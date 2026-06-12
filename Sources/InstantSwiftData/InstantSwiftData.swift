@@ -313,3 +313,191 @@ public struct FetchAll<Element: Sendable>: Sendable {
     try await load(using: client)
   }
 }
+
+@propertyWrapper
+public struct FetchOne<Element: Sendable>: Sendable {
+  public var wrappedValue: Element?
+  public var loadError: InstantError?
+  public var isLoading: Bool
+  private var loadOperation: (@Sendable (InstantSwiftDataClient) async throws -> Element?)?
+
+  public init(wrappedValue: Element? = nil) {
+    self.wrappedValue = wrappedValue
+    self.loadError = nil
+    self.isLoading = false
+    self.loadOperation = nil
+  }
+
+  public init(
+    wrappedValue: Element? = nil,
+    _ query: InstantEntityQuery<Element>
+  ) where Element: InstantEntityModel {
+    self.wrappedValue = wrappedValue
+    self.loadError = nil
+    self.isLoading = false
+    self.loadOperation = { client in
+      var query = query
+      if query.plan.limit == nil {
+        query = query.limit(1)
+      }
+      return try await client.query(query).first
+    }
+  }
+
+  public var projectedValue: Self {
+    get { self }
+    set { self = newValue }
+  }
+
+  public mutating func load() async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(using: client)
+  }
+
+  public mutating func load(using client: InstantSwiftDataClient) async throws {
+    guard let loadOperation else {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "load FetchOne",
+        message: "No Instant query has been configured for this fetch wrapper.",
+        recovery: "Initialize @FetchOne with an InstantEntityQuery, or pass a query to load(_:using:)."
+      )
+      loadError = error
+      throw error
+    }
+
+    isLoading = true
+    do {
+      wrappedValue = try await loadOperation(client)
+      loadError = nil
+      isLoading = false
+    } catch let error as CancellationError {
+      loadError = nil
+      isLoading = false
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      isLoading = false
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "load FetchOne",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient and query decoder."
+      )
+      loadError = error
+      isLoading = false
+      throw error
+    }
+  }
+
+  public mutating func load(
+    _ query: InstantEntityQuery<Element>
+  ) async throws where Element: InstantEntityModel {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(query, using: client)
+  }
+
+  public mutating func load(
+    _ query: InstantEntityQuery<Element>,
+    using client: InstantSwiftDataClient
+  ) async throws where Element: InstantEntityModel {
+    self.loadOperation = { client in
+      var query = query
+      if query.plan.limit == nil {
+        query = query.limit(1)
+      }
+      return try await client.query(query).first
+    }
+    try await load(using: client)
+  }
+}
+
+@propertyWrapper
+public struct Fetch<Value: Sendable>: Sendable {
+  public var wrappedValue: Value
+  public var loadError: InstantError?
+  public var isLoading: Bool
+  private var loadOperation: (@Sendable (InstantSwiftDataClient) async throws -> Value)?
+
+  public init(wrappedValue: Value) {
+    self.wrappedValue = wrappedValue
+    self.loadError = nil
+    self.isLoading = false
+    self.loadOperation = nil
+  }
+
+  public init(
+    wrappedValue: Value,
+    load: @escaping @Sendable (InstantSwiftDataClient) async throws -> Value
+  ) {
+    self.wrappedValue = wrappedValue
+    self.loadError = nil
+    self.isLoading = false
+    self.loadOperation = load
+  }
+
+  public var projectedValue: Self {
+    get { self }
+    set { self = newValue }
+  }
+
+  public mutating func load() async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(using: client)
+  }
+
+  public mutating func load(using client: InstantSwiftDataClient) async throws {
+    guard let loadOperation else {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "load Fetch",
+        message: "No Instant load operation has been configured for this fetch wrapper.",
+        recovery: "Initialize @Fetch with a load operation, or pass an operation to load(_:using:)."
+      )
+      loadError = error
+      throw error
+    }
+
+    isLoading = true
+    do {
+      wrappedValue = try await loadOperation(client)
+      loadError = nil
+      isLoading = false
+    } catch let error as CancellationError {
+      loadError = nil
+      isLoading = false
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      isLoading = false
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "load Fetch",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient and fetch load operation."
+      )
+      loadError = error
+      isLoading = false
+      throw error
+    }
+  }
+
+  public mutating func load(
+    _ operation: @escaping @Sendable (InstantSwiftDataClient) async throws -> Value
+  ) async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(operation, using: client)
+  }
+
+  public mutating func load(
+    _ operation: @escaping @Sendable (InstantSwiftDataClient) async throws -> Value,
+    using client: InstantSwiftDataClient
+  ) async throws {
+    self.loadOperation = operation
+    try await load(using: client)
+  }
+}

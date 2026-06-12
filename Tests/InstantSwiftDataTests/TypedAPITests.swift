@@ -164,6 +164,102 @@ struct TypedAPITests {
   }
 
   @Test
+  func fetchOneLoadsFirstTypedQueryAndDynamicQuery() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_150)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000655")!
+
+    try await withDependencies {
+      $0.date.now = baseDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "fetch-one-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      try await db.transact {
+        TypedTodo.create(
+          id: InstantID(rawValue: "todo-first"),
+          TypedTodo.text.set("First"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate)
+        )
+        TypedTodo.create(
+          id: InstantID(rawValue: "todo-second"),
+          TypedTodo.text.set("Second"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate.addingTimeInterval(1))
+        )
+      }
+
+      var fetch = FetchOne<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt))
+      try await fetch.load()
+
+      expectNoDifference(fetch.wrappedValue?.text, "First")
+      expectNoDifference(fetch.isLoading, false)
+      expectNoDifference(fetch.loadError, nil)
+
+      try await fetch.load(TypedTodo.query.where(TypedTodo.text == "Missing"))
+
+      expectNoDifference(fetch.wrappedValue, nil)
+      expectNoDifference(fetch.isLoading, false)
+      expectNoDifference(fetch.loadError, nil)
+    }
+  }
+
+  @Test
+  func fetchLoadsCustomDerivedValues() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_175)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000656")!
+
+    try await withDependencies {
+      $0.date.now = baseDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "fetch-custom-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      try await db.transact {
+        TypedTodo.create(
+          id: InstantID(rawValue: "todo-open"),
+          TypedTodo.text.set("Open"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate)
+        )
+        TypedTodo.create(
+          id: InstantID(rawValue: "todo-done"),
+          TypedTodo.text.set("Done"),
+          TypedTodo.isCompleted.set(true),
+          TypedTodo.createdAt.set(baseDate.addingTimeInterval(1))
+        )
+      }
+
+      var fetch = Fetch<Int>(wrappedValue: 0) { client in
+        try await client.query(TypedTodo.query).count
+      }
+      try await fetch.load()
+
+      expectNoDifference(fetch.wrappedValue, 2)
+      expectNoDifference(fetch.isLoading, false)
+      expectNoDifference(fetch.loadError, nil)
+
+      try await fetch.load { client in
+        try await client.query(TypedTodo.query.where(TypedTodo.isCompleted == false)).count
+      }
+
+      expectNoDifference(fetch.wrappedValue, 1)
+      expectNoDifference(fetch.isLoading, false)
+      expectNoDifference(fetch.loadError, nil)
+    }
+  }
+
+  @Test
   func typedTransactionBuilderUsesDependencyClockForMockClient() async throws {
     let fixedDate = Date(timeIntervalSince1970: 1_700_000_200)
     let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000987")!
@@ -256,6 +352,45 @@ struct TypedAPITests {
       expectNoDifference(model.$todos.isLoading, false)
     }
   }
+
+  @Test
+  func fetchOnePropertyWrapperProjectionLoadsTypedQuery() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_325)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000def")!
+
+    try await withDependencies {
+      $0.date.now = baseDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "fetch-one-wrapper-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+      try await db.transact {
+        TypedTodo.create(
+          id: InstantID(rawValue: "todo-later"),
+          TypedTodo.text.set("Later"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate.addingTimeInterval(1))
+        )
+        TypedTodo.create(
+          id: InstantID(rawValue: "todo-earlier"),
+          TypedTodo.text.set("Earlier"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate)
+        )
+      }
+
+      var model = TypedTodoFetchOneModel()
+      try await model.load()
+
+      expectNoDifference(model.todo?.text, "Earlier")
+      expectNoDifference(model.$todo.loadError, nil)
+      expectNoDifference(model.$todo.isLoading, false)
+    }
+  }
 }
 
 private actor TransactionRecorder {
@@ -272,6 +407,15 @@ private struct TypedTodoFetchModel {
 
   mutating func load() async throws {
     try await $todos.load()
+  }
+}
+
+private struct TypedTodoFetchOneModel {
+  @FetchOne(TypedTodo.query.where(TypedTodo.isCompleted == false).order(TypedTodo.createdAt))
+  var todo: TypedTodo?
+
+  mutating func load() async throws {
+    try await $todo.load()
   }
 }
 
