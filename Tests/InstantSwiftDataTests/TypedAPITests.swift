@@ -11,14 +11,17 @@ struct TypedAPITests {
     let query = TypedTodo.query
       .where(TypedTodo.isCompleted == false)
       .order(TypedTodo.createdAt, .descending)
+      .offset(5)
       .limit(10)
 
     expectNoDifference(query.plan.namespace, "todos")
     expectNoDifference(query.plan.filters, [.equals(field: "isCompleted", value: .bool(false))])
     expectNoDifference(query.plan.order, InstantQueryOrder("createdAt", .descending))
+    expectNoDifference(query.plan.offset, 5)
     expectNoDifference(query.plan.limit, 10)
 
-    let initializedWithLimit = InstantEntityQuery<TypedTodo>(limit: 2)
+    let initializedWithLimit = InstantEntityQuery<TypedTodo>(offset: 1, limit: 2)
+    expectNoDifference(initializedWithLimit.plan.offset, 1)
     expectNoDifference(initializedWithLimit.plan.limit, 2)
 
     let comparisonQuery = TypedTodo.query

@@ -163,6 +163,14 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       snapshots.sort { $0.id < $1.id }
     }
 
+    if let offset = plan.offset {
+      guard offset >= 0 else { return [] }
+      if offset >= snapshots.count {
+        return []
+      }
+      snapshots = Array(snapshots.dropFirst(offset))
+    }
+
     if let limit = plan.limit {
       guard limit > 0 else { return [] }
       return Array(snapshots.prefix(limit))

@@ -456,9 +456,9 @@ struct InstantSwiftDataCLI {
         perms generate --example todos [--to instant.perms.ts]
         perms verify --example todos --from instant.perms.ts [--json|--jsonl]
         examples todos add "do the dishes" [--json|--jsonl]
-        examples todos list [--completed true|false] [--search text] [--limit n] [--order asc|desc] [--json|--jsonl]
+        examples todos list [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--json|--jsonl]
         examples todos complete <todo-id> [--json|--jsonl]
-        examples todos refresh [--completed true|false] [--search text] [--limit n] [--order asc|desc] [--json|--jsonl]
+        examples todos refresh [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--json|--jsonl]
         cache inspect [--json|--jsonl]
         outbox inspect [--json|--jsonl]
         outbox confirm <mutation-id> [--json|--jsonl]
@@ -610,6 +610,7 @@ struct InstantSwiftDataCLI {
     var arguments = arguments
     var completed: Bool?
     var search: String?
+    var offset: Int?
     var limit: Int?
     var direction = InstantQuerySortDirection.ascending
 
@@ -638,6 +639,15 @@ struct InstantSwiftDataCLI {
         }
         limit = parsed
 
+      case "--offset":
+        guard let value = arguments.popFirstArgument(),
+          let parsed = Int(value),
+          parsed >= 0
+        else {
+          throw CLIError("Usage: instant-swift-data examples todos list --offset n", exitCode: 64)
+        }
+        offset = parsed
+
       case "--order":
         guard let value = arguments.popFirstArgument(), let parsed = parseSortDirection(value) else {
           throw CLIError("Usage: instant-swift-data examples todos list --order asc|desc", exitCode: 64)
@@ -646,7 +656,7 @@ struct InstantSwiftDataCLI {
 
       default:
         throw CLIError(
-          "Unknown todo list option: \(option). Usage: instant-swift-data examples todos list [--completed true|false] [--search text] [--limit n] [--order asc|desc]",
+          "Unknown todo list option: \(option). Usage: instant-swift-data examples todos list [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc]",
           exitCode: 64
         )
       }
@@ -666,6 +676,9 @@ struct InstantSwiftDataCLI {
     if direction != .ascending {
       id += ".order-\(direction.rawValue)"
     }
+    if let offset {
+      id += ".offset-\(offset)"
+    }
     if let limit {
       id += ".limit-\(limit)"
     }
@@ -675,6 +688,7 @@ struct InstantSwiftDataCLI {
       namespace: TodoExample.namespace,
       filters: filters,
       order: InstantQueryOrder("createdAt", direction),
+      offset: offset,
       limit: limit
     )
   }

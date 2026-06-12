@@ -17,7 +17,7 @@ export INSTANT_SWIFT_DATA_HOME="$(mktemp -d)"
 
 swift run instant-swift-data examples todos add "do the dishes"
 swift run instant-swift-data examples todos list
-swift run instant-swift-data examples todos list --completed false --limit 10 --order desc
+swift run instant-swift-data examples todos list --completed false --offset 0 --limit 10 --order desc
 swift run instant-swift-data examples todos list --search dishes
 swift run instant-swift-data examples todos complete <todo-id>
 swift run instant-swift-data examples todos refresh

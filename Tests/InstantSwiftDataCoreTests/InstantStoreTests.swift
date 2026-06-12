@@ -399,6 +399,17 @@ struct InstantStoreTests {
     )
     expectNoDifference(ordered.map(\.id), ["item-2", "item-10"])
 
+    let paged = await runtime.query(
+      .init(
+        id: "items.paged",
+        namespace: "items",
+        order: .init("score"),
+        offset: 1,
+        limit: 1
+      )
+    )
+    expectNoDifference(paged.map(\.id), ["item-10"])
+
     let filtered = await runtime.query(
       .init(
         id: "items.filtered",
@@ -729,7 +740,7 @@ struct InstantStoreTests {
   }
 
   @Test
-  func rawNegativeLimitPlansDoNotTrapMaterialization() async throws {
+  func rawNegativePaginationPlansDoNotTrapMaterialization() async throws {
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
         appID: "test-app",
@@ -756,6 +767,12 @@ struct InstantStoreTests {
 
     let snapshots = await runtime.query(plan)
     expectNoDifference(snapshots, [])
+
+    plan.limit = nil
+    plan.offset = -1
+
+    let negativeOffsetSnapshots = await runtime.query(plan)
+    expectNoDifference(negativeOffsetSnapshots, [])
   }
 
   private func temporaryCacheURL() throws -> URL {

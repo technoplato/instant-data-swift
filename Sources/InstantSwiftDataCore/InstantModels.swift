@@ -329,6 +329,7 @@ public struct InstantQueryPlan: Hashable, Codable, Sendable, Identifiable {
   public var namespace: String
   public var filters: [InstantQueryFilter]
   public var order: InstantQueryOrder?
+  public var offset: Int?
   public var limit: Int?
 
   public init(
@@ -336,8 +337,13 @@ public struct InstantQueryPlan: Hashable, Codable, Sendable, Identifiable {
     namespace: String,
     filters: [InstantQueryFilter] = [],
     order: InstantQueryOrder? = nil,
+    offset: Int? = nil,
     limit: Int? = nil
   ) {
+    precondition(
+      offset == nil || offset! >= 0,
+      "InstantQueryPlan offset must be greater than or equal to 0."
+    )
     precondition(
       limit == nil || limit! >= 0,
       "InstantQueryPlan limit must be greater than or equal to 0."
@@ -346,6 +352,7 @@ public struct InstantQueryPlan: Hashable, Codable, Sendable, Identifiable {
     self.namespace = namespace
     self.filters = filters
     self.order = order
+    self.offset = offset
     self.limit = limit
   }
 }
