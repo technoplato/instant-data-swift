@@ -1,2 +1,0 @@
-drop index instant_personal_access_tokens_user_id_index;
-drop table instant_personal_access_tokens;

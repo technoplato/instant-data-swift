@@ -1,9 +1,15 @@
 # Upstream References
 
-These checkouts are local source material for building Instant Swift Data.
+These submodules are local source material for building Instant Swift Data.
 They are intentionally kept under `upstream/` so implementation work can compare
 against the TypeScript client, SQLiteData examples, and prior Swift Instant
-experiments.
+experiments without vendoring those repositories into this repo's history.
+
+Clone them with:
+
+```bash
+git submodule update --init --recursive
+```
 
 | Directory | Repository | Ref checked out | Why it is here |
 | --- | --- | --- | --- |
