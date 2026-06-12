@@ -27,8 +27,8 @@ public struct InstantRuntimeConfiguration: Sendable {
 public final class InstantRuntime: Sendable {
   public let configuration: InstantRuntimeConfiguration
   public let store: InstantStore
-  public let outbox: InstantOutbox
   public let persistence: SQLitePersistenceStore
+  let outbox: InstantOutbox
   private let transactionGate = AsyncSerialGate()
 
   private init(
@@ -126,7 +126,53 @@ public final class InstantRuntime: Sendable {
     await outbox.pending()
   }
 
+  public func outboxMutations() async -> [PendingMutation] {
+    await outbox.all()
+  }
+
+  @discardableResult
+  public func confirmMutation(id: String) async throws -> PendingMutation {
+    await transactionGate.enter()
+    do {
+      guard let update = await outbox.markConfirmed(id: id) else {
+        throw outboxMutationNotFound(id: id)
+      }
+      try await persistence.saveOutbox(update.mutations)
+      await transactionGate.leave()
+      return update.mutation
+    } catch {
+      await transactionGate.leave()
+      throw error
+    }
+  }
+
+  @discardableResult
+  public func failMutation(id: String, message: String) async throws -> PendingMutation {
+    await transactionGate.enter()
+    do {
+      guard let update = await outbox.markFailed(id: id, message: message) else {
+        throw outboxMutationNotFound(id: id)
+      }
+      try await persistence.saveOutbox(update.mutations)
+      await transactionGate.leave()
+      return update.mutation
+    } catch {
+      await transactionGate.leave()
+      throw error
+    }
+  }
+
   public func localID(named name: String) async throws -> String {
     try await persistence.localID(named: name, makeID: configuration.makeID)
+  }
+
+  private func outboxMutationNotFound(id: String) -> InstantError {
+    InstantError(
+      code: .validationFailed,
+      operation: "update outbox mutation",
+      localID: id,
+      message: "No pending or historical outbox mutation exists for id '\(id)'.",
+      recovery: "Run 'instant-swift-data outbox inspect' to list known mutation ids."
+    )
   }
 }

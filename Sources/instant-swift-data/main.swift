@@ -200,12 +200,63 @@ struct InstantSwiftDataCLI {
 
   private static func runOutbox(arguments: [String], output: OutputMode) async throws {
     var arguments = arguments
-    guard arguments.popFirstArgument() == "inspect", arguments.isEmpty else {
-      throw CLIError("Usage: instant-swift-data outbox inspect [--json|--jsonl]", exitCode: 64)
+    guard let command = arguments.popFirstArgument() else {
+      throw CLIError(outboxUsage, exitCode: 64)
     }
 
     let context = try await CLIContext.bootstrap()
-    let mutations = await context.runtime.outbox.all()
+
+    switch command {
+    case "inspect":
+      guard arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data outbox inspect [--json|--jsonl]", exitCode: 64)
+      }
+      try await printOutbox(context: context, output: output)
+
+    case "confirm":
+      guard let mutationID = arguments.popFirstArgument(), arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data outbox confirm <mutation-id> [--json|--jsonl]", exitCode: 64)
+      }
+      let mutation = try await context.runtime.confirmMutation(id: mutationID)
+      try await printOutboxUpdate(
+        context: context,
+        output: output,
+        event: "confirm",
+        mutation: mutation
+      )
+
+    case "fail":
+      guard let mutationID = arguments.popFirstArgument() else {
+        throw CLIError(
+          "Usage: instant-swift-data outbox fail <mutation-id> \"reason\" [--json|--jsonl]",
+          exitCode: 64
+        )
+      }
+      let message = arguments.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !message.isEmpty else {
+        throw CLIError(
+          "Usage: instant-swift-data outbox fail <mutation-id> \"reason\" [--json|--jsonl]",
+          exitCode: 64
+        )
+      }
+      let mutation = try await context.runtime.failMutation(id: mutationID, message: message)
+      try await printOutboxUpdate(
+        context: context,
+        output: output,
+        event: "fail",
+        mutation: mutation
+      )
+
+    default:
+      throw CLIError(outboxUsage, exitCode: 64)
+    }
+  }
+
+  private static func printOutbox(
+    context: CLIContext,
+    output: OutputMode
+  ) async throws {
+    let mutations = await context.runtime.outboxMutations()
     let summary = OutboxInspectOutput(
       appID: context.appID,
       cachePath: context.cacheURL.path,
@@ -253,6 +304,52 @@ struct InstantSwiftDataCLI {
           )
         )
       }
+    }
+  }
+
+  private static func printOutboxUpdate(
+    context: CLIContext,
+    output: OutputMode,
+    event: String,
+    mutation: PendingMutation
+  ) async throws {
+    let mutations = await context.runtime.outboxMutations()
+    let update = OutboxUpdateOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      transport: "not-implemented-local-cache-only",
+      pendingMutationCount: mutations.filter { $0.status == .pending }.count,
+      mutationCount: mutations.count,
+      mutation: mutation
+    )
+
+    switch output {
+    case .human:
+      print("outbox: \(update.cachePath)")
+      print("event: \(event)")
+      print("mutation: \(mutation.id)")
+      print("status: \(mutation.status.rawValue)")
+      if let failureMessage = mutation.failureMessage {
+        print("failure: \(failureMessage)")
+      }
+      print("pending mutations: \(update.pendingMutationCount)")
+
+    case .json:
+      try writeJSON(update)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.outbox.update",
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          entityID: mutation.id,
+          ok: true,
+          details: update
+        )
+      )
     }
   }
 
@@ -331,12 +428,23 @@ struct InstantSwiftDataCLI {
         examples todos refresh [--json|--jsonl]
         cache inspect [--json|--jsonl]
         outbox inspect [--json|--jsonl]
+        outbox confirm <mutation-id> [--json|--jsonl]
+        outbox fail <mutation-id> "reason" [--json|--jsonl]
 
       Environment:
         INSTANT_SWIFT_DATA_HOME  Directory for CLI SQLite state. Defaults to ~/.instant-swift-data.
         INSTANT_APP_ID           Logical app id recorded in output. Defaults to local-demo.
       """
     )
+  }
+
+  private static var outboxUsage: String {
+    """
+    Usage: instant-swift-data outbox <inspect|confirm|fail>
+      instant-swift-data outbox inspect [--json|--jsonl]
+      instant-swift-data outbox confirm <mutation-id> [--json|--jsonl]
+      instant-swift-data outbox fail <mutation-id> "reason" [--json|--jsonl]
+    """
   }
 
   private static func namespaceSummaries(
@@ -486,6 +594,16 @@ private struct OutboxInspectOutput: Codable, Sendable {
   var pendingMutationCount: Int
   var mutationCount: Int
   var mutations: [PendingMutation]
+}
+
+private struct OutboxUpdateOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var transport: String
+  var pendingMutationCount: Int
+  var mutationCount: Int
+  var mutation: PendingMutation
 }
 
 private struct EvidenceRow<Details: Encodable & Sendable>: Encodable, Sendable {
