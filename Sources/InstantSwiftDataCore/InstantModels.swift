@@ -1,0 +1,328 @@
+import Foundation
+
+public struct InstantID<Entity>: Hashable, Codable, Sendable, CustomStringConvertible {
+  public var rawValue: String
+
+  public init(rawValue: String) {
+    self.rawValue = rawValue
+  }
+
+  public var description: String {
+    rawValue
+  }
+}
+
+public struct AnyInstantID: Hashable, Codable, Sendable, CustomStringConvertible {
+  public var rawValue: String
+
+  public init(_ rawValue: String) {
+    self.rawValue = rawValue
+  }
+
+  public var description: String {
+    rawValue
+  }
+}
+
+public struct InstantTimestamp: Hashable, Codable, Comparable, Sendable {
+  public var milliseconds: Int64
+
+  public init(milliseconds: Int64) {
+    self.milliseconds = milliseconds
+  }
+
+  public static func < (lhs: Self, rhs: Self) -> Bool {
+    lhs.milliseconds < rhs.milliseconds
+  }
+}
+
+public indirect enum JSONValue: Hashable, Codable, Sendable {
+  case null
+  case bool(Bool)
+  case number(Double)
+  case string(String)
+  case array([JSONValue])
+  case object([String: JSONValue])
+}
+
+public enum InstantValue: Hashable, Codable, Sendable {
+  case null
+  case string(String)
+  case number(Double)
+  case bool(Bool)
+  case date(Date)
+  case json(JSONValue)
+  case ref(String)
+}
+
+extension InstantValue {
+  public var refValue: String? {
+    guard case let .ref(value) = self else { return nil }
+    return value
+  }
+
+  public var comparableKey: String {
+    switch self {
+    case .null:
+      return "0:null"
+    case let .bool(value):
+      return "1:\(value ? 1 : 0)"
+    case let .number(value):
+      return "2:\(value)"
+    case let .string(value):
+      return "3:\(value)"
+    case let .date(value):
+      return "4:\(value.timeIntervalSince1970)"
+    case let .ref(value):
+      return "5:\(value)"
+    case let .json(value):
+      return "6:\(String(describing: value))"
+    }
+  }
+
+  public func compare(to other: InstantValue) -> ComparisonResult {
+    switch (self, other) {
+    case (.null, .null):
+      return .orderedSame
+    case let (.bool(lhs), .bool(rhs)):
+      return lhs == rhs ? .orderedSame : (lhs == false ? .orderedAscending : .orderedDescending)
+    case let (.number(lhs), .number(rhs)):
+      return lhs == rhs ? .orderedSame : (lhs < rhs ? .orderedAscending : .orderedDescending)
+    case let (.string(lhs), .string(rhs)):
+      return lhs.compare(rhs)
+    case let (.date(lhs), .date(rhs)):
+      return lhs == rhs ? .orderedSame : (lhs < rhs ? .orderedAscending : .orderedDescending)
+    case let (.ref(lhs), .ref(rhs)):
+      return lhs.compare(rhs)
+    default:
+      return comparableKey.compare(other.comparableKey)
+    }
+  }
+}
+
+public enum InstantValueType: String, Codable, Sendable {
+  case string
+  case number
+  case boolean
+  case date
+  case json
+  case ref
+}
+
+public enum InstantCardinality: String, Codable, Sendable {
+  case one
+  case many
+}
+
+public enum InstantDeleteRule: String, Codable, Sendable {
+  case none
+  case cascade
+}
+
+public struct InstantAttribute: Hashable, Codable, Sendable, Identifiable {
+  public var id: String
+  public var namespace: String
+  public var name: String
+  public var valueType: InstantValueType
+  public var cardinality: InstantCardinality
+  public var isIndexed: Bool
+  public var isUnique: Bool
+  public var forwardIdentity: String?
+  public var reverseIdentity: String?
+  public var primaryKey: Bool
+  public var linkNamespace: String?
+  public var onDelete: InstantDeleteRule
+
+  public init(
+    id: String,
+    namespace: String,
+    name: String,
+    valueType: InstantValueType,
+    cardinality: InstantCardinality = .one,
+    isIndexed: Bool = false,
+    isUnique: Bool = false,
+    forwardIdentity: String? = nil,
+    reverseIdentity: String? = nil,
+    primaryKey: Bool = false,
+    linkNamespace: String? = nil,
+    onDelete: InstantDeleteRule = .none
+  ) {
+    self.id = id
+    self.namespace = namespace
+    self.name = name
+    self.valueType = valueType
+    self.cardinality = cardinality
+    self.isIndexed = isIndexed
+    self.isUnique = isUnique
+    self.forwardIdentity = forwardIdentity
+    self.reverseIdentity = reverseIdentity
+    self.primaryKey = primaryKey
+    self.linkNamespace = linkNamespace
+    self.onDelete = onDelete
+  }
+}
+
+public struct InstantTriple: Hashable, Codable, Sendable {
+  public var entityID: String
+  public var attributeID: String
+  public var value: InstantValue
+  public var txID: String
+  public var txTime: InstantTimestamp
+
+  public init(
+    entityID: String,
+    attributeID: String,
+    value: InstantValue,
+    txID: String,
+    txTime: InstantTimestamp
+  ) {
+    self.entityID = entityID
+    self.attributeID = attributeID
+    self.value = value
+    self.txID = txID
+    self.txTime = txTime
+  }
+}
+
+public enum InstantTripleOperation: Hashable, Codable, Sendable {
+  case insert(InstantTriple)
+  case retract(InstantTriple)
+  case deleteEntity(String)
+}
+
+public struct InstantStoreTransaction: Hashable, Codable, Sendable {
+  public var id: String
+  public var operations: [InstantTripleOperation]
+
+  public init(id: String, operations: [InstantTripleOperation]) {
+    self.id = id
+    self.operations = operations
+  }
+}
+
+public enum InstantMutationStatus: String, Codable, Sendable {
+  case pending
+  case confirmed
+  case failed
+}
+
+public struct PendingMutation: Hashable, Codable, Sendable, Identifiable {
+  public var id: String
+  public var createdAt: InstantTimestamp
+  public var transaction: InstantStoreTransaction
+  public var status: InstantMutationStatus
+  public var failureMessage: String?
+
+  public init(
+    id: String,
+    createdAt: InstantTimestamp,
+    transaction: InstantStoreTransaction,
+    status: InstantMutationStatus = .pending,
+    failureMessage: String? = nil
+  ) {
+    self.id = id
+    self.createdAt = createdAt
+    self.transaction = transaction
+    self.status = status
+    self.failureMessage = failureMessage
+  }
+}
+
+public enum InstantQuerySortDirection: String, Codable, Sendable {
+  case ascending
+  case descending
+}
+
+public struct InstantQueryOrder: Hashable, Codable, Sendable {
+  public var field: String
+  public var direction: InstantQuerySortDirection
+
+  public init(_ field: String, _ direction: InstantQuerySortDirection = .ascending) {
+    self.field = field
+    self.direction = direction
+  }
+}
+
+public enum InstantQueryFilter: Hashable, Codable, Sendable {
+  case equals(field: String, value: InstantValue)
+  case isNull(field: String)
+}
+
+public struct InstantQueryPlan: Hashable, Codable, Sendable, Identifiable {
+  public var id: String
+  public var namespace: String
+  public var filters: [InstantQueryFilter]
+  public var order: InstantQueryOrder?
+  public var limit: Int?
+
+  public init(
+    id: String,
+    namespace: String,
+    filters: [InstantQueryFilter] = [],
+    order: InstantQueryOrder? = nil,
+    limit: Int? = nil
+  ) {
+    self.id = id
+    self.namespace = namespace
+    self.filters = filters
+    self.order = order
+    self.limit = limit
+  }
+}
+
+public enum InstantMaterializedValue: Hashable, Codable, Sendable {
+  case one(InstantValue)
+  case many([InstantValue])
+
+  public var first: InstantValue? {
+    switch self {
+    case let .one(value):
+      return value
+    case let .many(values):
+      return values.first
+    }
+  }
+
+  public func contains(_ value: InstantValue) -> Bool {
+    switch self {
+    case let .one(current):
+      return current == value
+    case let .many(values):
+      return values.contains(value)
+    }
+  }
+}
+
+public struct InstantEntitySnapshot: Hashable, Codable, Sendable, Identifiable {
+  public var id: String
+  public var namespace: String
+  public var values: [String: InstantMaterializedValue]
+
+  public init(id: String, namespace: String, values: [String: InstantMaterializedValue]) {
+    self.id = id
+    self.namespace = namespace
+    self.values = values
+  }
+}
+
+public struct InstantQueryEmission: Hashable, Codable, Sendable {
+  public var queryID: String
+  public var sequence: Int64
+  public var values: [InstantEntitySnapshot]
+
+  public init(queryID: String, sequence: Int64, values: [InstantEntitySnapshot]) {
+    self.queryID = queryID
+    self.sequence = sequence
+    self.values = values
+  }
+}
+
+public struct InstantStoreSnapshot: Hashable, Codable, Sendable {
+  public var attributes: [InstantAttribute]
+  public var triples: [InstantTriple]
+
+  public init(attributes: [InstantAttribute] = [], triples: [InstantTriple] = []) {
+    self.attributes = attributes
+    self.triples = triples
+  }
+}

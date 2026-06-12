@@ -2,6 +2,12 @@
 
 import PackageDescription
 
+let strictConcurrencySettings: [SwiftSetting] = [
+  .enableUpcomingFeature("StrictConcurrency"),
+  .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
+  .enableUpcomingFeature("InferIsolatedConformances"),
+]
+
 let package = Package(
   name: "instant-swift-data",
   platforms: [
@@ -27,6 +33,10 @@ let package = Package(
       targets: ["InstantSwiftDataBenchmarks"]
     ),
   ],
+  dependencies: [
+    .package(url: "https://github.com/pointfreeco/swift-custom-dump", from: "1.0.0"),
+    .package(url: "https://github.com/swiftlang/swift-testing.git", exact: "6.2.3"),
+  ],
   targets: [
     .target(
       name: "InstantSwiftData",
@@ -34,30 +44,48 @@ let package = Package(
         "InstantSwiftDataCore",
         "InstantSwiftDataMacros",
         "InstantSwiftDataSchema",
-      ]
+      ],
+      swiftSettings: strictConcurrencySettings
     ),
-    .target(name: "InstantSwiftDataCore"),
-    .target(name: "InstantSwiftDataSchema"),
-    .target(name: "InstantSwiftDataMacros"),
+    .target(name: "InstantSwiftDataCore", swiftSettings: strictConcurrencySettings),
+    .target(
+      name: "InstantSwiftDataSchema",
+      dependencies: ["InstantSwiftDataCore"],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .target(name: "InstantSwiftDataMacros", swiftSettings: strictConcurrencySettings),
     .target(
       name: "InstantSwiftDataTesting",
       dependencies: [
         "InstantSwiftData",
         "InstantSwiftDataCore",
         "InstantSwiftDataSchema",
-      ]
+      ],
+      swiftSettings: strictConcurrencySettings
     ),
     .executableTarget(
       name: "instant-swift-data",
-      dependencies: ["InstantSwiftDataCore", "InstantSwiftDataSchema"]
+      dependencies: ["InstantSwiftDataCore", "InstantSwiftDataSchema"],
+      swiftSettings: strictConcurrencySettings
     ),
     .executableTarget(
       name: "InstantSwiftDataValidationRunner",
-      dependencies: ["InstantSwiftDataTesting"]
+      dependencies: ["InstantSwiftDataTesting"],
+      swiftSettings: strictConcurrencySettings
     ),
     .executableTarget(
       name: "InstantSwiftDataBenchmarks",
-      dependencies: ["InstantSwiftDataCore"]
+      dependencies: ["InstantSwiftDataCore"],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .testTarget(
+      name: "InstantSwiftDataCoreTests",
+      dependencies: [
+        "InstantSwiftDataCore",
+        .product(name: "CustomDump", package: "swift-custom-dump"),
+        .product(name: "Testing", package: "swift-testing"),
+      ],
+      swiftSettings: strictConcurrencySettings
     ),
   ],
   swiftLanguageModes: [.v6]
