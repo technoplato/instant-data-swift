@@ -40,6 +40,8 @@ swift run instant-swift-data outbox inspect --jsonl
 swift run instant-swift-data outbox confirm <mutation-id> --json
 swift run instant-swift-data outbox fail <mutation-id> "server rejected" --json
 swift run instant-swift-data local-id get todos.viewer --json
+swift run instant-swift-data sync inspect --json
+swift run instant-swift-data sync mark-processed <tx-id> --json
 ```
 
 Persist local CLI auth/session state:

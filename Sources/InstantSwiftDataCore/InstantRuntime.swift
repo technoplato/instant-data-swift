@@ -191,6 +191,39 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  public func syncState() async throws -> InstantSyncState {
+    InstantSyncState(
+      processedTransactionID: try await persistence.loadMetadataValue(
+        key: processedTransactionIDMetadataKey
+      )
+    )
+  }
+
+  public func markProcessedTransaction(id transactionID: String) async throws -> InstantSyncState {
+    let transactionID = transactionID.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !transactionID.isEmpty else {
+      throw validationFailed(
+        operation: "mark processed transaction",
+        message: "Transaction id must not be empty.",
+        recovery: "Pass the Instant transaction id that has been fully processed."
+      )
+    }
+
+    await operationGate.enter()
+    do {
+      try await persistence.saveMetadataValue(
+        transactionID,
+        key: processedTransactionIDMetadataKey,
+        updatedAt: configuration.now()
+      )
+      await operationGate.leave()
+      return InstantSyncState(processedTransactionID: transactionID)
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
   public func authSession() async throws -> InstantAuthSession? {
     try await persistence.loadAuthSession(key: authSessionKey)
   }
@@ -354,5 +387,9 @@ public final class InstantRuntime: Sendable {
 
   private var authSessionKey: String {
     "auth:\(configuration.appID)"
+  }
+
+  private var processedTransactionIDMetadataKey: String {
+    "sync.processed_transaction_id:\(configuration.appID)"
   }
 }

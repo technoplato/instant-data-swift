@@ -455,6 +455,52 @@ struct InstantStoreTests {
   }
 
   @Test
+  func processedTransactionCheckpointPersistsAcrossLaunches() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "app-a", persistenceURL: cacheURL)
+    )
+
+    let initialState = try await runtime.syncState()
+    expectNoDifference(initialState, InstantSyncState())
+
+    let updatedState = try await runtime.markProcessedTransaction(id: " tx-processed ")
+    expectNoDifference(
+      updatedState,
+      InstantSyncState(processedTransactionID: "tx-processed")
+    )
+
+    let otherAppRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "app-b", persistenceURL: cacheURL)
+    )
+    let otherInitialState = try await otherAppRuntime.syncState()
+    expectNoDifference(otherInitialState, InstantSyncState())
+    let otherUpdatedState = try await otherAppRuntime.markProcessedTransaction(id: "tx-other")
+    expectNoDifference(
+      otherUpdatedState,
+      InstantSyncState(processedTransactionID: "tx-other")
+    )
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "app-a", persistenceURL: cacheURL)
+    )
+    let relaunchedState = try await relaunchedRuntime.syncState()
+    expectNoDifference(
+      relaunchedState,
+      InstantSyncState(processedTransactionID: "tx-processed")
+    )
+
+    let otherRelaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "app-b", persistenceURL: cacheURL)
+    )
+    let otherRelaunchedState = try await otherRelaunchedRuntime.syncState()
+    expectNoDifference(
+      otherRelaunchedState,
+      InstantSyncState(processedTransactionID: "tx-other")
+    )
+  }
+
+  @Test
   func concurrentOutboxStatusUpdateAndTransactionPersistAcrossLaunches() async throws {
     let cacheURL = try temporaryCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)

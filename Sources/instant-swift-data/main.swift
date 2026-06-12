@@ -56,6 +56,9 @@ struct InstantSwiftDataCLI {
     case "app":
       try await runApp(arguments: arguments, output: output)
 
+    case "sync":
+      try await runSync(arguments: arguments, output: output)
+
     default:
       throw CLIError("Unknown command: \(command)", exitCode: 64)
     }
@@ -410,6 +413,37 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func runSync(arguments: [String], output: OutputMode) async throws {
+    var arguments = arguments
+    guard let command = arguments.popFirstArgument() else {
+      throw CLIError(syncUsage, exitCode: 64)
+    }
+
+    let context = try await CLIContext.bootstrap(initialAttributes: [])
+
+    switch command {
+    case "inspect", "show", "status":
+      guard arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data sync inspect [--json|--jsonl]", exitCode: 64)
+      }
+      let state = try await context.runtime.syncState()
+      try printSync(context: context, event: "inspect", state: state, output: output)
+
+    case "mark-processed":
+      guard let transactionID = arguments.popFirstArgument(),
+        arguments.isEmpty,
+        !transactionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      else {
+        throw CLIError("Usage: instant-swift-data sync mark-processed <tx-id> [--json|--jsonl]", exitCode: 64)
+      }
+      let state = try await context.runtime.markProcessedTransaction(id: transactionID)
+      try printSync(context: context, event: "mark-processed", state: state, output: output)
+
+    default:
+      throw CLIError(syncUsage, exitCode: 64)
+    }
+  }
+
   private static func printOutbox(
     context: CLIContext,
     output: OutputMode
@@ -542,6 +576,43 @@ struct InstantSwiftDataCLI {
           side: "swift",
           event: event,
           appID: context.appID,
+          ok: true,
+          details: payload
+        )
+      )
+    }
+  }
+
+  private static func printSync(
+    context: CLIContext,
+    event: String,
+    state: InstantSyncState,
+    output: OutputMode
+  ) throws {
+    let payload = SyncOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      transport: "not-implemented-local-cache-only",
+      processedTransactionID: state.processedTransactionID
+    )
+
+    switch output {
+    case .human:
+      print("processed transaction: \(payload.processedTransactionID ?? "none")")
+      print("cache: \(payload.cachePath)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.sync",
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          entityID: state.processedTransactionID,
           ok: true,
           details: payload
         )
@@ -683,6 +754,8 @@ struct InstantSwiftDataCLI {
         auth sign-out [--json|--jsonl]
         app show [--json|--jsonl]
         app select <app-id> [--json|--jsonl]
+        sync inspect [--json|--jsonl]
+        sync mark-processed <tx-id> [--json|--jsonl]
 
       Environment:
         INSTANT_SWIFT_DATA_HOME  Directory for CLI SQLite state. Defaults to ~/.instant-swift-data.
@@ -995,6 +1068,14 @@ struct InstantSwiftDataCLI {
     """
   }
 
+  private static var syncUsage: String {
+    """
+    Usage: instant-swift-data sync <inspect|mark-processed>
+      instant-swift-data sync inspect [--json|--jsonl]
+      instant-swift-data sync mark-processed <tx-id> [--json|--jsonl]
+    """
+  }
+
   private static func namespaceSummaries(
     _ snapshot: InstantStoreSnapshot
   ) -> [CacheNamespaceSummary] {
@@ -1238,6 +1319,14 @@ private struct AppOutput: Codable, Sendable {
   var event: String
   var transport: String
   var selectionSource: String
+}
+
+private struct SyncOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var transport: String
+  var processedTransactionID: String?
 }
 
 private struct SchemaVerifyOutput: Codable, Sendable {

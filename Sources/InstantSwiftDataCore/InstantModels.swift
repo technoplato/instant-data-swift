@@ -319,6 +319,14 @@ public struct InstantAuthSession: Hashable, Codable, Sendable, Identifiable {
   }
 }
 
+public struct InstantSyncState: Hashable, Codable, Sendable {
+  public var processedTransactionID: String?
+
+  public init(processedTransactionID: String? = nil) {
+    self.processedTransactionID = processedTransactionID
+  }
+}
+
 public enum InstantQuerySortDirection: String, Codable, Sendable {
   case ascending
   case descending
