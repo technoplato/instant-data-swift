@@ -26,9 +26,21 @@ public struct InstantEntityMacro: MemberMacro {
     }
 
     let defaultNamespace = InstantEntityMacro.defaultNamespace(for: typeName)
-    let namespace = explicitNamespace(from: node) ?? defaultNamespace
+    let explicitNamespace = explicitNamespace(from: node)
+    let namespace: String
+    switch explicitNamespace {
+    case .none:
+      namespace = defaultNamespace
+    case let .namespace(value):
+      namespace = value
+    case .unsupported:
+      context.diagnose(
+        InstantEntityDiagnostic.unsupportedNamespaceArgument.diagnose(at: Syntax(node))
+      )
+      return []
+    }
 
-    if explicitNamespace(from: node) == defaultNamespace {
+    if namespace == defaultNamespace, case .namespace = explicitNamespace {
       context.diagnose(
         InstantEntityDiagnostic.redundantNamespace(defaultNamespace)
           .diagnose(at: Syntax(node))
@@ -44,12 +56,17 @@ public struct InstantEntityMacro: MemberMacro {
     ]
   }
 
-  private static func explicitNamespace(from node: AttributeSyntax) -> String? {
+  private static func explicitNamespace(from node: AttributeSyntax) -> ExplicitNamespace {
     guard case let .argumentList(arguments) = node.arguments,
-      let expression = arguments.first?.expression.as(StringLiteralExprSyntax.self)
-    else { return nil }
+      let argument = arguments.first
+    else { return .none }
 
-    return expression.representedLiteralValue
+    guard arguments.count == 1,
+      let expression = argument.expression.as(StringLiteralExprSyntax.self),
+      let value = expression.representedLiteralValue
+    else { return .unsupported }
+
+    return .namespace(value)
   }
 
   private static func defaultNamespace(for typeName: String) -> String {
@@ -75,6 +92,12 @@ public struct InstantEntityMacro: MemberMacro {
   }
 }
 
+private enum ExplicitNamespace {
+  case none
+  case namespace(String)
+  case unsupported
+}
+
 private extension DeclGroupSyntax {
   var instantTypeName: String? {
     if let declaration = self.as(StructDeclSyntax.self) {
@@ -93,6 +116,7 @@ private extension DeclGroupSyntax {
 private enum InstantEntityDiagnostic {
   case redundantNamespace(String)
   case requiresNominalType
+  case unsupportedNamespaceArgument
 
   func diagnose(at node: Syntax) -> Diagnostic {
     Diagnostic(node: node, message: self)
@@ -106,6 +130,8 @@ extension InstantEntityDiagnostic: DiagnosticMessage {
       return #"@InstantEntity("\#(namespace)") is redundant; omit the argument to use the default namespace."#
     case .requiresNominalType:
       return "@InstantEntity can only be attached to a struct, class, or actor."
+    case .unsupportedNamespaceArgument:
+      return "@InstantEntity namespace overrides must be string literals."
     }
   }
 
@@ -115,6 +141,8 @@ extension InstantEntityDiagnostic: DiagnosticMessage {
       return MessageID(domain: "InstantSwiftDataMacros", id: "redundantNamespace")
     case .requiresNominalType:
       return MessageID(domain: "InstantSwiftDataMacros", id: "requiresNominalType")
+    case .unsupportedNamespaceArgument:
+      return MessageID(domain: "InstantSwiftDataMacros", id: "unsupportedNamespaceArgument")
     }
   }
 
@@ -122,7 +150,7 @@ extension InstantEntityDiagnostic: DiagnosticMessage {
     switch self {
     case .redundantNamespace:
       return .warning
-    case .requiresNominalType:
+    case .requiresNominalType, .unsupportedNamespaceArgument:
       return .error
     }
   }
