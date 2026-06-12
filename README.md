@@ -38,10 +38,11 @@ swift run instant-swift-data outbox confirm <mutation-id> --json
 swift run instant-swift-data outbox fail <mutation-id> "server rejected" --json
 ```
 
-Generate the current todo example schema:
+Generate the current todo example schema and permissions:
 
 ```bash
-swift run instant-swift-data schema generate --example todos
+swift run instant-swift-data schema generate --example todos > instant.schema.ts
+swift run instant-swift-data perms generate --example todos > instant.perms.ts
 ```
 
 The current transport is intentionally marked `not-implemented-local-cache-only`

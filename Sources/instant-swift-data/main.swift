@@ -35,6 +35,9 @@ struct InstantSwiftDataCLI {
     case "schema":
       try runSchema(arguments: arguments)
 
+    case "perms", "permissions":
+      try runPermissions(arguments: arguments)
+
     case "examples":
       try await runExamples(arguments: arguments, output: output)
 
@@ -58,11 +61,19 @@ struct InstantSwiftDataCLI {
       throw CLIError("Only '--example todos' is implemented in this core slice.", exitCode: 64)
     }
 
-    let schema = InstantEntitySchema(
-      typeName: "Todo",
-      attributes: TodoExample.attributes
-    )
-    print(TypeScriptSchemaPrinter().printSchema([schema]))
+    print(TypeScriptSchemaPrinter().printSchema([InstantSchemaExamples.todos]))
+  }
+
+  private static func runPermissions(arguments: [String]) throws {
+    var arguments = arguments
+    guard arguments.popFirstArgument() == "generate" else {
+      throw CLIError("Usage: instant-swift-data perms generate --example todos", exitCode: 64)
+    }
+    guard arguments.popFirstArgument() == "--example", arguments.popFirstArgument() == "todos" else {
+      throw CLIError("Only '--example todos' is implemented in this core slice.", exitCode: 64)
+    }
+
+    print(TypeScriptPermissionsPrinter().printPermissions(InstantSchemaExamples.todoPermissions))
   }
 
   private static func runExamples(arguments: [String], output: OutputMode) async throws {
@@ -425,6 +436,7 @@ struct InstantSwiftDataCLI {
 
       Commands:
         schema generate --example todos
+        perms generate --example todos
         examples todos add "do the dishes" [--json|--jsonl]
         examples todos list [--completed true|false] [--limit n] [--order asc|desc] [--json|--jsonl]
         examples todos complete <todo-id> [--json|--jsonl]
