@@ -40,6 +40,15 @@ swift run instant-swift-data outbox fail <mutation-id> "server rejected" --json
 swift run instant-swift-data local-id get todos.viewer --json
 ```
 
+Persist local CLI auth/session state:
+
+```bash
+swift run instant-swift-data auth guest --json
+swift run instant-swift-data auth show --json
+swift run instant-swift-data auth token <refresh-token> --user-id <user-id> --json
+swift run instant-swift-data auth sign-out --json
+```
+
 Generate the current todo example schema and permissions:
 
 ```bash

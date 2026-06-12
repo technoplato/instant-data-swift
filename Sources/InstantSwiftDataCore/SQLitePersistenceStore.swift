@@ -65,83 +65,89 @@ public actor SQLitePersistenceStore {
   }
 
   public func bootstrap() throws {
-    try execute("PRAGMA journal_mode = WAL")
+    try withSQLiteBusyRetry {
+      try execute("PRAGMA journal_mode = WAL")
+    }
     try execute("PRAGMA foreign_keys = ON")
-    try execute(
-      """
-      CREATE TABLE IF NOT EXISTS instant_schema_migrations (
-        name TEXT PRIMARY KEY NOT NULL,
-        applied_at_ms INTEGER NOT NULL
-      )
-      """
-    )
-    try migrate(name: "0001_initial_cache") {
+    try withSQLiteBusyRetry {
       try execute(
         """
-        CREATE TABLE IF NOT EXISTS instant_attributes (
-          id TEXT PRIMARY KEY NOT NULL,
-          json TEXT NOT NULL
-        )
-        """
-      )
-      try execute(
-        """
-        CREATE TABLE IF NOT EXISTS instant_triples (
-          entity_id TEXT NOT NULL,
-          attribute_id TEXT NOT NULL,
-          value_json TEXT NOT NULL,
-          tx_id TEXT NOT NULL,
-          tx_time_ms INTEGER NOT NULL,
-          json TEXT NOT NULL,
-          PRIMARY KEY (entity_id, attribute_id, value_json)
-        )
-        """
-      )
-      try execute(
-        """
-        CREATE TABLE IF NOT EXISTS instant_outbox (
-          mutation_id TEXT PRIMARY KEY NOT NULL,
-          status TEXT NOT NULL,
-          created_at_ms INTEGER NOT NULL,
-          json TEXT NOT NULL
-        )
-        """
-      )
-      try execute(
-        """
-        CREATE TABLE IF NOT EXISTS instant_local_ids (
+        CREATE TABLE IF NOT EXISTS instant_schema_migrations (
           name TEXT PRIMARY KEY NOT NULL,
-          entity_id TEXT NOT NULL
+          applied_at_ms INTEGER NOT NULL
         )
         """
       )
-      try execute(
-        """
-        CREATE TABLE IF NOT EXISTS instant_auth_sessions (
-          key TEXT PRIMARY KEY NOT NULL,
-          json TEXT NOT NULL,
-          updated_at_ms INTEGER NOT NULL
+    }
+    try withSQLiteBusyRetry {
+      try migrate(name: "0001_initial_cache") {
+        try execute(
+          """
+          CREATE TABLE IF NOT EXISTS instant_attributes (
+            id TEXT PRIMARY KEY NOT NULL,
+            json TEXT NOT NULL
+          )
+          """
         )
-        """
-      )
-      try execute(
-        """
-        CREATE TABLE IF NOT EXISTS instant_query_cache (
-          query_id TEXT PRIMARY KEY NOT NULL,
-          json TEXT NOT NULL,
-          updated_at_ms INTEGER NOT NULL
+        try execute(
+          """
+          CREATE TABLE IF NOT EXISTS instant_triples (
+            entity_id TEXT NOT NULL,
+            attribute_id TEXT NOT NULL,
+            value_json TEXT NOT NULL,
+            tx_id TEXT NOT NULL,
+            tx_time_ms INTEGER NOT NULL,
+            json TEXT NOT NULL,
+            PRIMARY KEY (entity_id, attribute_id, value_json)
+          )
+          """
         )
-        """
-      )
-      try execute(
-        """
-        CREATE TABLE IF NOT EXISTS instant_sync_metadata (
-          key TEXT PRIMARY KEY NOT NULL,
-          value TEXT NOT NULL,
-          updated_at_ms INTEGER NOT NULL
+        try execute(
+          """
+          CREATE TABLE IF NOT EXISTS instant_outbox (
+            mutation_id TEXT PRIMARY KEY NOT NULL,
+            status TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            json TEXT NOT NULL
+          )
+          """
         )
-        """
-      )
+        try execute(
+          """
+          CREATE TABLE IF NOT EXISTS instant_local_ids (
+            name TEXT PRIMARY KEY NOT NULL,
+            entity_id TEXT NOT NULL
+          )
+          """
+        )
+        try execute(
+          """
+          CREATE TABLE IF NOT EXISTS instant_auth_sessions (
+            key TEXT PRIMARY KEY NOT NULL,
+            json TEXT NOT NULL,
+            updated_at_ms INTEGER NOT NULL
+          )
+          """
+        )
+        try execute(
+          """
+          CREATE TABLE IF NOT EXISTS instant_query_cache (
+            query_id TEXT PRIMARY KEY NOT NULL,
+            json TEXT NOT NULL,
+            updated_at_ms INTEGER NOT NULL
+          )
+          """
+        )
+        try execute(
+          """
+          CREATE TABLE IF NOT EXISTS instant_sync_metadata (
+            key TEXT PRIMARY KEY NOT NULL,
+            value TEXT NOT NULL,
+            updated_at_ms INTEGER NOT NULL
+          )
+          """
+        )
+      }
     }
   }
 
@@ -199,6 +205,35 @@ public actor SQLitePersistenceStore {
     try transaction {
       try saveOutboxWithoutTransaction(mutations)
     }
+  }
+
+  public func loadAuthSession(key: String) throws -> InstantAuthSession? {
+    let rows: [InstantAuthSession] = try selectJSON(
+      "SELECT json FROM instant_auth_sessions WHERE key = ? LIMIT 1",
+      [.text(key)]
+    )
+    return rows.first
+  }
+
+  public func saveAuthSession(_ session: InstantAuthSession, key: String) throws {
+    try execute(
+      """
+      INSERT OR REPLACE INTO instant_auth_sessions (key, json, updated_at_ms)
+      VALUES (?, ?, ?)
+      """,
+      [
+        .text(key),
+        .text(try encode(session)),
+        .int(session.updatedAt.milliseconds),
+      ]
+    )
+  }
+
+  public func deleteAuthSession(key: String) throws {
+    try execute(
+      "DELETE FROM instant_auth_sessions WHERE key = ?",
+      [.text(key)]
+    )
   }
 
   public func saveSnapshot(_ snapshot: InstantPersistenceSnapshot) throws {
@@ -260,18 +295,35 @@ public actor SQLitePersistenceStore {
   }
 
   private func migrate(name: String, body: () throws -> Void) throws {
-    let alreadyApplied: String? = try selectScalar(
-      "SELECT name FROM instant_schema_migrations WHERE name = ? LIMIT 1",
-      [.text(name)]
-    )
-    guard alreadyApplied == nil else { return }
     try transaction {
+      let alreadyApplied: String? = try selectScalar(
+        "SELECT name FROM instant_schema_migrations WHERE name = ? LIMIT 1",
+        [.text(name)]
+      )
+      guard alreadyApplied == nil else { return }
       try body()
       try execute(
-        "INSERT INTO instant_schema_migrations (name, applied_at_ms) VALUES (?, ?)",
+        "INSERT OR IGNORE INTO instant_schema_migrations (name, applied_at_ms) VALUES (?, ?)",
         [.text(name), .int(Self.nowMilliseconds())]
       )
     }
+  }
+
+  private func withSQLiteBusyRetry<Value>(_ operation: () throws -> Value) throws -> Value {
+    var lastError: Error?
+    for attempt in 0..<6 {
+      do {
+        return try operation()
+      } catch let error as InstantError where error.code == .persistenceFailed && error.isSQLiteBusy {
+        lastError = error
+        Thread.sleep(forTimeInterval: 0.025 * Double(attempt + 1))
+      }
+    }
+
+    if let lastError {
+      throw lastError
+    }
+    return try operation()
   }
 
   @discardableResult
@@ -488,6 +540,15 @@ private enum SQLiteBinding: Sendable {
   case int(Int64)
   case text(String)
   case null
+}
+
+private extension InstantError {
+  var isSQLiteBusy: Bool {
+    let lowercasedMessage = message.lowercased()
+    return lowercasedMessage.contains("database is locked")
+      || lowercasedMessage.contains("database schema is locked")
+      || lowercasedMessage.contains("database table is locked")
+  }
 }
 
 // SQLite's raw pointer is confined to SQLitePersistenceStore. The wrapper is

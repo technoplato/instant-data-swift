@@ -293,6 +293,32 @@ public struct PendingMutation: Hashable, Codable, Sendable, Identifiable {
   }
 }
 
+public struct InstantAuthSession: Hashable, Codable, Sendable, Identifiable {
+  public var id: String { userID }
+  public var appID: String
+  public var userID: String
+  public var refreshToken: String?
+  public var isGuest: Bool
+  public var createdAt: InstantTimestamp
+  public var updatedAt: InstantTimestamp
+
+  public init(
+    appID: String,
+    userID: String,
+    refreshToken: String? = nil,
+    isGuest: Bool,
+    createdAt: InstantTimestamp,
+    updatedAt: InstantTimestamp
+  ) {
+    self.appID = appID
+    self.userID = userID
+    self.refreshToken = refreshToken
+    self.isGuest = isGuest
+    self.createdAt = createdAt
+    self.updatedAt = updatedAt
+  }
+}
+
 public enum InstantQuerySortDirection: String, Codable, Sendable {
   case ascending
   case descending

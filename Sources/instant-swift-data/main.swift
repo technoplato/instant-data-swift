@@ -50,6 +50,9 @@ struct InstantSwiftDataCLI {
     case "local-id", "localid":
       try await runLocalID(arguments: arguments, output: output)
 
+    case "auth":
+      try await runAuth(arguments: arguments, output: output)
+
     default:
       throw CLIError("Unknown command: \(command)", exitCode: 64)
     }
@@ -331,6 +334,49 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func runAuth(arguments: [String], output: OutputMode) async throws {
+    var arguments = arguments
+    guard let command = arguments.popFirstArgument() else {
+      throw CLIError(authUsage, exitCode: 64)
+    }
+
+    let context = try await CLIContext.bootstrap(initialAttributes: [])
+
+    switch command {
+    case "show", "status":
+      guard arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data auth show [--json|--jsonl]", exitCode: 64)
+      }
+      let session = try await context.runtime.authSession()
+      try printAuth(context: context, event: "show", session: session, output: output)
+
+    case "guest":
+      guard arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data auth guest [--json|--jsonl]", exitCode: 64)
+      }
+      let session = try await context.runtime.signInAsGuest()
+      try printAuth(context: context, event: "guest", session: session, output: output)
+
+    case "token":
+      guard let refreshToken = arguments.popFirstArgument() else {
+        throw CLIError("Usage: instant-swift-data auth token <refresh-token> [--user-id id] [--json|--jsonl]", exitCode: 64)
+      }
+      let userID = try parseAuthUserID(arguments: arguments)
+      let session = try await context.runtime.signInWithRefreshToken(refreshToken, userID: userID)
+      try printAuth(context: context, event: "token", session: session, output: output)
+
+    case "sign-out", "signout", "logout":
+      guard arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data auth sign-out [--json|--jsonl]", exitCode: 64)
+      }
+      try await context.runtime.signOut()
+      try printAuth(context: context, event: "sign-out", session: nil, output: output)
+
+    default:
+      throw CLIError(authUsage, exitCode: 64)
+    }
+  }
+
   private static func printOutbox(
     context: CLIContext,
     output: OutputMode
@@ -383,6 +429,54 @@ struct InstantSwiftDataCLI {
           )
         )
       }
+    }
+  }
+
+  private static func printAuth(
+    context: CLIContext,
+    event: String,
+    session: InstantAuthSession?,
+    output: OutputMode
+  ) throws {
+    let payload = AuthOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      transport: "not-implemented-local-cache-only",
+      isSignedIn: session != nil,
+      userID: session?.userID,
+      isGuest: session?.isGuest,
+      hasRefreshToken: session?.refreshToken != nil,
+      createdAt: session?.createdAt,
+      updatedAt: session?.updatedAt
+    )
+
+    switch output {
+    case .human:
+      if let session {
+        print("auth: \(session.isGuest ? "guest" : "token")")
+        print("user: \(session.userID)")
+        print("refresh token: \(session.refreshToken == nil ? "none" : "present")")
+      } else {
+        print("auth: signed out")
+      }
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.auth",
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          entityID: session?.userID,
+          ok: true,
+          details: payload
+        )
+      )
     }
   }
 
@@ -514,6 +608,10 @@ struct InstantSwiftDataCLI {
         outbox confirm <mutation-id> [--json|--jsonl]
         outbox fail <mutation-id> "reason" [--json|--jsonl]
         local-id get <name> [--json|--jsonl]
+        auth show [--json|--jsonl]
+        auth guest [--json|--jsonl]
+        auth token <refresh-token> [--user-id id] [--json|--jsonl]
+        auth sign-out [--json|--jsonl]
 
       Environment:
         INSTANT_SWIFT_DATA_HOME  Directory for CLI SQLite state. Defaults to ~/.instant-swift-data.
@@ -657,6 +755,32 @@ struct InstantSwiftDataCLI {
       + document.namespaces.reduce(0) { $0 + $1.allow.count }
   }
 
+  private static func parseAuthUserID(arguments: [String]) throws -> String? {
+    var arguments = arguments
+    var userID: String?
+    while let option = arguments.popFirstArgument() {
+      switch option {
+      case "--user-id":
+        guard let value = arguments.popFirstArgument(),
+          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+          throw CLIError(
+            "Usage: instant-swift-data auth token <refresh-token> [--user-id id] [--json|--jsonl]",
+            exitCode: 64
+          )
+        }
+        userID = value
+
+      default:
+        throw CLIError(
+          "Unknown auth token option: \(option). Usage: instant-swift-data auth token <refresh-token> [--user-id id] [--json|--jsonl]",
+          exitCode: 64
+        )
+      }
+    }
+    return userID
+  }
+
   private static func todoListQuery(arguments: [String]) throws -> InstantQueryPlan {
     var arguments = arguments
     var completed: Bool?
@@ -779,6 +903,16 @@ struct InstantSwiftDataCLI {
       instant-swift-data outbox inspect [--json|--jsonl]
       instant-swift-data outbox confirm <mutation-id> [--json|--jsonl]
       instant-swift-data outbox fail <mutation-id> "reason" [--json|--jsonl]
+    """
+  }
+
+  private static var authUsage: String {
+    """
+    Usage: instant-swift-data auth <show|guest|token|sign-out>
+      instant-swift-data auth show [--json|--jsonl]
+      instant-swift-data auth guest [--json|--jsonl]
+      instant-swift-data auth token <refresh-token> [--user-id id] [--json|--jsonl]
+      instant-swift-data auth sign-out [--json|--jsonl]
     """
   }
 
@@ -948,6 +1082,19 @@ private struct LocalIDOutput: Codable, Sendable {
   var transport: String
   var name: String
   var id: String
+}
+
+private struct AuthOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var transport: String
+  var isSignedIn: Bool
+  var userID: String?
+  var isGuest: Bool?
+  var hasRefreshToken: Bool
+  var createdAt: InstantTimestamp?
+  var updatedAt: InstantTimestamp?
 }
 
 private struct SchemaVerifyOutput: Codable, Sendable {

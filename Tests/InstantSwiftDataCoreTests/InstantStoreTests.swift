@@ -359,6 +359,85 @@ struct InstantStoreTests {
   }
 
   @Test
+  func authSessionsPersistByAppIDAcrossLaunchesAndSignOut() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let signedInAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let guestRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        now: { signedInAt },
+        makeID: { "guest-user" }
+      )
+    )
+
+    let guest = try await guestRuntime.signInAsGuest()
+    expectNoDifference(
+      guest,
+      InstantAuthSession(
+        appID: "app-a",
+        userID: "guest-user",
+        isGuest: true,
+        createdAt: signedInAt,
+        updatedAt: signedInAt
+      )
+    )
+
+    let tokenRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-b",
+        persistenceURL: cacheURL,
+        now: { signedInAt }
+      )
+    )
+    let token = try await tokenRuntime.signInWithRefreshToken("refresh-token", userID: "token-user")
+    expectNoDifference(token.userID, "token-user")
+    expectNoDifference(token.refreshToken, "refresh-token")
+    expectNoDifference(token.isGuest, false)
+
+    let relaunchedGuestRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "app-a", persistenceURL: cacheURL)
+    )
+    let relaunchedTokenRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "app-b", persistenceURL: cacheURL)
+    )
+    let relaunchedGuest = try await relaunchedGuestRuntime.authSession()
+    let relaunchedToken = try await relaunchedTokenRuntime.authSession()
+    expectNoDifference(relaunchedGuest, guest)
+    expectNoDifference(relaunchedToken, token)
+
+    try await relaunchedGuestRuntime.signOut()
+
+    let signedOutGuestRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "app-a", persistenceURL: cacheURL)
+    )
+    let stillSignedInTokenRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "app-b", persistenceURL: cacheURL)
+    )
+    let signedOutGuest = try await signedOutGuestRuntime.authSession()
+    let stillSignedInToken = try await stillSignedInTokenRuntime.authSession()
+    expectNoDifference(signedOutGuest, nil)
+    expectNoDifference(stillSignedInToken, token)
+  }
+
+  @Test
+  func emptyTokenSignInFailsWithAuthError() async throws {
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "test-app", persistenceURL: temporaryCacheURL())
+    )
+
+    do {
+      _ = try await runtime.signInWithRefreshToken("  ")
+      #expect(Bool(false), "Expected empty token sign-in to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .authFailed)
+      expectNoDifference(error.operation, "sign in with token")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
   func concurrentOutboxStatusUpdateAndTransactionPersistAcrossLaunches() async throws {
     let cacheURL = try temporaryCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)

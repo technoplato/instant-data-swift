@@ -160,6 +160,67 @@ public final class InstantRuntime: Sendable {
     try await persistence.loadQueryCache()
   }
 
+  public func authSession() async throws -> InstantAuthSession? {
+    try await persistence.loadAuthSession(key: authSessionKey)
+  }
+
+  public func signInAsGuest() async throws -> InstantAuthSession {
+    let now = configuration.now()
+    let session = InstantAuthSession(
+      appID: configuration.appID,
+      userID: configuration.makeID(),
+      isGuest: true,
+      createdAt: now,
+      updatedAt: now
+    )
+    try await saveAuthSession(session)
+    return session
+  }
+
+  public func signInWithRefreshToken(
+    _ refreshToken: String,
+    userID: String? = nil
+  ) async throws -> InstantAuthSession {
+    let token = refreshToken.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !token.isEmpty else {
+      throw authValidationFailed(
+        operation: "sign in with token",
+        message: "Refresh token must not be empty.",
+        recovery: "Pass a refresh token, or use 'instant-swift-data auth guest'."
+      )
+    }
+
+    let trimmedUserID = userID?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let resolvedUserID: String
+    if let trimmedUserID, !trimmedUserID.isEmpty {
+      resolvedUserID = trimmedUserID
+    } else {
+      resolvedUserID = "token-\(configuration.makeID())"
+    }
+    let now = configuration.now()
+    let session = InstantAuthSession(
+      appID: configuration.appID,
+      userID: resolvedUserID,
+      refreshToken: token,
+      isGuest: false,
+      createdAt: now,
+      updatedAt: now
+    )
+    try await saveAuthSession(session)
+    return session
+  }
+
+  public func signOut() async throws {
+    await operationGate.enter()
+    do {
+      try await persistence.deleteAuthSession(key: authSessionKey)
+      await operationGate.leave()
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
   public func pendingMutations() async -> [PendingMutation] {
     await outbox.pending()
   }
@@ -204,6 +265,17 @@ public final class InstantRuntime: Sendable {
     try await persistence.localID(named: name, makeID: configuration.makeID)
   }
 
+  private func saveAuthSession(_ session: InstantAuthSession) async throws {
+    await operationGate.enter()
+    do {
+      try await persistence.saveAuthSession(session, key: authSessionKey)
+      await operationGate.leave()
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
   private func outboxMutationNotFound(id: String) -> InstantError {
     InstantError(
       code: .validationFailed,
@@ -214,6 +286,19 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  private func authValidationFailed(
+    operation: String,
+    message: String,
+    recovery: String
+  ) -> InstantError {
+    InstantError(
+      code: .authFailed,
+      operation: operation,
+      message: message,
+      recovery: recovery
+    )
+  }
+
   private func queryCacheChangedDuringMaterialization(_ plan: InstantQueryPlan) -> InstantError {
     InstantError(
       code: .persistenceFailed,
@@ -221,5 +306,9 @@ public final class InstantRuntime: Sendable {
       message: "The local SQLite store changed repeatedly while materializing query '\(plan.id)'.",
       recovery: "Retry the query, or reduce concurrent writes against the same local cache."
     )
+  }
+
+  private var authSessionKey: String {
+    "auth:\(configuration.appID)"
   }
 }
