@@ -53,27 +53,29 @@ struct InstantSwiftDataCLI {
   }
 
   private static func runSchema(arguments: [String]) throws {
-    var arguments = arguments
-    guard arguments.popFirstArgument() == "generate" else {
-      throw CLIError("Usage: instant-swift-data schema generate --example todos", exitCode: 64)
-    }
-    guard arguments.popFirstArgument() == "--example", arguments.popFirstArgument() == "todos" else {
-      throw CLIError("Only '--example todos' is implemented in this core slice.", exitCode: 64)
-    }
+    let options = try GenerateOptions.parse(
+      arguments: arguments,
+      usage: "Usage: instant-swift-data schema generate --example todos [--to instant.schema.ts]"
+    )
+    try requireTodoExample(options.example)
 
-    print(TypeScriptSchemaPrinter().printSchema([InstantSchemaExamples.todos]))
+    try writeGenerated(
+      TypeScriptSchemaPrinter().printSchema([InstantSchemaExamples.todos]),
+      to: options.outputPath
+    )
   }
 
   private static func runPermissions(arguments: [String]) throws {
-    var arguments = arguments
-    guard arguments.popFirstArgument() == "generate" else {
-      throw CLIError("Usage: instant-swift-data perms generate --example todos", exitCode: 64)
-    }
-    guard arguments.popFirstArgument() == "--example", arguments.popFirstArgument() == "todos" else {
-      throw CLIError("Only '--example todos' is implemented in this core slice.", exitCode: 64)
-    }
+    let options = try GenerateOptions.parse(
+      arguments: arguments,
+      usage: "Usage: instant-swift-data perms generate --example todos [--to instant.perms.ts]"
+    )
+    try requireTodoExample(options.example)
 
-    print(try TypeScriptPermissionsPrinter().printPermissions(InstantSchemaExamples.todoPermissions))
+    try writeGenerated(
+      try TypeScriptPermissionsPrinter().printPermissions(InstantSchemaExamples.todoPermissions),
+      to: options.outputPath
+    )
   }
 
   private static func runExamples(arguments: [String], output: OutputMode) async throws {
@@ -435,8 +437,8 @@ struct InstantSwiftDataCLI {
       instant-swift-data
 
       Commands:
-        schema generate --example todos
-        perms generate --example todos
+        schema generate --example todos [--to instant.schema.ts]
+        perms generate --example todos [--to instant.perms.ts]
         examples todos add "do the dishes" [--json|--jsonl]
         examples todos list [--completed true|false] [--limit n] [--order asc|desc] [--json|--jsonl]
         examples todos complete <todo-id> [--json|--jsonl]
@@ -451,6 +453,28 @@ struct InstantSwiftDataCLI {
         INSTANT_APP_ID           Logical app id recorded in output. Defaults to local-demo.
       """
     )
+  }
+
+  private static func requireTodoExample(_ example: String) throws {
+    guard example == "todos" else {
+      throw CLIError("Only '--example todos' is implemented in this core slice.", exitCode: 64)
+    }
+  }
+
+  private static func writeGenerated(_ contents: String, to outputPath: String?) throws {
+    let data = Data(contents.utf8)
+    guard let outputPath else {
+      FileHandle.standardOutput.write(data)
+      return
+    }
+
+    let currentDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    let url = URL(fileURLWithPath: outputPath, relativeTo: currentDirectory).standardizedFileURL
+    try FileManager.default.createDirectory(
+      at: url.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try data.write(to: url, options: .atomic)
   }
 
   private static func todoListQuery(arguments: [String]) throws -> InstantQueryPlan {
@@ -700,6 +724,46 @@ private struct OutboxUpdateOutput: Codable, Sendable {
   var pendingMutationCount: Int
   var mutationCount: Int
   var mutation: PendingMutation
+}
+
+private struct GenerateOptions: Sendable {
+  var example: String
+  var outputPath: String?
+
+  static func parse(arguments: [String], usage: String) throws -> Self {
+    var arguments = arguments
+    guard arguments.popFirstArgument() == "generate" else {
+      throw CLIError(usage, exitCode: 64)
+    }
+
+    var example: String?
+    var outputPath: String?
+
+    while let option = arguments.popFirstArgument() {
+      switch option {
+      case "--example":
+        guard let value = arguments.popFirstArgument() else {
+          throw CLIError(usage, exitCode: 64)
+        }
+        example = value
+
+      case "--to":
+        guard let value = arguments.popFirstArgument() else {
+          throw CLIError(usage, exitCode: 64)
+        }
+        outputPath = value
+
+      default:
+        throw CLIError("Unknown generate option: \(option). \(usage)", exitCode: 64)
+      }
+    }
+
+    guard let example else {
+      throw CLIError(usage, exitCode: 64)
+    }
+
+    return Self(example: example, outputPath: outputPath)
+  }
 }
 
 private struct EvidenceRow<Details: Encodable & Sendable>: Encodable, Sendable {
