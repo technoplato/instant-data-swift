@@ -132,6 +132,7 @@ public struct InstantAttribute: Hashable, Codable, Sendable, Identifiable {
   public var primaryKey: Bool
   public var linkNamespace: String?
   public var onDelete: InstantDeleteRule
+  public var onDeleteReverse: InstantDeleteRule
 
   public init(
     id: String,
@@ -145,7 +146,8 @@ public struct InstantAttribute: Hashable, Codable, Sendable, Identifiable {
     reverseIdentity: String? = nil,
     primaryKey: Bool = false,
     linkNamespace: String? = nil,
-    onDelete: InstantDeleteRule = .none
+    onDelete: InstantDeleteRule = .none,
+    onDeleteReverse: InstantDeleteRule = .none
   ) {
     self.id = id
     self.namespace = namespace
@@ -159,6 +161,63 @@ public struct InstantAttribute: Hashable, Codable, Sendable, Identifiable {
     self.primaryKey = primaryKey
     self.linkNamespace = linkNamespace
     self.onDelete = onDelete
+    self.onDeleteReverse = onDeleteReverse
+  }
+}
+
+extension InstantAttribute {
+  private enum CodingKeys: String, CodingKey {
+    case id
+    case namespace
+    case name
+    case valueType
+    case cardinality
+    case isIndexed
+    case isUnique
+    case forwardIdentity
+    case reverseIdentity
+    case primaryKey
+    case linkNamespace
+    case onDelete
+    case onDeleteReverse
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      id: try container.decode(String.self, forKey: .id),
+      namespace: try container.decode(String.self, forKey: .namespace),
+      name: try container.decode(String.self, forKey: .name),
+      valueType: try container.decode(InstantValueType.self, forKey: .valueType),
+      cardinality: try container.decodeIfPresent(InstantCardinality.self, forKey: .cardinality)
+        ?? .one,
+      isIndexed: try container.decodeIfPresent(Bool.self, forKey: .isIndexed) ?? false,
+      isUnique: try container.decodeIfPresent(Bool.self, forKey: .isUnique) ?? false,
+      forwardIdentity: try container.decodeIfPresent(String.self, forKey: .forwardIdentity),
+      reverseIdentity: try container.decodeIfPresent(String.self, forKey: .reverseIdentity),
+      primaryKey: try container.decodeIfPresent(Bool.self, forKey: .primaryKey) ?? false,
+      linkNamespace: try container.decodeIfPresent(String.self, forKey: .linkNamespace),
+      onDelete: try container.decodeIfPresent(InstantDeleteRule.self, forKey: .onDelete) ?? .none,
+      onDeleteReverse: try container.decodeIfPresent(InstantDeleteRule.self, forKey: .onDeleteReverse)
+        ?? .none
+    )
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(id, forKey: .id)
+    try container.encode(namespace, forKey: .namespace)
+    try container.encode(name, forKey: .name)
+    try container.encode(valueType, forKey: .valueType)
+    try container.encode(cardinality, forKey: .cardinality)
+    try container.encode(isIndexed, forKey: .isIndexed)
+    try container.encode(isUnique, forKey: .isUnique)
+    try container.encodeIfPresent(forwardIdentity, forKey: .forwardIdentity)
+    try container.encodeIfPresent(reverseIdentity, forKey: .reverseIdentity)
+    try container.encode(primaryKey, forKey: .primaryKey)
+    try container.encodeIfPresent(linkNamespace, forKey: .linkNamespace)
+    try container.encode(onDelete, forKey: .onDelete)
+    try container.encode(onDeleteReverse, forKey: .onDeleteReverse)
   }
 }
 

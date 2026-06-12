@@ -16,12 +16,37 @@ public struct ParsedInstantEntitySchema: Hashable, Codable, Sendable, Identifiab
   }
 }
 
+public struct ParsedInstantSchemaDocument: Hashable, Codable, Sendable {
+  public var entities: [ParsedInstantEntitySchema]
+  public var links: [InstantLinkSchema]
+
+  public init(
+    entities: [ParsedInstantEntitySchema],
+    links: [InstantLinkSchema] = []
+  ) {
+    self.entities = entities.sorted { $0.namespace < $1.namespace }
+    self.links = links.sorted { $0.name < $1.name }
+  }
+
+  public init(_ document: InstantSchemaDocument) {
+    self.init(
+      entities: document.entities.map(ParsedInstantEntitySchema.init),
+      links: document.links
+    )
+  }
+}
+
 public enum TypeScriptSchemaParseError: Error, Equatable, Sendable, CustomStringConvertible {
   case missingEntitiesObject
   case malformedObject(String)
   case unsupportedTopLevelKey(String)
   case unsupportedEntityExpression(namespace: String, expression: String)
   case unsupportedAttributeExpression(namespace: String, attribute: String, expression: String)
+  case missingLinkEndpoint(link: String, endpoint: String)
+  case unsupportedLinkExpression(name: String, expression: String)
+  case unsupportedLinkEndpointKey(name: String, endpoint: String, key: String)
+  case unsupportedLinkEndpointValue(name: String, endpoint: String, key: String, value: String)
+  case invalidLinkCascadeEndpoint(link: String, endpoint: String, cardinality: InstantCardinality)
 
   public var description: String {
     switch self {
@@ -35,6 +60,16 @@ public enum TypeScriptSchemaParseError: Error, Equatable, Sendable, CustomString
       "Unsupported entity expression for '\(namespace)': \(expression)"
     case .unsupportedAttributeExpression(let namespace, let attribute, let expression):
       "Unsupported attribute expression for '\(namespace).\(attribute)': \(expression)"
+    case .missingLinkEndpoint(let link, let endpoint):
+      "Link '\(link)' is missing its \(endpoint) endpoint."
+    case .unsupportedLinkExpression(let name, let expression):
+      "Unsupported link expression for '\(name)': \(expression)"
+    case .unsupportedLinkEndpointKey(let name, let endpoint, let key):
+      "Unsupported \(endpoint) endpoint key for link '\(name)': \(key)"
+    case .unsupportedLinkEndpointValue(let name, let endpoint, let key, let value):
+      "Unsupported \(endpoint) endpoint value for link '\(name)' key '\(key)': \(value)"
+    case .invalidLinkCascadeEndpoint(let link, let endpoint, let cardinality):
+      "Link '\(link)' \(endpoint) endpoint has invalid cascade delete for cardinality '\(cardinality.rawValue)'. Cascade delete is only supported on has: \"one\" links."
     }
   }
 }
@@ -43,6 +78,10 @@ public struct TypeScriptSchemaParser: Sendable {
   public init() {}
 
   public func parse(_ source: String) throws -> [ParsedInstantEntitySchema] {
+    try parseDocument(source).entities
+  }
+
+  public func parseDocument(_ source: String) throws -> ParsedInstantSchemaDocument {
     guard let schemaCall = try ObjectEntryParser.firstOccurrence(of: "i.schema(", in: source)
     else {
       throw TypeScriptSchemaParseError.missingEntitiesObject
@@ -52,10 +91,10 @@ public struct TypeScriptSchemaParser: Sendable {
       context: "schema"
     )
     let entries = try ObjectEntryParser.parseObjectEntries(in: schemaBody)
-    for entry in entries where entry.key != "entities" {
+    for entry in entries where entry.key != "entities" && entry.key != "links" {
       throw TypeScriptSchemaParseError.unsupportedTopLevelKey(entry.key)
     }
-    guard let entitiesExpression = entries.first(where: { $0.key == "entities" })?.value
+    guard let entitiesExpression = entries.lastValue(for: "entities")
     else {
       throw TypeScriptSchemaParseError.missingEntitiesObject
     }
@@ -65,11 +104,20 @@ public struct TypeScriptSchemaParser: Sendable {
       context: "entities"
     )
 
-    return try ObjectEntryParser.parseObjectEntries(in: entitiesBody)
+    let entities = try ObjectEntryParser.parseObjectEntries(in: entitiesBody)
       .map { entity in
         try parseEntity(namespace: entity.key, expression: entity.value)
       }
       .sorted { $0.namespace < $1.namespace }
+
+    let links: [InstantLinkSchema]
+    if let linksExpression = entries.lastValue(for: "links") {
+      links = try parseLinks(expression: linksExpression)
+    } else {
+      links = []
+    }
+
+    return ParsedInstantSchemaDocument(entities: entities, links: links)
   }
 
   private func parseEntity(
@@ -100,6 +148,192 @@ public struct TypeScriptSchemaParser: Sendable {
       .sorted { $0.name < $1.name }
 
     return ParsedInstantEntitySchema(namespace: namespace, attributes: attributes)
+  }
+
+  private func parseLinks(expression: String) throws -> [InstantLinkSchema] {
+    let expression = expression.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard expression.hasPrefix("{") else {
+      throw TypeScriptSchemaParseError.unsupportedLinkExpression(
+        name: "links",
+        expression: expression
+      )
+    }
+    let linksBody = try ObjectEntryParser.extractFirstObjectBody(
+      from: expression,
+      context: "links"
+    )
+
+    return try ObjectEntryParser.parseObjectEntries(in: linksBody)
+      .map { link in
+        try parseLink(name: link.key, expression: link.value)
+      }
+      .sorted { $0.name < $1.name }
+  }
+
+  private func parseLink(
+    name: String,
+    expression: String
+  ) throws -> InstantLinkSchema {
+    let expression = expression.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard expression.hasPrefix("{") else {
+      throw TypeScriptSchemaParseError.unsupportedLinkExpression(
+        name: name,
+        expression: expression
+      )
+    }
+
+    let body = try ObjectEntryParser.extractFirstObjectBody(
+      from: expression,
+      context: "link \(name)"
+    )
+    let entries = try ObjectEntryParser.parseObjectEntries(in: body)
+    for entry in entries where entry.key != "forward" && entry.key != "reverse" {
+      throw TypeScriptSchemaParseError.unsupportedLinkEndpointKey(
+        name: name,
+        endpoint: "link",
+        key: entry.key
+      )
+    }
+
+    guard let forwardExpression = entries.lastValue(for: "forward")
+    else {
+      throw TypeScriptSchemaParseError.missingLinkEndpoint(link: name, endpoint: "forward")
+    }
+    guard let reverseExpression = entries.lastValue(for: "reverse")
+    else {
+      throw TypeScriptSchemaParseError.missingLinkEndpoint(link: name, endpoint: "reverse")
+    }
+
+    let forward = try parseLinkEndpoint(
+      link: name,
+      endpoint: "forward",
+      expression: forwardExpression,
+      allowsRequired: true
+    )
+    let reverse = try parseLinkEndpoint(
+      link: name,
+      endpoint: "reverse",
+      expression: reverseExpression,
+      allowsRequired: false
+    )
+
+    return InstantLinkSchema(
+      name: name,
+      forward: forward.endpoint,
+      reverse: reverse.endpoint,
+      isRequired: forward.isRequired
+    )
+  }
+
+  private func parseLinkEndpoint(
+    link: String,
+    endpoint: String,
+    expression: String,
+    allowsRequired: Bool
+  ) throws -> ParsedLinkEndpoint {
+    let expression = expression.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard expression.hasPrefix("{") else {
+      throw TypeScriptSchemaParseError.unsupportedLinkExpression(
+        name: link,
+        expression: expression
+      )
+    }
+
+    let body = try ObjectEntryParser.extractFirstObjectBody(
+      from: expression,
+      context: "\(link).\(endpoint)"
+    )
+    let entries = try ObjectEntryParser.parseObjectEntries(in: body)
+
+    var namespace: String?
+    var cardinality: InstantCardinality?
+    var label: String?
+    var isRequired: Bool?
+    var onDelete = InstantDeleteRule.none
+
+    for entry in entries {
+      switch entry.key {
+      case "on":
+        namespace = try ObjectEntryParser.parseStringExpression(entry.value)
+
+      case "has":
+        let value = try ObjectEntryParser.parseStringExpression(entry.value)
+        guard let parsed = InstantCardinality(rawValue: value) else {
+          throw TypeScriptSchemaParseError.unsupportedLinkEndpointValue(
+            name: link,
+            endpoint: endpoint,
+            key: entry.key,
+            value: value
+          )
+        }
+        cardinality = parsed
+
+      case "label":
+        label = try ObjectEntryParser.parseStringExpression(entry.value)
+
+      case "required":
+        guard allowsRequired else {
+          throw TypeScriptSchemaParseError.unsupportedLinkEndpointKey(
+            name: link,
+            endpoint: endpoint,
+            key: entry.key
+          )
+        }
+        isRequired = try ObjectEntryParser.parseBoolExpression(entry.value)
+
+      case "onDelete":
+        let value = try ObjectEntryParser.parseStringExpression(entry.value)
+        guard value == "cascade" else {
+          throw TypeScriptSchemaParseError.unsupportedLinkEndpointValue(
+            name: link,
+            endpoint: endpoint,
+            key: entry.key,
+            value: value
+          )
+        }
+        onDelete = .cascade
+
+      default:
+        throw TypeScriptSchemaParseError.unsupportedLinkEndpointKey(
+          name: link,
+          endpoint: endpoint,
+          key: entry.key
+        )
+      }
+    }
+
+    guard let namespace else {
+      throw TypeScriptSchemaParseError.malformedObject(
+        "Link '\(link)' \(endpoint) endpoint is missing 'on'."
+      )
+    }
+    guard let cardinality else {
+      throw TypeScriptSchemaParseError.malformedObject(
+        "Link '\(link)' \(endpoint) endpoint is missing 'has'."
+      )
+    }
+    guard let label else {
+      throw TypeScriptSchemaParseError.malformedObject(
+        "Link '\(link)' \(endpoint) endpoint is missing 'label'."
+      )
+    }
+    if onDelete == .cascade, cardinality != .one {
+      throw TypeScriptSchemaParseError.invalidLinkCascadeEndpoint(
+        link: link,
+        endpoint: endpoint,
+        cardinality: cardinality
+      )
+    }
+
+    return ParsedLinkEndpoint(
+      endpoint: InstantLinkEndpoint(
+        namespace: namespace,
+        cardinality: cardinality,
+        label: label,
+        onDelete: onDelete
+      ),
+      isRequired: isRequired
+    )
   }
 
   private func parseAttribute(
@@ -163,6 +397,17 @@ private struct ParsedAttributeExpression {
         return nil
       }
     }
+  }
+}
+
+private struct ParsedLinkEndpoint {
+  var endpoint: InstantLinkEndpoint
+  var isRequired: Bool?
+}
+
+extension [ObjectEntryParser.Entry] {
+  fileprivate func lastValue(for key: String) -> String? {
+    self.reversed().first { $0.key == key }?.value
   }
 }
 
@@ -246,6 +491,49 @@ private enum ObjectEntryParser {
     }
     let close = try matchingBrace(in: source, open: open)
     return String(source[source.index(after: open)..<close])
+  }
+
+  fileprivate static func parseStringExpression(_ source: String) throws -> String {
+    var index = source.startIndex
+    skipTrivia(in: source, index: &index)
+    guard index < source.endIndex, source[index] == "\"" || source[index] == "'"
+    else {
+      throw TypeScriptSchemaParseError.malformedObject("Expected string literal.")
+    }
+
+    let value = try parseStringLiteral(in: source, index: &index)
+    skipTrivia(in: source, index: &index)
+    guard index == source.endIndex else {
+      throw TypeScriptSchemaParseError.malformedObject("Expected end of string literal.")
+    }
+    return value
+  }
+
+  fileprivate static func parseBoolExpression(_ source: String) throws -> Bool {
+    var index = source.startIndex
+    skipTrivia(in: source, index: &index)
+    guard index < source.endIndex else {
+      throw TypeScriptSchemaParseError.malformedObject("Expected boolean literal.")
+    }
+    if source[index...].hasPrefix("true") {
+      let end = source.index(index, offsetBy: "true".count)
+      index = end
+      skipTrivia(in: source, index: &index)
+      guard index == source.endIndex else {
+        throw TypeScriptSchemaParseError.malformedObject("Expected end of boolean literal.")
+      }
+      return true
+    }
+    if source[index...].hasPrefix("false") {
+      let end = source.index(index, offsetBy: "false".count)
+      index = end
+      skipTrivia(in: source, index: &index)
+      guard index == source.endIndex else {
+        throw TypeScriptSchemaParseError.malformedObject("Expected end of boolean literal.")
+      }
+      return false
+    }
+    throw TypeScriptSchemaParseError.malformedObject("Expected boolean literal.")
   }
 
   private static func parsePropertyKey(

@@ -5,10 +5,46 @@ import Testing
 
 @Suite
 struct TypeScriptPrinterTests {
+  private static let linkedTodoDocument = InstantSchemaDocument(
+    entities: [
+      InstantEntitySchema(
+        typeName: "Project",
+        namespace: "projects",
+        attributes: [
+          InstantAttribute(
+            id: "projects/title",
+            namespace: "projects",
+            name: "title",
+            valueType: .string,
+            isIndexed: true
+          )
+        ]
+      ),
+      InstantSchemaExamples.todos,
+    ],
+    links: [
+      InstantLinkSchema(
+        name: "projectsTodos",
+        forward: InstantLinkEndpoint(
+          namespace: "todos",
+          cardinality: .one,
+          label: "project",
+          onDelete: .cascade
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "projects",
+          cardinality: .many,
+          label: "todos"
+        ),
+        isRequired: true
+      )
+    ]
+  )
+
   @Test
-  func schemaPrinterEmitsTodoExample() {
+  func schemaPrinterEmitsTodoExample() throws {
     expectNoDifference(
-      TypeScriptSchemaPrinter().printSchema([InstantSchemaExamples.todos]),
+      try TypeScriptSchemaPrinter().printSchema([InstantSchemaExamples.todos]),
       """
       import { i } from '@instantdb/core';
 
@@ -27,14 +63,243 @@ struct TypeScriptPrinterTests {
   }
 
   @Test
+  func schemaPrinterEmitsLinks() throws {
+    expectNoDifference(
+      try TypeScriptSchemaPrinter().printSchema(Self.linkedTodoDocument),
+      """
+      import { i } from '@instantdb/core';
+
+      export default i.schema({
+        entities: {
+          projects: i.entity({
+            title: i.string().indexed(),
+          }),
+          todos: i.entity({
+            createdAt: i.date().indexed(),
+            isCompleted: i.boolean().indexed(),
+            text: i.string().indexed(),
+          }),
+        },
+        links: {
+          projectsTodos: {
+            forward: {
+              on: "todos",
+              has: "one",
+              label: "project",
+              required: true,
+              onDelete: "cascade",
+            },
+            reverse: {
+              on: "projects",
+              has: "many",
+              label: "todos",
+            },
+          },
+        },
+      });
+
+      """
+    )
+  }
+
+  @Test
   func schemaParserRoundTripsGeneratedTodoExample() throws {
-    let printed = TypeScriptSchemaPrinter().printSchema([InstantSchemaExamples.todos])
+    let printed = try TypeScriptSchemaPrinter().printSchema([InstantSchemaExamples.todos])
     let parsed = try TypeScriptSchemaParser().parse(printed)
 
     expectNoDifference(
       parsed,
       [
         ParsedInstantEntitySchema(InstantSchemaExamples.todos)
+      ]
+    )
+  }
+
+  @Test
+  func schemaParserRoundTripsGeneratedLinks() throws {
+    let printed = try TypeScriptSchemaPrinter().printSchema(Self.linkedTodoDocument)
+    let parsed = try TypeScriptSchemaParser().parseDocument(printed)
+
+    expectNoDifference(
+      parsed,
+      ParsedInstantSchemaDocument(Self.linkedTodoDocument)
+    )
+  }
+
+  @Test
+  func schemaParserUsesLastTopLevelLinksValue() throws {
+    let parsed = try TypeScriptSchemaParser().parseDocument(
+      """
+      export default i.schema({
+        entities: {
+          projects: i.entity({
+            title: i.string().indexed(),
+          }),
+          todos: i.entity({
+            text: i.string().indexed(),
+          }),
+        },
+        links: {},
+        links: {
+          projectsTodos: {
+            forward: {
+              on: "todos",
+              has: "one",
+              label: "project",
+            },
+            reverse: {
+              on: "projects",
+              has: "many",
+              label: "todos",
+            },
+          },
+        },
+      });
+      """
+    )
+
+    expectNoDifference(
+      parsed.links,
+      [
+        InstantLinkSchema(
+          name: "projectsTodos",
+          forward: InstantLinkEndpoint(
+            namespace: "todos",
+            cardinality: .one,
+            label: "project"
+          ),
+          reverse: InstantLinkEndpoint(
+            namespace: "projects",
+            cardinality: .many,
+            label: "todos"
+          )
+        )
+      ]
+    )
+  }
+
+  @Test
+  func schemaParserUsesLastTopLevelEntitiesValue() throws {
+    let parsed = try TypeScriptSchemaParser().parse(
+      """
+      export default i.schema({
+        entities: {
+          ignored: i.entity({
+            name: i.string(),
+          }),
+        },
+        entities: {
+          todos: i.entity({
+            createdAt: i.date().indexed(),
+            isCompleted: i.boolean().indexed(),
+            text: i.string().indexed(),
+          }),
+        },
+      });
+      """
+    )
+
+    expectNoDifference(
+      parsed,
+      [
+        ParsedInstantEntitySchema(InstantSchemaExamples.todos)
+      ]
+    )
+  }
+
+  @Test
+  func linkSchemaDerivesCoreRefAttributes() {
+    expectNoDifference(
+      Self.linkedTodoDocument.links.flatMap(\.attributes),
+      [
+        InstantAttribute(
+          id: "todos/project",
+          namespace: "todos",
+          name: "project",
+          valueType: .ref,
+          cardinality: .one,
+          isIndexed: true,
+          forwardIdentity: "todos/project",
+          reverseIdentity: "projects/todos",
+          linkNamespace: "projects",
+          onDelete: .cascade
+        )
+      ]
+    )
+  }
+
+  @Test
+  func schemaPrinterRejectsCascadeOnManyLinks() {
+    let document = InstantSchemaDocument(
+      entities: [InstantSchemaExamples.todos],
+      links: [
+        InstantLinkSchema(
+          name: "badCascade",
+          forward: InstantLinkEndpoint(
+            namespace: "todos",
+            cardinality: .many,
+            label: "children",
+            onDelete: .cascade
+          ),
+          reverse: InstantLinkEndpoint(
+            namespace: "todos",
+            cardinality: .many,
+            label: "parents"
+          )
+        )
+      ]
+    )
+
+    do {
+      _ = try TypeScriptSchemaPrinter().printSchema(document)
+      #expect(Bool(false), "Expected printer to reject cascade on has: many links.")
+    } catch let error as InstantSchemaValidationError {
+      expectNoDifference(
+        error,
+        .invalidLinkCascadeEndpoint(
+          link: "badCascade",
+          endpoint: "forward",
+          cardinality: .many
+        )
+      )
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
+  func linkSchemaDerivesReverseCascadeMetadata() {
+    let link = InstantLinkSchema(
+      name: "usersProfiles",
+      forward: InstantLinkEndpoint(
+        namespace: "users",
+        cardinality: .one,
+        label: "profile"
+      ),
+      reverse: InstantLinkEndpoint(
+        namespace: "profiles",
+        cardinality: .one,
+        label: "user",
+        onDelete: .cascade
+      )
+    )
+
+    expectNoDifference(
+      link.attributes,
+      [
+        InstantAttribute(
+          id: "users/profile",
+          namespace: "users",
+          name: "profile",
+          valueType: .ref,
+          cardinality: .one,
+          isIndexed: true,
+          isUnique: true,
+          forwardIdentity: "users/profile",
+          reverseIdentity: "profiles/user",
+          linkNamespace: "profiles",
+          onDeleteReverse: .cascade
+        )
       ]
     )
   }
@@ -245,13 +510,104 @@ struct TypeScriptPrinterTests {
               text: i.string().indexed(),
             }),
           },
-          links: {},
+          rooms: {},
         });
         """
       )
       #expect(Bool(false), "Expected parser to reject unsupported top-level schema keys.")
     } catch let error as TypeScriptSchemaParseError {
-      expectNoDifference(error, .unsupportedTopLevelKey("links"))
+      expectNoDifference(error, .unsupportedTopLevelKey("rooms"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
+  func schemaParserRejectsUnsupportedLinkEndpointValues() {
+    do {
+      _ = try TypeScriptSchemaParser().parseDocument(
+        """
+        export default i.schema({
+          entities: {
+            todos: i.entity({
+              text: i.string().indexed(),
+            }),
+            projects: i.entity({
+              title: i.string().indexed(),
+            }),
+          },
+          links: {
+            projectsTodos: {
+              forward: {
+                on: "todos",
+                has: "some",
+                label: "project",
+              },
+              reverse: {
+                on: "projects",
+                has: "many",
+                label: "todos",
+              },
+            },
+          },
+        });
+        """
+      )
+      #expect(Bool(false), "Expected parser to reject unsupported link endpoint values.")
+    } catch let error as TypeScriptSchemaParseError {
+      expectNoDifference(
+        error,
+        .unsupportedLinkEndpointValue(
+          name: "projectsTodos",
+          endpoint: "forward",
+          key: "has",
+          value: "some"
+        )
+      )
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
+  func schemaParserRejectsCascadeOnManyLinks() {
+    do {
+      _ = try TypeScriptSchemaParser().parseDocument(
+        """
+        export default i.schema({
+          entities: {
+            todos: i.entity({
+              text: i.string().indexed(),
+            }),
+          },
+          links: {
+            badCascade: {
+              forward: {
+                on: "todos",
+                has: "many",
+                label: "children",
+                onDelete: "cascade",
+              },
+              reverse: {
+                on: "todos",
+                has: "many",
+                label: "parents",
+              },
+            },
+          },
+        });
+        """
+      )
+      #expect(Bool(false), "Expected parser to reject cascade on has: many links.")
+    } catch let error as TypeScriptSchemaParseError {
+      expectNoDifference(
+        error,
+        .invalidLinkCascadeEndpoint(
+          link: "badCascade",
+          endpoint: "forward",
+          cardinality: .many
+        )
+      )
     } catch {
       #expect(Bool(false), "Unexpected error: \(error)")
     }

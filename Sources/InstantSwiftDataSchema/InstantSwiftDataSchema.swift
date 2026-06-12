@@ -18,6 +18,96 @@ public struct InstantEntitySchema: Hashable, Codable, Sendable, Identifiable {
   }
 }
 
+public struct InstantSchemaDocument: Hashable, Codable, Sendable {
+  public var entities: [InstantEntitySchema]
+  public var links: [InstantLinkSchema]
+
+  public init(
+    entities: [InstantEntitySchema],
+    links: [InstantLinkSchema] = []
+  ) {
+    self.entities = entities
+    self.links = links
+  }
+
+  public var attributes: [InstantAttribute] {
+    entities.flatMap(\.attributes) + links.flatMap(\.attributes)
+  }
+}
+
+public struct InstantLinkSchema: Hashable, Codable, Sendable, Identifiable {
+  public var id: String { name }
+  public var name: String
+  public var forward: InstantLinkEndpoint
+  public var reverse: InstantLinkEndpoint
+  public var isRequired: Bool?
+
+  public init(
+    name: String,
+    forward: InstantLinkEndpoint,
+    reverse: InstantLinkEndpoint,
+    isRequired: Bool? = nil
+  ) {
+    self.name = name
+    self.forward = forward
+    self.reverse = reverse
+    self.isRequired = isRequired
+  }
+
+  public var attributes: [InstantAttribute] {
+    [
+      InstantAttribute(
+        id: "\(forward.namespace)/\(forward.label)",
+        namespace: forward.namespace,
+        name: forward.label,
+        valueType: .ref,
+        cardinality: forward.cardinality,
+        isIndexed: true,
+        isUnique: reverse.cardinality == .one,
+        forwardIdentity: "\(forward.namespace)/\(forward.label)",
+        reverseIdentity: "\(reverse.namespace)/\(reverse.label)",
+        linkNamespace: reverse.namespace,
+        onDelete: forward.onDelete,
+        onDeleteReverse: reverse.onDelete
+      )
+    ]
+  }
+}
+
+public struct InstantLinkEndpoint: Hashable, Codable, Sendable {
+  public var namespace: String
+  public var cardinality: InstantCardinality
+  public var label: String
+  public var onDelete: InstantDeleteRule
+
+  public init(
+    namespace: String,
+    cardinality: InstantCardinality,
+    label: String,
+    onDelete: InstantDeleteRule = .none
+  ) {
+    self.namespace = namespace
+    self.cardinality = cardinality
+    self.label = label
+    self.onDelete = onDelete
+  }
+}
+
+public enum InstantSchemaValidationError: Error, Equatable, Sendable, CustomStringConvertible {
+  case invalidLinkCascadeEndpoint(
+    link: String,
+    endpoint: String,
+    cardinality: InstantCardinality
+  )
+
+  public var description: String {
+    switch self {
+    case .invalidLinkCascadeEndpoint(let link, let endpoint, let cardinality):
+      "Link '\(link)' \(endpoint) endpoint has invalid cascade delete for cardinality '\(cardinality.rawValue)'. Cascade delete is only supported on has: \"one\" links."
+    }
+  }
+}
+
 public struct InstantPermissionsDocument: Hashable, Codable, Sendable {
   public var attrs: InstantAttributePermissions?
   public var defaults: InstantDefaultPermissions?
@@ -223,6 +313,10 @@ public enum InstantSchemaExamples {
     attributes: TodoExample.attributes
   )
 
+  public static let todosDocument = InstantSchemaDocument(
+    entities: [todos]
+  )
+
   public static let todoPermissions = InstantPermissionsDocument(
     namespaces: [
       .allowAll(namespace: TodoExample.namespace)
@@ -233,7 +327,13 @@ public enum InstantSchemaExamples {
 public struct TypeScriptSchemaPrinter: Sendable {
   public init() {}
 
-  public func printSchema(_ entities: [InstantEntitySchema]) -> String {
+  public func printSchema(_ entities: [InstantEntitySchema]) throws -> String {
+    try printSchema(InstantSchemaDocument(entities: entities))
+  }
+
+  public func printSchema(_ document: InstantSchemaDocument) throws -> String {
+    try validate(document)
+
     var lines: [String] = [
       "import { i } from '@instantdb/core';",
       "",
@@ -241,7 +341,7 @@ public struct TypeScriptSchemaPrinter: Sendable {
       "  entities: {",
     ]
 
-    for entity in entities.sorted(by: { $0.namespace < $1.namespace }) {
+    for entity in document.entities.sorted(by: { $0.namespace < $1.namespace }) {
       lines.append("    \(TypeScriptPrinterSupport.propertyKey(entity.namespace)): i.entity({")
       for attribute in entity.attributes.sorted(by: { $0.name < $1.name }) {
         lines.append(
@@ -251,13 +351,75 @@ public struct TypeScriptSchemaPrinter: Sendable {
       lines.append("    }),")
     }
 
+    lines.append("  },")
+
+    if !document.links.isEmpty {
+      lines.append("  links: {")
+      for link in document.links.sorted(by: { $0.name < $1.name }) {
+        lines.append("    \(TypeScriptPrinterSupport.propertyKey(link.name)): {")
+        lines.append("      forward: {")
+        lines.append(contentsOf: endpointLines(for: link.forward, isRequired: link.isRequired))
+        lines.append("      },")
+        lines.append("      reverse: {")
+        lines.append(contentsOf: endpointLines(for: link.reverse))
+        lines.append("      },")
+        lines.append("    },")
+      }
+      lines.append("  },")
+    }
+
     lines.append(contentsOf: [
-      "  },",
       "});",
       "",
     ])
 
     return lines.joined(separator: "\n")
+  }
+
+  private func validate(_ document: InstantSchemaDocument) throws {
+    for link in document.links {
+      try validateCascadeEndpoint(
+        link: link.name,
+        endpoint: "forward",
+        value: link.forward
+      )
+      try validateCascadeEndpoint(
+        link: link.name,
+        endpoint: "reverse",
+        value: link.reverse
+      )
+    }
+  }
+
+  private func validateCascadeEndpoint(
+    link: String,
+    endpoint: String,
+    value: InstantLinkEndpoint
+  ) throws {
+    guard value.onDelete == .cascade, value.cardinality != .one else { return }
+    throw InstantSchemaValidationError.invalidLinkCascadeEndpoint(
+      link: link,
+      endpoint: endpoint,
+      cardinality: value.cardinality
+    )
+  }
+
+  private func endpointLines(
+    for endpoint: InstantLinkEndpoint,
+    isRequired: Bool? = nil
+  ) -> [String] {
+    var lines = [
+      "        on: \(TypeScriptPrinterSupport.stringLiteral(endpoint.namespace)),",
+      "        has: \(TypeScriptPrinterSupport.stringLiteral(endpoint.cardinality.rawValue)),",
+      "        label: \(TypeScriptPrinterSupport.stringLiteral(endpoint.label)),",
+    ]
+    if let isRequired {
+      lines.append("        required: \(isRequired),")
+    }
+    if endpoint.onDelete == .cascade {
+      lines.append("        onDelete: \(TypeScriptPrinterSupport.stringLiteral("cascade")),")
+    }
+    return lines
   }
 
   private func typeExpression(for attribute: InstantAttribute) -> String {

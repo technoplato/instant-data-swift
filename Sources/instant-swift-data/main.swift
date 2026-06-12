@@ -67,7 +67,7 @@ struct InstantSwiftDataCLI {
     try requireTodoExample(options.example)
 
     try writeGenerated(
-      TypeScriptSchemaPrinter().printSchema([InstantSchemaExamples.todos]),
+      try TypeScriptSchemaPrinter().printSchema(InstantSchemaExamples.todosDocument),
       to: options.outputPath
     )
   }
@@ -490,14 +490,14 @@ struct InstantSwiftDataCLI {
     let url = URL(fileURLWithPath: options.inputPath, relativeTo: currentDirectory)
       .standardizedFileURL
     let source = try String(contentsOf: url, encoding: .utf8)
-    let parsed: [ParsedInstantEntitySchema]
+    let parsed: ParsedInstantSchemaDocument
     do {
-      parsed = try TypeScriptSchemaParser().parse(source)
+      parsed = try TypeScriptSchemaParser().parseDocument(source)
     } catch let error as TypeScriptSchemaParseError {
       throw CLIError("Schema parse failed: \(error.description)", exitCode: 66)
     }
 
-    let expected = [ParsedInstantEntitySchema(InstantSchemaExamples.todos)]
+    let expected = ParsedInstantSchemaDocument(InstantSchemaExamples.todosDocument)
     guard parsed == expected else {
       throw CLIError("Schema does not match --example todos.", exitCode: 66)
     }
@@ -505,8 +505,9 @@ struct InstantSwiftDataCLI {
     let summary = SchemaVerifyOutput(
       example: options.example,
       path: url.path,
-      entityCount: parsed.count,
-      attributeCount: parsed.reduce(0) { $0 + $1.attributes.count }
+      entityCount: parsed.entities.count,
+      attributeCount: parsed.entities.reduce(0) { $0 + $1.attributes.count },
+      linkCount: parsed.links.count
     )
 
     switch output {
@@ -515,6 +516,7 @@ struct InstantSwiftDataCLI {
       print("example: \(summary.example)")
       print("entities: \(summary.entityCount)")
       print("attributes: \(summary.attributeCount)")
+      print("links: \(summary.linkCount)")
       print("path: \(summary.path)")
 
     case .json:
@@ -788,6 +790,7 @@ private struct SchemaVerifyOutput: Codable, Sendable {
   var path: String
   var entityCount: Int
   var attributeCount: Int
+  var linkCount: Int
 }
 
 private struct GenerateOptions: Sendable {
