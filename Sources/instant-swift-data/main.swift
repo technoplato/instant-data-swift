@@ -36,7 +36,7 @@ struct InstantSwiftDataCLI {
       try runSchema(arguments: arguments, output: output)
 
     case "perms", "permissions":
-      try runPermissions(arguments: arguments)
+      try runPermissions(arguments: arguments, output: output)
 
     case "examples":
       try await runExamples(arguments: arguments, output: output)
@@ -72,7 +72,14 @@ struct InstantSwiftDataCLI {
     )
   }
 
-  private static func runPermissions(arguments: [String]) throws {
+  private static func runPermissions(arguments: [String], output: OutputMode) throws {
+    if arguments.first == "verify" {
+      let options = try PermissionsVerifyOptions.parse(arguments: arguments)
+      try requireTodoExample(options.example)
+      try verifyPermissions(options: options, output: output)
+      return
+    }
+
     let options = try GenerateOptions.parse(
       arguments: arguments,
       usage: "Usage: instant-swift-data perms generate --example todos [--to instant.perms.ts]"
@@ -447,6 +454,7 @@ struct InstantSwiftDataCLI {
         schema generate --example todos [--to instant.schema.ts]
         schema verify --example todos --from instant.schema.ts [--json|--jsonl]
         perms generate --example todos [--to instant.perms.ts]
+        perms verify --example todos --from instant.perms.ts [--json|--jsonl]
         examples todos add "do the dishes" [--json|--jsonl]
         examples todos list [--completed true|false] [--limit n] [--order asc|desc] [--json|--jsonl]
         examples todos complete <todo-id> [--json|--jsonl]
@@ -534,6 +542,68 @@ struct InstantSwiftDataCLI {
         )
       )
     }
+  }
+
+  private static func verifyPermissions(
+    options: PermissionsVerifyOptions,
+    output: OutputMode
+  ) throws {
+    let currentDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    let url = URL(fileURLWithPath: options.inputPath, relativeTo: currentDirectory)
+      .standardizedFileURL
+    let source = try String(contentsOf: url, encoding: .utf8)
+    let parsed: InstantPermissionsDocument
+    do {
+      parsed = try TypeScriptPermissionsParser().parse(source)
+    } catch let error as TypeScriptPermissionsParseError {
+      throw CLIError("Permissions parse failed: \(error.description)", exitCode: 66)
+    } catch let error as TypeScriptSchemaParseError {
+      throw CLIError("Permissions parse failed: \(error.description)", exitCode: 66)
+    }
+
+    let expected = InstantSchemaExamples.todoPermissions
+    guard parsed == expected else {
+      throw CLIError("Permissions do not match --example todos.", exitCode: 66)
+    }
+
+    let summary = PermissionsVerifyOutput(
+      example: options.example,
+      path: url.path,
+      namespaceCount: parsed.namespaces.count,
+      allowRuleCount: allowRuleCount(in: parsed),
+      rateLimitCount: parsed.rateLimits.count
+    )
+
+    switch output {
+    case .human:
+      print("permissions: ok")
+      print("example: \(summary.example)")
+      print("namespaces: \(summary.namespaceCount)")
+      print("allow rules: \(summary.allowRuleCount)")
+      print("rate limits: \(summary.rateLimitCount)")
+      print("path: \(summary.path)")
+
+    case .json:
+      try writeJSON(summary)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.perms.verify",
+          side: "swift",
+          event: "summary",
+          appID: "permissions-tooling",
+          ok: true,
+          details: summary
+        )
+      )
+    }
+  }
+
+  private static func allowRuleCount(in document: InstantPermissionsDocument) -> Int {
+    (document.attrs?.allow.count ?? 0)
+      + (document.defaults?.allow.count ?? 0)
+      + document.namespaces.reduce(0) { $0 + $1.allow.count }
   }
 
   private static func todoListQuery(arguments: [String]) throws -> InstantQueryPlan {
@@ -793,6 +863,14 @@ private struct SchemaVerifyOutput: Codable, Sendable {
   var linkCount: Int
 }
 
+private struct PermissionsVerifyOutput: Codable, Sendable {
+  var example: String
+  var path: String
+  var namespaceCount: Int
+  var allowRuleCount: Int
+  var rateLimitCount: Int
+}
+
 private struct GenerateOptions: Sendable {
   var example: String
   var outputPath: String?
@@ -863,6 +941,47 @@ private struct SchemaVerifyOptions: Sendable {
 
       default:
         throw CLIError("Unknown schema verify option: \(option). \(usage)", exitCode: 64)
+      }
+    }
+
+    guard let example, let inputPath else {
+      throw CLIError(usage, exitCode: 64)
+    }
+
+    return Self(example: example, inputPath: inputPath)
+  }
+}
+
+private struct PermissionsVerifyOptions: Sendable {
+  var example: String
+  var inputPath: String
+
+  static func parse(arguments: [String]) throws -> Self {
+    let usage = "Usage: instant-swift-data perms verify --example todos --from instant.perms.ts"
+    var arguments = arguments
+    guard arguments.popFirstArgument() == "verify" else {
+      throw CLIError(usage, exitCode: 64)
+    }
+
+    var example: String?
+    var inputPath: String?
+
+    while let option = arguments.popFirstArgument() {
+      switch option {
+      case "--example":
+        guard let value = arguments.popFirstArgument() else {
+          throw CLIError(usage, exitCode: 64)
+        }
+        example = value
+
+      case "--from":
+        guard let value = arguments.popFirstArgument() else {
+          throw CLIError(usage, exitCode: 64)
+        }
+        inputPath = value
+
+      default:
+        throw CLIError("Unknown permissions verify option: \(option). \(usage)", exitCode: 64)
       }
     }
 

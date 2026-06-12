@@ -662,6 +662,15 @@ struct TypeScriptPrinterTests {
   }
 
   @Test
+  func permissionsParserRoundTripsTodoExample() throws {
+    let printed = try TypeScriptPermissionsPrinter()
+      .printPermissions(InstantSchemaExamples.todoPermissions)
+    let parsed = try TypeScriptPermissionsParser().parse(printed)
+
+    expectNoDifference(parsed, InstantSchemaExamples.todoPermissions)
+  }
+
+  @Test
   func permissionsPrinterSupportsBindingsAndSpecialNamespaces() throws {
     let document = InstantPermissionsDocument(
       namespaces: [
@@ -729,6 +738,297 @@ struct TypeScriptPrinterTests {
 
       """
     )
+  }
+
+  @Test
+  func permissionsParserRoundTripsGeneratedRuleSurface() throws {
+    let document = InstantPermissionsDocument(
+      attrs: InstantAttributePermissions(
+        allow: [.create: "isAdmin"],
+        bind: [
+          InstantPermissionBinding("isAdmin", "auth.ref('$users.admins.id') != null")
+        ]
+      ),
+      defaults: InstantDefaultPermissions(
+        allow: [.view: "true"],
+        link: ["owner": "isOwner"],
+        unlink: ["owner": "isOwner"],
+        bind: [
+          InstantPermissionBinding("isOwner", "auth.id != null && auth.id == data.ownerId")
+        ]
+      ),
+      rateLimits: [
+        InstantRateLimit(
+          name: "writes",
+          limits: [
+            InstantRateLimitLimit(capacity: 20),
+            InstantRateLimitLimit(
+              capacity: 10,
+              refill: InstantRateLimitRefill(
+                amount: 1,
+                period: "1 minute",
+                type: .greedy
+              )
+            ),
+          ]
+        )
+      ],
+      namespaces: [
+        InstantNamespacePermissions(
+          namespace: "posts",
+          allow: [
+            .view: "true",
+            .create: "isOwner",
+            .update: "isOwner",
+          ],
+          link: ["author": "isOwner"],
+          unlink: ["author": "isOwner"],
+          bind: [
+            InstantPermissionBinding("isOwner", "auth.id != null && auth.id == data.ownerId")
+          ],
+          fields: ["privateNotes": "false"]
+        )
+      ]
+    )
+
+    let printed = try TypeScriptPermissionsPrinter().printPermissions(document)
+    let parsed = try TypeScriptPermissionsParser().parse(printed)
+
+    expectNoDifference(parsed, document)
+  }
+
+  @Test
+  func permissionsParserRejectsUnsupportedAllowKeys() {
+    do {
+      _ = try TypeScriptPermissionsParser().parse(
+        """
+        const rules = {
+          todos: {
+            allow: {
+              publish: "true",
+            },
+          },
+        } satisfies InstantRules;
+
+        export default rules;
+        """
+      )
+      #expect(Bool(false), "Expected parser to reject unsupported allow keys.")
+    } catch let error as TypeScriptPermissionsParseError {
+      expectNoDifference(
+        error,
+        .unsupportedRuleKey(context: "todos.allow", key: "publish")
+      )
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
+  func permissionsParserRejectsWrappedRulesInitializers() {
+    do {
+      _ = try TypeScriptPermissionsParser().parse(
+        """
+        const rules = makeRules({
+          todos: {
+            allow: {
+              view: "true",
+              create: "true",
+              update: "true",
+              delete: "true",
+            },
+          },
+        }) satisfies InstantRules;
+
+        export default rules;
+        """
+      )
+      #expect(Bool(false), "Expected parser to reject non-literal rules initializers.")
+    } catch let error as TypeScriptPermissionsParseError {
+      expectNoDifference(
+        error,
+        .unsupportedRuleValue(
+          context: "rules",
+          key: "initializer",
+          value: """
+            makeRules({
+              todos: {
+                allow: {
+                  view: "true",
+                  create: "true",
+                  update: "true",
+                  delete: "true",
+                },
+              },
+            }) satisfies InstantRules;
+
+            export default rules;
+            """
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+      )
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
+  func permissionsParserRejectsTrailingInitializerExpressions() {
+    do {
+      _ = try TypeScriptPermissionsParser().parse(
+        """
+        const rules = {
+          todos: {
+            allow: {
+              view: "true",
+              create: "true",
+              update: "true",
+              delete: "true",
+            },
+          },
+        } && {
+          todos: {
+            allow: {
+              view: "false",
+            },
+          },
+        };
+
+        export default rules;
+        """
+      )
+      #expect(Bool(false), "Expected parser to reject trailing initializer expressions.")
+    } catch let error as TypeScriptPermissionsParseError {
+      guard case let .unsupportedRuleValue(context, key, value) = error else {
+        #expect(Bool(false), "Unexpected parser error: \(error)")
+        return
+      }
+      expectNoDifference(context, "rules")
+      expectNoDifference(key, "initializer")
+      #expect(value.contains("&&"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
+  func permissionsParserRejectsPostInitializerMutation() {
+    do {
+      _ = try TypeScriptPermissionsParser().parse(
+        """
+        const rules = {
+          todos: {
+            allow: {
+              view: "true",
+              create: "true",
+              update: "true",
+              delete: "true",
+            },
+          },
+        } satisfies InstantRules;
+
+        rules.todos.allow.view = "false";
+        export default rules;
+        """
+      )
+      #expect(Bool(false), "Expected parser to reject mutated rules exports.")
+    } catch let error as TypeScriptPermissionsParseError {
+      guard case let .unsupportedRuleValue(context, key, value) = error else {
+        #expect(Bool(false), "Unexpected parser error: \(error)")
+        return
+      }
+      expectNoDifference(context, "rules")
+      expectNoDifference(key, "initializer")
+      #expect(value.contains("rules.todos.allow.view"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
+  func permissionsParserRejectsMissingRulesExport() {
+    do {
+      _ = try TypeScriptPermissionsParser().parse(
+        """
+        const rules = {
+          todos: {
+            allow: {
+              view: "true",
+              create: "true",
+              update: "true",
+              delete: "true",
+            },
+          },
+        } satisfies InstantRules;
+        """
+      )
+      #expect(Bool(false), "Expected parser to reject permissions without export default rules.")
+    } catch let error as TypeScriptPermissionsParseError {
+      guard case let .unsupportedRuleValue(context, key, _) = error else {
+        #expect(Bool(false), "Unexpected parser error: \(error)")
+        return
+      }
+      expectNoDifference(context, "rules")
+      expectNoDifference(key, "initializer")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
+  func permissionsParserRejectsUnsupportedContextKeys() {
+    do {
+      _ = try TypeScriptPermissionsParser().parse(
+        """
+        const rules = {
+          attrs: {
+            allow: {
+              link: {
+                owner: "true",
+              },
+            },
+          },
+        } satisfies InstantRules;
+
+        export default rules;
+        """
+      )
+      #expect(Bool(false), "Expected parser to reject relationship rules in attrs.")
+    } catch let error as TypeScriptPermissionsParseError {
+      expectNoDifference(
+        error,
+        .unsupportedRuleKey(context: "attrs.allow", key: "link")
+      )
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      _ = try TypeScriptPermissionsParser().parse(
+        """
+        const rules = {
+          "$default": {
+            allow: {
+              view: "true",
+            },
+            fields: {
+              privateNotes: "false",
+            },
+          },
+        } satisfies InstantRules;
+
+        export default rules;
+        """
+      )
+      #expect(Bool(false), "Expected parser to reject fields in $default.")
+    } catch let error as TypeScriptPermissionsParseError {
+      expectNoDifference(
+        error,
+        .unsupportedRuleKey(context: "$default", key: "fields")
+      )
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
   }
 
   @Test

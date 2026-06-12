@@ -405,6 +405,465 @@ private struct ParsedLinkEndpoint {
   var isRequired: Bool?
 }
 
+public enum TypeScriptPermissionsParseError: Error, Equatable, Sendable, CustomStringConvertible {
+  case missingRulesObject
+  case unsupportedRuleKey(context: String, key: String)
+  case unsupportedRuleValue(context: String, key: String, value: String)
+
+  public var description: String {
+    switch self {
+    case .missingRulesObject:
+      "Could not find a rules object in the TypeScript permissions."
+    case .unsupportedRuleKey(let context, let key):
+      "Unsupported permissions key in \(context): \(key)"
+    case .unsupportedRuleValue(let context, let key, let value):
+      "Unsupported permissions value in \(context) for key '\(key)': \(value)"
+    }
+  }
+}
+
+public struct TypeScriptPermissionsParser: Sendable {
+  public init() {}
+
+  public func parse(_ source: String) throws -> InstantPermissionsDocument {
+    guard let rules = try ObjectEntryParser.firstOccurrence(of: "const rules =", in: source)
+    else {
+      throw TypeScriptPermissionsParseError.missingRulesObject
+    }
+    let body = try parseRulesObjectBody(afterRulesEquals: String(source[rules.upperBound...]))
+    let entries = try ObjectEntryParser.parseObjectEntries(in: body)
+
+    var attrs: InstantAttributePermissions?
+    var defaults: InstantDefaultPermissions?
+    var rateLimits: [InstantRateLimit] = []
+    var namespaces: [String: InstantNamespacePermissions] = [:]
+
+    for entry in entries {
+      switch entry.key {
+      case "attrs":
+        let block = try parseRuleBlock(
+          context: "attrs",
+          expression: entry.value,
+          allowsRelationshipRules: false,
+          allowsFields: false
+        )
+        attrs = InstantAttributePermissions(
+          allow: block.allow,
+          bind: block.bind
+        )
+
+      case "$default":
+        let block = try parseRuleBlock(
+          context: "$default",
+          expression: entry.value,
+          allowsRelationshipRules: true,
+          allowsFields: false
+        )
+        defaults = InstantDefaultPermissions(
+          allow: block.allow,
+          link: block.link,
+          unlink: block.unlink,
+          bind: block.bind
+        )
+
+      case "$rateLimits":
+        rateLimits = try parseRateLimits(expression: entry.value)
+
+      default:
+        let block = try parseRuleBlock(
+          context: entry.key,
+          expression: entry.value,
+          allowsRelationshipRules: true,
+          allowsFields: true
+        )
+        namespaces[entry.key] = InstantNamespacePermissions(
+          namespace: entry.key,
+          allow: block.allow,
+          link: block.link,
+          unlink: block.unlink,
+          bind: block.bind,
+          fields: block.fields
+        )
+      }
+    }
+
+    return InstantPermissionsDocument(
+      attrs: attrs,
+      defaults: defaults,
+      rateLimits: rateLimits.sorted { $0.name < $1.name },
+      namespaces: namespaces.values.sorted { $0.namespace < $1.namespace }
+    )
+  }
+
+  private func parseRulesObjectBody(afterRulesEquals source: String) throws -> String {
+    var index = source.startIndex
+    ObjectEntryParser.skipTrivia(in: source, index: &index)
+    guard index < source.endIndex, source[index] == "{" else {
+      throw TypeScriptPermissionsParseError.unsupportedRuleValue(
+        context: "rules",
+        key: "initializer",
+        value: source.trimmingCharacters(in: .whitespacesAndNewlines)
+      )
+    }
+
+    let close = try ObjectEntryParser.matchingBrace(in: source, open: index)
+    let body = String(source[source.index(after: index)..<close])
+    index = source.index(after: close)
+    ObjectEntryParser.skipTrivia(in: source, index: &index)
+    if consumeKeyword("satisfies", in: source, index: &index) {
+      ObjectEntryParser.skipTrivia(in: source, index: &index)
+      guard consumeKeyword("InstantRules", in: source, index: &index) else {
+        throw unsupportedRulesInitializer(source)
+      }
+      ObjectEntryParser.skipTrivia(in: source, index: &index)
+    }
+    guard index < source.endIndex, source[index] == ";" else {
+      throw unsupportedRulesInitializer(source)
+    }
+    source.formIndex(after: &index)
+    ObjectEntryParser.skipTrivia(in: source, index: &index)
+    guard consumeKeyword("export", in: source, index: &index) else {
+      throw unsupportedRulesInitializer(source)
+    }
+    ObjectEntryParser.skipTrivia(in: source, index: &index)
+    guard consumeKeyword("default", in: source, index: &index) else {
+      throw unsupportedRulesInitializer(source)
+    }
+    ObjectEntryParser.skipTrivia(in: source, index: &index)
+    guard consumeKeyword("rules", in: source, index: &index) else {
+      throw unsupportedRulesInitializer(source)
+    }
+    ObjectEntryParser.skipTrivia(in: source, index: &index)
+    guard index < source.endIndex, source[index] == ";" else {
+      throw unsupportedRulesInitializer(source)
+    }
+    source.formIndex(after: &index)
+    ObjectEntryParser.skipTrivia(in: source, index: &index)
+    guard index == source.endIndex else {
+      throw unsupportedRulesInitializer(source)
+    }
+    return body
+  }
+
+  private func consumeKeyword(
+    _ keyword: String,
+    in source: String,
+    index: inout String.Index
+  ) -> Bool {
+    guard source[index...].hasPrefix(keyword) else { return false }
+    let end = source.index(index, offsetBy: keyword.count)
+    if end < source.endIndex, isIdentifierCharacter(source[end]) {
+      return false
+    }
+    index = end
+    return true
+  }
+
+  private func isIdentifierCharacter(_ character: Character) -> Bool {
+    character == "_" || character == "$" || character.isLetter || character.isNumber
+  }
+
+  private func unsupportedRulesInitializer(_ source: String) -> TypeScriptPermissionsParseError {
+    .unsupportedRuleValue(
+      context: "rules",
+      key: "initializer",
+      value: source.trimmingCharacters(in: .whitespacesAndNewlines)
+    )
+  }
+
+  private func parseRuleBlock(
+    context: String,
+    expression: String,
+    allowsRelationshipRules: Bool,
+    allowsFields: Bool
+  ) throws -> ParsedRuleBlock {
+    let body = try ObjectEntryParser.extractFirstObjectBody(
+      from: expression,
+      context: context
+    )
+    let entries = try ObjectEntryParser.parseObjectEntries(in: body)
+
+    var allow: [InstantPermissionAction: String] = [:]
+    var link: [String: String] = [:]
+    var unlink: [String: String] = [:]
+    var bind: [InstantPermissionBinding] = []
+    var fields: [String: String] = [:]
+
+    for entry in entries {
+      switch entry.key {
+      case "allow":
+        let parsed = try parseAllowBlock(
+          context: "\(context).allow",
+          expression: entry.value,
+          allowsRelationshipRules: allowsRelationshipRules
+        )
+        allow = parsed.allow
+        link = parsed.link
+        unlink = parsed.unlink
+
+      case "bind":
+        bind = try parseBindings(context: "\(context).bind", expression: entry.value)
+
+      case "fields":
+        guard allowsFields else {
+          throw TypeScriptPermissionsParseError.unsupportedRuleKey(
+            context: context,
+            key: entry.key
+          )
+        }
+        fields = try parseStringMap(context: "\(context).fields", expression: entry.value)
+
+      default:
+        throw TypeScriptPermissionsParseError.unsupportedRuleKey(
+          context: context,
+          key: entry.key
+        )
+      }
+    }
+
+    return ParsedRuleBlock(
+      allow: allow,
+      link: link,
+      unlink: unlink,
+      bind: bind,
+      fields: fields
+    )
+  }
+
+  private func parseAllowBlock(
+    context: String,
+    expression: String,
+    allowsRelationshipRules: Bool
+  ) throws -> ParsedAllowBlock {
+    let body = try ObjectEntryParser.extractFirstObjectBody(
+      from: expression,
+      context: context
+    )
+    let entries = try ObjectEntryParser.parseObjectEntries(in: body)
+
+    var allow: [InstantPermissionAction: String] = [:]
+    var link: [String: String] = [:]
+    var unlink: [String: String] = [:]
+
+    for entry in entries {
+      switch entry.key {
+      case "link":
+        guard allowsRelationshipRules else {
+          throw TypeScriptPermissionsParseError.unsupportedRuleKey(
+            context: context,
+            key: entry.key
+          )
+        }
+        link = try parseStringMap(context: "\(context).link", expression: entry.value)
+
+      case "unlink":
+        guard allowsRelationshipRules else {
+          throw TypeScriptPermissionsParseError.unsupportedRuleKey(
+            context: context,
+            key: entry.key
+          )
+        }
+        unlink = try parseStringMap(context: "\(context).unlink", expression: entry.value)
+
+      default:
+        guard let action = InstantPermissionAction(rawValue: entry.key) else {
+          throw TypeScriptPermissionsParseError.unsupportedRuleKey(
+            context: context,
+            key: entry.key
+          )
+        }
+        allow[action] = try ObjectEntryParser.parseStringExpression(entry.value)
+      }
+    }
+
+    return ParsedAllowBlock(allow: allow, link: link, unlink: unlink)
+  }
+
+  private func parseBindings(
+    context: String,
+    expression: String
+  ) throws -> [InstantPermissionBinding] {
+    let values = try ObjectEntryParser.parseArrayValues(expression, context: context)
+    guard values.count.isMultiple(of: 2) else {
+      throw TypeScriptPermissionsParseError.unsupportedRuleValue(
+        context: context,
+        key: "bind",
+        value: expression.trimmingCharacters(in: .whitespacesAndNewlines)
+      )
+    }
+
+    var bindings: [InstantPermissionBinding] = []
+    var index = 0
+    while index < values.count {
+      bindings.append(
+        InstantPermissionBinding(
+          try ObjectEntryParser.parseStringExpression(values[index]),
+          try ObjectEntryParser.parseStringExpression(values[index + 1])
+        )
+      )
+      index += 2
+    }
+    return bindings
+  }
+
+  private func parseStringMap(
+    context: String,
+    expression: String
+  ) throws -> [String: String] {
+    let body = try ObjectEntryParser.extractFirstObjectBody(
+      from: expression,
+      context: context
+    )
+    let entries = try ObjectEntryParser.parseObjectEntries(in: body)
+
+    var result: [String: String] = [:]
+    for entry in entries {
+      result[entry.key] = try ObjectEntryParser.parseStringExpression(entry.value)
+    }
+    return result
+  }
+
+  private func parseRateLimits(expression: String) throws -> [InstantRateLimit] {
+    let body = try ObjectEntryParser.extractFirstObjectBody(
+      from: expression,
+      context: "$rateLimits"
+    )
+    return try ObjectEntryParser.parseObjectEntries(in: body)
+      .map { entry in
+        InstantRateLimit(
+          name: entry.key,
+          limits: try parseRateLimitList(name: entry.key, expression: entry.value)
+        )
+      }
+      .sorted { $0.name < $1.name }
+  }
+
+  private func parseRateLimitList(
+    name: String,
+    expression: String
+  ) throws -> [InstantRateLimitLimit] {
+    let body = try ObjectEntryParser.extractFirstObjectBody(
+      from: expression,
+      context: "$rateLimits.\(name)"
+    )
+    let entries = try ObjectEntryParser.parseObjectEntries(in: body)
+    for entry in entries where entry.key != "limits" {
+      throw TypeScriptPermissionsParseError.unsupportedRuleKey(
+        context: "$rateLimits.\(name)",
+        key: entry.key
+      )
+    }
+
+    guard let limitsExpression = entries.lastValue(for: "limits") else {
+      throw TypeScriptPermissionsParseError.unsupportedRuleKey(
+        context: "$rateLimits.\(name)",
+        key: "limits"
+      )
+    }
+
+    return try ObjectEntryParser.parseArrayValues(
+      limitsExpression,
+      context: "$rateLimits.\(name).limits"
+    )
+    .map { try parseRateLimitLimit(name: name, expression: $0) }
+  }
+
+  private func parseRateLimitLimit(
+    name: String,
+    expression: String
+  ) throws -> InstantRateLimitLimit {
+    let body = try ObjectEntryParser.extractFirstObjectBody(
+      from: expression,
+      context: "$rateLimits.\(name).limit"
+    )
+    let entries = try ObjectEntryParser.parseObjectEntries(in: body)
+
+    var capacity: Int?
+    var refill: InstantRateLimitRefill?
+    for entry in entries {
+      switch entry.key {
+      case "capacity":
+        capacity = try ObjectEntryParser.parseIntExpression(entry.value)
+
+      case "refill":
+        refill = try parseRateLimitRefill(name: name, expression: entry.value)
+
+      default:
+        throw TypeScriptPermissionsParseError.unsupportedRuleKey(
+          context: "$rateLimits.\(name).limit",
+          key: entry.key
+        )
+      }
+    }
+
+    guard let capacity else {
+      throw TypeScriptPermissionsParseError.unsupportedRuleKey(
+        context: "$rateLimits.\(name).limit",
+        key: "capacity"
+      )
+    }
+    return InstantRateLimitLimit(capacity: capacity, refill: refill)
+  }
+
+  private func parseRateLimitRefill(
+    name: String,
+    expression: String
+  ) throws -> InstantRateLimitRefill {
+    let body = try ObjectEntryParser.extractFirstObjectBody(
+      from: expression,
+      context: "$rateLimits.\(name).limit.refill"
+    )
+    let entries = try ObjectEntryParser.parseObjectEntries(in: body)
+
+    var amount: Int?
+    var period: String?
+    var type: InstantRateLimitRefillType?
+
+    for entry in entries {
+      switch entry.key {
+      case "amount":
+        amount = try ObjectEntryParser.parseIntExpression(entry.value)
+
+      case "period":
+        period = try ObjectEntryParser.parseStringExpression(entry.value)
+
+      case "type":
+        let value = try ObjectEntryParser.parseStringExpression(entry.value)
+        guard let parsed = InstantRateLimitRefillType(rawValue: value) else {
+          throw TypeScriptPermissionsParseError.unsupportedRuleValue(
+            context: "$rateLimits.\(name).limit.refill",
+            key: entry.key,
+            value: value
+          )
+        }
+        type = parsed
+
+      default:
+        throw TypeScriptPermissionsParseError.unsupportedRuleKey(
+          context: "$rateLimits.\(name).limit.refill",
+          key: entry.key
+        )
+      }
+    }
+
+    return InstantRateLimitRefill(amount: amount, period: period, type: type)
+  }
+}
+
+private struct ParsedRuleBlock {
+  var allow: [InstantPermissionAction: String]
+  var link: [String: String]
+  var unlink: [String: String]
+  var bind: [InstantPermissionBinding]
+  var fields: [String: String]
+}
+
+private struct ParsedAllowBlock {
+  var allow: [InstantPermissionAction: String]
+  var link: [String: String]
+  var unlink: [String: String]
+}
+
 extension [ObjectEntryParser.Entry] {
   fileprivate func lastValue(for key: String) -> String? {
     self.reversed().first { $0.key == key }?.value
@@ -493,6 +952,45 @@ private enum ObjectEntryParser {
     return String(source[source.index(after: open)..<close])
   }
 
+  fileprivate static func parseArrayValues(
+    _ source: String,
+    context: String
+  ) throws -> [String] {
+    let source = source.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let open = source.firstIndex(of: "[") else {
+      throw TypeScriptSchemaParseError.malformedObject("Expected array body for '\(context)'.")
+    }
+    let close = try matchingBracket(in: source, open: open)
+    let body = String(source[source.index(after: open)..<close])
+
+    var values: [String] = []
+    var index = body.startIndex
+    while true {
+      skipTrivia(in: body, index: &index)
+      guard index < body.endIndex else { break }
+
+      if body[index] == "," {
+        body.formIndex(after: &index)
+        continue
+      }
+
+      let valueStart = index
+      try advancePastValue(in: body, index: &index)
+      let value = try stripComments(in: String(body[valueStart..<index]))
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      if !value.isEmpty {
+        values.append(value)
+      }
+
+      skipTrivia(in: body, index: &index)
+      if index < body.endIndex, body[index] == "," {
+        body.formIndex(after: &index)
+      }
+    }
+
+    return values
+  }
+
   fileprivate static func parseStringExpression(_ source: String) throws -> String {
     var index = source.startIndex
     skipTrivia(in: source, index: &index)
@@ -507,6 +1005,14 @@ private enum ObjectEntryParser {
       throw TypeScriptSchemaParseError.malformedObject("Expected end of string literal.")
     }
     return value
+  }
+
+  fileprivate static func parseIntExpression(_ source: String) throws -> Int {
+    let value = source.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let int = Int(value) else {
+      throw TypeScriptSchemaParseError.malformedObject("Expected integer literal.")
+    }
+    return int
   }
 
   fileprivate static func parseBoolExpression(_ source: String) throws -> Bool {
@@ -687,7 +1193,7 @@ private enum ObjectEntryParser {
     return result
   }
 
-  private static func matchingBrace(
+  fileprivate static func matchingBrace(
     in source: String,
     open: String.Index
   ) throws -> String.Index {
@@ -717,7 +1223,41 @@ private enum ObjectEntryParser {
     throw TypeScriptSchemaParseError.malformedObject("Unbalanced braces.")
   }
 
-  private static func skipTrivia(in source: String, index: inout String.Index) {
+  private static func matchingBracket(
+    in source: String,
+    open: String.Index
+  ) throws -> String.Index {
+    var index = source.index(after: open)
+    var depth = 1
+
+    while index < source.endIndex {
+      let character = source[index]
+
+      if character == "\"" || character == "'" {
+        _ = try parseStringLiteral(in: source, index: &index)
+        continue
+      }
+
+      if try skipComment(in: source, index: &index) {
+        continue
+      }
+
+      if character == "[" {
+        depth += 1
+      } else if character == "]" {
+        depth -= 1
+        if depth == 0 {
+          return index
+        }
+      }
+
+      source.formIndex(after: &index)
+    }
+
+    throw TypeScriptSchemaParseError.malformedObject("Unbalanced brackets.")
+  }
+
+  fileprivate static func skipTrivia(in source: String, index: inout String.Index) {
     while index < source.endIndex {
       if source[index].isWhitespace {
         source.formIndex(after: &index)
