@@ -6,7 +6,9 @@ public protocol InstantValueRepresentable: Sendable {
   var instantValue: InstantValue { get }
 }
 
-extension String: InstantValueRepresentable {
+public protocol InstantComparableValue: InstantValueRepresentable {}
+
+extension String: InstantComparableValue {
   public var instantValue: InstantValue { .string(self) }
 }
 
@@ -14,27 +16,27 @@ extension Bool: InstantValueRepresentable {
   public var instantValue: InstantValue { .bool(self) }
 }
 
-extension Date: InstantValueRepresentable {
+extension Date: InstantComparableValue {
   public var instantValue: InstantValue { .date(self) }
 }
 
-extension Double: InstantValueRepresentable {
+extension Double: InstantComparableValue {
   public var instantValue: InstantValue { .number(self) }
 }
 
-extension Float: InstantValueRepresentable {
+extension Float: InstantComparableValue {
   public var instantValue: InstantValue { .number(Double(self)) }
 }
 
-extension Int: InstantValueRepresentable {
+extension Int: InstantComparableValue {
   public var instantValue: InstantValue { .number(Double(self)) }
 }
 
-extension Int64: InstantValueRepresentable {
+extension Int64: InstantComparableValue {
   public var instantValue: InstantValue { .number(Double(self)) }
 }
 
-extension InstantTimestamp: InstantValueRepresentable {
+extension InstantTimestamp: InstantComparableValue {
   public var instantValue: InstantValue {
     .date(Date(timeIntervalSince1970: Double(milliseconds) / 1000))
   }
@@ -163,6 +165,51 @@ public func == <Entity, Value>(
   InstantPredicate(.equals(field: lhs.name, value: rhs.instantValue))
 }
 
+public func != <Entity, Value>(
+  lhs: InstantAttributePath<Entity, Value>,
+  rhs: Value
+) -> InstantPredicate<Entity> {
+  InstantPredicate(.notEquals(field: lhs.name, value: rhs.instantValue))
+}
+
+public func > <Entity, Value: InstantComparableValue>(
+  lhs: InstantAttributePath<Entity, Value>,
+  rhs: Value
+) -> InstantPredicate<Entity> {
+  InstantPredicate(.greaterThan(field: lhs.name, value: rhs.instantValue))
+}
+
+public func >= <Entity, Value: InstantComparableValue>(
+  lhs: InstantAttributePath<Entity, Value>,
+  rhs: Value
+) -> InstantPredicate<Entity> {
+  InstantPredicate(.greaterThanOrEqual(field: lhs.name, value: rhs.instantValue))
+}
+
+public func < <Entity, Value: InstantComparableValue>(
+  lhs: InstantAttributePath<Entity, Value>,
+  rhs: Value
+) -> InstantPredicate<Entity> {
+  InstantPredicate(.lessThan(field: lhs.name, value: rhs.instantValue))
+}
+
+public func <= <Entity, Value: InstantComparableValue>(
+  lhs: InstantAttributePath<Entity, Value>,
+  rhs: Value
+) -> InstantPredicate<Entity> {
+  InstantPredicate(.lessThanOrEqual(field: lhs.name, value: rhs.instantValue))
+}
+
+extension InstantAttributePath {
+  public var isNull: InstantPredicate<Entity> {
+    InstantPredicate(.isNull(field: name))
+  }
+
+  public func isIn(_ values: [Value]) -> InstantPredicate<Entity> {
+    InstantPredicate(.in(field: name, values: values.map(\.instantValue)))
+  }
+}
+
 public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable {
   public private(set) var plan: InstantQueryPlan
 
@@ -222,45 +269,40 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
     order: InstantQueryOrder?,
     limit: Int?
   ) -> String {
-    var parts = [Entity.instantNamespace]
-    if !filters.isEmpty {
-      parts.append("where:" + filters.map(filterID).joined(separator: ","))
-    }
-    if let order {
-      parts.append("order:\(order.field):\(order.direction.rawValue)")
-    }
-    if let limit {
-      parts.append("limit:\(limit)")
-    }
-    return parts.joined(separator: "|")
+    let payload = QueryIDPayload(
+      namespace: Entity.instantNamespace,
+      filters: filters,
+      order: order,
+      limit: limit
+    )
+    return "instant-query:" + payload.canonicalBase64ID()
   }
+}
 
-  private static func filterID(_ filter: InstantQueryFilter) -> String {
-    switch filter {
-    case let .equals(field, value):
-      return "\(field)==\(valueID(value))"
-    case let .isNull(field):
-      return "\(field)==null"
-    }
-  }
+private struct QueryIDPayload: Encodable {
+  var namespace: String
+  var filters: [InstantQueryFilter]
+  var order: InstantQueryOrder?
+  var limit: Int?
 
-  private static func valueID(_ value: InstantValue) -> String {
-    switch value {
-    case .null:
-      return "null"
-    case let .string(value):
-      return "string:\(value)"
-    case let .number(value):
-      return "number:\(value)"
-    case let .bool(value):
-      return "bool:\(value)"
-    case let .date(value):
-      return "date:\(Int64((value.timeIntervalSince1970 * 1000).rounded()))"
-    case let .json(value):
-      return "json:\(String(describing: value))"
-    case let .ref(value):
-      return "ref:\(value)"
+  func canonicalBase64ID() -> String {
+    let encoder = JSONEncoder()
+    encoder.nonConformingFloatEncodingStrategy = .convertToString(
+      positiveInfinity: "Infinity",
+      negativeInfinity: "-Infinity",
+      nan: "NaN"
+    )
+    encoder.outputFormatting = [.sortedKeys]
+    let data: Data
+    do {
+      data = try encoder.encode(self)
+    } catch {
+      preconditionFailure("Instant typed query IDs must be canonically encodable: \(error)")
     }
+    return data.base64EncodedString()
+      .replacingOccurrences(of: "+", with: "-")
+      .replacingOccurrences(of: "/", with: "_")
+      .replacingOccurrences(of: "=", with: "")
   }
 }
 

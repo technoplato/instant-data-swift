@@ -245,6 +245,12 @@ public struct InstantQueryOrder: Hashable, Codable, Sendable {
 
 public enum InstantQueryFilter: Hashable, Codable, Sendable {
   case equals(field: String, value: InstantValue)
+  case notEquals(field: String, value: InstantValue)
+  case greaterThan(field: String, value: InstantValue)
+  case greaterThanOrEqual(field: String, value: InstantValue)
+  case lessThan(field: String, value: InstantValue)
+  case lessThanOrEqual(field: String, value: InstantValue)
+  case `in`(field: String, values: [InstantValue])
   case isNull(field: String)
 }
 
@@ -262,6 +268,10 @@ public struct InstantQueryPlan: Hashable, Codable, Sendable, Identifiable {
     order: InstantQueryOrder? = nil,
     limit: Int? = nil
   ) {
+    precondition(
+      limit == nil || limit! >= 0,
+      "InstantQueryPlan limit must be greater than or equal to 0."
+    )
     self.id = id
     self.namespace = namespace
     self.filters = filters
@@ -280,6 +290,15 @@ public enum InstantMaterializedValue: Hashable, Codable, Sendable {
       return value
     case let .many(values):
       return values.first
+    }
+  }
+
+  public var values: [InstantValue] {
+    switch self {
+    case let .one(value):
+      return [value]
+    case let .many(values):
+      return values
     }
   }
 

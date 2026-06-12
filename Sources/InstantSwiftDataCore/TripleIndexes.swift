@@ -160,6 +160,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     }
 
     if let limit = plan.limit {
+      guard limit > 0 else { return [] }
       return Array(snapshots.prefix(limit))
     }
     return snapshots
@@ -218,11 +219,65 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       switch filter {
       case let .equals(field, value):
         guard snapshot.values[field]?.contains(value) == true else { return false }
+      case let .notEquals(field, value):
+        guard let values = snapshot.values[field] else { return false }
+        guard !values.contains(value) else { return false }
+      case let .greaterThan(field, value):
+        guard matchesComparison(snapshot, field: field, value: value, allowed: [.orderedDescending])
+        else { return false }
+      case let .greaterThanOrEqual(field, value):
+        guard matchesComparison(
+          snapshot,
+          field: field,
+          value: value,
+          allowed: [.orderedSame, .orderedDescending]
+        )
+        else { return false }
+      case let .lessThan(field, value):
+        guard matchesComparison(snapshot, field: field, value: value, allowed: [.orderedAscending])
+        else { return false }
+      case let .lessThanOrEqual(field, value):
+        guard matchesComparison(
+          snapshot,
+          field: field,
+          value: value,
+          allowed: [.orderedAscending, .orderedSame]
+        )
+        else { return false }
+      case let .in(field, values):
+        guard let materialized = snapshot.values[field], !values.isEmpty else { return false }
+        guard materialized.values.contains(where: values.contains) else { return false }
       case let .isNull(field):
-        if snapshot.values[field] != nil { return false }
+        if let materialized = snapshot.values[field],
+          !materialized.values.allSatisfy({ $0 == .null })
+        {
+          return false
+        }
       }
     }
     return true
+  }
+
+  private func matchesComparison(
+    _ snapshot: InstantEntitySnapshot,
+    field: String,
+    value: InstantValue,
+    allowed: Set<ComparisonResult>
+  ) -> Bool {
+    guard let materialized = snapshot.values[field] else { return false }
+    return materialized.values.contains {
+      guard Self.canRangeCompare($0, value) else { return false }
+      return allowed.contains($0.compare(to: value))
+    }
+  }
+
+  private static func canRangeCompare(_ lhs: InstantValue, _ rhs: InstantValue) -> Bool {
+    switch (lhs, rhs) {
+    case (.string, .string), (.number, .number), (.date, .date):
+      return true
+    default:
+      return false
+    }
   }
 
   private static func tripleSortKey(_ triple: InstantTriple) -> [String] {

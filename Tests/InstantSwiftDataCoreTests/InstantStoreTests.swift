@@ -409,6 +409,168 @@ struct InstantStoreTests {
     expectNoDifference(filtered.map(\.id), ["item-10"])
   }
 
+  @Test
+  func queryFiltersSupportComparisonsInAndNullChecks() async throws {
+    let score = InstantAttribute(
+      id: "items/score",
+      namespace: "items",
+      name: "score",
+      valueType: .number,
+      isIndexed: true
+    )
+    let tag = InstantAttribute(
+      id: "items/tag",
+      namespace: "items",
+      name: "tag",
+      valueType: .string,
+      cardinality: .many,
+      isIndexed: true
+    )
+    let optional = InstantAttribute(
+      id: "items/optional",
+      namespace: "items",
+      name: "optional",
+      valueType: .string
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: [score, tag, optional]
+      )
+    )
+    let time = InstantTimestamp(milliseconds: 10)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-filter-items",
+        operations: [
+          .insert(.init(entityID: "item-1", attributeID: "items/score", value: .number(1), txID: "tx-filter-items", txTime: time)),
+          .insert(.init(entityID: "item-1", attributeID: "items/tag", value: .string("red"), txID: "tx-filter-items", txTime: time)),
+          .insert(.init(entityID: "item-2", attributeID: "items/score", value: .number(2), txID: "tx-filter-items", txTime: time)),
+          .insert(.init(entityID: "item-2", attributeID: "items/tag", value: .string("blue"), txID: "tx-filter-items", txTime: time)),
+          .insert(.init(entityID: "item-2", attributeID: "items/optional", value: .string("present"), txID: "tx-filter-items", txTime: time)),
+          .insert(.init(entityID: "item-3", attributeID: "items/score", value: .number(3), txID: "tx-filter-items", txTime: time)),
+          .insert(.init(entityID: "item-3", attributeID: "items/tag", value: .string("green"), txID: "tx-filter-items", txTime: time)),
+          .insert(.init(entityID: "item-4", attributeID: "items/score", value: .number(4), txID: "tx-filter-items", txTime: time)),
+          .insert(.init(entityID: "item-4", attributeID: "items/tag", value: .string("purple"), txID: "tx-filter-items", txTime: time)),
+          .insert(.init(entityID: "item-4", attributeID: "items/optional", value: .null, txID: "tx-filter-items", txTime: time)),
+        ]
+      ),
+      createdAt: time
+    )
+
+    let greaterThan = await runtime.query(
+      .init(
+        id: "items.gt",
+        namespace: "items",
+        filters: [.greaterThan(field: "score", value: .number(1))],
+        order: .init("score")
+      )
+    )
+    expectNoDifference(greaterThan.map(\.id), ["item-2", "item-3", "item-4"])
+
+    let greaterThanOrEqual = await runtime.query(
+      .init(
+        id: "items.gte",
+        namespace: "items",
+        filters: [.greaterThanOrEqual(field: "score", value: .number(2))],
+        order: .init("score")
+      )
+    )
+    expectNoDifference(greaterThanOrEqual.map(\.id), ["item-2", "item-3", "item-4"])
+
+    let lessThan = await runtime.query(
+      .init(
+        id: "items.lt",
+        namespace: "items",
+        filters: [.lessThan(field: "score", value: .number(3))],
+        order: .init("score")
+      )
+    )
+    expectNoDifference(lessThan.map(\.id), ["item-1", "item-2"])
+
+    let lessThanOrEqual = await runtime.query(
+      .init(
+        id: "items.lte",
+        namespace: "items",
+        filters: [.lessThanOrEqual(field: "score", value: .number(2))],
+        order: .init("score")
+      )
+    )
+    expectNoDifference(lessThanOrEqual.map(\.id), ["item-1", "item-2"])
+
+    let inFilter = await runtime.query(
+      .init(
+        id: "items.in",
+        namespace: "items",
+        filters: [.in(field: "tag", values: [.string("red"), .string("green")])],
+        order: .init("score")
+      )
+    )
+    expectNoDifference(inFilter.map(\.id), ["item-1", "item-3"])
+
+    let notEquals = await runtime.query(
+      .init(
+        id: "items.ne",
+        namespace: "items",
+        filters: [.notEquals(field: "tag", value: .string("blue"))],
+        order: .init("score")
+      )
+    )
+    expectNoDifference(notEquals.map(\.id), ["item-1", "item-3", "item-4"])
+
+    let isNull = await runtime.query(
+      .init(
+        id: "items.null",
+        namespace: "items",
+        filters: [.isNull(field: "optional")],
+        order: .init("score")
+      )
+    )
+    expectNoDifference(isNull.map(\.id), ["item-1", "item-3", "item-4"])
+
+    let mixedTypeComparison = await runtime.query(
+      .init(
+        id: "items.mixed-type-range",
+        namespace: "items",
+        filters: [.greaterThan(field: "tag", value: .number(1))],
+        order: .init("score")
+      )
+    )
+    expectNoDifference(mixedTypeComparison, [])
+  }
+
+  @Test
+  func rawNegativeLimitPlansDoNotTrapMaterialization() async throws {
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-negative-limit",
+        operations: TodoExample.createOperations(
+          id: "todo-negative-limit",
+          text: "negative limit",
+          createdAt: createdAt,
+          transactionID: "tx-negative-limit"
+        )
+      ),
+      createdAt: createdAt
+    )
+
+    var plan = TodoExample.query
+    plan.limit = -1
+
+    let snapshots = await runtime.query(plan)
+    expectNoDifference(snapshots, [])
+  }
+
   private func temporaryCacheURL() throws -> URL {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataTests-\(UUID().uuidString)")

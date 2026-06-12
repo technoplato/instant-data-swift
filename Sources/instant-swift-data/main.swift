@@ -98,7 +98,8 @@ struct InstantSwiftDataCLI {
       try await printTodos(context: context, output: output, event: "add", changedID: todoID)
 
     case "list":
-      try await printTodos(context: context, output: output, event: "list")
+      let query = try todoListQuery(arguments: arguments)
+      try await printTodos(context: context, output: output, event: "list", query: query)
 
     case "complete":
       guard let todoID = arguments.popFirstArgument() else {
@@ -126,7 +127,8 @@ struct InstantSwiftDataCLI {
       try await printTodos(context: context, output: output, event: "complete", changedID: todoID)
 
     case "refresh":
-      try await printTodos(context: context, output: output, event: "refresh")
+      let query = try todoListQuery(arguments: arguments)
+      try await printTodos(context: context, output: output, event: "refresh", query: query)
 
     default:
       throw CLIError("Unknown todos command: \(command)", exitCode: 64)
@@ -357,9 +359,10 @@ struct InstantSwiftDataCLI {
     context: CLIContext,
     output: OutputMode,
     event: String,
-    changedID: String? = nil
+    changedID: String? = nil,
+    query: InstantQueryPlan = TodoExample.query
   ) async throws {
-    let snapshots = await context.runtime.query(TodoExample.query)
+    let snapshots = await context.runtime.query(query)
     let todos = try TodoExample.decode(snapshots)
     let pending = await context.runtime.pendingMutations()
     let payload = TodosOutput(
@@ -423,9 +426,9 @@ struct InstantSwiftDataCLI {
       Commands:
         schema generate --example todos
         examples todos add "do the dishes" [--json|--jsonl]
-        examples todos list [--json|--jsonl]
+        examples todos list [--completed true|false] [--limit n] [--order asc|desc] [--json|--jsonl]
         examples todos complete <todo-id> [--json|--jsonl]
-        examples todos refresh [--json|--jsonl]
+        examples todos refresh [--completed true|false] [--limit n] [--order asc|desc] [--json|--jsonl]
         cache inspect [--json|--jsonl]
         outbox inspect [--json|--jsonl]
         outbox confirm <mutation-id> [--json|--jsonl]
@@ -436,6 +439,87 @@ struct InstantSwiftDataCLI {
         INSTANT_APP_ID           Logical app id recorded in output. Defaults to local-demo.
       """
     )
+  }
+
+  private static func todoListQuery(arguments: [String]) throws -> InstantQueryPlan {
+    var arguments = arguments
+    var completed: Bool?
+    var limit: Int?
+    var direction = InstantQuerySortDirection.ascending
+
+    while let option = arguments.popFirstArgument() {
+      switch option {
+      case "--completed":
+        guard let value = arguments.popFirstArgument(), let parsed = parseBool(value) else {
+          throw CLIError("Usage: instant-swift-data examples todos list --completed true|false", exitCode: 64)
+        }
+        completed = parsed
+
+      case "--limit":
+        guard let value = arguments.popFirstArgument(),
+          let parsed = Int(value),
+          parsed >= 0
+        else {
+          throw CLIError("Usage: instant-swift-data examples todos list --limit n", exitCode: 64)
+        }
+        limit = parsed
+
+      case "--order":
+        guard let value = arguments.popFirstArgument(), let parsed = parseSortDirection(value) else {
+          throw CLIError("Usage: instant-swift-data examples todos list --order asc|desc", exitCode: 64)
+        }
+        direction = parsed
+
+      default:
+        throw CLIError(
+          "Unknown todo list option: \(option). Usage: instant-swift-data examples todos list [--completed true|false] [--limit n] [--order asc|desc]",
+          exitCode: 64
+        )
+      }
+    }
+
+    var filters: [InstantQueryFilter] = []
+    var id = "examples.todos.list"
+    if let completed {
+      filters.append(.equals(field: "isCompleted", value: .bool(completed)))
+      id += ".completed-\(completed)"
+    }
+    if direction != .ascending {
+      id += ".order-\(direction.rawValue)"
+    }
+    if let limit {
+      id += ".limit-\(limit)"
+    }
+
+    return InstantQueryPlan(
+      id: id,
+      namespace: TodoExample.namespace,
+      filters: filters,
+      order: InstantQueryOrder("createdAt", direction),
+      limit: limit
+    )
+  }
+
+  private static func parseBool(_ value: String) -> Bool? {
+    switch value.lowercased() {
+    case "true", "yes", "1":
+      return true
+    case "false", "no", "0":
+      return false
+    default:
+      return nil
+    }
+  }
+
+  private static func parseSortDirection(_ value: String) -> InstantQuerySortDirection? {
+    switch value.lowercased() {
+    case "asc", "ascending":
+      return .ascending
+    case "desc", "descending":
+      return .descending
+    default:
+      return nil
+    }
   }
 
   private static var outboxUsage: String {

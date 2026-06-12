@@ -14,13 +14,40 @@ struct TypedAPITests {
       .limit(10)
 
     expectNoDifference(query.plan.namespace, "todos")
-    expectNoDifference(query.plan.id, "todos|where:isCompleted==bool:false|order:createdAt:descending|limit:10")
     expectNoDifference(query.plan.filters, [.equals(field: "isCompleted", value: .bool(false))])
     expectNoDifference(query.plan.order, InstantQueryOrder("createdAt", .descending))
     expectNoDifference(query.plan.limit, 10)
 
     let initializedWithLimit = InstantEntityQuery<TypedTodo>(limit: 2)
     expectNoDifference(initializedWithLimit.plan.limit, 2)
+
+    let comparisonQuery = TypedTodo.query
+      .where(TypedTodo.createdAt >= Date(timeIntervalSince1970: 1_700_000_000))
+      .where(TypedTodo.text != "Archived")
+      .where(TypedTodo.text.isIn(["Open", "Queued"]))
+
+    expectNoDifference(
+      comparisonQuery.plan.filters,
+      [
+        .greaterThanOrEqual(
+          field: "createdAt",
+          value: .date(Date(timeIntervalSince1970: 1_700_000_000))
+        ),
+        .notEquals(field: "text", value: .string("Archived")),
+        .in(field: "text", values: [.string("Open"), .string("Queued")]),
+      ]
+    )
+
+    let delimiterHeavyQuery = TypedTodo.query
+      .where(TypedTodo.text.isIn(["a", "b"]))
+    let singleValueQuery = TypedTodo.query
+      .where(TypedTodo.text.isIn(["a,string:b"]))
+    #expect(delimiterHeavyQuery.plan.id != singleValueQuery.plan.id)
+
+    let nonFiniteQuery = InstantEntityQuery<TypedTodo>(
+      filters: [.equals(field: "score", value: .number(.infinity))]
+    )
+    #expect(nonFiniteQuery.plan.id.hasPrefix("instant-query:"))
   }
 
   @Test
