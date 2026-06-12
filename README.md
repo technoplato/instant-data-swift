@@ -11,6 +11,7 @@ the same SQLite cache and outbox path used by the core runtime.
 ## Local Todo CLI Demo
 
 Use `INSTANT_SWIFT_DATA_HOME` to keep the demo cache isolated:
+The completion step uses `jq` to extract the created todo ID from JSON output.
 
 ```bash
 export INSTANT_SWIFT_DATA_HOME="$(mktemp -d)"
@@ -19,7 +20,8 @@ swift run instant-swift-data examples todos add "do the dishes"
 swift run instant-swift-data examples todos list
 swift run instant-swift-data examples todos list --completed false --offset 0 --limit 10 --order desc
 swift run instant-swift-data examples todos list --search dishes
-swift run instant-swift-data examples todos complete <todo-id>
+TODO_ID="$(swift run instant-swift-data examples todos add "ship the demo" --json | jq -r '.changedID')"
+swift run instant-swift-data examples todos complete "$TODO_ID"
 swift run instant-swift-data examples todos refresh
 ```
 
