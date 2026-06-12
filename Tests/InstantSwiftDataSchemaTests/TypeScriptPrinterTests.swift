@@ -3,7 +3,7 @@ import InstantSwiftDataCore
 import InstantSwiftDataSchema
 import Testing
 
-@Suite
+@Suite(.serialized)
 struct TypeScriptPrinterTests {
   private static let linkedTodoDocument = InstantSchemaDocument(
     entities: [
@@ -95,6 +95,44 @@ struct TypeScriptPrinterTests {
               label: "todos",
             },
           },
+        },
+      });
+
+      """
+    )
+  }
+
+  @Test
+  func schemaPrinterEmitsOptionalAttributes() throws {
+    let document = InstantSchemaDocument(
+      entities: [
+        InstantEntitySchema(
+          typeName: "Profile",
+          namespace: "profiles",
+          attributes: [
+            InstantAttribute(
+              id: "profiles/bio",
+              namespace: "profiles",
+              name: "bio",
+              valueType: .string,
+              isRequired: false,
+              isIndexed: true
+            )
+          ]
+        )
+      ]
+    )
+
+    expectNoDifference(
+      try TypeScriptSchemaPrinter().printSchema(document),
+      """
+      import { i } from '@instantdb/core';
+
+      export default i.schema({
+        entities: {
+          profiles: i.entity({
+            bio: i.string().optional().indexed(),
+          }),
         },
       });
 
@@ -292,6 +330,7 @@ struct TypeScriptPrinterTests {
           namespace: "users",
           name: "profile",
           valueType: .ref,
+          isRequired: false,
           cardinality: .one,
           isIndexed: true,
           isUnique: true,
@@ -299,6 +338,42 @@ struct TypeScriptPrinterTests {
           reverseIdentity: "profiles/user",
           linkNamespace: "profiles",
           onDeleteReverse: .cascade
+        )
+      ]
+    )
+  }
+
+  @Test
+  func linkSchemaDerivesOptionalCoreRefAttributes() {
+    let link = InstantLinkSchema(
+      name: "postsAuthors",
+      forward: InstantLinkEndpoint(
+        namespace: "posts",
+        cardinality: .one,
+        label: "author"
+      ),
+      reverse: InstantLinkEndpoint(
+        namespace: "profiles",
+        cardinality: .many,
+        label: "posts"
+      ),
+      isRequired: false
+    )
+
+    expectNoDifference(
+      link.attributes,
+      [
+        InstantAttribute(
+          id: "posts/author",
+          namespace: "posts",
+          name: "author",
+          valueType: .ref,
+          isRequired: false,
+          cardinality: .one,
+          isIndexed: true,
+          forwardIdentity: "posts/author",
+          reverseIdentity: "profiles/posts",
+          linkNamespace: "profiles"
         )
       ]
     )
@@ -315,6 +390,7 @@ struct TypeScriptPrinterTests {
           "blog-posts": i.entity({
             "published-at": i.date().indexed(),
             slug: i.string().unique().indexed(),
+            summary: i.string().optional().indexed(),
             metadata: i.json(),
           }),
         },
@@ -349,6 +425,14 @@ struct TypeScriptPrinterTests {
               valueType: .string,
               isIndexed: true,
               isUnique: true
+            ),
+            InstantAttribute(
+              id: "blog-posts/summary",
+              namespace: "blog-posts",
+              name: "summary",
+              valueType: .string,
+              isRequired: false,
+              isIndexed: true
             ),
           ]
         )
@@ -426,7 +510,7 @@ struct TypeScriptPrinterTests {
         export default i.schema({
           entities: {
             todos: i.entity({
-              text: i.string().optional().indexed(),
+              text: i.string().clientRequired().indexed(),
             }),
           },
         });
@@ -439,7 +523,7 @@ struct TypeScriptPrinterTests {
         .unsupportedAttributeExpression(
           namespace: "todos",
           attribute: "text",
-          expression: "i.string().optional().indexed()"
+          expression: "i.string().clientRequired().indexed()"
         )
       )
     } catch {

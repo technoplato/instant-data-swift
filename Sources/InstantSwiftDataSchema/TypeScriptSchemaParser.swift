@@ -355,6 +355,7 @@ public struct TypeScriptSchemaParser: Sendable {
       namespace: namespace,
       name: name,
       valueType: parsedExpression.valueType,
+      isRequired: parsedExpression.isRequired,
       isIndexed: parsedExpression.isIndexed,
       isUnique: parsedExpression.isUnique
     )
@@ -363,6 +364,7 @@ public struct TypeScriptSchemaParser: Sendable {
 
 private struct ParsedAttributeExpression {
   var valueType: InstantValueType
+  var isRequired: Bool
   var isIndexed: Bool
   var isUnique: Bool
 
@@ -382,12 +384,16 @@ private struct ParsedAttributeExpression {
     else { return nil }
 
     self.valueType = scalar.1
+    self.isRequired = true
     self.isIndexed = false
     self.isUnique = false
 
     var remainder = String(scalarString.dropFirst(scalar.0.count))
     while !remainder.isEmpty {
-      if remainder.hasPrefix(".indexed()") {
+      if remainder.hasPrefix(".optional()") {
+        self.isRequired = false
+        remainder.removeFirst(".optional()".count)
+      } else if remainder.hasPrefix(".indexed()") {
         self.isIndexed = true
         remainder.removeFirst(".indexed()".count)
       } else if remainder.hasPrefix(".unique()") {

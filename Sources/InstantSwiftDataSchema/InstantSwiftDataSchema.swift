@@ -61,6 +61,7 @@ public struct InstantLinkSchema: Hashable, Codable, Sendable, Identifiable {
         namespace: forward.namespace,
         name: forward.label,
         valueType: .ref,
+        isRequired: isRequired == true,
         cardinality: forward.cardinality,
         isIndexed: true,
         isUnique: reverse.cardinality == .one,
@@ -440,6 +441,9 @@ public struct TypeScriptSchemaPrinter: Sendable {
       }
 
     var expression = scalar
+    if !attribute.isRequired {
+      expression += ".optional()"
+    }
     if attribute.isIndexed {
       expression += ".indexed()"
     }

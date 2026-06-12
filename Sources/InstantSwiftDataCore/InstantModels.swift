@@ -124,6 +124,7 @@ public struct InstantAttribute: Hashable, Codable, Sendable, Identifiable {
   public var namespace: String
   public var name: String
   public var valueType: InstantValueType
+  public var isRequired: Bool
   public var cardinality: InstantCardinality
   public var isIndexed: Bool
   public var isUnique: Bool
@@ -139,6 +140,7 @@ public struct InstantAttribute: Hashable, Codable, Sendable, Identifiable {
     namespace: String,
     name: String,
     valueType: InstantValueType,
+    isRequired: Bool = true,
     cardinality: InstantCardinality = .one,
     isIndexed: Bool = false,
     isUnique: Bool = false,
@@ -153,6 +155,7 @@ public struct InstantAttribute: Hashable, Codable, Sendable, Identifiable {
     self.namespace = namespace
     self.name = name
     self.valueType = valueType
+    self.isRequired = isRequired
     self.cardinality = cardinality
     self.isIndexed = isIndexed
     self.isUnique = isUnique
@@ -171,6 +174,7 @@ extension InstantAttribute {
     case namespace
     case name
     case valueType
+    case isRequired
     case cardinality
     case isIndexed
     case isUnique
@@ -189,6 +193,7 @@ extension InstantAttribute {
       namespace: try container.decode(String.self, forKey: .namespace),
       name: try container.decode(String.self, forKey: .name),
       valueType: try container.decode(InstantValueType.self, forKey: .valueType),
+      isRequired: try container.decodeIfPresent(Bool.self, forKey: .isRequired) ?? true,
       cardinality: try container.decodeIfPresent(InstantCardinality.self, forKey: .cardinality)
         ?? .one,
       isIndexed: try container.decodeIfPresent(Bool.self, forKey: .isIndexed) ?? false,
@@ -209,6 +214,7 @@ extension InstantAttribute {
     try container.encode(namespace, forKey: .namespace)
     try container.encode(name, forKey: .name)
     try container.encode(valueType, forKey: .valueType)
+    try container.encode(isRequired, forKey: .isRequired)
     try container.encode(cardinality, forKey: .cardinality)
     try container.encode(isIndexed, forKey: .isIndexed)
     try container.encode(isUnique, forKey: .isUnique)
