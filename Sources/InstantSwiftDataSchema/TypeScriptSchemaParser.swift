@@ -19,19 +19,25 @@ public struct ParsedInstantEntitySchema: Hashable, Codable, Sendable, Identifiab
 public struct ParsedInstantSchemaDocument: Hashable, Codable, Sendable {
   public var entities: [ParsedInstantEntitySchema]
   public var links: [InstantLinkSchema]
+  public var rooms: [InstantRoomSchema]
 
   public init(
     entities: [ParsedInstantEntitySchema],
-    links: [InstantLinkSchema] = []
+    links: [InstantLinkSchema] = [],
+    rooms: [InstantRoomSchema] = []
   ) {
     self.entities = entities.sorted { $0.namespace < $1.namespace }
     self.links = links.sorted { $0.name < $1.name }
+    self.rooms = rooms
+      .map { $0.normalized }
+      .sorted { $0.name < $1.name }
   }
 
   public init(_ document: InstantSchemaDocument) {
     self.init(
       entities: document.entities.map(ParsedInstantEntitySchema.init),
-      links: document.links
+      links: document.links,
+      rooms: document.rooms
     )
   }
 }
@@ -47,6 +53,8 @@ public enum TypeScriptSchemaParseError: Error, Equatable, Sendable, CustomString
   case unsupportedLinkEndpointKey(name: String, endpoint: String, key: String)
   case unsupportedLinkEndpointValue(name: String, endpoint: String, key: String, value: String)
   case invalidLinkCascadeEndpoint(link: String, endpoint: String, cardinality: InstantCardinality)
+  case missingRoomPresence(room: String)
+  case unsupportedRoomKey(room: String, key: String)
 
   public var description: String {
     switch self {
@@ -70,6 +78,10 @@ public enum TypeScriptSchemaParseError: Error, Equatable, Sendable, CustomString
       "Unsupported \(endpoint) endpoint value for link '\(name)' key '\(key)': \(value)"
     case .invalidLinkCascadeEndpoint(let link, let endpoint, let cardinality):
       "Link '\(link)' \(endpoint) endpoint has invalid cascade delete for cardinality '\(cardinality.rawValue)'. Cascade delete is only supported on has: \"one\" links."
+    case .missingRoomPresence(let room):
+      "Room '\(room)' is missing its presence schema."
+    case .unsupportedRoomKey(let room, let key):
+      "Unsupported room schema key for '\(room)': \(key)"
     }
   }
 }
@@ -91,7 +103,7 @@ public struct TypeScriptSchemaParser: Sendable {
       context: "schema"
     )
     let entries = try ObjectEntryParser.parseObjectEntries(in: schemaBody)
-    for entry in entries where entry.key != "entities" && entry.key != "links" {
+    for entry in entries where entry.key != "entities" && entry.key != "links" && entry.key != "rooms" {
       throw TypeScriptSchemaParseError.unsupportedTopLevelKey(entry.key)
     }
     guard let entitiesExpression = entries.lastValue(for: "entities")
@@ -117,7 +129,14 @@ public struct TypeScriptSchemaParser: Sendable {
       links = []
     }
 
-    return ParsedInstantSchemaDocument(entities: entities, links: links)
+    let rooms: [InstantRoomSchema]
+    if let roomsExpression = entries.lastValue(for: "rooms") {
+      rooms = try parseRooms(expression: roomsExpression)
+    } else {
+      rooms = []
+    }
+
+    return ParsedInstantSchemaDocument(entities: entities, links: links, rooms: rooms)
   }
 
   private func parseEntity(
@@ -358,6 +377,99 @@ public struct TypeScriptSchemaParser: Sendable {
       isRequired: parsedExpression.isRequired,
       isIndexed: parsedExpression.isIndexed,
       isUnique: parsedExpression.isUnique
+    )
+  }
+
+  private func parseRooms(expression: String) throws -> [InstantRoomSchema] {
+    let expression = expression.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard try ObjectEntryParser.isExactObjectExpression(expression) else {
+      throw TypeScriptSchemaParseError.malformedObject("Expected rooms object.")
+    }
+    let roomsBody = try ObjectEntryParser.extractFirstObjectBody(
+      from: expression,
+      context: "rooms"
+    )
+
+    return try ObjectEntryParser.parseObjectEntries(in: roomsBody)
+      .map { room in
+        try parseRoom(name: room.key, expression: room.value)
+      }
+      .sorted { $0.name < $1.name }
+  }
+
+  private func parseRoom(
+    name: String,
+    expression: String
+  ) throws -> InstantRoomSchema {
+    let expression = expression.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard try ObjectEntryParser.isExactObjectExpression(expression) else {
+      throw TypeScriptSchemaParseError.unsupportedRoomKey(room: name, key: "initializer")
+    }
+    let body = try ObjectEntryParser.extractFirstObjectBody(
+      from: expression,
+      context: "room \(name)"
+    )
+    let entries = try ObjectEntryParser.parseObjectEntries(in: body)
+    for entry in entries where entry.key != "presence" && entry.key != "topics" {
+      throw TypeScriptSchemaParseError.unsupportedRoomKey(room: name, key: entry.key)
+    }
+
+    guard let presenceExpression = entries.lastValue(for: "presence") else {
+      throw TypeScriptSchemaParseError.missingRoomPresence(room: name)
+    }
+
+    let presence = try parseRoomPayload(
+      namespace: "rooms/\(name)/presence",
+      expression: presenceExpression
+    )
+
+    let topics: [InstantRoomTopicSchema]
+    if let topicsExpression = entries.lastValue(for: "topics") {
+      topics = try parseRoomTopics(room: name, expression: topicsExpression)
+    } else {
+      topics = []
+    }
+
+    return InstantRoomSchema(name: name, presence: presence, topics: topics)
+  }
+
+  private func parseRoomTopics(
+    room: String,
+    expression: String
+  ) throws -> [InstantRoomTopicSchema] {
+    let expression = expression.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard try ObjectEntryParser.isExactObjectExpression(expression) else {
+      throw TypeScriptSchemaParseError.unsupportedRoomKey(room: room, key: "topics")
+    }
+    let body = try ObjectEntryParser.extractFirstObjectBody(
+      from: expression,
+      context: "room \(room) topics"
+    )
+    return try ObjectEntryParser.parseObjectEntries(in: body)
+      .map { topic in
+        InstantRoomTopicSchema(
+          name: topic.key,
+          payload: try parseRoomPayload(
+            namespace: "rooms/\(room)/topics/\(topic.key)",
+            expression: topic.value
+          )
+        )
+      }
+      .sorted { $0.name < $1.name }
+  }
+
+  private func parseRoomPayload(
+    namespace: String,
+    expression: String
+  ) throws -> InstantRoomPayloadSchema {
+    guard try ObjectEntryParser.isExactEntityExpression(expression) else {
+      throw TypeScriptSchemaParseError.unsupportedEntityExpression(
+        namespace: namespace,
+        expression: expression.trimmingCharacters(in: .whitespacesAndNewlines)
+      )
+    }
+    return InstantRoomPayloadSchema(
+      attributes: try parseEntity(namespace: namespace, expression: expression).attributes
     )
   }
 }
@@ -870,6 +982,35 @@ private struct ParsedAllowBlock {
   var unlink: [String: String]
 }
 
+extension InstantRoomSchema {
+  fileprivate var normalized: Self {
+    InstantRoomSchema(
+      name: name,
+      presence: presence.normalized,
+      topics: topics
+        .map { $0.normalized }
+        .sorted { $0.name < $1.name }
+    )
+  }
+}
+
+extension InstantRoomTopicSchema {
+  fileprivate var normalized: Self {
+    InstantRoomTopicSchema(
+      name: name,
+      payload: payload.normalized
+    )
+  }
+}
+
+extension InstantRoomPayloadSchema {
+  fileprivate var normalized: Self {
+    InstantRoomPayloadSchema(
+      attributes: attributes.sorted { $0.name < $1.name }
+    )
+  }
+}
+
 extension [ObjectEntryParser.Entry] {
   fileprivate func lastValue(for key: String) -> String? {
     self.reversed().first { $0.key == key }?.value
@@ -956,6 +1097,33 @@ private enum ObjectEntryParser {
     }
     let close = try matchingBrace(in: source, open: open)
     return String(source[source.index(after: open)..<close])
+  }
+
+  fileprivate static func isExactObjectExpression(_ source: String) throws -> Bool {
+    var index = source.startIndex
+    skipTrivia(in: source, index: &index)
+    guard index < source.endIndex, source[index] == "{" else { return false }
+    let close = try matchingBrace(in: source, open: index)
+    index = source.index(after: close)
+    skipTrivia(in: source, index: &index)
+    return index == source.endIndex
+  }
+
+  fileprivate static func isExactEntityExpression(_ source: String) throws -> Bool {
+    var index = source.startIndex
+    skipTrivia(in: source, index: &index)
+    guard index < source.endIndex else { return false }
+    guard source[index...].hasPrefix("i.entity(") else { return false }
+    index = source.index(index, offsetBy: "i.entity(".count)
+    skipTrivia(in: source, index: &index)
+    guard index < source.endIndex, source[index] == "{" else { return false }
+    let close = try matchingBrace(in: source, open: index)
+    index = source.index(after: close)
+    skipTrivia(in: source, index: &index)
+    guard index < source.endIndex, source[index] == ")" else { return false }
+    source.formIndex(after: &index)
+    skipTrivia(in: source, index: &index)
+    return index == source.endIndex
   }
 
   fileprivate static func parseArrayValues(

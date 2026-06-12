@@ -41,6 +41,47 @@ struct TypeScriptPrinterTests {
     ]
   )
 
+  private static let roomDocument = InstantSchemaDocument(
+    entities: [InstantSchemaExamples.todos],
+    rooms: [
+      InstantRoomSchema(
+        name: "chat",
+        presence: InstantRoomPayloadSchema(
+          attributes: [
+            InstantAttribute(
+              id: "rooms/chat/presence/name",
+              namespace: "rooms/chat/presence",
+              name: "name",
+              valueType: .string
+            ),
+            InstantAttribute(
+              id: "rooms/chat/presence/status",
+              namespace: "rooms/chat/presence",
+              name: "status",
+              valueType: .string,
+              isRequired: false
+            ),
+          ]
+        ),
+        topics: [
+          InstantRoomTopicSchema(
+            name: "sendEmoji",
+            payload: InstantRoomPayloadSchema(
+              attributes: [
+                InstantAttribute(
+                  id: "rooms/chat/topics/sendEmoji/emoji",
+                  namespace: "rooms/chat/topics/sendEmoji",
+                  name: "emoji",
+                  valueType: .string
+                )
+              ]
+            )
+          )
+        ]
+      )
+    ]
+  )
+
   @Test
   func schemaPrinterEmitsTodoExample() throws {
     expectNoDifference(
@@ -141,6 +182,40 @@ struct TypeScriptPrinterTests {
   }
 
   @Test
+  func schemaPrinterEmitsRooms() throws {
+    expectNoDifference(
+      try TypeScriptSchemaPrinter().printSchema(Self.roomDocument),
+      """
+      import { i } from '@instantdb/core';
+
+      export default i.schema({
+        entities: {
+          todos: i.entity({
+            createdAt: i.date().indexed(),
+            isCompleted: i.boolean().indexed(),
+            text: i.string().indexed(),
+          }),
+        },
+        rooms: {
+          chat: {
+            presence: i.entity({
+              name: i.string(),
+              status: i.string().optional(),
+            }),
+            topics: {
+              sendEmoji: i.entity({
+                emoji: i.string(),
+              }),
+            },
+          },
+        },
+      });
+
+      """
+    )
+  }
+
+  @Test
   func schemaParserRoundTripsGeneratedTodoExample() throws {
     let printed = try TypeScriptSchemaPrinter().printSchema([InstantSchemaExamples.todos])
     let parsed = try TypeScriptSchemaParser().parse(printed)
@@ -161,6 +236,87 @@ struct TypeScriptPrinterTests {
     expectNoDifference(
       parsed,
       ParsedInstantSchemaDocument(Self.linkedTodoDocument)
+    )
+  }
+
+  @Test
+  func schemaParserRoundTripsGeneratedRooms() throws {
+    let printed = try TypeScriptSchemaPrinter().printSchema(Self.roomDocument)
+    let parsed = try TypeScriptSchemaParser().parseDocument(printed)
+
+    expectNoDifference(
+      parsed,
+      ParsedInstantSchemaDocument(Self.roomDocument)
+    )
+  }
+
+  @Test
+  func schemaParserRoundTripsUnsortedRooms() throws {
+    let document = InstantSchemaDocument(
+      entities: [InstantSchemaExamples.todos],
+      rooms: [
+        InstantRoomSchema(
+          name: "chat",
+          presence: InstantRoomPayloadSchema(
+            attributes: [
+              InstantAttribute(
+                id: "rooms/chat/presence/status",
+                namespace: "rooms/chat/presence",
+                name: "status",
+                valueType: .string
+              ),
+              InstantAttribute(
+                id: "rooms/chat/presence/name",
+                namespace: "rooms/chat/presence",
+                name: "name",
+                valueType: .string
+              ),
+            ]
+          ),
+          topics: [
+            InstantRoomTopicSchema(
+              name: "zTopic",
+              payload: InstantRoomPayloadSchema(
+                attributes: [
+                  InstantAttribute(
+                    id: "rooms/chat/topics/zTopic/z",
+                    namespace: "rooms/chat/topics/zTopic",
+                    name: "z",
+                    valueType: .string
+                  )
+                ]
+              )
+            ),
+            InstantRoomTopicSchema(
+              name: "aTopic",
+              payload: InstantRoomPayloadSchema(
+                attributes: [
+                  InstantAttribute(
+                    id: "rooms/chat/topics/aTopic/z",
+                    namespace: "rooms/chat/topics/aTopic",
+                    name: "z",
+                    valueType: .string
+                  ),
+                  InstantAttribute(
+                    id: "rooms/chat/topics/aTopic/a",
+                    namespace: "rooms/chat/topics/aTopic",
+                    name: "a",
+                    valueType: .string
+                  ),
+                ]
+              )
+            ),
+          ]
+        )
+      ]
+    )
+
+    let printed = try TypeScriptSchemaPrinter().printSchema(document)
+    let parsed = try TypeScriptSchemaParser().parseDocument(printed)
+
+    expectNoDifference(
+      parsed,
+      ParsedInstantSchemaDocument(document)
     )
   }
 
@@ -594,13 +750,227 @@ struct TypeScriptPrinterTests {
               text: i.string().indexed(),
             }),
           },
-          rooms: {},
+          storage: {},
         });
         """
       )
       #expect(Bool(false), "Expected parser to reject unsupported top-level schema keys.")
     } catch let error as TypeScriptSchemaParseError {
-      expectNoDifference(error, .unsupportedTopLevelKey("rooms"))
+      expectNoDifference(error, .unsupportedTopLevelKey("storage"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
+  func schemaParserRejectsRoomsWithoutPresence() {
+    do {
+      _ = try TypeScriptSchemaParser().parseDocument(
+        """
+        export default i.schema({
+          entities: {
+            todos: i.entity({
+              text: i.string().indexed(),
+            }),
+          },
+          rooms: {
+            chat: {
+              topics: {
+                sendEmoji: i.entity({
+                  emoji: i.string(),
+                }),
+              },
+            },
+          },
+        });
+        """
+      )
+      #expect(Bool(false), "Expected parser to reject rooms without presence.")
+    } catch let error as TypeScriptSchemaParseError {
+      expectNoDifference(error, .missingRoomPresence(room: "chat"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
+  func schemaParserRejectsWrappedRoomContainers() {
+    do {
+      _ = try TypeScriptSchemaParser().parseDocument(
+        """
+        export default i.schema({
+          entities: {
+            todos: i.entity({
+              text: i.string().indexed(),
+            }),
+          },
+          rooms: {
+            chat: makeRoom({
+              presence: i.entity({}),
+            }),
+          },
+        });
+        """
+      )
+      #expect(Bool(false), "Expected parser to reject wrapped room definitions.")
+    } catch let error as TypeScriptSchemaParseError {
+      expectNoDifference(error, .unsupportedRoomKey(room: "chat", key: "initializer"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      _ = try TypeScriptSchemaParser().parseDocument(
+        """
+        export default i.schema({
+          entities: {
+            todos: i.entity({
+              text: i.string().indexed(),
+            }),
+          },
+          rooms: {
+            chat: {
+              presence: i.entity({}),
+              topics: makeTopics({
+                sendEmoji: i.entity({
+                  emoji: i.string(),
+                }),
+              }),
+            },
+          },
+        });
+        """
+      )
+      #expect(Bool(false), "Expected parser to reject wrapped topics definitions.")
+    } catch let error as TypeScriptSchemaParseError {
+      expectNoDifference(error, .unsupportedRoomKey(room: "chat", key: "topics"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
+  func schemaParserRejectsTrailingRoomExpressions() {
+    do {
+      _ = try TypeScriptSchemaParser().parseDocument(
+        """
+        export default i.schema({
+          entities: {
+            todos: i.entity({
+              text: i.string().indexed(),
+            }),
+          },
+          rooms: {
+            chat: {
+              presence: i.entity({}),
+            },
+          } && {
+            chat: {
+              presence: i.entity({
+                different: i.string(),
+              }),
+            },
+          },
+        });
+        """
+      )
+      #expect(Bool(false), "Expected parser to reject trailing top-level rooms expressions.")
+    } catch let error as TypeScriptSchemaParseError {
+      expectNoDifference(error, .malformedObject("Expected rooms object."))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      _ = try TypeScriptSchemaParser().parseDocument(
+        """
+        export default i.schema({
+          entities: {
+            todos: i.entity({
+              text: i.string().indexed(),
+            }),
+          },
+          rooms: {
+            chat: {
+              presence: i.entity({}),
+            } && {
+              presence: i.entity({
+                different: i.string(),
+              }),
+            },
+          },
+        });
+        """
+      )
+      #expect(Bool(false), "Expected parser to reject trailing room definition expressions.")
+    } catch let error as TypeScriptSchemaParseError {
+      expectNoDifference(error, .unsupportedRoomKey(room: "chat", key: "initializer"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      _ = try TypeScriptSchemaParser().parseDocument(
+        """
+        export default i.schema({
+          entities: {
+            todos: i.entity({
+              text: i.string().indexed(),
+            }),
+          },
+          rooms: {
+            chat: {
+              presence: i.entity({}),
+              topics: {
+                sendEmoji: i.entity({
+                  emoji: i.string(),
+                }),
+              } && {},
+            },
+          },
+        });
+        """
+      )
+      #expect(Bool(false), "Expected parser to reject trailing topics expressions.")
+    } catch let error as TypeScriptSchemaParseError {
+      expectNoDifference(error, .unsupportedRoomKey(room: "chat", key: "topics"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      _ = try TypeScriptSchemaParser().parseDocument(
+        """
+        export default i.schema({
+          entities: {
+            todos: i.entity({
+              text: i.string().indexed(),
+            }),
+          },
+          rooms: {
+            chat: {
+              presence: i.entity({}) && i.entity({
+                different: i.string(),
+              }),
+            },
+          },
+        });
+        """
+      )
+      #expect(Bool(false), "Expected parser to reject trailing room payload expressions.")
+    } catch let error as TypeScriptSchemaParseError {
+      expectNoDifference(
+        error,
+        .unsupportedEntityExpression(
+          namespace: "rooms/chat/presence",
+          expression: """
+            i.entity({}) && i.entity({
+                    different: i.string(),
+                  })
+            """
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+      )
     } catch {
       #expect(Bool(false), "Unexpected error: \(error)")
     }

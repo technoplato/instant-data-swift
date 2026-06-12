@@ -21,17 +21,59 @@ public struct InstantEntitySchema: Hashable, Codable, Sendable, Identifiable {
 public struct InstantSchemaDocument: Hashable, Codable, Sendable {
   public var entities: [InstantEntitySchema]
   public var links: [InstantLinkSchema]
+  public var rooms: [InstantRoomSchema]
 
   public init(
     entities: [InstantEntitySchema],
-    links: [InstantLinkSchema] = []
+    links: [InstantLinkSchema] = [],
+    rooms: [InstantRoomSchema] = []
   ) {
     self.entities = entities
     self.links = links
+    self.rooms = rooms
   }
 
   public var attributes: [InstantAttribute] {
     entities.flatMap(\.attributes) + links.flatMap(\.attributes)
+  }
+}
+
+public struct InstantRoomSchema: Hashable, Codable, Sendable, Identifiable {
+  public var id: String { name }
+  public var name: String
+  public var presence: InstantRoomPayloadSchema
+  public var topics: [InstantRoomTopicSchema]
+
+  public init(
+    name: String,
+    presence: InstantRoomPayloadSchema,
+    topics: [InstantRoomTopicSchema] = []
+  ) {
+    self.name = name
+    self.presence = presence
+    self.topics = topics
+  }
+}
+
+public struct InstantRoomTopicSchema: Hashable, Codable, Sendable, Identifiable {
+  public var id: String { name }
+  public var name: String
+  public var payload: InstantRoomPayloadSchema
+
+  public init(
+    name: String,
+    payload: InstantRoomPayloadSchema
+  ) {
+    self.name = name
+    self.payload = payload
+  }
+}
+
+public struct InstantRoomPayloadSchema: Hashable, Codable, Sendable {
+  public var attributes: [InstantAttribute]
+
+  public init(attributes: [InstantAttribute] = []) {
+    self.attributes = attributes
   }
 }
 
@@ -369,12 +411,59 @@ public struct TypeScriptSchemaPrinter: Sendable {
       lines.append("  },")
     }
 
+    if !document.rooms.isEmpty {
+      lines.append("  rooms: {")
+      for room in document.rooms.sorted(by: { $0.name < $1.name }) {
+        lines.append("    \(TypeScriptPrinterSupport.propertyKey(room.name)): {")
+        appendEntityExpression(
+          to: &lines,
+          name: "presence",
+          attributes: room.presence.attributes,
+          indentation: "      "
+        )
+        if !room.topics.isEmpty {
+          lines.append("      topics: {")
+          for topic in room.topics.sorted(by: { $0.name < $1.name }) {
+            appendEntityExpression(
+              to: &lines,
+              name: topic.name,
+              attributes: topic.payload.attributes,
+              indentation: "        "
+            )
+          }
+          lines.append("      },")
+        }
+        lines.append("    },")
+      }
+      lines.append("  },")
+    }
+
     lines.append(contentsOf: [
       "});",
       "",
     ])
 
     return lines.joined(separator: "\n")
+  }
+
+  private func appendEntityExpression(
+    to lines: inout [String],
+    name: String,
+    attributes: [InstantAttribute],
+    indentation: String
+  ) {
+    if attributes.isEmpty {
+      lines.append("\(indentation)\(TypeScriptPrinterSupport.propertyKey(name)): i.entity({}),")
+      return
+    }
+
+    lines.append("\(indentation)\(TypeScriptPrinterSupport.propertyKey(name)): i.entity({")
+    for attribute in attributes.sorted(by: { $0.name < $1.name }) {
+      lines.append(
+        "\(indentation)  \(TypeScriptPrinterSupport.propertyKey(attribute.name)): \(typeExpression(for: attribute)),"
+      )
+    }
+    lines.append("\(indentation)}),")
   }
 
   private func validate(_ document: InstantSchemaDocument) throws {
