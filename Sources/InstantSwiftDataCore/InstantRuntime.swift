@@ -25,6 +25,8 @@ public struct InstantRuntimeConfiguration: Sendable {
 }
 
 public final class InstantRuntime: Sendable {
+  public static let selectedAppIDMetadataKey = "cli.selected_app_id"
+
   public let configuration: InstantRuntimeConfiguration
   public let store: InstantStore
   public let persistence: SQLitePersistenceStore
@@ -160,6 +162,35 @@ public final class InstantRuntime: Sendable {
     try await persistence.loadQueryCache()
   }
 
+  public func selectedAppID() async throws -> String? {
+    try await persistence.loadMetadataValue(key: Self.selectedAppIDMetadataKey)
+  }
+
+  public func saveSelectedAppID(_ appID: String) async throws -> String {
+    let appID = appID.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !appID.isEmpty else {
+      throw validationFailed(
+        operation: "select app",
+        message: "App id must not be empty.",
+        recovery: "Pass an app id, or set INSTANT_APP_ID for a temporary override."
+      )
+    }
+
+    await operationGate.enter()
+    do {
+      try await persistence.saveMetadataValue(
+        appID,
+        key: Self.selectedAppIDMetadataKey,
+        updatedAt: configuration.now()
+      )
+      await operationGate.leave()
+      return appID
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
   public func authSession() async throws -> InstantAuthSession? {
     try await persistence.loadAuthSession(key: authSessionKey)
   }
@@ -283,6 +314,19 @@ public final class InstantRuntime: Sendable {
       localID: id,
       message: "No pending or historical outbox mutation exists for id '\(id)'.",
       recovery: "Run 'instant-swift-data outbox inspect' to list known mutation ids."
+    )
+  }
+
+  private func validationFailed(
+    operation: String,
+    message: String,
+    recovery: String
+  ) -> InstantError {
+    InstantError(
+      code: .validationFailed,
+      operation: operation,
+      message: message,
+      recovery: recovery
     )
   }
 

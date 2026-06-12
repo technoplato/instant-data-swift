@@ -236,6 +236,31 @@ public actor SQLitePersistenceStore {
     )
   }
 
+  public func loadMetadataValue(key: String) throws -> String? {
+    try selectScalar(
+      "SELECT value FROM instant_sync_metadata WHERE key = ? LIMIT 1",
+      [.text(key)]
+    )
+  }
+
+  public func saveMetadataValue(
+    _ value: String,
+    key: String,
+    updatedAt: InstantTimestamp
+  ) throws {
+    try execute(
+      """
+      INSERT OR REPLACE INTO instant_sync_metadata (key, value, updated_at_ms)
+      VALUES (?, ?, ?)
+      """,
+      [
+        .text(key),
+        .text(value),
+        .int(updatedAt.milliseconds),
+      ]
+    )
+  }
+
   public func saveSnapshot(_ snapshot: InstantPersistenceSnapshot) throws {
     try transaction {
       try saveStoreSnapshotWithoutTransaction(snapshot.store)

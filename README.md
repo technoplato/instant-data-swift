@@ -33,6 +33,8 @@ swift run instant-swift-data examples todos list --jsonl
 Inspect the durable cache and optimistic outbox:
 
 ```bash
+swift run instant-swift-data app select local-demo --json
+swift run instant-swift-data app show --json
 swift run instant-swift-data cache inspect --json
 swift run instant-swift-data outbox inspect --jsonl
 swift run instant-swift-data outbox confirm <mutation-id> --json

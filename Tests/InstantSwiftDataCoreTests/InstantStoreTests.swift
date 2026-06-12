@@ -438,6 +438,23 @@ struct InstantStoreTests {
   }
 
   @Test
+  func selectedAppIDPersistsAcrossLaunches() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "app-a", persistenceURL: cacheURL)
+    )
+
+    let selected = try await runtime.saveSelectedAppID(" app-b ")
+    expectNoDifference(selected, "app-b")
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "app-c", persistenceURL: cacheURL)
+    )
+    let relaunchedSelected = try await relaunchedRuntime.selectedAppID()
+    expectNoDifference(relaunchedSelected, "app-b")
+  }
+
+  @Test
   func concurrentOutboxStatusUpdateAndTransactionPersistAcrossLaunches() async throws {
     let cacheURL = try temporaryCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)

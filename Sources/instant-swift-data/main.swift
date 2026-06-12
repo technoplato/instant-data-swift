@@ -53,6 +53,9 @@ struct InstantSwiftDataCLI {
     case "auth":
       try await runAuth(arguments: arguments, output: output)
 
+    case "app":
+      try await runApp(arguments: arguments, output: output)
+
     default:
       throw CLIError("Unknown command: \(command)", exitCode: 64)
     }
@@ -377,6 +380,36 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func runApp(arguments: [String], output: OutputMode) async throws {
+    var arguments = arguments
+    guard let command = arguments.popFirstArgument() else {
+      throw CLIError(appUsage, exitCode: 64)
+    }
+
+    switch command {
+    case "show", "status", "current":
+      guard arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data app show [--json|--jsonl]", exitCode: 64)
+      }
+      let context = try await CLIContext.bootstrap(initialAttributes: [])
+      try printApp(context: context, event: "show", output: output)
+
+    case "select":
+      guard let appID = arguments.popFirstArgument(),
+        arguments.isEmpty,
+        !appID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      else {
+        throw CLIError("Usage: instant-swift-data app select <app-id> [--json|--jsonl]", exitCode: 64)
+      }
+      let context = try await CLIContext.bootstrap(appIDOverride: appID, initialAttributes: [])
+      _ = try await context.runtime.saveSelectedAppID(appID)
+      try printApp(context: context, event: "select", output: output)
+
+    default:
+      throw CLIError(appUsage, exitCode: 64)
+    }
+  }
+
   private static func printOutbox(
     context: CLIContext,
     output: OutputMode
@@ -473,6 +506,42 @@ struct InstantSwiftDataCLI {
           event: event,
           appID: context.appID,
           entityID: session?.userID,
+          ok: true,
+          details: payload
+        )
+      )
+    }
+  }
+
+  private static func printApp(
+    context: CLIContext,
+    event: String,
+    output: OutputMode
+  ) throws {
+    let payload = AppOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      transport: "not-implemented-local-cache-only",
+      selectionSource: context.appIDSource.rawValue
+    )
+
+    switch output {
+    case .human:
+      print("app: \(payload.appID)")
+      print("source: \(payload.selectionSource)")
+      print("cache: \(payload.cachePath)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.app",
+          side: "swift",
+          event: event,
+          appID: context.appID,
           ok: true,
           details: payload
         )
@@ -612,6 +681,8 @@ struct InstantSwiftDataCLI {
         auth guest [--json|--jsonl]
         auth token <refresh-token> [--user-id id] [--json|--jsonl]
         auth sign-out [--json|--jsonl]
+        app show [--json|--jsonl]
+        app select <app-id> [--json|--jsonl]
 
       Environment:
         INSTANT_SWIFT_DATA_HOME  Directory for CLI SQLite state. Defaults to ~/.instant-swift-data.
@@ -916,6 +987,14 @@ struct InstantSwiftDataCLI {
     """
   }
 
+  private static var appUsage: String {
+    """
+    Usage: instant-swift-data app <show|select>
+      instant-swift-data app show [--json|--jsonl]
+      instant-swift-data app select <app-id> [--json|--jsonl]
+    """
+  }
+
   private static func namespaceSummaries(
     _ snapshot: InstantStoreSnapshot
   ) -> [CacheNamespaceSummary] {
@@ -989,25 +1068,81 @@ struct InstantSwiftDataCLI {
   }
 }
 
+private enum CLIAppIDSource: String, Codable, Sendable {
+  case argument
+  case environment
+  case selected
+  case `default`
+}
+
 private struct CLIContext: Sendable {
   var appID: String
+  var appIDSource: CLIAppIDSource
   var cacheURL: URL
   var runtime: InstantRuntime
 
-  static func bootstrap(initialAttributes: [InstantAttribute] = TodoExample.attributes) async throws -> Self {
+  static func bootstrap(
+    appIDOverride: String? = nil,
+    initialAttributes: [InstantAttribute] = TodoExample.attributes
+  ) async throws -> Self {
     let environment = ProcessInfo.processInfo.environment
-    let appID = environment["INSTANT_APP_ID"] ?? "local-demo"
     let homeURL = environment["INSTANT_SWIFT_DATA_HOME"].map(URL.init(fileURLWithPath:))
       ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".instant-swift-data")
     let cacheURL = homeURL.appendingPathComponent("state.sqlite")
+    let resolved = try await resolveAppID(
+      override: appIDOverride,
+      environment: environment,
+      cacheURL: cacheURL
+    )
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
-        appID: appID,
+        appID: resolved.appID,
         persistenceURL: cacheURL,
         initialAttributes: initialAttributes
       )
     )
-    return Self(appID: appID, cacheURL: cacheURL, runtime: runtime)
+    return Self(
+      appID: resolved.appID,
+      appIDSource: resolved.source,
+      cacheURL: cacheURL,
+      runtime: runtime
+    )
+  }
+
+  private static func resolveAppID(
+    override: String?,
+    environment: [String: String],
+    cacheURL: URL
+  ) async throws -> (appID: String, source: CLIAppIDSource) {
+    if let appID = override?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !appID.isEmpty
+    {
+      return (appID, .argument)
+    }
+    if let appID = environment["INSTANT_APP_ID"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !appID.isEmpty
+    {
+      return (appID, .environment)
+    }
+
+    if let appID = try await persistedSelectedAppID(cacheURL: cacheURL) {
+      return (appID, .selected)
+    }
+
+    return ("local-demo", .default)
+  }
+
+  private static func persistedSelectedAppID(cacheURL: URL) async throws -> String? {
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    guard let appID = try await persistence.loadMetadataValue(
+      key: InstantRuntime.selectedAppIDMetadataKey
+    )?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !appID.isEmpty
+    else {
+      return nil
+    }
+    return appID
   }
 }
 
@@ -1095,6 +1230,14 @@ private struct AuthOutput: Codable, Sendable {
   var hasRefreshToken: Bool
   var createdAt: InstantTimestamp?
   var updatedAt: InstantTimestamp?
+}
+
+private struct AppOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var transport: String
+  var selectionSource: String
 }
 
 private struct SchemaVerifyOutput: Codable, Sendable {
