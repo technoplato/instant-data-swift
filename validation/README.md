@@ -1,0 +1,49 @@
+# Validation Harness
+
+This directory is the source of truth for acceptance proof.
+
+The rule is simple: data must cross the real InstantDB boundary and the
+Swift/TypeScript boundary. A unit test can protect a helper, but it does not
+prove this library.
+
+## Expected Layout
+
+- `fixtures/schema.swift`: Swift schema declaration.
+- `fixtures/instant.schema.ts`: generated TypeScript schema.
+- `fixtures/instant.perms.ts`: generated TypeScript permissions.
+- `swift-runner`: Swift executable built by the package.
+- `ts-runner`: TypeScript executable using `@instantdb/core` and
+  `@instantdb/admin`.
+- `run-e2e.sh`: orchestration entry point.
+- `results/`: per-run JSONL evidence and timing output.
+
+## Required Cases
+
+- Swift writes, TypeScript observes.
+- TypeScript writes, Swift observes.
+- Swift linked graph writes, TypeScript nested query observes.
+- TypeScript linked graph writes, Swift nested query observes.
+- Swift offline optimistic writes flush after reconnect.
+- TypeScript offline/server writes refresh Swift after reconnect.
+- High-bandwidth scalar writes.
+- High-bandwidth linked writes.
+- Presence in both directions.
+- Topics in both directions.
+- Storage in both directions.
+- Streams in both directions.
+- Permissions reject unauthorized writes in both paths.
+
+## Evidence Format
+
+Each runner should emit JSON Lines. Every row should include:
+
+- `case`: stable case id.
+- `side`: `swift`, `typescript`, or `orchestrator`.
+- `event`: stable event name.
+- `appId`: ephemeral Instant app id.
+- `entityId` or `streamId` when applicable.
+- `timestampMs`.
+- `latencyMs` for observed round trips.
+- `ok`: boolean.
+- `details`: object with case-specific fields.
+

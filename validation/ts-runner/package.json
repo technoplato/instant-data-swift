@@ -1,0 +1,15 @@
+{
+  "name": "instantdata-validation-ts-runner",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "validate": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "@instantdb/admin": "latest",
+    "@instantdb/core": "latest",
+    "tsx": "latest",
+    "typescript": "latest"
+  }
+}
+
