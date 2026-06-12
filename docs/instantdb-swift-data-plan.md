@@ -1,4 +1,9 @@
-# InstantDB Swift Data Plan
+# Instant Swift Data Implementation Plan
+
+This plan is reconciled with
+`docs/instant-swift-data-goals.md`, which is the portable goal contract for the
+project. When the two documents differ, the goals document wins and this plan
+should be updated rather than treated as a competing source of truth.
 
 ## Goal
 
@@ -21,6 +26,18 @@ The important concrete pieces are:
 The target package should not require maintaining a separate core Swift SDK and
 a separate sharing wrapper. It can still have internal targets, but they should
 live in one repository and version together.
+
+Resolved decisions from the later goal pass:
+
+- The package, module, and CLI naming centers on `InstantSwiftData` and
+  `instant-swift-data`.
+- Swift `Date` maps to Instant's `date` semantic value by default. Epoch
+  milliseconds remain an explicit compatibility strategy.
+- SQLite is the first durable Swift persistence backend unless benchmarks prove
+  another backend is better.
+- Macro support and benchmark support are first-class package targets.
+- The CLI must be agent-interactable, non-captive, and backed by the same
+  durable auth/cache/outbox state as app clients.
 
 ## Upstream Inventory
 
@@ -53,6 +70,8 @@ real Instant app.
 ### Schema
 
 - Entities with scalar attributes: string, number, boolean, date, json.
+- Swift-only type safety for enums, discriminated unions, typed JSON fields,
+  typed IDs, local IDs, and decode validation.
 - Required/optional fields.
 - Indexed fields and unique fields.
 - Primary keys and lookup by unique attribute.
@@ -165,23 +184,39 @@ real Instant app.
 - Ephemeral app creation for tests.
 - Schema and permission push/pull.
 - Admin query and transact helpers for ground-truth verification.
-- CLI commands for schema generation, migration planning, push, get, and
-  validation.
+- CLI commands for schema generation, migration planning, push, get,
+  validation, example business commands, cache inspection, outbox inspection,
+  auth, and benchmarks.
 - Dev logging hooks should be optional and removable from production targets.
+
+### Sharing
+
+- Instant-native sharing that reproduces SQLiteData/CloudKit-style shared record
+  user experience without depending on CloudKit.
+- Share/root entities, memberships, roles/capabilities, share links or tokens,
+  accept/revoke flows, visible sharing metadata, and generated permissions using
+  `auth.ref` and `data.ref` where applicable.
+- The Reminders port must prove list sharing with two users.
 
 ## Proposed Package Architecture
 
 One repository, multiple targets:
 
-- `InstantData`: public SwiftData-like API. Property wrappers, dependency
+- `InstantSwiftData`: public SwiftData-like API. Property wrappers, dependency
   bootstrap, query/mutation surface, errors, and docs.
-- `InstantDataCore`: internal client engine. Reactor, transport, local store,
+- `InstantSwiftDataCore`: internal client engine. Reactor, transport, local store,
   outbox, query processor, persistence, auth, storage, presence, streams.
-- `InstantDataSchema`: Swift schema declaration DSL, IR, TypeScript printer,
+- `InstantSwiftDataSchema`: Swift schema declaration DSL, IR, TypeScript printer,
   Swift code generator, permissions printer.
-- `instant-data`: CLI executable for schema generation, validation, fixture
-  app creation, and parity scripts.
-- `InstantDataTesting`: ephemeral app helpers and end-to-end assertion tools.
+- `InstantSwiftDataMacros`: macro implementations such as `@InstantEntity` plus
+  diagnostics for redundant namespace overrides.
+- `instant-swift-data`: agent-interactable CLI executable for schema generation,
+  validation, auth, example commands, cache/outbox inspection, fixture app
+  creation, parity scripts, and benchmarks.
+- `InstantSwiftDataTesting`: ephemeral app helpers and end-to-end assertion
+  tools.
+- `InstantSwiftDataBenchmarks`: benchmark executable for Swift/TypeScript
+  parity measurements.
 
 The public API should start with concrete Swift app code:
 
@@ -190,14 +225,14 @@ The public API should start with concrete Swift app code:
 struct AppMain: App {
   init() {
     prepareDependencies {
-      try $0.bootstrapInstantData(appId: "...", schema: AppSchema.self)
+      try $0.bootstrapInstantSwiftData(appId: "...", schema: AppSchema.self)
     }
   }
 }
 
-@InstantEntity("todos")
+@InstantEntity
 struct Todo: Identifiable, Codable, Sendable {
-  var id: UUID
+  var id: InstantID<Todo>
   var title: String
   var done: Bool
   var createdAt: Date
@@ -206,14 +241,17 @@ struct Todo: Identifiable, Codable, Sendable {
 @FetchAll(Todo.where(\.done == false).order(by: \.createdAt.desc()))
 var openTodos: [Todo]
 
-try await instantData.write {
-  Todo.create(id: id, title: "Ship it", done: false)
+try await db.transact {
+  Todo.create(title: "Ship it", done: false)
 }
 ```
 
-`@FetchAll` should look familiar to SQLiteData users, but the engine underneath
-is not SQL. A query becomes an Instant query tree, the server returns triples,
-and the local store materializes Swift values from those triples.
+`@InstantEntity` defaults to the documented plural namespace (`Todo` ->
+`todos`). A manual override remains available, but the macro should diagnose an
+override that exactly matches the default plural. `@FetchAll` should look
+familiar to SQLiteData users, but the engine underneath is not SQL. A query
+becomes an Instant query tree, the server returns triples, and the local store
+materializes Swift values from those triples.
 
 ## Validation Suite
 
@@ -270,6 +308,10 @@ Create `validation/` with:
 - Storage: TypeScript uploads or creates file record; Swift observes.
 - Streams: Swift writes stream chunks; TypeScript reads in order.
 - Streams: TypeScript writes stream chunks; Swift reads in order.
+- Sharing: two Swift users share and accept a Reminders list; TypeScript verifies
+  memberships, permissions, and visible sharing metadata.
+- CLI: `instant-swift-data examples todos add "do the dishes"` persists auth,
+  local IDs, cache, and outbox state for a later CLI invocation.
 - Permissions: generated permissions reject an unauthorized write in both
   Swift and TypeScript paths.
 
@@ -284,31 +326,45 @@ Record numbers as JSON, not prose:
 - Reconnect flush throughput and p95 time-to-visible.
 - High-bandwidth update throughput for scalar and linked writes.
 - Memory growth during 1k, 10k, and 50k triple workloads.
+- Swift/TypeScript benchmark comparison result and quantified gap when Swift is
+  slower.
 
 Initial budgets can be loose until the implementation exists, but the suite
 must emit the same metrics on day one so regressions become visible.
 
 ## Implementation Packets
 
-1. Repository scaffold: package targets, dependencies, docs, and validation
-   directories.
-2. Schema IR: import the best pieces from `InstantSchemaCodegen` and
-   `InstantDBMacros`; make Swift -> TypeScript generation the primary path.
+1. Repository scaffold: `InstantSwiftData` package targets, macro and benchmark
+   placeholders, docs, and validation directories.
+2. Schema IR and macros: import the best pieces from `InstantSchemaCodegen` and
+   `InstantDBMacros`; make Swift -> TypeScript generation the primary path; add
+   Point-Free MacroTesting coverage for generated code and diagnostics.
 3. Core local store: port triple store, attrs store, query materialization,
-   observer invalidation, and reverse-link cleanup into `InstantDataCore`.
+   observer invalidation, and reverse-link cleanup into `InstantSwiftDataCore`;
+   persist through SQLite first.
 4. Transport and auth: merge `InstantClient`, connection messages, auth manager,
    and session persistence into the core target.
-5. Mutation outbox: transaction builder, optimistic apply, durable pending
+5. Agent CLI foundation: auth, selected app, SQLite cache, local IDs, query cache,
+   sync metadata, and pending outbox persisted across invocations.
+6. Mutation outbox: transaction builder, optimistic apply, durable pending
    mutations, confirmation cleanup, rollback/error surfacing, and ordered flush.
-6. Query surface: `@FetchAll`, `@FetchOne`, `@Fetch`, `queryOnce`, pagination,
-   and infinite query.
-7. Realtime linked entities: nested queries, multi-link resolution, field
-   filters, different `with` clauses, and reverse observer propagation.
-8. Offline: cached subscription emission, strict offline `queryOnce`, restart
+7. Query surface: `@FetchAll`, `@FetchOne`, `@Fetch`, `queryOnce`, pagination,
+   infinite query, nested linked queries, and dynamic query changes.
+8. Realtime linked entities: multi-link resolution, field filters, different
+   `with` clauses, and reverse observer propagation.
+9. Offline: cached subscription emission, strict offline `queryOnce`, restart
    restore, reconnect flush.
-9. Storage, auth public API, presence, topics, and streams.
-10. Performance pass: batch write path, query recomputation profiling, local
-    persistence hot path, memory pressure.
+10. Storage, auth public API, presence, topics, rooms, and streams.
+11. Sharing model: Instant-native share entities, memberships, permissions,
+    accept/revoke flows, Reminders list sharing proof, and CloudKitDemo concept
+    port.
+12. Example ports: Instant website examples, Instant recipes, SQLiteData
+    CaseStudies, Reminders, SyncUps, and CloudKitDemo concepts.
+13. TypeScript test parity: port or classify Instant TypeScript tests with exact
+    source-file/test-name provenance.
+14. Performance pass: benchmark target, Swift/TypeScript comparison scripts,
+    batch write path, query recomputation profiling, local persistence hot path,
+    memory pressure.
 
 ## Non-Goals For The First Cut
 
@@ -319,18 +375,13 @@ must emit the same metrics on day one so regressions become visible.
 - Do not manually edit generated TypeScript schema/perms except to debug the
   generator.
 
-## Open Questions
+## Remaining Open Questions
 
-- Should the public package name be `InstantData`, `InstantSwiftData`, or
-  `InstantDBData`?
-- Should Swift `Date` default to Instant `date` values or epoch milliseconds?
-  The prior examples recommend epoch milliseconds for TypeScript parity, but a
-  SwiftData-like surface will expect `Date`.
-- Should the first storage backend be SQLite through GRDB/StructuredQueries, or
-  should we keep the current custom `LocalStorage` tables and only adopt
-  SQLiteData-style observation APIs?
 - How much of Instant streams is stable public API versus internal support for
   React Native/resumable stream packages?
+- Which Swift SQLite layer should own persistence first: GRDB,
+  StructuredQueries/SQLiteData pieces, or a narrower SQLite adapter inside
+  `InstantSwiftDataCore`?
 
 ## First Acceptance Contract
 
@@ -346,4 +397,5 @@ must emit the same metrics on day one so regressions become visible.
   TypeScript runner SHALL observe it after reconnect.
 - WHEN high-bandwidth writes run, THE suite SHALL record throughput, p95
   latency, dropped-update count, final-state correctness, and memory use.
-
+- WHEN the CLI runs `instant-swift-data examples todos add "do the dishes"`,
+  THE next CLI invocation SHALL observe the same durable auth/cache/outbox world.

@@ -1,0 +1,2 @@
+{"case":"harness","side":"orchestrator","event":"start","timestampMs":1781291914337,"ok":true,"details":{"resultsDir":"/Users/server/Documents/Playground/container/repo/validation/results/20260612T191834Z"}}}
+{"case":"harness","side":"orchestrator","event":"blocked-not-implemented","timestampMs":1781291914377,"ok":false,"details":{"reason":"Swift and TypeScript runners are not implemented yet"}}}

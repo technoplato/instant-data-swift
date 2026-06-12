@@ -23,9 +23,8 @@ emit({
   ok: false,
   details: {
     reason:
-      "TypeScript runner scaffold exists, but InstantData Swift runner and orchestration are not implemented yet.",
+      "TypeScript runner scaffold exists, but InstantSwiftData Swift runner and orchestration are not implemented yet.",
   },
 });
 
 process.exit(2);
-

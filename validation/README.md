@@ -8,10 +8,10 @@ prove this library.
 
 ## Expected Layout
 
-- `fixtures/schema.swift`: Swift schema declaration.
-- `fixtures/instant.schema.ts`: generated TypeScript schema.
-- `fixtures/instant.perms.ts`: generated TypeScript permissions.
-- `swift-runner`: Swift executable built by the package.
+- `fixtures/schema.swift`: Swift source-of-truth schema declaration.
+- `fixtures/instant.schema.ts`: expected generated TypeScript schema.
+- `fixtures/instant.perms.ts`: expected generated TypeScript permissions.
+- `instant-swift-data-validation-runner`: Swift executable built by the package.
 - `ts-runner`: TypeScript executable using `@instantdb/core` and
   `@instantdb/admin`.
 - `run-e2e.sh`: orchestration entry point.
@@ -31,7 +31,10 @@ prove this library.
 - Topics in both directions.
 - Storage in both directions.
 - Streams in both directions.
+- Sharing and permissions across two users.
 - Permissions reject unauthorized writes in both paths.
+- CLI example commands reuse the same core auth, cache, and outbox state.
+- Benchmark runs emit JSON/JSONL metrics for Swift and TypeScript parity.
 
 ## Evidence Format
 
@@ -46,4 +49,3 @@ Each runner should emit JSON Lines. Every row should include:
 - `latencyMs` for observed round trips.
 - `ok`: boolean.
 - `details`: object with case-specific fields.
-

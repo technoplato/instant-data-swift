@@ -1,0 +1,235 @@
+{
+  "entities" : {
+    "comments" : {
+      "attrs" : {
+        "createdAt" : {
+          "config" : {
+            "indexed" : false,
+            "unique" : false
+          },
+          "required" : true,
+          "valueType" : "date"
+        },
+        "text" : {
+          "config" : {
+            "indexed" : false,
+            "unique" : false
+          },
+          "required" : true,
+          "valueType" : "string"
+        }
+      }
+    },
+    "friendships" : {
+      "attrs" : {
+        "createdAt" : {
+          "config" : {
+            "indexed" : false,
+            "unique" : false
+          },
+          "required" : true,
+          "valueType" : "date"
+        },
+        "status" : {
+          "config" : {
+            "indexed" : true,
+            "unique" : false
+          },
+          "required" : true,
+          "valueType" : "string"
+        }
+      }
+    },
+    "messages" : {
+      "attrs" : {
+        "createdAt" : {
+          "config" : {
+            "indexed" : true,
+            "unique" : false
+          },
+          "required" : true,
+          "valueType" : "date"
+        },
+        "isRead" : {
+          "config" : {
+            "indexed" : false,
+            "unique" : false
+          },
+          "required" : true,
+          "valueType" : "boolean"
+        },
+        "text" : {
+          "config" : {
+            "indexed" : false,
+            "unique" : false
+          },
+          "required" : true,
+          "valueType" : "string"
+        }
+      }
+    },
+    "posts" : {
+      "attrs" : {
+        "content" : {
+          "config" : {
+            "indexed" : false,
+            "unique" : false
+          },
+          "required" : true,
+          "valueType" : "string"
+        },
+        "createdAt" : {
+          "config" : {
+            "indexed" : true,
+            "unique" : false
+          },
+          "required" : true,
+          "valueType" : "date"
+        },
+        "imageUrl" : {
+          "config" : {
+            "indexed" : false,
+            "unique" : false
+          },
+          "valueType" : "string"
+        },
+        "likesCount" : {
+          "config" : {
+            "indexed" : false,
+            "unique" : false
+          },
+          "required" : true,
+          "valueType" : "number"
+        }
+      }
+    },
+    "profiles" : {
+      "attrs" : {
+        "avatarUrl" : {
+          "config" : {
+            "indexed" : false,
+            "unique" : false
+          },
+          "valueType" : "string"
+        },
+        "bio" : {
+          "config" : {
+            "indexed" : false,
+            "unique" : false
+          },
+          "valueType" : "string"
+        },
+        "createdAt" : {
+          "config" : {
+            "indexed" : false,
+            "unique" : false
+          },
+          "required" : true,
+          "valueType" : "date"
+        },
+        "displayName" : {
+          "config" : {
+            "indexed" : false,
+            "unique" : false
+          },
+          "required" : true,
+          "valueType" : "string"
+        },
+        "username" : {
+          "config" : {
+            "indexed" : true,
+            "unique" : true
+          },
+          "required" : true,
+          "valueType" : "string"
+        }
+      }
+    }
+  },
+  "links" : {
+    "postsComments" : {
+      "forward" : {
+        "has" : "many",
+        "label" : "comments",
+        "on" : "posts"
+      },
+      "reverse" : {
+        "has" : "one",
+        "label" : "post",
+        "on" : "comments"
+      }
+    },
+    "profilesComments" : {
+      "forward" : {
+        "has" : "many",
+        "label" : "comments",
+        "on" : "profiles"
+      },
+      "reverse" : {
+        "has" : "one",
+        "label" : "author",
+        "on" : "comments"
+      }
+    },
+    "profilesFriendshipsinitiated" : {
+      "forward" : {
+        "has" : "many",
+        "label" : "friendshipsInitiated",
+        "on" : "profiles"
+      },
+      "reverse" : {
+        "has" : "one",
+        "label" : "requester",
+        "on" : "friendships"
+      }
+    },
+    "profilesFriendshipsreceived" : {
+      "forward" : {
+        "has" : "many",
+        "label" : "friendshipsReceived",
+        "on" : "profiles"
+      },
+      "reverse" : {
+        "has" : "one",
+        "label" : "addressee",
+        "on" : "friendships"
+      }
+    },
+    "profilesPosts" : {
+      "forward" : {
+        "has" : "many",
+        "label" : "posts",
+        "on" : "profiles"
+      },
+      "reverse" : {
+        "has" : "one",
+        "label" : "author",
+        "on" : "posts"
+      }
+    },
+    "profilesReceivedmessages" : {
+      "forward" : {
+        "has" : "many",
+        "label" : "receivedMessages",
+        "on" : "profiles"
+      },
+      "reverse" : {
+        "has" : "one",
+        "label" : "recipient",
+        "on" : "messages"
+      }
+    },
+    "profilesSentmessages" : {
+      "forward" : {
+        "has" : "many",
+        "label" : "sentMessages",
+        "on" : "profiles"
+      },
+      "reverse" : {
+        "has" : "one",
+        "label" : "sender",
+        "on" : "messages"
+      }
+    }
+  }
+}

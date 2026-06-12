@@ -5,11 +5,11 @@ const _schema = i.schema({
     profiles: i.entity({
       handle: i.string().unique().indexed(),
       displayName: i.string(),
-      createdAt: i.number().indexed(),
+      createdAt: i.date().indexed(),
     }),
     posts: i.entity({
       content: i.string(),
-      createdAt: i.number().indexed(),
+      createdAt: i.date().indexed(),
     }),
   },
   links: {
@@ -28,7 +28,7 @@ const _schema = i.schema({
       topics: {
         ping: i.entity({
           message: i.string(),
-          sentAt: i.number(),
+          sentAt: i.date(),
         }),
       },
     },
@@ -41,4 +41,3 @@ const schema: AppSchema = _schema;
 
 export type { AppSchema };
 export default schema;
-

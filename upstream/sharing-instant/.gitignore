@@ -1,0 +1,26 @@
+.DS_Store
+/.build
+/Packages
+xcuserdata/
+DerivedData/
+.swiftpm/configuration/registries.json
+.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+.netrc
+
+# Node modules (for instant-cli schema push)
+node_modules/
+package-lock.json
+
+# Environment files
+.env*
+!.env.example
+
+
+
+build/
+.vscode/
+Examples/.build/
+.build/
+**/.build/
+.mobiledev/
+debug-logs.jsonl

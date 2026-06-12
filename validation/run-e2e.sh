@@ -33,6 +33,7 @@ require_file "${ROOT}/validation/fixtures/instant.schema.ts"
 require_file "${ROOT}/validation/fixtures/instant.perms.ts"
 require_file "${ROOT}/validation/ts-runner/package.json"
 require_file "${ROOT}/Package.swift"
+require_file "${ROOT}/Sources/InstantSwiftDataValidationRunner/main.swift"
 
 if ! command -v node >/dev/null 2>&1; then
   log_json "missing-node" false
@@ -49,4 +50,3 @@ fi
 log_json "blocked-not-implemented" false "{\"reason\":\"Swift and TypeScript runners are not implemented yet\"}"
 echo "Validation scaffold is present, but runners are not implemented yet." >&2
 exit 2
-

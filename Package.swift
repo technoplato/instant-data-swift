@@ -3,7 +3,7 @@
 import PackageDescription
 
 let package = Package(
-  name: "instant-data",
+  name: "instant-swift-data",
   platforms: [
     .iOS(.v15),
     .macOS(.v14),
@@ -12,36 +12,53 @@ let package = Package(
     .watchOS(.v8),
   ],
   products: [
-    .library(name: "InstantData", targets: ["InstantData"]),
-    .library(name: "InstantDataCore", targets: ["InstantDataCore"]),
-    .library(name: "InstantDataSchema", targets: ["InstantDataSchema"]),
-    .library(name: "InstantDataTesting", targets: ["InstantDataTesting"]),
-    .executable(name: "instant-data", targets: ["instant-data"]),
+    .library(name: "InstantSwiftData", targets: ["InstantSwiftData"]),
+    .library(name: "InstantSwiftDataCore", targets: ["InstantSwiftDataCore"]),
+    .library(name: "InstantSwiftDataSchema", targets: ["InstantSwiftDataSchema"]),
+    .library(name: "InstantSwiftDataMacros", targets: ["InstantSwiftDataMacros"]),
+    .library(name: "InstantSwiftDataTesting", targets: ["InstantSwiftDataTesting"]),
+    .executable(name: "instant-swift-data", targets: ["instant-swift-data"]),
     .executable(
-      name: "instantdata-validation-swift-runner",
-      targets: ["InstantDataValidationRunner"]
+      name: "instant-swift-data-validation-runner",
+      targets: ["InstantSwiftDataValidationRunner"]
+    ),
+    .executable(
+      name: "instant-swift-data-benchmarks",
+      targets: ["InstantSwiftDataBenchmarks"]
     ),
   ],
   targets: [
     .target(
-      name: "InstantData",
-      dependencies: ["InstantDataCore", "InstantDataSchema"]
+      name: "InstantSwiftData",
+      dependencies: [
+        "InstantSwiftDataCore",
+        "InstantSwiftDataMacros",
+        "InstantSwiftDataSchema",
+      ]
     ),
-    .target(name: "InstantDataCore"),
-    .target(name: "InstantDataSchema"),
+    .target(name: "InstantSwiftDataCore"),
+    .target(name: "InstantSwiftDataSchema"),
+    .target(name: "InstantSwiftDataMacros"),
     .target(
-      name: "InstantDataTesting",
-      dependencies: ["InstantData", "InstantDataCore", "InstantDataSchema"]
+      name: "InstantSwiftDataTesting",
+      dependencies: [
+        "InstantSwiftData",
+        "InstantSwiftDataCore",
+        "InstantSwiftDataSchema",
+      ]
     ),
     .executableTarget(
-      name: "instant-data",
-      dependencies: ["InstantDataSchema"]
+      name: "instant-swift-data",
+      dependencies: ["InstantSwiftDataCore", "InstantSwiftDataSchema"]
     ),
     .executableTarget(
-      name: "InstantDataValidationRunner",
-      dependencies: ["InstantDataTesting"]
+      name: "InstantSwiftDataValidationRunner",
+      dependencies: ["InstantSwiftDataTesting"]
+    ),
+    .executableTarget(
+      name: "InstantSwiftDataBenchmarks",
+      dependencies: ["InstantSwiftDataCore"]
     ),
   ],
   swiftLanguageModes: [.v6]
 )
-

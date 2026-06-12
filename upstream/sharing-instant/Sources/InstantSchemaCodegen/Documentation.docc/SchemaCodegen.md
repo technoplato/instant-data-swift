@@ -1,0 +1,123 @@
+# InstantDB Schema Codegen
+
+Generate type-safe Swift code from your InstantDB schema automatically.
+
+## Overview
+
+InstantDB Schema Codegen provides bidirectional schema conversion between TypeScript and Swift, with automatic code generation on every build.
+
+### Key Features
+
+- **Bidirectional Parsing**: TypeScript ↔ Swift with comment preservation
+- **API Integration**: Fetch deployed schemas directly from InstantDB
+- **Schema Validation**: Verify local schema matches production
+- **SPM Build Plugin**: Zero-config automatic codegen
+- **CLI Tool**: Manual schema operations
+
+## Quick Start
+
+### 1. Add the Dependency
+
+```swift
+// Package.swift
+dependencies: [
+  .package(url: "https://github.com/instantdb/sharing-instant", from: "1.0.0"),
+]
+```
+
+### 2. Add the Plugin to Your Target
+
+```swift
+.target(
+  name: "MyApp",
+  dependencies: ["SharingInstant"],
+  plugins: [
+    .plugin(name: "InstantSchemaPlugin", package: "sharing-instant")
+  ]
+)
+```
+
+### 3. Create Your Schema
+
+Create `instant.schema.ts` in your project root:
+
+```typescript
+import { i } from "@instantdb/core";
+
+const _schema = i.schema({
+  entities: {
+    todos: i.entity({
+      title: i.string(),
+      done: i.boolean(),
+      createdAt: i.date(),
+    }),
+  },
+});
+
+export type Schema = typeof _schema;
+```
+
+### 4. Build
+
+Run `swift build` - the plugin automatically generates:
+
+- `Schema.swift` - Namespace with EntityKey instances
+- `Todo.swift` - Codable struct for the todos entity
+
+## System Entities
+
+InstantDB has system entities prefixed with `$` (e.g., `$files`, `$users`).
+These are automatically converted to Swift-safe names:
+
+| InstantDB Name | Swift Type Name | Swift Property Name |
+|----------------|-----------------|---------------------|
+| `$files`       | `InstantFile`   | `Schema.instantFiles` |
+| `$users`       | `InstantUser`   | `Schema.instantUsers` |
+
+### Why the Conversion?
+
+Swift reserves the `$` prefix for compiler-synthesized declarations like
+property wrapper projections (`@State var foo` creates `$foo`). While
+explicitly naming a type `$file` technically compiles, it:
+
+1. Conflicts with Swift conventions
+2. Causes confusion with property wrapper projections
+3. May break in future Swift versions
+
+The `Instant` prefix clearly indicates these are InstantDB system entities
+while maintaining valid Swift identifiers.
+
+### Usage
+
+```swift
+// Access system entities via Schema namespace
+@Shared(Schema.instantFiles)
+private var files: IdentifiedArrayOf<InstantFile> = []
+
+@Shared(Schema.instantUsers)  
+private var users: IdentifiedArrayOf<InstantUser> = []
+```
+
+## Topics
+
+### Getting Started
+- <doc:Installation>
+- <doc:QuickStart>
+- <doc:SchemaFormat>
+
+### CLI Commands
+- <doc:CLIPull>
+- <doc:CLIGenerate>
+- <doc:CLIVerify>
+
+### Build Plugin
+- <doc:PluginSetup>
+- <doc:PluginConfiguration>
+
+### Advanced
+- <doc:BidirectionalCodegen>
+- <doc:SchemaValidation>
+- <doc:CustomPaths>
+
+
+
