@@ -47,6 +47,9 @@ struct InstantSwiftDataCLI {
     case "outbox":
       try await runOutbox(arguments: arguments, output: output)
 
+    case "local-id", "localid":
+      try await runLocalID(arguments: arguments, output: output)
+
     default:
       throw CLIError("Unknown command: \(command)", exitCode: 64)
     }
@@ -168,7 +171,7 @@ struct InstantSwiftDataCLI {
       throw CLIError("Usage: instant-swift-data cache inspect [--json|--jsonl]", exitCode: 64)
     }
 
-    let context = try await CLIContext.bootstrap()
+    let context = try await CLIContext.bootstrap(initialAttributes: [])
     let snapshot = try await context.runtime.persistence.loadSnapshot()
     let summary = CacheInspectOutput(
       appID: context.appID,
@@ -278,6 +281,50 @@ struct InstantSwiftDataCLI {
 
     default:
       throw CLIError(outboxUsage, exitCode: 64)
+    }
+  }
+
+  private static func runLocalID(arguments: [String], output: OutputMode) async throws {
+    var arguments = arguments
+    guard arguments.popFirstArgument() == "get",
+      let name = arguments.popFirstArgument(),
+      arguments.isEmpty,
+      !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else {
+      throw CLIError("Usage: instant-swift-data local-id get <name> [--json|--jsonl]", exitCode: 64)
+    }
+
+    let context = try await CLIContext.bootstrap(initialAttributes: [])
+    let id = try await context.runtime.localID(named: name)
+    let payload = LocalIDOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      transport: "not-implemented-local-cache-only",
+      name: name,
+      id: id
+    )
+
+    switch output {
+    case .human:
+      print(id)
+      print("name: \(name)")
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.local-id.get",
+          side: "swift",
+          event: "local-id",
+          appID: context.appID,
+          entityID: id,
+          ok: true,
+          details: payload
+        )
+      )
     }
   }
 
@@ -463,6 +510,7 @@ struct InstantSwiftDataCLI {
         outbox inspect [--json|--jsonl]
         outbox confirm <mutation-id> [--json|--jsonl]
         outbox fail <mutation-id> "reason" [--json|--jsonl]
+        local-id get <name> [--json|--jsonl]
 
       Environment:
         INSTANT_SWIFT_DATA_HOME  Directory for CLI SQLite state. Defaults to ~/.instant-swift-data.
@@ -809,7 +857,7 @@ private struct CLIContext: Sendable {
   var cacheURL: URL
   var runtime: InstantRuntime
 
-  static func bootstrap() async throws -> Self {
+  static func bootstrap(initialAttributes: [InstantAttribute] = TodoExample.attributes) async throws -> Self {
     let environment = ProcessInfo.processInfo.environment
     let appID = environment["INSTANT_APP_ID"] ?? "local-demo"
     let homeURL = environment["INSTANT_SWIFT_DATA_HOME"].map(URL.init(fileURLWithPath:))
@@ -819,7 +867,7 @@ private struct CLIContext: Sendable {
       configuration: InstantRuntimeConfiguration(
         appID: appID,
         persistenceURL: cacheURL,
-        initialAttributes: TodoExample.attributes
+        initialAttributes: initialAttributes
       )
     )
     return Self(appID: appID, cacheURL: cacheURL, runtime: runtime)
@@ -888,6 +936,14 @@ private struct OutboxUpdateOutput: Codable, Sendable {
   var pendingMutationCount: Int
   var mutationCount: Int
   var mutation: PendingMutation
+}
+
+private struct LocalIDOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var transport: String
+  var name: String
+  var id: String
 }
 
 private struct SchemaVerifyOutput: Codable, Sendable {

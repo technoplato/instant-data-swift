@@ -40,6 +40,17 @@ public actor SQLitePersistenceStore {
         recovery: "Check that the cache directory is writable, or choose another persistence path."
       )
     }
+    guard sqlite3_busy_timeout(opened, 10_000) == SQLITE_OK else {
+      let message = opened.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) }
+        ?? "SQLite could not configure a busy timeout for \(fileURL.path)."
+      sqlite3_close(opened)
+      throw InstantError(
+        code: .persistenceFailed,
+        operation: "configure local cache",
+        message: message,
+        recovery: "Check that the cache directory is writable, or choose another persistence path."
+      )
+    }
     self.connection = SQLiteConnection(opened)
   }
 
@@ -169,10 +180,20 @@ public actor SQLitePersistenceStore {
 
     let id = makeID()
     try execute(
-      "INSERT INTO instant_local_ids (name, entity_id) VALUES (?, ?)",
+      "INSERT OR IGNORE INTO instant_local_ids (name, entity_id) VALUES (?, ?)",
       [.text(name), .text(id)]
     )
-    return id
+    if let persisted = try selectScalar(
+      "SELECT entity_id FROM instant_local_ids WHERE name = ? LIMIT 1",
+      [.text(name)]
+    ) {
+      return persisted
+    }
+
+    throw persistenceError(
+      operation: "resolve local id",
+      message: "SQLite did not return a local id for name '\(name)' after inserting it."
+    )
   }
 
   private func migrate(name: String, body: () throws -> Void) throws {

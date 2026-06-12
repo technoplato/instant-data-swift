@@ -37,6 +37,7 @@ swift run instant-swift-data cache inspect --json
 swift run instant-swift-data outbox inspect --jsonl
 swift run instant-swift-data outbox confirm <mutation-id> --json
 swift run instant-swift-data outbox fail <mutation-id> "server rejected" --json
+swift run instant-swift-data local-id get todos.viewer --json
 ```
 
 Generate the current todo example schema and permissions:

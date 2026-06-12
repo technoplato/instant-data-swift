@@ -135,6 +135,71 @@ struct InstantStoreTests {
   }
 
   @Test
+  func localIDsPersistByNameAcrossLaunches() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let firstRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        makeID: { "local-1" }
+      )
+    )
+
+    let firstID = try await firstRuntime.localID(named: "todos.viewer")
+    expectNoDifference(firstID, "local-1")
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        makeID: { "local-2" }
+      )
+    )
+
+    let relaunchedID = try await relaunchedRuntime.localID(named: "todos.viewer")
+    let otherID = try await relaunchedRuntime.localID(named: "todos.other")
+    expectNoDifference(relaunchedID, "local-1")
+    expectNoDifference(otherID, "local-2")
+  }
+
+  @Test
+  func concurrentLocalIDResolutionsConvergeAcrossRuntimes() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let warmRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        makeID: { "warm-local-id" }
+      )
+    )
+    let warmID = try await warmRuntime.localID(named: "todos.viewer")
+    expectNoDifference(warmID, "warm-local-id")
+
+    let ids = try await withThrowingTaskGroup(of: String.self) { group in
+      for index in 0..<20 {
+        group.addTask {
+          let runtime = try await InstantRuntime.bootstrap(
+            configuration: InstantRuntimeConfiguration(
+              appID: "test-app",
+              persistenceURL: cacheURL,
+              makeID: { "local-\(index)" }
+            )
+          )
+          return try await runtime.localID(named: "todos.viewer")
+        }
+      }
+
+      var ids: [String] = []
+      for try await id in group {
+        ids.append(id)
+      }
+      return ids
+    }
+
+    expectNoDifference(Set(ids), ["warm-local-id"])
+  }
+
+  @Test
   func concurrentOutboxStatusUpdateAndTransactionPersistAcrossLaunches() async throws {
     let cacheURL = try temporaryCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
