@@ -1,5 +1,6 @@
 // swift-tools-version: 6.0
 
+import CompilerPluginSupport
 import PackageDescription
 
 let strictConcurrencySettings: [SwiftSetting] = [
@@ -21,7 +22,6 @@ let package = Package(
     .library(name: "InstantSwiftData", targets: ["InstantSwiftData"]),
     .library(name: "InstantSwiftDataCore", targets: ["InstantSwiftDataCore"]),
     .library(name: "InstantSwiftDataSchema", targets: ["InstantSwiftDataSchema"]),
-    .library(name: "InstantSwiftDataMacros", targets: ["InstantSwiftDataMacros"]),
     .library(name: "InstantSwiftDataTesting", targets: ["InstantSwiftDataTesting"]),
     .executable(name: "instant-swift-data", targets: ["instant-swift-data"]),
     .executable(
@@ -35,6 +35,7 @@ let package = Package(
   ],
   dependencies: [
     .package(url: "https://github.com/pointfreeco/swift-custom-dump", from: "1.0.0"),
+    .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "602.0.0"),
     .package(url: "https://github.com/swiftlang/swift-testing.git", exact: "6.2.3"),
   ],
   targets: [
@@ -53,7 +54,17 @@ let package = Package(
       dependencies: ["InstantSwiftDataCore"],
       swiftSettings: strictConcurrencySettings
     ),
-    .target(name: "InstantSwiftDataMacros", swiftSettings: strictConcurrencySettings),
+    .macro(
+      name: "InstantSwiftDataMacros",
+      dependencies: [
+        .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
+        .product(name: "SwiftDiagnostics", package: "swift-syntax"),
+        .product(name: "SwiftSyntax", package: "swift-syntax"),
+        .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
+        .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
     .target(
       name: "InstantSwiftDataTesting",
       dependencies: [
@@ -83,6 +94,18 @@ let package = Package(
       dependencies: [
         "InstantSwiftDataCore",
         .product(name: "CustomDump", package: "swift-custom-dump"),
+        .product(name: "Testing", package: "swift-testing"),
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .testTarget(
+      name: "InstantSwiftDataMacrosTests",
+      dependencies: [
+        "InstantSwiftDataMacros",
+        .product(name: "SwiftParser", package: "swift-syntax"),
+        .product(name: "SwiftSyntax", package: "swift-syntax"),
+        .product(name: "SwiftSyntaxMacroExpansion", package: "swift-syntax"),
+        .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
         .product(name: "Testing", package: "swift-testing"),
       ],
       swiftSettings: strictConcurrencySettings

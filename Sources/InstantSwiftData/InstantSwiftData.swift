@@ -1,5 +1,9 @@
 @_exported public import InstantSwiftDataCore
 
+@attached(member, names: named(instantNamespace))
+public macro InstantEntity(_ namespace: String? = nil) =
+  #externalMacro(module: "InstantSwiftDataMacros", type: "InstantEntityMacro")
+
 public struct InstantSwiftDataClient: Sendable {
   public var runtime: InstantRuntime
 
