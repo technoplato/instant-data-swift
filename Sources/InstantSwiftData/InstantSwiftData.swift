@@ -23,7 +23,7 @@ public struct InstantSwiftDataClient: Sendable {
       try await runtime.transact(transaction)
     }
     self.queryOperation = { plan in
-      await runtime.query(plan)
+      try await runtime.query(plan)
     }
     self.observeOperation = { plan in
       await runtime.observe(plan)

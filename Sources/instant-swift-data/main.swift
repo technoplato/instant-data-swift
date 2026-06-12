@@ -173,12 +173,14 @@ struct InstantSwiftDataCLI {
 
     let context = try await CLIContext.bootstrap(initialAttributes: [])
     let snapshot = try await context.runtime.persistence.loadSnapshot()
+    let queryCache = try await context.runtime.cachedQueries()
     let summary = CacheInspectOutput(
       appID: context.appID,
       cachePath: context.cacheURL.path,
       transport: "not-implemented-local-cache-only",
       attributeCount: snapshot.store.attributes.count,
       tripleCount: snapshot.store.triples.count,
+      queryCacheCount: queryCache.count,
       outboxMutationCount: snapshot.outbox.count,
       namespaces: namespaceSummaries(snapshot.store)
     )
@@ -188,6 +190,7 @@ struct InstantSwiftDataCLI {
       print("cache: \(summary.cachePath)")
       print("attributes: \(summary.attributeCount)")
       print("triples: \(summary.tripleCount)")
+      print("cached queries: \(summary.queryCacheCount)")
       print("outbox mutations: \(summary.outboxMutationCount)")
       if summary.namespaces.isEmpty {
         print("namespaces: none")
@@ -436,7 +439,7 @@ struct InstantSwiftDataCLI {
     changedID: String? = nil,
     query: InstantQueryPlan = TodoExample.query
   ) async throws {
-    let snapshots = await context.runtime.query(query)
+    let snapshots = try await context.runtime.query(query)
     let todos = try TodoExample.decode(snapshots)
     let pending = await context.runtime.pendingMutations()
     let payload = TodosOutput(
@@ -908,6 +911,7 @@ private struct CacheInspectOutput: Codable, Sendable {
   var transport: String
   var attributeCount: Int
   var tripleCount: Int
+  var queryCacheCount: Int
   var outboxMutationCount: Int
   var namespaces: [CacheNamespaceSummary]
 }

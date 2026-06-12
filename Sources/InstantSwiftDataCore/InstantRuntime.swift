@@ -29,7 +29,7 @@ public final class InstantRuntime: Sendable {
   public let store: InstantStore
   public let persistence: SQLitePersistenceStore
   let outbox: InstantOutbox
-  private let transactionGate = AsyncSerialGate()
+  private let operationGate = AsyncSerialGate()
 
   private init(
     configuration: InstantRuntimeConfiguration,
@@ -46,9 +46,9 @@ public final class InstantRuntime: Sendable {
   public static func bootstrap(configuration: InstantRuntimeConfiguration) async throws -> Self {
     let persistence = try SQLitePersistenceStore(fileURL: configuration.persistenceURL)
     try await persistence.bootstrap()
-    let snapshot = try await persistence.loadSnapshot()
-    let store = InstantStore(snapshot: snapshot.store)
-    let outbox = InstantOutbox(mutations: snapshot.outbox)
+    let state = try await persistence.loadState()
+    let store = InstantStore(snapshot: state.snapshot.store)
+    let outbox = InstantOutbox(mutations: state.snapshot.outbox)
     let runtime = Self(
       configuration: configuration,
       store: store,
@@ -83,13 +83,13 @@ public final class InstantRuntime: Sendable {
     createdAt: InstantTimestamp? = nil,
     source: String = "local"
   ) async throws -> InstantStoreMutationResult {
-    await transactionGate.enter()
+    await operationGate.enter()
     do {
       let result = try await performTransact(transaction, createdAt: createdAt, source: source)
-      await transactionGate.leave()
+      await operationGate.leave()
       return result
     } catch {
-      await transactionGate.leave()
+      await operationGate.leave()
       throw error
     }
   }
@@ -118,8 +118,46 @@ public final class InstantRuntime: Sendable {
     await store.observe(plan)
   }
 
-  public func query(_ plan: InstantQueryPlan) async -> [InstantEntitySnapshot] {
-    await store.materialize(plan)
+  public func query(_ plan: InstantQueryPlan) async throws -> [InstantEntitySnapshot] {
+    try await queryOnce(plan).values
+  }
+
+  public func queryOnce(_ plan: InstantQueryPlan) async throws -> InstantQueryEmission {
+    await operationGate.enter()
+    do {
+      for _ in 0..<5 {
+        let state = try await persistence.loadState()
+        await store.replaceSnapshot(state.snapshot.store)
+        let emission = await store.materializeEmission(plan)
+        let didSave = try await persistence.saveQueryCache(
+          InstantCachedQuery(
+            queryID: plan.id,
+            plan: plan,
+            emission: emission,
+            updatedAt: configuration.now(),
+            storeRevision: state.storeRevision
+          ),
+          expectedStoreRevision: state.storeRevision
+        )
+        if didSave {
+          await operationGate.leave()
+          return emission
+        }
+      }
+
+      throw queryCacheChangedDuringMaterialization(plan)
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  public func cachedQuery(_ plan: InstantQueryPlan) async throws -> InstantCachedQuery? {
+    try await persistence.cachedQuery(id: plan.id)
+  }
+
+  public func cachedQueries() async throws -> [InstantCachedQuery] {
+    try await persistence.loadQueryCache()
   }
 
   public func pendingMutations() async -> [PendingMutation] {
@@ -132,32 +170,32 @@ public final class InstantRuntime: Sendable {
 
   @discardableResult
   public func confirmMutation(id: String) async throws -> PendingMutation {
-    await transactionGate.enter()
+    await operationGate.enter()
     do {
       guard let update = await outbox.markConfirmed(id: id) else {
         throw outboxMutationNotFound(id: id)
       }
       try await persistence.saveOutbox(update.mutations)
-      await transactionGate.leave()
+      await operationGate.leave()
       return update.mutation
     } catch {
-      await transactionGate.leave()
+      await operationGate.leave()
       throw error
     }
   }
 
   @discardableResult
   public func failMutation(id: String, message: String) async throws -> PendingMutation {
-    await transactionGate.enter()
+    await operationGate.enter()
     do {
       guard let update = await outbox.markFailed(id: id, message: message) else {
         throw outboxMutationNotFound(id: id)
       }
       try await persistence.saveOutbox(update.mutations)
-      await transactionGate.leave()
+      await operationGate.leave()
       return update.mutation
     } catch {
-      await transactionGate.leave()
+      await operationGate.leave()
       throw error
     }
   }
@@ -173,6 +211,15 @@ public final class InstantRuntime: Sendable {
       localID: id,
       message: "No pending or historical outbox mutation exists for id '\(id)'.",
       recovery: "Run 'instant-swift-data outbox inspect' to list known mutation ids."
+    )
+  }
+
+  private func queryCacheChangedDuringMaterialization(_ plan: InstantQueryPlan) -> InstantError {
+    InstantError(
+      code: .persistenceFailed,
+      operation: "cache query result",
+      message: "The local SQLite store changed repeatedly while materializing query '\(plan.id)'.",
+      recovery: "Retry the query, or reduce concurrent writes against the same local cache."
     )
   }
 }

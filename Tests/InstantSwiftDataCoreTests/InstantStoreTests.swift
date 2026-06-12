@@ -54,6 +54,165 @@ struct InstantStoreTests {
   }
 
   @Test
+  func queryResultsPersistInQueryCacheAcrossLaunches() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let cachedAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 10)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        now: { cachedAt }
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-cached-query",
+        operations: TodoExample.createOperations(
+          id: "todo-cached",
+          text: "restore cached query",
+          createdAt: createdAt,
+          transactionID: "tx-cached-query"
+        )
+      ),
+      createdAt: createdAt
+    )
+
+    let snapshots = try await runtime.query(TodoExample.query)
+    let cachedQuery = try await runtime.cachedQuery(TodoExample.query)
+
+    expectNoDifference(cachedQuery?.queryID, TodoExample.query.id)
+    expectNoDifference(cachedQuery?.plan, TodoExample.query)
+    expectNoDifference(cachedQuery?.emission.values, snapshots)
+    expectNoDifference(cachedQuery?.updatedAt, cachedAt)
+
+    let secondCreatedAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-cached-query-2",
+        operations: TodoExample.createOperations(
+          id: "todo-cached-2",
+          text: "replace cached query",
+          createdAt: secondCreatedAt,
+          transactionID: "tx-cached-query-2"
+        )
+      ),
+      createdAt: secondCreatedAt
+    )
+
+    let refreshedSnapshots = try await runtime.query(TodoExample.query)
+    let refreshedCache = try await runtime.cachedQuery(TodoExample.query)
+    expectNoDifference(refreshedCache?.emission.values, refreshedSnapshots)
+    expectNoDifference(refreshedSnapshots.map(\.id), ["todo-cached", "todo-cached-2"])
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let relaunchedCache = try await relaunchedRuntime.cachedQuery(TodoExample.query)
+    let cachedTodos = try TodoExample.decode(relaunchedCache?.emission.values ?? [])
+    let cachedQueries = try await relaunchedRuntime.cachedQueries()
+
+    expectNoDifference(cachedQueries.map(\.queryID), [TodoExample.query.id])
+    expectNoDifference(
+      cachedTodos,
+      [
+        TodoRecord(
+          id: "todo-cached",
+          text: "restore cached query",
+          isCompleted: false,
+          createdAt: createdAt
+        ),
+        TodoRecord(
+          id: "todo-cached-2",
+          text: "replace cached query",
+          isCompleted: false,
+          createdAt: secondCreatedAt
+        )
+      ]
+    )
+  }
+
+  @Test
+  func staleRuntimeReloadsBeforeReplacingQueryCache() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let firstCreatedAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let secondCreatedAt = InstantTimestamp(milliseconds: firstCreatedAt.milliseconds + 1)
+    let seedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await seedRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-seed-cache",
+        operations: TodoExample.createOperations(
+          id: "todo-seed",
+          text: "seed cache",
+          createdAt: firstCreatedAt,
+          transactionID: "tx-seed-cache"
+        )
+      ),
+      createdAt: firstCreatedAt
+    )
+    _ = try await seedRuntime.query(TodoExample.query)
+
+    let staleRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL
+      )
+    )
+    let writerRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL
+      )
+    )
+    try await writerRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-cross-runtime",
+        operations: TodoExample.createOperations(
+          id: "todo-cross-runtime",
+          text: "cross runtime",
+          createdAt: secondCreatedAt,
+          transactionID: "tx-cross-runtime"
+        )
+      ),
+      createdAt: secondCreatedAt
+    )
+
+    let snapshots = try await staleRuntime.query(TodoExample.query)
+    let cachedQuery = try await staleRuntime.cachedQuery(TodoExample.query)
+    let cachedTodos = try TodoExample.decode(cachedQuery?.emission.values ?? [])
+
+    expectNoDifference(snapshots.map(\.id), ["todo-seed", "todo-cross-runtime"])
+    expectNoDifference(
+      cachedTodos,
+      [
+        TodoRecord(
+          id: "todo-seed",
+          text: "seed cache",
+          isCompleted: false,
+          createdAt: firstCreatedAt
+        ),
+        TodoRecord(
+          id: "todo-cross-runtime",
+          text: "cross runtime",
+          isCompleted: false,
+          createdAt: secondCreatedAt
+        ),
+      ]
+    )
+  }
+
+  @Test
   func outboxStatusUpdatesPersistAcrossLaunches() async throws {
     let cacheURL = try temporaryCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
@@ -315,7 +474,7 @@ struct InstantStoreTests {
       createdAt: time
     )
 
-    let posts = await runtime.query(.init(id: "posts", namespace: "posts"))
+    let posts = try await runtime.query(.init(id: "posts", namespace: "posts"))
     expectNoDifference(posts.map { $0.values["author"]?.first }, [.ref("user-2")])
 
     try await runtime.transact(
@@ -323,7 +482,7 @@ struct InstantStoreTests {
       createdAt: time
     )
 
-    let cleanedPosts = await runtime.query(.init(id: "posts", namespace: "posts"))
+    let cleanedPosts = try await runtime.query(.init(id: "posts", namespace: "posts"))
     expectNoDifference(cleanedPosts.map { $0.values["author"]?.first }, [nil])
     expectNoDifference(cleanedPosts.map { $0.values["title"]?.first }, [.string("Hello")])
   }
@@ -459,12 +618,12 @@ struct InstantStoreTests {
       createdAt: time
     )
 
-    let ordered = await runtime.query(
+    let ordered = try await runtime.query(
       .init(id: "items.ordered", namespace: "items", order: .init("score"))
     )
     expectNoDifference(ordered.map(\.id), ["item-2", "item-10"])
 
-    let paged = await runtime.query(
+    let paged = try await runtime.query(
       .init(
         id: "items.paged",
         namespace: "items",
@@ -475,7 +634,7 @@ struct InstantStoreTests {
     )
     expectNoDifference(paged.map(\.id), ["item-10"])
 
-    let filtered = await runtime.query(
+    let filtered = try await runtime.query(
       .init(
         id: "items.filtered",
         namespace: "items",
@@ -541,7 +700,7 @@ struct InstantStoreTests {
       createdAt: time
     )
 
-    let greaterThan = await runtime.query(
+    let greaterThan = try await runtime.query(
       .init(
         id: "items.gt",
         namespace: "items",
@@ -551,7 +710,7 @@ struct InstantStoreTests {
     )
     expectNoDifference(greaterThan.map(\.id), ["item-2", "item-3", "item-4", "item-5", "item-6"])
 
-    let greaterThanOrEqual = await runtime.query(
+    let greaterThanOrEqual = try await runtime.query(
       .init(
         id: "items.gte",
         namespace: "items",
@@ -561,7 +720,7 @@ struct InstantStoreTests {
     )
     expectNoDifference(greaterThanOrEqual.map(\.id), ["item-2", "item-3", "item-4", "item-5", "item-6"])
 
-    let lessThan = await runtime.query(
+    let lessThan = try await runtime.query(
       .init(
         id: "items.lt",
         namespace: "items",
@@ -571,7 +730,7 @@ struct InstantStoreTests {
     )
     expectNoDifference(lessThan.map(\.id), ["item-1", "item-2"])
 
-    let lessThanOrEqual = await runtime.query(
+    let lessThanOrEqual = try await runtime.query(
       .init(
         id: "items.lte",
         namespace: "items",
@@ -581,7 +740,7 @@ struct InstantStoreTests {
     )
     expectNoDifference(lessThanOrEqual.map(\.id), ["item-1", "item-2"])
 
-    let inFilter = await runtime.query(
+    let inFilter = try await runtime.query(
       .init(
         id: "items.in",
         namespace: "items",
@@ -591,7 +750,7 @@ struct InstantStoreTests {
     )
     expectNoDifference(inFilter.map(\.id), ["item-1", "item-3", "item-5"])
 
-    let notEquals = await runtime.query(
+    let notEquals = try await runtime.query(
       .init(
         id: "items.ne",
         namespace: "items",
@@ -601,7 +760,7 @@ struct InstantStoreTests {
     )
     expectNoDifference(notEquals.map(\.id), ["item-1", "item-3", "item-4", "item-5", "item-6"])
 
-    let notEqualsMatchesManyValueCandidate = await runtime.query(
+    let notEqualsMatchesManyValueCandidate = try await runtime.query(
       .init(
         id: "items.ne-many",
         namespace: "items",
@@ -614,7 +773,7 @@ struct InstantStoreTests {
       ["item-2", "item-3", "item-4", "item-5", "item-6"]
     )
 
-    let isNull = await runtime.query(
+    let isNull = try await runtime.query(
       .init(
         id: "items.null",
         namespace: "items",
@@ -624,7 +783,7 @@ struct InstantStoreTests {
     )
     expectNoDifference(isNull.map(\.id), ["item-1", "item-3", "item-4", "item-6"])
 
-    let isNotNull = await runtime.query(
+    let isNotNull = try await runtime.query(
       .init(
         id: "items.not-null",
         namespace: "items",
@@ -634,7 +793,7 @@ struct InstantStoreTests {
     )
     expectNoDifference(isNotNull.map(\.id), ["item-2", "item-5"])
 
-    let unknownNotEquals = await runtime.query(
+    let unknownNotEquals = try await runtime.query(
       .init(
         id: "items.ne-unknown",
         namespace: "items",
@@ -644,7 +803,7 @@ struct InstantStoreTests {
     )
     expectNoDifference(unknownNotEquals, [])
 
-    let unknownIsNull = await runtime.query(
+    let unknownIsNull = try await runtime.query(
       .init(
         id: "items.null-unknown",
         namespace: "items",
@@ -654,7 +813,7 @@ struct InstantStoreTests {
     )
     expectNoDifference(unknownIsNull, [])
 
-    let unknownIsNotNull = await runtime.query(
+    let unknownIsNotNull = try await runtime.query(
       .init(
         id: "items.not-null-unknown",
         namespace: "items",
@@ -664,7 +823,7 @@ struct InstantStoreTests {
     )
     expectNoDifference(unknownIsNotNull, [])
 
-    let unknownInsideOr = await runtime.query(
+    let unknownInsideOr = try await runtime.query(
       .init(
         id: "items.unknown-inside-or",
         namespace: "items",
@@ -679,7 +838,7 @@ struct InstantStoreTests {
     )
     expectNoDifference(unknownInsideOr, [])
 
-    let mixedTypeComparison = await runtime.query(
+    let mixedTypeComparison = try await runtime.query(
       .init(
         id: "items.mixed-type-range",
         namespace: "items",
@@ -734,7 +893,7 @@ struct InstantStoreTests {
       createdAt: time
     )
 
-    let like = await runtime.query(
+    let like = try await runtime.query(
       .init(
         id: "items.like",
         namespace: "items",
@@ -743,7 +902,7 @@ struct InstantStoreTests {
     )
     expectNoDifference(like.map(\.id), ["item-1"])
 
-    let iLike = await runtime.query(
+    let iLike = try await runtime.query(
       .init(
         id: "items.ilike",
         namespace: "items",
@@ -752,7 +911,7 @@ struct InstantStoreTests {
     )
     expectNoDifference(iLike.map(\.id), ["item-1", "item-2"])
 
-    let and = await runtime.query(
+    let and = try await runtime.query(
       .init(
         id: "items.and",
         namespace: "items",
@@ -766,7 +925,7 @@ struct InstantStoreTests {
     )
     expectNoDifference(and.map(\.id), ["item-1"])
 
-    let or = await runtime.query(
+    let or = try await runtime.query(
       .init(
         id: "items.or",
         namespace: "items",
@@ -780,7 +939,7 @@ struct InstantStoreTests {
     )
     expectNoDifference(or.map(\.id), ["item-2", "item-3"])
 
-    let underscoreWildcard = await runtime.query(
+    let underscoreWildcard = try await runtime.query(
       .init(
         id: "items.underscore-wildcard",
         namespace: "items",
@@ -789,7 +948,7 @@ struct InstantStoreTests {
     )
     expectNoDifference(underscoreWildcard.map(\.id), ["item-4"])
 
-    let backslashIsLiteral = await runtime.query(
+    let backslashIsLiteral = try await runtime.query(
       .init(
         id: "items.backslash-literal",
         namespace: "items",
@@ -798,7 +957,7 @@ struct InstantStoreTests {
     )
     expectNoDifference(backslashIsLiteral.map(\.id), ["item-5"])
 
-    let emptyOr = await runtime.query(
+    let emptyOr = try await runtime.query(
       .init(id: "items.empty-or", namespace: "items", filters: [.or([])])
     )
     expectNoDifference(emptyOr, [])
@@ -830,13 +989,13 @@ struct InstantStoreTests {
     var plan = TodoExample.query
     plan.limit = -1
 
-    let snapshots = await runtime.query(plan)
+    let snapshots = try await runtime.query(plan)
     expectNoDifference(snapshots, [])
 
     plan.limit = nil
     plan.offset = -1
 
-    let negativeOffsetSnapshots = await runtime.query(plan)
+    let negativeOffsetSnapshots = try await runtime.query(plan)
     expectNoDifference(negativeOffsetSnapshots, [])
   }
 

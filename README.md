@@ -51,8 +51,9 @@ swift run instant-swift-data perms verify --example todos --from instant.perms.t
 
 The current transport is intentionally marked `not-implemented-local-cache-only`
 in command output. That means the demo proves durable local cache, typed triples,
-query materialization, optimistic outbox persistence, and non-captive CLI
-interaction, but it does not yet sync with a real Instant app.
+query materialization, persisted query results, optimistic outbox persistence,
+and non-captive CLI interaction, but it does not yet sync with a real Instant
+app.
 
 ## Development
 

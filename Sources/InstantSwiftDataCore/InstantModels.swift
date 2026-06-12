@@ -413,6 +413,57 @@ public struct InstantQueryEmission: Hashable, Codable, Sendable {
   }
 }
 
+public struct InstantCachedQuery: Hashable, Codable, Sendable, Identifiable {
+  public var id: String { queryID }
+  public var queryID: String
+  public var plan: InstantQueryPlan
+  public var emission: InstantQueryEmission
+  public var updatedAt: InstantTimestamp
+  public var storeRevision: Int64
+
+  public init(
+    queryID: String,
+    plan: InstantQueryPlan,
+    emission: InstantQueryEmission,
+    updatedAt: InstantTimestamp,
+    storeRevision: Int64
+  ) {
+    self.queryID = queryID
+    self.plan = plan
+    self.emission = emission
+    self.updatedAt = updatedAt
+    self.storeRevision = storeRevision
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case queryID
+    case plan
+    case emission
+    case updatedAt
+    case storeRevision
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.init(
+      queryID: try container.decode(String.self, forKey: .queryID),
+      plan: try container.decode(InstantQueryPlan.self, forKey: .plan),
+      emission: try container.decode(InstantQueryEmission.self, forKey: .emission),
+      updatedAt: try container.decode(InstantTimestamp.self, forKey: .updatedAt),
+      storeRevision: try container.decodeIfPresent(Int64.self, forKey: .storeRevision) ?? 0
+    )
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(queryID, forKey: .queryID)
+    try container.encode(plan, forKey: .plan)
+    try container.encode(emission, forKey: .emission)
+    try container.encode(updatedAt, forKey: .updatedAt)
+    try container.encode(storeRevision, forKey: .storeRevision)
+  }
+}
+
 public struct InstantStoreSnapshot: Hashable, Codable, Sendable {
   public var attributes: [InstantAttribute]
   public var triples: [InstantTriple]

@@ -11,6 +11,16 @@ public struct InstantPersistenceSnapshot: Hashable, Codable, Sendable {
   }
 }
 
+public struct InstantPersistenceState: Hashable, Sendable {
+  public var snapshot: InstantPersistenceSnapshot
+  public var storeRevision: Int64
+
+  public init(snapshot: InstantPersistenceSnapshot, storeRevision: Int64) {
+    self.snapshot = snapshot
+    self.storeRevision = storeRevision
+  }
+}
+
 public actor SQLitePersistenceStore {
   private let fileURL: URL
   private let connection: SQLiteConnection
@@ -136,6 +146,19 @@ public actor SQLitePersistenceStore {
   }
 
   public func loadSnapshot() throws -> InstantPersistenceSnapshot {
+    try loadState().snapshot
+  }
+
+  public func loadState() throws -> InstantPersistenceState {
+    try readTransaction {
+      try InstantPersistenceState(
+        snapshot: loadSnapshotWithoutTransaction(),
+        storeRevision: loadStoreRevisionWithoutTransaction()
+      )
+    }
+  }
+
+  private func loadSnapshotWithoutTransaction() throws -> InstantPersistenceSnapshot {
     let attributes: [InstantAttribute] = try selectJSON(
       "SELECT json FROM instant_attributes ORDER BY id"
     )
@@ -151,9 +174,24 @@ public actor SQLitePersistenceStore {
     )
   }
 
+  public func loadQueryCache() throws -> [InstantCachedQuery] {
+    try selectJSON(
+      "SELECT json FROM instant_query_cache ORDER BY updated_at_ms, query_id"
+    )
+  }
+
+  public func cachedQuery(id: String) throws -> InstantCachedQuery? {
+    let rows: [InstantCachedQuery] = try selectJSON(
+      "SELECT json FROM instant_query_cache WHERE query_id = ? LIMIT 1",
+      [.text(id)]
+    )
+    return rows.first
+  }
+
   public func saveStoreSnapshot(_ snapshot: InstantStoreSnapshot) throws {
     try transaction {
       try saveStoreSnapshotWithoutTransaction(snapshot)
+      _ = try bumpStoreRevisionWithoutTransaction()
     }
   }
 
@@ -167,6 +205,31 @@ public actor SQLitePersistenceStore {
     try transaction {
       try saveStoreSnapshotWithoutTransaction(snapshot.store)
       try saveOutboxWithoutTransaction(snapshot.outbox)
+      _ = try bumpStoreRevisionWithoutTransaction()
+    }
+  }
+
+  public func saveQueryCache(
+    _ entry: InstantCachedQuery,
+    expectedStoreRevision: Int64
+  ) throws -> Bool {
+    try transaction {
+      guard try loadStoreRevisionWithoutTransaction() == expectedStoreRevision else {
+        return false
+      }
+
+      try execute(
+        """
+        INSERT OR REPLACE INTO instant_query_cache (query_id, json, updated_at_ms)
+        VALUES (?, ?, ?)
+        """,
+        [
+          .text(entry.queryID),
+          .text(try encode(entry)),
+          .int(entry.updatedAt.milliseconds),
+        ]
+      )
+      return true
     }
   }
 
@@ -211,21 +274,40 @@ public actor SQLitePersistenceStore {
     }
   }
 
-  private func transaction(_ body: () throws -> Void) throws {
+  @discardableResult
+  private func transaction<Value>(_ body: () throws -> Value) throws -> Value {
     try execute("BEGIN IMMEDIATE TRANSACTION")
     do {
-      try body()
+      let value = try body()
       try execute("COMMIT")
+      return value
     } catch {
       try? execute("ROLLBACK")
       throw error
     }
   }
 
-  private func selectJSON<Value: Decodable>(_ sql: String) throws -> [Value] {
+  @discardableResult
+  private func readTransaction<Value>(_ body: () throws -> Value) throws -> Value {
+    try execute("BEGIN DEFERRED TRANSACTION")
+    do {
+      let value = try body()
+      try execute("COMMIT")
+      return value
+    } catch {
+      try? execute("ROLLBACK")
+      throw error
+    }
+  }
+
+  private func selectJSON<Value: Decodable>(
+    _ sql: String,
+    _ bindings: [SQLiteBinding] = []
+  ) throws -> [Value] {
     var statement: OpaquePointer?
     try prepare(sql, statement: &statement)
     defer { sqlite3_finalize(statement) }
+    try bind(bindings, to: statement)
 
     var values: [Value] = []
     while true {
@@ -312,6 +394,30 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  private func loadStoreRevisionWithoutTransaction() throws -> Int64 {
+    let value: String? = try selectScalar(
+      "SELECT value FROM instant_sync_metadata WHERE key = ? LIMIT 1",
+      [.text(Self.storeRevisionKey)]
+    )
+    return value.flatMap(Int64.init) ?? 0
+  }
+
+  private func bumpStoreRevisionWithoutTransaction() throws -> Int64 {
+    let revision = try loadStoreRevisionWithoutTransaction() + 1
+    try execute(
+      """
+      INSERT OR REPLACE INTO instant_sync_metadata (key, value, updated_at_ms)
+      VALUES (?, ?, ?)
+      """,
+      [
+        .text(Self.storeRevisionKey),
+        .text(String(revision)),
+        .int(Self.nowMilliseconds()),
+      ]
+    )
+    return revision
+  }
+
   private func execute(_ sql: String, _ bindings: [SQLiteBinding] = []) throws {
     var statement: OpaquePointer?
     try prepare(sql, statement: &statement)
@@ -374,6 +480,8 @@ public actor SQLitePersistenceStore {
   private static func nowMilliseconds() -> Int64 {
     Int64((Date().timeIntervalSince1970 * 1000).rounded())
   }
+
+  private static let storeRevisionKey = "store_revision"
 }
 
 private enum SQLiteBinding: Sendable {

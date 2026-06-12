@@ -46,6 +46,15 @@ public actor InstantStore {
     return snapshot()
   }
 
+  public func replaceSnapshot(_ snapshot: InstantStoreSnapshot) {
+    let changed = snapshot != self.snapshot()
+    self.attributes = AttributeStore(attributes: snapshot.attributes)
+    self.indexes = TripleIndexes(triples: snapshot.triples, attributes: self.attributes)
+    if changed {
+      sequence += 1
+    }
+  }
+
   public func mergeAttributes(_ attributes: [InstantAttribute]) -> InstantStoreSnapshot {
     self.attributes.merge(attributes)
     self.indexes = TripleIndexes(triples: self.indexes.triples, attributes: self.attributes)
@@ -58,6 +67,14 @@ public actor InstantStore {
 
   public func materialize(_ plan: InstantQueryPlan) -> [InstantEntitySnapshot] {
     indexes.materialize(plan, attributes: attributes)
+  }
+
+  public func materializeEmission(_ plan: InstantQueryPlan) -> InstantQueryEmission {
+    InstantQueryEmission(
+      queryID: plan.id,
+      sequence: sequence,
+      values: indexes.materialize(plan, attributes: attributes)
+    )
   }
 
   public func observe(_ plan: InstantQueryPlan) -> AsyncStream<InstantQueryEmission> {
@@ -113,13 +130,7 @@ public actor InstantStore {
     continuation: AsyncStream<InstantQueryEmission>.Continuation
   ) {
     observers[id] = StoreObserver(plan: plan, continuation: continuation)
-    continuation.yield(
-      InstantQueryEmission(
-        queryID: plan.id,
-        sequence: sequence,
-        values: indexes.materialize(plan, attributes: attributes)
-      )
-    )
+    continuation.yield(materializeEmission(plan))
   }
 
   private func cancelObservation(id: UUID) {
