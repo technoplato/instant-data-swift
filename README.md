@@ -28,6 +28,13 @@ swift run instant-swift-data examples todos add "do the dishes" --json
 swift run instant-swift-data examples todos list --jsonl
 ```
 
+Inspect the durable cache and optimistic outbox:
+
+```bash
+swift run instant-swift-data cache inspect --json
+swift run instant-swift-data outbox inspect --jsonl
+```
+
 Generate the current todo example schema:
 
 ```bash

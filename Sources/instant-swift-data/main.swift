@@ -38,6 +38,12 @@ struct InstantSwiftDataCLI {
     case "examples":
       try await runExamples(arguments: arguments, output: output)
 
+    case "cache":
+      try await runCache(arguments: arguments, output: output)
+
+    case "outbox":
+      try await runOutbox(arguments: arguments, output: output)
+
     default:
       throw CLIError("Unknown command: \(command)", exitCode: 64)
     }
@@ -127,6 +133,129 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func runCache(arguments: [String], output: OutputMode) async throws {
+    var arguments = arguments
+    guard arguments.popFirstArgument() == "inspect", arguments.isEmpty else {
+      throw CLIError("Usage: instant-swift-data cache inspect [--json|--jsonl]", exitCode: 64)
+    }
+
+    let context = try await CLIContext.bootstrap()
+    let snapshot = try await context.runtime.persistence.loadSnapshot()
+    let summary = CacheInspectOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      transport: "not-implemented-local-cache-only",
+      attributeCount: snapshot.store.attributes.count,
+      tripleCount: snapshot.store.triples.count,
+      outboxMutationCount: snapshot.outbox.count,
+      namespaces: namespaceSummaries(snapshot.store)
+    )
+
+    switch output {
+    case .human:
+      print("cache: \(summary.cachePath)")
+      print("attributes: \(summary.attributeCount)")
+      print("triples: \(summary.tripleCount)")
+      print("outbox mutations: \(summary.outboxMutationCount)")
+      if summary.namespaces.isEmpty {
+        print("namespaces: none")
+      } else {
+        print("namespaces:")
+        for namespace in summary.namespaces {
+          print(
+            "  \(namespace.namespace) entities=\(namespace.entityCount) triples=\(namespace.tripleCount)"
+          )
+        }
+      }
+
+    case .json:
+      try writeJSON(summary)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.cache.inspect",
+          side: "swift",
+          event: "summary",
+          appID: context.appID,
+          ok: true,
+          details: summary
+        )
+      )
+      for namespace in summary.namespaces {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.cache.inspect",
+            side: "swift",
+            event: "namespace",
+            appID: context.appID,
+            entityID: namespace.namespace,
+            ok: true,
+            details: namespace
+          )
+        )
+      }
+    }
+  }
+
+  private static func runOutbox(arguments: [String], output: OutputMode) async throws {
+    var arguments = arguments
+    guard arguments.popFirstArgument() == "inspect", arguments.isEmpty else {
+      throw CLIError("Usage: instant-swift-data outbox inspect [--json|--jsonl]", exitCode: 64)
+    }
+
+    let context = try await CLIContext.bootstrap()
+    let mutations = await context.runtime.outbox.all()
+    let summary = OutboxInspectOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      transport: "not-implemented-local-cache-only",
+      pendingMutationCount: mutations.filter { $0.status == .pending }.count,
+      mutationCount: mutations.count,
+      mutations: mutations
+    )
+
+    switch output {
+    case .human:
+      print("outbox: \(summary.cachePath)")
+      print("mutations: \(summary.mutationCount)")
+      print("pending mutations: \(summary.pendingMutationCount)")
+      for mutation in summary.mutations {
+        print(
+          "- \(mutation.id) status=\(mutation.status.rawValue) createdAtMs=\(mutation.createdAt.milliseconds) operations=\(mutation.transaction.operations.count)"
+        )
+      }
+
+    case .json:
+      try writeJSON(summary)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.outbox.inspect",
+          side: "swift",
+          event: "summary",
+          appID: context.appID,
+          ok: true,
+          details: summary
+        )
+      )
+      for mutation in summary.mutations {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.outbox.inspect",
+            side: "swift",
+            event: "mutation",
+            appID: context.appID,
+            entityID: mutation.id,
+            ok: true,
+            details: mutation
+          )
+        )
+      }
+    }
+  }
+
   private static func printTodos(
     context: CLIContext,
     output: OutputMode,
@@ -200,12 +329,49 @@ struct InstantSwiftDataCLI {
         examples todos list [--json|--jsonl]
         examples todos complete <todo-id> [--json|--jsonl]
         examples todos refresh [--json|--jsonl]
+        cache inspect [--json|--jsonl]
+        outbox inspect [--json|--jsonl]
 
       Environment:
         INSTANT_SWIFT_DATA_HOME  Directory for CLI SQLite state. Defaults to ~/.instant-swift-data.
         INSTANT_APP_ID           Logical app id recorded in output. Defaults to local-demo.
       """
     )
+  }
+
+  private static func namespaceSummaries(
+    _ snapshot: InstantStoreSnapshot
+  ) -> [CacheNamespaceSummary] {
+    let attributesByID = Dictionary(uniqueKeysWithValues: snapshot.attributes.map { ($0.id, $0) })
+    var entityIDsByNamespace: [String: Set<String>] = [:]
+    var tripleCountsByNamespace: [String: Int] = [:]
+
+    for triple in snapshot.triples {
+      let namespace =
+        attributesByID[triple.attributeID]?.namespace
+        ?? triple.attributeID.split(separator: "/", maxSplits: 1).first.map(String.init)
+        ?? "unknown"
+      entityIDsByNamespace[namespace, default: []].insert(triple.entityID)
+      tripleCountsByNamespace[namespace, default: 0] += 1
+    }
+
+    for attribute in snapshot.attributes {
+      if entityIDsByNamespace[attribute.namespace] == nil {
+        entityIDsByNamespace[attribute.namespace] = []
+      }
+      if tripleCountsByNamespace[attribute.namespace] == nil {
+        tripleCountsByNamespace[attribute.namespace] = 0
+      }
+    }
+
+    return entityIDsByNamespace.keys.sorted().map { namespace in
+      CacheNamespaceSummary(
+        namespace: namespace,
+        entityCount: entityIDsByNamespace[namespace, default: []].count,
+        tripleCount: tripleCountsByNamespace[namespace, default: 0],
+        attributeCount: snapshot.attributes.filter { $0.namespace == namespace }.count
+      )
+    }
   }
 
   private static func writeJSON<Value: Encodable>(_ value: Value) throws {
@@ -294,6 +460,32 @@ private struct TodosOutput: Codable, Sendable {
   var transport: String
   var pendingMutationCount: Int
   var todos: [TodoRecord]
+}
+
+private struct CacheInspectOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var transport: String
+  var attributeCount: Int
+  var tripleCount: Int
+  var outboxMutationCount: Int
+  var namespaces: [CacheNamespaceSummary]
+}
+
+private struct CacheNamespaceSummary: Codable, Sendable {
+  var namespace: String
+  var entityCount: Int
+  var tripleCount: Int
+  var attributeCount: Int
+}
+
+private struct OutboxInspectOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var transport: String
+  var pendingMutationCount: Int
+  var mutationCount: Int
+  var mutations: [PendingMutation]
 }
 
 private struct EvidenceRow<Details: Encodable & Sendable>: Encodable, Sendable {
