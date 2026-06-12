@@ -73,7 +73,7 @@ struct InstantSwiftDataCLI {
       throw CLIError("Only '--example todos' is implemented in this core slice.", exitCode: 64)
     }
 
-    print(TypeScriptPermissionsPrinter().printPermissions(InstantSchemaExamples.todoPermissions))
+    print(try TypeScriptPermissionsPrinter().printPermissions(InstantSchemaExamples.todoPermissions))
   }
 
   private static func runExamples(arguments: [String], output: OutputMode) async throws {
