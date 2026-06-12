@@ -33,9 +33,10 @@ actor InstantOutbox {
 
   func markConfirmed(id: String) -> InstantOutboxUpdate? {
     guard let index = mutations.firstIndex(where: { $0.id == id }) else { return nil }
-    mutations[index].status = .confirmed
-    mutations[index].failureMessage = nil
-    return InstantOutboxUpdate(mutation: mutations[index], mutations: mutations)
+    var mutation = mutations.remove(at: index)
+    mutation.status = .confirmed
+    mutation.failureMessage = nil
+    return InstantOutboxUpdate(mutation: mutation, mutations: mutations)
   }
 
   func markFailed(id: String, message: String) -> InstantOutboxUpdate? {

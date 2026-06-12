@@ -10,8 +10,8 @@ the same SQLite cache and outbox path used by the core runtime.
 
 ## Local Todo CLI Demo
 
-Use `INSTANT_SWIFT_DATA_HOME` to keep the demo cache isolated:
-The completion step uses `jq` to extract the created todo ID from JSON output.
+Use `INSTANT_SWIFT_DATA_HOME` to keep the demo cache isolated.
+The ID-capture steps use `jq` to extract IDs from JSON output.
 
 ```bash
 export INSTANT_SWIFT_DATA_HOME="$(mktemp -d)"
@@ -39,11 +39,13 @@ swift run instant-swift-data app select local-demo --json
 swift run instant-swift-data app show --json
 swift run instant-swift-data cache inspect --json
 swift run instant-swift-data outbox inspect --jsonl
-swift run instant-swift-data outbox confirm <mutation-id> --json
-swift run instant-swift-data outbox fail <mutation-id> "server rejected" --json
+MUTATION_ID="$(swift run instant-swift-data outbox inspect --json | jq -r '.mutations[0].id')"
+swift run instant-swift-data outbox confirm "$MUTATION_ID" --json
+FAILED_MUTATION_ID="$(swift run instant-swift-data outbox inspect --json | jq -r '.mutations[0].id')"
+swift run instant-swift-data outbox fail "$FAILED_MUTATION_ID" "server rejected" --json
 swift run instant-swift-data local-id get todos.viewer --json
 swift run instant-swift-data sync inspect --json
-swift run instant-swift-data sync mark-processed <tx-id> --json
+swift run instant-swift-data sync mark-processed demo-tx-1 --json
 ```
 
 Persist local CLI auth/session state:

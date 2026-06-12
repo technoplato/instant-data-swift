@@ -213,7 +213,7 @@ struct InstantStoreTests {
   }
 
   @Test
-  func outboxStatusUpdatesPersistAcrossLaunches() async throws {
+  func outboxConfirmationCleansUpAndFailuresPersistAcrossLaunches() async throws {
     let cacheURL = try temporaryCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let runtime = try await InstantRuntime.bootstrap(
@@ -255,6 +255,9 @@ struct InstantStoreTests {
     expectNoDifference(failed.status, .failed)
     expectNoDifference(failed.failureMessage, "server rejected")
 
+    let liveMutations = await runtime.outboxMutations()
+    expectNoDifference(liveMutations.map(\.id), ["tx-fail"])
+
     let relaunchedRuntime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
         appID: "test-app",
@@ -265,9 +268,9 @@ struct InstantStoreTests {
 
     let mutations = await relaunchedRuntime.outboxMutations()
     let pending = await relaunchedRuntime.pendingMutations()
-    expectNoDifference(mutations.map(\.id), ["tx-confirm", "tx-fail"])
-    expectNoDifference(mutations.map(\.status), [.confirmed, .failed])
-    expectNoDifference(mutations.map(\.failureMessage), [nil, "server rejected"])
+    expectNoDifference(mutations.map(\.id), ["tx-fail"])
+    expectNoDifference(mutations.map(\.status), [.failed])
+    expectNoDifference(mutations.map(\.failureMessage), ["server rejected"])
     expectNoDifference(pending, [])
   }
 
@@ -627,7 +630,7 @@ struct InstantStoreTests {
   }
 
   @Test
-  func concurrentOutboxStatusUpdateAndTransactionPersistAcrossLaunches() async throws {
+  func concurrentOutboxCleanupAndTransactionPersistAcrossLaunches() async throws {
     let cacheURL = try temporaryCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let runtime = try await InstantRuntime.bootstrap(
@@ -683,8 +686,8 @@ struct InstantStoreTests {
     let mutations = await relaunchedRuntime.outboxMutations()
     let pending = await relaunchedRuntime.pendingMutations()
 
-    expectNoDifference(mutations.map(\.id), ["tx-confirm", "tx-new"])
-    expectNoDifference(mutations.map(\.status), [.confirmed, .pending])
+    expectNoDifference(mutations.map(\.id), ["tx-new"])
+    expectNoDifference(mutations.map(\.status), [.pending])
     expectNoDifference(pending.map(\.id), ["tx-new"])
   }
 
