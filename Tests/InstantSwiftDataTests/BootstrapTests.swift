@@ -86,6 +86,61 @@ struct BootstrapTests {
   }
 
   @Test
+  func bootstrapUsesMagicCodeExchangeDependency() async throws {
+    let appID = "magic-code-dependency-\(UUID().uuidString)"
+    let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataMagicCode-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let exchange = InstantMagicCodeExchange(
+      send: { request in
+        InstantMagicCodeChallenge(
+          appID: request.appID,
+          email: request.email,
+          code: "246810",
+          createdAt: request.sentAt,
+          expiresAt: InstantTimestamp(milliseconds: request.sentAt.milliseconds + 60_000)
+        )
+      },
+      verify: { request in
+        InstantMagicCodeVerification(
+          userID: "dependency:\(request.appID):\(request.email):\(request.code)",
+          refreshToken: "challenge:\(request.challenge.code)"
+        )
+      }
+    )
+
+    try await withDependencies {
+      $0.date.now = fixedDate
+      $0.instantMagicCodeExchange = exchange
+      try await $0.bootstrapInstantSwiftData(
+        appID: appID,
+        persistenceURL: directory.appendingPathComponent("cache.sqlite"),
+        context: .test
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var client
+
+      guard let runtime = client.runtime else {
+        #expect(Bool(false), "Expected a runtime-backed client.")
+        return
+      }
+
+      let challenge = try await runtime.sendMagicCode(email: " User@Example.COM ")
+      expectNoDifference(challenge.code, "246810")
+
+      let session = try await runtime.signInWithMagicCode(
+        email: "user@example.com",
+        code: "246810"
+      )
+      expectNoDifference(session.userID, "dependency:\(appID):user@example.com:246810")
+      expectNoDifference(session.refreshToken, "challenge:246810")
+    }
+  }
+
+  @Test
   func dependencyOverrideCanInstallMockClient() async throws {
     let mock = InstantSwiftDataClient(
       transact: { transaction in

@@ -319,6 +319,29 @@ public struct InstantAuthSession: Hashable, Codable, Sendable, Identifiable {
   }
 }
 
+public struct InstantMagicCodeChallenge: Hashable, Codable, Sendable, Identifiable {
+  public var id: String { "\(appID):\(email)" }
+  public var appID: String
+  public var email: String
+  public var code: String
+  public var createdAt: InstantTimestamp
+  public var expiresAt: InstantTimestamp
+
+  public init(
+    appID: String,
+    email: String,
+    code: String,
+    createdAt: InstantTimestamp,
+    expiresAt: InstantTimestamp
+  ) {
+    self.appID = appID
+    self.email = email
+    self.code = code
+    self.createdAt = createdAt
+    self.expiresAt = expiresAt
+  }
+}
+
 public struct InstantSyncState: Hashable, Codable, Sendable {
   public var processedTransactionID: String?
 

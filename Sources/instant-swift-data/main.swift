@@ -371,6 +371,9 @@ struct InstantSwiftDataCLI {
       let session = try await context.runtime.signInWithRefreshToken(refreshToken, userID: userID)
       try printAuth(context: context, event: "token", session: session, output: output)
 
+    case "magic-code", "magic":
+      try await runMagicCode(arguments: arguments, context: context, output: output)
+
     case "sign-out", "signout", "logout":
       guard arguments.isEmpty else {
         throw CLIError("Usage: instant-swift-data auth sign-out [--json|--jsonl]", exitCode: 64)
@@ -380,6 +383,39 @@ struct InstantSwiftDataCLI {
 
     default:
       throw CLIError(authUsage, exitCode: 64)
+    }
+  }
+
+  private static func runMagicCode(
+    arguments: [String],
+    context: CLIContext,
+    output: OutputMode
+  ) async throws {
+    var arguments = arguments
+    guard let command = arguments.popFirstArgument() else {
+      throw CLIError(magicCodeUsage, exitCode: 64)
+    }
+
+    switch command {
+    case "send":
+      guard let email = arguments.popFirstArgument(), arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data auth magic-code send <email> [--json|--jsonl]", exitCode: 64)
+      }
+      let challenge = try await context.runtime.sendMagicCode(email: email)
+      try printMagicCodeChallenge(context: context, challenge: challenge, output: output)
+
+    case "verify":
+      guard let email = arguments.popFirstArgument(),
+        let code = arguments.popFirstArgument(),
+        arguments.isEmpty
+      else {
+        throw CLIError("Usage: instant-swift-data auth magic-code verify <email> <code> [--json|--jsonl]", exitCode: 64)
+      }
+      let session = try await context.runtime.signInWithMagicCode(email: email, code: code)
+      try printAuth(context: context, event: "magic-code", session: session, output: output)
+
+    default:
+      throw CLIError(magicCodeUsage, exitCode: 64)
     }
   }
 
@@ -540,6 +576,46 @@ struct InstantSwiftDataCLI {
           event: event,
           appID: context.appID,
           entityID: session?.userID,
+          ok: true,
+          details: payload
+        )
+      )
+    }
+  }
+
+  private static func printMagicCodeChallenge(
+    context: CLIContext,
+    challenge: InstantMagicCodeChallenge,
+    output: OutputMode
+  ) throws {
+    let payload = MagicCodeOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: "magic-code-send",
+      transport: "not-implemented-local-cache-only",
+      email: challenge.email,
+      expiresAt: challenge.expiresAt,
+      localVerificationCode: challenge.code
+    )
+
+    switch output {
+    case .human:
+      print("email: \(payload.email)")
+      print("local verification code: \(payload.localVerificationCode)")
+      print("expires at ms: \(payload.expiresAt.milliseconds)")
+      print("cache: \(payload.cachePath)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.auth.magic-code",
+          side: "swift",
+          event: "magic-code-send",
+          appID: context.appID,
+          entityID: challenge.email,
           ok: true,
           details: payload
         )
@@ -751,6 +827,8 @@ struct InstantSwiftDataCLI {
         auth show [--json|--jsonl]
         auth guest [--json|--jsonl]
         auth token <refresh-token> [--user-id id] [--json|--jsonl]
+        auth magic-code send <email> [--json|--jsonl]
+        auth magic-code verify <email> <code> [--json|--jsonl]
         auth sign-out [--json|--jsonl]
         app show [--json|--jsonl]
         app select <app-id> [--json|--jsonl]
@@ -1052,11 +1130,21 @@ struct InstantSwiftDataCLI {
 
   private static var authUsage: String {
     """
-    Usage: instant-swift-data auth <show|guest|token|sign-out>
+    Usage: instant-swift-data auth <show|guest|token|magic-code|sign-out>
       instant-swift-data auth show [--json|--jsonl]
       instant-swift-data auth guest [--json|--jsonl]
       instant-swift-data auth token <refresh-token> [--user-id id] [--json|--jsonl]
+      instant-swift-data auth magic-code send <email> [--json|--jsonl]
+      instant-swift-data auth magic-code verify <email> <code> [--json|--jsonl]
       instant-swift-data auth sign-out [--json|--jsonl]
+    """
+  }
+
+  private static var magicCodeUsage: String {
+    """
+    Usage: instant-swift-data auth magic-code <send|verify>
+      instant-swift-data auth magic-code send <email> [--json|--jsonl]
+      instant-swift-data auth magic-code verify <email> <code> [--json|--jsonl]
     """
   }
 
@@ -1311,6 +1399,16 @@ private struct AuthOutput: Codable, Sendable {
   var hasRefreshToken: Bool
   var createdAt: InstantTimestamp?
   var updatedAt: InstantTimestamp?
+}
+
+private struct MagicCodeOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var transport: String
+  var email: String
+  var expiresAt: InstantTimestamp
+  var localVerificationCode: String
 }
 
 private struct AppOutput: Codable, Sendable {

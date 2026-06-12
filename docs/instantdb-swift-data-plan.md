@@ -38,6 +38,9 @@ Resolved decisions from the later goal pass:
 - Macro support and benchmark support are first-class package targets.
 - The CLI must be agent-interactable, non-captive, and backed by the same
   durable auth/cache/outbox state as app clients.
+- Swift concurrency compliance is a first-class implementation constraint. The
+  detailed contract lives in `docs/swift-concurrency-guidance.md`; the core
+  package must stay clean under Swift 6 strict concurrency.
 
 ## Upstream Inventory
 
@@ -45,12 +48,15 @@ Fetched on 2026-06-12.
 
 | Source | Local path | Revision inspected | What to mine |
 | --- | --- | --- | --- |
-| Instant TypeScript | `/Users/michael.lustig/Sync/tca/tools-local/instant` | `origin/main e7101761` | Canonical client behavior, schema surface, query grammar, transaction grammar, streams, storage, presence, auth, offline cache, sync table |
-| SQLiteData | `/Users/michael.lustig/Sync/tca/tools-local/sqlite-data` | `origin/main 0c79d7a` | SwiftData-like API shape, `@FetchAll`/`@FetchOne`/`@Fetch`, dependency bootstrap, migration docs, observation ergonomics |
-| Swift sharing Instant, ship branch | `/Users/michael.lustig/Sync/tca/upstream-swift/swift-sharing-instant-ship` | `8286964` | Best current Swift Instant behavior: reactor, triple store, offline tests, pending flush order, schema codegen, presence/topics/storage |
-| Swift sharing Instant, older branch | `/Users/michael.lustig/Sync/tca/swift-sharing-instant` | `d78601a` | Auto-research artifacts, ported tests, in-memory database sketches, parity scripts |
-| Instant iOS SDK draft | `/Users/michael.lustig/Sync/tca/tools-local/instant-ios-sdk` | `3e41b59` | Core Swift client, WebSocket, local storage, auth, storage, query manager, local-first manager, macros |
-| Sigil bridge | `/Users/michael.lustig/Sync/Sigil/Sources/USSInstantBridge` | local files | App-level bridge patterns and persistence integration |
+| Instant TypeScript | `upstream/instant` | `e7101761` | Canonical client behavior, schema surface, query grammar, transaction grammar, streams, storage, presence, auth, offline cache, sync table |
+| SQLiteData | `upstream/sqlite-data` | `0c79d7a` | SwiftData-like API shape, `@FetchAll`/`@FetchOne`/`@Fetch`, dependency bootstrap, migration docs, observation ergonomics, example ports |
+| Swift sharing Instant | `upstream/sharing-instant` | `d78601a` | Prior Swift Instant behavior: reactor, triple store, offline tests, pending flush order, schema codegen, presence/topics/storage |
+| Instant iOS SDK draft | `upstream/instant-ios-sdk` | `304677c` | Core Swift client, WebSocket, local storage, auth, storage, query manager, local-first manager, macros |
+
+`upstream/README.md` is the submodule map. The transferred plan referenced a
+local-only `swift-sharing-instant-ship` checkout and a Sigil bridge path; neither
+is part of this moved repository, so they are historical research leads rather
+than current local inputs.
 
 ## Feature Parity Target
 
@@ -253,6 +259,140 @@ familiar to SQLiteData users, but the engine underneath is not SQL. A query
 becomes an Instant query tree, the server returns triples, and the local store
 materializes Swift values from those triples.
 
+## SQLiteData Audit Notes
+
+Audit source: `upstream/sqlite-data`, especially the Reminders, SyncUps,
+CaseStudies, CloudKitDemo, `Fetch*`, `SyncEngine`, and CloudKit test suites.
+These practices should inform the Instant Swift Data design without turning the
+public API into SQL:
+
+- **One bootstrap path.** SQLiteData's `bootstrapDatabase` and
+  `prepareDependencies` pattern is good because previews, tests, app launches,
+  and model code all consume the same injected database/sync dependencies. The
+  Instant plan should expose `bootstrapInstantSwiftData` as the only production
+  setup path, with explicit configuration for app id, auth/session store, local
+  SQLite path, transport runtime, outbox, query cache, and preview/test stores.
+- **Swift Dependencies for overridable effects.** App-facing clients that vary
+  across live, preview, test, CLI, and local terminal contexts should be modeled
+  as Point-Free `swift-dependencies` values. Define a Sendable interface in the
+  appropriate module, expose reusable concrete instances such as
+  `InstantMagicCodeExchange.local`, register `TestDependencyKey` and
+  `DependencyKey` values with computed `testValue`, `previewValue`, and
+  `liveValue`, and thread the resolved dependency into
+  `bootstrapInstantSwiftData`/`InstantRuntimeConfiguration`. This applies first
+  to magic-code exchange and should later apply to transport/auth, sync, file
+  storage, and network clients.
+- **Typed models above explicit migrations.** SQLiteData combines `@Table`,
+  `Draft`, `@Selection`, typed expressions, and generated update helpers with
+  named migrations that use strict SQL, foreign keys, indexes, FTS tables, and
+  triggers. This is good because application queries are type checked while
+  persisted schema history stays frozen and auditable. Instant Swift Data should
+  keep typed access to triples, attributes, outbox rows, query cache rows, and
+  sync metadata while requiring named migrations for every persisted shape.
+- **Observable fetch wrappers as the app-facing contract.** SQLiteData's
+  `@FetchAll`, `@FetchOne`, and `@Fetch` expose values plus loading, errors,
+  animation, dynamic `load`, and cancellable `FetchSubscription` state. This is
+  good because views and `@Observable` models can subscribe without hand-rolled
+  observer lifetimes. Instant fetch wrappers should do the same over Instant
+  query trees, cached materialized results, server subscriptions, and explicit
+  cancellation.
+- **Dynamic query work belongs in the engine.** SQLiteData's search examples
+  debounce user input, cancel stale tasks, and reload the query key so filtering,
+  sorting, FTS, and limits execute in SQLite. This is good because it avoids
+  loading everything and doing repeated Swift collection work. Instant dynamic
+  queries should replan local materialization and server subscriptions rather
+  than treating post-filtered arrays as feature parity.
+- **Writes have drafts, transactions, and reportable errors.** SQLiteData uses
+  `Draft` values for forms, `database.write` for mutation boundaries, and
+  `withErrorReporting` around user actions. This is good because edit state,
+  persisted state, transaction scope, and error surfacing stay separate. Instant
+  mutations should use typed drafts or builders, an explicit optimistic
+  transaction boundary, durable outbox writes, rollback/failure state, and
+  actionable error values.
+- **Examples are architecture tests.** Reminders and SyncUps keep side effects in
+  `@Observable` models with `@ObservationIgnored` dependencies, preview seeds,
+  injected clients, and tested model behavior. This is good because real app
+  workflows exercise persistence, navigation, search, sharing, media/speech, and
+  sync without burying the behavior in SwiftUI `body`. Instant example ports
+  should preserve that model-first structure and include CLI access to the same
+  core behavior.
+- **Sync and sharing are proved with stateful tests.** SQLiteData's CloudKit
+  tests use mock private/shared databases, snapshots, relaunch scenarios,
+  permission rejection tests, metadata checks, root-record restrictions, and
+  sync-engine lifecycle assertions. This is good because collaboration bugs live
+  in durable state transitions, not in view code. Instant Swift Data should add
+  both deterministic local tests and real Instant validation for memberships,
+  roles, share links/tokens, accept/revoke, permissions, reconnect, and relaunch.
+- **Cancellable async ownership is part of the API.** SQLiteData fetch
+  subscriptions and dependency clients clean up observations and streams on task
+  cancellation. This is good because live data, speech/audio, sync, and storage
+  work cannot leak past the feature that started it. Instant runtime tasks need
+  clear owners and cancellation handles for live queries, presence, topics,
+  storage progress, streams, transport reconnect loops, and outbox drains.
+
+## Swift Concurrency Contract
+
+The implementation must follow `docs/swift-concurrency-guidance.md`. Concurrency
+correctness is part of the acceptance contract, not cleanup work after features
+exist.
+
+Build and toolchain requirements:
+
+- Keep Swift 6 language mode enabled.
+- Keep complete strict concurrency enabled in CI.
+- Enable upcoming concurrency checks as the supported toolchain allows:
+  strict concurrency, region-based isolation, dynamic actor isolation,
+  `nonisolated(nonsending)` by default, Sendable inference from captures, and
+  isolated conformance inference.
+- Do not add `@preconcurrency`, `@unchecked Sendable`, or global actor
+  annotations merely to silence diagnostics. Each use needs a local explanation
+  of the invariant that makes it correct.
+
+Actor ownership rules:
+
+- Use coarse actors for state ownership: store/triple indexes, outbox,
+  persistence, transport/runtime, and delivery/observation where needed.
+- Do not make every entity, query, or pending mutation an actor.
+- Every mutable variable belongs to exactly one actor. Mutable state that can be
+  written from two actors, or from actor-isolated and nonisolated code, is a
+  design error.
+- Actor methods must not suspend while invariants are partially updated. Split
+  mutation, snapshot creation, persistence, and network I/O into explicit phases.
+- Cross actor boundaries with immutable snapshots, never with references into
+  another actor's mutable state.
+
+Sendable and isolation rules:
+
+- All values crossing actor boundaries must be `Sendable`: query plans,
+  transaction steps, IDs, schema IR, errors, cache rows, outbox rows, transport
+  messages, storage metadata, room/presence/topic messages, stream chunks, and
+  query emissions.
+- Prefer immutable structs and enums for boundary values.
+- `nonisolated` is for pure, cheap helpers and protocol requirements that do not
+  touch actor-owned state.
+- `nonisolated(nonsending)` must be deliberate. It can keep lightweight async
+  helper work caller-bound, but it must not be used when the intent is to move
+  CPU-heavy work off the caller's actor.
+- CPU-heavy work must use an explicit concurrent boundary, detached task, custom
+  executor, or nonisolated async design that is verified not to inherit main
+  actor execution.
+
+Runtime and performance rules:
+
+- Keep `@MainActor` out of `InstantSwiftDataCore`, `InstantSwiftDataSchema`, and
+  the CLI. Main actor isolation belongs in UI adapters and examples only.
+- Every long-lived task must have an owner and deterministic cancellation path.
+  No fire-and-forget task may outlive the call stack without being stored and
+  cancelled by its owning runtime or actor.
+- Live queries, presence, topics, storage progress, and stream APIs should use
+  `AsyncSequence`-shaped surfaces or equivalent observation wrappers with
+  bounded buffering and explicit cancellation.
+- Hot paths must batch actor crossings. Do not insert or recompute one triple at
+  a time across actor boundaries.
+- Synchronous SQLite or file I/O must be isolated to a persistence actor or
+  custom serial executor and must not block actors responsible for query
+  observation or transport responsiveness.
+
 ## Validation Suite
 
 The validation rule is: a unit test can explain a helper, but it cannot prove
@@ -314,6 +454,14 @@ Create `validation/` with:
   local IDs, cache, and outbox state for a later CLI invocation.
 - Permissions: generated permissions reject an unauthorized write in both
   Swift and TypeScript paths.
+- Concurrency: concurrent Swift `transact` calls preserve deterministic outbox
+  order and deterministic final store state.
+- Concurrency: transport updates racing with local optimistic writes produce the
+  same materialized query results across repeated runs.
+- Concurrency: cancelling live query, presence, topic, stream, and storage
+  subscriptions unregisters observers and releases continuations.
+- Concurrency: no core API requires `@MainActor`; UI examples may adapt core
+  emissions onto the main actor.
 
 ### Performance Gates
 
@@ -328,6 +476,10 @@ Record numbers as JSON, not prose:
 - Memory growth during 1k, 10k, and 50k triple workloads.
 - Swift/TypeScript benchmark comparison result and quantified gap when Swift is
   slower.
+- Actor-hop counts or equivalent instrumentation for triple insert,
+  materialization, reconnect drain, and outbox flush hot paths.
+- Cancellation latency for live query, presence/topic, storage progress, and
+  stream subscriptions.
 
 Initial budgets can be loose until the implementation exists, but the suite
 must emit the same metrics on day one so regressions become visible.
@@ -335,36 +487,57 @@ must emit the same metrics on day one so regressions become visible.
 ## Implementation Packets
 
 1. Repository scaffold: `InstantSwiftData` package targets, macro and benchmark
-   placeholders, docs, and validation directories.
+   placeholders, docs, validation directories, and Swift 6 strict concurrency
+   settings.
 2. Schema IR and macros: import the best pieces from `InstantSchemaCodegen` and
    `InstantDBMacros`; make Swift -> TypeScript generation the primary path; add
    Point-Free MacroTesting coverage for generated code and diagnostics.
-3. Core local store: port triple store, attrs store, query materialization,
+3. Concurrency foundation: apply `docs/swift-concurrency-guidance.md`; define
+   actor ownership for store, outbox, persistence, transport/runtime, and
+   observation; define Sendable boundary types; add strict-concurrency CI.
+4. Bootstrap and persistence foundation: implement `bootstrapInstantSwiftData`
+   through `prepareDependencies`; provision context-aware live, preview, test,
+   and CLI stores; register Swift Dependencies values for magic-code exchange
+   and future auth/transport seams; create named SQLite migrations for
+   attributes, triples, query cache, sync metadata, local IDs, auth/session, and
+   outbox tables.
+5. Core local store: port triple store, attrs store, query materialization,
    observer invalidation, and reverse-link cleanup into `InstantSwiftDataCore`;
-   persist through SQLite first.
-4. Transport and auth: merge `InstantClient`, connection messages, auth manager,
-   and session persistence into the core target.
-5. Agent CLI foundation: auth, selected app, SQLite cache, local IDs, query cache,
+   persist through SQLite first; batch store mutation and query emissions across
+   actor boundaries.
+6. Transport and auth: merge `InstantClient`, connection messages, auth manager,
+   and session persistence into the core target behind Sendable Swift
+   Dependencies clients whose local/test implementations remain usable without
+   real Instant credentials.
+7. Agent CLI foundation: auth, selected app, SQLite cache, local IDs, query cache,
    sync metadata, and pending outbox persisted across invocations.
-6. Mutation outbox: transaction builder, optimistic apply, durable pending
-   mutations, confirmation cleanup, rollback/error surfacing, and ordered flush.
-7. Query surface: `@FetchAll`, `@FetchOne`, `@Fetch`, `queryOnce`, pagination,
-   infinite query, nested linked queries, and dynamic query changes.
-8. Realtime linked entities: multi-link resolution, field filters, different
-   `with` clauses, and reverse observer propagation.
-9. Offline: cached subscription emission, strict offline `queryOnce`, restart
-   restore, reconnect flush.
-10. Storage, auth public API, presence, topics, rooms, and streams.
-11. Sharing model: Instant-native share entities, memberships, permissions,
-    accept/revoke flows, Reminders list sharing proof, and CloudKitDemo concept
-    port.
-12. Example ports: Instant website examples, Instant recipes, SQLiteData
-    CaseStudies, Reminders, SyncUps, and CloudKitDemo concepts.
-13. TypeScript test parity: port or classify Instant TypeScript tests with exact
+8. Mutation outbox: draft/builder write APIs, explicit optimistic transaction
+   boundary, durable pending mutations, confirmation cleanup, rollback/error
+   surfacing, and ordered flush.
+9. Query surface: `@FetchAll`, `@FetchOne`, `@Fetch`, `queryOnce`, pagination,
+   infinite query, nested linked queries, dynamic query changes, loading/error
+   state, animation hooks, and cancellable subscription handles.
+10. Realtime linked entities: multi-link resolution, field filters, different
+    `with` clauses, and reverse observer propagation.
+11. Offline: cached subscription emission, strict offline `queryOnce`, restart
+    restore, reconnect flush.
+12. Storage, auth public API, presence, topics, rooms, and streams with explicit
+    async ownership and cancellation handles.
+13. Sharing model: Instant-native share entities, memberships, permissions,
+    accept/revoke flows, visible sharing metadata, read-only rejection behavior,
+    relaunch/reconnect proof, Reminders list sharing proof, and CloudKitDemo
+    concept port.
+14. Example ports: Instant website examples, Instant recipes, SQLiteData
+    CaseStudies, Reminders, SyncUps, and CloudKitDemo concepts; keep business
+    logic in observable models with injected dependencies and preview/test seeds.
+15. TypeScript test parity: port or classify Instant TypeScript tests with exact
     source-file/test-name provenance.
-14. Performance pass: benchmark target, Swift/TypeScript comparison scripts,
+16. SQLiteData-style local test suite: add deterministic in-memory tests for
+    dynamic fetches, migrations, write errors, sharing rules, relaunch, and
+    cancellation alongside real Instant validation.
+17. Performance pass: benchmark target, Swift/TypeScript comparison scripts,
     batch write path, query recomputation profiling, local persistence hot path,
-    memory pressure.
+    memory pressure, actor-hop counts, and cancellation latency.
 
 ## Non-Goals For The First Cut
 
@@ -399,3 +572,8 @@ must emit the same metrics on day one so regressions become visible.
   latency, dropped-update count, final-state correctness, and memory use.
 - WHEN the CLI runs `instant-swift-data examples todos add "do the dishes"`,
   THE next CLI invocation SHALL observe the same durable auth/cache/outbox world.
+- WHEN the package builds in CI, THE core targets SHALL compile under Swift 6
+  strict concurrency with no accepted concurrency-warning debt.
+- WHEN concurrent Swift writes, transport updates, observer cancellation, and
+  reconnect drains run, THE suite SHALL prove deterministic state, deterministic
+  outbox order, bounded buffering, and cancellable task ownership.

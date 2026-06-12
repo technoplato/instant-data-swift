@@ -6,6 +6,7 @@ public struct InstantRuntimeConfiguration: Sendable {
   public var initialAttributes: [InstantAttribute]
   public var now: @Sendable () -> InstantTimestamp
   public var makeID: @Sendable () -> String
+  public var magicCodeExchange: InstantMagicCodeExchange
 
   public init(
     appID: String,
@@ -14,13 +15,15 @@ public struct InstantRuntimeConfiguration: Sendable {
     now: @escaping @Sendable () -> InstantTimestamp = {
       InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
     },
-    makeID: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() }
+    makeID: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() },
+    magicCodeExchange: InstantMagicCodeExchange = .local
   ) {
     self.appID = appID
     self.persistenceURL = persistenceURL
     self.initialAttributes = initialAttributes
     self.now = now
     self.makeID = makeID
+    self.magicCodeExchange = magicCodeExchange
   }
 }
 
@@ -241,6 +244,81 @@ public final class InstantRuntime: Sendable {
     return session
   }
 
+  public func sendMagicCode(email rawEmail: String) async throws -> InstantMagicCodeChallenge {
+    let email = try normalizedEmail(rawEmail, operation: "send magic code")
+    let now = configuration.now()
+    let challenge = try await configuration.magicCodeExchange.send(
+      InstantMagicCodeSendRequest(
+        appID: configuration.appID,
+        email: email,
+        sentAt: now,
+        makeID: configuration.makeID
+      )
+    )
+
+    await operationGate.enter()
+    do {
+      try await persistence.saveMagicCodeChallenge(challenge, key: magicCodeChallengeKey(email: email))
+      await operationGate.leave()
+      return challenge
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  public func signInWithMagicCode(
+    email rawEmail: String,
+    code rawCode: String
+  ) async throws -> InstantAuthSession {
+    let email = try normalizedEmail(rawEmail, operation: "sign in with magic code")
+    let code = rawCode.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !code.isEmpty else {
+      throw authValidationFailed(
+        operation: "sign in with magic code",
+        message: "Magic code must not be empty.",
+        recovery: "Run 'instant-swift-data auth magic-code send <email>' and enter the returned local verification code."
+      )
+    }
+
+    await operationGate.enter()
+    do {
+      let key = magicCodeChallengeKey(email: email)
+      guard let challenge = try await persistence.loadMagicCodeChallenge(key: key) else {
+        throw authValidationFailed(
+          operation: "sign in with magic code",
+          message: "No pending magic code exists for '\(email)'.",
+          recovery: "Run 'instant-swift-data auth magic-code send \(email)' before verifying."
+        )
+      }
+      let now = configuration.now()
+      let verification = try await configuration.magicCodeExchange.verify(
+        InstantMagicCodeVerifyRequest(
+          appID: configuration.appID,
+          email: email,
+          code: code,
+          challenge: challenge,
+          verifiedAt: now
+        )
+      )
+      let session = InstantAuthSession(
+        appID: configuration.appID,
+        userID: verification.userID,
+        refreshToken: verification.refreshToken,
+        isGuest: false,
+        createdAt: now,
+        updatedAt: now
+      )
+      try await persistence.saveAuthSession(session, key: authSessionKey)
+      try await persistence.deleteMagicCodeChallenge(key: key)
+      await operationGate.leave()
+      return session
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
   public func signInWithRefreshToken(
     _ refreshToken: String,
     userID: String? = nil
@@ -376,6 +454,18 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  private func normalizedEmail(_ email: String, operation: String) throws -> String {
+    let email = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard email.contains("@"), email.contains(".") else {
+      throw authValidationFailed(
+        operation: operation,
+        message: "Email address '\(email)' is not valid.",
+        recovery: "Pass an email address such as user@example.com."
+      )
+    }
+    return email
+  }
+
   private func queryCacheChangedDuringMaterialization(_ plan: InstantQueryPlan) -> InstantError {
     InstantError(
       code: .persistenceFailed,
@@ -387,6 +477,10 @@ public final class InstantRuntime: Sendable {
 
   private var authSessionKey: String {
     "auth:\(configuration.appID)"
+  }
+
+  private func magicCodeChallengeKey(email: String) -> String {
+    "auth.magic_code:\(configuration.appID):\(email)"
   }
 
   private var processedTransactionIDMetadataKey: String {

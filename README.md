@@ -50,6 +50,8 @@ Persist local CLI auth/session state:
 swift run instant-swift-data auth guest --json
 swift run instant-swift-data auth show --json
 swift run instant-swift-data auth token <refresh-token> --user-id <user-id> --json
+swift run instant-swift-data auth magic-code send user@example.com --json
+swift run instant-swift-data auth magic-code verify user@example.com <local-verification-code> --json
 swift run instant-swift-data auth sign-out --json
 ```
 
@@ -80,6 +82,7 @@ import Dependencies
 import InstantSwiftData
 
 try await withDependencies {
+  $0.instantMagicCodeExchange = .local
   try await $0.bootstrapInstantSwiftData(
     appID: "local-demo",
     persistenceURL: cacheURL,
@@ -91,6 +94,10 @@ try await withDependencies {
   _ = try await db.query(TodoExample.query)
 }
 ```
+
+`instantMagicCodeExchange` defaults to `.local`, and app/test entry points can
+override it before `bootstrapInstantSwiftData` to install live or fixture-backed
+auth behavior.
 
 ### Typed Queries And Writes
 

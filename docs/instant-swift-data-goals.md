@@ -1,7 +1,7 @@
 # Instant Swift Data Goals
 
-This document is the portable goal contract for continuing the work on another
-machine.
+This document is the portable goal contract for continuing the work from this
+repository.
 
 ## Product Goal
 
@@ -17,16 +17,18 @@ examples do not satisfy the goal.
 ## Source Material To Read First
 
 - Instant TypeScript repository:
-  `/Users/michael.lustig/Sync/tca/tools-local/instant`
+  `upstream/instant`
 - Instant website examples:
-  `/Users/michael.lustig/Sync/tca/tools-local/instant/client/www/_examples`
+  `upstream/instant/client/www/_examples`
 - Instant website recipes:
-  `/Users/michael.lustig/Sync/tca/tools-local/instant/client/www/pages/recipes`
+  `upstream/instant/client/www/app/recipes` and
+  `upstream/instant/client/www/app/docs`
 - SQLiteData examples:
-  `/Users/michael.lustig/Sync/tca/tools-local/sqlite-data/Examples`
+  `upstream/sqlite-data/Examples`
 - Existing Swift Instant work:
-  `/Users/michael.lustig/Sync/tca/upstream-swift/swift-sharing-instant-ship`
-  and `/Users/michael.lustig/Sync/tca/tools-local/instant-ios-sdk`
+  `upstream/sharing-instant` and `upstream/instant-ios-sdk`
+- `upstream/README.md` for checked-out revisions and transfer notes, including
+  the missing local-only `swift-sharing-instant-ship` checkout.
 - Attached Instant LLM and patterns docs in this Codex thread.
 - On the target machine, also research the latest Swift, Swift macro, Swift
   benchmarking, SwiftPM, SwiftData, Observation, and Xcode documentation through
@@ -233,6 +235,85 @@ SQLite should persist:
 The public API should feel like SQLiteData where useful, but the implementation
 should be Instant-shaped, not SQL-shaped.
 
+## SQLiteData Practices To Preserve
+
+The SQLiteData checkout is valuable because it shows how to make persistence feel
+small at the call site while keeping lifecycle, errors, migrations, sync, and
+testing explicit. Instant Swift Data should preserve these practices, adapted to
+Instant's triple store and network model:
+
+- **Dependency bootstrap as the root lifecycle boundary.** SQLiteData provisions
+  `defaultDatabase` and `defaultSyncEngine` through `prepareDependencies` and a
+  single `bootstrapDatabase` entry point, including previews and tests. This is
+  good because app code, previews, CLIs, and tests all receive the same durable
+  dependencies without global singletons or parallel setup paths. Instant Swift
+  Data should provide one bootstrap path for app id, auth/session persistence,
+  local SQLite cache, transport runtime, outbox, and live-query observation.
+- **Swift Dependencies for effectful seams.** Use Point-Free's
+  `swift-dependencies` library for app-facing override points that must vary by
+  live, preview, test, CLI, or local-demo context. Keys should conform to
+  `TestDependencyKey`, extend `DependencyValues` for key-path access, and use
+  computed `liveValue`, `testValue`, and `previewValue` properties. Concrete
+  Sendable clients can expose reusable instances such as
+  `InstantMagicCodeExchange.local`, but the runtime must receive them through
+  bootstrap/configuration rather than reaching for globals. Magic-code exchange,
+  transport/auth clients, clocks, UUIDs, file/storage clients, sync engines, and
+  future network clients should follow this pattern.
+- **Context-aware database configuration.** SQLiteData uses context-dependent
+  default databases, debug-only query tracing, in-memory or temporary databases
+  for tests/previews, and explicit migrations. This is good because local
+  development is observable while production avoids leaking bound values, and
+  tests do not fight over shared state. Instant Swift Data should keep separate
+  live, preview, test, and CLI stores with explicit paths and logging policies.
+- **Frozen migrations plus typed query models.** SQLiteData keeps table
+  declarations typed with `@Table`, but writes deployed schema changes as named,
+  frozen migrations using strict SQL, foreign keys, indexes, FTS tables, and
+  triggers. This is good because runtime queries stay type checked while shipped
+  storage history remains reviewable and reproducible. Instant Swift Data should
+  treat its SQLite tables for triples, attributes, query cache, sync metadata,
+  and outbox the same way: typed access above, explicit migrations below.
+- **Property wrappers backed by observable readers.** `@FetchAll`, `@FetchOne`,
+  and `@Fetch` expose loaded values, `load`, `isLoading`, `loadError`, animation,
+  dynamic query replacement, and cancellable subscriptions. This is good because
+  SwiftUI views and observable models can own live data without bespoke observer
+  wiring. Instant Swift Data should provide the same ergonomic state surface over
+  Instant query trees, cached local materialization, server subscriptions, and
+  cancellation.
+- **Dynamic queries execute in the data engine.** SQLiteData's search examples
+  debounce input, cancel stale tasks, and reload the underlying fetch key instead
+  of fetching everything and filtering in Swift. This is good because memory,
+  sorting, search, and pagination work stay close to the store. Instant Swift
+  Data dynamic queries must replan and resubscribe at the query layer rather than
+  filtering materialized Swift arrays as a substitute for Instant query support.
+- **Draft-based writes and explicit write boundaries.** SQLiteData examples use
+  generated `Draft` values for forms and `database.write` blocks for mutations,
+  with `withErrorReporting` around user actions. This is good because edit state
+  stays separate from persisted state, writes have one obvious transaction
+  boundary, and thrown errors are surfaced instead of becoming crashes. Instant
+  Swift Data should mirror this with typed mutation drafts, explicit optimistic
+  transaction blocks, and human-readable error reporting.
+- **Business logic outside SwiftUI bodies.** The larger examples use
+  `@Observable` models, `@ObservationIgnored` dependencies/fetchers, injected
+  clients, and small view methods for user intents. This is good because query,
+  navigation, persistence, permissions, and side effects can be tested without
+  rendering views. Instant Swift Data examples should follow the same model-first
+  shape rather than hiding core behavior in SwiftUI `body` code.
+- **Sync and sharing invariants are tested as domain rules.** SQLiteData's
+  CloudKit tests cover root-record share restrictions, shared/private scopes,
+  permission rejections, metadata, conflict behavior, relaunch, and sync-engine
+  lifecycle with mock cloud databases and snapshot evidence. This is good
+  because sharing is proven as durable state and authorization behavior, not just
+  as UI. Instant Swift Data must prove equivalent Instant-native sharing,
+  membership, permission, accept/revoke, reconnect, and relaunch behavior with
+  real Instant validation plus deterministic local tests.
+- **Cancellation and ownership are API features.** SQLiteData returns fetch
+  subscriptions that can be tied to SwiftUI task lifetime, and dependency clients
+  use `AsyncSequence`-style streams with termination cleanup. This is good
+  because live queries and device/service clients do not leak work after the UI
+  or model stops observing. Instant Swift Data should make cancellation explicit
+  for live queries, presence, topics, storage progress, streams, reconnect loops,
+  and outbox drains.
+
 ## Network Errors And Human Messages
 
 Every rejected network write must produce a clear, human-readable error. This
@@ -307,7 +388,9 @@ CLI auth is required and must consume `InstantSwiftDataCore`, not a parallel
 implementation. Required auth flows:
 
 - guest sign-in.
-- magic-code sign-in.
+- magic-code sign-in backed by an injectable `InstantMagicCodeExchange`
+  dependency, with `.local` for the durable terminal demo and a live exchange
+  replacing it when real Instant auth transport lands.
 - token/session restore.
 - sign-out.
 - show current auth state.

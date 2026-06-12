@@ -149,6 +149,21 @@ public actor SQLitePersistenceStore {
         )
       }
     }
+    try withSQLiteBusyRetry {
+      try migrate(name: "0002_magic_code_challenges") {
+        try execute(
+          """
+          CREATE TABLE IF NOT EXISTS instant_magic_code_challenges (
+            key TEXT PRIMARY KEY NOT NULL,
+            email TEXT NOT NULL,
+            expires_at_ms INTEGER NOT NULL,
+            json TEXT NOT NULL,
+            updated_at_ms INTEGER NOT NULL
+          )
+          """
+        )
+      }
+    }
   }
 
   public func loadSnapshot() throws -> InstantPersistenceSnapshot {
@@ -232,6 +247,38 @@ public actor SQLitePersistenceStore {
   public func deleteAuthSession(key: String) throws {
     try execute(
       "DELETE FROM instant_auth_sessions WHERE key = ?",
+      [.text(key)]
+    )
+  }
+
+  public func loadMagicCodeChallenge(key: String) throws -> InstantMagicCodeChallenge? {
+    let rows: [InstantMagicCodeChallenge] = try selectJSON(
+      "SELECT json FROM instant_magic_code_challenges WHERE key = ? LIMIT 1",
+      [.text(key)]
+    )
+    return rows.first
+  }
+
+  public func saveMagicCodeChallenge(_ challenge: InstantMagicCodeChallenge, key: String) throws {
+    try execute(
+      """
+      INSERT OR REPLACE INTO instant_magic_code_challenges
+        (key, email, expires_at_ms, json, updated_at_ms)
+      VALUES (?, ?, ?, ?, ?)
+      """,
+      [
+        .text(key),
+        .text(challenge.email),
+        .int(challenge.expiresAt.milliseconds),
+        .text(try encode(challenge)),
+        .int(challenge.createdAt.milliseconds),
+      ]
+    )
+  }
+
+  public func deleteMagicCodeChallenge(key: String) throws {
+    try execute(
+      "DELETE FROM instant_magic_code_challenges WHERE key = ?",
       [.text(key)]
     )
   }

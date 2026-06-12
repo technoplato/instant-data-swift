@@ -421,6 +421,132 @@ struct InstantStoreTests {
   }
 
   @Test
+  func magicCodeChallengePersistsAndVerifiesAcrossLaunches() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let sentAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let verifiedAt = InstantTimestamp(milliseconds: sentAt.milliseconds + 1_000)
+    let senderRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        now: { sentAt },
+        makeID: { "123456" }
+      )
+    )
+
+    let challenge = try await senderRuntime.sendMagicCode(email: " User@Example.COM ")
+    expectNoDifference(
+      challenge,
+      InstantMagicCodeChallenge(
+        appID: "app-a",
+        email: "user@example.com",
+        code: "123456",
+        createdAt: sentAt,
+        expiresAt: InstantTimestamp(milliseconds: sentAt.milliseconds + 600_000)
+      )
+    )
+
+    let otherAppRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "app-b", persistenceURL: cacheURL)
+    )
+    do {
+      _ = try await otherAppRuntime.signInWithMagicCode(email: "user@example.com", code: "123456")
+      #expect(Bool(false), "Expected app-scoped magic code verification to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .authFailed)
+      expectNoDifference(error.operation, "sign in with magic code")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    let verifierRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        now: { verifiedAt }
+      )
+    )
+    let session = try await verifierRuntime.signInWithMagicCode(
+      email: "USER@example.com",
+      code: " 123456 "
+    )
+    expectNoDifference(
+      session,
+      InstantAuthSession(
+        appID: "app-a",
+        userID: "email:user@example.com",
+        refreshToken: "local-magic:app-a:user@example.com",
+        isGuest: false,
+        createdAt: verifiedAt,
+        updatedAt: verifiedAt
+      )
+    )
+    let persistedSession = try await verifierRuntime.authSession()
+    expectNoDifference(persistedSession, session)
+
+    do {
+      _ = try await verifierRuntime.signInWithMagicCode(email: "user@example.com", code: "123456")
+      #expect(Bool(false), "Expected one-time magic code verification to fail after use.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .authFailed)
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
+  func invalidMagicCodeInputsFailWithAuthError() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let sentAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        now: { sentAt },
+        makeID: { "654321" }
+      )
+    )
+
+    do {
+      _ = try await runtime.sendMagicCode(email: "not-an-email")
+      #expect(Bool(false), "Expected invalid email to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .authFailed)
+      expectNoDifference(error.operation, "send magic code")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    _ = try await runtime.sendMagicCode(email: "user@example.com")
+    do {
+      _ = try await runtime.signInWithMagicCode(email: "user@example.com", code: "000000")
+      #expect(Bool(false), "Expected wrong code to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .authFailed)
+      expectNoDifference(error.operation, "sign in with magic code")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    let expiredRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        now: { InstantTimestamp(milliseconds: sentAt.milliseconds + 600_001) }
+      )
+    )
+    do {
+      _ = try await expiredRuntime.signInWithMagicCode(email: "user@example.com", code: "654321")
+      #expect(Bool(false), "Expected expired code to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .authFailed)
+      expectNoDifference(error.operation, "sign in with magic code")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
   func emptyTokenSignInFailsWithAuthError() async throws {
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(appID: "test-app", persistenceURL: temporaryCacheURL())

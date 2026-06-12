@@ -136,10 +136,31 @@ extension DefaultInstantSwiftDataKey: DependencyKey {
   }
 }
 
+private enum InstantMagicCodeExchangeKey: TestDependencyKey {
+  static var testValue: InstantMagicCodeExchange {
+    .local
+  }
+
+  static var previewValue: InstantMagicCodeExchange {
+    .local
+  }
+}
+
+extension InstantMagicCodeExchangeKey: DependencyKey {
+  static var liveValue: InstantMagicCodeExchange {
+    .local
+  }
+}
+
 extension DependencyValues {
   public var defaultInstantSwiftData: InstantSwiftDataClient {
     get { self[DefaultInstantSwiftDataKey.self] }
     set { self[DefaultInstantSwiftDataKey.self] = newValue }
+  }
+
+  public var instantMagicCodeExchange: InstantMagicCodeExchange {
+    get { self[InstantMagicCodeExchangeKey.self] }
+    set { self[InstantMagicCodeExchangeKey.self] = newValue }
   }
 
   public mutating func bootstrapInstantSwiftData(
@@ -150,6 +171,7 @@ extension DependencyValues {
   ) async throws {
     let date = self.date
     let uuid = self.uuid
+    let magicCodeExchange = self.instantMagicCodeExchange
     let url =
       persistenceURL
       ?? Self.defaultInstantSwiftDataPersistenceURL(
@@ -168,7 +190,8 @@ extension DependencyValues {
         },
         makeID: {
           uuid().uuidString.lowercased()
-        }
+        },
+        magicCodeExchange: magicCodeExchange
       )
     )
   }
