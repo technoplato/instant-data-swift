@@ -375,10 +375,11 @@ public final class InstantRuntime: Sendable {
   public func confirmMutation(id: String) async throws -> PendingMutation {
     await operationGate.enter()
     do {
-      guard let update = await outbox.markConfirmed(id: id) else {
+      guard let update = await outbox.confirming(id: id) else {
         throw outboxMutationNotFound(id: id)
       }
       try await persistence.saveOutbox(update.mutations)
+      await outbox.replace(with: update.mutations)
       await operationGate.leave()
       return update.mutation
     } catch {
@@ -391,10 +392,11 @@ public final class InstantRuntime: Sendable {
   public func failMutation(id: String, message: String) async throws -> PendingMutation {
     await operationGate.enter()
     do {
-      guard let update = await outbox.markFailed(id: id, message: message) else {
+      guard let update = await outbox.failing(id: id, message: message) else {
         throw outboxMutationNotFound(id: id)
       }
       try await persistence.saveOutbox(update.mutations)
+      await outbox.replace(with: update.mutations)
       await operationGate.leave()
       return update.mutation
     } catch {

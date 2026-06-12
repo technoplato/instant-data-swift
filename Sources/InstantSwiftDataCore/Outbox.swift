@@ -31,18 +31,24 @@ actor InstantOutbox {
     mutations
   }
 
-  func markConfirmed(id: String) -> InstantOutboxUpdate? {
+  func confirming(id: String) -> InstantOutboxUpdate? {
     guard let index = mutations.firstIndex(where: { $0.id == id }) else { return nil }
-    var mutation = mutations.remove(at: index)
+    var nextMutations = mutations
+    var mutation = nextMutations.remove(at: index)
     mutation.status = .confirmed
     mutation.failureMessage = nil
-    return InstantOutboxUpdate(mutation: mutation, mutations: mutations)
+    return InstantOutboxUpdate(mutation: mutation, mutations: nextMutations)
   }
 
-  func markFailed(id: String, message: String) -> InstantOutboxUpdate? {
+  func failing(id: String, message: String) -> InstantOutboxUpdate? {
     guard let index = mutations.firstIndex(where: { $0.id == id }) else { return nil }
-    mutations[index].status = .failed
-    mutations[index].failureMessage = message
-    return InstantOutboxUpdate(mutation: mutations[index], mutations: mutations)
+    var nextMutations = mutations
+    nextMutations[index].status = .failed
+    nextMutations[index].failureMessage = message
+    return InstantOutboxUpdate(mutation: nextMutations[index], mutations: nextMutations)
+  }
+
+  func replace(with mutations: [PendingMutation]) {
+    self.mutations = mutations.sorted { $0.createdAt < $1.createdAt }
   }
 }

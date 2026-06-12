@@ -1,6 +1,7 @@
 import CustomDump
 import Foundation
 import InstantSwiftDataCore
+import SQLite3
 import Testing
 
 @Suite(.serialized)
@@ -294,6 +295,89 @@ struct InstantStoreTests {
     } catch {
       #expect(Bool(false), "Unexpected error: \(error)")
     }
+  }
+
+  @Test
+  func failedOutboxConfirmationDoesNotMutateLiveState() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-confirm-failure",
+        operations: TodoExample.createOperations(
+          id: "todo-confirm-failure",
+          text: "confirm failure",
+          createdAt: createdAt,
+          transactionID: "tx-confirm-failure"
+        )
+      ),
+      createdAt: createdAt
+    )
+    try dropOutboxTable(at: cacheURL)
+
+    do {
+      try await runtime.confirmMutation(id: "tx-confirm-failure")
+      #expect(Bool(false), "Expected failed outbox persistence to throw.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .persistenceFailed)
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    let mutations = await runtime.outboxMutations()
+    let pending = await runtime.pendingMutations()
+    expectNoDifference(mutations.map(\.id), ["tx-confirm-failure"])
+    expectNoDifference(mutations.map(\.status), [.pending])
+    expectNoDifference(pending.map(\.id), ["tx-confirm-failure"])
+  }
+
+  @Test
+  func failedOutboxFailureMarkDoesNotMutateLiveState() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-fail-failure",
+        operations: TodoExample.createOperations(
+          id: "todo-fail-failure",
+          text: "fail failure",
+          createdAt: createdAt,
+          transactionID: "tx-fail-failure"
+        )
+      ),
+      createdAt: createdAt
+    )
+    try dropOutboxTable(at: cacheURL)
+
+    do {
+      try await runtime.failMutation(id: "tx-fail-failure", message: "server rejected")
+      #expect(Bool(false), "Expected failed outbox persistence to throw.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .persistenceFailed)
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    let mutations = await runtime.outboxMutations()
+    let pending = await runtime.pendingMutations()
+    expectNoDifference(mutations.map(\.id), ["tx-fail-failure"])
+    expectNoDifference(mutations.map(\.status), [.pending])
+    expectNoDifference(mutations.map(\.failureMessage), [nil])
+    expectNoDifference(pending.map(\.id), ["tx-fail-failure"])
   }
 
   @Test
@@ -1275,5 +1359,38 @@ struct InstantStoreTests {
       .appendingPathComponent("InstantSwiftDataTests-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     return directory.appendingPathComponent("state.sqlite")
+  }
+
+  private func dropOutboxTable(at url: URL) throws {
+    var connection: OpaquePointer?
+    guard sqlite3_open_v2(url.path, &connection, SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, nil)
+      == SQLITE_OK
+    else {
+      let message = connection.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) }
+        ?? "SQLite could not open \(url.path)."
+      sqlite3_close(connection)
+      throw InstantError(
+        code: .persistenceFailed,
+        operation: "open test sqlite connection",
+        message: message,
+        recovery: "Check the temporary test database."
+      )
+    }
+    defer { sqlite3_close(connection) }
+
+    var errorMessage: UnsafeMutablePointer<CChar>?
+    guard sqlite3_exec(connection, "DROP TABLE instant_outbox", nil, nil, &errorMessage)
+      == SQLITE_OK
+    else {
+      let message = errorMessage.map { String(cString: $0) }
+        ?? "SQLite could not drop instant_outbox."
+      sqlite3_free(errorMessage)
+      throw InstantError(
+        code: .persistenceFailed,
+        operation: "drop test outbox table",
+        message: message,
+        recovery: "Check the temporary test database."
+      )
+    }
   }
 }
