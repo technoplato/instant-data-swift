@@ -33,7 +33,7 @@ struct InstantSwiftDataCLI {
       printHelp()
 
     case "schema":
-      try runSchema(arguments: arguments)
+      try runSchema(arguments: arguments, output: output)
 
     case "perms", "permissions":
       try runPermissions(arguments: arguments)
@@ -52,7 +52,14 @@ struct InstantSwiftDataCLI {
     }
   }
 
-  private static func runSchema(arguments: [String]) throws {
+  private static func runSchema(arguments: [String], output: OutputMode) throws {
+    if arguments.first == "verify" {
+      let options = try SchemaVerifyOptions.parse(arguments: arguments)
+      try requireTodoExample(options.example)
+      try verifySchema(options: options, output: output)
+      return
+    }
+
     let options = try GenerateOptions.parse(
       arguments: arguments,
       usage: "Usage: instant-swift-data schema generate --example todos [--to instant.schema.ts]"
@@ -438,6 +445,7 @@ struct InstantSwiftDataCLI {
 
       Commands:
         schema generate --example todos [--to instant.schema.ts]
+        schema verify --example todos --from instant.schema.ts [--json|--jsonl]
         perms generate --example todos [--to instant.perms.ts]
         examples todos add "do the dishes" [--json|--jsonl]
         examples todos list [--completed true|false] [--limit n] [--order asc|desc] [--json|--jsonl]
@@ -475,6 +483,55 @@ struct InstantSwiftDataCLI {
       withIntermediateDirectories: true
     )
     try data.write(to: url, options: .atomic)
+  }
+
+  private static func verifySchema(options: SchemaVerifyOptions, output: OutputMode) throws {
+    let currentDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    let url = URL(fileURLWithPath: options.inputPath, relativeTo: currentDirectory)
+      .standardizedFileURL
+    let source = try String(contentsOf: url, encoding: .utf8)
+    let parsed: [ParsedInstantEntitySchema]
+    do {
+      parsed = try TypeScriptSchemaParser().parse(source)
+    } catch let error as TypeScriptSchemaParseError {
+      throw CLIError("Schema parse failed: \(error.description)", exitCode: 66)
+    }
+
+    let expected = [ParsedInstantEntitySchema(InstantSchemaExamples.todos)]
+    guard parsed == expected else {
+      throw CLIError("Schema does not match --example todos.", exitCode: 66)
+    }
+
+    let summary = SchemaVerifyOutput(
+      example: options.example,
+      path: url.path,
+      entityCount: parsed.count,
+      attributeCount: parsed.reduce(0) { $0 + $1.attributes.count }
+    )
+
+    switch output {
+    case .human:
+      print("schema: ok")
+      print("example: \(summary.example)")
+      print("entities: \(summary.entityCount)")
+      print("attributes: \(summary.attributeCount)")
+      print("path: \(summary.path)")
+
+    case .json:
+      try writeJSON(summary)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.schema.verify",
+          side: "swift",
+          event: "summary",
+          appID: "schema-tooling",
+          ok: true,
+          details: summary
+        )
+      )
+    }
   }
 
   private static func todoListQuery(arguments: [String]) throws -> InstantQueryPlan {
@@ -726,6 +783,13 @@ private struct OutboxUpdateOutput: Codable, Sendable {
   var mutation: PendingMutation
 }
 
+private struct SchemaVerifyOutput: Codable, Sendable {
+  var example: String
+  var path: String
+  var entityCount: Int
+  var attributeCount: Int
+}
+
 private struct GenerateOptions: Sendable {
   var example: String
   var outputPath: String?
@@ -763,6 +827,47 @@ private struct GenerateOptions: Sendable {
     }
 
     return Self(example: example, outputPath: outputPath)
+  }
+}
+
+private struct SchemaVerifyOptions: Sendable {
+  var example: String
+  var inputPath: String
+
+  static func parse(arguments: [String]) throws -> Self {
+    let usage = "Usage: instant-swift-data schema verify --example todos --from instant.schema.ts"
+    var arguments = arguments
+    guard arguments.popFirstArgument() == "verify" else {
+      throw CLIError(usage, exitCode: 64)
+    }
+
+    var example: String?
+    var inputPath: String?
+
+    while let option = arguments.popFirstArgument() {
+      switch option {
+      case "--example":
+        guard let value = arguments.popFirstArgument() else {
+          throw CLIError(usage, exitCode: 64)
+        }
+        example = value
+
+      case "--from":
+        guard let value = arguments.popFirstArgument() else {
+          throw CLIError(usage, exitCode: 64)
+        }
+        inputPath = value
+
+      default:
+        throw CLIError("Unknown schema verify option: \(option). \(usage)", exitCode: 64)
+      }
+    }
+
+    guard let example, let inputPath else {
+      throw CLIError(usage, exitCode: 64)
+    }
+
+    return Self(example: example, inputPath: inputPath)
   }
 }
 

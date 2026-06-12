@@ -1,4 +1,5 @@
 import CustomDump
+import InstantSwiftDataCore
 import InstantSwiftDataSchema
 import Testing
 
@@ -23,6 +24,259 @@ struct TypeScriptPrinterTests {
 
       """
     )
+  }
+
+  @Test
+  func schemaParserRoundTripsGeneratedTodoExample() throws {
+    let printed = TypeScriptSchemaPrinter().printSchema([InstantSchemaExamples.todos])
+    let parsed = try TypeScriptSchemaParser().parse(printed)
+
+    expectNoDifference(
+      parsed,
+      [
+        ParsedInstantEntitySchema(InstantSchemaExamples.todos)
+      ]
+    )
+  }
+
+  @Test
+  func schemaParserSupportsQuotedKeysAndAttributeModifiers() throws {
+    let parsed = try TypeScriptSchemaParser().parse(
+      """
+      import { i } from '@instantdb/core';
+
+      export default i.schema({
+        entities: {
+          "blog-posts": i.entity({
+            "published-at": i.date().indexed(),
+            slug: i.string().unique().indexed(),
+            metadata: i.json(),
+          }),
+        },
+      });
+
+      """
+    )
+
+    expectNoDifference(
+      parsed,
+      [
+        ParsedInstantEntitySchema(
+          namespace: "blog-posts",
+          attributes: [
+            InstantAttribute(
+              id: "blog-posts/metadata",
+              namespace: "blog-posts",
+              name: "metadata",
+              valueType: .json
+            ),
+            InstantAttribute(
+              id: "blog-posts/published-at",
+              namespace: "blog-posts",
+              name: "published-at",
+              valueType: .date,
+              isIndexed: true
+            ),
+            InstantAttribute(
+              id: "blog-posts/slug",
+              namespace: "blog-posts",
+              name: "slug",
+              valueType: .string,
+              isIndexed: true,
+              isUnique: true
+            ),
+          ]
+        )
+      ]
+    )
+  }
+
+  @Test
+  func schemaParserRejectsUnsupportedAttributeExpression() {
+    do {
+      _ = try TypeScriptSchemaParser().parse(
+        """
+        export default i.schema({
+          entities: {
+            todos: i.entity({
+              text: i.custom(),
+            }),
+          },
+        });
+        """
+      )
+      #expect(Bool(false), "Expected parser to reject unsupported attribute expressions.")
+    } catch let error as TypeScriptSchemaParseError {
+      expectNoDifference(
+        error,
+        .unsupportedAttributeExpression(
+          namespace: "todos",
+          attribute: "text",
+          expression: "i.custom()"
+        )
+      )
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
+  func schemaParserRejectsUnsupportedEntityExpression() {
+    do {
+      _ = try TypeScriptSchemaParser().parse(
+        """
+        export default i.schema({
+          entities: {
+            todos: i.entityLoose({
+              text: i.string().indexed(),
+            }),
+          },
+        });
+        """
+      )
+      #expect(Bool(false), "Expected parser to reject unsupported entity expressions.")
+    } catch let error as TypeScriptSchemaParseError {
+      expectNoDifference(
+        error,
+        .unsupportedEntityExpression(
+          namespace: "todos",
+          expression: """
+            i.entityLoose({
+                  text: i.string().indexed(),
+                })
+            """
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+      )
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
+  func schemaParserRejectsUnsupportedAttributeModifiers() {
+    do {
+      _ = try TypeScriptSchemaParser().parse(
+        """
+        export default i.schema({
+          entities: {
+            todos: i.entity({
+              text: i.string().optional().indexed(),
+            }),
+          },
+        });
+        """
+      )
+      #expect(Bool(false), "Expected parser to reject unsupported attribute modifiers.")
+    } catch let error as TypeScriptSchemaParseError {
+      expectNoDifference(
+        error,
+        .unsupportedAttributeExpression(
+          namespace: "todos",
+          attribute: "text",
+          expression: "i.string().optional().indexed()"
+        )
+      )
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
+  func schemaParserIgnoresCommentsInObjectTrivia() throws {
+    let parsed = try TypeScriptSchemaParser().parse(
+      """
+      // This file calls i.schema below.
+      export default i.schema({
+        entities: {
+          // The generated todo entity.
+          todos: i.entity({
+            createdAt: i.date().indexed(), // generated field
+            /* user-visible text */
+            text: i.string().indexed(),
+            isCompleted: i.boolean().indexed(),
+          }),
+        },
+      });
+      """
+    )
+
+    expectNoDifference(
+      parsed,
+      [
+        ParsedInstantEntitySchema(InstantSchemaExamples.todos)
+      ]
+    )
+  }
+
+  @Test
+  func schemaParserIgnoresCommentsBeforeValueComma() throws {
+    let parsed = try TypeScriptSchemaParser().parse(
+      """
+      export default i.schema({
+        entities: {
+          todos: i.entity({
+            createdAt: i.date().indexed() // generated field
+            ,
+            text: i.string().indexed() /* generated field */,
+            isCompleted: i.boolean().indexed(),
+          }),
+        },
+      });
+      """
+    )
+
+    expectNoDifference(
+      parsed,
+      [
+        ParsedInstantEntitySchema(InstantSchemaExamples.todos)
+      ]
+    )
+  }
+
+  @Test
+  func schemaParserRejectsUnsupportedTopLevelSchemaKeys() {
+    do {
+      _ = try TypeScriptSchemaParser().parse(
+        """
+        export default i.schema({
+          entities: {
+            todos: i.entity({
+              text: i.string().indexed(),
+            }),
+          },
+          links: {},
+        });
+        """
+      )
+      #expect(Bool(false), "Expected parser to reject unsupported top-level schema keys.")
+    } catch let error as TypeScriptSchemaParseError {
+      expectNoDifference(error, .unsupportedTopLevelKey("links"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
+  func schemaParserRejectsUnsupportedSchemaCall() {
+    do {
+      _ = try TypeScriptSchemaParser().parse(
+        """
+        export default i.schemaLoose({
+          entities: {
+            todos: i.entity({
+              text: i.string().indexed(),
+            }),
+          },
+        });
+        """
+      )
+      #expect(Bool(false), "Expected parser to reject unsupported schema calls.")
+    } catch let error as TypeScriptSchemaParseError {
+      expectNoDifference(error, .missingEntitiesObject)
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
   }
 
   @Test
