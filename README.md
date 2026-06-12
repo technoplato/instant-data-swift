@@ -41,6 +41,28 @@ interaction, but it does not yet sync with a real Instant app.
 
 ## Development
 
+### Dependency Bootstrap
+
+App, preview, test, and CLI entry points can install the default client through
+Point-Free's Dependencies library:
+
+```swift
+import Dependencies
+import InstantSwiftData
+
+try await withDependencies {
+  try await $0.bootstrapInstantSwiftData(
+    appID: "local-demo",
+    persistenceURL: cacheURL,
+    context: .test,
+    initialAttributes: TodoExample.attributes
+  )
+} operation: {
+  @Dependency(\.defaultInstantSwiftData) var db
+  _ = try await db.query(TodoExample.query)
+}
+```
+
 Build and test:
 
 ```bash

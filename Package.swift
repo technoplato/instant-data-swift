@@ -35,6 +35,8 @@ let package = Package(
   ],
   dependencies: [
     .package(url: "https://github.com/pointfreeco/swift-custom-dump", from: "1.0.0"),
+    .package(url: "https://github.com/pointfreeco/swift-dependencies", from: "1.0.0"),
+    .package(url: "https://github.com/pointfreeco/xctest-dynamic-overlay", from: "1.0.0"),
     .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "602.0.0"),
     .package(url: "https://github.com/swiftlang/swift-testing.git", exact: "6.2.3"),
   ],
@@ -45,6 +47,8 @@ let package = Package(
         "InstantSwiftDataCore",
         "InstantSwiftDataMacros",
         "InstantSwiftDataSchema",
+        .product(name: "Dependencies", package: "swift-dependencies"),
+        .product(name: "IssueReporting", package: "xctest-dynamic-overlay"),
       ],
       swiftSettings: strictConcurrencySettings
     ),
@@ -94,6 +98,16 @@ let package = Package(
       dependencies: [
         "InstantSwiftDataCore",
         .product(name: "CustomDump", package: "swift-custom-dump"),
+        .product(name: "Testing", package: "swift-testing"),
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .testTarget(
+      name: "InstantSwiftDataTests",
+      dependencies: [
+        "InstantSwiftData",
+        .product(name: "CustomDump", package: "swift-custom-dump"),
+        .product(name: "Dependencies", package: "swift-dependencies"),
         .product(name: "Testing", package: "swift-testing"),
       ],
       swiftSettings: strictConcurrencySettings
