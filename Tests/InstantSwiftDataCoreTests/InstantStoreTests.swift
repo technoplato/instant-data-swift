@@ -455,6 +455,11 @@ struct InstantStoreTests {
           .insert(.init(entityID: "item-4", attributeID: "items/score", value: .number(4), txID: "tx-filter-items", txTime: time)),
           .insert(.init(entityID: "item-4", attributeID: "items/tag", value: .string("purple"), txID: "tx-filter-items", txTime: time)),
           .insert(.init(entityID: "item-4", attributeID: "items/optional", value: .null, txID: "tx-filter-items", txTime: time)),
+          .insert(.init(entityID: "item-5", attributeID: "items/score", value: .number(5), txID: "tx-filter-items", txTime: time)),
+          .insert(.init(entityID: "item-5", attributeID: "items/tag", value: .string("red"), txID: "tx-filter-items", txTime: time)),
+          .insert(.init(entityID: "item-5", attributeID: "items/tag", value: .string("yellow"), txID: "tx-filter-items", txTime: time)),
+          .insert(.init(entityID: "item-5", attributeID: "items/optional", value: .string("present"), txID: "tx-filter-items", txTime: time)),
+          .insert(.init(entityID: "item-6", attributeID: "items/score", value: .number(6), txID: "tx-filter-items", txTime: time)),
         ]
       ),
       createdAt: time
@@ -468,7 +473,7 @@ struct InstantStoreTests {
         order: .init("score")
       )
     )
-    expectNoDifference(greaterThan.map(\.id), ["item-2", "item-3", "item-4"])
+    expectNoDifference(greaterThan.map(\.id), ["item-2", "item-3", "item-4", "item-5", "item-6"])
 
     let greaterThanOrEqual = await runtime.query(
       .init(
@@ -478,7 +483,7 @@ struct InstantStoreTests {
         order: .init("score")
       )
     )
-    expectNoDifference(greaterThanOrEqual.map(\.id), ["item-2", "item-3", "item-4"])
+    expectNoDifference(greaterThanOrEqual.map(\.id), ["item-2", "item-3", "item-4", "item-5", "item-6"])
 
     let lessThan = await runtime.query(
       .init(
@@ -508,7 +513,7 @@ struct InstantStoreTests {
         order: .init("score")
       )
     )
-    expectNoDifference(inFilter.map(\.id), ["item-1", "item-3"])
+    expectNoDifference(inFilter.map(\.id), ["item-1", "item-3", "item-5"])
 
     let notEquals = await runtime.query(
       .init(
@@ -518,7 +523,20 @@ struct InstantStoreTests {
         order: .init("score")
       )
     )
-    expectNoDifference(notEquals.map(\.id), ["item-1", "item-3", "item-4"])
+    expectNoDifference(notEquals.map(\.id), ["item-1", "item-3", "item-4", "item-5", "item-6"])
+
+    let notEqualsMatchesManyValueCandidate = await runtime.query(
+      .init(
+        id: "items.ne-many",
+        namespace: "items",
+        filters: [.notEquals(field: "tag", value: .string("red"))],
+        order: .init("score")
+      )
+    )
+    expectNoDifference(
+      notEqualsMatchesManyValueCandidate.map(\.id),
+      ["item-2", "item-3", "item-4", "item-5", "item-6"]
+    )
 
     let isNull = await runtime.query(
       .init(
@@ -528,7 +546,62 @@ struct InstantStoreTests {
         order: .init("score")
       )
     )
-    expectNoDifference(isNull.map(\.id), ["item-1", "item-3", "item-4"])
+    expectNoDifference(isNull.map(\.id), ["item-1", "item-3", "item-4", "item-6"])
+
+    let isNotNull = await runtime.query(
+      .init(
+        id: "items.not-null",
+        namespace: "items",
+        filters: [.isNotNull(field: "optional")],
+        order: .init("score")
+      )
+    )
+    expectNoDifference(isNotNull.map(\.id), ["item-2", "item-5"])
+
+    let unknownNotEquals = await runtime.query(
+      .init(
+        id: "items.ne-unknown",
+        namespace: "items",
+        filters: [.notEquals(field: "unknown", value: .string("anything"))],
+        order: .init("score")
+      )
+    )
+    expectNoDifference(unknownNotEquals, [])
+
+    let unknownIsNull = await runtime.query(
+      .init(
+        id: "items.null-unknown",
+        namespace: "items",
+        filters: [.isNull(field: "unknown")],
+        order: .init("score")
+      )
+    )
+    expectNoDifference(unknownIsNull, [])
+
+    let unknownIsNotNull = await runtime.query(
+      .init(
+        id: "items.not-null-unknown",
+        namespace: "items",
+        filters: [.isNotNull(field: "unknown")],
+        order: .init("score")
+      )
+    )
+    expectNoDifference(unknownIsNotNull, [])
+
+    let unknownInsideOr = await runtime.query(
+      .init(
+        id: "items.unknown-inside-or",
+        namespace: "items",
+        filters: [
+          .or([
+            .equals(field: "unknown", value: .string("anything")),
+            .equals(field: "score", value: .number(1)),
+          ])
+        ],
+        order: .init("score")
+      )
+    )
+    expectNoDifference(unknownInsideOr, [])
 
     let mixedTypeComparison = await runtime.query(
       .init(
@@ -539,6 +612,120 @@ struct InstantStoreTests {
       )
     )
     expectNoDifference(mixedTypeComparison, [])
+  }
+
+  @Test
+  func queryFiltersSupportPatternAndCompoundPredicates() async throws {
+    let text = InstantAttribute(
+      id: "items/text",
+      namespace: "items",
+      name: "text",
+      valueType: .string,
+      isIndexed: true
+    )
+    let status = InstantAttribute(
+      id: "items/status",
+      namespace: "items",
+      name: "status",
+      valueType: .string,
+      isIndexed: true
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: [text, status]
+      )
+    )
+    let time = InstantTimestamp(milliseconds: 10)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-pattern-items",
+        operations: [
+          .insert(.init(entityID: "item-1", attributeID: "items/text", value: .string("Ship Instant Swift Data"), txID: "tx-pattern-items", txTime: time)),
+          .insert(.init(entityID: "item-1", attributeID: "items/status", value: .string("open"), txID: "tx-pattern-items", txTime: time)),
+          .insert(.init(entityID: "item-2", attributeID: "items/text", value: .string("swift instant docs"), txID: "tx-pattern-items", txTime: time)),
+          .insert(.init(entityID: "item-2", attributeID: "items/status", value: .string("closed"), txID: "tx-pattern-items", txTime: time)),
+          .insert(.init(entityID: "item-3", attributeID: "items/text", value: .string("Port README"), txID: "tx-pattern-items", txTime: time)),
+          .insert(.init(entityID: "item-3", attributeID: "items/status", value: .string("open"), txID: "tx-pattern-items", txTime: time)),
+          .insert(.init(entityID: "item-4", attributeID: "items/text", value: .string("release_v1"), txID: "tx-pattern-items", txTime: time)),
+          .insert(.init(entityID: "item-4", attributeID: "items/status", value: .string("open"), txID: "tx-pattern-items", txTime: time)),
+          .insert(.init(entityID: "item-5", attributeID: "items/text", value: .string("release\\av1"), txID: "tx-pattern-items", txTime: time)),
+          .insert(.init(entityID: "item-5", attributeID: "items/status", value: .string("open"), txID: "tx-pattern-items", txTime: time)),
+        ]
+      ),
+      createdAt: time
+    )
+
+    let like = await runtime.query(
+      .init(
+        id: "items.like",
+        namespace: "items",
+        filters: [.like(field: "text", pattern: "%Swift%")]
+      )
+    )
+    expectNoDifference(like.map(\.id), ["item-1"])
+
+    let iLike = await runtime.query(
+      .init(
+        id: "items.ilike",
+        namespace: "items",
+        filters: [.iLike(field: "text", pattern: "%instant%")]
+      )
+    )
+    expectNoDifference(iLike.map(\.id), ["item-1", "item-2"])
+
+    let and = await runtime.query(
+      .init(
+        id: "items.and",
+        namespace: "items",
+        filters: [
+          .and([
+            .iLike(field: "text", pattern: "%instant%"),
+            .equals(field: "status", value: .string("open")),
+          ])
+        ]
+      )
+    )
+    expectNoDifference(and.map(\.id), ["item-1"])
+
+    let or = await runtime.query(
+      .init(
+        id: "items.or",
+        namespace: "items",
+        filters: [
+          .or([
+            .equals(field: "status", value: .string("closed")),
+            .like(field: "text", pattern: "%README"),
+          ])
+        ]
+      )
+    )
+    expectNoDifference(or.map(\.id), ["item-2", "item-3"])
+
+    let underscoreWildcard = await runtime.query(
+      .init(
+        id: "items.underscore-wildcard",
+        namespace: "items",
+        filters: [.like(field: "text", pattern: "release_v_")]
+      )
+    )
+    expectNoDifference(underscoreWildcard.map(\.id), ["item-4"])
+
+    let backslashIsLiteral = await runtime.query(
+      .init(
+        id: "items.backslash-literal",
+        namespace: "items",
+        filters: [.like(field: "text", pattern: "release\\_v_")]
+      )
+    )
+    expectNoDifference(backslashIsLiteral.map(\.id), ["item-5"])
+
+    let emptyOr = await runtime.query(
+      .init(id: "items.empty-or", namespace: "items", filters: [.or([])])
+    )
+    expectNoDifference(emptyOr, [])
   }
 
   @Test

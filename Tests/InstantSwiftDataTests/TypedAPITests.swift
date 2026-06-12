@@ -25,6 +25,16 @@ struct TypedAPITests {
       .where(TypedTodo.createdAt >= Date(timeIntervalSince1970: 1_700_000_000))
       .where(TypedTodo.text != "Archived")
       .where(TypedTodo.text.isIn(["Open", "Queued"]))
+      .where(TypedTodo.text.isNotNull)
+      .where(
+        .any(
+          TypedTodo.text.iLike("%instant%"),
+          .all(
+            TypedTodo.text.like("README%"),
+            TypedTodo.isCompleted == false
+          )
+        )
+      )
 
     expectNoDifference(
       comparisonQuery.plan.filters,
@@ -35,6 +45,14 @@ struct TypedAPITests {
         ),
         .notEquals(field: "text", value: .string("Archived")),
         .in(field: "text", values: [.string("Open"), .string("Queued")]),
+        .isNotNull(field: "text"),
+        .or([
+          .iLike(field: "text", pattern: "%instant%"),
+          .and([
+            .like(field: "text", pattern: "README%"),
+            .equals(field: "isCompleted", value: .bool(false)),
+          ]),
+        ]),
       ]
     )
 

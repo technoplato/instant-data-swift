@@ -456,9 +456,9 @@ struct InstantSwiftDataCLI {
         perms generate --example todos [--to instant.perms.ts]
         perms verify --example todos --from instant.perms.ts [--json|--jsonl]
         examples todos add "do the dishes" [--json|--jsonl]
-        examples todos list [--completed true|false] [--limit n] [--order asc|desc] [--json|--jsonl]
+        examples todos list [--completed true|false] [--search text] [--limit n] [--order asc|desc] [--json|--jsonl]
         examples todos complete <todo-id> [--json|--jsonl]
-        examples todos refresh [--completed true|false] [--limit n] [--order asc|desc] [--json|--jsonl]
+        examples todos refresh [--completed true|false] [--search text] [--limit n] [--order asc|desc] [--json|--jsonl]
         cache inspect [--json|--jsonl]
         outbox inspect [--json|--jsonl]
         outbox confirm <mutation-id> [--json|--jsonl]
@@ -609,6 +609,7 @@ struct InstantSwiftDataCLI {
   private static func todoListQuery(arguments: [String]) throws -> InstantQueryPlan {
     var arguments = arguments
     var completed: Bool?
+    var search: String?
     var limit: Int?
     var direction = InstantQuerySortDirection.ascending
 
@@ -619,6 +620,14 @@ struct InstantSwiftDataCLI {
           throw CLIError("Usage: instant-swift-data examples todos list --completed true|false", exitCode: 64)
         }
         completed = parsed
+
+      case "--search":
+        guard let value = arguments.popFirstArgument(),
+          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+          throw CLIError("Usage: instant-swift-data examples todos list --search text", exitCode: 64)
+        }
+        search = value
 
       case "--limit":
         guard let value = arguments.popFirstArgument(),
@@ -637,7 +646,7 @@ struct InstantSwiftDataCLI {
 
       default:
         throw CLIError(
-          "Unknown todo list option: \(option). Usage: instant-swift-data examples todos list [--completed true|false] [--limit n] [--order asc|desc]",
+          "Unknown todo list option: \(option). Usage: instant-swift-data examples todos list [--completed true|false] [--search text] [--limit n] [--order asc|desc]",
           exitCode: 64
         )
       }
@@ -648,6 +657,11 @@ struct InstantSwiftDataCLI {
     if let completed {
       filters.append(.equals(field: "isCompleted", value: .bool(completed)))
       id += ".completed-\(completed)"
+    }
+    if let search {
+      let pattern = "%\(search)%"
+      filters.append(.iLike(field: "text", pattern: pattern))
+      id += ".search-\(queryIDFragment(search))"
     }
     if direction != .ascending {
       id += ".order-\(direction.rawValue)"
@@ -663,6 +677,13 @@ struct InstantSwiftDataCLI {
       order: InstantQueryOrder("createdAt", direction),
       limit: limit
     )
+  }
+
+  private static func queryIDFragment(_ value: String) -> String {
+    Data(value.utf8).base64EncodedString()
+      .replacingOccurrences(of: "+", with: "-")
+      .replacingOccurrences(of: "/", with: "_")
+      .replacingOccurrences(of: "=", with: "")
   }
 
   private static func parseBool(_ value: String) -> Bool? {

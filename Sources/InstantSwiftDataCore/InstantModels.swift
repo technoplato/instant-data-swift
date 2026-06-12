@@ -316,7 +316,12 @@ public enum InstantQueryFilter: Hashable, Codable, Sendable {
   case lessThan(field: String, value: InstantValue)
   case lessThanOrEqual(field: String, value: InstantValue)
   case `in`(field: String, values: [InstantValue])
+  case like(field: String, pattern: String)
+  case iLike(field: String, pattern: String)
   case isNull(field: String)
+  case isNotNull(field: String)
+  case and([InstantQueryFilter])
+  case or([InstantQueryFilter])
 }
 
 public struct InstantQueryPlan: Hashable, Codable, Sendable, Identifiable {

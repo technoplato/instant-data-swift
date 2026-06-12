@@ -103,6 +103,9 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     _ plan: InstantQueryPlan,
     attributes: AttributeStore
   ) -> [InstantEntitySnapshot] {
+    guard filtersReferenceDeclaredFields(plan.filters, namespace: plan.namespace, attributes: attributes)
+    else { return [] }
+
     var snapshots: [InstantEntitySnapshot] = []
 
     for (entityID, attributesByID) in eav {
@@ -128,7 +131,8 @@ struct TripleIndexes: Hashable, Codable, Sendable {
 
       guard !values.isEmpty else { continue }
       let snapshot = InstantEntitySnapshot(id: entityID, namespace: plan.namespace, values: values)
-      guard matches(snapshot, filters: plan.filters) else { continue }
+      guard matches(snapshot, filters: plan.filters, namespace: plan.namespace, attributes: attributes)
+      else { continue }
       snapshots.append(snapshot)
     }
 
@@ -213,15 +217,17 @@ struct TripleIndexes: Hashable, Codable, Sendable {
 
   private func matches(
     _ snapshot: InstantEntitySnapshot,
-    filters: [InstantQueryFilter]
+    filters: [InstantQueryFilter],
+    namespace: String,
+    attributes: AttributeStore
   ) -> Bool {
     for filter in filters {
       switch filter {
       case let .equals(field, value):
         guard snapshot.values[field]?.contains(value) == true else { return false }
       case let .notEquals(field, value):
-        guard let values = snapshot.values[field] else { return false }
-        guard !values.contains(value) else { return false }
+        guard isDeclaredField(field, namespace: namespace, attributes: attributes) else { return false }
+        guard matchesNotEquals(snapshot, field: field, value: value) else { return false }
       case let .greaterThan(field, value):
         guard matchesComparison(snapshot, field: field, value: value, allowed: [.orderedDescending])
         else { return false }
@@ -247,15 +253,99 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       case let .in(field, values):
         guard let materialized = snapshot.values[field], !values.isEmpty else { return false }
         guard materialized.values.contains(where: values.contains) else { return false }
+      case let .like(field, pattern):
+        guard matchesStringPattern(snapshot, field: field, pattern: pattern, caseInsensitive: false)
+        else { return false }
+      case let .iLike(field, pattern):
+        guard matchesStringPattern(snapshot, field: field, pattern: pattern, caseInsensitive: true)
+        else { return false }
       case let .isNull(field):
-        if let materialized = snapshot.values[field],
-          !materialized.values.allSatisfy({ $0 == .null })
-        {
-          return false
-        }
+        guard isDeclaredField(field, namespace: namespace, attributes: attributes) else { return false }
+        guard isFieldNull(snapshot, field: field) else { return false }
+      case let .isNotNull(field):
+        guard isDeclaredField(field, namespace: namespace, attributes: attributes) else { return false }
+        guard !isFieldNull(snapshot, field: field) else { return false }
+      case let .and(filters):
+        guard matches(snapshot, filters: filters, namespace: namespace, attributes: attributes)
+        else { return false }
+      case let .or(filters):
+        guard
+          !filters.isEmpty
+            && filters.contains(where: {
+              matches(snapshot, filter: $0, namespace: namespace, attributes: attributes)
+            })
+        else { return false }
       }
     }
     return true
+  }
+
+  private func filtersReferenceDeclaredFields(
+    _ filters: [InstantQueryFilter],
+    namespace: String,
+    attributes: AttributeStore
+  ) -> Bool {
+    filters.allSatisfy { filterReferencesDeclaredFields($0, namespace: namespace, attributes: attributes) }
+  }
+
+  private func filterReferencesDeclaredFields(
+    _ filter: InstantQueryFilter,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> Bool {
+    switch filter {
+    case let .equals(field, _),
+      let .notEquals(field, _),
+      let .greaterThan(field, _),
+      let .greaterThanOrEqual(field, _),
+      let .lessThan(field, _),
+      let .lessThanOrEqual(field, _),
+      let .in(field, _),
+      let .like(field, _),
+      let .iLike(field, _),
+      let .isNull(field),
+      let .isNotNull(field):
+      return isDeclaredField(field, namespace: namespace, attributes: attributes)
+
+    case let .and(filters), let .or(filters):
+      return filtersReferenceDeclaredFields(filters, namespace: namespace, attributes: attributes)
+    }
+  }
+
+  private func matches(
+    _ snapshot: InstantEntitySnapshot,
+    filter: InstantQueryFilter,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> Bool {
+    matches(
+      snapshot,
+      filters: [filter],
+      namespace: namespace,
+      attributes: attributes
+    )
+  }
+
+  private func isDeclaredField(
+    _ field: String,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> Bool {
+    attributes.attribute(namespace: namespace, name: field) != nil
+  }
+
+  private func matchesNotEquals(
+    _ snapshot: InstantEntitySnapshot,
+    field: String,
+    value: InstantValue
+  ) -> Bool {
+    guard let materialized = snapshot.values[field] else { return true }
+    return materialized.values.contains { $0 != value } || materialized.values.contains(.null)
+  }
+
+  private func isFieldNull(_ snapshot: InstantEntitySnapshot, field: String) -> Bool {
+    guard let materialized = snapshot.values[field] else { return true }
+    return materialized.values.contains(.null)
   }
 
   private func matchesComparison(
@@ -277,6 +367,77 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       return true
     default:
       return false
+    }
+  }
+
+  private func matchesStringPattern(
+    _ snapshot: InstantEntitySnapshot,
+    field: String,
+    pattern: String,
+    caseInsensitive: Bool
+  ) -> Bool {
+    guard let materialized = snapshot.values[field] else { return false }
+    return materialized.values.contains {
+      guard case let .string(value) = $0 else { return false }
+      return Self.matchesLikePattern(value, pattern: pattern, caseInsensitive: caseInsensitive)
+    }
+  }
+
+  private enum LikeToken: Hashable {
+    case literal(Character)
+    case anyOne
+    case anyMany
+  }
+
+  private static func matchesLikePattern(
+    _ value: String,
+    pattern: String,
+    caseInsensitive: Bool
+  ) -> Bool {
+    let input = Array(caseInsensitive ? value.lowercased() : value)
+    let tokens = tokenizeLikePattern(caseInsensitive ? pattern.lowercased() : pattern)
+
+    var table = Array(
+      repeating: Array(repeating: false, count: tokens.count + 1),
+      count: input.count + 1
+    )
+    table[0][0] = true
+
+    for inputIndex in 0...input.count {
+      for tokenIndex in 0..<tokens.count where table[inputIndex][tokenIndex] {
+        switch tokens[tokenIndex] {
+        case let .literal(character):
+          if inputIndex < input.count, input[inputIndex] == character {
+            table[inputIndex + 1][tokenIndex + 1] = true
+          }
+
+        case .anyOne:
+          if inputIndex < input.count {
+            table[inputIndex + 1][tokenIndex + 1] = true
+          }
+
+        case .anyMany:
+          table[inputIndex][tokenIndex + 1] = true
+          if inputIndex < input.count {
+            table[inputIndex + 1][tokenIndex] = true
+          }
+        }
+      }
+    }
+
+    return table[input.count][tokens.count]
+  }
+
+  private static func tokenizeLikePattern(_ pattern: String) -> [LikeToken] {
+    pattern.map { character in
+      switch character {
+      case "%":
+        .anyMany
+      case "_":
+        .anyOne
+      default:
+        .literal(character)
+      }
     }
   }
 

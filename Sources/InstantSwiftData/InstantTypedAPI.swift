@@ -158,6 +158,24 @@ public struct InstantPredicate<Entity: InstantEntityModel>: Hashable, Sendable {
   }
 }
 
+extension InstantPredicate {
+  public static func all(_ predicates: Self...) -> Self {
+    all(predicates)
+  }
+
+  public static func all(_ predicates: [Self]) -> Self {
+    Self(.and(predicates.map(\.filter)))
+  }
+
+  public static func any(_ predicates: Self...) -> Self {
+    any(predicates)
+  }
+
+  public static func any(_ predicates: [Self]) -> Self {
+    Self(.or(predicates.map(\.filter)))
+  }
+}
+
 public func == <Entity, Value>(
   lhs: InstantAttributePath<Entity, Value>,
   rhs: Value
@@ -205,8 +223,22 @@ extension InstantAttributePath {
     InstantPredicate(.isNull(field: name))
   }
 
+  public var isNotNull: InstantPredicate<Entity> {
+    InstantPredicate(.isNotNull(field: name))
+  }
+
   public func isIn(_ values: [Value]) -> InstantPredicate<Entity> {
     InstantPredicate(.in(field: name, values: values.map(\.instantValue)))
+  }
+}
+
+extension InstantAttributePath where Value == String {
+  public func like(_ pattern: String) -> InstantPredicate<Entity> {
+    InstantPredicate(.like(field: name, pattern: pattern))
+  }
+
+  public func iLike(_ pattern: String) -> InstantPredicate<Entity> {
+    InstantPredicate(.iLike(field: name, pattern: pattern))
   }
 }
 
