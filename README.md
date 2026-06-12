@@ -63,6 +63,33 @@ try await withDependencies {
 }
 ```
 
+### Typed Queries And Writes
+
+Entities that conform to `InstantEntityModel` can build typed local queries and
+optimistic mutations over the same runtime:
+
+```swift
+try await db.transact {
+  Todo.create(
+    id: InstantID(rawValue: "todo-1"),
+    Todo.text.set("Ship Instant Swift Data"),
+    Todo.isCompleted.set(false),
+    Todo.createdAt.set(Date())
+  )
+}
+
+let openTodos = try await db.query(
+  Todo.query
+    .where(Todo.isCompleted == false)
+    .order(Todo.createdAt)
+)
+
+@FetchAll(Todo.query.where(Todo.isCompleted == false))
+var todos: [Todo]
+
+try await $todos.load()
+```
+
 Build and test:
 
 ```bash
