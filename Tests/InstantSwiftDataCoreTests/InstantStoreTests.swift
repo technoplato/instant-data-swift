@@ -2120,6 +2120,52 @@ struct InstantStoreTests {
   }
 
   @Test
+  func oauthSignInUsesExchangeRefreshTokenAndPersistsSession() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let signedInAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let exchange = InstantOAuthExchange(
+      signIn: { request in
+        InstantOAuthVerification(
+          userID:
+            "dependency:\(request.appID):\(request.code):\(request.codeVerifier ?? "nil"):\(request.refreshToken ?? "nil")",
+          refreshToken: "oauth-refresh:\(request.signedInAt.milliseconds)"
+        )
+      }
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        now: { signedInAt },
+        oauthExchange: exchange
+      )
+    )
+
+    _ = try await runtime.signInWithRefreshToken(" existing-refresh ", userID: "existing-user")
+    let session = try await runtime.signInWithOAuth(
+      code: " oauth-code ",
+      codeVerifier: " verifier with spaces "
+    )
+    expectNoDifference(
+      session,
+      InstantAuthSession(
+        appID: "app-a",
+        userID: "dependency:app-a:oauth-code: verifier with spaces :existing-refresh",
+        refreshToken: "oauth-refresh:1700000000000",
+        isGuest: false,
+        createdAt: signedInAt,
+        updatedAt: signedInAt
+      )
+    )
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "app-a", persistenceURL: cacheURL)
+    )
+    let persistedSession = try await relaunchedRuntime.authSession()
+    expectNoDifference(persistedSession, session)
+  }
+
+  @Test
   func invalidIDTokenInputsFailWithAuthError() async throws {
     let cacheURL = try temporaryCacheURL()
     let runtime = try await InstantRuntime.bootstrap(
@@ -2144,6 +2190,25 @@ struct InstantStoreTests {
       expectNoDifference(error.code, .authFailed)
       expectNoDifference(error.operation, "sign in with id token")
       #expect(error.description.contains("ID token must not be empty"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
+  func invalidOAuthInputsFailWithAuthError() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "test-app", persistenceURL: cacheURL)
+    )
+
+    do {
+      _ = try await runtime.signInWithOAuth(code: " ")
+      #expect(Bool(false), "Expected empty OAuth code to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .authFailed)
+      expectNoDifference(error.operation, "sign in with oauth")
+      #expect(error.description.contains("OAuth authorization code must not be empty"))
     } catch {
       #expect(Bool(false), "Unexpected error: \(error)")
     }

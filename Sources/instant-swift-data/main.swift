@@ -824,6 +824,20 @@ struct InstantSwiftDataCLI {
       )
       try printAuth(context: context, event: "id-token", session: session, output: output)
 
+    case "oauth":
+      guard let code = arguments.popFirstArgument() else {
+        throw CLIError(
+          "Usage: instant-swift-data auth oauth <code> [--code-verifier verifier] [--json|--jsonl]",
+          exitCode: 64
+        )
+      }
+      let codeVerifier = try parseAuthOAuthCodeVerifier(arguments: arguments)
+      let session = try await context.runtime.signInWithOAuth(
+        code: code,
+        codeVerifier: codeVerifier
+      )
+      try printAuth(context: context, event: "oauth", session: session, output: output)
+
     case "magic-code", "magic":
       try await runMagicCode(arguments: arguments, context: context, output: output)
 
@@ -2655,6 +2669,7 @@ struct InstantSwiftDataCLI {
         auth guest [--json|--jsonl]
         auth token <refresh-token> [--user-id id] [--json|--jsonl]
         auth id-token <client-name> <id-token> [--nonce nonce] [--json|--jsonl]
+        auth oauth <code> [--code-verifier verifier] [--json|--jsonl]
         auth magic-code send <email> [--json|--jsonl]
         auth magic-code verify <email> <code> [--json|--jsonl]
         auth watch [--events 1] [--json|--jsonl]
@@ -3170,6 +3185,32 @@ struct InstantSwiftDataCLI {
       }
     }
     return nonce
+  }
+
+  private static func parseAuthOAuthCodeVerifier(arguments: [String]) throws -> String? {
+    var arguments = arguments
+    var codeVerifier: String?
+    while let option = arguments.popFirstArgument() {
+      switch option {
+      case "--code-verifier":
+        guard let value = arguments.popFirstArgument(),
+          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+          throw CLIError(
+            "Usage: instant-swift-data auth oauth <code> [--code-verifier verifier] [--json|--jsonl]",
+            exitCode: 64
+          )
+        }
+        codeVerifier = value
+
+      default:
+        throw CLIError(
+          "Unknown auth oauth option: \(option). Usage: instant-swift-data auth oauth <code> [--code-verifier verifier] [--json|--jsonl]",
+          exitCode: 64
+        )
+      }
+    }
+    return codeVerifier
   }
 
   private static func parseAuthWatchEventCount(arguments: [String]) throws -> Int {
@@ -3819,11 +3860,12 @@ struct InstantSwiftDataCLI {
 
   private static var authUsage: String {
     """
-    Usage: instant-swift-data auth <show|guest|token|id-token|magic-code|watch|sign-out>
+    Usage: instant-swift-data auth <show|guest|token|id-token|oauth|magic-code|watch|sign-out>
       instant-swift-data auth show [--json|--jsonl]
       instant-swift-data auth guest [--json|--jsonl]
       instant-swift-data auth token <refresh-token> [--user-id id] [--json|--jsonl]
       instant-swift-data auth id-token <client-name> <id-token> [--nonce nonce] [--json|--jsonl]
+      instant-swift-data auth oauth <code> [--code-verifier verifier] [--json|--jsonl]
       instant-swift-data auth magic-code send <email> [--json|--jsonl]
       instant-swift-data auth magic-code verify <email> <code> [--json|--jsonl]
       instant-swift-data auth watch [--events 1] [--json|--jsonl]

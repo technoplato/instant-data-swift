@@ -8,6 +8,7 @@ public struct InstantRuntimeConfiguration: Sendable {
   public var makeID: @Sendable () -> String
   public var magicCodeExchange: InstantMagicCodeExchange
   public var idTokenExchange: InstantIDTokenExchange
+  public var oauthExchange: InstantOAuthExchange
 
   public init(
     appID: String,
@@ -18,7 +19,8 @@ public struct InstantRuntimeConfiguration: Sendable {
     },
     makeID: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() },
     magicCodeExchange: InstantMagicCodeExchange = .local,
-    idTokenExchange: InstantIDTokenExchange = .local
+    idTokenExchange: InstantIDTokenExchange = .local,
+    oauthExchange: InstantOAuthExchange = .local
   ) {
     self.appID = appID
     self.persistenceURL = persistenceURL
@@ -27,6 +29,7 @@ public struct InstantRuntimeConfiguration: Sendable {
     self.makeID = makeID
     self.magicCodeExchange = magicCodeExchange
     self.idTokenExchange = idTokenExchange
+    self.oauthExchange = oauthExchange
   }
 }
 
@@ -460,12 +463,53 @@ public final class InstantRuntime: Sendable {
       )
     }
     let now = configuration.now()
+    let refreshToken = try await authSession()?.refreshToken
     let verification = try await configuration.idTokenExchange.signIn(
       InstantIDTokenSignInRequest(
         appID: configuration.appID,
         clientName: clientName,
         idToken: idToken,
         nonce: rawNonce,
+        refreshToken: refreshToken,
+        signedInAt: now,
+        makeID: configuration.makeID
+      )
+    )
+    let session = InstantAuthSession(
+      appID: configuration.appID,
+      userID: verification.userID,
+      refreshToken: verification.refreshToken,
+      isGuest: false,
+      createdAt: now,
+      updatedAt: now
+    )
+    try await saveAuthSession(session)
+    return session
+  }
+
+  public func signInWithOAuth(
+    code rawCode: String,
+    codeVerifier rawCodeVerifier: String? = nil
+  ) async throws -> InstantAuthSession {
+    let code = rawCode.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !code.isEmpty else {
+      throw authValidationFailed(
+        operation: "sign in with oauth",
+        message: "OAuth authorization code must not be empty.",
+        recovery: "Pass the authorization code returned by the OAuth callback."
+      )
+    }
+
+    let now = configuration.now()
+    // Match Instant's transport shape: pass the current refresh token so a live
+    // OAuth exchange can upgrade/link the existing session when supported.
+    let refreshToken = try await authSession()?.refreshToken
+    let verification = try await configuration.oauthExchange.signIn(
+      InstantOAuthSignInRequest(
+        appID: configuration.appID,
+        code: code,
+        codeVerifier: rawCodeVerifier,
+        refreshToken: refreshToken,
         signedInAt: now,
         makeID: configuration.makeID
       )

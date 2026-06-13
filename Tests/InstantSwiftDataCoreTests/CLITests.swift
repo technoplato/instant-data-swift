@@ -901,6 +901,74 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliAuthOAuthSignInPersistsAcrossLaunches() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let signedIn = try JSONDecoder().decode(
+      CLIAuthOutput.self,
+      from: Data(
+        try runCLI(
+          ["auth", "oauth", "local-oauth-code", "--code-verifier", "verifier-1", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(signedIn.event, "oauth")
+    expectNoDifference(signedIn.isSignedIn, true)
+    expectNoDifference(signedIn.isGuest, false)
+    expectNoDifference(signedIn.hasRefreshToken, true)
+    #expect(signedIn.userID?.hasPrefix("oauth:") == true)
+
+    let show = try JSONDecoder().decode(
+      CLIAuthOutput.self,
+      from: Data(try runCLI(["auth", "show", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(show.userID, signedIn.userID)
+    expectNoDifference(show.hasRefreshToken, true)
+
+    let watch = try JSONDecoder().decode(
+      CLIAuthWatchOutput.self,
+      from: Data(
+        try runCLI(["auth", "watch", "--events", "1", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(watch.emissions.map(\.userID), [signedIn.userID])
+
+    let noVerifierHomeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: noVerifierHomeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: noVerifierHomeURL) }
+    let noVerifier = try JSONDecoder().decode(
+      CLIAuthOutput.self,
+      from: Data(
+        try runCLI(["auth", "oauth", "local-oauth-code", "--json"], homeURL: noVerifierHomeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(noVerifier.event, "oauth")
+    expectNoDifference(noVerifier.isSignedIn, true)
+    #expect(noVerifier.userID?.hasPrefix("oauth:") == true)
+
+    let missingCode = try runCLIResult(
+      ["auth", "oauth", " ", "--json"],
+      homeURL: homeURL
+    )
+    #expect(missingCode.status == 65)
+    #expect(missingCode.error.contains("OAuth authorization code must not be empty"))
+
+    let malformedVerifier = try runCLIResult(
+      ["auth", "oauth", "local-oauth-code", "--code-verifier", " ", "--json"],
+      homeURL: homeURL
+    )
+    #expect(malformedVerifier.status == 64)
+    #expect(malformedVerifier.error.contains("auth oauth"))
+  }
+
+  @Test
   func cliTodoCompleteMarksTodoDurably() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)

@@ -105,6 +105,7 @@ swift run instant-swift-data auth guest --json
 swift run instant-swift-data auth show --json
 swift run instant-swift-data auth token <refresh-token> --user-id <user-id> --json
 swift run instant-swift-data auth id-token google-ios <id-token> --nonce <nonce> --json
+swift run instant-swift-data auth oauth <code> --code-verifier <verifier> --json
 swift run instant-swift-data auth magic-code send user@example.com --json
 swift run instant-swift-data auth magic-code verify user@example.com <local-verification-code> --json
 swift run instant-swift-data auth watch --events 1 --jsonl
@@ -213,6 +214,7 @@ import InstantSwiftData
 try await withDependencies {
   $0.instantMagicCodeExchange = .local
   $0.instantIDTokenExchange = .local
+  $0.instantOAuthExchange = .local
   try await $0.bootstrapInstantSwiftData(
     appID: "local-demo",
     persistenceURL: cacheURL,
@@ -224,22 +226,25 @@ try await withDependencies {
   let challenge = try await db.sendMagicCode(email: "user@example.com")
   _ = try await db.signInWithMagicCode(email: challenge.email, code: challenge.code)
   _ = try await db.signInWithIDToken(clientName: "google-ios", idToken: "local-jwt")
+  _ = try await db.signInWithOAuth(code: "local-oauth-code")
   _ = try await db.query(TodoExample.query)
   try await db.signOut()
 }
 ```
 
-`instantMagicCodeExchange` and `instantIDTokenExchange` default to `.local`, and
-app/test entry points can override them before `bootstrapInstantSwiftData` to
-install live or fixture-backed auth behavior. Local/demo clients should be
-reusable static instances on the client type, for example
+`instantMagicCodeExchange`, `instantIDTokenExchange`, and
+`instantOAuthExchange` default to `.local`, and app/test entry points can
+override them before `bootstrapInstantSwiftData` to install live or
+fixture-backed auth behavior. Local/demo clients should be reusable static
+instances on the client type, for example
 `extension InstantMagicCodeExchange { public static let local = Self(...) }`,
 while dependency keys remain computed `static var` `liveValue`, `testValue`, and
 `previewValue` properties.
 The dependency client exposes durable auth directly with `authSession`,
 `observeAuthSession`, `signInAsGuest`, `sendMagicCode`,
 `signInWithMagicCode`, `signInWithRefreshToken`, `signInWithIDToken`, and
-`signOut`, so app code does not need to reach through to the core runtime.
+`signInWithOAuth`, and `signOut`, so app code does not need to reach through to
+the core runtime.
 
 ### Typed Queries And Writes
 

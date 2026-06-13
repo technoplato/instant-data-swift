@@ -5,6 +5,7 @@ public struct InstantIDTokenSignInRequest: Sendable {
   public var clientName: String
   public var idToken: String
   public var nonce: String?
+  public var refreshToken: String?
   public var signedInAt: InstantTimestamp
   public var makeID: @Sendable () -> String
 
@@ -13,6 +14,7 @@ public struct InstantIDTokenSignInRequest: Sendable {
     clientName: String,
     idToken: String,
     nonce: String? = nil,
+    refreshToken: String? = nil,
     signedInAt: InstantTimestamp,
     makeID: @escaping @Sendable () -> String
   ) {
@@ -20,6 +22,7 @@ public struct InstantIDTokenSignInRequest: Sendable {
     self.clientName = clientName
     self.idToken = idToken
     self.nonce = nonce
+    self.refreshToken = refreshToken
     self.signedInAt = signedInAt
     self.makeID = makeID
   }

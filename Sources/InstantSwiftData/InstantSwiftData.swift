@@ -29,6 +29,8 @@ public struct InstantSwiftDataClient: Sendable {
     @Sendable (String, String?) async throws -> InstantAuthSession
   private var signInWithIDTokenOperation:
     @Sendable (String, String, String?) async throws -> InstantAuthSession
+  private var signInWithOAuthOperation:
+    @Sendable (String, String?) async throws -> InstantAuthSession
   private var signOutOperation: @Sendable () async throws -> Void
 
   public init(runtime: InstantRuntime) {
@@ -76,6 +78,9 @@ public struct InstantSwiftDataClient: Sendable {
         nonce: nonce
       )
     }
+    self.signInWithOAuthOperation = { code, codeVerifier in
+      try await runtime.signInWithOAuth(code: code, codeVerifier: codeVerifier)
+    }
     self.signOutOperation = {
       try await runtime.signOut()
     }
@@ -98,7 +103,9 @@ public struct InstantSwiftDataClient: Sendable {
       (@Sendable (String, String?) async throws -> InstantAuthSession)? = nil,
     signOut: (@Sendable () async throws -> Void)? = nil,
     signInWithIDToken:
-      (@Sendable (String, String, String?) async throws -> InstantAuthSession)? = nil
+      (@Sendable (String, String, String?) async throws -> InstantAuthSession)? = nil,
+    signInWithOAuth:
+      (@Sendable (String, String?) async throws -> InstantAuthSession)? = nil
   ) {
     let authError = InstantError(
       code: .implementationFailed,
@@ -125,6 +132,7 @@ public struct InstantSwiftDataClient: Sendable {
     self.signInWithMagicCodeOperation = signInWithMagicCode ?? { _, _ in throw authError }
     self.signInWithRefreshTokenOperation = signInWithRefreshToken ?? { _, _ in throw authError }
     self.signInWithIDTokenOperation = signInWithIDToken ?? { _, _, _ in throw authError }
+    self.signInWithOAuthOperation = signInWithOAuth ?? { _, _ in throw authError }
     self.signOutOperation = signOut ?? { throw authError }
   }
 
@@ -178,6 +186,9 @@ public struct InstantSwiftDataClient: Sendable {
         throw error
       },
       signInWithIDToken: { _, _, _ in
+        throw error
+      },
+      signInWithOAuth: { _, _ in
         throw error
       }
     )
@@ -249,6 +260,13 @@ public struct InstantSwiftDataClient: Sendable {
     nonce: String? = nil
   ) async throws -> InstantAuthSession {
     try await signInWithIDTokenOperation(clientName, idToken, nonce)
+  }
+
+  public func signInWithOAuth(
+    code: String,
+    codeVerifier: String? = nil
+  ) async throws -> InstantAuthSession {
+    try await signInWithOAuthOperation(code, codeVerifier)
   }
 
   public func signOut() async throws {
@@ -417,6 +435,22 @@ extension InstantIDTokenExchangeKey: DependencyKey {
   }
 }
 
+private enum InstantOAuthExchangeKey: TestDependencyKey {
+  static var testValue: InstantOAuthExchange {
+    .local
+  }
+
+  static var previewValue: InstantOAuthExchange {
+    .local
+  }
+}
+
+extension InstantOAuthExchangeKey: DependencyKey {
+  static var liveValue: InstantOAuthExchange {
+    .local
+  }
+}
+
 extension DependencyValues {
   public var defaultInstantSwiftData: InstantSwiftDataClient {
     get { self[DefaultInstantSwiftDataKey.self] }
@@ -433,6 +467,11 @@ extension DependencyValues {
     set { self[InstantIDTokenExchangeKey.self] = newValue }
   }
 
+  public var instantOAuthExchange: InstantOAuthExchange {
+    get { self[InstantOAuthExchangeKey.self] }
+    set { self[InstantOAuthExchangeKey.self] = newValue }
+  }
+
   public mutating func bootstrapInstantSwiftData(
     appID: String,
     persistenceURL: URL? = nil,
@@ -443,6 +482,7 @@ extension DependencyValues {
     let uuid = self.uuid
     let magicCodeExchange = self.instantMagicCodeExchange
     let idTokenExchange = self.instantIDTokenExchange
+    let oauthExchange = self.instantOAuthExchange
     let url =
       persistenceURL
       ?? Self.defaultInstantSwiftDataPersistenceURL(
@@ -463,7 +503,8 @@ extension DependencyValues {
           uuid().uuidString.lowercased()
         },
         magicCodeExchange: magicCodeExchange,
-        idTokenExchange: idTokenExchange
+        idTokenExchange: idTokenExchange,
+        oauthExchange: oauthExchange
       )
     )
   }
