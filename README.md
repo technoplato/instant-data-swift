@@ -207,6 +207,9 @@ node validation/ts-runner/src/main.ts --fixtures
 validation/run-e2e.sh
 ```
 
+`validation local-todos` emits local JSONL evidence for seed/update/cache/reset,
+closed-connection offline write, offline relaunch restore, and reconnect flush.
+
 Run local core benchmarks:
 
 ```bash

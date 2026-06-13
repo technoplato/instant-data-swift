@@ -51,6 +51,8 @@ public struct LocalTodoValidationDetails: Codable, Equatable, Sendable {
   public var todoIDs: [String]
   public var todoTexts: [String]
   public var pendingMutationIDs: [String]
+  public var confirmedMutationIDs: [String]
+  public var connectionState: String
   public var queryCacheCount: Int
 
   public init(
@@ -58,12 +60,16 @@ public struct LocalTodoValidationDetails: Codable, Equatable, Sendable {
     todoIDs: [String],
     todoTexts: [String],
     pendingMutationIDs: [String],
+    confirmedMutationIDs: [String] = [],
+    connectionState: String = InstantConnectionState.opened.rawValue,
     queryCacheCount: Int
   ) {
     self.cachePath = cachePath
     self.todoIDs = todoIDs
     self.todoTexts = todoTexts
     self.pendingMutationIDs = pendingMutationIDs
+    self.confirmedMutationIDs = confirmedMutationIDs
+    self.connectionState = connectionState
     self.queryCacheCount = queryCacheCount
   }
 }
@@ -203,6 +209,88 @@ public enum InstantSwiftDataLocalTodoValidation {
       try await evidenceRow(event: "relaunch", runtime: relaunchedRuntime, cacheURL: cacheURL, timestamp: timestamp)
     )
 
+    try await relaunchedRuntime.closeConnection()
+    let offlineTodoID = try await relaunchedRuntime.localID(named: "validation.local.todos.offline")
+    let offlineTransactionID = makeID()
+    let offlineAt = timestamp()
+    try await relaunchedRuntime.transact(
+      InstantStoreTransaction(
+        id: offlineTransactionID,
+        operations: TodoExample.createOperations(
+          id: offlineTodoID,
+          text: "Validate restart restore while closed",
+          createdAt: offlineAt,
+          transactionID: offlineTransactionID
+        )
+      ),
+      createdAt: offlineAt,
+      source: "validation.local.todos.offline-write"
+    )
+    evidence.append(
+      try await evidenceRow(
+        event: "offline-write",
+        runtime: relaunchedRuntime,
+        cacheURL: cacheURL,
+        timestamp: timestamp
+      )
+    )
+
+    let offlineRelaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: appID,
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        now: timestamp,
+        makeID: makeID
+      )
+    )
+    let offlineRelaunchedStatus = try await offlineRelaunchedRuntime.connectionStatus()
+    guard offlineRelaunchedStatus.state == .closed else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "validate offline relaunch",
+        message: "Expected relaunched runtime to preserve the closed connection state.",
+        recovery: "Inspect connection metadata persistence."
+      )
+    }
+    let offlineRelaunchedTodos = try await localTodoSnapshots(runtime: offlineRelaunchedRuntime)
+    guard offlineRelaunchedTodos.map(\.id) == [offlineTodoID] else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "validate offline relaunch",
+        message: "Expected pending offline todo to restore before reconnect.",
+        recovery: "Inspect SQLite store/outbox persistence and offline observation."
+      )
+    }
+    evidence.append(
+      try await evidenceRow(
+        event: "offline-relaunch",
+        runtime: offlineRelaunchedRuntime,
+        cacheURL: cacheURL,
+        timestamp: timestamp
+      )
+    )
+
+    try await offlineRelaunchedRuntime.connect()
+    let flush = try await offlineRelaunchedRuntime.flushPendingMutations()
+    guard flush.pendingMutationCount == 0 else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "validate reconnect flush",
+        message: "Expected reconnect flush to confirm all pending local mutations.",
+        recovery: "Inspect mutation transport flush and outbox cleanup."
+      )
+    }
+    evidence.append(
+      try await evidenceRow(
+        event: "reconnect-flush",
+        runtime: offlineRelaunchedRuntime,
+        cacheURL: cacheURL,
+        timestamp: timestamp,
+        confirmedMutationIDs: flush.confirmed.map(\.id)
+      )
+    )
+
     return LocalTodoValidationResult(appID: appID, cacheURL: cacheURL, evidence: evidence)
   }
 
@@ -210,9 +298,11 @@ public enum InstantSwiftDataLocalTodoValidation {
     event: String,
     runtime: InstantRuntime,
     cacheURL: URL,
-    timestamp: @escaping @Sendable () -> InstantTimestamp
+    timestamp: @escaping @Sendable () -> InstantTimestamp,
+    confirmedMutationIDs: [String] = []
   ) async throws -> ValidationEvidenceRow<LocalTodoValidationDetails> {
-    let todos = try await TodoExample.decode(runtime.query(TodoExample.query))
+    let status = try await runtime.connectionStatus()
+    let todos = try await localTodoSnapshots(runtime: runtime)
     let pending = await runtime.pendingMutations()
     let cachedQueries = try await runtime.cachedQueries()
     return ValidationEvidenceRow(
@@ -227,9 +317,26 @@ public enum InstantSwiftDataLocalTodoValidation {
         todoIDs: todos.map(\.id),
         todoTexts: todos.map(\.text),
         pendingMutationIDs: pending.map(\.id),
+        confirmedMutationIDs: confirmedMutationIDs,
+        connectionState: status.state.rawValue,
         queryCacheCount: cachedQueries.count
       )
     )
+  }
+
+  private static func localTodoSnapshots(runtime: InstantRuntime) async throws
+    -> [TodoRecord]
+  {
+    do {
+      return try await TodoExample.decode(runtime.query(TodoExample.query))
+    } catch let error as InstantError where error.code == .networkFailed {
+      let stream = await runtime.observe(TodoExample.query)
+      var iterator = stream.makeAsyncIterator()
+      guard let emission = await iterator.next() else {
+        throw error
+      }
+      return try TodoExample.decode(emission.values)
+    }
   }
 }
 

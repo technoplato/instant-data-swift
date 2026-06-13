@@ -93,17 +93,34 @@ struct LocalTodoValidationTests {
     expectNoDifference(result.appID, "validation-test")
     expectNoDifference(result.cacheURL, cacheURL)
     expectNoDifference(run.summary.caseID, "validation.local.todos")
-    expectNoDifference(run.summary.rowCount, 5)
+    expectNoDifference(run.summary.rowCount, 8)
     expectNoDifference(run.summary.ok, true)
-    expectNoDifference(run.summary.events, ["seed", "update", "cache", "reset", "relaunch"])
-    expectNoDifference(result.evidence.map(\.event), ["seed", "update", "cache", "reset", "relaunch"])
-    expectNoDifference(result.evidence.map(\.ok), [true, true, true, true, true])
+    expectNoDifference(
+      run.summary.events,
+      [
+        "seed", "update", "cache", "reset", "relaunch", "offline-write",
+        "offline-relaunch", "reconnect-flush",
+      ]
+    )
+    expectNoDifference(result.evidence.map(\.event), run.summary.events)
+    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 8))
     expectNoDifference(
       result.evidence.map(\.caseID),
       Array(repeating: "validation.local.todos", count: result.evidence.count)
     )
-    expectNoDifference(result.evidence.last?.details.todoTexts, [])
-    expectNoDifference(result.evidence.last?.details.pendingMutationIDs.count, 3)
+    expectNoDifference(result.evidence[6].details.connectionState, "closed")
+    expectNoDifference(
+      result.evidence[6].details.todoTexts,
+      ["Validate restart restore while closed"]
+    )
+    expectNoDifference(result.evidence[6].details.pendingMutationIDs.count, 4)
+    expectNoDifference(result.evidence.last?.details.connectionState, "opened")
+    expectNoDifference(
+      result.evidence.last?.details.todoTexts,
+      ["Validate restart restore while closed"]
+    )
+    expectNoDifference(result.evidence.last?.details.pendingMutationIDs, [])
+    expectNoDifference(result.evidence.last?.details.confirmedMutationIDs.count, 4)
   }
 }
 

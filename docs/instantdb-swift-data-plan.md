@@ -211,7 +211,9 @@ flushes them through the same local mutation transport after
 `instant-swift-data connection connect --json`. Todo example mutation commands
 can also run while closed: they write optimistically, then print the restored
 local SQLite snapshot through the same bounded observation path that powers
-offline watches.
+offline watches. `instant-swift-data validation local-todos --jsonl` now emits
+closed-connection offline write, offline relaunch restore, and reconnect flush
+evidence rows for this local path.
 
 ### Realtime Sync
 

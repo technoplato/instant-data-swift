@@ -2541,14 +2541,20 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.appID, "cli-cache-test")
     expectNoDifference(jsonOutput.event, "local-todos")
     expectNoDifference(jsonOutput.ok, true)
-    expectNoDifference(jsonOutput.evidenceCount, 5)
-    expectNoDifference(jsonOutput.events, ["seed", "update", "cache", "reset", "relaunch"])
-    expectNoDifference(jsonOutput.finalTodoCount, 0)
-    expectNoDifference(jsonOutput.pendingMutationCount, 3)
+    expectNoDifference(jsonOutput.evidenceCount, 8)
+    expectNoDifference(
+      jsonOutput.events,
+      [
+        "seed", "update", "cache", "reset", "relaunch", "offline-write",
+        "offline-relaunch", "reconnect-flush",
+      ]
+    )
+    expectNoDifference(jsonOutput.finalTodoCount, 1)
+    expectNoDifference(jsonOutput.pendingMutationCount, 0)
 
     let jsonlOutput = try runCLI(["validation", "local-todos", "--jsonl"], homeURL: homeURL)
     let lines = jsonlOutput.split(separator: "\n")
-    expectNoDifference(lines.count, 5)
+    expectNoDifference(lines.count, 8)
     let firstEvidence = try JSONDecoder().decode(
       CLILocalTodoValidationEvidence.self,
       from: Data(try #require(lines.first).utf8)
@@ -2558,9 +2564,30 @@ extension InstantStoreTests {
     expectNoDifference(firstEvidence.event, "seed")
     expectNoDifference(firstEvidence.details.todoTexts.count, 3)
 
+    let offlineRelaunchEvidence = try JSONDecoder().decode(
+      CLILocalTodoValidationEvidence.self,
+      from: Data(lines[6].utf8)
+    )
+    expectNoDifference(offlineRelaunchEvidence.event, "offline-relaunch")
+    expectNoDifference(offlineRelaunchEvidence.details.connectionState, "closed")
+    expectNoDifference(
+      offlineRelaunchEvidence.details.todoTexts,
+      ["Validate restart restore while closed"]
+    )
+    expectNoDifference(offlineRelaunchEvidence.details.pendingMutationIDs.count, 4)
+
+    let reconnectFlushEvidence = try JSONDecoder().decode(
+      CLILocalTodoValidationEvidence.self,
+      from: Data(lines[7].utf8)
+    )
+    expectNoDifference(reconnectFlushEvidence.event, "reconnect-flush")
+    expectNoDifference(reconnectFlushEvidence.details.connectionState, "opened")
+    expectNoDifference(reconnectFlushEvidence.details.pendingMutationIDs, [])
+    expectNoDifference(reconnectFlushEvidence.details.confirmedMutationIDs.count, 4)
+
     let humanOutput = try runCLI(["validation", "local-todos"], homeURL: homeURL)
     #expect(humanOutput.contains("validation: ok"))
-    #expect(humanOutput.contains("evidence rows: 5"))
+    #expect(humanOutput.contains("evidence rows: 8"))
 
     let defaultAppIDHomeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -3381,6 +3408,9 @@ private struct CLILocalTodoValidationEvidence: Decodable {
 
 private struct CLILocalTodoValidationDetails: Decodable {
   var todoTexts: [String]
+  var pendingMutationIDs: [String]
+  var confirmedMutationIDs: [String]
+  var connectionState: String
 }
 
 private struct CLIBenchmarkOutput: Decodable {
