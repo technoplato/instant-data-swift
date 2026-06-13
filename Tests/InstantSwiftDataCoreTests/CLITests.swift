@@ -2691,6 +2691,10 @@ extension InstantStoreTests {
         "stream-write.chunks",
         "stream-read.chunks",
         "subscription-cancel.live-query",
+        "subscription-cancel.presence",
+        "subscription-cancel.topic",
+        "subscription-cancel.storage",
+        "subscription-cancel.stream",
         "query-cache-read.todos",
         "triple-retract.reset",
         "offline-restore.relaunch",
@@ -2785,6 +2789,21 @@ extension InstantStoreTests {
       jsonOutput.metrics.first { $0.name == "subscription-cancel.live-query" }?.samples.map(\.resultCount),
       [1]
     )
+    for metricName in [
+      "subscription-cancel.presence",
+      "subscription-cancel.topic",
+      "subscription-cancel.storage",
+      "subscription-cancel.stream",
+    ] {
+      expectNoDifference(
+        jsonOutput.metrics.first { $0.name == metricName }?.samples.map(\.operationCount),
+        [1]
+      )
+      expectNoDifference(
+        jsonOutput.metrics.first { $0.name == metricName }?.samples.map(\.resultCount),
+        [1]
+      )
+    }
     expectNoDifference(
       jsonOutput.metrics.first { $0.name == "triple-insert.seed" }?.samples.map(\.actorHopCount),
       [7]
@@ -2848,7 +2867,7 @@ extension InstantStoreTests {
       homeURL: homeURL
     )
     let lines = jsonlOutput.split(separator: "\n")
-    expectNoDifference(lines.count, 18)
+    expectNoDifference(lines.count, 22)
     let firstEvidence = try JSONDecoder().decode(
       CLIBenchmarkEvidence.self,
       from: Data(try #require(lines.first).utf8)

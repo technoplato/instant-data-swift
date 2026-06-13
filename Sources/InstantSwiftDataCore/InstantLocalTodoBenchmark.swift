@@ -196,6 +196,11 @@ public enum InstantSwiftDataLocalBenchmarks {
   private static let storageMetadataFileCount = 5
   private static let streamChunkCount = 25
 
+  private struct SnapshotObservationResult: Sendable {
+    var emissionCount: Int
+    var initialCount: Int
+  }
+
   public static func runLocalTodos(
     appID: String = "local-benchmark",
     iterations: Int = 3,
@@ -544,6 +549,71 @@ public enum InstantSwiftDataLocalBenchmarks {
         )
       }
 
+      let benchmarkRoom = InstantRoomHandle(type: "chat", id: "benchmark-local-todos")
+      _ = try await runtime.setPresence(
+        room: benchmarkRoom,
+        values: [
+          "name": .string("Benchmark user"),
+          "status": .string("online"),
+        ]
+      )
+      let presenceObservationTask = try await snapshotObservationTask(
+        stream: try await runtime.observeRoomPresence(room: benchmarkRoom),
+        expectedInitialCount: 1,
+        operation: "room presence"
+      )
+      let (presenceObservation, presenceCancellationDuration) = try await measured(clockNanoseconds) {
+        presenceObservationTask.cancel()
+        let observation = await presenceObservationTask.value
+        try await waitForLocalSubscriptionCancellation(operation: "room presence") {
+          try await runtime.activeRoomPresenceObservationCount(room: benchmarkRoom)
+        }
+        return observation
+      }
+      record(
+        "subscription-cancel.presence",
+        InstantBenchmarkSample(
+          iteration: iteration,
+          durationNanoseconds: presenceCancellationDuration,
+          operationCount: 1,
+          resultCount: presenceObservation.emissionCount
+        )
+      )
+
+      _ = try await runtime.publishTopicMessage(
+        room: benchmarkRoom,
+        topic: "sendEmoji",
+        payload: .object(["emoji": .string("wave")])
+      )
+      let topicObservationTask = try await snapshotObservationTask(
+        stream: try await runtime.observeRoomTopicMessages(
+          room: benchmarkRoom,
+          topic: "sendEmoji"
+        ),
+        expectedInitialCount: 1,
+        operation: "room topic"
+      )
+      let (topicObservation, topicCancellationDuration) = try await measured(clockNanoseconds) {
+        topicObservationTask.cancel()
+        let observation = await topicObservationTask.value
+        try await waitForLocalSubscriptionCancellation(operation: "room topic") {
+          try await runtime.activeRoomTopicObservationCount(
+            room: benchmarkRoom,
+            topic: "sendEmoji"
+          )
+        }
+        return observation
+      }
+      record(
+        "subscription-cancel.topic",
+        InstantBenchmarkSample(
+          iteration: iteration,
+          durationNanoseconds: topicCancellationDuration,
+          operationCount: 1,
+          resultCount: topicObservation.emissionCount
+        )
+      )
+
       var expectedFileByteCounts: [String: Int64] = [:]
       for fileIndex in 0..<storageMetadataFileCount {
         let fileName = "storage-source-\(fileIndex).txt"
@@ -583,6 +653,29 @@ public enum InstantSwiftDataLocalBenchmarks {
           durationNanoseconds: storageDuration,
           operationCount: storageMetadataFileCount,
           resultCount: storedFiles.count
+        )
+      )
+
+      let storageObservationTask = try await snapshotObservationTask(
+        stream: try await runtime.observeStoredFiles(),
+        expectedInitialCount: storageMetadataFileCount,
+        operation: "stored files"
+      )
+      let (storageObservation, storageCancellationDuration) = try await measured(clockNanoseconds) {
+        storageObservationTask.cancel()
+        let observation = await storageObservationTask.value
+        try await waitForLocalSubscriptionCancellation(operation: "stored files") {
+          await runtime.activeStoredFilesObservationCount()
+        }
+        return observation
+      }
+      record(
+        "subscription-cancel.storage",
+        InstantBenchmarkSample(
+          iteration: iteration,
+          durationNanoseconds: storageCancellationDuration,
+          operationCount: 1,
+          resultCount: storageObservation.emissionCount
         )
       )
 
@@ -635,6 +728,29 @@ public enum InstantSwiftDataLocalBenchmarks {
           iteration: iteration,
           durationNanoseconds: streamReadDuration,
           resultCount: readStreamChunks.count
+        )
+      )
+
+      let streamObservationTask = try await snapshotObservationTask(
+        stream: try await runtime.observeStreamChunks(streamID: streamID),
+        expectedInitialCount: streamChunkCount,
+        operation: "stream chunks"
+      )
+      let (streamObservation, streamCancellationDuration) = try await measured(clockNanoseconds) {
+        streamObservationTask.cancel()
+        let observation = await streamObservationTask.value
+        try await waitForLocalSubscriptionCancellation(operation: "stream chunks") {
+          try await runtime.activeStreamChunksObservationCount(streamID: streamID)
+        }
+        return observation
+      }
+      record(
+        "subscription-cancel.stream",
+        InstantBenchmarkSample(
+          iteration: iteration,
+          durationNanoseconds: streamCancellationDuration,
+          operationCount: 1,
+          resultCount: streamObservation.emissionCount
         )
       )
 
@@ -783,6 +899,10 @@ public enum InstantSwiftDataLocalBenchmarks {
       "stream-write.chunks",
       "stream-read.chunks",
       "subscription-cancel.live-query",
+      "subscription-cancel.presence",
+      "subscription-cancel.topic",
+      "subscription-cancel.storage",
+      "subscription-cancel.stream",
       "query-cache-read.todos",
       "triple-retract.reset",
       "offline-restore.relaunch",
@@ -870,6 +990,70 @@ public enum InstantSwiftDataLocalBenchmarks {
       )
     }
     return observationTask
+  }
+
+  private static func snapshotObservationTask<Value: Sendable>(
+    stream: AsyncStream<[Value]>,
+    expectedInitialCount: Int,
+    operation: String
+  ) async throws -> Task<SnapshotObservationResult, Never> {
+    let firstEmission = AsyncStream<Int>.makeStream(bufferingPolicy: .bufferingNewest(1))
+    let observationTask = Task<SnapshotObservationResult, Never> {
+      var iterator = stream.makeAsyncIterator()
+      var emissionCount = 0
+      var initialCount = 0
+      while let values = await iterator.next() {
+        emissionCount += 1
+        if emissionCount == 1 {
+          initialCount = values.count
+          firstEmission.continuation.yield(initialCount)
+          firstEmission.continuation.finish()
+        }
+      }
+      return SnapshotObservationResult(
+        emissionCount: emissionCount,
+        initialCount: initialCount
+      )
+    }
+
+    var firstEmissionIterator = firstEmission.stream.makeAsyncIterator()
+    guard let initialCount = await firstEmissionIterator.next() else {
+      observationTask.cancel()
+      throw InstantError(
+        code: .validationFailed,
+        operation: "run local todo benchmark",
+        message: "Expected \(operation) observation to emit before cancellation.",
+        recovery: "Inspect local snapshot observation registration before trusting cancellation timings."
+      )
+    }
+    guard initialCount == expectedInitialCount else {
+      observationTask.cancel()
+      throw InstantError(
+        code: .validationFailed,
+        operation: "run local todo benchmark",
+        message: "Expected \(operation) observation to emit \(expectedInitialCount) values.",
+        recovery: "Inspect local snapshot persistence before trusting cancellation timings."
+      )
+    }
+    return observationTask
+  }
+
+  private static func waitForLocalSubscriptionCancellation(
+    operation: String,
+    activeCount: () async throws -> Int
+  ) async throws {
+    for _ in 0..<100 {
+      if try await activeCount() == 0 {
+        return
+      }
+      await Task.yield()
+    }
+    throw InstantError(
+      code: .validationFailed,
+      operation: "run local todo benchmark",
+      message: "Expected \(operation) cancellation to remove its local snapshot observer.",
+      recovery: "Inspect AsyncStream termination and local observer cleanup before trusting cancellation timings."
+    )
   }
 
   private static func waitForLiveQueryObserverCancellation(

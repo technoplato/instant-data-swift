@@ -140,6 +140,14 @@ public final class InstantRuntime: Sendable {
   public let persistence: SQLitePersistenceStore
   let outbox: InstantOutbox
   private let authSessionObservers = InstantAuthSessionObservers()
+  private let roomPresenceObservers =
+    InstantSnapshotObservers<InstantRoomPresenceObservationKey, [InstantRoomPresenceMember]>()
+  private let roomTopicObservers =
+    InstantSnapshotObservers<InstantRoomTopicObservationKey, [InstantRoomTopicMessage]>()
+  private let storedFilesObservers =
+    InstantSnapshotObservers<InstantStoredFilesObservationKey, [InstantStoredFile]>()
+  private let streamChunksObservers =
+    InstantSnapshotObservers<InstantStreamChunksObservationKey, [InstantStreamChunk]>()
   private let operationGate = AsyncSerialGate()
   private let mutationFlushGate = AsyncSerialGate()
 
@@ -931,6 +939,14 @@ public final class InstantRuntime: Sendable {
         updatedAt: now
       )
       try await persistence.saveRoomPresence(member)
+      let members = try await persistence.loadRoomPresence(
+        appID: configuration.appID,
+        room: room
+      )
+      await roomPresenceObservers.publish(
+        members,
+        for: roomPresenceObservationKey(room)
+      )
       await operationGate.leave()
       return member
     } catch {
@@ -944,6 +960,29 @@ public final class InstantRuntime: Sendable {
     return try await persistence.loadRoomPresence(appID: configuration.appID, room: room)
   }
 
+  public func observeRoomPresence(room: InstantRoomHandle) async throws
+    -> AsyncStream<[InstantRoomPresenceMember]>
+  {
+    let room = try validatedRoom(room, operation: "observe room presence")
+
+    await operationGate.enter()
+    do {
+      let members = try await persistence.loadRoomPresence(
+        appID: configuration.appID,
+        room: room
+      )
+      let stream = await roomPresenceObservers.observe(
+        key: roomPresenceObservationKey(room),
+        current: members
+      )
+      await operationGate.leave()
+      return stream
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
   public func leavePresence(room: InstantRoomHandle, userID: String? = nil) async throws -> String {
     let room = try validatedRoom(room, operation: "leave room presence")
 
@@ -955,12 +994,25 @@ public final class InstantRuntime: Sendable {
         room: room,
         userID: userID
       )
+      let members = try await persistence.loadRoomPresence(
+        appID: configuration.appID,
+        room: room
+      )
+      await roomPresenceObservers.publish(
+        members,
+        for: roomPresenceObservationKey(room)
+      )
       await operationGate.leave()
       return userID
     } catch {
       await operationGate.leave()
       throw error
     }
+  }
+
+  func activeRoomPresenceObservationCount(room: InstantRoomHandle) async throws -> Int {
+    let room = try validatedRoom(room, operation: "inspect room presence observers")
+    return await roomPresenceObservers.activeCount(for: roomPresenceObservationKey(room))
   }
 
   @discardableResult
@@ -991,6 +1043,16 @@ public final class InstantRuntime: Sendable {
         createdAt: configuration.now()
       )
       try await persistence.saveRoomTopicMessage(message)
+      let messages = try await persistence.loadRoomTopicMessages(
+        appID: configuration.appID,
+        room: room,
+        topic: topic,
+        limit: nil
+      )
+      await roomTopicObservers.publish(
+        messages,
+        for: roomTopicObservationKey(room: room, topic: topic)
+      )
       await operationGate.leave()
       return message
     } catch {
@@ -1026,6 +1088,54 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  public func observeRoomTopicMessages(
+    room: InstantRoomHandle,
+    topic rawTopic: String
+  ) async throws -> AsyncStream<[InstantRoomTopicMessage]> {
+    let room = try validatedRoom(room, operation: "observe room topic")
+    let topic = try validatedNonEmpty(
+      rawTopic,
+      label: "Topic",
+      operation: "observe room topic",
+      recovery: "Pass the room topic name to observe."
+    )
+
+    await operationGate.enter()
+    do {
+      let messages = try await persistence.loadRoomTopicMessages(
+        appID: configuration.appID,
+        room: room,
+        topic: topic,
+        limit: nil
+      )
+      let stream = await roomTopicObservers.observe(
+        key: roomTopicObservationKey(room: room, topic: topic),
+        current: messages
+      )
+      await operationGate.leave()
+      return stream
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  func activeRoomTopicObservationCount(
+    room: InstantRoomHandle,
+    topic rawTopic: String
+  ) async throws -> Int {
+    let room = try validatedRoom(room, operation: "inspect room topic observers")
+    let topic = try validatedNonEmpty(
+      rawTopic,
+      label: "Topic",
+      operation: "inspect room topic observers",
+      recovery: "Pass the room topic name to inspect."
+    )
+    return await roomTopicObservers.activeCount(
+      for: roomTopicObservationKey(room: room, topic: topic)
+    )
+  }
+
   public func uploadFile(
     from sourceURL: URL,
     name rawName: String? = nil,
@@ -1052,6 +1162,11 @@ public final class InstantRuntime: Sendable {
     await operationGate.enter()
     do {
       let savedFile = try await persistence.saveStoredFile(file, contentsOf: sourceURL)
+      let files = try await persistence.loadStoredFiles(appID: configuration.appID)
+      await storedFilesObservers.publish(
+        files,
+        for: storedFilesObservationKey
+      )
       await operationGate.leave()
       return savedFile
     } catch {
@@ -1067,6 +1182,23 @@ public final class InstantRuntime: Sendable {
       let files = try await persistence.loadStoredFiles(appID: configuration.appID)
       await operationGate.leave()
       return files
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  public func observeStoredFiles() async throws -> AsyncStream<[InstantStoredFile]> {
+    await operationGate.enter()
+    do {
+      _ = try await resolvedFileUserID(operation: "observe files")
+      let files = try await persistence.loadStoredFiles(appID: configuration.appID)
+      let stream = await storedFilesObservers.observe(
+        key: storedFilesObservationKey,
+        current: files
+      )
+      await operationGate.leave()
+      return stream
     } catch {
       await operationGate.leave()
       throw error
@@ -1096,12 +1228,21 @@ public final class InstantRuntime: Sendable {
           recovery: "Run 'instant-swift-data files list' to inspect local file ids."
         )
       }
+      let files = try await persistence.loadStoredFiles(appID: configuration.appID)
+      await storedFilesObservers.publish(
+        files,
+        for: storedFilesObservationKey
+      )
       await operationGate.leave()
       return file
     } catch {
       await operationGate.leave()
       throw error
     }
+  }
+
+  func activeStoredFilesObservationCount() async -> Int {
+    await storedFilesObservers.activeCount(for: storedFilesObservationKey)
   }
 
   public func appendStreamChunk(
@@ -1128,6 +1269,15 @@ public final class InstantRuntime: Sendable {
         payload: payload,
         userID: userID,
         createdAt: configuration.now()
+      )
+      let chunks = try await persistence.loadStreamChunks(
+        appID: configuration.appID,
+        streamID: streamID,
+        limit: nil
+      )
+      await streamChunksObservers.publish(
+        chunks,
+        for: streamChunksObservationKey(streamID: streamID)
       )
       await operationGate.leave()
       return chunk
@@ -1168,6 +1318,51 @@ public final class InstantRuntime: Sendable {
       await operationGate.leave()
       throw error
     }
+  }
+
+  public func observeStreamChunks(streamID rawStreamID: String) async throws
+    -> AsyncStream<[InstantStreamChunk]>
+  {
+    let streamID = try validatedNonEmpty(
+      rawStreamID,
+      label: "Stream id",
+      operation: "observe stream chunks",
+      recovery: "Pass a stream id, such as 'chat/lobby'."
+    )
+
+    await operationGate.enter()
+    do {
+      _ = try await resolvedAuthenticatedUserID(
+        operation: "observe stream chunks",
+        noun: "Stream"
+      )
+      let chunks = try await persistence.loadStreamChunks(
+        appID: configuration.appID,
+        streamID: streamID,
+        limit: nil
+      )
+      let stream = await streamChunksObservers.observe(
+        key: streamChunksObservationKey(streamID: streamID),
+        current: chunks
+      )
+      await operationGate.leave()
+      return stream
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  func activeStreamChunksObservationCount(streamID rawStreamID: String) async throws -> Int {
+    let streamID = try validatedNonEmpty(
+      rawStreamID,
+      label: "Stream id",
+      operation: "inspect stream observers",
+      recovery: "Pass a stream id to inspect."
+    )
+    return await streamChunksObservers.activeCount(
+      for: streamChunksObservationKey(streamID: streamID)
+    )
   }
 
   public func createShare(
@@ -1850,6 +2045,29 @@ public final class InstantRuntime: Sendable {
 
   private var connectionLastErrorMetadataKey: String {
     "connection.last_error:\(configuration.appID)"
+  }
+
+  private func roomPresenceObservationKey(_ room: InstantRoomHandle) -> InstantRoomPresenceObservationKey {
+    InstantRoomPresenceObservationKey(appID: configuration.appID, room: room)
+  }
+
+  private func roomTopicObservationKey(
+    room: InstantRoomHandle,
+    topic: String
+  ) -> InstantRoomTopicObservationKey {
+    InstantRoomTopicObservationKey(
+      appID: configuration.appID,
+      room: room,
+      topic: topic
+    )
+  }
+
+  private var storedFilesObservationKey: InstantStoredFilesObservationKey {
+    InstantStoredFilesObservationKey(appID: configuration.appID)
+  }
+
+  private func streamChunksObservationKey(streamID: String) -> InstantStreamChunksObservationKey {
+    InstantStreamChunksObservationKey(appID: configuration.appID, streamID: streamID)
   }
 
   private func recordActorHop(_ boundary: InstantActorHopBoundary) {

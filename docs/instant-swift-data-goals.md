@@ -669,13 +669,12 @@ records JSON/JSONL metrics for local bootstrap, triple insert/retract, todo
 query materialization, pending mutation enqueue, query-cache reads, offline
 SQLite restore, high-bandwidth scalar update streams, and high-bandwidth linked
 write batches, storage metadata queries, stream read/write throughput, and
-live-query cancellation latency. High-bandwidth scalar and linked samples also
-carry resident-memory high-water growth and budget fields, 1k/10k/50k triple
-workload samples carry explicit memory budgets, and local
-transact/query/cache/relaunch/outbox-flush samples carry actor-hop breakdowns.
-Swift/TypeScript comparison, live transport actor-hop counts, and
-presence/topic/storage/stream cancellation latency remain future benchmark
-work.
+live-query, presence, topic, storage, and stream cancellation latency.
+High-bandwidth scalar and linked samples also carry resident-memory high-water
+growth and budget fields, 1k/10k/50k triple workload samples carry explicit
+memory budgets, and local transact/query/cache/relaunch/outbox-flush samples
+carry actor-hop breakdowns. Swift/TypeScript comparison and live transport
+actor-hop counts remain future benchmark work.
 
 Success criterion: Swift matches or exceeds TypeScript for equivalent workloads.
 If Swift is slower, the benchmark must name the reason, quantify the gap, and

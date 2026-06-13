@@ -278,7 +278,8 @@ invalidation remain future work, but the Swift dependency slots are in place.
 
 Current local progress: `InstantRuntime` persists room presence and topic
 messages in SQLite, scopes them by app id, resolves users through the durable
-auth session or an explicit user id, and exposes non-captive CLI commands:
+auth session or an explicit user id, exposes local snapshot subscriptions with
+termination cleanup, and provides non-captive CLI commands:
 `instant-swift-data rooms presence ...` and
 `instant-swift-data rooms topics ...`. Transport-backed subscriptions,
 reconnect rejoin, and Swift/TypeScript boundary proof remain future work.
@@ -293,7 +294,8 @@ reconnect rejoin, and Swift/TypeScript boundary proof remain future work.
 
 Current local progress: `InstantRuntime` can copy a local file into the CLI
 cache directory, persist `InstantStoredFile` metadata in SQLite scoped by app id,
-list local files, and delete the stored content and metadata. The CLI exposes
+list local files, delete the stored content and metadata, and observe local file
+metadata snapshots with termination cleanup. The CLI exposes
 `instant-swift-data files upload/list/delete` for durable terminal proof. Real
 Instant `$files` sync, progress reporting, remote delete, and permissions remain
 future work.
@@ -309,8 +311,9 @@ future work.
 
 Current local progress: `InstantRuntime` can append ordered JSON chunks to a
 local stream, persist them in SQLite scoped by app id and stream id, and read
-them in order. The CLI exposes `instant-swift-data streams append/read` for
-durable terminal proof. Real Instant stream transport, backpressure,
+them in order. It also exposes local snapshot subscriptions with termination
+cleanup. The CLI exposes `instant-swift-data streams append/read` for durable
+terminal proof. Real Instant stream transport, backpressure, transport-backed
 subscriptions, and Swift/TypeScript boundary proof remain future work.
 
 ### Admin And Tooling
@@ -657,12 +660,13 @@ emits JSON/JSONL metrics for local bootstrap, triple insert/retract, todo query
 materialization, pending mutation enqueue, query-cache reads, offline SQLite
 restore, high-bandwidth scalar update streams, and high-bandwidth linked write
 batches, storage metadata queries, stream read/write throughput, and live-query
-cancellation latency. High-bandwidth scalar and linked samples also carry
-resident-memory high-water growth and budget fields, 1k/10k/50k triple workload
-samples carry explicit memory budgets, and local transact/query/cache/relaunch/
-outbox-flush samples carry actor-hop breakdowns. Swift/TypeScript comparison,
-live transport actor-hop counts, and presence/topic/storage/stream cancellation
-latency remain future benchmark work.
+cancellation latency. Local presence, topic, storage, and stream subscriptions
+also carry cancellation latency metrics. High-bandwidth scalar and linked
+samples carry resident-memory high-water growth and budget fields, 1k/10k/50k
+triple workload samples carry explicit memory budgets, and local
+transact/query/cache/relaunch/outbox-flush samples carry actor-hop breakdowns.
+Swift/TypeScript comparison and live transport actor-hop counts remain future
+benchmark work.
 
 Initial budgets can be loose until the implementation exists, but the suite
 must emit the same metrics on day one so regressions become visible.

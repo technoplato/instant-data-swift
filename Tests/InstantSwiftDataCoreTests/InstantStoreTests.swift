@@ -2881,6 +2881,90 @@ struct InstantStoreTests {
   }
 
   @Test
+  func localSnapshotObservationsEmitPersistedUpdates() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let sourceURL = cacheURL.deletingLastPathComponent().appendingPathComponent("observed-source.txt")
+    try Data("observed file\n".utf8).write(to: sourceURL)
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let idSequence = LockIsolated(0)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "observed-local-snapshots",
+        persistenceURL: cacheURL,
+        now: { timestamp },
+        makeID: {
+          let nextID = idSequence.withValue { value in
+            value += 1
+            return value
+          }
+          return "observed-\(nextID)"
+        }
+      )
+    )
+    _ = try await runtime.signInWithRefreshToken("refresh-token", userID: "user-1")
+
+    let room = InstantRoomHandle(type: "chat", id: "lobby")
+    var presenceIterator = (try await runtime.observeRoomPresence(room: room)).makeAsyncIterator()
+    let initialPresence = await presenceIterator.next()
+    expectNoDifference(try #require(initialPresence), [])
+    _ = try await runtime.setPresence(
+      room: room,
+      values: ["status": .string("online")]
+    )
+    let updatedPresence = await presenceIterator.next()
+    expectNoDifference(
+      try #require(updatedPresence).map(\.userID),
+      ["user-1"]
+    )
+
+    var topicIterator = (try await runtime.observeRoomTopicMessages(
+      room: room,
+      topic: "sendEmoji"
+    ))
+    .makeAsyncIterator()
+    let initialTopics = await topicIterator.next()
+    expectNoDifference(try #require(initialTopics), [])
+    _ = try await runtime.publishTopicMessage(
+      room: room,
+      topic: "sendEmoji",
+      payload: .object(["emoji": .string("wave")])
+    )
+    let updatedTopics = await topicIterator.next()
+    expectNoDifference(
+      try #require(updatedTopics).map(\.payload),
+      [.object(["emoji": .string("wave")])]
+    )
+
+    var filesIterator = (try await runtime.observeStoredFiles()).makeAsyncIterator()
+    let initialFiles = await filesIterator.next()
+    expectNoDifference(try #require(initialFiles), [])
+    let uploaded = try await runtime.uploadFile(
+      from: sourceURL,
+      name: "observed.txt",
+      contentType: "text/plain"
+    )
+    let updatedFiles = await filesIterator.next()
+    expectNoDifference(
+      try #require(updatedFiles).map(\.id),
+      [uploaded.id]
+    )
+
+    var streamIterator = (try await runtime.observeStreamChunks(streamID: "chat/lobby"))
+      .makeAsyncIterator()
+    let initialChunks = await streamIterator.next()
+    expectNoDifference(try #require(initialChunks), [])
+    let chunk = try await runtime.appendStreamChunk(
+      streamID: "chat/lobby",
+      payload: .object(["text": .string("hello")])
+    )
+    let updatedChunks = await streamIterator.next()
+    expectNoDifference(
+      try #require(updatedChunks).map(\.id),
+      [chunk.id]
+    )
+  }
+
+  @Test
   func streamAppendRequiresAuth() async throws {
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(appID: "test-app", persistenceURL: temporaryCacheURL())
