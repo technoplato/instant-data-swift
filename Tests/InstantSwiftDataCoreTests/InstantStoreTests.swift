@@ -7119,6 +7119,154 @@ struct InstantStoreTests {
   }
 
   @Test
+  func dateCoercionPortsUpstreamInstantDateCases() throws {
+    let validDateStrings = [
+      "Sat, 05 Apr 2025 18:00:31 GMT": "2025-04-05T18:00:31.000Z",
+      "2025-01-01T00:00:00Z": "2025-01-01T00:00:00.000Z",
+      "2025-01-01": "2025-01-01T00:00:00.000Z",
+      "2025-01-02T00:00:00-08": "2025-01-02T08:00:00.000Z",
+      "2025-11-2T00:00:00.000Z": "2025-11-02T00:00:00.000Z",
+      "2025-1-2T00:00:00.000Z": "2025-01-02T00:00:00.000Z",
+      "2025-1-2 00:00:00": "2025-01-02T00:00:00.000Z",
+      #""2025-01-02T00:00:00-08""#: "2025-01-02T08:00:00.000Z",
+      "2025-01-15 20:53:08.200": "2025-01-15T20:53:08.200Z",
+      "2025-01-15 20:53:08.892865": "2025-01-15T20:53:08.892Z",
+      #""2025-01-15 20:53:08""#: "2025-01-15T20:53:08.000Z",
+      "Wed Jul 09 2025": "2025-07-09T00:00:00.000Z",
+      "8/4/2025, 11:02:31 PM": "2025-08-04T23:02:31.000Z",
+      "2024-12-30 20:19:41.892865+00": "2024-12-30T20:19:41.892Z",
+      "epoch": "1970-01-01T00:00:00.000Z",
+      "Mon Feb 24 2025 22:37:27 GMT+0000": "2025-02-24T22:37:27.000Z",
+      "\t2025-03-02T16:08:53Z": "2025-03-02T16:08:53.000Z",
+      "2024-05-29 01:51:06.11848+00": "2024-05-29T01:51:06.118Z",
+      "2025-03-01T16:08:53+0000": "2025-03-01T16:08:53.000Z",
+      "2025-12-31 21:11": "2025-12-31T21:11:00.000Z",
+      "04-17-2025": "2025-04-17T00:00:00.000Z",
+      "2025-06-12T10:56:31.924+0530": "2025-06-12T05:26:31.924Z",
+      "2025-06-05T17:00:00EST": "2025-06-05T22:00:00.000Z",
+      "2025-06-05T17:00:00EDT": "2025-06-05T21:00:00.000Z",
+      "2025-06-05T17:00:00PDT": "2025-06-06T00:00:00.000Z",
+      "2025-06-05T17:00:00PST": "2025-06-06T01:00:00.000Z",
+      "2025-06-05T17:00:00PYST": "2025-06-05T20:00:00.000Z",
+      "2025-06-05T17:00:00UTC": "2025-06-05T17:00:00.000Z",
+      "2025-06-05T17:00:00CETDST": "2025-06-05T15:00:00.000Z",
+      "2025-06-05T17:00:00CET": "2025-06-05T16:00:00.000Z",
+      "2025-06-05T17:00:00CEST": "2025-06-05T15:00:00.000Z",
+      "2026-04-28T04:7:00.000Z": "2026-04-28T04:07:00.000Z",
+      "2026-04-28T4:07:00.000Z": "2026-04-28T04:07:00.000Z",
+      "2026-04-28T04:07:7.000Z": "2026-04-28T04:07:07.000Z",
+    ]
+
+    for (dateString, expectedISOString) in validDateStrings {
+      let date = try #require(InstantDateCoercion.parse(dateString), "Expected \(dateString) to parse.")
+      let actualISOString = iso8601MillisecondsString(from: date)
+      #expect(
+        actualISOString == expectedISOString,
+        "Expected \(dateString) to parse as \(expectedISOString), got \(actualISOString)."
+      )
+    }
+
+    let numberDate = InstantDateCoercion.coerce(.number(1_642_234_800_000))
+      .map(iso8601MillisecondsString(from:))
+    #expect(numberDate == "2022-01-15T08:20:00.000Z")
+    #expect(InstantDateCoercion.parse("2025-01-0") == nil)
+    #expect(InstantDateCoercion.parse(#""2025-01-0""#) == nil)
+    #expect(InstantDateCoercion.parse("2025--01-02") == nil)
+    #expect(InstantDateCoercion.parse("2025-01-02-") == nil)
+    #expect(InstantDateCoercion.coerce(.bool(true)) == nil)
+    #expect(InstantDateCoercion.coerce(.json(.object([:]))) == nil)
+  }
+
+  @Test
+  func dateAttributesCoerceStringAndNumberValuesForMaterializationAndQueries() async throws {
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-date-coercion",
+        operations: [
+          .insert(.init(entityID: "todo-string", attributeID: "todos/id", value: .string("todo-string"), txID: "tx-date-coercion", txTime: time)),
+          .insert(.init(entityID: "todo-string", attributeID: "todos/text", value: .string("from string"), txID: "tx-date-coercion", txTime: time)),
+          .insert(.init(entityID: "todo-string", attributeID: "todos/isCompleted", value: .bool(false), txID: "tx-date-coercion", txTime: time)),
+          .insert(.init(entityID: "todo-string", attributeID: "todos/createdAt", value: .string("2025-01-15 20:53:08.200"), txID: "tx-date-coercion", txTime: time)),
+          .insert(.init(entityID: "todo-number", attributeID: "todos/id", value: .string("todo-number"), txID: "tx-date-coercion", txTime: time)),
+          .insert(.init(entityID: "todo-number", attributeID: "todos/text", value: .string("from number"), txID: "tx-date-coercion", txTime: time)),
+          .insert(.init(entityID: "todo-number", attributeID: "todos/isCompleted", value: .bool(false), txID: "tx-date-coercion", txTime: time)),
+          .insert(.init(entityID: "todo-number", attributeID: "todos/createdAt", value: .number(1_642_234_800_000), txID: "tx-date-coercion", txTime: time)),
+        ]
+      ),
+      createdAt: time
+    )
+
+    let ordered = try await runtime.query(
+      InstantQueryPlan(
+        id: "todos.date-coercion.ordered",
+        namespace: TodoExample.namespace,
+        order: InstantQueryOrder("createdAt")
+      )
+    )
+    #expect(ordered.map(\.id) == ["todo-number", "todo-string"])
+    let orderedDates = ordered.map { $0.values["createdAt"]?.first }.map { value -> String? in
+        guard case let .date(date) = value else { return nil }
+        return iso8601MillisecondsString(from: date)
+      }
+    #expect(
+      orderedDates == [
+        "2022-01-15T08:20:00.000Z",
+        "2025-01-15T20:53:08.200Z",
+      ],
+      "Expected coerced date values, got \(orderedDates)."
+    )
+
+    let equalString = try await runtime.query(
+      InstantQueryPlan(
+        id: "todos.date-coercion.equal-string",
+        namespace: TodoExample.namespace,
+        filters: [.equals(field: "createdAt", value: .string("2025-01-15T20:53:08.200Z"))]
+      )
+    )
+    #expect(equalString.map(\.id) == ["todo-string"])
+
+    let equalNumber = try await runtime.query(
+      InstantQueryPlan(
+        id: "todos.date-coercion.equal-number",
+        namespace: TodoExample.namespace,
+        filters: [.equals(field: "createdAt", value: .number(1_642_234_800_000))]
+      )
+    )
+    #expect(equalNumber.map(\.id) == ["todo-number"])
+
+    let ranged = try await runtime.query(
+      InstantQueryPlan(
+        id: "todos.date-coercion.range",
+        namespace: TodoExample.namespace,
+        filters: [.greaterThan(field: "createdAt", value: .string("2024-12-31"))],
+        order: InstantQueryOrder("createdAt")
+      )
+    )
+    #expect(ranged.map(\.id) == ["todo-string"])
+
+    let afterStringCursor = try await runtime.queryOnce(
+      InstantQueryPlan(
+        id: "todos.date-coercion.after-string-cursor",
+        namespace: TodoExample.namespace,
+        order: InstantQueryOrder("createdAt"),
+        after: InstantQueryCursor(
+          entityID: "todo-number",
+          sortValue: .string("2022-01-15T09:00:00Z")
+        )
+      )
+    )
+    #expect(afterStringCursor.values.map(\.id) == ["todo-string"])
+  }
+
+  @Test
   func queryOrderingSupportsServerCreatedAtReservedField() async throws {
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
@@ -7971,6 +8119,15 @@ struct InstantStoreTests {
       .appendingPathComponent("InstantSwiftDataTests-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     return directory.appendingPathComponent("state.sqlite")
+  }
+
+  private func iso8601MillisecondsString(from date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
+    return formatter.string(from: date)
   }
 
   private func lookupTestAttributes() -> [InstantAttribute] {

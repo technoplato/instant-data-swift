@@ -109,12 +109,17 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     }
   }
 
-  func containsTriple(entityID: String, attributeID: String, value: InstantValue) -> Bool {
-    eav[entityID]?[attributeID]?[value] != nil
+  func containsTriple(
+    entityID: String,
+    attributeID: String,
+    value: InstantValue,
+    attribute: InstantAttribute?
+  ) -> Bool {
+    eav[entityID]?[attributeID]?[Self.normalizedValue(value, attribute: attribute)] != nil
   }
 
-  func entityIDs(matching lookup: InstantLookupRef) -> [String] {
-    let value = lookup.value.instantValue
+  func entityIDs(matching lookup: InstantLookupRef, attribute: InstantAttribute?) -> [String] {
+    let value = Self.normalizedValue(lookup.value.instantValue, attribute: attribute)
     return aev[lookup.attributeID]?
       .compactMap { entityID, valuesByValue in
         valuesByValue[value] == nil ? nil : entityID
@@ -227,7 +232,12 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       Self.compare($0, $1, order: effectiveOrder) == .orderedAscending
     }
 
-    let paged = paginate(snapshots, plan: plan, effectiveOrder: effectiveOrder)
+    let paged = paginate(
+      snapshots,
+      plan: plan,
+      effectiveOrder: effectiveOrder,
+      attributes: attributes
+    )
     let linked = includeLinks(paged.values.map(\.snapshot), plan: plan, attributes: attributes)
     return InstantQueryPage(
       values: project(linked, selectedFields: plan.selectedFields),
@@ -398,7 +408,8 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   private func paginate(
     _ snapshots: [QuerySnapshot],
     plan: InstantQueryPlan,
-    effectiveOrder: InstantQueryOrder
+    effectiveOrder: InstantQueryOrder,
+    attributes: AttributeStore
   ) -> (values: [QuerySnapshot], pageInfo: InstantQueryPageInfo?) {
     guard isValidPagination(plan) else {
       return ([], pageInfo(for: [], plan: plan, effectiveOrder: effectiveOrder))
@@ -417,7 +428,13 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         startIndex = after.inclusive ? index : index + 1
       } else {
         startIndex = page.firstIndex {
-          let comparison = Self.compare($0, to: after, order: effectiveOrder)
+          let comparison = Self.compare(
+            $0,
+            to: after,
+            order: effectiveOrder,
+            namespace: plan.namespace,
+            attributes: attributes
+          )
           return after.inclusive
             ? comparison != .orderedAscending
             : comparison == .orderedDescending
@@ -436,7 +453,13 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         endIndex = before.inclusive ? index + 1 : index
       } else {
         endIndex = page.firstIndex {
-          let comparison = Self.compare($0, to: before, order: effectiveOrder)
+          let comparison = Self.compare(
+            $0,
+            to: before,
+            order: effectiveOrder,
+            namespace: plan.namespace,
+            attributes: attributes
+          )
           return before.inclusive
             ? comparison == .orderedDescending
             : comparison != .orderedAscending
@@ -529,7 +552,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   }
 
   private mutating func insert(_ triple: InstantTriple, attribute: InstantAttribute?) {
-    var triple = triple
+    var triple = Self.normalizedTriple(triple, attribute: attribute)
     if let existing = eav[triple.entityID]?[triple.attributeID]?[triple.value] {
       triple.txTime = existing.txTime
     }
@@ -590,6 +613,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   }
 
   private mutating func remove(_ triple: InstantTriple, attribute: InstantAttribute?) {
+    let triple = Self.normalizedTriple(triple, attribute: attribute)
     eav[triple.entityID]?[triple.attributeID]?[triple.value] = nil
     if eav[triple.entityID]?[triple.attributeID]?.isEmpty == true {
       eav[triple.entityID]?[triple.attributeID] = nil
@@ -615,6 +639,25 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         vae[triple.value] = nil
       }
     }
+  }
+
+  private static func normalizedTriple(
+    _ triple: InstantTriple,
+    attribute: InstantAttribute?
+  ) -> InstantTriple {
+    var triple = triple
+    triple.value = normalizedValue(triple.value, attribute: attribute)
+    return triple
+  }
+
+  private static func normalizedValue(
+    _ value: InstantValue,
+    attribute: InstantAttribute?
+  ) -> InstantValue {
+    guard attribute?.valueType == .date, let date = InstantDateCoercion.coerce(value) else {
+      return value
+    }
+    return .date(date)
   }
 
   private mutating func deleteEntity(
@@ -679,6 +722,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
           else { return false }
           continue
         }
+        let value = normalizedValue(value, field: field, namespace: namespace, attributes: attributes)
         guard materializedValue(snapshot, field: field)?.contains(value) == true else { return false }
       case let .notEquals(field, value):
         if let nested = nestedField(field) {
@@ -692,6 +736,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
           else { return false }
           continue
         }
+        let value = normalizedValue(value, field: field, namespace: namespace, attributes: attributes)
         guard isDeclaredField(field, namespace: namespace, attributes: attributes) else { return false }
         guard matchesNotEquals(snapshot, field: field, value: value) else { return false }
       case let .greaterThan(field, value):
@@ -706,6 +751,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
           else { return false }
           continue
         }
+        let value = normalizedValue(value, field: field, namespace: namespace, attributes: attributes)
         guard matchesComparison(snapshot, field: field, value: value, allowed: [.orderedDescending])
         else { return false }
       case let .greaterThanOrEqual(field, value):
@@ -720,6 +766,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
           else { return false }
           continue
         }
+        let value = normalizedValue(value, field: field, namespace: namespace, attributes: attributes)
         guard matchesComparison(
           snapshot,
           field: field,
@@ -739,6 +786,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
           else { return false }
           continue
         }
+        let value = normalizedValue(value, field: field, namespace: namespace, attributes: attributes)
         guard matchesComparison(snapshot, field: field, value: value, allowed: [.orderedAscending])
         else { return false }
       case let .lessThanOrEqual(field, value):
@@ -753,6 +801,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
           else { return false }
           continue
         }
+        let value = normalizedValue(value, field: field, namespace: namespace, attributes: attributes)
         guard matchesComparison(
           snapshot,
           field: field,
@@ -774,6 +823,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         }
         guard let materialized = materializedValue(snapshot, field: field), !values.isEmpty
         else { return false }
+        let values = normalizedValues(values, field: field, namespace: namespace, attributes: attributes)
         guard materialized.values.contains(where: values.contains) else { return false }
       case let .like(field, pattern):
         if let nested = nestedField(field) {
@@ -1426,6 +1476,28 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     snapshot.values[field] ?? (field == "id" ? .one(.string(snapshot.id)) : nil)
   }
 
+  private func normalizedValue(
+    _ value: InstantValue,
+    field: String,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> InstantValue {
+    Self.normalizedValue(
+      value,
+      attribute: attributes.attribute(namespace: namespace, name: field)
+    )
+  }
+
+  private func normalizedValues(
+    _ values: [InstantValue],
+    field: String,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> [InstantValue] {
+    let attribute = attributes.attribute(namespace: namespace, name: field)
+    return values.map { Self.normalizedValue($0, attribute: attribute) }
+  }
+
   private func matchesNotEquals(
     _ snapshot: InstantEntitySnapshot,
     field: String,
@@ -1571,14 +1643,20 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   private static func compare(
     _ querySnapshot: QuerySnapshot,
     to cursor: InstantQueryCursor,
-    order: InstantQueryOrder?
+    order: InstantQueryOrder?,
+    namespace: String,
+    attributes: AttributeStore
   ) -> ComparisonResult {
     guard let order, let sortValue = cursor.sortValue else {
       return querySnapshot.snapshot.id.compare(cursor.entityID)
     }
 
     let value = orderValue(querySnapshot, field: order.field)
-    let valueComparison = compare(value, sortValue)
+    let normalizedSortValue = normalizedValue(
+      sortValue,
+      attribute: attributes.attribute(namespace: namespace, name: order.field)
+    )
+    let valueComparison = compare(value, normalizedSortValue)
     let directedComparison: ComparisonResult
     switch order.direction {
     case .ascending:

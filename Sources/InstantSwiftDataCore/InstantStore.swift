@@ -139,7 +139,12 @@ public actor InstantStore {
         }
 
       case let .requireTripleExists(entityID, attributeID, value):
-        guard indexes.containsTriple(entityID: entityID, attributeID: attributeID, value: value) else {
+        guard indexes.containsTriple(
+          entityID: entityID,
+          attributeID: attributeID,
+          value: value,
+          attribute: attributes[attributeID]
+        ) else {
           throw Self.missingTripleError(
             entityID: entityID,
             attributeID: attributeID,
@@ -604,7 +609,7 @@ public actor InstantStore {
     in indexes: TripleIndexes,
     attribute: InstantAttribute
   ) throws -> [String] {
-    let entityIDs = indexes.entityIDs(matching: lookup)
+    let entityIDs = indexes.entityIDs(matching: lookup, attribute: attribute)
     guard entityIDs.count < 2 else {
       throw InstantError(
         code: .validationFailed,
