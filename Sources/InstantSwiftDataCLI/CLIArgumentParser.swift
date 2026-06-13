@@ -108,6 +108,31 @@ public enum CLIConnectionArgumentError: Error, Equatable, Sendable {
   public var exitCode: Int32 { 64 }
 }
 
+public enum CLILocalIDInvocation: Equatable, Sendable {
+  case get(name: String)
+  case list
+}
+
+public enum CLILocalIDUsage {
+  public static let localID = """
+    Usage: instant-swift-data local-id <get|list>
+      instant-swift-data local-id get <name> [--json|--jsonl]
+      instant-swift-data local-id list [--json|--jsonl]
+    """
+
+  public static let get = "Usage: instant-swift-data local-id get <name> [--json|--jsonl]"
+  public static let list = "Usage: instant-swift-data local-id list [--json|--jsonl]"
+}
+
+public enum CLILocalIDArgumentError: Error, Equatable, Sendable {
+  case missingCommand
+  case unknownCommand(String)
+  case missingArguments(usage: String)
+  case unexpectedArgument(String, usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
 public enum CLIRoomsInvocation: Equatable, Sendable {
   case presence(CLIRoomPresenceInvocation)
   case topics(CLIRoomTopicsInvocation)
@@ -789,6 +814,31 @@ public struct CLIConnectionParser: Parser {
 
     default:
       throw CLIConnectionArgumentError.unknownCommand(command)
+    }
+  }
+}
+
+public struct CLILocalIDParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLILocalIDInvocation {
+    guard let command = input.first else {
+      throw CLILocalIDArgumentError.missingCommand
+    }
+    input.removeFirst()
+
+    switch command {
+    case "get":
+      let name = try parseRequiredLocalIDArgument(from: &input, usage: CLILocalIDUsage.get)
+      try requireNoRemainingLocalIDArguments(&input, usage: CLILocalIDUsage.get)
+      return .get(name: name)
+
+    case "list", "ls":
+      try requireNoRemainingLocalIDArguments(&input, usage: CLILocalIDUsage.list)
+      return .list
+
+    default:
+      throw CLILocalIDArgumentError.unknownCommand(command)
     }
   }
 }
@@ -2028,6 +2078,29 @@ private func requireNoRemainingConnectionArguments(
   }
 }
 
+private func parseRequiredLocalIDArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLILocalIDArgumentError.missingArguments(usage: usage)
+  }
+  input.removeFirst()
+  guard !trimmed(value).isEmpty else {
+    throw CLILocalIDArgumentError.missingArguments(usage: usage)
+  }
+  return value
+}
+
+private func requireNoRemainingLocalIDArguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if let argument = input.first {
+    throw CLILocalIDArgumentError.unexpectedArgument(argument, usage: usage)
+  }
+}
+
 private func trimmed(_ string: String) -> String {
   string.trimmingCharacters(in: .whitespacesAndNewlines)
 }
@@ -2040,6 +2113,24 @@ extension CLIConnectionArgumentError: CustomStringConvertible {
 
     case .unknownCommand:
       return CLIConnectionUsage.connection
+
+    case let .unexpectedArgument(argument, usage):
+      return "Unexpected argument: \(argument). \(usage)"
+    }
+  }
+}
+
+extension CLILocalIDArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case .missingCommand:
+      return CLILocalIDUsage.localID
+
+    case .unknownCommand:
+      return CLILocalIDUsage.localID
+
+    case let .missingArguments(usage):
+      return usage
 
     case let .unexpectedArgument(argument, usage):
       return "Unexpected argument: \(argument). \(usage)"

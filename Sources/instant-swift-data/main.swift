@@ -1820,20 +1820,16 @@ struct InstantSwiftDataCLI {
   }
 
   private static func runLocalID(arguments: [String], output: OutputMode) async throws {
-    var arguments = arguments
-    guard let command = arguments.popFirstArgument() else {
-      throw CLIError(localIDUsage, exitCode: 64)
+    let invocation: CLILocalIDInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLILocalIDParser().parse(&input)
+    } catch let error as CLILocalIDArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
 
-    switch command {
-    case "get":
-      guard let name = arguments.popFirstArgument(),
-        arguments.isEmpty,
-        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      else {
-        throw CLIError("Usage: instant-swift-data local-id get <name> [--json|--jsonl]", exitCode: 64)
-      }
-
+    switch invocation {
+    case let .get(name):
       let context = try await CLIContext.bootstrap(initialAttributes: [])
       let id = try await context.runtime.localID(named: name)
       let payload = LocalIDOutput(
@@ -1867,16 +1863,10 @@ struct InstantSwiftDataCLI {
         )
       }
 
-    case "list", "ls":
-      guard arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data local-id list [--json|--jsonl]", exitCode: 64)
-      }
+    case .list:
       let context = try await CLIContext.bootstrap(initialAttributes: [])
       let localIDs = try await context.runtime.localIDs()
       try printLocalIDs(context: context, output: output, localIDs: localIDs)
-
-    default:
-      throw CLIError(localIDUsage, exitCode: 64)
     }
   }
 
@@ -6174,11 +6164,7 @@ struct InstantSwiftDataCLI {
   }
 
   private static var localIDUsage: String {
-    """
-    Usage: instant-swift-data local-id <get|list>
-      instant-swift-data local-id get <name> [--json|--jsonl]
-      instant-swift-data local-id list [--json|--jsonl]
-    """
+    CLILocalIDUsage.localID
   }
 
   private static var adminUsage: String {

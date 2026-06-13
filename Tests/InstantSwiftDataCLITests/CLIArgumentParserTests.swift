@@ -197,6 +197,22 @@ struct CLIArgumentParserTests {
       )
     )
     expectNoDifference(
+      try CLIArguments.parse(["localid", "get", "todos.viewer", "--json"]),
+      CLIInvocation(
+        output: .json,
+        command: .localID,
+        arguments: ["get", "todos.viewer"]
+      )
+    )
+    expectNoDifference(
+      try CLIArguments.parse(["local-id", "--jsonl", "ls"]),
+      CLIInvocation(
+        output: .jsonl,
+        command: .localID,
+        arguments: ["ls"]
+      )
+    )
+    expectNoDifference(
       try CLIArguments.parse([
         "streams", "append", "chat/lobby", "--value", "{}", "--jsonl",
       ]),
@@ -395,6 +411,41 @@ struct CLIArgumentParserTests {
     try expectConnectionParseError(
       ["dance"],
       contains: "Usage: instant-swift-data connection"
+    )
+  }
+
+  @Test
+  func localIDParserParsesCommandsAndAliases() throws {
+    expectNoDifference(
+      try parseLocalID(["get", " todos.viewer "]),
+      .get(name: " todos.viewer ")
+    )
+    expectNoDifference(try parseLocalID(["list"]), .list)
+    expectNoDifference(try parseLocalID(["ls"]), .list)
+  }
+
+  @Test
+  func localIDParserReportsMalformedArguments() throws {
+    try expectLocalIDParseError([], contains: "Usage: instant-swift-data local-id")
+    try expectLocalIDParseError(
+      ["get"],
+      contains: "local-id get <name>"
+    )
+    try expectLocalIDParseError(
+      ["get", "  "],
+      contains: "local-id get <name>"
+    )
+    try expectLocalIDParseError(
+      ["get", "todos.viewer", "extra"],
+      contains: "Unexpected argument: extra."
+    )
+    try expectLocalIDParseError(
+      ["list", "extra"],
+      contains: "local-id list"
+    )
+    try expectLocalIDParseError(
+      ["dance"],
+      contains: "Usage: instant-swift-data local-id"
     )
   }
 
@@ -949,6 +1000,13 @@ private func parseConnection(_ arguments: [String]) throws -> CLIConnectionInvoc
   return invocation
 }
 
+private func parseLocalID(_ arguments: [String]) throws -> CLILocalIDInvocation {
+  var input = arguments[...]
+  let invocation = try CLILocalIDParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseRooms(_ arguments: [String]) throws -> CLIRoomsInvocation {
   var input = arguments[...]
   let invocation = try CLIRoomsParser().parse(&input)
@@ -998,6 +1056,19 @@ private func expectConnectionParseError(
     _ = try parseConnection(arguments)
     Issue.record("Expected connection parser to reject \(arguments).")
   } catch let error as CLIConnectionArgumentError {
+    #expect(error.description.contains(expectedFragment))
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectLocalIDParseError(
+  _ arguments: [String],
+  contains expectedFragment: String
+) throws {
+  do {
+    _ = try parseLocalID(arguments)
+    Issue.record("Expected local-id parser to reject \(arguments).")
+  } catch let error as CLILocalIDArgumentError {
     #expect(error.description.contains(expectedFragment))
     expectNoDifference(error.exitCode, 64)
   }
