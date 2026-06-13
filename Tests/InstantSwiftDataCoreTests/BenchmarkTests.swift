@@ -30,7 +30,7 @@ extension InstantStoreTests {
     expectNoDifference(result.iterations, 2)
     expectNoDifference(result.ok, true)
     expectNoDifference(result.finalTodoCount, 0)
-    expectNoDifference(result.pendingMutationCount, 54)
+    expectNoDifference(result.pendingMutationCount, 0)
     expectNoDifference(
       result.metrics.map(\.name),
       [
@@ -47,24 +47,58 @@ extension InstantStoreTests {
         "query-cache-read.todos",
         "triple-retract.reset",
         "offline-restore.relaunch",
+        "outbox-flush.local-transport",
       ]
     )
-    expectNoDifference(result.metrics.map(\.samples.count), Array(repeating: 2, count: 13))
+    expectNoDifference(result.metrics.map(\.samples.count), Array(repeating: 2, count: 14))
     expectNoDifference(
       result.metrics.flatMap { $0.samples.map(\.durationNanoseconds) },
-      Array(repeating: 100, count: 26)
+      Array(repeating: 100, count: 28)
     )
     expectNoDifference(
       result.metrics.first { $0.name == "triple-insert.seed" }?.samples.map(\.operationCount),
       [21, 21]
     )
     expectNoDifference(
+      result.metrics.first { $0.name == "triple-insert.seed" }?.samples.map(\.actorHopCount),
+      [7, 7]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "triple-insert.seed" }?.samples.map(\.actorHopBreakdown),
+      [
+        ["operation-gate": 2, "outbox": 1, "persistence": 2, "store": 2],
+        ["operation-gate": 2, "outbox": 1, "persistence": 2, "store": 2],
+      ]
+    )
+    expectNoDifference(
       result.metrics.first { $0.name == "query-materialization.todos" }?.samples.map(\.resultCount),
       [3, 3]
     )
     expectNoDifference(
+      result.metrics.first { $0.name == "query-materialization.todos" }?.samples.map(\.actorHopCount),
+      [7, 7]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "query-materialization.todos" }?.samples.map(\.actorHopBreakdown),
+      [
+        ["operation-gate": 2, "persistence": 3, "store": 2],
+        ["operation-gate": 2, "persistence": 3, "store": 2],
+      ]
+    )
+    expectNoDifference(
       result.metrics.first { $0.name == "high-bandwidth.scalar-updates" }?.samples.map(\.operationCount),
       [150, 150]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "high-bandwidth.scalar-updates" }?.samples.map(\.actorHopCount),
+      [350, 350]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "high-bandwidth.scalar-updates" }?.samples.map(\.actorHopBreakdown),
+      [
+        ["operation-gate": 100, "outbox": 50, "persistence": 100, "store": 100],
+        ["operation-gate": 100, "outbox": 50, "persistence": 100, "store": 100],
+      ]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "high-bandwidth.scalar-updates" }?.samples.map(\.memoryDeltaBytes),
@@ -81,6 +115,10 @@ extension InstantStoreTests {
     expectNoDifference(
       result.metrics.first { $0.name == "high-bandwidth.linked-writes" }?.samples.map(\.resultCount),
       [20, 20]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "high-bandwidth.linked-writes" }?.samples.map(\.actorHopCount),
+      [7, 7]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "high-bandwidth.linked-writes" }?.samples.map(\.memoryDeltaBytes),
@@ -114,15 +152,61 @@ extension InstantStoreTests {
       result.metrics.first { $0.name == "offline-restore.relaunch" }?.samples.map(\.pendingMutationCount),
       [54, 54]
     )
+    expectNoDifference(
+      result.metrics.first { $0.name == "offline-restore.relaunch" }?.samples.map(\.actorHopCount),
+      [12, 12]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "offline-restore.relaunch" }?.samples.map(\.actorHopBreakdown),
+      [
+        ["operation-gate": 2, "outbox": 1, "persistence": 6, "store": 3],
+        ["operation-gate": 2, "outbox": 1, "persistence": 6, "store": 3],
+      ]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "outbox-flush.local-transport" }?.samples.map(\.operationCount),
+      [54, 54]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "outbox-flush.local-transport" }?.samples.map(\.resultCount),
+      [54, 54]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "outbox-flush.local-transport" }?.samples.map(\.pendingMutationCount),
+      [0, 0]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "outbox-flush.local-transport" }?.samples.map(\.actorHopCount),
+      [15, 15]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "outbox-flush.local-transport" }?.samples.map(\.actorHopBreakdown),
+      [
+        [
+          "mutation-flush-gate": 2,
+          "mutation-transport": 1,
+          "operation-gate": 4,
+          "outbox": 1,
+          "persistence": 7,
+        ],
+        [
+          "mutation-flush-gate": 2,
+          "mutation-transport": 1,
+          "operation-gate": 4,
+          "outbox": 1,
+          "persistence": 7,
+        ],
+      ]
+    )
 
     let evidenceRows = result.evidenceRows
-    expectNoDifference(evidenceRows.count, 14)
+    expectNoDifference(evidenceRows.count, 15)
     expectNoDifference(evidenceRows.first?.caseID, "benchmark.local.todos")
     expectNoDifference(evidenceRows.first?.event, "summary")
     expectNoDifference(evidenceRows.first?.details.transport, "not-implemented-local-cache-only")
     expectNoDifference(evidenceRows.first?.details.iterations, 2)
     expectNoDifference(evidenceRows.first?.details.metric, nil)
-    expectNoDifference(evidenceRows.dropFirst().map(\.details.transport), Array(repeating: result.transport, count: 13))
+    expectNoDifference(evidenceRows.dropFirst().map(\.details.transport), Array(repeating: result.transport, count: 14))
     expectNoDifference(
       evidenceRows.dropFirst().compactMap(\.details.metric?.name),
       result.metrics.map(\.name)

@@ -658,9 +658,11 @@ materialization, pending mutation enqueue, query-cache reads, offline SQLite
 restore, high-bandwidth scalar update streams, and high-bandwidth linked write
 batches, storage metadata queries, stream read/write throughput, and live-query
 cancellation latency. High-bandwidth scalar and linked samples also carry
-resident-memory growth and budget fields. Swift/TypeScript comparison, expanded
-1k/10k/50k memory budgets, actor-hop counts, and presence/topic/storage/stream
-cancellation latency remain future benchmark work.
+resident-memory growth and budget fields, and local
+transact/query/cache/relaunch/outbox-flush samples carry actor-hop breakdowns.
+Swift/TypeScript comparison, expanded 1k/10k/50k memory budgets, live transport
+actor-hop counts, and presence/topic/storage/stream cancellation latency remain
+future benchmark work.
 
 Initial budgets can be loose until the implementation exists, but the suite
 must emit the same metrics on day one so regressions become visible.

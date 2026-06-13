@@ -19,6 +19,7 @@ public struct InstantRuntimeConfiguration: Sendable {
   public var oauthExchange: InstantOAuthExchange
   public var authTokenInvalidator: InstantAuthTokenInvalidator
   public var mutationTransport: InstantMutationTransportClient
+  var actorHopRecorder: InstantActorHopRecorder?
 
   public init(
     appID: String,
@@ -81,6 +82,7 @@ public struct InstantRuntimeConfiguration: Sendable {
     self.oauthExchange = oauthExchange
     self.authTokenInvalidator = authTokenInvalidator
     self.mutationTransport = mutationTransport
+    self.actorHopRecorder = nil
   }
 
   public static func isValidAPIURI(_ url: URL) -> Bool {
@@ -158,7 +160,9 @@ public final class InstantRuntime: Sendable {
     try validateInitialAttributes(configuration.initialAttributes)
 
     let persistence = try SQLitePersistenceStore(fileURL: configuration.persistenceURL)
+    configuration.actorHopRecorder?.record(.persistence)
     try await persistence.bootstrap()
+    configuration.actorHopRecorder?.record(.persistence)
     let state = try await persistence.loadState()
     let store = InstantStore(snapshot: state.snapshot.store)
     let outbox = InstantOutbox(mutations: state.snapshot.outbox)
@@ -170,7 +174,9 @@ public final class InstantRuntime: Sendable {
     )
 
     if !configuration.initialAttributes.isEmpty {
+      configuration.actorHopRecorder?.record(.store)
       let storeSnapshot = await store.mergeAttributes(configuration.initialAttributes)
+      configuration.actorHopRecorder?.record(.persistence)
       try await persistence.saveStoreSnapshot(storeSnapshot)
     }
 
@@ -239,13 +245,13 @@ public final class InstantRuntime: Sendable {
     createdAt: InstantTimestamp? = nil,
     source: String = "local"
   ) async throws -> InstantStoreMutationResult {
-    await operationGate.enter()
+    await enterOperationGate()
     do {
       let result = try await performTransact(transaction, createdAt: createdAt, source: source)
-      await operationGate.leave()
+      await leaveOperationGate()
       return result
     } catch {
-      await operationGate.leave()
+      await leaveOperationGate()
       throw error
     }
   }
@@ -258,9 +264,12 @@ public final class InstantRuntime: Sendable {
     var mutation: PendingMutation?
 
     for _ in 0..<5 {
+      recordActorHop(.persistence)
       let state = try await persistence.loadState()
       if let existingMutation = state.snapshot.outbox.first(where: { $0.id == transaction.id }) {
+        recordActorHop(.store)
         await store.replaceSnapshot(state.snapshot.store)
+        recordActorHop(.outbox)
         await outbox.replace(with: state.snapshot.outbox)
         guard existingMutation.status == .pending else {
           throw validationFailed(
@@ -303,14 +312,18 @@ public final class InstantRuntime: Sendable {
       }
       let outboxSnapshot = (state.snapshot.outbox + [pendingMutation])
         .sorted(by: PendingMutation.creationOrder)
+      recordActorHop(.store)
       let prepared = try await store.prepare(transaction, applyingTo: state.snapshot.store)
+      recordActorHop(.persistence)
       let didSave = try await persistence.saveSnapshot(
         InstantPersistenceSnapshot(store: prepared.snapshot, outbox: outboxSnapshot),
         expectedStoreRevision: state.storeRevision,
         expectedOutboxRevision: state.outboxRevision
       )
       if didSave {
+        recordActorHop(.store)
         let committed = await store.commitAndPublish(prepared)
+        recordActorHop(.outbox)
         await outbox.replace(with: outboxSnapshot)
         return committed.result
       }
@@ -320,12 +333,15 @@ public final class InstantRuntime: Sendable {
   }
 
   public func observe(_ plan: InstantQueryPlan) async -> AsyncStream<InstantQueryEmission> {
-    await operationGate.enter()
+    await enterOperationGate()
+    recordActorHop(.persistence)
     if let state = try? await persistence.loadState() {
+      recordActorHop(.store)
       await store.replaceSnapshot(state.snapshot.store)
     }
+    recordActorHop(.store)
     let stream = await store.observe(plan)
-    await operationGate.leave()
+    await leaveOperationGate()
     return stream
   }
 
@@ -334,9 +350,10 @@ public final class InstantRuntime: Sendable {
   }
 
   public func queryOnce(_ plan: InstantQueryPlan) async throws -> InstantQueryEmission {
-    await operationGate.enter()
+    await enterOperationGate()
     do {
       for _ in 0..<5 {
+        recordActorHop(.persistence)
         let state = try await persistence.loadState()
         if let issue = TripleIndexes.validate(
           plan,
@@ -351,6 +368,7 @@ public final class InstantRuntime: Sendable {
           )
         }
         if try await persistedConnectionState() == .closed {
+          recordActorHop(.persistence)
           let cachedQuery = try await persistence.cachedQuery(cacheKey: plan.cacheKey)
           throw InstantError(
             code: .networkFailed,
@@ -362,8 +380,11 @@ public final class InstantRuntime: Sendable {
             cachedQuery: cachedQuery
           )
         }
+        recordActorHop(.store)
         await store.replaceSnapshot(state.snapshot.store)
+        recordActorHop(.store)
         let emission = await store.materializeEmission(plan)
+        recordActorHop(.persistence)
         let didSave = try await persistence.saveQueryCache(
           InstantCachedQuery(
             queryID: plan.id,
@@ -375,20 +396,21 @@ public final class InstantRuntime: Sendable {
           expectedStoreRevision: state.storeRevision
         )
         if didSave {
-          await operationGate.leave()
+          await leaveOperationGate()
           return emission
         }
       }
 
       throw queryCacheChangedDuringMaterialization(plan)
     } catch {
-      await operationGate.leave()
+      await leaveOperationGate()
       throw error
     }
   }
 
   public func cachedQuery(_ plan: InstantQueryPlan) async throws -> InstantCachedQuery? {
-    try await persistence.cachedQuery(cacheKey: plan.cacheKey)
+    recordActorHop(.persistence)
+    return try await persistence.cachedQuery(cacheKey: plan.cacheKey)
   }
 
   public func cachedQueries() async throws -> [InstantCachedQuery] {
@@ -526,27 +548,32 @@ public final class InstantRuntime: Sendable {
   }
 
   private func persistedConnectionState() async throws -> InstantConnectionState {
-    try await persistence.loadMetadataValue(key: connectionStateMetadataKey)
+    recordActorHop(.persistence)
+    return try await persistence.loadMetadataValue(key: connectionStateMetadataKey)
       .flatMap(InstantConnectionState.init(rawValue:))
       ?? .opened
   }
 
   private func saveOpenedConnectionMetadataWithGateHeld() async throws {
+    recordActorHop(.persistence)
     try await persistence.saveMetadataValue(
       InstantConnectionState.opened.rawValue,
       key: connectionStateMetadataKey,
       updatedAt: configuration.now()
     )
+    recordActorHop(.persistence)
     try await persistence.deleteMetadataValue(key: connectionLastErrorMetadataKey)
   }
 
   private func saveErroredConnectionMetadataWithGateHeld(message: String) async throws {
     let now = configuration.now()
+    recordActorHop(.persistence)
     try await persistence.saveMetadataValue(
       InstantConnectionState.errored.rawValue,
       key: connectionStateMetadataKey,
       updatedAt: now
     )
+    recordActorHop(.persistence)
     try await persistence.saveMetadataValue(
       message,
       key: connectionLastErrorMetadataKey,
@@ -1270,7 +1297,8 @@ public final class InstantRuntime: Sendable {
   }
 
   public func pendingMutations() async -> [PendingMutation] {
-    await outbox.pending()
+    recordActorHop(.outbox)
+    return await outbox.pending()
   }
 
   public func outboxMutations() async -> [PendingMutation] {
@@ -1305,13 +1333,14 @@ public final class InstantRuntime: Sendable {
       )
     }
 
-    await mutationFlushGate.enter()
+    await enterMutationFlushGate()
     do {
       let request: InstantMutationTransportRequest
       let selectedMutationIDs: Set<String>
 
-      await operationGate.enter()
+      await enterOperationGate()
       do {
+        recordActorHop(.persistence)
         let state = try await persistence.loadState()
         let pending = state.snapshot.outbox
           .filter { $0.status == .pending }
@@ -1326,9 +1355,10 @@ public final class InstantRuntime: Sendable {
         selectedMutationIDs = Set(selected.map(\.id))
 
         guard !selected.isEmpty else {
+          recordActorHop(.outbox)
           await outbox.replace(with: state.snapshot.outbox)
-          await operationGate.leave()
-          await mutationFlushGate.leave()
+          await leaveOperationGate()
+          await leaveMutationFlushGate()
           return InstantMutationTransportFlushResult(
             request: request,
             results: [],
@@ -1348,14 +1378,15 @@ public final class InstantRuntime: Sendable {
           )
         }
 
-        await operationGate.leave()
+        await leaveOperationGate()
       } catch {
-        await operationGate.leave()
+        await leaveOperationGate()
         throw error
       }
 
       let response: InstantMutationTransportResponse
       do {
+        recordActorHop(.mutationTransport)
         response = try await configuration.mutationTransport.send(request)
       } catch {
         await recordConnectionError(error)
@@ -1363,20 +1394,23 @@ public final class InstantRuntime: Sendable {
       }
       let results = response.results.filter { selectedMutationIDs.contains($0.mutationID) }
 
-      await operationGate.enter()
+      await enterOperationGate()
       do {
         for _ in 0..<5 {
+          recordActorHop(.persistence)
           let latestState = try await persistence.loadState()
           let update = InstantOutbox.applyingTransportResults(
             results,
             in: latestState.snapshot.outbox,
             allowedMutationIDs: selectedMutationIDs
           )
+          recordActorHop(.persistence)
           let didSave = try await persistence.saveOutbox(
             update.mutations,
             expectedOutboxRevision: latestState.outboxRevision
           )
           if didSave {
+            recordActorHop(.outbox)
             await outbox.replace(with: update.mutations)
             if let failed = update.failed.first {
               try await saveErroredConnectionMetadataWithGateHeld(
@@ -1388,8 +1422,8 @@ public final class InstantRuntime: Sendable {
               try await saveOpenedConnectionMetadataWithGateHeld()
             }
             let remainingPendingCount = update.mutations.filter { $0.status == .pending }.count
-            await operationGate.leave()
-            await mutationFlushGate.leave()
+            await leaveOperationGate()
+            await leaveMutationFlushGate()
             return InstantMutationTransportFlushResult(
               request: request,
               results: results,
@@ -1403,11 +1437,11 @@ public final class InstantRuntime: Sendable {
 
         throw outboxChangedDuringFlush()
       } catch {
-        await operationGate.leave()
+        await leaveOperationGate()
         throw error
       }
     } catch {
-      await mutationFlushGate.leave()
+      await leaveMutationFlushGate()
       throw error
     }
   }
@@ -1516,30 +1550,34 @@ public final class InstantRuntime: Sendable {
       )
     }
 
-    await operationGate.enter()
+    await enterOperationGate()
     do {
       for _ in 0..<5 {
+        recordActorHop(.persistence)
         let state = try await persistence.loadState()
         let update = InstantOutbox.confirmingPending(limit: limit, in: state.snapshot.outbox)
         guard !update.confirmed.isEmpty else {
+          recordActorHop(.outbox)
           await outbox.replace(with: state.snapshot.outbox)
-          await operationGate.leave()
+          await leaveOperationGate()
           return []
         }
+        recordActorHop(.persistence)
         let didSave = try await persistence.saveOutbox(
           update.mutations,
           expectedOutboxRevision: state.outboxRevision
         )
         if didSave {
+          recordActorHop(.outbox)
           await outbox.replace(with: update.mutations)
-          await operationGate.leave()
+          await leaveOperationGate()
           return update.confirmed
         }
       }
 
       throw outboxChangedDuringDrain()
     } catch {
-      await operationGate.leave()
+      await leaveOperationGate()
       throw error
     }
   }
@@ -1812,6 +1850,30 @@ public final class InstantRuntime: Sendable {
 
   private var connectionLastErrorMetadataKey: String {
     "connection.last_error:\(configuration.appID)"
+  }
+
+  private func recordActorHop(_ boundary: InstantActorHopBoundary) {
+    configuration.actorHopRecorder?.record(boundary)
+  }
+
+  private func enterOperationGate() async {
+    recordActorHop(.operationGate)
+    await operationGate.enter()
+  }
+
+  private func leaveOperationGate() async {
+    recordActorHop(.operationGate)
+    await operationGate.leave()
+  }
+
+  private func enterMutationFlushGate() async {
+    recordActorHop(.mutationFlushGate)
+    await mutationFlushGate.enter()
+  }
+
+  private func leaveMutationFlushGate() async {
+    recordActorHop(.mutationFlushGate)
+    await mutationFlushGate.leave()
   }
 }
 

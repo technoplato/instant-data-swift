@@ -670,9 +670,11 @@ query materialization, pending mutation enqueue, query-cache reads, offline
 SQLite restore, high-bandwidth scalar update streams, and high-bandwidth linked
 write batches, storage metadata queries, stream read/write throughput, and
 live-query cancellation latency. High-bandwidth scalar and linked samples also
-carry resident-memory growth and budget fields. Swift/TypeScript comparison,
-expanded 1k/10k/50k memory budgets, actor-hop counts, and
-presence/topic/storage/stream cancellation latency remain future benchmark work.
+carry resident-memory growth and budget fields, and local
+transact/query/cache/relaunch/outbox-flush samples carry actor-hop breakdowns.
+Swift/TypeScript comparison, expanded 1k/10k/50k memory budgets, live transport
+actor-hop counts, and presence/topic/storage/stream cancellation latency remain
+future benchmark work.
 
 Success criterion: Swift matches or exceeds TypeScript for equivalent workloads.
 If Swift is slower, the benchmark must name the reason, quantify the gap, and

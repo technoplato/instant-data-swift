@@ -14,6 +14,8 @@ public struct InstantBenchmarkSample: Codable, Equatable, Sendable {
   public var memoryAfterBytes: UInt64?
   public var memoryDeltaBytes: UInt64?
   public var memoryBudgetBytes: UInt64?
+  public var actorHopCount: Int?
+  public var actorHopBreakdown: [String: Int]?
   public var cachePath: String?
 
   public init(
@@ -26,6 +28,8 @@ public struct InstantBenchmarkSample: Codable, Equatable, Sendable {
     memoryAfterBytes: UInt64? = nil,
     memoryDeltaBytes: UInt64? = nil,
     memoryBudgetBytes: UInt64? = nil,
+    actorHopCount: Int? = nil,
+    actorHopBreakdown: [String: Int]? = nil,
     cachePath: String? = nil
   ) {
     self.iteration = iteration
@@ -37,6 +41,8 @@ public struct InstantBenchmarkSample: Codable, Equatable, Sendable {
     self.memoryAfterBytes = memoryAfterBytes
     self.memoryDeltaBytes = memoryDeltaBytes
     self.memoryBudgetBytes = memoryBudgetBytes
+    self.actorHopCount = actorHopCount
+    self.actorHopBreakdown = actorHopBreakdown
     self.cachePath = cachePath
   }
 }
@@ -205,6 +211,7 @@ public enum InstantSwiftDataLocalBenchmarks {
     }
 
     let measureMemoryBytes = memoryBytes ?? residentMemoryBytes
+    let actorHopRecorder = InstantActorHopRecorder()
     let rootCacheDirectory =
       cacheDirectory
       ?? FileManager.default.temporaryDirectory
@@ -221,18 +228,24 @@ public enum InstantSwiftDataLocalBenchmarks {
       samplesByMetric[metricName, default: []].append(sample)
     }
 
+    func runtimeConfiguration(persistenceURL: URL) -> InstantRuntimeConfiguration {
+      var configuration = InstantRuntimeConfiguration(
+        appID: appID,
+        persistenceURL: persistenceURL,
+        initialAttributes: TodoProjectExample.attributes,
+        now: timestamp,
+        makeID: makeID
+      )
+      configuration.actorHopRecorder = actorHopRecorder
+      return configuration
+    }
+
     for iteration in 0..<iterations {
       let cacheURL = cacheDirectory
         .appendingPathComponent("local-todos-\(iteration).sqlite")
       let (runtime, bootstrapDuration) = try await measured(clockNanoseconds) {
         try await InstantRuntime.bootstrap(
-          configuration: InstantRuntimeConfiguration(
-            appID: appID,
-            persistenceURL: cacheURL,
-            initialAttributes: TodoProjectExample.attributes,
-            now: timestamp,
-            makeID: makeID
-          )
+          configuration: runtimeConfiguration(persistenceURL: cacheURL)
         )
       }
       record(
@@ -260,6 +273,7 @@ public enum InstantSwiftDataLocalBenchmarks {
         baseCreatedAt: seededAt,
         transactionID: seedTransactionID
       )
+      let seedActorHopBaseline = actorHopRecorder.baseline()
       let (_, seedDuration) = try await measured(clockNanoseconds) {
         try await runtime.transact(
           InstantStoreTransaction(id: seedTransactionID, operations: seedOperations),
@@ -267,25 +281,32 @@ public enum InstantSwiftDataLocalBenchmarks {
           source: "benchmark.local.todos.seed"
         )
       }
+      let seedActorHops = actorHopRecorder.summary(since: seedActorHopBaseline)
       record(
         "triple-insert.seed",
         InstantBenchmarkSample(
           iteration: iteration,
           durationNanoseconds: seedDuration,
           operationCount: seedOperations.count,
-          pendingMutationCount: await runtime.pendingMutations().count
+          pendingMutationCount: await runtime.pendingMutations().count,
+          actorHopCount: seedActorHops.count,
+          actorHopBreakdown: seedActorHops.breakdown
         )
       )
 
+      let queryActorHopBaseline = actorHopRecorder.baseline()
       let (seededTodos, queryDuration) = try await measured(clockNanoseconds) {
         try await TodoExample.decode(runtime.query(TodoExample.query))
       }
+      let queryActorHops = actorHopRecorder.summary(since: queryActorHopBaseline)
       record(
         "query-materialization.todos",
         InstantBenchmarkSample(
           iteration: iteration,
           durationNanoseconds: queryDuration,
-          resultCount: seededTodos.count
+          resultCount: seededTodos.count,
+          actorHopCount: queryActorHops.count,
+          actorHopBreakdown: queryActorHops.breakdown
         )
       )
 
@@ -299,6 +320,7 @@ public enum InstantSwiftDataLocalBenchmarks {
         updatedAt: updatedAt,
         transactionID: updateTransactionID
       )
+      let updateActorHopBaseline = actorHopRecorder.baseline()
       let (_, updateDuration) = try await measured(clockNanoseconds) {
         try await runtime.transact(
           InstantStoreTransaction(id: updateTransactionID, operations: updateOperations),
@@ -306,18 +328,22 @@ public enum InstantSwiftDataLocalBenchmarks {
           source: "benchmark.local.todos.update"
         )
       }
+      let updateActorHops = actorHopRecorder.summary(since: updateActorHopBaseline)
       record(
         "pending-mutation-enqueue.update",
         InstantBenchmarkSample(
           iteration: iteration,
           durationNanoseconds: updateDuration,
           operationCount: updateOperations.count,
-          pendingMutationCount: await runtime.pendingMutations().count
+          pendingMutationCount: await runtime.pendingMutations().count,
+          actorHopCount: updateActorHops.count,
+          actorHopBreakdown: updateActorHops.breakdown
         )
       )
 
       var scalarOperationCount = 0
       let scalarMemoryBefore = measureMemoryBytes()
+      let scalarActorHopBaseline = actorHopRecorder.baseline()
       let (_, scalarDuration) = try await measured(clockNanoseconds) {
         for updateIndex in 0..<highBandwidthScalarUpdateCount {
           let scalarTransactionID = makeID()
@@ -339,6 +365,7 @@ public enum InstantSwiftDataLocalBenchmarks {
           )
         }
       }
+      let scalarActorHops = actorHopRecorder.summary(since: scalarActorHopBaseline)
       let scalarMemoryAfter = measureMemoryBytes()
       let scalarMemoryDelta = try validatedMemoryDelta(
         before: scalarMemoryBefore,
@@ -356,7 +383,9 @@ public enum InstantSwiftDataLocalBenchmarks {
           memoryBeforeBytes: scalarMemoryBefore,
           memoryAfterBytes: scalarMemoryAfter,
           memoryDeltaBytes: scalarMemoryDelta,
-          memoryBudgetBytes: highBandwidthMemoryBudgetBytes
+          memoryBudgetBytes: highBandwidthMemoryBudgetBytes,
+          actorHopCount: scalarActorHops.count,
+          actorHopBreakdown: scalarActorHops.breakdown
         )
       )
 
@@ -399,6 +428,7 @@ public enum InstantSwiftDataLocalBenchmarks {
         )
       }
       let linkedMemoryBefore = measureMemoryBytes()
+      let linkedActorHopBaseline = actorHopRecorder.baseline()
       let (_, linkedDuration) = try await measured(clockNanoseconds) {
         try await runtime.transact(
           InstantStoreTransaction(id: linkedTransactionID, operations: linkedOperations),
@@ -406,6 +436,7 @@ public enum InstantSwiftDataLocalBenchmarks {
           source: "benchmark.local.todos.linked-writes"
         )
       }
+      let linkedActorHops = actorHopRecorder.summary(since: linkedActorHopBaseline)
       let linkedMemoryAfter = measureMemoryBytes()
       let linkedMemoryDelta = try validatedMemoryDelta(
         before: linkedMemoryBefore,
@@ -443,7 +474,9 @@ public enum InstantSwiftDataLocalBenchmarks {
           memoryBeforeBytes: linkedMemoryBefore,
           memoryAfterBytes: linkedMemoryAfter,
           memoryDeltaBytes: linkedMemoryDelta,
-          memoryBudgetBytes: highBandwidthMemoryBudgetBytes
+          memoryBudgetBytes: highBandwidthMemoryBudgetBytes,
+          actorHopCount: linkedActorHops.count,
+          actorHopBreakdown: linkedActorHops.breakdown
         )
       )
 
@@ -576,9 +609,11 @@ public enum InstantSwiftDataLocalBenchmarks {
         )
       }
 
+      let cacheActorHopBaseline = actorHopRecorder.baseline()
       let (cachedTodos, cacheDuration) = try await measured(clockNanoseconds) {
         try TodoExample.decode((try await runtime.cachedQuery(TodoExample.query))?.emission.values ?? [])
       }
+      let cacheActorHops = actorHopRecorder.summary(since: cacheActorHopBaseline)
       guard cachedTodos.contains(where: { $0.id == terminalID && $0.text == finalScalarText }) else {
         throw InstantError(
           code: .validationFailed,
@@ -592,7 +627,9 @@ public enum InstantSwiftDataLocalBenchmarks {
         InstantBenchmarkSample(
           iteration: iteration,
           durationNanoseconds: cacheDuration,
-          resultCount: cachedTodos.count
+          resultCount: cachedTodos.count,
+          actorHopCount: cacheActorHops.count,
+          actorHopBreakdown: cacheActorHops.breakdown
         )
       )
 
@@ -600,6 +637,7 @@ public enum InstantSwiftDataLocalBenchmarks {
       let resetTransactionID = makeID()
       let resetAt = timestamp()
       let resetOperations = TodoExample.resetOperations(ids: currentTodos.map(\.id))
+      let resetActorHopBaseline = actorHopRecorder.baseline()
       let (_, resetDuration) = try await measured(clockNanoseconds) {
         try await runtime.transact(
           InstantStoreTransaction(id: resetTransactionID, operations: resetOperations),
@@ -607,33 +645,33 @@ public enum InstantSwiftDataLocalBenchmarks {
           source: "benchmark.local.todos.reset"
         )
       }
+      let resetActorHops = actorHopRecorder.summary(since: resetActorHopBaseline)
       record(
         "triple-retract.reset",
         InstantBenchmarkSample(
           iteration: iteration,
           durationNanoseconds: resetDuration,
           operationCount: resetOperations.count,
-          pendingMutationCount: await runtime.pendingMutations().count
+          pendingMutationCount: await runtime.pendingMutations().count,
+          actorHopCount: resetActorHops.count,
+          actorHopBreakdown: resetActorHops.breakdown
         )
       )
 
-      let (relaunchedTodosAndPending, relaunchDuration) = try await measured(clockNanoseconds) {
+      let relaunchActorHopBaseline = actorHopRecorder.baseline()
+      let (relaunchedState, relaunchDuration) = try await measured(clockNanoseconds) {
         let relaunchedRuntime = try await InstantRuntime.bootstrap(
-          configuration: InstantRuntimeConfiguration(
-            appID: appID,
-            persistenceURL: cacheURL,
-            initialAttributes: TodoProjectExample.attributes,
-            now: timestamp,
-            makeID: makeID
-          )
+          configuration: runtimeConfiguration(persistenceURL: cacheURL)
         )
         return (
-          try await TodoExample.decode(relaunchedRuntime.query(TodoExample.query)),
-          await relaunchedRuntime.pendingMutations()
+          todos: try await TodoExample.decode(relaunchedRuntime.query(TodoExample.query)),
+          pending: await relaunchedRuntime.pendingMutations(),
+          runtime: relaunchedRuntime
         )
       }
-      finalTodoCount = relaunchedTodosAndPending.0.count
-      pendingMutationCount = relaunchedTodosAndPending.1.count
+      let relaunchActorHops = actorHopRecorder.summary(since: relaunchActorHopBaseline)
+      finalTodoCount = relaunchedState.todos.count
+      pendingMutationCount = relaunchedState.pending.count
       record(
         "offline-restore.relaunch",
         InstantBenchmarkSample(
@@ -641,7 +679,28 @@ public enum InstantSwiftDataLocalBenchmarks {
           durationNanoseconds: relaunchDuration,
           resultCount: finalTodoCount,
           pendingMutationCount: pendingMutationCount,
+          actorHopCount: relaunchActorHops.count,
+          actorHopBreakdown: relaunchActorHops.breakdown,
           cachePath: cacheURL.path
+        )
+      )
+
+      let flushActorHopBaseline = actorHopRecorder.baseline()
+      let (flushResult, flushDuration) = try await measured(clockNanoseconds) {
+        try await relaunchedState.runtime.flushPendingMutations()
+      }
+      let flushActorHops = actorHopRecorder.summary(since: flushActorHopBaseline)
+      pendingMutationCount = flushResult.pendingMutationCount
+      record(
+        "outbox-flush.local-transport",
+        InstantBenchmarkSample(
+          iteration: iteration,
+          durationNanoseconds: flushDuration,
+          operationCount: flushResult.request.mutations.count,
+          resultCount: flushResult.confirmed.count,
+          pendingMutationCount: pendingMutationCount,
+          actorHopCount: flushActorHops.count,
+          actorHopBreakdown: flushActorHops.breakdown
         )
       )
     }
@@ -660,6 +719,7 @@ public enum InstantSwiftDataLocalBenchmarks {
       "query-cache-read.todos",
       "triple-retract.reset",
       "offline-restore.relaunch",
+      "outbox-flush.local-transport",
     ]
     let metrics = metricOrder.compactMap { metricName in
       samplesByMetric[metricName].map { InstantBenchmarkMetric(name: metricName, samples: $0) }

@@ -2674,7 +2674,7 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.ok, true)
     expectNoDifference(jsonOutput.transport, "not-implemented-local-cache-only")
     expectNoDifference(jsonOutput.finalTodoCount, 0)
-    expectNoDifference(jsonOutput.pendingMutationCount, 54)
+    expectNoDifference(jsonOutput.pendingMutationCount, 0)
     expectNoDifference(
       jsonOutput.metrics.map(\.name),
       [
@@ -2691,6 +2691,7 @@ extension InstantStoreTests {
         "query-cache-read.todos",
         "triple-retract.reset",
         "offline-restore.relaunch",
+        "outbox-flush.local-transport",
       ]
     )
     let scalarMemorySamples = try #require(
@@ -2741,6 +2742,38 @@ extension InstantStoreTests {
       jsonOutput.metrics.first { $0.name == "subscription-cancel.live-query" }?.samples.map(\.resultCount),
       [1]
     )
+    expectNoDifference(
+      jsonOutput.metrics.first { $0.name == "triple-insert.seed" }?.samples.map(\.actorHopCount),
+      [7]
+    )
+    expectNoDifference(
+      jsonOutput.metrics.first { $0.name == "high-bandwidth.scalar-updates" }?.samples.map(\.actorHopCount),
+      [350]
+    )
+    expectNoDifference(
+      jsonOutput.metrics.first { $0.name == "outbox-flush.local-transport" }?.samples.map(\.operationCount),
+      [54]
+    )
+    expectNoDifference(
+      jsonOutput.metrics.first { $0.name == "outbox-flush.local-transport" }?.samples.map(\.resultCount),
+      [54]
+    )
+    expectNoDifference(
+      jsonOutput.metrics.first { $0.name == "outbox-flush.local-transport" }?.samples.map(\.pendingMutationCount),
+      [0]
+    )
+    expectNoDifference(
+      jsonOutput.metrics.first { $0.name == "outbox-flush.local-transport" }?.samples.map(\.actorHopBreakdown),
+      [
+        [
+          "mutation-flush-gate": 2,
+          "mutation-transport": 1,
+          "operation-gate": 4,
+          "outbox": 1,
+          "persistence": 7,
+        ]
+      ]
+    )
 
     let environmentDefaultOutput = try JSONDecoder().decode(
       CLIBenchmarkOutput.self,
@@ -2772,7 +2805,7 @@ extension InstantStoreTests {
       homeURL: homeURL
     )
     let lines = jsonlOutput.split(separator: "\n")
-    expectNoDifference(lines.count, 14)
+    expectNoDifference(lines.count, 15)
     let firstEvidence = try JSONDecoder().decode(
       CLIBenchmarkEvidence.self,
       from: Data(try #require(lines.first).utf8)
@@ -3525,8 +3558,11 @@ private struct CLIBenchmarkMetric: Decodable, Equatable {
 private struct CLIBenchmarkSample: Decodable, Equatable {
   var operationCount: Int?
   var resultCount: Int?
+  var pendingMutationCount: Int?
   var memoryDeltaBytes: UInt64?
   var memoryBudgetBytes: UInt64?
+  var actorHopCount: Int?
+  var actorHopBreakdown: [String: Int]?
 }
 
 private struct CLIBenchmarkEvidence: Decodable {
