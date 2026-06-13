@@ -903,6 +903,70 @@ public struct InstantAttributePath<
   }
 }
 
+public struct InstantReverseRelation<
+  Entity: InstantEntityModel,
+  Target: InstantEntityModel
+>: Hashable, Sendable {
+  public var name: String
+  public var attributeID: String?
+
+  public init(_ name: String, attributeID: String? = nil) {
+    precondition(
+      !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      "InstantReverseRelation name must not be empty."
+    )
+    self.name = name
+    self.attributeID = attributeID
+  }
+
+  public init(
+    _ name: String,
+    attribute: InstantAttributePath<Target, InstantID<Entity>>
+  ) {
+    self.init(name, attributeID: attribute.attributeID)
+  }
+
+  fileprivate func validateIncludeRelation() {
+    do {
+      _ = try reverseAttribute()
+    } catch {
+      preconditionFailure("Invalid Instant reverse include relation '\(name)': \(error)")
+    }
+  }
+
+  private func reverseAttribute() throws -> InstantAttribute {
+    let reverseIdentity = "\(Entity.instantNamespace)/\(name)"
+    guard
+      let attribute = Target.instantAttributes.first(where: { attribute in
+        attribute.valueType == .ref
+          && attribute.linkNamespace == Entity.instantNamespace
+          && attribute.reverseIdentity == reverseIdentity
+          && (attributeID == nil || attribute.id == attributeID)
+      })
+    else {
+      let attributeQualifier =
+        attributeID.map { " with attribute id '\($0)'" } ?? ""
+      throw InstantError(
+        code: .validationFailed,
+        operation: "build reverse include",
+        namespace: Entity.instantNamespace,
+        path: name,
+        message:
+          "No reverse relation '\(name)'\(attributeQualifier) links '\(Entity.instantNamespace)' to '\(Target.instantNamespace)'.",
+        recovery:
+          "Declare a ref attribute on \(Target.self) that links to '\(Entity.instantNamespace)' with reverse identity '\(reverseIdentity)'."
+      )
+    }
+
+    try Target.validateUsableAttribute(
+      attribute,
+      operation: "build reverse include",
+      path: name
+    )
+    return attribute
+  }
+}
+
 public struct InstantReservedOrder<Entity: InstantEntityModel>: Hashable, Sendable {
   /// Orders by Instant's server-created metadata instead of a schema attribute.
   public static var serverCreatedAt: Self {
@@ -1189,6 +1253,22 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
     _ query: InstantEntityQuery<Target> = Target.query
   ) -> Self {
     relation.validateIncludeAttribute(target: Target.self)
+    return including(relation.name, direction: .forward, query: query)
+  }
+
+  public func include<Target: InstantEntityModel>(
+    _ relation: InstantReverseRelation<Entity, Target>,
+    _ query: InstantEntityQuery<Target> = Target.query
+  ) -> Self {
+    relation.validateIncludeRelation()
+    return including(relation.name, direction: .reverse, query: query)
+  }
+
+  private func including<Target: InstantEntityModel>(
+    _ name: String,
+    direction: InstantQueryIncludeDirection,
+    query: InstantEntityQuery<Target>
+  ) -> Self {
     let includePlan = query.plan
     precondition(
       includePlan.offset == nil
@@ -1201,10 +1281,11 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
       "InstantEntityQuery.include does not support nested includes or pagination."
     )
 
-    var includes = (plan.includes ?? []).filter { $0.name != relation.name }
+    var includes = (plan.includes ?? []).filter { $0.name != name }
     includes.append(
       InstantQueryInclude(
-        relation.name,
+        name,
+        direction: direction,
         query: InstantQueryIncludePlan(
           id: includePlan.id,
           namespace: includePlan.namespace,

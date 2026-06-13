@@ -340,6 +340,12 @@ let selectedSnapshots = try await db.query(
     .plan
 )
 
+let usersWithPosts = try await db.query(
+  User.query
+    .include(User.posts, Post.query.select(Post.title))
+    .plan
+)
+
 @FetchAll(Todo.query.where(Todo.isCompleted == false))
 var todos: [Todo]
 
@@ -362,6 +368,8 @@ Queries without an explicit order follow Instant's implicit
 one-shot reads; use raw `queryOnce` when you need snapshots or emissions.
 Partial field selection returns raw snapshots unless your entity decoder can
 build a value from the selected fields.
+Forward includes use typed ref attributes such as `Post.author`, while reverse
+includes use generated relation tokens such as `User.posts`.
 Strict one-shot queries validate field, order, and include references before
 materializing or caching results.
 

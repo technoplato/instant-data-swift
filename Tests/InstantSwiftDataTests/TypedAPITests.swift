@@ -166,6 +166,31 @@ struct TypedAPITests {
       .include(TypedPost.author, TypedUser.query.select(TypedUser.email))
     expectNoDifference(replacedIncludeQuery.plan.includes?.count, 1)
     expectNoDifference(replacedIncludeQuery.plan.includes?.first?.query?.selectedFields, ["email"])
+
+    let reverseIncludedQuery = TypedUser.query
+      .include(
+        TypedUser.posts,
+        TypedPost.query
+          .select(TypedPost.title)
+          .order(TypedPost.title)
+      )
+    expectNoDifference(
+      reverseIncludedQuery.plan.includes,
+      [
+        InstantQueryInclude(
+          "posts",
+          direction: .reverse,
+          query: InstantQueryIncludePlan(
+            id: TypedPost.query.select(TypedPost.title).order(TypedPost.title).plan.id,
+            namespace: TypedPost.instantNamespace,
+            order: InstantQueryOrder("title"),
+            selectedFields: ["title"]
+          )
+        )
+      ]
+    )
+    #expect(reverseIncludedQuery.plan.id != TypedUser.query.plan.id)
+    #expect(reverseIncludedQuery.plan.cacheKey != TypedUser.query.plan.cacheKey)
   }
 
   @Test
@@ -773,7 +798,7 @@ struct TypedAPITests {
   }
 
   @Test
-  func typedQueryIncludesForwardLinkedSnapshots() async throws {
+  func typedQueryIncludesForwardAndReverseLinkedSnapshots() async throws {
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_105_000)
     let userID = InstantID<TypedUser>(rawValue: "included-user")
     let postID = InstantID<TypedPost>(rawValue: "included-post")
@@ -826,6 +851,31 @@ struct TypedAPITests {
           .plan
       )
       expectNoDifference(hiddenByChildFilter.first?.links?["author"], [])
+
+      let reverseQuery = TypedUser.query.include(
+        TypedUser.posts,
+        TypedPost.query.select(TypedPost.title)
+      )
+      let userSnapshots = try await db.query(reverseQuery.plan)
+      expectNoDifference(userSnapshots.map(\.id), [userID.rawValue])
+      expectNoDifference(userSnapshots.first?.links?["posts"]?.map(\.id), [postID.rawValue])
+      expectNoDifference(
+        userSnapshots.first?.links?["posts"]?.first?.values,
+        ["title": .one(.string("Hello includes"))]
+      )
+
+      let decodedUsers = try await db.query(reverseQuery)
+      expectNoDifference(decodedUsers, [TypedUser(id: userID, name: "Blob")])
+
+      let hiddenReverseByChildFilter = try await db.query(
+        TypedUser.query
+          .include(
+            TypedUser.posts,
+            TypedPost.query.where(TypedPost.title == "Someone else").select(TypedPost.title)
+          )
+          .plan
+      )
+      expectNoDifference(hiddenReverseByChildFilter.first?.links?["posts"], [])
     }
   }
 
@@ -2389,6 +2439,10 @@ private struct TypedUser: Hashable, Codable, InstantEntityModel {
   static let instantNamespace = "users"
   static let name = InstantAttributePath<TypedUser, String>("name")
   static let email = InstantAttributePath<TypedUser, String>("email")
+  static let posts = InstantReverseRelation<TypedUser, TypedPost>(
+    "posts",
+    attribute: TypedPost.author
+  )
 
   static let instantAttributes = [
     InstantAttribute(

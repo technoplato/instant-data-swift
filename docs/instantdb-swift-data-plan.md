@@ -110,8 +110,10 @@ transitions remain future WebSocket transport work.
 - Top-level namespace queries and nested relation queries.
 - Explicit linked-entity inclusion, including typed forward includes like
   `.include(Post.author, User.query.select(User.name))`. Raw core materialization
-  also supports multi-linked entities and reverse links; typed reverse includes
-  need generated reverse relation tokens.
+  also supports multi-linked entities and reverse links. The typed query surface
+  now accepts reverse relation tokens like
+  `.include(User.posts, Post.query.select(Post.title))`; macro-generated reverse
+  tokens remain the next ergonomics step.
 - Field selection, including typed `.select(Todo.text, Todo.isCompleted)`.
   Partial selections should be read as raw snapshots unless the selected fields
   satisfy the entity decoder.
