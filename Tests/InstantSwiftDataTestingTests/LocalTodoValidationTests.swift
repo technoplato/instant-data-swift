@@ -175,12 +175,219 @@ struct LocalTodoValidationTests {
     expectNoDifference(relaunchEvidence.streamChunkIDs.count, 1)
     expectNoDifference(relaunchEvidence.activeShareIDs, [])
   }
+
+  @Test
+  func validationRunE2EScriptOrchestratesLocalIntegrationEvidence() throws {
+    let packageURL = packageRootURL()
+    let scriptURL = packageURL.appendingPathComponent("validation/run-e2e.sh")
+    let script = try String(contentsOf: scriptURL, encoding: .utf8)
+
+    #expect(script.contains("INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR"))
+    #expect(script.contains("swift run instant-swift-data-validation-runner --local-todos"))
+    #expect(script.contains("swift run instant-swift-data-validation-runner --local-integrations"))
+    #expect(script.contains("swift-local-integrations.jsonl"))
+    #expect(script.contains("node validation/ts-runner/src/main.ts --fixtures"))
+    #expect(script.contains("rm -f"))
+    #expect(script.contains(": > \"${RESULTS_DIR}/orchestrator.jsonl\""))
+    #expect(script.contains("\"failed\":\"missing-required-file\""))
+    #expect(script.contains("\"failed\":\"missing-swift\""))
+    #expect(!script.contains("${3:-{}}"))
+
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/bin/bash")
+    process.arguments = ["-n", scriptURL.path]
+    let errorPipe = Pipe()
+    process.standardError = errorPipe
+    try process.run()
+    process.waitUntilExit()
+
+    let error = String(
+      decoding: errorPipe.fileHandleForReading.readDataToEndOfFile(),
+      as: UTF8.self
+    )
+    #expect(process.terminationStatus == 0, "run-e2e.sh syntax check failed: \(error)")
+
+    let tempURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataRunE2E-\(UUID().uuidString)", isDirectory: true)
+    let binURL = tempURL.appendingPathComponent("bin", isDirectory: true)
+    let resultsURL = tempURL.appendingPathComponent("results", isDirectory: true)
+    try FileManager.default.createDirectory(at: binURL, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: resultsURL, withIntermediateDirectories: true)
+
+    try writeExecutable(
+      """
+      #!/bin/sh
+      case "$3" in
+        --local-todos)
+          if [ "${SWIFT_STUB_FAIL_LOCAL_TODOS:-}" = "1" ]; then
+            exit 42
+          fi
+          echo '{"case":"validation.local.todos","side":"swift","event":"stub-todos","appID":"local-validation","timestampMs":1,"ok":true,"details":{}}'
+          ;;
+        --local-integrations)
+          echo '{"case":"validation.local.integrations","side":"swift","event":"stub-integrations","appID":"local-validation","timestampMs":2,"ok":true,"details":{}}'
+          ;;
+        *)
+          echo "unexpected swift arguments: $*" >&2
+          exit 64
+          ;;
+      esac
+      """,
+      to: binURL.appendingPathComponent("swift")
+    )
+    try writeExecutable(
+      """
+      #!/bin/sh
+      echo '{"case":"validation.typescript.fixtures","side":"typescript","event":"fixtures","appID":"local-validation","timestampMs":3,"ok":true,"details":{}}'
+      """,
+      to: binURL.appendingPathComponent("node")
+    )
+
+    let firstRun = try runValidationRunE2E(
+      scriptURL: scriptURL,
+      resultsURL: resultsURL,
+      binURL: binURL
+    )
+    #expect(firstRun.status == 0, "run-e2e.sh failed: \(firstRun.stderr)")
+    let successRows = try readJSONLines(resultsURL.appendingPathComponent("orchestrator.jsonl"))
+    expectNoDifference(successRows.map { $0["event"] as? String ?? "" }, [
+      "start",
+      "swift-local-start",
+      "swift-local-complete",
+      "swift-local-integrations-start",
+      "swift-local-integrations-complete",
+      "typescript-fixtures-start",
+      "typescript-fixtures-complete",
+      "typescript-boundary-pending",
+      "complete",
+    ])
+    expectNoDifference(successRows.last?["ok"] as? Bool, true)
+    #expect(
+      FileManager.default.fileExists(atPath: resultsURL.appendingPathComponent("swift-local.jsonl").path)
+    )
+    #expect(
+      FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-local-integrations.jsonl").path
+      )
+    )
+    #expect(
+      FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-fixtures.jsonl").path
+      )
+    )
+
+    try "stale integrations\n".write(
+      to: resultsURL.appendingPathComponent("swift-local-integrations.jsonl"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try "stale typescript\n".write(
+      to: resultsURL.appendingPathComponent("typescript-fixtures.jsonl"),
+      atomically: true,
+      encoding: .utf8
+    )
+
+    let failedRun = try runValidationRunE2E(
+      scriptURL: scriptURL,
+      resultsURL: resultsURL,
+      binURL: binURL,
+      extraEnvironment: ["SWIFT_STUB_FAIL_LOCAL_TODOS": "1"]
+    )
+    #expect(failedRun.status == 42)
+    let failedRows = try readJSONLines(resultsURL.appendingPathComponent("orchestrator.jsonl"))
+    expectNoDifference(failedRows.map { $0["event"] as? String ?? "" }, [
+      "start",
+      "swift-local-start",
+      "swift-local-failed",
+      "complete",
+    ])
+    expectNoDifference(failedRows.last?["ok"] as? Bool, false)
+    let failedDetails = try #require(failedRows.last?["details"] as? [String: Any])
+    expectNoDifference(failedDetails["failed"] as? String, "swift-local")
+    expectNoDifference((failedDetails["exitCode"] as? NSNumber)?.intValue, 42)
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-local-integrations.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-fixtures.jsonl").path
+      )
+    )
+  }
 }
 
 private func temporaryCacheURL() -> URL {
   FileManager.default.temporaryDirectory
     .appendingPathComponent("InstantSwiftDataValidationTests-\(UUID().uuidString)", isDirectory: true)
     .appendingPathComponent("state.sqlite")
+}
+
+private func packageRootURL(filePath: String = #filePath) -> URL {
+  URL(fileURLWithPath: filePath)
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+    .deletingLastPathComponent()
+}
+
+@discardableResult
+private func runValidationRunE2E(
+  scriptURL: URL,
+  resultsURL: URL,
+  binURL: URL,
+  extraEnvironment: [String: String] = [:]
+) throws -> (status: Int32, stdout: String, stderr: String) {
+  let process = Process()
+  process.executableURL = URL(fileURLWithPath: "/bin/bash")
+  process.arguments = [scriptURL.path]
+  let outputPipe = Pipe()
+  let errorPipe = Pipe()
+  process.standardOutput = outputPipe
+  process.standardError = errorPipe
+  var environment = ProcessInfo.processInfo.environment
+  environment["PATH"] = "\(binURL.path):\(environment["PATH", default: ""])"
+  environment["INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR"] = resultsURL.path
+  for (key, value) in extraEnvironment {
+    environment[key] = value
+  }
+  process.environment = environment
+  try process.run()
+  process.waitUntilExit()
+  let output = String(
+    decoding: outputPipe.fileHandleForReading.readDataToEndOfFile(),
+    as: UTF8.self
+  )
+  let error = String(
+    decoding: errorPipe.fileHandleForReading.readDataToEndOfFile(),
+    as: UTF8.self
+  )
+  return (process.terminationStatus, output, error)
+}
+
+private func writeExecutable(_ contents: String, to url: URL) throws {
+  try contents.write(to: url, atomically: true, encoding: .utf8)
+  try FileManager.default.setAttributes(
+    [.posixPermissions: 0o755],
+    ofItemAtPath: url.path
+  )
+}
+
+private func readJSONLines(_ url: URL) throws -> [[String: Any]] {
+  try String(contentsOf: url, encoding: .utf8)
+    .split(separator: "\n")
+    .map { line in
+      let data = Data(line.utf8)
+      let object = try JSONSerialization.jsonObject(with: data)
+      guard let row = object as? [String: Any] else {
+        throw ValidationScriptTestError.invalidJSONLine(String(line))
+      }
+      return row
+    }
+}
+
+private enum ValidationScriptTestError: Error {
+  case invalidJSONLine(String)
 }
 
 private func evidenceRow(

@@ -20,14 +20,19 @@ prove this library.
 ## Local Swift Evidence
 
 The Swift runner currently emits local-only evidence for the durable todo
-workflow. It proves the Swift core can seed, update, cache, reset, and relaunch
+workflow and the local integration surfaces. It proves the Swift core can seed,
+update, cache, reset, relaunch, authenticate, publish room presence/topics,
+upload/read file contents, append stream chunks, and create/accept/revoke shares
 against the same SQLite state without SwiftUI. The standalone runner goes
-through `InstantSwiftDataTesting.InstantSwiftDataTestHarness`, so the same
-evidence helpers are available to package tests and terminal validation:
+through `InstantSwiftDataTesting.InstantSwiftDataTestHarness` where practical,
+so the same evidence helpers are available to package tests and terminal
+validation:
 
 ```bash
 swift run instant-swift-data validation local-todos --jsonl
+swift run instant-swift-data validation local-integrations --jsonl
 swift run instant-swift-data-validation-runner --local-todos
+swift run instant-swift-data-validation-runner --local-integrations
 ```
 
 The output is JSON Lines using the evidence format below. Real InstantDB and
@@ -43,9 +48,11 @@ without requiring an Instant app or admin token:
 node validation/ts-runner/src/main.ts --fixtures
 ```
 
-`validation/run-e2e.sh` runs this fixture check after Swift local validation when
-Node is available, then records the real Instant boundary as pending until
-ephemeral app creation, schema push, and admin query/transact are implemented.
+`validation/run-e2e.sh` runs both Swift local validations and then this fixture
+check when Node is available. Set `INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR` to
+direct artifacts to a specific directory. The harness records the real Instant
+boundary as pending until ephemeral app creation, schema push, and admin
+query/transact are implemented.
 
 ## Required Cases
 
