@@ -895,6 +895,153 @@ struct TypedAPITests {
   }
 
   @Test
+  func typedRuleParamsPersistForIDsAndLookupsWithoutLocalMutation() async throws {
+    let userID = InstantID<TypedUser>(rawValue: "rule-params-user")
+    let userLookup = TypedUser.email.lookup("rule@example.com")
+
+    try await withDependencies {
+      try await $0.bootstrapInstantSwiftData(
+        appID: "typed-rule-params-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedUser.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      try await db.transact(id: "tx-rule-params-id") {
+        TypedUser.ruleParams(
+          id: userID,
+          .object(["role": .string("owner")])
+        )
+      }
+      try await db.transact(id: "tx-rule-params-lookup") {
+        TypedUser.ruleParams(
+          lookup: userLookup,
+          .object(["role": .string("editor")])
+        )
+      }
+
+      let users = try await db.query(
+        InstantQueryPlan(id: "typed.rule-params.users", namespace: TypedUser.instantNamespace)
+      )
+      expectNoDifference(users, [])
+
+      let pending = await db.pendingMutations()
+      expectNoDifference(
+        pending.map(\.transaction),
+        [
+          InstantStoreTransaction(
+            id: "tx-rule-params-id",
+            operations: [
+              .ruleParams(
+                entityID: userID.rawValue,
+                namespace: TypedUser.instantNamespace,
+                params: .object(["role": .string("owner")])
+              )
+            ]
+          ),
+          InstantStoreTransaction(
+            id: "tx-rule-params-lookup",
+            operations: [
+              .ruleParamsByLookup(
+                entity: userLookup.lookupRef,
+                namespace: TypedUser.instantNamespace,
+                params: .object(["role": .string("editor")])
+              )
+            ]
+          ),
+        ]
+      )
+    }
+  }
+
+  @Test
+  func typedRuleParamsRejectsInvalidLookupsBeforeMockClientReceivesTransaction() async throws {
+    let recorder = TransactionRecorder()
+    let mock = InstantSwiftDataClient(
+      transact: { transaction in
+        await recorder.record(transaction)
+        return InstantStoreMutationResult(
+          transactionID: transaction.id,
+          changedEntityIDs: [],
+          tripleCount: transaction.operations.count,
+          emissions: []
+        )
+      },
+      query: { _ in [] },
+      observe: { _ in AsyncStream { continuation in continuation.finish() } },
+      pendingMutations: { [] },
+      localID: { name in "mock-\(name)" }
+    )
+
+    await withDependencies {
+      $0.date.now = Date(timeIntervalSince1970: 1_700_000_425)
+      $0.uuid = .constant(UUID(uuidString: "00000000-0000-0000-0000-000000000779")!)
+      $0.defaultInstantSwiftData = mock
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      do {
+        try await db.transact(id: "tx-rule-params-non-unique") {
+          TypedUser.ruleParams(
+            lookup: TypedUser.name.lookup("Blob"),
+            .object(["role": .string("owner")])
+          )
+        }
+        #expect(Bool(false), "Expected non-unique rule params lookup to fail before the mock client.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .validationFailed)
+        expectNoDifference(error.operation, "lookup entity")
+        expectNoDifference(error.namespace, "users")
+        expectNoDifference(error.path, "name")
+      } catch {
+        #expect(Bool(false), "Unexpected error: \(error)")
+      }
+
+      do {
+        try await db.transact(id: "tx-rule-params-wrong-type") {
+          TypedUser.ruleParams(
+            lookup: InstantEntityLookup<TypedUser>(
+              name: "email",
+              attributeID: "users/email",
+              value: .number(1)
+            ),
+            .object(["role": .string("owner")])
+          )
+        }
+        #expect(Bool(false), "Expected wrong-value rule params lookup to fail before the mock client.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .validationFailed)
+        expectNoDifference(error.operation, "lookup entity")
+        expectNoDifference(error.namespace, "users")
+        expectNoDifference(error.path, "email")
+      } catch {
+        #expect(Bool(false), "Unexpected error: \(error)")
+      }
+
+      do {
+        try await db.transact(id: "tx-rule-params-wrong-namespace") {
+          TypedWrongNamespaceLookupEntity.ruleParams(
+            lookup: TypedWrongNamespaceLookupEntity.email.lookup("blob@example.com"),
+            .object(["role": .string("owner")])
+          )
+        }
+        #expect(Bool(false), "Expected wrong-namespace rule params lookup to fail before the mock client.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .validationFailed)
+        expectNoDifference(error.operation, "lookup entity")
+        expectNoDifference(error.namespace, "wrongUsers")
+        expectNoDifference(error.path, "email")
+      } catch {
+        #expect(Bool(false), "Unexpected error: \(error)")
+      }
+    }
+
+    let transactions = await recorder.transactions
+    expectNoDifference(transactions, [])
+  }
+
+  @Test
   func typedLinkRejectsMismatchedTargetNamespaceBeforePersistence() async throws {
     let postID = InstantID<TypedPost>(rawValue: "post-1")
     let wrongTargetID = InstantID<TypedTodo>(rawValue: "todo-1")
@@ -1741,6 +1888,31 @@ private struct TypedBadIDEntity: Hashable, Codable, InstantEntityModel {
       name: "id",
       valueType: .string,
       isIndexed: true
+    )
+  ]
+
+  init(snapshot: InstantEntitySnapshot) throws {
+    self.id = InstantID(rawValue: snapshot.id)
+  }
+}
+
+private struct TypedWrongNamespaceLookupEntity: Hashable, Codable, InstantEntityModel {
+  var id: InstantID<TypedWrongNamespaceLookupEntity>
+
+  static let instantNamespace = "wrongUsers"
+  static let email = InstantAttributePath<TypedWrongNamespaceLookupEntity, String>(
+    "email",
+    attributeID: "users/email"
+  )
+
+  static let instantAttributes = [
+    InstantAttribute(
+      id: "users/email",
+      namespace: "users",
+      name: "email",
+      valueType: .string,
+      isIndexed: true,
+      isUnique: true
     )
   ]
 

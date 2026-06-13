@@ -122,6 +122,9 @@ real Instant app.
   pending mutations for transport lowering; resolve local optimistic effects
   sequentially against the AEV index, no-op unresolved non-strict lookups, and
   reject strict lookup updates before cache/outbox writes when missing.
+- Preserve `ruleParams` operations for transport lowering. They should validate
+  lookup refs but otherwise no-op local optimistic materialization because their
+  effect is server-side permission evaluation.
 - Optimistic application before server confirmation.
 - Rollback or visible failure state when the server rejects a mutation.
 - Durable pending mutation persistence across process restart.

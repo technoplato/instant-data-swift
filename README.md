@@ -231,6 +231,18 @@ already present; unresolved non-strict lookup writes remain pending for the
 server to resolve later, while `updateExisting(lookup:)` fails before cache or
 outbox writes when the lookup is missing.
 
+`ruleParams` writes are also preserved in the pending outbox for transport
+lowering, but they do not change local materialized entities optimistically:
+
+```swift
+try await db.transact {
+  User.ruleParams(
+    lookup: User.email.lookup("blob@example.com"),
+    .object(["role": .string("owner")])
+  )
+}
+```
+
 Subscriptions are bounded newest-value streams, so slow consumers receive the
 latest local materialization rather than every intermediate invalidation.
 

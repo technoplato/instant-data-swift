@@ -120,7 +120,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     case .requireEntityMissing, .requireEntityMissingByLookup,
       .requireEntityExists, .requireEntityExistsByLookup,
       .mergeByLookup, .insertByLookup, .retractByLookup,
-      .deleteEntityByLookup:
+      .deleteEntityByLookup, .ruleParams, .ruleParamsByLookup:
       return []
 
     case let .merge(triple):

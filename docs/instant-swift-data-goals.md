@@ -209,6 +209,9 @@ machinery unless there is no cleaner Instant-shaped representation.
   AEV index in transaction order. Unresolved non-strict lookup writes may no-op
   locally and remain pending for the server, but strict lookup updates must fail
   before cache/outbox writes.
+- Preserve `ruleParams` operations in the pending outbox for transport lowering.
+  Rule params affect server-side permission evaluation and should not mutate
+  local materialized entities optimistically.
 - Local seed/demo helpers may use explicit upsert operations so terminal demos
   remain repeatable against durable state, but app-facing `create` must stay
   strict.

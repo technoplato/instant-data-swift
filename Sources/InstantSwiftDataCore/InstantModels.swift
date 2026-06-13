@@ -371,6 +371,8 @@ public enum InstantTripleOperation: Hashable, Codable, Sendable {
   )
   case deleteEntity(String)
   case deleteEntityByLookup(InstantLookupRef)
+  case ruleParams(entityID: String, namespace: String, params: JSONValue)
+  case ruleParamsByLookup(entity: InstantLookupRef, namespace: String, params: JSONValue)
 }
 
 public struct InstantStoreTransaction: Hashable, Codable, Sendable {

@@ -334,6 +334,34 @@ extension InstantEntityModel {
     })
   }
 
+  public static func ruleParams(id: ID, _ params: JSONValue) -> InstantMutation {
+    InstantMutation { _, _ in
+      [
+        .ruleParams(
+          entityID: id.rawValue,
+          namespace: Self.instantNamespace,
+          params: params
+        )
+      ]
+    }
+  }
+
+  public static func ruleParams(
+    lookup: InstantEntityLookup<Self>,
+    _ params: JSONValue
+  ) -> InstantMutation {
+    InstantMutation(throwing: { _, _ in
+      try validateLookup(lookup)
+      return [
+        .ruleParamsByLookup(
+          entity: lookup.lookupRef,
+          namespace: Self.instantNamespace,
+          params: params
+        )
+      ]
+    })
+  }
+
   private static func validateAssignments(
     _ assignments: [InstantAttributeAssignment<Self>],
     allowRefs: Bool = true

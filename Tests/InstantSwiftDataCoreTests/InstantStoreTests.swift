@@ -465,6 +465,127 @@ struct InstantStoreTests {
   }
 
   @Test
+  func ruleParamsPersistPendingWithoutChangingLocalStore() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_350)
+    let lookup = InstantLookupRef(
+      attributeID: "users/email",
+      value: .string("missing@example.com")
+    )
+    let transactions = [
+      InstantStoreTransaction(
+        id: "tx-rule-params-id",
+        operations: [
+          .ruleParams(
+            entityID: "user-rule",
+            namespace: "users",
+            params: .object(["role": .string("owner")])
+          )
+        ]
+      ),
+      InstantStoreTransaction(
+        id: "tx-rule-params-lookup",
+        operations: [
+          .ruleParamsByLookup(
+            entity: lookup,
+            namespace: "users",
+            params: .object(["role": .string("editor")])
+          )
+        ]
+      ),
+    ]
+
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: lookupTestAttributes()
+      )
+    )
+    for transaction in transactions {
+      try await runtime.transact(transaction, createdAt: createdAt)
+    }
+
+    let users = try await runtime.query(InstantQueryPlan(id: "rule-params.users", namespace: "users"))
+    expectNoDifference(users, [])
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: lookupTestAttributes()
+      )
+    )
+    let relaunchedPending = await relaunchedRuntime.pendingMutations()
+    expectNoDifference(relaunchedPending.map(\.transaction), transactions)
+  }
+
+  @Test
+  func ruleParamsByLookupRejectsNonUniqueLookupAttributesBeforePersistence() async throws {
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: lookupTestAttributes()
+      )
+    )
+
+    do {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-invalid-rule-params-lookup",
+          operations: [
+            .ruleParamsByLookup(
+              entity: InstantLookupRef(attributeID: "users/name", value: .string("Blob")),
+              namespace: "users",
+              params: .object(["role": .string("owner")])
+            )
+          ]
+        )
+      )
+      #expect(Bool(false), "Expected non-unique rule params lookup to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "lookup entity")
+      expectNoDifference(error.namespace, "users")
+      expectNoDifference(error.path, "name")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    let pending = await runtime.pendingMutations()
+    expectNoDifference(pending, [])
+  }
+
+  @Test
+  func ruleParamsOperationCodableShapeRoundTrips() throws {
+    let lookup = InstantLookupRef(
+      attributeID: "users/email",
+      value: .string("blob@example.com")
+    )
+    let transaction = InstantStoreTransaction(
+      id: "tx-rule-params-codable",
+      operations: [
+        .ruleParams(
+          entityID: "user-rule",
+          namespace: "users",
+          params: .object(["role": .string("owner")])
+        ),
+        .ruleParamsByLookup(
+          entity: lookup,
+          namespace: "users",
+          params: .object(["role": .string("editor")])
+        ),
+      ]
+    )
+
+    let data = try JSONEncoder().encode(transaction)
+    let decoded = try JSONDecoder().decode(InstantStoreTransaction.self, from: data)
+
+    expectNoDifference(decoded, transaction)
+  }
+
+  @Test
   func strictTodoUpdateRejectsMissingEntityBeforePersistence() async throws {
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(

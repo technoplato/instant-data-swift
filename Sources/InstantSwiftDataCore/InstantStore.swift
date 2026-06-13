@@ -149,6 +149,16 @@ public actor InstantStore {
           throw Self.missingEntityError(lookup: lookup, attribute: attribute)
         }
 
+      case .ruleParams:
+        break
+
+      case let .ruleParamsByLookup(lookup, namespace, _):
+        _ = try Self.validateLookup(
+          lookup,
+          expectedNamespace: namespace,
+          attributes: attributes
+        )
+
       case .merge, .mergeByLookup, .insert, .insertByLookup, .retract, .retractByLookup,
         .deleteEntity, .deleteEntityByLookup:
         var resolvedLookups: [InstantLookupRef: String] = [:]
@@ -172,7 +182,7 @@ public actor InstantStore {
           case .requireEntityMissing, .requireEntityMissingByLookup,
             .requireEntityExists, .requireEntityExistsByLookup,
             .mergeByLookup, .insertByLookup, .retractByLookup,
-            .deleteEntityByLookup:
+            .deleteEntityByLookup, .ruleParams, .ruleParamsByLookup:
             break
           }
         }
@@ -425,7 +435,8 @@ public actor InstantStore {
       return [.deleteEntity(entityID)]
 
     case .requireEntityMissing, .requireEntityMissingByLookup,
-      .requireEntityExists, .requireEntityExistsByLookup:
+      .requireEntityExists, .requireEntityExistsByLookup,
+      .ruleParams, .ruleParamsByLookup:
       return []
     }
   }
