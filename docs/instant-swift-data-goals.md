@@ -507,6 +507,9 @@ Agent-oriented output modes are required:
   `instant-swift-data local-id list --json`.
 - inspect local runtime connection status with
   `instant-swift-data connection status --json`.
+- exercise local connection lifecycle output with
+  `instant-swift-data connection close --json` and
+  `instant-swift-data connection connect --json`.
 - inspect pending mutation outbox.
 - replay or drain pending mutations.
 - print decoded query results.

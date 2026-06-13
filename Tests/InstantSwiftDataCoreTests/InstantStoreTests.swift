@@ -3035,6 +3035,21 @@ struct InstantStoreTests {
     expectNoDifference(initialStatus.processedTransactionID, nil)
     expectNoDifference(initialStatus.lastErrorMessage, nil)
 
+    let closedStatus = try await runtime.closeConnection()
+    expectNoDifference(closedStatus.state, .closed)
+    expectNoDifference(closedStatus.isAuthenticated, false)
+    expectNoDifference(closedStatus.pendingMutationCount, 0)
+    let statusAfterClose = try await runtime.connectionStatus()
+    expectNoDifference(statusAfterClose.state, .closed)
+    expectNoDifference(statusAfterClose.isAuthenticated, false)
+
+    let reconnectedStatus = try await runtime.connect()
+    expectNoDifference(reconnectedStatus.state, .opened)
+    expectNoDifference(reconnectedStatus.isAuthenticated, false)
+    let statusAfterReconnect = try await runtime.connectionStatus()
+    expectNoDifference(statusAfterReconnect.state, .opened)
+    expectNoDifference(statusAfterReconnect.isAuthenticated, false)
+
     let session = try await runtime.signInAsGuest()
     try await runtime.transact(
       InstantStoreTransaction(
@@ -3056,6 +3071,25 @@ struct InstantStoreTests {
     expectNoDifference(authenticatedStatus.userID, session.userID)
     expectNoDifference(authenticatedStatus.pendingMutationCount, 1)
     expectNoDifference(authenticatedStatus.processedTransactionID, "tx-remote")
+
+    let closedAuthenticatedStatus = try await runtime.closeConnection()
+    expectNoDifference(closedAuthenticatedStatus.state, .closed)
+    expectNoDifference(closedAuthenticatedStatus.isAuthenticated, true)
+    expectNoDifference(closedAuthenticatedStatus.userID, session.userID)
+    expectNoDifference(closedAuthenticatedStatus.pendingMutationCount, 1)
+    let authenticatedStatusAfterClose = try await runtime.connectionStatus()
+    expectNoDifference(authenticatedStatusAfterClose.state, .closed)
+    expectNoDifference(authenticatedStatusAfterClose.isAuthenticated, true)
+    expectNoDifference(authenticatedStatusAfterClose.userID, session.userID)
+
+    let reconnectedAuthenticatedStatus = try await runtime.connect()
+    expectNoDifference(reconnectedAuthenticatedStatus.state, .authenticated)
+    expectNoDifference(reconnectedAuthenticatedStatus.isAuthenticated, true)
+    expectNoDifference(reconnectedAuthenticatedStatus.userID, session.userID)
+    let authenticatedStatusAfterReconnect = try await runtime.connectionStatus()
+    expectNoDifference(authenticatedStatusAfterReconnect.state, .authenticated)
+    expectNoDifference(authenticatedStatusAfterReconnect.isAuthenticated, true)
+    expectNoDifference(authenticatedStatusAfterReconnect.userID, session.userID)
 
     let relaunchedRuntime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(

@@ -74,10 +74,12 @@ real Instant app.
   remains available and useful for server-like Swift environments.
 
 Current local progress: `InstantRuntime.connectionStatus()` reports the
-configured app id, HTTP/WebSocket endpoints, local-cache transport kind, opened
-vs authenticated state, current user id, pending outbox count, and processed
-transaction checkpoint. The CLI proves this local runtime shape with
-`instant-swift-data connection status --jsonl`. Live connecting/closed/errored
+configured app id, HTTP/WebSocket endpoints, local-cache transport kind, opened,
+authenticated, and closed local lifecycle states, current user id, pending
+outbox count, and processed transaction checkpoint. The CLI proves this local
+runtime shape with `instant-swift-data connection status --jsonl`,
+`instant-swift-data connection close --json`, and
+`instant-swift-data connection connect --json`. Live connecting/errored
 transitions remain future WebSocket transport work.
 
 ### Schema

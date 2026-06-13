@@ -1684,9 +1684,65 @@ extension InstantStoreTests {
     expectNoDifference(initialStatus.pendingMutationCount, 0)
     #expect(initialStatus.processedTransactionID == nil)
 
+    let closedStatus = try JSONDecoder().decode(
+      CLIConnectionStatusOutput.self,
+      from: Data(try runCLI(["connection", "close", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(closedStatus.event, "close")
+    expectNoDifference(closedStatus.state, "closed")
+    expectNoDifference(closedStatus.isAuthenticated, false)
+    let statusAfterClose = try JSONDecoder().decode(
+      CLIConnectionStatusOutput.self,
+      from: Data(try runCLI(["connection", "status", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(statusAfterClose.event, "status")
+    expectNoDifference(statusAfterClose.state, "closed")
+    expectNoDifference(statusAfterClose.isAuthenticated, false)
+
+    let connectedStatus = try JSONDecoder().decode(
+      CLIConnectionStatusOutput.self,
+      from: Data(try runCLI(["connection", "connect", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(connectedStatus.event, "connect")
+    expectNoDifference(connectedStatus.state, "opened")
+    expectNoDifference(connectedStatus.isAuthenticated, false)
+    let statusAfterConnect = try JSONDecoder().decode(
+      CLIConnectionStatusOutput.self,
+      from: Data(try runCLI(["connection", "status", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(statusAfterConnect.event, "status")
+    expectNoDifference(statusAfterConnect.state, "opened")
+    expectNoDifference(statusAfterConnect.isAuthenticated, false)
+
     _ = try runCLI(["examples", "todos", "add", "status proof", "--json"], homeURL: homeURL)
     _ = try runCLI(["sync", "mark-processed", "tx-remote-status", "--json"], homeURL: homeURL)
     _ = try runCLI(["auth", "guest", "--json"], homeURL: homeURL)
+
+    let closedAuthenticatedStatus = try JSONDecoder().decode(
+      CLIConnectionStatusOutput.self,
+      from: Data(try runCLI(["connection", "close", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(closedAuthenticatedStatus.event, "close")
+    expectNoDifference(closedAuthenticatedStatus.state, "closed")
+    expectNoDifference(closedAuthenticatedStatus.isAuthenticated, true)
+    expectNoDifference(closedAuthenticatedStatus.pendingMutationCount, 1)
+    let authenticatedStatusAfterClose = try JSONDecoder().decode(
+      CLIConnectionStatusOutput.self,
+      from: Data(try runCLI(["connection", "status", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(authenticatedStatusAfterClose.event, "status")
+    expectNoDifference(authenticatedStatusAfterClose.state, "closed")
+    expectNoDifference(authenticatedStatusAfterClose.isAuthenticated, true)
+    expectNoDifference(authenticatedStatusAfterClose.pendingMutationCount, 1)
+
+    let reconnectedAuthenticatedStatus = try JSONDecoder().decode(
+      CLIConnectionStatusOutput.self,
+      from: Data(try runCLI(["connection", "connect", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(reconnectedAuthenticatedStatus.event, "connect")
+    expectNoDifference(reconnectedAuthenticatedStatus.state, "authenticated")
+    expectNoDifference(reconnectedAuthenticatedStatus.isAuthenticated, true)
+    expectNoDifference(reconnectedAuthenticatedStatus.pendingMutationCount, 1)
 
     let authenticatedStatus = try JSONDecoder().decode(
       CLIConnectionStatusOutput.self,
@@ -1724,12 +1780,52 @@ extension InstantStoreTests {
     expectNoDifference(evidence.details.state, "authenticated")
     expectNoDifference(evidence.details.pendingMutationCount, 1)
 
+    let closeJSONL = try runCLI(["connection", "close", "--jsonl"], homeURL: homeURL)
+    let closeJSONLLines = closeJSONL.split(separator: "\n")
+    expectNoDifference(closeJSONLLines.count, 1)
+    let closeEvidence = try JSONDecoder().decode(
+      CLIConnectionStatusEvidence.self,
+      from: Data(closeJSONLLines[0].utf8)
+    )
+    expectNoDifference(closeEvidence.caseID, "cli.connection.close")
+    expectNoDifference(closeEvidence.event, "close")
+    expectNoDifference(closeEvidence.ok, true)
+    expectNoDifference(closeEvidence.details.state, "closed")
+    expectNoDifference(closeEvidence.details.pendingMutationCount, 1)
+
+    let connectJSONL = try runCLI(["connection", "connect", "--jsonl"], homeURL: homeURL)
+    let connectJSONLLines = connectJSONL.split(separator: "\n")
+    expectNoDifference(connectJSONLLines.count, 1)
+    let connectEvidence = try JSONDecoder().decode(
+      CLIConnectionStatusEvidence.self,
+      from: Data(connectJSONLLines[0].utf8)
+    )
+    expectNoDifference(connectEvidence.caseID, "cli.connection.connect")
+    expectNoDifference(connectEvidence.event, "connect")
+    expectNoDifference(connectEvidence.ok, true)
+    expectNoDifference(connectEvidence.details.state, "authenticated")
+    expectNoDifference(connectEvidence.details.pendingMutationCount, 1)
+
     let malformed = try runCLIResult(
       ["connection", "status", "unexpected", "--json"],
       homeURL: homeURL
     )
     #expect(malformed.status == 64)
     #expect(malformed.error.contains("connection status"))
+
+    let malformedClose = try runCLIResult(
+      ["connection", "close", "unexpected", "--json"],
+      homeURL: homeURL
+    )
+    #expect(malformedClose.status == 64)
+    #expect(malformedClose.error.contains("connection close"))
+
+    let malformedConnect = try runCLIResult(
+      ["connection", "connect", "unexpected", "--json"],
+      homeURL: homeURL
+    )
+    #expect(malformedConnect.status == 64)
+    #expect(malformedConnect.error.contains("connection connect"))
   }
 
   @Test

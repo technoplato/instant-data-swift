@@ -404,26 +404,87 @@ public final class InstantRuntime: Sendable {
   public func connectionStatus() async throws -> InstantConnectionStatus {
     await operationGate.enter()
     do {
-      let state = try await persistence.loadState()
-      let session = try await persistence.loadAuthSession(key: authSessionKey)
-      let processedTransactionID = try await persistence.loadMetadataValue(
-        key: processedTransactionIDMetadataKey
-      )
+      let status = try await connectionStatusWithGateHeld()
       await operationGate.leave()
-      return InstantConnectionStatus(
-        appID: configuration.appID,
-        apiURI: configuration.apiURI,
-        websocketURI: configuration.websocketURI,
-        transport: .localCacheOnly,
-        state: session == nil ? .opened : .authenticated,
-        isAuthenticated: session != nil,
-        userID: session?.userID,
-        pendingMutationCount: state.snapshot.outbox.filter { $0.status == .pending }.count,
-        processedTransactionID: processedTransactionID
-      )
+      return status
     } catch {
       await operationGate.leave()
       throw error
+    }
+  }
+
+  @discardableResult
+  public func connect() async throws -> InstantConnectionStatus {
+    await operationGate.enter()
+    do {
+      try await persistence.saveMetadataValue(
+        InstantConnectionState.opened.rawValue,
+        key: connectionStateMetadataKey,
+        updatedAt: configuration.now()
+      )
+      let status = try await connectionStatusWithGateHeld()
+      await operationGate.leave()
+      return status
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  @discardableResult
+  public func closeConnection() async throws -> InstantConnectionStatus {
+    await operationGate.enter()
+    do {
+      try await persistence.saveMetadataValue(
+        InstantConnectionState.closed.rawValue,
+        key: connectionStateMetadataKey,
+        updatedAt: configuration.now()
+      )
+      let status = try await connectionStatusWithGateHeld()
+      await operationGate.leave()
+      return status
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  private func connectionStatusWithGateHeld() async throws -> InstantConnectionStatus {
+    let state = try await persistence.loadState()
+    let session = try await persistence.loadAuthSession(key: authSessionKey)
+    let processedTransactionID = try await persistence.loadMetadataValue(
+      key: processedTransactionIDMetadataKey
+    )
+    let storedState =
+      try await persistence.loadMetadataValue(key: connectionStateMetadataKey)
+      .flatMap(InstantConnectionState.init(rawValue:))
+      ?? .opened
+    let lastErrorMessage = try await persistence.loadMetadataValue(
+      key: connectionLastErrorMetadataKey
+    )
+    return InstantConnectionStatus(
+      appID: configuration.appID,
+      apiURI: configuration.apiURI,
+      websocketURI: configuration.websocketURI,
+      transport: .localCacheOnly,
+      state: connectionState(storedState, isAuthenticated: session != nil),
+      isAuthenticated: session != nil,
+      userID: session?.userID,
+      pendingMutationCount: state.snapshot.outbox.filter { $0.status == .pending }.count,
+      processedTransactionID: processedTransactionID,
+      lastErrorMessage: lastErrorMessage
+    )
+  }
+
+  private func connectionState(
+    _ state: InstantConnectionState,
+    isAuthenticated: Bool
+  ) -> InstantConnectionState {
+    switch state {
+    case .opened, .authenticated:
+      return isAuthenticated ? .authenticated : .opened
+    case .connecting, .closed, .errored:
+      return state
     }
   }
 
@@ -1625,6 +1686,14 @@ public final class InstantRuntime: Sendable {
 
   private var processedTransactionIDMetadataKey: String {
     "sync.processed_transaction_id:\(configuration.appID)"
+  }
+
+  private var connectionStateMetadataKey: String {
+    "connection.state:\(configuration.appID)"
+  }
+
+  private var connectionLastErrorMetadataKey: String {
+    "connection.last_error:\(configuration.appID)"
   }
 }
 

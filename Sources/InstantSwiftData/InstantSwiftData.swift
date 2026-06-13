@@ -20,6 +20,8 @@ public struct InstantSwiftDataClient: Sendable {
   private var flushPendingMutationsOperation:
     @Sendable (Int?) async throws -> InstantMutationTransportFlushResult
   private var connectionStatusOperation: @Sendable () async throws -> InstantConnectionStatus
+  private var connectOperation: @Sendable () async throws -> InstantConnectionStatus
+  private var closeConnectionOperation: @Sendable () async throws -> InstantConnectionStatus
   private var localIDOperation: @Sendable (String) async throws -> String
   private var authSessionOperation: @Sendable () async throws -> InstantAuthSession?
   private var observeAuthSessionOperation:
@@ -60,6 +62,12 @@ public struct InstantSwiftDataClient: Sendable {
     }
     self.connectionStatusOperation = {
       try await runtime.connectionStatus()
+    }
+    self.connectOperation = {
+      try await runtime.connect()
+    }
+    self.closeConnectionOperation = {
+      try await runtime.closeConnection()
     }
     self.localIDOperation = { name in
       try await runtime.localID(named: name)
@@ -113,6 +121,8 @@ public struct InstantSwiftDataClient: Sendable {
     flushPendingMutations:
       (@Sendable (Int?) async throws -> InstantMutationTransportFlushResult)? = nil,
     connectionStatus: (@Sendable () async throws -> InstantConnectionStatus)? = nil,
+    connect: (@Sendable () async throws -> InstantConnectionStatus)? = nil,
+    closeConnection: (@Sendable () async throws -> InstantConnectionStatus)? = nil,
     localID: @escaping @Sendable (String) async throws -> String,
     authSession: (@Sendable () async throws -> InstantAuthSession?)? = nil,
     observeAuthSession: (@Sendable () async throws -> AsyncStream<InstantAuthSession?>)? = nil,
@@ -136,6 +146,8 @@ public struct InstantSwiftDataClient: Sendable {
       pendingMutations: pendingMutations,
       flushPendingMutations: flushPendingMutations,
       connectionStatus: connectionStatus,
+      connect: connect,
+      closeConnection: closeConnection,
       localID: localID,
       authSession: authSession,
       observeAuthSession: observeAuthSession,
@@ -162,6 +174,8 @@ public struct InstantSwiftDataClient: Sendable {
     flushPendingMutations:
       (@Sendable (Int?) async throws -> InstantMutationTransportFlushResult)? = nil,
     connectionStatus: (@Sendable () async throws -> InstantConnectionStatus)? = nil,
+    connect: (@Sendable () async throws -> InstantConnectionStatus)? = nil,
+    closeConnection: (@Sendable () async throws -> InstantConnectionStatus)? = nil,
     localID: @escaping @Sendable (String) async throws -> String,
     authSession: (@Sendable () async throws -> InstantAuthSession?)? = nil,
     observeAuthSession: (@Sendable () async throws -> AsyncStream<InstantAuthSession?>)? = nil,
@@ -212,6 +226,8 @@ public struct InstantSwiftDataClient: Sendable {
     self.pendingMutationsOperation = pendingMutations
     self.flushPendingMutationsOperation = flushPendingMutations ?? { _ in throw transportError }
     self.connectionStatusOperation = connectionStatus ?? { throw runtimeStatusError }
+    self.connectOperation = connect ?? { throw runtimeStatusError }
+    self.closeConnectionOperation = closeConnection ?? { throw runtimeStatusError }
     self.localIDOperation = localID
     self.authSessionOperation = authSession ?? { throw authError }
     self.observeAuthSessionOperation = observeAuthSession ?? { throw authError }
@@ -262,6 +278,12 @@ public struct InstantSwiftDataClient: Sendable {
         throw error
       },
       connectionStatus: {
+        throw error
+      },
+      connect: {
+        throw error
+      },
+      closeConnection: {
         throw error
       },
       localID: { _ in
@@ -343,6 +365,16 @@ public struct InstantSwiftDataClient: Sendable {
 
   public func connectionStatus() async throws -> InstantConnectionStatus {
     try await connectionStatusOperation()
+  }
+
+  @discardableResult
+  public func connect() async throws -> InstantConnectionStatus {
+    try await connectOperation()
+  }
+
+  @discardableResult
+  public func closeConnection() async throws -> InstantConnectionStatus {
+    try await closeConnectionOperation()
   }
 
   public func localID(named name: String) async throws -> String {

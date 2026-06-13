@@ -1035,6 +1035,26 @@ struct InstantSwiftDataCLI {
       let status = try await context.runtime.connectionStatus()
       try printConnectionStatus(context: context, event: "status", status: status, output: output)
 
+    case "connect", "open":
+      guard arguments.isEmpty else {
+        throw CLIError(
+          "Usage: instant-swift-data connection connect [--json|--jsonl]",
+          exitCode: 64
+        )
+      }
+      let status = try await context.runtime.connect()
+      try printConnectionStatus(context: context, event: "connect", status: status, output: output)
+
+    case "close", "disconnect":
+      guard arguments.isEmpty else {
+        throw CLIError(
+          "Usage: instant-swift-data connection close [--json|--jsonl]",
+          exitCode: 64
+        )
+      }
+      let status = try await context.runtime.closeConnection()
+      try printConnectionStatus(context: context, event: "close", status: status, output: output)
+
     default:
       throw CLIError(connectionUsage, exitCode: 64)
     }
@@ -2038,7 +2058,7 @@ struct InstantSwiftDataCLI {
     case .jsonl:
       try writeJSONLine(
         EvidenceRow(
-          caseID: "cli.connection.status",
+          caseID: "cli.connection.\(event)",
           side: "swift",
           event: event,
           appID: context.appID,
@@ -3003,6 +3023,8 @@ struct InstantSwiftDataCLI {
         app select <app-id> [--json|--jsonl]
         app ephemeral --title <title> [--json|--jsonl]
         connection status [--json|--jsonl]
+        connection connect [--json|--jsonl]
+        connection close [--json|--jsonl]
         sync inspect [--json|--jsonl]
         sync mark-processed <tx-id> [--json|--jsonl]
         validation local-todos [--json|--jsonl]
@@ -4288,8 +4310,10 @@ struct InstantSwiftDataCLI {
 
   private static var connectionUsage: String {
     """
-    Usage: instant-swift-data connection <status>
+    Usage: instant-swift-data connection <status|connect|close>
       instant-swift-data connection status [--json|--jsonl]
+      instant-swift-data connection connect [--json|--jsonl]
+      instant-swift-data connection close [--json|--jsonl]
     """
   }
 

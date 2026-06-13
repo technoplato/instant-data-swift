@@ -162,6 +162,14 @@ struct BootstrapTests {
       expectNoDifference(status.transport, .localCacheOnly)
       expectNoDifference(status.state, .opened)
       expectNoDifference(status.pendingMutationCount, 1)
+
+      let closedStatus = try await client.closeConnection()
+      expectNoDifference(closedStatus.state, .closed)
+      expectNoDifference(closedStatus.pendingMutationCount, 1)
+
+      let reconnectedStatus = try await client.connect()
+      expectNoDifference(reconnectedStatus.state, .opened)
+      expectNoDifference(reconnectedStatus.pendingMutationCount, 1)
     }
   }
 
@@ -768,6 +776,26 @@ struct BootstrapTests {
     do {
       _ = try await mock.connectionStatus()
       #expect(Bool(false), "Expected old-shape mock client status to fail without status closure.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .implementationFailed)
+      expectNoDifference(error.operation, "inspect InstantSwiftData connection")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      _ = try await mock.connect()
+      #expect(Bool(false), "Expected old-shape mock client connect to fail without status closure.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .implementationFailed)
+      expectNoDifference(error.operation, "inspect InstantSwiftData connection")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      _ = try await mock.closeConnection()
+      #expect(Bool(false), "Expected old-shape mock client close to fail without status closure.")
     } catch let error as InstantError {
       expectNoDifference(error.code, .implementationFailed)
       expectNoDifference(error.operation, "inspect InstantSwiftData connection")
