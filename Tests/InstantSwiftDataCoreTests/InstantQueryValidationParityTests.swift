@@ -43,6 +43,59 @@ struct InstantQueryValidationParityTests {
     )
     expectNoDifference(schemaless, [], source)
   }
+
+  @Test
+  func upstreamLinks() async throws {
+    let runtime = try await queryValidationRuntime()
+    let source = queryValidationSource(
+      "links",
+      assertion: "lines 131-155 relation validation",
+      status: "adapted: Swift expresses nested query objects as InstantQueryInclude values."
+    )
+
+    let postsWithComments = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.posts.comments",
+        namespace: "posts",
+        includes: [
+          InstantQueryInclude("comments")
+        ]
+      )
+    )
+    expectNoDifference(postsWithComments, [], source)
+
+    await expectQueryValidation(
+      namespace: "posts",
+      path: "doesNotExist",
+      source
+    ) {
+      _ = try await runtime.query(
+        InstantQueryPlan(
+          id: "query-validation-parity.posts.missing-relation",
+          namespace: "posts",
+          includes: [
+            InstantQueryInclude("doesNotExist")
+          ]
+        )
+      )
+    }
+
+    await expectQueryValidation(
+      namespace: "posts",
+      path: "unlinkedWithAnything",
+      source
+    ) {
+      _ = try await runtime.query(
+        InstantQueryPlan(
+          id: "query-validation-parity.posts.unlinked",
+          namespace: "posts",
+          includes: [
+            InstantQueryInclude("unlinkedWithAnything")
+          ]
+        )
+      )
+    }
+  }
 }
 
 private let upstreamQueryValidationTestSource =
@@ -88,6 +141,31 @@ private func queryValidationParityAttributes() -> [InstantAttribute] {
       id: "posts/title",
       namespace: "posts",
       name: "title",
+      valueType: .string,
+      isIndexed: true
+    ),
+    InstantAttribute(
+      id: "posts/comments",
+      namespace: "posts",
+      name: "comments",
+      valueType: .ref,
+      cardinality: .many,
+      isIndexed: true,
+      forwardIdentity: "posts/comments",
+      reverseIdentity: "comments/post",
+      linkNamespace: "comments"
+    ),
+    InstantAttribute(
+      id: "comments/body",
+      namespace: "comments",
+      name: "body",
+      valueType: .string,
+      isIndexed: true
+    ),
+    InstantAttribute(
+      id: "unlinkedWithAnything/animal",
+      namespace: "unlinkedWithAnything",
+      name: "animal",
       valueType: .string,
       isIndexed: true
     ),
