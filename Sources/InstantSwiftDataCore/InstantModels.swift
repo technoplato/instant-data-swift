@@ -614,6 +614,7 @@ public struct InstantQueryIncludePlan: Hashable, Codable, Sendable, Identifiable
   public var filters: [InstantQueryFilter]
   public var order: InstantQueryOrder?
   public var selectedFields: [String]?
+  public var includes: [InstantQueryInclude]?
 
   public init(
     id: String,
@@ -621,6 +622,24 @@ public struct InstantQueryIncludePlan: Hashable, Codable, Sendable, Identifiable
     filters: [InstantQueryFilter] = [],
     order: InstantQueryOrder? = nil,
     selectedFields: [String]? = nil
+  ) {
+    self.init(
+      id: id,
+      namespace: namespace,
+      filters: filters,
+      order: order,
+      selectedFields: selectedFields,
+      includes: []
+    )
+  }
+
+  public init(
+    id: String,
+    namespace: String,
+    filters: [InstantQueryFilter] = [],
+    order: InstantQueryOrder? = nil,
+    selectedFields: [String]? = nil,
+    includes: [InstantQueryInclude]
   ) {
     precondition(
       selectedFields?.allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -632,6 +651,7 @@ public struct InstantQueryIncludePlan: Hashable, Codable, Sendable, Identifiable
     self.filters = filters
     self.order = order
     self.selectedFields = selectedFields.map { Array(Set($0)).sorted() }
+    self.includes = includes.isEmpty ? nil : includes
   }
 }
 
@@ -762,7 +782,8 @@ extension InstantQueryIncludePlan {
       namespace: plan.namespace,
       filters: plan.filters,
       order: plan.order,
-      selectedFields: plan.selectedFields
+      selectedFields: plan.selectedFields,
+      includes: plan.includes ?? []
     )
   }
 
@@ -772,7 +793,8 @@ extension InstantQueryIncludePlan {
       namespace: namespace,
       filters: filters,
       order: order,
-      selectedFields: selectedFields
+      selectedFields: selectedFields,
+      includes: includes ?? []
     )
   }
 }
@@ -785,7 +807,6 @@ private extension InstantQueryPlan {
       && after == nil
       && last == nil
       && before == nil
-      && (includes == nil || includes?.isEmpty == true)
   }
 }
 
@@ -817,14 +838,17 @@ private extension InstantQueryOrder {
 
 private extension InstantQueryIncludePlan {
   var canonicalCacheKeyPayload: String {
-    [
+    var components = [
       "id:\(id.cacheKeyEncodedString)",
       "namespace:\(namespace.cacheKeyEncodedString)",
       "filters:[\(filters.map(\.canonicalCacheKeyPayload).joined(separator: ","))]",
       "order:\(order?.canonicalCacheKeyPayload ?? "nil")",
       "selectedFields:\(selectedFields.map { $0.joined(separator: ",").cacheKeyEncodedString } ?? "nil")",
     ]
-    .joined(separator: "|")
+    if let includes, !includes.isEmpty {
+      components.append("includes:[\(includes.map(\.canonicalCacheKeyPayload).joined(separator: ","))]")
+    }
+    return components.joined(separator: "|")
   }
 }
 
@@ -993,15 +1017,31 @@ public struct InstantLinkedEntitySnapshot: Hashable, Codable, Sendable, Identifi
   public var id: String
   public var namespace: String
   public var values: [String: InstantMaterializedValue]
+  public var links: [String: [InstantLinkedEntitySnapshot]]?
 
   public init(id: String, namespace: String, values: [String: InstantMaterializedValue]) {
+    self.init(id: id, namespace: namespace, values: values, links: nil)
+  }
+
+  public init(
+    id: String,
+    namespace: String,
+    values: [String: InstantMaterializedValue],
+    links: [String: [InstantLinkedEntitySnapshot]]?
+  ) {
     self.id = id
     self.namespace = namespace
     self.values = values
+    self.links = links
   }
 
   public init(_ snapshot: InstantEntitySnapshot) {
-    self.init(id: snapshot.id, namespace: snapshot.namespace, values: snapshot.values)
+    self.init(
+      id: snapshot.id,
+      namespace: snapshot.namespace,
+      values: snapshot.values,
+      links: snapshot.links
+    )
   }
 }
 

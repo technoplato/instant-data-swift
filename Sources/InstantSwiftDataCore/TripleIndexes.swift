@@ -1213,6 +1213,9 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       if let issue = validateOrder(query.order, namespace: query.namespace, attributes: attributes) {
         return issue
       }
+      if let issue = validateIncludes(query.includes, namespace: query.namespace, attributes: attributes) {
+        return issue
+      }
     }
     return nil
   }
@@ -1593,6 +1596,8 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       )
       else { return false }
       guard orderReferencesDeclaredField(query.order, namespace: query.namespace, attributes: attributes)
+      else { return false }
+      guard includesReferenceDeclaredLinks(query.includes, namespace: query.namespace, attributes: attributes)
       else { return false }
       return true
     }

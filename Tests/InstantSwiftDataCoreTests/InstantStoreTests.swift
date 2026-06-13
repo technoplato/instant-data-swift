@@ -7537,6 +7537,26 @@ struct InstantStoreTests {
     let decoded = try JSONDecoder().decode(InstantQueryPlan.self, from: data)
     expectNoDifference(decoded, plan)
     expectNoDifference(decoded.cacheKey, plan.cacheKey)
+
+    let nestedPlan = InstantQueryPlan(
+      id: "todos.codable-include",
+      namespace: TodoExample.namespace,
+      includes: [
+        InstantQueryInclude(
+          "project",
+          query: InstantQueryIncludePlan(
+            id: "projects.codable-include",
+            namespace: "projects",
+            selectedFields: ["title"],
+            includes: [InstantQueryInclude("todos", direction: .reverse)]
+          )
+        )
+      ]
+    )
+    let nestedData = try JSONEncoder().encode(nestedPlan)
+    let nestedDecoded = try JSONDecoder().decode(InstantQueryPlan.self, from: nestedData)
+    expectNoDifference(nestedDecoded, nestedPlan)
+    #expect(nestedPlan.cacheKey != plan.cacheKey)
   }
 
   @Test
@@ -7622,7 +7642,7 @@ struct InstantStoreTests {
         query: InstantQueryPlan(id: "projects.paginated", namespace: "projects", limit: 1)
       ) == nil
     )
-    #expect(
+    let nestedInclude = try #require(
       InstantQueryInclude(
         "project",
         query: InstantQueryPlan(
@@ -7630,8 +7650,34 @@ struct InstantStoreTests {
           namespace: "projects",
           includes: [InstantQueryInclude("todos", direction: .reverse)]
         )
-      ) == nil
+      )
     )
+    let nested = try await runtime.query(
+      InstantQueryPlan(
+        id: "todos.valid-nested-include",
+        namespace: TodoExample.namespace,
+        includes: [nestedInclude]
+      )
+    )
+    #expect(nested.first?.links?["project"]?.first?.links?["todos"]?.map(\.id) == ["todo-1"])
+    await expectQueryValidation(namespace: "projects", path: "missing") {
+      _ = try await runtime.query(
+        .init(
+          id: "todos.bad-nested-include",
+          namespace: TodoExample.namespace,
+          includes: [
+            InstantQueryInclude(
+              "project",
+              query: InstantQueryIncludePlan(
+                id: "projects.bad-include",
+                namespace: "projects",
+                includes: [InstantQueryInclude("missing")]
+              )
+            )
+          ]
+        )
+      )
+    }
   }
 
   @Test

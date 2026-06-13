@@ -473,7 +473,7 @@ struct InstantQueryValidationParityTests {
       "pagination parameters can only be used at top-level namespaces",
       assertion: "lines 795-981 nested pagination validation",
       status:
-        "adapted: Swift allows pagination only on InstantQueryPlan; converting a plan into an include rejects pagination and nested includes."
+        "adapted: Swift allows pagination only on top-level InstantQueryPlan values; converting a paginated plan into an include rejects it before dropping pagination fields."
     )
 
     let validTopLevelPagination = try await runtime.queryOnce(
@@ -563,26 +563,26 @@ struct InstantQueryValidationParityTests {
     }
 
     let swiftOnlySource =
-      "Swift include conversion guard: InstantQueryIncludePlan intentionally omits pagination and nested include storage, so conversion rejects those plans before dropping fields."
-    let swiftOnlyUnsupportedIncludePlans: [InstantQueryPlan] = [
-      InstantQueryPlan(
-        id: "query-validation-parity.users.posts.limit",
-        namespace: "posts",
-        limit: 5
-      ),
-      InstantQueryPlan(
-        id: "query-validation-parity.users.posts.nested-include",
-        namespace: "posts",
-        includes: [InstantQueryInclude("comments")]
-      ),
-    ]
+      "Swift include conversion guard: InstantQueryIncludePlan omits pagination storage, so conversion rejects pagination plans before dropping fields."
+    let limitPlan = InstantQueryPlan(
+      id: "query-validation-parity.users.posts.limit",
+      namespace: "posts",
+      limit: 5
+    )
+    #expect(
+      InstantQueryInclude("posts", direction: .reverse, query: limitPlan) == nil,
+      "\(swiftOnlySource) rejected include plan \(limitPlan.id)"
+    )
 
-    for plan in swiftOnlyUnsupportedIncludePlans {
-      #expect(
-        InstantQueryInclude("posts", direction: .reverse, query: plan) == nil,
-        "\(swiftOnlySource) rejected include plan \(plan.id)"
-      )
-    }
+    let nestedIncludePlan = InstantQueryPlan(
+      id: "query-validation-parity.users.posts.nested-include",
+      namespace: "posts",
+      includes: [InstantQueryInclude("comments")]
+    )
+    #expect(
+      InstantQueryInclude("posts", direction: .reverse, query: nestedIncludePlan) != nil,
+      "Swift nested include conversion preserves nested include storage."
+    )
   }
 
   @Test
