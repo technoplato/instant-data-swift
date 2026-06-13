@@ -2408,6 +2408,349 @@ struct InstantStoreTests {
   }
 
   @Test
+  func queryFiltersSupportOneHopNestedRelationFields() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoProjectExample.attributes
+      )
+    )
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let secondCreatedAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
+    let thirdCreatedAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 2)
+    let transactionID = "tx-nested-relation-filters"
+    var operations: [InstantTripleOperation] = []
+    operations += TodoProjectExample.createProjectOperations(
+      id: "project-1",
+      title: "Launch",
+      createdAt: createdAt,
+      transactionID: transactionID
+    )
+    operations += TodoProjectExample.createProjectOperations(
+      id: "project-2",
+      title: "Archive",
+      createdAt: secondCreatedAt,
+      transactionID: transactionID
+    )
+    operations += TodoProjectExample.createProjectOperations(
+      id: "project-3",
+      title: "Empty",
+      createdAt: thirdCreatedAt,
+      transactionID: transactionID
+    )
+    operations += TodoExample.createOperations(
+      id: "todo-1",
+      text: "Wire links",
+      createdAt: createdAt,
+      transactionID: transactionID
+    )
+    operations += TodoExample.createOperations(
+      id: "todo-2",
+      text: "Polish docs",
+      createdAt: secondCreatedAt,
+      transactionID: transactionID
+    )
+    operations += TodoExample.createOperations(
+      id: "todo-3",
+      text: "Loose todo",
+      createdAt: thirdCreatedAt,
+      transactionID: transactionID
+    )
+    operations += TodoProjectExample.linkOperations(
+      todoID: "todo-1",
+      projectID: "project-1",
+      updatedAt: createdAt,
+      transactionID: transactionID
+    )
+    operations += TodoProjectExample.linkOperations(
+      todoID: "todo-2",
+      projectID: "project-2",
+      updatedAt: secondCreatedAt,
+      transactionID: transactionID
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(id: transactionID, operations: operations),
+      createdAt: createdAt
+    )
+
+    func queryIDs(
+      _ runtime: InstantRuntime,
+      id: String,
+      namespace: String,
+      filters: [InstantQueryFilter]
+    ) async throws -> [String] {
+      try await runtime.query(
+        InstantQueryPlan(id: id, namespace: namespace, filters: filters)
+      )
+      .map(\.id)
+    }
+
+    let todoCases: [(String, [InstantQueryFilter], [String])] = [
+      (
+        "equals",
+        [.equals(field: "project.title", value: .string("Launch"))],
+        ["todo-1"]
+      ),
+      (
+        "not-equals",
+        [.notEquals(field: "project.title", value: .string("Launch"))],
+        ["todo-2", "todo-3"]
+      ),
+      (
+        "greater-than",
+        [.greaterThan(field: "project.title", value: .string("Archive"))],
+        ["todo-1"]
+      ),
+      (
+        "greater-than-or-equal",
+        [.greaterThanOrEqual(field: "project.title", value: .string("Launch"))],
+        ["todo-1"]
+      ),
+      (
+        "less-than",
+        [.lessThan(field: "project.title", value: .string("Launch"))],
+        ["todo-2"]
+      ),
+      (
+        "less-than-or-equal",
+        [.lessThanOrEqual(field: "project.title", value: .string("Archive"))],
+        ["todo-2"]
+      ),
+      (
+        "in",
+        [.in(field: "project.title", values: [.string("Launch"), .string("Missing")])],
+        ["todo-1"]
+      ),
+      (
+        "like",
+        [.like(field: "project.title", pattern: "%unch")],
+        ["todo-1"]
+      ),
+      (
+        "ilike",
+        [.iLike(field: "project.title", pattern: "%launch%")],
+        ["todo-1"]
+      ),
+      (
+        "is-null",
+        [.isNull(field: "project.title")],
+        ["todo-3"]
+      ),
+      (
+        "is-not-null",
+        [.isNotNull(field: "project.title")],
+        ["todo-1", "todo-2"]
+      ),
+      (
+        "id",
+        [.equals(field: "project.id", value: .string("project-1"))],
+        ["todo-1"]
+      ),
+      (
+        "compound-or",
+        [
+          .or([
+            .equals(field: "project.title", value: .string("Launch")),
+            .equals(field: "text", value: .string("Loose todo")),
+          ])
+        ],
+        ["todo-1", "todo-3"]
+      ),
+    ]
+
+    for (id, filters, expectedIDs) in todoCases {
+      let ids = try await queryIDs(
+        runtime,
+        id: "todos.nested.\(id)",
+        namespace: TodoExample.namespace,
+        filters: filters
+      )
+      expectNoDifference(ids, expectedIDs)
+    }
+
+    let projectCases: [(String, [InstantQueryFilter], [String])] = [
+      (
+        "equals",
+        [.equals(field: "todos.text", value: .string("Wire links"))],
+        ["project-1"]
+      ),
+      (
+        "not-equals",
+        [.notEquals(field: "todos.text", value: .string("Wire links"))],
+        ["project-2", "project-3"]
+      ),
+      (
+        "ilike",
+        [.iLike(field: "todos.text", pattern: "%DOCS%")],
+        ["project-2"]
+      ),
+      (
+        "is-null",
+        [.isNull(field: "todos.text")],
+        ["project-3"]
+      ),
+      (
+        "is-not-null",
+        [.isNotNull(field: "todos.text")],
+        ["project-1", "project-2"]
+      ),
+      (
+        "id",
+        [.equals(field: "todos.id", value: .string("todo-1"))],
+        ["project-1"]
+      ),
+    ]
+
+    for (id, filters, expectedIDs) in projectCases {
+      let ids = try await queryIDs(
+        runtime,
+        id: "projects.nested.\(id)",
+        namespace: TodoProjectExample.namespace,
+        filters: filters
+      )
+      expectNoDifference(ids, expectedIDs)
+    }
+
+    for field in ["missing.title", "project.missing", "text.value", "project.title.extra"] {
+      let ids = try await queryIDs(
+        runtime,
+        id: "todos.invalid-nested.\(field)",
+        namespace: TodoExample.namespace,
+        filters: [.equals(field: field, value: .string("Launch"))]
+      )
+      expectNoDifference(ids, [])
+    }
+
+    let launchPlan = InstantQueryPlan(
+      id: "todos.nested.cached.launch",
+      namespace: TodoExample.namespace,
+      filters: [.equals(field: "project.title", value: .string("Launch"))]
+    )
+    let launchIDs = try await runtime.query(launchPlan).map(\.id)
+    let cachedLaunchIDs = try await runtime.cachedQuery(launchPlan)?.emission.values.map(\.id)
+    expectNoDifference(launchIDs, ["todo-1"])
+    expectNoDifference(cachedLaunchIDs, ["todo-1"])
+
+    let stream = await runtime.observe(launchPlan)
+    var iterator = stream.makeAsyncIterator()
+    let initialEmission = await iterator.next()
+    expectNoDifference(initialEmission?.values.map(\.id), ["todo-1"])
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-retitle-project",
+        operations: TodoProjectExample.upsertProjectOperations(
+          id: "project-1",
+          title: "Released",
+          createdAt: InstantTimestamp(milliseconds: createdAt.milliseconds + 3),
+          transactionID: "tx-retitle-project"
+        )
+      ),
+      createdAt: InstantTimestamp(milliseconds: createdAt.milliseconds + 3)
+    )
+    let retitledEmission = await iterator.next()
+    expectNoDifference(retitledEmission?.values.map(\.id), [])
+
+    let releasedPlan = InstantQueryPlan(
+      id: "todos.nested.cached.released",
+      namespace: TodoExample.namespace,
+      filters: [.equals(field: "project.title", value: .string("Released"))]
+    )
+    let staleLaunchIDs = try await runtime.query(launchPlan).map(\.id)
+    let releasedIDs = try await runtime.query(releasedPlan).map(\.id)
+    let cachedReleasedIDs = try await runtime.cachedQuery(releasedPlan)?.emission.values.map(\.id)
+    expectNoDifference(staleLaunchIDs, [])
+    expectNoDifference(releasedIDs, ["todo-1"])
+    expectNoDifference(cachedReleasedIDs, ["todo-1"])
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoProjectExample.attributes
+      )
+    )
+    let relaunchedReleasedIDs = try await relaunchedRuntime.query(releasedPlan).map(\.id)
+    expectNoDifference(relaunchedReleasedIDs, ["todo-1"])
+  }
+
+  @Test
+  func queryFiltersSupportForwardManyNestedRelationFields() async throws {
+    let articlesTitle = InstantAttribute(
+      id: "articles/title",
+      namespace: "articles",
+      name: "title",
+      valueType: .string
+    )
+    let articlesTags = InstantAttribute(
+      id: "articles/tags",
+      namespace: "articles",
+      name: "tags",
+      valueType: .ref,
+      cardinality: .many,
+      linkNamespace: "tags"
+    )
+    let tagsName = InstantAttribute(
+      id: "tags/name",
+      namespace: "tags",
+      name: "name",
+      valueType: .string
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: [articlesTitle, articlesTags, tagsName]
+      )
+    )
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-forward-many-nested-filters",
+        operations: [
+          .insert(.init(entityID: "article-1", attributeID: "articles/title", value: .string("Build"), txID: "tx-forward-many-nested-filters", txTime: time)),
+          .insert(.init(entityID: "article-1", attributeID: "articles/tags", value: .ref("tag-swift"), txID: "tx-forward-many-nested-filters", txTime: time)),
+          .insert(.init(entityID: "article-1", attributeID: "articles/tags", value: .ref("tag-data"), txID: "tx-forward-many-nested-filters", txTime: time)),
+          .insert(.init(entityID: "article-2", attributeID: "articles/title", value: .string("Design"), txID: "tx-forward-many-nested-filters", txTime: time)),
+          .insert(.init(entityID: "article-2", attributeID: "articles/tags", value: .ref("tag-ui"), txID: "tx-forward-many-nested-filters", txTime: time)),
+          .insert(.init(entityID: "article-3", attributeID: "articles/title", value: .string("Draft"), txID: "tx-forward-many-nested-filters", txTime: time)),
+          .insert(.init(entityID: "tag-swift", attributeID: "tags/name", value: .string("Swift"), txID: "tx-forward-many-nested-filters", txTime: time)),
+          .insert(.init(entityID: "tag-data", attributeID: "tags/name", value: .string("Data"), txID: "tx-forward-many-nested-filters", txTime: time)),
+          .insert(.init(entityID: "tag-ui", attributeID: "tags/name", value: .string("UI"), txID: "tx-forward-many-nested-filters", txTime: time)),
+        ]
+      ),
+      createdAt: time
+    )
+
+    func articleIDs(id: String, filters: [InstantQueryFilter]) async throws -> [String] {
+      try await runtime.query(
+        InstantQueryPlan(id: id, namespace: "articles", filters: filters)
+      )
+      .map(\.id)
+    }
+
+    let swiftArticles = try await articleIDs(id: "articles.tags.name.swift", filters: [
+      .equals(field: "tags.name", value: .string("Swift"))
+    ])
+    let notSwiftArticles = try await articleIDs(id: "articles.tags.name.not-swift", filters: [
+      .notEquals(field: "tags.name", value: .string("Swift"))
+    ])
+    let untaggedArticles = try await articleIDs(id: "articles.tags.name.null", filters: [
+      .isNull(field: "tags.name")
+    ])
+    let swiftIDArticles = try await articleIDs(id: "articles.tags.id.swift", filters: [
+      .equals(field: "tags.id", value: .string("tag-swift"))
+    ])
+
+    expectNoDifference(swiftArticles, ["article-1"])
+    expectNoDifference(notSwiftArticles, ["article-1", "article-2", "article-3"])
+    expectNoDifference(untaggedArticles, ["article-3"])
+    expectNoDifference(swiftIDArticles, ["article-1"])
+  }
+
+  @Test
   func queryIncludesRoundTripPublicCodableShape() throws {
     let plan = InstantQueryPlan(
       id: "todos.codable-include",

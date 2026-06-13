@@ -103,6 +103,11 @@ real Instant app.
 - `where` operators: equality, `$ne`, `$isNull`, `$gt`, `$lt`, `$gte`, `$lte`,
   `$in`, `$like`, `$ilike`, `and`, `or`, and nested field paths like
   `relation.field`.
+- Local triple materialization currently supports one-hop raw nested field
+  filters (`relation.field`) over declared forward and reverse links, including
+  `relation.id`, null/not-equals matching for missing links, and validation that
+  rejects deeper paths such as `relation.child.field` by returning no local
+  results until full InstaQL path parity is implemented.
 - Ordering on indexed fields and `serverCreatedAt`.
 - Pagination on top-level namespaces: `limit`, `offset`, `first`, `after`,
   `last`, `before`, inclusive cursors, and page info.

@@ -294,6 +294,36 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       .map(InstantLinkedEntitySnapshot.init)
   }
 
+  private func snapshot(
+    entityID: String,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> InstantEntitySnapshot? {
+    guard let attributesByID = eav[entityID] else { return nil }
+
+    var values: [String: InstantMaterializedValue] = [:]
+    for (attributeID, valuesByValue) in attributesByID {
+      guard let attribute = attributes[attributeID], attribute.namespace == namespace
+      else { continue }
+
+      let sortedValues = valuesByValue.values
+        .sorted { $0.value.comparableKey < $1.value.comparableKey }
+        .map(\.value)
+
+      switch attribute.cardinality {
+      case .one:
+        if let value = sortedValues.last {
+          values[attribute.name] = .one(value)
+        }
+      case .many:
+        values[attribute.name] = .many(sortedValues)
+      }
+    }
+
+    guard !values.isEmpty else { return nil }
+    return InstantEntitySnapshot(id: entityID, namespace: namespace, values: values)
+  }
+
   private func paginate(
     _ snapshots: [InstantEntitySnapshot],
     plan: InstantQueryPlan
@@ -558,14 +588,58 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     for filter in filters {
       switch filter {
       case let .equals(field, value):
-        guard snapshot.values[field]?.contains(value) == true else { return false }
+        if let nested = nestedField(field) {
+          guard matchesNestedField(
+            snapshot,
+            nested: nested,
+            filter: .equals(field: nested.field, value: value),
+            namespace: namespace,
+            attributes: attributes
+          )
+          else { return false }
+          continue
+        }
+        guard materializedValue(snapshot, field: field)?.contains(value) == true else { return false }
       case let .notEquals(field, value):
+        if let nested = nestedField(field) {
+          guard matchesNestedField(
+            snapshot,
+            nested: nested,
+            filter: .notEquals(field: nested.field, value: value),
+            namespace: namespace,
+            attributes: attributes
+          )
+          else { return false }
+          continue
+        }
         guard isDeclaredField(field, namespace: namespace, attributes: attributes) else { return false }
         guard matchesNotEquals(snapshot, field: field, value: value) else { return false }
       case let .greaterThan(field, value):
+        if let nested = nestedField(field) {
+          guard matchesNestedField(
+            snapshot,
+            nested: nested,
+            filter: .greaterThan(field: nested.field, value: value),
+            namespace: namespace,
+            attributes: attributes
+          )
+          else { return false }
+          continue
+        }
         guard matchesComparison(snapshot, field: field, value: value, allowed: [.orderedDescending])
         else { return false }
       case let .greaterThanOrEqual(field, value):
+        if let nested = nestedField(field) {
+          guard matchesNestedField(
+            snapshot,
+            nested: nested,
+            filter: .greaterThanOrEqual(field: nested.field, value: value),
+            namespace: namespace,
+            attributes: attributes
+          )
+          else { return false }
+          continue
+        }
         guard matchesComparison(
           snapshot,
           field: field,
@@ -574,9 +648,31 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         )
         else { return false }
       case let .lessThan(field, value):
+        if let nested = nestedField(field) {
+          guard matchesNestedField(
+            snapshot,
+            nested: nested,
+            filter: .lessThan(field: nested.field, value: value),
+            namespace: namespace,
+            attributes: attributes
+          )
+          else { return false }
+          continue
+        }
         guard matchesComparison(snapshot, field: field, value: value, allowed: [.orderedAscending])
         else { return false }
       case let .lessThanOrEqual(field, value):
+        if let nested = nestedField(field) {
+          guard matchesNestedField(
+            snapshot,
+            nested: nested,
+            filter: .lessThanOrEqual(field: nested.field, value: value),
+            namespace: namespace,
+            attributes: attributes
+          )
+          else { return false }
+          continue
+        }
         guard matchesComparison(
           snapshot,
           field: field,
@@ -585,18 +681,74 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         )
         else { return false }
       case let .in(field, values):
-        guard let materialized = snapshot.values[field], !values.isEmpty else { return false }
+        if let nested = nestedField(field) {
+          guard matchesNestedField(
+            snapshot,
+            nested: nested,
+            filter: .in(field: nested.field, values: values),
+            namespace: namespace,
+            attributes: attributes
+          )
+          else { return false }
+          continue
+        }
+        guard let materialized = materializedValue(snapshot, field: field), !values.isEmpty
+        else { return false }
         guard materialized.values.contains(where: values.contains) else { return false }
       case let .like(field, pattern):
+        if let nested = nestedField(field) {
+          guard matchesNestedField(
+            snapshot,
+            nested: nested,
+            filter: .like(field: nested.field, pattern: pattern),
+            namespace: namespace,
+            attributes: attributes
+          )
+          else { return false }
+          continue
+        }
         guard matchesStringPattern(snapshot, field: field, pattern: pattern, caseInsensitive: false)
         else { return false }
       case let .iLike(field, pattern):
+        if let nested = nestedField(field) {
+          guard matchesNestedField(
+            snapshot,
+            nested: nested,
+            filter: .iLike(field: nested.field, pattern: pattern),
+            namespace: namespace,
+            attributes: attributes
+          )
+          else { return false }
+          continue
+        }
         guard matchesStringPattern(snapshot, field: field, pattern: pattern, caseInsensitive: true)
         else { return false }
       case let .isNull(field):
+        if let nested = nestedField(field) {
+          guard matchesNestedField(
+            snapshot,
+            nested: nested,
+            filter: .isNull(field: nested.field),
+            namespace: namespace,
+            attributes: attributes
+          )
+          else { return false }
+          continue
+        }
         guard isDeclaredField(field, namespace: namespace, attributes: attributes) else { return false }
         guard isFieldNull(snapshot, field: field) else { return false }
       case let .isNotNull(field):
+        if let nested = nestedField(field) {
+          guard matchesNestedField(
+            snapshot,
+            nested: nested,
+            filter: .isNotNull(field: nested.field),
+            namespace: namespace,
+            attributes: attributes
+          )
+          else { return false }
+          continue
+        }
         guard isDeclaredField(field, namespace: namespace, attributes: attributes) else { return false }
         guard !isFieldNull(snapshot, field: field) else { return false }
       case let .and(filters):
@@ -718,7 +870,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       let .iLike(field, _),
       let .isNull(field),
       let .isNotNull(field):
-      return isDeclaredField(field, namespace: namespace, attributes: attributes)
+      return fieldReferencesDeclaredField(field, namespace: namespace, attributes: attributes)
 
     case let .and(filters), let .or(filters):
       return filtersReferenceDeclaredFields(filters, namespace: namespace, attributes: attributes)
@@ -747,17 +899,148 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     attributes.attribute(namespace: namespace, name: field) != nil
   }
 
+  private func fieldReferencesDeclaredField(
+    _ field: String,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> Bool {
+    guard field.contains(".") else {
+      return isDeclaredField(field, namespace: namespace, attributes: attributes)
+    }
+    guard
+      let nested = nestedField(field),
+      let targetNamespace = nestedFieldTargetNamespace(
+        nested,
+        namespace: namespace,
+        attributes: attributes
+      )
+    else { return false }
+    return isDeclaredField(nested.field, namespace: targetNamespace, attributes: attributes)
+  }
+
+  private struct NestedField: Hashable, Sendable {
+    var relation: String
+    var field: String
+  }
+
+  private struct NestedFieldSnapshots: Hashable, Sendable {
+    var namespace: String
+    var snapshots: [InstantEntitySnapshot]
+  }
+
+  private func nestedField(_ field: String) -> NestedField? {
+    let parts = field.split(separator: ".", omittingEmptySubsequences: false)
+    guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
+    return NestedField(relation: String(parts[0]), field: String(parts[1]))
+  }
+
+  private func nestedFieldTargetNamespace(
+    _ nested: NestedField,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> String? {
+    if
+      let attribute = attributes.attribute(namespace: namespace, name: nested.relation),
+      attribute.valueType == .ref,
+      let linkNamespace = attribute.linkNamespace
+    {
+      return linkNamespace
+    }
+
+    return reverseAttribute(
+      namespace: namespace,
+      name: nested.relation,
+      attributes: attributes
+    )?.namespace
+  }
+
+  private func linkedSnapshots(
+    for snapshot: InstantEntitySnapshot,
+    nested: NestedField,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> NestedFieldSnapshots? {
+    if
+      let attribute = attributes.attribute(namespace: namespace, name: nested.relation),
+      attribute.valueType == .ref,
+      let linkNamespace = attribute.linkNamespace
+    {
+      let ids = Set(snapshot.values[nested.relation]?.values.compactMap(\.refValue) ?? [])
+      return NestedFieldSnapshots(
+        namespace: linkNamespace,
+        snapshots: ids.sorted().compactMap {
+          self.snapshot(entityID: $0, namespace: linkNamespace, attributes: attributes)
+        }
+      )
+    }
+
+    if
+      let attribute = reverseAttribute(
+        namespace: namespace,
+        name: nested.relation,
+        attributes: attributes
+      )
+    {
+      let ids =
+        vae[.ref(snapshot.id)]?[attribute.id]?.keys.sorted()
+        ?? []
+      return NestedFieldSnapshots(
+        namespace: attribute.namespace,
+        snapshots: ids.compactMap {
+          self.snapshot(entityID: $0, namespace: attribute.namespace, attributes: attributes)
+        }
+      )
+    }
+
+    return nil
+  }
+
+  private func matchesNestedField(
+    _ snapshot: InstantEntitySnapshot,
+    nested: NestedField,
+    filter: InstantQueryFilter,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> Bool {
+    guard
+      let linked = linkedSnapshots(
+        for: snapshot,
+        nested: nested,
+        namespace: namespace,
+        attributes: attributes
+      )
+    else { return false }
+    guard !linked.snapshots.isEmpty else {
+      switch filter {
+      case .notEquals, .isNull:
+        return true
+      default:
+        return false
+      }
+    }
+    return linked.snapshots.contains {
+      matches($0, filter: filter, namespace: linked.namespace, attributes: attributes)
+    }
+  }
+
+  private func materializedValue(
+    _ snapshot: InstantEntitySnapshot,
+    field: String
+  ) -> InstantMaterializedValue? {
+    snapshot.values[field] ?? (field == "id" ? .one(.string(snapshot.id)) : nil)
+  }
+
   private func matchesNotEquals(
     _ snapshot: InstantEntitySnapshot,
     field: String,
     value: InstantValue
   ) -> Bool {
-    guard let materialized = snapshot.values[field] else { return true }
+    guard let materialized = materializedValue(snapshot, field: field) else { return true }
     return materialized.values.contains { $0 != value } || materialized.values.contains(.null)
   }
 
   private func isFieldNull(_ snapshot: InstantEntitySnapshot, field: String) -> Bool {
-    guard let materialized = snapshot.values[field] else { return true }
+    guard let materialized = materializedValue(snapshot, field: field) else { return true }
     return materialized.values.contains(.null)
   }
 
@@ -767,7 +1050,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     value: InstantValue,
     allowed: Set<ComparisonResult>
   ) -> Bool {
-    guard let materialized = snapshot.values[field] else { return false }
+    guard let materialized = materializedValue(snapshot, field: field) else { return false }
     return materialized.values.contains {
       guard Self.canRangeCompare($0, value) else { return false }
       return allowed.contains($0.compare(to: value))
@@ -789,7 +1072,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     pattern: String,
     caseInsensitive: Bool
   ) -> Bool {
-    guard let materialized = snapshot.values[field] else { return false }
+    guard let materialized = materializedValue(snapshot, field: field) else { return false }
     return materialized.values.contains {
       guard case let .string(value) = $0 else { return false }
       return Self.matchesLikePattern(value, pattern: pattern, caseInsensitive: caseInsensitive)
