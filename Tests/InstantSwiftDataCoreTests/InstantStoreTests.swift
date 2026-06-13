@@ -1934,6 +1934,96 @@ struct InstantStoreTests {
   }
 
   @Test
+  func queryFieldSelectionTrimsReturnedValuesAfterFilteringAndOrdering() async throws {
+    let score = InstantAttribute(
+      id: "items/score",
+      namespace: "items",
+      name: "score",
+      valueType: .number,
+      isIndexed: true
+    )
+    let text = InstantAttribute(
+      id: "items/text",
+      namespace: "items",
+      name: "text",
+      valueType: .string
+    )
+    let status = InstantAttribute(
+      id: "items/status",
+      namespace: "items",
+      name: "status",
+      valueType: .string,
+      isIndexed: true
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: [score, text, status]
+      )
+    )
+    let time = InstantTimestamp(milliseconds: 10)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-select-items",
+        operations: [
+          .insert(.init(entityID: "item-1", attributeID: "items/score", value: .number(1), txID: "tx-select-items", txTime: time)),
+          .insert(.init(entityID: "item-1", attributeID: "items/text", value: .string("first"), txID: "tx-select-items", txTime: time)),
+          .insert(.init(entityID: "item-1", attributeID: "items/status", value: .string("open"), txID: "tx-select-items", txTime: time)),
+          .insert(.init(entityID: "item-2", attributeID: "items/score", value: .number(2), txID: "tx-select-items", txTime: time)),
+          .insert(.init(entityID: "item-2", attributeID: "items/text", value: .string("second"), txID: "tx-select-items", txTime: time)),
+          .insert(.init(entityID: "item-2", attributeID: "items/status", value: .string("open"), txID: "tx-select-items", txTime: time)),
+          .insert(.init(entityID: "item-3", attributeID: "items/score", value: .number(3), txID: "tx-select-items", txTime: time)),
+          .insert(.init(entityID: "item-3", attributeID: "items/text", value: .string("third"), txID: "tx-select-items", txTime: time)),
+          .insert(.init(entityID: "item-3", attributeID: "items/status", value: .string("closed"), txID: "tx-select-items", txTime: time)),
+        ]
+      ),
+      createdAt: time
+    )
+
+    let selectedPlan = InstantQueryPlan(
+      id: "items.selected",
+      namespace: "items",
+      filters: [.equals(field: "status", value: .string("open"))],
+      order: .init("score", .descending),
+      selectedFields: ["text"]
+    )
+    let selected = try await runtime.query(selectedPlan)
+    expectNoDifference(selected.map(\.id), ["item-2", "item-1"])
+    expectNoDifference(selected.map(\.values), [
+      ["text": .one(.string("second"))],
+      ["text": .one(.string("first"))],
+    ])
+
+    let fullPlan = InstantQueryPlan(
+      id: "items.selected",
+      namespace: "items",
+      filters: [.equals(field: "status", value: .string("open"))],
+      order: .init("score", .descending)
+    )
+    #expect(fullPlan.cacheKey != selectedPlan.cacheKey)
+    let selectedAgain = InstantQueryPlan(
+      id: "items.selected",
+      namespace: "items",
+      filters: [.equals(field: "status", value: .string("open"))],
+      order: .init("score", .descending),
+      selectedFields: ["text", "text"]
+    )
+    expectNoDifference(selectedAgain.selectedFields, ["text"])
+    expectNoDifference(selectedAgain.cacheKey, selectedPlan.cacheKey)
+
+    let unknownSelection = try await runtime.query(
+      .init(
+        id: "items.unknown-selection",
+        namespace: "items",
+        selectedFields: ["missing"]
+      )
+    )
+    expectNoDifference(unknownSelection, [])
+  }
+
+  @Test
   func queryFiltersSupportComparisonsInAndNullChecks() async throws {
     let score = InstantAttribute(
       id: "items/score",

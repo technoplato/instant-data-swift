@@ -395,6 +395,7 @@ public struct InstantQueryPlan: Hashable, Codable, Sendable, Identifiable {
   public var order: InstantQueryOrder?
   public var offset: Int?
   public var limit: Int?
+  public var selectedFields: [String]?
 
   public var cacheKey: String {
     Self.cacheKey(for: self)
@@ -406,7 +407,8 @@ public struct InstantQueryPlan: Hashable, Codable, Sendable, Identifiable {
     filters: [InstantQueryFilter] = [],
     order: InstantQueryOrder? = nil,
     offset: Int? = nil,
-    limit: Int? = nil
+    limit: Int? = nil,
+    selectedFields: [String]? = nil
   ) {
     precondition(
       offset == nil || offset! >= 0,
@@ -416,12 +418,18 @@ public struct InstantQueryPlan: Hashable, Codable, Sendable, Identifiable {
       limit == nil || limit! >= 0,
       "InstantQueryPlan limit must be greater than or equal to 0."
     )
+    precondition(
+      selectedFields?.allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        ?? true,
+      "InstantQueryPlan selected fields must not be empty strings."
+    )
     self.id = id
     self.namespace = namespace
     self.filters = filters
     self.order = order
     self.offset = offset
     self.limit = limit
+    self.selectedFields = selectedFields.map { Array(Set($0)).sorted() }
   }
 
   public static func cacheKey(for plan: Self) -> String {
@@ -439,6 +447,7 @@ private extension InstantQueryPlan {
       "order:\(order?.canonicalCacheKeyPayload ?? "nil")",
       "offset:\(offset.map(String.init) ?? "nil")",
       "limit:\(limit.map(String.init) ?? "nil")",
+      "selectedFields:\(selectedFields.map { $0.joined(separator: ",").cacheKeyEncodedString } ?? "nil")",
     ]
     .joined(separator: "|")
   }

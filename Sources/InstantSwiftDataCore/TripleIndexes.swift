@@ -105,6 +105,12 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   ) -> [InstantEntitySnapshot] {
     guard filtersReferenceDeclaredFields(plan.filters, namespace: plan.namespace, attributes: attributes)
     else { return [] }
+    guard selectedFieldsReferenceDeclaredFields(
+      plan.selectedFields,
+      namespace: plan.namespace,
+      attributes: attributes
+    )
+    else { return [] }
 
     var snapshots: [InstantEntitySnapshot] = []
 
@@ -173,9 +179,9 @@ struct TripleIndexes: Hashable, Codable, Sendable {
 
     if let limit = plan.limit {
       guard limit > 0 else { return [] }
-      return Array(snapshots.prefix(limit))
+      snapshots = Array(snapshots.prefix(limit))
     }
-    return snapshots
+    return project(snapshots, selectedFields: plan.selectedFields)
   }
 
   private mutating func insert(_ triple: InstantTriple, attribute: InstantAttribute?) {
@@ -294,6 +300,29 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     attributes: AttributeStore
   ) -> Bool {
     filters.allSatisfy { filterReferencesDeclaredFields($0, namespace: namespace, attributes: attributes) }
+  }
+
+  private func selectedFieldsReferenceDeclaredFields(
+    _ fields: [String]?,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> Bool {
+    fields?.allSatisfy { isDeclaredField($0, namespace: namespace, attributes: attributes) } ?? true
+  }
+
+  private func project(
+    _ snapshots: [InstantEntitySnapshot],
+    selectedFields: [String]?
+  ) -> [InstantEntitySnapshot] {
+    guard let selectedFields else { return snapshots }
+    let selectedFieldSet = Set(selectedFields)
+    return snapshots.map { snapshot in
+      InstantEntitySnapshot(
+        id: snapshot.id,
+        namespace: snapshot.namespace,
+        values: snapshot.values.filter { selectedFieldSet.contains($0.key) }
+      )
+    }
   }
 
   private func filterReferencesDeclaredFields(

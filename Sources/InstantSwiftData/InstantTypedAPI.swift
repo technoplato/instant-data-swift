@@ -254,7 +254,13 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
     let offset = offset.map { Int(clamping: $0) }
     let limit = limit.map { Int(clamping: $0) }
     self.plan = InstantQueryPlan(
-      id: Self.queryID(filters: filters, order: order, offset: offset, limit: limit),
+      id: Self.queryID(
+        filters: filters,
+        order: order,
+        offset: offset,
+        limit: limit,
+        selectedFields: nil
+      ),
       namespace: Entity.instantNamespace,
       filters: filters,
       order: order,
@@ -270,7 +276,8 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
       filters: copy.plan.filters,
       order: copy.plan.order,
       offset: copy.plan.offset,
-      limit: copy.plan.limit
+      limit: copy.plan.limit,
+      selectedFields: copy.plan.selectedFields
     )
     return copy
   }
@@ -285,7 +292,8 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
       filters: copy.plan.filters,
       order: copy.plan.order,
       offset: copy.plan.offset,
-      limit: copy.plan.limit
+      limit: copy.plan.limit,
+      selectedFields: copy.plan.selectedFields
     )
     return copy
   }
@@ -297,7 +305,8 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
       filters: copy.plan.filters,
       order: copy.plan.order,
       offset: copy.plan.offset,
-      limit: copy.plan.limit
+      limit: copy.plan.limit,
+      selectedFields: copy.plan.selectedFields
     )
     return copy
   }
@@ -309,7 +318,8 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
       filters: copy.plan.filters,
       order: copy.plan.order,
       offset: copy.plan.offset,
-      limit: copy.plan.limit
+      limit: copy.plan.limit,
+      selectedFields: copy.plan.selectedFields
     )
     return copy
   }
@@ -318,14 +328,16 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
     filters: [InstantQueryFilter],
     order: InstantQueryOrder?,
     offset: Int?,
-    limit: Int?
+    limit: Int?,
+    selectedFields: [String]?
   ) -> String {
     let payload = QueryIDPayload(
       namespace: Entity.instantNamespace,
       filters: filters,
       order: order,
       offset: offset,
-      limit: limit
+      limit: limit,
+      selectedFields: selectedFields
     )
     return "instant-query:" + payload.canonicalBase64ID()
   }
@@ -337,6 +349,7 @@ private struct QueryIDPayload: Encodable {
   var order: InstantQueryOrder?
   var offset: Int?
   var limit: Int?
+  var selectedFields: [String]?
 
   func canonicalBase64ID() -> String {
     let encoder = JSONEncoder()

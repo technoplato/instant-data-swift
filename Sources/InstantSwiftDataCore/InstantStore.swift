@@ -164,14 +164,20 @@ public actor InstantStore {
   }
 
   private static func emissionSortKey(_ plan: InstantQueryPlan) -> String {
-    [
+    let orderField = plan.order?.field ?? ""
+    let orderDirection = plan.order?.direction.rawValue ?? ""
+    let offset = plan.offset.map(String.init) ?? ""
+    let limit = plan.limit.map(String.init) ?? ""
+    let selectedFields = plan.selectedFields?.joined(separator: ",") ?? ""
+    return [
       plan.id,
       plan.namespace,
       String(describing: plan.filters),
-      plan.order?.field ?? "",
-      plan.order?.direction.rawValue ?? "",
-      plan.offset.map(String.init) ?? "",
-      plan.limit.map(String.init) ?? "",
+      orderField,
+      orderDirection,
+      offset,
+      limit,
+      selectedFields,
     ]
     .joined(separator: "\u{1f}")
   }

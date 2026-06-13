@@ -145,6 +145,41 @@ extension InstantStoreTests {
     expectNoDifference(summary.details.queryID, "examples.todos.list.completed-false")
     expectNoDifference(summary.details.todos.map(\.text), ["query open"])
 
+    let selectedSnapshotsJSON = try runCLI(
+      ["query", "todos", "--completed", "false", "--select", "text,isCompleted", "--json"],
+      homeURL: homeURL
+    )
+    #expect(selectedSnapshotsJSON.contains(#""event" : "query""#))
+    #expect(selectedSnapshotsJSON.contains(#""transport" : "not-implemented-local-cache-only""#))
+    #expect(selectedSnapshotsJSON.contains(#""selectedFields" : ["#))
+    #expect(selectedSnapshotsJSON.contains(#""isCompleted""#))
+    #expect(selectedSnapshotsJSON.contains(#""text""#))
+    #expect(!selectedSnapshotsJSON.contains(#""createdAt""#))
+    #expect(selectedSnapshotsJSON.contains("query open"))
+    #expect(!selectedSnapshotsJSON.contains("query completed"))
+
+    let explicitRawSnapshots = try runCLI(
+      ["query", "todos", "--raw", "--select", "text,isCompleted", "--json"],
+      homeURL: homeURL
+    )
+    #expect(explicitRawSnapshots.contains(#""selectedFields" : ["#))
+    #expect(explicitRawSnapshots.contains(#""isCompleted""#))
+    #expect(explicitRawSnapshots.contains(#""text""#))
+    #expect(!explicitRawSnapshots.contains(#""createdAt""#))
+
+    let selectedHumanOutput = try runCLI(
+      ["query", "todos", "--completed", "false", "--select", "text,isCompleted"],
+      homeURL: homeURL
+    )
+    #expect(selectedHumanOutput.contains("fields=isCompleted,text"))
+
+    let badSelection = try runCLIResult(
+      ["query", "todos", "--select", "missing", "--json"],
+      homeURL: homeURL
+    )
+    #expect(badSelection.status == 64)
+    #expect(badSelection.error.contains("--select text,isCompleted,createdAt"))
+
     let humanOutput = try runCLI(["query", "todos", "--completed", "true"], homeURL: homeURL)
     #expect(humanOutput.contains("transport: not-implemented-local-cache-only"))
     #expect(humanOutput.contains("query completed"))

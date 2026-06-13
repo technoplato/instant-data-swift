@@ -163,18 +163,28 @@ struct InstantSwiftDataCLI {
 
     switch namespace {
     case "todos":
-      let query = try todoListQuery(
+      let options = try todoQueryOptions(
         arguments: arguments,
         usageCommand: "instant-swift-data query todos"
       )
       let context = try await CLIContext.bootstrap()
-      try await printTodos(
-        context: context,
-        output: output,
-        event: "query",
-        query: query,
-        caseID: "cli.query.todos"
-      )
+      if options.rawSnapshots {
+        try await printSnapshots(
+          context: context,
+          output: output,
+          event: "query",
+          query: options.query,
+          caseID: "cli.query.todos.snapshots"
+        )
+      } else {
+        try await printTodos(
+          context: context,
+          output: output,
+          event: "query",
+          query: options.query,
+          caseID: "cli.query.todos"
+        )
+      }
 
     default:
       throw CLIError(queryUsage, exitCode: 64)
@@ -1095,6 +1105,71 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func printSnapshots(
+    context: CLIContext,
+    output: OutputMode,
+    event: String,
+    query: InstantQueryPlan,
+    caseID: String
+  ) async throws {
+    let emission = try await context.runtime.queryOnce(query)
+    let pending = await context.runtime.pendingMutations()
+    let payload = QuerySnapshotsOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      transport: "not-implemented-local-cache-only",
+      queryID: query.id,
+      cacheKey: query.cacheKey,
+      selectedFields: query.selectedFields,
+      pendingMutationCount: pending.count,
+      snapshots: emission.values
+    )
+
+    switch output {
+    case .human:
+      if emission.values.isEmpty {
+        print("No snapshots.")
+      } else {
+        for snapshot in emission.values {
+          let fields = snapshot.values.keys.sorted().joined(separator: ",")
+          print("\(snapshot.namespace)/\(snapshot.id) fields=\(fields)")
+        }
+      }
+      print("transport: \(payload.transport)")
+      print("pending mutations: \(pending.count)")
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: caseID,
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          ok: true,
+          details: payload
+        )
+      )
+      for snapshot in emission.values {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: caseID,
+            side: "swift",
+            event: "snapshot",
+            appID: context.appID,
+            entityID: snapshot.id,
+            ok: true,
+            details: snapshot
+          )
+        )
+      }
+    }
+  }
+
   private static func watchTodos(
     context: CLIContext,
     output: OutputMode,
@@ -1189,7 +1264,7 @@ struct InstantSwiftDataCLI {
         schema verify --example todos --from instant.schema.ts [--json|--jsonl]
         perms generate --example todos [--to instant.perms.ts]
         perms verify --example todos --from instant.perms.ts [--json|--jsonl]
-        query todos [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--json|--jsonl]
+        query todos [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--raw] [--select field[,field]] [--json|--jsonl]
         examples todos seed [--json|--jsonl]
         examples todos add "do the dishes" [--json|--jsonl]
         examples todos list [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--json|--jsonl]
@@ -1707,6 +1782,92 @@ struct InstantSwiftDataCLI {
     )
   }
 
+  private static func todoQueryOptions(
+    arguments: [String],
+    usageCommand: String
+  ) throws -> TodoQueryOptions {
+    var arguments = arguments
+    let usage =
+      "\(usageCommand) [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--raw] [--select field[,field]]"
+    var completed: Bool?
+    var search: String?
+    var offset: Int?
+    var limit: Int?
+    var direction = InstantQuerySortDirection.ascending
+    var selectedFields: [String]?
+    var rawSnapshots = false
+
+    while let option = arguments.popFirstArgument() {
+      switch option {
+      case "--completed":
+        guard let value = arguments.popFirstArgument(), let parsed = parseBool(value) else {
+          throw CLIError("Usage: \(usageCommand) --completed true|false", exitCode: 64)
+        }
+        completed = parsed
+
+      case "--search":
+        guard let value = arguments.popFirstArgument(),
+          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+          throw CLIError("Usage: \(usageCommand) --search text", exitCode: 64)
+        }
+        search = value
+
+      case "--limit":
+        guard let value = arguments.popFirstArgument(),
+          let parsed = Int(value),
+          parsed >= 0
+        else {
+          throw CLIError("Usage: \(usageCommand) --limit n", exitCode: 64)
+        }
+        limit = parsed
+
+      case "--offset":
+        guard let value = arguments.popFirstArgument(),
+          let parsed = Int(value),
+          parsed >= 0
+        else {
+          throw CLIError("Usage: \(usageCommand) --offset n", exitCode: 64)
+        }
+        offset = parsed
+
+      case "--order":
+        guard let value = arguments.popFirstArgument(), let parsed = parseSortDirection(value) else {
+          throw CLIError("Usage: \(usageCommand) --order asc|desc", exitCode: 64)
+        }
+        direction = parsed
+
+      case "--raw", "--snapshots":
+        rawSnapshots = true
+
+      case "--select":
+        guard let value = arguments.popFirstArgument() else {
+          throw CLIError("Usage: \(usageCommand) --select field[,field]", exitCode: 64)
+        }
+        selectedFields = try parseTodoSelectedFields(value, usageCommand: usageCommand)
+        rawSnapshots = true
+
+      default:
+        throw CLIError(
+          "Unknown todo query option: \(option). Usage: \(usage)",
+          exitCode: 64
+        )
+      }
+    }
+
+    return TodoQueryOptions(
+      query: makeTodoListQuery(
+        completed: completed,
+        search: search,
+        offset: offset,
+        limit: limit,
+        direction: direction,
+        selectedFields: selectedFields
+      ),
+      rawSnapshots: rawSnapshots
+    )
+  }
+
   private static func todoWatchOptions(arguments: [String]) throws -> TodoWatchOptions {
     var arguments = arguments
     var completed: Bool?
@@ -1790,7 +1951,8 @@ struct InstantSwiftDataCLI {
     search: String?,
     offset: Int?,
     limit: Int?,
-    direction: InstantQuerySortDirection
+    direction: InstantQuerySortDirection,
+    selectedFields: [String]? = nil
   ) -> InstantQueryPlan {
     var filters: [InstantQueryFilter] = []
     var id = "examples.todos.list"
@@ -1812,6 +1974,9 @@ struct InstantSwiftDataCLI {
     if let limit {
       id += ".limit-\(limit)"
     }
+    if let selectedFields {
+      id += ".select-\(queryIDFragment(selectedFields.joined(separator: ",")))"
+    }
 
     return InstantQueryPlan(
       id: id,
@@ -1819,8 +1984,27 @@ struct InstantSwiftDataCLI {
       filters: filters,
       order: InstantQueryOrder("createdAt", direction),
       offset: offset,
-      limit: limit
+      limit: limit,
+      selectedFields: selectedFields
     )
+  }
+
+  private static func parseTodoSelectedFields(
+    _ value: String,
+    usageCommand: String
+  ) throws -> [String] {
+    let fields = value
+      .split(separator: ",")
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty }
+    let declaredFields = Set(TodoExample.attributes.map(\.name))
+    guard !fields.isEmpty, fields.allSatisfy({ declaredFields.contains($0) }) else {
+      throw CLIError(
+        "Usage: \(usageCommand) --select text,isCompleted,createdAt",
+        exitCode: 64
+      )
+    }
+    return Array(Set(fields)).sorted()
   }
 
   private static func queryIDFragment(_ value: String) -> String {
@@ -1949,7 +2133,7 @@ struct InstantSwiftDataCLI {
   private static var queryUsage: String {
     """
     Usage: instant-swift-data query <namespace>
-      instant-swift-data query todos [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--json|--jsonl]
+      instant-swift-data query todos [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--raw] [--select field[,field]] [--json|--jsonl]
     """
   }
 
@@ -2147,6 +2331,23 @@ private struct TodosOutput: Codable, Sendable {
   var cacheKey: String
   var pendingMutationCount: Int
   var todos: [TodoRecord]
+}
+
+private struct QuerySnapshotsOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var transport: String
+  var queryID: String
+  var cacheKey: String
+  var selectedFields: [String]?
+  var pendingMutationCount: Int
+  var snapshots: [InstantEntitySnapshot]
+}
+
+private struct TodoQueryOptions: Sendable {
+  var query: InstantQueryPlan
+  var rawSnapshots: Bool
 }
 
 private struct TodoWatchOptions: Sendable {

@@ -19,6 +19,7 @@ struct TypedAPITests {
     expectNoDifference(query.plan.order, InstantQueryOrder("createdAt", .descending))
     expectNoDifference(query.plan.offset, 5)
     expectNoDifference(query.plan.limit, 10)
+    expectNoDifference(query.plan.selectedFields, nil)
 
     let initializedWithLimit = InstantEntityQuery<TypedTodo>(offset: 1, limit: 2)
     expectNoDifference(initializedWithLimit.plan.offset, 1)
