@@ -17,7 +17,7 @@ struct InstantSwiftDataValidationRunner {
       exit(1)
     } catch {
       emit(
-        caseID: "validation.local.todos",
+        caseID: requestedCaseID(),
         event: "failed",
         ok: false,
         appID: "local-validation",
@@ -27,19 +27,38 @@ struct InstantSwiftDataValidationRunner {
     }
   }
 
+  private static func requestedCaseID() -> String {
+    switch Array(CommandLine.arguments.dropFirst()) {
+    case ["--local-integrations"]:
+      "validation.local.integrations"
+    case [], ["--local-todos"]:
+      "validation.local.todos"
+    default:
+      "validation.arguments"
+    }
+  }
+
   private static func run() async throws {
     let arguments = Array(CommandLine.arguments.dropFirst())
-    guard arguments.isEmpty || arguments == ["--local-todos"] else {
+    guard arguments.isEmpty || arguments == ["--local-todos"] || arguments == ["--local-integrations"]
+    else {
       throw ValidationFailure(
         caseID: "validation.arguments",
         appID: "local-validation",
-        message: "Usage: instant-swift-data-validation-runner [--local-todos]"
+        message: "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations]"
       )
     }
 
-    let run = try await InstantSwiftDataTestHarness.runLocalTodoValidation()
-    for row in run.result.evidence {
-      try writeJSONLine(row)
+    if arguments == ["--local-integrations"] {
+      let result = try await InstantSwiftDataLocalIntegrationValidation.run()
+      for row in result.evidence {
+        try writeJSONLine(row)
+      }
+    } else {
+      let run = try await InstantSwiftDataTestHarness.runLocalTodoValidation()
+      for row in run.result.evidence {
+        try writeJSONLine(row)
+      }
     }
   }
 

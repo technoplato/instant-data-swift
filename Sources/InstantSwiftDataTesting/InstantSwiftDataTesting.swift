@@ -50,6 +50,19 @@ public struct InstantLocalTodoValidationRun: Sendable {
   }
 }
 
+public struct InstantLocalIntegrationValidationRun: Sendable {
+  public var result: LocalIntegrationValidationResult
+  public var summary: InstantValidationEvidenceSummary
+
+  public init(
+    result: LocalIntegrationValidationResult,
+    summary: InstantValidationEvidenceSummary
+  ) {
+    self.result = result
+    self.summary = summary
+  }
+}
+
 public enum InstantSwiftDataTestHarness {
   public static func summarize<Details>(
     _ rows: [ValidationEvidenceRow<Details>]
@@ -91,6 +104,26 @@ public enum InstantSwiftDataTestHarness {
       makeID: makeID
     )
     return InstantLocalTodoValidationRun(
+      result: result,
+      summary: try requireAllEvidenceOK(result.evidence)
+    )
+  }
+
+  public static func runLocalIntegrationValidation(
+    appID: String = "local-validation",
+    cacheURL: URL? = nil,
+    timestamp: @escaping @Sendable () -> InstantTimestamp = {
+      InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
+    },
+    makeID: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() }
+  ) async throws -> InstantLocalIntegrationValidationRun {
+    let result = try await InstantSwiftDataLocalIntegrationValidation.run(
+      appID: appID,
+      cacheURL: cacheURL,
+      timestamp: timestamp,
+      makeID: makeID
+    )
+    return InstantLocalIntegrationValidationRun(
       result: result,
       summary: try requireAllEvidenceOK(result.evidence)
     )

@@ -496,6 +496,9 @@ Agent-oriented output modes are required:
 - run admin transact.
 - seed examples.
 - reset examples.
+- run local Swift validation evidence, including
+  `instant-swift-data validation local-todos --jsonl` and
+  `instant-swift-data validation local-integrations --jsonl`.
 - run Swift/TypeScript parity suites.
 - run benchmarks.
 - inspect local SQLite cache, including namespace summaries, attributes, and

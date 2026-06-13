@@ -337,8 +337,11 @@ subscriptions, and Swift/TypeScript boundary proof remain future work.
 Current local progress: schema and permissions generation can emit structured
 local evidence with `instant-swift-data schema generate --example todos --to
 instant.schema.ts --json` and `instant-swift-data perms generate --example todos
---to instant.perms.ts --jsonl`. Real remote push/pull remains future transport
-work.
+--to instant.perms.ts --jsonl`. Local validation can emit JSONL evidence for
+todos/offline behavior with `instant-swift-data validation local-todos --jsonl`
+and for auth, rooms, files, streams, and shares with
+`instant-swift-data validation local-integrations --jsonl`. Real remote
+push/pull remains future transport work.
 
 Current local progress: the CLI exposes non-captive local admin helpers:
 `instant-swift-data admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id]`

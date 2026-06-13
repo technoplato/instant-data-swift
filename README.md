@@ -211,13 +211,18 @@ Run the local Swift validation evidence runner:
 
 ```bash
 swift run instant-swift-data validation local-todos --jsonl
+swift run instant-swift-data validation local-integrations --jsonl
 swift run instant-swift-data-validation-runner --local-todos
+swift run instant-swift-data-validation-runner --local-integrations
 node validation/ts-runner/src/main.ts --fixtures
 validation/run-e2e.sh
 ```
 
 `validation local-todos` emits local JSONL evidence for seed/update/cache/reset,
 closed-connection offline write, offline relaunch restore, and reconnect flush.
+`validation local-integrations` emits evidence for local auth, room
+presence/topic messages, file upload/read, stream chunks, and share
+create/accept/revoke.
 
 Run local core benchmarks:
 

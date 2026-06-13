@@ -2915,7 +2915,83 @@ extension InstantStoreTests {
 
     let malformed = try runCLIResult(["validation", "remote", "--json"], homeURL: homeURL)
     #expect(malformed.status == 64)
-    #expect(malformed.error.contains("validation <local-todos>"))
+    #expect(malformed.error.contains("validation <local-todos|local-integrations>"))
+  }
+
+  @Test
+  func cliValidationLocalIntegrationsEmitsEvidence() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let jsonOutput = try JSONDecoder().decode(
+      CLILocalIntegrationValidationOutput.self,
+      from: Data(
+        try runCLI(["validation", "local-integrations", "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(jsonOutput.appID, "cli-cache-test")
+    expectNoDifference(jsonOutput.event, "local-integrations")
+    expectNoDifference(jsonOutput.ok, true)
+    expectNoDifference(jsonOutput.evidenceCount, 9)
+    expectNoDifference(
+      jsonOutput.events,
+      [
+        "auth", "room-presence", "room-topic", "file", "stream", "share-create",
+        "share-accept", "share-revoke", "relaunch",
+      ]
+    )
+    expectNoDifference(jsonOutput.authUserID, "user-1")
+    expectNoDifference(jsonOutput.roomMemberCount, 1)
+    expectNoDifference(jsonOutput.topicMessageCount, 1)
+    expectNoDifference(jsonOutput.fileCount, 1)
+    expectNoDifference(jsonOutput.streamChunkCount, 1)
+    expectNoDifference(jsonOutput.activeShareCount, 0)
+    expectNoDifference(jsonOutput.revokedShareCount, 1)
+
+    let jsonlOutput = try runCLI(["validation", "local-integrations", "--jsonl"], homeURL: homeURL)
+    let lines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(lines.count, 9)
+    let firstEvidence = try JSONDecoder().decode(
+      CLILocalIntegrationValidationEvidence.self,
+      from: Data(try #require(lines.first).utf8)
+    )
+    expectNoDifference(firstEvidence.caseID, "validation.local.integrations")
+    expectNoDifference(firstEvidence.appID, "cli-cache-test")
+    expectNoDifference(firstEvidence.event, "auth")
+    expectNoDifference(firstEvidence.details.authUserID, "user-1")
+
+    let fileEvidence = try JSONDecoder().decode(
+      CLILocalIntegrationValidationEvidence.self,
+      from: Data(lines[3].utf8)
+    )
+    expectNoDifference(fileEvidence.event, "file")
+    expectNoDifference(fileEvidence.details.fileIDs.count, 1)
+    expectNoDifference(fileEvidence.details.fileByteCounts, [23])
+    expectNoDifference(fileEvidence.details.fileContentDigests.count, 1)
+
+    let revokeEvidence = try JSONDecoder().decode(
+      CLILocalIntegrationValidationEvidence.self,
+      from: Data(lines[7].utf8)
+    )
+    expectNoDifference(revokeEvidence.event, "share-revoke")
+    expectNoDifference(revokeEvidence.details.activeShareIDs, [])
+    expectNoDifference(revokeEvidence.details.revokedShareIDs.count, 1)
+    expectNoDifference(revokeEvidence.details.shareMemberUserIDs, ["user-1", "user-2"])
+
+    let relaunchEvidence = try JSONDecoder().decode(
+      CLILocalIntegrationValidationEvidence.self,
+      from: Data(lines[8].utf8)
+    )
+    expectNoDifference(relaunchEvidence.event, "relaunch")
+    expectNoDifference(relaunchEvidence.details.fileContentDigests, fileEvidence.details.fileContentDigests)
+
+    let humanOutput = try runCLI(["validation", "local-integrations"], homeURL: homeURL)
+    #expect(humanOutput.contains("validation: ok"))
+    #expect(humanOutput.contains("case: validation.local.integrations"))
+    #expect(humanOutput.contains("evidence rows: 9"))
+    #expect(humanOutput.contains("revoked shares: 1"))
   }
 
   @Test
@@ -3932,6 +4008,45 @@ private struct CLILocalTodoValidationDetails: Decodable {
   var pendingMutationIDs: [String]
   var confirmedMutationIDs: [String]
   var connectionState: String
+}
+
+private struct CLILocalIntegrationValidationOutput: Decodable {
+  var appID: String
+  var event: String
+  var ok: Bool
+  var evidenceCount: Int
+  var events: [String]
+  var authUserID: String?
+  var roomMemberCount: Int
+  var topicMessageCount: Int
+  var fileCount: Int
+  var streamChunkCount: Int
+  var activeShareCount: Int
+  var revokedShareCount: Int
+}
+
+private struct CLILocalIntegrationValidationEvidence: Decodable {
+  var caseID: String
+  var appID: String
+  var event: String
+  var details: CLILocalIntegrationValidationDetails
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case appID
+    case event
+    case details
+  }
+}
+
+private struct CLILocalIntegrationValidationDetails: Decodable {
+  var authUserID: String?
+  var fileIDs: [String]
+  var fileByteCounts: [Int64]
+  var fileContentDigests: [String]
+  var activeShareIDs: [String]
+  var revokedShareIDs: [String]
+  var shareMemberUserIDs: [String]
 }
 
 private struct CLIBenchmarkOutput: Decodable {

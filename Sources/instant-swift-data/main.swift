@@ -166,7 +166,31 @@ struct InstantSwiftDataCLI {
         try printLocalTodoValidation(result: result, output: output)
       } catch {
         if output == .jsonl {
-          try writeJSONLine(validationFailureRow(appID: appID, error: error))
+          try writeJSONLine(
+            validationFailureRow(
+              caseID: "validation.local.todos",
+              appID: appID,
+              error: error
+            )
+          )
+        }
+        throw error
+      }
+
+    case "local-integrations", "integrations":
+      let appID = validationAppID()
+      do {
+        let result = try await InstantSwiftDataLocalIntegrationValidation.run(appID: appID)
+        try printLocalIntegrationValidation(result: result, output: output)
+      } catch {
+        if output == .jsonl {
+          try writeJSONLine(
+            validationFailureRow(
+              caseID: "validation.local.integrations",
+              appID: appID,
+              error: error
+            )
+          )
         }
         throw error
       }
@@ -3349,6 +3373,7 @@ struct InstantSwiftDataCLI {
         sync inspect [--json|--jsonl]
         sync mark-processed <tx-id> [--json|--jsonl]
         validation local-todos [--json|--jsonl]
+        validation local-integrations [--json|--jsonl]
         benchmark [--suite local-todos] [--iterations n] [--app-id id] [--json|--jsonl]
 
       Environment:
@@ -3733,6 +3758,50 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func printLocalIntegrationValidation(
+    result: LocalIntegrationValidationResult,
+    output: OutputMode
+  ) throws {
+    let finalDetails = result.evidence.last?.details
+    let summary = LocalIntegrationValidationOutput(
+      appID: result.appID,
+      cachePath: result.cacheURL.path,
+      event: "local-integrations",
+      transport: "not-implemented-local-cache-only",
+      ok: result.evidence.allSatisfy { $0.ok },
+      evidenceCount: result.evidence.count,
+      events: result.evidence.map(\.event),
+      authUserID: finalDetails?.authUserID,
+      roomMemberCount: finalDetails?.roomMemberIDs.count ?? 0,
+      topicMessageCount: finalDetails?.topicMessageIDs.count ?? 0,
+      fileCount: finalDetails?.fileIDs.count ?? 0,
+      streamChunkCount: finalDetails?.streamChunkIDs.count ?? 0,
+      activeShareCount: finalDetails?.activeShareIDs.count ?? 0,
+      revokedShareCount: result.evidence.flatMap(\.details.revokedShareIDs).count
+    )
+
+    switch output {
+    case .human:
+      print("validation: \(summary.ok ? "ok" : "failed")")
+      print("case: validation.local.integrations")
+      print("events: \(summary.events.joined(separator: ", "))")
+      print("evidence rows: \(summary.evidenceCount)")
+      print("files: \(summary.fileCount)")
+      print("stream chunks: \(summary.streamChunkCount)")
+      print("active shares: \(summary.activeShareCount)")
+      print("revoked shares: \(summary.revokedShareCount)")
+      print("cache: \(summary.cachePath)")
+
+    case .json:
+      try writeJSON(summary)
+
+    case .jsonl:
+      for row in result.evidence {
+        try writeJSONLine(row)
+      }
+    }
+  }
+
   private static func printBenchmark(
     result: InstantLocalTodoBenchmarkResult,
     output: OutputMode
@@ -3772,11 +3841,12 @@ struct InstantSwiftDataCLI {
   }
 
   private static func validationFailureRow(
+    caseID: String,
     appID: String,
     error: any Error
   ) -> ValidationEvidenceRow<[String: String]> {
     ValidationEvidenceRow(
-      caseID: "validation.local.todos",
+      caseID: caseID,
       side: "swift",
       event: "failed",
       appID: appID,
@@ -4731,8 +4801,9 @@ struct InstantSwiftDataCLI {
 
   private static var validationUsage: String {
     """
-    Usage: instant-swift-data validation <local-todos>
+    Usage: instant-swift-data validation <local-todos|local-integrations>
       instant-swift-data validation local-todos [--json|--jsonl]
+      instant-swift-data validation local-integrations [--json|--jsonl]
     """
   }
 
@@ -5801,6 +5872,23 @@ private struct LocalTodoValidationOutput: Codable, Sendable {
   var events: [String]
   var finalTodoCount: Int
   var pendingMutationCount: Int
+}
+
+private struct LocalIntegrationValidationOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var transport: String
+  var ok: Bool
+  var evidenceCount: Int
+  var events: [String]
+  var authUserID: String?
+  var roomMemberCount: Int
+  var topicMessageCount: Int
+  var fileCount: Int
+  var streamChunkCount: Int
+  var activeShareCount: Int
+  var revokedShareCount: Int
 }
 
 private struct ScaffoldOutput: Codable, Sendable {

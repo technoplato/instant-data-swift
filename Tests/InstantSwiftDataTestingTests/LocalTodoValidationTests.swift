@@ -122,6 +122,59 @@ struct LocalTodoValidationTests {
     expectNoDifference(result.evidence.last?.details.pendingMutationIDs, [])
     expectNoDifference(result.evidence.last?.details.confirmedMutationIDs.count, 4)
   }
+
+  @Test
+  func localIntegrationValidationProducesEvidenceAndPersistsLocalSurfaces() async throws {
+    let cacheURL = temporaryCacheURL()
+
+    let run = try await InstantSwiftDataTestHarness.runLocalIntegrationValidation(
+      appID: "validation-integrations-test",
+      cacheURL: cacheURL
+    )
+    let result = run.result
+
+    expectNoDifference(result.appID, "validation-integrations-test")
+    expectNoDifference(result.cacheURL, cacheURL)
+    expectNoDifference(run.summary.caseID, "validation.local.integrations")
+    expectNoDifference(run.summary.rowCount, 9)
+    expectNoDifference(run.summary.ok, true)
+    expectNoDifference(
+      run.summary.events,
+      [
+        "auth", "room-presence", "room-topic", "file", "stream", "share-create",
+        "share-accept", "share-revoke", "relaunch",
+      ]
+    )
+    expectNoDifference(result.evidence.map(\.event), run.summary.events)
+    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 9))
+    expectNoDifference(
+      result.evidence.map(\.caseID),
+      Array(repeating: "validation.local.integrations", count: result.evidence.count)
+    )
+
+    let fileEvidence = result.evidence[3].details
+    expectNoDifference(fileEvidence.fileIDs.count, 1)
+    expectNoDifference(fileEvidence.fileByteCounts, [23])
+    expectNoDifference(fileEvidence.fileContentDigests.count, 1)
+
+    let acceptEvidence = result.evidence[6].details
+    expectNoDifference(acceptEvidence.activeShareIDs.count, 1)
+    expectNoDifference(acceptEvidence.shareMemberUserIDs, ["user-1", "user-2"])
+
+    let revokeEvidence = result.evidence[7].details
+    expectNoDifference(revokeEvidence.activeShareIDs, [])
+    expectNoDifference(revokeEvidence.revokedShareIDs.count, 1)
+    expectNoDifference(revokeEvidence.shareMemberUserIDs, ["user-1", "user-2"])
+
+    let relaunchEvidence = try #require(result.evidence.last?.details)
+    expectNoDifference(relaunchEvidence.authUserID, "user-1")
+    expectNoDifference(relaunchEvidence.roomMemberIDs, ["user-1"])
+    expectNoDifference(relaunchEvidence.topicMessageIDs.count, 1)
+    expectNoDifference(relaunchEvidence.fileIDs.count, 1)
+    expectNoDifference(relaunchEvidence.fileContentDigests, fileEvidence.fileContentDigests)
+    expectNoDifference(relaunchEvidence.streamChunkIDs.count, 1)
+    expectNoDifference(relaunchEvidence.activeShareIDs, [])
+  }
 }
 
 private func temporaryCacheURL() -> URL {
