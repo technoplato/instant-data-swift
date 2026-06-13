@@ -158,6 +158,7 @@ Persist local file metadata and copied file contents after signing in:
 swift run instant-swift-data auth token local-refresh --user-id user-1 --json
 printf "hello instant files\n" > /tmp/instant-demo-file.txt
 swift run instant-swift-data files upload /tmp/instant-demo-file.txt --content-type text/plain --json
+swift run instant-swift-data files upload-progress /tmp/instant-demo-file.txt --content-type text/plain --jsonl
 swift run instant-swift-data files list --json
 swift run instant-swift-data files watch --events 1 --jsonl
 FILE_ID="$(swift run instant-swift-data files list --json | jq -r '.files[0].id')"

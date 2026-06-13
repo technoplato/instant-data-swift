@@ -132,6 +132,25 @@ private actor InstantAuthSessionObservers {
   }
 }
 
+private final class InstantFileUploadProgressCancellation: @unchecked Sendable {
+  private let lock = NSLock()
+  private var isCancelled = false
+
+  func cancel() {
+    lock.lock()
+    defer { lock.unlock() }
+    isCancelled = true
+  }
+
+  func check() throws {
+    lock.lock()
+    defer { lock.unlock() }
+    if isCancelled {
+      throw CancellationError()
+    }
+  }
+}
+
 public final class InstantRuntime: Sendable {
   public static let selectedAppIDMetadataKey = "cli.selected_app_id"
 
@@ -1141,24 +1160,101 @@ public final class InstantRuntime: Sendable {
     name rawName: String? = nil,
     contentType rawContentType: String? = nil
   ) async throws -> InstantStoredFile {
-    let name = try resolvedFileName(rawName, sourceURL: sourceURL, operation: "upload file")
-    let contentType = rawContentType?
-      .trimmingCharacters(in: .whitespacesAndNewlines)
-      .nilIfEmpty
-    let userID = try await resolvedFileUserID(operation: "upload file")
-    let now = configuration.now()
-    let file = InstantStoredFile(
-      id: configuration.makeID(),
-      appID: configuration.appID,
-      name: name,
-      contentType: contentType,
-      byteCount: 0,
-      localPath: "",
-      ownerUserID: userID,
-      createdAt: now,
-      updatedAt: now
+    let file = try await preparedStoredFile(
+      from: sourceURL,
+      name: rawName,
+      contentType: rawContentType,
+      operation: "upload file"
     )
+    return try await savePreparedStoredFile(file, contentsOf: sourceURL)
+  }
 
+  public func uploadFileProgress(
+    from sourceURL: URL,
+    name rawName: String? = nil,
+    contentType rawContentType: String? = nil
+  ) async throws -> AsyncThrowingStream<InstantFileUploadProgress, Error> {
+    let file = try await preparedStoredFile(
+      from: sourceURL,
+      name: rawName,
+      contentType: rawContentType,
+      operation: "upload file"
+    )
+    let totalByteCount = try await persistence.regularFileByteCount(
+      at: sourceURL,
+      operation: "upload file"
+    )
+    let cancellation = InstantFileUploadProgressCancellation()
+
+    return AsyncThrowingStream(bufferingPolicy: .bufferingOldest(2)) { continuation in
+      Task {
+        let startedAt = self.configuration.now()
+        continuation.yield(
+          InstantFileUploadProgress(
+            operationID: file.id,
+            appID: file.appID,
+            fileID: file.id,
+            fileName: file.name,
+            contentType: file.contentType,
+            state: .loading,
+            completedByteCount: 0,
+            totalByteCount: totalByteCount,
+            progress: 0,
+            updatedAt: startedAt
+          )
+        )
+        do {
+          try await Task.sleep(nanoseconds: 5_000_000)
+          try cancellation.check()
+          let savedFile = try await self.savePreparedStoredFile(file, contentsOf: sourceURL)
+          continuation.yield(
+            InstantFileUploadProgress(
+              operationID: file.id,
+              appID: file.appID,
+              fileID: file.id,
+              fileName: file.name,
+              contentType: file.contentType,
+              state: .success,
+              completedByteCount: savedFile.byteCount,
+              totalByteCount: max(totalByteCount, savedFile.byteCount),
+              progress: 1,
+              file: savedFile,
+              updatedAt: self.configuration.now()
+            )
+          )
+          continuation.finish()
+        } catch is CancellationError {
+          return
+        } catch {
+          continuation.yield(
+            InstantFileUploadProgress(
+              operationID: file.id,
+              appID: file.appID,
+              fileID: file.id,
+              fileName: file.name,
+              contentType: file.contentType,
+              state: .error,
+              completedByteCount: 0,
+              totalByteCount: totalByteCount,
+              progress: 0,
+              errorMessage: error.localizedDescription,
+              updatedAt: self.configuration.now()
+            )
+          )
+          continuation.finish(throwing: error)
+        }
+      }
+      continuation.onTermination = { @Sendable _ in
+        cancellation.cancel()
+      }
+    }
+  }
+
+  private func savePreparedStoredFile(
+    _ file: InstantStoredFile,
+    contentsOf sourceURL: URL
+  ) async throws -> InstantStoredFile {
+    try Task.checkCancellation()
     await operationGate.enter()
     do {
       let savedFile = try await persistence.saveStoredFile(file, contentsOf: sourceURL)
@@ -1173,6 +1269,31 @@ public final class InstantRuntime: Sendable {
       await operationGate.leave()
       throw error
     }
+  }
+
+  private func preparedStoredFile(
+    from sourceURL: URL,
+    name rawName: String?,
+    contentType rawContentType: String?,
+    operation: String
+  ) async throws -> InstantStoredFile {
+    let name = try resolvedFileName(rawName, sourceURL: sourceURL, operation: operation)
+    let contentType = rawContentType?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .nilIfEmpty
+    let userID = try await resolvedFileUserID(operation: operation)
+    let now = configuration.now()
+    return InstantStoredFile(
+      id: configuration.makeID(),
+      appID: configuration.appID,
+      name: name,
+      contentType: contentType,
+      byteCount: 0,
+      localPath: "",
+      ownerUserID: userID,
+      createdAt: now,
+      updatedAt: now
+    )
   }
 
   public func storedFiles() async throws -> [InstantStoredFile] {

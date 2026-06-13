@@ -2794,6 +2794,74 @@ struct InstantStoreTests {
   }
 
   @Test
+  func fileUploadProgressEmitsLoadingAndSuccessAndPersistsFile() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let sourceURL = cacheURL.deletingLastPathComponent().appendingPathComponent("progress.txt")
+    let contents = Data("progress bytes\n".utf8)
+    try contents.write(to: sourceURL)
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        now: { timestamp },
+        makeID: { "file-progress-1" }
+      )
+    )
+    _ = try await runtime.signInWithRefreshToken("refresh-token", userID: "user-1")
+
+    let stream = try await runtime.uploadFileProgress(
+      from: sourceURL,
+      name: " progress.txt ",
+      contentType: " text/plain "
+    )
+    var events: [InstantFileUploadProgress] = []
+    for try await event in stream {
+      events.append(event)
+    }
+
+    expectNoDifference(events.map(\.state), [.loading, .success])
+    expectNoDifference(events.map(\.completedByteCount), [0, Int64(contents.count)])
+    expectNoDifference(events.map(\.totalByteCount), [Int64(contents.count), Int64(contents.count)])
+    expectNoDifference(events.map(\.progress), [0, 1])
+    let success = try #require(events.last)
+    let uploaded = try #require(success.file)
+    expectNoDifference(uploaded.id, "file-progress-1")
+    expectNoDifference(uploaded.name, "progress.txt")
+    expectNoDifference(uploaded.contentType, "text/plain")
+    expectNoDifference(uploaded.ownerUserID, "user-1")
+    expectNoDifference(FileManager.default.fileExists(atPath: uploaded.localPath), true)
+    let files = try await runtime.storedFiles()
+    expectNoDifference(files, [uploaded])
+  }
+
+  @Test
+  func fileUploadProgressCancellationBeforeSaveDoesNotPersistFile() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let sourceURL = cacheURL.deletingLastPathComponent().appendingPathComponent("cancel.txt")
+    try Data("cancel before save\n".utf8).write(to: sourceURL)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        makeID: { "file-cancelled-1" }
+      )
+    )
+    _ = try await runtime.signInWithRefreshToken("refresh-token", userID: "user-1")
+
+    let firstEvent = try await Task {
+      let stream = try await runtime.uploadFileProgress(from: sourceURL)
+      var iterator = stream.makeAsyncIterator()
+      return try #require(try await iterator.next())
+    }.value
+    expectNoDifference(firstEvent.state, .loading)
+
+    try await Task.sleep(nanoseconds: 50_000_000)
+    let files = try await runtime.storedFiles()
+    expectNoDifference(files, [])
+  }
+
+  @Test
   func fileUploadRequiresAuth() async throws {
     let cacheURL = try temporaryCacheURL()
     let sourceURL = cacheURL.deletingLastPathComponent().appendingPathComponent("source.txt")
@@ -2805,6 +2873,16 @@ struct InstantStoreTests {
     do {
       _ = try await runtime.uploadFile(from: sourceURL)
       #expect(Bool(false), "Expected anonymous file upload to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .authFailed)
+      expectNoDifference(error.operation, "upload file")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      _ = try await runtime.uploadFileProgress(from: sourceURL)
+      #expect(Bool(false), "Expected anonymous file upload progress to fail.")
     } catch let error as InstantError {
       expectNoDifference(error.code, .authFailed)
       expectNoDifference(error.operation, "upload file")

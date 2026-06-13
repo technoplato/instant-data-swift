@@ -526,8 +526,10 @@ Agent-oriented output modes are required:
   must stay non-captive until transport-backed subscriptions arrive.
 - persist local file metadata and copied content after sign-in with commands
   such as `instant-swift-data files upload ./photo.jpg --content-type image/jpeg`
-  and `instant-swift-data files list --json`; prove local metadata observation
-  with `instant-swift-data files watch --events 1 --jsonl`.
+  and `instant-swift-data files list --json`; prove local upload progress with
+  `instant-swift-data files upload-progress ./photo.jpg --content-type image/jpeg --jsonl`
+  and local metadata observation with
+  `instant-swift-data files watch --events 1 --jsonl`.
 - persist ordered local stream chunks after sign-in with commands such as
   `instant-swift-data streams append chat/lobby --value '{"text":"hello"}'`
   and `instant-swift-data streams read chat/lobby --json`; prove local chunk

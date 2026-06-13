@@ -296,9 +296,12 @@ reconnect rejoin, and Swift/TypeScript boundary proof remain future work.
 
 Current local progress: `InstantRuntime` can copy a local file into the CLI
 cache directory, persist `InstantStoredFile` metadata in SQLite scoped by app id,
-list local files, delete the stored content and metadata, and observe local file
-metadata snapshots with termination cleanup. The CLI exposes
-file upload/list/watch/delete command families, including
+list local files, delete the stored content and metadata, emit finite local
+upload progress states, and observe local file metadata snapshots with
+termination cleanup. The CLI exposes file upload/upload-progress/list/watch/delete
+command families, including
+`instant-swift-data files upload-progress ./photo.jpg --content-type image/jpeg --jsonl`
+and
 `instant-swift-data files watch --events 1 --jsonl`, for durable terminal proof. Real
 Instant `$files` sync, progress reporting, remote delete, and permissions remain
 future work.

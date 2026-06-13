@@ -2430,6 +2430,77 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliFilesUploadProgressEmitsFiniteEvidence() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+    let sourceURL = homeURL.appendingPathComponent("progress.txt")
+    let contents = Data("progress from cli\n".utf8)
+    try contents.write(to: sourceURL)
+
+    _ = try runCLI(
+      ["auth", "token", "refresh-token", "--user-id", "user-1", "--json"],
+      homeURL: homeURL
+    )
+
+    let summary = try JSONDecoder().decode(
+      CLIFileUploadProgressSummaryOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "files", "upload-progress", sourceURL.path,
+            "--name", "progress-json.txt",
+            "--content-type", "text/plain",
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(summary.event, "upload-progress")
+    expectNoDifference(summary.transport, "not-implemented-local-cache-only")
+    expectNoDifference(summary.emittedEventCount, 2)
+    expectNoDifference(summary.finalState, .success)
+    expectNoDifference(summary.events.map(\.state), [.loading, .success])
+    expectNoDifference(summary.events.map(\.completedByteCount), [0, Int64(contents.count)])
+    let uploaded = try #require(summary.events.last?.file)
+    expectNoDifference(uploaded.name, "progress-json.txt")
+    expectNoDifference(uploaded.contentType, "text/plain")
+    expectNoDifference(FileManager.default.fileExists(atPath: uploaded.localPath), true)
+
+    let jsonlOutput = try runCLI(
+      [
+        "files", "upload-progress", sourceURL.path,
+        "--name", "progress-jsonl.txt",
+        "--content-type", "text/plain",
+        "--jsonl",
+      ],
+      homeURL: homeURL
+    )
+    let lines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(lines.count, 2)
+    let evidence = try lines.map {
+      try JSONDecoder().decode(CLIFileUploadProgressEvidence.self, from: Data($0.utf8))
+    }
+    expectNoDifference(evidence.map(\.caseID), [
+      "cli.files.upload-progress",
+      "cli.files.upload-progress",
+    ])
+    expectNoDifference(evidence.map(\.event), ["loading", "success"])
+    expectNoDifference(evidence.map(\.details.state), [.loading, .success])
+    expectNoDifference(evidence.last?.details.file?.name, "progress-jsonl.txt")
+
+    _ = try runCLI(["auth", "sign-out", "--json"], homeURL: homeURL)
+    let signedOutProgress = try runCLIResult(
+      ["files", "upload-progress", sourceURL.path, "--json"],
+      homeURL: homeURL
+    )
+    #expect(signedOutProgress.status == 65)
+    #expect(signedOutProgress.error.contains("File operations require a signed-in user"))
+  }
+
+  @Test
   func cliStreamsAppendAndReadPersistAcrossLaunches() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -3639,6 +3710,32 @@ private struct CLIFilesEvidence: Decodable {
   var caseID: String
   var event: String
   var details: CLIFilesOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
+}
+
+private struct CLIFileUploadProgressSummaryOutput: Decodable {
+  var event: String
+  var transport: String
+  var emittedEventCount: Int
+  var finalState: InstantStorageOperationState
+  var events: [CLIFileUploadProgressOutput]
+}
+
+private struct CLIFileUploadProgressOutput: Decodable {
+  var state: InstantStorageOperationState
+  var completedByteCount: Int64
+  var file: InstantStoredFile?
+}
+
+private struct CLIFileUploadProgressEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLIFileUploadProgressOutput
 
   enum CodingKeys: String, CodingKey {
     case caseID = "case"

@@ -579,21 +579,7 @@ public actor SQLitePersistenceStore {
     _ file: InstantStoredFile,
     contentsOf sourceURL: URL
   ) throws -> InstantStoredFile {
-    let sourceValues: URLResourceValues
-    do {
-      sourceValues = try sourceURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-    } catch {
-      throw persistenceError(
-        operation: "upload file",
-        message: "Could not read source path '\(sourceURL.path)': \(error.localizedDescription)"
-      )
-    }
-    guard sourceValues.isRegularFile == true else {
-      throw persistenceError(
-        operation: "upload file",
-        message: "Source path '\(sourceURL.path)' is not a regular file."
-      )
-    }
+    let sourceValues = try regularFileResourceValues(at: sourceURL, operation: "upload file")
 
     let directory = localFilesRootURL
       .appendingPathComponent(sanitizedFileComponent(file.appID), isDirectory: true)
@@ -637,6 +623,11 @@ public actor SQLitePersistenceStore {
       throw error
     }
     return savedFile
+  }
+
+  public func regularFileByteCount(at sourceURL: URL, operation: String) throws -> Int64 {
+    let sourceValues = try regularFileResourceValues(at: sourceURL, operation: operation)
+    return Int64(sourceValues.fileSize ?? 0)
   }
 
   public func loadStoredFiles(appID: String) throws -> [InstantStoredFile] {
@@ -1397,6 +1388,28 @@ public actor SQLitePersistenceStore {
     }
     let string = String(sanitized).trimmingCharacters(in: .whitespacesAndNewlines)
     return string.isEmpty || string == "." || string == ".." ? "file" : string
+  }
+
+  private func regularFileResourceValues(
+    at sourceURL: URL,
+    operation: String
+  ) throws -> URLResourceValues {
+    let sourceValues: URLResourceValues
+    do {
+      sourceValues = try sourceURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+    } catch {
+      throw persistenceError(
+        operation: operation,
+        message: "Could not read source path '\(sourceURL.path)': \(error.localizedDescription)"
+      )
+    }
+    guard sourceValues.isRegularFile == true else {
+      throw persistenceError(
+        operation: operation,
+        message: "Source path '\(sourceURL.path)' is not a regular file."
+      )
+    }
+    return sourceValues
   }
 
   private static let storeRevisionKey = "store_revision"

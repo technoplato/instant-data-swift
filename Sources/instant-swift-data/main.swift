@@ -1317,6 +1317,14 @@ struct InstantSwiftDataCLI {
         output: output
       )
 
+    case "upload-progress", "progress":
+      let options = try FileUploadOptions.parse(arguments: arguments)
+      try await printFileUploadProgress(
+        context: context,
+        options: options,
+        output: output
+      )
+
     case "list", "ls":
       guard arguments.isEmpty else {
         throw CLIError("Usage: instant-swift-data files list [--json|--jsonl]", exitCode: 64)
@@ -2395,6 +2403,91 @@ struct InstantSwiftDataCLI {
           )
         )
       }
+    }
+  }
+
+  private static func printFileUploadProgress(
+    context: CLIContext,
+    options: FileUploadOptions,
+    output: OutputMode
+  ) async throws {
+    let stream = try await context.runtime.uploadFileProgress(
+      from: options.sourceURL,
+      name: options.name,
+      contentType: options.contentType
+    )
+    var events: [FileUploadProgressOutput] = []
+    var index = 0
+
+    for try await progress in stream {
+      let payload = FileUploadProgressOutput(
+        appID: context.appID,
+        cachePath: context.cacheURL.path,
+        event: "upload-progress",
+        transport: "not-implemented-local-cache-only",
+        index: index,
+        operationID: progress.operationID,
+        fileID: progress.fileID,
+        fileName: progress.fileName,
+        contentType: progress.contentType,
+        state: progress.state,
+        completedByteCount: progress.completedByteCount,
+        totalByteCount: progress.totalByteCount,
+        progress: progress.progress,
+        file: progress.file,
+        errorMessage: progress.errorMessage,
+        updatedAt: progress.updatedAt
+      )
+
+      switch output {
+      case .human:
+        print(
+          "upload: \(payload.state.rawValue) \(payload.completedByteCount)/\(payload.totalByteCount) bytes"
+        )
+        if let file = payload.file {
+          print("file: \(file.id) \(file.name)")
+        }
+        if let errorMessage = payload.errorMessage {
+          print("error: \(errorMessage)")
+        }
+
+      case .json:
+        break
+
+      case .jsonl:
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.files.upload-progress",
+            side: "swift",
+            event: payload.state.rawValue,
+            appID: context.appID,
+            entityID: payload.fileID,
+            ok: payload.state != .error,
+            details: payload
+          )
+        )
+      }
+
+      events.append(payload)
+      index += 1
+    }
+
+    switch output {
+    case .human, .jsonl:
+      break
+
+    case .json:
+      try writeJSON(
+        FileUploadProgressSummaryOutput(
+          appID: context.appID,
+          cachePath: context.cacheURL.path,
+          event: "upload-progress",
+          transport: "not-implemented-local-cache-only",
+          emittedEventCount: events.count,
+          finalState: events.last?.state ?? .idle,
+          events: events
+        )
+      )
     }
   }
 
@@ -4550,8 +4643,9 @@ struct InstantSwiftDataCLI {
 
   fileprivate static var filesUsage: String {
     """
-    Usage: instant-swift-data files <upload|list|watch|delete>
+    Usage: instant-swift-data files <upload|upload-progress|list|watch|delete>
       instant-swift-data files upload <path> [--name name] [--content-type type] [--json|--jsonl]
+      instant-swift-data files upload-progress <path> [--name name] [--content-type type] [--json|--jsonl]
       instant-swift-data files list [--json|--jsonl]
       instant-swift-data files watch [--events 1] [--json|--jsonl]
       instant-swift-data files delete <file-id> [--json|--jsonl]
@@ -5550,6 +5644,35 @@ private struct FilesOutput: Codable, Sendable {
   var transport: String
   var fileCount: Int
   var files: [InstantStoredFile]
+}
+
+private struct FileUploadProgressOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var transport: String
+  var index: Int
+  var operationID: String
+  var fileID: String
+  var fileName: String
+  var contentType: String?
+  var state: InstantStorageOperationState
+  var completedByteCount: Int64
+  var totalByteCount: Int64
+  var progress: Double
+  var file: InstantStoredFile?
+  var errorMessage: String?
+  var updatedAt: InstantTimestamp
+}
+
+private struct FileUploadProgressSummaryOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var transport: String
+  var emittedEventCount: Int
+  var finalState: InstantStorageOperationState
+  var events: [FileUploadProgressOutput]
 }
 
 private struct StreamsOutput: Codable, Sendable {
