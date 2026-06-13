@@ -8,6 +8,9 @@ struct InstantSwiftDataCLI {
   static func main() async {
     do {
       try await run()
+    } catch let help as CLIHelp {
+      print(help.description)
+      exit(0)
     } catch let error as CLIError {
       writeError(error.description)
       exit(error.exitCode)
@@ -8235,47 +8238,36 @@ private struct BenchmarkOptions: Sendable {
   var appID: String
 
   static func parse(arguments: [String]) throws -> Self {
-    var arguments = arguments
-    var suite = InstantSwiftDataLocalBenchmarks.localTodosSuite
-    var iterations = 3
     var appID = ProcessInfo.processInfo.environment["INSTANT_APP_ID"]?
       .trimmingCharacters(in: .whitespacesAndNewlines) ?? "local-demo"
     if appID.isEmpty {
       appID = "local-demo"
     }
 
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--suite":
-        guard let value = arguments.popFirstArgument(), !value.isEmpty else {
-          throw CLIError(usage, exitCode: 64)
-        }
-        suite = value
-
-      case "--iterations":
-        guard let value = arguments.popFirstArgument(), let parsed = Int(value), parsed > 0 else {
-          throw CLIError(usage, exitCode: 64)
-        }
-        iterations = parsed
-
-      case "--app-id":
-        guard let value = arguments.popFirstArgument(),
-          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else {
-          throw CLIError(usage, exitCode: 64)
-        }
-        appID = value
-
-      default:
-        throw CLIError("Unknown benchmark option: \(option). \(usage)", exitCode: 64)
+    let invocation: CLIBenchmarkInvocation
+    do {
+      invocation = try CLIBenchmarkArguments.parse(
+        arguments,
+        defaultAppID: appID,
+        allowsOutputFlags: false,
+        usageCommand: "instant-swift-data benchmark"
+      )
+    } catch let error as CLIBenchmarkArgumentError {
+      guard error.exitCode != 0 else {
+        throw CLIHelp(error.description)
       }
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
 
-    guard suite == InstantSwiftDataLocalBenchmarks.localTodosSuite else {
-      throw CLIError("Unsupported benchmark suite: \(suite). \(usage)", exitCode: 64)
+    guard invocation.suite == InstantSwiftDataLocalBenchmarks.localTodosSuite else {
+      throw CLIError("Unsupported benchmark suite: \(invocation.suite). \(usage)", exitCode: 64)
     }
 
-    return Self(suite: suite, iterations: iterations, appID: appID)
+    return Self(
+      suite: invocation.suite,
+      iterations: invocation.iterations,
+      appID: invocation.appID
+    )
   }
 
   private static var usage: String {
@@ -8488,6 +8480,14 @@ private struct CLIError: Error, CustomStringConvertible {
   init(_ description: String, exitCode: Int32) {
     self.description = description
     self.exitCode = exitCode
+  }
+}
+
+private struct CLIHelp: Error, CustomStringConvertible {
+  var description: String
+
+  init(_ description: String) {
+    self.description = description
   }
 }
 

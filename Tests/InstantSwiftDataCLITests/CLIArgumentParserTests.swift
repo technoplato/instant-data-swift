@@ -186,6 +186,89 @@ struct CLIArgumentParserTests {
       )
     )
   }
+
+  @Test
+  func benchmarkParserParsesOptionsAndDefaults() throws {
+    expectNoDifference(
+      try CLIBenchmarkArguments.parse([]),
+      CLIBenchmarkInvocation()
+    )
+    expectNoDifference(
+      try CLIBenchmarkArguments.parse(
+        ["--iterations", "2", "--suite", "local-todos", "--app-id", "cli-benchmark", "--jsonl"]
+      ),
+      CLIBenchmarkInvocation(
+        suite: "local-todos",
+        iterations: 2,
+        appID: "cli-benchmark",
+        output: .jsonl
+      )
+    )
+    expectNoDifference(
+      try CLIBenchmarkArguments.parse(
+        ["--app-id", "  trimmed-app  ", "--json"],
+        defaultAppID: " default-app "
+      ),
+      CLIBenchmarkInvocation(appID: "trimmed-app", output: .json)
+    )
+    expectNoDifference(
+      try CLIBenchmarkArguments.parse([], defaultAppID: "  "),
+      CLIBenchmarkInvocation()
+    )
+  }
+
+  @Test
+  func benchmarkParserReportsMalformedOptions() throws {
+    try expectBenchmarkParseError(
+      ["--iterations", "0"],
+      contains: "Invalid --iterations value: 0."
+    )
+    try expectBenchmarkParseError(
+      ["--iterations"],
+      contains: "Missing value for --iterations."
+    )
+    try expectBenchmarkParseError(
+      ["--app-id", "  "],
+      contains: "Missing non-empty value for --app-id."
+    )
+    try expectBenchmarkParseError(
+      ["--surprise"],
+      contains: "Unknown benchmark option: --surprise."
+    )
+    try expectBenchmarkParseError(
+      ["--help"],
+      contains: "Usage: instant-swift-data benchmark",
+      exitCode: 0
+    )
+    try expectBenchmarkParseError(
+      ["help"],
+      contains: "Usage: instant-swift-data benchmark",
+      exitCode: 0
+    )
+    try expectBenchmarkParseError(
+      ["-h"],
+      contains: "Usage: instant-swift-data benchmark",
+      exitCode: 0
+    )
+  }
+
+  @Test
+  func benchmarkParserKeepsLastLeafOutputFlag() throws {
+    expectNoDifference(
+      try CLIBenchmarkArguments.parse(["--jsonl", "--json"]),
+      CLIBenchmarkInvocation(output: .json)
+    )
+    expectNoDifference(
+      try CLIBenchmarkArguments.parse(["--json", "--jsonl"]),
+      CLIBenchmarkInvocation(output: .jsonl)
+    )
+
+    try expectBenchmarkParseError(
+      ["--json"],
+      contains: "Unknown benchmark option: --json.",
+      allowsOutputFlags: false
+    )
+  }
 }
 
 private func parseExamples(_ arguments: [String]) throws -> CLIExamplesInvocation {
@@ -193,4 +276,19 @@ private func parseExamples(_ arguments: [String]) throws -> CLIExamplesInvocatio
   let invocation = try CLIExamplesParser().parse(&input)
   expectNoDifference(Array(input), [])
   return invocation
+}
+
+private func expectBenchmarkParseError(
+  _ arguments: [String],
+  contains expectedFragment: String,
+  exitCode expectedExitCode: Int32 = 64,
+  allowsOutputFlags: Bool = true
+) throws {
+  do {
+    _ = try CLIBenchmarkArguments.parse(arguments, allowsOutputFlags: allowsOutputFlags)
+    Issue.record("Expected benchmark parser to reject \(arguments).")
+  } catch let error as CLIBenchmarkArgumentError {
+    #expect(error.description.contains(expectedFragment))
+    expectNoDifference(error.exitCode, expectedExitCode)
+  }
 }

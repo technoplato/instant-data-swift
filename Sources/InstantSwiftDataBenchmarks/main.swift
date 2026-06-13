@@ -1,4 +1,5 @@
 import Foundation
+import InstantSwiftDataCLIParsing
 import InstantSwiftDataCore
 
 @main
@@ -7,6 +8,13 @@ struct InstantSwiftDataBenchmarks {
     do {
       try await run()
     } catch let error as BenchmarkCLIError {
+      if error.exitCode == 0 {
+        print(error.description)
+      } else {
+        writeError(error.description)
+      }
+      exit(error.exitCode)
+    } catch let error as CLIBenchmarkArgumentError {
       if error.exitCode == 0 {
         print(error.description)
       } else {
@@ -30,7 +38,7 @@ struct InstantSwiftDataBenchmarks {
     )
 
     switch options.output {
-    case .json:
+    case .human, .json:
       try writeJSON(result)
 
     case .jsonl:
@@ -82,56 +90,25 @@ private struct BenchmarkOptions: Sendable {
   var suite: String
   var iterations: Int
   var appID: String
-  var output: BenchmarkOutputMode
+  var output: CLIOutputMode
 
   static func parse(arguments: [String]) throws -> Self {
-    var arguments = arguments
-    var suite = InstantSwiftDataLocalBenchmarks.localTodosSuite
-    var iterations = 3
-    var appID = "local-benchmark"
-    var output = BenchmarkOutputMode.json
+    let invocation = try CLIBenchmarkArguments.parse(
+      arguments,
+      defaultAppID: "local-benchmark",
+      usageCommand: "instant-swift-data-benchmarks"
+    )
 
-    while let argument = arguments.popFirstArgument() {
-      switch argument {
-      case "--suite":
-        guard let value = arguments.popFirstArgument(), !value.isEmpty else {
-          throw BenchmarkCLIError(usage, exitCode: 64)
-        }
-        suite = value
-
-      case "--iterations":
-        guard let value = arguments.popFirstArgument(), let count = Int(value), count > 0 else {
-          throw BenchmarkCLIError(usage, exitCode: 64)
-        }
-        iterations = count
-
-      case "--app-id":
-        guard let value = arguments.popFirstArgument(),
-          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else {
-          throw BenchmarkCLIError(usage, exitCode: 64)
-        }
-        appID = value
-
-      case "--json":
-        output = .json
-
-      case "--jsonl":
-        output = .jsonl
-
-      case "help", "--help", "-h":
-        throw BenchmarkCLIError(usage, exitCode: 0)
-
-      default:
-        throw BenchmarkCLIError("Unknown benchmark option: \(argument).\n\(usage)", exitCode: 64)
-      }
+    guard invocation.suite == InstantSwiftDataLocalBenchmarks.localTodosSuite else {
+      throw BenchmarkCLIError("Unsupported benchmark suite: \(invocation.suite).\n\(usage)", exitCode: 64)
     }
 
-    guard suite == InstantSwiftDataLocalBenchmarks.localTodosSuite else {
-      throw BenchmarkCLIError("Unsupported benchmark suite: \(suite).\n\(usage)", exitCode: 64)
-    }
-
-    return Self(suite: suite, iterations: iterations, appID: appID, output: output)
+    return Self(
+      suite: invocation.suite,
+      iterations: invocation.iterations,
+      appID: invocation.appID,
+      output: invocation.output
+    )
   }
 
   private static var usage: String {
@@ -141,11 +118,6 @@ private struct BenchmarkOptions: Sendable {
   }
 }
 
-private enum BenchmarkOutputMode: Sendable {
-  case json
-  case jsonl
-}
-
 private struct BenchmarkCLIError: Error, CustomStringConvertible {
   var description: String
   var exitCode: Int32
@@ -153,12 +125,5 @@ private struct BenchmarkCLIError: Error, CustomStringConvertible {
   init(_ description: String, exitCode: Int32) {
     self.description = description
     self.exitCode = exitCode
-  }
-}
-
-private extension Array {
-  mutating func popFirstArgument() -> Element? {
-    guard !isEmpty else { return nil }
-    return removeFirst()
   }
 }

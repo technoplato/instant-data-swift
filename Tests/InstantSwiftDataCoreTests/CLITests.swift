@@ -4263,6 +4263,11 @@ extension InstantStoreTests {
     let malformed = try runCLIResult(["benchmark", "--iterations", "0", "--json"], homeURL: homeURL)
     #expect(malformed.status == 64)
     #expect(malformed.error.contains("instant-swift-data benchmark"))
+
+    let help = try runCLIResult(["benchmark", "--help"], homeURL: homeURL)
+    #expect(help.status == 0)
+    #expect(help.output.contains("Usage: instant-swift-data benchmark"))
+    expectNoDifference(help.error, "")
   }
 
   private func runCLI(

@@ -1,3 +1,4 @@
+import Foundation
 import Parsing
 
 public enum CLIOutputMode: Equatable, Sendable {
@@ -80,9 +81,47 @@ public enum CLIExamplesTodosCommand: Equatable, Sendable {
   case unknown(String)
 }
 
+public struct CLIBenchmarkInvocation: Equatable, Sendable {
+  public static let defaultSuite = "local-todos"
+
+  public var suite: String
+  public var iterations: Int
+  public var appID: String
+  public var output: CLIOutputMode
+
+  public init(
+    suite: String = Self.defaultSuite,
+    iterations: Int = 3,
+    appID: String = "local-benchmark",
+    output: CLIOutputMode = .json
+  ) {
+    self.suite = suite
+    self.iterations = iterations
+    self.appID = appID
+    self.output = output
+  }
+}
+
 public enum CLIArgumentParseError: Error, Equatable, Sendable {
   case missingCommand
   case missingOutputFlag
+}
+
+public enum CLIBenchmarkArgumentError: Error, Equatable, Sendable {
+  case missingValue(option: String, usage: String)
+  case invalidIterations(String, usage: String)
+  case emptyAppID(usage: String)
+  case unknownOption(String, usage: String)
+  case help(usage: String)
+
+  public var exitCode: Int32 {
+    switch self {
+    case .help:
+      return 0
+    case .emptyAppID, .invalidIterations, .missingValue, .unknownOption:
+      return 64
+    }
+  }
 }
 
 public struct CLIOutputFlagParser: Parser {
@@ -191,6 +230,97 @@ public struct CLIExamplesTodosCommandParser: Parser {
   }
 }
 
+public struct CLIBenchmarkParser: Parser {
+  public var defaultAppID: String
+  public var allowsOutputFlags: Bool
+  public var usageCommand: String
+
+  public init(
+    defaultAppID: String = "local-benchmark",
+    allowsOutputFlags: Bool = true,
+    usageCommand: String = "instant-swift-data benchmark"
+  ) {
+    self.defaultAppID = defaultAppID
+    self.allowsOutputFlags = allowsOutputFlags
+    self.usageCommand = usageCommand
+  }
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIBenchmarkInvocation {
+    var invocation = CLIBenchmarkInvocation(appID: normalizedDefaultAppID)
+
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--suite":
+        guard let value = takeValue(from: &input), !value.isEmpty else {
+          throw CLIBenchmarkArgumentError.missingValue(option: option, usage: usage)
+        }
+        invocation.suite = value
+
+      case "--iterations":
+        guard let value = takeValue(from: &input) else {
+          throw CLIBenchmarkArgumentError.missingValue(option: option, usage: usage)
+        }
+        guard let iterations = Int(value), iterations > 0 else {
+          throw CLIBenchmarkArgumentError.invalidIterations(value, usage: usage)
+        }
+        invocation.iterations = iterations
+
+      case "--app-id":
+        guard let value = takeValue(from: &input) else {
+          throw CLIBenchmarkArgumentError.missingValue(option: option, usage: usage)
+        }
+        let appID = trimmed(value)
+        guard !appID.isEmpty else {
+          throw CLIBenchmarkArgumentError.emptyAppID(usage: usage)
+        }
+        invocation.appID = appID
+
+      case "--json":
+        guard allowsOutputFlags else {
+          throw CLIBenchmarkArgumentError.unknownOption(option, usage: usage)
+        }
+        invocation.output = .json
+
+      case "--jsonl":
+        guard allowsOutputFlags else {
+          throw CLIBenchmarkArgumentError.unknownOption(option, usage: usage)
+        }
+        invocation.output = .jsonl
+
+      case "help", "--help", "-h":
+        throw CLIBenchmarkArgumentError.help(usage: usage)
+
+      default:
+        throw CLIBenchmarkArgumentError.unknownOption(option, usage: usage)
+      }
+    }
+
+    return invocation
+  }
+
+  private var normalizedDefaultAppID: String {
+    let appID = trimmed(defaultAppID)
+    return appID.isEmpty ? "local-benchmark" : appID
+  }
+
+  private var usage: String {
+    "Usage: \(usageCommand) [--suite local-todos] [--iterations n] [--app-id id] [--json|--jsonl]"
+  }
+
+  private func takeValue(
+    from input: inout ArraySlice<String>
+  ) -> String? {
+    guard let value = input.first else { return nil }
+    input.removeFirst()
+    return value
+  }
+
+  private func trimmed(_ string: String) -> String {
+    string.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+}
+
 public enum CLIArguments {
   public static func parse(_ arguments: [String]) throws -> CLIInvocation {
     var input = arguments[...]
@@ -216,6 +346,40 @@ public enum CLIArguments {
   private static func parseOutputFlag(_ token: String) -> CLIOutputMode? {
     var input = [token][...]
     return try? CLIOutputFlagParser().parse(&input)
+  }
+}
+
+public enum CLIBenchmarkArguments {
+  public static func parse(
+    _ arguments: [String],
+    defaultAppID: String = "local-benchmark",
+    allowsOutputFlags: Bool = true,
+    usageCommand: String = "instant-swift-data benchmark"
+  ) throws -> CLIBenchmarkInvocation {
+    var input = arguments[...]
+    return try CLIBenchmarkParser(
+      defaultAppID: defaultAppID,
+      allowsOutputFlags: allowsOutputFlags,
+      usageCommand: usageCommand
+    )
+    .parse(&input)
+  }
+}
+
+extension CLIBenchmarkArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case let .emptyAppID(usage):
+      return "Missing non-empty value for --app-id. \(usage)"
+    case let .help(usage):
+      return usage
+    case let .invalidIterations(value, usage):
+      return "Invalid --iterations value: \(value). \(usage)"
+    case let .missingValue(option, usage):
+      return "Missing value for \(option). \(usage)"
+    case let .unknownOption(option, usage):
+      return "Unknown benchmark option: \(option). \(usage)"
+    }
   }
 }
 

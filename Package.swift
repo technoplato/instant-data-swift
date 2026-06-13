@@ -110,7 +110,10 @@ let package = Package(
     ),
     .executableTarget(
       name: "InstantSwiftDataBenchmarks",
-      dependencies: ["InstantSwiftDataCore"],
+      dependencies: [
+        "InstantSwiftDataCLIParsing",
+        "InstantSwiftDataCore",
+      ],
       swiftSettings: strictConcurrencySettings
     ),
     .testTarget(
