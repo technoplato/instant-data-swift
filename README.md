@@ -44,6 +44,9 @@ MUTATION_ID="$(swift run instant-swift-data outbox inspect --json | jq -r '.muta
 swift run instant-swift-data outbox confirm "$MUTATION_ID" --json
 FAILED_MUTATION_ID="$(swift run instant-swift-data outbox inspect --json | jq -r '.mutations[0].id')"
 swift run instant-swift-data outbox fail "$FAILED_MUTATION_ID" "server rejected" --json
+swift run instant-swift-data outbox retry "$FAILED_MUTATION_ID" --json
+swift run instant-swift-data outbox drain --local-confirm --limit 1 --json
+swift run instant-swift-data outbox drain --local-confirm --jsonl
 swift run instant-swift-data local-id get todos.viewer --json
 swift run instant-swift-data sync inspect --json
 swift run instant-swift-data sync mark-processed demo-tx-1 --json

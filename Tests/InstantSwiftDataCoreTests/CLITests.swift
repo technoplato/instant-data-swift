@@ -65,6 +65,81 @@ extension InstantStoreTests {
     expectNoDifference(Set(evidence.details.queries.map(\.stableSummary)), summaries)
   }
 
+  @Test
+  func cliOutboxRetryAndDrainOperateOnDurableState() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    _ = try runCLI(["examples", "todos", "add", "retry me", "--json"], homeURL: homeURL)
+    _ = try runCLI(["examples", "todos", "add", "drain later", "--json"], homeURL: homeURL)
+
+    let initialOutbox = try JSONDecoder().decode(
+      CLIOutboxInspectOutput.self,
+      from: Data(try runCLI(["outbox", "inspect", "--json"], homeURL: homeURL).utf8)
+    )
+    let retriedMutationID = try #require(initialOutbox.mutations.first?.id)
+
+    let failed = try JSONDecoder().decode(
+      CLIOutboxUpdateOutput.self,
+      from: Data(
+        try runCLI(
+          ["outbox", "fail", retriedMutationID, "server rejected", "--json"],
+          homeURL: homeURL
+        )
+        .utf8
+      )
+    )
+    expectNoDifference(failed.mutation.status, "failed")
+    expectNoDifference(failed.mutation.failureMessage, "server rejected")
+
+    let retried = try JSONDecoder().decode(
+      CLIOutboxUpdateOutput.self,
+      from: Data(try runCLI(["outbox", "retry", retriedMutationID, "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(retried.mutation.status, "pending")
+    expectNoDifference(retried.mutation.failureMessage, nil)
+
+    let firstDrain = try JSONDecoder().decode(
+      CLIOutboxDrainOutput.self,
+      from: Data(
+        try runCLI(
+          ["outbox", "drain", "--local-confirm", "--limit", "1", "--json"],
+          homeURL: homeURL
+        )
+        .utf8
+      )
+    )
+    expectNoDifference(firstDrain.event, "drain-local-confirm")
+    expectNoDifference(firstDrain.drainedMutationCount, 1)
+    expectNoDifference(firstDrain.mutations.map(\.id), [retriedMutationID])
+    expectNoDifference(firstDrain.mutations.map(\.status), ["confirmed"])
+    expectNoDifference(firstDrain.pendingMutationCount, 1)
+    expectNoDifference(firstDrain.mutationCount, 1)
+
+    let finalDrainOutput = try runCLI(
+      ["outbox", "drain", "--local-confirm", "--jsonl"],
+      homeURL: homeURL
+    )
+    let finalSummaryLine = try #require(finalDrainOutput.split(separator: "\n").first)
+    let finalDrain = try JSONDecoder().decode(
+      CLIOutboxDrainEvidence.self,
+      from: Data(finalSummaryLine.utf8)
+    )
+    expectNoDifference(finalDrain.event, "drain-local-confirm")
+    expectNoDifference(finalDrain.details.drainedMutationCount, 1)
+    expectNoDifference(finalDrain.details.pendingMutationCount, 0)
+
+    let emptyOutbox = try JSONDecoder().decode(
+      CLIOutboxInspectOutput.self,
+      from: Data(try runCLI(["outbox", "inspect", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(emptyOutbox.pendingMutationCount, 0)
+    expectNoDifference(emptyOutbox.mutationCount, 0)
+    expectNoDifference(emptyOutbox.mutations, [])
+  }
+
   private func runCLI(_ arguments: [String], homeURL: URL) throws -> String {
     let packageURL = packageRootURL()
     let executableURL = packageURL.appendingPathComponent(".build/debug/instant-swift-data")
@@ -151,6 +226,35 @@ private struct CLICacheQueryStableSummary: Hashable {
   var queryID: String
   var namespace: String
   var resultCount: Int
+}
+
+private struct CLIOutboxInspectOutput: Decodable {
+  var pendingMutationCount: Int
+  var mutationCount: Int
+  var mutations: [CLIOutboxMutation]
+}
+
+private struct CLIOutboxUpdateOutput: Decodable {
+  var mutation: CLIOutboxMutation
+}
+
+private struct CLIOutboxDrainEvidence: Decodable {
+  var event: String
+  var details: CLIOutboxDrainOutput
+}
+
+private struct CLIOutboxDrainOutput: Decodable {
+  var event: String
+  var pendingMutationCount: Int
+  var mutationCount: Int
+  var drainedMutationCount: Int
+  var mutations: [CLIOutboxMutation]
+}
+
+private struct CLIOutboxMutation: Decodable, Hashable {
+  var id: String
+  var status: String
+  var failureMessage: String?
 }
 
 private struct CLITestError: Error, CustomStringConvertible {

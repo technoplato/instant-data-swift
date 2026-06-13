@@ -291,6 +291,13 @@ public struct PendingMutation: Hashable, Codable, Sendable, Identifiable {
     self.status = status
     self.failureMessage = failureMessage
   }
+
+  static func creationOrder(_ lhs: Self, _ rhs: Self) -> Bool {
+    if lhs.createdAt == rhs.createdAt {
+      return lhs.id < rhs.id
+    }
+    return lhs.createdAt < rhs.createdAt
+  }
 }
 
 public struct InstantAuthSession: Hashable, Codable, Sendable, Identifiable {

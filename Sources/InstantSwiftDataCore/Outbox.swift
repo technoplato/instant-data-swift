@@ -14,7 +14,7 @@ actor InstantOutbox {
   private var mutations: [PendingMutation]
 
   init(mutations: [PendingMutation] = []) {
-    self.mutations = mutations.sorted { $0.createdAt < $1.createdAt }
+    self.mutations = mutations.sorted(by: PendingMutation.creationOrder)
   }
 
   func pending() -> [PendingMutation] {
@@ -54,7 +54,42 @@ actor InstantOutbox {
     return InstantOutboxUpdate(mutation: nextMutations[index], mutations: nextMutations)
   }
 
+  func retrying(id: String) -> InstantOutboxUpdate? {
+    Self.retrying(id: id, in: mutations)
+  }
+
+  static func retrying(id: String, in mutations: [PendingMutation]) -> InstantOutboxUpdate? {
+    guard let index = mutations.firstIndex(where: { $0.id == id }) else { return nil }
+    var nextMutations = mutations
+    nextMutations[index].status = .pending
+    nextMutations[index].failureMessage = nil
+    return InstantOutboxUpdate(mutation: nextMutations[index], mutations: nextMutations)
+  }
+
+  static func confirmingPending(
+    limit: Int?,
+    in mutations: [PendingMutation]
+  ) -> (confirmed: [PendingMutation], mutations: [PendingMutation]) {
+    var confirmed: [PendingMutation] = []
+    var remaining: [PendingMutation] = []
+    var remainingLimit = limit ?? Int.max
+
+    for mutation in mutations.sorted(by: PendingMutation.creationOrder) {
+      guard mutation.status == .pending, remainingLimit > 0 else {
+        remaining.append(mutation)
+        continue
+      }
+      var confirmedMutation = mutation
+      confirmedMutation.status = .confirmed
+      confirmedMutation.failureMessage = nil
+      confirmed.append(confirmedMutation)
+      remainingLimit -= 1
+    }
+
+    return (confirmed, remaining.sorted(by: PendingMutation.creationOrder))
+  }
+
   func replace(with mutations: [PendingMutation]) {
-    self.mutations = mutations.sorted { $0.createdAt < $1.createdAt }
+    self.mutations = mutations.sorted(by: PendingMutation.creationOrder)
   }
 }

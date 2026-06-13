@@ -300,6 +300,28 @@ struct InstantSwiftDataCLI {
         mutation: mutation
       )
 
+    case "retry":
+      guard let mutationID = arguments.popFirstArgument(), arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data outbox retry <mutation-id> [--json|--jsonl]", exitCode: 64)
+      }
+      let mutation = try await context.runtime.retryMutation(id: mutationID)
+      try await printOutboxUpdate(
+        context: context,
+        output: output,
+        event: "retry",
+        mutation: mutation
+      )
+
+    case "drain":
+      let limit = try parseOutboxDrainLimit(arguments: arguments)
+      let mutations = try await context.runtime.drainPendingMutationsLocally(limit: limit)
+      try await printOutboxDrain(
+        context: context,
+        output: output,
+        event: "drain-local-confirm",
+        mutations: mutations
+      )
+
     default:
       throw CLIError(outboxUsage, exitCode: 64)
     }
@@ -751,6 +773,66 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func printOutboxDrain(
+    context: CLIContext,
+    output: OutputMode,
+    event: String,
+    mutations: [PendingMutation]
+  ) async throws {
+    let remainingMutations = await context.runtime.outboxMutations()
+    let update = OutboxDrainOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      transport: "not-implemented-local-cache-only",
+      pendingMutationCount: remainingMutations.filter { $0.status == .pending }.count,
+      mutationCount: remainingMutations.count,
+      drainedMutationCount: mutations.count,
+      mutations: mutations
+    )
+
+    switch output {
+    case .human:
+      print("outbox: \(update.cachePath)")
+      print("event: \(event)")
+      print("drained mutations: \(mutations.count)")
+      for mutation in mutations {
+        print(
+          "- \(mutation.id) status=\(mutation.status.rawValue) createdAtMs=\(mutation.createdAt.milliseconds) operations=\(mutation.transaction.operations.count)"
+        )
+      }
+      print("pending mutations: \(update.pendingMutationCount)")
+
+    case .json:
+      try writeJSON(update)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.outbox.drain",
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          ok: true,
+          details: update
+        )
+      )
+      for mutation in mutations {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.outbox.drain",
+            side: "swift",
+            event: "mutation",
+            appID: context.appID,
+            entityID: mutation.id,
+            ok: true,
+            details: mutation
+          )
+        )
+      }
+    }
+  }
+
   private static func printTodos(
     context: CLIContext,
     output: OutputMode,
@@ -832,6 +914,8 @@ struct InstantSwiftDataCLI {
         outbox inspect [--json|--jsonl]
         outbox confirm <mutation-id> [--json|--jsonl]
         outbox fail <mutation-id> "reason" [--json|--jsonl]
+        outbox retry <mutation-id> [--json|--jsonl]
+        outbox drain --local-confirm [--limit n] [--json|--jsonl]
         local-id get <name> [--json|--jsonl]
         auth show [--json|--jsonl]
         auth guest [--json|--jsonl]
@@ -1130,11 +1214,52 @@ struct InstantSwiftDataCLI {
 
   private static var outboxUsage: String {
     """
-    Usage: instant-swift-data outbox <inspect|confirm|fail>
+    Usage: instant-swift-data outbox <inspect|confirm|fail|retry|drain>
       instant-swift-data outbox inspect [--json|--jsonl]
       instant-swift-data outbox confirm <mutation-id> [--json|--jsonl]
       instant-swift-data outbox fail <mutation-id> "reason" [--json|--jsonl]
+      instant-swift-data outbox retry <mutation-id> [--json|--jsonl]
+      instant-swift-data outbox drain --local-confirm [--limit n] [--json|--jsonl]
     """
+  }
+
+  private static func parseOutboxDrainLimit(arguments: [String]) throws -> Int? {
+    var arguments = arguments
+    var sawLocalConfirm = false
+    var limit: Int?
+
+    while let option = arguments.popFirstArgument() {
+      switch option {
+      case "--local-confirm":
+        sawLocalConfirm = true
+
+      case "--limit":
+        guard let value = arguments.popFirstArgument(),
+          let parsed = Int(value),
+          parsed >= 0
+        else {
+          throw CLIError(
+            "Usage: instant-swift-data outbox drain --local-confirm [--limit n] [--json|--jsonl]",
+            exitCode: 64
+          )
+        }
+        limit = parsed
+
+      default:
+        throw CLIError(
+          "Unknown outbox drain option: \(option). Usage: instant-swift-data outbox drain --local-confirm [--limit n] [--json|--jsonl]",
+          exitCode: 64
+        )
+      }
+    }
+
+    guard sawLocalConfirm else {
+      throw CLIError(
+        "Usage: instant-swift-data outbox drain --local-confirm [--limit n] [--json|--jsonl]",
+        exitCode: 64
+      )
+    }
+    return limit
   }
 
   private static var authUsage: String {
@@ -1416,6 +1541,17 @@ private struct OutboxUpdateOutput: Codable, Sendable {
   var pendingMutationCount: Int
   var mutationCount: Int
   var mutation: PendingMutation
+}
+
+private struct OutboxDrainOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var transport: String
+  var pendingMutationCount: Int
+  var mutationCount: Int
+  var drainedMutationCount: Int
+  var mutations: [PendingMutation]
 }
 
 private struct LocalIDOutput: Codable, Sendable {

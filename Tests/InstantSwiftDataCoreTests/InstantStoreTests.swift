@@ -405,6 +405,99 @@ struct InstantStoreTests {
   }
 
   @Test
+  func outboxDrainSkipsFailedMutationsAndRetryRestoresPendingState() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let baseTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+
+    for index in 0..<3 {
+      let createdAt = InstantTimestamp(milliseconds: baseTime.milliseconds + Int64(index))
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-drain-\(index)",
+          operations: TodoExample.createOperations(
+            id: "todo-drain-\(index)",
+            text: "drain \(index)",
+            createdAt: createdAt,
+            transactionID: "tx-drain-\(index)"
+          )
+        ),
+        createdAt: createdAt
+      )
+    }
+
+    let failed = try await runtime.failMutation(id: "tx-drain-1", message: "permission rejected")
+    expectNoDifference(failed.status, .failed)
+
+    let drained = try await runtime.drainPendingMutationsLocally()
+    expectNoDifference(drained.map(\.id), ["tx-drain-0", "tx-drain-2"])
+    expectNoDifference(drained.map(\.status), [.confirmed, .confirmed])
+
+    var mutations = await runtime.outboxMutations()
+    expectNoDifference(mutations.map(\.id), ["tx-drain-1"])
+    expectNoDifference(mutations.map(\.status), [.failed])
+
+    let retried = try await runtime.retryMutation(id: "tx-drain-1")
+    expectNoDifference(retried.status, .pending)
+    expectNoDifference(retried.failureMessage, nil)
+
+    let finalDrain = try await runtime.drainPendingMutationsLocally(limit: 1)
+    expectNoDifference(finalDrain.map(\.id), ["tx-drain-1"])
+    expectNoDifference(finalDrain.map(\.status), [.confirmed])
+    mutations = await runtime.outboxMutations()
+    expectNoDifference(mutations, [])
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    mutations = await relaunchedRuntime.outboxMutations()
+    expectNoDifference(mutations, [])
+  }
+
+  @Test
+  func outboxDrainUsesIDAsStableTieBreakerForSameTimestampMutations() async throws {
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+
+    for transactionID in ["tx-b", "tx-a", "tx-c"] {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: TodoExample.createOperations(
+            id: "todo-\(transactionID)",
+            text: transactionID,
+            createdAt: createdAt,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: createdAt
+      )
+    }
+
+    let firstDrain = try await runtime.drainPendingMutationsLocally(limit: 2)
+    expectNoDifference(firstDrain.map(\.id), ["tx-a", "tx-b"])
+
+    let secondDrain = try await runtime.drainPendingMutationsLocally(limit: 2)
+    expectNoDifference(secondDrain.map(\.id), ["tx-c"])
+  }
+
+  @Test
   func outboxStatusUpdateFailsForMissingMutation() async throws {
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(

@@ -113,7 +113,7 @@ public final class InstantRuntime: Sendable {
     for _ in 0..<5 {
       let state = try await persistence.loadState()
       let outboxSnapshot = (state.snapshot.outbox + [mutation])
-        .sorted { $0.createdAt < $1.createdAt }
+        .sorted(by: PendingMutation.creationOrder)
       let prepared = await store.prepare(transaction, applyingTo: state.snapshot.store)
       let didSave = try await persistence.saveSnapshot(
         InstantPersistenceSnapshot(store: prepared.snapshot, outbox: outboxSnapshot),
@@ -442,6 +442,72 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @discardableResult
+  public func retryMutation(id: String) async throws -> PendingMutation {
+    await operationGate.enter()
+    do {
+      for _ in 0..<5 {
+        let state = try await persistence.loadState()
+        guard let update = InstantOutbox.retrying(id: id, in: state.snapshot.outbox) else {
+          await outbox.replace(with: state.snapshot.outbox)
+          throw outboxMutationNotFound(id: id)
+        }
+        let didSave = try await persistence.saveOutbox(
+          update.mutations,
+          expectedOutboxRevision: state.outboxRevision
+        )
+        if didSave {
+          await outbox.replace(with: update.mutations)
+          await operationGate.leave()
+          return update.mutation
+        }
+      }
+
+      throw outboxChangedDuringStatusUpdate(id: id)
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  @discardableResult
+  public func drainPendingMutationsLocally(limit: Int? = nil) async throws -> [PendingMutation] {
+    if let limit, limit < 0 {
+      throw validationFailed(
+        operation: "drain outbox",
+        message: "Drain limit must be greater than or equal to 0.",
+        recovery: "Pass a non-negative --limit value, or omit --limit to drain every pending mutation."
+      )
+    }
+
+    await operationGate.enter()
+    do {
+      for _ in 0..<5 {
+        let state = try await persistence.loadState()
+        let update = InstantOutbox.confirmingPending(limit: limit, in: state.snapshot.outbox)
+        guard !update.confirmed.isEmpty else {
+          await outbox.replace(with: state.snapshot.outbox)
+          await operationGate.leave()
+          return []
+        }
+        let didSave = try await persistence.saveOutbox(
+          update.mutations,
+          expectedOutboxRevision: state.outboxRevision
+        )
+        if didSave {
+          await outbox.replace(with: update.mutations)
+          await operationGate.leave()
+          return update.confirmed
+        }
+      }
+
+      throw outboxChangedDuringDrain()
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
   public func localID(named name: String) async throws -> String {
     try await persistence.localID(named: name, makeID: configuration.makeID)
   }
@@ -474,6 +540,15 @@ public final class InstantRuntime: Sendable {
       localID: id,
       message: "The local outbox changed repeatedly while updating mutation '\(id)'.",
       recovery: "Retry the outbox update after inspecting the current outbox."
+    )
+  }
+
+  private func outboxChangedDuringDrain() -> InstantError {
+    InstantError(
+      code: .persistenceFailed,
+      operation: "drain outbox",
+      message: "The local outbox changed repeatedly while draining pending mutations.",
+      recovery: "Retry the drain after inspecting the current outbox."
     )
   }
 
