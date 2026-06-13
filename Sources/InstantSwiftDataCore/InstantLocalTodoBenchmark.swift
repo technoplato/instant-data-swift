@@ -164,6 +164,8 @@ public enum InstantSwiftDataLocalBenchmarks {
   public static let localTodosSuite = "local-todos"
   private static let highBandwidthScalarUpdateCount = 50
   private static let highBandwidthLinkedWriteCount = 20
+  private static let storageMetadataFileCount = 5
+  private static let streamChunkCount = 25
 
   public static func runLocalTodos(
     appID: String = "local-benchmark",
@@ -221,6 +223,11 @@ public enum InstantSwiftDataLocalBenchmarks {
           durationNanoseconds: bootstrapDuration,
           cachePath: cacheURL.path
         )
+      )
+
+      _ = try await runtime.signInWithRefreshToken(
+        "benchmark-refresh-token-\(iteration)",
+        userID: "benchmark-user"
       )
 
       let seedTransactionID = makeID()
@@ -397,6 +404,100 @@ public enum InstantSwiftDataLocalBenchmarks {
         )
       )
 
+      var expectedFileByteCounts: [String: Int64] = [:]
+      for fileIndex in 0..<storageMetadataFileCount {
+        let fileName = "storage-source-\(fileIndex).txt"
+        let contents = Data("benchmark file \(iteration)-\(fileIndex)\n".utf8)
+        let sourceURL = cacheDirectory
+          .appendingPathComponent("storage-source-\(iteration)-\(fileIndex).txt")
+        try contents.write(to: sourceURL)
+        expectedFileByteCounts[fileName] = Int64(contents.count)
+        _ = try await runtime.uploadFile(
+          from: sourceURL,
+          name: fileName,
+          contentType: "text/plain"
+        )
+      }
+      let (storedFiles, storageDuration) = try await measured(clockNanoseconds) {
+        try await runtime.storedFiles()
+      }
+      let storedFileByteCounts = Dictionary(
+        uniqueKeysWithValues: storedFiles.map { ($0.name, $0.byteCount) }
+      )
+      guard storedFileByteCounts == expectedFileByteCounts,
+        storedFiles.allSatisfy({ $0.ownerUserID == "benchmark-user" }),
+        storedFiles.allSatisfy({ $0.contentType == "text/plain" }),
+        storedFiles.allSatisfy({ FileManager.default.fileExists(atPath: $0.localPath) })
+      else {
+        throw InstantError(
+          code: .validationFailed,
+          operation: "run local todo benchmark",
+          message: "Expected storage metadata query to return every uploaded benchmark file.",
+          recovery: "Inspect local file metadata persistence before trusting benchmark timings."
+        )
+      }
+      record(
+        "storage-metadata.query",
+        InstantBenchmarkSample(
+          iteration: iteration,
+          durationNanoseconds: storageDuration,
+          operationCount: storageMetadataFileCount,
+          resultCount: storedFiles.count
+        )
+      )
+
+      let streamID = "benchmark/local-todos"
+      var appendedStreamChunks: [InstantStreamChunk] = []
+      let (_, streamWriteDuration) = try await measured(clockNanoseconds) {
+        for chunkIndex in 0..<streamChunkCount {
+          let chunk = try await runtime.appendStreamChunk(
+            streamID: streamID,
+            payload: .object([
+              "iteration": .number(Double(iteration)),
+              "index": .number(Double(chunkIndex)),
+            ])
+          )
+          appendedStreamChunks.append(chunk)
+        }
+      }
+      guard appendedStreamChunks.map(\.index) == (0..<streamChunkCount).map(Int64.init) else {
+        throw InstantError(
+          code: .validationFailed,
+          operation: "run local todo benchmark",
+          message: "Expected stream writes to receive contiguous local indexes.",
+          recovery: "Inspect local stream append ordering before trusting benchmark timings."
+        )
+      }
+      record(
+        "stream-write.chunks",
+        InstantBenchmarkSample(
+          iteration: iteration,
+          durationNanoseconds: streamWriteDuration,
+          operationCount: streamChunkCount,
+          resultCount: appendedStreamChunks.count
+        )
+      )
+
+      let (readStreamChunks, streamReadDuration) = try await measured(clockNanoseconds) {
+        try await runtime.streamChunks(streamID: streamID)
+      }
+      guard readStreamChunks == appendedStreamChunks else {
+        throw InstantError(
+          code: .validationFailed,
+          operation: "run local todo benchmark",
+          message: "Expected stream reads to return the written chunks in order.",
+          recovery: "Inspect local stream read ordering before trusting benchmark timings."
+        )
+      }
+      record(
+        "stream-read.chunks",
+        InstantBenchmarkSample(
+          iteration: iteration,
+          durationNanoseconds: streamReadDuration,
+          resultCount: readStreamChunks.count
+        )
+      )
+
       let refreshedTodos = try await TodoExample.decode(runtime.query(TodoExample.query))
       guard refreshedTodos.contains(where: { $0.id == terminalID && $0.text == finalScalarText }) else {
         throw InstantError(
@@ -484,6 +585,9 @@ public enum InstantSwiftDataLocalBenchmarks {
       "pending-mutation-enqueue.update",
       "high-bandwidth.scalar-updates",
       "high-bandwidth.linked-writes",
+      "storage-metadata.query",
+      "stream-write.chunks",
+      "stream-read.chunks",
       "query-cache-read.todos",
       "triple-retract.reset",
       "offline-restore.relaunch",

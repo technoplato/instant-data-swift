@@ -2684,10 +2684,25 @@ extension InstantStoreTests {
         "pending-mutation-enqueue.update",
         "high-bandwidth.scalar-updates",
         "high-bandwidth.linked-writes",
+        "storage-metadata.query",
+        "stream-write.chunks",
+        "stream-read.chunks",
         "query-cache-read.todos",
         "triple-retract.reset",
         "offline-restore.relaunch",
       ]
+    )
+    expectNoDifference(
+      jsonOutput.metrics.first { $0.name == "storage-metadata.query" }?.samples.map(\.resultCount),
+      [5]
+    )
+    expectNoDifference(
+      jsonOutput.metrics.first { $0.name == "stream-write.chunks" }?.samples.map(\.operationCount),
+      [25]
+    )
+    expectNoDifference(
+      jsonOutput.metrics.first { $0.name == "stream-read.chunks" }?.samples.map(\.resultCount),
+      [25]
     )
 
     let environmentDefaultOutput = try JSONDecoder().decode(
@@ -2720,7 +2735,7 @@ extension InstantStoreTests {
       homeURL: homeURL
     )
     let lines = jsonlOutput.split(separator: "\n")
-    expectNoDifference(lines.count, 10)
+    expectNoDifference(lines.count, 13)
     let firstEvidence = try JSONDecoder().decode(
       CLIBenchmarkEvidence.self,
       from: Data(try #require(lines.first).utf8)
@@ -3467,6 +3482,12 @@ private struct CLIBenchmarkOutput: Decodable {
 
 private struct CLIBenchmarkMetric: Decodable, Equatable {
   var name: String
+  var samples: [CLIBenchmarkSample]
+}
+
+private struct CLIBenchmarkSample: Decodable, Equatable {
+  var operationCount: Int?
+  var resultCount: Int?
 }
 
 private struct CLIBenchmarkEvidence: Decodable {

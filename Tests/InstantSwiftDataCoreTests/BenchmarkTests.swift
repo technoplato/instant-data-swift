@@ -38,15 +38,18 @@ extension InstantStoreTests {
         "pending-mutation-enqueue.update",
         "high-bandwidth.scalar-updates",
         "high-bandwidth.linked-writes",
+        "storage-metadata.query",
+        "stream-write.chunks",
+        "stream-read.chunks",
         "query-cache-read.todos",
         "triple-retract.reset",
         "offline-restore.relaunch",
       ]
     )
-    expectNoDifference(result.metrics.map(\.samples.count), Array(repeating: 2, count: 9))
+    expectNoDifference(result.metrics.map(\.samples.count), Array(repeating: 2, count: 12))
     expectNoDifference(
       result.metrics.flatMap { $0.samples.map(\.durationNanoseconds) },
-      Array(repeating: 100, count: 18)
+      Array(repeating: 100, count: 24)
     )
     expectNoDifference(
       result.metrics.first { $0.name == "triple-insert.seed" }?.samples.map(\.operationCount),
@@ -69,18 +72,30 @@ extension InstantStoreTests {
       [20, 20]
     )
     expectNoDifference(
+      result.metrics.first { $0.name == "storage-metadata.query" }?.samples.map(\.resultCount),
+      [5, 5]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "stream-write.chunks" }?.samples.map(\.operationCount),
+      [25, 25]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "stream-read.chunks" }?.samples.map(\.resultCount),
+      [25, 25]
+    )
+    expectNoDifference(
       result.metrics.first { $0.name == "offline-restore.relaunch" }?.samples.map(\.pendingMutationCount),
       [54, 54]
     )
 
     let evidenceRows = result.evidenceRows
-    expectNoDifference(evidenceRows.count, 10)
+    expectNoDifference(evidenceRows.count, 13)
     expectNoDifference(evidenceRows.first?.caseID, "benchmark.local.todos")
     expectNoDifference(evidenceRows.first?.event, "summary")
     expectNoDifference(evidenceRows.first?.details.transport, "not-implemented-local-cache-only")
     expectNoDifference(evidenceRows.first?.details.iterations, 2)
     expectNoDifference(evidenceRows.first?.details.metric, nil)
-    expectNoDifference(evidenceRows.dropFirst().map(\.details.transport), Array(repeating: result.transport, count: 9))
+    expectNoDifference(evidenceRows.dropFirst().map(\.details.transport), Array(repeating: result.transport, count: 12))
     expectNoDifference(
       evidenceRows.dropFirst().compactMap(\.details.metric?.name),
       result.metrics.map(\.name)
