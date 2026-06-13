@@ -807,6 +807,23 @@ struct InstantSwiftDataCLI {
       let session = try await context.runtime.signInWithRefreshToken(refreshToken, userID: userID)
       try printAuth(context: context, event: "token", session: session, output: output)
 
+    case "id-token", "idtoken":
+      guard let clientName = arguments.popFirstArgument(),
+        let idToken = arguments.popFirstArgument()
+      else {
+        throw CLIError(
+          "Usage: instant-swift-data auth id-token <client-name> <id-token> [--nonce nonce] [--json|--jsonl]",
+          exitCode: 64
+        )
+      }
+      let nonce = try parseAuthIDTokenNonce(arguments: arguments)
+      let session = try await context.runtime.signInWithIDToken(
+        clientName: clientName,
+        idToken: idToken,
+        nonce: nonce
+      )
+      try printAuth(context: context, event: "id-token", session: session, output: output)
+
     case "magic-code", "magic":
       try await runMagicCode(arguments: arguments, context: context, output: output)
 
@@ -2637,6 +2654,7 @@ struct InstantSwiftDataCLI {
         auth show [--json|--jsonl]
         auth guest [--json|--jsonl]
         auth token <refresh-token> [--user-id id] [--json|--jsonl]
+        auth id-token <client-name> <id-token> [--nonce nonce] [--json|--jsonl]
         auth magic-code send <email> [--json|--jsonl]
         auth magic-code verify <email> <code> [--json|--jsonl]
         auth watch [--events 1] [--json|--jsonl]
@@ -3126,6 +3144,32 @@ struct InstantSwiftDataCLI {
       }
     }
     return userID
+  }
+
+  private static func parseAuthIDTokenNonce(arguments: [String]) throws -> String? {
+    var arguments = arguments
+    var nonce: String?
+    while let option = arguments.popFirstArgument() {
+      switch option {
+      case "--nonce":
+        guard let value = arguments.popFirstArgument(),
+          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+          throw CLIError(
+            "Usage: instant-swift-data auth id-token <client-name> <id-token> [--nonce nonce] [--json|--jsonl]",
+            exitCode: 64
+          )
+        }
+        nonce = value
+
+      default:
+        throw CLIError(
+          "Unknown auth id-token option: \(option). Usage: instant-swift-data auth id-token <client-name> <id-token> [--nonce nonce] [--json|--jsonl]",
+          exitCode: 64
+        )
+      }
+    }
+    return nonce
   }
 
   private static func parseAuthWatchEventCount(arguments: [String]) throws -> Int {
@@ -3775,10 +3819,11 @@ struct InstantSwiftDataCLI {
 
   private static var authUsage: String {
     """
-    Usage: instant-swift-data auth <show|guest|token|magic-code|watch|sign-out>
+    Usage: instant-swift-data auth <show|guest|token|id-token|magic-code|watch|sign-out>
       instant-swift-data auth show [--json|--jsonl]
       instant-swift-data auth guest [--json|--jsonl]
       instant-swift-data auth token <refresh-token> [--user-id id] [--json|--jsonl]
+      instant-swift-data auth id-token <client-name> <id-token> [--nonce nonce] [--json|--jsonl]
       instant-swift-data auth magic-code send <email> [--json|--jsonl]
       instant-swift-data auth magic-code verify <email> <code> [--json|--jsonl]
       instant-swift-data auth watch [--events 1] [--json|--jsonl]

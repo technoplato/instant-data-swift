@@ -50,6 +50,16 @@ struct BootstrapTests {
     } catch {
       #expect(Bool(false), "Unexpected error: \(error)")
     }
+
+    do {
+      _ = try await client.signInWithIDToken(clientName: "google-ios", idToken: "token")
+      #expect(Bool(false), "Expected the default client ID token auth to fail before bootstrap.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .implementationFailed)
+      expectNoDifference(error.operation, "access default InstantSwiftData client")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
   }
 
   @Test
@@ -210,6 +220,58 @@ struct BootstrapTests {
   }
 
   @Test
+  func bootstrapUsesIDTokenExchangeDependency() async throws {
+    let appID = "id-token-dependency-\(UUID().uuidString)"
+    let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataIDToken-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let exchange = InstantIDTokenExchange(
+      signIn: { request in
+        InstantIDTokenVerification(
+          userID:
+            "dependency:\(request.appID):\(request.clientName):\(request.idToken):\(request.nonce ?? "nil")",
+          refreshToken: "dependency-refresh:\(request.signedInAt.milliseconds)"
+        )
+      }
+    )
+
+    try await withDependencies {
+      $0.date.now = fixedDate
+      $0.instantIDTokenExchange = exchange
+      try await $0.bootstrapInstantSwiftData(
+        appID: appID,
+        persistenceURL: directory.appendingPathComponent("cache.sqlite"),
+        context: .test
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var client
+
+      let authStream = try await client.observeAuthSession()
+      var authIterator = authStream.makeAsyncIterator()
+      let observedEmptySession = try #require(await authIterator.next())
+      expectNoDifference(observedEmptySession, nil)
+
+      let session = try await client.signInWithIDToken(
+        clientName: " google-ios ",
+        idToken: " jwt-token ",
+        nonce: " nonce-1 "
+      )
+      expectNoDifference(
+        session.userID,
+        "dependency:\(appID):google-ios:jwt-token: nonce-1 "
+      )
+      expectNoDifference(session.refreshToken, "dependency-refresh:1700000000000")
+      let persistedSession = try await client.authSession()
+      expectNoDifference(persistedSession, session)
+      let observedSession = try #require(await authIterator.next())
+      expectNoDifference(observedSession, session)
+    }
+  }
+
+  @Test
   func dependencyOverrideCanInstallMockClient() async throws {
     let mock = InstantSwiftDataClient(
       transact: { transaction in
@@ -299,7 +361,17 @@ struct BootstrapTests {
           updatedAt: InstantTimestamp(milliseconds: 7)
         )
       },
-      signOut: {}
+      signOut: {},
+      signInWithIDToken: { clientName, idToken, nonce in
+        InstantAuthSession(
+          appID: "mock-app",
+          userID: "\(clientName):\(idToken):\(nonce ?? "nil")",
+          refreshToken: "mock-id-token-refresh",
+          isGuest: false,
+          createdAt: InstantTimestamp(milliseconds: 10),
+          updatedAt: InstantTimestamp(milliseconds: 10)
+        )
+      }
     )
 
     try await withDependencies {
@@ -332,6 +404,12 @@ struct BootstrapTests {
       expectNoDifference(mockMagicSession.userID, "mock@example.com:135790")
       let mockTokenSession = try await client.signInWithRefreshToken("mock-token", userID: nil)
       expectNoDifference(mockTokenSession.userID, "mock-token-user")
+      let mockIDTokenSession = try await client.signInWithIDToken(
+        clientName: "mock-client",
+        idToken: "mock-id-token",
+        nonce: nil
+      )
+      expectNoDifference(mockIDTokenSession.userID, "mock-client:mock-id-token:nil")
       try await client.signOut()
     }
   }
@@ -407,6 +485,16 @@ struct BootstrapTests {
     do {
       _ = try await mock.observeAuthSession()
       #expect(Bool(false), "Expected old-shape mock client auth observer to fail without auth closures.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .implementationFailed)
+      expectNoDifference(error.operation, "access InstantSwiftData auth")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      _ = try await mock.signInWithIDToken(clientName: "google-ios", idToken: "token")
+      #expect(Bool(false), "Expected old-shape mock client ID token auth to fail without auth closures.")
     } catch let error as InstantError {
       expectNoDifference(error.code, .implementationFailed)
       expectNoDifference(error.operation, "access InstantSwiftData auth")

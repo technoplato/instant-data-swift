@@ -439,6 +439,8 @@ CLI auth is required and must consume `InstantSwiftDataCore`, not a parallel
 implementation. Required auth flows:
 
 - guest sign-in.
+- id-token sign-in backed by an injectable `InstantIDTokenExchange` dependency
+  for native OAuth providers such as Apple, Google, Clerk, and Firebase.
 - magic-code sign-in backed by an injectable `InstantMagicCodeExchange`
   dependency, with `.local` for the durable terminal demo and a live exchange
   replacing it when real Instant auth transport lands. App and test code should
@@ -447,7 +449,8 @@ implementation. Required auth flows:
   non-captive proof until transport-backed auth is implemented.
 - app-facing auth should be available directly on the `InstantSwiftDataClient`
   dependency, not by reaching through to private runtime internals. This
-  includes `observeAuthSession` for auth-state subscriptions.
+  includes `observeAuthSession` for auth-state subscriptions and
+  `signInWithIDToken(clientName:idToken:nonce:)` for native OAuth token flows.
 - token/session restore.
 - sign-out.
 - show current auth state.

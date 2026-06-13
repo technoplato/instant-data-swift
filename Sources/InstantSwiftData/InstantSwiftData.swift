@@ -27,6 +27,8 @@ public struct InstantSwiftDataClient: Sendable {
     @Sendable (String, String) async throws -> InstantAuthSession
   private var signInWithRefreshTokenOperation:
     @Sendable (String, String?) async throws -> InstantAuthSession
+  private var signInWithIDTokenOperation:
+    @Sendable (String, String, String?) async throws -> InstantAuthSession
   private var signOutOperation: @Sendable () async throws -> Void
 
   public init(runtime: InstantRuntime) {
@@ -67,6 +69,13 @@ public struct InstantSwiftDataClient: Sendable {
     self.signInWithRefreshTokenOperation = { refreshToken, userID in
       try await runtime.signInWithRefreshToken(refreshToken, userID: userID)
     }
+    self.signInWithIDTokenOperation = { clientName, idToken, nonce in
+      try await runtime.signInWithIDToken(
+        clientName: clientName,
+        idToken: idToken,
+        nonce: nonce
+      )
+    }
     self.signOutOperation = {
       try await runtime.signOut()
     }
@@ -87,7 +96,9 @@ public struct InstantSwiftDataClient: Sendable {
     signInWithMagicCode: (@Sendable (String, String) async throws -> InstantAuthSession)? = nil,
     signInWithRefreshToken:
       (@Sendable (String, String?) async throws -> InstantAuthSession)? = nil,
-    signOut: (@Sendable () async throws -> Void)? = nil
+    signOut: (@Sendable () async throws -> Void)? = nil,
+    signInWithIDToken:
+      (@Sendable (String, String, String?) async throws -> InstantAuthSession)? = nil
   ) {
     let authError = InstantError(
       code: .implementationFailed,
@@ -113,6 +124,7 @@ public struct InstantSwiftDataClient: Sendable {
     self.sendMagicCodeOperation = sendMagicCode ?? { _ in throw authError }
     self.signInWithMagicCodeOperation = signInWithMagicCode ?? { _, _ in throw authError }
     self.signInWithRefreshTokenOperation = signInWithRefreshToken ?? { _, _ in throw authError }
+    self.signInWithIDTokenOperation = signInWithIDToken ?? { _, _, _ in throw authError }
     self.signOutOperation = signOut ?? { throw authError }
   }
 
@@ -163,6 +175,9 @@ public struct InstantSwiftDataClient: Sendable {
         throw error
       },
       signOut: {
+        throw error
+      },
+      signInWithIDToken: { _, _, _ in
         throw error
       }
     )
@@ -226,6 +241,14 @@ public struct InstantSwiftDataClient: Sendable {
     userID: String? = nil
   ) async throws -> InstantAuthSession {
     try await signInWithRefreshTokenOperation(refreshToken, userID)
+  }
+
+  public func signInWithIDToken(
+    clientName: String,
+    idToken: String,
+    nonce: String? = nil
+  ) async throws -> InstantAuthSession {
+    try await signInWithIDTokenOperation(clientName, idToken, nonce)
   }
 
   public func signOut() async throws {
@@ -378,6 +401,22 @@ extension InstantMagicCodeExchangeKey: DependencyKey {
   }
 }
 
+private enum InstantIDTokenExchangeKey: TestDependencyKey {
+  static var testValue: InstantIDTokenExchange {
+    .local
+  }
+
+  static var previewValue: InstantIDTokenExchange {
+    .local
+  }
+}
+
+extension InstantIDTokenExchangeKey: DependencyKey {
+  static var liveValue: InstantIDTokenExchange {
+    .local
+  }
+}
+
 extension DependencyValues {
   public var defaultInstantSwiftData: InstantSwiftDataClient {
     get { self[DefaultInstantSwiftDataKey.self] }
@@ -389,6 +428,11 @@ extension DependencyValues {
     set { self[InstantMagicCodeExchangeKey.self] = newValue }
   }
 
+  public var instantIDTokenExchange: InstantIDTokenExchange {
+    get { self[InstantIDTokenExchangeKey.self] }
+    set { self[InstantIDTokenExchangeKey.self] = newValue }
+  }
+
   public mutating func bootstrapInstantSwiftData(
     appID: String,
     persistenceURL: URL? = nil,
@@ -398,6 +442,7 @@ extension DependencyValues {
     let date = self.date
     let uuid = self.uuid
     let magicCodeExchange = self.instantMagicCodeExchange
+    let idTokenExchange = self.instantIDTokenExchange
     let url =
       persistenceURL
       ?? Self.defaultInstantSwiftDataPersistenceURL(
@@ -417,7 +462,8 @@ extension DependencyValues {
         makeID: {
           uuid().uuidString.lowercased()
         },
-        magicCodeExchange: magicCodeExchange
+        magicCodeExchange: magicCodeExchange,
+        idTokenExchange: idTokenExchange
       )
     )
   }

@@ -7,6 +7,7 @@ public struct InstantRuntimeConfiguration: Sendable {
   public var now: @Sendable () -> InstantTimestamp
   public var makeID: @Sendable () -> String
   public var magicCodeExchange: InstantMagicCodeExchange
+  public var idTokenExchange: InstantIDTokenExchange
 
   public init(
     appID: String,
@@ -16,7 +17,8 @@ public struct InstantRuntimeConfiguration: Sendable {
       InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
     },
     makeID: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() },
-    magicCodeExchange: InstantMagicCodeExchange = .local
+    magicCodeExchange: InstantMagicCodeExchange = .local,
+    idTokenExchange: InstantIDTokenExchange = .local
   ) {
     self.appID = appID
     self.persistenceURL = persistenceURL
@@ -24,6 +26,7 @@ public struct InstantRuntimeConfiguration: Sendable {
     self.now = now
     self.makeID = makeID
     self.magicCodeExchange = magicCodeExchange
+    self.idTokenExchange = idTokenExchange
   }
 }
 
@@ -427,6 +430,50 @@ public final class InstantRuntime: Sendable {
       appID: configuration.appID,
       userID: resolvedUserID,
       refreshToken: token,
+      isGuest: false,
+      createdAt: now,
+      updatedAt: now
+    )
+    try await saveAuthSession(session)
+    return session
+  }
+
+  public func signInWithIDToken(
+    clientName rawClientName: String,
+    idToken rawIDToken: String,
+    nonce rawNonce: String? = nil
+  ) async throws -> InstantAuthSession {
+    let clientName = rawClientName.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clientName.isEmpty else {
+      throw authValidationFailed(
+        operation: "sign in with id token",
+        message: "Client name must not be empty.",
+        recovery: "Pass the Instant OAuth client name, for example 'google-ios'."
+      )
+    }
+    let idToken = rawIDToken.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !idToken.isEmpty else {
+      throw authValidationFailed(
+        operation: "sign in with id token",
+        message: "ID token must not be empty.",
+        recovery: "Pass the ID token returned by the native OAuth provider."
+      )
+    }
+    let now = configuration.now()
+    let verification = try await configuration.idTokenExchange.signIn(
+      InstantIDTokenSignInRequest(
+        appID: configuration.appID,
+        clientName: clientName,
+        idToken: idToken,
+        nonce: rawNonce,
+        signedInAt: now,
+        makeID: configuration.makeID
+      )
+    )
+    let session = InstantAuthSession(
+      appID: configuration.appID,
+      userID: verification.userID,
+      refreshToken: verification.refreshToken,
       isGuest: false,
       createdAt: now,
       updatedAt: now

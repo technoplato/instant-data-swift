@@ -848,6 +848,59 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliAuthIDTokenSignInPersistsAcrossLaunches() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let signedIn = try JSONDecoder().decode(
+      CLIAuthOutput.self,
+      from: Data(
+        try runCLI(
+          ["auth", "id-token", "google-ios", "local-jwt", "--nonce", "nonce-1", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(signedIn.event, "id-token")
+    expectNoDifference(signedIn.isSignedIn, true)
+    expectNoDifference(signedIn.isGuest, false)
+    expectNoDifference(signedIn.hasRefreshToken, true)
+    #expect(signedIn.userID?.hasPrefix("id-token:google-ios:") == true)
+
+    let show = try JSONDecoder().decode(
+      CLIAuthOutput.self,
+      from: Data(try runCLI(["auth", "show", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(show.userID, signedIn.userID)
+    expectNoDifference(show.hasRefreshToken, true)
+
+    let watch = try JSONDecoder().decode(
+      CLIAuthWatchOutput.self,
+      from: Data(
+        try runCLI(["auth", "watch", "--events", "1", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(watch.emissions.map(\.userID), [signedIn.userID])
+
+    let missingToken = try runCLIResult(
+      ["auth", "id-token", "google-ios", " ", "--json"],
+      homeURL: homeURL
+    )
+    #expect(missingToken.status == 65)
+    #expect(missingToken.error.contains("ID token must not be empty"))
+
+    let malformedNonce = try runCLIResult(
+      ["auth", "id-token", "google-ios", "local-jwt", "--nonce", " ", "--json"],
+      homeURL: homeURL
+    )
+    #expect(malformedNonce.status == 64)
+    #expect(malformedNonce.error.contains("auth id-token"))
+  }
+
+  @Test
   func cliTodoCompleteMarksTodoDurably() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)

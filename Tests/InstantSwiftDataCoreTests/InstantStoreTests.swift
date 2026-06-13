@@ -2074,6 +2074,82 @@ struct InstantStoreTests {
   }
 
   @Test
+  func idTokenSignInUsesExchangeAndPersistsSession() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let signedInAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let exchange = InstantIDTokenExchange(
+      signIn: { request in
+        InstantIDTokenVerification(
+          userID:
+            "dependency:\(request.appID):\(request.clientName):\(request.idToken):\(request.nonce ?? "nil")",
+          refreshToken: "id-token-refresh:\(request.signedInAt.milliseconds)"
+        )
+      }
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        now: { signedInAt },
+        idTokenExchange: exchange
+      )
+    )
+
+    let session = try await runtime.signInWithIDToken(
+      clientName: " google-ios ",
+      idToken: " jwt-token ",
+      nonce: " nonce-1 "
+    )
+    expectNoDifference(
+      session,
+      InstantAuthSession(
+        appID: "app-a",
+        userID: "dependency:app-a:google-ios:jwt-token: nonce-1 ",
+        refreshToken: "id-token-refresh:1700000000000",
+        isGuest: false,
+        createdAt: signedInAt,
+        updatedAt: signedInAt
+      )
+    )
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "app-a", persistenceURL: cacheURL)
+    )
+    let persistedSession = try await relaunchedRuntime.authSession()
+    expectNoDifference(persistedSession, session)
+  }
+
+  @Test
+  func invalidIDTokenInputsFailWithAuthError() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "test-app", persistenceURL: cacheURL)
+    )
+
+    do {
+      _ = try await runtime.signInWithIDToken(clientName: " ", idToken: "token")
+      #expect(Bool(false), "Expected empty ID token client name to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .authFailed)
+      expectNoDifference(error.operation, "sign in with id token")
+      #expect(error.description.contains("Client name must not be empty"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      _ = try await runtime.signInWithIDToken(clientName: "google-ios", idToken: " ")
+      #expect(Bool(false), "Expected empty ID token to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .authFailed)
+      expectNoDifference(error.operation, "sign in with id token")
+      #expect(error.description.contains("ID token must not be empty"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
   func invalidMagicCodeInputsFailWithAuthError() async throws {
     let cacheURL = try temporaryCacheURL()
     let sentAt = InstantTimestamp(milliseconds: 1_700_000_000_000)

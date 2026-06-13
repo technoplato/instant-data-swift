@@ -195,9 +195,13 @@ real Instant app.
 Current local progress: `InstantRuntime` persists auth sessions in SQLite,
 publishes auth-state changes through `observeAuthSession`, and the public
 `InstantSwiftDataClient` dependency exposes the same stream alongside guest,
-token, magic-code, session lookup, and sign-out operations. The CLI proves this
-path non-captively with `instant-swift-data auth watch --events 1 --jsonl`.
-Transport-backed token refresh and server auth invalidation remain future work.
+token, id-token, magic-code, session lookup, and sign-out operations.
+`InstantIDTokenExchange` and `InstantMagicCodeExchange` are Swift Dependencies
+value clients with reusable `.local` instances for durable local proof. The CLI
+proves this path non-captively with commands such as
+`instant-swift-data auth id-token google-ios <id-token> --json` and
+`instant-swift-data auth watch --events 1 --jsonl`. Transport-backed token
+verification, token refresh, and server auth invalidation remain future work.
 
 ### Presence, Rooms, Topics
 
@@ -365,16 +369,18 @@ public API into SQL:
   register `TestDependencyKey` and `DependencyKey` values with computed
   `testValue`, `previewValue`, and `liveValue`, and thread the resolved dependency into
   `bootstrapInstantSwiftData`/`InstantRuntimeConfiguration`. This applies first
-  to magic-code exchange and should later apply to transport/auth, sync, file
-  storage, and network clients.
+  to magic-code and id-token exchange and should later apply to transport/auth,
+  sync, file storage, and network clients.
   Current local progress: `InstantMagicCodeExchange` follows this shape, the
-  public `InstantSwiftData` target exposes `DependencyValues.instantMagicCodeExchange`,
-  and `bootstrapInstantSwiftData` resolves that value before constructing the
-  runtime configuration. The public dependency client also exposes durable auth
-  operations directly, including guest, token, magic-code send/verify, session
-  lookup, auth-state observation, and sign-out. Future transport/auth clients
-  should preserve the same Sendable value-client boundary and local
-  static-instance convention.
+  public `InstantSwiftData` target exposes
+  `DependencyValues.instantMagicCodeExchange` and
+  `DependencyValues.instantIDTokenExchange`, and `bootstrapInstantSwiftData`
+  resolves those values before constructing the runtime configuration. The
+  public dependency client also exposes durable auth operations directly,
+  including guest, token, id-token, magic-code send/verify, session lookup,
+  auth-state observation, and sign-out. Future transport/auth clients should
+  preserve the same Sendable value-client boundary and local static-instance
+  convention.
 - **Typed models above explicit migrations.** SQLiteData combines `@Table`,
   `Draft`, `@Selection`, typed expressions, and generated update helpers with
   named migrations that use strict SQL, foreign keys, indexes, FTS tables, and
