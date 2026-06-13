@@ -833,12 +833,18 @@ struct TypedAPITests {
       let initialPending = await db.pendingMutations()
       expectNoDifference(initialPending, [])
 
+      try await db.transact(id: "tx-create-todo") {
+        TypedTodo.create(
+          id: todoID,
+          TypedTodo.text.set("Created"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(createdAt)
+        )
+      }
       try await db.transact(id: "tx-merge-todo") {
         TypedTodo.merge(
           id: todoID,
-          TypedTodo.text.set("Merged"),
-          TypedTodo.isCompleted.set(false),
-          TypedTodo.createdAt.set(createdAt)
+          TypedTodo.text.set("Merged")
         )
       }
       try await db.transact(id: "tx-strict-update-todo") {
@@ -861,7 +867,7 @@ struct TypedAPITests {
         ]
       )
       let pending = await db.pendingMutations()
-      expectNoDifference(pending.map(\.id), ["tx-merge-todo", "tx-strict-update-todo"])
+      expectNoDifference(pending.map(\.id), ["tx-create-todo", "tx-merge-todo", "tx-strict-update-todo"])
     }
   }
 

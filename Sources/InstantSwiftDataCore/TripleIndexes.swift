@@ -150,8 +150,9 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       return []
 
     case let .merge(triple):
-      merge(triple, attribute: attributes[triple.attributeID])
-      return [triple.entityID]
+      return merge(triple, attribute: attributes[triple.attributeID])
+        ? [triple.entityID]
+        : []
 
     case let .insert(triple):
       var changed: Set<String> = [triple.entityID]
@@ -587,18 +588,19 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     }
   }
 
-  private mutating func merge(_ triple: InstantTriple, attribute: InstantAttribute?) {
+  private mutating func merge(_ triple: InstantTriple, attribute: InstantAttribute?) -> Bool {
     guard
       attribute?.cardinality != .many,
       let existing = eav[triple.entityID]?[triple.attributeID]?.values.first
     else {
-      insert(triple, attribute: attribute)
-      return
+      return false
     }
 
     var merged = triple
     merged.value = Self.deepMerge(existing.value, with: triple.value)
+    merged.txTime = existing.txTime
     insert(merged, attribute: attribute)
+    return true
   }
 
   private static func deepMerge(_ current: InstantValue, with update: InstantValue) -> InstantValue {
@@ -617,6 +619,10 @@ struct TripleIndexes: Hashable, Codable, Sendable {
 
     var merged = currentFields
     for (key, value) in updateFields {
+      if case .null = value {
+        merged[key] = nil
+        continue
+      }
       if let currentValue = merged[key] {
         merged[key] = deepMerge(currentValue, with: value)
       } else {
