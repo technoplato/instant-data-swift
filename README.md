@@ -145,8 +145,10 @@ Persist local room presence and topic messages after signing in:
 swift run instant-swift-data auth token local-refresh --user-id user-1 --json
 swift run instant-swift-data rooms presence set chat lobby --value '{"name":"Ada","status":"online"}' --json
 swift run instant-swift-data rooms presence list chat lobby --json
+swift run instant-swift-data rooms presence watch chat lobby --events 1 --jsonl
 swift run instant-swift-data rooms topics publish chat lobby sendEmoji --value '{"emoji":"wave"}' --json
 swift run instant-swift-data rooms topics list chat lobby sendEmoji --limit 1 --json
+swift run instant-swift-data rooms topics watch chat lobby sendEmoji --events 1 --jsonl
 swift run instant-swift-data rooms presence leave chat lobby --json
 ```
 
@@ -157,6 +159,7 @@ swift run instant-swift-data auth token local-refresh --user-id user-1 --json
 printf "hello instant files\n" > /tmp/instant-demo-file.txt
 swift run instant-swift-data files upload /tmp/instant-demo-file.txt --content-type text/plain --json
 swift run instant-swift-data files list --json
+swift run instant-swift-data files watch --events 1 --jsonl
 FILE_ID="$(swift run instant-swift-data files list --json | jq -r '.files[0].id')"
 swift run instant-swift-data files delete "$FILE_ID" --json
 ```
@@ -168,6 +171,7 @@ swift run instant-swift-data auth token local-refresh --user-id user-1 --json
 swift run instant-swift-data streams append chat/lobby --value '{"text":"hello"}' --json
 swift run instant-swift-data streams append chat/lobby --value '{"text":"again"}' --json
 swift run instant-swift-data streams read chat/lobby --limit 2 --json
+swift run instant-swift-data streams watch chat/lobby --events 1 --jsonl
 ```
 
 Create, accept, and revoke a local share with two users:

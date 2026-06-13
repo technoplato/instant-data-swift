@@ -1180,6 +1180,22 @@ struct InstantSwiftDataCLI {
         output: output
       )
 
+    case "watch":
+      let options = try RoomPresenceWatchOptions.parse(arguments: arguments)
+      let members = try await firstWatchSnapshot(
+        from: context.runtime.observeRoomPresence(room: options.room),
+        operation: "room presence watch",
+        eventCount: options.eventCount
+      )
+      try printRoomPresence(
+        context: context,
+        event: "presence-watch",
+        room: options.room,
+        userID: nil,
+        members: members,
+        output: output
+      )
+
     case "leave":
       let options = try RoomPresenceLeaveOptions.parse(arguments: arguments)
       let userID = try await context.runtime.leavePresence(
@@ -1251,6 +1267,26 @@ struct InstantSwiftDataCLI {
         output: output
       )
 
+    case "watch":
+      let options = try RoomTopicWatchOptions.parse(arguments: arguments)
+      let messages = try await firstWatchSnapshot(
+        from: context.runtime.observeRoomTopicMessages(
+          room: options.room,
+          topic: options.topic
+        ),
+        operation: "room topic watch",
+        eventCount: options.eventCount
+      )
+      try printRoomTopic(
+        context: context,
+        event: "topic-watch",
+        room: options.room,
+        topic: options.topic,
+        publishedMessageID: nil,
+        messages: messages,
+        output: output
+      )
+
     default:
       throw CLIError(roomTopicsUsage, exitCode: 64)
     }
@@ -1289,6 +1325,21 @@ struct InstantSwiftDataCLI {
       try printFiles(
         context: context,
         event: "list",
+        changedID: nil,
+        files: files,
+        output: output
+      )
+
+    case "watch":
+      let options = try FilesWatchOptions.parse(arguments: arguments)
+      let files = try await firstWatchSnapshot(
+        from: context.runtime.observeStoredFiles(),
+        operation: "files watch",
+        eventCount: options.eventCount
+      )
+      try printFiles(
+        context: context,
+        event: "watch",
         changedID: nil,
         files: files,
         output: output
@@ -1353,9 +1404,40 @@ struct InstantSwiftDataCLI {
         output: output
       )
 
+    case "watch":
+      let options = try StreamWatchOptions.parse(arguments: arguments)
+      let chunks = try await firstWatchSnapshot(
+        from: context.runtime.observeStreamChunks(streamID: options.streamID),
+        operation: "stream watch",
+        eventCount: options.eventCount
+      )
+      try printStreamChunks(
+        context: context,
+        event: "watch",
+        streamID: options.streamID,
+        changedID: nil,
+        chunks: chunks,
+        output: output
+      )
+
     default:
       throw CLIError(streamsUsage, exitCode: 64)
     }
+  }
+
+  private static func firstWatchSnapshot<Value: Sendable>(
+    from stream: AsyncStream<[Value]>,
+    operation: String,
+    eventCount: Int
+  ) async throws -> [Value] {
+    guard eventCount == 1 else {
+      throw CLIError("Only --events 1 is supported for \(operation).", exitCode: 64)
+    }
+    var iterator = stream.makeAsyncIterator()
+    guard let snapshot = await iterator.next() else {
+      throw CLIError("Expected \(operation) to emit an initial snapshot.", exitCode: 70)
+    }
+    return snapshot
   }
 
   private static func runShares(arguments: [String], output: OutputMode) async throws {
@@ -3683,6 +3765,34 @@ struct InstantSwiftDataCLI {
     return eventCount
   }
 
+  fileprivate static func parseFiniteWatchEventCount(
+    arguments: [String],
+    usageCommand: String,
+    domain: String
+  ) throws -> Int {
+    var arguments = arguments
+    var eventCount = 1
+    while let option = arguments.popFirstArgument() {
+      switch option {
+      case "--events":
+        guard let value = arguments.popFirstArgument(),
+          let parsed = Int(value),
+          parsed == 1
+        else {
+          throw CLIError("Usage: \(usageCommand) --events 1", exitCode: 64)
+        }
+        eventCount = parsed
+
+      default:
+        throw CLIError(
+          "Unknown \(domain) option: \(option). Usage: \(usageCommand) [--events 1] [--json|--jsonl]",
+          exitCode: 64
+        )
+      }
+    }
+    return eventCount
+  }
+
   private static func todoListQuery(
     arguments: [String],
     usageCommand: String = "instant-swift-data examples todos list"
@@ -4411,43 +4521,49 @@ struct InstantSwiftDataCLI {
     Usage: instant-swift-data rooms <presence|topics>
       instant-swift-data rooms presence set <room-type> <room-id> --value '{...}' [--user-id id] [--json|--jsonl]
       instant-swift-data rooms presence list <room-type> <room-id> [--json|--jsonl]
+      instant-swift-data rooms presence watch <room-type> <room-id> [--events 1] [--json|--jsonl]
       instant-swift-data rooms presence leave <room-type> <room-id> [--user-id id] [--json|--jsonl]
       instant-swift-data rooms topics publish <room-type> <room-id> <topic> --value '{...}' [--user-id id] [--json|--jsonl]
       instant-swift-data rooms topics list <room-type> <room-id> <topic> [--limit n] [--json|--jsonl]
+      instant-swift-data rooms topics watch <room-type> <room-id> <topic> [--events 1] [--json|--jsonl]
     """
   }
 
   fileprivate static var roomPresenceUsage: String {
     """
-    Usage: instant-swift-data rooms presence <set|list|leave>
+    Usage: instant-swift-data rooms presence <set|list|watch|leave>
       instant-swift-data rooms presence set <room-type> <room-id> --value '{...}' [--user-id id] [--json|--jsonl]
       instant-swift-data rooms presence list <room-type> <room-id> [--json|--jsonl]
+      instant-swift-data rooms presence watch <room-type> <room-id> [--events 1] [--json|--jsonl]
       instant-swift-data rooms presence leave <room-type> <room-id> [--user-id id] [--json|--jsonl]
     """
   }
 
   fileprivate static var roomTopicsUsage: String {
     """
-    Usage: instant-swift-data rooms topics <publish|list>
+    Usage: instant-swift-data rooms topics <publish|list|watch>
       instant-swift-data rooms topics publish <room-type> <room-id> <topic> --value '{...}' [--user-id id] [--json|--jsonl]
       instant-swift-data rooms topics list <room-type> <room-id> <topic> [--limit n] [--json|--jsonl]
+      instant-swift-data rooms topics watch <room-type> <room-id> <topic> [--events 1] [--json|--jsonl]
     """
   }
 
   fileprivate static var filesUsage: String {
     """
-    Usage: instant-swift-data files <upload|list|delete>
+    Usage: instant-swift-data files <upload|list|watch|delete>
       instant-swift-data files upload <path> [--name name] [--content-type type] [--json|--jsonl]
       instant-swift-data files list [--json|--jsonl]
+      instant-swift-data files watch [--events 1] [--json|--jsonl]
       instant-swift-data files delete <file-id> [--json|--jsonl]
     """
   }
 
   fileprivate static var streamsUsage: String {
     """
-    Usage: instant-swift-data streams <append|read>
+    Usage: instant-swift-data streams <append|read|watch>
       instant-swift-data streams append <stream-id> --value '{...}' [--json|--jsonl]
       instant-swift-data streams read <stream-id> [--limit n] [--json|--jsonl]
+      instant-swift-data streams watch <stream-id> [--events 1] [--json|--jsonl]
     """
   }
 
@@ -5586,6 +5702,32 @@ private struct RoomPresenceListOptions: Sendable {
   }
 }
 
+private struct RoomPresenceWatchOptions: Sendable {
+  var room: InstantRoomHandle
+  var eventCount: Int
+
+  static func parse(arguments: [String]) throws -> Self {
+    var arguments = arguments
+    guard let roomType = arguments.popFirstArgument(),
+      let roomID = arguments.popFirstArgument()
+    else {
+      throw CLIError(InstantSwiftDataCLI.roomPresenceUsage, exitCode: 64)
+    }
+    let eventCount = try InstantSwiftDataCLI.parseFiniteWatchEventCount(
+      arguments: arguments,
+      usageCommand: "instant-swift-data rooms presence watch <room-type> <room-id>",
+      domain: "rooms presence watch"
+    )
+    return Self(
+      room: InstantRoomHandle(
+        type: roomType.trimmingCharacters(in: .whitespacesAndNewlines),
+        id: roomID.trimmingCharacters(in: .whitespacesAndNewlines)
+      ),
+      eventCount: eventCount
+    )
+  }
+}
+
 private struct RoomPresenceLeaveOptions: Sendable {
   var room: InstantRoomHandle
   var userID: String?
@@ -5727,6 +5869,35 @@ private struct RoomTopicListOptions: Sendable {
   }
 }
 
+private struct RoomTopicWatchOptions: Sendable {
+  var room: InstantRoomHandle
+  var topic: String
+  var eventCount: Int
+
+  static func parse(arguments: [String]) throws -> Self {
+    var arguments = arguments
+    guard let roomType = arguments.popFirstArgument(),
+      let roomID = arguments.popFirstArgument(),
+      let topic = arguments.popFirstArgument()
+    else {
+      throw CLIError(InstantSwiftDataCLI.roomTopicsUsage, exitCode: 64)
+    }
+    let eventCount = try InstantSwiftDataCLI.parseFiniteWatchEventCount(
+      arguments: arguments,
+      usageCommand: "instant-swift-data rooms topics watch <room-type> <room-id> <topic>",
+      domain: "rooms topics watch"
+    )
+    return Self(
+      room: InstantRoomHandle(
+        type: roomType.trimmingCharacters(in: .whitespacesAndNewlines),
+        id: roomID.trimmingCharacters(in: .whitespacesAndNewlines)
+      ),
+      topic: topic.trimmingCharacters(in: .whitespacesAndNewlines),
+      eventCount: eventCount
+    )
+  }
+}
+
 private struct FileUploadOptions: Sendable {
   var sourceURL: URL
   var name: String?
@@ -5771,6 +5942,19 @@ private struct FileUploadOptions: Sendable {
     let currentDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
     let sourceURL = URL(fileURLWithPath: path, relativeTo: currentDirectory).standardizedFileURL
     return Self(sourceURL: sourceURL, name: name, contentType: contentType)
+  }
+}
+
+private struct FilesWatchOptions: Sendable {
+  var eventCount: Int
+
+  static func parse(arguments: [String]) throws -> Self {
+    let eventCount = try InstantSwiftDataCLI.parseFiniteWatchEventCount(
+      arguments: arguments,
+      usageCommand: "instant-swift-data files watch",
+      domain: "files watch"
+    )
+    return Self(eventCount: eventCount)
   }
 }
 
@@ -5848,6 +6032,29 @@ private struct StreamReadOptions: Sendable {
     return Self(
       streamID: streamID.trimmingCharacters(in: .whitespacesAndNewlines),
       limit: limit
+    )
+  }
+}
+
+private struct StreamWatchOptions: Sendable {
+  var streamID: String
+  var eventCount: Int
+
+  static func parse(arguments: [String]) throws -> Self {
+    var arguments = arguments
+    guard let streamID = arguments.popFirstArgument(),
+      !streamID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else {
+      throw CLIError(InstantSwiftDataCLI.streamsUsage, exitCode: 64)
+    }
+    let eventCount = try InstantSwiftDataCLI.parseFiniteWatchEventCount(
+      arguments: arguments,
+      usageCommand: "instant-swift-data streams watch <stream-id>",
+      domain: "streams watch"
+    )
+    return Self(
+      streamID: streamID.trimmingCharacters(in: .whitespacesAndNewlines),
+      eventCount: eventCount
     )
   }
 }

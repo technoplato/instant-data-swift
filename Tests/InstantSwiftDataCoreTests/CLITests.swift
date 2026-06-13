@@ -2176,6 +2176,26 @@ extension InstantStoreTests {
     expectNoDifference(presenceEvidence.caseID, "cli.rooms.presence")
     expectNoDifference(presenceEvidence.details.memberCount, 1)
 
+    let presenceWatchJSONL = try runCLI(
+      ["rooms", "presence", "watch", "chat", "lobby", "--events", "1", "--jsonl"],
+      homeURL: homeURL
+    )
+    let presenceWatchLines = presenceWatchJSONL.split(separator: "\n")
+    expectNoDifference(presenceWatchLines.count, 2)
+    let presenceWatchEvidence = try JSONDecoder().decode(
+      CLIRoomPresenceEvidence.self,
+      from: Data(try #require(presenceWatchLines.first).utf8)
+    )
+    expectNoDifference(presenceWatchEvidence.event, "presence-watch")
+    expectNoDifference(presenceWatchEvidence.details.members, setPresence.members)
+
+    let invalidPresenceWatch = try runCLIResult(
+      ["rooms", "presence", "watch", "chat", "lobby", "--events", "2", "--json"],
+      homeURL: homeURL
+    )
+    #expect(invalidPresenceWatch.status == 64)
+    #expect(invalidPresenceWatch.error.contains("rooms presence watch"))
+
     let firstTopic = try JSONDecoder().decode(
       CLIRoomTopicOutput.self,
       from: Data(
@@ -2216,6 +2236,55 @@ extension InstantStoreTests {
     expectNoDifference(limitedTopic.event, "topic-list")
     expectNoDifference(limitedTopic.messageCount, 1)
     expectNoDifference(limitedTopic.messages.first?.payload, .object(["emoji": .string("wave")]))
+
+    let topicWatch = try JSONDecoder().decode(
+      CLIRoomTopicOutput.self,
+      from: Data(
+        try runCLI(
+          ["rooms", "topics", "watch", "chat", "lobby", "sendEmoji", "--events", "1", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(topicWatch.event, "topic-watch")
+    expectNoDifference(topicWatch.messageCount, 2)
+    expectNoDifference(
+      topicWatch.messages.map(\.payload),
+      [.object(["emoji": .string("wave")]), .object(["emoji": .string("spark")])]
+    )
+
+    let topicWatchJSONL = try runCLI(
+      [
+        "rooms", "topics", "watch", "chat", "lobby", "sendEmoji",
+        "--events", "1",
+        "--jsonl",
+      ],
+      homeURL: homeURL
+    )
+    let topicWatchLines = topicWatchJSONL.split(separator: "\n")
+    expectNoDifference(topicWatchLines.count, 3)
+    let topicWatchEvidence = try JSONDecoder().decode(
+      CLIRoomTopicEvidence.self,
+      from: Data(try #require(topicWatchLines.first).utf8)
+    )
+    expectNoDifference(topicWatchEvidence.event, "topic-watch")
+    expectNoDifference(topicWatchEvidence.details.messageCount, 2)
+    let topicMessageRows = try topicWatchLines.dropFirst().map {
+      try JSONDecoder().decode(CLIRoomTopicMessageEvidence.self, from: Data($0.utf8))
+    }
+    expectNoDifference(topicMessageRows.map(\.event), ["topic-message", "topic-message"])
+    expectNoDifference(topicMessageRows.map(\.details), topicWatch.messages)
+
+    let invalidTopicWatch = try runCLIResult(
+      [
+        "rooms", "topics", "watch", "chat", "lobby", "sendEmoji",
+        "--events", "2",
+        "--json",
+      ],
+      homeURL: homeURL
+    )
+    #expect(invalidTopicWatch.status == 64)
+    #expect(invalidTopicWatch.error.contains("rooms topics watch"))
 
     let leftPresence = try JSONDecoder().decode(
       CLIRoomPresenceOutput.self,
@@ -2303,10 +2372,31 @@ extension InstantStoreTests {
     expectNoDifference(evidence.caseID, "cli.files")
     expectNoDifference(evidence.details.fileCount, 1)
 
+    let watchOutput = try runCLI(["files", "watch", "--events", "1", "--jsonl"], homeURL: homeURL)
+    let watchLines = watchOutput.split(separator: "\n")
+    expectNoDifference(watchLines.count, 2)
+    let watchEvidence = try JSONDecoder().decode(
+      CLIFilesEvidence.self,
+      from: Data(try #require(watchLines.first).utf8)
+    )
+    expectNoDifference(watchEvidence.caseID, "cli.files")
+    expectNoDifference(watchEvidence.event, "watch")
+    expectNoDifference(watchEvidence.details.files, upload.files)
+
+    let invalidWatch = try runCLIResult(
+      ["files", "watch", "--events", "2", "--json"],
+      homeURL: homeURL
+    )
+    #expect(invalidWatch.status == 64)
+    #expect(invalidWatch.error.contains("files watch"))
+
     _ = try runCLI(["auth", "sign-out", "--json"], homeURL: homeURL)
     let signedOutList = try runCLIResult(["files", "list", "--json"], homeURL: homeURL)
     #expect(signedOutList.status == 65)
     #expect(signedOutList.error.contains("File operations require a signed-in user"))
+    let signedOutWatch = try runCLIResult(["files", "watch", "--json"], homeURL: homeURL)
+    #expect(signedOutWatch.status == 65)
+    #expect(signedOutWatch.error.contains("File operations require a signed-in user"))
     let signedOutDelete = try runCLIResult(["files", "delete", file.id, "--json"], homeURL: homeURL)
     #expect(signedOutDelete.status == 65)
     #expect(signedOutDelete.error.contains("File operations require a signed-in user"))
@@ -2430,10 +2520,38 @@ extension InstantStoreTests {
     expectNoDifference(chunkRows.map(\.caseID), ["cli.streams", "cli.streams"])
     expectNoDifference(chunkRows.map(\.details), secondAppend.chunks)
 
+    let watchOutput = try runCLI(
+      ["streams", "watch", "chat/lobby", "--events", "1", "--jsonl"],
+      homeURL: homeURL
+    )
+    let watchLines = watchOutput.split(separator: "\n")
+    expectNoDifference(watchLines.count, 3)
+    let watchEvidence = try JSONDecoder().decode(
+      CLIStreamsEvidence.self,
+      from: Data(try #require(watchLines.first).utf8)
+    )
+    expectNoDifference(watchEvidence.caseID, "cli.streams")
+    expectNoDifference(watchEvidence.event, "watch")
+    expectNoDifference(watchEvidence.details.changedID, nil)
+    expectNoDifference(watchEvidence.details.chunks, secondAppend.chunks)
+
+    let invalidWatch = try runCLIResult(
+      ["streams", "watch", "chat/lobby", "--events", "2", "--json"],
+      homeURL: homeURL
+    )
+    #expect(invalidWatch.status == 64)
+    #expect(invalidWatch.error.contains("streams watch"))
+
     _ = try runCLI(["auth", "sign-out", "--json"], homeURL: homeURL)
     let signedOutRead = try runCLIResult(["streams", "read", "chat/lobby", "--json"], homeURL: homeURL)
     #expect(signedOutRead.status == 65)
     #expect(signedOutRead.error.contains("Stream operations require a signed-in user"))
+    let signedOutWatch = try runCLIResult(
+      ["streams", "watch", "chat/lobby", "--json"],
+      homeURL: homeURL
+    )
+    #expect(signedOutWatch.status == 65)
+    #expect(signedOutWatch.error.contains("Stream operations require a signed-in user"))
     let signedOutAppend = try runCLIResult(
       ["streams", "append", "chat/lobby", "--value", #"{"text":"blocked"}"#, "--json"],
       homeURL: homeURL
@@ -3490,6 +3608,23 @@ private struct CLIRoomTopicOutput: Decodable, Equatable {
   var publishedMessageID: String?
   var messageCount: Int
   var messages: [InstantRoomTopicMessage]
+}
+
+private struct CLIRoomTopicEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLIRoomTopicOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
+}
+
+private struct CLIRoomTopicMessageEvidence: Decodable {
+  var event: String
+  var details: InstantRoomTopicMessage
 }
 
 private struct CLIFilesOutput: Decodable, Equatable {
