@@ -111,6 +111,34 @@ public struct InstantSwiftDataClient: Sendable {
   public func localID(named name: String) async throws -> String {
     try await localIDOperation(name)
   }
+
+  public func subscribe<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>
+  ) async -> FetchSubscription<[Entity]> {
+    let emissions = await observe(query.plan)
+    let stream = AsyncThrowingStream<[Entity], Error>.makeStream(
+      bufferingPolicy: .bufferingNewest(1)
+    )
+    let task = Task {
+      for await emission in emissions {
+        do {
+          try Task.checkCancellation()
+          stream.continuation.yield(try Entity.decode(emission.values))
+        } catch {
+          stream.continuation.finish(throwing: error)
+          return
+        }
+      }
+      stream.continuation.finish()
+    }
+    stream.continuation.onTermination = { @Sendable _ in
+      task.cancel()
+    }
+    return FetchSubscription(stream: stream.stream) {
+      task.cancel()
+      stream.continuation.finish()
+    }
+  }
 }
 
 public enum InstantSwiftDataBootstrapContext: String, Sendable {
@@ -118,6 +146,84 @@ public enum InstantSwiftDataBootstrapContext: String, Sendable {
   case preview
   case test
   case cli
+}
+
+public struct FetchSubscription<Element: Sendable>: AsyncSequence, Sendable {
+  public typealias AsyncIterator = AsyncThrowingStream<Element, Error>.Iterator
+
+  private let stream: AsyncThrowingStream<Element, Error>
+  private let cancellation: FetchSubscriptionCancellation
+
+  public init(
+    stream: AsyncThrowingStream<Element, Error>,
+    cancel: @escaping @Sendable () -> Void
+  ) {
+    self.stream = stream
+    self.cancellation = FetchSubscriptionCancellation(cancel)
+  }
+
+  public func makeAsyncIterator() -> AsyncIterator {
+    stream.makeAsyncIterator()
+  }
+
+  public func cancel() {
+    cancellation.cancel()
+  }
+
+  public func map<Mapped: Sendable>(
+    _ transform: @escaping @Sendable (Element) throws -> Mapped
+  ) -> FetchSubscription<Mapped> {
+    let mapped = AsyncThrowingStream<Mapped, Error>.makeStream(
+      bufferingPolicy: .bufferingNewest(1)
+    )
+    let task = Task {
+      do {
+        for try await value in self {
+          try Task.checkCancellation()
+          mapped.continuation.yield(try transform(value))
+        }
+        mapped.continuation.finish()
+      } catch {
+        mapped.continuation.finish(throwing: error)
+      }
+    }
+    mapped.continuation.onTermination = { @Sendable _ in
+      task.cancel()
+      self.cancel()
+    }
+    return FetchSubscription<Mapped>(stream: mapped.stream) {
+      task.cancel()
+      mapped.continuation.finish()
+      self.cancel()
+    }
+  }
+}
+
+// SAFETY: the only mutable state is `isCancelled`, which is protected by `lock`.
+private final class FetchSubscriptionCancellation: @unchecked Sendable {
+  private let lock = NSLock()
+  private let operation: @Sendable () -> Void
+  private var isCancelled = false
+
+  init(_ operation: @escaping @Sendable () -> Void) {
+    self.operation = operation
+  }
+
+  deinit {
+    cancel()
+  }
+
+  func cancel() {
+    lock.lock()
+    guard !isCancelled else {
+      lock.unlock()
+      return
+    }
+    isCancelled = true
+    lock.unlock()
+
+    operation()
+  }
 }
 
 private enum DefaultInstantSwiftDataKey: TestDependencyKey {
@@ -251,12 +357,15 @@ public struct FetchAll<Element: Sendable>: Sendable {
   public var loadError: InstantError?
   public var isLoading: Bool
   private var loadOperation: (@Sendable (InstantSwiftDataClient) async throws -> [Element])?
+  private var subscribeOperation:
+    (@Sendable (InstantSwiftDataClient) async -> FetchSubscription<[Element]>)?
 
   public init(wrappedValue: [Element] = []) {
     self.wrappedValue = wrappedValue
     self.loadError = nil
     self.isLoading = false
     self.loadOperation = nil
+    self.subscribeOperation = nil
   }
 
   public init(
@@ -268,6 +377,9 @@ public struct FetchAll<Element: Sendable>: Sendable {
     self.isLoading = false
     self.loadOperation = { client in
       try await client.query(query)
+    }
+    self.subscribeOperation = { client in
+      await client.subscribe(query)
     }
   }
 
@@ -333,7 +445,53 @@ public struct FetchAll<Element: Sendable>: Sendable {
     self.loadOperation = { client in
       try await client.query(query)
     }
+    self.subscribeOperation = { client in
+      await client.subscribe(query)
+    }
     try await load(using: client)
+  }
+
+  public mutating func subscribe() async throws -> FetchSubscription<[Element]> {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(using: client)
+  }
+
+  public mutating func subscribe(
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[Element]> {
+    guard let subscribeOperation else {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "subscribe FetchAll",
+        message: "No Instant query has been configured for this fetch wrapper.",
+        recovery: "Initialize @FetchAll with an InstantEntityQuery, or pass a query to subscribe(_:using:)."
+      )
+      loadError = error
+      throw error
+    }
+
+    loadError = nil
+    return await subscribeOperation(client)
+  }
+
+  public mutating func subscribe(
+    _ query: InstantEntityQuery<Element>
+  ) async throws -> FetchSubscription<[Element]> where Element: InstantEntityModel {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(query, using: client)
+  }
+
+  public mutating func subscribe(
+    _ query: InstantEntityQuery<Element>,
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[Element]> where Element: InstantEntityModel {
+    self.loadOperation = { client in
+      try await client.query(query)
+    }
+    self.subscribeOperation = { client in
+      await client.subscribe(query)
+    }
+    return try await subscribe(using: client)
   }
 }
 
@@ -343,12 +501,15 @@ public struct FetchOne<Element: Sendable>: Sendable {
   public var loadError: InstantError?
   public var isLoading: Bool
   private var loadOperation: (@Sendable (InstantSwiftDataClient) async throws -> Element?)?
+  private var subscribeOperation:
+    (@Sendable (InstantSwiftDataClient) async -> FetchSubscription<Element?>)?
 
   public init(wrappedValue: Element? = nil) {
     self.wrappedValue = wrappedValue
     self.loadError = nil
     self.isLoading = false
     self.loadOperation = nil
+    self.subscribeOperation = nil
   }
 
   public init(
@@ -364,6 +525,13 @@ public struct FetchOne<Element: Sendable>: Sendable {
         query = query.limit(1)
       }
       return try await client.query(query).first
+    }
+    self.subscribeOperation = { client in
+      var query = query
+      if query.plan.limit == nil {
+        query = query.limit(1)
+      }
+      return await client.subscribe(query).map(\.first)
     }
   }
 
@@ -433,7 +601,65 @@ public struct FetchOne<Element: Sendable>: Sendable {
       }
       return try await client.query(query).first
     }
+    self.subscribeOperation = { client in
+      var query = query
+      if query.plan.limit == nil {
+        query = query.limit(1)
+      }
+      return await client.subscribe(query).map(\.first)
+    }
     try await load(using: client)
+  }
+
+  public mutating func subscribe() async throws -> FetchSubscription<Element?> {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(using: client)
+  }
+
+  public mutating func subscribe(
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<Element?> {
+    guard let subscribeOperation else {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "subscribe FetchOne",
+        message: "No Instant query has been configured for this fetch wrapper.",
+        recovery: "Initialize @FetchOne with an InstantEntityQuery, or pass a query to subscribe(_:using:)."
+      )
+      loadError = error
+      throw error
+    }
+
+    loadError = nil
+    return await subscribeOperation(client)
+  }
+
+  public mutating func subscribe(
+    _ query: InstantEntityQuery<Element>
+  ) async throws -> FetchSubscription<Element?> where Element: InstantEntityModel {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(query, using: client)
+  }
+
+  public mutating func subscribe(
+    _ query: InstantEntityQuery<Element>,
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<Element?> where Element: InstantEntityModel {
+    self.loadOperation = { client in
+      var query = query
+      if query.plan.limit == nil {
+        query = query.limit(1)
+      }
+      return try await client.query(query).first
+    }
+    self.subscribeOperation = { client in
+      var query = query
+      if query.plan.limit == nil {
+        query = query.limit(1)
+      }
+      return await client.subscribe(query).map(\.first)
+    }
+    return try await subscribe(using: client)
   }
 }
 

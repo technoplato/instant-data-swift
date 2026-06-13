@@ -132,7 +132,17 @@ let openTodos = try await db.query(
 var todos: [Todo]
 
 try await $todos.load()
+
+let subscription = try await $todos.subscribe()
+defer { subscription.cancel() }
+
+for try await todos in subscription {
+  // Update model state from the latest local materialization.
+}
 ```
+
+Subscriptions are bounded newest-value streams, so slow consumers receive the
+latest local materialization rather than every intermediate invalidation.
 
 Build and test:
 

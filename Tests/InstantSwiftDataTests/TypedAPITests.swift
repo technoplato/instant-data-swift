@@ -164,6 +164,49 @@ struct TypedAPITests {
   }
 
   @Test
+  func fetchAllSubscriptionEmitsInitialAndOptimisticUpdates() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_125)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000657")!
+
+    try await withDependencies {
+      $0.date.now = baseDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "fetch-all-subscription-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      var fetch = FetchAll<TypedTodo>(
+        TypedTodo.query
+          .where(TypedTodo.isCompleted == false)
+          .order(TypedTodo.createdAt)
+      )
+      let subscription = try await fetch.subscribe()
+      var iterator = subscription.makeAsyncIterator()
+
+      let initial = try await iterator.next()
+      expectNoDifference(initial, [])
+
+      try await db.transact {
+        TypedTodo.create(
+          id: InstantID(rawValue: "todo-live"),
+          TypedTodo.text.set("Live"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate)
+        )
+      }
+
+      let updated = try await iterator.next()
+      expectNoDifference(updated?.map(\.text), ["Live"])
+      expectNoDifference(fetch.loadError, nil)
+      subscription.cancel()
+    }
+  }
+
+  @Test
   func fetchOneLoadsFirstTypedQueryAndDynamicQuery() async throws {
     let baseDate = Date(timeIntervalSince1970: 1_700_000_150)
     let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000655")!
@@ -207,6 +250,117 @@ struct TypedAPITests {
       expectNoDifference(fetch.isLoading, false)
       expectNoDifference(fetch.loadError, nil)
     }
+  }
+
+  @Test
+  func fetchOneSubscriptionMapsLiveValuesToFirstEntity() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_160)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000658")!
+
+    try await withDependencies {
+      $0.date.now = baseDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "fetch-one-subscription-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      var fetch = FetchOne<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt))
+      let subscription = try await fetch.subscribe()
+      var iterator = subscription.makeAsyncIterator()
+
+      let initial = try await iterator.next()
+      guard case .some(nil) = initial else {
+        Issue.record("Expected initial FetchOne subscription emission to be nil.")
+        return
+      }
+
+      try await db.transact {
+        TypedTodo.create(
+          id: InstantID(rawValue: "todo-second-live"),
+          TypedTodo.text.set("Second live"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate.addingTimeInterval(1))
+        )
+        TypedTodo.create(
+          id: InstantID(rawValue: "todo-first-live"),
+          TypedTodo.text.set("First live"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate)
+        )
+      }
+
+      let updated = try await iterator.next()
+      let todo = try #require(updated ?? nil)
+      expectNoDifference(todo.text, "First live")
+      expectNoDifference(fetch.loadError, nil)
+      subscription.cancel()
+    }
+  }
+
+  @Test
+  func fetchSubscriptionCancelTerminatesObservedStream() async throws {
+    let termination = ObservationTermination()
+    let mock = mockClient(recording: termination)
+
+    var fetch = FetchAll<TypedTodo>(TypedTodo.query)
+    let subscription = try await fetch.subscribe(using: mock)
+    var iterator = subscription.makeAsyncIterator()
+
+    let initial = try await iterator.next()
+    expectNoDifference(initial?.count, 0)
+
+    subscription.cancel()
+    if let value = try await iterator.next() {
+      Issue.record("Expected subscription cancellation to finish the stream; got \(value.count) values.")
+    }
+    await termination.wait()
+  }
+
+  @Test
+  func fetchSubscriptionCancelBeforeFirstReadTerminatesObservedStream() async throws {
+    let termination = ObservationTermination()
+    let mock = mockClient(recording: termination)
+
+    var fetch = FetchAll<TypedTodo>(TypedTodo.query)
+    let subscription = try await fetch.subscribe(using: mock)
+    subscription.cancel()
+
+    var iterator = subscription.makeAsyncIterator()
+    _ = try await iterator.next()
+    if let value = try await iterator.next() {
+      Issue.record("Expected cancelled subscription to finish after draining; got \(value.count) values.")
+    }
+    await termination.wait()
+  }
+
+  @Test
+  func fetchOneSubscriptionCancelTerminatesMappedObservedStream() async throws {
+    let termination = ObservationTermination()
+    let mock = mockClient(recording: termination)
+
+    var fetch = FetchOne<TypedTodo>(TypedTodo.query)
+    let subscription = try await fetch.subscribe(using: mock)
+    subscription.cancel()
+
+    var iterator = subscription.makeAsyncIterator()
+    _ = try await iterator.next()
+    if let value = try await iterator.next() {
+      Issue.record("Expected mapped subscription to finish after draining; got \(String(describing: value)).")
+    }
+    await termination.wait()
+  }
+
+  @Test
+  func unusedFetchSubscriptionCleansUpWhenReleased() async throws {
+    let termination = ObservationTermination()
+    let mock = mockClient(recording: termination)
+
+    try await makeUnusedFetchSubscription(using: mock)
+    await termination.wait()
   }
 
   @Test
@@ -398,6 +552,60 @@ private actor TransactionRecorder {
 
   func record(_ transaction: InstantStoreTransaction) {
     transactions.append(transaction)
+  }
+}
+
+private func mockClient(recording termination: ObservationTermination) -> InstantSwiftDataClient {
+  InstantSwiftDataClient(
+    transact: { _ in
+      InstantStoreMutationResult(
+        transactionID: "tx",
+        changedEntityIDs: [],
+        tripleCount: 0,
+        emissions: []
+      )
+    },
+    query: { _ in [] },
+    observe: { plan in
+      AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+        continuation.yield(
+          InstantQueryEmission(queryID: plan.id, sequence: 0, values: [])
+        )
+        continuation.onTermination = { @Sendable _ in
+          Task {
+            await termination.record()
+          }
+        }
+      }
+    },
+    pendingMutations: { [] },
+    localID: { name in "mock-\(name)" }
+  )
+}
+
+private func makeUnusedFetchSubscription(using client: InstantSwiftDataClient) async throws {
+  var fetch = FetchAll<TypedTodo>(TypedTodo.query)
+  let subscription = try await fetch.subscribe(using: client)
+  withExtendedLifetime(subscription) {}
+}
+
+private actor ObservationTermination {
+  private var didTerminate = false
+  private var continuations: [CheckedContinuation<Void, Never>] = []
+
+  func record() {
+    didTerminate = true
+    for continuation in continuations {
+      continuation.resume()
+    }
+    continuations.removeAll()
+  }
+
+  func wait() async {
+    if didTerminate { return }
+    await withCheckedContinuation { continuation in
+      continuations.append(continuation)
+    }
   }
 }
 
