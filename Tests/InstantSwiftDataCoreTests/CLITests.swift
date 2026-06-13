@@ -4,6 +4,63 @@ import Testing
 
 extension InstantStoreTests {
   @Test
+  func cliQueryTodosPrintsDecodedLocalResults() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    _ = try runCLI(["examples", "todos", "add", "query open", "--json"], homeURL: homeURL)
+    let completedAddOutput = try runCLI(
+      ["examples", "todos", "add", "query completed", "--json"],
+      homeURL: homeURL
+    )
+    let completedAdd = try JSONDecoder().decode(CLIAddOutput.self, from: Data(completedAddOutput.utf8))
+    let completedID = try #require(completedAdd.changedID)
+    _ = try runCLI(["examples", "todos", "complete", completedID, "--json"], homeURL: homeURL)
+
+    let completedQuery = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(try runCLI(["query", "todos", "--completed", "true", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(completedQuery.event, "query")
+    expectNoDifference(completedQuery.transport, "not-implemented-local-cache-only")
+    expectNoDifference(completedQuery.queryID, "examples.todos.list.completed-true")
+    #expect(completedQuery.cacheKey.hasPrefix("plan:"))
+    expectNoDifference(completedQuery.todos.map(\.text), ["query completed"])
+    expectNoDifference(completedQuery.todos.map(\.isCompleted), [true])
+    expectNoDifference(completedQuery.pendingMutationCount, 3)
+
+    let jsonlOutput = try runCLI(
+      ["query", "todos", "--completed", "false", "--jsonl"],
+      homeURL: homeURL
+    )
+    let lines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(lines.count, 2)
+    let summary = try JSONDecoder().decode(
+      CLITodosEvidence.self,
+      from: Data(try #require(lines.first).utf8)
+    )
+    expectNoDifference(summary.caseID, "cli.query.todos")
+    expectNoDifference(summary.event, "query")
+    expectNoDifference(summary.details.transport, "not-implemented-local-cache-only")
+    expectNoDifference(summary.details.queryID, "examples.todos.list.completed-false")
+    expectNoDifference(summary.details.todos.map(\.text), ["query open"])
+
+    let humanOutput = try runCLI(["query", "todos", "--completed", "true"], homeURL: homeURL)
+    #expect(humanOutput.contains("transport: not-implemented-local-cache-only"))
+    #expect(humanOutput.contains("query completed"))
+
+    let malformed = try runCLIResult(["query", "todos", "--completed", "--json"], homeURL: homeURL)
+    #expect(malformed.status == 64)
+    #expect(malformed.error.contains("instant-swift-data query todos --completed"))
+
+    let unsupported = try runCLIResult(["query", "rooms", "--json"], homeURL: homeURL)
+    #expect(unsupported.status == 64)
+    #expect(unsupported.error.contains("query <namespace>"))
+  }
+
+  @Test
   func cliCacheInspectIncludesPlanAwareQuerySummaries() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -827,6 +884,9 @@ private struct CLITodosOutput: Decodable {
   var appID: String
   var event: String
   var changedID: String?
+  var transport: String
+  var queryID: String
+  var cacheKey: String
   var pendingMutationCount: Int
   var todos: [CLITodo]
 }
@@ -835,6 +895,18 @@ private struct CLITestProcessResult {
   var status: Int32
   var output: String
   var error: String
+}
+
+private struct CLITodosEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLITodosOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
 }
 
 private struct CLITodoWatchOutput: Decodable {

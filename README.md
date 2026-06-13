@@ -22,6 +22,7 @@ swift run instant-swift-data examples todos add "do the dishes"
 swift run instant-swift-data examples todos list
 swift run instant-swift-data examples todos list --completed false --offset 0 --limit 10 --order desc
 swift run instant-swift-data examples todos list --search dishes
+swift run instant-swift-data query todos --completed false --json
 swift run instant-swift-data examples todos watch --events 1 --jsonl
 TODO_ID="$(swift run instant-swift-data examples todos add "ship the demo" --json | jq -r '.changedID')"
 swift run instant-swift-data examples todos complete "$TODO_ID"
@@ -40,6 +41,7 @@ TODO_ID="$(swift run instant-swift-data examples todos add "complete through JSO
 swift run instant-swift-data examples todos complete "$TODO_ID" --jsonl
 swift run instant-swift-data examples todos seed --jsonl
 swift run instant-swift-data examples todos list --jsonl
+swift run instant-swift-data query todos --search dishes --jsonl
 swift run instant-swift-data examples todos watch --events 1 --jsonl
 swift run instant-swift-data examples todos reset --jsonl
 ```

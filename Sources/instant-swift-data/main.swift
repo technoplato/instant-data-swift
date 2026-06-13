@@ -41,6 +41,9 @@ struct InstantSwiftDataCLI {
     case "examples":
       try await runExamples(arguments: arguments, output: output)
 
+    case "query":
+      try await runQuery(arguments: arguments, output: output)
+
     case "cache":
       try await runCache(arguments: arguments, output: output)
 
@@ -141,6 +144,32 @@ struct InstantSwiftDataCLI {
       iterations: options.iterations
     )
     try printBenchmark(result: result, output: output)
+  }
+
+  private static func runQuery(arguments: [String], output: OutputMode) async throws {
+    var arguments = arguments
+    guard let namespace = arguments.popFirstArgument() else {
+      throw CLIError(queryUsage, exitCode: 64)
+    }
+
+    switch namespace {
+    case "todos":
+      let query = try todoListQuery(
+        arguments: arguments,
+        usageCommand: "instant-swift-data query todos"
+      )
+      let context = try await CLIContext.bootstrap()
+      try await printTodos(
+        context: context,
+        output: output,
+        event: "query",
+        query: query,
+        caseID: "cli.query.todos"
+      )
+
+    default:
+      throw CLIError(queryUsage, exitCode: 64)
+    }
   }
 
   private static func runExamples(arguments: [String], output: OutputMode) async throws {
@@ -995,7 +1024,8 @@ struct InstantSwiftDataCLI {
     output: OutputMode,
     event: String,
     changedID: String? = nil,
-    query: InstantQueryPlan = TodoExample.query
+    query: InstantQueryPlan = TodoExample.query,
+    caseID: String = "cli.examples.todos"
   ) async throws {
     let snapshots = try await context.runtime.query(query)
     let todos = try TodoExample.decode(snapshots)
@@ -1006,6 +1036,8 @@ struct InstantSwiftDataCLI {
       event: event,
       changedID: changedID,
       transport: "not-implemented-local-cache-only",
+      queryID: query.id,
+      cacheKey: query.cacheKey,
       pendingMutationCount: pending.count,
       todos: todos
     )
@@ -1020,6 +1052,7 @@ struct InstantSwiftDataCLI {
           print("\(mark) \(todo.id) \(todo.text)")
         }
       }
+      print("transport: \(payload.transport)")
       print("pending mutations: \(pending.count)")
       print("cache: \(context.cacheURL.path)")
 
@@ -1029,7 +1062,7 @@ struct InstantSwiftDataCLI {
     case .jsonl:
       try writeJSONLine(
         EvidenceRow(
-          caseID: "cli.examples.todos",
+          caseID: caseID,
           side: "swift",
           event: event,
           appID: context.appID,
@@ -1040,7 +1073,7 @@ struct InstantSwiftDataCLI {
       for todo in todos {
         try writeJSONLine(
           EvidenceRow(
-            caseID: "cli.examples.todos",
+            caseID: caseID,
             side: "swift",
             event: "todo",
             appID: context.appID,
@@ -1146,6 +1179,7 @@ struct InstantSwiftDataCLI {
         schema verify --example todos --from instant.schema.ts [--json|--jsonl]
         perms generate --example todos [--to instant.perms.ts]
         perms verify --example todos --from instant.perms.ts [--json|--jsonl]
+        query todos [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--json|--jsonl]
         examples todos seed [--json|--jsonl]
         examples todos add "do the dishes" [--json|--jsonl]
         examples todos list [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--json|--jsonl]
@@ -1432,8 +1466,12 @@ struct InstantSwiftDataCLI {
     return userID
   }
 
-  private static func todoListQuery(arguments: [String]) throws -> InstantQueryPlan {
+  private static func todoListQuery(
+    arguments: [String],
+    usageCommand: String = "instant-swift-data examples todos list"
+  ) throws -> InstantQueryPlan {
     var arguments = arguments
+    let usage = "\(usageCommand) [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc]"
     var completed: Bool?
     var search: String?
     var offset: Int?
@@ -1444,7 +1482,7 @@ struct InstantSwiftDataCLI {
       switch option {
       case "--completed":
         guard let value = arguments.popFirstArgument(), let parsed = parseBool(value) else {
-          throw CLIError("Usage: instant-swift-data examples todos list --completed true|false", exitCode: 64)
+          throw CLIError("Usage: \(usageCommand) --completed true|false", exitCode: 64)
         }
         completed = parsed
 
@@ -1452,7 +1490,7 @@ struct InstantSwiftDataCLI {
         guard let value = arguments.popFirstArgument(),
           !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else {
-          throw CLIError("Usage: instant-swift-data examples todos list --search text", exitCode: 64)
+          throw CLIError("Usage: \(usageCommand) --search text", exitCode: 64)
         }
         search = value
 
@@ -1461,7 +1499,7 @@ struct InstantSwiftDataCLI {
           let parsed = Int(value),
           parsed >= 0
         else {
-          throw CLIError("Usage: instant-swift-data examples todos list --limit n", exitCode: 64)
+          throw CLIError("Usage: \(usageCommand) --limit n", exitCode: 64)
         }
         limit = parsed
 
@@ -1470,19 +1508,19 @@ struct InstantSwiftDataCLI {
           let parsed = Int(value),
           parsed >= 0
         else {
-          throw CLIError("Usage: instant-swift-data examples todos list --offset n", exitCode: 64)
+          throw CLIError("Usage: \(usageCommand) --offset n", exitCode: 64)
         }
         offset = parsed
 
       case "--order":
         guard let value = arguments.popFirstArgument(), let parsed = parseSortDirection(value) else {
-          throw CLIError("Usage: instant-swift-data examples todos list --order asc|desc", exitCode: 64)
+          throw CLIError("Usage: \(usageCommand) --order asc|desc", exitCode: 64)
         }
         direction = parsed
 
       default:
         throw CLIError(
-          "Unknown todo list option: \(option). Usage: instant-swift-data examples todos list [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc]",
+          "Unknown todo list option: \(option). Usage: \(usage)",
           exitCode: 64
         )
       }
@@ -1736,6 +1774,13 @@ struct InstantSwiftDataCLI {
     """
   }
 
+  private static var queryUsage: String {
+    """
+    Usage: instant-swift-data query <namespace>
+      instant-swift-data query todos [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--json|--jsonl]
+    """
+  }
+
   private static func namespaceSummaries(
     _ snapshot: InstantStoreSnapshot
   ) -> [CacheNamespaceSummary] {
@@ -1926,6 +1971,8 @@ private struct TodosOutput: Codable, Sendable {
   var event: String
   var changedID: String?
   var transport: String
+  var queryID: String
+  var cacheKey: String
   var pendingMutationCount: Int
   var todos: [TodoRecord]
 }
