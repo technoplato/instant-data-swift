@@ -474,6 +474,9 @@ Agent-oriented output modes are required:
 - persist local file metadata and copied content after sign-in with commands
   such as `instant-swift-data files upload ./photo.jpg --content-type image/jpeg`
   and `instant-swift-data files list --json`.
+- persist ordered local stream chunks after sign-in with commands such as
+  `instant-swift-data streams append chat/lobby --value '{"text":"hello"}'`
+  and `instant-swift-data streams read chat/lobby --json`.
 - run example business commands directly, such as todo/reminder/sync-up/chat
   create, list, update, delete, share, accept, upload, and stream operations.
 

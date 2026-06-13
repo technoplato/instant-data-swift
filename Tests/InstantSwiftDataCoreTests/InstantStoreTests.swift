@@ -1701,6 +1701,93 @@ struct InstantStoreTests {
   }
 
   @Test
+  func streamChunksPersistOrderedByAppIDAcrossLaunches() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let idSequence = LockIsolated(0)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        now: { timestamp },
+        makeID: {
+          let nextID = idSequence.withValue { value in
+            value += 1
+            return value
+          }
+          return "chunk-\(nextID)"
+        }
+      )
+    )
+    _ = try await runtime.signInWithRefreshToken("refresh-token", userID: "user-1")
+
+    let first = try await runtime.appendStreamChunk(
+      streamID: " chat/lobby ",
+      payload: .object(["text": .string("hello")])
+    )
+    let second = try await runtime.appendStreamChunk(
+      streamID: "chat/lobby",
+      payload: .object(["text": .string("again")])
+    )
+    let otherStream = try await runtime.appendStreamChunk(
+      streamID: "chat/side",
+      payload: .object(["text": .string("side")])
+    )
+    expectNoDifference(first.index, 0)
+    expectNoDifference(second.index, 1)
+    expectNoDifference(otherStream.index, 0)
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "app-a", persistenceURL: cacheURL)
+    )
+    _ = try await relaunchedRuntime.signInWithRefreshToken("refresh-token", userID: "user-1")
+    let relaunchedChunks = try await relaunchedRuntime.streamChunks(streamID: "chat/lobby")
+    expectNoDifference(relaunchedChunks, [first, second])
+    let limitedChunks = try await relaunchedRuntime.streamChunks(streamID: "chat/lobby", limit: 1)
+    expectNoDifference(limitedChunks, [first])
+    let otherStreamChunks = try await relaunchedRuntime.streamChunks(streamID: "chat/side")
+    expectNoDifference(otherStreamChunks, [otherStream])
+
+    try await relaunchedRuntime.signOut()
+    do {
+      _ = try await relaunchedRuntime.streamChunks(streamID: "chat/lobby")
+      #expect(Bool(false), "Expected signed-out stream read to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .authFailed)
+      expectNoDifference(error.operation, "read stream chunks")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    let otherAppRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "app-b", persistenceURL: cacheURL)
+    )
+    _ = try await otherAppRuntime.signInWithRefreshToken("other-refresh", userID: "user-2")
+    let otherChunks = try await otherAppRuntime.streamChunks(streamID: "chat/lobby")
+    expectNoDifference(otherChunks, [])
+  }
+
+  @Test
+  func streamAppendRequiresAuth() async throws {
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "test-app", persistenceURL: temporaryCacheURL())
+    )
+
+    do {
+      _ = try await runtime.appendStreamChunk(
+        streamID: "chat/lobby",
+        payload: .object(["text": .string("hello")])
+      )
+      #expect(Bool(false), "Expected anonymous stream append to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .authFailed)
+      expectNoDifference(error.operation, "append stream chunk")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
   func magicCodeChallengePersistsAndVerifiesAcrossLaunches() async throws {
     let cacheURL = try temporaryCacheURL()
     let sentAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
@@ -4663,6 +4750,21 @@ private struct LegacyCachedQuery: Encodable, Sendable {
   var emission: InstantQueryEmission
   var updatedAt: InstantTimestamp
   var storeRevision: Int64
+}
+
+private final class LockIsolated<Value>: @unchecked Sendable {
+  private var value: Value
+  private let lock = NSLock()
+
+  init(_ value: Value) {
+    self.value = value
+  }
+
+  func withValue<Result>(_ operation: (inout Value) throws -> Result) rethrows -> Result {
+    lock.lock()
+    defer { lock.unlock() }
+    return try operation(&value)
+  }
 }
 
 private let testSQLiteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)

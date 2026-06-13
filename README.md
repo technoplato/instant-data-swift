@@ -120,6 +120,15 @@ FILE_ID="$(swift run instant-swift-data files list --json | jq -r '.files[0].id'
 swift run instant-swift-data files delete "$FILE_ID" --json
 ```
 
+Persist local stream chunks after signing in:
+
+```bash
+swift run instant-swift-data auth token local-refresh --user-id user-1 --json
+swift run instant-swift-data streams append chat/lobby --value '{"text":"hello"}' --json
+swift run instant-swift-data streams append chat/lobby --value '{"text":"again"}' --json
+swift run instant-swift-data streams read chat/lobby --limit 2 --json
+```
+
 Create and verify a local todo scaffold:
 
 ```bash
@@ -159,8 +168,8 @@ The current transport is intentionally marked `not-implemented-local-cache-only`
 in command output. That means the demo proves durable local cache, typed triples,
 query materialization, plan-aware persisted query results, optimistic outbox
 persistence, local auth/session state, local room presence/topics, local file
-metadata/content copies, and non-captive CLI interaction, but it does not yet
-sync with a real Instant app.
+metadata/content copies, local stream chunks, and non-captive CLI interaction,
+but it does not yet sync with a real Instant app.
 
 ## Development
 

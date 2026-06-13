@@ -295,6 +295,29 @@ public actor SQLitePersistenceStore {
         )
       }
     }
+    try withSQLiteBusyRetry {
+      try migrate(name: "0007_local_stream_chunks") {
+        try execute(
+          """
+          CREATE TABLE IF NOT EXISTS instant_stream_chunks (
+            app_id TEXT NOT NULL,
+            stream_id TEXT NOT NULL,
+            chunk_id TEXT NOT NULL,
+            chunk_index INTEGER NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            json TEXT NOT NULL,
+            PRIMARY KEY (app_id, stream_id, chunk_id)
+          )
+          """
+        )
+        try execute(
+          """
+          CREATE INDEX IF NOT EXISTS instant_stream_chunks_stream_idx
+          ON instant_stream_chunks (app_id, stream_id, chunk_index, chunk_id)
+          """
+        )
+      }
+    }
   }
 
   public func loadSnapshot() throws -> InstantPersistenceSnapshot {
@@ -600,6 +623,63 @@ public actor SQLitePersistenceStore {
       }
     }
     return file
+  }
+
+  public func appendStreamChunk(
+    appID: String,
+    streamID: String,
+    chunkID: String,
+    payload: JSONValue,
+    userID: String,
+    createdAt: InstantTimestamp
+  ) throws -> InstantStreamChunk {
+    try transaction {
+      let nextIndex = try nextStreamChunkIndexWithoutTransaction(appID: appID, streamID: streamID)
+      let chunk = InstantStreamChunk(
+        id: chunkID,
+        appID: appID,
+        streamID: streamID,
+        index: nextIndex,
+        payload: payload,
+        userID: userID,
+        createdAt: createdAt
+      )
+      try execute(
+        """
+        INSERT INTO instant_stream_chunks
+          (app_id, stream_id, chunk_id, chunk_index, created_at_ms, json)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        [
+          .text(chunk.appID),
+          .text(chunk.streamID),
+          .text(chunk.id),
+          .int(chunk.index),
+          .int(chunk.createdAt.milliseconds),
+          .text(try encode(chunk)),
+        ]
+      )
+      return chunk
+    }
+  }
+
+  public func loadStreamChunks(
+    appID: String,
+    streamID: String,
+    limit: Int? = nil
+  ) throws -> [InstantStreamChunk] {
+    var sql =
+      """
+      SELECT json FROM instant_stream_chunks
+      WHERE app_id = ? AND stream_id = ?
+      ORDER BY chunk_index, chunk_id
+      """
+    var bindings: [SQLiteBinding] = [.text(appID), .text(streamID)]
+    if let limit {
+      sql.append("\nLIMIT ?")
+      bindings.append(.int(Int64(limit)))
+    }
+    return try selectJSON(sql, bindings)
   }
 
   public func loadMagicCodeChallenge(key: String) throws -> InstantMagicCodeChallenge? {
@@ -919,6 +999,18 @@ public actor SQLitePersistenceStore {
       ]
     )
     return revision
+  }
+
+  private func nextStreamChunkIndexWithoutTransaction(appID: String, streamID: String) throws -> Int64 {
+    let value: String? = try selectScalar(
+      """
+      SELECT CAST(COALESCE(MAX(chunk_index), -1) + 1 AS TEXT)
+      FROM instant_stream_chunks
+      WHERE app_id = ? AND stream_id = ?
+      """,
+      [.text(appID), .text(streamID)]
+    )
+    return value.flatMap(Int64.init) ?? 0
   }
 
   private func execute(_ sql: String, _ bindings: [SQLiteBinding] = []) throws {

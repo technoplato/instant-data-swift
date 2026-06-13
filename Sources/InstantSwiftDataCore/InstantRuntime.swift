@@ -599,6 +599,72 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  public func appendStreamChunk(
+    streamID rawStreamID: String,
+    payload: JSONValue
+  ) async throws -> InstantStreamChunk {
+    let streamID = try validatedNonEmpty(
+      rawStreamID,
+      label: "Stream id",
+      operation: "append stream chunk",
+      recovery: "Pass a stream id, such as 'chat/lobby'."
+    )
+
+    await operationGate.enter()
+    do {
+      let userID = try await resolvedAuthenticatedUserID(
+        operation: "append stream chunk",
+        noun: "Stream"
+      )
+      let chunk = try await persistence.appendStreamChunk(
+        appID: configuration.appID,
+        streamID: streamID,
+        chunkID: configuration.makeID(),
+        payload: payload,
+        userID: userID,
+        createdAt: configuration.now()
+      )
+      await operationGate.leave()
+      return chunk
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  public func streamChunks(streamID rawStreamID: String, limit: Int? = nil) async throws
+    -> [InstantStreamChunk]
+  {
+    if let limit, limit < 0 {
+      throw validationFailed(
+        operation: "read stream chunks",
+        message: "Stream chunk limit must be greater than or equal to 0.",
+        recovery: "Pass a non-negative --limit value, or omit --limit to read every local chunk."
+      )
+    }
+    let streamID = try validatedNonEmpty(
+      rawStreamID,
+      label: "Stream id",
+      operation: "read stream chunks",
+      recovery: "Pass a stream id, such as 'chat/lobby'."
+    )
+
+    await operationGate.enter()
+    do {
+      _ = try await resolvedAuthenticatedUserID(operation: "read stream chunks", noun: "Stream")
+      let chunks = try await persistence.loadStreamChunks(
+        appID: configuration.appID,
+        streamID: streamID,
+        limit: limit
+      )
+      await operationGate.leave()
+      return chunks
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
   public func pendingMutations() async -> [PendingMutation] {
     await outbox.pending()
   }
@@ -846,12 +912,16 @@ public final class InstantRuntime: Sendable {
   }
 
   private func resolvedFileUserID(operation: String) async throws -> String {
+    try await resolvedAuthenticatedUserID(operation: operation, noun: "File")
+  }
+
+  private func resolvedAuthenticatedUserID(operation: String, noun: String) async throws -> String {
     if let session = try await persistence.loadAuthSession(key: authSessionKey) {
       return session.userID
     }
     throw authValidationFailed(
       operation: operation,
-      message: "File operations require a signed-in user.",
+      message: "\(noun) operations require a signed-in user.",
       recovery: "Run 'instant-swift-data auth guest' first."
     )
   }

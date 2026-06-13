@@ -1111,6 +1111,119 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliStreamsAppendAndReadPersistAcrossLaunches() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    _ = try runCLI(
+      ["auth", "token", "refresh-token", "--user-id", "user-1", "--json"],
+      homeURL: homeURL
+    )
+
+    let firstAppend = try JSONDecoder().decode(
+      CLIStreamsOutput.self,
+      from: Data(
+        try runCLI(
+          ["streams", "append", "chat/lobby", "--value", #"{"text":"hello"}"#, "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(firstAppend.event, "append")
+    expectNoDifference(firstAppend.transport, "not-implemented-local-cache-only")
+    expectNoDifference(firstAppend.streamID, "chat/lobby")
+    expectNoDifference(firstAppend.chunkCount, 1)
+    expectNoDifference(firstAppend.chunks.map(\.payload), [.object(["text": .string("hello")])])
+    expectNoDifference(firstAppend.chunks.map(\.index), [0])
+    expectNoDifference(firstAppend.chunks.map(\.userID), ["user-1"])
+    expectNoDifference(firstAppend.changedID, firstAppend.chunks.first?.id)
+
+    let secondAppend = try JSONDecoder().decode(
+      CLIStreamsOutput.self,
+      from: Data(
+        try runCLI(
+          ["streams", "append", "chat/lobby", "--value", #"{"text":"again"}"#, "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(secondAppend.chunkCount, 2)
+    expectNoDifference(
+      secondAppend.chunks.map(\.payload),
+      [
+        .object(["text": .string("hello")]),
+        .object(["text": .string("again")]),
+      ]
+    )
+    expectNoDifference(secondAppend.chunks.map(\.index), [0, 1])
+
+    let otherStreamAppend = try JSONDecoder().decode(
+      CLIStreamsOutput.self,
+      from: Data(
+        try runCLI(
+          ["streams", "append", "chat/side", "--value", #"{"text":"side"}"#, "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(otherStreamAppend.streamID, "chat/side")
+    expectNoDifference(otherStreamAppend.chunks.map(\.payload), [.object(["text": .string("side")])])
+    expectNoDifference(otherStreamAppend.chunks.map(\.index), [0])
+
+    let limitedRead = try JSONDecoder().decode(
+      CLIStreamsOutput.self,
+      from: Data(
+        try runCLI(["streams", "read", "chat/lobby", "--limit", "1", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(limitedRead.event, "read")
+    expectNoDifference(limitedRead.changedID, nil)
+    expectNoDifference(limitedRead.chunkCount, 1)
+    expectNoDifference(limitedRead.chunks, Array(secondAppend.chunks.prefix(1)))
+
+    let jsonlOutput = try runCLI(["streams", "read", "chat/lobby", "--jsonl"], homeURL: homeURL)
+    let lines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(lines.count, 3)
+    let evidence = try JSONDecoder().decode(
+      CLIStreamsEvidence.self,
+      from: Data(try #require(lines.first).utf8)
+    )
+    expectNoDifference(evidence.caseID, "cli.streams")
+    expectNoDifference(evidence.event, "read")
+    expectNoDifference(evidence.details.chunkCount, 2)
+    let chunkRows = try lines.dropFirst().map {
+      try JSONDecoder().decode(CLIStreamChunkEvidence.self, from: Data($0.utf8))
+    }
+    expectNoDifference(chunkRows.map(\.event), ["chunk", "chunk"])
+    expectNoDifference(chunkRows.map(\.caseID), ["cli.streams", "cli.streams"])
+    expectNoDifference(chunkRows.map(\.details), secondAppend.chunks)
+
+    _ = try runCLI(["auth", "sign-out", "--json"], homeURL: homeURL)
+    let signedOutRead = try runCLIResult(["streams", "read", "chat/lobby", "--json"], homeURL: homeURL)
+    #expect(signedOutRead.status == 65)
+    #expect(signedOutRead.error.contains("Stream operations require a signed-in user"))
+    let signedOutAppend = try runCLIResult(
+      ["streams", "append", "chat/lobby", "--value", #"{"text":"blocked"}"#, "--json"],
+      homeURL: homeURL
+    )
+    #expect(signedOutAppend.status == 65)
+    #expect(signedOutAppend.error.contains("Stream operations require a signed-in user"))
+
+    _ = try runCLI(
+      ["auth", "token", "refresh-token", "--user-id", "user-1", "--json"],
+      homeURL: homeURL
+    )
+    let reauthenticatedRead = try JSONDecoder().decode(
+      CLIStreamsOutput.self,
+      from: Data(try runCLI(["streams", "read", "chat/lobby", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(reauthenticatedRead.chunks, secondAppend.chunks)
+  }
+
+  @Test
   func cliValidationLocalTodosEmitsEvidence() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -1635,6 +1748,39 @@ private struct CLIFilesEvidence: Decodable {
   var caseID: String
   var event: String
   var details: CLIFilesOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
+}
+
+private struct CLIStreamsOutput: Decodable, Equatable {
+  var event: String
+  var changedID: String?
+  var transport: String
+  var streamID: String
+  var chunkCount: Int
+  var chunks: [InstantStreamChunk]
+}
+
+private struct CLIStreamsEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLIStreamsOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
+}
+
+private struct CLIStreamChunkEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: InstantStreamChunk
 
   enum CodingKeys: String, CodingKey {
     case caseID = "case"

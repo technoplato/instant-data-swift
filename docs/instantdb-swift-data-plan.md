@@ -232,6 +232,12 @@ future work.
   stream writes observed by Swift.
 - Define backpressure and cancellation behavior explicitly before implementation.
 
+Current local progress: `InstantRuntime` can append ordered JSON chunks to a
+local stream, persist them in SQLite scoped by app id and stream id, and read
+them in order. The CLI exposes `instant-swift-data streams append/read` for
+durable terminal proof. Real Instant stream transport, backpressure,
+subscriptions, and Swift/TypeScript boundary proof remain future work.
+
 ### Admin And Tooling
 
 - Ephemeral app creation for tests.
