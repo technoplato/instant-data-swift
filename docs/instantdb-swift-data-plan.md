@@ -194,6 +194,13 @@ scheduling, and server rejection rollback remain future transport work.
 - Process restart while offline restores pending local state before network
   reconnect.
 
+Current local progress: durable `closed` connection state now makes
+`InstantRuntime.queryOnce(_:)` fail with a `networkFailed` `InstantError` before
+fresh local materialization, while carrying the matching `InstantCachedQuery`
+when one exists. The CLI proves the non-captive shape by returning the network
+exit code and cached-query summary for `instant-swift-data query todos --json`
+after `instant-swift-data connection close --json`.
+
 ### Realtime Sync
 
 - Initial query load.

@@ -175,6 +175,42 @@ struct InstantStoreTests {
     expectNoDifference(refreshedCache?.emission.values, refreshedSnapshots)
     expectNoDifference(refreshedSnapshots.map(\.id), ["todo-cached", "todo-cached-2"])
 
+    try await runtime.closeConnection()
+    do {
+      _ = try await runtime.queryOnce(TodoExample.query)
+      #expect(Bool(false), "Expected queryOnce to fail while the connection is closed.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .networkFailed)
+      expectNoDifference(error.operation, "queryOnce")
+      expectNoDifference(error.namespace, TodoExample.namespace)
+      expectNoDifference(error.cachedQuery?.queryID, TodoExample.query.id)
+      expectNoDifference(error.cachedQuery?.cacheKey, TodoExample.query.cacheKey)
+      expectNoDifference(error.cachedQuery?.emission.values, refreshedSnapshots)
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    let uncachedPlan = InstantQueryPlan(
+      id: "examples.todos.uncached-closed",
+      namespace: TodoExample.namespace,
+      filters: [.equals(field: "text", value: .string("missing"))]
+    )
+    do {
+      _ = try await runtime.queryOnce(uncachedPlan)
+      #expect(Bool(false), "Expected uncached queryOnce to fail while the connection is closed.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .networkFailed)
+      expectNoDifference(error.operation, "queryOnce")
+      expectNoDifference(error.namespace, TodoExample.namespace)
+      expectNoDifference(error.cachedQuery, nil)
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    try await runtime.connect()
+    let reconnectedSnapshots = try await runtime.query(TodoExample.query)
+    expectNoDifference(reconnectedSnapshots, refreshedSnapshots)
+
     let relaunchedRuntime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
         appID: "test-app",

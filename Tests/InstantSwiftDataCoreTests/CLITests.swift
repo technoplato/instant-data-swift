@@ -322,6 +322,13 @@ extension InstantStoreTests {
     #expect(malformed.status == 64)
     #expect(malformed.error.contains("instant-swift-data query todos --completed"))
 
+    _ = try runCLI(["connection", "close", "--json"], homeURL: homeURL)
+    let offlineQuery = try runCLIResult(["query", "todos", "--completed", "false", "--json"], homeURL: homeURL)
+    #expect(offlineQuery.status == 69)
+    #expect(offlineQuery.error.contains("Cannot run query 'examples.todos.list.completed-false'"))
+    #expect(offlineQuery.error.contains("cached query: examples.todos.list.completed-false results: 2"))
+    _ = try runCLI(["connection", "connect", "--json"], homeURL: homeURL)
+
     let unsupported = try runCLIResult(["query", "rooms", "--json"], homeURL: homeURL)
     #expect(unsupported.status == 64)
     #expect(unsupported.error.contains("query <namespace>"))

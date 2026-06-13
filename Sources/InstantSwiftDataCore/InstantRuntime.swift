@@ -306,6 +306,18 @@ public final class InstantRuntime: Sendable {
             recovery: issue.recovery
           )
         }
+        if try await persistedConnectionState() == .closed {
+          let cachedQuery = try await persistence.cachedQuery(cacheKey: plan.cacheKey)
+          throw InstantError(
+            code: .networkFailed,
+            operation: "queryOnce",
+            namespace: plan.namespace,
+            message: "Cannot run query '\(plan.id)' while the Instant connection is closed.",
+            recovery:
+              "Call connect() or run 'instant-swift-data connection connect' before querying again.",
+            cachedQuery: cachedQuery
+          )
+        }
         await store.replaceSnapshot(state.snapshot.store)
         let emission = await store.materializeEmission(plan)
         let didSave = try await persistence.saveQueryCache(
@@ -455,10 +467,7 @@ public final class InstantRuntime: Sendable {
     let processedTransactionID = try await persistence.loadMetadataValue(
       key: processedTransactionIDMetadataKey
     )
-    let storedState =
-      try await persistence.loadMetadataValue(key: connectionStateMetadataKey)
-      .flatMap(InstantConnectionState.init(rawValue:))
-      ?? .opened
+    let storedState = try await persistedConnectionState()
     let lastErrorMessage = try await persistence.loadMetadataValue(
       key: connectionLastErrorMetadataKey
     )
@@ -474,6 +483,12 @@ public final class InstantRuntime: Sendable {
       processedTransactionID: processedTransactionID,
       lastErrorMessage: lastErrorMessage
     )
+  }
+
+  private func persistedConnectionState() async throws -> InstantConnectionState {
+    try await persistence.loadMetadataValue(key: connectionStateMetadataKey)
+      .flatMap(InstantConnectionState.init(rawValue:))
+      ?? .opened
   }
 
   private func connectionState(

@@ -19,6 +19,7 @@ public struct InstantError: Error, Hashable, Codable, Sendable, CustomStringConv
   public var serverEventID: String?
   public var recovery: String
   public var message: String
+  public var cachedQuery: InstantCachedQuery?
 
   public init(
     code: Code,
@@ -28,7 +29,8 @@ public struct InstantError: Error, Hashable, Codable, Sendable, CustomStringConv
     localID: String? = nil,
     serverEventID: String? = nil,
     message: String,
-    recovery: String
+    recovery: String,
+    cachedQuery: InstantCachedQuery? = nil
   ) {
     self.code = code
     self.operation = operation
@@ -38,6 +40,7 @@ public struct InstantError: Error, Hashable, Codable, Sendable, CustomStringConv
     self.serverEventID = serverEventID
     self.message = message
     self.recovery = recovery
+    self.cachedQuery = cachedQuery
   }
 
   public var description: String {
@@ -53,6 +56,11 @@ public struct InstantError: Error, Hashable, Codable, Sendable, CustomStringConv
     }
     if let serverEventID {
       parts.append("server event: \(serverEventID)")
+    }
+    if let cachedQuery {
+      parts.append(
+        "cached query: \(cachedQuery.queryID) results: \(cachedQuery.emission.values.count)"
+      )
     }
     parts.append("fix: \(recovery)")
     return parts.joined(separator: "; ")
