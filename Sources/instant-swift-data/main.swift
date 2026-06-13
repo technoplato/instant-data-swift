@@ -313,7 +313,12 @@ struct InstantSwiftDataCLI {
         createdAt: now,
         source: "cli.examples.todos.seed"
       )
-      try await printTodos(context: context, output: output, event: "seed")
+      try await printTodos(
+        context: context,
+        output: output,
+        event: "seed",
+        allowOfflineLocalEmission: true
+      )
 
     case "add":
       let text = arguments.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -333,7 +338,13 @@ struct InstantSwiftDataCLI {
         )
       )
       try await context.runtime.transact(transaction, createdAt: now, source: "cli.examples.todos.add")
-      try await printTodos(context: context, output: output, event: "add", changedID: todoID)
+      try await printTodos(
+        context: context,
+        output: output,
+        event: "add",
+        changedID: todoID,
+        allowOfflineLocalEmission: true
+      )
 
     case "list":
       let query = try todoListQuery(arguments: arguments)
@@ -347,7 +358,13 @@ struct InstantSwiftDataCLI {
       guard let todoID = arguments.popFirstArgument(), arguments.isEmpty else {
         throw CLIError("Usage: instant-swift-data examples todos complete <todo-id>", exitCode: 64)
       }
-      let currentTodos = try await TodoExample.decode(context.runtime.query(TodoExample.query))
+      let currentTodos = try await TodoExample.decode(
+        todoEmission(
+          context: context,
+          query: TodoExample.query,
+          allowOfflineLocalEmission: true
+        ).values
+      )
       guard currentTodos.contains(where: { $0.id == todoID }) else {
         throw CLIError("Todo not found: \(todoID)", exitCode: 66)
       }
@@ -366,7 +383,13 @@ struct InstantSwiftDataCLI {
         createdAt: now,
         source: "cli.examples.todos.complete"
       )
-      try await printTodos(context: context, output: output, event: "complete", changedID: todoID)
+      try await printTodos(
+        context: context,
+        output: output,
+        event: "complete",
+        changedID: todoID,
+        allowOfflineLocalEmission: true
+      )
 
     case "update", "edit":
       guard let todoID = arguments.popFirstArgument() else {
@@ -376,7 +399,13 @@ struct InstantSwiftDataCLI {
       guard !text.isEmpty else {
         throw CLIError("Usage: instant-swift-data examples todos update <todo-id> \"new text\"", exitCode: 64)
       }
-      let currentTodos = try await TodoExample.decode(context.runtime.query(TodoExample.query))
+      let currentTodos = try await TodoExample.decode(
+        todoEmission(
+          context: context,
+          query: TodoExample.query,
+          allowOfflineLocalEmission: true
+        ).values
+      )
       guard currentTodos.contains(where: { $0.id == todoID }) else {
         throw CLIError("Todo not found: \(todoID)", exitCode: 66)
       }
@@ -396,13 +425,25 @@ struct InstantSwiftDataCLI {
         createdAt: now,
         source: "cli.examples.todos.update"
       )
-      try await printTodos(context: context, output: output, event: "update", changedID: todoID)
+      try await printTodos(
+        context: context,
+        output: output,
+        event: "update",
+        changedID: todoID,
+        allowOfflineLocalEmission: true
+      )
 
     case "delete", "remove":
       guard let todoID = arguments.popFirstArgument(), arguments.isEmpty else {
         throw CLIError("Usage: instant-swift-data examples todos delete <todo-id>", exitCode: 64)
       }
-      let currentTodos = try await TodoExample.decode(context.runtime.query(TodoExample.query))
+      let currentTodos = try await TodoExample.decode(
+        todoEmission(
+          context: context,
+          query: TodoExample.query,
+          allowOfflineLocalEmission: true
+        ).values
+      )
       guard currentTodos.contains(where: { $0.id == todoID }) else {
         throw CLIError("Todo not found: \(todoID)", exitCode: 66)
       }
@@ -417,13 +458,25 @@ struct InstantSwiftDataCLI {
         createdAt: now,
         source: "cli.examples.todos.delete"
       )
-      try await printTodos(context: context, output: output, event: "delete", changedID: todoID)
+      try await printTodos(
+        context: context,
+        output: output,
+        event: "delete",
+        changedID: todoID,
+        allowOfflineLocalEmission: true
+      )
 
     case "reset":
       guard arguments.isEmpty else {
         throw CLIError("Usage: instant-swift-data examples todos reset [--json|--jsonl]", exitCode: 64)
       }
-      let currentTodos = try await TodoExample.decode(context.runtime.query(TodoExample.query))
+      let currentTodos = try await TodoExample.decode(
+        todoEmission(
+          context: context,
+          query: TodoExample.query,
+          allowOfflineLocalEmission: true
+        ).values
+      )
       if !currentTodos.isEmpty {
         let transactionID = context.runtime.configuration.makeID()
         let now = context.runtime.configuration.now()
@@ -437,7 +490,12 @@ struct InstantSwiftDataCLI {
           source: "cli.examples.todos.reset"
         )
       }
-      try await printTodos(context: context, output: output, event: "reset")
+      try await printTodos(
+        context: context,
+        output: output,
+        event: "reset",
+        allowOfflineLocalEmission: true
+      )
 
     case "refresh":
       let query = try todoListQuery(arguments: arguments)
@@ -2488,9 +2546,14 @@ struct InstantSwiftDataCLI {
     event: String,
     changedID: String? = nil,
     query: InstantQueryPlan = TodoExample.query,
-    caseID: String = "cli.examples.todos"
+    caseID: String = "cli.examples.todos",
+    allowOfflineLocalEmission: Bool = false
   ) async throws {
-    let emission = try await context.runtime.queryOnce(query)
+    let emission = try await todoEmission(
+      context: context,
+      query: query,
+      allowOfflineLocalEmission: allowOfflineLocalEmission
+    )
     let todos = try TodoExample.decode(emission.values)
     let pending = await context.runtime.pendingMutations()
     let payload = TodosOutput(
@@ -2858,6 +2921,26 @@ struct InstantSwiftDataCLI {
           )
         )
       }
+    }
+  }
+
+  private static func todoEmission(
+    context: CLIContext,
+    query: InstantQueryPlan,
+    allowOfflineLocalEmission: Bool
+  ) async throws -> InstantQueryEmission {
+    do {
+      return try await context.runtime.queryOnce(query)
+    } catch let error as InstantError {
+      guard allowOfflineLocalEmission, error.code == .networkFailed else {
+        throw error
+      }
+      let stream = await context.runtime.observe(query)
+      var iterator = stream.makeAsyncIterator()
+      guard let emission = await iterator.next() else {
+        throw error
+      }
+      return emission
     }
   }
 

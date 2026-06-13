@@ -208,7 +208,10 @@ the persisted SQLite snapshot before registering, so finite watchers such as
 local results while the connection is closed. `outbox flush` now refuses to send
 pending mutations while the durable state is closed, leaves them queued, and
 flushes them through the same local mutation transport after
-`instant-swift-data connection connect --json`.
+`instant-swift-data connection connect --json`. Todo example mutation commands
+can also run while closed: they write optimistically, then print the restored
+local SQLite snapshot through the same bounded observation path that powers
+offline watches.
 
 ### Realtime Sync
 

@@ -1313,6 +1313,70 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliTodoStrictMutationsUseLocalStateWhileConnectionIsClosed() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let add = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(
+        try runCLI(["examples", "todos", "add", "offline draft", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    let todoID = try #require(add.changedID)
+    _ = try runCLI(["connection", "close", "--json"], homeURL: homeURL)
+
+    let update = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "todos", "update", todoID, "offline polished", "--json"],
+          homeURL: homeURL
+        )
+        .utf8
+      )
+    )
+    expectNoDifference(update.event, "update")
+    expectNoDifference(update.changedID, todoID)
+    expectNoDifference(update.todos.map(\.text), ["offline polished"])
+    expectNoDifference(update.pendingMutationCount, 2)
+
+    let complete = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(
+        try runCLI(["examples", "todos", "complete", todoID, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(complete.event, "complete")
+    expectNoDifference(complete.todos.map(\.isCompleted), [true])
+    expectNoDifference(complete.pendingMutationCount, 3)
+
+    let delete = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(
+        try runCLI(["examples", "todos", "delete", todoID, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(delete.event, "delete")
+    expectNoDifference(delete.changedID, todoID)
+    expectNoDifference(delete.todos, [])
+    expectNoDifference(delete.pendingMutationCount, 4)
+
+    let status = try JSONDecoder().decode(
+      CLIConnectionStatusOutput.self,
+      from: Data(try runCLI(["connection", "status", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(status.state, "closed")
+    expectNoDifference(status.pendingMutationCount, 4)
+    expectNoDifference(status.lastErrorMessage, nil)
+  }
+
+  @Test
   func cliTodoSeedAndResetUseDurableLocalState() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -1710,10 +1774,27 @@ extension InstantStoreTests {
     try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: homeURL) }
 
-    _ = try runCLI(["examples", "todos", "add", "flush after reconnect", "--json"], homeURL: homeURL)
-    let closedStatus = try JSONDecoder().decode(
+    let emptyClosedStatus = try JSONDecoder().decode(
       CLIConnectionStatusOutput.self,
       from: Data(try runCLI(["connection", "close", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(emptyClosedStatus.state, "closed")
+    expectNoDifference(emptyClosedStatus.pendingMutationCount, 0)
+
+    let offlineAdd = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(
+        try runCLI(["examples", "todos", "add", "flush after reconnect", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(offlineAdd.event, "add")
+    expectNoDifference(offlineAdd.pendingMutationCount, 1)
+    expectNoDifference(offlineAdd.todos.map(\.text), ["flush after reconnect"])
+
+    let closedStatus = try JSONDecoder().decode(
+      CLIConnectionStatusOutput.self,
+      from: Data(try runCLI(["connection", "status", "--json"], homeURL: homeURL).utf8)
     )
     expectNoDifference(closedStatus.state, "closed")
     expectNoDifference(closedStatus.pendingMutationCount, 1)

@@ -93,6 +93,7 @@ swift run instant-swift-data local-id get todos.viewer --json
 swift run instant-swift-data local-id list --json
 swift run instant-swift-data connection status --json
 swift run instant-swift-data connection close --json
+swift run instant-swift-data examples todos add "queued while closed" --json
 swift run instant-swift-data query todos --json # exits non-zero while closed, with cached-query details
 swift run instant-swift-data examples todos watch --events 1 --jsonl # emits cached local state while closed
 swift run instant-swift-data outbox flush --json # exits non-zero while closed, pending writes stay queued
