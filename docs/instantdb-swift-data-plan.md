@@ -223,7 +223,9 @@ can also run while closed: they write optimistically, then print the restored
 local SQLite snapshot through the same bounded observation path that powers
 offline watches. `instant-swift-data validation local-todos --jsonl` now emits
 closed-connection offline write, offline relaunch restore, and reconnect flush
-evidence rows for this local path.
+evidence rows for this local path. `connection status/connect/close` argument
+validation now flows through the shared `swift-parsing` target while preserving
+the `inspect`/`show`, `open`, and `disconnect` aliases.
 
 ### Realtime Sync
 

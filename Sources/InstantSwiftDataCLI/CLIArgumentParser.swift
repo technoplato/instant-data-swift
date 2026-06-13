@@ -81,6 +81,33 @@ public enum CLIExamplesTodosCommand: Equatable, Sendable {
   case unknown(String)
 }
 
+public enum CLIConnectionInvocation: Equatable, Sendable {
+  case status
+  case connect
+  case close
+}
+
+public enum CLIConnectionUsage {
+  public static let connection = """
+    Usage: instant-swift-data connection <status|connect|close>
+      instant-swift-data connection status [--json|--jsonl]
+      instant-swift-data connection connect [--json|--jsonl]
+      instant-swift-data connection close [--json|--jsonl]
+    """
+
+  public static let status = "Usage: instant-swift-data connection status [--json|--jsonl]"
+  public static let connect = "Usage: instant-swift-data connection connect [--json|--jsonl]"
+  public static let close = "Usage: instant-swift-data connection close [--json|--jsonl]"
+}
+
+public enum CLIConnectionArgumentError: Error, Equatable, Sendable {
+  case missingCommand
+  case unknownCommand(String)
+  case unexpectedArgument(String, usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
 public enum CLIRoomsInvocation: Equatable, Sendable {
   case presence(CLIRoomPresenceInvocation)
   case topics(CLIRoomTopicsInvocation)
@@ -735,6 +762,34 @@ public struct CLIExamplesTodosCommandParser: Parser {
     }
     input.removeFirst()
     return CLIExamplesTodosCommand(command)
+  }
+}
+
+public struct CLIConnectionParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIConnectionInvocation {
+    guard let command = input.first else {
+      throw CLIConnectionArgumentError.missingCommand
+    }
+    input.removeFirst()
+
+    switch command {
+    case "inspect", "show", "status":
+      try requireNoRemainingConnectionArguments(&input, usage: CLIConnectionUsage.status)
+      return .status
+
+    case "connect", "open":
+      try requireNoRemainingConnectionArguments(&input, usage: CLIConnectionUsage.connect)
+      return .connect
+
+    case "close", "disconnect":
+      try requireNoRemainingConnectionArguments(&input, usage: CLIConnectionUsage.close)
+      return .close
+
+    default:
+      throw CLIConnectionArgumentError.unknownCommand(command)
+    }
   }
 }
 
@@ -1964,8 +2019,32 @@ private func requireNoRemainingShareArguments(
   }
 }
 
+private func requireNoRemainingConnectionArguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if let argument = input.first {
+    throw CLIConnectionArgumentError.unexpectedArgument(argument, usage: usage)
+  }
+}
+
 private func trimmed(_ string: String) -> String {
   string.trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+extension CLIConnectionArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case .missingCommand:
+      return CLIConnectionUsage.connection
+
+    case .unknownCommand:
+      return CLIConnectionUsage.connection
+
+    case let .unexpectedArgument(argument, usage):
+      return "Unexpected argument: \(argument). \(usage)"
+    }
+  }
 }
 
 extension CLIRoomsArgumentError: CustomStringConvertible {

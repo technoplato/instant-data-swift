@@ -2038,46 +2038,28 @@ struct InstantSwiftDataCLI {
   }
 
   private static func runConnection(arguments: [String], output: OutputMode) async throws {
-    var arguments = arguments
-    guard let command = arguments.popFirstArgument() else {
-      throw CLIError(connectionUsage, exitCode: 64)
+    let invocation: CLIConnectionInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLIConnectionParser().parse(&input)
+    } catch let error as CLIConnectionArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
 
     let context = try await CLIContext.bootstrap(initialAttributes: [])
 
-    switch command {
-    case "inspect", "show", "status":
-      guard arguments.isEmpty else {
-        throw CLIError(
-          "Usage: instant-swift-data connection status [--json|--jsonl]",
-          exitCode: 64
-        )
-      }
+    switch invocation {
+    case .status:
       let status = try await context.runtime.connectionStatus()
       try printConnectionStatus(context: context, event: "status", status: status, output: output)
 
-    case "connect", "open":
-      guard arguments.isEmpty else {
-        throw CLIError(
-          "Usage: instant-swift-data connection connect [--json|--jsonl]",
-          exitCode: 64
-        )
-      }
+    case .connect:
       let status = try await context.runtime.connect()
       try printConnectionStatus(context: context, event: "connect", status: status, output: output)
 
-    case "close", "disconnect":
-      guard arguments.isEmpty else {
-        throw CLIError(
-          "Usage: instant-swift-data connection close [--json|--jsonl]",
-          exitCode: 64
-        )
-      }
+    case .close:
       let status = try await context.runtime.closeConnection()
       try printConnectionStatus(context: context, event: "close", status: status, output: output)
-
-    default:
-      throw CLIError(connectionUsage, exitCode: 64)
     }
   }
 
@@ -6140,12 +6122,7 @@ struct InstantSwiftDataCLI {
   }
 
   private static var connectionUsage: String {
-    """
-    Usage: instant-swift-data connection <status|connect|close>
-      instant-swift-data connection status [--json|--jsonl]
-      instant-swift-data connection connect [--json|--jsonl]
-      instant-swift-data connection close [--json|--jsonl]
-    """
+    CLIConnectionUsage.connection
   }
 
   private static var roomsUsage: String {

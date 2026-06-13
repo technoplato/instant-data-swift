@@ -181,6 +181,22 @@ struct CLIArgumentParserTests {
       )
     )
     expectNoDifference(
+      try CLIArguments.parse(["connection", "status", "--jsonl"]),
+      CLIInvocation(
+        output: .jsonl,
+        command: .connection,
+        arguments: ["status"]
+      )
+    )
+    expectNoDifference(
+      try CLIArguments.parse(["connect", "show", "--json"]),
+      CLIInvocation(
+        output: .json,
+        command: .connection,
+        arguments: ["show"]
+      )
+    )
+    expectNoDifference(
       try CLIArguments.parse([
         "streams", "append", "chat/lobby", "--value", "{}", "--jsonl",
       ]),
@@ -347,6 +363,38 @@ struct CLIArgumentParserTests {
     try expectAuthParseError(
       ["dance"],
       contains: "Usage: instant-swift-data auth"
+    )
+  }
+
+  @Test
+  func connectionParserParsesCommandsAndAliases() throws {
+    expectNoDifference(try parseConnection(["status"]), .status)
+    expectNoDifference(try parseConnection(["show"]), .status)
+    expectNoDifference(try parseConnection(["inspect"]), .status)
+    expectNoDifference(try parseConnection(["connect"]), .connect)
+    expectNoDifference(try parseConnection(["open"]), .connect)
+    expectNoDifference(try parseConnection(["close"]), .close)
+    expectNoDifference(try parseConnection(["disconnect"]), .close)
+  }
+
+  @Test
+  func connectionParserReportsMalformedArguments() throws {
+    try expectConnectionParseError([], contains: "Usage: instant-swift-data connection")
+    try expectConnectionParseError(
+      ["status", "extra"],
+      contains: "Unexpected argument: extra."
+    )
+    try expectConnectionParseError(
+      ["open", "extra"],
+      contains: "connection connect"
+    )
+    try expectConnectionParseError(
+      ["disconnect", "extra"],
+      contains: "connection close"
+    )
+    try expectConnectionParseError(
+      ["dance"],
+      contains: "Usage: instant-swift-data connection"
     )
   }
 
@@ -894,6 +942,13 @@ private func parseAuth(_ arguments: [String]) throws -> CLIAuthInvocation {
   return invocation
 }
 
+private func parseConnection(_ arguments: [String]) throws -> CLIConnectionInvocation {
+  var input = arguments[...]
+  let invocation = try CLIConnectionParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseRooms(_ arguments: [String]) throws -> CLIRoomsInvocation {
   var input = arguments[...]
   let invocation = try CLIRoomsParser().parse(&input)
@@ -930,6 +985,19 @@ private func expectAuthParseError(
     _ = try parseAuth(arguments)
     Issue.record("Expected auth parser to reject \(arguments).")
   } catch let error as CLIAuthArgumentError {
+    #expect(error.description.contains(expectedFragment))
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectConnectionParseError(
+  _ arguments: [String],
+  contains expectedFragment: String
+) throws {
+  do {
+    _ = try parseConnection(arguments)
+    Issue.record("Expected connection parser to reject \(arguments).")
+  } catch let error as CLIConnectionArgumentError {
     #expect(error.description.contains(expectedFragment))
     expectNoDifference(error.exitCode, 64)
   }
