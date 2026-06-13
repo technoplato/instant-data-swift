@@ -579,8 +579,9 @@ The acceptance proof is real execution against Instant:
 
 - Swift writes, TypeScript observes.
 - TypeScript writes, Swift observes.
-- Swift offline writes update local observers immediately, do not appear on the
-  TypeScript side before reconnect, then flush in order after reconnect.
+- Swift offline writes update local observers immediately, remain queued while
+  the connection is closed, do not appear on the TypeScript side before
+  reconnect, then flush in order after reconnect.
 - TypeScript writes while Swift is offline are observed by Swift after reconnect.
 - All linked-entity cases cross the Swift/TypeScript boundary.
 - All sharing cases cross the Swift/TypeScript boundary with two users.

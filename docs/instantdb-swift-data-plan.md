@@ -190,8 +190,8 @@ server rejection rollback remain future transport work.
   processed tx id, auth session, and sync table state.
 - Subscriptions can emit cached results while offline.
 - `queryOnce` fails offline, but carries last-known cached result when available.
-- Offline writes update observers immediately, stay in the outbox, and flush in
-  deterministic order after reconnect.
+- Offline writes update observers immediately, stay in the outbox while the
+  connection is closed, and flush in deterministic order after reconnect.
 - Server confirmations clean up pending mutations without erasing newer local
   state.
 - Process restart while offline restores pending local state before network
@@ -205,7 +205,10 @@ exit code and cached-query summary for `instant-swift-data query todos --json`
 after `instant-swift-data connection close --json`. Query observation refreshes
 the persisted SQLite snapshot before registering, so finite watchers such as
 `instant-swift-data examples todos watch --events 1 --jsonl` still emit cached
-local results while the connection is closed.
+local results while the connection is closed. `outbox flush` now refuses to send
+pending mutations while the durable state is closed, leaves them queued, and
+flushes them through the same local mutation transport after
+`instant-swift-data connection connect --json`.
 
 ### Realtime Sync
 

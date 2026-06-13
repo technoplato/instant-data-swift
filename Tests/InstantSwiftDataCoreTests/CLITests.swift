@@ -1704,6 +1704,65 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliOutboxFlushWaitsForReconnectWhenConnectionIsClosed() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    _ = try runCLI(["examples", "todos", "add", "flush after reconnect", "--json"], homeURL: homeURL)
+    let closedStatus = try JSONDecoder().decode(
+      CLIConnectionStatusOutput.self,
+      from: Data(try runCLI(["connection", "close", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(closedStatus.state, "closed")
+    expectNoDifference(closedStatus.pendingMutationCount, 1)
+
+    let blockedFlush = try runCLIResult(["outbox", "flush", "--json"], homeURL: homeURL)
+    expectNoDifference(blockedFlush.status, 69)
+    #expect(blockedFlush.error.contains("Cannot flush 1 pending mutation(s)"))
+    #expect(blockedFlush.error.contains("Call connect() before flushing pending mutations."))
+
+    let pendingOutbox = try JSONDecoder().decode(
+      CLIOutboxInspectOutput.self,
+      from: Data(try runCLI(["outbox", "inspect", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(pendingOutbox.pendingMutationCount, 1)
+    expectNoDifference(pendingOutbox.mutations.map(\.status), ["pending"])
+
+    let stillClosedStatus = try JSONDecoder().decode(
+      CLIConnectionStatusOutput.self,
+      from: Data(try runCLI(["connection", "status", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(stillClosedStatus.state, "closed")
+    expectNoDifference(stillClosedStatus.pendingMutationCount, 1)
+    expectNoDifference(stillClosedStatus.lastErrorMessage, nil)
+
+    let connectedStatus = try JSONDecoder().decode(
+      CLIConnectionStatusOutput.self,
+      from: Data(try runCLI(["connection", "connect", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(connectedStatus.state, "opened")
+    expectNoDifference(connectedStatus.pendingMutationCount, 1)
+
+    let flush = try #require(
+      JSONSerialization.jsonObject(
+        with: Data(try runCLI(["outbox", "flush", "--json"], homeURL: homeURL).utf8)
+      ) as? [String: Any]
+    )
+    expectNoDifference(flush["event"] as? String, "flush-local-transport")
+    expectNoDifference(flush["confirmedMutationCount"] as? Int, 1)
+    expectNoDifference(flush["pendingMutationCount"] as? Int, 0)
+
+    let emptyOutbox = try JSONDecoder().decode(
+      CLIOutboxInspectOutput.self,
+      from: Data(try runCLI(["outbox", "inspect", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(emptyOutbox.pendingMutationCount, 0)
+    expectNoDifference(emptyOutbox.mutations, [])
+  }
+
+  @Test
   func cliConnectionStatusReportsDurableLocalRuntime() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)

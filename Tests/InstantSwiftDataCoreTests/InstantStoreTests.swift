@@ -1489,6 +1489,96 @@ struct InstantStoreTests {
   }
 
   @Test
+  func outboxFlushWaitsForReconnectWhenConnectionIsClosed() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let baseTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let recorder = MutationTransportRecorder()
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        mutationTransport: InstantMutationTransportClient { request in
+          await recorder.record(request)
+          return InstantMutationTransportResponse(
+            results: request.mutations.map { mutation in
+              InstantMutationTransportResult(mutationID: mutation.mutationID, outcome: .confirmed)
+            }
+          )
+        }
+      )
+    )
+
+    let emptyClosedStatus = try await runtime.closeConnection()
+    expectNoDifference(emptyClosedStatus.state, .closed)
+    expectNoDifference(emptyClosedStatus.pendingMutationCount, 0)
+    let emptyFlush = try await runtime.flushPendingMutations()
+    expectNoDifference(emptyFlush.request.mutations, [])
+    expectNoDifference(emptyFlush.results, [])
+    expectNoDifference(emptyFlush.confirmed, [])
+    expectNoDifference(emptyFlush.failed, [])
+    expectNoDifference(emptyFlush.pendingMutationCount, 0)
+    expectNoDifference(emptyFlush.mutationCount, 0)
+    let emptyBlockedRequests = await recorder.requests()
+    expectNoDifference(emptyBlockedRequests.count, 0)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-offline-flush",
+        operations: TodoExample.createOperations(
+          id: "todo-offline-flush",
+          text: "flush after reconnect",
+          createdAt: baseTime,
+          transactionID: "tx-offline-flush"
+        )
+      ),
+      createdAt: baseTime
+    )
+
+    let closedStatus = try await runtime.connectionStatus()
+    expectNoDifference(closedStatus.state, .closed)
+    expectNoDifference(closedStatus.pendingMutationCount, 1)
+
+    do {
+      _ = try await runtime.flushPendingMutations()
+      #expect(Bool(false), "Expected closed connection to block outbox flush.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .networkFailed)
+      expectNoDifference(error.operation, "flush outbox")
+      expectNoDifference(
+        error.message,
+        "Cannot flush 1 pending mutation(s) while the Instant connection is closed."
+      )
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    let blockedStatus = try await runtime.connectionStatus()
+    expectNoDifference(blockedStatus.state, .closed)
+    expectNoDifference(blockedStatus.pendingMutationCount, 1)
+    expectNoDifference(blockedStatus.lastErrorMessage, nil)
+    let blockedRequests = await recorder.requests()
+    expectNoDifference(blockedRequests.count, 0)
+    let blockedMutations = await runtime.outboxMutations()
+    expectNoDifference(blockedMutations.map(\.id), ["tx-offline-flush"])
+    expectNoDifference(blockedMutations.map(\.status), [.pending])
+
+    let connectedStatus = try await runtime.connect()
+    expectNoDifference(connectedStatus.state, .opened)
+    expectNoDifference(connectedStatus.pendingMutationCount, 1)
+
+    let result = try await runtime.flushPendingMutations()
+    expectNoDifference(result.confirmed.map(\.id), ["tx-offline-flush"])
+    expectNoDifference(result.pendingMutationCount, 0)
+    let requests = await recorder.requests()
+    expectNoDifference(requests.map { $0.mutations.map(\.mutationID) }, [
+      ["tx-offline-flush"]
+    ])
+    let flushedMutations = await runtime.outboxMutations()
+    expectNoDifference(flushedMutations, [])
+  }
+
+  @Test
   func outboxFlushIgnoresTransportResultsOutsideRequestedBatch() async throws {
     let cacheURL = try temporaryCacheURL()
     let baseTime = InstantTimestamp(milliseconds: 1_700_000_000_000)

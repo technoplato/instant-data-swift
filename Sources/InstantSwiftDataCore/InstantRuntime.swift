@@ -1301,6 +1301,15 @@ public final class InstantRuntime: Sendable {
           )
         }
 
+        guard try await persistedConnectionState() != .closed else {
+          throw InstantError(
+            code: .networkFailed,
+            operation: "flush outbox",
+            message: "Cannot flush \(selected.count) pending mutation(s) while the Instant connection is closed.",
+            recovery: "Call connect() before flushing pending mutations."
+          )
+        }
+
         await operationGate.leave()
       } catch {
         await operationGate.leave()

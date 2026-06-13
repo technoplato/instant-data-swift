@@ -95,7 +95,9 @@ swift run instant-swift-data connection status --json
 swift run instant-swift-data connection close --json
 swift run instant-swift-data query todos --json # exits non-zero while closed, with cached-query details
 swift run instant-swift-data examples todos watch --events 1 --jsonl # emits cached local state while closed
+swift run instant-swift-data outbox flush --json # exits non-zero while closed, pending writes stay queued
 swift run instant-swift-data connection connect --json
+swift run instant-swift-data outbox flush --json
 swift run instant-swift-data sync inspect --json
 swift run instant-swift-data sync mark-processed demo-tx-1 --json
 ```
@@ -221,7 +223,8 @@ metadata/content copies, local stream chunks, local share metadata/memberships,
 local admin query/transact helpers, and non-captive CLI interaction, but it does
 not yet sync with a real Instant app. The outbox can lower pending mutations to
 Instant-shaped transport `txSteps` for inspection with `outbox transport` and
-can exercise the local mutation transport ack path with `outbox flush`.
+can exercise the local mutation transport ack path with `outbox flush`; explicit
+`connection close` keeps writes queued until `connection connect`.
 Endpoint helpers such as `auth oauth-url` and `auth issuer` mirror Instant's URL
 shape and use configured `INSTANT_API_URI`/`INSTANT_WEBSOCKET_URI` values, but
 they do not perform network I/O.
@@ -389,6 +392,9 @@ Inspect lowered transport payloads before real network sync is configured:
 swift run instant-swift-data outbox transport --json
 swift run instant-swift-data outbox transport --all --jsonl
 swift run instant-swift-data outbox flush --limit 1 --json
+swift run instant-swift-data connection close --json
+swift run instant-swift-data outbox flush --json # exits non-zero while closed
+swift run instant-swift-data connection connect --json
 swift run instant-swift-data outbox flush --jsonl
 ```
 
