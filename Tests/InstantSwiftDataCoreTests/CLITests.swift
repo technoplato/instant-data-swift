@@ -2693,6 +2693,34 @@ extension InstantStoreTests {
         "offline-restore.relaunch",
       ]
     )
+    let scalarMemorySamples = try #require(
+      jsonOutput.metrics.first { $0.name == "high-bandwidth.scalar-updates" }?.samples
+    )
+    expectNoDifference(scalarMemorySamples.map(\.memoryBudgetBytes), [67_108_864])
+    #if canImport(Darwin)
+      #expect(scalarMemorySamples.allSatisfy { sample in
+        guard let delta = sample.memoryDeltaBytes,
+          let budget = sample.memoryBudgetBytes
+        else { return false }
+        return delta <= budget
+      })
+    #else
+      expectNoDifference(scalarMemorySamples.map(\.memoryDeltaBytes), [UInt64?.none])
+    #endif
+    let linkedMemorySamples = try #require(
+      jsonOutput.metrics.first { $0.name == "high-bandwidth.linked-writes" }?.samples
+    )
+    expectNoDifference(linkedMemorySamples.map(\.memoryBudgetBytes), [67_108_864])
+    #if canImport(Darwin)
+      #expect(linkedMemorySamples.allSatisfy { sample in
+        guard let delta = sample.memoryDeltaBytes,
+          let budget = sample.memoryBudgetBytes
+        else { return false }
+        return delta <= budget
+      })
+    #else
+      expectNoDifference(linkedMemorySamples.map(\.memoryDeltaBytes), [UInt64?.none])
+    #endif
     expectNoDifference(
       jsonOutput.metrics.first { $0.name == "storage-metadata.query" }?.samples.map(\.resultCount),
       [5]
@@ -3497,6 +3525,8 @@ private struct CLIBenchmarkMetric: Decodable, Equatable {
 private struct CLIBenchmarkSample: Decodable, Equatable {
   var operationCount: Int?
   var resultCount: Int?
+  var memoryDeltaBytes: UInt64?
+  var memoryBudgetBytes: UInt64?
 }
 
 private struct CLIBenchmarkEvidence: Decodable {

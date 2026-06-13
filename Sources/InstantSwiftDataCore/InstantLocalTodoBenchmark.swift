@@ -1,11 +1,19 @@
 import Foundation
 
+#if canImport(Darwin)
+import Darwin
+#endif
+
 public struct InstantBenchmarkSample: Codable, Equatable, Sendable {
   public var iteration: Int
   public var durationNanoseconds: UInt64
   public var operationCount: Int?
   public var resultCount: Int?
   public var pendingMutationCount: Int?
+  public var memoryBeforeBytes: UInt64?
+  public var memoryAfterBytes: UInt64?
+  public var memoryDeltaBytes: UInt64?
+  public var memoryBudgetBytes: UInt64?
   public var cachePath: String?
 
   public init(
@@ -14,6 +22,10 @@ public struct InstantBenchmarkSample: Codable, Equatable, Sendable {
     operationCount: Int? = nil,
     resultCount: Int? = nil,
     pendingMutationCount: Int? = nil,
+    memoryBeforeBytes: UInt64? = nil,
+    memoryAfterBytes: UInt64? = nil,
+    memoryDeltaBytes: UInt64? = nil,
+    memoryBudgetBytes: UInt64? = nil,
     cachePath: String? = nil
   ) {
     self.iteration = iteration
@@ -21,6 +33,10 @@ public struct InstantBenchmarkSample: Codable, Equatable, Sendable {
     self.operationCount = operationCount
     self.resultCount = resultCount
     self.pendingMutationCount = pendingMutationCount
+    self.memoryBeforeBytes = memoryBeforeBytes
+    self.memoryAfterBytes = memoryAfterBytes
+    self.memoryDeltaBytes = memoryDeltaBytes
+    self.memoryBudgetBytes = memoryBudgetBytes
     self.cachePath = cachePath
   }
 }
@@ -164,6 +180,7 @@ public enum InstantSwiftDataLocalBenchmarks {
   public static let localTodosSuite = "local-todos"
   private static let highBandwidthScalarUpdateCount = 50
   private static let highBandwidthLinkedWriteCount = 20
+  private static let highBandwidthMemoryBudgetBytes: UInt64 = 64 * 1024 * 1024
   private static let storageMetadataFileCount = 5
   private static let streamChunkCount = 25
 
@@ -175,7 +192,8 @@ public enum InstantSwiftDataLocalBenchmarks {
       InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
     },
     makeID: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() },
-    clockNanoseconds: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }
+    clockNanoseconds: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds },
+    memoryBytes: (@Sendable () -> UInt64?)? = nil
   ) async throws -> InstantLocalTodoBenchmarkResult {
     guard iterations > 0 else {
       throw InstantError(
@@ -186,6 +204,7 @@ public enum InstantSwiftDataLocalBenchmarks {
       )
     }
 
+    let measureMemoryBytes = memoryBytes ?? residentMemoryBytes
     let rootCacheDirectory =
       cacheDirectory
       ?? FileManager.default.temporaryDirectory
@@ -298,6 +317,7 @@ public enum InstantSwiftDataLocalBenchmarks {
       )
 
       var scalarOperationCount = 0
+      let scalarMemoryBefore = measureMemoryBytes()
       let (_, scalarDuration) = try await measured(clockNanoseconds) {
         for updateIndex in 0..<highBandwidthScalarUpdateCount {
           let scalarTransactionID = makeID()
@@ -319,13 +339,24 @@ public enum InstantSwiftDataLocalBenchmarks {
           )
         }
       }
+      let scalarMemoryAfter = measureMemoryBytes()
+      let scalarMemoryDelta = try validatedMemoryDelta(
+        before: scalarMemoryBefore,
+        after: scalarMemoryAfter,
+        budget: highBandwidthMemoryBudgetBytes,
+        operation: "high-bandwidth scalar updates"
+      )
       record(
         "high-bandwidth.scalar-updates",
         InstantBenchmarkSample(
           iteration: iteration,
           durationNanoseconds: scalarDuration,
           operationCount: scalarOperationCount,
-          pendingMutationCount: await runtime.pendingMutations().count
+          pendingMutationCount: await runtime.pendingMutations().count,
+          memoryBeforeBytes: scalarMemoryBefore,
+          memoryAfterBytes: scalarMemoryAfter,
+          memoryDeltaBytes: scalarMemoryDelta,
+          memoryBudgetBytes: highBandwidthMemoryBudgetBytes
         )
       )
 
@@ -367,6 +398,7 @@ public enum InstantSwiftDataLocalBenchmarks {
           transactionID: linkedTransactionID
         )
       }
+      let linkedMemoryBefore = measureMemoryBytes()
       let (_, linkedDuration) = try await measured(clockNanoseconds) {
         try await runtime.transact(
           InstantStoreTransaction(id: linkedTransactionID, operations: linkedOperations),
@@ -374,6 +406,13 @@ public enum InstantSwiftDataLocalBenchmarks {
           source: "benchmark.local.todos.linked-writes"
         )
       }
+      let linkedMemoryAfter = measureMemoryBytes()
+      let linkedMemoryDelta = try validatedMemoryDelta(
+        before: linkedMemoryBefore,
+        after: linkedMemoryAfter,
+        budget: highBandwidthMemoryBudgetBytes,
+        operation: "high-bandwidth linked writes"
+      )
       let linkedTodos = try await TodoProjectExample.decodeLinkedTodos(
         runtime.query(TodoProjectExample.todosQuery)
       )
@@ -400,7 +439,11 @@ public enum InstantSwiftDataLocalBenchmarks {
           durationNanoseconds: linkedDuration,
           operationCount: linkedOperations.count,
           resultCount: includedLinkedTodoIDs.count,
-          pendingMutationCount: await runtime.pendingMutations().count
+          pendingMutationCount: await runtime.pendingMutations().count,
+          memoryBeforeBytes: linkedMemoryBefore,
+          memoryAfterBytes: linkedMemoryAfter,
+          memoryDeltaBytes: linkedMemoryDelta,
+          memoryBudgetBytes: highBandwidthMemoryBudgetBytes
         )
       )
 
@@ -692,5 +735,34 @@ public enum InstantSwiftDataLocalBenchmarks {
       message: "Expected live query cancellation to remove its store observer.",
       recovery: "Inspect AsyncStream termination and observer cleanup before trusting benchmark timings."
     )
+  }
+
+  private static func validatedMemoryDelta(
+    before: UInt64?,
+    after: UInt64?,
+    budget: UInt64,
+    operation: String
+  ) throws -> UInt64? {
+    guard let before, let after else { return nil }
+    let delta = after >= before ? after - before : 0
+    guard delta <= budget else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "run local todo benchmark",
+        message: "Expected \(operation) memory growth to stay within \(budget) bytes.",
+        recovery: "Inspect batching and retained benchmark state before trusting high-bandwidth timings."
+      )
+    }
+    return delta
+  }
+
+  private static func residentMemoryBytes() -> UInt64? {
+    #if canImport(Darwin)
+      var usage = rusage()
+      guard getrusage(RUSAGE_SELF, &usage) == 0 else { return nil }
+      return UInt64(max(usage.ru_maxrss, 0))
+    #else
+      return nil
+    #endif
   }
 }

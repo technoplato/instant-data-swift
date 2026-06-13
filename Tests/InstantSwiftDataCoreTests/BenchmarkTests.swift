@@ -13,6 +13,7 @@ extension InstantStoreTests {
     let ids = LockedCounter(prefix: "benchmark-id")
     let timestamps = LockedTimestamp(milliseconds: 1_000)
     let clock = LockedNanosecondClock(step: 100)
+    let memory = LockedMemoryMeter(start: 1_000, step: 100)
 
     let result = try await InstantSwiftDataLocalBenchmarks.runLocalTodos(
       appID: "benchmark-test",
@@ -20,7 +21,8 @@ extension InstantStoreTests {
       cacheDirectory: cacheURL,
       timestamp: { timestamps.next() },
       makeID: { ids.next() },
-      clockNanoseconds: { clock.next() }
+      clockNanoseconds: { clock.next() },
+      memoryBytes: { memory.next() }
     )
 
     expectNoDifference(result.suite, "local-todos")
@@ -65,12 +67,28 @@ extension InstantStoreTests {
       [150, 150]
     )
     expectNoDifference(
+      result.metrics.first { $0.name == "high-bandwidth.scalar-updates" }?.samples.map(\.memoryDeltaBytes),
+      [100, 100]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "high-bandwidth.scalar-updates" }?.samples.map(\.memoryBudgetBytes),
+      [67_108_864, 67_108_864]
+    )
+    expectNoDifference(
       result.metrics.first { $0.name == "high-bandwidth.linked-writes" }?.samples.map(\.operationCount),
       [123, 123]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "high-bandwidth.linked-writes" }?.samples.map(\.resultCount),
       [20, 20]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "high-bandwidth.linked-writes" }?.samples.map(\.memoryDeltaBytes),
+      [100, 100]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "high-bandwidth.linked-writes" }?.samples.map(\.memoryBudgetBytes),
+      [67_108_864, 67_108_864]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "storage-metadata.query" }?.samples.map(\.resultCount),
@@ -162,5 +180,24 @@ private final class LockedNanosecondClock: @unchecked Sendable {
     defer { lock.unlock() }
     defer { nanoseconds += step }
     return nanoseconds
+  }
+}
+
+// SAFETY: tests call this closure from one task, and mutation is protected by `lock`.
+private final class LockedMemoryMeter: @unchecked Sendable {
+  private let lock = NSLock()
+  private var bytes: UInt64
+  private let step: UInt64
+
+  init(start: UInt64, step: UInt64) {
+    self.bytes = start
+    self.step = step
+  }
+
+  func next() -> UInt64? {
+    lock.lock()
+    defer { lock.unlock() }
+    defer { bytes += step }
+    return bytes
   }
 }
