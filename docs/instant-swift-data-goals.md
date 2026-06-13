@@ -122,6 +122,13 @@ var todos: [Todo]
 try await db.transact {
   Todo.create(text: "Ship Instant Swift Data")
 }
+
+var draft = Todo.Draft(text: "Ship generated drafts", isCompleted: false)
+try await db.save(draft)
+
+var editDraft = Todo.Draft(existingTodo)
+editDraft.text = "Ship generated draft edits"
+try await db.save(editDraft)
 ```
 
 The macro should infer the namespace from the type name:
@@ -198,6 +205,12 @@ with declared attribute paths because it maps to Instant field selection, but do
 not expose `leftJoin` or SQL row-shape machinery unless there is no cleaner
 Instant-shaped representation.
 
+Client adapters should translate live/subscribable Instant objects into
+platform-idiomatic Swift surfaces. The public app-facing layer should expose
+property wrappers, projected bindings, observable model state, and
+`AsyncSequence` streams rather than leaking raw subscription callbacks or
+transport objects into feature code.
+
 ## Schema And Type Safety
 
 - Swift schema is the source of truth.
@@ -214,6 +227,14 @@ Instant-shaped representation.
   network send.
 - Support typed IDs and local IDs. Local IDs must persist by name, matching
   Instant's `getLocalId("name")` behavior.
+- Generate `Entity.Draft` for primary-keyed `@InstantEntity` models. A draft's
+  `id` must be optional, `Draft(existingEntity)` must copy persisted values for
+  edit flows, and the memberwise initializer must support new drafts whose id is
+  omitted so the client can allocate the Instant id at save time.
+- Generated drafts should include only writable stored fields, should not emit
+  the managed Instant id as a normal attribute assignment, and should not conform
+  to `Identifiable` by default. UI examples may add their own stable local
+  editing identity when needed.
 
 ## Mutation Semantics
 
@@ -228,6 +249,11 @@ Instant-shaped representation.
   AEV index in transaction order. Unresolved non-strict lookup writes may no-op
   locally and remain pending for the server, but strict lookup updates must fail
   before cache/outbox writes.
+- Support SQLiteData-style draft saves as a first-class typed write path.
+  Saving a draft with an id should update/upsert that entity through existing
+  mutation semantics; saving a draft without an id should allocate a durable
+  client-scoped Instant id, create the entity, return the created id, and leave
+  strict `create`/`updateExisting` guarantees intact.
 - Preserve `ruleParams` operations in the pending outbox for transport lowering.
   Rule params affect server-side permission evaluation and should not mutate
   local materialized entities optimistically.
@@ -404,6 +430,11 @@ The CLI must be **agent-interactable** and **non-captive**. An LLM or shell
 script should be able to use the same core business logic as the GUI examples
 without launching a heavy SwiftUI application or simulator. Commands must be
 small, composable, deterministic, and readable from stdout/stderr.
+
+CLI argument parsing must use Point-Free `swift-parsing`/parser-printer
+combinators for the typed grammar. Preserve today's global `--json`/`--jsonl`
+semantics while migrating command leaves gradually behind parser-level tests;
+manual `popFirstArgument` parsing is allowed only as a temporary legacy bridge.
 
 The CLI must maintain durable state across sessions using the same persistence
 work as the core library:
@@ -679,6 +710,24 @@ layers. Required categories include:
 - storage.
 - presence/topics.
 - streams.
+
+Port upstream Instant core tests faithfully, and add analogous tests for every
+Swift client adapter. Adapter parity must be proven through the idiomatic Swift
+surface that users touch: `@FetchAll`, `@FetchOne`, `@Fetch`, projected
+bindings, observable models, `AsyncSequence` subscriptions, auth/status
+observers, room/presence/topic streams, and paged/infinite-query helpers. Tests
+should verify loading/error state, dynamic nil queries, resubscription,
+cached-prior results, cleanup on cancellation, independent subscription
+lifetime, and task cancellation without reaching around to raw callbacks unless
+the test is explicitly about the core runtime.
+
+Port SQLiteData core and example tests faithfully for the InstantDB version.
+This includes `FetchAll`, `FetchOne`, `Fetch`, `FetchSubscription`, observable
+model examples, Reminders search/stats/detail/delete flows, SyncUps form
+save/update behavior, CloudKitDemo sharing concepts translated to Instant
+sharing, and generated `Draft` macro/write behavior. Each port should be exact
+when possible and explicitly adapted when SQLite-specific behavior maps to an
+Instant query, mutation, or sharing concept.
 
 Every ported TypeScript test should record:
 

@@ -397,7 +397,11 @@ One repository, multiple targets:
 - `InstantSwiftDataSchema`: Swift schema declaration DSL, IR, TypeScript printer,
   Swift code generator, permissions printer.
 - `InstantSwiftDataMacros`: macro implementations such as `@InstantEntity` plus
-  diagnostics for redundant namespace overrides.
+  generated `Entity.Draft` types and diagnostics for redundant namespace
+  overrides.
+- `InstantSwiftDataCLI`: typed command grammar and reusable command
+  implementation backed by Point-Free `swift-parsing`; the executable target
+  should be a thin wrapper around this target.
 - `instant-swift-data`: agent-interactable CLI executable for schema generation,
   validation, auth, example commands, cache/outbox inspection, fixture app
   creation, parity scripts, and benchmarks.
@@ -432,6 +436,13 @@ var openTodos: [Todo]
 try await db.transact {
   Todo.create(title: "Ship it", done: false)
 }
+
+var draft = Todo.Draft(title: "Draft it", done: false)
+let createdID = try await db.save(draft)
+
+var editDraft = Todo.Draft(existingTodo)
+editDraft.title = "Ship the edit"
+try await db.save(editDraft)
 ```
 
 `@InstantEntity` defaults to the documented plural namespace (`Todo` ->
@@ -440,6 +451,12 @@ override that exactly matches the default plural. `@FetchAll` should look
 familiar to SQLiteData users, but the engine underneath is not SQL. A query
 becomes an Instant query tree, the server returns triples, and the local store
 materializes Swift values from those triples.
+
+`@InstantEntity` should generate SQLiteData-style `Draft` types for
+primary-keyed entities. Draft ids are optional, new forms can omit the id,
+`Draft(existing)` supports edit flows, and saving a nil-id draft allocates a
+durable Instant id through the client/runtime rather than treating the id as a
+normal writable attribute.
 
 ## SQLiteData Audit Notes
 
@@ -487,14 +504,20 @@ public API into SQL:
   triggers. This is good because application queries are type checked while
   persisted schema history stays frozen and auditable. Instant Swift Data should
   keep typed access to triples, attributes, outbox rows, query cache rows, and
-  sync metadata while requiring named migrations for every persisted shape.
+  sync metadata while requiring named migrations for every persisted shape. Its
+  generated drafts should mirror StructuredQueries: emit only for primary-keyed
+  entities, optionalize the primary key, exclude generated/managed fields, add
+  `Draft(existing)`, and avoid `Identifiable` conformance by default.
 - **Observable fetch wrappers as the app-facing contract.** SQLiteData's
   `@FetchAll`, `@FetchOne`, and `@Fetch` expose values plus loading, errors,
   animation, dynamic `load`, and cancellable `FetchSubscription` state. This is
   good because views and `@Observable` models can subscribe without hand-rolled
   observer lifetimes. Instant fetch wrappers should do the same over Instant
   query trees, cached materialized results, server subscriptions, and explicit
-  cancellation.
+  cancellation. Client adapters must transform subscribable/live Instant values
+  into Swift-native wrappers, projected bindings, observable model state, and
+  `AsyncSequence` streams rather than exposing raw subscription callbacks to app
+  features.
 - **Dynamic query work belongs in the engine.** SQLiteData's search examples
   debounce user input, cancel stale tasks, and reload the query key so filtering,
   sorting, FTS, and limits execute in SQLite. This is good because it avoids
@@ -507,7 +530,9 @@ public API into SQL:
   persisted state, transaction scope, and error surfacing stay separate. Instant
   mutations should use typed drafts or builders, an explicit optimistic
   transaction boundary, durable outbox writes, rollback/failure state, and
-  actionable error values.
+  actionable error values. Draft saves must support both new unsaved drafts and
+  drafts initialized from existing entities without weakening strict create or
+  update-existing checks.
 - **Examples are architecture tests.** Reminders and SyncUps keep side effects in
   `@Observable` models with `@ObservationIgnored` dependencies, preview seeds,
   injected clients, and tested model behavior. This is good because real app
@@ -753,8 +778,9 @@ must emit the same metrics on day one so regressions become visible.
    placeholders, docs, validation directories, and Swift 6 strict concurrency
    settings.
 2. Schema IR and macros: import the best pieces from `InstantSchemaCodegen` and
-   `InstantDBMacros`; make Swift -> TypeScript generation the primary path; add
-   Point-Free MacroTesting coverage for generated code and diagnostics.
+   `InstantDBMacros`; make Swift -> TypeScript generation the primary path;
+   generate `Entity.Draft` types for primary-keyed entities; add Point-Free
+   MacroTesting coverage for generated code, draft expansion, and diagnostics.
 3. Concurrency foundation: apply `docs/swift-concurrency-guidance.md`; define
    actor ownership for store, outbox, persistence, transport/runtime, and
    observation; define Sendable boundary types; add strict-concurrency CI.
@@ -773,13 +799,17 @@ must emit the same metrics on day one so regressions become visible.
    Dependencies clients whose local/test implementations remain usable without
    real Instant credentials.
 7. Agent CLI foundation: auth, selected app, SQLite cache, local IDs, query cache,
-   sync metadata, and pending outbox persisted across invocations.
+   sync metadata, and pending outbox persisted across invocations; move command
+   parsing into a `swift-parsing` parser-printer grammar with parser-level tests
+   while preserving global `--json`/`--jsonl` compatibility.
 8. Mutation outbox: draft/builder write APIs, explicit optimistic transaction
    boundary, durable pending mutations, confirmation cleanup, rollback/error
-   surfacing, and ordered flush.
+   surfacing, ordered flush, and `save(_ draft:)` helpers that allocate ids for
+   nil-id drafts through the client/runtime.
 9. Query surface: `@FetchAll`, `@FetchOne`, `@Fetch`, `queryOnce`, pagination,
    infinite query, nested linked queries, dynamic query changes, loading/error
-   state, animation hooks, and cancellable subscription handles.
+   state, animation hooks, projected bindings, observable-model adapters, and
+   cancellable `AsyncSequence` subscription handles.
 10. Realtime linked entities: multi-link resolution, field filters, different
     `with` clauses, and reverse observer propagation.
 11. Offline: cached subscription emission, strict offline `queryOnce`, restart
@@ -795,11 +825,14 @@ must emit the same metrics on day one so regressions become visible.
 14. Example ports: Instant website examples, Instant recipes, SQLiteData
     CaseStudies, Reminders, SyncUps, and CloudKitDemo concepts; keep business
     logic in observable models with injected dependencies and preview/test seeds.
-15. TypeScript test parity: port or classify Instant TypeScript tests with exact
-    source-file/test-name provenance.
-16. SQLiteData-style local test suite: add deterministic in-memory tests for
-    dynamic fetches, migrations, write errors, sharing rules, relaunch, and
-    cancellation alongside real Instant validation.
+15. TypeScript test parity: port or classify Instant TypeScript core and client
+    adapter tests with exact source-file/test-name provenance; adapter ports
+    must exercise Swift-native wrappers, bindings, observable models, and async
+    streams rather than raw subscriptions.
+16. SQLiteData-style local test suite: faithfully port core and example tests for
+    dynamic fetches, wrapper state, fetch subscription lifecycle, generated
+    drafts, migrations, write errors, Reminders, SyncUps, CloudKitDemo-style
+    sharing rules, relaunch, and cancellation alongside real Instant validation.
 17. Performance pass: benchmark target, Swift/TypeScript comparison scripts,
     batch write path, query recomputation profiling, local persistence hot path,
     memory pressure, actor-hop counts, and cancellation latency.
@@ -837,6 +870,15 @@ must emit the same metrics on day one so regressions become visible.
   latency, dropped-update count, final-state correctness, and memory use.
 - WHEN the CLI runs `instant-swift-data examples todos add "do the dishes"`,
   THE next CLI invocation SHALL observe the same durable auth/cache/outbox world.
+- WHEN CLI commands are parsed, THE grammar SHALL be expressed through
+  `swift-parsing` parser-printers with tests proving top-level aliases, required
+  values, unknown-command failures, and global `--json`/`--jsonl` compatibility.
+- WHEN an `@InstantEntity` has a primary key, THE macro SHALL generate a draft
+  type that supports new nil-id drafts, `Draft(existing)` edit flows, writable
+  assignments only, and client-side id allocation on save.
+- WHEN upstream Instant or SQLiteData behavior has an equivalent Swift surface,
+  THE test suite SHALL record the source file/test name and prove the behavior
+  through core APIs or platform-idiomatic adapters as appropriate.
 - WHEN the package builds in CI, THE core targets SHALL compile under Swift 6
   strict concurrency with no accepted concurrency-warning debt.
 - WHEN concurrent Swift writes, transport updates, observer cancellation, and
