@@ -552,6 +552,12 @@ Agent-oriented output modes are required:
   undeclared namespace-prefixed attributes, for example
   after sharing a todo root, accepting as a reader, and running
   `instant-swift-data examples todos update <todo-id> "reader edit"`.
+- promote and demote accepted non-owner share members between reader and writer
+  roles with owner-only commands such as
+  `instant-swift-data shares role <share-id> <user-id> writer`; writers must be
+  able to mutate active shared roots, while demoted readers are rejected before
+  local cache/outbox persistence and share ownership/duplicate-share creation
+  remains owner-only.
 - run local admin write/query helpers such as
   `instant-swift-data admin transact notes note-1 --merge '{"title":"admin note"}' --transaction-id tx-admin-note-1`
   and `instant-swift-data admin query notes --json` for durable terminal

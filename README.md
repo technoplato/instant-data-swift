@@ -176,7 +176,7 @@ swift run instant-swift-data streams read chat/lobby --limit 2 --json
 swift run instant-swift-data streams watch chat/lobby --events 1 --jsonl
 ```
 
-Create, accept, reject a read-only write, and revoke a local share with two users:
+Create, accept, promote, demote, and revoke a local share with two users:
 
 ```bash
 swift run instant-swift-data auth token owner-refresh --user-id user-1 --json
@@ -190,6 +190,14 @@ swift run instant-swift-data shares accept "$SHARE_TOKEN" --json
 swift run instant-swift-data shares list --json
 swift run instant-swift-data shares create todos "$TODO_ID" --json || test "$?" -eq 77
 swift run instant-swift-data examples todos update "$TODO_ID" "reader edit" --json || test "$?" -eq 77
+swift run instant-swift-data auth token owner-refresh --user-id user-1 --json
+swift run instant-swift-data shares role "$SHARE_ID" user-2 writer --json
+swift run instant-swift-data auth token invitee-refresh --user-id user-2 --json
+swift run instant-swift-data examples todos update "$TODO_ID" "writer edit" --json
+swift run instant-swift-data auth token owner-refresh --user-id user-1 --json
+swift run instant-swift-data shares role "$SHARE_ID" user-2 reader --json
+swift run instant-swift-data auth token invitee-refresh --user-id user-2 --json
+swift run instant-swift-data examples todos update "$TODO_ID" "reader edit again" --json || test "$?" -eq 77
 swift run instant-swift-data examples todos list --json
 swift run instant-swift-data auth token owner-refresh --user-id user-1 --json
 swift run instant-swift-data shares revoke "$SHARE_ID" --json

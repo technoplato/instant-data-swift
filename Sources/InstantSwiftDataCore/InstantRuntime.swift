@@ -1547,8 +1547,11 @@ public final class InstantRuntime: Sendable {
         rootNamespace: rootNamespace,
         rootID: rootID
       )
-      if !activeRootShares.isEmpty, !canWriteSharedRoot(activeRootShares, userID: userID) {
-        throw sharedRootWritePermissionRejected(snapshot: activeRootShares[0], userID: userID)
+      if let activeRootShare = activeRootShares.first {
+        guard activeRootShare.share.ownerUserID == userID else {
+          throw shareRootOwnershipPermissionRejected(snapshot: activeRootShare, userID: userID)
+        }
+        throw duplicateShareRejected(snapshot: activeRootShare)
       }
       let now = configuration.now()
       let shareID = configuration.makeID()
@@ -1617,6 +1620,82 @@ public final class InstantRuntime: Sendable {
       )
       await operationGate.leave()
       return snapshots
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  public func updateShareMembershipRole(
+    shareID rawShareID: String,
+    userID rawTargetUserID: String,
+    role: InstantShareRole
+  ) async throws -> InstantShareSnapshot {
+    let shareID = try validatedNonEmpty(
+      rawShareID,
+      label: "Share id",
+      operation: "update share role",
+      recovery: "Pass a share id from 'instant-swift-data shares list'."
+    )
+    let targetUserID = try validatedNonEmpty(
+      rawTargetUserID,
+      label: "Share member user id",
+      operation: "update share role",
+      recovery: "Pass the user id of an accepted share member."
+    )
+    guard role != .owner else {
+      throw validationFailed(
+        operation: "update share role",
+        localID: shareID,
+        message: "The owner role cannot be assigned through membership role updates.",
+        recovery: "Create a new share as the intended owner, or assign reader/writer to members."
+      )
+    }
+
+    await operationGate.enter()
+    do {
+      let userID = try await resolvedAuthenticatedUserID(operation: "update share role", noun: "Share")
+      guard let snapshot = try await persistence.loadShareSnapshot(
+        appID: configuration.appID,
+        shareID: shareID
+      ), !snapshot.share.isRevoked else {
+        throw shareNotFound(operation: "update share role", localID: shareID)
+      }
+      guard snapshot.share.ownerUserID == userID else {
+        throw shareRolePermissionRejected(snapshot: snapshot, userID: userID)
+      }
+      guard snapshot.share.ownerUserID != targetUserID else {
+        throw validationFailed(
+          operation: "update share role",
+          localID: targetUserID,
+          message: "The share owner's membership role cannot be changed.",
+          recovery: "Update reader/writer roles for accepted non-owner members."
+        )
+      }
+      guard snapshot.memberships.contains(where: { membership in
+        membership.userID == targetUserID && !membership.isRevoked
+      }) else {
+        throw shareMembershipNotFound(
+          operation: "update share role",
+          shareID: shareID,
+          userID: targetUserID
+        )
+      }
+      guard let updated = try await persistence.updateShareMembershipRole(
+        appID: configuration.appID,
+        shareID: shareID,
+        userID: targetUserID,
+        role: role,
+        updatedAt: configuration.now()
+      ) else {
+        throw shareMembershipNotFound(
+          operation: "update share role",
+          shareID: shareID,
+          userID: targetUserID
+        )
+      }
+      await operationGate.leave()
+      return updated
     } catch {
       await operationGate.leave()
       throw error
@@ -2398,6 +2477,19 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  private func shareMembershipNotFound(
+    operation: String,
+    shareID: String,
+    userID: String
+  ) -> InstantError {
+    validationFailed(
+      operation: operation,
+      localID: userID,
+      message: "User '\(userID)' is not an active member of share '\(shareID)'.",
+      recovery: "Have the user accept the share token before updating their role."
+    )
+  }
+
   private func sharePermissionRejected(snapshot: InstantShareSnapshot, userID: String) -> InstantError {
     InstantError(
       code: .permissionRejected,
@@ -2406,6 +2498,50 @@ public final class InstantRuntime: Sendable {
       message:
         "User '\(userID)' cannot revoke share '\(snapshot.share.id)' owned by '\(snapshot.share.ownerUserID)'.",
       recovery: "Sign in as the share owner before revoking it."
+    )
+  }
+
+  private func shareRolePermissionRejected(
+    snapshot: InstantShareSnapshot,
+    userID: String
+  ) -> InstantError {
+    let message =
+      "User '\(userID)' cannot update roles for share '\(snapshot.share.id)' owned by '\(snapshot.share.ownerUserID)'."
+    return InstantError(
+      code: .permissionRejected,
+      operation: "update share role",
+      localID: snapshot.share.id,
+      message: message,
+      recovery: "Sign in as the share owner before updating member roles."
+    )
+  }
+
+  private func duplicateShareRejected(snapshot: InstantShareSnapshot) -> InstantError {
+    let root = "\(snapshot.share.rootNamespace)/\(snapshot.share.rootID)"
+    return validationFailed(
+      operation: "create share",
+      namespace: snapshot.share.rootNamespace,
+      localID: snapshot.share.rootID,
+      message:
+        "Shared root '\(root)' already has active share '\(snapshot.share.id)'.",
+      recovery: "Use the existing share token, or revoke the current share before creating another one."
+    )
+  }
+
+  private func shareRootOwnershipPermissionRejected(
+    snapshot: InstantShareSnapshot,
+    userID: String
+  ) -> InstantError {
+    let root = "\(snapshot.share.rootNamespace)/\(snapshot.share.rootID)"
+    let message =
+      "User '\(userID)' cannot create a share for shared root '\(root)' owned by '\(snapshot.share.ownerUserID)'."
+    return InstantError(
+      code: .permissionRejected,
+      operation: "create share",
+      namespace: snapshot.share.rootNamespace,
+      localID: snapshot.share.rootID,
+      message: message,
+      recovery: "Sign in as the share owner, or ask the owner to manage the existing share."
     )
   }
 

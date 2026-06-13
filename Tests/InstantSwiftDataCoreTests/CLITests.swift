@@ -2804,7 +2804,7 @@ extension InstantStoreTests {
       homeURL: homeURL
     )
     #expect(readerDuplicateShare.status == 77)
-    #expect(readerDuplicateShare.error.contains("reader access"))
+    #expect(readerDuplicateShare.error.contains("cannot create a share"))
 
     let readerUpdate = try runCLIResult(
       ["examples", "todos", "update", todoID, "reader edit", "--json"],
@@ -2818,6 +2818,81 @@ extension InstantStoreTests {
     )
     expectNoDifference(todosAfterReaderUpdate.todos.map(\.text), ["shared cli todo"])
     expectNoDifference(todosAfterReaderUpdate.pendingMutationCount, 1)
+
+    let nonOwnerRole = try runCLIResult(
+      ["shares", "role", shareID, "user-2", "writer", "--json"],
+      homeURL: homeURL
+    )
+    #expect(nonOwnerRole.status == 77)
+    #expect(nonOwnerRole.error.contains("cannot update roles"))
+
+    _ = try runCLI(
+      ["auth", "token", "owner-refresh", "--user-id", "user-1", "--json"],
+      homeURL: homeURL
+    )
+    let promoted = try JSONDecoder().decode(
+      CLIShareOutput.self,
+      from: Data(
+        try runCLI(["shares", "role", shareID, "user-2", "writer", "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(promoted.event, "role")
+    expectNoDifference(promoted.changedID, shareID)
+    expectNoDifference(promoted.shares.first?.memberships.map(\.role), [.owner, .writer])
+
+    let ownerRole = try runCLIResult(
+      ["shares", "role", shareID, "user-1", "reader", "--json"],
+      homeURL: homeURL
+    )
+    #expect(ownerRole.status == 66)
+    #expect(ownerRole.error.contains("owner's membership role cannot be changed"))
+
+    let invalidRole = try runCLIResult(
+      ["shares", "role", shareID, "user-2", "owner", "--json"],
+      homeURL: homeURL
+    )
+    #expect(invalidRole.status == 64)
+    #expect(invalidRole.error.contains("reader|writer"))
+
+    _ = try runCLI(
+      ["auth", "token", "invitee-refresh", "--user-id", "user-2", "--json"],
+      homeURL: homeURL
+    )
+    let writerUpdate = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(
+        try runCLI(["examples", "todos", "update", todoID, "writer edit", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(writerUpdate.todos.map(\.text), ["writer edit"])
+    expectNoDifference(
+      writerUpdate.pendingMutationCount,
+      todosAfterReaderUpdate.pendingMutationCount + 1
+    )
+
+    _ = try runCLI(
+      ["auth", "token", "owner-refresh", "--user-id", "user-1", "--json"],
+      homeURL: homeURL
+    )
+    let demoted = try JSONDecoder().decode(
+      CLIShareOutput.self,
+      from: Data(
+        try runCLI(["shares", "role", shareID, "user-2", "reader", "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(demoted.shares.first?.memberships.map(\.role), [.owner, .reader])
+
+    _ = try runCLI(
+      ["auth", "token", "invitee-refresh", "--user-id", "user-2", "--json"],
+      homeURL: homeURL
+    )
+    let demotedReaderUpdate = try runCLIResult(
+      ["examples", "todos", "update", todoID, "reader edit after demotion", "--json"],
+      homeURL: homeURL
+    )
+    #expect(demotedReaderUpdate.status == 77)
+    #expect(demotedReaderUpdate.error.contains("reader access"))
 
     let inviteeRevoke = try runCLIResult(["shares", "revoke", shareID, "--json"], homeURL: homeURL)
     #expect(inviteeRevoke.status == 77)

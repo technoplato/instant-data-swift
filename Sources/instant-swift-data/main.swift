@@ -1537,6 +1537,31 @@ struct InstantSwiftDataCLI {
         output: output
       )
 
+    case "role":
+      guard let shareID = arguments.popFirstArgument(),
+        let userID = arguments.popFirstArgument(),
+        let roleValue = arguments.popFirstArgument(),
+        arguments.isEmpty
+      else {
+        throw CLIError(
+          "Usage: instant-swift-data shares role <share-id> <user-id> <reader|writer> [--json|--jsonl]",
+          exitCode: 64
+        )
+      }
+      let role = try shareRole(roleValue)
+      let snapshot = try await context.runtime.updateShareMembershipRole(
+        shareID: shareID,
+        userID: userID,
+        role: role
+      )
+      try printShares(
+        context: context,
+        event: "role",
+        changedID: snapshot.share.id,
+        shares: [snapshot],
+        output: output
+      )
+
     case "revoke":
       guard let shareID = arguments.popFirstArgument(), arguments.isEmpty else {
         throw CLIError("Usage: instant-swift-data shares revoke <share-id> [--json|--jsonl]", exitCode: 64)
@@ -1552,6 +1577,21 @@ struct InstantSwiftDataCLI {
 
     default:
       throw CLIError(sharesUsage, exitCode: 64)
+    }
+  }
+
+  private static func shareRole(_ rawValue: String) throws -> InstantShareRole {
+    let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    switch value {
+    case "reader":
+      return .reader
+    case "writer":
+      return .writer
+    default:
+      throw CLIError(
+        "Usage: instant-swift-data shares role <share-id> <user-id> <reader|writer> [--json|--jsonl]",
+        exitCode: 64
+      )
     }
   }
 
@@ -3363,6 +3403,7 @@ struct InstantSwiftDataCLI {
         shares create <namespace> <entity-id> [--json|--jsonl]
         shares list [--json|--jsonl]
         shares accept <token> [--json|--jsonl]
+        shares role <share-id> <user-id> <reader|writer> [--json|--jsonl]
         shares revoke <share-id> [--json|--jsonl]
         app show [--json|--jsonl]
         app select <app-id> [--json|--jsonl]
@@ -4791,10 +4832,11 @@ struct InstantSwiftDataCLI {
 
   fileprivate static var sharesUsage: String {
     """
-    Usage: instant-swift-data shares <create|list|accept|revoke>
+    Usage: instant-swift-data shares <create|list|accept|role|revoke>
       instant-swift-data shares create <namespace> <entity-id> [--json|--jsonl]
       instant-swift-data shares list [--json|--jsonl]
       instant-swift-data shares accept <token> [--json|--jsonl]
+      instant-swift-data shares role <share-id> <user-id> <reader|writer> [--json|--jsonl]
       instant-swift-data shares revoke <share-id> [--json|--jsonl]
     """
   }

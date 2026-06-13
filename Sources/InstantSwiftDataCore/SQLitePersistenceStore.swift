@@ -858,6 +858,40 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  public func updateShareMembershipRole(
+    appID: String,
+    shareID: String,
+    userID: String,
+    role: InstantShareRole,
+    updatedAt: InstantTimestamp
+  ) throws -> InstantShareSnapshot? {
+    try transaction {
+      guard var share = try shareWithoutTransaction(appID: appID, shareID: shareID),
+        share.revokedAt == nil,
+        var membership = try shareMembershipWithoutTransaction(
+          appID: appID,
+          shareID: shareID,
+          userID: userID
+        ),
+        membership.revokedAt == nil
+      else {
+        return nil
+      }
+
+      if membership.role != role {
+        membership.role = role
+        try saveShareMembershipWithoutTransaction(membership)
+        share.updatedAt = updatedAt
+        try saveShareWithoutTransaction(share)
+      }
+      return try shareSnapshotWithoutTransaction(
+        appID: appID,
+        shareID: shareID,
+        activeMembershipsOnly: true
+      )
+    }
+  }
+
   public func revokeShare(
     appID: String,
     shareID: String,

@@ -3160,6 +3160,19 @@ struct InstantStoreTests {
     expectNoDifference(accepted.share.token, created.share.token)
     expectNoDifference(accepted.memberships.map(\.userID), ["user-1", "user-2"])
     expectNoDifference(accepted.memberships.map(\.role), [.owner, .reader])
+    do {
+      _ = try await inviteeRuntime.updateShareMembershipRole(
+        shareID: created.share.id,
+        userID: "user-2",
+        role: .writer
+      )
+      #expect(Bool(false), "Expected non-owner role update to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "update share role")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
 
     let inviteeShares = try await inviteeRuntime.shares()
     expectNoDifference(inviteeShares.map(\.share.id), [accepted.share.id])
@@ -3178,9 +3191,79 @@ struct InstantStoreTests {
     let ownerShares = try await runtime.shares()
     expectNoDifference(ownerShares.map(\.share.id), [accepted.share.id])
     expectNoDifference(ownerShares.first?.memberships.map(\.userID), ["user-1", "user-2"])
+    do {
+      _ = try await runtime.createShare(rootNamespace: "remindersLists", rootID: "list-1")
+      #expect(Bool(false), "Expected duplicate owner share creation to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "create share")
+      #expect(error.message.contains("already has active share"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+    do {
+      _ = try await runtime.updateShareMembershipRole(
+        shareID: created.share.id,
+        userID: "user-1",
+        role: .reader
+      )
+      #expect(Bool(false), "Expected owner role mutation to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "update share role")
+      #expect(error.message.contains("owner's membership role cannot be changed"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+    do {
+      _ = try await runtime.updateShareMembershipRole(
+        shareID: created.share.id,
+        userID: "missing-user",
+        role: .writer
+      )
+      #expect(Bool(false), "Expected missing member role mutation to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "update share role")
+      #expect(error.message.contains("not an active member"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+    let promoted = try await runtime.updateShareMembershipRole(
+      shareID: created.share.id,
+      userID: "user-2",
+      role: .writer
+    )
+    expectNoDifference(promoted.memberships.map(\.role), [.owner, .writer])
+    let promotedAgain = try await runtime.updateShareMembershipRole(
+      shareID: created.share.id,
+      userID: "user-2",
+      role: .writer
+    )
+    expectNoDifference(promotedAgain, promoted)
+    let demoted = try await runtime.updateShareMembershipRole(
+      shareID: created.share.id,
+      userID: "user-2",
+      role: .reader
+    )
+    expectNoDifference(demoted.memberships.map(\.role), [.owner, .reader])
     let revoked = try await runtime.revokeShare(id: created.share.id)
     expectNoDifference(revoked.share.revokedAt, timestamp)
     expectNoDifference(revoked.memberships.map(\.revokedAt), [timestamp, timestamp])
+    do {
+      _ = try await runtime.updateShareMembershipRole(
+        shareID: created.share.id,
+        userID: "user-2",
+        role: .writer
+      )
+      #expect(Bool(false), "Expected revoked share role mutation to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "update share role")
+      #expect(error.message.contains("was not found or has been revoked"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
     let revokedAgain = try await runtime.revokeShare(id: created.share.id)
     expectNoDifference(revokedAgain.share.revokedAt, timestamp)
     expectNoDifference(revokedAgain.memberships.map(\.revokedAt), [timestamp, timestamp])
@@ -3274,8 +3357,8 @@ struct InstantStoreTests {
       #expect(Bool(false), "Expected reader duplicate share creation to fail.")
     } catch let error as InstantError {
       expectNoDifference(error.code, .permissionRejected)
-      expectNoDifference(error.operation, "write shared root")
-      #expect(error.message.contains("reader access"))
+      expectNoDifference(error.operation, "create share")
+      #expect(error.message.contains("cannot create a share"))
     } catch {
       #expect(Bool(false), "Unexpected error: \(error)")
     }
@@ -3390,6 +3473,74 @@ struct InstantStoreTests {
     )
     expectNoDifference(todosAfterReaderAttempts.map(\.text), ["owner updated"])
 
+    _ = try await ownerRuntime.signInWithRefreshToken("owner-refresh", userID: "user-1")
+    let promoted = try await ownerRuntime.updateShareMembershipRole(
+      shareID: createdShare.share.id,
+      userID: "user-2",
+      role: .writer
+    )
+    expectNoDifference(promoted.memberships.map(\.role), [.owner, .writer])
+    _ = try await inviteeRuntime.signInWithRefreshToken("invitee-refresh", userID: "user-2")
+    do {
+      _ = try await inviteeRuntime.createShare(rootNamespace: TodoExample.namespace, rootID: todoID)
+      #expect(Bool(false), "Expected writer duplicate share creation to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "create share")
+      #expect(error.message.contains("cannot create a share"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+    let pendingBeforeWriterUpdate = await inviteeRuntime.pendingMutations()
+    try await inviteeRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-writer-update",
+        operations: TodoExample.updateTextOperations(
+          id: todoID,
+          text: "writer updated",
+          updatedAt: timestamp,
+          transactionID: "tx-writer-update"
+        )
+      ),
+      createdAt: timestamp
+    )
+    let todosAfterWriterUpdate = try TodoExample.decode(
+      (try await inviteeRuntime.queryOnce(TodoExample.query)).values
+    )
+    expectNoDifference(todosAfterWriterUpdate.map(\.text), ["writer updated"])
+    let pendingAfterWriterUpdate = await inviteeRuntime.pendingMutations()
+    expectNoDifference(pendingAfterWriterUpdate.count, pendingBeforeWriterUpdate.count + 1)
+
+    _ = try await ownerRuntime.signInWithRefreshToken("owner-refresh", userID: "user-1")
+    let demoted = try await ownerRuntime.updateShareMembershipRole(
+      shareID: createdShare.share.id,
+      userID: "user-2",
+      role: .reader
+    )
+    expectNoDifference(demoted.memberships.map(\.role), [.owner, .reader])
+    _ = try await inviteeRuntime.signInWithRefreshToken("invitee-refresh", userID: "user-2")
+    do {
+      try await inviteeRuntime.transact(
+        InstantStoreTransaction(
+          id: "tx-reader-update-after-demotion",
+          operations: TodoExample.updateTextOperations(
+            id: todoID,
+            text: "reader after demotion",
+            updatedAt: timestamp,
+            transactionID: "tx-reader-update-after-demotion"
+          )
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected demoted reader write to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "write shared root")
+      #expect(error.message.contains("reader access"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
     let nonMemberRuntime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
         appID: "app-a",
@@ -3421,7 +3572,7 @@ struct InstantStoreTests {
       #expect(Bool(false), "Unexpected error: \(error)")
     }
     let pendingAfterNonMemberWrite = await nonMemberRuntime.pendingMutations()
-    expectNoDifference(pendingAfterNonMemberWrite, pendingBeforeReaderWrite)
+    #expect(!pendingAfterNonMemberWrite.map(\.id).contains("tx-non-member-update"))
   }
 
   @Test

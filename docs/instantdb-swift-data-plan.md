@@ -372,16 +372,19 @@ and remote ground-truth transport remain future work.
 Current local progress: `InstantRuntime` persists local share root metadata,
 owner/member rows, share tokens, accept, list, and owner-only revoke flows in
 SQLite scoped by app id. The CLI exposes `instant-swift-data shares
-create/list/accept/revoke` for durable two-user terminal proof. Local
+create/list/accept/role/revoke` for durable two-user terminal proof. Local
 transactions now reject reader and non-member writes to active shared roots
 before cache/outbox persistence, including namespace-less delete fallbacks, and
 reader attempts to mint duplicate owner shares for an already shared root are
 rejected. The local guard also covers same-transaction-id replays, declared ref
 targets, unresolved source lookups with shared ref targets, cascade-expanded
 delete targets, unresolved primary-key lookup ref targets, and undeclared
-namespace-prefixed attributes. Real Instant sharing entities, generated
-permissions, Reminders UI sharing, and Swift/TypeScript boundary proof remain
-future work.
+namespace-prefixed attributes. Owners can now promote/demote accepted non-owner
+members between reader and writer roles with `instant-swift-data shares role`,
+and writer access is enforced through the same shared-root transaction guard
+without granting share ownership or duplicate-share creation.
+Real Instant sharing entities, generated permissions, Reminders UI sharing, and
+Swift/TypeScript boundary proof remain future work.
 
 ## Proposed Package Architecture
 
@@ -652,6 +655,10 @@ Create `validation/` with:
   namespace-prefixed attributes, unresolved source lookups with shared ref
   targets, unresolved primary-key lookup ref targets, cascade-expanded delete
   targets, namespace-less deletes, and same-id pending replay are covered.
+- Sharing: local owners can promote accepted members to writer, writers can
+  mutate active shared roots through the normal transaction path, and demoted
+  readers are rejected again before cache/outbox writes; share creation for an
+  active shared root remains owner-only and non-duplicating.
 - CLI: `instant-swift-data examples todos add "do the dishes"` persists auth,
   local IDs, cache, and outbox state for a later CLI invocation.
 - Permissions: generated permissions reject an unauthorized write in both
