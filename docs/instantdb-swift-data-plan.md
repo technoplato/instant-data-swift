@@ -280,8 +280,10 @@ Current local progress: `InstantRuntime` persists room presence and topic
 messages in SQLite, scopes them by app id, resolves users through the durable
 auth session or an explicit user id, exposes local snapshot subscriptions with
 termination cleanup, and provides non-captive CLI commands:
-`instant-swift-data rooms presence ...` and
-`instant-swift-data rooms topics ...`. Transport-backed subscriptions,
+presence set/list/watch/leave and topic publish/list/watch, including
+`instant-swift-data rooms presence watch chat lobby --events 1 --jsonl` and
+`instant-swift-data rooms topics watch chat lobby sendEmoji --events 1 --jsonl`.
+Transport-backed subscriptions,
 reconnect rejoin, and Swift/TypeScript boundary proof remain future work.
 
 ### Storage And Files
@@ -296,7 +298,8 @@ Current local progress: `InstantRuntime` can copy a local file into the CLI
 cache directory, persist `InstantStoredFile` metadata in SQLite scoped by app id,
 list local files, delete the stored content and metadata, and observe local file
 metadata snapshots with termination cleanup. The CLI exposes
-`instant-swift-data files upload/list/delete` for durable terminal proof. Real
+file upload/list/watch/delete command families, including
+`instant-swift-data files watch --events 1 --jsonl`, for durable terminal proof. Real
 Instant `$files` sync, progress reporting, remote delete, and permissions remain
 future work.
 
@@ -312,7 +315,8 @@ future work.
 Current local progress: `InstantRuntime` can append ordered JSON chunks to a
 local stream, persist them in SQLite scoped by app id and stream id, and read
 them in order. It also exposes local snapshot subscriptions with termination
-cleanup. The CLI exposes `instant-swift-data streams append/read` for durable
+cleanup. The CLI exposes stream append/read/watch command families, including
+`instant-swift-data streams watch chat/lobby --events 1 --jsonl`, for durable
 terminal proof. Real Instant stream transport, backpressure, transport-backed
 subscriptions, and Swift/TypeScript boundary proof remain future work.
 

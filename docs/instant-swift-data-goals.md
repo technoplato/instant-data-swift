@@ -519,13 +519,19 @@ Agent-oriented output modes are required:
   explicit `--user-id` commands such as:
   `instant-swift-data rooms presence set chat lobby --value '{"name":"Ada"}'`
   and
-  `instant-swift-data rooms topics publish chat lobby sendEmoji --value '{"emoji":"wave"}'`.
+  `instant-swift-data rooms topics publish chat lobby sendEmoji --value '{"emoji":"wave"}'`;
+  finite local snapshot watches such as
+  `instant-swift-data rooms presence watch chat lobby --events 1 --jsonl` and
+  `instant-swift-data rooms topics watch chat lobby sendEmoji --events 1 --jsonl`
+  must stay non-captive until transport-backed subscriptions arrive.
 - persist local file metadata and copied content after sign-in with commands
   such as `instant-swift-data files upload ./photo.jpg --content-type image/jpeg`
-  and `instant-swift-data files list --json`.
+  and `instant-swift-data files list --json`; prove local metadata observation
+  with `instant-swift-data files watch --events 1 --jsonl`.
 - persist ordered local stream chunks after sign-in with commands such as
   `instant-swift-data streams append chat/lobby --value '{"text":"hello"}'`
-  and `instant-swift-data streams read chat/lobby --json`.
+  and `instant-swift-data streams read chat/lobby --json`; prove local chunk
+  observation with `instant-swift-data streams watch chat/lobby --events 1 --jsonl`.
 - persist local share metadata, memberships, accept, and revoke flows after
   sign-in with commands such as
   `instant-swift-data shares create remindersLists list-1`,
