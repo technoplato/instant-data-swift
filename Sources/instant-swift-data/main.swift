@@ -107,10 +107,10 @@ struct InstantSwiftDataCLI {
   private static func runExamples(arguments: [String], output: OutputMode) async throws {
     var arguments = arguments
     guard arguments.popFirstArgument() == "todos" else {
-      throw CLIError("Usage: instant-swift-data examples todos <add|list|complete|refresh>", exitCode: 64)
+      throw CLIError("Usage: instant-swift-data examples todos <add|list|watch|complete|refresh>", exitCode: 64)
     }
     guard let command = arguments.popFirstArgument() else {
-      throw CLIError("Usage: instant-swift-data examples todos <add|list|complete|refresh>", exitCode: 64)
+      throw CLIError("Usage: instant-swift-data examples todos <add|list|watch|complete|refresh>", exitCode: 64)
     }
 
     let context = try await CLIContext.bootstrap()
@@ -139,6 +139,10 @@ struct InstantSwiftDataCLI {
     case "list":
       let query = try todoListQuery(arguments: arguments)
       try await printTodos(context: context, output: output, event: "list", query: query)
+
+    case "watch", "observe":
+      let options = try todoWatchOptions(arguments: arguments)
+      try await watchTodos(context: context, output: output, options: options)
 
     case "complete":
       guard let todoID = arguments.popFirstArgument() else {
@@ -896,6 +900,89 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func watchTodos(
+    context: CLIContext,
+    output: OutputMode,
+    options: TodoWatchOptions
+  ) async throws {
+    _ = try await context.runtime.queryOnce(options.query)
+    let stream = await context.runtime.observe(options.query)
+    var iterator = stream.makeAsyncIterator()
+    var emissions: [TodoWatchEmissionOutput] = []
+    emissions.reserveCapacity(options.eventCount)
+
+    while emissions.count < options.eventCount {
+      guard let emission = await iterator.next() else { break }
+      let todos = try TodoExample.decode(emission.values)
+      let pending = await context.runtime.pendingMutations()
+      let payload = TodoWatchEmissionOutput(
+        appID: context.appID,
+        cachePath: context.cacheURL.path,
+        event: "watch",
+        transport: "not-implemented-local-cache-only",
+        queryID: options.query.id,
+        cacheKey: options.query.cacheKey,
+        emissionIndex: emissions.count,
+        sequence: emission.sequence,
+        pendingMutationCount: pending.count,
+        todos: todos
+      )
+
+      switch output {
+      case .human:
+        print("event: watch index=\(payload.emissionIndex) sequence=\(payload.sequence)")
+        if todos.isEmpty {
+          print("No todos.")
+        } else {
+          for todo in todos {
+            let mark = todo.isCompleted ? "[x]" : "[ ]"
+            print("\(mark) \(todo.id) \(todo.text)")
+          }
+        }
+        print("pending mutations: \(pending.count)")
+        print("cache: \(context.cacheURL.path)")
+
+      case .json, .jsonl:
+        break
+      }
+
+      emissions.append(payload)
+
+      if output == .jsonl {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.todos.watch",
+            side: "swift",
+            event: "watch",
+            appID: context.appID,
+            ok: true,
+            details: payload
+          )
+        )
+      }
+    }
+
+    switch output {
+    case .human, .jsonl:
+      break
+
+    case .json:
+      try writeJSON(
+        TodoWatchOutput(
+          appID: context.appID,
+          cachePath: context.cacheURL.path,
+          event: "watch",
+          transport: "not-implemented-local-cache-only",
+          queryID: options.query.id,
+          cacheKey: options.query.cacheKey,
+          requestedEventCount: options.eventCount,
+          emittedEventCount: emissions.count,
+          emissions: emissions
+        )
+      )
+    }
+  }
+
   private static func printHelp() {
     print(
       """
@@ -908,6 +995,7 @@ struct InstantSwiftDataCLI {
         perms verify --example todos --from instant.perms.ts [--json|--jsonl]
         examples todos add "do the dishes" [--json|--jsonl]
         examples todos list [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--json|--jsonl]
+        examples todos watch [--events 1] [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--json|--jsonl]
         examples todos complete <todo-id> [--json|--jsonl]
         examples todos refresh [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--json|--jsonl]
         cache inspect [--json|--jsonl]
@@ -1152,6 +1240,100 @@ struct InstantSwiftDataCLI {
       }
     }
 
+    return makeTodoListQuery(
+      completed: completed,
+      search: search,
+      offset: offset,
+      limit: limit,
+      direction: direction
+    )
+  }
+
+  private static func todoWatchOptions(arguments: [String]) throws -> TodoWatchOptions {
+    var arguments = arguments
+    var completed: Bool?
+    var search: String?
+    var offset: Int?
+    var limit: Int?
+    var direction = InstantQuerySortDirection.ascending
+    var eventCount = 1
+
+    while let option = arguments.popFirstArgument() {
+      switch option {
+      case "--completed":
+        guard let value = arguments.popFirstArgument(), let parsed = parseBool(value) else {
+          throw CLIError("Usage: instant-swift-data examples todos watch --completed true|false", exitCode: 64)
+        }
+        completed = parsed
+
+      case "--search":
+        guard let value = arguments.popFirstArgument(),
+          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+          throw CLIError("Usage: instant-swift-data examples todos watch --search text", exitCode: 64)
+        }
+        search = value
+
+      case "--limit":
+        guard let value = arguments.popFirstArgument(),
+          let parsed = Int(value),
+          parsed >= 0
+        else {
+          throw CLIError("Usage: instant-swift-data examples todos watch --limit n", exitCode: 64)
+        }
+        limit = parsed
+
+      case "--offset":
+        guard let value = arguments.popFirstArgument(),
+          let parsed = Int(value),
+          parsed >= 0
+        else {
+          throw CLIError("Usage: instant-swift-data examples todos watch --offset n", exitCode: 64)
+        }
+        offset = parsed
+
+      case "--order":
+        guard let value = arguments.popFirstArgument(), let parsed = parseSortDirection(value) else {
+          throw CLIError("Usage: instant-swift-data examples todos watch --order asc|desc", exitCode: 64)
+        }
+        direction = parsed
+
+      case "--events":
+        guard let value = arguments.popFirstArgument(),
+          let parsed = Int(value),
+          parsed == 1
+        else {
+          throw CLIError("Usage: instant-swift-data examples todos watch --events 1", exitCode: 64)
+        }
+        eventCount = parsed
+
+      default:
+        throw CLIError(
+          "Unknown todo watch option: \(option). Usage: instant-swift-data examples todos watch [--events 1] [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc]",
+          exitCode: 64
+        )
+      }
+    }
+
+    return TodoWatchOptions(
+      query: makeTodoListQuery(
+        completed: completed,
+        search: search,
+        offset: offset,
+        limit: limit,
+        direction: direction
+      ),
+      eventCount: eventCount
+    )
+  }
+
+  private static func makeTodoListQuery(
+    completed: Bool?,
+    search: String?,
+    offset: Int?,
+    limit: Int?,
+    direction: InstantQuerySortDirection
+  ) -> InstantQueryPlan {
     var filters: [InstantQueryFilter] = []
     var id = "examples.todos.list"
     if let completed {
@@ -1464,7 +1646,7 @@ private struct CLIContext: Sendable {
   }
 }
 
-private enum OutputMode: Sendable {
+private enum OutputMode: Equatable, Sendable {
   case human
   case json
   case jsonl
@@ -1488,6 +1670,36 @@ private struct TodosOutput: Codable, Sendable {
   var event: String
   var changedID: String?
   var transport: String
+  var pendingMutationCount: Int
+  var todos: [TodoRecord]
+}
+
+private struct TodoWatchOptions: Sendable {
+  var query: InstantQueryPlan
+  var eventCount: Int
+}
+
+private struct TodoWatchOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var transport: String
+  var queryID: String
+  var cacheKey: String
+  var requestedEventCount: Int
+  var emittedEventCount: Int
+  var emissions: [TodoWatchEmissionOutput]
+}
+
+private struct TodoWatchEmissionOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var transport: String
+  var queryID: String
+  var cacheKey: String
+  var emissionIndex: Int
+  var sequence: Int64
   var pendingMutationCount: Int
   var todos: [TodoRecord]
 }

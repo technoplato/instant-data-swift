@@ -20,6 +20,7 @@ swift run instant-swift-data examples todos add "do the dishes"
 swift run instant-swift-data examples todos list
 swift run instant-swift-data examples todos list --completed false --offset 0 --limit 10 --order desc
 swift run instant-swift-data examples todos list --search dishes
+swift run instant-swift-data examples todos watch --events 1 --jsonl
 TODO_ID="$(swift run instant-swift-data examples todos add "ship the demo" --json | jq -r '.changedID')"
 swift run instant-swift-data examples todos complete "$TODO_ID"
 swift run instant-swift-data examples todos refresh
@@ -30,6 +31,7 @@ Agent-readable output is available with `--json` or `--jsonl`:
 ```bash
 swift run instant-swift-data examples todos add "do the dishes" --json
 swift run instant-swift-data examples todos list --jsonl
+swift run instant-swift-data examples todos watch --events 1 --jsonl
 ```
 
 Inspect the durable cache and optimistic outbox:

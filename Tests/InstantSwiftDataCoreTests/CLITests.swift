@@ -66,6 +66,85 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliTodoWatchEmitsFiniteJsonLEvidence() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    _ = try runCLI(["examples", "todos", "add", "watch open", "--json"], homeURL: homeURL)
+    let completedAddOutput = try runCLI(
+      ["examples", "todos", "add", "watch completed", "--json"],
+      homeURL: homeURL
+    )
+    let completedAdd = try JSONDecoder().decode(CLIAddOutput.self, from: Data(completedAddOutput.utf8))
+    let completedID = try #require(completedAdd.changedID)
+    _ = try runCLI(["examples", "todos", "complete", completedID, "--json"], homeURL: homeURL)
+
+    let watchOutput = try runCLI(
+      ["examples", "todos", "watch", "--events", "1", "--completed", "false", "--jsonl"],
+      homeURL: homeURL
+    )
+    let lines = watchOutput.split(separator: "\n")
+    expectNoDifference(lines.count, 1)
+    let line = try #require(lines.first)
+    let evidence = try JSONDecoder().decode(
+      CLITodoWatchEvidence.self,
+      from: Data(line.utf8)
+    )
+
+    expectNoDifference(evidence.event, "watch")
+    expectNoDifference(evidence.caseID, "cli.examples.todos.watch")
+    expectNoDifference(evidence.side, "swift")
+    expectNoDifference(evidence.ok, true)
+    expectNoDifference(evidence.details.queryID, "examples.todos.list.completed-false")
+    #expect(evidence.details.cacheKey.hasPrefix("plan:"))
+    expectNoDifference(evidence.details.emissionIndex, 0)
+    expectNoDifference(evidence.details.sequence, 0)
+    expectNoDifference(evidence.details.todos.map(\.text), ["watch open"])
+    expectNoDifference(evidence.details.pendingMutationCount, 3)
+
+    let cache = try JSONDecoder().decode(
+      CLICacheInspectOutput.self,
+      from: Data(try runCLI(["cache", "inspect", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(
+      Set(cache.queries.map(\.stableSummary)),
+      [
+        CLICacheQueryStableSummary(
+          queryID: "examples.todos.list",
+          namespace: "todos",
+          resultCount: 2
+        ),
+        CLICacheQueryStableSummary(
+          queryID: "examples.todos.list.completed-false",
+          namespace: "todos",
+          resultCount: 1
+        ),
+      ]
+    )
+
+    let jsonWatch = try JSONDecoder().decode(
+      CLITodoWatchOutput.self,
+      from: Data(
+        try runCLI(["examples", "todos", "watch", "--events", "1", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(jsonWatch.event, "watch")
+    expectNoDifference(jsonWatch.requestedEventCount, 1)
+    expectNoDifference(jsonWatch.emittedEventCount, 1)
+    expectNoDifference(jsonWatch.emissions.map(\.todos.count), [2])
+
+    let invalidEvents = try runCLIResult(
+      ["examples", "todos", "watch", "--events", "2", "--json"],
+      homeURL: homeURL
+    )
+    #expect(invalidEvents.status == 64)
+    #expect(invalidEvents.error.contains("watch --events 1"))
+  }
+
+  @Test
   func cliOutboxRetryAndDrainOperateOnDurableState() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -141,6 +220,16 @@ extension InstantStoreTests {
   }
 
   private func runCLI(_ arguments: [String], homeURL: URL) throws -> String {
+    let result = try runCLIResult(arguments, homeURL: homeURL)
+    guard result.status == 0 else {
+      throw CLITestError(
+        "instant-swift-data \(arguments.joined(separator: " ")) failed with status \(result.status): \(result.error)"
+      )
+    }
+    return result.output
+  }
+
+  private func runCLIResult(_ arguments: [String], homeURL: URL) throws -> CLITestProcessResult {
     let packageURL = packageRootURL()
     let executableURL = packageURL.appendingPathComponent(".build/debug/instant-swift-data")
 
@@ -177,12 +266,11 @@ extension InstantStoreTests {
       decoding: errorPipe.fileHandleForReading.readDataToEndOfFile(),
       as: UTF8.self
     )
-    guard process.terminationStatus == 0 else {
-      throw CLITestError(
-        "instant-swift-data \(arguments.joined(separator: " ")) failed with status \(process.terminationStatus): \(error)"
-      )
-    }
-    return output
+    return CLITestProcessResult(
+      status: process.terminationStatus,
+      output: output,
+      error: error
+    )
   }
 
   private func packageRootURL(filePath: String = #filePath) -> URL {
@@ -195,6 +283,48 @@ extension InstantStoreTests {
 
 private struct CLIAddOutput: Decodable {
   var changedID: String?
+}
+
+private struct CLITestProcessResult {
+  var status: Int32
+  var output: String
+  var error: String
+}
+
+private struct CLITodoWatchOutput: Decodable {
+  var event: String
+  var requestedEventCount: Int
+  var emittedEventCount: Int
+  var emissions: [CLITodoWatchEmission]
+}
+
+private struct CLITodoWatchEvidence: Decodable {
+  var caseID: String
+  var side: String
+  var event: String
+  var ok: Bool
+  var details: CLITodoWatchEmission
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case side
+    case event
+    case ok
+    case details
+  }
+}
+
+private struct CLITodoWatchEmission: Decodable {
+  var queryID: String
+  var cacheKey: String
+  var emissionIndex: Int
+  var sequence: Int64
+  var pendingMutationCount: Int
+  var todos: [CLITodo]
+}
+
+private struct CLITodo: Decodable {
+  var text: String
 }
 
 private struct CLICacheInspectEvidence: Decodable {
