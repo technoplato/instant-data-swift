@@ -788,6 +788,8 @@ extension InstantStoreTests {
 
   @Test
   func cliRemindersTagsSearchAndSeedPersistAcrossLaunches() throws {
+    let fixedNow = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let fixedNowEnvironment = ["INSTANT_SWIFT_DATA_NOW": "\(fixedNow.milliseconds)"]
     let seedHomeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: seedHomeURL, withIntermediateDirectories: true)
@@ -796,12 +798,22 @@ extension InstantStoreTests {
     let seeded = try JSONDecoder().decode(
       CLIRemindersOutput.self,
       from: Data(
-        try runCLI(["examples", "reminders", "seed", "--json"], homeURL: seedHomeURL)
+        try runCLI(
+          ["examples", "reminders", "seed", "--json"],
+          homeURL: seedHomeURL,
+          environment: fixedNowEnvironment
+        )
           .utf8
       )
     )
     expectNoDifference(seeded.event, "seed")
     expectNoDifference(seeded.reminders.map(\.title), ["Groceries", "Haircut"])
+    expectNoDifference(seeded.reminders.map(\.isFlagged), [false, true])
+    expectNoDifference(seeded.reminders.map(\.dueDate), [
+      InstantTimestamp(milliseconds: fixedNow.milliseconds + 24 * 60 * 60 * 1000),
+      InstantTimestamp(milliseconds: fixedNow.milliseconds + 3 * 24 * 60 * 60 * 1000),
+    ])
+    expectNoDifference(seeded.reminders.map(\.priority), [.medium, .high])
     expectNoDifference(seeded.tags.map(\.title), ["personal", "shopping"])
     expectNoDifference(
       seeded.reminderTags,
@@ -827,6 +839,20 @@ extension InstantStoreTests {
     try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: homeURL) }
 
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let fixedDate = Date(timeIntervalSince1970: Double(fixedNow.milliseconds) / 1000)
+    let todayStart = calendar.startOfDay(for: fixedDate)
+    let dueDateFormatter = DateFormatter()
+    dueDateFormatter.calendar = calendar
+    dueDateFormatter.locale = Locale(identifier: "en_US_POSIX")
+    dueDateFormatter.timeZone = calendar.timeZone
+    dueDateFormatter.dateFormat = "yyyy-MM-dd"
+    let dueDateString = dueDateFormatter.string(from: todayStart)
+    let dueDateTimestamp = InstantTimestamp(
+      milliseconds: Int64((todayStart.timeIntervalSince1970 * 1000).rounded())
+    )
+
     let addedList = try JSONDecoder().decode(
       CLIRemindersOutput.self,
       from: Data(
@@ -838,11 +864,24 @@ extension InstantStoreTests {
     let addedTake = try JSONDecoder().decode(
       CLIRemindersOutput.self,
       from: Data(
-        try runCLI(["examples", "reminders", "add", listID, "Take out trash", "--json"], homeURL: homeURL)
+        try runCLI(
+          [
+            "examples", "reminders", "add", listID, "Take out trash",
+            "--notes", "Bins at the curb",
+            "--due-date", dueDateString,
+            "--priority", "high",
+            "--flagged",
+            "--json",
+          ],
+          homeURL: homeURL
+        )
           .utf8
       )
     )
     let takeID = try #require(addedTake.changedID)
+    expectNoDifference(addedTake.reminders.map(\.isFlagged), [true])
+    expectNoDifference(addedTake.reminders.map(\.priority), [.high])
+    expectNoDifference(addedTake.reminders.map(\.dueDate), [dueDateTimestamp])
     let addedWalk = try JSONDecoder().decode(
       CLIRemindersOutput.self,
       from: Data(
@@ -852,6 +891,20 @@ extension InstantStoreTests {
     )
     let walkID = try #require(addedWalk.changedID)
     _ = try runCLI(["examples", "reminders", "complete", walkID, "--json"], homeURL: homeURL)
+
+    let badDueDate = try runCLIResult(
+      ["examples", "reminders", "add", listID, "Bad date", "--due-date", "not-a-date", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(badDueDate.status, 64)
+    #expect(badDueDate.error.contains("Invalid due date"))
+
+    let badPriority = try runCLIResult(
+      ["examples", "reminders", "add", listID, "Bad priority", "--priority", "urgent", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(badPriority.status, 64)
+    #expect(badPriority.error.contains("Usage: instant-swift-data examples reminders add"))
 
     let taggedTake = try JSONDecoder().decode(
       CLIRemindersOutput.self,
@@ -880,6 +933,65 @@ extension InstantStoreTests {
       ReminderTagLinkRecord(reminderID: takeID, tagID: "kids")
     ])
 
+    let flaggedList = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(["examples", "reminders", "list", "--flagged", "--priority", "high", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(flaggedList.reminders.map(\.id), [takeID])
+
+    let scheduledList = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(["examples", "reminders", "list", "--scheduled", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(scheduledList.reminders.map(\.id), [takeID])
+
+    let todayList = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "reminders", "list", "--today", "--json"],
+          homeURL: homeURL,
+          environment: fixedNowEnvironment
+        )
+          .utf8
+      )
+    )
+    expectNoDifference(todayList.reminders.map(\.id), [takeID])
+
+    let richSearch = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "examples", "reminders", "search", "Take",
+            "--flagged",
+            "--priority", "high",
+            "--scheduled",
+            "--today",
+            "--json",
+          ],
+          homeURL: homeURL,
+          environment: fixedNowEnvironment
+        )
+          .utf8
+      )
+    )
+    expectNoDifference(richSearch.reminders.map(\.id), [takeID])
+
+    let humanRichList = try runCLI(
+      ["examples", "reminders", "list", "--flagged", "--priority", "high"],
+      homeURL: homeURL
+    )
+    #expect(humanRichList.contains("due=\(dueDateString)"))
+    #expect(humanRichList.contains("priority=high"))
+    #expect(humanRichList.contains("notes=\"Bins at the curb\""))
+
     let wildcardSearch = try JSONDecoder().decode(
       CLIRemindersOutput.self,
       from: Data(
@@ -901,6 +1013,37 @@ extension InstantStoreTests {
     )
     expectNoDifference(completedSearch.reminders.map(\.id), [walkID])
     expectNoDifference(completedSearch.reminders.map(\.isCompleted), [true])
+
+    let editedTake = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "examples", "reminders", "update", takeID, "Take bins out",
+            "--notes", "Updated bins",
+            "--clear-due-date",
+            "--clear-priority",
+            "--unflagged",
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(editedTake.reminders.map(\.title), ["Take bins out", "Take a walk"])
+    expectNoDifference(editedTake.reminders.first?.notes, "Updated bins")
+    expectNoDifference(editedTake.reminders.first?.isFlagged, false)
+    expectNoDifference(editedTake.reminders.first?.dueDate, nil)
+    expectNoDifference(editedTake.reminders.first?.priority, nil)
+
+    let emptyScheduledList = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(["examples", "reminders", "list", "--scheduled", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(emptyScheduledList.reminders, [])
 
     let jsonlOutput = try runCLI(["examples", "reminders", "tags", "--jsonl"], homeURL: homeURL)
     let rows = jsonlOutput.split(separator: "\n")
@@ -989,6 +1132,74 @@ extension InstantStoreTests {
     expectNoDifference(deletedList.changedID, listID)
     expectNoDifference(deletedList.lists, [])
     expectNoDifference(deletedList.reminders, [])
+  }
+
+  @Test
+  func cliRemindersFilteredListKeepsGlobalSummaryCounts() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let environment = ["INSTANT_SWIFT_DATA_NOW": "1700000000000"]
+    let addedList = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "reminders", "add-list", "Family", "--json"],
+          homeURL: homeURL,
+          environment: environment
+        ).utf8
+      )
+    )
+    let listID = try #require(addedList.changedID)
+    let scheduled = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "examples", "reminders", "add", listID, "Pack lunch",
+            "--due-date", "2023-11-14",
+            "--priority", "high",
+            "--json",
+          ],
+          homeURL: homeURL,
+          environment: environment
+        ).utf8
+      )
+    )
+    let scheduledID = try #require(scheduled.changedID)
+    _ = try runCLI(
+      ["examples", "reminders", "add", listID, "Read book", "--json"],
+      homeURL: homeURL,
+      environment: environment
+    )
+
+    let scheduledList = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "reminders", "list", "--scheduled", "--json"],
+          homeURL: homeURL,
+          environment: environment
+        ).utf8
+      )
+    )
+    expectNoDifference(scheduledList.reminders.map(\.id), [scheduledID])
+    expectNoDifference(scheduledList.lists.map(\.reminderCount), [2])
+
+    let priorityList = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "reminders", "list", "--priority", "high", "--json"],
+          homeURL: homeURL,
+          environment: environment
+        ).utf8
+      )
+    )
+    expectNoDifference(priorityList.reminders.map(\.id), [scheduledID])
+    expectNoDifference(priorityList.lists.map(\.reminderCount), [2])
   }
 
   @Test

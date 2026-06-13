@@ -1,5 +1,11 @@
 import Foundation
 
+public enum ReminderPriority: String, CaseIterable, Codable, Hashable, Sendable {
+  case low
+  case medium
+  case high
+}
+
 public struct RemindersListRecord: Hashable, Codable, Sendable, Identifiable {
   public var id: String
   public var title: String
@@ -29,6 +35,8 @@ public struct ReminderRecord: Hashable, Codable, Sendable, Identifiable {
   public var notes: String
   public var isCompleted: Bool
   public var isFlagged: Bool
+  public var dueDate: InstantTimestamp?
+  public var priority: ReminderPriority?
   public var position: Int
   public var createdAt: InstantTimestamp
 
@@ -39,6 +47,8 @@ public struct ReminderRecord: Hashable, Codable, Sendable, Identifiable {
     notes: String,
     isCompleted: Bool,
     isFlagged: Bool,
+    dueDate: InstantTimestamp? = nil,
+    priority: ReminderPriority? = nil,
     position: Int,
     createdAt: InstantTimestamp
   ) {
@@ -48,6 +58,8 @@ public struct ReminderRecord: Hashable, Codable, Sendable, Identifiable {
     self.notes = notes
     self.isCompleted = isCompleted
     self.isFlagged = isFlagged
+    self.dueDate = dueDate
+    self.priority = priority
     self.position = position
     self.createdAt = createdAt
   }
@@ -114,6 +126,8 @@ public struct ReminderSeedRecord: Hashable, Codable, Sendable {
   public var notes: String
   public var isCompleted: Bool
   public var isFlagged: Bool
+  public var dueDateOffsetMilliseconds: Int64?
+  public var priority: ReminderPriority?
   public var position: Int
   public var createdAtOffsetMilliseconds: Int64
   public var tagTitles: [String]
@@ -125,6 +139,8 @@ public struct ReminderSeedRecord: Hashable, Codable, Sendable {
     notes: String,
     isCompleted: Bool,
     isFlagged: Bool,
+    dueDateOffsetMilliseconds: Int64? = nil,
+    priority: ReminderPriority? = nil,
     position: Int,
     createdAtOffsetMilliseconds: Int64,
     tagTitles: [String] = []
@@ -135,6 +151,8 @@ public struct ReminderSeedRecord: Hashable, Codable, Sendable {
     self.notes = notes
     self.isCompleted = isCompleted
     self.isFlagged = isFlagged
+    self.dueDateOffsetMilliseconds = dueDateOffsetMilliseconds
+    self.priority = priority
     self.position = position
     self.createdAtOffsetMilliseconds = createdAtOffsetMilliseconds
     self.tagTitles = tagTitles
@@ -173,6 +191,8 @@ public enum ReminderExample {
       notes: "Milk\nEggs\nApples",
       isCompleted: false,
       isFlagged: false,
+      dueDateOffsetMilliseconds: 24 * 60 * 60 * 1000,
+      priority: .medium,
       position: 0,
       createdAtOffsetMilliseconds: 1,
       tagTitles: ["shopping"]
@@ -184,6 +204,8 @@ public enum ReminderExample {
       notes: "",
       isCompleted: false,
       isFlagged: true,
+      dueDateOffsetMilliseconds: 3 * 24 * 60 * 60 * 1000,
+      priority: .high,
       position: 1,
       createdAtOffsetMilliseconds: 2,
       tagTitles: ["personal"]
@@ -252,6 +274,22 @@ public enum ReminderExample {
       namespace: remindersNamespace,
       name: "isFlagged",
       valueType: .boolean,
+      isIndexed: true
+    ),
+    InstantAttribute(
+      id: "reminders/dueDate",
+      namespace: remindersNamespace,
+      name: "dueDate",
+      valueType: .date,
+      isRequired: false,
+      isIndexed: true
+    ),
+    InstantAttribute(
+      id: "reminders/priority",
+      namespace: remindersNamespace,
+      name: "priority",
+      valueType: .string,
+      isRequired: false,
       isIndexed: true
     ),
     InstantAttribute(
@@ -330,11 +368,70 @@ public enum ReminderExample {
     )
   }
 
+  public static func remindersFilterQuery(
+    listID: String? = nil,
+    includeCompleted: Bool = false,
+    flagged: Bool? = nil,
+    scheduled: Bool = false,
+    today: InstantTimestamp? = nil,
+    priority: ReminderPriority? = nil
+  ) -> InstantQueryPlan {
+    var fragments: [String] = []
+    var filters: [InstantQueryFilter] = []
+
+    if let listID {
+      fragments.append("list-\(queryIDFragment(listID))")
+      filters.append(.equals(field: "list", value: .ref(listID)))
+    }
+
+    if !includeCompleted {
+      fragments.append("incomplete")
+      filters.append(.equals(field: "isCompleted", value: .bool(false)))
+    }
+
+    if let flagged {
+      fragments.append("flagged-\(flagged)")
+      filters.append(.equals(field: "isFlagged", value: .bool(flagged)))
+    }
+
+    if scheduled {
+      fragments.append("scheduled")
+      filters.append(.isNotNull(field: "dueDate"))
+    }
+
+    if let today {
+      let range = dayRange(containing: today)
+      fragments.append("today-\(timestampMilliseconds(for: range.start))")
+      filters.append(
+        .and([
+          .greaterThanOrEqual(field: "dueDate", value: .date(range.start)),
+          .lessThan(field: "dueDate", value: .date(range.end)),
+        ])
+      )
+    }
+
+    if let priority {
+      fragments.append("priority-\(priority.rawValue)")
+      filters.append(.equals(field: "priority", value: .string(priority.rawValue)))
+    }
+
+    return InstantQueryPlan(
+      id: "examples.reminders.filter.\(fragments.isEmpty ? "all" : fragments.joined(separator: "."))",
+      namespace: remindersNamespace,
+      filters: filters,
+      order: InstantQueryOrder("position", .ascending)
+    )
+  }
+
   public static func remindersSearchQuery(
     text: String,
     listID: String? = nil,
     tagID: String? = nil,
-    includeCompleted: Bool = false
+    includeCompleted: Bool = false,
+    flagged: Bool? = nil,
+    scheduled: Bool = false,
+    today: InstantTimestamp? = nil,
+    priority: ReminderPriority? = nil
   ) -> InstantQueryPlan {
     let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
     var fragments: [String] = []
@@ -361,6 +458,32 @@ public enum ReminderExample {
     if let tagID {
       fragments.append("tag-\(queryIDFragment(tagID))")
       filters.append(.equals(field: "tags", value: .ref(tagID)))
+    }
+
+    if let flagged {
+      fragments.append("flagged-\(flagged)")
+      filters.append(.equals(field: "isFlagged", value: .bool(flagged)))
+    }
+
+    if scheduled {
+      fragments.append("scheduled")
+      filters.append(.isNotNull(field: "dueDate"))
+    }
+
+    if let today {
+      let range = dayRange(containing: today)
+      fragments.append("today-\(timestampMilliseconds(for: range.start))")
+      filters.append(
+        .and([
+          .greaterThanOrEqual(field: "dueDate", value: .date(range.start)),
+          .lessThan(field: "dueDate", value: .date(range.end)),
+        ])
+      )
+    }
+
+    if let priority {
+      fragments.append("priority-\(priority.rawValue)")
+      filters.append(.equals(field: "priority", value: .string(priority.rawValue)))
     }
 
     if !includeCompleted {
@@ -483,6 +606,8 @@ public enum ReminderExample {
     title: String,
     notes: String = "",
     isFlagged: Bool = false,
+    dueDate: InstantTimestamp? = nil,
+    priority: ReminderPriority? = nil,
     position: Int,
     createdAt: InstantTimestamp,
     transactionID: String
@@ -497,6 +622,8 @@ public enum ReminderExample {
       notes: notes,
       isCompleted: false,
       isFlagged: isFlagged,
+      dueDate: dueDate,
+      priority: priority,
       position: position,
       updatedAt: createdAt,
       transactionID: transactionID
@@ -550,6 +677,55 @@ public enum ReminderExample {
           txTime: updatedAt
         )
       ),
+    ]
+  }
+
+  public static func updateReminderDetailsOperations(
+    id: String,
+    listID: String,
+    title: String,
+    notes: String,
+    isFlagged: Bool,
+    dueDate: InstantTimestamp?,
+    priority: ReminderPriority?,
+    updatedAt: InstantTimestamp,
+    transactionID: String
+  ) -> [InstantTripleOperation] {
+    [
+      .requireEntityExists(entityID: listID, namespace: listsNamespace),
+      .requireEntityExists(entityID: id, namespace: remindersNamespace),
+      requireReminderInListOperation(reminderID: id, listID: listID),
+      reminderIdentityOperation(id: id, updatedAt: updatedAt, transactionID: transactionID),
+      listRefOperation(reminderID: id, listID: listID, updatedAt: updatedAt, transactionID: transactionID),
+      .insert(
+        InstantTriple(
+          entityID: id,
+          attributeID: "reminders/title",
+          value: .string(title),
+          txID: transactionID,
+          txTime: updatedAt
+        )
+      ),
+      .insert(
+        InstantTriple(
+          entityID: id,
+          attributeID: "reminders/notes",
+          value: .string(notes),
+          txID: transactionID,
+          txTime: updatedAt
+        )
+      ),
+      .insert(
+        InstantTriple(
+          entityID: id,
+          attributeID: "reminders/isFlagged",
+          value: .bool(isFlagged),
+          txID: transactionID,
+          txTime: updatedAt
+        )
+      ),
+      dueDateOperation(reminderID: id, dueDate: dueDate, updatedAt: updatedAt, transactionID: transactionID),
+      priorityOperation(reminderID: id, priority: priority, updatedAt: updatedAt, transactionID: transactionID),
     ]
   }
 
@@ -695,6 +871,9 @@ public enum ReminderExample {
       let createdAt = InstantTimestamp(
         milliseconds: baseCreatedAt.milliseconds + seed.createdAtOffsetMilliseconds
       )
+      let dueDate = seed.dueDateOffsetMilliseconds.map {
+        InstantTimestamp(milliseconds: baseCreatedAt.milliseconds + $0)
+      }
       return upsertReminderOperations(
         id: id,
         listID: listID,
@@ -702,6 +881,8 @@ public enum ReminderExample {
         notes: seed.notes,
         isCompleted: seed.isCompleted,
         isFlagged: seed.isFlagged,
+        dueDate: dueDate,
+        priority: seed.priority,
         position: seed.position,
         updatedAt: createdAt,
         transactionID: transactionID
@@ -742,6 +923,8 @@ public enum ReminderExample {
         notes: try stringField("notes", from: snapshot, namespace: remindersNamespace),
         isCompleted: try boolField("isCompleted", from: snapshot, namespace: remindersNamespace),
         isFlagged: try boolField("isFlagged", from: snapshot, namespace: remindersNamespace),
+        dueDate: try optionalTimestampField("dueDate", from: snapshot, namespace: remindersNamespace),
+        priority: try optionalPriorityField("priority", from: snapshot, namespace: remindersNamespace),
         position: try intField("position", from: snapshot, namespace: remindersNamespace),
         createdAt: try timestampField("createdAt", from: snapshot, namespace: remindersNamespace)
       )
@@ -785,6 +968,8 @@ public enum ReminderExample {
     notes: String,
     isCompleted: Bool,
     isFlagged: Bool,
+    dueDate: InstantTimestamp?,
+    priority: ReminderPriority?,
     position: Int,
     updatedAt: InstantTimestamp,
     transactionID: String
@@ -828,6 +1013,8 @@ public enum ReminderExample {
           txTime: updatedAt
         )
       ),
+      dueDateOperation(reminderID: id, dueDate: dueDate, updatedAt: updatedAt, transactionID: transactionID),
+      priorityOperation(reminderID: id, priority: priority, updatedAt: updatedAt, transactionID: transactionID),
       .insert(
         InstantTriple(
           entityID: id,
@@ -877,6 +1064,42 @@ public enum ReminderExample {
         entityID: reminderID,
         attributeID: "reminders/tags",
         value: .ref(tagID),
+        txID: transactionID,
+        txTime: updatedAt
+      )
+    )
+  }
+
+  private static func dueDateOperation(
+    reminderID: String,
+    dueDate: InstantTimestamp?,
+    updatedAt: InstantTimestamp,
+    transactionID: String
+  ) -> InstantTripleOperation {
+    .insert(
+      InstantTriple(
+        entityID: reminderID,
+        attributeID: "reminders/dueDate",
+        value: dueDate.map {
+          .date(Date(timeIntervalSince1970: Double($0.milliseconds) / 1000))
+        } ?? .null,
+        txID: transactionID,
+        txTime: updatedAt
+      )
+    )
+  }
+
+  private static func priorityOperation(
+    reminderID: String,
+    priority: ReminderPriority?,
+    updatedAt: InstantTimestamp,
+    transactionID: String
+  ) -> InstantTripleOperation {
+    .insert(
+      InstantTriple(
+        entityID: reminderID,
+        attributeID: "reminders/priority",
+        value: priority.map { .string($0.rawValue) } ?? .null,
         txID: transactionID,
         txTime: updatedAt
       )
@@ -997,6 +1220,41 @@ public enum ReminderExample {
     return InstantTimestamp(milliseconds: Int64((value.timeIntervalSince1970 * 1000).rounded()))
   }
 
+  private static func optionalTimestampField(
+    _ field: String,
+    from snapshot: InstantEntitySnapshot,
+    namespace: String
+  ) throws -> InstantTimestamp? {
+    guard let value = snapshot.values[field]?.first else { return nil }
+    switch value {
+    case .null:
+      return nil
+    case let .date(date):
+      return InstantTimestamp(milliseconds: Int64((date.timeIntervalSince1970 * 1000).rounded()))
+    default:
+      throw decodeError(namespace: namespace, id: snapshot.id, field: field, expected: "date")
+    }
+  }
+
+  private static func optionalPriorityField(
+    _ field: String,
+    from snapshot: InstantEntitySnapshot,
+    namespace: String
+  ) throws -> ReminderPriority? {
+    guard let value = snapshot.values[field]?.first else { return nil }
+    switch value {
+    case .null:
+      return nil
+    case let .string(rawValue):
+      guard let priority = ReminderPriority(rawValue: rawValue) else {
+        throw decodeError(namespace: namespace, id: snapshot.id, field: field, expected: "priority")
+      }
+      return priority
+    default:
+      throw decodeError(namespace: namespace, id: snapshot.id, field: field, expected: "priority")
+    }
+  }
+
   private static func decodeError(
     namespace: String,
     id: String,
@@ -1019,6 +1277,19 @@ public enum ReminderExample {
       character != "%" && character != "_" && character != "\\"
     }
     return sanitized.isEmpty ? "\u{0}" : String(sanitized)
+  }
+
+  private static func dayRange(containing timestamp: InstantTimestamp) -> (start: Date, end: Date) {
+    let date = Date(timeIntervalSince1970: Double(timestamp.milliseconds) / 1000)
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let start = calendar.startOfDay(for: date)
+    let end = calendar.date(byAdding: .day, value: 1, to: start)!
+    return (start, end)
+  }
+
+  private static func timestampMilliseconds(for date: Date) -> Int64 {
+    Int64((date.timeIntervalSince1970 * 1000).rounded())
   }
 
   private static func queryIDFragment(_ value: String) -> String {

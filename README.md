@@ -70,9 +70,13 @@ Create a local Reminders list, add reminders, and prove two-user list sharing:
 swift run instant-swift-data auth token owner-refresh --user-id user-1 --json
 LIST_JSON="$(swift run instant-swift-data examples reminders add-list "Family" --json)"
 LIST_ID="$(printf '%s' "$LIST_JSON" | jq -r '.changedID')"
-REMINDER_JSON="$(swift run instant-swift-data examples reminders add "$LIST_ID" "Pack lunch" --json)"
+DUE_DATE="$(date -u +%F)"
+REMINDER_JSON="$(swift run instant-swift-data examples reminders add "$LIST_ID" "Pack lunch" --notes "Bring a cooler" --due-date "$DUE_DATE" --priority high --flagged --json)"
 REMINDER_ID="$(printf '%s' "$REMINDER_JSON" | jq -r '.changedID')"
 swift run instant-swift-data examples reminders add-tag "$REMINDER_ID" family --json
+swift run instant-swift-data examples reminders list --scheduled --json
+swift run instant-swift-data examples reminders list --today --json
+swift run instant-swift-data examples reminders list --flagged --priority high --json
 swift run instant-swift-data examples reminders search "Pack" --tag family --json
 swift run instant-swift-data examples reminders tags --jsonl
 swift run instant-swift-data examples reminders list --refresh --jsonl
@@ -86,7 +90,7 @@ swift run instant-swift-data examples reminders add-tag "$REMINDER_ID" reader --
 swift run instant-swift-data auth token owner-refresh --user-id user-1 --json
 swift run instant-swift-data shares role "$SHARE_ID" user-2 writer --json
 swift run instant-swift-data auth token invitee-refresh --user-id user-2 --json
-swift run instant-swift-data examples reminders update "$REMINDER_ID" "writer edit" --json
+swift run instant-swift-data examples reminders update "$REMINDER_ID" "writer edit" --notes "Done by the writer" --clear-due-date --clear-priority --unflagged --json
 swift run instant-swift-data examples reminders complete "$REMINDER_ID" --json
 swift run instant-swift-data examples reminders search "writer" --include-completed --json
 swift run instant-swift-data examples reminders delete-completed --list-id "$LIST_ID" --json

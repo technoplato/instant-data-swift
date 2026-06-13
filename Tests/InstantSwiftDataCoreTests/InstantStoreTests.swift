@@ -3702,6 +3702,124 @@ struct InstantStoreTests {
   }
 
   @Test
+  func remindersExampleRichFieldsFilterAndPersist() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let today = InstantTimestamp(milliseconds: 1_700_000_100_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: ReminderExample.attributes,
+        now: { timestamp }
+      )
+    )
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-rich-list",
+        operations: ReminderExample.createListOperations(
+          id: "list-rich",
+          title: "Family",
+          position: 0,
+          createdAt: timestamp,
+          transactionID: "tx-rich-list"
+        )
+      ),
+      createdAt: timestamp
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-rich-reminders",
+        operations: ReminderExample.createReminderOperations(
+          id: "reminder-dentist",
+          listID: "list-rich",
+          title: "Call dentist",
+          notes: "Bring insurance card",
+          isFlagged: true,
+          dueDate: today,
+          priority: .high,
+          position: 0,
+          createdAt: timestamp,
+          transactionID: "tx-rich-reminders"
+        ) + ReminderExample.createReminderOperations(
+          id: "reminder-someday",
+          listID: "list-rich",
+          title: "Someday",
+          position: 1,
+          createdAt: timestamp,
+          transactionID: "tx-rich-reminders"
+        )
+      ),
+      createdAt: timestamp
+    )
+
+    let flagged = try ReminderExample.decodeReminders(
+      (try await runtime.queryOnce(ReminderExample.remindersFilterQuery(flagged: true))).values
+    )
+    let scheduled = try ReminderExample.decodeReminders(
+      (try await runtime.queryOnce(ReminderExample.remindersFilterQuery(scheduled: true))).values
+    )
+    let dueToday = try ReminderExample.decodeReminders(
+      (try await runtime.queryOnce(ReminderExample.remindersFilterQuery(today: today))).values
+    )
+    let highPriority = try ReminderExample.decodeReminders(
+      (try await runtime.queryOnce(ReminderExample.remindersFilterQuery(priority: .high))).values
+    )
+    expectNoDifference(flagged.map(\.id), ["reminder-dentist"])
+    expectNoDifference(scheduled.map(\.id), ["reminder-dentist"])
+    expectNoDifference(dueToday.map(\.id), ["reminder-dentist"])
+    expectNoDifference(highPriority.map(\.id), ["reminder-dentist"])
+    expectNoDifference(flagged.first?.notes, "Bring insurance card")
+    expectNoDifference(flagged.first?.dueDate, today)
+    expectNoDifference(flagged.first?.priority, .high)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-rich-update",
+        operations: ReminderExample.updateReminderDetailsOperations(
+          id: "reminder-dentist",
+          listID: "list-rich",
+          title: "Call orthodontist",
+          notes: "Updated notes",
+          isFlagged: false,
+          dueDate: nil,
+          priority: .medium,
+          updatedAt: timestamp,
+          transactionID: "tx-rich-update"
+        )
+      ),
+      createdAt: timestamp
+    )
+
+    let noLongerScheduled = try ReminderExample.decodeReminders(
+      (try await runtime.queryOnce(ReminderExample.remindersFilterQuery(scheduled: true))).values
+    )
+    let mediumPriority = try ReminderExample.decodeReminders(
+      (try await runtime.queryOnce(ReminderExample.remindersFilterQuery(priority: .medium))).values
+    )
+    expectNoDifference(noLongerScheduled, [])
+    expectNoDifference(mediumPriority.map(\.title), ["Call orthodontist"])
+    expectNoDifference(mediumPriority.map(\.isFlagged), [false])
+    expectNoDifference(mediumPriority.map(\.dueDate), [nil])
+    expectNoDifference(mediumPriority.map(\.priority), [.medium])
+
+    let relaunched = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: ReminderExample.attributes
+      )
+    )
+    let persisted = try ReminderExample.decodeReminders(
+      (try await relaunched.queryOnce(ReminderExample.remindersFilterQuery(priority: .medium))).values
+    )
+    expectNoDifference(persisted.map(\.notes), ["Updated notes"])
+    expectNoDifference(persisted.map(\.dueDate), [nil])
+    expectNoDifference(persisted.map(\.priority), [.medium])
+  }
+
+  @Test
   func syncUpsExamplePersistsMeetingsAndCascadesChildren() async throws {
     let cacheURL = try temporaryCacheURL()
     let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)

@@ -576,6 +576,14 @@ Agent-oriented output modes are required:
   and `instant-swift-data examples reminders delete-list <list-id>`; reminder
   deletes reassert list membership for shared-list permission checks, and list
   deletes prove local cascade cleanup through the triple store.
+- create and filter richer Reminders fields locally with commands such as
+  `instant-swift-data examples reminders add <list-id> "Pack lunch" --due-date "$(date -u +%F)" --priority high --flagged`,
+  `instant-swift-data examples reminders list --scheduled --json`,
+  `instant-swift-data examples reminders list --today --json`, and
+  `instant-swift-data examples reminders list --flagged --priority high --json`;
+  due dates use Instant date values, priority is a local Swift enum encoded as a
+  string for now, and filtered views default to incomplete reminders like the
+  upstream Reminders predicates.
 - run the first local SyncUps port slice with commands such as
   `instant-swift-data examples sync-ups add "Design" --seconds 900 --theme appOrange --attendee Blob`,
   `instant-swift-data examples sync-ups edit <sync-up-id> --title "Design Review" --attendee Blob`,

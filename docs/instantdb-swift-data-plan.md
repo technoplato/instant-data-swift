@@ -676,6 +676,14 @@ Create `validation/` with:
   deletes carry the parent list ref for shared-root guards, completed deletes
   batch the same protected operation, and list deletes exercise cascade cleanup
   through the existing `reminders/list` link metadata.
+- Reminders: rich local reminder fields now cover optional `dueDate`, optional
+  `priority`, notes, and flagged state through `examples reminders add`/`update`
+  flags, plus `list --scheduled`, `list --today`, `list --flagged`, and
+  `list --priority high` filters. Scheduled/today/flagged/priority filters
+  default to incomplete reminders, matching the upstream Reminders predicates.
+  Priority is currently string-backed; upstream-exact integer rank ordering,
+  status states, FTS/highlighting, stats, and SwiftUI detail models remain future
+  work.
 - SyncUps: the first local SyncUps port slice exposes durable
   `examples sync-ups add`, `detail`, `edit`, `record`, `list`, and `delete`
   commands over `syncUps`/`attendees`/`meetings` namespaces; attendee and meeting
