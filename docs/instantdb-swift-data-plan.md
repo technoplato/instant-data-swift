@@ -689,11 +689,14 @@ Create `validation/` with:
   upstream Reminders list model. Upstream-exact integer priority rank ordering,
   status states, FTS/highlighting, and SwiftUI detail models remain future work.
 - SyncUps: the first local SyncUps port slice exposes durable
-  `examples sync-ups add`, `detail`, `edit`, `record`, `list`, and `delete`
-  commands over `syncUps`/`attendees`/`meetings` namespaces; attendee and meeting
-  children cascade with their parent sync-up and shared-root role checks cover
-  child writes before cache/outbox persistence. Speech, sound, settings, live
-  meeting timers, and UI navigation remain app-facing future work.
+  `examples sync-ups add`, `detail`, `edit`, `add-attendee`,
+  `delete-attendee`, `record`, `delete-meeting`, `list`, and `delete` commands over
+  `syncUps`/`attendees`/`meetings` namespaces; attendee and meeting children
+  cascade with their parent sync-up, deleting the final attendee creates a blank
+  replacement attendee to match the upstream form model, and shared-root role
+  checks cover child writes before cache/outbox persistence. Speech, sound,
+  settings, live meeting timers, and UI navigation remain app-facing future
+  work.
 - CLI: `instant-swift-data examples todos add "do the dishes"` persists auth,
   local IDs, cache, and outbox state for a later CLI invocation.
 - Permissions: generated permissions reject an unauthorized write in both

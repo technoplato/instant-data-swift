@@ -4029,6 +4029,131 @@ struct InstantStoreTests {
   }
 
   @Test
+  func syncUpsExampleDeletesAttendeesAndReaddsBlankReplacement() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let syncUpID = "syncup-design"
+    let firstAttendeeID = "attendee-blob"
+    let secondAttendeeID = "attendee-blob-jr"
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: SyncUpsExample.attributes,
+        now: { timestamp }
+      )
+    )
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-syncup-attendees",
+        operations: SyncUpsExample.createSyncUpOperations(
+          id: syncUpID,
+          title: "Design",
+          seconds: 900,
+          theme: .appOrange,
+          updatedAt: timestamp,
+          transactionID: "tx-syncup-attendees"
+        )
+        + SyncUpsExample.createAttendeeOperations(
+          id: firstAttendeeID,
+          syncUpID: syncUpID,
+          name: "Blob",
+          updatedAt: timestamp,
+          transactionID: "tx-syncup-attendees"
+        )
+        + SyncUpsExample.createAttendeeOperations(
+          id: secondAttendeeID,
+          syncUpID: syncUpID,
+          name: "Blob Jr",
+          updatedAt: timestamp,
+          transactionID: "tx-syncup-attendees"
+        )
+      ),
+      createdAt: timestamp
+    )
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-delete-attendee",
+        operations: SyncUpsExample.deleteAttendeeOperations(
+          id: secondAttendeeID,
+          syncUpID: syncUpID,
+          remainingAttendeeIDs: [firstAttendeeID],
+          updatedAt: timestamp,
+          transactionID: "tx-delete-attendee"
+        )
+      ),
+      createdAt: timestamp
+    )
+
+    let attendees = try SyncUpsExample.decodeAttendees(
+      (try await runtime.queryOnce(SyncUpsExample.attendeesForSyncUpQuery(syncUpID))).values
+    )
+    expectNoDifference(attendees.map(\.name), ["Blob"])
+
+    do {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-delete-last-attendee-without-replacement",
+          operations: SyncUpsExample.deleteAttendeeOperations(
+            id: firstAttendeeID,
+            syncUpID: syncUpID,
+            remainingAttendeeIDs: [],
+            updatedAt: timestamp,
+            transactionID: "tx-delete-last-attendee-without-replacement"
+          )
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected last attendee deletion without a replacement to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+    }
+
+    let stillHasOneAttendee = try SyncUpsExample.decodeAttendees(
+      (try await runtime.queryOnce(SyncUpsExample.attendeesForSyncUpQuery(syncUpID))).values
+    )
+    expectNoDifference(stillHasOneAttendee.map(\.name), ["Blob"])
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-delete-last-attendee",
+        operations: SyncUpsExample.deleteAttendeeOperations(
+          id: firstAttendeeID,
+          syncUpID: syncUpID,
+          remainingAttendeeIDs: [],
+          replacementAttendeeID: "attendee-blank",
+          updatedAt: timestamp,
+          transactionID: "tx-delete-last-attendee"
+        )
+      ),
+      createdAt: timestamp
+    )
+
+    let replacementAttendees = try SyncUpsExample.decodeAttendees(
+      (try await runtime.queryOnce(SyncUpsExample.attendeesForSyncUpQuery(syncUpID))).values
+    )
+    expectNoDifference(replacementAttendees, [
+      SyncUpAttendeeRecord(id: "attendee-blank", name: "", syncUpID: syncUpID)
+    ])
+
+    let relaunched = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: SyncUpsExample.attributes
+      )
+    )
+    let persistedAttendees = try SyncUpsExample.decodeAttendees(
+      (try await relaunched.queryOnce(SyncUpsExample.attendeesForSyncUpQuery(syncUpID))).values
+    )
+    expectNoDifference(persistedAttendees, [
+      SyncUpAttendeeRecord(id: "attendee-blank", name: "", syncUpID: syncUpID)
+    ])
+  }
+
+  @Test
   func syncUpsExampleSharedRootRolesProtectChildren() async throws {
     let cacheURL = try temporaryCacheURL()
     let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)

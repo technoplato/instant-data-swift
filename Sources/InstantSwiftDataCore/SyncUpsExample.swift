@@ -375,10 +375,16 @@ public enum SyncUpsExample {
     updatedAt: InstantTimestamp,
     transactionID: String
   ) -> [InstantTripleOperation] {
-    [
+    guard !newAttendees.isEmpty else {
+      return [
+        .requireEntityExists(entityID: syncUpID, namespace: syncUpsNamespace),
+        .requireEntityMissing(entityID: syncUpID, namespace: syncUpsNamespace),
+      ]
+    }
+    return [
       .requireEntityExists(entityID: syncUpID, namespace: syncUpsNamespace)
     ] + existingAttendeeIDs.flatMap { id in
-      deleteAttendeeOperations(id: id)
+      deleteAttendeeEntityOperations(id: id)
     } + newAttendees.flatMap { attendee in
       [
         .requireEntityMissing(entityID: attendee.id, namespace: attendeesNamespace)
@@ -437,11 +443,46 @@ public enum SyncUpsExample {
     ]
   }
 
-  public static func deleteAttendeeOperations(id: String) -> [InstantTripleOperation] {
-    [
+  public static func deleteAttendeeOperations(
+    id: String,
+    syncUpID: String,
+    remainingAttendeeIDs: [String],
+    replacementAttendeeID: String? = nil,
+    updatedAt: InstantTimestamp,
+    transactionID: String
+  ) -> [InstantTripleOperation] {
+    let verifiedRemainingAttendeeIDs = remainingAttendeeIDs.filter { $0 != id }
+    let keepsAtLeastOneAttendee = !verifiedRemainingAttendeeIDs.isEmpty || replacementAttendeeID != nil
+    var operations: [InstantTripleOperation] = [
+      .requireEntityExists(entityID: syncUpID, namespace: syncUpsNamespace),
       .requireEntityExists(entityID: id, namespace: attendeesNamespace),
+      .requireTripleExists(entityID: id, attributeID: "attendees/syncUp", value: .ref(syncUpID)),
+    ] + (
+      keepsAtLeastOneAttendee
+        ? []
+        : [.requireEntityMissing(entityID: syncUpID, namespace: syncUpsNamespace)]
+    ) + verifiedRemainingAttendeeIDs.flatMap { remainingAttendeeID in
+      [
+        .requireEntityExists(entityID: remainingAttendeeID, namespace: attendeesNamespace),
+        .requireTripleExists(
+          entityID: remainingAttendeeID,
+          attributeID: "attendees/syncUp",
+          value: .ref(syncUpID)
+        ),
+      ]
+    } + [
       .deleteEntity(id),
     ]
+    if let replacementAttendeeID {
+      operations += createAttendeeOperations(
+        id: replacementAttendeeID,
+        syncUpID: syncUpID,
+        name: "",
+        updatedAt: updatedAt,
+        transactionID: transactionID
+      )
+    }
+    return operations
   }
 
   public static func deleteMeetingOperations(id: String) -> [InstantTripleOperation] {
@@ -600,6 +641,13 @@ public enum SyncUpsExample {
           txTime: updatedAt
         )
       ),
+    ]
+  }
+
+  private static func deleteAttendeeEntityOperations(id: String) -> [InstantTripleOperation] {
+    [
+      .requireEntityExists(entityID: id, namespace: attendeesNamespace),
+      .deleteEntity(id),
     ]
   }
 

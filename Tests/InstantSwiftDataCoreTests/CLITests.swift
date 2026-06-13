@@ -1317,6 +1317,31 @@ extension InstantStoreTests {
     expectNoDifference(scopedList.attendees.map(\.name), ["Blob", "Blob Jr"])
     expectNoDifference(scopedList.meetings, [])
 
+    let deletedAttendeeID = try #require(scopedList.attendees.first(where: { $0.name == "Blob Jr" })?.id)
+    let deletedAttendee = try JSONDecoder().decode(
+      CLISyncUpsOutput.self,
+      from: Data(
+        try runCLI(["examples", "sync-ups", "delete-attendee", deletedAttendeeID, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(deletedAttendee.event, "delete-attendee")
+    expectNoDifference(deletedAttendee.changedID, deletedAttendeeID)
+    expectNoDifference(deletedAttendee.syncUps.map(\.attendeeCount), [1, 1])
+    expectNoDifference(deletedAttendee.attendees.map(\.name), ["Blob", "Blob Sr"])
+
+    let addedAttendee = try JSONDecoder().decode(
+      CLISyncUpsOutput.self,
+      from: Data(
+        try runCLI(["examples", "sync-ups", "add-attendee", syncUpID, "Blob Jr", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(addedAttendee.event, "add-attendee")
+    #expect(addedAttendee.changedID != nil)
+    expectNoDifference(addedAttendee.syncUps.map(\.attendeeCount), [2])
+    expectNoDifference(addedAttendee.attendees.map(\.name), ["Blob", "Blob Jr"])
+
     let edited = try JSONDecoder().decode(
       CLISyncUpsOutput.self,
       from: Data(
@@ -1341,12 +1366,19 @@ extension InstantStoreTests {
     expectNoDifference(edited.attendees.map(\.name), ["Blob"])
     let onlyAttendeeID = try #require(edited.attendees.first?.id)
 
-    let rejectedDeleteAttendee = try runCLIResult(
-      ["examples", "sync-ups", "delete-attendee", onlyAttendeeID, "--json"],
-      homeURL: homeURL
+    let replacedLastAttendee = try JSONDecoder().decode(
+      CLISyncUpsOutput.self,
+      from: Data(
+        try runCLI(["examples", "sync-ups", "delete-attendee", onlyAttendeeID, "--json"], homeURL: homeURL)
+          .utf8
+      )
     )
-    expectNoDifference(rejectedDeleteAttendee.status, 66)
-    #expect(rejectedDeleteAttendee.error.contains("at least one attendee"))
+    expectNoDifference(replacedLastAttendee.event, "delete-attendee")
+    expectNoDifference(replacedLastAttendee.changedID, onlyAttendeeID)
+    expectNoDifference(replacedLastAttendee.syncUps.map(\.attendeeCount), [1, 1])
+    let otherSyncUpID = try #require(other.changedID)
+    expectNoDifference(replacedLastAttendee.attendees.map(\.name), ["", "Blob Sr"])
+    expectNoDifference(replacedLastAttendee.attendees.map(\.syncUpID), [syncUpID, otherSyncUpID])
 
     let recorded = try JSONDecoder().decode(
       CLISyncUpsOutput.self,

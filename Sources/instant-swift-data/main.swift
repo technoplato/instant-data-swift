@@ -959,16 +959,25 @@ struct InstantSwiftDataCLI {
       guard let attendee = allAttendees.first(where: { $0.id == attendeeID }) else {
         throw CLIError("Attendee not found: \(attendeeID)", exitCode: 66)
       }
-      let siblingCount = allAttendees.filter { $0.syncUpID == attendee.syncUpID }.count
-      guard siblingCount > 1 else {
-        throw CLIError("Sync-ups require at least one attendee.", exitCode: 66)
-      }
+      let remainingAttendeeIDs = allAttendees
+        .filter { $0.syncUpID == attendee.syncUpID && $0.id != attendeeID }
+        .map(\.id)
       let transactionID = context.runtime.configuration.makeID()
       let now = context.runtime.configuration.now()
+      let replacementAttendeeID = remainingAttendeeIDs.isEmpty
+        ? context.runtime.configuration.makeID()
+        : nil
       try await context.runtime.transact(
         InstantStoreTransaction(
           id: transactionID,
-          operations: SyncUpsExample.deleteAttendeeOperations(id: attendeeID)
+          operations: SyncUpsExample.deleteAttendeeOperations(
+            id: attendeeID,
+            syncUpID: attendee.syncUpID,
+            remainingAttendeeIDs: remainingAttendeeIDs,
+            replacementAttendeeID: replacementAttendeeID,
+            updatedAt: now,
+            transactionID: transactionID
+          )
         ),
         createdAt: now,
         source: "cli.examples.sync-ups.delete-attendee"
@@ -6598,7 +6607,7 @@ struct InstantSwiftDataCLI {
       instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>
       instant-swift-data examples todo-links <seed|list|nested|unlink> [--json|--jsonl]
       instant-swift-data examples reminders <seed|list|stats|tags|list-tags|search|add-list|rename-list|delete-list|add|update|complete|delete|delete-completed|add-tag|remove-tag> [--json|--jsonl]
-      instant-swift-data examples sync-ups <seed|list|detail|add|edit|add-attendee|record|delete> [--json|--jsonl]
+      instant-swift-data examples sync-ups <seed|list|detail|add|edit|add-attendee|record|delete|delete-attendee|delete-meeting> [--json|--jsonl]
     """
   }
 

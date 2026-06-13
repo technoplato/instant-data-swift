@@ -109,8 +109,14 @@ cascade delete:
 SYNCUP_JSON="$(swift run instant-swift-data examples sync-ups add "Design" --seconds 900 --theme appOrange --attendee Blob --attendee "Blob Jr" --json)"
 SYNCUP_ID="$(printf '%s' "$SYNCUP_JSON" | jq -r '.changedID')"
 swift run instant-swift-data examples sync-ups detail "$SYNCUP_ID" --json
+ATTENDEE_ID="$(swift run instant-swift-data examples sync-ups detail "$SYNCUP_ID" --json | jq -r '.attendees[] | select(.name == "Blob Jr") | .id')"
+swift run instant-swift-data examples sync-ups delete-attendee "$ATTENDEE_ID" --json
+swift run instant-swift-data examples sync-ups add-attendee "$SYNCUP_ID" "Blob Jr" --json
 swift run instant-swift-data examples sync-ups edit "$SYNCUP_ID" --title "Design Review" --seconds 1200 --theme periwinkle --attendee Blob --json
-swift run instant-swift-data examples sync-ups record "$SYNCUP_ID" --transcript "Reviewed launch risks." --json
+MEETING_JSON="$(swift run instant-swift-data examples sync-ups record "$SYNCUP_ID" --transcript "Reviewed launch risks." --json)"
+MEETING_ID="$(printf '%s' "$MEETING_JSON" | jq -r '.changedID')"
+swift run instant-swift-data examples sync-ups delete-meeting "$MEETING_ID" --json
+swift run instant-swift-data examples sync-ups record "$SYNCUP_ID" --transcript "Final launch notes." --json
 swift run instant-swift-data examples sync-ups list --jsonl
 swift run instant-swift-data examples sync-ups delete "$SYNCUP_ID" --json
 ```

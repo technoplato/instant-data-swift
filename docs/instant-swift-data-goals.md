@@ -591,9 +591,13 @@ Agent-oriented output modes are required:
 - run the first local SyncUps port slice with commands such as
   `instant-swift-data examples sync-ups add "Design" --seconds 900 --theme appOrange --attendee Blob`,
   `instant-swift-data examples sync-ups edit <sync-up-id> --title "Design Review" --attendee Blob`,
-  and `instant-swift-data examples sync-ups record <sync-up-id> --transcript "Reviewed launch risks."`;
+  `instant-swift-data examples sync-ups delete-attendee <attendee-id>`,
+  `instant-swift-data examples sync-ups add-attendee <sync-up-id> "Blob Jr"`,
+  `instant-swift-data examples sync-ups record <sync-up-id> --transcript "Reviewed launch risks."`,
+  and `instant-swift-data examples sync-ups delete-meeting <meeting-id>`;
   sync-up attendee and meeting records are linked children with cascade delete
-  and shared-root role checks.
+  and shared-root role checks; deleting the final attendee creates a blank
+  replacement attendee, matching the upstream form model.
 - run local admin write/query helpers such as
   `instant-swift-data admin transact notes note-1 --merge '{"title":"admin note"}' --transaction-id tx-admin-note-1`
   and `instant-swift-data admin query notes --json` for durable terminal
