@@ -22,6 +22,7 @@ public struct InstantStoreMutationResult: Hashable, Codable, Sendable {
 struct PreparedStoreMutation: Sendable {
   var result: InstantStoreMutationResult
   var snapshot: InstantStoreSnapshot
+  var sequence: Int64
 }
 
 private struct StoreObserver: Sendable {
@@ -92,36 +93,72 @@ public actor InstantStore {
   }
 
   func prepare(_ transaction: InstantStoreTransaction) -> PreparedStoreMutation {
+    let prepared = prepare(transaction, applyingTo: snapshot())
+    return commit(prepared)
+  }
+
+  func prepare(
+    _ transaction: InstantStoreTransaction,
+    applyingTo snapshot: InstantStoreSnapshot
+  ) -> PreparedStoreMutation {
+    let attributes = AttributeStore(attributes: snapshot.attributes)
+    var indexes = TripleIndexes(triples: snapshot.triples, attributes: attributes)
     var changedEntityIDs: Set<String> = []
 
     for operation in transaction.operations {
       changedEntityIDs.formUnion(indexes.apply(operation, attributes: attributes))
     }
 
-    sequence += 1
-    let emissions = observers.values.map { observer in
-      InstantQueryEmission(
-        queryID: observer.plan.id,
-        sequence: sequence,
-        values: indexes.materialize(observer.plan, attributes: attributes)
-      )
-    }
-
+    let nextSequence = sequence + 1
     let result = InstantStoreMutationResult(
       transactionID: transaction.id,
       changedEntityIDs: changedEntityIDs,
       tripleCount: indexes.triples.count,
-      emissions: emissions
+      emissions: []
     )
-    return PreparedStoreMutation(result: result, snapshot: snapshot())
+    return PreparedStoreMutation(
+      result: result,
+      snapshot: InstantStoreSnapshot(attributes: attributes.attributes, triples: indexes.triples),
+      sequence: nextSequence
+    )
   }
 
-  func publish(_ emissions: [InstantQueryEmission]) {
-    for emission in emissions {
-      for observer in observers.values where observer.plan.id == emission.queryID {
+  func commit(_ prepared: PreparedStoreMutation) -> PreparedStoreMutation {
+    commit(prepared, shouldPublish: false)
+  }
+
+  func commitAndPublish(_ prepared: PreparedStoreMutation) -> PreparedStoreMutation {
+    commit(prepared, shouldPublish: true)
+  }
+
+  private func commit(
+    _ prepared: PreparedStoreMutation,
+    shouldPublish: Bool
+  ) -> PreparedStoreMutation {
+    self.attributes = AttributeStore(attributes: prepared.snapshot.attributes)
+    self.indexes = TripleIndexes(triples: prepared.snapshot.triples, attributes: self.attributes)
+    self.sequence = prepared.sequence
+
+    var emissionsByQueryID: [String: InstantQueryEmission] = [:]
+    for observer in observers.values {
+      let emission: InstantQueryEmission
+      if let existing = emissionsByQueryID[observer.plan.id] {
+        emission = existing
+      } else {
+        emission = InstantQueryEmission(
+          queryID: observer.plan.id,
+          sequence: sequence,
+          values: indexes.materialize(observer.plan, attributes: attributes)
+        )
+        emissionsByQueryID[observer.plan.id] = emission
+      }
+      if shouldPublish {
         observer.continuation.yield(emission)
       }
     }
+    var result = prepared.result
+    result.emissions = emissionsByQueryID.values.sorted { $0.queryID < $1.queryID }
+    return PreparedStoreMutation(result: result, snapshot: prepared.snapshot, sequence: sequence)
   }
 
   private func registerObserver(

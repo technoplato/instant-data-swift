@@ -17,12 +17,6 @@ actor InstantOutbox {
     self.mutations = mutations.sorted { $0.createdAt < $1.createdAt }
   }
 
-  func enqueue(_ mutation: PendingMutation) -> [PendingMutation] {
-    mutations.append(mutation)
-    mutations.sort { $0.createdAt < $1.createdAt }
-    return mutations
-  }
-
   func pending() -> [PendingMutation] {
     mutations.filter { $0.status == .pending }
   }
@@ -32,6 +26,10 @@ actor InstantOutbox {
   }
 
   func confirming(id: String) -> InstantOutboxUpdate? {
+    Self.confirming(id: id, in: mutations)
+  }
+
+  static func confirming(id: String, in mutations: [PendingMutation]) -> InstantOutboxUpdate? {
     guard let index = mutations.firstIndex(where: { $0.id == id }) else { return nil }
     var nextMutations = mutations
     var mutation = nextMutations.remove(at: index)
@@ -41,6 +39,14 @@ actor InstantOutbox {
   }
 
   func failing(id: String, message: String) -> InstantOutboxUpdate? {
+    Self.failing(id: id, message: message, in: mutations)
+  }
+
+  static func failing(
+    id: String,
+    message: String,
+    in mutations: [PendingMutation]
+  ) -> InstantOutboxUpdate? {
     guard let index = mutations.firstIndex(where: { $0.id == id }) else { return nil }
     var nextMutations = mutations
     nextMutations[index].status = .failed

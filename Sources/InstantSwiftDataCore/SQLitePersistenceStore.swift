@@ -14,10 +14,16 @@ public struct InstantPersistenceSnapshot: Hashable, Codable, Sendable {
 public struct InstantPersistenceState: Hashable, Sendable {
   public var snapshot: InstantPersistenceSnapshot
   public var storeRevision: Int64
+  public var outboxRevision: Int64
 
-  public init(snapshot: InstantPersistenceSnapshot, storeRevision: Int64) {
+  public init(
+    snapshot: InstantPersistenceSnapshot,
+    storeRevision: Int64,
+    outboxRevision: Int64
+  ) {
     self.snapshot = snapshot
     self.storeRevision = storeRevision
+    self.outboxRevision = outboxRevision
   }
 }
 
@@ -174,7 +180,8 @@ public actor SQLitePersistenceStore {
     try readTransaction {
       try InstantPersistenceState(
         snapshot: loadSnapshotWithoutTransaction(),
-        storeRevision: loadStoreRevisionWithoutTransaction()
+        storeRevision: loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey),
+        outboxRevision: loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
       )
     }
   }
@@ -212,13 +219,30 @@ public actor SQLitePersistenceStore {
   public func saveStoreSnapshot(_ snapshot: InstantStoreSnapshot) throws {
     try transaction {
       try saveStoreSnapshotWithoutTransaction(snapshot)
-      _ = try bumpStoreRevisionWithoutTransaction()
+      _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
     }
   }
 
   public func saveOutbox(_ mutations: [PendingMutation]) throws {
     try transaction {
       try saveOutboxWithoutTransaction(mutations)
+      _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+    }
+  }
+
+  public func saveOutbox(
+    _ mutations: [PendingMutation],
+    expectedOutboxRevision: Int64
+  ) throws -> Bool {
+    try transaction {
+      guard try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+        == expectedOutboxRevision
+      else {
+        return false
+      }
+      try saveOutboxWithoutTransaction(mutations)
+      _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+      return true
     }
   }
 
@@ -312,7 +336,27 @@ public actor SQLitePersistenceStore {
     try transaction {
       try saveStoreSnapshotWithoutTransaction(snapshot.store)
       try saveOutboxWithoutTransaction(snapshot.outbox)
-      _ = try bumpStoreRevisionWithoutTransaction()
+      _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
+      _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+    }
+  }
+
+  public func saveSnapshot(
+    _ snapshot: InstantPersistenceSnapshot,
+    expectedStoreRevision: Int64,
+    expectedOutboxRevision: Int64
+  ) throws -> Bool {
+    try transaction {
+      guard try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
+        try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision
+      else {
+        return false
+      }
+      try saveStoreSnapshotWithoutTransaction(snapshot.store)
+      try saveOutboxWithoutTransaction(snapshot.outbox)
+      _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
+      _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+      return true
     }
   }
 
@@ -321,7 +365,7 @@ public actor SQLitePersistenceStore {
     expectedStoreRevision: Int64
   ) throws -> Bool {
     try transaction {
-      guard try loadStoreRevisionWithoutTransaction() == expectedStoreRevision else {
+      guard try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision else {
         return false
       }
 
@@ -518,23 +562,23 @@ public actor SQLitePersistenceStore {
     }
   }
 
-  private func loadStoreRevisionWithoutTransaction() throws -> Int64 {
+  private func loadMetadataRevisionWithoutTransaction(_ key: String) throws -> Int64 {
     let value: String? = try selectScalar(
       "SELECT value FROM instant_sync_metadata WHERE key = ? LIMIT 1",
-      [.text(Self.storeRevisionKey)]
+      [.text(key)]
     )
     return value.flatMap(Int64.init) ?? 0
   }
 
-  private func bumpStoreRevisionWithoutTransaction() throws -> Int64 {
-    let revision = try loadStoreRevisionWithoutTransaction() + 1
+  private func bumpMetadataRevisionWithoutTransaction(_ key: String) throws -> Int64 {
+    let revision = try loadMetadataRevisionWithoutTransaction(key) + 1
     try execute(
       """
       INSERT OR REPLACE INTO instant_sync_metadata (key, value, updated_at_ms)
       VALUES (?, ?, ?)
       """,
       [
-        .text(Self.storeRevisionKey),
+        .text(key),
         .text(String(revision)),
         .int(Self.nowMilliseconds()),
       ]
@@ -606,6 +650,7 @@ public actor SQLitePersistenceStore {
   }
 
   private static let storeRevisionKey = "store_revision"
+  private static let outboxRevisionKey = "outbox_revision"
 }
 
 private enum SQLiteBinding: Sendable {

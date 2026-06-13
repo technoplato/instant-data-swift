@@ -110,13 +110,24 @@ public final class InstantRuntime: Sendable {
       transaction: transaction
     )
 
-    let outboxSnapshot = await outbox.enqueue(mutation)
-    let prepared = await store.prepare(transaction)
-    try await persistence.saveSnapshot(
-      InstantPersistenceSnapshot(store: prepared.snapshot, outbox: outboxSnapshot)
-    )
-    await store.publish(prepared.result.emissions)
-    return prepared.result
+    for _ in 0..<5 {
+      let state = try await persistence.loadState()
+      let outboxSnapshot = (state.snapshot.outbox + [mutation])
+        .sorted { $0.createdAt < $1.createdAt }
+      let prepared = await store.prepare(transaction, applyingTo: state.snapshot.store)
+      let didSave = try await persistence.saveSnapshot(
+        InstantPersistenceSnapshot(store: prepared.snapshot, outbox: outboxSnapshot),
+        expectedStoreRevision: state.storeRevision,
+        expectedOutboxRevision: state.outboxRevision
+      )
+      if didSave {
+        let committed = await store.commitAndPublish(prepared)
+        await outbox.replace(with: outboxSnapshot)
+        return committed.result
+      }
+    }
+
+    throw transactionChangedDuringPersistence(id: transaction.id)
   }
 
   public func observe(_ plan: InstantQueryPlan) async -> AsyncStream<InstantQueryEmission> {
@@ -375,13 +386,24 @@ public final class InstantRuntime: Sendable {
   public func confirmMutation(id: String) async throws -> PendingMutation {
     await operationGate.enter()
     do {
-      guard let update = await outbox.confirming(id: id) else {
-        throw outboxMutationNotFound(id: id)
+      for _ in 0..<5 {
+        let state = try await persistence.loadState()
+        guard let update = InstantOutbox.confirming(id: id, in: state.snapshot.outbox) else {
+          await outbox.replace(with: state.snapshot.outbox)
+          throw outboxMutationNotFound(id: id)
+        }
+        let didSave = try await persistence.saveOutbox(
+          update.mutations,
+          expectedOutboxRevision: state.outboxRevision
+        )
+        if didSave {
+          await outbox.replace(with: update.mutations)
+          await operationGate.leave()
+          return update.mutation
+        }
       }
-      try await persistence.saveOutbox(update.mutations)
-      await outbox.replace(with: update.mutations)
-      await operationGate.leave()
-      return update.mutation
+
+      throw outboxChangedDuringStatusUpdate(id: id)
     } catch {
       await operationGate.leave()
       throw error
@@ -392,13 +414,28 @@ public final class InstantRuntime: Sendable {
   public func failMutation(id: String, message: String) async throws -> PendingMutation {
     await operationGate.enter()
     do {
-      guard let update = await outbox.failing(id: id, message: message) else {
-        throw outboxMutationNotFound(id: id)
+      for _ in 0..<5 {
+        let state = try await persistence.loadState()
+        guard let update = InstantOutbox.failing(
+          id: id,
+          message: message,
+          in: state.snapshot.outbox
+        ) else {
+          await outbox.replace(with: state.snapshot.outbox)
+          throw outboxMutationNotFound(id: id)
+        }
+        let didSave = try await persistence.saveOutbox(
+          update.mutations,
+          expectedOutboxRevision: state.outboxRevision
+        )
+        if didSave {
+          await outbox.replace(with: update.mutations)
+          await operationGate.leave()
+          return update.mutation
+        }
       }
-      try await persistence.saveOutbox(update.mutations)
-      await outbox.replace(with: update.mutations)
-      await operationGate.leave()
-      return update.mutation
+
+      throw outboxChangedDuringStatusUpdate(id: id)
     } catch {
       await operationGate.leave()
       throw error
@@ -427,6 +464,26 @@ public final class InstantRuntime: Sendable {
       localID: id,
       message: "No pending or historical outbox mutation exists for id '\(id)'.",
       recovery: "Run 'instant-swift-data outbox inspect' to list known mutation ids."
+    )
+  }
+
+  private func outboxChangedDuringStatusUpdate(id: String) -> InstantError {
+    InstantError(
+      code: .persistenceFailed,
+      operation: "update outbox mutation",
+      localID: id,
+      message: "The local outbox changed repeatedly while updating mutation '\(id)'.",
+      recovery: "Retry the outbox update after inspecting the current outbox."
+    )
+  }
+
+  private func transactionChangedDuringPersistence(id: String) -> InstantError {
+    InstantError(
+      code: .persistenceFailed,
+      operation: "persist transaction",
+      localID: id,
+      message: "The local store changed repeatedly while persisting transaction '\(id)'.",
+      recovery: "Retry the transaction after reloading the local cache."
     )
   }
 

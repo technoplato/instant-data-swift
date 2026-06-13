@@ -1,7 +1,7 @@
 import CustomDump
 import Foundation
-import InstantSwiftDataCore
 import SQLite3
+@testable import InstantSwiftDataCore
 import Testing
 
 @Suite(.serialized)
@@ -776,6 +776,419 @@ struct InstantStoreTests {
   }
 
   @Test
+  func staleRuntimeOutboxConfirmationPreservesNewerPersistedMutation() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let writerRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await writerRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-confirm",
+        operations: TodoExample.createOperations(
+          id: "todo-confirm",
+          text: "confirm me",
+          createdAt: createdAt,
+          transactionID: "tx-confirm"
+        )
+      ),
+      createdAt: createdAt
+    )
+
+    let staleRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let newerCreatedAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
+    try await writerRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-new",
+        operations: TodoExample.createOperations(
+          id: "todo-new",
+          text: "newer mutation",
+          createdAt: newerCreatedAt,
+          transactionID: "tx-new"
+        )
+      ),
+      createdAt: newerCreatedAt
+    )
+
+    let confirmed = try await staleRuntime.confirmMutation(id: "tx-confirm")
+    expectNoDifference(confirmed.status, .confirmed)
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let mutations = await relaunchedRuntime.outboxMutations()
+    expectNoDifference(mutations.map(\.id), ["tx-new"])
+    expectNoDifference(mutations.map(\.status), [.pending])
+  }
+
+  @Test
+  func staleRuntimeOutboxFailurePreservesNewerPersistedMutation() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let writerRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await writerRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-fail",
+        operations: TodoExample.createOperations(
+          id: "todo-fail",
+          text: "fail me",
+          createdAt: createdAt,
+          transactionID: "tx-fail"
+        )
+      ),
+      createdAt: createdAt
+    )
+
+    let staleRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let newerCreatedAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
+    try await writerRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-new",
+        operations: TodoExample.createOperations(
+          id: "todo-new",
+          text: "newer mutation",
+          createdAt: newerCreatedAt,
+          transactionID: "tx-new"
+        )
+      ),
+      createdAt: newerCreatedAt
+    )
+
+    let failed = try await staleRuntime.failMutation(id: "tx-fail", message: "server rejected")
+    expectNoDifference(failed.status, .failed)
+    expectNoDifference(failed.failureMessage, "server rejected")
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let mutations = await relaunchedRuntime.outboxMutations()
+    expectNoDifference(mutations.map(\.id), ["tx-fail", "tx-new"])
+    expectNoDifference(mutations.map(\.status), [.failed, .pending])
+    expectNoDifference(mutations.map(\.failureMessage), ["server rejected", nil])
+  }
+
+  @Test
+  func outboxStatusUpdatesDoNotInvalidateQueryCacheStoreRevision() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-query-revision",
+        operations: TodoExample.createOperations(
+          id: "todo-query-revision",
+          text: "query revision",
+          createdAt: createdAt,
+          transactionID: "tx-query-revision"
+        )
+      ),
+      createdAt: createdAt
+    )
+
+    let before = try await runtime.persistence.loadState()
+    _ = try await runtime.confirmMutation(id: "tx-query-revision")
+    let after = try await runtime.persistence.loadState()
+
+    expectNoDifference(after.storeRevision, before.storeRevision)
+    #expect(after.outboxRevision > before.outboxRevision)
+  }
+
+  @Test
+  func staleRuntimeMissingOutboxTargetRefreshesBeforeFutureTransactions() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let writerRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await writerRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-confirmed-elsewhere",
+        operations: TodoExample.createOperations(
+          id: "todo-confirmed-elsewhere",
+          text: "confirmed elsewhere",
+          createdAt: createdAt,
+          transactionID: "tx-confirmed-elsewhere"
+        )
+      ),
+      createdAt: createdAt
+    )
+
+    let staleRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    _ = try await writerRuntime.confirmMutation(id: "tx-confirmed-elsewhere")
+
+    do {
+      _ = try await staleRuntime.confirmMutation(id: "tx-confirmed-elsewhere")
+      #expect(Bool(false), "Expected stale confirm to fail after another runtime cleaned it up.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "update outbox mutation")
+      expectNoDifference(error.localID, "tx-confirmed-elsewhere")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    let newCreatedAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
+    try await staleRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-after-refresh",
+        operations: TodoExample.createOperations(
+          id: "todo-after-refresh",
+          text: "after refresh",
+          createdAt: newCreatedAt,
+          transactionID: "tx-after-refresh"
+        )
+      ),
+      createdAt: newCreatedAt
+    )
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let mutations = await relaunchedRuntime.outboxMutations()
+    expectNoDifference(mutations.map(\.id), ["tx-after-refresh"])
+    expectNoDifference(mutations.map(\.status), [.pending])
+  }
+
+  @Test
+  func staleRuntimeTransactionDoesNotResurrectConfirmedMutation() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let writerRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await writerRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-confirmed-elsewhere",
+        operations: TodoExample.createOperations(
+          id: "todo-confirmed-elsewhere",
+          text: "confirmed elsewhere",
+          createdAt: createdAt,
+          transactionID: "tx-confirmed-elsewhere"
+        )
+      ),
+      createdAt: createdAt
+    )
+
+    let staleRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    _ = try await writerRuntime.confirmMutation(id: "tx-confirmed-elsewhere")
+
+    let newCreatedAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
+    try await staleRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-after-stale",
+        operations: TodoExample.createOperations(
+          id: "todo-after-stale",
+          text: "after stale",
+          createdAt: newCreatedAt,
+          transactionID: "tx-after-stale"
+        )
+      ),
+      createdAt: newCreatedAt
+    )
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let mutations = await relaunchedRuntime.outboxMutations()
+    expectNoDifference(mutations.map(\.id), ["tx-after-stale"])
+
+    let todos = try await TodoExample.decode(relaunchedRuntime.query(TodoExample.query))
+    expectNoDifference(todos.map(\.id), ["todo-confirmed-elsewhere", "todo-after-stale"])
+  }
+
+  @Test
+  func staleRuntimeTransactionPreservesNewerPersistedStoreAndOutbox() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let writerRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await writerRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-base",
+        operations: TodoExample.createOperations(
+          id: "todo-base",
+          text: "base",
+          createdAt: createdAt,
+          transactionID: "tx-base"
+        )
+      ),
+      createdAt: createdAt
+    )
+
+    let staleRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let newerCreatedAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
+    try await writerRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-newer",
+        operations: TodoExample.createOperations(
+          id: "todo-newer",
+          text: "newer",
+          createdAt: newerCreatedAt,
+          transactionID: "tx-newer"
+        )
+      ),
+      createdAt: newerCreatedAt
+    )
+
+    let staleCreatedAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 2)
+    try await staleRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-after-stale",
+        operations: TodoExample.createOperations(
+          id: "todo-after-stale",
+          text: "after stale",
+          createdAt: staleCreatedAt,
+          transactionID: "tx-after-stale"
+        )
+      ),
+      createdAt: staleCreatedAt
+    )
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let mutations = await relaunchedRuntime.outboxMutations()
+    expectNoDifference(mutations.map(\.id), ["tx-base", "tx-newer", "tx-after-stale"])
+
+    let todos = try await TodoExample.decode(relaunchedRuntime.query(TodoExample.query))
+    expectNoDifference(todos.map(\.id), ["todo-base", "todo-newer", "todo-after-stale"])
+  }
+
+  @Test
+  func failedTransactionPersistenceDoesNotMutateLiveStore() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-seed",
+        operations: TodoExample.createOperations(
+          id: "todo-seed",
+          text: "seed",
+          createdAt: createdAt,
+          transactionID: "tx-seed"
+        )
+      ),
+      createdAt: createdAt
+    )
+    try dropOutboxTable(at: cacheURL)
+
+    do {
+      let failedCreatedAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-failed",
+          operations: TodoExample.createOperations(
+            id: "todo-failed",
+            text: "failed",
+            createdAt: failedCreatedAt,
+            transactionID: "tx-failed"
+          )
+        ),
+        createdAt: failedCreatedAt
+      )
+      #expect(Bool(false), "Expected failed transaction persistence to throw.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .persistenceFailed)
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    let liveTodos = try TodoExample.decode(await runtime.store.materialize(TodoExample.query))
+    expectNoDifference(liveTodos.map(\.id), ["todo-seed"])
+
+    let stream = await runtime.observe(TodoExample.query)
+    var iterator = stream.makeAsyncIterator()
+    let emission = await iterator.next()
+    expectNoDifference(try TodoExample.decode(emission?.values ?? []).map(\.id), ["todo-seed"])
+  }
+
+  @Test
   func cardinalityOneRefOverwriteAndReverseDeleteCleanup() async throws {
     let authorAttribute = InstantAttribute(
       id: "posts/author",
@@ -840,6 +1253,62 @@ struct InstantStoreTests {
     let cleanedPosts = try await runtime.query(.init(id: "posts", namespace: "posts"))
     expectNoDifference(cleanedPosts.map { $0.values["author"]?.first }, [nil])
     expectNoDifference(cleanedPosts.map { $0.values["title"]?.first }, [.string("Hello")])
+  }
+
+  @Test
+  func storeCommitPublishesToObserversRegisteredAfterPrepare() async throws {
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let store = InstantStore(snapshot: InstantStoreSnapshot(attributes: TodoExample.attributes))
+    let transaction = InstantStoreTransaction(
+      id: "tx-observer-after-prepare",
+      operations: TodoExample.createOperations(
+        id: "todo-observer-after-prepare",
+        text: "observer after prepare",
+        createdAt: createdAt,
+        transactionID: "tx-observer-after-prepare"
+      )
+    )
+    let prepared = await store.prepare(
+      transaction,
+      applyingTo: InstantStoreSnapshot(attributes: TodoExample.attributes)
+    )
+
+    let stream = await store.observe(TodoExample.query)
+    var iterator = stream.makeAsyncIterator()
+    let initialEmission = await iterator.next()
+    expectNoDifference(initialEmission?.values, [])
+    let secondStream = await store.observe(TodoExample.query)
+    var secondIterator = secondStream.makeAsyncIterator()
+    let secondInitialEmission = await secondIterator.next()
+    expectNoDifference(secondInitialEmission?.values, [])
+
+    let committed = await store.commitAndPublish(prepared)
+    expectNoDifference(committed.result.emissions.map { $0.queryID }, [TodoExample.query.id])
+
+    let update = await iterator.next()
+    let secondUpdate = await secondIterator.next()
+    expectNoDifference(
+      try TodoExample.decode(update?.values ?? []),
+      [
+        TodoRecord(
+          id: "todo-observer-after-prepare",
+          text: "observer after prepare",
+          isCompleted: false,
+          createdAt: createdAt
+        )
+      ]
+    )
+    expectNoDifference(
+      try TodoExample.decode(secondUpdate?.values ?? []),
+      [
+        TodoRecord(
+          id: "todo-observer-after-prepare",
+          text: "observer after prepare",
+          isCompleted: false,
+          createdAt: createdAt
+        )
+      ]
+    )
   }
 
   @Test
