@@ -466,6 +466,11 @@ Agent-oriented output modes are required:
 - replay or drain pending mutations.
 - print decoded query results.
 - produce JSONL evidence for CI.
+- persist local room presence and topic messages after sign-in or with
+  explicit `--user-id` commands such as:
+  `instant-swift-data rooms presence set chat lobby --value '{"name":"Ada"}'`
+  and
+  `instant-swift-data rooms topics publish chat lobby sendEmoji --value '{"emoji":"wave"}'`.
 - run example business commands directly, such as todo/reminder/sync-up/chat
   create, list, update, delete, share, accept, upload, and stream operations.
 

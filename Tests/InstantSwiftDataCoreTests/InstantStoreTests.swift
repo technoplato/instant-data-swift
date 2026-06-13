@@ -1375,6 +1375,234 @@ struct InstantStoreTests {
   }
 
   @Test
+  func roomPresenceAndTopicsPersistByAppIDAcrossLaunches() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let room = InstantRoomHandle(type: "chat", id: "lobby")
+    let firstTimestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        now: { firstTimestamp },
+        makeID: { "message-1" }
+      )
+    )
+    _ = try await runtime.signInWithRefreshToken("refresh-token", userID: "user-1")
+
+    let member = try await runtime.setPresence(
+      room: room,
+      values: [
+        "name": .string("Blob"),
+        "status": .string("online"),
+      ]
+    )
+    expectNoDifference(
+      member,
+      InstantRoomPresenceMember(
+        appID: "app-a",
+        room: room,
+        userID: "user-1",
+        values: [
+          "name": .string("Blob"),
+          "status": .string("online"),
+        ],
+        updatedAt: firstTimestamp
+      )
+    )
+
+    let message = try await runtime.publishTopicMessage(
+      room: room,
+      topic: "sendEmoji",
+      payload: .object(["emoji": .string("wave")])
+    )
+    expectNoDifference(
+      message,
+      InstantRoomTopicMessage(
+        id: "message-1",
+        appID: "app-a",
+        room: room,
+        topic: "sendEmoji",
+        userID: "user-1",
+        payload: .object(["emoji": .string("wave")]),
+        createdAt: firstTimestamp
+      )
+    )
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        now: { InstantTimestamp(milliseconds: firstTimestamp.milliseconds + 1_000) }
+      )
+    )
+    let relaunchedPresence = try await relaunchedRuntime.roomPresence(room: room)
+    let relaunchedMessages = try await relaunchedRuntime.roomTopicMessages(
+      room: room,
+      topic: "sendEmoji"
+    )
+    expectNoDifference(relaunchedPresence, [member])
+    expectNoDifference(relaunchedMessages, [message])
+
+    _ = try await relaunchedRuntime.setPresence(
+      room: room,
+      userID: " user-1 ",
+      values: ["status": .string("away")]
+    )
+    let updatedMembers = try await relaunchedRuntime.roomPresence(room: room)
+    expectNoDifference(updatedMembers.map(\.userID), ["user-1"])
+    expectNoDifference(updatedMembers.first?.values, ["status": .string("away")])
+
+    let otherAppRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-b",
+        persistenceURL: cacheURL,
+        now: { firstTimestamp },
+        makeID: { "message-1" }
+      )
+    )
+    _ = try await otherAppRuntime.signInWithRefreshToken("other-refresh", userID: "user-2")
+    let otherAppMessage = try await otherAppRuntime.publishTopicMessage(
+      room: room,
+      topic: "sendEmoji",
+      payload: .object(["emoji": .string("other")])
+    )
+    let otherAppPresence = try await otherAppRuntime.roomPresence(room: room)
+    let otherAppMessages = try await otherAppRuntime.roomTopicMessages(
+      room: room,
+      topic: "sendEmoji"
+    )
+    expectNoDifference(otherAppPresence, [])
+    expectNoDifference(
+      otherAppMessages,
+      [
+        InstantRoomTopicMessage(
+          id: "message-1",
+          appID: "app-b",
+          room: room,
+          topic: "sendEmoji",
+          userID: "user-2",
+          payload: .object(["emoji": .string("other")]),
+          createdAt: firstTimestamp
+        )
+      ]
+    )
+    expectNoDifference(otherAppMessage.id, message.id)
+    let appMessagesAfterOtherAppCollision = try await relaunchedRuntime.roomTopicMessages(
+      room: room,
+      topic: "sendEmoji"
+    )
+    expectNoDifference(appMessagesAfterOtherAppCollision, [message])
+
+    let leftUserID = try await relaunchedRuntime.leavePresence(room: room, userID: nil)
+    let remainingPresence = try await relaunchedRuntime.roomPresence(room: room)
+    expectNoDifference(leftUserID, "user-1")
+    expectNoDifference(remainingPresence, [])
+  }
+
+  @Test
+  func roomPresenceAndTopicsRequireAuthOrExplicitUserID() async throws {
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL()
+      )
+    )
+    let room = InstantRoomHandle(type: "chat", id: "lobby")
+
+    do {
+      _ = try await runtime.setPresence(room: room, values: ["status": .string("online")])
+      #expect(Bool(false), "Expected anonymous presence to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .authFailed)
+      expectNoDifference(error.operation, "set room presence")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      _ = try await runtime.publishTopicMessage(
+        room: room,
+        topic: "sendEmoji",
+        payload: .string("wave")
+      )
+      #expect(Bool(false), "Expected anonymous topic publish to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .authFailed)
+      expectNoDifference(error.operation, "publish room topic")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    let member = try await runtime.setPresence(
+      room: room,
+      userID: "user-1",
+      values: ["status": .string("online")]
+    )
+    expectNoDifference(member.userID, "user-1")
+  }
+
+  @Test
+  func roomTopicMigrationPreservesLegacyRowsAndScopesMessageIDsByApp() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let room = InstantRoomHandle(type: "chat", id: "lobby")
+    let legacyMessage = InstantRoomTopicMessage(
+      id: "message-1",
+      appID: "app-a",
+      room: room,
+      topic: "sendEmoji",
+      userID: "user-1",
+      payload: .object(["emoji": .string("wave")]),
+      createdAt: InstantTimestamp(milliseconds: 1_700_000_000_000)
+    )
+
+    do {
+      let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+      try await persistence.bootstrap()
+    }
+    try seedLegacyRoomTopicMessageBeforeAppScopedMigration(at: cacheURL, message: legacyMessage)
+
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "app-a", persistenceURL: cacheURL)
+    )
+    let migratedMessages = try await runtime.roomTopicMessages(room: room, topic: "sendEmoji")
+    expectNoDifference(migratedMessages, [legacyMessage])
+
+    let otherAppRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-b",
+        persistenceURL: cacheURL,
+        now: { legacyMessage.createdAt },
+        makeID: { legacyMessage.id }
+      )
+    )
+    _ = try await otherAppRuntime.signInWithRefreshToken("other-refresh", userID: "user-2")
+    let otherMessage = try await otherAppRuntime.publishTopicMessage(
+      room: room,
+      topic: "sendEmoji",
+      payload: .object(["emoji": .string("spark")])
+    )
+
+    expectNoDifference(otherMessage.id, legacyMessage.id)
+    let appMessages = try await runtime.roomTopicMessages(room: room, topic: "sendEmoji")
+    let otherAppMessages = try await otherAppRuntime.roomTopicMessages(room: room, topic: "sendEmoji")
+    expectNoDifference(appMessages, [legacyMessage])
+    expectNoDifference(
+      otherAppMessages,
+      [
+        InstantRoomTopicMessage(
+          id: "message-1",
+          appID: "app-b",
+          room: room,
+          topic: "sendEmoji",
+          userID: "user-2",
+          payload: .object(["emoji": .string("spark")]),
+          createdAt: legacyMessage.createdAt
+        )
+      ]
+    )
+  }
+
+  @Test
   func magicCodeChallengePersistsAndVerifiesAcrossLaunches() async throws {
     let cacheURL = try temporaryCacheURL()
     let sentAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
@@ -4162,6 +4390,123 @@ struct InstantStoreTests {
     }
   }
 
+  private func seedLegacyRoomTopicMessageBeforeAppScopedMigration(
+    at url: URL,
+    message: InstantRoomTopicMessage
+  ) throws {
+    var connection: OpaquePointer?
+    guard sqlite3_open_v2(url.path, &connection, SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, nil)
+      == SQLITE_OK
+    else {
+      let message = connection.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) }
+        ?? "SQLite could not open \(url.path)."
+      sqlite3_close(connection)
+      throw InstantError(
+        code: .persistenceFailed,
+        operation: "open legacy room topic messages",
+        message: message,
+        recovery: "Check the temporary test database."
+      )
+    }
+    defer { sqlite3_close(connection) }
+
+    var errorMessage: UnsafeMutablePointer<CChar>?
+    guard sqlite3_exec(
+      connection,
+      """
+      DELETE FROM instant_schema_migrations
+      WHERE name = '0005_app_scoped_room_topic_messages';
+
+      DROP TABLE IF EXISTS instant_room_topic_messages;
+
+      CREATE TABLE instant_room_topic_messages (
+        message_id TEXT PRIMARY KEY NOT NULL,
+        app_id TEXT NOT NULL,
+        room_type TEXT NOT NULL,
+        room_id TEXT NOT NULL,
+        topic TEXT NOT NULL,
+        created_at_ms INTEGER NOT NULL,
+        json TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS instant_room_topic_messages_room_idx
+      ON instant_room_topic_messages (app_id, room_type, room_id, topic, created_at_ms, message_id);
+      """,
+      nil,
+      nil,
+      &errorMessage
+    ) == SQLITE_OK
+    else {
+      let message = errorMessage.map { String(cString: $0) }
+        ?? "SQLite could not create legacy instant_room_topic_messages."
+      sqlite3_free(errorMessage)
+      throw InstantError(
+        code: .persistenceFailed,
+        operation: "create legacy room topic messages",
+        message: message,
+        recovery: "Check the temporary test database."
+      )
+    }
+
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    let data = try encoder.encode(message)
+    let json = String(decoding: data, as: UTF8.self)
+
+    var statement: OpaquePointer?
+    guard sqlite3_prepare_v2(
+      connection,
+      """
+      INSERT INTO instant_room_topic_messages
+        (message_id, app_id, room_type, room_id, topic, created_at_ms, json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      """,
+      -1,
+      &statement,
+      nil
+    ) == SQLITE_OK
+    else {
+      let message = connection.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) }
+        ?? "SQLite could not prepare legacy room topic insert."
+      throw InstantError(
+        code: .persistenceFailed,
+        operation: "prepare legacy room topic insert",
+        message: message,
+        recovery: "Check the temporary test database."
+      )
+    }
+    defer { sqlite3_finalize(statement) }
+
+    guard sqlite3_bind_text(statement, 1, message.id, -1, testSQLiteTransient) == SQLITE_OK,
+      sqlite3_bind_text(statement, 2, message.appID, -1, testSQLiteTransient) == SQLITE_OK,
+      sqlite3_bind_text(statement, 3, message.room.type, -1, testSQLiteTransient) == SQLITE_OK,
+      sqlite3_bind_text(statement, 4, message.room.id, -1, testSQLiteTransient) == SQLITE_OK,
+      sqlite3_bind_text(statement, 5, message.topic, -1, testSQLiteTransient) == SQLITE_OK,
+      sqlite3_bind_int64(statement, 6, sqlite3_int64(message.createdAt.milliseconds)) == SQLITE_OK,
+      sqlite3_bind_text(statement, 7, json, -1, testSQLiteTransient) == SQLITE_OK
+    else {
+      let message = connection.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) }
+        ?? "SQLite could not bind legacy room topic insert."
+      throw InstantError(
+        code: .persistenceFailed,
+        operation: "bind legacy room topic insert",
+        message: message,
+        recovery: "Check the temporary test database."
+      )
+    }
+
+    guard sqlite3_step(statement) == SQLITE_DONE else {
+      let message = connection.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) }
+        ?? "SQLite could not insert legacy room topic row."
+      throw InstantError(
+        code: .persistenceFailed,
+        operation: "insert legacy room topic",
+        message: message,
+        recovery: "Check the temporary test database."
+      )
+    }
+  }
+
   private func dropOutboxTable(at url: URL) throws {
     var connection: OpaquePointer?
     guard sqlite3_open_v2(url.path, &connection, SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, nil)
@@ -4221,3 +4566,5 @@ private struct LegacyCachedQuery: Encodable, Sendable {
   var updatedAt: InstantTimestamp
   var storeRevision: Int64
 }
+
+private let testSQLiteTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)

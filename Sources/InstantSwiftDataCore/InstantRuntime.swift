@@ -406,6 +406,121 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  @discardableResult
+  public func setPresence(
+    room: InstantRoomHandle,
+    userID: String? = nil,
+    values: [String: JSONValue]
+  ) async throws -> InstantRoomPresenceMember {
+    let room = try validatedRoom(room, operation: "set room presence")
+
+    await operationGate.enter()
+    do {
+      let userID = try await resolvedRoomUserID(userID, operation: "set room presence")
+      let now = configuration.now()
+      let member = InstantRoomPresenceMember(
+        appID: configuration.appID,
+        room: room,
+        userID: userID,
+        values: values,
+        updatedAt: now
+      )
+      try await persistence.saveRoomPresence(member)
+      await operationGate.leave()
+      return member
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  public func roomPresence(room: InstantRoomHandle) async throws -> [InstantRoomPresenceMember] {
+    let room = try validatedRoom(room, operation: "list room presence")
+    return try await persistence.loadRoomPresence(appID: configuration.appID, room: room)
+  }
+
+  public func leavePresence(room: InstantRoomHandle, userID: String? = nil) async throws -> String {
+    let room = try validatedRoom(room, operation: "leave room presence")
+
+    await operationGate.enter()
+    do {
+      let userID = try await resolvedRoomUserID(userID, operation: "leave room presence")
+      try await persistence.deleteRoomPresence(
+        appID: configuration.appID,
+        room: room,
+        userID: userID
+      )
+      await operationGate.leave()
+      return userID
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  @discardableResult
+  public func publishTopicMessage(
+    room: InstantRoomHandle,
+    topic rawTopic: String,
+    userID: String? = nil,
+    payload: JSONValue
+  ) async throws -> InstantRoomTopicMessage {
+    let room = try validatedRoom(room, operation: "publish room topic")
+    let topic = try validatedNonEmpty(
+      rawTopic,
+      label: "Topic",
+      operation: "publish room topic",
+      recovery: "Pass the room topic name to publish."
+    )
+
+    await operationGate.enter()
+    do {
+      let userID = try await resolvedRoomUserID(userID, operation: "publish room topic")
+      let message = InstantRoomTopicMessage(
+        id: configuration.makeID(),
+        appID: configuration.appID,
+        room: room,
+        topic: topic,
+        userID: userID,
+        payload: payload,
+        createdAt: configuration.now()
+      )
+      try await persistence.saveRoomTopicMessage(message)
+      await operationGate.leave()
+      return message
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  public func roomTopicMessages(
+    room: InstantRoomHandle,
+    topic rawTopic: String,
+    limit: Int? = nil
+  ) async throws -> [InstantRoomTopicMessage] {
+    if let limit, limit < 0 {
+      throw validationFailed(
+        operation: "list room topic",
+        message: "Topic message limit must be greater than or equal to 0.",
+        recovery: "Pass a non-negative --limit value, or omit --limit to list every local message."
+      )
+    }
+    let room = try validatedRoom(room, operation: "list room topic")
+    let topic = try validatedNonEmpty(
+      rawTopic,
+      label: "Topic",
+      operation: "list room topic",
+      recovery: "Pass the room topic name to list."
+    )
+    return try await persistence.loadRoomTopicMessages(
+      appID: configuration.appID,
+      room: room,
+      topic: topic,
+      limit: limit
+    )
+  }
+
   public func pendingMutations() async -> [PendingMutation] {
     await outbox.pending()
   }
@@ -634,6 +749,57 @@ public final class InstantRuntime: Sendable {
       )
     }
     return email
+  }
+
+  private func resolvedRoomUserID(_ userID: String?, operation: String) async throws -> String {
+    if let userID = userID?.trimmingCharacters(in: .whitespacesAndNewlines), !userID.isEmpty {
+      return userID
+    }
+    if let session = try await persistence.loadAuthSession(key: authSessionKey) {
+      return session.userID
+    }
+    throw authValidationFailed(
+      operation: operation,
+      message: "Room operations require a signed-in user.",
+      recovery: "Run 'instant-swift-data auth guest' first, or pass --user-id <id>."
+    )
+  }
+
+  private func validatedRoom(
+    _ room: InstantRoomHandle,
+    operation: String
+  ) throws -> InstantRoomHandle {
+    InstantRoomHandle(
+      type: try validatedNonEmpty(
+        room.type,
+        label: "Room type",
+        operation: operation,
+        recovery: "Pass a room type, such as 'chat'."
+      ),
+      id: try validatedNonEmpty(
+        room.id,
+        label: "Room id",
+        operation: operation,
+        recovery: "Pass a room id, such as 'lobby'."
+      )
+    )
+  }
+
+  private func validatedNonEmpty(
+    _ value: String,
+    label: String,
+    operation: String,
+    recovery: String
+  ) throws -> String {
+    let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !value.isEmpty else {
+      throw validationFailed(
+        operation: operation,
+        message: "\(label) must not be empty.",
+        recovery: recovery
+      )
+    }
+    return value
   }
 
   private func queryCacheChangedDuringMaterialization(_ plan: InstantQueryPlan) -> InstantError {

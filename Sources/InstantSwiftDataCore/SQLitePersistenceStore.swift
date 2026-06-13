@@ -199,6 +199,79 @@ public actor SQLitePersistenceStore {
         )
       }
     }
+    try withSQLiteBusyRetry {
+      try migrate(name: "0004_room_presence_and_topics") {
+        try execute(
+          """
+          CREATE TABLE IF NOT EXISTS instant_room_presence (
+            app_id TEXT NOT NULL,
+            room_type TEXT NOT NULL,
+            room_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            json TEXT NOT NULL,
+            updated_at_ms INTEGER NOT NULL,
+            PRIMARY KEY (app_id, room_type, room_id, user_id)
+          )
+          """
+        )
+        try execute(
+          """
+          CREATE TABLE IF NOT EXISTS instant_room_topic_messages (
+            message_id TEXT NOT NULL,
+            app_id TEXT NOT NULL,
+            room_type TEXT NOT NULL,
+            room_id TEXT NOT NULL,
+            topic TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            json TEXT NOT NULL,
+            PRIMARY KEY (app_id, message_id)
+          )
+          """
+        )
+        try execute(
+          """
+          CREATE INDEX IF NOT EXISTS instant_room_topic_messages_room_idx
+          ON instant_room_topic_messages (app_id, room_type, room_id, topic, created_at_ms, message_id)
+          """
+        )
+      }
+    }
+    try withSQLiteBusyRetry {
+      try migrate(name: "0005_app_scoped_room_topic_messages") {
+        let messages: [InstantRoomTopicMessage] = try selectJSON(
+          "SELECT json FROM instant_room_topic_messages ORDER BY created_at_ms, message_id"
+        )
+        try execute("DROP TABLE IF EXISTS instant_room_topic_messages_v2")
+        try execute(
+          """
+          CREATE TABLE instant_room_topic_messages_v2 (
+            message_id TEXT NOT NULL,
+            app_id TEXT NOT NULL,
+            room_type TEXT NOT NULL,
+            room_id TEXT NOT NULL,
+            topic TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            json TEXT NOT NULL,
+            PRIMARY KEY (app_id, message_id)
+          )
+          """
+        )
+        for message in messages {
+          try saveRoomTopicMessageWithoutTransaction(
+            message,
+            tableName: "instant_room_topic_messages_v2"
+          )
+        }
+        try execute("DROP TABLE instant_room_topic_messages")
+        try execute("ALTER TABLE instant_room_topic_messages_v2 RENAME TO instant_room_topic_messages")
+        try execute(
+          """
+          CREATE INDEX IF NOT EXISTS instant_room_topic_messages_room_idx
+          ON instant_room_topic_messages (app_id, room_type, room_id, topic, created_at_ms, message_id)
+          """
+        )
+      }
+    }
   }
 
   public func loadSnapshot() throws -> InstantPersistenceSnapshot {
@@ -309,6 +382,98 @@ public actor SQLitePersistenceStore {
       "DELETE FROM instant_auth_sessions WHERE key = ?",
       [.text(key)]
     )
+  }
+
+  public func loadRoomPresence(
+    appID: String,
+    room: InstantRoomHandle
+  ) throws -> [InstantRoomPresenceMember] {
+    try selectJSON(
+      """
+      SELECT json FROM instant_room_presence
+      WHERE app_id = ? AND room_type = ? AND room_id = ?
+      ORDER BY updated_at_ms, user_id
+      """,
+      [.text(appID), .text(room.type), .text(room.id)]
+    )
+  }
+
+  public func saveRoomPresence(_ member: InstantRoomPresenceMember) throws {
+    try execute(
+      """
+      INSERT OR REPLACE INTO instant_room_presence
+        (app_id, room_type, room_id, user_id, json, updated_at_ms)
+      VALUES (?, ?, ?, ?, ?, ?)
+      """,
+      [
+        .text(member.appID),
+        .text(member.room.type),
+        .text(member.room.id),
+        .text(member.userID),
+        .text(try encode(member)),
+        .int(member.updatedAt.milliseconds),
+      ]
+    )
+  }
+
+  public func deleteRoomPresence(
+    appID: String,
+    room: InstantRoomHandle,
+    userID: String
+  ) throws {
+    try execute(
+      """
+      DELETE FROM instant_room_presence
+      WHERE app_id = ? AND room_type = ? AND room_id = ? AND user_id = ?
+      """,
+      [.text(appID), .text(room.type), .text(room.id), .text(userID)]
+    )
+  }
+
+  public func saveRoomTopicMessage(_ message: InstantRoomTopicMessage) throws {
+    try saveRoomTopicMessageWithoutTransaction(message)
+  }
+
+  private func saveRoomTopicMessageWithoutTransaction(
+    _ message: InstantRoomTopicMessage,
+    tableName: String = "instant_room_topic_messages"
+  ) throws {
+    try execute(
+      """
+      INSERT OR REPLACE INTO \(tableName)
+        (message_id, app_id, room_type, room_id, topic, created_at_ms, json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      """,
+      [
+        .text(message.id),
+        .text(message.appID),
+        .text(message.room.type),
+        .text(message.room.id),
+        .text(message.topic),
+        .int(message.createdAt.milliseconds),
+        .text(try encode(message)),
+      ]
+    )
+  }
+
+  public func loadRoomTopicMessages(
+    appID: String,
+    room: InstantRoomHandle,
+    topic: String,
+    limit: Int? = nil
+  ) throws -> [InstantRoomTopicMessage] {
+    let messages: [InstantRoomTopicMessage] = try selectJSON(
+      """
+      SELECT json FROM instant_room_topic_messages
+      WHERE app_id = ? AND room_type = ? AND room_id = ? AND topic = ?
+      ORDER BY created_at_ms, message_id
+      """,
+      [.text(appID), .text(room.type), .text(room.id), .text(topic)]
+    )
+    if let limit {
+      return Array(messages.prefix(limit))
+    }
+    return messages
   }
 
   public func loadMagicCodeChallenge(key: String) throws -> InstantMagicCodeChallenge? {

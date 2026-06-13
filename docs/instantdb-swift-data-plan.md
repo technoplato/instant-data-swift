@@ -201,6 +201,13 @@ real Instant app.
 - Typed room schema generation from Swift schema declarations.
 - Rejoin rooms after reconnect.
 
+Current local progress: `InstantRuntime` persists room presence and topic
+messages in SQLite, scopes them by app id, resolves users through the durable
+auth session or an explicit user id, and exposes non-captive CLI commands:
+`instant-swift-data rooms presence ...` and
+`instant-swift-data rooms topics ...`. Transport-backed subscriptions,
+reconnect rejoin, and Swift/TypeScript boundary proof remain future work.
+
 ### Storage And Files
 
 - Upload files, delete files, and query `$files`.
@@ -555,7 +562,9 @@ must emit the same metrics on day one so regressions become visible.
 11. Offline: cached subscription emission, strict offline `queryOnce`, restart
     restore, reconnect flush.
 12. Storage, auth public API, presence, topics, rooms, and streams with explicit
-    async ownership and cancellation handles.
+    async ownership and cancellation handles; the local rooms foundation should
+    graduate from durable CLI state to transport-backed subscriptions without
+    changing the persisted command surface.
 13. Sharing model: Instant-native share entities, memberships, permissions,
     accept/revoke flows, visible sharing metadata, read-only rejection behavior,
     relaunch/reconnect proof, Reminders list sharing proof, and CloudKitDemo

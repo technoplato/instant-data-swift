@@ -7,7 +7,8 @@ agent-friendly command-line workflows.
 This repository is early, but the first local core slice is usable: todos can be
 created, listed, completed, updated, deleted, and read back across separate CLI
 invocations through the same SQLite cache and outbox path used by the core
-runtime.
+runtime. Local auth, room presence, and room topic messages also persist across
+CLI launches.
 
 ## Local Todo CLI Demo
 
@@ -97,6 +98,17 @@ swift run instant-swift-data auth magic-code verify user@example.com <local-veri
 swift run instant-swift-data auth sign-out --json
 ```
 
+Persist local room presence and topic messages after signing in:
+
+```bash
+swift run instant-swift-data auth token local-refresh --user-id user-1 --json
+swift run instant-swift-data rooms presence set chat lobby --value '{"name":"Ada","status":"online"}' --json
+swift run instant-swift-data rooms presence list chat lobby --json
+swift run instant-swift-data rooms topics publish chat lobby sendEmoji --value '{"emoji":"wave"}' --json
+swift run instant-swift-data rooms topics list chat lobby sendEmoji --limit 1 --json
+swift run instant-swift-data rooms presence leave chat lobby --json
+```
+
 Create and verify a local todo scaffold:
 
 ```bash
@@ -135,8 +147,8 @@ swift run instant-swift-data-benchmarks --suite local-todos --iterations 3 --jso
 The current transport is intentionally marked `not-implemented-local-cache-only`
 in command output. That means the demo proves durable local cache, typed triples,
 query materialization, plan-aware persisted query results, optimistic outbox
-persistence, and non-captive CLI interaction, but it does not yet sync with a
-real Instant app.
+persistence, local auth/session state, local room presence/topics, and
+non-captive CLI interaction, but it does not yet sync with a real Instant app.
 
 ## Development
 

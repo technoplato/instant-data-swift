@@ -891,6 +891,134 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliRoomsPresenceAndTopicsPersistAcrossLaunches() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    _ = try runCLI(
+      ["auth", "token", "refresh-token", "--user-id", "user-1", "--json"],
+      homeURL: homeURL
+    )
+
+    let setPresence = try JSONDecoder().decode(
+      CLIRoomPresenceOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "rooms", "presence", "set", "chat", "lobby",
+            "--value", #"{"name":"Ada","status":"online"}"#,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(setPresence.event, "presence-set")
+    expectNoDifference(setPresence.transport, "not-implemented-local-cache-only")
+    expectNoDifference(setPresence.room, InstantRoomHandle(type: "chat", id: "lobby"))
+    expectNoDifference(setPresence.userID, "user-1")
+    expectNoDifference(setPresence.memberCount, 1)
+    expectNoDifference(setPresence.members.first?.userID, "user-1")
+    expectNoDifference(setPresence.members.first?.values["name"], .string("Ada"))
+
+    let listedPresence = try JSONDecoder().decode(
+      CLIRoomPresenceOutput.self,
+      from: Data(
+        try runCLI(
+          ["rooms", "presence", "list", "chat", "lobby", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(listedPresence.members, setPresence.members)
+
+    let presenceJSONL = try runCLI(
+      ["rooms", "presence", "list", "chat", "lobby", "--jsonl"],
+      homeURL: homeURL
+    )
+    let presenceLines = presenceJSONL.split(separator: "\n")
+    expectNoDifference(presenceLines.count, 2)
+    let presenceEvidence = try JSONDecoder().decode(
+      CLIRoomPresenceEvidence.self,
+      from: Data(try #require(presenceLines.first).utf8)
+    )
+    expectNoDifference(presenceEvidence.caseID, "cli.rooms.presence")
+    expectNoDifference(presenceEvidence.details.memberCount, 1)
+
+    let firstTopic = try JSONDecoder().decode(
+      CLIRoomTopicOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "rooms", "topics", "publish", "chat", "lobby", "sendEmoji",
+            "--value", #"{"emoji":"wave"}"#,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(firstTopic.event, "topic-publish")
+    expectNoDifference(firstTopic.topic, "sendEmoji")
+    expectNoDifference(firstTopic.messageCount, 1)
+    expectNoDifference(firstTopic.messages.first?.userID, "user-1")
+    expectNoDifference(firstTopic.messages.first?.payload, .object(["emoji": .string("wave")]))
+
+    _ = try runCLI(
+      [
+        "rooms", "topics", "publish", "chat", "lobby", "sendEmoji",
+        "--value", #"{"emoji":"spark"}"#,
+        "--json",
+      ],
+      homeURL: homeURL
+    )
+
+    let limitedTopic = try JSONDecoder().decode(
+      CLIRoomTopicOutput.self,
+      from: Data(
+        try runCLI(
+          ["rooms", "topics", "list", "chat", "lobby", "sendEmoji", "--limit", "1", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(limitedTopic.event, "topic-list")
+    expectNoDifference(limitedTopic.messageCount, 1)
+    expectNoDifference(limitedTopic.messages.first?.payload, .object(["emoji": .string("wave")]))
+
+    let leftPresence = try JSONDecoder().decode(
+      CLIRoomPresenceOutput.self,
+      from: Data(
+        try runCLI(
+          ["rooms", "presence", "leave", "chat", "lobby", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(leftPresence.event, "presence-leave")
+    expectNoDifference(leftPresence.userID, "user-1")
+    expectNoDifference(leftPresence.memberCount, 0)
+    expectNoDifference(leftPresence.members, [])
+
+    let anonymousHomeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: anonymousHomeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: anonymousHomeURL) }
+    let anonymous = try runCLIResult(
+      [
+        "rooms", "presence", "set", "chat", "lobby",
+        "--value", #"{"status":"online"}"#,
+        "--json",
+      ],
+      homeURL: anonymousHomeURL
+    )
+    #expect(anonymous.status == 65)
+    #expect(anonymous.error.contains("Room operations require a signed-in user"))
+  }
+
+  @Test
   func cliValidationLocalTodosEmitsEvidence() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -1370,6 +1498,37 @@ private struct CLIAppOutput: Decodable {
 private struct CLIAppEvidence: Decodable {
   var event: String
   var details: CLIAppOutput
+}
+
+private struct CLIRoomPresenceOutput: Decodable, Equatable {
+  var event: String
+  var transport: String
+  var room: InstantRoomHandle
+  var userID: String?
+  var memberCount: Int
+  var members: [InstantRoomPresenceMember]
+}
+
+private struct CLIRoomPresenceEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLIRoomPresenceOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
+}
+
+private struct CLIRoomTopicOutput: Decodable, Equatable {
+  var event: String
+  var transport: String
+  var room: InstantRoomHandle
+  var topic: String
+  var publishedMessageID: String?
+  var messageCount: Int
+  var messages: [InstantRoomTopicMessage]
 }
 
 private struct CLILocalTodoValidationOutput: Decodable {
