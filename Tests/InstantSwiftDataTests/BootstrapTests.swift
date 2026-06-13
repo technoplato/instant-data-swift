@@ -1152,6 +1152,305 @@ struct BootstrapTests {
   }
 
   @Test
+  func fileAndStreamClientOperationsUseInjectedClosures() async throws {
+    let sourceURL = URL(fileURLWithPath: "/tmp/mock-file.txt")
+    let file = mockStoredFile(id: "file-1", name: "mock-file.txt")
+    let contents = InstantStoredFileContents(file: file, data: Data("hello".utf8))
+    let progress = mockFileUploadProgress(file: file, state: .success)
+    let chunk = mockStreamChunk(streamID: "chat/lobby")
+    let client = integrationClient(
+      uploadFile: { url, name, contentType in
+        expectNoDifference(url, sourceURL)
+        expectNoDifference(name, "renamed.txt")
+        expectNoDifference(contentType, "text/plain")
+        return file
+      },
+      uploadFileProgress: { url, name, contentType in
+        expectNoDifference(url, sourceURL)
+        expectNoDifference(name, "renamed.txt")
+        expectNoDifference(contentType, "text/plain")
+        return AsyncThrowingStream { continuation in
+          continuation.yield(progress)
+          continuation.finish()
+        }
+      },
+      storedFiles: { [file] },
+      observeStoredFiles: {
+        AsyncStream { continuation in
+          continuation.yield([file])
+          continuation.finish()
+        }
+      },
+      storedFileContents: { id in
+        expectNoDifference(id, "file-1")
+        return contents
+      },
+      deleteStoredFile: { id in
+        expectNoDifference(id, "file-1")
+        return file
+      },
+      appendStreamChunk: { streamID, payload in
+        expectNoDifference(streamID, "chat/lobby")
+        expectNoDifference(payload, .object(["text": .string("hello")]))
+        return chunk
+      },
+      streamChunks: { streamID, limit in
+        expectNoDifference(streamID, "chat/lobby")
+        expectNoDifference(limit, 1)
+        return [chunk]
+      },
+      observeStreamChunks: { streamID in
+        expectNoDifference(streamID, "chat/lobby")
+        return AsyncStream { continuation in
+          continuation.yield([chunk])
+          continuation.finish()
+        }
+      }
+    )
+
+    let uploadedFile = try await client.uploadFile(
+      from: sourceURL,
+      name: "renamed.txt",
+      contentType: "text/plain"
+    )
+    expectNoDifference(uploadedFile, file)
+    var progressIterator = try await client.uploadFileProgress(
+      from: sourceURL,
+      name: "renamed.txt",
+      contentType: "text/plain"
+    )
+    .makeAsyncIterator()
+    let observedProgress = try await progressIterator.next()
+    expectNoDifference(observedProgress, progress)
+    let listedFiles = try await client.storedFiles()
+    expectNoDifference(listedFiles, [file])
+    var filesIterator = try await client.observeStoredFiles().makeAsyncIterator()
+    let observedFiles = await filesIterator.next()
+    expectNoDifference(observedFiles, [file])
+    let storedContents = try await client.storedFileContents(id: "file-1")
+    expectNoDifference(storedContents, contents)
+    let deletedFile = try await client.deleteStoredFile(id: "file-1")
+    expectNoDifference(deletedFile, file)
+    let appendedChunk = try await client.appendStreamChunk(
+      streamID: "chat/lobby",
+      payload: .object(["text": .string("hello")])
+    )
+    expectNoDifference(appendedChunk, chunk)
+    let listedChunks = try await client.streamChunks(streamID: "chat/lobby", limit: 1)
+    expectNoDifference(listedChunks, [chunk])
+    var chunksIterator = try await client.observeStreamChunks(streamID: "chat/lobby")
+      .makeAsyncIterator()
+    let observedChunks = await chunksIterator.next()
+    expectNoDifference(observedChunks, [chunk])
+  }
+
+  @Test
+  func storedFilesPropertyWrapperLoadsUsingDependencyClient() async throws {
+    let file = mockStoredFile(id: "file-1")
+    let client = integrationClient(
+      storedFiles: { [file] }
+    )
+
+    try await withDependencies {
+      $0.defaultInstantSwiftData = client
+    } operation: {
+      @StoredFiles var files: [InstantStoredFile]
+
+      try await $files.load()
+
+      expectNoDifference(files, [file])
+      expectNoDifference($files.loadError, nil)
+      expectNoDifference($files.isLoading, false)
+    }
+  }
+
+  @Test
+  func storedFilesPropertyWrapperPreservesCachedValueAndRecordsLoadError() async throws {
+    let cached = [mockStoredFile(id: "cached-file")]
+    let expectedError = InstantError(
+      code: .implementationFailed,
+      operation: "load test StoredFiles",
+      message: "files failed",
+      recovery: "Retry with a working files client."
+    )
+    let client = integrationClient(
+      storedFiles: { throw expectedError }
+    )
+
+    @StoredFiles var files: [InstantStoredFile] = cached
+
+    do {
+      try await $files.load(using: client)
+      Issue.record("Expected @StoredFiles to surface client failures.")
+    } catch let error as InstantError {
+      expectNoDifference(error.operation, "load test StoredFiles")
+      expectNoDifference($files.loadError?.operation, "load test StoredFiles")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+
+    expectNoDifference(files, cached)
+    expectNoDifference($files.isLoading, false)
+  }
+
+  @Test
+  func storedFilesPropertyWrapperTaskBindsObservedFiles() async throws {
+    let file = mockStoredFile(id: "file-1")
+    let client = integrationClient(
+      observeStoredFiles: {
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield([])
+          continuation.yield([file])
+          continuation.finish()
+        }
+      }
+    )
+
+    @StoredFiles var files: [InstantStoredFile]
+
+    try await $files.task(using: client)
+
+    expectNoDifference(files, [file])
+    expectNoDifference($files.loadError, nil)
+    expectNoDifference($files.isLoading, false)
+  }
+
+  @Test
+  func storedFilesPropertyWrapperSubscribeCancelsUnderlyingObservation() async throws {
+    let termination = RoomObservationTermination()
+    let client = integrationClient(
+      observeStoredFiles: {
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield([])
+          continuation.onTermination = { @Sendable _ in
+            Task {
+              await termination.record()
+            }
+          }
+        }
+      }
+    )
+
+    let files = StoredFiles()
+    let subscription = try await files.subscribe(using: client)
+    var iterator = subscription.makeAsyncIterator()
+    let initialFiles = try await iterator.next()
+    expectNoDifference(initialFiles, [])
+
+    subscription.cancel()
+    #expect(try await iterator.next() == nil)
+    await termination.wait()
+  }
+
+  @Test
+  func streamChunksPropertyWrapperLoadsUsingDependencyClient() async throws {
+    let chunk = mockStreamChunk(streamID: "chat/lobby")
+    let client = integrationClient(
+      streamChunks: { streamID, limit in
+        expectNoDifference(streamID, "chat/lobby")
+        expectNoDifference(limit, 1)
+        return [chunk]
+      }
+    )
+
+    try await withDependencies {
+      $0.defaultInstantSwiftData = client
+    } operation: {
+      @StreamChunks("chat/lobby", limit: 1) var chunks: [InstantStreamChunk]
+
+      try await $chunks.load()
+
+      expectNoDifference(chunks, [chunk])
+      expectNoDifference($chunks.loadError, nil)
+      expectNoDifference($chunks.isLoading, false)
+    }
+  }
+
+  @Test
+  func streamChunksPropertyWrapperRecordsNegativeLimitErrors() async throws {
+    let chunks = StreamChunks("chat/lobby", limit: -1)
+
+    do {
+      try await chunks.load(using: integrationClient())
+      Issue.record("Expected @StreamChunks negative load limit to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "load StreamChunks")
+      expectNoDifference(chunks.loadError?.operation, "load StreamChunks")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+
+    expectNoDifference(chunks.wrappedValue, [])
+    expectNoDifference(chunks.isLoading, false)
+
+    do {
+      _ = try await chunks.subscribe("chat/lobby", limit: -1, using: integrationClient())
+      Issue.record("Expected @StreamChunks negative subscribe limit to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "subscribe StreamChunks")
+      expectNoDifference(chunks.loadError?.operation, "subscribe StreamChunks")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+  }
+
+  @Test
+  func streamChunksPropertyWrapperTaskBindsObservedChunks() async throws {
+    let chunk = mockStreamChunk(streamID: "chat/lobby")
+    let laterChunk = mockStreamChunk(id: "chunk-2", streamID: "chat/lobby", index: 1)
+    let client = integrationClient(
+      observeStreamChunks: { streamID in
+        expectNoDifference(streamID, "chat/lobby")
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield([])
+          continuation.yield([chunk, laterChunk])
+          continuation.finish()
+        }
+      }
+    )
+
+    @StreamChunks var chunks: [InstantStreamChunk]
+
+    try await $chunks.task("chat/lobby", limit: 1, using: client)
+
+    expectNoDifference(chunks, [chunk])
+    expectNoDifference($chunks.loadError, nil)
+    expectNoDifference($chunks.isLoading, false)
+  }
+
+  @Test
+  func streamChunksPropertyWrapperSubscribeCancelsUnderlyingObservation() async throws {
+    let chunk = mockStreamChunk(streamID: "chat/lobby")
+    let laterChunk = mockStreamChunk(id: "chunk-2", streamID: "chat/lobby", index: 1)
+    let termination = RoomObservationTermination()
+    let client = integrationClient(
+      observeStreamChunks: { streamID in
+        expectNoDifference(streamID, "chat/lobby")
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield([chunk, laterChunk])
+          continuation.onTermination = { @Sendable _ in
+            Task {
+              await termination.record()
+            }
+          }
+        }
+      }
+    )
+
+    let chunks = StreamChunks("chat/lobby", limit: 1)
+    let subscription = try await chunks.subscribe(using: client)
+    var iterator = subscription.makeAsyncIterator()
+    let initialChunks = try await iterator.next()
+    expectNoDifference(initialChunks, [chunk])
+
+    subscription.cancel()
+    #expect(try await iterator.next() == nil)
+    await termination.wait()
+  }
+
+  @Test
   func cliDefaultPersistenceURLHonorsHomeEnvironment() {
     let key = "INSTANT_SWIFT_DATA_HOME"
     let previous = getenv(key).map { String(cString: $0) }
@@ -1295,6 +1594,26 @@ struct BootstrapTests {
     } catch let error as InstantError {
       expectNoDifference(error.code, .implementationFailed)
       expectNoDifference(error.operation, "access InstantSwiftData rooms")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      _ = try await mock.storedFiles()
+      #expect(Bool(false), "Expected old-shape mock client files to fail without file closures.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .implementationFailed)
+      expectNoDifference(error.operation, "access InstantSwiftData files")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      _ = try await mock.streamChunks(streamID: "chat/lobby")
+      #expect(Bool(false), "Expected old-shape mock client streams to fail without stream closures.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .implementationFailed)
+      expectNoDifference(error.operation, "access InstantSwiftData streams")
     } catch {
       #expect(Bool(false), "Unexpected error: \(error)")
     }
@@ -1456,6 +1775,60 @@ private func mockRoomTopicMessage(
   )
 }
 
+private func mockStoredFile(
+  id: String,
+  name: String = "mock-file.txt",
+  contentType: String? = "text/plain"
+) -> InstantStoredFile {
+  InstantStoredFile(
+    id: id,
+    appID: "mock-app",
+    name: name,
+    contentType: contentType,
+    byteCount: 5,
+    localPath: "/tmp/\(name)",
+    ownerUserID: "user-1",
+    createdAt: InstantTimestamp(milliseconds: 5),
+    updatedAt: InstantTimestamp(milliseconds: 6)
+  )
+}
+
+private func mockFileUploadProgress(
+  file: InstantStoredFile,
+  state: InstantStorageOperationState
+) -> InstantFileUploadProgress {
+  InstantFileUploadProgress(
+    operationID: file.id,
+    appID: file.appID,
+    fileID: file.id,
+    fileName: file.name,
+    contentType: file.contentType,
+    state: state,
+    completedByteCount: file.byteCount,
+    totalByteCount: file.byteCount,
+    progress: state == .success ? 1 : 0,
+    file: state == .success ? file : nil,
+    updatedAt: InstantTimestamp(milliseconds: 7)
+  )
+}
+
+private func mockStreamChunk(
+  id: String = "chunk-1",
+  streamID: String,
+  index: Int64 = 0,
+  payload: JSONValue = .object(["text": .string("hello")])
+) -> InstantStreamChunk {
+  InstantStreamChunk(
+    id: id,
+    appID: "mock-app",
+    streamID: streamID,
+    index: index,
+    payload: payload,
+    userID: "user-1",
+    createdAt: InstantTimestamp(milliseconds: 8 + index)
+  )
+}
+
 private func authSessionClient(
   load: @escaping @Sendable () async throws -> InstantAuthSession?,
   observe: @escaping @Sendable () async throws -> AsyncStream<InstantAuthSession?>
@@ -1529,5 +1902,71 @@ private func roomClient(
     publishRoomTopicMessage: publishTopicMessage,
     roomTopicMessages: roomTopicMessages,
     observeRoomTopicMessages: observeRoomTopicMessages
+  )
+}
+
+private func integrationClient(
+  uploadFile: @escaping @Sendable (URL, String?, String?) async throws
+    -> InstantStoredFile = { _, name, contentType in
+      mockStoredFile(id: "mock-file", name: name ?? "mock-file.txt", contentType: contentType)
+    },
+  uploadFileProgress: @escaping @Sendable (URL, String?, String?) async throws
+    -> AsyncThrowingStream<InstantFileUploadProgress, Error> = { _, name, contentType in
+      let file = mockStoredFile(
+        id: "mock-file",
+        name: name ?? "mock-file.txt",
+        contentType: contentType
+      )
+      return AsyncThrowingStream { continuation in
+        continuation.yield(mockFileUploadProgress(file: file, state: .success))
+        continuation.finish()
+      }
+    },
+  storedFiles: @escaping @Sendable () async throws -> [InstantStoredFile] = { [] },
+  observeStoredFiles: @escaping @Sendable () async throws
+    -> AsyncStream<[InstantStoredFile]> = {
+      AsyncStream { continuation in continuation.finish() }
+    },
+  storedFileContents: @escaping @Sendable (String) async throws
+    -> InstantStoredFileContents = { id in
+      let file = mockStoredFile(id: id)
+      return InstantStoredFileContents(file: file, data: Data())
+    },
+  deleteStoredFile: @escaping @Sendable (String) async throws -> InstantStoredFile = { id in
+    mockStoredFile(id: id)
+  },
+  appendStreamChunk: @escaping @Sendable (String, JSONValue) async throws
+    -> InstantStreamChunk = { streamID, payload in
+      mockStreamChunk(streamID: streamID, payload: payload)
+    },
+  streamChunks: @escaping @Sendable (String, Int?) async throws
+    -> [InstantStreamChunk] = { _, _ in [] },
+  observeStreamChunks: @escaping @Sendable (String) async throws
+    -> AsyncStream<[InstantStreamChunk]> = { _ in
+      AsyncStream { continuation in continuation.finish() }
+    }
+) -> InstantSwiftDataClient {
+  InstantSwiftDataClient(
+    transact: { transaction in
+      InstantStoreMutationResult(
+        transactionID: transaction.id,
+        changedEntityIDs: [],
+        tripleCount: transaction.operations.count,
+        emissions: []
+      )
+    },
+    query: { _ in [] },
+    observe: { _ in AsyncStream { continuation in continuation.finish() } },
+    pendingMutations: { [] },
+    localID: { name in "mock-\(name)" },
+    uploadFile: uploadFile,
+    uploadFileProgress: uploadFileProgress,
+    storedFiles: storedFiles,
+    observeStoredFiles: observeStoredFiles,
+    storedFileContents: storedFileContents,
+    deleteStoredFile: deleteStoredFile,
+    appendStreamChunk: appendStreamChunk,
+    streamChunks: streamChunks,
+    observeStreamChunks: observeStreamChunks
   )
 }

@@ -443,6 +443,12 @@ try await $presence.load()
 @RoomTopicMessages("chat", "lobby", "sendEmoji", limit: 10)
 var messages: [InstantRoomTopicMessage]
 try await $messages.load()
+
+@StoredFiles var files: [InstantStoredFile]
+try await $files.load()
+
+@StreamChunks("chat/lobby", limit: 10) var chunks: [InstantStreamChunk]
+try await $chunks.load()
 ```
 
 `serverCreatedAt` is order-only metadata. Do not declare a model attribute with

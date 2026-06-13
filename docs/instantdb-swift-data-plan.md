@@ -524,7 +524,9 @@ public API into SQL:
   value/loading/error/task/subscription shape instead of exposing raw auth
   callbacks to app features. `@RoomPresence` and `@RoomTopicMessages` should do
   the same for room presence and topic streams, including dynamic room/topic
-  replacement for SwiftUI task lifetimes.
+  replacement for SwiftUI task lifetimes. `@StoredFiles` and `@StreamChunks`
+  should adapt storage metadata and stream chunk observations into the same
+  loading/error/task/subscription shape.
   Client adapters must transform subscribable/live Instant values into
   Swift-native wrappers, projected bindings, observable model state, and
   `AsyncSequence` streams rather than exposing raw subscription callbacks to app

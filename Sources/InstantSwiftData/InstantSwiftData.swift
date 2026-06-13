@@ -59,6 +59,24 @@ public struct InstantSwiftDataClient: Sendable {
     @Sendable (InstantRoomHandle, String, Int?) async throws -> [InstantRoomTopicMessage]
   private var observeRoomTopicMessagesOperation:
     @Sendable (InstantRoomHandle, String) async throws -> AsyncStream<[InstantRoomTopicMessage]>
+  private var uploadFileOperation:
+    @Sendable (URL, String?, String?) async throws -> InstantStoredFile
+  private var uploadFileProgressOperation:
+    @Sendable (URL, String?, String?) async throws
+      -> AsyncThrowingStream<InstantFileUploadProgress, Error>
+  private var storedFilesOperation: @Sendable () async throws -> [InstantStoredFile]
+  private var observeStoredFilesOperation:
+    @Sendable () async throws -> AsyncStream<[InstantStoredFile]>
+  private var storedFileContentsOperation:
+    @Sendable (String) async throws -> InstantStoredFileContents
+  private var deleteStoredFileOperation:
+    @Sendable (String) async throws -> InstantStoredFile
+  private var appendStreamChunkOperation:
+    @Sendable (String, JSONValue) async throws -> InstantStreamChunk
+  private var streamChunksOperation:
+    @Sendable (String, Int?) async throws -> [InstantStreamChunk]
+  private var observeStreamChunksOperation:
+    @Sendable (String) async throws -> AsyncStream<[InstantStreamChunk]>
 
   public init(runtime: InstantRuntime) {
     self.runtime = runtime
@@ -155,6 +173,33 @@ public struct InstantSwiftDataClient: Sendable {
     self.observeRoomTopicMessagesOperation = { room, topic in
       try await runtime.observeRoomTopicMessages(room: room, topic: topic)
     }
+    self.uploadFileOperation = { sourceURL, name, contentType in
+      try await runtime.uploadFile(from: sourceURL, name: name, contentType: contentType)
+    }
+    self.uploadFileProgressOperation = { sourceURL, name, contentType in
+      try await runtime.uploadFileProgress(from: sourceURL, name: name, contentType: contentType)
+    }
+    self.storedFilesOperation = {
+      try await runtime.storedFiles()
+    }
+    self.observeStoredFilesOperation = {
+      try await runtime.observeStoredFiles()
+    }
+    self.storedFileContentsOperation = { id in
+      try await runtime.storedFileContents(id: id)
+    }
+    self.deleteStoredFileOperation = { id in
+      try await runtime.deleteStoredFile(id: id)
+    }
+    self.appendStreamChunkOperation = { streamID, payload in
+      try await runtime.appendStreamChunk(streamID: streamID, payload: payload)
+    }
+    self.streamChunksOperation = { streamID, limit in
+      try await runtime.streamChunks(streamID: streamID, limit: limit)
+    }
+    self.observeStreamChunksOperation = { streamID in
+      try await runtime.observeStreamChunks(streamID: streamID)
+    }
   }
 
   public init(
@@ -200,7 +245,25 @@ public struct InstantSwiftDataClient: Sendable {
         -> [InstantRoomTopicMessage])? = nil,
     observeRoomTopicMessages:
       (@Sendable (InstantRoomHandle, String) async throws
-        -> AsyncStream<[InstantRoomTopicMessage]>)? = nil
+        -> AsyncStream<[InstantRoomTopicMessage]>)? = nil,
+    uploadFile:
+      (@Sendable (URL, String?, String?) async throws -> InstantStoredFile)? = nil,
+    uploadFileProgress:
+      (@Sendable (URL, String?, String?) async throws
+        -> AsyncThrowingStream<InstantFileUploadProgress, Error>)? = nil,
+    storedFiles: (@Sendable () async throws -> [InstantStoredFile])? = nil,
+    observeStoredFiles:
+      (@Sendable () async throws -> AsyncStream<[InstantStoredFile]>)? = nil,
+    storedFileContents:
+      (@Sendable (String) async throws -> InstantStoredFileContents)? = nil,
+    deleteStoredFile:
+      (@Sendable (String) async throws -> InstantStoredFile)? = nil,
+    appendStreamChunk:
+      (@Sendable (String, JSONValue) async throws -> InstantStreamChunk)? = nil,
+    streamChunks:
+      (@Sendable (String, Int?) async throws -> [InstantStreamChunk])? = nil,
+    observeStreamChunks:
+      (@Sendable (String) async throws -> AsyncStream<[InstantStreamChunk]>)? = nil
   ) {
     self.init(
       transact: transact,
@@ -231,7 +294,16 @@ public struct InstantSwiftDataClient: Sendable {
       leaveRoomPresence: leaveRoomPresence,
       publishRoomTopicMessage: publishRoomTopicMessage,
       roomTopicMessages: roomTopicMessages,
-      observeRoomTopicMessages: observeRoomTopicMessages
+      observeRoomTopicMessages: observeRoomTopicMessages,
+      uploadFile: uploadFile,
+      uploadFileProgress: uploadFileProgress,
+      storedFiles: storedFiles,
+      observeStoredFiles: observeStoredFiles,
+      storedFileContents: storedFileContents,
+      deleteStoredFile: deleteStoredFile,
+      appendStreamChunk: appendStreamChunk,
+      streamChunks: streamChunks,
+      observeStreamChunks: observeStreamChunks
     )
   }
 
@@ -280,7 +352,25 @@ public struct InstantSwiftDataClient: Sendable {
         -> [InstantRoomTopicMessage])? = nil,
     observeRoomTopicMessages:
       (@Sendable (InstantRoomHandle, String) async throws
-        -> AsyncStream<[InstantRoomTopicMessage]>)? = nil
+        -> AsyncStream<[InstantRoomTopicMessage]>)? = nil,
+    uploadFile:
+      (@Sendable (URL, String?, String?) async throws -> InstantStoredFile)? = nil,
+    uploadFileProgress:
+      (@Sendable (URL, String?, String?) async throws
+        -> AsyncThrowingStream<InstantFileUploadProgress, Error>)? = nil,
+    storedFiles: (@Sendable () async throws -> [InstantStoredFile])? = nil,
+    observeStoredFiles:
+      (@Sendable () async throws -> AsyncStream<[InstantStoredFile]>)? = nil,
+    storedFileContents:
+      (@Sendable (String) async throws -> InstantStoredFileContents)? = nil,
+    deleteStoredFile:
+      (@Sendable (String) async throws -> InstantStoredFile)? = nil,
+    appendStreamChunk:
+      (@Sendable (String, JSONValue) async throws -> InstantStreamChunk)? = nil,
+    streamChunks:
+      (@Sendable (String, Int?) async throws -> [InstantStreamChunk])? = nil,
+    observeStreamChunks:
+      (@Sendable (String) async throws -> AsyncStream<[InstantStreamChunk]>)? = nil
   ) {
     let authError = InstantError(
       code: .implementationFailed,
@@ -308,6 +398,20 @@ public struct InstantSwiftDataClient: Sendable {
       message: "No room client has been configured.",
       recovery:
         "Bootstrap Instant Swift Data before using rooms, or override room closures in tests."
+    )
+    let filesError = InstantError(
+      code: .implementationFailed,
+      operation: "access InstantSwiftData files",
+      message: "No file client has been configured.",
+      recovery:
+        "Bootstrap Instant Swift Data before using files, or override file closures in tests."
+    )
+    let streamsError = InstantError(
+      code: .implementationFailed,
+      operation: "access InstantSwiftData streams",
+      message: "No stream client has been configured.",
+      recovery:
+        "Bootstrap Instant Swift Data before using streams, or override stream closures in tests."
     )
 
     self.runtime = nil
@@ -352,6 +456,15 @@ public struct InstantSwiftDataClient: Sendable {
     self.roomTopicMessagesOperation = roomTopicMessages ?? { _, _, _ in throw roomsError }
     self.observeRoomTopicMessagesOperation =
       observeRoomTopicMessages ?? { _, _ in throw roomsError }
+    self.uploadFileOperation = uploadFile ?? { _, _, _ in throw filesError }
+    self.uploadFileProgressOperation = uploadFileProgress ?? { _, _, _ in throw filesError }
+    self.storedFilesOperation = storedFiles ?? { throw filesError }
+    self.observeStoredFilesOperation = observeStoredFiles ?? { throw filesError }
+    self.storedFileContentsOperation = storedFileContents ?? { _ in throw filesError }
+    self.deleteStoredFileOperation = deleteStoredFile ?? { _ in throw filesError }
+    self.appendStreamChunkOperation = appendStreamChunk ?? { _, _ in throw streamsError }
+    self.streamChunksOperation = streamChunks ?? { _, _ in throw streamsError }
+    self.observeStreamChunksOperation = observeStreamChunks ?? { _ in throw streamsError }
   }
 
   public static func unimplemented(_ message: String) -> Self {
@@ -449,6 +562,33 @@ public struct InstantSwiftDataClient: Sendable {
         throw error
       },
       observeRoomTopicMessages: { _, _ in
+        throw error
+      },
+      uploadFile: { _, _, _ in
+        throw error
+      },
+      uploadFileProgress: { _, _, _ in
+        throw error
+      },
+      storedFiles: {
+        throw error
+      },
+      observeStoredFiles: {
+        throw error
+      },
+      storedFileContents: { _ in
+        throw error
+      },
+      deleteStoredFile: { _ in
+        throw error
+      },
+      appendStreamChunk: { _, _ in
+        throw error
+      },
+      streamChunks: { _, _ in
+        throw error
+      },
+      observeStreamChunks: { _ in
         throw error
       }
     )
@@ -620,6 +760,61 @@ public struct InstantSwiftDataClient: Sendable {
     topic: String
   ) async throws -> AsyncStream<[InstantRoomTopicMessage]> {
     try await observeRoomTopicMessagesOperation(room, topic)
+  }
+
+  @discardableResult
+  public func uploadFile(
+    from sourceURL: URL,
+    name: String? = nil,
+    contentType: String? = nil
+  ) async throws -> InstantStoredFile {
+    try await uploadFileOperation(sourceURL, name, contentType)
+  }
+
+  public func uploadFileProgress(
+    from sourceURL: URL,
+    name: String? = nil,
+    contentType: String? = nil
+  ) async throws -> AsyncThrowingStream<InstantFileUploadProgress, Error> {
+    try await uploadFileProgressOperation(sourceURL, name, contentType)
+  }
+
+  public func storedFiles() async throws -> [InstantStoredFile] {
+    try await storedFilesOperation()
+  }
+
+  public func observeStoredFiles() async throws -> AsyncStream<[InstantStoredFile]> {
+    try await observeStoredFilesOperation()
+  }
+
+  public func storedFileContents(id: String) async throws -> InstantStoredFileContents {
+    try await storedFileContentsOperation(id)
+  }
+
+  @discardableResult
+  public func deleteStoredFile(id: String) async throws -> InstantStoredFile {
+    try await deleteStoredFileOperation(id)
+  }
+
+  @discardableResult
+  public func appendStreamChunk(
+    streamID: String,
+    payload: JSONValue
+  ) async throws -> InstantStreamChunk {
+    try await appendStreamChunkOperation(streamID, payload)
+  }
+
+  public func streamChunks(
+    streamID: String,
+    limit: Int? = nil
+  ) async throws -> [InstantStreamChunk] {
+    try await streamChunksOperation(streamID, limit)
+  }
+
+  public func observeStreamChunks(
+    streamID: String
+  ) async throws -> AsyncStream<[InstantStreamChunk]> {
+    try await observeStreamChunksOperation(streamID)
   }
 
   public func subscribe<Entity: InstantEntityModel>(
@@ -2837,6 +3032,431 @@ public struct RoomTopicMessages: Sendable {
       operation: operation,
       message: "Topic message limit must be greater than or equal to 0.",
       recovery: "Pass a non-negative limit, or omit limit to observe every local message."
+    )
+  }
+}
+
+@propertyWrapper
+public struct StoredFiles: Sendable {
+  private let storage: FetchStorage<[InstantStoredFile]>
+
+  public var wrappedValue: [InstantStoredFile] {
+    get { storage.wrappedValue }
+    nonmutating set { storage.wrappedValue = newValue }
+  }
+
+  public var loadError: InstantError? {
+    get { storage.loadError }
+    nonmutating set { storage.loadError = newValue }
+  }
+
+  public var isLoading: Bool {
+    get { storage.isLoading }
+    nonmutating set { storage.isLoading = newValue }
+  }
+
+  #if canImport(SwiftUI)
+    public var binding: Binding<[InstantStoredFile]> {
+      Binding(
+        get: { storage.wrappedValue },
+        set: { storage.wrappedValue = $0 }
+      )
+    }
+  #endif
+
+  public init(wrappedValue: [InstantStoredFile] = []) {
+    self.storage = FetchStorage(value: wrappedValue)
+  }
+
+  public var projectedValue: Self {
+    get { self }
+    nonmutating set {
+      wrappedValue = newValue.wrappedValue
+      loadError = newValue.loadError
+      isLoading = newValue.isLoading
+    }
+  }
+
+  public func load() async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(using: client)
+  }
+
+  public func load(using client: InstantSwiftDataClient) async throws {
+    isLoading = true
+    do {
+      let files = try await client.storedFiles()
+      try Task.checkCancellation()
+      wrappedValue = files
+      loadError = nil
+      isLoading = false
+    } catch let error as CancellationError {
+      loadError = nil
+      isLoading = false
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      isLoading = false
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "load StoredFiles",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient stored files operation."
+      )
+      loadError = error
+      isLoading = false
+      throw error
+    }
+  }
+
+  public func subscribe()
+    async throws -> FetchSubscription<[InstantStoredFile]>
+  {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(using: client)
+  }
+
+  public func subscribe(
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[InstantStoredFile]> {
+    do {
+      let files = try await client.observeStoredFiles()
+      try Task.checkCancellation()
+      loadError = nil
+      return fetchSubscription(from: files)
+    } catch let error as CancellationError {
+      loadError = nil
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "subscribe StoredFiles",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient stored files observer."
+      )
+      loadError = error
+      throw error
+    }
+  }
+
+  public func task() async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(using: client)
+  }
+
+  public func task(using client: InstantSwiftDataClient) async throws {
+    isLoading = true
+    do {
+      let subscription = try await subscribe(using: client)
+      defer { subscription.cancel() }
+      for try await value in subscription {
+        try Task.checkCancellation()
+        wrappedValue = value
+        loadError = nil
+        isLoading = false
+      }
+      try Task.checkCancellation()
+      loadError = nil
+      isLoading = false
+    } catch let error as CancellationError {
+      loadError = nil
+      isLoading = false
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      isLoading = false
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "observe StoredFiles",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient stored files observer."
+      )
+      loadError = error
+      isLoading = false
+      throw error
+    }
+  }
+}
+
+private struct StreamChunksConfiguration: Sendable {
+  var streamID: String?
+  var limit: Int?
+}
+
+// SAFETY: stream chunk configuration is protected by `lock`.
+private final class StreamChunksConfigurationStorage: @unchecked Sendable {
+  private let lock = NSLock()
+  private var configuration: StreamChunksConfiguration
+
+  init(streamID: String?, limit: Int?) {
+    self.configuration = StreamChunksConfiguration(streamID: streamID, limit: limit)
+  }
+
+  var value: StreamChunksConfiguration {
+    lock.lock()
+    defer { lock.unlock() }
+    return configuration
+  }
+
+  func set(_ configuration: StreamChunksConfiguration) {
+    lock.lock()
+    defer { lock.unlock() }
+    self.configuration = configuration
+  }
+
+  func set(streamID: String, limit: Int?) {
+    set(StreamChunksConfiguration(streamID: streamID, limit: limit))
+  }
+}
+
+@propertyWrapper
+public struct StreamChunks: Sendable {
+  private let storage: FetchStorage<[InstantStreamChunk]>
+  private let configuration: StreamChunksConfigurationStorage
+
+  public var wrappedValue: [InstantStreamChunk] {
+    get { storage.wrappedValue }
+    nonmutating set { storage.wrappedValue = newValue }
+  }
+
+  public var loadError: InstantError? {
+    get { storage.loadError }
+    nonmutating set { storage.loadError = newValue }
+  }
+
+  public var isLoading: Bool {
+    get { storage.isLoading }
+    nonmutating set { storage.isLoading = newValue }
+  }
+
+  #if canImport(SwiftUI)
+    public var binding: Binding<[InstantStreamChunk]> {
+      Binding(
+        get: { storage.wrappedValue },
+        set: { storage.wrappedValue = $0 }
+      )
+    }
+  #endif
+
+  public init(wrappedValue: [InstantStreamChunk] = []) {
+    self.storage = FetchStorage(value: wrappedValue)
+    self.configuration = StreamChunksConfigurationStorage(streamID: nil, limit: nil)
+  }
+
+  public init(_ streamID: String, limit: Int? = nil) {
+    self.storage = FetchStorage(value: [])
+    self.configuration = StreamChunksConfigurationStorage(streamID: streamID, limit: limit)
+  }
+
+  public init(wrappedValue: [InstantStreamChunk], _ streamID: String, limit: Int? = nil) {
+    self.storage = FetchStorage(value: wrappedValue)
+    self.configuration = StreamChunksConfigurationStorage(streamID: streamID, limit: limit)
+  }
+
+  public var projectedValue: Self {
+    get { self }
+    nonmutating set {
+      wrappedValue = newValue.wrappedValue
+      loadError = newValue.loadError
+      isLoading = newValue.isLoading
+      configuration.set(newValue.configuration.value)
+    }
+  }
+
+  public func load() async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(using: client)
+  }
+
+  public func load(using client: InstantSwiftDataClient) async throws {
+    let configuration = configuration.value
+    guard let streamID = configuration.streamID else {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "load StreamChunks",
+        message: "No Instant stream id has been configured for this wrapper.",
+        recovery: "Initialize @StreamChunks with a stream id, or pass one to load(_:using:)."
+      )
+      loadError = error
+      throw error
+    }
+    try await load(streamID, limit: configuration.limit, using: client)
+  }
+
+  public func load(_ streamID: String, limit: Int? = nil) async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(streamID, limit: limit, using: client)
+  }
+
+  public func load(
+    _ streamID: String,
+    limit: Int? = nil,
+    using client: InstantSwiftDataClient
+  ) async throws {
+    configuration.set(streamID: streamID, limit: limit)
+    isLoading = true
+    do {
+      try Self.validateLimit(limit, operation: "load StreamChunks")
+      let chunks = try await client.streamChunks(streamID: streamID, limit: limit)
+      try Task.checkCancellation()
+      wrappedValue = chunks
+      loadError = nil
+      isLoading = false
+    } catch let error as CancellationError {
+      loadError = nil
+      isLoading = false
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      isLoading = false
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "load StreamChunks",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient stream chunks operation."
+      )
+      loadError = error
+      isLoading = false
+      throw error
+    }
+  }
+
+  public func subscribe()
+    async throws -> FetchSubscription<[InstantStreamChunk]>
+  {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(using: client)
+  }
+
+  public func subscribe(
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[InstantStreamChunk]> {
+    let configuration = configuration.value
+    guard let streamID = configuration.streamID else {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "subscribe StreamChunks",
+        message: "No Instant stream id has been configured for this wrapper.",
+        recovery: "Initialize @StreamChunks with a stream id, or pass one to subscribe(_:using:)."
+      )
+      loadError = error
+      throw error
+    }
+    return try await subscribe(streamID, limit: configuration.limit, using: client)
+  }
+
+  public func subscribe(
+    _ streamID: String,
+    limit: Int? = nil
+  ) async throws -> FetchSubscription<[InstantStreamChunk]> {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(streamID, limit: limit, using: client)
+  }
+
+  public func subscribe(
+    _ streamID: String,
+    limit: Int? = nil,
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[InstantStreamChunk]> {
+    configuration.set(streamID: streamID, limit: limit)
+    do {
+      try Self.validateLimit(limit, operation: "subscribe StreamChunks")
+      let chunks = try await client.observeStreamChunks(streamID: streamID)
+      try Task.checkCancellation()
+      loadError = nil
+      let subscription = fetchSubscription(from: chunks)
+      if let limit {
+        return subscription.map { Array($0.prefix(limit)) }
+      }
+      return subscription
+    } catch let error as CancellationError {
+      loadError = nil
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "subscribe StreamChunks",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient stream chunks observer."
+      )
+      loadError = error
+      throw error
+    }
+  }
+
+  public func task() async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(using: client)
+  }
+
+  public func task(_ streamID: String, limit: Int? = nil) async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(streamID, limit: limit, using: client)
+  }
+
+  public func task(
+    _ streamID: String,
+    limit: Int? = nil,
+    using client: InstantSwiftDataClient
+  ) async throws {
+    configuration.set(streamID: streamID, limit: limit)
+    try await task(using: client)
+  }
+
+  public func task(using client: InstantSwiftDataClient) async throws {
+    isLoading = true
+    do {
+      let subscription = try await subscribe(using: client)
+      defer { subscription.cancel() }
+      for try await value in subscription {
+        try Task.checkCancellation()
+        wrappedValue = value
+        loadError = nil
+        isLoading = false
+      }
+      try Task.checkCancellation()
+      loadError = nil
+      isLoading = false
+    } catch let error as CancellationError {
+      loadError = nil
+      isLoading = false
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      isLoading = false
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "observe StreamChunks",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient stream chunks observer."
+      )
+      loadError = error
+      isLoading = false
+      throw error
+    }
+  }
+
+  private static func validateLimit(_ limit: Int?, operation: String) throws {
+    guard let limit, limit < 0 else { return }
+    throw InstantError(
+      code: .validationFailed,
+      operation: operation,
+      message: "Stream chunk limit must be greater than or equal to 0.",
+      recovery: "Pass a non-negative limit, or omit limit to observe every local chunk."
     )
   }
 }
