@@ -3215,6 +3215,497 @@ struct InstantStoreTests {
   }
 
   @Test
+  func sharedRootWritePermissionsRejectReadersBeforeOutboxPersistence() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let todoID = "todo-shared"
+    let ownerRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        now: { timestamp }
+      )
+    )
+    _ = try await ownerRuntime.signInWithRefreshToken("owner-refresh", userID: "user-1")
+
+    try await ownerRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-owner-create",
+        operations: TodoExample.createOperations(
+          id: todoID,
+          text: "owner created",
+          createdAt: timestamp,
+          transactionID: "tx-owner-create"
+        )
+      ),
+      createdAt: timestamp
+    )
+    let createdShare = try await ownerRuntime.createShare(
+      rootNamespace: TodoExample.namespace,
+      rootID: todoID
+    )
+    try await ownerRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-owner-update",
+        operations: TodoExample.updateTextOperations(
+          id: todoID,
+          text: "owner updated",
+          updatedAt: timestamp,
+          transactionID: "tx-owner-update"
+        )
+      ),
+      createdAt: timestamp
+    )
+
+    let inviteeRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        now: { timestamp }
+      )
+    )
+    _ = try await inviteeRuntime.signInWithRefreshToken("invitee-refresh", userID: "user-2")
+    let acceptedShare = try await inviteeRuntime.acceptShare(token: createdShare.share.token)
+    expectNoDifference(acceptedShare.memberships.map(\.role), [.owner, .reader])
+    do {
+      _ = try await inviteeRuntime.createShare(rootNamespace: TodoExample.namespace, rootID: todoID)
+      #expect(Bool(false), "Expected reader duplicate share creation to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "write shared root")
+      #expect(error.message.contains("reader access"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+    let inviteeShares = try await inviteeRuntime.shares()
+    expectNoDifference(inviteeShares.map(\.share.id), [createdShare.share.id])
+
+    let pendingBeforeReaderWrite = await inviteeRuntime.pendingMutations()
+    do {
+      try await inviteeRuntime.transact(
+        InstantStoreTransaction(
+          id: "tx-owner-update",
+          operations: TodoExample.updateTextOperations(
+            id: todoID,
+            text: "owner updated",
+            updatedAt: timestamp,
+            transactionID: "tx-owner-update"
+          )
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected reader replay of a pending owner write to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "write shared root")
+      #expect(error.message.contains("reader access"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+    let pendingAfterReaderReplay = await inviteeRuntime.pendingMutations()
+    expectNoDifference(pendingAfterReaderReplay, pendingBeforeReaderWrite)
+
+    do {
+      try await inviteeRuntime.transact(
+        InstantStoreTransaction(
+          id: "tx-reader-update",
+          operations: TodoExample.updateTextOperations(
+            id: todoID,
+            text: "reader updated",
+            updatedAt: timestamp,
+            transactionID: "tx-reader-update"
+          )
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected reader write to a shared root to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "write shared root")
+      expectNoDifference(error.namespace, TodoExample.namespace)
+      expectNoDifference(error.localID, todoID)
+      #expect(error.message.contains("reader access"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+    let pendingAfterReaderUpdate = await inviteeRuntime.pendingMutations()
+    expectNoDifference(pendingAfterReaderUpdate, pendingBeforeReaderWrite)
+
+    do {
+      try await inviteeRuntime.transact(
+        InstantStoreTransaction(
+          id: "tx-reader-delete",
+          operations: TodoExample.deleteOperations(id: todoID)
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected reader delete of a shared root to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "write shared root")
+      expectNoDifference(error.namespace, TodoExample.namespace)
+      expectNoDifference(error.localID, todoID)
+      #expect(error.message.contains("reader access"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+    let pendingAfterReaderDelete = await inviteeRuntime.pendingMutations()
+    expectNoDifference(pendingAfterReaderDelete, pendingBeforeReaderWrite)
+
+    do {
+      try await inviteeRuntime.transact(
+        InstantStoreTransaction(
+          id: "tx-reader-rogue-attribute",
+          operations: [
+            .insert(
+              InstantTriple(
+                entityID: todoID,
+                attributeID: "todos/rogue",
+                value: .string("reader bypass"),
+                txID: "tx-reader-rogue-attribute",
+                txTime: timestamp
+              )
+            )
+          ]
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected reader undeclared-attribute write to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "write shared root")
+      expectNoDifference(error.namespace, TodoExample.namespace)
+      expectNoDifference(error.localID, todoID)
+      #expect(error.message.contains("reader access"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+    let pendingAfterReaderRogueAttribute = await inviteeRuntime.pendingMutations()
+    expectNoDifference(pendingAfterReaderRogueAttribute, pendingBeforeReaderWrite)
+
+    let todosAfterReaderAttempts = try TodoExample.decode(
+      (try await inviteeRuntime.queryOnce(TodoExample.query)).values
+    )
+    expectNoDifference(todosAfterReaderAttempts.map(\.text), ["owner updated"])
+
+    let nonMemberRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        now: { timestamp }
+      )
+    )
+    _ = try await nonMemberRuntime.signInWithRefreshToken("other-refresh", userID: "user-3")
+    do {
+      try await nonMemberRuntime.transact(
+        InstantStoreTransaction(
+          id: "tx-non-member-update",
+          operations: TodoExample.updateTextOperations(
+            id: todoID,
+            text: "non-member updated",
+            updatedAt: timestamp,
+            transactionID: "tx-non-member-update"
+          )
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected non-member write to a shared root to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "write shared root")
+      #expect(error.message.contains("not a member"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+    let pendingAfterNonMemberWrite = await nonMemberRuntime.pendingMutations()
+    expectNoDifference(pendingAfterNonMemberWrite, pendingBeforeReaderWrite)
+  }
+
+  @Test
+  func sharedRootWritePermissionsRejectReaderRefTargetMutation() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let projectID = "project-shared"
+    let todoID = "todo-source"
+    let ownerRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoProjectExample.attributes,
+        now: { timestamp }
+      )
+    )
+    _ = try await ownerRuntime.signInWithRefreshToken("owner-refresh", userID: "user-1")
+    try await ownerRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-owner-project",
+        operations: TodoProjectExample.createProjectOperations(
+          id: projectID,
+          title: "Shared project",
+          createdAt: timestamp,
+          transactionID: "tx-owner-project"
+        )
+      ),
+      createdAt: timestamp
+    )
+    let share = try await ownerRuntime.createShare(
+      rootNamespace: TodoProjectExample.namespace,
+      rootID: projectID
+    )
+    let remoteProjectID = "remote-project-shared"
+    let remoteShare = try await ownerRuntime.createShare(
+      rootNamespace: TodoProjectExample.namespace,
+      rootID: remoteProjectID
+    )
+
+    let inviteeRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoProjectExample.attributes,
+        now: { timestamp }
+      )
+    )
+    _ = try await inviteeRuntime.signInWithRefreshToken("invitee-refresh", userID: "user-2")
+    _ = try await inviteeRuntime.acceptShare(token: share.share.token)
+    _ = try await inviteeRuntime.acceptShare(token: remoteShare.share.token)
+    try await inviteeRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-reader-create-source",
+        operations: TodoExample.createOperations(
+          id: todoID,
+          text: "reader source",
+          createdAt: timestamp,
+          transactionID: "tx-reader-create-source"
+        )
+      ),
+      createdAt: timestamp
+    )
+    let pendingBeforeLink = await inviteeRuntime.pendingMutations()
+
+    do {
+      try await inviteeRuntime.transact(
+        InstantStoreTransaction(
+          id: "tx-reader-link-shared-project",
+          operations: TodoProjectExample.linkOperations(
+            todoID: todoID,
+            projectID: projectID,
+            updatedAt: timestamp,
+            transactionID: "tx-reader-link-shared-project"
+          )
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected reader ref target write to a shared root to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "write shared root")
+      expectNoDifference(error.namespace, TodoProjectExample.namespace)
+      expectNoDifference(error.localID, projectID)
+      #expect(error.message.contains("reader access"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+    let pendingAfterLink = await inviteeRuntime.pendingMutations()
+    expectNoDifference(pendingAfterLink, pendingBeforeLink)
+
+    let missingTodoLookup = InstantLookupRef(
+      attributeID: InstantAttribute.primaryKeyID(namespace: TodoExample.namespace),
+      value: .string("missing-source")
+    )
+    do {
+      try await inviteeRuntime.transact(
+        InstantStoreTransaction(
+          id: "tx-reader-link-missing-source",
+          operations: [
+            .insertByLookup(
+              entity: missingTodoLookup,
+              attributeID: "todos/project",
+              value: .ref(projectID),
+              txID: "tx-reader-link-missing-source",
+              txTime: timestamp
+            )
+          ]
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected unresolved source lookup with a shared ref target to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "write shared root")
+      expectNoDifference(error.namespace, TodoProjectExample.namespace)
+      expectNoDifference(error.localID, projectID)
+      #expect(error.message.contains("reader access"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+    let pendingAfterMissingSourceLink = await inviteeRuntime.pendingMutations()
+    expectNoDifference(pendingAfterMissingSourceLink, pendingBeforeLink)
+
+    let remoteProjectLookup = InstantLookupRef(
+      attributeID: InstantAttribute.primaryKeyID(namespace: TodoProjectExample.namespace),
+      value: .string(remoteProjectID)
+    )
+    do {
+      try await inviteeRuntime.transact(
+        InstantStoreTransaction(
+          id: "tx-reader-link-remote-target-lookup",
+          operations: [
+            .insert(
+              InstantTriple(
+                entityID: todoID,
+                attributeID: "todos/project",
+                value: .lookupRef(remoteProjectLookup),
+                txID: "tx-reader-link-remote-target-lookup",
+                txTime: timestamp
+              )
+            )
+          ]
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected unresolved shared target lookup to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "write shared root")
+      expectNoDifference(error.namespace, TodoProjectExample.namespace)
+      expectNoDifference(error.localID, remoteProjectID)
+      #expect(error.message.contains("reader access"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+    let pendingAfterRemoteTargetLookup = await inviteeRuntime.pendingMutations()
+    expectNoDifference(pendingAfterRemoteTargetLookup, pendingBeforeLink)
+
+    let linkedTodos = try TodoProjectExample.decodeLinkedTodos(
+      (try await inviteeRuntime.queryOnce(TodoProjectExample.todosQuery)).values
+    )
+    expectNoDifference(linkedTodos.map(\.projectID), [nil])
+  }
+
+  @Test
+  func sharedRootWritePermissionsRejectReaderCascadeDeleteTarget() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let taskNamespace = "tasks"
+    let taskID = "task-source"
+    let projectID = "project-shared"
+    let attributes = TodoProjectExample.attributes + [
+      .primaryKey(namespace: taskNamespace),
+      InstantAttribute(
+        id: "tasks/title",
+        namespace: taskNamespace,
+        name: "title",
+        valueType: .string,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "tasks/project",
+        namespace: taskNamespace,
+        name: "project",
+        valueType: .ref,
+        isIndexed: true,
+        linkNamespace: TodoProjectExample.namespace,
+        onDeleteReverse: .cascade
+      ),
+    ]
+    let ownerRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: attributes,
+        now: { timestamp }
+      )
+    )
+    _ = try await ownerRuntime.signInWithRefreshToken("owner-refresh", userID: "user-1")
+    try await ownerRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-owner-project-and-task",
+        operations: TodoProjectExample.createProjectOperations(
+          id: projectID,
+          title: "Shared project",
+          createdAt: timestamp,
+          transactionID: "tx-owner-project-and-task"
+        ) + [
+          .insert(
+            InstantTriple(
+              entityID: taskID,
+              attributeID: InstantAttribute.primaryKeyID(namespace: taskNamespace),
+              value: .string(taskID),
+              txID: "tx-owner-project-and-task",
+              txTime: timestamp
+            )
+          ),
+          .insert(
+            InstantTriple(
+              entityID: taskID,
+              attributeID: "tasks/title",
+              value: .string("Source task"),
+              txID: "tx-owner-project-and-task",
+              txTime: timestamp
+            )
+          ),
+          .insert(
+            InstantTriple(
+              entityID: taskID,
+              attributeID: "tasks/project",
+              value: .ref(projectID),
+              txID: "tx-owner-project-and-task",
+              txTime: timestamp
+            )
+          ),
+        ]
+      ),
+      createdAt: timestamp
+    )
+    let share = try await ownerRuntime.createShare(
+      rootNamespace: TodoProjectExample.namespace,
+      rootID: projectID
+    )
+
+    let inviteeRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: attributes,
+        now: { timestamp }
+      )
+    )
+    _ = try await inviteeRuntime.signInWithRefreshToken("invitee-refresh", userID: "user-2")
+    _ = try await inviteeRuntime.acceptShare(token: share.share.token)
+    let pendingBeforeDelete = await inviteeRuntime.pendingMutations()
+
+    do {
+      try await inviteeRuntime.transact(
+        InstantStoreTransaction(
+          id: "tx-reader-delete-cascade-source",
+          operations: [.deleteEntity(taskID)]
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected reader cascade delete into a shared root to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "write shared root")
+      expectNoDifference(error.namespace, TodoProjectExample.namespace)
+      expectNoDifference(error.localID, projectID)
+      #expect(error.message.contains("reader access"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+    let pendingAfterDelete = await inviteeRuntime.pendingMutations()
+    expectNoDifference(pendingAfterDelete, pendingBeforeDelete)
+
+    let projects = try TodoProjectExample.decodeProjects(
+      (try await inviteeRuntime.queryOnce(TodoProjectExample.projectsQuery)).values
+    )
+    expectNoDifference(projects.map(\.id), [projectID])
+  }
+
+  @Test
   func shareCreateRequiresAuth() async throws {
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(appID: "test-app", persistenceURL: temporaryCacheURL())

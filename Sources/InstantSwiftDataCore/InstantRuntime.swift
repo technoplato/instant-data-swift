@@ -151,6 +151,11 @@ private final class InstantFileUploadProgressCancellation: @unchecked Sendable {
   }
 }
 
+private struct InstantSharedRootWriteTarget: Hashable, Sendable {
+  var namespace: String?
+  var id: String
+}
+
 public final class InstantRuntime: Sendable {
   public static let selectedAppIDMetadataKey = "cli.selected_app_id"
 
@@ -293,6 +298,7 @@ public final class InstantRuntime: Sendable {
     for _ in 0..<5 {
       recordActorHop(.persistence)
       let state = try await persistence.loadState()
+      try await authorizeSharedRootWrites(transaction: transaction, snapshot: state.snapshot.store)
       if let existingMutation = state.snapshot.outbox.first(where: { $0.id == transaction.id }) {
         recordActorHop(.store)
         await store.replaceSnapshot(state.snapshot.store)
@@ -1536,6 +1542,14 @@ public final class InstantRuntime: Sendable {
     await operationGate.enter()
     do {
       let userID = try await resolvedAuthenticatedUserID(operation: "create share", noun: "Share")
+      let activeRootShares = try await persistence.loadActiveShareSnapshots(
+        appID: configuration.appID,
+        rootNamespace: rootNamespace,
+        rootID: rootID
+      )
+      if !activeRootShares.isEmpty, !canWriteSharedRoot(activeRootShares, userID: userID) {
+        throw sharedRootWritePermissionRejected(snapshot: activeRootShares[0], userID: userID)
+      }
       let now = configuration.now()
       let shareID = configuration.makeID()
       let share = InstantShare(
@@ -1640,6 +1654,327 @@ public final class InstantRuntime: Sendable {
       await operationGate.leave()
       throw error
     }
+  }
+
+  private func authorizeSharedRootWrites(
+    transaction: InstantStoreTransaction,
+    snapshot: InstantStoreSnapshot
+  ) async throws {
+    let targets = sharedRootWriteTargets(in: transaction, snapshot: snapshot)
+    guard !targets.isEmpty else { return }
+
+    for target in targets.sorted(by: sharedRootWriteTargetSort) {
+      let snapshots = try await persistence.loadActiveShareSnapshots(
+        appID: configuration.appID,
+        rootNamespace: target.namespace,
+        rootID: target.id
+      )
+      guard !snapshots.isEmpty else { continue }
+
+      guard let session = try await persistence.loadAuthSession(key: authSessionKey) else {
+        throw sharedRootWritePermissionRejected(snapshot: snapshots[0], userID: nil)
+      }
+
+      if target.namespace != nil {
+        guard canWriteSharedRoot(snapshots, userID: session.userID) else {
+          throw sharedRootWritePermissionRejected(
+            snapshot: snapshots[0],
+            userID: session.userID
+          )
+        }
+      } else {
+        let snapshotsByNamespace = Dictionary(grouping: snapshots, by: \.share.rootNamespace)
+        for namespace in snapshotsByNamespace.keys.sorted() {
+          let namespaceSnapshots = snapshotsByNamespace[namespace] ?? []
+          guard canWriteSharedRoot(namespaceSnapshots, userID: session.userID) else {
+            throw sharedRootWritePermissionRejected(
+              snapshot: namespaceSnapshots[0],
+              userID: session.userID
+            )
+          }
+        }
+      }
+    }
+  }
+
+  private func sharedRootWriteTargets(
+    in transaction: InstantStoreTransaction,
+    snapshot: InstantStoreSnapshot
+  ) -> Set<InstantSharedRootWriteTarget> {
+    let attributesByID = Dictionary(
+      snapshot.attributes.map { ($0.id, $0) },
+      uniquingKeysWith: { lhs, _ in lhs }
+    )
+    var targets: Set<InstantSharedRootWriteTarget> = []
+
+    for operation in transaction.operations {
+      switch operation {
+      case let .insert(triple), let .merge(triple), let .retract(triple):
+        let attribute = attributesByID[triple.attributeID]
+        let namespace = sharedRootNamespace(for: triple.attributeID, attribute: attribute)
+        targets.insert(InstantSharedRootWriteTarget(namespace: namespace, id: triple.entityID))
+        insertRefWriteTargets(
+          for: triple.value,
+          attribute: attribute,
+          snapshot: snapshot,
+          attributesByID: attributesByID,
+          into: &targets
+        )
+
+      case let .insertByLookup(lookup, attributeID, value, _, _),
+        let .mergeByLookup(lookup, attributeID, value, _, _),
+        let .retractByLookup(lookup, attributeID, value, _, _):
+        let attribute = attributesByID[attributeID]
+        insertRefWriteTargets(
+          for: value,
+          attribute: attribute,
+          snapshot: snapshot,
+          attributesByID: attributesByID,
+          into: &targets
+        )
+        let sourceIDs = entityIDs(matching: lookup, snapshot: snapshot)
+        if sourceIDs.isEmpty, let target = primaryKeyLookupWriteTarget(
+          lookup,
+          attributesByID: attributesByID
+        ) {
+          targets.insert(target)
+        }
+        guard !sourceIDs.isEmpty else { continue }
+        let namespace = sharedRootNamespace(for: attributeID, attribute: attribute)
+        for entityID in sourceIDs {
+          targets.insert(InstantSharedRootWriteTarget(namespace: namespace, id: entityID))
+        }
+
+      case let .deleteEntity(entityID):
+        targets.formUnion(
+          cascadeDeleteWriteTargets(
+            entityID: entityID,
+            snapshot: snapshot,
+            attributesByID: attributesByID
+          )
+        )
+
+      case let .deleteEntityByLookup(lookup):
+        let entityIDs = entityIDs(matching: lookup, snapshot: snapshot)
+        if entityIDs.isEmpty, let target = primaryKeyLookupWriteTarget(
+          lookup,
+          attributesByID: attributesByID
+        ) {
+          targets.formUnion(
+            cascadeDeleteWriteTargets(
+              entityID: target.id,
+              snapshot: snapshot,
+              attributesByID: attributesByID
+            )
+          )
+          targets.insert(target)
+        } else {
+          for entityID in entityIDs {
+            targets.formUnion(
+              cascadeDeleteWriteTargets(
+                entityID: entityID,
+                snapshot: snapshot,
+                attributesByID: attributesByID
+              )
+            )
+          }
+        }
+
+      case .requireEntityMissing, .requireEntityMissingByLookup, .requireEntityExists,
+        .requireEntityExistsByLookup, .ruleParams, .ruleParamsByLookup:
+        break
+      }
+    }
+
+    return targets
+  }
+
+  private func primaryKeyLookupWriteTarget(
+    _ lookup: InstantLookupRef,
+    attributesByID: [String: InstantAttribute]
+  ) -> InstantSharedRootWriteTarget? {
+    let attribute = attributesByID[lookup.attributeID]
+    let isPrimaryKey = attribute?.primaryKey == true
+      || attribute?.name == "id"
+      || lookup.attributeID.hasSuffix("/id")
+    guard isPrimaryKey, case let .string(entityID) = lookup.value else { return nil }
+    return InstantSharedRootWriteTarget(
+      namespace: sharedRootNamespace(for: lookup.attributeID, attribute: attribute),
+      id: entityID
+    )
+  }
+
+  private func sharedRootNamespace(
+    for attributeID: String,
+    attribute: InstantAttribute?
+  ) -> String? {
+    if let attribute {
+      return attribute.namespace
+    }
+    let parts = attributeID.split(separator: "/", maxSplits: 1, omittingEmptySubsequences: false)
+    guard parts.count == 2, !parts[0].isEmpty else { return nil }
+    return String(parts[0])
+  }
+
+  private func insertRefWriteTargets(
+    for value: InstantValue,
+    attribute: InstantAttribute?,
+    snapshot: InstantStoreSnapshot,
+    attributesByID: [String: InstantAttribute],
+    into targets: inout Set<InstantSharedRootWriteTarget>
+  ) {
+    let targetNamespace: String?
+    if let attribute {
+      guard attribute.valueType == .ref else { return }
+      targetNamespace = attribute.linkNamespace
+    } else {
+      targetNamespace = nil
+    }
+
+    switch value {
+    case let .ref(entityID):
+      targets.insert(InstantSharedRootWriteTarget(namespace: targetNamespace, id: entityID))
+
+    case let .lookupRef(lookup):
+      let entityIDs = entityIDs(matching: lookup, snapshot: snapshot)
+      if entityIDs.isEmpty, let target = primaryKeyLookupWriteTarget(
+        lookup,
+        attributesByID: attributesByID
+      ) {
+        targets.insert(
+          InstantSharedRootWriteTarget(
+            namespace: targetNamespace ?? target.namespace,
+            id: target.id
+          )
+        )
+      }
+      for entityID in entityIDs {
+        targets.insert(InstantSharedRootWriteTarget(namespace: targetNamespace, id: entityID))
+      }
+
+    case .null, .bool, .number, .string, .date, .json:
+      break
+    }
+  }
+
+  private func cascadeDeleteWriteTargets(
+    entityID: String,
+    snapshot: InstantStoreSnapshot,
+    attributesByID: [String: InstantAttribute],
+    visited: Set<String> = []
+  ) -> Set<InstantSharedRootWriteTarget> {
+    guard !visited.contains(entityID) else { return [] }
+    var visited = visited
+    visited.insert(entityID)
+    var targets: Set<InstantSharedRootWriteTarget> = [
+      InstantSharedRootWriteTarget(namespace: nil, id: entityID)
+    ]
+
+    let outgoingTriples = snapshot.triples.filter { $0.entityID == entityID }
+    let incomingTriples = snapshot.triples.filter { triple in
+      guard attributesByID[triple.attributeID]?.valueType == .ref,
+        case let .ref(targetID) = triple.value
+      else {
+        return false
+      }
+      return targetID == entityID
+    }
+
+    for triple in outgoingTriples {
+      guard let attribute = attributesByID[triple.attributeID],
+        attribute.valueType == .ref,
+        case let .ref(targetID) = triple.value
+      else {
+        continue
+      }
+      targets.insert(InstantSharedRootWriteTarget(namespace: nil, id: targetID))
+      if attribute.onDeleteReverse == .cascade {
+        targets.formUnion(
+          cascadeDeleteWriteTargets(
+            entityID: targetID,
+            snapshot: snapshot,
+            attributesByID: attributesByID,
+            visited: visited
+          )
+        )
+      }
+    }
+
+    for triple in incomingTriples {
+      let attribute = attributesByID[triple.attributeID]
+      targets.insert(InstantSharedRootWriteTarget(namespace: nil, id: triple.entityID))
+      if attribute?.onDelete == .cascade {
+        targets.formUnion(
+          cascadeDeleteWriteTargets(
+            entityID: triple.entityID,
+            snapshot: snapshot,
+            attributesByID: attributesByID,
+            visited: visited
+          )
+        )
+      }
+    }
+
+    return targets
+  }
+
+  private func entityIDs(
+    matching lookup: InstantLookupRef,
+    snapshot: InstantStoreSnapshot
+  ) -> [String] {
+    let ids = snapshot.triples.compactMap { triple -> String? in
+      guard triple.attributeID == lookup.attributeID,
+        lookupValue(lookup.value, matches: triple.value)
+      else {
+        return nil
+      }
+      return triple.entityID
+    }
+    return Array(Set(ids)).sorted()
+  }
+
+  private func lookupValue(_ lookupValue: InstantLookupValue, matches value: InstantValue) -> Bool {
+    switch (lookupValue, value) {
+    case (.null, .null):
+      return true
+    case let (.bool(lhs), .bool(rhs)):
+      return lhs == rhs
+    case let (.number(lhs), .number(rhs)):
+      return lhs == rhs
+    case let (.string(lhs), .string(rhs)):
+      return lhs == rhs
+    case let (.date(lhs), .date(rhs)):
+      return lhs == rhs
+    case let (.json(lhs), .json(rhs)):
+      return lhs == rhs
+    case let (.ref(lhs), .ref(rhs)):
+      return lhs == rhs
+    case (.null, _), (.bool, _), (.number, _), (.string, _), (.date, _), (.json, _), (.ref, _):
+      return false
+    }
+  }
+
+  private func canWriteSharedRoot(
+    _ snapshots: [InstantShareSnapshot],
+    userID: String
+  ) -> Bool {
+    snapshots.contains { snapshot in
+      snapshot.memberships.contains { membership in
+        membership.userID == userID
+          && !membership.isRevoked
+          && membership.role.canWriteSharedRoot
+      }
+    }
+  }
+
+  private func sharedRootWriteTargetSort(
+    _ lhs: InstantSharedRootWriteTarget,
+    _ rhs: InstantSharedRootWriteTarget
+  ) -> Bool {
+    if lhs.id == rhs.id {
+      return (lhs.namespace ?? "") < (rhs.namespace ?? "")
+    }
+    return lhs.id < rhs.id
   }
 
   public func pendingMutations() async -> [PendingMutation] {
@@ -2071,6 +2406,37 @@ public final class InstantRuntime: Sendable {
       message:
         "User '\(userID)' cannot revoke share '\(snapshot.share.id)' owned by '\(snapshot.share.ownerUserID)'.",
       recovery: "Sign in as the share owner before revoking it."
+    )
+  }
+
+  private func sharedRootWritePermissionRejected(
+    snapshot: InstantShareSnapshot,
+    userID: String?
+  ) -> InstantError {
+    let root = "\(snapshot.share.rootNamespace)/\(snapshot.share.rootID)"
+    let role = userID.flatMap { userID in
+      snapshot.memberships.first { $0.userID == userID }?.role.rawValue
+    }
+    let message: String
+    if let userID {
+      if let role {
+        message =
+          "User '\(userID)' has \(role) access to shared root '\(root)' and cannot write it."
+      } else {
+        message =
+          "User '\(userID)' is not a member of share '\(snapshot.share.id)' for shared root '\(root)'."
+      }
+    } else {
+      message = "Shared root '\(root)' requires a signed-in owner or writer before it can be written."
+    }
+
+    return InstantError(
+      code: .permissionRejected,
+      operation: "write shared root",
+      namespace: snapshot.share.rootNamespace,
+      localID: snapshot.share.rootID,
+      message: message,
+      recovery: "Sign in as the share owner or a writer before mutating the shared record."
     )
   }
 

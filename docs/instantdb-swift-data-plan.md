@@ -372,9 +372,16 @@ and remote ground-truth transport remain future work.
 Current local progress: `InstantRuntime` persists local share root metadata,
 owner/member rows, share tokens, accept, list, and owner-only revoke flows in
 SQLite scoped by app id. The CLI exposes `instant-swift-data shares
-create/list/accept/revoke` for durable two-user terminal proof. Real Instant
-sharing entities, generated permissions, read-only rejection behavior, Reminders
-UI sharing, and Swift/TypeScript boundary proof remain future work.
+create/list/accept/revoke` for durable two-user terminal proof. Local
+transactions now reject reader and non-member writes to active shared roots
+before cache/outbox persistence, including namespace-less delete fallbacks, and
+reader attempts to mint duplicate owner shares for an already shared root are
+rejected. The local guard also covers same-transaction-id replays, declared ref
+targets, unresolved source lookups with shared ref targets, cascade-expanded
+delete targets, unresolved primary-key lookup ref targets, and undeclared
+namespace-prefixed attributes. Real Instant sharing entities, generated
+permissions, Reminders UI sharing, and Swift/TypeScript boundary proof remain
+future work.
 
 ## Proposed Package Architecture
 
@@ -639,6 +646,12 @@ Create `validation/` with:
 - Streams: TypeScript writes stream chunks; Swift reads in order.
 - Sharing: two Swift users share and accept a Reminders list; TypeScript verifies
   memberships, permissions, and visible sharing metadata.
+- Sharing: local Swift readers and non-members are rejected before cache/outbox
+  writes when mutating an active shared root, and readers cannot create a second
+  owner share for that active root. Relationship targets, undeclared
+  namespace-prefixed attributes, unresolved source lookups with shared ref
+  targets, unresolved primary-key lookup ref targets, cascade-expanded delete
+  targets, namespace-less deletes, and same-id pending replay are covered.
 - CLI: `instant-swift-data examples todos add "do the dishes"` persists auth,
   local IDs, cache, and outbox state for a later CLI invocation.
 - Permissions: generated permissions reject an unauthorized write in both
@@ -730,10 +743,10 @@ must emit the same metrics on day one so regressions become visible.
     async ownership and cancellation handles; the local rooms foundation should
     graduate from durable CLI state to transport-backed subscriptions without
     changing the persisted command surface.
-13. Sharing model: Instant-native share entities, memberships, permissions,
-    accept/revoke flows, visible sharing metadata, read-only rejection behavior,
-    relaunch/reconnect proof, Reminders list sharing proof, and CloudKitDemo
-    concept port.
+13. Sharing model: Instant-native share entities, memberships, generated
+    permissions, accept/revoke flows, visible sharing metadata,
+    relaunch/reconnect proof, Reminders list sharing proof, CloudKitDemo concept
+    port, and remote read-only rejection proof.
 14. Example ports: Instant website examples, Instant recipes, SQLiteData
     CaseStudies, Reminders, SyncUps, and CloudKitDemo concepts; keep business
     logic in observable models with injected dependencies and preview/test seeds.

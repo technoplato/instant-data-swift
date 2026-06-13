@@ -351,6 +351,12 @@ public actor SQLitePersistenceStore {
         )
         try execute(
           """
+          CREATE INDEX IF NOT EXISTS instant_shares_root_idx
+          ON instant_shares (app_id, root_id, root_namespace, revoked_at_ms, created_at_ms, share_id)
+          """
+        )
+        try execute(
+          """
           CREATE TABLE IF NOT EXISTS instant_share_memberships (
             app_id TEXT NOT NULL,
             share_id TEXT NOT NULL,
@@ -367,6 +373,16 @@ public actor SQLitePersistenceStore {
           """
           CREATE INDEX IF NOT EXISTS instant_share_memberships_user_idx
           ON instant_share_memberships (app_id, user_id, revoked_at_ms, accepted_at_ms, share_id)
+          """
+        )
+      }
+    }
+    try withSQLiteBusyRetry {
+      try migrate(name: "0009_local_share_root_index") {
+        try execute(
+          """
+          CREATE INDEX IF NOT EXISTS instant_shares_root_idx
+          ON instant_shares (app_id, root_id, root_namespace, revoked_at_ms, created_at_ms, share_id)
           """
         )
       }
@@ -812,6 +828,30 @@ public actor SQLitePersistenceStore {
         """,
         [.text(appID), .text(userID)]
       )
+      return try shares.map {
+        try shareSnapshotWithoutTransaction(appID: appID, shareID: $0.id, activeMembershipsOnly: true)
+      }
+    }
+  }
+
+  public func loadActiveShareSnapshots(
+    appID: String,
+    rootNamespace: String?,
+    rootID: String
+  ) throws -> [InstantShareSnapshot] {
+    try readTransaction {
+      var sql =
+        """
+        SELECT json FROM instant_shares
+        WHERE app_id = ? AND root_id = ? AND revoked_at_ms IS NULL
+        """
+      var bindings: [SQLiteBinding] = [.text(appID), .text(rootID)]
+      if let rootNamespace {
+        sql.append("\nAND root_namespace = ?")
+        bindings.append(.text(rootNamespace))
+      }
+      sql.append("\nORDER BY created_at_ms, share_id")
+      let shares: [InstantShare] = try selectJSON(sql, bindings)
       return try shares.map {
         try shareSnapshotWithoutTransaction(appID: appID, shareID: $0.id, activeMembershipsOnly: true)
       }

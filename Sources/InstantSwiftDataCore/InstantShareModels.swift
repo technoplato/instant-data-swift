@@ -4,6 +4,16 @@ public enum InstantShareRole: String, Hashable, Codable, Sendable {
   case owner
   case writer
   case reader
+
+  public var canWriteSharedRoot: Bool {
+    switch self {
+    case .owner, .writer:
+      return true
+
+    case .reader:
+      return false
+    }
+  }
 }
 
 public struct InstantShare: Hashable, Codable, Sendable, Identifiable {

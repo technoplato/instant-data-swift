@@ -543,6 +543,15 @@ Agent-oriented output modes are required:
   `instant-swift-data shares create remindersLists list-1`,
   `instant-swift-data shares accept <token>`, and
   `instant-swift-data shares revoke <share-id>`.
+- reject reader and non-member writes to active local shared roots before local
+  cache/outbox persistence, and reject reader attempts to mint a second owner
+  share for the same active root. The local guard must cover direct root writes,
+  same-transaction-id replays, namespace-less deletes, declared relationship
+  targets, unresolved source lookups with shared ref targets, unresolved
+  primary-key lookup ref targets, cascade-expanded delete targets, and
+  undeclared namespace-prefixed attributes, for example
+  after sharing a todo root, accepting as a reader, and running
+  `instant-swift-data examples todos update <todo-id> "reader edit"`.
 - run local admin write/query helpers such as
   `instant-swift-data admin transact notes note-1 --merge '{"title":"admin note"}' --transaction-id tx-admin-note-1`
   and `instant-swift-data admin query notes --json` for durable terminal

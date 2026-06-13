@@ -2732,11 +2732,19 @@ extension InstantStoreTests {
       ["auth", "token", "owner-refresh", "--user-id", "user-1", "--json"],
       homeURL: homeURL
     )
+    let addedTodo = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(
+        try runCLI(["examples", "todos", "add", "shared cli todo", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    let todoID = try #require(addedTodo.changedID)
 
     let created = try JSONDecoder().decode(
       CLIShareOutput.self,
       from: Data(
-        try runCLI(["shares", "create", "remindersLists", "list-1", "--json"], homeURL: homeURL)
+        try runCLI(["shares", "create", TodoExample.namespace, todoID, "--json"], homeURL: homeURL)
           .utf8
       )
     )
@@ -2745,8 +2753,8 @@ extension InstantStoreTests {
     expectNoDifference(created.shareCount, 1)
     let createdSnapshot = try #require(created.shares.first)
     expectNoDifference(created.changedID, createdSnapshot.share.id)
-    expectNoDifference(createdSnapshot.share.rootNamespace, "remindersLists")
-    expectNoDifference(createdSnapshot.share.rootID, "list-1")
+    expectNoDifference(createdSnapshot.share.rootNamespace, TodoExample.namespace)
+    expectNoDifference(createdSnapshot.share.rootID, todoID)
     expectNoDifference(createdSnapshot.share.ownerUserID, "user-1")
     expectNoDifference(createdSnapshot.memberships.map(\.role), [.owner])
     let shareID = createdSnapshot.share.id
@@ -2790,6 +2798,26 @@ extension InstantStoreTests {
     expectNoDifference(shareRow.event, "share")
     expectNoDifference(shareRow.details.share.id, acceptedSnapshot.share.id)
     expectNoDifference(shareRow.details.memberships.map(\.userID), ["user-1", "user-2"])
+
+    let readerDuplicateShare = try runCLIResult(
+      ["shares", "create", TodoExample.namespace, todoID, "--json"],
+      homeURL: homeURL
+    )
+    #expect(readerDuplicateShare.status == 77)
+    #expect(readerDuplicateShare.error.contains("reader access"))
+
+    let readerUpdate = try runCLIResult(
+      ["examples", "todos", "update", todoID, "reader edit", "--json"],
+      homeURL: homeURL
+    )
+    #expect(readerUpdate.status == 77)
+    #expect(readerUpdate.error.contains("reader access"))
+    let todosAfterReaderUpdate = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(try runCLI(["examples", "todos", "list", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(todosAfterReaderUpdate.todos.map(\.text), ["shared cli todo"])
+    expectNoDifference(todosAfterReaderUpdate.pendingMutationCount, 1)
 
     let inviteeRevoke = try runCLIResult(["shares", "revoke", shareID, "--json"], homeURL: homeURL)
     #expect(inviteeRevoke.status == 77)
