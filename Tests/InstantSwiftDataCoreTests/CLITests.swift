@@ -202,6 +202,62 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliTodoUpdateChangesDurableText() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let addOutput = try runCLI(
+      ["examples", "todos", "add", "draft from cli", "--json"],
+      homeURL: homeURL
+    )
+    let add = try JSONDecoder().decode(CLIAddOutput.self, from: Data(addOutput.utf8))
+    let todoID = try #require(add.changedID)
+
+    let malformed = try runCLIResult(
+      ["examples", "todos", "update", todoID, "--json"],
+      homeURL: homeURL
+    )
+    #expect(malformed.status == 64)
+    #expect(malformed.error.contains("examples todos update <todo-id>"))
+
+    let afterMalformedUpdate = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(try runCLI(["examples", "todos", "list", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(afterMalformedUpdate.todos.map(\.text), ["draft from cli"])
+
+    let updateOutput = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "todos", "update", todoID, "polished from cli", "--json"],
+          homeURL: homeURL
+        )
+        .utf8
+      )
+    )
+    expectNoDifference(updateOutput.event, "update")
+    expectNoDifference(updateOutput.changedID, todoID)
+    expectNoDifference(updateOutput.todos.map(\.text), ["polished from cli"])
+    expectNoDifference(updateOutput.pendingMutationCount, 2)
+
+    let listOutput = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(try runCLI(["examples", "todos", "list", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(listOutput.todos.map(\.text), ["polished from cli"])
+
+    let missing = try runCLIResult(
+      ["examples", "todos", "update", "missing-todo", "new text", "--json"],
+      homeURL: homeURL
+    )
+    #expect(missing.status == 66)
+    #expect(missing.error.contains("Todo not found"))
+  }
+
+  @Test
   func cliOutboxRetryAndDrainOperateOnDurableState() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)

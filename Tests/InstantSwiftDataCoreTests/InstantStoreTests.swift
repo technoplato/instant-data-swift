@@ -206,6 +206,62 @@ struct InstantStoreTests {
   }
 
   @Test
+  func updateTextReplacesTodoAndPersistsAcrossLaunches() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_200)
+    let updatedAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
+
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-create-update-todo",
+        operations: TodoExample.createOperations(
+          id: "todo-update-me",
+          text: "draft text",
+          createdAt: createdAt,
+          transactionID: "tx-create-update-todo"
+        )
+      ),
+      createdAt: createdAt
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-update-todo-text",
+        operations: TodoExample.updateTextOperations(
+          id: "todo-update-me",
+          text: "polished text",
+          updatedAt: updatedAt,
+          transactionID: "tx-update-todo-text"
+        )
+      ),
+      createdAt: updatedAt
+    )
+
+    let todos = try await TodoExample.decode(runtime.query(TodoExample.query))
+    expectNoDifference(todos.map(\.text), ["polished text"])
+    expectNoDifference(todos.map(\.createdAt), [createdAt])
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let relaunchedTodos = try await TodoExample.decode(relaunchedRuntime.query(TodoExample.query))
+    expectNoDifference(relaunchedTodos.map(\.text), ["polished text"])
+
+    let pending = await relaunchedRuntime.pendingMutations()
+    expectNoDifference(pending.map(\.id), ["tx-create-update-todo", "tx-update-todo-text"])
+  }
+
+  @Test
   func queryCacheStoresSameQueryIDDifferentPlansSeparately() async throws {
     let cacheURL = try temporaryCacheURL()
     let runtime = try await InstantRuntime.bootstrap(

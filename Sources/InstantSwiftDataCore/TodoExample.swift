@@ -103,6 +103,25 @@ public enum TodoExample {
     ]
   }
 
+  public static func updateTextOperations(
+    id: String,
+    text: String,
+    updatedAt: InstantTimestamp,
+    transactionID: String
+  ) -> [InstantTripleOperation] {
+    [
+      .insert(
+        InstantTriple(
+          entityID: id,
+          attributeID: "todos/text",
+          value: .string(text),
+          txID: transactionID,
+          txTime: updatedAt
+        )
+      )
+    ]
+  }
+
   public static func deleteOperations(id: String) -> [InstantTripleOperation] {
     [.deleteEntity(id)]
   }
