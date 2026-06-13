@@ -53,3 +53,8 @@ struct InstantStreamChunksObservationKey: Hashable, Sendable {
   var appID: String
   var streamID: String
 }
+
+struct InstantSharesObservationKey: Hashable, Sendable {
+  var appID: String
+  var userID: String
+}

@@ -3429,6 +3429,65 @@ struct InstantStoreTests {
   }
 
   @Test
+  func observeSharesEmitsUserScopedShareSnapshots() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let idSequence = LockIsolated(0)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        now: { timestamp },
+        makeID: {
+          let nextID = idSequence.withValue { value in
+            value += 1
+            return value
+          }
+          return "id-\(nextID)"
+        }
+      )
+    )
+    _ = try await runtime.signInWithRefreshToken("owner-refresh", userID: "user-1")
+
+    var iterator = (try await runtime.observeShares()).makeAsyncIterator()
+    let initialShares = await iterator.next()
+    expectNoDifference(initialShares, [])
+
+    let created = try await runtime.createShare(
+      rootNamespace: "remindersLists",
+      rootID: "list-1"
+    )
+    let createdEmission = await iterator.next()
+    expectNoDifference(createdEmission?.map(\.share.id), [created.share.id])
+    expectNoDifference(createdEmission?.first?.memberships.map(\.role), [.owner])
+
+    _ = try await runtime.signInWithRefreshToken("invitee-refresh", userID: "user-2")
+    let accepted = try await runtime.acceptShare(token: created.share.token)
+    var inviteeIterator = (try await runtime.observeShares()).makeAsyncIterator()
+    let inviteeInitialEmission = await inviteeIterator.next()
+    expectNoDifference(inviteeInitialEmission, [accepted])
+    let acceptedEmission = await iterator.next()
+    expectNoDifference(acceptedEmission, [accepted])
+
+    _ = try await runtime.signInWithRefreshToken("owner-refresh", userID: "user-1")
+    let promoted = try await runtime.updateShareMembershipRole(
+      shareID: created.share.id,
+      userID: "user-2",
+      role: .writer
+    )
+    let promotedEmission = await iterator.next()
+    expectNoDifference(promotedEmission, [promoted])
+    let inviteePromotedEmission = await inviteeIterator.next()
+    expectNoDifference(inviteePromotedEmission, [promoted])
+
+    _ = try await runtime.revokeShare(id: created.share.id)
+    let revokedEmission = await iterator.next()
+    expectNoDifference(revokedEmission, [])
+    let inviteeRevokedEmission = await inviteeIterator.next()
+    expectNoDifference(inviteeRevokedEmission, [])
+  }
+
+  @Test
   func remindersExampleSharesListRootRolesAndPersistsCounts() async throws {
     let cacheURL = try temporaryCacheURL()
     let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)

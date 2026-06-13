@@ -715,9 +715,9 @@ Port upstream Instant core tests faithfully, and add analogous tests for every
 Swift client adapter. Adapter parity must be proven through the idiomatic Swift
 surface that users touch: `@FetchAll`, `@FetchOne`, `@Fetch`, projected
 bindings, observable models, `@LocalID`, `@AuthSession`, `@RoomPresence`,
-`@RoomTopicMessages`, `@StoredFiles`, `@StreamChunks`, `AsyncSequence`
-subscriptions, auth/status observers, room/presence/topic streams,
-storage/stream observers, and paged/infinite-query helpers. Tests
+`@RoomTopicMessages`, `@StoredFiles`, `@StreamChunks`, `@Shares`,
+`AsyncSequence` subscriptions, auth/status observers, room/presence/topic
+streams, storage/stream/share observers, and paged/infinite-query helpers. Tests
 should verify loading/error state, dynamic nil queries, resubscription,
 cached-prior results, cleanup on cancellation, independent subscription
 lifetime, and task cancellation without reaching around to raw callbacks unless

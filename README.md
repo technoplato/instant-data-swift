@@ -449,6 +449,9 @@ try await $files.load()
 
 @StreamChunks("chat/lobby", limit: 10) var chunks: [InstantStreamChunk]
 try await $chunks.load()
+
+@Shares var shares: [InstantShareSnapshot]
+try await $shares.load()
 ```
 
 `serverCreatedAt` is order-only metadata. Do not declare a model attribute with
@@ -464,6 +467,9 @@ Forward includes use typed ref attributes such as `Post.author`, while reverse
 includes use generated relation tokens such as `User.posts`.
 Strict one-shot queries validate field, order, and include references before
 materializing or caching results.
+`@Shares` observes local share snapshots for the signed-in user and runtime at
+subscription time; resubscribe after switching auth sessions or runtime
+instances.
 
 `create` follows Instant's strict-insert semantics and fails when the entity
 already exists. Use `update` for upsert-style writes, `updateExisting` when a

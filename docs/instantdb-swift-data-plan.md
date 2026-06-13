@@ -373,18 +373,21 @@ and remote ground-truth transport remain future work.
 - The Reminders port must prove list sharing with two users.
 
 Current local progress: `InstantRuntime` persists local share root metadata,
-owner/member rows, share tokens, accept, list, and owner-only revoke flows in
-SQLite scoped by app id. The CLI exposes `instant-swift-data shares
-create/list/accept/role/revoke` for durable two-user terminal proof. Local
-transactions now reject reader and non-member writes to active shared roots
-before cache/outbox persistence, including namespace-less delete fallbacks, and
-reader attempts to mint duplicate owner shares for an already shared root are
-rejected. The local guard also covers same-transaction-id replays, declared ref
-targets, unresolved source lookups with shared ref targets, cascade-expanded
-delete targets, unresolved primary-key lookup ref targets, and undeclared
-namespace-prefixed attributes. Owners can now promote/demote accepted non-owner
-members between reader and writer roles with `instant-swift-data shares role`,
-and writer access is enforced through the same shared-root transaction guard
+owner/member rows, share tokens, accept, list, role update, revoke, and
+runtime-local, user-scoped share observation flows in SQLite scoped by app id.
+The public client exposes these operations and `@Shares` adapts observations
+into the Swift wrapper/task/subscription surface. The CLI exposes
+`instant-swift-data shares create/list/accept/role/revoke` for durable two-user
+terminal proof. Local transactions now reject reader and non-member writes to
+active shared roots before cache/outbox persistence, including namespace-less
+delete fallbacks, and reader attempts to mint duplicate owner shares for an
+already shared root are rejected. The local guard also covers
+same-transaction-id replays, declared ref targets, unresolved source lookups
+with shared ref targets, cascade-expanded delete targets, unresolved
+primary-key lookup ref targets, and undeclared namespace-prefixed attributes.
+Owners can now promote/demote accepted non-owner members between reader and
+writer roles with `instant-swift-data shares role`, and writer access is
+enforced through the same shared-root transaction guard
 without granting share ownership or duplicate-share creation.
 Real Instant sharing entities, generated permissions, Reminders UI sharing, and
 Swift/TypeScript boundary proof remain future work.
@@ -526,7 +529,11 @@ public API into SQL:
   the same for room presence and topic streams, including dynamic room/topic
   replacement for SwiftUI task lifetimes. `@StoredFiles` and `@StreamChunks`
   should adapt storage metadata and stream chunk observations into the same
-  loading/error/task/subscription shape.
+  loading/error/task/subscription shape. `@Shares` should adapt user-scoped
+  share snapshots into the same wrapper, projected binding, task, and
+  cancellable subscription shape; local share observers are session- and
+  runtime-scoped at subscription time, so auth-session or runtime-instance
+  switches should resubscribe.
   Client adapters must transform subscribable/live Instant values into
   Swift-native wrappers, projected bindings, observable model state, and
   `AsyncSequence` streams rather than exposing raw subscription callbacks to app

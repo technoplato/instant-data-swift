@@ -172,6 +172,8 @@ public final class InstantRuntime: Sendable {
     InstantSnapshotObservers<InstantStoredFilesObservationKey, [InstantStoredFile]>()
   private let streamChunksObservers =
     InstantSnapshotObservers<InstantStreamChunksObservationKey, [InstantStreamChunk]>()
+  private let sharesObservers =
+    InstantSnapshotObservers<InstantSharesObservationKey, [InstantShareSnapshot]>()
   private let operationGate = AsyncSerialGate()
   private let mutationFlushGate = AsyncSerialGate()
 
@@ -1594,6 +1596,9 @@ public final class InstantRuntime: Sendable {
         acceptedAt: now
       )
       let snapshot = try await persistence.createShare(share, ownerMembership: membership)
+      for membership in snapshot.memberships where !membership.isRevoked {
+        try await publishShares(for: membership.userID)
+      }
       await operationGate.leave()
       return snapshot
     } catch {
@@ -1623,6 +1628,9 @@ public final class InstantRuntime: Sendable {
       else {
         throw shareNotFound(operation: "accept share", localID: token)
       }
+      for membership in snapshot.memberships where !membership.isRevoked {
+        try await publishShares(for: membership.userID)
+      }
       await operationGate.leave()
       return snapshot
     } catch {
@@ -1641,6 +1649,26 @@ public final class InstantRuntime: Sendable {
       )
       await operationGate.leave()
       return snapshots
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  public func observeShares() async throws -> AsyncStream<[InstantShareSnapshot]> {
+    await operationGate.enter()
+    do {
+      let userID = try await resolvedAuthenticatedUserID(operation: "observe shares", noun: "Share")
+      let snapshots = try await persistence.loadShareSnapshots(
+        appID: configuration.appID,
+        userID: userID
+      )
+      let stream = await sharesObservers.observe(
+        key: sharesObservationKey(userID: userID),
+        current: snapshots
+      )
+      await operationGate.leave()
+      return stream
     } catch {
       await operationGate.leave()
       throw error
@@ -1715,6 +1743,9 @@ public final class InstantRuntime: Sendable {
           userID: targetUserID
         )
       }
+      for membership in updated.memberships where !membership.isRevoked {
+        try await publishShares(for: membership.userID)
+      }
       await operationGate.leave()
       return updated
     } catch {
@@ -1748,6 +1779,9 @@ public final class InstantRuntime: Sendable {
         shareID: shareID,
         revokedAt: configuration.now()
       ) ?? snapshot
+      for membership in revoked.memberships {
+        try await publishShares(for: membership.userID)
+      }
       await operationGate.leave()
       return revoked
     } catch {
@@ -2742,6 +2776,18 @@ public final class InstantRuntime: Sendable {
 
   private func streamChunksObservationKey(streamID: String) -> InstantStreamChunksObservationKey {
     InstantStreamChunksObservationKey(appID: configuration.appID, streamID: streamID)
+  }
+
+  private func sharesObservationKey(userID: String) -> InstantSharesObservationKey {
+    InstantSharesObservationKey(appID: configuration.appID, userID: userID)
+  }
+
+  private func publishShares(for userID: String) async throws {
+    let snapshots = try await persistence.loadShareSnapshots(
+      appID: configuration.appID,
+      userID: userID
+    )
+    await sharesObservers.publish(snapshots, for: sharesObservationKey(userID: userID))
   }
 
   private static func emptyObservation(_ plan: InstantQueryPlan) -> AsyncStream<InstantQueryEmission> {

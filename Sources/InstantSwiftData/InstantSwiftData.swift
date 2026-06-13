@@ -77,6 +77,15 @@ public struct InstantSwiftDataClient: Sendable {
     @Sendable (String, Int?) async throws -> [InstantStreamChunk]
   private var observeStreamChunksOperation:
     @Sendable (String) async throws -> AsyncStream<[InstantStreamChunk]>
+  private var createShareOperation:
+    @Sendable (String, String) async throws -> InstantShareSnapshot
+  private var acceptShareOperation: @Sendable (String) async throws -> InstantShareSnapshot
+  private var sharesOperation: @Sendable () async throws -> [InstantShareSnapshot]
+  private var observeSharesOperation:
+    @Sendable () async throws -> AsyncStream<[InstantShareSnapshot]>
+  private var updateShareMembershipRoleOperation:
+    @Sendable (String, String, InstantShareRole) async throws -> InstantShareSnapshot
+  private var revokeShareOperation: @Sendable (String) async throws -> InstantShareSnapshot
 
   public init(runtime: InstantRuntime) {
     self.runtime = runtime
@@ -200,6 +209,24 @@ public struct InstantSwiftDataClient: Sendable {
     self.observeStreamChunksOperation = { streamID in
       try await runtime.observeStreamChunks(streamID: streamID)
     }
+    self.createShareOperation = { rootNamespace, rootID in
+      try await runtime.createShare(rootNamespace: rootNamespace, rootID: rootID)
+    }
+    self.acceptShareOperation = { token in
+      try await runtime.acceptShare(token: token)
+    }
+    self.sharesOperation = {
+      try await runtime.shares()
+    }
+    self.observeSharesOperation = {
+      try await runtime.observeShares()
+    }
+    self.updateShareMembershipRoleOperation = { shareID, userID, role in
+      try await runtime.updateShareMembershipRole(shareID: shareID, userID: userID, role: role)
+    }
+    self.revokeShareOperation = { id in
+      try await runtime.revokeShare(id: id)
+    }
   }
 
   public init(
@@ -263,7 +290,19 @@ public struct InstantSwiftDataClient: Sendable {
     streamChunks:
       (@Sendable (String, Int?) async throws -> [InstantStreamChunk])? = nil,
     observeStreamChunks:
-      (@Sendable (String) async throws -> AsyncStream<[InstantStreamChunk]>)? = nil
+      (@Sendable (String) async throws -> AsyncStream<[InstantStreamChunk]>)? = nil,
+    createShare:
+      (@Sendable (String, String) async throws -> InstantShareSnapshot)? = nil,
+    acceptShare:
+      (@Sendable (String) async throws -> InstantShareSnapshot)? = nil,
+    shares:
+      (@Sendable () async throws -> [InstantShareSnapshot])? = nil,
+    observeShares:
+      (@Sendable () async throws -> AsyncStream<[InstantShareSnapshot]>)? = nil,
+    updateShareMembershipRole:
+      (@Sendable (String, String, InstantShareRole) async throws -> InstantShareSnapshot)? = nil,
+    revokeShare:
+      (@Sendable (String) async throws -> InstantShareSnapshot)? = nil
   ) {
     self.init(
       transact: transact,
@@ -303,7 +342,13 @@ public struct InstantSwiftDataClient: Sendable {
       deleteStoredFile: deleteStoredFile,
       appendStreamChunk: appendStreamChunk,
       streamChunks: streamChunks,
-      observeStreamChunks: observeStreamChunks
+      observeStreamChunks: observeStreamChunks,
+      createShare: createShare,
+      acceptShare: acceptShare,
+      shares: shares,
+      observeShares: observeShares,
+      updateShareMembershipRole: updateShareMembershipRole,
+      revokeShare: revokeShare
     )
   }
 
@@ -370,7 +415,19 @@ public struct InstantSwiftDataClient: Sendable {
     streamChunks:
       (@Sendable (String, Int?) async throws -> [InstantStreamChunk])? = nil,
     observeStreamChunks:
-      (@Sendable (String) async throws -> AsyncStream<[InstantStreamChunk]>)? = nil
+      (@Sendable (String) async throws -> AsyncStream<[InstantStreamChunk]>)? = nil,
+    createShare:
+      (@Sendable (String, String) async throws -> InstantShareSnapshot)? = nil,
+    acceptShare:
+      (@Sendable (String) async throws -> InstantShareSnapshot)? = nil,
+    shares:
+      (@Sendable () async throws -> [InstantShareSnapshot])? = nil,
+    observeShares:
+      (@Sendable () async throws -> AsyncStream<[InstantShareSnapshot]>)? = nil,
+    updateShareMembershipRole:
+      (@Sendable (String, String, InstantShareRole) async throws -> InstantShareSnapshot)? = nil,
+    revokeShare:
+      (@Sendable (String) async throws -> InstantShareSnapshot)? = nil
   ) {
     let authError = InstantError(
       code: .implementationFailed,
@@ -412,6 +469,13 @@ public struct InstantSwiftDataClient: Sendable {
       message: "No stream client has been configured.",
       recovery:
         "Bootstrap Instant Swift Data before using streams, or override stream closures in tests."
+    )
+    let sharesError = InstantError(
+      code: .implementationFailed,
+      operation: "access InstantSwiftData shares",
+      message: "No share client has been configured.",
+      recovery:
+        "Bootstrap Instant Swift Data before using shares, or override share closures in tests."
     )
 
     self.runtime = nil
@@ -465,6 +529,13 @@ public struct InstantSwiftDataClient: Sendable {
     self.appendStreamChunkOperation = appendStreamChunk ?? { _, _ in throw streamsError }
     self.streamChunksOperation = streamChunks ?? { _, _ in throw streamsError }
     self.observeStreamChunksOperation = observeStreamChunks ?? { _ in throw streamsError }
+    self.createShareOperation = createShare ?? { _, _ in throw sharesError }
+    self.acceptShareOperation = acceptShare ?? { _ in throw sharesError }
+    self.sharesOperation = shares ?? { throw sharesError }
+    self.observeSharesOperation = observeShares ?? { throw sharesError }
+    self.updateShareMembershipRoleOperation =
+      updateShareMembershipRole ?? { _, _, _ in throw sharesError }
+    self.revokeShareOperation = revokeShare ?? { _ in throw sharesError }
   }
 
   public static func unimplemented(_ message: String) -> Self {
@@ -589,6 +660,24 @@ public struct InstantSwiftDataClient: Sendable {
         throw error
       },
       observeStreamChunks: { _ in
+        throw error
+      },
+      createShare: { _, _ in
+        throw error
+      },
+      acceptShare: { _ in
+        throw error
+      },
+      shares: {
+        throw error
+      },
+      observeShares: {
+        throw error
+      },
+      updateShareMembershipRole: { _, _, _ in
+        throw error
+      },
+      revokeShare: { _ in
         throw error
       }
     )
@@ -815,6 +904,41 @@ public struct InstantSwiftDataClient: Sendable {
     streamID: String
   ) async throws -> AsyncStream<[InstantStreamChunk]> {
     try await observeStreamChunksOperation(streamID)
+  }
+
+  @discardableResult
+  public func createShare(
+    rootNamespace: String,
+    rootID: String
+  ) async throws -> InstantShareSnapshot {
+    try await createShareOperation(rootNamespace, rootID)
+  }
+
+  @discardableResult
+  public func acceptShare(token: String) async throws -> InstantShareSnapshot {
+    try await acceptShareOperation(token)
+  }
+
+  public func shares() async throws -> [InstantShareSnapshot] {
+    try await sharesOperation()
+  }
+
+  public func observeShares() async throws -> AsyncStream<[InstantShareSnapshot]> {
+    try await observeSharesOperation()
+  }
+
+  @discardableResult
+  public func updateShareMembershipRole(
+    shareID: String,
+    userID: String,
+    role: InstantShareRole
+  ) async throws -> InstantShareSnapshot {
+    try await updateShareMembershipRoleOperation(shareID, userID, role)
+  }
+
+  @discardableResult
+  public func revokeShare(id: String) async throws -> InstantShareSnapshot {
+    try await revokeShareOperation(id)
   }
 
   public func subscribe<Entity: InstantEntityModel>(
@@ -3458,6 +3582,155 @@ public struct StreamChunks: Sendable {
       message: "Stream chunk limit must be greater than or equal to 0.",
       recovery: "Pass a non-negative limit, or omit limit to observe every local chunk."
     )
+  }
+}
+
+@propertyWrapper
+public struct Shares: Sendable {
+  private let storage: FetchStorage<[InstantShareSnapshot]>
+
+  public var wrappedValue: [InstantShareSnapshot] {
+    get { storage.wrappedValue }
+    nonmutating set { storage.wrappedValue = newValue }
+  }
+
+  public var loadError: InstantError? {
+    get { storage.loadError }
+    nonmutating set { storage.loadError = newValue }
+  }
+
+  public var isLoading: Bool {
+    get { storage.isLoading }
+    nonmutating set { storage.isLoading = newValue }
+  }
+
+  #if canImport(SwiftUI)
+    public var binding: Binding<[InstantShareSnapshot]> {
+      Binding(
+        get: { storage.wrappedValue },
+        set: { storage.wrappedValue = $0 }
+      )
+    }
+  #endif
+
+  public init(wrappedValue: [InstantShareSnapshot] = []) {
+    self.storage = FetchStorage(value: wrappedValue)
+  }
+
+  public var projectedValue: Self {
+    get { self }
+    nonmutating set {
+      wrappedValue = newValue.wrappedValue
+      loadError = newValue.loadError
+      isLoading = newValue.isLoading
+    }
+  }
+
+  public func load() async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(using: client)
+  }
+
+  public func load(using client: InstantSwiftDataClient) async throws {
+    isLoading = true
+    do {
+      let shares = try await client.shares()
+      try Task.checkCancellation()
+      wrappedValue = shares
+      loadError = nil
+      isLoading = false
+    } catch let error as CancellationError {
+      loadError = nil
+      isLoading = false
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      isLoading = false
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "load Shares",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient shares operation."
+      )
+      loadError = error
+      isLoading = false
+      throw error
+    }
+  }
+
+  public func subscribe()
+    async throws -> FetchSubscription<[InstantShareSnapshot]>
+  {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(using: client)
+  }
+
+  public func subscribe(
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[InstantShareSnapshot]> {
+    do {
+      let shares = try await client.observeShares()
+      try Task.checkCancellation()
+      loadError = nil
+      return fetchSubscription(from: shares)
+    } catch let error as CancellationError {
+      loadError = nil
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "subscribe Shares",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient shares observer."
+      )
+      loadError = error
+      throw error
+    }
+  }
+
+  public func task() async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(using: client)
+  }
+
+  public func task(using client: InstantSwiftDataClient) async throws {
+    isLoading = true
+    do {
+      let subscription = try await subscribe(using: client)
+      defer { subscription.cancel() }
+      for try await value in subscription {
+        try Task.checkCancellation()
+        wrappedValue = value
+        loadError = nil
+        isLoading = false
+      }
+      try Task.checkCancellation()
+      loadError = nil
+      isLoading = false
+    } catch let error as CancellationError {
+      loadError = nil
+      isLoading = false
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      isLoading = false
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "observe Shares",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient shares observer."
+      )
+      loadError = error
+      isLoading = false
+      throw error
+    }
   }
 }
 

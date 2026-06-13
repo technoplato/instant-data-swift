@@ -174,6 +174,70 @@ struct BootstrapTests {
   }
 
   @Test
+  func runtimeBackedClientForwardsShareOperations() async throws {
+    let appID = "share-forwarding-\(UUID().uuidString)"
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataShareForwarding-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    try await withDependencies {
+      try await $0.bootstrapInstantSwiftData(
+        appID: appID,
+        persistenceURL: directory.appendingPathComponent("cache.sqlite"),
+        context: .test,
+        initialAttributes: TodoExample.attributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var client
+
+      guard client.runtime != nil else {
+        Issue.record("Expected a runtime-backed client.")
+        return
+      }
+
+      _ = try await client.signInWithRefreshToken("owner-refresh", userID: "user-1")
+      var ownerIterator = try await client.observeShares().makeAsyncIterator()
+      let ownerInitialShares = await ownerIterator.next()
+      expectNoDifference(ownerInitialShares, [])
+
+      let created = try await client.createShare(
+        rootNamespace: TodoExample.namespace,
+        rootID: "todo-public-client"
+      )
+      let listedShares = try await client.shares()
+      expectNoDifference(listedShares, [created])
+      let ownerCreatedEmission = await ownerIterator.next()
+      expectNoDifference(ownerCreatedEmission, [created])
+
+      _ = try await client.signInWithRefreshToken("invitee-refresh", userID: "user-2")
+      let accepted = try await client.acceptShare(token: created.share.token)
+      var inviteeIterator = try await client.observeShares().makeAsyncIterator()
+      let inviteeInitialShares = await inviteeIterator.next()
+      expectNoDifference(inviteeInitialShares, [accepted])
+      let ownerAcceptedEmission = await ownerIterator.next()
+      expectNoDifference(ownerAcceptedEmission, [accepted])
+
+      _ = try await client.signInWithRefreshToken("owner-refresh", userID: "user-1")
+      let promoted = try await client.updateShareMembershipRole(
+        shareID: created.share.id,
+        userID: "user-2",
+        role: .writer
+      )
+      let ownerPromotedEmission = await ownerIterator.next()
+      expectNoDifference(ownerPromotedEmission, [promoted])
+      let inviteePromotedEmission = await inviteeIterator.next()
+      expectNoDifference(inviteePromotedEmission, [promoted])
+
+      _ = try await client.revokeShare(id: created.share.id)
+      let ownerRevokedEmission = await ownerIterator.next()
+      expectNoDifference(ownerRevokedEmission, [])
+      let inviteeRevokedEmission = await inviteeIterator.next()
+      expectNoDifference(inviteeRevokedEmission, [])
+    }
+  }
+
+  @Test
   func bootstrapUsesMagicCodeExchangeDependency() async throws {
     let appID = "magic-code-dependency-\(UUID().uuidString)"
     let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
@@ -1451,6 +1515,165 @@ struct BootstrapTests {
   }
 
   @Test
+  func shareClientOperationsUseInjectedClosures() async throws {
+    let snapshot = mockShareSnapshot()
+    let accepted = mockShareSnapshot(
+      memberships: [("user-1", .owner), ("user-2", .reader)]
+    )
+    let promoted = mockShareSnapshot(
+      memberships: [("user-1", .owner), ("user-2", .writer)]
+    )
+    let client = integrationClient(
+      createShare: { namespace, id in
+        expectNoDifference(namespace, "todos")
+        expectNoDifference(id, "todo-1")
+        return snapshot
+      },
+      acceptShare: { token in
+        expectNoDifference(token, snapshot.share.token)
+        return accepted
+      },
+      shares: { [accepted] },
+      observeShares: {
+        AsyncStream { continuation in
+          continuation.yield([accepted])
+          continuation.finish()
+        }
+      },
+      updateShareMembershipRole: { shareID, userID, role in
+        expectNoDifference(shareID, snapshot.share.id)
+        expectNoDifference(userID, "user-2")
+        expectNoDifference(role, .writer)
+        return promoted
+      },
+      revokeShare: { id in
+        expectNoDifference(id, snapshot.share.id)
+        return snapshot
+      }
+    )
+
+    let createdShare = try await client.createShare(rootNamespace: "todos", rootID: "todo-1")
+    expectNoDifference(createdShare, snapshot)
+    let acceptedShare = try await client.acceptShare(token: snapshot.share.token)
+    expectNoDifference(acceptedShare, accepted)
+    let listedShares = try await client.shares()
+    expectNoDifference(listedShares, [accepted])
+    var shareIterator = try await client.observeShares().makeAsyncIterator()
+    let observedShares = await shareIterator.next()
+    expectNoDifference(observedShares, [accepted])
+    let promotedShare = try await client.updateShareMembershipRole(
+      shareID: snapshot.share.id,
+      userID: "user-2",
+      role: .writer
+    )
+    expectNoDifference(promotedShare, promoted)
+    let revokedShare = try await client.revokeShare(id: snapshot.share.id)
+    expectNoDifference(revokedShare, snapshot)
+  }
+
+  @Test
+  func sharesPropertyWrapperLoadsUsingDependencyClient() async throws {
+    let snapshot = mockShareSnapshot()
+    let client = integrationClient(
+      shares: { [snapshot] }
+    )
+
+    try await withDependencies {
+      $0.defaultInstantSwiftData = client
+    } operation: {
+      @Shares var shares: [InstantShareSnapshot]
+
+      try await $shares.load()
+
+      expectNoDifference(shares, [snapshot])
+      expectNoDifference($shares.loadError, nil)
+      expectNoDifference($shares.isLoading, false)
+    }
+  }
+
+  @Test
+  func sharesPropertyWrapperPreservesCachedValueAndRecordsLoadError() async throws {
+    let cached = [mockShareSnapshot(id: "cached-share")]
+    let expectedError = InstantError(
+      code: .implementationFailed,
+      operation: "load test Shares",
+      message: "shares failed",
+      recovery: "Retry with a working shares client."
+    )
+    let client = integrationClient(
+      shares: { throw expectedError }
+    )
+
+    @Shares var shares: [InstantShareSnapshot] = cached
+
+    do {
+      try await $shares.load(using: client)
+      Issue.record("Expected @Shares to surface client failures.")
+    } catch let error as InstantError {
+      expectNoDifference(error.operation, "load test Shares")
+      expectNoDifference($shares.loadError?.operation, "load test Shares")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+
+    expectNoDifference(shares, cached)
+    expectNoDifference($shares.isLoading, false)
+  }
+
+  @Test
+  func sharesPropertyWrapperTaskBindsObservedShares() async throws {
+    let snapshot = mockShareSnapshot()
+    let accepted = mockShareSnapshot(
+      memberships: [("user-1", .owner), ("user-2", .reader)]
+    )
+    let client = integrationClient(
+      observeShares: {
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield([snapshot])
+          continuation.yield([accepted])
+          continuation.finish()
+        }
+      }
+    )
+
+    @Shares var shares: [InstantShareSnapshot]
+
+    try await $shares.task(using: client)
+
+    expectNoDifference(shares, [accepted])
+    expectNoDifference($shares.loadError, nil)
+    expectNoDifference($shares.isLoading, false)
+  }
+
+  @Test
+  func sharesPropertyWrapperSubscribeCancelsUnderlyingObservation() async throws {
+    let snapshot = mockShareSnapshot()
+    let termination = RoomObservationTermination()
+    let client = integrationClient(
+      observeShares: {
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield([snapshot])
+          continuation.onTermination = { @Sendable _ in
+            Task {
+              await termination.record()
+            }
+          }
+        }
+      }
+    )
+
+    let shares = Shares()
+    let subscription = try await shares.subscribe(using: client)
+    var iterator = subscription.makeAsyncIterator()
+    let initialShares = try await iterator.next()
+    expectNoDifference(initialShares, [snapshot])
+
+    subscription.cancel()
+    #expect(try await iterator.next() == nil)
+    await termination.wait()
+  }
+
+  @Test
   func cliDefaultPersistenceURLHonorsHomeEnvironment() {
     let key = "INSTANT_SWIFT_DATA_HOME"
     let previous = getenv(key).map { String(cString: $0) }
@@ -1614,6 +1837,16 @@ struct BootstrapTests {
     } catch let error as InstantError {
       expectNoDifference(error.code, .implementationFailed)
       expectNoDifference(error.operation, "access InstantSwiftData streams")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      _ = try await mock.shares()
+      #expect(Bool(false), "Expected old-shape mock client shares to fail without share closures.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .implementationFailed)
+      expectNoDifference(error.operation, "access InstantSwiftData shares")
     } catch {
       #expect(Bool(false), "Unexpected error: \(error)")
     }
@@ -1829,6 +2062,36 @@ private func mockStreamChunk(
   )
 }
 
+private func mockShareSnapshot(
+  id: String = "share-1",
+  rootNamespace: String = "todos",
+  rootID: String = "todo-1",
+  ownerUserID: String = "user-1",
+  memberships: [(userID: String, role: InstantShareRole)] = [("user-1", .owner)]
+) -> InstantShareSnapshot {
+  InstantShareSnapshot(
+    share: InstantShare(
+      id: id,
+      appID: "mock-app",
+      rootNamespace: rootNamespace,
+      rootID: rootID,
+      ownerUserID: ownerUserID,
+      token: "token-\(id)",
+      createdAt: InstantTimestamp(milliseconds: 9),
+      updatedAt: InstantTimestamp(milliseconds: 10)
+    ),
+    memberships: memberships.map { membership in
+      InstantShareMembership(
+        appID: "mock-app",
+        shareID: id,
+        userID: membership.userID,
+        role: membership.role,
+        acceptedAt: InstantTimestamp(milliseconds: 11)
+      )
+    }
+  )
+}
+
 private func authSessionClient(
   load: @escaping @Sendable () async throws -> InstantAuthSession?,
   observe: @escaping @Sendable () async throws -> AsyncStream<InstantAuthSession?>
@@ -1944,7 +2207,32 @@ private func integrationClient(
   observeStreamChunks: @escaping @Sendable (String) async throws
     -> AsyncStream<[InstantStreamChunk]> = { _ in
       AsyncStream { continuation in continuation.finish() }
-    }
+    },
+  createShare: @escaping @Sendable (String, String) async throws
+    -> InstantShareSnapshot = { namespace, id in
+      mockShareSnapshot(rootNamespace: namespace, rootID: id)
+    },
+  acceptShare: @escaping @Sendable (String) async throws -> InstantShareSnapshot = { token in
+    mockShareSnapshot(id: token)
+  },
+  shares: @escaping @Sendable () async throws -> [InstantShareSnapshot] = { [] },
+  observeShares: @escaping @Sendable () async throws
+    -> AsyncStream<[InstantShareSnapshot]> = {
+      AsyncStream { continuation in continuation.finish() }
+    },
+  updateShareMembershipRole: @escaping @Sendable (
+    String,
+    String,
+    InstantShareRole
+  ) async throws -> InstantShareSnapshot = { shareID, userID, role in
+    mockShareSnapshot(
+      id: shareID,
+      memberships: [("user-1", .owner), (userID, role)]
+    )
+  },
+  revokeShare: @escaping @Sendable (String) async throws -> InstantShareSnapshot = { id in
+    mockShareSnapshot(id: id)
+  }
 ) -> InstantSwiftDataClient {
   InstantSwiftDataClient(
     transact: { transaction in
@@ -1967,6 +2255,12 @@ private func integrationClient(
     deleteStoredFile: deleteStoredFile,
     appendStreamChunk: appendStreamChunk,
     streamChunks: streamChunks,
-    observeStreamChunks: observeStreamChunks
+    observeStreamChunks: observeStreamChunks,
+    createShare: createShare,
+    acceptShare: acceptShare,
+    shares: shares,
+    observeShares: observeShares,
+    updateShareMembershipRole: updateShareMembershipRole,
+    revokeShare: revokeShare
   )
 }
