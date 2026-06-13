@@ -2480,6 +2480,171 @@ struct TypedAPITests {
   }
 
   @Test
+  func fetchSubscribesToCustomDerivedValues() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_176)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000677")!
+
+    try await withDependencies {
+      $0.date.now = baseDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "fetch-custom-subscription-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      var fetch = Fetch<Int>(
+        wrappedValue: -1,
+        load: { client in
+          try await client.query(TypedTodo.query).count
+        },
+        subscribe: { client in
+          await client.subscribe(TypedTodo.query.order(TypedTodo.createdAt)).map(\.count)
+        }
+      )
+      let subscription = try await fetch.subscribe()
+      var iterator = subscription.makeAsyncIterator()
+
+      let initial = try await iterator.next()
+      expectNoDifference(initial, 0)
+
+      try await db.transact {
+        TypedTodo.create(
+          id: InstantID(rawValue: "todo-derived-count"),
+          TypedTodo.text.set("Derived count"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate)
+        )
+      }
+
+      let updated = try await iterator.next()
+      expectNoDifference(updated, 1)
+      expectNoDifference(fetch.loadError, nil)
+      subscription.cancel()
+    }
+  }
+
+  @Test
+  func fetchTaskBindsCustomSubscriptionEmissionsIntoWrappedValue() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_177)
+    let client = finiteObservationClient([
+      [],
+      [
+        typedTodoSnapshot(
+          id: "todo-derived-first",
+          text: "Derived first",
+          isCompleted: false,
+          createdAt: baseDate
+        ),
+        typedTodoSnapshot(
+          id: "todo-derived-second",
+          text: "Derived second",
+          isCompleted: false,
+          createdAt: baseDate.addingTimeInterval(1)
+        ),
+      ],
+    ])
+
+    var fetch = Fetch<Int>(
+      wrappedValue: 0,
+      load: { client in
+        try await client.query(TypedTodo.query).count
+      },
+      subscribe: { client in
+        await client.subscribe(TypedTodo.query).map(\.count)
+      }
+    )
+    try await fetch.task(using: client)
+
+    expectNoDifference(fetch.wrappedValue, 2)
+    expectNoDifference(fetch.loadError, nil)
+    expectNoDifference(fetch.isLoading, false)
+  }
+
+  @Test
+  func fetchTaskPreservesLastValueAndRecordsDerivedError() async throws {
+    var fetch = Fetch<Int>(
+      wrappedValue: 0,
+      load: { _ in 0 },
+      subscribe: { _ in
+        let stream = AsyncThrowingStream<Int, Error>.makeStream(
+          bufferingPolicy: .bufferingNewest(1)
+        )
+        stream.continuation.yield(1)
+        stream.continuation.finish(throwing: DerivedFetchFailure())
+        return FetchSubscription(stream: stream.stream) {
+          stream.continuation.finish()
+        }
+      }
+    )
+
+    do {
+      try await fetch.task(using: mockClient(recording: ObservationTermination()))
+      Issue.record("Expected derived subscription failure.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .implementationFailed)
+      expectNoDifference(error.operation, "observe Fetch")
+      expectNoDifference(fetch.loadError?.operation, "observe Fetch")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+
+    expectNoDifference(fetch.wrappedValue, 1)
+    expectNoDifference(fetch.isLoading, false)
+  }
+
+  @Test
+  func fetchTaskCancellationTerminatesUnderlyingObservation() async throws {
+    let termination = ObservationTermination()
+    let mock = mockClient(recording: termination)
+    let fetch = Fetch<Int>(
+      wrappedValue: 0,
+      load: { client in
+        try await client.query(TypedTodo.query).count
+      },
+      subscribe: { client in
+        await client.subscribe(TypedTodo.query).map(\.count)
+      }
+    )
+    let task = Task {
+      var fetch = fetch
+      try await fetch.task(using: mock)
+    }
+
+    try await Task.sleep(nanoseconds: 10_000_000)
+    task.cancel()
+    do {
+      try await task.value
+      Issue.record("Expected wrapper task cancellation to throw CancellationError.")
+    } catch is CancellationError {
+    } catch {
+      Issue.record("Expected CancellationError, got \(error).")
+    }
+    await termination.wait()
+    expectNoDifference(fetch.isLoading, false)
+    expectNoDifference(fetch.loadError, nil)
+  }
+
+  @Test
+  func fetchSubscribeWithoutOperationRecordsError() async throws {
+    var fetch = Fetch<Int>(wrappedValue: 0)
+
+    do {
+      _ = try await fetch.subscribe(using: mockClient(recording: ObservationTermination()))
+      Issue.record("Expected @Fetch without a subscribe operation to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .implementationFailed)
+      expectNoDifference(error.operation, "subscribe Fetch")
+      expectNoDifference(fetch.loadError?.operation, "subscribe Fetch")
+      expectNoDifference(fetch.isLoading, false)
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+  }
+
+  @Test
   func typedTransactionBuilderUsesDependencyClockForMockClient() async throws {
     let fixedDate = Date(timeIntervalSince1970: 1_700_000_200)
     let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000987")!
@@ -2969,6 +3134,12 @@ private actor TransactionRecorder {
 
   func record(_ transaction: InstantStoreTransaction) {
     transactions.append(transaction)
+  }
+}
+
+private struct DerivedFetchFailure: Error, CustomStringConvertible, Sendable {
+  var description: String {
+    "derived fetch failed"
   }
 }
 

@@ -1456,6 +1456,8 @@ extension FetchOne {
 public struct Fetch<Value: Sendable>: Sendable {
   private let storage: FetchStorage<Value>
   private var loadOperation: (@Sendable (InstantSwiftDataClient) async throws -> Value)?
+  private var subscribeOperation:
+    (@Sendable (InstantSwiftDataClient) async throws -> FetchSubscription<Value>)?
 
   public var wrappedValue: Value {
     get { storage.wrappedValue }
@@ -1484,14 +1486,17 @@ public struct Fetch<Value: Sendable>: Sendable {
   public init(wrappedValue: Value) {
     self.storage = FetchStorage(value: wrappedValue)
     self.loadOperation = nil
+    self.subscribeOperation = nil
   }
 
   public init(
     wrappedValue: Value,
-    load: @escaping @Sendable (InstantSwiftDataClient) async throws -> Value
+    load: @escaping @Sendable (InstantSwiftDataClient) async throws -> Value,
+    subscribe: (@Sendable (InstantSwiftDataClient) async throws -> FetchSubscription<Value>)? = nil
   ) {
     self.storage = FetchStorage(value: wrappedValue)
     self.loadOperation = load
+    self.subscribeOperation = subscribe
   }
 
   public var projectedValue: Self {
@@ -1551,9 +1556,135 @@ public struct Fetch<Value: Sendable>: Sendable {
 
   public mutating func load(
     _ operation: @escaping @Sendable (InstantSwiftDataClient) async throws -> Value,
+    subscribe: (@Sendable (InstantSwiftDataClient) async throws -> FetchSubscription<Value>)? = nil
+  ) async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(operation, subscribe: subscribe, using: client)
+  }
+
+  public mutating func load(
+    _ operation: @escaping @Sendable (InstantSwiftDataClient) async throws -> Value,
+    subscribe: (@Sendable (InstantSwiftDataClient) async throws -> FetchSubscription<Value>)? = nil,
     using client: InstantSwiftDataClient
   ) async throws {
     self.loadOperation = operation
+    self.subscribeOperation = subscribe
     try await load(using: client)
+  }
+
+  public mutating func subscribe() async throws -> FetchSubscription<Value> {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(using: client)
+  }
+
+  public mutating func subscribe(
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<Value> {
+    guard let subscribeOperation else {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "subscribe Fetch",
+        message: "No Instant subscription operation has been configured for this fetch wrapper.",
+        recovery:
+          "Initialize @Fetch with a subscribe operation, or pass an operation to subscribe(_:using:)."
+      )
+      loadError = error
+      throw error
+    }
+
+    do {
+      let subscription = try await subscribeOperation(client)
+      loadError = nil
+      return subscription
+    } catch let error as CancellationError {
+      loadError = nil
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "subscribe Fetch",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient and fetch subscription operation."
+      )
+      loadError = error
+      throw error
+    }
+  }
+
+  public mutating func subscribe(
+    _ operation: @escaping @Sendable (InstantSwiftDataClient) async throws
+      -> FetchSubscription<Value>
+  ) async throws -> FetchSubscription<Value> {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(operation, using: client)
+  }
+
+  public mutating func subscribe(
+    _ operation: @escaping @Sendable (InstantSwiftDataClient) async throws
+      -> FetchSubscription<Value>,
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<Value> {
+    self.subscribeOperation = operation
+    return try await subscribe(using: client)
+  }
+
+  public mutating func task() async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(using: client)
+  }
+
+  public mutating func task(using client: InstantSwiftDataClient) async throws {
+    isLoading = true
+    do {
+      let subscription = try await subscribe(using: client)
+      defer { subscription.cancel() }
+      for try await value in subscription {
+        try Task.checkCancellation()
+        wrappedValue = value
+        loadError = nil
+        isLoading = false
+      }
+      try Task.checkCancellation()
+      loadError = nil
+      isLoading = false
+    } catch let error as CancellationError {
+      loadError = nil
+      isLoading = false
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      isLoading = false
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "observe Fetch",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient and fetch subscription operation."
+      )
+      loadError = error
+      isLoading = false
+      throw error
+    }
+  }
+
+  public mutating func task(
+    _ operation: @escaping @Sendable (InstantSwiftDataClient) async throws
+      -> FetchSubscription<Value>
+  ) async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(operation, using: client)
+  }
+
+  public mutating func task(
+    _ operation: @escaping @Sendable (InstantSwiftDataClient) async throws
+      -> FetchSubscription<Value>,
+    using client: InstantSwiftDataClient
+  ) async throws {
+    self.subscribeOperation = operation
+    try await task(using: client)
   }
 }
