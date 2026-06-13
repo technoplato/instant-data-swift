@@ -2313,18 +2313,20 @@ struct InstantSwiftDataCLI {
   }
 
   private static func runFiles(arguments: [String], output: OutputMode) async throws {
-    var arguments = arguments
-    guard let command = arguments.popFirstArgument() else {
-      throw CLIError(filesUsage, exitCode: 64)
+    let invocation: CLIFilesInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLIFilesParser().parse(&input)
+    } catch let error as CLIFilesArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
 
     let context = try await CLIContext.bootstrap(initialAttributes: [])
 
-    switch command {
-    case "upload", "put":
-      let options = try FileUploadOptions.parse(arguments: arguments)
+    switch invocation {
+    case let .upload(options):
       let file = try await context.runtime.uploadFile(
-        from: options.sourceURL,
+        from: fileSourceURL(for: options.sourcePath),
         name: options.name,
         contentType: options.contentType
       )
@@ -2337,18 +2339,14 @@ struct InstantSwiftDataCLI {
         output: output
       )
 
-    case "upload-progress", "progress":
-      let options = try FileUploadOptions.parse(arguments: arguments)
+    case let .uploadProgress(options):
       try await printFileUploadProgress(
         context: context,
         options: options,
         output: output
       )
 
-    case "list", "ls":
-      guard arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data files list [--json|--jsonl]", exitCode: 64)
-      }
+    case .list:
       let files = try await context.runtime.storedFiles()
       try printFiles(
         context: context,
@@ -2358,8 +2356,7 @@ struct InstantSwiftDataCLI {
         output: output
       )
 
-    case "watch":
-      let options = try FilesWatchOptions.parse(arguments: arguments)
+    case let .watch(options):
       let files = try await firstWatchSnapshot(
         from: context.runtime.observeStoredFiles(),
         operation: "files watch",
@@ -2373,10 +2370,7 @@ struct InstantSwiftDataCLI {
         output: output
       )
 
-    case "read", "cat":
-      guard let fileID = arguments.popFirstArgument(), arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data files read <file-id> [--json|--jsonl]", exitCode: 64)
-      }
+    case let .read(fileID):
       let contents = try await context.runtime.storedFileContents(id: fileID)
       try printFileContents(
         context: context,
@@ -2384,10 +2378,7 @@ struct InstantSwiftDataCLI {
         output: output
       )
 
-    case "delete", "rm":
-      guard let fileID = arguments.popFirstArgument(), arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data files delete <file-id> [--json|--jsonl]", exitCode: 64)
-      }
+    case let .delete(fileID):
       let file = try await context.runtime.deleteStoredFile(id: fileID)
       let files = try await context.runtime.storedFiles()
       try printFiles(
@@ -2397,9 +2388,6 @@ struct InstantSwiftDataCLI {
         files: files,
         output: output
       )
-
-    default:
-      throw CLIError(filesUsage, exitCode: 64)
     }
   }
 
@@ -3451,11 +3439,11 @@ struct InstantSwiftDataCLI {
 
   private static func printFileUploadProgress(
     context: CLIContext,
-    options: FileUploadOptions,
+    options: CLIFileUploadInvocation,
     output: OutputMode
   ) async throws {
     let stream = try await context.runtime.uploadFileProgress(
-      from: options.sourceURL,
+      from: fileSourceURL(for: options.sourcePath),
       name: options.name,
       contentType: options.contentType
     )
@@ -3575,6 +3563,11 @@ struct InstantSwiftDataCLI {
         )
       )
     }
+  }
+
+  private static func fileSourceURL(for path: String) -> URL {
+    let currentDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    return URL(fileURLWithPath: path, relativeTo: currentDirectory).standardizedFileURL
   }
 
   private static func printStreamChunks(
@@ -6377,15 +6370,7 @@ struct InstantSwiftDataCLI {
   }
 
   fileprivate static var filesUsage: String {
-    """
-    Usage: instant-swift-data files <upload|upload-progress|list|watch|read|delete>
-      instant-swift-data files upload <path> [--name name] [--content-type type] [--json|--jsonl]
-      instant-swift-data files upload-progress <path> [--name name] [--content-type type] [--json|--jsonl]
-      instant-swift-data files list [--json|--jsonl]
-      instant-swift-data files watch [--events 1] [--json|--jsonl]
-      instant-swift-data files read <file-id> [--json|--jsonl]
-      instant-swift-data files delete <file-id> [--json|--jsonl]
-    """
+    CLIFilesUsage.files
   }
 
   fileprivate static var streamsUsage: String {
@@ -7727,66 +7712,6 @@ private struct ScaffoldFileSpec: Sendable {
 private extension CLIRoomIdentifier {
   var instantRoomHandle: InstantRoomHandle {
     InstantRoomHandle(type: type, id: id)
-  }
-}
-
-private struct FileUploadOptions: Sendable {
-  var sourceURL: URL
-  var name: String?
-  var contentType: String?
-
-  static func parse(arguments: [String]) throws -> Self {
-    var arguments = arguments
-    guard let path = arguments.popFirstArgument(),
-      !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    else {
-      throw CLIError(InstantSwiftDataCLI.filesUsage, exitCode: 64)
-    }
-
-    var name: String?
-    var contentType: String?
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--name":
-        guard let value = arguments.popFirstArgument(),
-          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else {
-          throw CLIError(InstantSwiftDataCLI.filesUsage, exitCode: 64)
-        }
-        name = value.trimmingCharacters(in: .whitespacesAndNewlines)
-
-      case "--content-type":
-        guard let value = arguments.popFirstArgument(),
-          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else {
-          throw CLIError(InstantSwiftDataCLI.filesUsage, exitCode: 64)
-        }
-        contentType = value.trimmingCharacters(in: .whitespacesAndNewlines)
-
-      default:
-        throw CLIError(
-          "Unknown files upload option: \(option). \(InstantSwiftDataCLI.filesUsage)",
-          exitCode: 64
-        )
-      }
-    }
-
-    let currentDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-    let sourceURL = URL(fileURLWithPath: path, relativeTo: currentDirectory).standardizedFileURL
-    return Self(sourceURL: sourceURL, name: name, contentType: contentType)
-  }
-}
-
-private struct FilesWatchOptions: Sendable {
-  var eventCount: Int
-
-  static func parse(arguments: [String]) throws -> Self {
-    let eventCount = try InstantSwiftDataCLI.parseFiniteWatchEventCount(
-      arguments: arguments,
-      usageCommand: "instant-swift-data files watch",
-      domain: "files watch"
-    )
-    return Self(eventCount: eventCount)
   }
 }
 

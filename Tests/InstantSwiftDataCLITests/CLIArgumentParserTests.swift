@@ -165,6 +165,14 @@ struct CLIArgumentParserTests {
       )
     )
     expectNoDifference(
+      try CLIArguments.parse(["files", "upload", "./photo.jpg", "--json"]),
+      CLIInvocation(
+        output: .json,
+        command: .files,
+        arguments: ["upload", "./photo.jpg"]
+      )
+    )
+    expectNoDifference(
       try CLIArguments.parse([
         "streams", "append", "chat/lobby", "--value", "{}", "--jsonl",
       ]),
@@ -359,6 +367,123 @@ struct CLIArgumentParserTests {
     try expectRoomsParseError(
       ["topics", "watch", "chat", "lobby", "sendEmoji", "--surprise"],
       contains: "Unknown rooms topics watch option: --surprise."
+    )
+  }
+
+  @Test
+  func filesParserParsesCommandsAndAliases() throws {
+    expectNoDifference(
+      try parseFiles([
+        "upload", " ./photo.jpg ", "--name", " Uploaded Photo ", "--content-type",
+        " image/jpeg ",
+      ]),
+        .upload(
+        CLIFileUploadInvocation(
+          sourcePath: " ./photo.jpg ",
+          name: "Uploaded Photo",
+          contentType: "image/jpeg"
+        )
+      )
+    )
+    expectNoDifference(
+      try parseFiles(["put", "./photo.jpg"]),
+      .upload(CLIFileUploadInvocation(sourcePath: "./photo.jpg"))
+    )
+    expectNoDifference(
+      try parseFiles([
+        "upload", "./photo.jpg",
+        "--name", "first.jpg",
+        "--name", "second.jpg",
+        "--content-type", "image/jpeg",
+      ]),
+      .upload(
+        CLIFileUploadInvocation(
+          sourcePath: "./photo.jpg",
+          name: "second.jpg",
+          contentType: "image/jpeg"
+        )
+      )
+    )
+    expectNoDifference(
+      try parseFiles(["upload-progress", "./photo.jpg", "--content-type", "image/jpeg"]),
+      .uploadProgress(
+        CLIFileUploadInvocation(sourcePath: "./photo.jpg", contentType: "image/jpeg")
+      )
+    )
+    expectNoDifference(
+      try parseFiles(["progress", "./photo.jpg"]),
+      .uploadProgress(CLIFileUploadInvocation(sourcePath: "./photo.jpg"))
+    )
+    expectNoDifference(try parseFiles(["list"]), .list)
+    expectNoDifference(try parseFiles(["ls"]), .list)
+    expectNoDifference(
+      try parseFiles(["watch", "--events", "1"]),
+      .watch(CLIFilesWatchInvocation(eventCount: 1))
+    )
+    expectNoDifference(
+      try parseFiles(["read", " file-1 "]),
+      .read(fileID: "file-1")
+    )
+    expectNoDifference(
+      try parseFiles(["cat", "file-1"]),
+      .read(fileID: "file-1")
+    )
+    expectNoDifference(
+      try parseFiles(["delete", " file-1 "]),
+      .delete(fileID: "file-1")
+    )
+    expectNoDifference(
+      try parseFiles(["rm", "file-1"]),
+      .delete(fileID: "file-1")
+    )
+  }
+
+  @Test
+  func filesParserReportsMalformedArguments() throws {
+    try expectFilesParseError([], contains: "Usage: instant-swift-data files")
+    try expectFilesParseError(
+      ["upload"],
+      contains: "files upload <path>"
+    )
+    try expectFilesParseError(
+      ["upload", "  "],
+      contains: "files upload <path>"
+    )
+    try expectFilesParseError(
+      ["upload", "./photo.jpg", "--name"],
+      contains: "Missing value for --name."
+    )
+    try expectFilesParseError(
+      ["upload", "./photo.jpg", "--name", "  "],
+      contains: "Missing non-empty value for --name."
+    )
+    try expectFilesParseError(
+      ["upload", "./photo.jpg", "--surprise"],
+      contains: "Unknown files upload option: --surprise."
+    )
+    try expectFilesParseError(
+      ["list", "extra"],
+      contains: "Unexpected argument: extra."
+    )
+    try expectFilesParseError(
+      ["watch", "--events", "2"],
+      contains: "instant-swift-data files watch --events 1"
+    )
+    try expectFilesParseError(
+      ["watch", "--surprise"],
+      contains: "Unknown files watch option: --surprise."
+    )
+    try expectFilesParseError(
+      ["read"],
+      contains: "files read <file-id>"
+    )
+    try expectFilesParseError(
+      ["delete", "file-1", "--force"],
+      contains: "Unexpected argument: --force."
+    )
+    try expectFilesParseError(
+      ["dance"],
+      contains: "Usage: instant-swift-data files"
     )
   }
 
@@ -603,6 +728,13 @@ private func parseRooms(_ arguments: [String]) throws -> CLIRoomsInvocation {
   return invocation
 }
 
+private func parseFiles(_ arguments: [String]) throws -> CLIFilesInvocation {
+  var input = arguments[...]
+  let invocation = try CLIFilesParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseShares(_ arguments: [String]) throws -> CLISharesInvocation {
   var input = arguments[...]
   let invocation = try CLISharesParser().parse(&input)
@@ -625,6 +757,19 @@ private func expectRoomsParseError(
     _ = try parseRooms(arguments)
     Issue.record("Expected rooms parser to reject \(arguments).")
   } catch let error as CLIRoomsArgumentError {
+    #expect(error.description.contains(expectedFragment))
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectFilesParseError(
+  _ arguments: [String],
+  contains expectedFragment: String
+) throws {
+  do {
+    _ = try parseFiles(arguments)
+    Issue.record("Expected files parser to reject \(arguments).")
+  } catch let error as CLIFilesArgumentError {
     #expect(error.description.contains(expectedFragment))
     expectNoDifference(error.exitCode, 64)
   }

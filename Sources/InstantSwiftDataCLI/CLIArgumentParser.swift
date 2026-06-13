@@ -252,6 +252,73 @@ public enum CLIRoomsArgumentError: Error, Equatable, Sendable {
   public var exitCode: Int32 { 64 }
 }
 
+public enum CLIFilesInvocation: Equatable, Sendable {
+  case upload(CLIFileUploadInvocation)
+  case uploadProgress(CLIFileUploadInvocation)
+  case list
+  case watch(CLIFilesWatchInvocation)
+  case read(fileID: String)
+  case delete(fileID: String)
+}
+
+public struct CLIFileUploadInvocation: Equatable, Sendable {
+  public var sourcePath: String
+  public var name: String?
+  public var contentType: String?
+
+  public init(
+    sourcePath: String,
+    name: String? = nil,
+    contentType: String? = nil
+  ) {
+    self.sourcePath = sourcePath
+    self.name = name
+    self.contentType = contentType
+  }
+}
+
+public struct CLIFilesWatchInvocation: Equatable, Sendable {
+  public var eventCount: Int
+
+  public init(eventCount: Int = 1) {
+    self.eventCount = eventCount
+  }
+}
+
+public enum CLIFilesUsage {
+  public static let files = """
+    Usage: instant-swift-data files <upload|upload-progress|list|watch|read|delete>
+      instant-swift-data files upload <path> [--name name] [--content-type type] [--json|--jsonl]
+      instant-swift-data files upload-progress <path> [--name name] [--content-type type] [--json|--jsonl]
+      instant-swift-data files list [--json|--jsonl]
+      instant-swift-data files watch [--events 1] [--json|--jsonl]
+      instant-swift-data files read <file-id> [--json|--jsonl]
+      instant-swift-data files delete <file-id> [--json|--jsonl]
+    """
+
+  public static let upload =
+    "Usage: instant-swift-data files upload <path> [--name name] [--content-type type] [--json|--jsonl]"
+  public static let uploadProgress =
+    "Usage: instant-swift-data files upload-progress <path> [--name name] [--content-type type] [--json|--jsonl]"
+  public static let list = "Usage: instant-swift-data files list [--json|--jsonl]"
+  public static let watch = "Usage: instant-swift-data files watch [--events 1] [--json|--jsonl]"
+  public static let read = "Usage: instant-swift-data files read <file-id> [--json|--jsonl]"
+  public static let delete = "Usage: instant-swift-data files delete <file-id> [--json|--jsonl]"
+}
+
+public enum CLIFilesArgumentError: Error, Equatable, Sendable {
+  case missingCommand
+  case unknownCommand(String)
+  case missingArguments(usage: String)
+  case missingValue(option: String, usage: String)
+  case emptyValue(option: String, usage: String)
+  case invalidEventCount(String, usageCommand: String)
+  case unknownOption(domain: String, option: String, usage: String)
+  case unexpectedArgument(String, usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
 public enum CLIStreamsInvocation: Equatable, Sendable {
   case append(CLIStreamAppendInvocation)
   case read(CLIStreamReadInvocation)
@@ -785,6 +852,101 @@ public struct CLIRoomTopicWatchParser: Parser {
   }
 }
 
+public struct CLIFilesParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIFilesInvocation {
+    guard let command = input.first else {
+      throw CLIFilesArgumentError.missingCommand
+    }
+    input.removeFirst()
+
+    switch command {
+    case "upload", "put":
+      return .upload(try CLIFileUploadParser(usage: CLIFilesUsage.upload).parse(&input))
+
+    case "upload-progress", "progress":
+      return .uploadProgress(
+        try CLIFileUploadParser(usage: CLIFilesUsage.uploadProgress).parse(&input)
+      )
+
+    case "list", "ls":
+      try requireNoRemainingFileArguments(&input, usage: CLIFilesUsage.list)
+      return .list
+
+    case "watch":
+      return .watch(try CLIFilesWatchParser().parse(&input))
+
+    case "read", "cat":
+      return .read(
+        fileID: try parseSingleFileArgument(from: &input, usage: CLIFilesUsage.read)
+      )
+
+    case "delete", "rm":
+      return .delete(
+        fileID: try parseSingleFileArgument(from: &input, usage: CLIFilesUsage.delete)
+      )
+
+    default:
+      throw CLIFilesArgumentError.unknownCommand(command)
+    }
+  }
+}
+
+public struct CLIFileUploadParser: Parser {
+  public var usage: String
+
+  public init(usage: String) {
+    self.usage = usage
+  }
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIFileUploadInvocation {
+    let sourcePath = try parseRequiredFilePath(from: &input, usage: usage)
+    var name: String?
+    var contentType: String?
+
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--name":
+        name = try parseNonEmptyFileOptionValue(
+          from: &input,
+          option: option,
+          usage: usage
+        )
+
+      case "--content-type":
+        contentType = try parseNonEmptyFileOptionValue(
+          from: &input,
+          option: option,
+          usage: usage
+        )
+
+      default:
+        throw CLIFilesArgumentError.unknownOption(
+          domain: "files upload",
+          option: option,
+          usage: CLIFilesUsage.files
+        )
+      }
+    }
+
+    return CLIFileUploadInvocation(
+      sourcePath: sourcePath,
+      name: name,
+      contentType: contentType
+    )
+  }
+}
+
+public struct CLIFilesWatchParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIFilesWatchInvocation {
+    CLIFilesWatchInvocation(eventCount: try parseFilesFiniteWatchEventCount(from: &input))
+  }
+}
+
 public struct CLIStreamsParser: Parser {
   public init() {}
 
@@ -1190,6 +1352,108 @@ private func requireNoRemainingArguments(
   }
 }
 
+private func parseSingleFileArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  let value = try parseRequiredFileArgument(from: &input, usage: usage)
+  try requireNoRemainingFileArguments(&input, usage: usage)
+  return value
+}
+
+private func parseRequiredFilePath(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIFilesArgumentError.missingArguments(usage: usage)
+  }
+  input.removeFirst()
+  guard !trimmed(value).isEmpty else {
+    throw CLIFilesArgumentError.missingArguments(usage: usage)
+  }
+  return value
+}
+
+private func parseRequiredFileArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIFilesArgumentError.missingArguments(usage: usage)
+  }
+  input.removeFirst()
+  let parsed = trimmed(value)
+  guard !parsed.isEmpty else {
+    throw CLIFilesArgumentError.missingArguments(usage: usage)
+  }
+  return parsed
+}
+
+private func parseFileOptionValue(
+  from input: inout ArraySlice<String>,
+  option: String,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIFilesArgumentError.missingValue(option: option, usage: usage)
+  }
+  input.removeFirst()
+  return value
+}
+
+private func parseNonEmptyFileOptionValue(
+  from input: inout ArraySlice<String>,
+  option: String,
+  usage: String
+) throws -> String {
+  let value = try parseFileOptionValue(from: &input, option: option, usage: usage)
+  let parsed = trimmed(value)
+  guard !parsed.isEmpty else {
+    throw CLIFilesArgumentError.emptyValue(option: option, usage: usage)
+  }
+  return parsed
+}
+
+private func parseFilesFiniteWatchEventCount(
+  from input: inout ArraySlice<String>
+) throws -> Int {
+  let usageCommand = "instant-swift-data files watch"
+  var eventCount = 1
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--events":
+      let value = try parseFileOptionValue(
+        from: &input,
+        option: option,
+        usage: "Usage: \(usageCommand) --events 1"
+      )
+      guard let parsed = Int(value), parsed == 1 else {
+        throw CLIFilesArgumentError.invalidEventCount(value, usageCommand: usageCommand)
+      }
+      eventCount = parsed
+
+    default:
+      throw CLIFilesArgumentError.unknownOption(
+        domain: "files watch",
+        option: option,
+        usage: CLIFilesUsage.watch
+      )
+    }
+  }
+  return eventCount
+}
+
+private func requireNoRemainingFileArguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if let argument = input.first {
+    throw CLIFilesArgumentError.unexpectedArgument(argument, usage: usage)
+  }
+}
+
 private func parseRequiredStreamArgument(
   from input: inout ArraySlice<String>,
   usage: String
@@ -1313,6 +1577,36 @@ extension CLIRoomsArgumentError: CustomStringConvertible {
 
     case let .invalidLimit(value, usage):
       return "Invalid --limit value: \(value). \(usage)"
+
+    case let .invalidEventCount(_, usageCommand):
+      return "Usage: \(usageCommand) --events 1"
+
+    case let .unknownOption(domain, option, usage):
+      return "Unknown \(domain) option: \(option). \(usage)"
+
+    case let .unexpectedArgument(argument, usage):
+      return "Unexpected argument: \(argument). \(usage)"
+    }
+  }
+}
+
+extension CLIFilesArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case .missingCommand:
+      return CLIFilesUsage.files
+
+    case .unknownCommand:
+      return CLIFilesUsage.files
+
+    case let .missingArguments(usage):
+      return usage
+
+    case let .missingValue(option, usage):
+      return "Missing value for \(option). \(usage)"
+
+    case let .emptyValue(option, usage):
+      return "Missing non-empty value for \(option). \(usage)"
 
     case let .invalidEventCount(_, usageCommand):
       return "Usage: \(usageCommand) --events 1"
