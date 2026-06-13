@@ -507,9 +507,8 @@ public struct FetchSubscription<Element: Sendable>: AsyncSequence, Sendable {
   public var task: Void {
     get async throws {
       try await withTaskCancellationHandler {
-        while true {
-          try await Task.sleep(nanoseconds: 3_600_000_000_000)
-        }
+        await cancellation.wait()
+        try Task.checkCancellation()
       } onCancel: {
         self.cancel()
       }
@@ -603,6 +602,7 @@ private final class FetchSubscriptionCancellation: @unchecked Sendable {
   private let lock = NSLock()
   private let operation: @Sendable () -> Void
   private var isCancelled = false
+  private var continuations: [CheckedContinuation<Void, Never>] = []
 
   init(_ operation: @escaping @Sendable () -> Void) {
     self.operation = operation
@@ -619,9 +619,27 @@ private final class FetchSubscriptionCancellation: @unchecked Sendable {
       return
     }
     isCancelled = true
+    let continuations = self.continuations
+    self.continuations.removeAll()
     lock.unlock()
 
     operation()
+    for continuation in continuations {
+      continuation.resume()
+    }
+  }
+
+  func wait() async {
+    await withCheckedContinuation { continuation in
+      lock.lock()
+      if isCancelled {
+        lock.unlock()
+        continuation.resume()
+      } else {
+        continuations.append(continuation)
+        lock.unlock()
+      }
+    }
   }
 }
 
@@ -1062,6 +1080,7 @@ public struct FetchAll<Element: Sendable>: Sendable {
         loadError = nil
         isLoading = false
       }
+      try Task.checkCancellation()
       loadError = nil
       isLoading = false
     } catch let error as CancellationError {
@@ -1307,6 +1326,7 @@ public struct FetchOne<Element: Sendable>: Sendable {
         loadError = nil
         isLoading = false
       }
+      try Task.checkCancellation()
       loadError = nil
       isLoading = false
     } catch let error as CancellationError {

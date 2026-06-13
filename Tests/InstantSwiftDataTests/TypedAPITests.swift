@@ -2360,9 +2360,84 @@ struct TypedAPITests {
     task.cancel()
     do {
       try await task.value
+      Issue.record("Expected parent task cancellation to throw CancellationError.")
     } catch is CancellationError {
+    } catch {
+      Issue.record("Expected CancellationError, got \(error).")
     }
     await termination.wait()
+  }
+
+  @Test
+  func fetchSubscriptionTaskCompletesWhenSubscriptionExplicitlyCancelled() async throws {
+    let termination = ObservationTermination()
+    let mock = mockClient(recording: termination)
+
+    var fetch = FetchAll<TypedTodo>(TypedTodo.query)
+    let subscription = try await fetch.subscribe(using: mock)
+    let task = Task {
+      do {
+        try await subscription.task
+        return nil as String?
+      } catch {
+        return String(describing: error)
+      }
+    }
+
+    try await Task.sleep(nanoseconds: 10_000_000)
+    subscription.cancel()
+    let error = await task.value
+
+    await termination.wait()
+    expectNoDifference(error, nil)
+  }
+
+  @Test
+  func cancellingOneFetchSubscriptionDoesNotCancelAnother() async throws {
+    let firstTermination = ObservationTermination()
+    let secondTermination = ObservationTermination()
+    let secondCompletion = CompletionFlag()
+
+    var firstFetch = FetchAll<TypedTodo>(TypedTodo.query)
+    let firstSubscription = try await firstFetch.subscribe(
+      using: mockClient(recording: firstTermination)
+    )
+    let firstTask = Task {
+      do {
+        try await firstSubscription.task
+        return nil as String?
+      } catch {
+        return String(describing: error)
+      }
+    }
+
+    var secondFetch = FetchAll<TypedTodo>(TypedTodo.query)
+    let secondSubscription = try await secondFetch.subscribe(
+      using: mockClient(recording: secondTermination)
+    )
+    let secondTask = Task {
+      do {
+        try await secondSubscription.task
+      } catch {
+        await secondCompletion.recordError(String(describing: error))
+      }
+      await secondCompletion.record()
+    }
+
+    firstSubscription.cancel()
+    let firstError = await firstTask.value
+    await firstTermination.wait()
+    try await Task.sleep(nanoseconds: 10_000_000)
+
+    expectNoDifference(firstError, nil)
+    #expect(await secondCompletion.value == false)
+
+    secondSubscription.cancel()
+    await secondTask.value
+    await secondTermination.wait()
+    #expect(await secondCompletion.value)
+    let secondError = await secondCompletion.error
+    expectNoDifference(secondError, nil)
   }
 
   @Test
@@ -2406,7 +2481,10 @@ struct TypedAPITests {
     task.cancel()
     do {
       try await task.value
+      Issue.record("Expected wrapper task cancellation to throw CancellationError.")
     } catch is CancellationError {
+    } catch {
+      Issue.record("Expected CancellationError, got \(error).")
     }
     await termination.wait()
     expectNoDifference(fetch.isLoading, false)
@@ -2620,6 +2698,27 @@ private actor ObservationTermination {
     await withCheckedContinuation { continuation in
       continuations.append(continuation)
     }
+  }
+}
+
+private actor CompletionFlag {
+  private var didComplete = false
+  private var recordedError: String?
+
+  var value: Bool {
+    didComplete
+  }
+
+  var error: String? {
+    recordedError
+  }
+
+  func record() {
+    didComplete = true
+  }
+
+  func recordError(_ error: String) {
+    recordedError = error
   }
 }
 
