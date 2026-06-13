@@ -258,6 +258,82 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliTodoSeedAndResetUseDurableLocalState() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let seedOutput = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(try runCLI(["examples", "todos", "seed", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(seedOutput.event, "seed")
+    expectNoDifference(seedOutput.pendingMutationCount, 1)
+    expectNoDifference(
+      seedOutput.todos.map { "\($0.text)|\($0.isCompleted)" },
+      [
+        "Plan the Instant Swift Data demo|true",
+        "Run the non-captive terminal workflow|false",
+        "Audit the local cache and outbox|false",
+      ]
+    )
+
+    let planID = try JSONDecoder().decode(
+      CLILocalIDOutput.self,
+      from: Data(
+        try runCLI(["local-id", "get", "examples.todos.seed.plan", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(seedOutput.todos.first?.id, planID.id)
+
+    let malformedSeed = try runCLIResult(
+      ["examples", "todos", "seed", "unexpected", "--json"],
+      homeURL: homeURL
+    )
+    #expect(malformedSeed.status == 64)
+    #expect(malformedSeed.error.contains("examples todos seed"))
+
+    let reseedOutput = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(try runCLI(["examples", "todos", "seed", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(reseedOutput.todos.map(\.id), seedOutput.todos.map(\.id))
+    expectNoDifference(reseedOutput.todos.map(\.text), seedOutput.todos.map(\.text))
+    expectNoDifference(reseedOutput.pendingMutationCount, 2)
+
+    let malformedReset = try runCLIResult(
+      ["examples", "todos", "reset", "unexpected", "--json"],
+      homeURL: homeURL
+    )
+    #expect(malformedReset.status == 64)
+    #expect(malformedReset.error.contains("examples todos reset"))
+
+    let afterMalformedReset = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(try runCLI(["examples", "todos", "list", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(afterMalformedReset.todos.map(\.id), seedOutput.todos.map(\.id))
+    expectNoDifference(afterMalformedReset.pendingMutationCount, 2)
+
+    let resetOutput = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(try runCLI(["examples", "todos", "reset", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(resetOutput.event, "reset")
+    expectNoDifference(resetOutput.todos, [])
+    expectNoDifference(resetOutput.pendingMutationCount, 3)
+
+    let emptyResetOutput = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(try runCLI(["examples", "todos", "reset", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(emptyResetOutput.todos, [])
+    expectNoDifference(emptyResetOutput.pendingMutationCount, 3)
+  }
+
+  @Test
   func cliOutboxRetryAndDrainOperateOnDurableState() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -443,8 +519,14 @@ private struct CLITodoWatchEmission: Decodable {
   var todos: [CLITodo]
 }
 
-private struct CLITodo: Decodable {
+private struct CLITodo: Decodable, Equatable {
+  var id: String
   var text: String
+  var isCompleted: Bool
+}
+
+private struct CLILocalIDOutput: Decodable {
+  var id: String
 }
 
 private struct CLICacheInspectEvidence: Decodable {

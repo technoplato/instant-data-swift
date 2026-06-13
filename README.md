@@ -17,6 +17,7 @@ The ID-capture steps use `jq` to extract IDs from JSON output.
 ```bash
 export INSTANT_SWIFT_DATA_HOME="$(mktemp -d)"
 
+swift run instant-swift-data examples todos seed --json
 swift run instant-swift-data examples todos add "do the dishes"
 swift run instant-swift-data examples todos list
 swift run instant-swift-data examples todos list --completed false --offset 0 --limit 10 --order desc
@@ -28,14 +29,17 @@ swift run instant-swift-data examples todos update "$TODO_ID" "ship the polished
 DELETE_TODO_ID="$(swift run instant-swift-data examples todos add "delete after smoke" --json | jq -r '.changedID')"
 swift run instant-swift-data examples todos delete "$DELETE_TODO_ID" --json
 swift run instant-swift-data examples todos refresh
+swift run instant-swift-data examples todos reset --json
 ```
 
 Agent-readable output is available with `--json` or `--jsonl`:
 
 ```bash
 swift run instant-swift-data examples todos add "do the dishes" --json
+swift run instant-swift-data examples todos seed --jsonl
 swift run instant-swift-data examples todos list --jsonl
 swift run instant-swift-data examples todos watch --events 1 --jsonl
+swift run instant-swift-data examples todos reset --jsonl
 ```
 
 Inspect the durable cache and optimistic outbox:

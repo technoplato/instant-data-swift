@@ -14,8 +14,48 @@ public struct TodoRecord: Hashable, Codable, Sendable, Identifiable {
   }
 }
 
+public struct TodoSeedRecord: Hashable, Codable, Sendable {
+  public var localIDName: String
+  public var text: String
+  public var isCompleted: Bool
+  public var createdAtOffsetMilliseconds: Int64
+
+  public init(
+    localIDName: String,
+    text: String,
+    isCompleted: Bool,
+    createdAtOffsetMilliseconds: Int64
+  ) {
+    self.localIDName = localIDName
+    self.text = text
+    self.isCompleted = isCompleted
+    self.createdAtOffsetMilliseconds = createdAtOffsetMilliseconds
+  }
+}
+
 public enum TodoExample {
   public static let namespace = "todos"
+
+  public static let seedRecords: [TodoSeedRecord] = [
+    TodoSeedRecord(
+      localIDName: "examples.todos.seed.plan",
+      text: "Plan the Instant Swift Data demo",
+      isCompleted: true,
+      createdAtOffsetMilliseconds: 0
+    ),
+    TodoSeedRecord(
+      localIDName: "examples.todos.seed.terminal",
+      text: "Run the non-captive terminal workflow",
+      isCompleted: false,
+      createdAtOffsetMilliseconds: 1
+    ),
+    TodoSeedRecord(
+      localIDName: "examples.todos.seed.audit",
+      text: "Audit the local cache and outbox",
+      isCompleted: false,
+      createdAtOffsetMilliseconds: 2
+    ),
+  ]
 
   public static let attributes: [InstantAttribute] = [
     InstantAttribute(
@@ -84,6 +124,29 @@ public enum TodoExample {
     ]
   }
 
+  public static func seedOperations(
+    records: [(id: String, seed: TodoSeedRecord)],
+    baseCreatedAt: InstantTimestamp,
+    transactionID: String
+  ) -> [InstantTripleOperation] {
+    records.flatMap { id, seed in
+      let createdAt = InstantTimestamp(
+        milliseconds: baseCreatedAt.milliseconds + seed.createdAtOffsetMilliseconds
+      )
+      return createOperations(
+        id: id,
+        text: seed.text,
+        createdAt: createdAt,
+        transactionID: transactionID
+      ) + completeOperations(
+        id: id,
+        isCompleted: seed.isCompleted,
+        updatedAt: createdAt,
+        transactionID: transactionID
+      )
+    }
+  }
+
   public static func completeOperations(
     id: String,
     isCompleted: Bool = true,
@@ -124,6 +187,10 @@ public enum TodoExample {
 
   public static func deleteOperations(id: String) -> [InstantTripleOperation] {
     [.deleteEntity(id)]
+  }
+
+  public static func resetOperations(ids: [String]) -> [InstantTripleOperation] {
+    ids.map(InstantTripleOperation.deleteEntity)
   }
 
   public static func decode(_ snapshots: [InstantEntitySnapshot]) throws -> [TodoRecord] {

@@ -262,6 +262,83 @@ struct InstantStoreTests {
   }
 
   @Test
+  func seedAndResetTodoOperationsPersistAcrossLaunches() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let seededAt = InstantTimestamp(milliseconds: 1_700_000_000_300)
+
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-seed-todos",
+        operations: TodoExample.seedOperations(
+          records: [
+            ("todo-seed-plan", TodoExample.seedRecords[0]),
+            ("todo-seed-terminal", TodoExample.seedRecords[1]),
+            ("todo-seed-audit", TodoExample.seedRecords[2]),
+          ],
+          baseCreatedAt: seededAt,
+          transactionID: "tx-seed-todos"
+        )
+      ),
+      createdAt: seededAt
+    )
+
+    let seededTodos = try await TodoExample.decode(runtime.query(TodoExample.query))
+    expectNoDifference(
+      seededTodos.map { "\($0.id)|\($0.text)|\($0.isCompleted)" },
+      [
+        "todo-seed-plan|Plan the Instant Swift Data demo|true",
+        "todo-seed-terminal|Run the non-captive terminal workflow|false",
+        "todo-seed-audit|Audit the local cache and outbox|false",
+      ]
+    )
+
+    let relaunchedSeededRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let relaunchedSeededTodos = try await TodoExample.decode(
+      relaunchedSeededRuntime.query(TodoExample.query)
+    )
+    expectNoDifference(relaunchedSeededTodos.map(\.id), seededTodos.map(\.id))
+
+    try await relaunchedSeededRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-reset-todos",
+        operations: TodoExample.resetOperations(ids: relaunchedSeededTodos.map(\.id))
+      ),
+      createdAt: InstantTimestamp(milliseconds: seededAt.milliseconds + 10)
+    )
+
+    let resetTodos = try await TodoExample.decode(relaunchedSeededRuntime.query(TodoExample.query))
+    expectNoDifference(resetTodos, [])
+
+    let relaunchedResetRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let relaunchedResetTodos = try await TodoExample.decode(
+      relaunchedResetRuntime.query(TodoExample.query)
+    )
+    expectNoDifference(relaunchedResetTodos, [])
+
+    let pending = await relaunchedResetRuntime.pendingMutations()
+    expectNoDifference(pending.map(\.id), ["tx-seed-todos", "tx-reset-todos"])
+  }
+
+  @Test
   func queryCacheStoresSameQueryIDDifferentPlansSeparately() async throws {
     let cacheURL = try temporaryCacheURL()
     let runtime = try await InstantRuntime.bootstrap(

@@ -107,15 +107,40 @@ struct InstantSwiftDataCLI {
   private static func runExamples(arguments: [String], output: OutputMode) async throws {
     var arguments = arguments
     guard arguments.popFirstArgument() == "todos" else {
-      throw CLIError("Usage: instant-swift-data examples todos <add|list|watch|complete|update|delete|refresh>", exitCode: 64)
+      throw CLIError("Usage: instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>", exitCode: 64)
     }
     guard let command = arguments.popFirstArgument() else {
-      throw CLIError("Usage: instant-swift-data examples todos <add|list|watch|complete|update|delete|refresh>", exitCode: 64)
+      throw CLIError("Usage: instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>", exitCode: 64)
     }
 
     let context = try await CLIContext.bootstrap()
 
     switch command {
+    case "seed":
+      guard arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data examples todos seed [--json|--jsonl]", exitCode: 64)
+      }
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      var seedRecords: [(id: String, seed: TodoSeedRecord)] = []
+      for seed in TodoExample.seedRecords {
+        seedRecords.append((try await context.runtime.localID(named: seed.localIDName), seed))
+      }
+      let transaction = InstantStoreTransaction(
+        id: transactionID,
+        operations: TodoExample.seedOperations(
+          records: seedRecords,
+          baseCreatedAt: now,
+          transactionID: transactionID
+        )
+      )
+      try await context.runtime.transact(
+        transaction,
+        createdAt: now,
+        source: "cli.examples.todos.seed"
+      )
+      try await printTodos(context: context, output: output, event: "seed")
+
     case "add":
       let text = arguments.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
       guard !text.isEmpty else {
@@ -219,6 +244,26 @@ struct InstantSwiftDataCLI {
         source: "cli.examples.todos.delete"
       )
       try await printTodos(context: context, output: output, event: "delete", changedID: todoID)
+
+    case "reset":
+      guard arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data examples todos reset [--json|--jsonl]", exitCode: 64)
+      }
+      let currentTodos = try await TodoExample.decode(context.runtime.query(TodoExample.query))
+      if !currentTodos.isEmpty {
+        let transactionID = context.runtime.configuration.makeID()
+        let now = context.runtime.configuration.now()
+        let transaction = InstantStoreTransaction(
+          id: transactionID,
+          operations: TodoExample.resetOperations(ids: currentTodos.map(\.id))
+        )
+        try await context.runtime.transact(
+          transaction,
+          createdAt: now,
+          source: "cli.examples.todos.reset"
+        )
+      }
+      try await printTodos(context: context, output: output, event: "reset")
 
     case "refresh":
       let query = try todoListQuery(arguments: arguments)
@@ -1044,12 +1089,14 @@ struct InstantSwiftDataCLI {
         schema verify --example todos --from instant.schema.ts [--json|--jsonl]
         perms generate --example todos [--to instant.perms.ts]
         perms verify --example todos --from instant.perms.ts [--json|--jsonl]
+        examples todos seed [--json|--jsonl]
         examples todos add "do the dishes" [--json|--jsonl]
         examples todos list [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--json|--jsonl]
         examples todos watch [--events 1] [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--json|--jsonl]
         examples todos complete <todo-id> [--json|--jsonl]
         examples todos update <todo-id> "new text" [--json|--jsonl]
         examples todos delete <todo-id> [--json|--jsonl]
+        examples todos reset [--json|--jsonl]
         examples todos refresh [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--json|--jsonl]
         cache inspect [--json|--jsonl]
         outbox inspect [--json|--jsonl]
