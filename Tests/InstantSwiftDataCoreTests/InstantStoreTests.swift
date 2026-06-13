@@ -937,6 +937,44 @@ struct InstantStoreTests {
   }
 
   @Test
+  func transportMutationPreservesTripleExistsPreconditions() throws {
+    let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let transaction = InstantStoreTransaction(
+      id: "tx-syncup-transport-guard",
+      operations: SyncUpsExample.replaceAttendeesOperations(
+        syncUpID: "syncup-a",
+        existingAttendeeIDs: ["attendee-b"],
+        newAttendees: [SyncUpAttendeeDraft(id: "attendee-a-new", name: "A New")],
+        updatedAt: txTime,
+        transactionID: "tx-syncup-transport-guard"
+      )
+    )
+    let mutation = InstantTransportMutation(
+      PendingMutation(id: "tx-syncup-transport-guard", createdAt: txTime, transaction: transaction)
+    )
+
+    let data = try JSONEncoder().encode(mutation)
+    let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let preconditions = try #require(object["preconditions"] as? [[String: Any]])
+    let tripleExists = try #require(
+      preconditions.first { precondition in
+        precondition["kind"] as? String == "triple-exists"
+      }
+    )
+    expectNoDifference(tripleExists["entity"] as? String, "attendee-b")
+    expectNoDifference(tripleExists["attributeID"] as? String, "attendees/syncUp")
+    expectNoDifference(tripleExists["value"] as? String, "syncup-a")
+
+    let txSteps = try #require(object["txSteps"] as? [[Any]])
+    let deleteStep = try #require(
+      txSteps.first { step in
+        step.first as? String == "delete-entity" && step.dropFirst().first as? String == "attendee-b"
+      }
+    )
+    expectNoDifference(deleteStep.dropFirst(2).first as? String, "attendees")
+  }
+
+  @Test
   func transportMutationAppliesPreconditionMetadataInOperationOrder() throws {
     let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let transaction = InstantStoreTransaction(
@@ -4193,6 +4231,609 @@ struct InstantStoreTests {
     expectNoDifference(persistedAttendees, [
       SyncUpAttendeeRecord(id: "attendee-blank", name: "", syncUpID: syncUpID)
     ])
+  }
+
+  @Test
+  func syncUpFormModelSavesNewDraftWithNonBlankAttendees() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: SyncUpsExample.attributes,
+        now: { timestamp }
+      )
+    )
+    var model = SyncUpFormModel(
+      syncUp: SyncUpDraft(title: "Morning Sync"),
+      blankAttendeeID: "attendee-draft-blank"
+    )
+    model.addAttendeeButtonTapped(id: "attendee-draft-second")
+    model.addAttendeeButtonTapped(id: "attendee-draft-third")
+    model.attendees[0].name = "Blob"
+    model.attendees[1].name = "Blob Jr."
+
+    let save = model.saveButtonTapped(
+      newSyncUpID: "syncup-morning",
+      blankAttendeeID: "attendee-draft-save-blank",
+      updatedAt: timestamp,
+      transactionID: "tx-syncup-form-new"
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(id: "tx-syncup-form-new", operations: save.operations),
+      createdAt: timestamp
+    )
+    model.commit(save)
+
+    let syncUps = try SyncUpsExample.decodeSyncUps(
+      (try await runtime.queryOnce(SyncUpsExample.syncUpsQuery)).values
+    )
+    let attendees = try SyncUpsExample.decodeAttendees(
+      (try await runtime.queryOnce(SyncUpsExample.attendeesForSyncUpQuery(save.syncUpID))).values
+    )
+    expectNoDifference(model.isDismissed, true)
+    expectNoDifference(model.syncUp.id, "syncup-morning")
+    expectNoDifference(syncUps, [
+      SyncUpRecord(id: "syncup-morning", title: "Morning Sync", seconds: 300, theme: .bubblegum)
+    ])
+    expectNoDifference(attendees.map(\.name), ["Blob", "Blob Jr."])
+  }
+
+  @Test
+  func syncUpFormModelFailedCreateCanRetryWithCreateSemantics() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: SyncUpsExample.attributes,
+        now: { timestamp }
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-syncup-existing",
+        operations: SyncUpsExample.createSyncUpOperations(
+          id: "syncup-collision",
+          title: "Existing",
+          seconds: 60,
+          theme: .appOrange,
+          updatedAt: timestamp,
+          transactionID: "tx-syncup-existing"
+        )
+      ),
+      createdAt: timestamp
+    )
+    var model = SyncUpFormModel(
+      syncUp: SyncUpDraft(title: "Retry Sync"),
+      blankAttendeeID: "attendee-retry-blank"
+    )
+    model.attendees[0].name = "Blob"
+
+    let failedSave = model.saveButtonTapped(
+      newSyncUpID: "syncup-collision",
+      blankAttendeeID: "attendee-retry-save-blank",
+      updatedAt: timestamp,
+      transactionID: "tx-syncup-form-collision"
+    )
+    do {
+      try await runtime.transact(
+        InstantStoreTransaction(id: "tx-syncup-form-collision", operations: failedSave.operations),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected duplicate sync-up id to fail before form commit.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+    expectNoDifference(model.syncUp.id, nil)
+    expectNoDifference(model.existingAttendeeIDs, [])
+    expectNoDifference(model.isDismissed, false)
+
+    let retrySave = model.saveButtonTapped(
+      newSyncUpID: "syncup-retry",
+      blankAttendeeID: "attendee-retry-second-save-blank",
+      updatedAt: timestamp,
+      transactionID: "tx-syncup-form-retry"
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(id: "tx-syncup-form-retry", operations: retrySave.operations),
+      createdAt: timestamp
+    )
+    model.commit(retrySave)
+
+    let syncUps = try SyncUpsExample.decodeSyncUps(
+      (try await runtime.queryOnce(SyncUpsExample.syncUpsQuery)).values
+    )
+    expectNoDifference(model.syncUp.id, "syncup-retry")
+    expectNoDifference(model.isDismissed, true)
+    expectNoDifference(syncUps.map(\.id), ["syncup-collision", "syncup-retry"])
+  }
+
+  @Test
+  func syncUpFormNewDraftTransportDoesNotRequireCreatedSyncUpToExist() throws {
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    var model = SyncUpFormModel(
+      syncUp: SyncUpDraft(title: "Design"),
+      blankAttendeeID: "attendee-blank"
+    )
+    model.attendees[0].name = "Blob"
+    let save = model.saveButtonTapped(
+      newSyncUpID: "syncup-new",
+      blankAttendeeID: "attendee-save-blank",
+      updatedAt: timestamp,
+      transactionID: "tx-syncup-form-new-transport"
+    )
+    let transportMutation = InstantTransportMutation(
+      PendingMutation(
+        id: "mutation-syncup-form-new-transport",
+        createdAt: timestamp,
+        transaction: InstantStoreTransaction(
+          id: "tx-syncup-form-new-transport",
+          operations: save.operations
+        )
+      )
+    )
+
+    let data = try JSONEncoder().encode(transportMutation)
+    let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let preconditions = try #require(object["preconditions"] as? [[String: Any]])
+    let syncUpKinds = preconditions.compactMap { precondition in
+      precondition["entity"] as? String == "syncup-new"
+        ? precondition["kind"] as? String
+        : nil
+    }
+    expectNoDifference(syncUpKinds, ["entity-missing"])
+  }
+
+  @Test
+  func syncUpFormModelUpdatesExistingDraftAndReplacesAttendees() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let editTimestamp = InstantTimestamp(milliseconds: 1_700_000_001_000)
+    let syncUpID = "syncup-design"
+    let attendeeNames = ["Blob", "Blob Jr", "Blob Sr", "Blob Esq", "Blob III", "Blob I"]
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: SyncUpsExample.attributes,
+        now: { timestamp }
+      )
+    )
+    let createOperations = SyncUpsExample.createSyncUpOperations(
+      id: syncUpID,
+      title: "Design",
+      seconds: 60,
+      theme: .appOrange,
+      updatedAt: timestamp,
+      transactionID: "tx-syncup-form-seed"
+    )
+      + attendeeNames.enumerated().flatMap { offset, name in
+        SyncUpsExample.createAttendeeOperations(
+          id: "attendee-\(offset)",
+          syncUpID: syncUpID,
+          name: name,
+          updatedAt: timestamp,
+          transactionID: "tx-syncup-form-seed"
+        )
+      }
+    try await runtime.transact(
+      InstantStoreTransaction(id: "tx-syncup-form-seed", operations: createOperations),
+      createdAt: timestamp
+    )
+
+    let existingSyncUp = try #require(
+      try SyncUpsExample.decodeSyncUps(
+        (try await runtime.queryOnce(SyncUpsExample.syncUpsQuery)).values
+      )
+      .first
+    )
+    let existingAttendees = try SyncUpsExample.decodeAttendees(
+      (try await runtime.queryOnce(SyncUpsExample.attendeesForSyncUpQuery(syncUpID))).values
+    )
+    var model = SyncUpFormModel(
+      syncUp: existingSyncUp,
+      existingAttendees: existingAttendees,
+      draftAttendeeIDs: existingAttendees.indices.map { "draft-attendee-\($0)" },
+      blankAttendeeID: "draft-attendee-blank"
+    )
+
+    model.syncUp.title = "Evening Sync"
+    model.deleteAttendees(atOffsets: IndexSet(1..<existingAttendees.count), blankAttendeeID: "draft-empty")
+    model.addAttendeeButtonTapped(id: "draft-attendee-new")
+    model.attendees[model.attendees.count - 1].name = "Blobby McBlob"
+
+    let save = model.saveButtonTapped(
+      newSyncUpID: "unused-new-syncup",
+      blankAttendeeID: "draft-save-blank",
+      updatedAt: editTimestamp,
+      transactionID: "tx-syncup-form-edit"
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(id: "tx-syncup-form-edit", operations: save.operations),
+      createdAt: editTimestamp
+    )
+    model.commit(save)
+
+    let syncUp = try #require(
+      try SyncUpsExample.decodeSyncUps(
+        (try await runtime.queryOnce(SyncUpsExample.syncUpsQuery)).values
+      )
+      .first
+    )
+    let attendees = try SyncUpsExample.decodeAttendees(
+      (try await runtime.queryOnce(SyncUpsExample.attendeesForSyncUpQuery(syncUpID))).values
+    )
+    expectNoDifference(model.isDismissed, true)
+    expectNoDifference(save.syncUpID, syncUpID)
+    expectNoDifference(syncUp.title, "Evening Sync")
+    expectNoDifference(attendees.map(\.id), ["draft-attendee-0", "draft-attendee-new"])
+    expectNoDifference(attendees.map(\.name), ["Blob", "Blobby McBlob"])
+  }
+
+  @Test
+  func syncUpFormModelSanitizesDraftAttendeeIDsBeforeReplacement() {
+    let existingAttendees = [
+      SyncUpAttendeeRecord(id: "attendee-0", name: "Blob", syncUpID: "syncup-design"),
+      SyncUpAttendeeRecord(id: "attendee-1", name: "Blob Jr", syncUpID: "syncup-design"),
+    ]
+
+    let model = SyncUpFormModel(
+      syncUp: SyncUpRecord(
+        id: "syncup-design",
+        title: "Design",
+        seconds: 60,
+        theme: .appOrange
+      ),
+      existingAttendees: existingAttendees,
+      draftAttendeeIDs: ["attendee-0", "attendee-0"],
+      blankAttendeeID: "draft-blank"
+    )
+
+    expectNoDifference(model.existingAttendeeIDs, ["attendee-0", "attendee-1"])
+    expectNoDifference(
+      model.attendees.map(\.id),
+      ["draft-attendee-0", "draft-draft-attendee-0"]
+    )
+    #expect(Set(model.attendees.map(\.id)).isDisjoint(with: Set(model.existingAttendeeIDs)))
+  }
+
+  @Test
+  func syncUpFormModelSanitizesPublicDraftIDsAtInitAddAndSave() {
+    var model = SyncUpFormModel(
+      syncUp: SyncUpDraft(id: "syncup-design", title: "Design"),
+      attendees: [
+        SyncUpAttendeeDraft(id: "attendee-0", name: "Blob"),
+        SyncUpAttendeeDraft(id: "attendee-0", name: "Blob Jr"),
+      ],
+      existingAttendeeIDs: ["attendee-0", "attendee-0", "attendee-1"],
+      blankAttendeeID: "attendee-0",
+      focus: .attendee("attendee-0")
+    )
+
+    expectNoDifference(model.existingAttendeeIDs, ["attendee-0", "attendee-1"])
+    expectNoDifference(
+      model.attendees.map(\.id),
+      ["draft-attendee-0", "draft-draft-attendee-0"]
+    )
+    expectNoDifference(model.focus, .attendee("draft-attendee-0"))
+
+    model.addAttendeeButtonTapped(id: "draft-attendee-0")
+    expectNoDifference(
+      model.attendees.map(\.id),
+      ["draft-attendee-0", "draft-draft-attendee-0", "draft-draft-draft-attendee-0"]
+    )
+    expectNoDifference(model.focus, .attendee("draft-draft-draft-attendee-0"))
+
+    model.attendees[2].name = "Blobby"
+    model.attendees.append(SyncUpAttendeeDraft(id: "attendee-1", name: "Manual"))
+    model.focus = .attendee("attendee-1")
+    let save = model.saveButtonTapped(
+      newSyncUpID: "unused-new-syncup",
+      blankAttendeeID: "unused-blank",
+      updatedAt: InstantTimestamp(milliseconds: 1_700_000_000_000),
+      transactionID: "tx-syncup-form-public-sanitize"
+    )
+
+    expectNoDifference(
+      save.attendees.map(\.id),
+      [
+        "draft-attendee-0",
+        "draft-draft-attendee-0",
+        "draft-draft-draft-attendee-0",
+        "draft-attendee-1",
+      ]
+    )
+    expectNoDifference(model.focus, .attendee("draft-attendee-0"))
+    #expect(Set(save.attendees.map(\.id)).isDisjoint(with: Set(model.existingAttendeeIDs)))
+    expectNoDifference(Set(save.attendees.map(\.id)).count, save.attendees.count)
+  }
+
+  @Test
+  func syncUpFormReplacementRejectsOverlappingExistingAndNewAttendeeIDs() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: SyncUpsExample.attributes,
+        now: { timestamp }
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-syncup-overlap-seed",
+        operations: SyncUpsExample.createSyncUpOperations(
+          id: "syncup-a",
+          title: "A",
+          seconds: 60,
+          theme: .appOrange,
+          updatedAt: timestamp,
+          transactionID: "tx-syncup-overlap-seed"
+        )
+          + SyncUpsExample.createAttendeeOperations(
+            id: "attendee-a",
+            syncUpID: "syncup-a",
+            name: "A",
+            updatedAt: timestamp,
+            transactionID: "tx-syncup-overlap-seed"
+          )
+      ),
+      createdAt: timestamp
+    )
+
+    do {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-syncup-overlap-replace",
+          operations: SyncUpsExample.replaceAttendeesOperations(
+            syncUpID: "syncup-a",
+            existingAttendeeIDs: ["attendee-a"],
+            newAttendees: [SyncUpAttendeeDraft(id: "attendee-a", name: "A Updated")],
+            updatedAt: timestamp,
+            transactionID: "tx-syncup-overlap-replace"
+          )
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected overlapping replacement attendee IDs to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    let pending = await runtime.pendingMutations()
+    expectNoDifference(pending.map(\.transaction.id), ["tx-syncup-overlap-seed"])
+  }
+
+  @Test
+  func syncUpFormReplacementRejectsDuplicateNewAttendeeIDs() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: SyncUpsExample.attributes,
+        now: { timestamp }
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-syncup-duplicate-seed",
+        operations: SyncUpsExample.createSyncUpOperations(
+          id: "syncup-a",
+          title: "A",
+          seconds: 60,
+          theme: .appOrange,
+          updatedAt: timestamp,
+          transactionID: "tx-syncup-duplicate-seed"
+        )
+      ),
+      createdAt: timestamp
+    )
+
+    do {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-syncup-duplicate-replace",
+          operations: SyncUpsExample.replaceAttendeesOperations(
+            syncUpID: "syncup-a",
+            existingAttendeeIDs: [],
+            newAttendees: [
+              SyncUpAttendeeDraft(id: "attendee-a", name: "A"),
+              SyncUpAttendeeDraft(id: "attendee-a", name: "A Duplicate"),
+            ],
+            updatedAt: timestamp,
+            transactionID: "tx-syncup-duplicate-replace"
+          )
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected duplicate replacement attendee IDs to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    let pending = await runtime.pendingMutations()
+    expectNoDifference(pending.map(\.transaction.id), ["tx-syncup-duplicate-seed"])
+  }
+
+  @Test
+  func syncUpFormReplacementRejectsFreshExistingAttendeeIDsThatMatchNewAttendees() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: SyncUpsExample.attributes,
+        now: { timestamp }
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-syncup-fresh-existing-seed",
+        operations: SyncUpsExample.createSyncUpOperations(
+          id: "syncup-a",
+          title: "A",
+          seconds: 60,
+          theme: .appOrange,
+          updatedAt: timestamp,
+          transactionID: "tx-syncup-fresh-existing-seed"
+        )
+      ),
+      createdAt: timestamp
+    )
+
+    do {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-syncup-fresh-existing-replace",
+          operations: SyncUpsExample.replaceAttendeesOperations(
+            syncUpID: "syncup-a",
+            existingAttendeeIDs: ["attendee-a"],
+            newAttendees: [SyncUpAttendeeDraft(id: "attendee-a", name: "A")],
+            updatedAt: timestamp,
+            transactionID: "tx-syncup-fresh-existing-replace"
+          )
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected fresh existing attendee IDs to fail before inserts.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    let pending = await runtime.pendingMutations()
+    expectNoDifference(pending.map(\.transaction.id), ["tx-syncup-fresh-existing-seed"])
+  }
+
+  @Test
+  func syncUpFormReplacementRejectsExistingAttendeeFromAnotherSyncUp() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: SyncUpsExample.attributes,
+        now: { timestamp }
+      )
+    )
+    let operations =
+      SyncUpsExample.createSyncUpOperations(
+        id: "syncup-a",
+        title: "A",
+        seconds: 60,
+        theme: .appOrange,
+        updatedAt: timestamp,
+        transactionID: "tx-syncup-cross-seed"
+      )
+      + SyncUpsExample.createAttendeeOperations(
+        id: "attendee-a",
+        syncUpID: "syncup-a",
+        name: "A",
+        updatedAt: timestamp,
+        transactionID: "tx-syncup-cross-seed"
+      )
+      + SyncUpsExample.createSyncUpOperations(
+        id: "syncup-b",
+        title: "B",
+        seconds: 60,
+        theme: .periwinkle,
+        updatedAt: timestamp,
+        transactionID: "tx-syncup-cross-seed"
+      )
+      + SyncUpsExample.createAttendeeOperations(
+        id: "attendee-b",
+        syncUpID: "syncup-b",
+        name: "B",
+        updatedAt: timestamp,
+        transactionID: "tx-syncup-cross-seed"
+      )
+    try await runtime.transact(
+      InstantStoreTransaction(id: "tx-syncup-cross-seed", operations: operations),
+      createdAt: timestamp
+    )
+
+    do {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-syncup-cross-replace",
+          operations: SyncUpsExample.replaceAttendeesOperations(
+            syncUpID: "syncup-a",
+            existingAttendeeIDs: ["attendee-b"],
+            newAttendees: [SyncUpAttendeeDraft(id: "attendee-a-new", name: "A New")],
+            updatedAt: timestamp,
+            transactionID: "tx-syncup-cross-replace"
+          )
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected cross-sync-up attendee replacement to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    let syncUpBAttendees = try SyncUpsExample.decodeAttendees(
+      (try await runtime.queryOnce(SyncUpsExample.attendeesForSyncUpQuery("syncup-b"))).values
+    )
+    expectNoDifference(syncUpBAttendees, [
+      SyncUpAttendeeRecord(id: "attendee-b", name: "B", syncUpID: "syncup-b")
+    ])
+  }
+
+  @Test
+  func syncUpFormModelMaintainsBlankAttendeeFocusAndDismissalState() {
+    var model = SyncUpFormModel(
+      syncUp: SyncUpDraft(title: "Focus"),
+      attendees: [
+        SyncUpAttendeeDraft(id: "draft-first", name: "Blob"),
+        SyncUpAttendeeDraft(id: "draft-second", name: "Blob Jr"),
+      ],
+      blankAttendeeID: "draft-unused-blank"
+    )
+
+    model.deleteAttendees(atOffsets: IndexSet(0..<2), blankAttendeeID: "draft-replacement")
+    expectNoDifference(model.attendees, [
+      SyncUpAttendeeDraft(id: "draft-replacement", name: "")
+    ])
+    expectNoDifference(model.focus, .attendee("draft-replacement"))
+
+    model.attendees[0].name = "   "
+    let save = model.saveButtonTapped(
+      newSyncUpID: "syncup-focus",
+      blankAttendeeID: "draft-save-replacement",
+      updatedAt: InstantTimestamp(milliseconds: 1_700_000_000_000),
+      transactionID: "tx-syncup-form-focus"
+    )
+    expectNoDifference(save.attendees, [
+      SyncUpAttendeeDraft(id: "draft-save-replacement", name: "")
+    ])
+    expectNoDifference(model.focus, .attendee("draft-save-replacement"))
+    expectNoDifference(model.isDismissed, false)
+    model.commit(save)
+    expectNoDifference(model.isDismissed, true)
+
+    var cancelModel = SyncUpFormModel(
+      syncUp: SyncUpDraft(title: "Cancel"),
+      blankAttendeeID: "draft-cancel"
+    )
+    cancelModel.cancelButtonTapped()
+    expectNoDifference(cancelModel.isDismissed, true)
   }
 
   @Test

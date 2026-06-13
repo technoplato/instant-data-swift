@@ -86,6 +86,34 @@ public struct SyncUpSeedRecord: Hashable, Codable, Sendable {
   }
 }
 
+public struct SyncUpDraft: Hashable, Codable, Sendable {
+  public var id: String?
+  public var title: String
+  public var seconds: Int
+  public var theme: SyncUpTheme
+
+  public init(
+    id: String? = nil,
+    title: String = "",
+    seconds: Int = 60 * 5,
+    theme: SyncUpTheme = .bubblegum
+  ) {
+    self.id = id
+    self.title = title
+    self.seconds = seconds
+    self.theme = theme
+  }
+
+  public init(_ syncUp: SyncUpRecord) {
+    self.init(
+      id: syncUp.id,
+      title: syncUp.title,
+      seconds: syncUp.seconds,
+      theme: syncUp.theme
+    )
+  }
+}
+
 public struct SyncUpAttendeeSeedRecord: Hashable, Codable, Sendable {
   public var localIDName: String
   public var syncUpLocalIDName: String
@@ -105,6 +133,233 @@ public struct SyncUpAttendeeDraft: Hashable, Codable, Sendable {
   public init(id: String, name: String) {
     self.id = id
     self.name = name
+  }
+}
+
+public struct SyncUpFormSave: Hashable, Sendable {
+  public var syncUpID: String
+  public var operations: [InstantTripleOperation]
+  public var attendees: [SyncUpAttendeeDraft]
+
+  public init(
+    syncUpID: String,
+    operations: [InstantTripleOperation],
+    attendees: [SyncUpAttendeeDraft]
+  ) {
+    self.syncUpID = syncUpID
+    self.operations = operations
+    self.attendees = attendees
+  }
+}
+
+public struct SyncUpFormModel: Hashable, Sendable {
+  public enum Field: Hashable, Sendable {
+    case attendee(String)
+    case title
+  }
+
+  public var attendees: [SyncUpAttendeeDraft]
+  public private(set) var existingAttendeeIDs: [String]
+  public var focus: Field?
+  public var isDismissed: Bool
+  public var syncUp: SyncUpDraft
+
+  public init(
+    syncUp: SyncUpDraft,
+    attendees: [SyncUpAttendeeDraft] = [],
+    existingAttendeeIDs: [String] = [],
+    blankAttendeeID: String,
+    focus: Field? = .title
+  ) {
+    let existingAttendeeIDs = Self.unique(existingAttendeeIDs)
+    let attendees = attendees.isEmpty
+      ? [SyncUpAttendeeDraft(id: blankAttendeeID, name: "")]
+      : attendees
+    self.syncUp = syncUp
+    self.attendees = Self.sanitizedAttendees(
+      attendees,
+      existingAttendeeIDs: existingAttendeeIDs
+    )
+    self.existingAttendeeIDs = existingAttendeeIDs
+    self.focus = Self.sanitizedFocus(focus, attendees: self.attendees)
+    self.isDismissed = false
+  }
+
+  public init(
+    syncUp: SyncUpRecord,
+    existingAttendees: [SyncUpAttendeeRecord],
+    draftAttendeeIDs: [String],
+    blankAttendeeID: String,
+    focus: Field? = .title
+  ) {
+    let existingAttendeeIDs = existingAttendees.map(\.id)
+    var usedDraftAttendeeIDs: [String] = []
+    let draftAttendees = existingAttendees.enumerated().map { offset, attendee in
+      let proposedID = draftAttendeeIDs.indices.contains(offset)
+        ? draftAttendeeIDs[offset]
+        : "draft-\(attendee.id)"
+      let id = Self.distinctDraftAttendeeID(
+        proposedID,
+        existingAttendeeIDs: existingAttendeeIDs,
+        usedDraftAttendeeIDs: usedDraftAttendeeIDs
+      )
+      usedDraftAttendeeIDs.append(id)
+      return SyncUpAttendeeDraft(id: id, name: attendee.name)
+    }
+    self.init(
+      syncUp: SyncUpDraft(syncUp),
+      attendees: draftAttendees,
+      existingAttendeeIDs: existingAttendeeIDs,
+      blankAttendeeID: blankAttendeeID,
+      focus: focus
+    )
+  }
+
+  public mutating func deleteAttendees(
+    atOffsets indices: IndexSet,
+    blankAttendeeID: String
+  ) {
+    for index in indices.sorted(by: >) where attendees.indices.contains(index) {
+      attendees.remove(at: index)
+    }
+    if attendees.isEmpty {
+      attendees.append(SyncUpAttendeeDraft(id: blankAttendeeID, name: ""))
+    }
+    guard let firstIndex = indices.first else { return }
+    let index = min(firstIndex, attendees.count - 1)
+    focus = .attendee(attendees[index].id)
+  }
+
+  public mutating func addAttendeeButtonTapped(id: String) {
+    let attendee = SyncUpAttendeeDraft(
+      id: Self.distinctDraftAttendeeID(
+        id,
+        existingAttendeeIDs: existingAttendeeIDs,
+        usedDraftAttendeeIDs: attendees.map(\.id)
+      ),
+      name: ""
+    )
+    attendees.append(attendee)
+    focus = .attendee(attendee.id)
+  }
+
+  public mutating func cancelButtonTapped() {
+    isDismissed = true
+  }
+
+  public mutating func saveButtonTapped(
+    newSyncUpID: String,
+    blankAttendeeID: String,
+    updatedAt: InstantTimestamp,
+    transactionID: String
+  ) -> SyncUpFormSave {
+    normalizeAttendees(blankAttendeeID: blankAttendeeID)
+
+    let isNew = syncUp.id == nil
+    let syncUpID = syncUp.id ?? newSyncUpID
+
+    let syncUpOperations =
+      isNew
+      ? SyncUpsExample.createSyncUpOperations(
+        id: syncUpID,
+        title: syncUp.title,
+        seconds: syncUp.seconds,
+        theme: syncUp.theme,
+        updatedAt: updatedAt,
+        transactionID: transactionID
+      )
+      : SyncUpsExample.updateSyncUpOperations(
+        id: syncUpID,
+        title: syncUp.title,
+        seconds: syncUp.seconds,
+        theme: syncUp.theme,
+        updatedAt: updatedAt,
+        transactionID: transactionID
+      )
+
+    let operations =
+      syncUpOperations
+      + SyncUpsExample.replaceAttendeesOperations(
+        syncUpID: syncUpID,
+        existingAttendeeIDs: existingAttendeeIDs,
+        newAttendees: attendees,
+        updatedAt: updatedAt,
+        transactionID: transactionID
+      )
+    return SyncUpFormSave(syncUpID: syncUpID, operations: operations, attendees: attendees)
+  }
+
+  public mutating func commit(_ save: SyncUpFormSave) {
+    syncUp.id = save.syncUpID
+    attendees = save.attendees
+    existingAttendeeIDs = save.attendees.map(\.id)
+    isDismissed = true
+  }
+
+  private mutating func normalizeAttendees(blankAttendeeID: String) {
+    let focus = focus
+    attendees.removeAll { attendee in
+      attendee.name.allSatisfy(\.isWhitespace)
+    }
+    if attendees.isEmpty {
+      attendees.append(SyncUpAttendeeDraft(id: blankAttendeeID, name: ""))
+    }
+    attendees = Self.sanitizedAttendees(
+      attendees,
+      existingAttendeeIDs: existingAttendeeIDs
+    )
+    self.focus = Self.sanitizedFocus(focus, attendees: attendees)
+  }
+
+  private static func sanitizedAttendees(
+    _ attendees: [SyncUpAttendeeDraft],
+    existingAttendeeIDs: [String]
+  ) -> [SyncUpAttendeeDraft] {
+    var usedDraftAttendeeIDs: [String] = []
+    return attendees.map { attendee in
+      let id = distinctDraftAttendeeID(
+        attendee.id,
+        existingAttendeeIDs: existingAttendeeIDs,
+        usedDraftAttendeeIDs: usedDraftAttendeeIDs
+      )
+      usedDraftAttendeeIDs.append(id)
+      var attendee = attendee
+      attendee.id = id
+      return attendee
+    }
+  }
+
+  private static func sanitizedFocus(
+    _ focus: Field?,
+    attendees: [SyncUpAttendeeDraft]
+  ) -> Field? {
+    switch focus {
+    case let .attendee(id) where attendees.contains(where: { $0.id == id }):
+      return focus
+    case .attendee:
+      return attendees.first.map { .attendee($0.id) }
+    case .title, nil:
+      return focus
+    }
+  }
+
+  private static func unique(_ ids: [String]) -> [String] {
+    var seen: Set<String> = []
+    return ids.filter { seen.insert($0).inserted }
+  }
+
+  private static func distinctDraftAttendeeID(
+    _ id: String,
+    existingAttendeeIDs: [String],
+    usedDraftAttendeeIDs: [String]
+  ) -> String {
+    guard existingAttendeeIDs.contains(id) || usedDraftAttendeeIDs.contains(id)
+    else { return id }
+    var candidate = "draft-\(id)"
+    while existingAttendeeIDs.contains(candidate) || usedDraftAttendeeIDs.contains(candidate) {
+      candidate = "draft-\(candidate)"
+    }
+    return candidate
   }
 }
 
@@ -383,8 +638,12 @@ public enum SyncUpsExample {
     }
     return [
       .requireEntityExists(entityID: syncUpID, namespace: syncUpsNamespace)
-    ] + existingAttendeeIDs.flatMap { id in
-      deleteAttendeeEntityOperations(id: id)
+    ] + newAttendees.map { attendee in
+      .requireEntityMissing(entityID: attendee.id, namespace: attendeesNamespace)
+    } + existingAttendeeIDs.flatMap { id in
+      deleteAttendeeEntityPreconditions(id: id, syncUpID: syncUpID)
+    } + existingAttendeeIDs.map { id in
+      .deleteEntity(id)
     } + newAttendees.flatMap { attendee in
       [
         .requireEntityMissing(entityID: attendee.id, namespace: attendeesNamespace)
@@ -644,11 +903,23 @@ public enum SyncUpsExample {
     ]
   }
 
-  private static func deleteAttendeeEntityOperations(id: String) -> [InstantTripleOperation] {
+  private static func deleteAttendeeEntityPreconditions(
+    id: String,
+    syncUpID: String? = nil
+  ) -> [InstantTripleOperation] {
     [
       .requireEntityExists(entityID: id, namespace: attendeesNamespace),
-      .deleteEntity(id),
-    ]
+    ] + (
+      syncUpID.map { syncUpID in
+        [
+          InstantTripleOperation.requireTripleExists(
+            entityID: id,
+            attributeID: "attendees/syncUp",
+            value: .ref(syncUpID)
+          )
+        ]
+      } ?? []
+    )
   }
 
   private static func upsertMeetingOperations(

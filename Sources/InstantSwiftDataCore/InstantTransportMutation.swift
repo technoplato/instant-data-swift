@@ -48,16 +48,27 @@ public struct InstantTransportPrecondition: Hashable, Encodable, Sendable {
   public enum Kind: String, Encodable, Sendable {
     case entityMissing = "entity-missing"
     case entityExists = "entity-exists"
+    case tripleExists = "triple-exists"
   }
 
   public var kind: Kind
   public var entity: InstantTransportEntityRef
   public var namespace: String?
+  public var attributeID: String?
+  public var value: InstantTransportValue?
 
-  public init(kind: Kind, entity: InstantTransportEntityRef, namespace: String?) {
+  public init(
+    kind: Kind,
+    entity: InstantTransportEntityRef,
+    namespace: String?,
+    attributeID: String? = nil,
+    value: InstantTransportValue? = nil
+  ) {
     self.kind = kind
     self.entity = entity
     self.namespace = namespace
+    self.attributeID = attributeID
+    self.value = value
   }
 }
 
@@ -291,6 +302,9 @@ extension InstantStoreTransaction {
 
       case let .requireEntityExists(entityID, namespace):
         let entity = InstantTransportEntityRef.id(entityID)
+        guard modes[entity] != .create || namespaces[entity] != namespace else {
+          continue
+        }
         preconditions.append(
           InstantTransportPrecondition(kind: .entityExists, entity: entity, namespace: namespace)
         )
@@ -299,14 +313,25 @@ extension InstantStoreTransaction {
 
       case let .requireEntityExistsByLookup(lookup, namespace):
         let entity = InstantTransportEntityRef.lookup(lookup)
+        guard modes[entity] != .create || namespaces[entity] != namespace else {
+          continue
+        }
         preconditions.append(
           InstantTransportPrecondition(kind: .entityExists, entity: entity, namespace: namespace)
         )
         modes[entity] = .update
         namespaces[entity] = namespace
 
-      case .requireTripleExists:
-        break
+      case let .requireTripleExists(entityID, attributeID, value):
+        preconditions.append(
+          InstantTransportPrecondition(
+            kind: .tripleExists,
+            entity: .id(entityID),
+            namespace: nil,
+            attributeID: attributeID,
+            value: InstantTransportValue(value)
+          )
+        )
 
       case let .merge(triple):
         let entity = InstantTransportEntityRef.id(triple.entityID)
