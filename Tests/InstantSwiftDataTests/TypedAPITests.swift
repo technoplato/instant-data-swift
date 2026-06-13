@@ -8,6 +8,10 @@ import Testing
   import SwiftUI
 #endif
 
+#if canImport(Observation)
+  import Observation
+#endif
+
 @Suite(.serialized)
 struct TypedAPITests {
   @Test
@@ -3303,6 +3307,83 @@ struct TypedAPITests {
     expectNoDifference(counts.observationCount, 0)
   }
 
+  #if canImport(Observation)
+    @Test
+    func observableModelLoadsDynamicFetchQueriesThroughWrapperState() async throws {
+      let open = typedTodoSnapshot(
+        id: "todo-observable-open",
+        text: "Open",
+        isCompleted: false,
+        createdAt: Date(timeIntervalSince1970: 1_700_000_369.25)
+      )
+      let done = typedTodoSnapshot(
+        id: "todo-observable-done",
+        text: "Done",
+        isCompleted: true,
+        createdAt: Date(timeIntervalSince1970: 1_700_000_369.5)
+      )
+      let recorder = ClientCallRecorder(queryResults: [[open], [done]])
+      let client = recordingClient(recorder)
+      let model = TypedTodoObservableSearchModel()
+      let titleChange = ObservationChangeFlag()
+      let initiallyObservedTitles = withObservationTracking {
+        model.visibleTitles
+      } onChange: {
+        titleChange.record()
+      }
+      expectNoDifference(initiallyObservedTitles, [])
+      #expect(titleChange.value == false)
+
+      model.searchText = "Open"
+      model.isCompleted = false
+      try await model.refresh(using: client)
+
+      expectNoDifference(model.todos.map(\.text), ["Open"])
+      expectNoDifference(model.visibleTitles, ["Open"])
+      #expect(titleChange.value)
+      expectNoDifference(model.$todos.loadError, nil)
+      expectNoDifference(model.$todos.isLoading, false)
+
+      model.searchText = ""
+      model.isCompleted = nil
+      try await model.refresh(using: client)
+
+      expectNoDifference(model.todos, [])
+      expectNoDifference(model.$todos.loadError, nil)
+      expectNoDifference(model.$todos.isLoading, false)
+
+      model.searchText = "Done"
+      model.isCompleted = true
+      try await model.refresh(using: client)
+
+      expectNoDifference(model.todos.map(\.text), ["Done"])
+      let plans = await recorder.queryPlans()
+      expectNoDifference(
+        plans.map(\.filters),
+        [
+          [
+            .equals(field: "text", value: .string("Open")),
+            .equals(field: "isCompleted", value: .bool(false)),
+          ],
+          [
+            .equals(field: "text", value: .string("Done")),
+            .equals(field: "isCompleted", value: .bool(true)),
+          ],
+        ]
+      )
+      expectNoDifference(
+        plans.map(\.order),
+        [
+          InstantQueryOrder("createdAt"),
+          InstantQueryOrder("createdAt"),
+        ]
+      )
+      let counts = await recorder.counts()
+      expectNoDifference(counts.queryCount, 2)
+      expectNoDifference(counts.observationCount, 0)
+    }
+  #endif
+
   #if canImport(SwiftUI)
     @Test
     func projectedFetchWrappersExposeSwiftUIBindings() {
@@ -3354,11 +3435,30 @@ private struct FetchCounter: Hashable, Sendable {
   var count: Int
 }
 
+// SAFETY: mutable state is protected by `lock`.
+private final class ObservationChangeFlag: @unchecked Sendable {
+  private let lock = NSLock()
+  private var didChange = false
+
+  var value: Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return didChange
+  }
+
+  func record() {
+    lock.lock()
+    didChange = true
+    lock.unlock()
+  }
+}
+
 private actor ClientCallRecorder {
   private var queryResults: [[InstantEntitySnapshot]]
   private var fallbackError: InstantError?
   private var queryCount = 0
   private var observationCount = 0
+  private var plans: [InstantQueryPlan] = []
 
   init(
     queryResults: [[InstantEntitySnapshot]] = [],
@@ -3368,8 +3468,9 @@ private actor ClientCallRecorder {
     self.fallbackError = fallbackError
   }
 
-  func query() throws -> [InstantEntitySnapshot] {
+  func query(plan: InstantQueryPlan) throws -> [InstantEntitySnapshot] {
     queryCount += 1
+    plans.append(plan)
     if !queryResults.isEmpty {
       return queryResults.removeFirst()
     }
@@ -3390,6 +3491,10 @@ private actor ClientCallRecorder {
   func counts() -> (queryCount: Int, observationCount: Int) {
     (queryCount, observationCount)
   }
+
+  func queryPlans() -> [InstantQueryPlan] {
+    plans
+  }
 }
 
 private func recordingClient(_ recorder: ClientCallRecorder) -> InstantSwiftDataClient {
@@ -3402,8 +3507,8 @@ private func recordingClient(_ recorder: ClientCallRecorder) -> InstantSwiftData
         emissions: []
       )
     },
-    query: { _ in
-      try await recorder.query()
+    query: { plan in
+      try await recorder.query(plan: plan)
     },
     observe: { plan in
       await recorder.observe(plan: plan)
@@ -3607,6 +3712,37 @@ private struct TypedTodoFetchOneModel {
     try await $todo.load()
   }
 }
+
+#if canImport(Observation)
+  @Observable
+  private final class TypedTodoObservableSearchModel {
+    var searchText = ""
+    var isCompleted: Bool?
+    var visibleTitles: [String] = []
+
+    @ObservationIgnored
+    @FetchAll
+    var todos: [TypedTodo] = []
+
+    func refresh(using client: InstantSwiftDataClient) async throws {
+      let text = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+      var query: InstantEntityQuery<TypedTodo>?
+      if !text.isEmpty || isCompleted != nil {
+        var builtQuery = TypedTodo.query.order(TypedTodo.createdAt)
+        if !text.isEmpty {
+          builtQuery = builtQuery.where(TypedTodo.text == text)
+        }
+        if let isCompleted {
+          builtQuery = builtQuery.where(TypedTodo.isCompleted == isCompleted)
+        }
+        query = builtQuery
+      }
+
+      try await $todos.load(query, using: client)
+      visibleTitles = todos.map(\.text)
+    }
+  }
+#endif
 
 private struct RequiredTypedTodoFetchOneModel {
   @FetchOne var todo: TypedTodo
