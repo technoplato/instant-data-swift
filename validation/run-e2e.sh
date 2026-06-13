@@ -4,11 +4,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RESULTS_DIR="${INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR:-${ROOT}/validation/results/$(date -u +%Y%m%dT%H%M%SZ)}"
 VALIDATION_APP_ID="local-validation"
+BENCHMARK_ITERATIONS="${INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS:-1}"
 
 mkdir -p "${RESULTS_DIR}"
 rm -f \
   "${RESULTS_DIR}/swift-local.jsonl" \
   "${RESULTS_DIR}/swift-local-integrations.jsonl" \
+  "${RESULTS_DIR}/swift-benchmark.jsonl" \
   "${RESULTS_DIR}/typescript-fixtures.jsonl"
 : > "${RESULTS_DIR}/orchestrator.jsonl"
 
@@ -102,7 +104,8 @@ for required_file in \
   "${ROOT}/validation/fixtures/instant.perms.ts" \
   "${ROOT}/validation/ts-runner/package.json" \
   "${ROOT}/Package.swift" \
-  "${ROOT}/Sources/InstantSwiftDataValidationRunner/main.swift"
+  "${ROOT}/Sources/InstantSwiftDataValidationRunner/main.swift" \
+  "${ROOT}/Sources/InstantSwiftDataBenchmarks/main.swift"
 do
   if ! require_file "${required_file}"; then
     missing_required_file=true
@@ -164,6 +167,29 @@ else
   exit "${status}"
 fi
 
+log_json "swift-benchmark-start" true
+if (
+  cd "${ROOT}"
+  swift run instant-swift-data-benchmarks \
+    --suite local-todos \
+    --iterations "${BENCHMARK_ITERATIONS}" \
+    --app-id "${VALIDATION_APP_ID}" \
+    --jsonl
+) | tee "${RESULTS_DIR}/swift-benchmark.jsonl"; then
+  log_json "swift-benchmark-complete" true "$(json_object "path" "${RESULTS_DIR}/swift-benchmark.jsonl")"
+else
+  status=$?
+  log_json \
+    "swift-benchmark-failed" \
+    false \
+    "$(json_failure_details "${RESULTS_DIR}/swift-benchmark.jsonl" "${status}")"
+  log_json \
+    "complete" \
+    false \
+    "$(printf '{"resultsDir":%s,"failed":"swift-benchmark","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+  exit "${status}"
+fi
+
 if command -v node >/dev/null 2>&1; then
   log_json "typescript-fixtures-start" true
   if (
@@ -185,7 +211,7 @@ if command -v node >/dev/null 2>&1; then
   fi
   log_json "typescript-boundary-pending" true "$(json_object "reason" "Real Instant app creation, schema push, and admin query/transact remain pending")"
 else
-  log_json "typescript-boundary-skipped" true "$(json_object "reason" "node is not available and Swift local validations completed")"
+  log_json "typescript-boundary-skipped" true "$(json_object "reason" "node is not available and Swift local validations and benchmark completed")"
 fi
 
 log_json "complete" true "$(json_object "resultsDir" "${RESULTS_DIR}")"

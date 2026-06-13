@@ -183,9 +183,12 @@ struct LocalTodoValidationTests {
     let script = try String(contentsOf: scriptURL, encoding: .utf8)
 
     #expect(script.contains("INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR"))
+    #expect(script.contains("INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS"))
     #expect(script.contains("swift run instant-swift-data-validation-runner --local-todos"))
     #expect(script.contains("swift run instant-swift-data-validation-runner --local-integrations"))
+    #expect(script.contains("swift run instant-swift-data-benchmarks"))
     #expect(script.contains("swift-local-integrations.jsonl"))
+    #expect(script.contains("swift-benchmark.jsonl"))
     #expect(script.contains("node validation/ts-runner/src/main.ts --fixtures"))
     #expect(script.contains("rm -f"))
     #expect(script.contains(": > \"${RESULTS_DIR}/orchestrator.jsonl\""))
@@ -211,21 +214,33 @@ struct LocalTodoValidationTests {
       .appendingPathComponent("InstantSwiftDataRunE2E-\(UUID().uuidString)", isDirectory: true)
     let binURL = tempURL.appendingPathComponent("bin", isDirectory: true)
     let resultsURL = tempURL.appendingPathComponent("results", isDirectory: true)
+    let benchmarkIterations = "7"
     try FileManager.default.createDirectory(at: binURL, withIntermediateDirectories: true)
     try FileManager.default.createDirectory(at: resultsURL, withIntermediateDirectories: true)
 
     try writeExecutable(
       """
       #!/bin/sh
-      case "$3" in
-        --local-todos)
+      case "$2:$3" in
+        instant-swift-data-validation-runner:--local-todos)
           if [ "${SWIFT_STUB_FAIL_LOCAL_TODOS:-}" = "1" ]; then
             exit 42
           fi
           echo '{"case":"validation.local.todos","side":"swift","event":"stub-todos","appID":"local-validation","timestampMs":1,"ok":true,"details":{}}'
           ;;
-        --local-integrations)
+        instant-swift-data-validation-runner:--local-integrations)
           echo '{"case":"validation.local.integrations","side":"swift","event":"stub-integrations","appID":"local-validation","timestampMs":2,"ok":true,"details":{}}'
+          ;;
+        instant-swift-data-benchmarks:--suite)
+          expected="run instant-swift-data-benchmarks --suite local-todos --iterations ${INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS:-1} --app-id local-validation --jsonl"
+          if [ "$*" != "$expected" ]; then
+            echo "unexpected benchmark arguments: $*" >&2
+            exit 65
+          fi
+          if [ "${SWIFT_STUB_FAIL_BENCHMARK:-}" = "1" ]; then
+            exit 43
+          fi
+          echo '{"case":"benchmark.local.todos","side":"swift","event":"summary","appID":"local-validation","timestampMs":3,"ok":true,"details":{"suite":"local-todos","iterations":7}}'
           ;;
         *)
           echo "unexpected swift arguments: $*" >&2
@@ -246,7 +261,10 @@ struct LocalTodoValidationTests {
     let firstRun = try runValidationRunE2E(
       scriptURL: scriptURL,
       resultsURL: resultsURL,
-      binURL: binURL
+      binURL: binURL,
+      extraEnvironment: [
+        "INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS": benchmarkIterations
+      ]
     )
     #expect(firstRun.status == 0, "run-e2e.sh failed: \(firstRun.stderr)")
     let successRows = try readJSONLines(resultsURL.appendingPathComponent("orchestrator.jsonl"))
@@ -256,6 +274,8 @@ struct LocalTodoValidationTests {
       "swift-local-complete",
       "swift-local-integrations-start",
       "swift-local-integrations-complete",
+      "swift-benchmark-start",
+      "swift-benchmark-complete",
       "typescript-fixtures-start",
       "typescript-fixtures-complete",
       "typescript-boundary-pending",
@@ -272,12 +292,22 @@ struct LocalTodoValidationTests {
     )
     #expect(
       FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-benchmark.jsonl").path
+      )
+    )
+    #expect(
+      FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("typescript-fixtures.jsonl").path
       )
     )
 
     try "stale integrations\n".write(
       to: resultsURL.appendingPathComponent("swift-local-integrations.jsonl"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try "stale benchmark\n".write(
+      to: resultsURL.appendingPathComponent("swift-benchmark.jsonl"),
       atomically: true,
       encoding: .utf8
     )
@@ -309,6 +339,64 @@ struct LocalTodoValidationTests {
       !FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("swift-local-integrations.jsonl").path
       )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-benchmark.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-fixtures.jsonl").path
+      )
+    )
+
+    try "stale benchmark\n".write(
+      to: resultsURL.appendingPathComponent("swift-benchmark.jsonl"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try "stale typescript\n".write(
+      to: resultsURL.appendingPathComponent("typescript-fixtures.jsonl"),
+      atomically: true,
+      encoding: .utf8
+    )
+
+    let benchmarkFailedRun = try runValidationRunE2E(
+      scriptURL: scriptURL,
+      resultsURL: resultsURL,
+      binURL: binURL,
+      extraEnvironment: [
+        "INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS": benchmarkIterations,
+        "SWIFT_STUB_FAIL_BENCHMARK": "1",
+      ]
+    )
+    #expect(benchmarkFailedRun.status == 43)
+    let benchmarkFailedRows = try readJSONLines(
+      resultsURL.appendingPathComponent("orchestrator.jsonl")
+    )
+    expectNoDifference(benchmarkFailedRows.map { $0["event"] as? String ?? "" }, [
+      "start",
+      "swift-local-start",
+      "swift-local-complete",
+      "swift-local-integrations-start",
+      "swift-local-integrations-complete",
+      "swift-benchmark-start",
+      "swift-benchmark-failed",
+      "complete",
+    ])
+    expectNoDifference(benchmarkFailedRows.last?["ok"] as? Bool, false)
+    let benchmarkFailedDetails = try #require(
+      benchmarkFailedRows.last?["details"] as? [String: Any]
+    )
+    expectNoDifference(benchmarkFailedDetails["failed"] as? String, "swift-benchmark")
+    expectNoDifference((benchmarkFailedDetails["exitCode"] as? NSNumber)?.intValue, 43)
+    expectNoDifference(
+      try String(
+        contentsOf: resultsURL.appendingPathComponent("swift-benchmark.jsonl"),
+        encoding: .utf8
+      ),
+      ""
     )
     #expect(
       !FileManager.default.fileExists(

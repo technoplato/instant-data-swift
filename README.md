@@ -222,7 +222,9 @@ validation/run-e2e.sh
 closed-connection offline write, offline relaunch restore, and reconnect flush.
 `validation local-integrations` emits evidence for local auth, room
 presence/topic messages, file upload/read, stream chunks, and share
-create/accept/revoke.
+create/accept/revoke. `validation/run-e2e.sh` also records a one-iteration
+`local-todos` benchmark JSONL artifact by default; set
+`INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS` to change that count.
 
 Run local core benchmarks:
 
