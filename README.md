@@ -225,6 +225,8 @@ Queries without an explicit order follow Instant's implicit
 one-shot reads; use raw `queryOnce` when you need snapshots or emissions.
 Partial field selection returns raw snapshots unless your entity decoder can
 build a value from the selected fields.
+Strict one-shot queries validate field, order, and include references before
+materializing or caching results.
 
 `create` follows Instant's strict-insert semantics and fails when the entity
 already exists. Use `update` for upsert-style writes, `updateExisting` when a

@@ -111,9 +111,9 @@ real Instant app.
   `relation.field`.
 - Local triple materialization currently supports one-hop raw nested field
   filters (`relation.field`) over declared forward and reverse links, including
-  `relation.id`, null/not-equals matching for missing links, and validation that
-  rejects deeper paths such as `relation.child.field` by returning no local
-  results until full InstaQL path parity is implemented.
+  `relation.id`, null/not-equals matching for missing links. Strict runtime
+  query validation rejects undeclared fields and unsupported deeper paths such as
+  `relation.child.field` before materialization/cache writes.
 - Ordering on indexed fields and `serverCreatedAt`.
 - Local triple materialization uses `serverCreatedAt` ascending as the implicit
   no-order query order, matching Instant, and supports explicit
@@ -128,8 +128,9 @@ real Instant app.
 - Pagination on top-level namespaces: `limit`, `offset`, `first`, `after`,
   `last`, `before`, inclusive cursors, and page info.
 - Infinite query subscriptions.
-- Query validation that rejects unsupported operators and illegal nested
-  pagination before the network call.
+- Query validation rejects undeclared fields, unsupported nested paths, invalid
+  include targets, unsupported operators, and illegal nested pagination before
+  the network call.
 - Hashing/caching of queries so cached results can be restored consistently.
 
 ### Mutations

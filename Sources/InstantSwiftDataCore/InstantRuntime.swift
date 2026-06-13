@@ -163,6 +163,18 @@ public final class InstantRuntime: Sendable {
     do {
       for _ in 0..<5 {
         let state = try await persistence.loadState()
+        if let issue = TripleIndexes.validate(
+          plan,
+          attributes: AttributeStore(attributes: state.snapshot.store.attributes)
+        ) {
+          throw validationFailed(
+            operation: "validate query",
+            namespace: issue.namespace,
+            path: issue.path,
+            message: issue.message,
+            recovery: issue.recovery
+          )
+        }
         await store.replaceSnapshot(state.snapshot.store)
         let emission = await store.materializeEmission(plan)
         let didSave = try await persistence.saveQueryCache(
@@ -584,12 +596,16 @@ public final class InstantRuntime: Sendable {
 
   private func validationFailed(
     operation: String,
+    namespace: String? = nil,
+    path: String? = nil,
     message: String,
     recovery: String
   ) -> InstantError {
     InstantError(
       code: .validationFailed,
       operation: operation,
+      namespace: namespace,
+      path: path,
       message: message,
       recovery: recovery
     )

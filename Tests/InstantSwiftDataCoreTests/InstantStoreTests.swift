@@ -2643,14 +2643,20 @@ struct InstantStoreTests {
       expectNoDifference(ids, expectedIDs)
     }
 
-    for field in ["missing.title", "project.missing", "text.value", "project.title.extra"] {
-      let ids = try await queryIDs(
-        runtime,
-        id: "todos.invalid-nested.\(field)",
-        namespace: TodoExample.namespace,
-        filters: [.equals(field: field, value: .string("Launch"))]
-      )
-      expectNoDifference(ids, [])
+    for (field, namespace) in [
+      ("missing.title", TodoExample.namespace),
+      ("project.missing", TodoProjectExample.namespace),
+      ("text.value", TodoExample.namespace),
+      ("project.title.extra", TodoExample.namespace),
+    ] {
+      await expectQueryValidation(namespace: namespace, path: field) {
+        _ = try await queryIDs(
+          runtime,
+          id: "todos.invalid-nested.\(field)",
+          namespace: TodoExample.namespace,
+          filters: [.equals(field: field, value: .string("Launch"))]
+        )
+      }
     }
 
     let launchPlan = InstantQueryPlan(
@@ -2840,46 +2846,49 @@ struct InstantStoreTests {
       createdAt: createdAt
     )
 
-    let undeclared = try await runtime.query(
-      .init(
-        id: "todos.bad-include",
-        namespace: TodoExample.namespace,
-        includes: [InstantQueryInclude("missing")]
+    await expectQueryValidation(namespace: TodoExample.namespace, path: "missing") {
+      _ = try await runtime.query(
+        .init(
+          id: "todos.bad-include",
+          namespace: TodoExample.namespace,
+          includes: [InstantQueryInclude("missing")]
+        )
       )
-    )
-    expectNoDifference(undeclared, [])
+    }
 
-    let mismatchedNamespace = try await runtime.query(
-      .init(
-        id: "todos.mismatched-include",
-        namespace: TodoExample.namespace,
-        includes: [
-          InstantQueryInclude(
-            "project",
-            query: InstantQueryIncludePlan(id: "comments", namespace: "comments")
-          )
-        ]
-      )
-    )
-    expectNoDifference(mismatchedNamespace, [])
-
-    let undeclaredNestedFilter = try await runtime.query(
-      .init(
-        id: "todos.bad-nested-filter",
-        namespace: TodoExample.namespace,
-        includes: [
-          InstantQueryInclude(
-            "project",
-            query: InstantQueryIncludePlan(
-              id: "projects.bad-filter",
-              namespace: "projects",
-              filters: [.equals(field: "missing", value: .string("Launch"))]
+    await expectQueryValidation(namespace: TodoExample.namespace, path: "project") {
+      _ = try await runtime.query(
+        .init(
+          id: "todos.mismatched-include",
+          namespace: TodoExample.namespace,
+          includes: [
+            InstantQueryInclude(
+              "project",
+              query: InstantQueryIncludePlan(id: "comments", namespace: "comments")
             )
-          )
-        ]
+          ]
+        )
       )
-    )
-    expectNoDifference(undeclaredNestedFilter, [])
+    }
+
+    await expectQueryValidation(namespace: TodoProjectExample.namespace, path: "missing") {
+      _ = try await runtime.query(
+        .init(
+          id: "todos.bad-nested-filter",
+          namespace: TodoExample.namespace,
+          includes: [
+            InstantQueryInclude(
+              "project",
+              query: InstantQueryIncludePlan(
+                id: "projects.bad-filter",
+                namespace: "projects",
+                filters: [.equals(field: "missing", value: .string("Launch"))]
+              )
+            )
+          ]
+        )
+      )
+    }
 
     #expect(
       InstantQueryInclude(
@@ -3246,13 +3255,6 @@ struct InstantStoreTests {
         selectedFields: ["text"]
       )
     )
-    let invalidSelection = try await runtime.query(
-      InstantQueryPlan(
-        id: "todos.server-created-at.invalid-selection",
-        namespace: TodoExample.namespace,
-        selectedFields: ["serverCreatedAt"]
-      )
-    )
 
     expectNoDifference(ascending.map(\.id), ["todo-a", "todo-c", "todo-b"])
     expectNoDifference(descending.map(\.id), ["todo-b", "todo-c", "todo-a"])
@@ -3273,7 +3275,15 @@ struct InstantStoreTests {
       ["text": .one(.string("same time c"))],
       ["text": .one(.string("later b"))],
     ])
-    expectNoDifference(invalidSelection, [])
+    await expectQueryValidation(namespace: TodoExample.namespace, path: "serverCreatedAt") {
+      _ = try await runtime.query(
+        InstantQueryPlan(
+          id: "todos.server-created-at.invalid-selection",
+          namespace: TodoExample.namespace,
+          selectedFields: ["serverCreatedAt"]
+        )
+      )
+    }
     #expect(ascendingPlan.cacheKey != createdAtFieldPlan.cacheKey)
   }
 
@@ -3346,10 +3356,11 @@ struct InstantStoreTests {
     )
     expectNoDifference(previousPage.values.map(\.id), ["item-a", "item-b"])
 
-    let unknownOrder = try await runtime.query(
-      InstantQueryPlan(id: "items.unknown-order", namespace: "items", order: InstantQueryOrder("missing"))
-    )
-    expectNoDifference(unknownOrder, [])
+    await expectQueryValidation(namespace: "items", path: "missing") {
+      _ = try await runtime.query(
+        InstantQueryPlan(id: "items.unknown-order", namespace: "items", order: InstantQueryOrder("missing"))
+      )
+    }
   }
 
   @Test
@@ -3578,14 +3589,15 @@ struct InstantStoreTests {
     expectNoDifference(selectedAgain.selectedFields, ["text"])
     expectNoDifference(selectedAgain.cacheKey, selectedPlan.cacheKey)
 
-    let unknownSelection = try await runtime.query(
-      .init(
-        id: "items.unknown-selection",
-        namespace: "items",
-        selectedFields: ["missing"]
+    await expectQueryValidation(namespace: "items", path: "missing") {
+      _ = try await runtime.query(
+        .init(
+          id: "items.unknown-selection",
+          namespace: "items",
+          selectedFields: ["missing"]
+        )
       )
-    )
-    expectNoDifference(unknownSelection, [])
+    }
   }
 
   @Test
@@ -3737,50 +3749,54 @@ struct InstantStoreTests {
     )
     expectNoDifference(isNotNull.map(\.id), ["item-2", "item-5"])
 
-    let unknownNotEquals = try await runtime.query(
-      .init(
-        id: "items.ne-unknown",
-        namespace: "items",
-        filters: [.notEquals(field: "unknown", value: .string("anything"))],
-        order: .init("score")
+    await expectQueryValidation(namespace: "items", path: "unknown") {
+      _ = try await runtime.query(
+        .init(
+          id: "items.ne-unknown",
+          namespace: "items",
+          filters: [.notEquals(field: "unknown", value: .string("anything"))],
+          order: .init("score")
+        )
       )
-    )
-    expectNoDifference(unknownNotEquals, [])
+    }
 
-    let unknownIsNull = try await runtime.query(
-      .init(
-        id: "items.null-unknown",
-        namespace: "items",
-        filters: [.isNull(field: "unknown")],
-        order: .init("score")
+    await expectQueryValidation(namespace: "items", path: "unknown") {
+      _ = try await runtime.query(
+        .init(
+          id: "items.null-unknown",
+          namespace: "items",
+          filters: [.isNull(field: "unknown")],
+          order: .init("score")
+        )
       )
-    )
-    expectNoDifference(unknownIsNull, [])
+    }
 
-    let unknownIsNotNull = try await runtime.query(
-      .init(
-        id: "items.not-null-unknown",
-        namespace: "items",
-        filters: [.isNotNull(field: "unknown")],
-        order: .init("score")
+    await expectQueryValidation(namespace: "items", path: "unknown") {
+      _ = try await runtime.query(
+        .init(
+          id: "items.not-null-unknown",
+          namespace: "items",
+          filters: [.isNotNull(field: "unknown")],
+          order: .init("score")
+        )
       )
-    )
-    expectNoDifference(unknownIsNotNull, [])
+    }
 
-    let unknownInsideOr = try await runtime.query(
-      .init(
-        id: "items.unknown-inside-or",
-        namespace: "items",
-        filters: [
-          .or([
-            .equals(field: "unknown", value: .string("anything")),
-            .equals(field: "score", value: .number(1)),
-          ])
-        ],
-        order: .init("score")
+    await expectQueryValidation(namespace: "items", path: "unknown") {
+      _ = try await runtime.query(
+        .init(
+          id: "items.unknown-inside-or",
+          namespace: "items",
+          filters: [
+            .or([
+              .equals(field: "unknown", value: .string("anything")),
+              .equals(field: "score", value: .number(1)),
+            ])
+          ],
+          order: .init("score")
+        )
       )
-    )
-    expectNoDifference(unknownInsideOr, [])
+    }
 
     let mixedTypeComparison = try await runtime.query(
       .init(
@@ -4176,6 +4192,24 @@ struct InstantStoreTests {
         message: message,
         recovery: "Check the temporary test database."
       )
+    }
+  }
+
+  private func expectQueryValidation(
+    namespace: String,
+    path: String?,
+    _ operation: () async throws -> Void
+  ) async {
+    do {
+      try await operation()
+      #expect(Bool(false), "Expected query validation to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "validate query")
+      expectNoDifference(error.namespace, namespace)
+      expectNoDifference(error.path, path)
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
     }
   }
 }

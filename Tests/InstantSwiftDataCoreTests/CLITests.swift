@@ -228,8 +228,9 @@ extension InstantStoreTests {
       ["query", "todos", "--select", "missing", "--json"],
       homeURL: homeURL
     )
-    #expect(badSelection.status == 64)
-    #expect(badSelection.error.contains("--select text,isCompleted,createdAt"))
+    #expect(badSelection.status == 66)
+    #expect(badSelection.error.contains("validate query"))
+    #expect(badSelection.error.contains("path: missing"))
 
     let humanOutput = try runCLI(["query", "todos", "--completed", "true"], homeURL: homeURL)
     #expect(humanOutput.contains("transport: not-implemented-local-cache-only"))

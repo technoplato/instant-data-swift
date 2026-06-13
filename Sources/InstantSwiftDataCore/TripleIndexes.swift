@@ -52,6 +52,13 @@ struct AttributeStore: Hashable, Codable, Sendable {
   }
 }
 
+struct InstantQueryValidationIssue: Hashable, Sendable {
+  var namespace: String
+  var path: String?
+  var message: String
+  var recovery: String
+}
+
 struct TripleIndexes: Hashable, Codable, Sendable {
   private var eav: [String: [String: [InstantValue: InstantTriple]]] = [:]
   private var aev: [String: [String: [InstantValue: InstantTriple]]] = [:]
@@ -167,18 +174,9 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     _ plan: InstantQueryPlan,
     attributes: AttributeStore
   ) -> InstantQueryPage {
-    guard filtersReferenceDeclaredFields(plan.filters, namespace: plan.namespace, attributes: attributes)
-    else { return InstantQueryPage(values: [], pageInfo: pageInfo(for: [], plan: plan)) }
-    guard selectedFieldsReferenceDeclaredFields(
-      plan.selectedFields,
-      namespace: plan.namespace,
-      attributes: attributes
-    )
-    else { return InstantQueryPage(values: [], pageInfo: pageInfo(for: [], plan: plan)) }
-    guard orderReferencesDeclaredField(plan.order, namespace: plan.namespace, attributes: attributes)
-    else { return InstantQueryPage(values: [], pageInfo: pageInfo(for: [], plan: plan)) }
-    guard includesReferenceDeclaredLinks(plan.includes, namespace: plan.namespace, attributes: attributes)
-    else { return InstantQueryPage(values: [], pageInfo: pageInfo(for: [], plan: plan)) }
+    guard Self.validate(plan, attributes: attributes) == nil else {
+      return InstantQueryPage(values: [], pageInfo: pageInfo(for: [], plan: plan))
+    }
 
     var snapshots: [QuerySnapshot] = []
 
@@ -230,6 +228,38 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       values: project(linked, selectedFields: plan.selectedFields),
       pageInfo: paged.pageInfo
     )
+  }
+
+  static func validate(
+    _ plan: InstantQueryPlan,
+    attributes: AttributeStore
+  ) -> InstantQueryValidationIssue? {
+    if plan.first != nil, plan.last != nil {
+      return InstantQueryValidationIssue(
+        namespace: plan.namespace,
+        path: "pagination",
+        message: "A query cannot request both 'first' and 'last' pagination.",
+        recovery: "Use either 'first' for a forward page or 'last' for a reverse page."
+      )
+    }
+
+    if let issue = validate(filters: plan.filters, namespace: plan.namespace, attributes: attributes) {
+      return issue
+    }
+    if let issue = validateSelectedFields(
+      plan.selectedFields,
+      namespace: plan.namespace,
+      attributes: attributes
+    ) {
+      return issue
+    }
+    if let issue = validateOrder(plan.order, namespace: plan.namespace, attributes: attributes) {
+      return issue
+    }
+    if let issue = validateIncludes(plan.includes, namespace: plan.namespace, attributes: attributes) {
+      return issue
+    }
+    return nil
   }
 
   private func includeLinks(
@@ -817,6 +847,262 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     attributes: AttributeStore
   ) -> Bool {
     filters.allSatisfy { filterReferencesDeclaredFields($0, namespace: namespace, attributes: attributes) }
+  }
+
+  private static func validate(
+    filters: [InstantQueryFilter],
+    namespace: String,
+    attributes: AttributeStore
+  ) -> InstantQueryValidationIssue? {
+    for filter in filters {
+      if let issue = validate(filter: filter, namespace: namespace, attributes: attributes) {
+        return issue
+      }
+    }
+    return nil
+  }
+
+  private static func validate(
+    filter: InstantQueryFilter,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> InstantQueryValidationIssue? {
+    switch filter {
+    case let .equals(field, _),
+      let .notEquals(field, _),
+      let .greaterThan(field, _),
+      let .greaterThanOrEqual(field, _),
+      let .lessThan(field, _),
+      let .lessThanOrEqual(field, _),
+      let .in(field, _),
+      let .like(field, _),
+      let .iLike(field, _),
+      let .isNull(field),
+      let .isNotNull(field):
+      return validateFieldReference(
+        field,
+        namespace: namespace,
+        attributes: attributes,
+        context: "query filter",
+        allowNested: true
+      )
+
+    case let .and(filters), let .or(filters):
+      return validate(filters: filters, namespace: namespace, attributes: attributes)
+    }
+  }
+
+  private static func validateSelectedFields(
+    _ fields: [String]?,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> InstantQueryValidationIssue? {
+    guard let fields else { return nil }
+    for field in fields {
+      if let issue = validateFieldReference(
+        field,
+        namespace: namespace,
+        attributes: attributes,
+        context: "selected field",
+        allowNested: false
+      ) {
+        return issue
+      }
+    }
+    return nil
+  }
+
+  private static func validateOrder(
+    _ order: InstantQueryOrder?,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> InstantQueryValidationIssue? {
+    guard let order, !order.isServerCreatedAt else { return nil }
+    return validateFieldReference(
+      order.field,
+      namespace: namespace,
+      attributes: attributes,
+      context: "query order",
+      allowNested: false
+    )
+  }
+
+  private static func validateIncludes(
+    _ includes: [InstantQueryInclude]?,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> InstantQueryValidationIssue? {
+    guard let includes else { return nil }
+    for include in includes {
+      let childNamespace: String?
+      switch include.direction {
+      case .forward:
+        childNamespace = attributes.attribute(namespace: namespace, name: include.name).flatMap {
+          attribute in
+          guard attribute.valueType == .ref else { return nil }
+          return attribute.linkNamespace
+        }
+
+      case .reverse:
+        childNamespace = reverseAttribute(
+          namespace: namespace,
+          name: include.name,
+          attributes: attributes
+        )?.namespace
+      }
+
+      guard let childNamespace else {
+        return InstantQueryValidationIssue(
+          namespace: namespace,
+          path: include.name,
+          message: "'\(include.name)' is not a declared \(include.direction.rawValue) relation.",
+          recovery: "Include a declared ref relation, or update the schema attributes before querying."
+        )
+      }
+
+      guard let query = include.query else { continue }
+      guard query.namespace == childNamespace else {
+        return InstantQueryValidationIssue(
+          namespace: namespace,
+          path: include.name,
+          message: "Include '\(include.name)' targets '\(childNamespace)' but its query targets '\(query.namespace)'.",
+          recovery: "Use an include query for the relation's target namespace."
+        )
+      }
+      if let issue = validate(filters: query.filters, namespace: query.namespace, attributes: attributes) {
+        return issue
+      }
+      if let issue = validateSelectedFields(
+        query.selectedFields,
+        namespace: query.namespace,
+        attributes: attributes
+      ) {
+        return issue
+      }
+      if let issue = validateOrder(query.order, namespace: query.namespace, attributes: attributes) {
+        return issue
+      }
+    }
+    return nil
+  }
+
+  private static func validateFieldReference(
+    _ field: String,
+    namespace: String,
+    attributes: AttributeStore,
+    context: String,
+    allowNested: Bool
+  ) -> InstantQueryValidationIssue? {
+    if !field.contains(".") {
+      guard isDeclaredField(field, namespace: namespace, attributes: attributes) else {
+        return undeclaredFieldIssue(
+          field,
+          namespace: namespace,
+          context: context
+        )
+      }
+      return nil
+    }
+
+    guard allowNested else {
+      return InstantQueryValidationIssue(
+        namespace: namespace,
+        path: field,
+        message: "\(context) '\(field)' cannot use a nested relation path.",
+        recovery: "Use a direct field for this query clause."
+      )
+    }
+    guard let nested = nestedField(field) else {
+      return InstantQueryValidationIssue(
+        namespace: namespace,
+        path: field,
+        message: "Nested field path '\(field)' is not supported.",
+        recovery: "Use one relation and one field, such as 'project.title'."
+      )
+    }
+    guard
+      let targetNamespace = nestedFieldTargetNamespace(
+        nested,
+        namespace: namespace,
+        attributes: attributes
+      )
+    else {
+      return InstantQueryValidationIssue(
+        namespace: namespace,
+        path: field,
+        message: "'\(nested.relation)' is not a declared relation.",
+        recovery: "Filter through a declared forward or reverse relation."
+      )
+    }
+    guard isDeclaredField(nested.field, namespace: targetNamespace, attributes: attributes) else {
+      return undeclaredFieldIssue(
+        nested.field,
+        namespace: targetNamespace,
+        context: context,
+        path: field
+      )
+    }
+    return nil
+  }
+
+  private static func undeclaredFieldIssue(
+    _ field: String,
+    namespace: String,
+    context: String,
+    path: String? = nil
+  ) -> InstantQueryValidationIssue {
+    InstantQueryValidationIssue(
+      namespace: namespace,
+      path: path ?? field,
+      message: "\(context) '\(path ?? field)' references an undeclared field.",
+      recovery: "Declare the field in the schema attributes, or remove it from the query."
+    )
+  }
+
+  private static func isDeclaredField(
+    _ field: String,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> Bool {
+    attributes.attribute(namespace: namespace, name: field) != nil
+  }
+
+  private static func nestedField(_ field: String) -> NestedField? {
+    let parts = field.split(separator: ".", omittingEmptySubsequences: false)
+    guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
+    return NestedField(relation: String(parts[0]), field: String(parts[1]))
+  }
+
+  private static func nestedFieldTargetNamespace(
+    _ nested: NestedField,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> String? {
+    if
+      let attribute = attributes.attribute(namespace: namespace, name: nested.relation),
+      attribute.valueType == .ref,
+      let linkNamespace = attribute.linkNamespace
+    {
+      return linkNamespace
+    }
+
+    return reverseAttribute(
+      namespace: namespace,
+      name: nested.relation,
+      attributes: attributes
+    )?.namespace
+  }
+
+  private static func reverseAttribute(
+    namespace: String,
+    name: String,
+    attributes: AttributeStore
+  ) -> InstantAttribute? {
+    attributes.attributes.first {
+      $0.valueType == .ref
+        && $0.linkNamespace == namespace
+        && $0.reverseIdentity == "\(namespace)/\(name)"
+    }
   }
 
   private func selectedFieldsReferenceDeclaredFields(

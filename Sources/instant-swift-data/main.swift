@@ -2520,10 +2520,9 @@ struct InstantSwiftDataCLI {
       .split(separator: ",")
       .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
       .filter { !$0.isEmpty }
-    let declaredFields = Set(TodoExample.attributes.map(\.name))
-    guard !fields.isEmpty, fields.allSatisfy({ declaredFields.contains($0) }) else {
+    guard !fields.isEmpty else {
       throw CLIError(
-        "Usage: \(usageCommand) --select text,isCompleted,createdAt",
+        "Usage: \(usageCommand) --select field[,field]",
         exitCode: 64
       )
     }
