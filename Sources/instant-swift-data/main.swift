@@ -518,78 +518,112 @@ struct InstantSwiftDataCLI {
 
   private static func runCache(arguments: [String], output: OutputMode) async throws {
     var arguments = arguments
-    guard arguments.popFirstArgument() == "inspect", arguments.isEmpty else {
-      throw CLIError("Usage: instant-swift-data cache inspect [--json|--jsonl]", exitCode: 64)
+    guard let command = arguments.popFirstArgument() else {
+      throw CLIError(cacheUsage, exitCode: 64)
     }
 
     let context = try await CLIContext.bootstrap(initialAttributes: [])
     let snapshot = try await context.runtime.persistence.loadSnapshot()
-    let queryCache = try await context.runtime.cachedQueries()
-    let summary = CacheInspectOutput(
-      appID: context.appID,
-      cachePath: context.cacheURL.path,
-      transport: "not-implemented-local-cache-only",
-      attributeCount: snapshot.store.attributes.count,
-      tripleCount: snapshot.store.triples.count,
-      queryCacheCount: queryCache.count,
-      outboxMutationCount: snapshot.outbox.count,
-      namespaces: namespaceSummaries(snapshot.store),
-      queries: queryCacheSummaries(queryCache)
-    )
 
-    switch output {
-    case .human:
-      print("cache: \(summary.cachePath)")
-      print("attributes: \(summary.attributeCount)")
-      print("triples: \(summary.tripleCount)")
-      print("cached queries: \(summary.queryCacheCount)")
-      print("outbox mutations: \(summary.outboxMutationCount)")
-      if !summary.queries.isEmpty {
-        print("cached query entries:")
-        for query in summary.queries {
-          print(
-            "  \(query.queryID) namespace=\(query.namespace) results=\(query.resultCount) key=\(query.shortCacheKey)"
-          )
-        }
+    switch command {
+    case "inspect":
+      guard arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data cache inspect [--json|--jsonl]", exitCode: 64)
       }
-      if summary.namespaces.isEmpty {
-        print("namespaces: none")
-      } else {
-        print("namespaces:")
-        for namespace in summary.namespaces {
-          print(
-            "  \(namespace.namespace) entities=\(namespace.entityCount) triples=\(namespace.tripleCount)"
-          )
-        }
-      }
-
-    case .json:
-      try writeJSON(summary)
-
-    case .jsonl:
-      try writeJSONLine(
-        EvidenceRow(
-          caseID: "cli.cache.inspect",
-          side: "swift",
-          event: "summary",
-          appID: context.appID,
-          ok: true,
-          details: summary
-        )
+      let queryCache = try await context.runtime.cachedQueries()
+      let summary = CacheInspectOutput(
+        appID: context.appID,
+        cachePath: context.cacheURL.path,
+        transport: "not-implemented-local-cache-only",
+        attributeCount: snapshot.store.attributes.count,
+        tripleCount: snapshot.store.triples.count,
+        queryCacheCount: queryCache.count,
+        outboxMutationCount: snapshot.outbox.count,
+        namespaces: namespaceSummaries(snapshot.store),
+        queries: queryCacheSummaries(queryCache)
       )
-      for namespace in summary.namespaces {
+
+      switch output {
+      case .human:
+        print("cache: \(summary.cachePath)")
+        print("attributes: \(summary.attributeCount)")
+        print("triples: \(summary.tripleCount)")
+        print("cached queries: \(summary.queryCacheCount)")
+        print("outbox mutations: \(summary.outboxMutationCount)")
+        if !summary.queries.isEmpty {
+          print("cached query entries:")
+          for query in summary.queries {
+            print(
+              "  \(query.queryID) namespace=\(query.namespace) results=\(query.resultCount) key=\(query.shortCacheKey)"
+            )
+          }
+        }
+        if summary.namespaces.isEmpty {
+          print("namespaces: none")
+        } else {
+          print("namespaces:")
+          for namespace in summary.namespaces {
+            print(
+              "  \(namespace.namespace) entities=\(namespace.entityCount) triples=\(namespace.tripleCount)"
+            )
+          }
+        }
+
+      case .json:
+        try writeJSON(summary)
+
+      case .jsonl:
         try writeJSONLine(
           EvidenceRow(
             caseID: "cli.cache.inspect",
             side: "swift",
-            event: "namespace",
+            event: "summary",
             appID: context.appID,
-            entityID: namespace.namespace,
             ok: true,
-            details: namespace
+            details: summary
           )
         )
+        for namespace in summary.namespaces {
+          try writeJSONLine(
+            EvidenceRow(
+              caseID: "cli.cache.inspect",
+              side: "swift",
+              event: "namespace",
+              appID: context.appID,
+              entityID: namespace.namespace,
+              ok: true,
+              details: namespace
+            )
+          )
+        }
       }
+
+    case "attributes", "attrs":
+      let namespace = try parseOptionalCacheNamespace(
+        arguments: arguments,
+        usage: "Usage: instant-swift-data cache attributes [namespace] [--json|--jsonl]"
+      )
+      try printCacheAttributes(
+        context: context,
+        output: output,
+        namespace: namespace,
+        attributes: cacheAttributes(snapshot.store, namespace: namespace)
+      )
+
+    case "triples", "facts":
+      let namespace = try parseOptionalCacheNamespace(
+        arguments: arguments,
+        usage: "Usage: instant-swift-data cache triples [namespace] [--json|--jsonl]"
+      )
+      try printCacheTriples(
+        context: context,
+        output: output,
+        namespace: namespace,
+        triples: cacheTriples(snapshot.store, namespace: namespace)
+      )
+
+    default:
+      throw CLIError(cacheUsage, exitCode: 64)
     }
   }
 
@@ -1167,6 +1201,126 @@ struct InstantSwiftDataCLI {
 
     default:
       throw CLIError(sharesUsage, exitCode: 64)
+    }
+  }
+
+  private static func printCacheAttributes(
+    context: CLIContext,
+    output: OutputMode,
+    namespace: String?,
+    attributes: [InstantAttribute]
+  ) throws {
+    let payload = CacheAttributesOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      transport: "not-implemented-local-cache-only",
+      namespace: namespace,
+      attributeCount: attributes.count,
+      attributes: attributes
+    )
+
+    switch output {
+    case .human:
+      if attributes.isEmpty {
+        print("attributes: none")
+      } else {
+        for attribute in attributes {
+          print(
+            "\(attribute.id) namespace=\(attribute.namespace) name=\(attribute.name) type=\(attribute.valueType.rawValue)"
+          )
+        }
+      }
+      print("transport: \(payload.transport)")
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.cache.attributes",
+          side: "swift",
+          event: "summary",
+          appID: context.appID,
+          entityID: namespace,
+          ok: true,
+          details: payload
+        )
+      )
+      for attribute in attributes {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.cache.attributes",
+            side: "swift",
+            event: "attribute",
+            appID: context.appID,
+            entityID: attribute.id,
+            ok: true,
+            details: attribute
+          )
+        )
+      }
+    }
+  }
+
+  private static func printCacheTriples(
+    context: CLIContext,
+    output: OutputMode,
+    namespace: String?,
+    triples: [InstantTriple]
+  ) throws {
+    let payload = CacheTriplesOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      transport: "not-implemented-local-cache-only",
+      namespace: namespace,
+      tripleCount: triples.count,
+      triples: triples
+    )
+
+    switch output {
+    case .human:
+      if triples.isEmpty {
+        print("triples: none")
+      } else {
+        for triple in triples {
+          print(
+            "\(triple.entityID) \(triple.attributeID) \(triple.value.comparableKey) tx=\(triple.txID)"
+          )
+        }
+      }
+      print("transport: \(payload.transport)")
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.cache.triples",
+          side: "swift",
+          event: "summary",
+          appID: context.appID,
+          entityID: namespace,
+          ok: true,
+          details: payload
+        )
+      )
+      for triple in triples {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.cache.triples",
+            side: "swift",
+            event: "triple",
+            appID: context.appID,
+            entityID: triple.entityID,
+            ok: true,
+            details: triple
+          )
+        )
+      }
     }
   }
 
@@ -2310,6 +2464,8 @@ struct InstantSwiftDataCLI {
         examples todo-links nested [--json|--jsonl]
         examples todo-links unlink [--json|--jsonl]
         cache inspect [--json|--jsonl]
+        cache attributes [namespace] [--json|--jsonl]
+        cache triples [namespace] [--json|--jsonl]
         outbox inspect [--json|--jsonl]
         outbox confirm <mutation-id> [--json|--jsonl]
         outbox fail <mutation-id> "reason" [--json|--jsonl]
@@ -3489,6 +3645,15 @@ struct InstantSwiftDataCLI {
     """
   }
 
+  private static var cacheUsage: String {
+    """
+    Usage: instant-swift-data cache <inspect|attributes|triples>
+      instant-swift-data cache inspect [--json|--jsonl]
+      instant-swift-data cache attributes [namespace] [--json|--jsonl]
+      instant-swift-data cache triples [namespace] [--json|--jsonl]
+    """
+  }
+
   private static var adminUsage: String {
     """
     Usage: instant-swift-data admin <query|transact>
@@ -3658,6 +3823,67 @@ struct InstantSwiftDataCLI {
         attributeCount: snapshot.attributes.filter { $0.namespace == namespace }.count
       )
     }
+  }
+
+  private static func cacheAttributes(
+    _ snapshot: InstantStoreSnapshot,
+    namespace: String?
+  ) -> [InstantAttribute] {
+    snapshot.attributes
+      .filter { namespace == nil || $0.namespace == namespace }
+      .sorted {
+        ($0.namespace, $0.name, $0.id) < ($1.namespace, $1.name, $1.id)
+      }
+  }
+
+  private static func cacheTriples(
+    _ snapshot: InstantStoreSnapshot,
+    namespace: String?
+  ) -> [InstantTriple] {
+    let attributesByID = Dictionary(uniqueKeysWithValues: snapshot.attributes.map { ($0.id, $0) })
+    return snapshot.triples
+      .filter {
+        guard let namespace else { return true }
+        return cacheNamespace(forAttributeID: $0.attributeID, attributesByID: attributesByID)
+          == namespace
+      }
+      .sorted {
+        (
+          cacheNamespace(forAttributeID: $0.attributeID, attributesByID: attributesByID),
+          $0.entityID,
+          $0.attributeID,
+          $0.value.comparableKey,
+          $0.txID
+        )
+          < (
+            cacheNamespace(forAttributeID: $1.attributeID, attributesByID: attributesByID),
+            $1.entityID,
+            $1.attributeID,
+            $1.value.comparableKey,
+            $1.txID
+          )
+      }
+  }
+
+  private static func cacheNamespace(
+    forAttributeID attributeID: String,
+    attributesByID: [String: InstantAttribute]
+  ) -> String {
+    attributesByID[attributeID]?.namespace
+      ?? attributeID.split(separator: "/", maxSplits: 1).first.map(String.init)
+      ?? "unknown"
+  }
+
+  private static func parseOptionalCacheNamespace(
+    arguments: [String],
+    usage: String
+  ) throws -> String? {
+    var arguments = arguments
+    guard let namespace = arguments.popFirstArgument() else { return nil }
+    guard arguments.isEmpty else {
+      throw CLIError(usage, exitCode: 64)
+    }
+    return try parseAdminNamespace(namespace, usage: usage)
   }
 
   private static func queryCacheSummaries(
@@ -4097,6 +4323,24 @@ private struct CacheInspectOutput: Codable, Sendable {
   var outboxMutationCount: Int
   var namespaces: [CacheNamespaceSummary]
   var queries: [CacheQuerySummary]
+}
+
+private struct CacheAttributesOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var transport: String
+  var namespace: String?
+  var attributeCount: Int
+  var attributes: [InstantAttribute]
+}
+
+private struct CacheTriplesOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var transport: String
+  var namespace: String?
+  var tripleCount: Int
+  var triples: [InstantTriple]
 }
 
 private struct CacheNamespaceSummary: Codable, Sendable {

@@ -545,6 +545,77 @@ extension InstantStoreTests {
 
     expectNoDifference(evidence.event, "summary")
     expectNoDifference(Set(evidence.details.queries.map(\.stableSummary)), summaries)
+
+    let attributes = try JSONDecoder().decode(
+      CLICacheAttributesOutput.self,
+      from: Data(try runCLI(["cache", "attributes", "todos", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(attributes.namespace, "todos")
+    expectNoDifference(attributes.attributeCount, 4)
+    expectNoDifference(attributes.attributes.map(\.name), ["createdAt", "id", "isCompleted", "text"])
+    let allAttributes = try JSONDecoder().decode(
+      CLICacheAttributesOutput.self,
+      from: Data(try runCLI(["cache", "attributes", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(allAttributes.namespace, nil)
+    #expect(allAttributes.attributeCount >= attributes.attributeCount)
+    #expect(Set(allAttributes.attributes.map(\.id)).isSuperset(of: Set(attributes.attributes.map(\.id))))
+
+    let attributesJSONL = try runCLI(["cache", "attributes", "todos", "--jsonl"], homeURL: homeURL)
+    let attributeLines = attributesJSONL.split(separator: "\n")
+    expectNoDifference(attributeLines.count, 5)
+    let attributesEvidence = try JSONDecoder().decode(
+      CLICacheAttributesEvidence.self,
+      from: Data(try #require(attributeLines.first).utf8)
+    )
+    expectNoDifference(attributesEvidence.caseID, "cli.cache.attributes")
+    expectNoDifference(attributesEvidence.event, "summary")
+    expectNoDifference(attributesEvidence.details.attributes.map(\.id), attributes.attributes.map(\.id))
+    let attributeRows = try attributeLines.dropFirst().map {
+      try JSONDecoder().decode(CLICacheAttributeEvidence.self, from: Data($0.utf8))
+    }
+    expectNoDifference(attributeRows.map(\.event), Array(repeating: "attribute", count: 4))
+    expectNoDifference(attributeRows.map(\.details.id), attributes.attributes.map(\.id))
+
+    let triples = try JSONDecoder().decode(
+      CLICacheTriplesOutput.self,
+      from: Data(try runCLI(["cache", "triples", "todos", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(triples.namespace, "todos")
+    expectNoDifference(triples.tripleCount, 8)
+    expectNoDifference(
+      Set(triples.triples.map(\.attributeID)),
+      Set(["todos/createdAt", "todos/id", "todos/isCompleted", "todos/text"])
+    )
+    let allTriples = try JSONDecoder().decode(
+      CLICacheTriplesOutput.self,
+      from: Data(try runCLI(["cache", "triples", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(allTriples.namespace, nil)
+    #expect(allTriples.tripleCount >= triples.tripleCount)
+    #expect(Set(allTriples.triples).isSuperset(of: Set(triples.triples)))
+
+    let triplesJSONL = try runCLI(["cache", "triples", "todos", "--jsonl"], homeURL: homeURL)
+    let tripleLines = triplesJSONL.split(separator: "\n")
+    expectNoDifference(tripleLines.count, 9)
+    let triplesEvidence = try JSONDecoder().decode(
+      CLICacheTriplesEvidence.self,
+      from: Data(try #require(tripleLines.first).utf8)
+    )
+    expectNoDifference(triplesEvidence.caseID, "cli.cache.triples")
+    expectNoDifference(triplesEvidence.event, "summary")
+    expectNoDifference(triplesEvidence.details.triples.map(\.attributeID), triples.triples.map(\.attributeID))
+    let tripleRows = try tripleLines.dropFirst().map {
+      try JSONDecoder().decode(CLICacheTripleEvidence.self, from: Data($0.utf8))
+    }
+    expectNoDifference(tripleRows.map(\.event), Array(repeating: "triple", count: 8))
+    expectNoDifference(tripleRows.map(\.details.entityID), triples.triples.map(\.entityID))
+
+    let humanAttributes = try runCLI(["cache", "attributes", "todos"], homeURL: homeURL)
+    #expect(humanAttributes.contains("todos/text namespace=todos name=text type=string"))
+    let malformed = try runCLIResult(["cache", "triples", "bad/namespace", "--json"], homeURL: homeURL)
+    #expect(malformed.status == 64)
+    #expect(malformed.error.contains("namespace must not be empty"))
   }
 
   @Test
@@ -1937,8 +2008,22 @@ private struct CLICacheInspectEvidence: Decodable {
 }
 
 private struct CLICacheInspectOutput: Decodable {
+  var attributeCount: Int
+  var tripleCount: Int
   var queryCacheCount: Int
   var queries: [CLICacheQuerySummary]
+}
+
+private struct CLICacheAttributesOutput: Decodable {
+  var namespace: String?
+  var attributeCount: Int
+  var attributes: [InstantAttribute]
+}
+
+private struct CLICacheTriplesOutput: Decodable {
+  var namespace: String?
+  var tripleCount: Int
+  var triples: [InstantTriple]
 }
 
 private struct CLICacheQuerySummary: Decodable {
@@ -1960,6 +2045,40 @@ private struct CLICacheQueryStableSummary: Hashable {
   var queryID: String
   var namespace: String
   var resultCount: Int
+}
+
+private struct CLICacheAttributesEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLICacheAttributesOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
+}
+
+private struct CLICacheAttributeEvidence: Decodable {
+  var event: String
+  var details: InstantAttribute
+}
+
+private struct CLICacheTriplesEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLICacheTriplesOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
+}
+
+private struct CLICacheTripleEvidence: Decodable {
+  var event: String
+  var details: InstantTriple
 }
 
 private struct CLIOutboxInspectOutput: Decodable {

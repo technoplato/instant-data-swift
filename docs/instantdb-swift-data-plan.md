@@ -253,8 +253,11 @@ Current local progress: the CLI exposes non-captive local admin helpers:
 infers scalar/json attributes for the namespace, writes through the same
 runtime/outbox/cache path as examples, and `instant-swift-data admin query
 <namespace>` reads the durable local snapshots back across process launches.
-Real Instant admin tokens, schema push/pull, and remote ground-truth transport
-remain future work.
+It also exposes local cache detail commands, `instant-swift-data cache
+attributes [namespace]` and `instant-swift-data cache triples [namespace]`, so
+agents can inspect persisted schema attributes and triple facts directly. Real
+Instant admin tokens, schema push/pull, and remote ground-truth transport remain
+future work.
 
 ### Sharing
 

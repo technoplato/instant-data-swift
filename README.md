@@ -74,6 +74,8 @@ swift run instant-swift-data app show --json
 swift run instant-swift-data examples todos add "scoped to the selected local app" --json
 swift run instant-swift-data cache inspect --json
 swift run instant-swift-data cache inspect --json | jq '.queries[] | {queryID, namespace, resultCount}'
+swift run instant-swift-data cache attributes todos --json
+swift run instant-swift-data cache triples todos --jsonl
 swift run instant-swift-data outbox inspect --jsonl
 MUTATION_ID="$(swift run instant-swift-data outbox inspect --json | jq -r '.mutations[0].id')"
 swift run instant-swift-data outbox confirm "$MUTATION_ID" --json

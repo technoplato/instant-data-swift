@@ -470,7 +470,10 @@ Agent-oriented output modes are required:
 - reset examples.
 - run Swift/TypeScript parity suites.
 - run benchmarks.
-- inspect local SQLite cache.
+- inspect local SQLite cache, including namespace summaries, attributes, and
+  triples with commands such as `instant-swift-data cache inspect`,
+  `instant-swift-data cache attributes todos --json`, and
+  `instant-swift-data cache triples todos --jsonl`.
 - inspect pending mutation outbox.
 - replay or drain pending mutations.
 - print decoded query results.
