@@ -304,6 +304,12 @@ Instant's triple store and network model:
   reaching for globals. Magic-code exchange, transport/auth clients, clocks,
   UUIDs, file/storage clients, sync engines, and
   future network clients should follow this pattern.
+  Current package policy starts with `InstantMagicCodeExchange`: it is a
+  Sendable value client, exposes `.local` as an extension static instance for
+  terminal demos, registers `instantMagicCodeExchange` in `DependencyValues`,
+  and is resolved by `bootstrapInstantSwiftData` into
+  `InstantRuntimeConfiguration`. New app-facing effect seams should copy that
+  shape instead of adding hidden mutable singletons or parallel setup paths.
 - **Context-aware database configuration.** SQLiteData uses context-dependent
   default databases, debug-only query tracing, in-memory or temporary databases
   for tests/previews, and explicit migrations. This is good because local
@@ -435,7 +441,10 @@ implementation. Required auth flows:
 - guest sign-in.
 - magic-code sign-in backed by an injectable `InstantMagicCodeExchange`
   dependency, with `.local` for the durable terminal demo and a live exchange
-  replacing it when real Instant auth transport lands.
+  replacing it when real Instant auth transport lands. App and test code should
+  override `DependencyValues.instantMagicCodeExchange` before
+  `bootstrapInstantSwiftData`; the CLI may use the same `.local` instance for
+  non-captive proof until transport-backed auth is implemented.
 - token/session restore.
 - sign-out.
 - show current auth state.

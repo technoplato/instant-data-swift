@@ -342,6 +342,11 @@ public API into SQL:
   `bootstrapInstantSwiftData`/`InstantRuntimeConfiguration`. This applies first
   to magic-code exchange and should later apply to transport/auth, sync, file
   storage, and network clients.
+  Current local progress: `InstantMagicCodeExchange` follows this shape, the
+  public `InstantSwiftData` target exposes `DependencyValues.instantMagicCodeExchange`,
+  and `bootstrapInstantSwiftData` resolves that value before constructing the
+  runtime configuration. Future transport/auth clients should preserve the same
+  Sendable value-client boundary and local static-instance convention.
 - **Typed models above explicit migrations.** SQLiteData combines `@Table`,
   `Draft`, `@Selection`, typed expressions, and generated update helpers with
   named migrations that use strict SQL, foreign keys, indexes, FTS tables, and
