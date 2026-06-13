@@ -846,10 +846,8 @@ struct InstantSwiftDataCLI {
       try await watchAuth(context: context, output: output, eventCount: eventCount)
 
     case "sign-out", "signout", "logout":
-      guard arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data auth sign-out [--json|--jsonl]", exitCode: 64)
-      }
-      try await context.runtime.signOut()
+      let invalidateToken = try parseAuthSignOutInvalidateToken(arguments: arguments)
+      try await context.runtime.signOut(invalidateToken: invalidateToken)
       try printAuth(context: context, event: "sign-out", session: nil, output: output)
 
     default:
@@ -2673,7 +2671,7 @@ struct InstantSwiftDataCLI {
         auth magic-code send <email> [--json|--jsonl]
         auth magic-code verify <email> <code> [--json|--jsonl]
         auth watch [--events 1] [--json|--jsonl]
-        auth sign-out [--json|--jsonl]
+        auth sign-out [--skip-token-invalidation] [--json|--jsonl]
         rooms presence set <room-type> <room-id> --value '{...}' [--user-id id] [--json|--jsonl]
         rooms presence list <room-type> <room-id> [--json|--jsonl]
         rooms presence leave <room-type> <room-id> [--user-id id] [--json|--jsonl]
@@ -3211,6 +3209,27 @@ struct InstantSwiftDataCLI {
       }
     }
     return codeVerifier
+  }
+
+  private static func parseAuthSignOutInvalidateToken(arguments: [String]) throws -> Bool {
+    var arguments = arguments
+    var invalidateToken = true
+    while let option = arguments.popFirstArgument() {
+      switch option {
+      case "--invalidate-token":
+        invalidateToken = true
+
+      case "--skip-token-invalidation", "--no-invalidate-token":
+        invalidateToken = false
+
+      default:
+        throw CLIError(
+          "Unknown auth sign-out option: \(option). Usage: instant-swift-data auth sign-out [--skip-token-invalidation] [--json|--jsonl]",
+          exitCode: 64
+        )
+      }
+    }
+    return invalidateToken
   }
 
   private static func parseAuthWatchEventCount(arguments: [String]) throws -> Int {
@@ -3869,7 +3888,7 @@ struct InstantSwiftDataCLI {
       instant-swift-data auth magic-code send <email> [--json|--jsonl]
       instant-swift-data auth magic-code verify <email> <code> [--json|--jsonl]
       instant-swift-data auth watch [--events 1] [--json|--jsonl]
-      instant-swift-data auth sign-out [--json|--jsonl]
+      instant-swift-data auth sign-out [--skip-token-invalidation] [--json|--jsonl]
     """
   }
 

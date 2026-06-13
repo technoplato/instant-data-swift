@@ -110,6 +110,7 @@ swift run instant-swift-data auth magic-code send user@example.com --json
 swift run instant-swift-data auth magic-code verify user@example.com <local-verification-code> --json
 swift run instant-swift-data auth watch --events 1 --jsonl
 swift run instant-swift-data auth sign-out --json
+swift run instant-swift-data auth sign-out --skip-token-invalidation --json
 ```
 
 Persist local room presence and topic messages after signing in:
@@ -215,6 +216,7 @@ try await withDependencies {
   $0.instantMagicCodeExchange = .local
   $0.instantIDTokenExchange = .local
   $0.instantOAuthExchange = .local
+  $0.instantAuthTokenInvalidator = .local
   try await $0.bootstrapInstantSwiftData(
     appID: "local-demo",
     persistenceURL: cacheURL,
@@ -232,9 +234,9 @@ try await withDependencies {
 }
 ```
 
-`instantMagicCodeExchange`, `instantIDTokenExchange`, and
-`instantOAuthExchange` default to `.local`, and app/test entry points can
-override them before `bootstrapInstantSwiftData` to install live or
+`instantMagicCodeExchange`, `instantIDTokenExchange`, `instantOAuthExchange`,
+and `instantAuthTokenInvalidator` default to `.local`, and app/test entry
+points can override them before `bootstrapInstantSwiftData` to install live or
 fixture-backed auth behavior. Local/demo clients should be reusable static
 instances on the client type, for example
 `extension InstantMagicCodeExchange { public static let local = Self(...) }`,
@@ -243,8 +245,8 @@ while dependency keys remain computed `static var` `liveValue`, `testValue`, and
 The dependency client exposes durable auth directly with `authSession`,
 `observeAuthSession`, `signInAsGuest`, `sendMagicCode`,
 `signInWithMagicCode`, `signInWithRefreshToken`, `signInWithIDToken`, and
-`signInWithOAuth`, and `signOut`, so app code does not need to reach through to
-the core runtime.
+`signInWithOAuth`, and `signOut(invalidateToken:)`, so app code does not need to
+reach through to the core runtime.
 
 ### Typed Queries And Writes
 

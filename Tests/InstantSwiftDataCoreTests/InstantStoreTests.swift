@@ -1375,6 +1375,71 @@ struct InstantStoreTests {
   }
 
   @Test
+  func signOutInvalidatesRefreshTokenWhenRequestedAndClearsSession() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let signedOutAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let invalidations = LockIsolated<[InstantAuthTokenInvalidationRequest]>([])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        now: { signedOutAt },
+        authTokenInvalidator: InstantAuthTokenInvalidator(
+          invalidate: { request in
+            invalidations.withValue { $0.append(request) }
+          }
+        )
+      )
+    )
+
+    _ = try await runtime.signInWithRefreshToken("refresh-token", userID: "token-user")
+    let signOut: () async throws -> Void = runtime.signOut
+    try await signOut()
+    let signedOutSession = try await runtime.authSession()
+    expectNoDifference(signedOutSession, nil)
+    let defaultInvalidations = invalidations.withValue { $0 }
+    expectNoDifference(defaultInvalidations.count, 1)
+    expectNoDifference(defaultInvalidations.first?.appID, "app-a")
+    expectNoDifference(defaultInvalidations.first?.refreshToken, "refresh-token")
+    expectNoDifference(defaultInvalidations.first?.signedOutAt, signedOutAt)
+
+    _ = try await runtime.signInWithRefreshToken("second-refresh-token", userID: "token-user")
+    try await runtime.signOut(invalidateToken: false)
+    let skippedInvalidationSession = try await runtime.authSession()
+    expectNoDifference(skippedInvalidationSession, nil)
+    expectNoDifference(invalidations.withValue { $0.count }, 1)
+  }
+
+  @Test
+  func signOutIgnoresTokenInvalidationFailuresAfterClearingSession() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let invalidationCount = LockIsolated(0)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        authTokenInvalidator: InstantAuthTokenInvalidator(
+          invalidate: { _ in
+            invalidationCount.withValue { $0 += 1 }
+            throw InstantError(
+              code: .networkFailed,
+              operation: "invalidate auth token",
+              message: "The local invalidator failed.",
+              recovery: "Retry sign-out."
+            )
+          }
+        )
+      )
+    )
+
+    _ = try await runtime.signInWithRefreshToken("refresh-token", userID: "token-user")
+    try await runtime.signOut()
+    let signedOutSession = try await runtime.authSession()
+    expectNoDifference(signedOutSession, nil)
+    expectNoDifference(invalidationCount.withValue { $0 }, 1)
+  }
+
+  @Test
   func authSessionObservationEmitsCurrentAndDurableChanges() async throws {
     let cacheURL = try temporaryCacheURL()
     let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)

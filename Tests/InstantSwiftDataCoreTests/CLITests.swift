@@ -848,6 +848,56 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliAuthSignOutSupportsTokenInvalidationOption() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    _ = try runCLI(
+      ["auth", "token", "refresh-token", "--user-id", "token-user", "--json"],
+      homeURL: homeURL
+    )
+    let skipped = try JSONDecoder().decode(
+      CLIAuthOutput.self,
+      from: Data(
+        try runCLI(["auth", "sign-out", "--skip-token-invalidation", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(skipped.event, "sign-out")
+    expectNoDifference(skipped.isSignedIn, false)
+    expectNoDifference(skipped.hasRefreshToken, false)
+
+    let show = try JSONDecoder().decode(
+      CLIAuthOutput.self,
+      from: Data(try runCLI(["auth", "show", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(show.isSignedIn, false)
+
+    _ = try runCLI(
+      ["auth", "token", "refresh-token", "--user-id", "token-user", "--json"],
+      homeURL: homeURL
+    )
+    let noInvalidateAlias = try JSONDecoder().decode(
+      CLIAuthOutput.self,
+      from: Data(
+        try runCLI(["auth", "sign-out", "--no-invalidate-token", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(noInvalidateAlias.event, "sign-out")
+    expectNoDifference(noInvalidateAlias.isSignedIn, false)
+
+    let malformed = try runCLIResult(
+      ["auth", "sign-out", "--unknown", "--json"],
+      homeURL: homeURL
+    )
+    #expect(malformed.status == 64)
+    #expect(malformed.error.contains("auth sign-out"))
+  }
+
+  @Test
   func cliAuthIDTokenSignInPersistsAcrossLaunches() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)

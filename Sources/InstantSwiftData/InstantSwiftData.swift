@@ -31,7 +31,7 @@ public struct InstantSwiftDataClient: Sendable {
     @Sendable (String, String, String?) async throws -> InstantAuthSession
   private var signInWithOAuthOperation:
     @Sendable (String, String?) async throws -> InstantAuthSession
-  private var signOutOperation: @Sendable () async throws -> Void
+  private var signOutOperation: @Sendable (Bool) async throws -> Void
 
   public init(runtime: InstantRuntime) {
     self.runtime = runtime
@@ -81,8 +81,8 @@ public struct InstantSwiftDataClient: Sendable {
     self.signInWithOAuthOperation = { code, codeVerifier in
       try await runtime.signInWithOAuth(code: code, codeVerifier: codeVerifier)
     }
-    self.signOutOperation = {
-      try await runtime.signOut()
+    self.signOutOperation = { invalidateToken in
+      try await runtime.signOut(invalidateToken: invalidateToken)
     }
   }
 
@@ -105,7 +105,8 @@ public struct InstantSwiftDataClient: Sendable {
     signInWithIDToken:
       (@Sendable (String, String, String?) async throws -> InstantAuthSession)? = nil,
     signInWithOAuth:
-      (@Sendable (String, String?) async throws -> InstantAuthSession)? = nil
+      (@Sendable (String, String?) async throws -> InstantAuthSession)? = nil,
+    signOutWithOptions: (@Sendable (Bool) async throws -> Void)? = nil
   ) {
     let authError = InstantError(
       code: .implementationFailed,
@@ -133,7 +134,14 @@ public struct InstantSwiftDataClient: Sendable {
     self.signInWithRefreshTokenOperation = signInWithRefreshToken ?? { _, _ in throw authError }
     self.signInWithIDTokenOperation = signInWithIDToken ?? { _, _, _ in throw authError }
     self.signInWithOAuthOperation = signInWithOAuth ?? { _, _ in throw authError }
-    self.signOutOperation = signOut ?? { throw authError }
+    self.signOutOperation =
+      signOutWithOptions ?? { _ in
+        if let signOut {
+          try await signOut()
+        } else {
+          throw authError
+        }
+      }
   }
 
   public static func unimplemented(_ message: String) -> Self {
@@ -189,6 +197,9 @@ public struct InstantSwiftDataClient: Sendable {
         throw error
       },
       signInWithOAuth: { _, _ in
+        throw error
+      },
+      signOutWithOptions: { _ in
         throw error
       }
     )
@@ -270,7 +281,11 @@ public struct InstantSwiftDataClient: Sendable {
   }
 
   public func signOut() async throws {
-    try await signOutOperation()
+    try await signOut(invalidateToken: true)
+  }
+
+  public func signOut(invalidateToken: Bool = true) async throws {
+    try await signOutOperation(invalidateToken)
   }
 
   public func subscribe<Entity: InstantEntityModel>(
@@ -451,6 +466,22 @@ extension InstantOAuthExchangeKey: DependencyKey {
   }
 }
 
+private enum InstantAuthTokenInvalidatorKey: TestDependencyKey {
+  static var testValue: InstantAuthTokenInvalidator {
+    .local
+  }
+
+  static var previewValue: InstantAuthTokenInvalidator {
+    .local
+  }
+}
+
+extension InstantAuthTokenInvalidatorKey: DependencyKey {
+  static var liveValue: InstantAuthTokenInvalidator {
+    .local
+  }
+}
+
 extension DependencyValues {
   public var defaultInstantSwiftData: InstantSwiftDataClient {
     get { self[DefaultInstantSwiftDataKey.self] }
@@ -472,6 +503,11 @@ extension DependencyValues {
     set { self[InstantOAuthExchangeKey.self] = newValue }
   }
 
+  public var instantAuthTokenInvalidator: InstantAuthTokenInvalidator {
+    get { self[InstantAuthTokenInvalidatorKey.self] }
+    set { self[InstantAuthTokenInvalidatorKey.self] = newValue }
+  }
+
   public mutating func bootstrapInstantSwiftData(
     appID: String,
     persistenceURL: URL? = nil,
@@ -483,6 +519,7 @@ extension DependencyValues {
     let magicCodeExchange = self.instantMagicCodeExchange
     let idTokenExchange = self.instantIDTokenExchange
     let oauthExchange = self.instantOAuthExchange
+    let authTokenInvalidator = self.instantAuthTokenInvalidator
     let url =
       persistenceURL
       ?? Self.defaultInstantSwiftDataPersistenceURL(
@@ -504,7 +541,8 @@ extension DependencyValues {
         },
         magicCodeExchange: magicCodeExchange,
         idTokenExchange: idTokenExchange,
-        oauthExchange: oauthExchange
+        oauthExchange: oauthExchange,
+        authTokenInvalidator: authTokenInvalidator
       )
     )
   }

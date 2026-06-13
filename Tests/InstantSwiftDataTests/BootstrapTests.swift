@@ -327,7 +327,55 @@ struct BootstrapTests {
   }
 
   @Test
+  func bootstrapUsesAuthTokenInvalidatorDependency() async throws {
+    let appID = "sign-out-dependency-\(UUID().uuidString)"
+    let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataSignOut-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let recorder = AuthTokenInvalidationRecorder()
+    let invalidator = InstantAuthTokenInvalidator(
+      invalidate: { request in
+        await recorder.record(request)
+      }
+    )
+
+    try await withDependencies {
+      $0.date.now = fixedDate
+      $0.instantAuthTokenInvalidator = invalidator
+      try await $0.bootstrapInstantSwiftData(
+        appID: appID,
+        persistenceURL: directory.appendingPathComponent("cache.sqlite"),
+        context: .test
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var client
+
+      _ = try await client.signInWithRefreshToken("refresh-token", userID: "token-user")
+      let signOut: () async throws -> Void = client.signOut
+      try await signOut()
+      let signedOutSession = try await client.authSession()
+      expectNoDifference(signedOutSession, nil)
+      let defaultRequests = await recorder.requests()
+      expectNoDifference(defaultRequests.count, 1)
+      expectNoDifference(defaultRequests.first?.appID, appID)
+      expectNoDifference(defaultRequests.first?.refreshToken, "refresh-token")
+      expectNoDifference(defaultRequests.first?.signedOutAt.milliseconds, 1_700_000_000_000)
+
+      _ = try await client.signInWithRefreshToken("second-refresh-token", userID: "token-user")
+      try await client.signOut(invalidateToken: false)
+      let skippedInvalidationSession = try await client.authSession()
+      expectNoDifference(skippedInvalidationSession, nil)
+      let skippedRequests = await recorder.requests()
+      expectNoDifference(skippedRequests.count, 1)
+    }
+  }
+
+  @Test
   func dependencyOverrideCanInstallMockClient() async throws {
+    let signOutOptions = SignOutOptionsRecorder()
     let mock = InstantSwiftDataClient(
       transact: { transaction in
         InstantStoreMutationResult(
@@ -436,6 +484,9 @@ struct BootstrapTests {
           createdAt: InstantTimestamp(milliseconds: 11),
           updatedAt: InstantTimestamp(milliseconds: 11)
         )
+      },
+      signOutWithOptions: { invalidateToken in
+        await signOutOptions.record(invalidateToken)
       }
     )
 
@@ -480,7 +531,9 @@ struct BootstrapTests {
         codeVerifier: nil
       )
       expectNoDifference(mockOAuthSession.userID, "mock-code:nil")
-      try await client.signOut()
+      try await client.signOut(invalidateToken: false)
+      let recordedSignOutOptions = await signOutOptions.values()
+      expectNoDifference(recordedSignOutOptions, [false])
     }
   }
 
@@ -581,5 +634,29 @@ struct BootstrapTests {
     } catch {
       #expect(Bool(false), "Unexpected error: \(error)")
     }
+  }
+}
+
+private actor AuthTokenInvalidationRecorder {
+  private var values: [InstantAuthTokenInvalidationRequest] = []
+
+  func record(_ request: InstantAuthTokenInvalidationRequest) {
+    values.append(request)
+  }
+
+  func requests() -> [InstantAuthTokenInvalidationRequest] {
+    values
+  }
+}
+
+private actor SignOutOptionsRecorder {
+  private var recordedValues: [Bool] = []
+
+  func record(_ invalidateToken: Bool) {
+    recordedValues.append(invalidateToken)
+  }
+
+  func values() -> [Bool] {
+    recordedValues
   }
 }

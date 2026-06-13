@@ -9,6 +9,7 @@ public struct InstantRuntimeConfiguration: Sendable {
   public var magicCodeExchange: InstantMagicCodeExchange
   public var idTokenExchange: InstantIDTokenExchange
   public var oauthExchange: InstantOAuthExchange
+  public var authTokenInvalidator: InstantAuthTokenInvalidator
 
   public init(
     appID: String,
@@ -20,7 +21,8 @@ public struct InstantRuntimeConfiguration: Sendable {
     makeID: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() },
     magicCodeExchange: InstantMagicCodeExchange = .local,
     idTokenExchange: InstantIDTokenExchange = .local,
-    oauthExchange: InstantOAuthExchange = .local
+    oauthExchange: InstantOAuthExchange = .local,
+    authTokenInvalidator: InstantAuthTokenInvalidator = .local
   ) {
     self.appID = appID
     self.persistenceURL = persistenceURL
@@ -30,6 +32,7 @@ public struct InstantRuntimeConfiguration: Sendable {
     self.magicCodeExchange = magicCodeExchange
     self.idTokenExchange = idTokenExchange
     self.oauthExchange = oauthExchange
+    self.authTokenInvalidator = authTokenInvalidator
   }
 }
 
@@ -527,14 +530,36 @@ public final class InstantRuntime: Sendable {
   }
 
   public func signOut() async throws {
+    try await signOut(invalidateToken: true)
+  }
+
+  public func signOut(invalidateToken: Bool = true) async throws {
+    let signedOutAt = configuration.now()
+    var invalidationRequest: InstantAuthTokenInvalidationRequest?
     await operationGate.enter()
     do {
+      let session = try await persistence.loadAuthSession(key: authSessionKey)
+      if invalidateToken, let refreshToken = session?.refreshToken {
+        invalidationRequest = InstantAuthTokenInvalidationRequest(
+          appID: configuration.appID,
+          refreshToken: refreshToken,
+          signedOutAt: signedOutAt
+        )
+      }
       try await persistence.deleteAuthSession(key: authSessionKey)
       await authSessionObservers.yield(nil)
       await operationGate.leave()
     } catch {
       await operationGate.leave()
       throw error
+    }
+
+    if let invalidationRequest {
+      do {
+        try await configuration.authTokenInvalidator.invalidate(invalidationRequest)
+      } catch {
+        // Match Instant's client: failed token invalidation must not undo local sign-out.
+      }
     }
   }
 

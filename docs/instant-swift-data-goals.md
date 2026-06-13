@@ -454,6 +454,9 @@ implementation. Required auth flows:
   includes `observeAuthSession` for auth-state subscriptions and
   `signInWithIDToken(clientName:idToken:nonce:)` for native OAuth token flows
   plus `signInWithOAuth(code:codeVerifier:)` for authorization-code flows.
+- sign-out token invalidation should be backed by an injectable
+  `InstantAuthTokenInvalidator` dependency with a reusable `.local` no-op for
+  terminal demos and tests.
 - token/session restore.
 - sign-out.
 - show current auth state.
