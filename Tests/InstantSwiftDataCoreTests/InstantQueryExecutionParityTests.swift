@@ -737,6 +737,136 @@ struct InstantQueryExecutionParityTests {
       source
     )
 
+    source = instaQLSource("arbitrary ordering with dates")
+    let field = fixtureAttribute(namespace: "tests", name: "field", valueType: .number)
+    let date = fixtureAttribute(namespace: "tests", name: "date", valueType: .date)
+    let num = fixtureAttribute(namespace: "tests", name: "num", valueType: .number)
+    var dateOrderingOperations: [InstantTripleOperation] = []
+    for value in (-5)..<5 {
+      let triples = [
+        testTriple("test-date-\(value)", field, .number(Double(value + 5)), value + 5),
+        testTriple("test-date-\(value)", date, .number(Double(value)), value + 5),
+        testTriple("test-date-\(value)", num, .number(Double(value)), value + 5),
+      ]
+      dateOrderingOperations.append(contentsOf: triples.map(InstantTripleOperation.insert))
+    }
+    let nullAndMissingOrderingTriples = [
+      testTriple("00000000-0000-0000-0000-000000000000", field, .number(10), 10),
+      testTriple("00000000-0000-0000-0000-000000000000", date, .null, 10),
+      testTriple("00000000-0000-0000-0000-000000000000", num, .null, 10),
+      testTriple("00000000-0000-0000-0000-000000000001", field, .number(11), 11),
+      testTriple("00000000-0000-0000-0000-000000000002", field, .number(12), 12),
+      testTriple("00000000-0000-0000-0000-000000000002", date, .null, 12),
+      testTriple("00000000-0000-0000-0000-000000000002", num, .null, 12),
+      testTriple("00000000-0000-0000-0000-000000000003", field, .number(13), 13),
+    ]
+    dateOrderingOperations.append(
+      contentsOf: nullAndMissingOrderingTriples.map(InstantTripleOperation.insert)
+    )
+    let dateOrderingFixture = try await fixture.transacting(
+      attributes: [field, date, num],
+      operations: dateOrderingOperations
+    )
+    let orderingDescExpected = [
+      "4", "3", "2", "1", "0", "-1", "-2", "-3", "-4", "-5",
+      "undefined", "null", "undefined", "null",
+    ]
+    let orderingAscExpected = [
+      "null", "undefined", "null", "undefined",
+      "-5", "-4", "-3", "-2", "-1", "0", "1", "2", "3", "4",
+    ]
+    expectParityEqual(
+      await dateOrderingFixture.query(
+        InstantQueryPlan(id: "tests.date.desc", namespace: "tests", order: InstantQueryOrder("date", .descending))
+      ).map { $0.orderingValueDescription("date") },
+      orderingDescExpected,
+      "\(source) date desc"
+    )
+    expectParityEqual(
+      await dateOrderingFixture.query(
+        InstantQueryPlan(id: "tests.num.desc", namespace: "tests", order: InstantQueryOrder("num", .descending))
+      ).map { $0.orderingValueDescription("num") },
+      orderingDescExpected,
+      "\(source) number desc"
+    )
+    expectParityEqual(
+      await dateOrderingFixture.query(
+        InstantQueryPlan(id: "tests.date.asc", namespace: "tests", order: InstantQueryOrder("date", .ascending))
+      ).map { $0.orderingValueDescription("date") },
+      orderingAscExpected,
+      "\(source) date asc"
+    )
+    expectParityEqual(
+      await dateOrderingFixture.query(
+        InstantQueryPlan(id: "tests.num.asc", namespace: "tests", order: InstantQueryOrder("num", .ascending))
+      ).map { $0.orderingValueDescription("num") },
+      orderingAscExpected,
+      "\(source) number asc"
+    )
+
+    source = instaQLSource("arbitrary ordering with strings")
+    let string = fixtureAttribute(namespace: "string_tests", name: "string", valueType: .string)
+    let stringValues = ["10", "2", "a0", "Zz"]
+    let stringOrderingFixture = try await fixture.transacting(
+      attributes: [string],
+      operations: stringValues.enumerated().map { index, value in
+        .insert(testTriple("test-string-\(index)", string, .string(value), index))
+      }
+    )
+    expectParityEqual(
+      await stringOrderingFixture.query(
+        InstantQueryPlan(
+          id: "string-tests.asc",
+          namespace: "string_tests",
+          order: InstantQueryOrder("string", .ascending)
+        )
+      ).map { $0.string("string") ?? "<missing>" },
+      stringValues,
+      "\(source) asc"
+    )
+    expectParityEqual(
+      await stringOrderingFixture.query(
+        InstantQueryPlan(
+          id: "string-tests.desc",
+          namespace: "string_tests",
+          order: InstantQueryOrder("string", .descending)
+        )
+      ).map { $0.string("string") ?? "<missing>" },
+      Array(stringValues.reversed()),
+      "\(source) desc"
+    )
+
+    let caseString = fixtureAttribute(namespace: "case_string_tests", name: "string", valueType: .string)
+    let caseStringValues = ["a", "A", "b", "B"]
+    let caseStringOrderingFixture = try await fixture.transacting(
+      attributes: [caseString],
+      operations: caseStringValues.enumerated().map { index, value in
+        .insert(testTriple("test-case-string-\(index)", caseString, .string(value), index))
+      }
+    )
+    expectParityEqual(
+      await caseStringOrderingFixture.query(
+        InstantQueryPlan(
+          id: "case-string-tests.asc",
+          namespace: "case_string_tests",
+          order: InstantQueryOrder("string", .ascending)
+        )
+      ).map { $0.string("string") ?? "<missing>" },
+      caseStringValues,
+      "\(source) en-US case-only asc"
+    )
+    expectParityEqual(
+      await caseStringOrderingFixture.query(
+        InstantQueryPlan(
+          id: "case-string-tests.desc",
+          namespace: "case_string_tests",
+          order: InstantQueryOrder("string", .descending)
+        )
+      ).map { $0.string("string") ?? "<missing>" },
+      Array(caseStringValues.reversed()),
+      "\(source) en-US case-only desc"
+    )
+
     source = instaQLSource("fields")
     let users = await fixture.query(
       InstantQueryPlan(
@@ -835,6 +965,99 @@ struct InstantQueryExecutionParityTests {
     )
     books = await booksWithNulls.query(booksTitleIsNull)
     expectParityEqual(books.map { $0.values["title"]?.first }, [.null, nil], source)
+
+    source = instaQLSource("$isNull with relations")
+    let usersWithoutShelves = InstantQueryPlan(
+      id: "users.where.bookshelves-is-null",
+      namespace: "users",
+      filters: [.isNull(field: "bookshelves")]
+    )
+    var users = await fixture.query(usersWithoutShelves)
+    expectParityEqual(users.count, 0, source)
+    let handle = try #require(fixture.attribute(namespace: "users", name: "handle"))
+    let usersWithLonelyUser = try await fixture.transacting(
+      operations: [
+        .insert(
+          InstantTriple(
+            entityID: "fixture-user-dww",
+            attributeID: handle.id,
+            value: .string("dww"),
+            txID: "upstream-fixture-null-relations",
+            txTime: InstantTimestamp(milliseconds: 9_000_000_000_302)
+          )
+        )
+      ]
+    )
+    users = await usersWithLonelyUser.query(usersWithoutShelves)
+    expectParityEqual(users.map { $0.string("handle") ?? "<missing>" }, ["dww"], source)
+
+    let monteCristo = try #require(
+      await fixture.query(
+        InstantQueryPlan(
+          id: "books.where.title.monte-cristo",
+          namespace: "books",
+          filters: [.equals(field: "title", value: .string("The Count of Monte Cristo"))]
+        )
+      ).first
+    )
+    let usersWithBook = await fixture.query(
+      InstantQueryPlan(
+        id: "users.where.bookshelves.books.title.monte-cristo",
+        namespace: "users",
+        filters: [.equals(field: "bookshelves.books.title", value: .string("The Count of Monte Cristo"))]
+      )
+    )
+    let usersWithNullTitleBook = try await usersWithLonelyUser.transacting(
+      operations: [
+        .merge(
+          InstantTriple(
+            entityID: monteCristo.id,
+            attributeID: title.id,
+            value: .null,
+            txID: "upstream-fixture-null-relations",
+            txTime: InstantTimestamp(milliseconds: 9_000_000_000_303)
+          )
+        )
+      ]
+    )
+    users = await usersWithNullTitleBook.query(
+      InstantQueryPlan(
+        id: "users.where.bookshelves.books.title-is-null",
+        namespace: "users",
+        filters: [.isNull(field: "bookshelves.books.title")]
+      )
+    )
+    expectParityEqual(
+      users.map { $0.string("handle") ?? "<missing>" },
+      usersWithBook.map { $0.string("handle") ?? "<missing>" } + ["dww"],
+      source
+    )
+
+    source = instaQLSource("$isNull with reverse relations")
+    let shelvesWithoutUsers = InstantQueryPlan(
+      id: "bookshelves.where.users-id-is-null",
+      namespace: "bookshelves",
+      filters: [.isNull(field: "users.id")],
+      includes: [InstantQueryInclude("users", direction: .reverse)]
+    )
+    var bookshelves = await fixture.query(shelvesWithoutUsers)
+    expectParityEqual(bookshelves.count, 0, source)
+    let shelfName = try #require(fixture.attribute(namespace: "bookshelves", name: "name"))
+    let lonelyShelfFixture = try await fixture.transacting(
+      operations: [
+        .insert(
+          InstantTriple(
+            entityID: "fixture-lonely-shelf",
+            attributeID: shelfName.id,
+            value: .string("Lonely shelf"),
+            txID: "upstream-fixture-null-reverse-relations",
+            txTime: InstantTimestamp(milliseconds: 9_000_000_000_304)
+          )
+        )
+      ]
+    )
+    bookshelves = await lonelyShelfFixture.query(shelvesWithoutUsers)
+    expectParityEqual(bookshelves.map { $0.string("name") ?? "<missing>" }, ["Lonely shelf"], source)
 
     source = instaQLSource("$not and $ne")
     let val = fixtureAttribute(namespace: "tests", name: "val", valueType: .string)
@@ -1286,6 +1509,29 @@ private extension InstantEntitySnapshot {
 
   func valueDescription(_ field: String) -> String? {
     values[field]?.first.map(String.init(describing:))
+  }
+
+  func orderingValueDescription(_ field: String) -> String {
+    switch values[field]?.first {
+    case nil:
+      return "undefined"
+    case .null:
+      return "null"
+    case let .number(value):
+      return String(format: "%.0f", value)
+    case let .date(value):
+      return String(format: "%.0f", value.timeIntervalSince1970 * 1000)
+    case let .string(value):
+      return value
+    case let .bool(value):
+      return String(value)
+    case let .json(value):
+      return String(describing: value)
+    case let .ref(value):
+      return value
+    case let .lookupRef(value):
+      return String(describing: value)
+    }
   }
 
   func linkedStrings(_ relation: String, field: String) -> [String] {

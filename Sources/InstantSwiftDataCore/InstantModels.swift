@@ -103,7 +103,7 @@ extension InstantValue {
     case let (.number(lhs), .number(rhs)):
       return lhs == rhs ? .orderedSame : (lhs < rhs ? .orderedAscending : .orderedDescending)
     case let (.string(lhs), .string(rhs)):
-      return lhs.compare(rhs)
+      return lhs.instantTextCompare(rhs)
     case let (.date(lhs), .date(rhs)):
       return lhs == rhs ? .orderedSame : (lhs < rhs ? .orderedAscending : .orderedDescending)
     case let (.ref(lhs), .ref(rhs)):
@@ -111,6 +111,17 @@ extension InstantValue {
     default:
       return comparableKey.compare(other.comparableKey)
     }
+  }
+}
+
+private extension String {
+  func instantTextCompare(_ other: String) -> ComparisonResult {
+    (self as NSString).compare(
+      other,
+      options: [],
+      range: NSRange(location: 0, length: (self as NSString).length),
+      locale: Locale(identifier: "en_US")
+    )
   }
 }
 

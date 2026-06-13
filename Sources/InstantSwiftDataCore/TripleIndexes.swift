@@ -2121,6 +2121,8 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     switch (lhs, rhs) {
     case (nil, nil):
       return .orderedSame
+    case (nil, .some(.null)), (.some(.null), nil):
+      return .orderedSame
     case (nil, .some):
       return .orderedAscending
     case (.some, nil):
