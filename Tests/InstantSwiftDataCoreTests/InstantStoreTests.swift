@@ -8441,6 +8441,153 @@ struct InstantStoreTests {
   }
 
   @Test
+  func queryCursorsPageAcrossNullAndMissingOrderValues() async throws {
+    let score = InstantAttribute(
+      id: "items/score",
+      namespace: "items",
+      name: "score",
+      valueType: .number,
+      isIndexed: true
+    )
+    let title = InstantAttribute(
+      id: "items/title",
+      namespace: "items",
+      name: "title",
+      valueType: .string
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: [score, title]
+      )
+    )
+    let time = InstantTimestamp(milliseconds: 10)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-null-cursor-items",
+        operations: [
+          .insert(.init(entityID: "item-0-null", attributeID: "items/score", value: .null, txID: "tx-null-cursor-items", txTime: time)),
+          .insert(.init(entityID: "item-0-null", attributeID: "items/title", value: .string("explicit null 0"), txID: "tx-null-cursor-items", txTime: time)),
+          .insert(.init(entityID: "item-1-missing", attributeID: "items/title", value: .string("missing 1"), txID: "tx-null-cursor-items", txTime: time)),
+          .insert(.init(entityID: "item-2-null", attributeID: "items/score", value: .null, txID: "tx-null-cursor-items", txTime: time)),
+          .insert(.init(entityID: "item-2-null", attributeID: "items/title", value: .string("explicit null 2"), txID: "tx-null-cursor-items", txTime: time)),
+          .insert(.init(entityID: "item-3-missing", attributeID: "items/title", value: .string("missing 3"), txID: "tx-null-cursor-items", txTime: time)),
+          .insert(.init(entityID: "item-4-one", attributeID: "items/score", value: .number(1), txID: "tx-null-cursor-items", txTime: time)),
+          .insert(.init(entityID: "item-4-one", attributeID: "items/title", value: .string("one"), txID: "tx-null-cursor-items", txTime: time)),
+        ]
+      ),
+      createdAt: time
+    )
+
+    let firstPage = try await runtime.queryOnce(
+      InstantQueryPlan(
+        id: "items.null-cursors.first",
+        namespace: "items",
+        order: InstantQueryOrder("score"),
+        first: 2
+      )
+    )
+    expectNoDifference(firstPage.values.map(\.id), ["item-0-null", "item-1-missing"])
+    expectNoDifference(firstPage.pageInfo?.startCursor?.sortValue, .null)
+    expectNoDifference(firstPage.pageInfo?.endCursor?.sortValue, nil)
+    expectNoDifference(firstPage.pageInfo?.hasNextPage, true)
+
+    let nextPage = try await runtime.queryOnce(
+      InstantQueryPlan(
+        id: "items.null-cursors.next",
+        namespace: "items",
+        order: InstantQueryOrder("score"),
+        first: 2,
+        after: try #require(firstPage.pageInfo?.endCursor)
+      )
+    )
+    expectNoDifference(nextPage.values.map(\.id), ["item-2-null", "item-3-missing"])
+    expectNoDifference(nextPage.pageInfo?.startCursor?.sortValue, .null)
+    expectNoDifference(nextPage.pageInfo?.endCursor?.sortValue, nil)
+    expectNoDifference(nextPage.pageInfo?.hasPreviousPage, true)
+    expectNoDifference(nextPage.pageInfo?.hasNextPage, true)
+
+    let beforeExplicitNullPage = try await runtime.queryOnce(
+      InstantQueryPlan(
+        id: "items.null-cursors.before-null",
+        namespace: "items",
+        order: InstantQueryOrder("score"),
+        last: 2,
+        before: try #require(nextPage.pageInfo?.startCursor)
+      )
+    )
+    expectNoDifference(beforeExplicitNullPage.values.map(\.id), ["item-0-null", "item-1-missing"])
+    expectNoDifference(beforeExplicitNullPage.pageInfo?.hasPreviousPage, false)
+    expectNoDifference(beforeExplicitNullPage.pageInfo?.hasNextPage, true)
+
+    let beforeMissingPage = try await runtime.queryOnce(
+      InstantQueryPlan(
+        id: "items.null-cursors.before-missing",
+        namespace: "items",
+        order: InstantQueryOrder("score"),
+        last: 2,
+        before: try #require(nextPage.pageInfo?.endCursor)
+      )
+    )
+    expectNoDifference(beforeMissingPage.values.map(\.id), ["item-1-missing", "item-2-null"])
+    expectNoDifference(beforeMissingPage.pageInfo?.hasPreviousPage, true)
+    expectNoDifference(beforeMissingPage.pageInfo?.hasNextPage, true)
+
+    let finalPage = try await runtime.queryOnce(
+      InstantQueryPlan(
+        id: "items.null-cursors.final",
+        namespace: "items",
+        order: InstantQueryOrder("score"),
+        first: 2,
+        after: try #require(nextPage.pageInfo?.endCursor)
+      )
+    )
+    expectNoDifference(finalPage.values.map(\.id), ["item-4-one"])
+    expectNoDifference(finalPage.pageInfo?.startCursor?.sortValue, .number(1))
+    expectNoDifference(finalPage.pageInfo?.hasPreviousPage, true)
+    expectNoDifference(finalPage.pageInfo?.hasNextPage, false)
+
+    let previousPage = try await runtime.queryOnce(
+      InstantQueryPlan(
+        id: "items.null-cursors.previous",
+        namespace: "items",
+        order: InstantQueryOrder("score"),
+        last: 2,
+        before: try #require(finalPage.pageInfo?.startCursor)
+      )
+    )
+    expectNoDifference(previousPage.values.map(\.id), ["item-2-null", "item-3-missing"])
+    expectNoDifference(previousPage.pageInfo?.hasPreviousPage, true)
+    expectNoDifference(previousPage.pageInfo?.hasNextPage, true)
+
+    let descendingFirstPage = try await runtime.queryOnce(
+      InstantQueryPlan(
+        id: "items.null-cursors.desc.first",
+        namespace: "items",
+        order: InstantQueryOrder("score", .descending),
+        first: 3
+      )
+    )
+    expectNoDifference(descendingFirstPage.values.map(\.id), ["item-4-one", "item-3-missing", "item-2-null"])
+    expectNoDifference(descendingFirstPage.pageInfo?.endCursor?.sortValue, .null)
+
+    let descendingNextPage = try await runtime.queryOnce(
+      InstantQueryPlan(
+        id: "items.null-cursors.desc.next",
+        namespace: "items",
+        order: InstantQueryOrder("score", .descending),
+        first: 3,
+        after: try #require(descendingFirstPage.pageInfo?.endCursor)
+      )
+    )
+    expectNoDifference(descendingNextPage.values.map(\.id), ["item-1-missing", "item-0-null"])
+    expectNoDifference(descendingNextPage.pageInfo?.hasPreviousPage, true)
+    expectNoDifference(descendingNextPage.pageInfo?.hasNextPage, false)
+  }
+
+  @Test
   func queryFieldSelectionTrimsReturnedValuesAfterFilteringAndOrdering() async throws {
     let score = InstantAttribute(
       id: "items/score",
