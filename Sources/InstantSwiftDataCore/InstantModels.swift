@@ -389,6 +389,10 @@ public struct InstantQueryPlan: Hashable, Codable, Sendable, Identifiable {
   public var offset: Int?
   public var limit: Int?
 
+  public var cacheKey: String {
+    Self.cacheKey(for: self)
+  }
+
   public init(
     id: String,
     namespace: String,
@@ -411,6 +415,115 @@ public struct InstantQueryPlan: Hashable, Codable, Sendable, Identifiable {
     self.order = order
     self.offset = offset
     self.limit = limit
+  }
+
+  public static func cacheKey(for plan: Self) -> String {
+    let data = Data(plan.canonicalCacheKeyPayload.utf8)
+    return "plan:\(data.base64EncodedString())"
+  }
+}
+
+private extension InstantQueryPlan {
+  var canonicalCacheKeyPayload: String {
+    [
+      "id:\(id.cacheKeyEncodedString)",
+      "namespace:\(namespace.cacheKeyEncodedString)",
+      "filters:[\(filters.map(\.canonicalCacheKeyPayload).joined(separator: ","))]",
+      "order:\(order?.canonicalCacheKeyPayload ?? "nil")",
+      "offset:\(offset.map(String.init) ?? "nil")",
+      "limit:\(limit.map(String.init) ?? "nil")",
+    ]
+    .joined(separator: "|")
+  }
+}
+
+private extension InstantQueryOrder {
+  var canonicalCacheKeyPayload: String {
+    "field:\(field.cacheKeyEncodedString)|direction:\(direction.rawValue)"
+  }
+}
+
+private extension InstantQueryFilter {
+  var canonicalCacheKeyPayload: String {
+    switch self {
+    case let .equals(field, value):
+      return "equals(\(field.cacheKeyEncodedString),\(value.canonicalCacheKeyPayload))"
+    case let .notEquals(field, value):
+      return "notEquals(\(field.cacheKeyEncodedString),\(value.canonicalCacheKeyPayload))"
+    case let .greaterThan(field, value):
+      return "greaterThan(\(field.cacheKeyEncodedString),\(value.canonicalCacheKeyPayload))"
+    case let .greaterThanOrEqual(field, value):
+      return "greaterThanOrEqual(\(field.cacheKeyEncodedString),\(value.canonicalCacheKeyPayload))"
+    case let .lessThan(field, value):
+      return "lessThan(\(field.cacheKeyEncodedString),\(value.canonicalCacheKeyPayload))"
+    case let .lessThanOrEqual(field, value):
+      return "lessThanOrEqual(\(field.cacheKeyEncodedString),\(value.canonicalCacheKeyPayload))"
+    case let .in(field, values):
+      return
+        "in(\(field.cacheKeyEncodedString),[\(values.map(\.canonicalCacheKeyPayload).joined(separator: ","))])"
+    case let .like(field, pattern):
+      return "like(\(field.cacheKeyEncodedString),\(pattern.cacheKeyEncodedString))"
+    case let .iLike(field, pattern):
+      return "iLike(\(field.cacheKeyEncodedString),\(pattern.cacheKeyEncodedString))"
+    case let .isNull(field):
+      return "isNull(\(field.cacheKeyEncodedString))"
+    case let .isNotNull(field):
+      return "isNotNull(\(field.cacheKeyEncodedString))"
+    case let .and(filters):
+      return "and(\(filters.map(\.canonicalCacheKeyPayload).joined(separator: ",")))"
+    case let .or(filters):
+      return "or(\(filters.map(\.canonicalCacheKeyPayload).joined(separator: ",")))"
+    }
+  }
+}
+
+private extension InstantValue {
+  var canonicalCacheKeyPayload: String {
+    switch self {
+    case .null:
+      return "null"
+    case let .string(value):
+      return "string:\(value.cacheKeyEncodedString)"
+    case let .number(value):
+      return "number:\(value.bitPattern)"
+    case let .bool(value):
+      return "bool:\(value)"
+    case let .date(value):
+      return "date:\(value.timeIntervalSinceReferenceDate.bitPattern)"
+    case let .json(value):
+      return "json:\(value.canonicalCacheKeyPayload)"
+    case let .ref(value):
+      return "ref:\(value.cacheKeyEncodedString)"
+    }
+  }
+}
+
+private extension JSONValue {
+  var canonicalCacheKeyPayload: String {
+    switch self {
+    case .null:
+      return "null"
+    case let .bool(value):
+      return "bool:\(value)"
+    case let .number(value):
+      return "number:\(value.bitPattern)"
+    case let .string(value):
+      return "string:\(value.cacheKeyEncodedString)"
+    case let .array(values):
+      return "array:[\(values.map(\.canonicalCacheKeyPayload).joined(separator: ","))]"
+    case let .object(fields):
+      let payload = fields.keys.sorted().map { key in
+        "\(key.cacheKeyEncodedString):\(fields[key]?.canonicalCacheKeyPayload ?? "nil")"
+      }
+      .joined(separator: ",")
+      return "object:{\(payload)}"
+    }
+  }
+}
+
+private extension String {
+  var cacheKeyEncodedString: String {
+    Data(utf8).base64EncodedString()
   }
 }
 
@@ -471,7 +584,8 @@ public struct InstantQueryEmission: Hashable, Codable, Sendable {
 }
 
 public struct InstantCachedQuery: Hashable, Codable, Sendable, Identifiable {
-  public var id: String { queryID }
+  public var id: String { cacheKey }
+  public var cacheKey: String
   public var queryID: String
   public var plan: InstantQueryPlan
   public var emission: InstantQueryEmission
@@ -479,12 +593,14 @@ public struct InstantCachedQuery: Hashable, Codable, Sendable, Identifiable {
   public var storeRevision: Int64
 
   public init(
+    cacheKey: String? = nil,
     queryID: String,
     plan: InstantQueryPlan,
     emission: InstantQueryEmission,
     updatedAt: InstantTimestamp,
     storeRevision: Int64
   ) {
+    self.cacheKey = cacheKey ?? plan.cacheKey
     self.queryID = queryID
     self.plan = plan
     self.emission = emission
@@ -493,6 +609,7 @@ public struct InstantCachedQuery: Hashable, Codable, Sendable, Identifiable {
   }
 
   private enum CodingKeys: String, CodingKey {
+    case cacheKey
     case queryID
     case plan
     case emission
@@ -502,9 +619,11 @@ public struct InstantCachedQuery: Hashable, Codable, Sendable, Identifiable {
 
   public init(from decoder: Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
+    let plan = try container.decode(InstantQueryPlan.self, forKey: .plan)
     self.init(
+      cacheKey: try container.decodeIfPresent(String.self, forKey: .cacheKey) ?? plan.cacheKey,
       queryID: try container.decode(String.self, forKey: .queryID),
-      plan: try container.decode(InstantQueryPlan.self, forKey: .plan),
+      plan: plan,
       emission: try container.decode(InstantQueryEmission.self, forKey: .emission),
       updatedAt: try container.decode(InstantTimestamp.self, forKey: .updatedAt),
       storeRevision: try container.decodeIfPresent(Int64.self, forKey: .storeRevision) ?? 0
@@ -513,6 +632,7 @@ public struct InstantCachedQuery: Hashable, Codable, Sendable, Identifiable {
 
   public func encode(to encoder: Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(cacheKey, forKey: .cacheKey)
     try container.encode(queryID, forKey: .queryID)
     try container.encode(plan, forKey: .plan)
     try container.encode(emission, forKey: .emission)

@@ -84,6 +84,7 @@ struct InstantStoreTests {
     let cachedQuery = try await runtime.cachedQuery(TodoExample.query)
 
     expectNoDifference(cachedQuery?.queryID, TodoExample.query.id)
+    expectNoDifference(cachedQuery?.cacheKey, TodoExample.query.cacheKey)
     expectNoDifference(cachedQuery?.plan, TodoExample.query)
     expectNoDifference(cachedQuery?.emission.values, snapshots)
     expectNoDifference(cachedQuery?.updatedAt, cachedAt)
@@ -119,6 +120,7 @@ struct InstantStoreTests {
     let cachedQueries = try await relaunchedRuntime.cachedQueries()
 
     expectNoDifference(cachedQueries.map(\.queryID), [TodoExample.query.id])
+    expectNoDifference(cachedQueries.map(\.cacheKey), [TodoExample.query.cacheKey])
     expectNoDifference(
       cachedTodos,
       [
@@ -136,6 +138,133 @@ struct InstantStoreTests {
         )
       ]
     )
+  }
+
+  @Test
+  func queryCacheStoresSameQueryIDDifferentPlansSeparately() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let firstCreatedAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let secondCreatedAt = InstantTimestamp(milliseconds: firstCreatedAt.milliseconds + 1)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-cache-collision-a",
+        operations: TodoExample.createOperations(
+          id: "todo-open",
+          text: "open",
+          createdAt: firstCreatedAt,
+          transactionID: "tx-cache-collision-a"
+        )
+      ),
+      createdAt: firstCreatedAt
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-cache-collision-b",
+        operations: TodoExample.createOperations(
+          id: "todo-completed",
+          text: "completed",
+          createdAt: secondCreatedAt,
+          transactionID: "tx-cache-collision-b"
+        ) + TodoExample.completeOperations(
+          id: "todo-completed",
+          updatedAt: secondCreatedAt,
+          transactionID: "tx-cache-collision-b"
+        )
+      ),
+      createdAt: secondCreatedAt
+    )
+
+    let openPlan = InstantQueryPlan(
+      id: "examples.todos.list",
+      namespace: TodoExample.namespace,
+      filters: [.equals(field: "isCompleted", value: .bool(false))],
+      order: InstantQueryOrder("createdAt", .ascending)
+    )
+    let completedPlan = InstantQueryPlan(
+      id: "examples.todos.list",
+      namespace: TodoExample.namespace,
+      filters: [.equals(field: "isCompleted", value: .bool(true))],
+      order: InstantQueryOrder("createdAt", .ascending)
+    )
+
+    _ = try await runtime.query(openPlan)
+    _ = try await runtime.query(completedPlan)
+
+    let cachedQueries = try await runtime.cachedQueries()
+    expectNoDifference(cachedQueries.map(\.queryID), ["examples.todos.list", "examples.todos.list"])
+    expectNoDifference(
+      Set(cachedQueries.map(\.cacheKey)),
+      Set([openPlan.cacheKey, completedPlan.cacheKey])
+    )
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let openCache = try await relaunchedRuntime.cachedQuery(openPlan)
+    let completedCache = try await relaunchedRuntime.cachedQuery(completedPlan)
+
+    expectNoDifference(openCache?.emission.values.map(\.id), ["todo-open"])
+    expectNoDifference(completedCache?.emission.values.map(\.id), ["todo-completed"])
+  }
+
+  @Test
+  func queryCacheKeyDoesNotTrapForNonFiniteNumbers() {
+    let nanPlan = InstantQueryPlan(
+      id: "numbers.nan",
+      namespace: "numbers",
+      filters: [.equals(field: "value", value: .number(.nan))]
+    )
+    let infinityPlan = InstantQueryPlan(
+      id: "numbers.infinity",
+      namespace: "numbers",
+      filters: [.equals(field: "value", value: .number(.infinity))]
+    )
+
+    #expect(nanPlan.cacheKey.hasPrefix("plan:"))
+    #expect(infinityPlan.cacheKey.hasPrefix("plan:"))
+    #expect(nanPlan.cacheKey != infinityPlan.cacheKey)
+  }
+
+  @Test
+  func queryCacheMigrationPreservesLegacyRows() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let updatedAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    try seedLegacyQueryCache(
+      at: cacheURL,
+      entry: LegacyCachedQuery(
+        queryID: TodoExample.query.id,
+        plan: TodoExample.query,
+        emission: InstantQueryEmission(queryID: TodoExample.query.id, sequence: 0, values: []),
+        updatedAt: updatedAt,
+        storeRevision: 42
+      )
+    )
+
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let cachedQuery = try await runtime.cachedQuery(TodoExample.query)
+    let cachedQueries = try await runtime.cachedQueries()
+
+    expectNoDifference(cachedQuery?.cacheKey, TodoExample.query.cacheKey)
+    expectNoDifference(cachedQuery?.updatedAt, updatedAt)
+    expectNoDifference(cachedQuery?.storeRevision, 42)
+    expectNoDifference(cachedQueries.map(\.cacheKey), [TodoExample.query.cacheKey])
   }
 
   @Test
@@ -1875,6 +2004,112 @@ struct InstantStoreTests {
     return directory.appendingPathComponent("state.sqlite")
   }
 
+  private func seedLegacyQueryCache(at url: URL, entry: LegacyCachedQuery) throws {
+    try FileManager.default.createDirectory(
+      at: url.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+
+    var connection: OpaquePointer?
+    guard sqlite3_open_v2(url.path, &connection, SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, nil)
+      == SQLITE_OK
+    else {
+      let message = connection.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) }
+        ?? "SQLite could not open \(url.path)."
+      sqlite3_close(connection)
+      throw InstantError(
+        code: .persistenceFailed,
+        operation: "open legacy query cache",
+        message: message,
+        recovery: "Check the temporary test database."
+      )
+    }
+    defer { sqlite3_close(connection) }
+
+    var errorMessage: UnsafeMutablePointer<CChar>?
+    guard sqlite3_exec(
+      connection,
+      """
+      CREATE TABLE instant_query_cache (
+        query_id TEXT PRIMARY KEY NOT NULL,
+        json TEXT NOT NULL,
+        updated_at_ms INTEGER NOT NULL
+      )
+      """,
+      nil,
+      nil,
+      &errorMessage
+    ) == SQLITE_OK
+    else {
+      let message = errorMessage.map { String(cString: $0) }
+        ?? "SQLite could not create legacy instant_query_cache."
+      sqlite3_free(errorMessage)
+      throw InstantError(
+        code: .persistenceFailed,
+        operation: "create legacy query cache",
+        message: message,
+        recovery: "Check the temporary test database."
+      )
+    }
+
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    let data = try encoder.encode(entry)
+    let json = String(decoding: data, as: UTF8.self)
+
+    var statement: OpaquePointer?
+    guard sqlite3_prepare_v2(
+      connection,
+      """
+      INSERT INTO instant_query_cache (query_id, json, updated_at_ms)
+      VALUES (?, ?, ?)
+      """,
+      -1,
+      &statement,
+      nil
+    ) == SQLITE_OK
+    else {
+      let message = connection.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) }
+        ?? "SQLite could not prepare legacy query cache insert."
+      throw InstantError(
+        code: .persistenceFailed,
+        operation: "prepare legacy query cache insert",
+        message: message,
+        recovery: "Check the temporary test database."
+      )
+    }
+    defer { sqlite3_finalize(statement) }
+
+    try entry.queryID.withCString { queryIDCString in
+      try json.withCString { jsonCString in
+        guard sqlite3_bind_text(statement, 1, queryIDCString, -1, nil) == SQLITE_OK,
+          sqlite3_bind_text(statement, 2, jsonCString, -1, nil) == SQLITE_OK,
+          sqlite3_bind_int64(statement, 3, sqlite3_int64(entry.updatedAt.milliseconds)) == SQLITE_OK
+        else {
+          let message = connection.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) }
+            ?? "SQLite could not bind legacy query cache insert."
+          throw InstantError(
+            code: .persistenceFailed,
+            operation: "bind legacy query cache insert",
+            message: message,
+            recovery: "Check the temporary test database."
+          )
+        }
+
+        guard sqlite3_step(statement) == SQLITE_DONE else {
+          let message = connection.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) }
+            ?? "SQLite could not insert legacy query cache row."
+          throw InstantError(
+            code: .persistenceFailed,
+            operation: "insert legacy query cache",
+            message: message,
+            recovery: "Check the temporary test database."
+          )
+        }
+      }
+    }
+  }
+
   private func dropOutboxTable(at url: URL) throws {
     var connection: OpaquePointer?
     guard sqlite3_open_v2(url.path, &connection, SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX, nil)
@@ -1907,4 +2142,12 @@ struct InstantStoreTests {
       )
     }
   }
+}
+
+private struct LegacyCachedQuery: Encodable, Sendable {
+  var queryID: String
+  var plan: InstantQueryPlan
+  var emission: InstantQueryEmission
+  var updatedAt: InstantTimestamp
+  var storeRevision: Int64
 }

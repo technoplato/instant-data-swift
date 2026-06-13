@@ -191,7 +191,8 @@ struct InstantSwiftDataCLI {
       tripleCount: snapshot.store.triples.count,
       queryCacheCount: queryCache.count,
       outboxMutationCount: snapshot.outbox.count,
-      namespaces: namespaceSummaries(snapshot.store)
+      namespaces: namespaceSummaries(snapshot.store),
+      queries: queryCacheSummaries(queryCache)
     )
 
     switch output {
@@ -201,6 +202,14 @@ struct InstantSwiftDataCLI {
       print("triples: \(summary.tripleCount)")
       print("cached queries: \(summary.queryCacheCount)")
       print("outbox mutations: \(summary.outboxMutationCount)")
+      if !summary.queries.isEmpty {
+        print("cached query entries:")
+        for query in summary.queries {
+          print(
+            "  \(query.queryID) namespace=\(query.namespace) results=\(query.resultCount) key=\(query.shortCacheKey)"
+          )
+        }
+      }
       if summary.namespaces.isEmpty {
         print("namespaces: none")
       } else {
@@ -1199,6 +1208,21 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func queryCacheSummaries(
+    _ entries: [InstantCachedQuery]
+  ) -> [CacheQuerySummary] {
+    entries.map { entry in
+      CacheQuerySummary(
+        queryID: entry.queryID,
+        cacheKey: entry.cacheKey,
+        namespace: entry.plan.namespace,
+        resultCount: entry.emission.values.count,
+        updatedAt: entry.updatedAt,
+        storeRevision: entry.storeRevision
+      )
+    }
+  }
+
   private static func writeJSON<Value: Encodable>(_ value: Value) throws {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -1352,6 +1376,7 @@ private struct CacheInspectOutput: Codable, Sendable {
   var queryCacheCount: Int
   var outboxMutationCount: Int
   var namespaces: [CacheNamespaceSummary]
+  var queries: [CacheQuerySummary]
 }
 
 private struct CacheNamespaceSummary: Codable, Sendable {
@@ -1359,6 +1384,19 @@ private struct CacheNamespaceSummary: Codable, Sendable {
   var entityCount: Int
   var tripleCount: Int
   var attributeCount: Int
+}
+
+private struct CacheQuerySummary: Codable, Sendable {
+  var queryID: String
+  var cacheKey: String
+  var namespace: String
+  var resultCount: Int
+  var updatedAt: InstantTimestamp
+  var storeRevision: Int64
+
+  var shortCacheKey: String {
+    String(cacheKey.prefix(32))
+  }
 }
 
 private struct OutboxInspectOutput: Codable, Sendable {

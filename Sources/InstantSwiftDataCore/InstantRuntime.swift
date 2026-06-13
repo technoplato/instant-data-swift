@@ -169,7 +169,7 @@ public final class InstantRuntime: Sendable {
   }
 
   public func cachedQuery(_ plan: InstantQueryPlan) async throws -> InstantCachedQuery? {
-    try await persistence.cachedQuery(id: plan.id)
+    try await persistence.cachedQuery(cacheKey: plan.cacheKey)
   }
 
   public func cachedQueries() async throws -> [InstantCachedQuery] {

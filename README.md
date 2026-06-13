@@ -38,6 +38,7 @@ Inspect the durable cache and optimistic outbox:
 swift run instant-swift-data app select local-demo --json
 swift run instant-swift-data app show --json
 swift run instant-swift-data cache inspect --json
+swift run instant-swift-data cache inspect --json | jq '.queries[] | {queryID, namespace, resultCount}'
 swift run instant-swift-data outbox inspect --jsonl
 MUTATION_ID="$(swift run instant-swift-data outbox inspect --json | jq -r '.mutations[0].id')"
 swift run instant-swift-data outbox confirm "$MUTATION_ID" --json
@@ -70,9 +71,9 @@ swift run instant-swift-data perms verify --example todos --from instant.perms.t
 
 The current transport is intentionally marked `not-implemented-local-cache-only`
 in command output. That means the demo proves durable local cache, typed triples,
-query materialization, persisted query results, optimistic outbox persistence,
-and non-captive CLI interaction, but it does not yet sync with a real Instant
-app.
+query materialization, plan-aware persisted query results, optimistic outbox
+persistence, and non-captive CLI interaction, but it does not yet sync with a
+real Instant app.
 
 ## Development
 

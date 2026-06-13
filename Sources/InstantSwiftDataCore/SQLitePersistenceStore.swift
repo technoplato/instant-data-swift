@@ -170,6 +170,35 @@ public actor SQLitePersistenceStore {
         )
       }
     }
+    try withSQLiteBusyRetry {
+      try migrate(name: "0003_plan_aware_query_cache") {
+        let entries: [InstantCachedQuery] = try selectJSON(
+          "SELECT json FROM instant_query_cache ORDER BY updated_at_ms, query_id"
+        )
+        try execute("DROP TABLE IF EXISTS instant_query_cache_v2")
+        try execute(
+          """
+          CREATE TABLE instant_query_cache_v2 (
+            cache_key TEXT PRIMARY KEY NOT NULL,
+            query_id TEXT NOT NULL,
+            json TEXT NOT NULL,
+            updated_at_ms INTEGER NOT NULL
+          )
+          """
+        )
+        for entry in entries {
+          try saveQueryCacheEntryWithoutTransaction(entry, tableName: "instant_query_cache_v2")
+        }
+        try execute("DROP TABLE instant_query_cache")
+        try execute("ALTER TABLE instant_query_cache_v2 RENAME TO instant_query_cache")
+        try execute(
+          """
+          CREATE INDEX IF NOT EXISTS instant_query_cache_query_id_idx
+          ON instant_query_cache (query_id)
+          """
+        )
+      }
+    }
   }
 
   public func loadSnapshot() throws -> InstantPersistenceSnapshot {
@@ -204,16 +233,23 @@ public actor SQLitePersistenceStore {
 
   public func loadQueryCache() throws -> [InstantCachedQuery] {
     try selectJSON(
-      "SELECT json FROM instant_query_cache ORDER BY updated_at_ms, query_id"
+      "SELECT json FROM instant_query_cache ORDER BY updated_at_ms, query_id, cache_key"
     )
   }
 
-  public func cachedQuery(id: String) throws -> InstantCachedQuery? {
+  public func cachedQuery(cacheKey: String) throws -> InstantCachedQuery? {
     let rows: [InstantCachedQuery] = try selectJSON(
-      "SELECT json FROM instant_query_cache WHERE query_id = ? LIMIT 1",
-      [.text(id)]
+      "SELECT json FROM instant_query_cache WHERE cache_key = ? LIMIT 1",
+      [.text(cacheKey)]
     )
     return rows.first
+  }
+
+  public func cachedQueries(queryID: String) throws -> [InstantCachedQuery] {
+    try selectJSON(
+      "SELECT json FROM instant_query_cache WHERE query_id = ? ORDER BY updated_at_ms, cache_key",
+      [.text(queryID)]
+    )
   }
 
   public func saveStoreSnapshot(_ snapshot: InstantStoreSnapshot) throws {
@@ -369,17 +405,7 @@ public actor SQLitePersistenceStore {
         return false
       }
 
-      try execute(
-        """
-        INSERT OR REPLACE INTO instant_query_cache (query_id, json, updated_at_ms)
-        VALUES (?, ?, ?)
-        """,
-        [
-          .text(entry.queryID),
-          .text(try encode(entry)),
-          .int(entry.updatedAt.milliseconds),
-        ]
-      )
+      try saveQueryCacheEntryWithoutTransaction(entry)
       return true
     }
   }
@@ -560,6 +586,24 @@ public actor SQLitePersistenceStore {
         ]
       )
     }
+  }
+
+  private func saveQueryCacheEntryWithoutTransaction(
+    _ entry: InstantCachedQuery,
+    tableName: String = "instant_query_cache"
+  ) throws {
+    try execute(
+      """
+      INSERT OR REPLACE INTO \(tableName) (cache_key, query_id, json, updated_at_ms)
+      VALUES (?, ?, ?, ?)
+      """,
+      [
+        .text(entry.cacheKey),
+        .text(entry.queryID),
+        .text(try encode(entry)),
+        .int(entry.updatedAt.milliseconds),
+      ]
+    )
   }
 
   private func loadMetadataRevisionWithoutTransaction(_ key: String) throws -> Int64 {
