@@ -914,9 +914,35 @@ struct InstantQueryExecutionParityTests {
       source
     )
     expectParityEqual(
+      await values("date", .greaterThanOrEqual(field: "date", value: .date(Date(timeIntervalSince1970: 2)))),
+      [.date(Date(timeIntervalSince1970: 2)), .date(Date(timeIntervalSince1970: 3)), .date(Date(timeIntervalSince1970: 4))],
+      source
+    )
+    expectParityEqual(
+      await values("date", .lessThan(field: "date", value: .date(Date(timeIntervalSince1970: 2)))),
+      [.date(Date(timeIntervalSince1970: 0)), .date(Date(timeIntervalSince1970: 1))],
+      source
+    )
+    expectParityEqual(
       await values("date", .lessThanOrEqual(field: "date", value: .date(Date(timeIntervalSince1970: 2)))),
       [.date(Date(timeIntervalSince1970: 0)), .date(Date(timeIntervalSince1970: 1)), .date(Date(timeIntervalSince1970: 2))],
       source
+    )
+    expectParityEqual(
+      await values("date", .lessThan(field: "date", value: .string("2026-01-01T00:00:00.000Z"))),
+      [
+        .date(Date(timeIntervalSince1970: 0)),
+        .date(Date(timeIntervalSince1970: 1)),
+        .date(Date(timeIntervalSince1970: 2)),
+        .date(Date(timeIntervalSince1970: 3)),
+        .date(Date(timeIntervalSince1970: 4)),
+      ],
+      "\(source) accepts string dates"
+    )
+    expectParityEqual(
+      await values("date", .greaterThan(field: "date", value: .string("2026-01-01T00:00:00.000Z"))),
+      [],
+      "\(source) accepts string dates"
     )
 
     expectParityEqual(await values("boolean", .greaterThan(field: "boolean", value: .bool(true))), [], source)
