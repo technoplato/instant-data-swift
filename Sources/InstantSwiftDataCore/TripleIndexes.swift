@@ -189,10 +189,6 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     _ plan: InstantQueryPlan,
     attributes: AttributeStore
   ) -> InstantQueryPage {
-    guard Self.validate(plan, attributes: attributes) == nil else {
-      return InstantQueryPage(values: [], pageInfo: pageInfo(for: [], plan: plan))
-    }
-
     var snapshots: [QuerySnapshot] = []
 
     for (entityID, attributesByID) in eav {

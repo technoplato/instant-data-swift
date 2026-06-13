@@ -380,9 +380,18 @@ public final class InstantRuntime: Sendable {
   public func observe(_ plan: InstantQueryPlan) async -> AsyncStream<InstantQueryEmission> {
     await enterOperationGate()
     recordActorHop(.persistence)
+    let attributes: [InstantAttribute]
     if let state = try? await persistence.loadState() {
       recordActorHop(.store)
       await store.replaceSnapshot(state.snapshot.store)
+      attributes = state.snapshot.store.attributes
+    } else {
+      recordActorHop(.store)
+      attributes = await store.snapshot().attributes
+    }
+    if TripleIndexes.validate(plan, attributes: AttributeStore(attributes: attributes)) != nil {
+      await leaveOperationGate()
+      return Self.emptyObservation(plan)
     }
     recordActorHop(.store)
     let stream = await store.observe(plan)
@@ -2733,6 +2742,13 @@ public final class InstantRuntime: Sendable {
 
   private func streamChunksObservationKey(streamID: String) -> InstantStreamChunksObservationKey {
     InstantStreamChunksObservationKey(appID: configuration.appID, streamID: streamID)
+  }
+
+  private static func emptyObservation(_ plan: InstantQueryPlan) -> AsyncStream<InstantQueryEmission> {
+    AsyncStream<InstantQueryEmission> { continuation in
+      continuation.yield(InstantQueryEmission(queryID: plan.id, sequence: 0, values: []))
+      continuation.finish()
+    }
   }
 
   private func recordActorHop(_ boundary: InstantActorHopBoundary) {

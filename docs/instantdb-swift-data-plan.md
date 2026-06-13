@@ -120,11 +120,14 @@ transitions remain future WebSocket transport work.
 - `where` operators: equality, `$ne`, `$isNull`, `$gt`, `$lt`, `$gte`, `$lte`,
   `$in`, `$like`, `$ilike`, `and`, `or`, and nested field paths like
   `relation.field`.
-- Local triple materialization currently supports one-hop raw nested field
-  filters (`relation.field`) over declared forward and reverse links, including
-  `relation.id`, null/not-equals matching for missing links. Strict runtime
-  query validation rejects undeclared fields and unsupported deeper paths such as
-  `relation.child.field` before materialization/cache writes.
+- Local triple materialization currently supports raw nested field filters over
+  declared forward and reverse links, including `relation.id`,
+  `relation.child.field`, null/not-equals matching for missing links, and
+  nested include plans. Strict runtime query validation rejects undeclared
+  fields, invalid include targets, and illegal nested pagination before
+  materialization/cache writes. Low-level `InstantStore.materialize` remains
+  validation-light for upstream fixture parity tests, matching Instant core's
+  raw query-resolution behavior without weakening runtime/client validation.
 - Ordering on indexed fields and `serverCreatedAt`.
 - Local triple materialization uses `serverCreatedAt` ascending as the implicit
   no-order query order, matching Instant, and supports explicit

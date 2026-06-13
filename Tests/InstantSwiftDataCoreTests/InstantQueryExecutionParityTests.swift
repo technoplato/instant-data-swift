@@ -22,6 +22,14 @@ struct InstantQueryExecutionParityTests {
     )
     expectParityEqual(users.compactMap { $0.string("handle") }.sorted(), ["joe"], source)
 
+    source = instaQLSource("Simple Where has expected keys")
+    let joe = try #require(users.first)
+    expectParityEqual(
+      joe.materializedScalarKeysIncludingID,
+      ["createdAt", "email", "fullName", "handle", "id"],
+      "\(source) adapted: Swift snapshots expose id separately from materialized values."
+    )
+
     source = instaQLSource("Simple Where with multiple clauses")
     users = await fixture.query(
       InstantQueryPlan(
@@ -96,6 +104,86 @@ struct InstantQueryExecutionParityTests {
       )
     )
     expectParityEqual(users.compactMap { $0.string("handle") }.sorted(), ["alex", "nicolegf", "stopa"], source)
+
+    source = instaQLSource("Deep where")
+    users = await fixture.query(
+      InstantQueryPlan(
+        id: "users.where.deep-exact",
+        namespace: "users",
+        filters: [.equals(field: "bookshelves.books.title", value: .string("Aesop's Fables"))]
+      )
+    )
+    expectParityEqual(users.compactMap { $0.string("handle") }, ["alex"], source)
+  }
+
+  @Test
+  func upstreamInstaQLLikeAndAndFilterEdges() async throws {
+    let fixture = try await UpstreamInstantFixture.zeneca()
+
+    var source = instaQLSource("like case sensitivity")
+    func fullNames(matching filter: InstantQueryFilter) async -> [String] {
+      await fixture.query(
+        InstantQueryPlan(
+          id: "users.where.full-name-pattern",
+          namespace: "users",
+          filters: [filter]
+        )
+      )
+      .compactMap { $0.string("fullName") }
+      .sorted()
+    }
+    expectParityEqual(await fullNames(matching: .like(field: "fullName", pattern: "%O%")), [], source)
+    expectParityEqual(
+      await fullNames(matching: .iLike(field: "fullName", pattern: "%O%")),
+      ["Joe Averbukh", "Nicole"],
+      source
+    )
+    expectParityEqual(await fullNames(matching: .like(field: "fullName", pattern: "%j%")), [], source)
+    expectParityEqual(await fullNames(matching: .iLike(field: "fullName", pattern: "%j%")), ["Joe Averbukh"], source)
+
+    source = instaQLSource("like special regex characters")
+    let specialCharacters: [(Character, String)] = [
+      ("(", "Stopa (The Hacker)"),
+      (")", "The Hacker (Stopa)"),
+      ("[", "Stopa [Hacker]"),
+      ("]", "[Hacker] Stopa"),
+      ("{", "Stopa {Hacker}"),
+      ("}", "{Hacker} Stopa"),
+      ("*", "Stopa * Hacker"),
+      ("+", "Stopa + Hacker"),
+      ("?", "Stopa? Yes!"),
+      ("^", "Stopa ^ Hacker"),
+      ("$", "Stopa $ Hacker"),
+      ("|", "Stopa | Hacker"),
+      ("\\", "Stopa \\ Hacker"),
+      (".", "Mr. Stopa"),
+    ]
+    for (character, fullName) in specialCharacters {
+      let renamed = try await fixture.replacingUserFullName(handle: "stopa", with: fullName)
+      let matches = await renamed.query(
+        InstantQueryPlan(
+          id: "users.where.full-name-special-\(character)",
+          namespace: "users",
+          filters: [.like(field: "fullName", pattern: "%\(character)%")]
+        )
+      )
+      expectParityEqual(matches.first?.string("fullName"), fullName, "\(source) \(character)")
+    }
+
+    source = instaQLSource("Where and")
+    let users = await fixture.query(
+      InstantQueryPlan(
+        id: "users.where.and",
+        namespace: "users",
+        filters: [
+          .and([
+            .equals(field: "bookshelves.books.title", value: .string("The Count of Monte Cristo")),
+            .equals(field: "bookshelves.books.title", value: .string("Antifragile")),
+          ])
+        ]
+      )
+    )
+    expectParityEqual(users.compactMap { $0.string("handle") }.sorted(), ["nicolegf", "stopa"], source)
   }
 
   @Test
@@ -320,6 +408,71 @@ struct InstantQueryExecutionParityTests {
       source
     )
 
+    source = instaQLSource("Nested wheres with OR queries")
+    users = await fixture.query(
+      InstantQueryPlan(
+        id: "users.include.filtered-bookshelves-or",
+        namespace: "users",
+        filters: [.equals(field: "handle", value: .string("alex"))],
+        includes: [
+          InstantQueryInclude(
+            "bookshelves",
+            query: InstantQueryIncludePlan(
+              id: "bookshelves.short-stories-or",
+              namespace: "bookshelves",
+              filters: [.or([.equals(field: "name", value: .string("Short Stories"))])],
+              includes: [InstantQueryInclude("books")]
+            )
+          )
+        ]
+      )
+    )
+    expectParityEqual(
+      users.flatMap { $0.links?["bookshelves"] ?? [] }
+        .flatMap { $0.linkedStrings("books", field: "title") },
+      [
+        "The Paper Menagerie and Other Stories",
+        "Stories of Your Life and Others",
+        "Aesop's Fables",
+      ],
+      source
+    )
+
+    source = instaQLSource("Nested wheres with AND queries")
+    users = await fixture.query(
+      InstantQueryPlan(
+        id: "users.include.filtered-bookshelves-and",
+        namespace: "users",
+        filters: [.equals(field: "handle", value: .string("alex"))],
+        includes: [
+          InstantQueryInclude(
+            "bookshelves",
+            query: InstantQueryIncludePlan(
+              id: "bookshelves.short-stories-and",
+              namespace: "bookshelves",
+              filters: [
+                .and([
+                  .equals(field: "name", value: .string("Short Stories")),
+                  .equals(field: "order", value: .number(0)),
+                ])
+              ],
+              includes: [InstantQueryInclude("books")]
+            )
+          )
+        ]
+      )
+    )
+    expectParityEqual(
+      users.flatMap { $0.links?["bookshelves"] ?? [] }
+        .flatMap { $0.linkedStrings("books", field: "title") },
+      [
+        "The Paper Menagerie and Other Stories",
+        "Stories of Your Life and Others",
+        "Aesop's Fables",
+      ],
+      source
+    )
+
     source = instaQLSource("multiple connections")
     let shelfConnections = await fixture.query(
       InstantQueryPlan(
@@ -349,6 +502,40 @@ struct InstantQueryExecutionParityTests {
       ],
       source
     )
+  }
+
+  @Test
+  func upstreamInstaQLMissingNamespacesAndAttributes() async throws {
+    let fixture = try await UpstreamInstantFixture.zeneca()
+
+    var source = instaQLSource("Missing etype")
+    var snapshots = await fixture.query(InstantQueryPlan(id: "moopy.missing", namespace: "moopy"))
+    expectParityEqual(snapshots.count, 0, source)
+
+    source = instaQLSource("Missing inner etype")
+    snapshots = await fixture.query(
+      InstantQueryPlan(
+        id: "users.include.missing-inner",
+        namespace: "users",
+        filters: [.equals(field: "handle", value: .string("joe"))],
+        includes: [InstantQueryInclude("moopy")]
+      )
+    )
+    expectParityEqual(
+      snapshots.map { [$0.string("handle") ?? "", String($0.linkedCount("moopy"))] },
+      [["joe", "0"]],
+      "\(source) adapted: strict runtime validation rejects undeclared include targets, while raw materialization treats them as empty."
+    )
+
+    source = instaQLSource("Missing filter attr")
+    snapshots = await fixture.query(
+      InstantQueryPlan(
+        id: "users.where.missing-filter-attr",
+        namespace: "users",
+        filters: [.equals(field: "bookshelves.moopy", value: .string("joe"))]
+      )
+    )
+    expectParityEqual(snapshots.count, 0, source)
   }
 
   @Test
@@ -454,6 +641,7 @@ private func bookshelfProjection(_ snapshot: InstantEntitySnapshot) -> [String] 
 
 private struct UpstreamInstantFixture {
   var store: InstantStore
+  var attributes: [InstantAttribute]
 
   static func zeneca() async throws -> Self {
     try await Self.loadFixture(named: "zeneca")
@@ -461,6 +649,41 @@ private struct UpstreamInstantFixture {
 
   func query(_ plan: InstantQueryPlan) async -> [InstantEntitySnapshot] {
     await store.materialize(plan)
+  }
+
+  func replacingUserFullName(handle: String, with fullName: String) async throws -> Self {
+    let user = try #require(
+      await query(
+        InstantQueryPlan(
+          id: "users.rename-source.\(handle)",
+          namespace: "users",
+          filters: [.equals(field: "handle", value: .string(handle))]
+        )
+      ).first
+    )
+    let fullNameAttribute = try #require(
+      attributes.first { $0.namespace == "users" && $0.name == "fullName" }
+    )
+    let snapshot = await store.snapshot()
+    let store = InstantStore(snapshot: snapshot)
+    let txID = "upstream-fixture-rename-\(handle)"
+    _ = try await store.prepare(
+      InstantStoreTransaction(
+        id: txID,
+        operations: [
+          .merge(
+            InstantTriple(
+              entityID: user.id,
+              attributeID: fullNameAttribute.id,
+              value: .string(fullName),
+              txID: txID,
+              txTime: InstantTimestamp(milliseconds: 9_000_000_000_000)
+            )
+          )
+        ]
+      )
+    )
+    return Self(store: store, attributes: attributes)
   }
 
   private static func loadFixture(named name: String) async throws -> Self {
@@ -485,7 +708,10 @@ private struct UpstreamInstantFixture {
     let triples = try rawTriples.map {
       try instantTriple(from: $0, attributesByID: attributesByID)
     }
-    return Self(store: InstantStore(snapshot: InstantStoreSnapshot(attributes: attributes, triples: triples)))
+    return Self(
+      store: InstantStore(snapshot: InstantStoreSnapshot(attributes: attributes, triples: triples)),
+      attributes: attributes
+    )
   }
 
   private static func rawAttributeObjects(from data: Data) throws -> [[String: Any]] {
@@ -636,6 +862,10 @@ private struct UpstreamInstantFixture {
 }
 
 private extension InstantEntitySnapshot {
+  var materializedScalarKeysIncludingID: [String] {
+    Array(values.filter { !$0.value.containsRef }.keys).appending("id").sorted()
+  }
+
   func string(_ field: String) -> String? {
     guard case let .string(value) = values[field]?.first else { return nil }
     return value
@@ -650,6 +880,10 @@ private extension InstantEntitySnapshot {
       guard case let .string(value) = linked.values[field]?.first else { return nil }
       return value
     } ?? []
+  }
+
+  func linkedCount(_ relation: String) -> Int {
+    links?[relation]?.count ?? 0
   }
 }
 
@@ -666,11 +900,24 @@ private extension InstantMaterializedValue {
   var first: InstantValue? {
     values.first
   }
+
+  var containsRef: Bool {
+    values.contains {
+      guard case .ref = $0 else { return false }
+      return true
+    }
+  }
 }
 
 private extension Collection {
   subscript(safe index: Index) -> Element? {
     indices.contains(index) ? self[index] : nil
+  }
+}
+
+private extension Array {
+  func appending(_ element: Element) -> [Element] {
+    self + [element]
   }
 }
 

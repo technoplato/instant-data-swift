@@ -7601,6 +7601,17 @@ struct InstantStoreTests {
         )
       )
     }
+    let invalidObservation = await runtime.observe(
+      .init(
+        id: "todos.bad-include-observe",
+        namespace: TodoExample.namespace,
+        includes: [InstantQueryInclude("missing")]
+      )
+    )
+    var invalidObservationIterator = invalidObservation.makeAsyncIterator()
+    let invalidObservationEmission = await invalidObservationIterator.next()
+    expectNoDifference(invalidObservationEmission?.values.map(\.id), [])
+    #expect(await invalidObservationIterator.next() == nil)
 
     await expectQueryValidation(namespace: TodoExample.namespace, path: "project") {
       _ = try await runtime.query(
