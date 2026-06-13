@@ -32,6 +32,9 @@ struct InstantSwiftDataCLI {
     case "help", "--help", "-h":
       printHelp()
 
+    case "init":
+      try runInit(arguments: arguments, output: output)
+
     case "schema":
       try runSchema(arguments: arguments, output: output)
 
@@ -71,6 +74,12 @@ struct InstantSwiftDataCLI {
     default:
       throw CLIError("Unknown command: \(command)", exitCode: 64)
     }
+  }
+
+  private static func runInit(arguments: [String], output: OutputMode) throws {
+    let options = try ScaffoldOptions.parse(arguments: arguments)
+    try requireTodoExample(options.example)
+    try scaffoldTodoExample(options: options, output: output)
   }
 
   private static func runSchema(arguments: [String], output: OutputMode) throws {
@@ -1175,6 +1184,7 @@ struct InstantSwiftDataCLI {
       instant-swift-data
 
       Commands:
+        init --example todos --to <directory> [--force] [--json|--jsonl]
         schema generate --example todos [--to instant.schema.ts]
         schema verify --example todos --from instant.schema.ts [--json|--jsonl]
         perms generate --example todos [--to instant.perms.ts]
@@ -1237,6 +1247,168 @@ struct InstantSwiftDataCLI {
       withIntermediateDirectories: true
     )
     try data.write(to: url, options: .atomic)
+  }
+
+  private static func scaffoldTodoExample(
+    options: ScaffoldOptions,
+    output: OutputMode
+  ) throws {
+    let currentDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    let directoryURL = URL(fileURLWithPath: options.outputDirectory, relativeTo: currentDirectory)
+      .standardizedFileURL
+
+    let fileSpecs = [
+      ScaffoldFileSpec(
+        contents: try TypeScriptSchemaPrinter().printSchema(InstantSchemaExamples.todosDocument),
+        fileName: "instant.schema.ts",
+        kind: "schema"
+      ),
+      ScaffoldFileSpec(
+        contents: try TypeScriptPermissionsPrinter().printPermissions(InstantSchemaExamples.todoPermissions),
+        fileName: "instant.perms.ts",
+        kind: "permissions"
+      ),
+      ScaffoldFileSpec(
+        contents: scaffoldSchemaSwift,
+        fileName: "Schema.swift",
+        kind: "swift-schema"
+      ),
+      ScaffoldFileSpec(
+        contents: scaffoldReadme,
+        fileName: "README.md",
+        kind: "readme"
+      ),
+    ]
+    try preflightScaffoldWrite(fileSpecs: fileSpecs, directoryURL: directoryURL, force: options.force)
+    let files = try fileSpecs.map {
+      try writeScaffoldFile($0, directoryURL: directoryURL, force: options.force)
+    }
+
+    let summary = ScaffoldOutput(
+      example: options.example,
+      directory: directoryURL.path,
+      transport: "not-implemented-local-cache-only",
+      files: files
+    )
+
+    switch output {
+    case .human:
+      print("scaffold: \(summary.example)")
+      print("transport: \(summary.transport)")
+      print("directory: \(summary.directory)")
+      for file in summary.files {
+        print("- \(file.kind): \(file.path)")
+      }
+
+    case .json:
+      try writeJSON(summary)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.init",
+          side: "swift",
+          event: "summary",
+          appID: "scaffold",
+          ok: true,
+          details: summary
+        )
+      )
+      for file in summary.files {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.init",
+            side: "swift",
+            event: "file",
+            appID: "scaffold",
+            entityID: file.path,
+            ok: true,
+            details: file
+          )
+        )
+      }
+    }
+  }
+
+  private static func writeScaffoldFile(
+    _ fileSpec: ScaffoldFileSpec,
+    directoryURL: URL,
+    force: Bool
+  ) throws -> ScaffoldFileOutput {
+    let url = directoryURL.appendingPathComponent(fileSpec.fileName)
+    try FileManager.default.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+    if !force && FileManager.default.fileExists(atPath: url.path) {
+      throw CLIError(
+        "Scaffold refused to overwrite existing file: \(url.path). Re-run with --force to replace it.",
+        exitCode: 73
+      )
+    }
+    try Data(fileSpec.contents.utf8).write(to: url, options: .atomic)
+    return ScaffoldFileOutput(kind: fileSpec.kind, path: url.path)
+  }
+
+  private static func preflightScaffoldWrite(
+    fileSpecs: [ScaffoldFileSpec],
+    directoryURL: URL,
+    force: Bool
+  ) throws {
+    var isDirectory: ObjCBool = false
+    let fileManager = FileManager.default
+    if fileManager.fileExists(atPath: directoryURL.path, isDirectory: &isDirectory),
+      !isDirectory.boolValue
+    {
+      throw CLIError(
+        "Scaffold destination exists and is not a directory: \(directoryURL.path)",
+        exitCode: 73
+      )
+    }
+    guard !force else { return }
+
+    let existingPaths = fileSpecs
+      .map { directoryURL.appendingPathComponent($0.fileName).path }
+      .filter { fileManager.fileExists(atPath: $0) }
+    guard existingPaths.isEmpty else {
+      throw CLIError(
+        """
+        Scaffold refused to overwrite existing file(s): \(existingPaths.joined(separator: ", ")). \
+        Re-run with --force to replace them.
+        """,
+        exitCode: 73
+      )
+    }
+  }
+
+  private static var scaffoldSchemaSwift: String {
+    """
+    import InstantSwiftDataSchema
+
+    public enum AppSchema {
+      public static let schema = InstantSchemaExamples.todosDocument
+      public static let permissions = InstantSchemaExamples.todoPermissions
+    }
+
+    """
+  }
+
+  private static var scaffoldReadme: String {
+    """
+    # Instant Swift Data Todo Scaffold
+
+    This scaffold is generated from the Swift-owned `InstantSchemaExamples.todosDocument`
+    and `InstantSchemaExamples.todoPermissions` fixtures.
+
+    Verify the generated files:
+
+    ```bash
+    swift run instant-swift-data schema verify --example todos --from instant.schema.ts --json
+    swift run instant-swift-data perms verify --example todos --from instant.perms.ts --json
+    ```
+
+    The current transport is intentionally `not-implemented-local-cache-only`.
+    It proves local schema/perms generation and CLI workflows, not a pushed Instant app.
+    Re-run `instant-swift-data init ... --force` to replace generated files.
+
+    """
   }
 
   private static func verifySchema(options: SchemaVerifyOptions, output: OutputMode) throws {
@@ -2145,6 +2317,72 @@ private struct LocalTodoValidationOutput: Codable, Sendable {
   var events: [String]
   var finalTodoCount: Int
   var pendingMutationCount: Int
+}
+
+private struct ScaffoldOutput: Codable, Sendable {
+  var example: String
+  var directory: String
+  var transport: String
+  var files: [ScaffoldFileOutput]
+}
+
+private struct ScaffoldFileOutput: Codable, Sendable {
+  var kind: String
+  var path: String
+}
+
+private struct ScaffoldFileSpec: Sendable {
+  var contents: String
+  var fileName: String
+  var kind: String
+}
+
+private struct ScaffoldOptions: Sendable {
+  var example: String
+  var outputDirectory: String
+  var force: Bool
+
+  static func parse(arguments: [String]) throws -> Self {
+    var arguments = arguments
+    var example: String?
+    var outputDirectory: String?
+    var force = false
+
+    while let option = arguments.popFirstArgument() {
+      switch option {
+      case "--example":
+        guard let value = arguments.popFirstArgument() else {
+          throw CLIError(usage, exitCode: 64)
+        }
+        example = value
+
+      case "--to":
+        guard let value = arguments.popFirstArgument(),
+          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+          throw CLIError(usage, exitCode: 64)
+        }
+        outputDirectory = value
+
+      case "--force":
+        force = true
+
+      default:
+        throw CLIError("Unknown init option: \(option). \(usage)", exitCode: 64)
+      }
+    }
+
+    guard let example, let outputDirectory else {
+      throw CLIError(usage, exitCode: 64)
+    }
+    return Self(example: example, outputDirectory: outputDirectory, force: force)
+  }
+
+  private static var usage: String {
+    """
+    Usage: instant-swift-data init --example todos --to <directory> [--force] [--json|--jsonl]
+    """
+  }
 }
 
 private struct BenchmarkOptions: Sendable {

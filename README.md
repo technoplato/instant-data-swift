@@ -80,7 +80,15 @@ swift run instant-swift-data auth magic-code verify user@example.com <local-veri
 swift run instant-swift-data auth sign-out --json
 ```
 
-Generate the current todo example schema and permissions:
+Create and verify a local todo scaffold:
+
+```bash
+swift run instant-swift-data init --example todos --to .instant-swift-data-todos --json
+swift run instant-swift-data schema verify --example todos --from .instant-swift-data-todos/instant.schema.ts --json
+swift run instant-swift-data perms verify --example todos --from .instant-swift-data-todos/instant.perms.ts --json
+```
+
+Generate just the current todo example schema and permissions:
 
 ```bash
 swift run instant-swift-data schema generate --example todos --to instant.schema.ts

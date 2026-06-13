@@ -4,6 +4,104 @@ import Testing
 
 extension InstantStoreTests {
   @Test
+  func cliInitScaffoldsTodoExampleFiles() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    let scaffoldURL = homeURL.appendingPathComponent("TodoScaffold", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let output = try JSONDecoder().decode(
+      CLIInitOutput.self,
+      from: Data(
+        try runCLI(["init", "--example", "todos", "--to", scaffoldURL.path, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(output.example, "todos")
+    expectNoDifference(output.directory, scaffoldURL.path)
+    expectNoDifference(output.transport, "not-implemented-local-cache-only")
+    expectNoDifference(output.files.map(\.kind), ["schema", "permissions", "swift-schema", "readme"])
+
+    let schemaURL = scaffoldURL.appendingPathComponent("instant.schema.ts")
+    let permissionsURL = scaffoldURL.appendingPathComponent("instant.perms.ts")
+    let swiftSchemaURL = scaffoldURL.appendingPathComponent("Schema.swift")
+    let readmeURL = scaffoldURL.appendingPathComponent("README.md")
+    for url in [schemaURL, permissionsURL, swiftSchemaURL, readmeURL] {
+      #expect(FileManager.default.fileExists(atPath: url.path))
+    }
+    #expect(try String(contentsOf: swiftSchemaURL).contains("InstantSchemaExamples.todosDocument"))
+    #expect(try String(contentsOf: readmeURL).contains("not-implemented-local-cache-only"))
+
+    _ = try runCLI(
+      ["schema", "verify", "--example", "todos", "--from", schemaURL.path, "--json"],
+      homeURL: homeURL
+    )
+    _ = try runCLI(
+      ["perms", "verify", "--example", "todos", "--from", permissionsURL.path, "--json"],
+      homeURL: homeURL
+    )
+
+    let collisionURL = homeURL.appendingPathComponent("TodoScaffoldCollision", isDirectory: true)
+    try FileManager.default.createDirectory(at: collisionURL, withIntermediateDirectories: true)
+    let collisionReadmeURL = collisionURL.appendingPathComponent("README.md")
+    try Data("sentinel readme".utf8).write(to: collisionReadmeURL)
+    let collision = try runCLIResult(
+      ["init", "--example", "todos", "--to", collisionURL.path, "--json"],
+      homeURL: homeURL
+    )
+    #expect(collision.status == 73)
+    #expect(collision.error.contains("Scaffold refused to overwrite existing file(s)"))
+    expectNoDifference(try String(contentsOf: collisionReadmeURL), "sentinel readme")
+    #expect(!FileManager.default.fileExists(
+      atPath: collisionURL.appendingPathComponent("instant.schema.ts").path
+    ))
+
+    let forcedOutput = try JSONDecoder().decode(
+      CLIInitOutput.self,
+      from: Data(
+        try runCLI(
+          ["init", "--example", "todos", "--to", collisionURL.path, "--force", "--json"],
+          homeURL: homeURL
+        )
+        .utf8
+      )
+    )
+    expectNoDifference(forcedOutput.files.map(\.kind), ["schema", "permissions", "swift-schema", "readme"])
+    #expect(try String(contentsOf: collisionReadmeURL).contains("Instant Swift Data Todo Scaffold"))
+
+    let jsonlURL = homeURL.appendingPathComponent("TodoScaffoldJSONL", isDirectory: true)
+    let jsonlOutput = try runCLI(
+      ["init", "--example", "todos", "--to", jsonlURL.path, "--jsonl"],
+      homeURL: homeURL
+    )
+    let lines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(lines.count, 5)
+    let evidence = try JSONDecoder().decode(
+      CLIInitEvidence.self,
+      from: Data(try #require(lines.first).utf8)
+    )
+    expectNoDifference(evidence.caseID, "cli.init")
+    expectNoDifference(evidence.event, "summary")
+    expectNoDifference(evidence.details.files.map(\.kind), ["schema", "permissions", "swift-schema", "readme"])
+
+    let humanURL = homeURL.appendingPathComponent("TodoScaffoldHuman", isDirectory: true)
+    let humanOutput = try runCLI(
+      ["init", "--example", "todos", "--to", humanURL.path],
+      homeURL: homeURL
+    )
+    #expect(humanOutput.contains("transport: not-implemented-local-cache-only"))
+    #expect(humanOutput.contains("instant.schema.ts"))
+
+    let unsupported = try runCLIResult(
+      ["init", "--example", "rooms", "--to", scaffoldURL.path, "--json"],
+      homeURL: homeURL
+    )
+    #expect(unsupported.status == 64)
+    #expect(unsupported.error.contains("Only '--example todos' is implemented"))
+  }
+
+  @Test
   func cliQueryTodosPrintsDecodedLocalResults() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -878,6 +976,30 @@ extension InstantStoreTests {
 
 private struct CLIAddOutput: Decodable {
   var changedID: String?
+}
+
+private struct CLIInitOutput: Decodable {
+  var example: String
+  var directory: String
+  var transport: String
+  var files: [CLIInitFile]
+}
+
+private struct CLIInitFile: Decodable {
+  var kind: String
+  var path: String
+}
+
+private struct CLIInitEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLIInitOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
 }
 
 private struct CLITodosOutput: Decodable {
