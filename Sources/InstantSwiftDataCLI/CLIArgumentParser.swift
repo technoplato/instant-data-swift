@@ -46,6 +46,40 @@ public struct CLIInvocation: Equatable, Sendable {
   }
 }
 
+public enum CLIExamplesInvocation: Equatable, Sendable {
+  case todos(CLIExamplesTodosInvocation)
+  case syncUps(arguments: [String])
+  case reminders(arguments: [String])
+  case todoLinks(arguments: [String])
+  case unknown(String, arguments: [String])
+}
+
+public struct CLIExamplesTodosInvocation: Equatable, Sendable {
+  public var command: CLIExamplesTodosCommand?
+  public var arguments: [String]
+
+  public init(
+    command: CLIExamplesTodosCommand?,
+    arguments: [String]
+  ) {
+    self.command = command
+    self.arguments = arguments
+  }
+}
+
+public enum CLIExamplesTodosCommand: Equatable, Sendable {
+  case seed
+  case add
+  case list
+  case watch
+  case complete
+  case update
+  case delete
+  case reset
+  case refresh
+  case unknown(String)
+}
+
 public enum CLIArgumentParseError: Error, Equatable, Sendable {
   case missingCommand
   case missingOutputFlag
@@ -95,6 +129,65 @@ public struct CLIInvocationParser: Parser {
       : try CLITopLevelCommandParser().parse(&commandInput)
     input.removeAll()
     return CLIInvocation(output: output, command: command, arguments: Array(commandInput))
+  }
+}
+
+public struct CLIExamplesParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIExamplesInvocation {
+    guard let example = input.first else {
+      throw CLIArgumentParseError.missingCommand
+    }
+    input.removeFirst()
+
+    switch example {
+    case "todos":
+      return .todos(try CLIExamplesTodosParser().parse(&input))
+
+    case "sync-ups", "syncups":
+      let arguments = Array(input)
+      input.removeAll()
+      return .syncUps(arguments: arguments)
+
+    case "reminders":
+      let arguments = Array(input)
+      input.removeAll()
+      return .reminders(arguments: arguments)
+
+    case "todo-links":
+      let arguments = Array(input)
+      input.removeAll()
+      return .todoLinks(arguments: arguments)
+
+    default:
+      let arguments = Array(input)
+      input.removeAll()
+      return .unknown(example, arguments: arguments)
+    }
+  }
+}
+
+public struct CLIExamplesTodosParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIExamplesTodosInvocation {
+    let command = input.isEmpty ? nil : try CLIExamplesTodosCommandParser().parse(&input)
+    let arguments = Array(input)
+    input.removeAll()
+    return CLIExamplesTodosInvocation(command: command, arguments: arguments)
+  }
+}
+
+public struct CLIExamplesTodosCommandParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIExamplesTodosCommand {
+    guard let command = input.first else {
+      throw CLIArgumentParseError.missingCommand
+    }
+    input.removeFirst()
+    return CLIExamplesTodosCommand(command)
   }
 }
 
@@ -169,6 +262,33 @@ extension CLITopLevelCommand {
       self = .sync
     case "validate", "validation":
       self = .validation
+    default:
+      self = .unknown(rawValue)
+    }
+  }
+}
+
+extension CLIExamplesTodosCommand {
+  public init(_ rawValue: String) {
+    switch rawValue {
+    case "seed":
+      self = .seed
+    case "add":
+      self = .add
+    case "list":
+      self = .list
+    case "watch", "observe":
+      self = .watch
+    case "complete":
+      self = .complete
+    case "update", "edit":
+      self = .update
+    case "delete", "remove":
+      self = .delete
+    case "reset":
+      self = .reset
+    case "refresh":
+      self = .refresh
     default:
       self = .unknown(rawValue)
     }

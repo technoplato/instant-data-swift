@@ -296,37 +296,40 @@ struct InstantSwiftDataCLI {
   }
 
   private static func runExamples(arguments: [String], output: OutputMode) async throws {
-    var arguments = arguments
-    guard let example = arguments.popFirstArgument() else {
+    guard !arguments.isEmpty else {
       throw CLIError(examplesUsage, exitCode: 64)
     }
-    switch example {
-    case "sync-ups", "syncups":
+    var input = arguments[...]
+    let invocation = try CLIExamplesParser().parse(&input)
+    let todos: CLIExamplesTodosInvocation
+    switch invocation {
+    case let .syncUps(arguments):
       try await runSyncUps(arguments: arguments, output: output)
       return
 
-    case "reminders":
+    case let .reminders(arguments):
       try await runReminders(arguments: arguments, output: output)
       return
 
-    case "todo-links":
+    case let .todoLinks(arguments):
       try await runTodoLinks(arguments: arguments, output: output)
       return
 
-    case "todos":
-      break
+    case let .todos(parsedTodos):
+      todos = parsedTodos
 
-    default:
+    case .unknown:
       throw CLIError(examplesUsage, exitCode: 64)
     }
-    guard let command = arguments.popFirstArgument() else {
+    guard let command = todos.command else {
       throw CLIError("Usage: instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>", exitCode: 64)
     }
+    let arguments = todos.arguments
 
     let context = try await CLIContext.bootstrap()
 
     switch command {
-    case "seed":
+    case .seed:
       guard arguments.isEmpty else {
         throw CLIError("Usage: instant-swift-data examples todos seed [--json|--jsonl]", exitCode: 64)
       }
@@ -356,7 +359,7 @@ struct InstantSwiftDataCLI {
         allowOfflineLocalEmission: true
       )
 
-    case "add":
+    case .add:
       let text = arguments.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
       guard !text.isEmpty else {
         throw CLIError("Usage: instant-swift-data examples todos add \"todo text\"", exitCode: 64)
@@ -382,15 +385,16 @@ struct InstantSwiftDataCLI {
         allowOfflineLocalEmission: true
       )
 
-    case "list":
+    case .list:
       let query = try todoListQuery(arguments: arguments)
       try await printTodos(context: context, output: output, event: "list", query: query)
 
-    case "watch", "observe":
+    case .watch:
       let options = try todoWatchOptions(arguments: arguments)
       try await watchTodos(context: context, output: output, options: options)
 
-    case "complete":
+    case .complete:
+      var arguments = arguments
       guard let todoID = arguments.popFirstArgument(), arguments.isEmpty else {
         throw CLIError("Usage: instant-swift-data examples todos complete <todo-id>", exitCode: 64)
       }
@@ -427,7 +431,8 @@ struct InstantSwiftDataCLI {
         allowOfflineLocalEmission: true
       )
 
-    case "update", "edit":
+    case .update:
+      var arguments = arguments
       guard let todoID = arguments.popFirstArgument() else {
         throw CLIError("Usage: instant-swift-data examples todos update <todo-id> \"new text\"", exitCode: 64)
       }
@@ -469,7 +474,8 @@ struct InstantSwiftDataCLI {
         allowOfflineLocalEmission: true
       )
 
-    case "delete", "remove":
+    case .delete:
+      var arguments = arguments
       guard let todoID = arguments.popFirstArgument(), arguments.isEmpty else {
         throw CLIError("Usage: instant-swift-data examples todos delete <todo-id>", exitCode: 64)
       }
@@ -502,7 +508,7 @@ struct InstantSwiftDataCLI {
         allowOfflineLocalEmission: true
       )
 
-    case "reset":
+    case .reset:
       guard arguments.isEmpty else {
         throw CLIError("Usage: instant-swift-data examples todos reset [--json|--jsonl]", exitCode: 64)
       }
@@ -533,11 +539,11 @@ struct InstantSwiftDataCLI {
         allowOfflineLocalEmission: true
       )
 
-    case "refresh":
+    case .refresh:
       let query = try todoListQuery(arguments: arguments)
       try await printTodos(context: context, output: output, event: "refresh", query: query)
 
-    default:
+    case let .unknown(command):
       throw CLIError("Unknown todos command: \(command)", exitCode: 64)
     }
   }

@@ -2210,6 +2210,72 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliTodoCommandAliasesUseTypedParserDispatch() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let addOutput = try JSONDecoder().decode(
+      CLIAddOutput.self,
+      from: Data(
+        try runCLI(["examples", "todos", "add", "alias from cli", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    let todoID = try #require(addOutput.changedID)
+
+    let observeOutput = try runCLI(
+      ["examples", "todos", "observe", "--events", "1", "--jsonl"],
+      homeURL: homeURL
+    )
+    let observeLines = observeOutput.split(separator: "\n")
+    expectNoDifference(observeLines.count, 1)
+    let observeEvidence = try JSONDecoder().decode(
+      CLITodoWatchEvidence.self,
+      from: Data(try #require(observeLines.first).utf8)
+    )
+    expectNoDifference(observeEvidence.event, "watch")
+    expectNoDifference(observeEvidence.details.todos.map(\.text), ["alias from cli"])
+
+    let editOutput = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "todos", "edit", todoID, "alias polished", "--json"],
+          homeURL: homeURL
+        )
+        .utf8
+      )
+    )
+    expectNoDifference(editOutput.event, "update")
+    expectNoDifference(editOutput.todos.map(\.text), ["alias polished"])
+
+    let removeOutput = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(
+        try runCLI(["examples", "todos", "remove", todoID, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(removeOutput.event, "delete")
+    expectNoDifference(removeOutput.todos, [])
+  }
+
+  @Test
+  func cliExamplesWithoutSubcommandPrintsUsageError() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let result = try runCLIResult(["examples"], homeURL: homeURL)
+
+    expectNoDifference(result.status, 64)
+    #expect(result.error.contains("Usage: instant-swift-data examples <todos|todo-links|reminders|sync-ups>"))
+  }
+
+  @Test
   func cliTodoStrictMutationsUseLocalStateWhileConnectionIsClosed() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
