@@ -49,6 +49,9 @@ Inspect the durable cache and optimistic outbox:
 ```bash
 swift run instant-swift-data app select local-demo --json
 swift run instant-swift-data app show --json
+swift run instant-swift-data app ephemeral --title reminders-port --json
+swift run instant-swift-data app show --json
+swift run instant-swift-data examples todos add "scoped to the selected local app" --json
 swift run instant-swift-data cache inspect --json
 swift run instant-swift-data cache inspect --json | jq '.queries[] | {queryID, namespace, resultCount}'
 swift run instant-swift-data outbox inspect --jsonl

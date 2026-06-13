@@ -614,6 +614,13 @@ struct InstantSwiftDataCLI {
       _ = try await context.runtime.saveSelectedAppID(appID)
       try printApp(context: context, event: "select", output: output)
 
+    case "ephemeral":
+      let options = try EphemeralAppOptions.parse(arguments: arguments)
+      let app = try InstantEphemeralApps.makeLocal(title: options.title)
+      let context = try await CLIContext.bootstrap(appIDOverride: app.appID, initialAttributes: [])
+      _ = try await context.runtime.saveSelectedAppID(app.appID)
+      try printApp(context: context, event: "ephemeral", output: output, ephemeralApp: app)
+
     default:
       throw CLIError(appUsage, exitCode: 64)
     }
@@ -796,20 +803,31 @@ struct InstantSwiftDataCLI {
   private static func printApp(
     context: CLIContext,
     event: String,
-    output: OutputMode
+    output: OutputMode,
+    ephemeralApp: InstantEphemeralApp? = nil
   ) throws {
     let payload = AppOutput(
       appID: context.appID,
       cachePath: context.cacheURL.path,
       event: event,
-      transport: "not-implemented-local-cache-only",
-      selectionSource: context.appIDSource.rawValue
+      transport: ephemeralApp?.transport ?? "not-implemented-local-cache-only",
+      selectionSource: context.appIDSource.rawValue,
+      title: ephemeralApp?.title,
+      isLocalOnly: ephemeralApp?.isLocalOnly,
+      createdAt: ephemeralApp?.createdAt
     )
 
     switch output {
     case .human:
       print("app: \(payload.appID)")
       print("source: \(payload.selectionSource)")
+      if let title = payload.title {
+        print("title: \(title)")
+      }
+      if let isLocalOnly = payload.isLocalOnly {
+        print("local only: \(isLocalOnly)")
+      }
+      print("transport: \(payload.transport)")
       print("cache: \(payload.cachePath)")
 
     case .json:
@@ -1152,6 +1170,7 @@ struct InstantSwiftDataCLI {
         auth sign-out [--json|--jsonl]
         app show [--json|--jsonl]
         app select <app-id> [--json|--jsonl]
+        app ephemeral --title <title> [--json|--jsonl]
         sync inspect [--json|--jsonl]
         sync mark-processed <tx-id> [--json|--jsonl]
         validation local-todos [--json|--jsonl]
@@ -1695,9 +1714,10 @@ struct InstantSwiftDataCLI {
 
   private static var appUsage: String {
     """
-    Usage: instant-swift-data app <show|select>
+    Usage: instant-swift-data app <show|select|ephemeral>
       instant-swift-data app show [--json|--jsonl]
       instant-swift-data app select <app-id> [--json|--jsonl]
+      instant-swift-data app ephemeral --title <title> [--json|--jsonl]
     """
   }
 
@@ -2039,6 +2059,9 @@ private struct AppOutput: Codable, Sendable {
   var event: String
   var transport: String
   var selectionSource: String
+  var title: String?
+  var isLocalOnly: Bool?
+  var createdAt: InstantTimestamp?
 }
 
 private struct SyncOutput: Codable, Sendable {
@@ -2129,6 +2152,39 @@ private struct BenchmarkOptions: Sendable {
   private static var usage: String {
     """
     Usage: instant-swift-data benchmark [--suite local-todos] [--iterations n] [--app-id id] [--json|--jsonl]
+    """
+  }
+}
+
+private struct EphemeralAppOptions: Sendable {
+  var title: String
+
+  static func parse(arguments: [String]) throws -> Self {
+    var arguments = arguments
+    var title: String?
+
+    while let option = arguments.popFirstArgument() {
+      switch option {
+      case "--title":
+        guard let value = arguments.popFirstArgument() else {
+          throw CLIError(usage, exitCode: 64)
+        }
+        title = value
+
+      default:
+        throw CLIError("Unknown ephemeral app option: \(option). \(usage)", exitCode: 64)
+      }
+    }
+
+    guard let title, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      throw CLIError(usage, exitCode: 64)
+    }
+    return Self(title: title)
+  }
+
+  private static var usage: String {
+    """
+    Usage: instant-swift-data app ephemeral --title <title> [--json|--jsonl]
     """
   }
 }

@@ -464,6 +464,81 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliEphemeralAppPersistsSelectionForLaterCommands() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let created = try JSONDecoder().decode(
+      CLIAppOutput.self,
+      from: Data(
+        try runCLI(
+          ["app", "ephemeral", "--title", "Reminders Port", "--json"],
+          homeURL: homeURL,
+          environment: ["INSTANT_APP_ID": nil]
+        ).utf8
+      )
+    )
+    #expect(created.appID.hasPrefix("local-ephemeral-"))
+    expectNoDifference(created.event, "ephemeral")
+    expectNoDifference(created.transport, "not-implemented-local-cache-only")
+    expectNoDifference(created.selectionSource, "argument")
+    expectNoDifference(created.title, "Reminders Port")
+    expectNoDifference(created.isLocalOnly, true)
+
+    let show = try JSONDecoder().decode(
+      CLIAppOutput.self,
+      from: Data(
+        try runCLI(["app", "show", "--json"], homeURL: homeURL, environment: ["INSTANT_APP_ID": nil])
+          .utf8
+      )
+    )
+    expectNoDifference(show.appID, created.appID)
+    expectNoDifference(show.selectionSource, "selected")
+
+    let add = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "todos", "add", "uses selected ephemeral app", "--json"],
+          homeURL: homeURL,
+          environment: ["INSTANT_APP_ID": nil]
+        ).utf8
+      )
+    )
+    expectNoDifference(add.appID, created.appID)
+
+    let jsonlOutput = try runCLI(
+      ["app", "ephemeral", "--title", "JSONL Port", "--jsonl"],
+      homeURL: homeURL,
+      environment: ["INSTANT_APP_ID": nil]
+    )
+    let evidence = try JSONDecoder().decode(
+      CLIAppEvidence.self,
+      from: Data(try #require(jsonlOutput.split(separator: "\n").first).utf8)
+    )
+    expectNoDifference(evidence.event, "ephemeral")
+    expectNoDifference(evidence.details.title, "JSONL Port")
+    expectNoDifference(evidence.details.isLocalOnly, true)
+
+    let humanOutput = try runCLI(
+      ["app", "ephemeral", "--title", "Human Port"],
+      homeURL: homeURL,
+      environment: ["INSTANT_APP_ID": nil]
+    )
+    #expect(humanOutput.contains("transport: not-implemented-local-cache-only"))
+
+    let malformed = try runCLIResult(
+      ["app", "ephemeral", "--json"],
+      homeURL: homeURL,
+      environment: ["INSTANT_APP_ID": nil]
+    )
+    #expect(malformed.status == 64)
+    #expect(malformed.error.contains("app ephemeral --title"))
+  }
+
+  @Test
   func cliValidationLocalTodosEmitsEvidence() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -749,6 +824,7 @@ private struct CLIAddOutput: Decodable {
 }
 
 private struct CLITodosOutput: Decodable {
+  var appID: String
   var event: String
   var changedID: String?
   var pendingMutationCount: Int
@@ -861,6 +937,20 @@ private struct CLIOutboxMutation: Decodable, Hashable {
   var id: String
   var status: String
   var failureMessage: String?
+}
+
+private struct CLIAppOutput: Decodable {
+  var appID: String
+  var event: String
+  var transport: String
+  var selectionSource: String
+  var title: String?
+  var isLocalOnly: Bool?
+}
+
+private struct CLIAppEvidence: Decodable {
+  var event: String
+  var details: CLIAppOutput
 }
 
 private struct CLILocalTodoValidationOutput: Decodable {
