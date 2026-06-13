@@ -453,14 +453,17 @@ than once against durable state.
 
 Primary-keyed `@InstantEntity` models also derive SQLiteData-style drafts for
 form flows. New drafts may omit `id`; saving allocates the Instant id and
-returns it. Edit drafts copy an existing entity and save back through the same
-typed mutation surface:
+returns it. Optional writable fields default to `nil` even when the entity
+property does not spell out `= nil`, while non-optional fields keep their Swift
+defaults or remain required. Edit drafts copy an existing entity and save back
+through the same typed mutation surface:
 
 ```swift
 var draft = Todo.Draft(
   text: "Ship generated drafts",
   isCompleted: false,
   createdAt: Date()
+  // notes defaults to nil
 )
 let todoID = try await db.save(draft, localIDName: "todos.compose")
 
