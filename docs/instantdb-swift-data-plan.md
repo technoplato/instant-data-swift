@@ -360,7 +360,10 @@ It also exposes local cache detail commands, `instant-swift-data cache
 attributes [namespace]` and `instant-swift-data cache triples [namespace]`, so
 agents can inspect persisted schema attributes and triple facts directly. Durable
 local IDs are inspectable with `instant-swift-data local-id get <name>` and
-`instant-swift-data local-id list`. Real Instant admin tokens, schema push/pull,
+`instant-swift-data local-id list`. The `swift-parsing` CLI grammar now covers
+top-level command/output normalization, the todos example leaf, room
+presence/topics, benchmark options, and share create/list/accept/role/revoke
+commands with parser-level tests. Real Instant admin tokens, schema push/pull,
 and remote ground-truth transport remain future work.
 
 ### Sharing

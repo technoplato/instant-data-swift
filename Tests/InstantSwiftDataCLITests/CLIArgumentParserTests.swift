@@ -148,6 +148,22 @@ struct CLIArgumentParserTests {
         arguments: ["todos", "edit", "todo-1", "new"]
       )
     )
+    expectNoDifference(
+      try CLIArguments.parse(["shares", "role", "share-1", "user-2", "writer", "--json"]),
+      CLIInvocation(
+        output: .json,
+        command: .shares,
+        arguments: ["role", "share-1", "user-2", "writer"]
+      )
+    )
+    expectNoDifference(
+      try CLIArguments.parse(["shares", "--jsonl", "ls"]),
+      CLIInvocation(
+        output: .jsonl,
+        command: .shares,
+        arguments: ["ls"]
+      )
+    )
   }
 
   @Test
@@ -337,6 +353,75 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func sharesParserParsesCommandsAndAliases() throws {
+    expectNoDifference(
+      try parseShares(["create", " todos ", " todo-1 "]),
+      .create(CLISharesCreateInvocation(namespace: "todos", entityID: "todo-1"))
+    )
+    expectNoDifference(
+      try parseShares(["list"]),
+      .list
+    )
+    expectNoDifference(
+      try parseShares(["ls"]),
+      .list
+    )
+    expectNoDifference(
+      try parseShares(["accept", " local-share-token "]),
+      .accept(token: "local-share-token")
+    )
+    expectNoDifference(
+      try parseShares(["role", " share-1 ", " user-2 ", "WRITER"]),
+      .role(CLISharesRoleInvocation(shareID: "share-1", userID: "user-2", role: .writer))
+    )
+    expectNoDifference(
+      try parseShares(["role", "share-1", "user-2", "reader"]),
+      .role(CLISharesRoleInvocation(shareID: "share-1", userID: "user-2", role: .reader))
+    )
+    expectNoDifference(
+      try parseShares(["revoke", " share-1 "]),
+      .revoke(shareID: "share-1")
+    )
+  }
+
+  @Test
+  func sharesParserReportsMalformedArguments() throws {
+    try expectSharesParseError([], contains: "Usage: instant-swift-data shares")
+    try expectSharesParseError(
+      ["create", "todos"],
+      contains: "shares create <namespace> <entity-id>"
+    )
+    try expectSharesParseError(
+      ["list", "extra"],
+      contains: "Unexpected argument: extra."
+    )
+    try expectSharesParseError(
+      ["accept", "  "],
+      contains: "shares accept <token>"
+    )
+    try expectSharesParseError(
+      ["role", "share-1", "user-2", "owner"],
+      contains: "Invalid share role: owner."
+    )
+    try expectSharesParseError(
+      ["role", "share-1", "user-2"],
+      contains: "shares role <share-id> <user-id> <reader|writer>"
+    )
+    try expectSharesParseError(
+      ["revoke", "share-1", "--force"],
+      contains: "Unexpected argument: --force."
+    )
+    try expectSharesParseError(
+      ["revoke"],
+      contains: "shares revoke <share-id>"
+    )
+    try expectSharesParseError(
+      ["dance"],
+      contains: "Usage: instant-swift-data shares"
+    )
+  }
+
+  @Test
   func benchmarkParserParsesOptionsAndDefaults() throws {
     expectNoDifference(
       try CLIBenchmarkArguments.parse([]),
@@ -434,6 +519,13 @@ private func parseRooms(_ arguments: [String]) throws -> CLIRoomsInvocation {
   return invocation
 }
 
+private func parseShares(_ arguments: [String]) throws -> CLISharesInvocation {
+  var input = arguments[...]
+  let invocation = try CLISharesParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func expectRoomsParseError(
   _ arguments: [String],
   contains expectedFragment: String
@@ -442,6 +534,19 @@ private func expectRoomsParseError(
     _ = try parseRooms(arguments)
     Issue.record("Expected rooms parser to reject \(arguments).")
   } catch let error as CLIRoomsArgumentError {
+    #expect(error.description.contains(expectedFragment))
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectSharesParseError(
+  _ arguments: [String],
+  contains expectedFragment: String
+) throws {
+  do {
+    _ = try parseShares(arguments)
+    Issue.record("Expected shares parser to reject \(arguments).")
+  } catch let error as CLISharesArgumentError {
     #expect(error.description.contains(expectedFragment))
     expectNoDifference(error.exitCode, 64)
   }

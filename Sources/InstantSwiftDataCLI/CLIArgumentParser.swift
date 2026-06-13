@@ -252,6 +252,70 @@ public enum CLIRoomsArgumentError: Error, Equatable, Sendable {
   public var exitCode: Int32 { 64 }
 }
 
+public enum CLISharesInvocation: Equatable, Sendable {
+  case create(CLISharesCreateInvocation)
+  case list
+  case accept(token: String)
+  case role(CLISharesRoleInvocation)
+  case revoke(shareID: String)
+}
+
+public struct CLISharesCreateInvocation: Equatable, Sendable {
+  public var namespace: String
+  public var entityID: String
+
+  public init(namespace: String, entityID: String) {
+    self.namespace = namespace
+    self.entityID = entityID
+  }
+}
+
+public struct CLISharesRoleInvocation: Equatable, Sendable {
+  public var shareID: String
+  public var userID: String
+  public var role: CLIShareRole
+
+  public init(shareID: String, userID: String, role: CLIShareRole) {
+    self.shareID = shareID
+    self.userID = userID
+    self.role = role
+  }
+}
+
+public enum CLIShareRole: String, Equatable, Sendable {
+  case reader
+  case writer
+}
+
+public enum CLISharesUsage {
+  public static let shares = """
+    Usage: instant-swift-data shares <create|list|accept|role|revoke>
+      instant-swift-data shares create <namespace> <entity-id> [--json|--jsonl]
+      instant-swift-data shares list [--json|--jsonl]
+      instant-swift-data shares accept <token> [--json|--jsonl]
+      instant-swift-data shares role <share-id> <user-id> <reader|writer> [--json|--jsonl]
+      instant-swift-data shares revoke <share-id> [--json|--jsonl]
+    """
+
+  public static let create =
+    "Usage: instant-swift-data shares create <namespace> <entity-id> [--json|--jsonl]"
+  public static let list = "Usage: instant-swift-data shares list [--json|--jsonl]"
+  public static let accept = "Usage: instant-swift-data shares accept <token> [--json|--jsonl]"
+  public static let role =
+    "Usage: instant-swift-data shares role <share-id> <user-id> <reader|writer> [--json|--jsonl]"
+  public static let revoke = "Usage: instant-swift-data shares revoke <share-id> [--json|--jsonl]"
+}
+
+public enum CLISharesArgumentError: Error, Equatable, Sendable {
+  case missingCommand
+  case unknownCommand(String)
+  case missingArguments(usage: String)
+  case invalidRole(String, usage: String)
+  case unexpectedArgument(String, usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
 public struct CLIBenchmarkInvocation: Equatable, Sendable {
   public static let defaultSuite = "local-todos"
 
@@ -647,6 +711,74 @@ public struct CLIRoomTopicWatchParser: Parser {
   }
 }
 
+public struct CLISharesParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLISharesInvocation {
+    guard let command = input.first else {
+      throw CLISharesArgumentError.missingCommand
+    }
+    input.removeFirst()
+
+    switch command {
+    case "create":
+      return .create(try CLISharesCreateParser().parse(&input))
+
+    case "list", "ls":
+      try requireNoRemainingShareArguments(&input, usage: CLISharesUsage.list)
+      return .list
+
+    case "accept":
+      return .accept(
+        token: try parseSingleShareArgument(
+          from: &input,
+          usage: CLISharesUsage.accept
+        )
+      )
+
+    case "role":
+      return .role(try CLISharesRoleParser().parse(&input))
+
+    case "revoke":
+      return .revoke(
+        shareID: try parseSingleShareArgument(
+          from: &input,
+          usage: CLISharesUsage.revoke
+        )
+      )
+
+    default:
+      throw CLISharesArgumentError.unknownCommand(command)
+    }
+  }
+}
+
+public struct CLISharesCreateParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLISharesCreateInvocation {
+    let namespace = try parseRequiredShareArgument(from: &input, usage: CLISharesUsage.create)
+    let entityID = try parseRequiredShareArgument(from: &input, usage: CLISharesUsage.create)
+    try requireNoRemainingShareArguments(&input, usage: CLISharesUsage.create)
+    return CLISharesCreateInvocation(namespace: namespace, entityID: entityID)
+  }
+}
+
+public struct CLISharesRoleParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLISharesRoleInvocation {
+    let shareID = try parseRequiredShareArgument(from: &input, usage: CLISharesUsage.role)
+    let userID = try parseRequiredShareArgument(from: &input, usage: CLISharesUsage.role)
+    let roleValue = try parseRequiredShareArgument(from: &input, usage: CLISharesUsage.role)
+    guard let role = CLIShareRole(rawValue: roleValue.lowercased()) else {
+      throw CLISharesArgumentError.invalidRole(roleValue, usage: CLISharesUsage.role)
+    }
+    try requireNoRemainingShareArguments(&input, usage: CLISharesUsage.role)
+    return CLISharesRoleInvocation(shareID: shareID, userID: userID, role: role)
+  }
+}
+
 public struct CLIRoomIdentifierParser: Parser {
   public var usage: String
 
@@ -885,6 +1017,39 @@ private func requireNoRemainingArguments(
   }
 }
 
+private func parseSingleShareArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  let value = try parseRequiredShareArgument(from: &input, usage: usage)
+  try requireNoRemainingShareArguments(&input, usage: usage)
+  return value
+}
+
+private func parseRequiredShareArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLISharesArgumentError.missingArguments(usage: usage)
+  }
+  input.removeFirst()
+  let parsed = trimmed(value)
+  guard !parsed.isEmpty else {
+    throw CLISharesArgumentError.missingArguments(usage: usage)
+  }
+  return parsed
+}
+
+private func requireNoRemainingShareArguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if let argument = input.first {
+    throw CLISharesArgumentError.unexpectedArgument(argument, usage: usage)
+  }
+}
+
 private func trimmed(_ string: String) -> String {
   string.trimmingCharacters(in: .whitespacesAndNewlines)
 }
@@ -944,6 +1109,27 @@ extension CLIBenchmarkArgumentError: CustomStringConvertible {
       return "Missing value for \(option). \(usage)"
     case let .unknownOption(option, usage):
       return "Unknown benchmark option: \(option). \(usage)"
+    }
+  }
+}
+
+extension CLISharesArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case .missingCommand:
+      return CLISharesUsage.shares
+
+    case .unknownCommand:
+      return CLISharesUsage.shares
+
+    case let .missingArguments(usage):
+      return usage
+
+    case let .invalidRole(value, usage):
+      return "Invalid share role: \(value). \(usage)"
+
+    case let .unexpectedArgument(argument, usage):
+      return "Unexpected argument: \(argument). \(usage)"
     }
   }
 }
