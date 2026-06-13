@@ -1855,3 +1855,129 @@ public struct Fetch<Value: Sendable>: Sendable {
     try await task(using: client)
   }
 }
+
+@propertyWrapper
+public struct LocalID: Sendable {
+  private let storage: FetchStorage<String?>
+  private var name: String?
+
+  public var wrappedValue: String? {
+    get { storage.wrappedValue }
+    set { storage.wrappedValue = newValue }
+  }
+
+  public var loadError: InstantError? {
+    get { storage.loadError }
+    set { storage.loadError = newValue }
+  }
+
+  public var isLoading: Bool {
+    get { storage.isLoading }
+    set { storage.isLoading = newValue }
+  }
+
+  #if canImport(SwiftUI)
+    public var binding: Binding<String?> {
+      Binding(
+        get: { storage.wrappedValue },
+        set: { storage.wrappedValue = $0 }
+      )
+    }
+  #endif
+
+  public init(wrappedValue: String? = nil) {
+    self.storage = FetchStorage(value: wrappedValue)
+    self.name = nil
+  }
+
+  public init(_ name: String) {
+    self.storage = FetchStorage(value: nil)
+    self.name = name
+  }
+
+  public init(wrappedValue: String?, _ name: String) {
+    self.storage = FetchStorage(value: wrappedValue)
+    self.name = name
+  }
+
+  public init(wrappedValue: String? = nil, name: String) {
+    self.storage = FetchStorage(value: wrappedValue)
+    self.name = name
+  }
+
+  public var projectedValue: Self {
+    get { self }
+    set { self = newValue }
+  }
+
+  public mutating func load() async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(using: client)
+  }
+
+  public mutating func load(using client: InstantSwiftDataClient) async throws {
+    guard let name else {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "load LocalID",
+        message: "No Instant local ID name has been configured for this wrapper.",
+        recovery: "Initialize @LocalID with a name, or pass a name to load(_:using:)."
+      )
+      loadError = error
+      throw error
+    }
+    try await load(name, using: client)
+  }
+
+  public mutating func load(_ name: String) async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(name, using: client)
+  }
+
+  public mutating func load(_ name: String, using client: InstantSwiftDataClient) async throws {
+    self.name = name
+    isLoading = true
+    do {
+      let value = try await client.localID(named: name)
+      try Task.checkCancellation()
+      wrappedValue = value
+      loadError = nil
+      isLoading = false
+    } catch let error as CancellationError {
+      loadError = nil
+      isLoading = false
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      isLoading = false
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "load LocalID",
+        path: name,
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient local ID operation."
+      )
+      loadError = error
+      isLoading = false
+      throw error
+    }
+  }
+
+  public mutating func task() async throws {
+    try await load()
+  }
+
+  public mutating func task(using client: InstantSwiftDataClient) async throws {
+    try await load(using: client)
+  }
+
+  public mutating func task(_ name: String) async throws {
+    try await load(name)
+  }
+
+  public mutating func task(_ name: String, using client: InstantSwiftDataClient) async throws {
+    try await load(name, using: client)
+  }
+}

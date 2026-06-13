@@ -517,8 +517,11 @@ public API into SQL:
   good because views and `@Observable` models can subscribe without hand-rolled
   observer lifetimes. Instant fetch wrappers should do the same over Instant
   query trees, cached materialized results, server subscriptions, and explicit
-  cancellation. Client adapters must transform subscribable/live Instant values
-  into Swift-native wrappers, projected bindings, observable model state, and
+  cancellation. Instant Swift Data's `@LocalID` should follow the same wrapper
+  conventions for local ID values: optional current value, loading/error state,
+  dynamic `load`, projected task helpers, and SwiftUI bindings when available.
+  Client adapters must transform subscribable/live Instant values into
+  Swift-native wrappers, projected bindings, observable model state, and
   `AsyncSequence` streams rather than exposing raw subscription callbacks to app
   features.
 - **Dynamic query work belongs in the engine.** SQLiteData's search examples

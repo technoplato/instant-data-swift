@@ -2655,6 +2655,136 @@ struct TypedAPITests {
   }
 
   @Test
+  func localIDPropertyWrapperStartsNil() {
+    @LocalID("device") var localID: String?
+
+    expectNoDifference(localID, nil)
+    expectNoDifference($localID.loadError, nil)
+    expectNoDifference($localID.isLoading, false)
+  }
+
+  @Test
+  func localIDPropertyWrapperSupportsCachedInitialValue() {
+    @LocalID("device") var localID: String? = "cached-device"
+
+    expectNoDifference(localID, "cached-device")
+    expectNoDifference($localID.loadError, nil)
+    expectNoDifference($localID.isLoading, false)
+  }
+
+  @Test
+  func localIDPropertyWrapperLoadsUsingDependencyClient() async throws {
+    let recorder = LocalIDRecorder()
+    let client = localIDClient(recorder)
+
+    try await withDependencies {
+      $0.defaultInstantSwiftData = client
+    } operation: {
+      @LocalID("device") var localID: String?
+
+      try await $localID.load()
+
+      expectNoDifference(localID, "local-id-device")
+      expectNoDifference($localID.loadError, nil)
+      expectNoDifference($localID.isLoading, false)
+    }
+
+    let recordedNames = await recorder.recordedNames()
+    expectNoDifference(recordedNames, ["device"])
+  }
+
+  @Test
+  func localIDPropertyWrapperReloadsWhenNameChanges() async throws {
+    let recorder = LocalIDRecorder()
+    let client = localIDClient(recorder)
+
+    @LocalID("device") var localID: String?
+    try await $localID.load(using: client)
+    expectNoDifference(localID, "local-id-device")
+
+    try await $localID.load("session", using: client)
+    expectNoDifference(localID, "local-id-session")
+    expectNoDifference($localID.loadError, nil)
+    expectNoDifference($localID.isLoading, false)
+    let recordedNames = await recorder.recordedNames()
+    expectNoDifference(recordedNames, ["device", "session"])
+  }
+
+  @Test
+  func localIDPropertyWrapperTaskBindsResolvedValue() async throws {
+    let recorder = LocalIDRecorder()
+    let client = localIDClient(recorder)
+
+    @LocalID var localID: String?
+
+    try await $localID.task("session", using: client)
+
+    expectNoDifference(localID, "local-id-session")
+    expectNoDifference($localID.loadError, nil)
+    expectNoDifference($localID.isLoading, false)
+    let recordedNames = await recorder.recordedNames()
+    expectNoDifference(recordedNames, ["session"])
+  }
+
+  @Test
+  func localIDPropertyWrapperRecordsMissingNameError() async throws {
+    @LocalID var localID: String?
+
+    do {
+      try await $localID.load(using: localIDClient(LocalIDRecorder()))
+      Issue.record("Expected @LocalID without a name to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .implementationFailed)
+      expectNoDifference(error.operation, "load LocalID")
+      expectNoDifference($localID.loadError?.operation, "load LocalID")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+
+    expectNoDifference(localID, nil)
+    expectNoDifference($localID.isLoading, false)
+  }
+
+  @Test
+  func localIDPropertyWrapperPreservesCachedValueAndRecordsError() async throws {
+    let expectedError = InstantError(
+      code: .implementationFailed,
+      operation: "resolve test LocalID",
+      message: "local id failed",
+      recovery: "Retry with a working client."
+    )
+    let client = InstantSwiftDataClient(
+      transact: { transaction in
+        InstantStoreMutationResult(
+          transactionID: transaction.id,
+          changedEntityIDs: [],
+          tripleCount: transaction.operations.count,
+          emissions: []
+        )
+      },
+      query: { _ in [] },
+      observe: { _ in AsyncStream { continuation in continuation.finish() } },
+      pendingMutations: { [] },
+      localID: { _ in throw expectedError }
+    )
+
+    @LocalID("device") var localID: String? = "cached-device"
+
+    do {
+      try await $localID.load(using: client)
+      Issue.record("Expected @LocalID to surface client failures.")
+    } catch let error as InstantError {
+      expectNoDifference(error.operation, "resolve test LocalID")
+      expectNoDifference($localID.loadError?.operation, "resolve test LocalID")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+
+    expectNoDifference(localID, "cached-device")
+    expectNoDifference($localID.isLoading, false)
+  }
+
+  @Test
   func typedTransactionBuilderUsesDependencyClockForMockClient() async throws {
     let fixedDate = Date(timeIntervalSince1970: 1_700_000_200)
     let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000987")!
@@ -3503,6 +3633,19 @@ private actor ClientCallRecorder {
   }
 }
 
+private actor LocalIDRecorder {
+  private var names: [String] = []
+
+  func resolve(_ name: String) -> String {
+    names.append(name)
+    return "local-id-\(name)"
+  }
+
+  func recordedNames() -> [String] {
+    names
+  }
+}
+
 private func recordingClient(_ recorder: ClientCallRecorder) -> InstantSwiftDataClient {
   InstantSwiftDataClient(
     transact: { transaction in
@@ -3521,6 +3664,25 @@ private func recordingClient(_ recorder: ClientCallRecorder) -> InstantSwiftData
     },
     pendingMutations: { [] },
     localID: { name in "recording-\(name)" }
+  )
+}
+
+private func localIDClient(_ recorder: LocalIDRecorder) -> InstantSwiftDataClient {
+  InstantSwiftDataClient(
+    transact: { transaction in
+      InstantStoreMutationResult(
+        transactionID: transaction.id,
+        changedEntityIDs: [],
+        tripleCount: transaction.operations.count,
+        emissions: []
+      )
+    },
+    query: { _ in [] },
+    observe: { _ in AsyncStream { continuation in continuation.finish() } },
+    pendingMutations: { [] },
+    localID: { name in
+      await recorder.resolve(name)
+    }
   )
 }
 

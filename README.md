@@ -429,6 +429,10 @@ defer { subscription.cancel() }
 for try await todos in subscription {
   // Update model state from the latest local materialization.
 }
+
+@LocalID("todos.compose") var composeTodoID: String?
+try await $composeTodoID.load()
+try await $composeTodoID.load("todos.viewer")
 ```
 
 `serverCreatedAt` is order-only metadata. Do not declare a model attribute with
