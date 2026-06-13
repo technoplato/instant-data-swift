@@ -19,6 +19,8 @@ public struct InstantSwiftDataClient: Sendable {
   private var pendingMutationsOperation: @Sendable () async -> [PendingMutation]
   private var localIDOperation: @Sendable (String) async throws -> String
   private var authSessionOperation: @Sendable () async throws -> InstantAuthSession?
+  private var observeAuthSessionOperation:
+    @Sendable () async throws -> AsyncStream<InstantAuthSession?>
   private var signInAsGuestOperation: @Sendable () async throws -> InstantAuthSession
   private var sendMagicCodeOperation: @Sendable (String) async throws -> InstantMagicCodeChallenge
   private var signInWithMagicCodeOperation:
@@ -50,6 +52,9 @@ public struct InstantSwiftDataClient: Sendable {
     self.authSessionOperation = {
       try await runtime.authSession()
     }
+    self.observeAuthSessionOperation = {
+      try await runtime.observeAuthSession()
+    }
     self.signInAsGuestOperation = {
       try await runtime.signInAsGuest()
     }
@@ -76,6 +81,7 @@ public struct InstantSwiftDataClient: Sendable {
     pendingMutations: @escaping @Sendable () async -> [PendingMutation],
     localID: @escaping @Sendable (String) async throws -> String,
     authSession: (@Sendable () async throws -> InstantAuthSession?)? = nil,
+    observeAuthSession: (@Sendable () async throws -> AsyncStream<InstantAuthSession?>)? = nil,
     signInAsGuest: (@Sendable () async throws -> InstantAuthSession)? = nil,
     sendMagicCode: (@Sendable (String) async throws -> InstantMagicCodeChallenge)? = nil,
     signInWithMagicCode: (@Sendable (String, String) async throws -> InstantAuthSession)? = nil,
@@ -102,6 +108,7 @@ public struct InstantSwiftDataClient: Sendable {
     self.pendingMutationsOperation = pendingMutations
     self.localIDOperation = localID
     self.authSessionOperation = authSession ?? { throw authError }
+    self.observeAuthSessionOperation = observeAuthSession ?? { throw authError }
     self.signInAsGuestOperation = signInAsGuest ?? { throw authError }
     self.sendMagicCodeOperation = sendMagicCode ?? { _ in throw authError }
     self.signInWithMagicCodeOperation = signInWithMagicCode ?? { _, _ in throw authError }
@@ -138,6 +145,9 @@ public struct InstantSwiftDataClient: Sendable {
         throw error
       },
       authSession: {
+        throw error
+      },
+      observeAuthSession: {
         throw error
       },
       signInAsGuest: {
@@ -193,6 +203,10 @@ public struct InstantSwiftDataClient: Sendable {
 
   public func authSession() async throws -> InstantAuthSession? {
     try await authSessionOperation()
+  }
+
+  public func observeAuthSession() async throws -> AsyncStream<InstantAuthSession?> {
+    try await observeAuthSessionOperation()
   }
 
   public func signInAsGuest() async throws -> InstantAuthSession {

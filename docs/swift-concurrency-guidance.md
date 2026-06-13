@@ -134,6 +134,9 @@ values, resolved in `bootstrapInstantSwiftData`, then passed into
 `InstantRuntimeConfiguration`. This keeps live, preview, test, CLI, and
 non-captive terminal runs on the same concurrency path while allowing auth,
 transport, sync, and storage behavior to vary by context.
+Long-lived streams such as query observation and auth-session observation should
+be dependency-client operations that delegate to runtime/actor owners; do not
+hide mutable stream registries behind global dependency values.
 
 ## Isolation Rules
 

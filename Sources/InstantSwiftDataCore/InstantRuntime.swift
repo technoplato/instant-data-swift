@@ -27,6 +27,31 @@ public struct InstantRuntimeConfiguration: Sendable {
   }
 }
 
+private actor InstantAuthSessionObservers {
+  private var continuations: [UUID: AsyncStream<InstantAuthSession?>.Continuation] = [:]
+
+  func observe(current session: InstantAuthSession?) -> AsyncStream<InstantAuthSession?> {
+    let id = UUID()
+    let stream = AsyncStream<InstantAuthSession?>.makeStream(bufferingPolicy: .bufferingNewest(1))
+    continuations[id] = stream.continuation
+    stream.continuation.yield(session)
+    stream.continuation.onTermination = { @Sendable _ in
+      Task { await self.cancel(id: id) }
+    }
+    return stream.stream
+  }
+
+  func yield(_ session: InstantAuthSession?) {
+    for continuation in continuations.values {
+      continuation.yield(session)
+    }
+  }
+
+  private func cancel(id: UUID) {
+    continuations[id] = nil
+  }
+}
+
 public final class InstantRuntime: Sendable {
   public static let selectedAppIDMetadataKey = "cli.selected_app_id"
 
@@ -34,6 +59,7 @@ public final class InstantRuntime: Sendable {
   public let store: InstantStore
   public let persistence: SQLitePersistenceStore
   let outbox: InstantOutbox
+  private let authSessionObservers = InstantAuthSessionObservers()
   private let operationGate = AsyncSerialGate()
 
   private init(
@@ -274,6 +300,19 @@ public final class InstantRuntime: Sendable {
     try await persistence.loadAuthSession(key: authSessionKey)
   }
 
+  public func observeAuthSession() async throws -> AsyncStream<InstantAuthSession?> {
+    await operationGate.enter()
+    do {
+      let session = try await persistence.loadAuthSession(key: authSessionKey)
+      let stream = await authSessionObservers.observe(current: session)
+      await operationGate.leave()
+      return stream
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
   public func signInAsGuest() async throws -> InstantAuthSession {
     let now = configuration.now()
     let session = InstantAuthSession(
@@ -354,6 +393,7 @@ public final class InstantRuntime: Sendable {
       )
       try await persistence.saveAuthSession(session, key: authSessionKey)
       try await persistence.deleteMagicCodeChallenge(key: key)
+      await authSessionObservers.yield(session)
       await operationGate.leave()
       return session
     } catch {
@@ -399,6 +439,7 @@ public final class InstantRuntime: Sendable {
     await operationGate.enter()
     do {
       try await persistence.deleteAuthSession(key: authSessionKey)
+      await authSessionObservers.yield(nil)
       await operationGate.leave()
     } catch {
       await operationGate.leave()
@@ -937,6 +978,7 @@ public final class InstantRuntime: Sendable {
     await operationGate.enter()
     do {
       try await persistence.saveAuthSession(session, key: authSessionKey)
+      await authSessionObservers.yield(session)
       await operationGate.leave()
     } catch {
       await operationGate.leave()

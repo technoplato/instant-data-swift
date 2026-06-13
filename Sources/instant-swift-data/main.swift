@@ -810,6 +810,10 @@ struct InstantSwiftDataCLI {
     case "magic-code", "magic":
       try await runMagicCode(arguments: arguments, context: context, output: output)
 
+    case "watch", "observe":
+      let eventCount = try parseAuthWatchEventCount(arguments: arguments)
+      try await watchAuth(context: context, output: output, eventCount: eventCount)
+
     case "sign-out", "signout", "logout":
       guard arguments.isEmpty else {
         throw CLIError("Usage: instant-swift-data auth sign-out [--json|--jsonl]", exitCode: 64)
@@ -1469,29 +1473,11 @@ struct InstantSwiftDataCLI {
     session: InstantAuthSession?,
     output: OutputMode
   ) throws {
-    let payload = AuthOutput(
-      appID: context.appID,
-      cachePath: context.cacheURL.path,
-      event: event,
-      transport: "not-implemented-local-cache-only",
-      isSignedIn: session != nil,
-      userID: session?.userID,
-      isGuest: session?.isGuest,
-      hasRefreshToken: session?.refreshToken != nil,
-      createdAt: session?.createdAt,
-      updatedAt: session?.updatedAt
-    )
+    let payload = makeAuthOutput(context: context, event: event, session: session)
 
     switch output {
     case .human:
-      if let session {
-        print("auth: \(session.isGuest ? "guest" : "token")")
-        print("user: \(session.userID)")
-        print("refresh token: \(session.refreshToken == nil ? "none" : "present")")
-      } else {
-        print("auth: signed out")
-      }
-      print("cache: \(context.cacheURL.path)")
+      printAuth(payload)
 
     case .json:
       try writeJSON(payload)
@@ -1506,6 +1492,97 @@ struct InstantSwiftDataCLI {
           entityID: session?.userID,
           ok: true,
           details: payload
+        )
+      )
+    }
+  }
+
+  private static func makeAuthOutput(
+    context: CLIContext,
+    event: String,
+    session: InstantAuthSession?
+  ) -> AuthOutput {
+    AuthOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      transport: "not-implemented-local-cache-only",
+      isSignedIn: session != nil,
+      userID: session?.userID,
+      isGuest: session?.isGuest,
+      hasRefreshToken: session?.refreshToken != nil,
+      createdAt: session?.createdAt,
+      updatedAt: session?.updatedAt
+    )
+  }
+
+  private static func printAuth(_ payload: AuthOutput) {
+    if payload.isSignedIn {
+      print("auth: \(payload.isGuest == true ? "guest" : "token")")
+      if let userID = payload.userID {
+        print("user: \(userID)")
+      }
+      print("refresh token: \(payload.hasRefreshToken ? "present" : "none")")
+    } else {
+      print("auth: signed out")
+    }
+    print("cache: \(payload.cachePath)")
+  }
+
+  private static func watchAuth(
+    context: CLIContext,
+    output: OutputMode,
+    eventCount: Int
+  ) async throws {
+    let stream = try await context.runtime.observeAuthSession()
+    var iterator = stream.makeAsyncIterator()
+    var emissions: [AuthOutput] = []
+    emissions.reserveCapacity(eventCount)
+
+    while emissions.count < eventCount {
+      guard let session = await iterator.next() else { break }
+      let payload = makeAuthOutput(context: context, event: "watch", session: session)
+
+      switch output {
+      case .human:
+        print("event: watch index=\(emissions.count)")
+        printAuth(payload)
+
+      case .json, .jsonl:
+        break
+      }
+
+      emissions.append(payload)
+
+      if output == .jsonl {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.auth.watch",
+            side: "swift",
+            event: "watch",
+            appID: context.appID,
+            entityID: session?.userID,
+            ok: true,
+            details: payload
+          )
+        )
+      }
+    }
+
+    switch output {
+    case .human, .jsonl:
+      break
+
+    case .json:
+      try writeJSON(
+        AuthWatchOutput(
+          appID: context.appID,
+          cachePath: context.cacheURL.path,
+          event: "watch",
+          transport: "not-implemented-local-cache-only",
+          requestedEventCount: eventCount,
+          emittedEventCount: emissions.count,
+          emissions: emissions
         )
       )
     }
@@ -2562,6 +2639,7 @@ struct InstantSwiftDataCLI {
         auth token <refresh-token> [--user-id id] [--json|--jsonl]
         auth magic-code send <email> [--json|--jsonl]
         auth magic-code verify <email> <code> [--json|--jsonl]
+        auth watch [--events 1] [--json|--jsonl]
         auth sign-out [--json|--jsonl]
         rooms presence set <room-type> <room-id> --value '{...}' [--user-id id] [--json|--jsonl]
         rooms presence list <room-type> <room-id> [--json|--jsonl]
@@ -3048,6 +3126,30 @@ struct InstantSwiftDataCLI {
       }
     }
     return userID
+  }
+
+  private static func parseAuthWatchEventCount(arguments: [String]) throws -> Int {
+    var arguments = arguments
+    var eventCount = 1
+    while let option = arguments.popFirstArgument() {
+      switch option {
+      case "--events":
+        guard let value = arguments.popFirstArgument(),
+          let parsed = Int(value),
+          parsed == 1
+        else {
+          throw CLIError("Usage: instant-swift-data auth watch --events 1", exitCode: 64)
+        }
+        eventCount = parsed
+
+      default:
+        throw CLIError(
+          "Unknown auth watch option: \(option). Usage: instant-swift-data auth watch [--events 1] [--json|--jsonl]",
+          exitCode: 64
+        )
+      }
+    }
+    return eventCount
   }
 
   private static func todoListQuery(
@@ -3673,12 +3775,13 @@ struct InstantSwiftDataCLI {
 
   private static var authUsage: String {
     """
-    Usage: instant-swift-data auth <show|guest|token|magic-code|sign-out>
+    Usage: instant-swift-data auth <show|guest|token|magic-code|watch|sign-out>
       instant-swift-data auth show [--json|--jsonl]
       instant-swift-data auth guest [--json|--jsonl]
       instant-swift-data auth token <refresh-token> [--user-id id] [--json|--jsonl]
       instant-swift-data auth magic-code send <email> [--json|--jsonl]
       instant-swift-data auth magic-code verify <email> <code> [--json|--jsonl]
+      instant-swift-data auth watch [--events 1] [--json|--jsonl]
       instant-swift-data auth sign-out [--json|--jsonl]
     """
   }
@@ -4547,6 +4650,16 @@ private struct LocalIDsOutput: Codable, Sendable {
   var transport: String
   var localIDCount: Int
   var localIDs: [InstantLocalID]
+}
+
+private struct AuthWatchOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var transport: String
+  var requestedEventCount: Int
+  var emittedEventCount: Int
+  var emissions: [AuthOutput]
 }
 
 private struct AuthOutput: Codable, Sendable {

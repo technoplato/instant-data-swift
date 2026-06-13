@@ -106,6 +106,7 @@ swift run instant-swift-data auth show --json
 swift run instant-swift-data auth token <refresh-token> --user-id <user-id> --json
 swift run instant-swift-data auth magic-code send user@example.com --json
 swift run instant-swift-data auth magic-code verify user@example.com <local-verification-code> --json
+swift run instant-swift-data auth watch --events 1 --jsonl
 swift run instant-swift-data auth sign-out --json
 ```
 
@@ -232,9 +233,9 @@ client type, for example `extension InstantMagicCodeExchange { public static let
 local = Self(...) }`, while dependency keys remain computed `static var`
 `liveValue`, `testValue`, and `previewValue` properties.
 The dependency client exposes durable auth directly with `authSession`,
-`signInAsGuest`, `sendMagicCode`, `signInWithMagicCode`,
-`signInWithRefreshToken`, and `signOut`, so app code does not need to reach
-through to the core runtime.
+`observeAuthSession`, `signInAsGuest`, `sendMagicCode`,
+`signInWithMagicCode`, `signInWithRefreshToken`, and `signOut`, so app code does
+not need to reach through to the core runtime.
 
 ### Typed Queries And Writes
 

@@ -192,6 +192,13 @@ real Instant app.
 - Auth state subscription.
 - Auth session persistence and refresh token handling.
 
+Current local progress: `InstantRuntime` persists auth sessions in SQLite,
+publishes auth-state changes through `observeAuthSession`, and the public
+`InstantSwiftDataClient` dependency exposes the same stream alongside guest,
+token, magic-code, session lookup, and sign-out operations. The CLI proves this
+path non-captively with `instant-swift-data auth watch --events 1 --jsonl`.
+Transport-backed token refresh and server auth invalidation remain future work.
+
 ### Presence, Rooms, Topics
 
 - Join and leave rooms.
@@ -365,8 +372,9 @@ public API into SQL:
   and `bootstrapInstantSwiftData` resolves that value before constructing the
   runtime configuration. The public dependency client also exposes durable auth
   operations directly, including guest, token, magic-code send/verify, session
-  lookup, and sign-out. Future transport/auth clients should preserve the same
-  Sendable value-client boundary and local static-instance convention.
+  lookup, auth-state observation, and sign-out. Future transport/auth clients
+  should preserve the same Sendable value-client boundary and local
+  static-instance convention.
 - **Typed models above explicit migrations.** SQLiteData combines `@Table`,
   `Draft`, `@Selection`, typed expressions, and generated update helpers with
   named migrations that use strict SQL, foreign keys, indexes, FTS tables, and

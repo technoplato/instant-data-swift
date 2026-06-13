@@ -446,10 +446,13 @@ implementation. Required auth flows:
   `bootstrapInstantSwiftData`; the CLI may use the same `.local` instance for
   non-captive proof until transport-backed auth is implemented.
 - app-facing auth should be available directly on the `InstantSwiftDataClient`
-  dependency, not by reaching through to private runtime internals.
+  dependency, not by reaching through to private runtime internals. This
+  includes `observeAuthSession` for auth-state subscriptions.
 - token/session restore.
 - sign-out.
 - show current auth state.
+- watch current auth state through a finite non-captive CLI command such as
+  `instant-swift-data auth watch --events 1 --jsonl`.
 
 Agent-oriented output modes are required:
 

@@ -780,6 +780,74 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliAuthWatchEmitsFiniteAuthState() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let signedOutJSONL = try runCLI(["auth", "watch", "--events", "1", "--jsonl"], homeURL: homeURL)
+    let signedOutLines = signedOutJSONL.split(separator: "\n")
+    expectNoDifference(signedOutLines.count, 1)
+    let signedOutEvidence = try JSONDecoder().decode(
+      CLIAuthWatchEvidence.self,
+      from: Data(try #require(signedOutLines.first).utf8)
+    )
+    expectNoDifference(signedOutEvidence.caseID, "cli.auth.watch")
+    expectNoDifference(signedOutEvidence.side, "swift")
+    expectNoDifference(signedOutEvidence.event, "watch")
+    expectNoDifference(signedOutEvidence.ok, true)
+    expectNoDifference(signedOutEvidence.details.event, "watch")
+    expectNoDifference(signedOutEvidence.details.isSignedIn, false)
+    expectNoDifference(signedOutEvidence.details.userID, nil)
+
+    let token = try JSONDecoder().decode(
+      CLIAuthOutput.self,
+      from: Data(
+        try runCLI(
+          ["auth", "token", "refresh-token", "--user-id", "watch-user", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(token.event, "token")
+    expectNoDifference(token.isSignedIn, true)
+    expectNoDifference(token.userID, "watch-user")
+    expectNoDifference(token.hasRefreshToken, true)
+
+    let signedInWatch = try JSONDecoder().decode(
+      CLIAuthWatchOutput.self,
+      from: Data(
+        try runCLI(["auth", "watch", "--events", "1", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(signedInWatch.event, "watch")
+    expectNoDifference(signedInWatch.requestedEventCount, 1)
+    expectNoDifference(signedInWatch.emittedEventCount, 1)
+    expectNoDifference(signedInWatch.emissions.map(\.userID), ["watch-user"])
+    expectNoDifference(signedInWatch.emissions.map(\.isGuest), [false])
+    expectNoDifference(signedInWatch.emissions.map(\.hasRefreshToken), [true])
+
+    _ = try runCLI(["auth", "sign-out", "--json"], homeURL: homeURL)
+    let signedOutWatch = try JSONDecoder().decode(
+      CLIAuthWatchOutput.self,
+      from: Data(
+        try runCLI(["auth", "watch", "--events", "1", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(signedOutWatch.emissions.map(\.isSignedIn), [false])
+
+    let invalidEvents = try runCLIResult(
+      ["auth", "watch", "--events", "2", "--json"],
+      homeURL: homeURL
+    )
+    #expect(invalidEvents.status == 64)
+    #expect(invalidEvents.error.contains("auth watch --events 1"))
+  }
+
+  @Test
   func cliTodoCompleteMarksTodoDurably() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -2178,6 +2246,37 @@ private struct CLITodoWatchEmission: Decodable {
   var sequence: Int64
   var pendingMutationCount: Int
   var todos: [CLITodo]
+}
+
+private struct CLIAuthOutput: Decodable {
+  var event: String
+  var isSignedIn: Bool
+  var userID: String?
+  var isGuest: Bool?
+  var hasRefreshToken: Bool
+}
+
+private struct CLIAuthWatchOutput: Decodable {
+  var event: String
+  var requestedEventCount: Int
+  var emittedEventCount: Int
+  var emissions: [CLIAuthOutput]
+}
+
+private struct CLIAuthWatchEvidence: Decodable {
+  var caseID: String
+  var side: String
+  var event: String
+  var ok: Bool
+  var details: CLIAuthOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case side
+    case event
+    case ok
+    case details
+  }
 }
 
 private struct CLITodo: Decodable, Equatable {

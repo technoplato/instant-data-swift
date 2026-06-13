@@ -40,6 +40,16 @@ struct BootstrapTests {
     } catch {
       #expect(Bool(false), "Unexpected error: \(error)")
     }
+
+    do {
+      _ = try await client.observeAuthSession()
+      #expect(Bool(false), "Expected the default client auth observer to fail before bootstrap.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .implementationFailed)
+      expectNoDifference(error.operation, "access default InstantSwiftData client")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
   }
 
   @Test
@@ -146,16 +156,24 @@ struct BootstrapTests {
 
       let emptySession = try await client.authSession()
       expectNoDifference(emptySession, nil)
+      let authStream = try await client.observeAuthSession()
+      var authIterator = authStream.makeAsyncIterator()
+      let observedEmptySession = try #require(await authIterator.next())
+      expectNoDifference(observedEmptySession, nil)
 
       let guestSession = try await client.signInAsGuest()
       expectNoDifference(guestSession.appID, appID)
       expectNoDifference(guestSession.isGuest, true)
       let persistedGuestSession = try await client.authSession()
       expectNoDifference(persistedGuestSession, guestSession)
+      let observedGuestSession = try #require(await authIterator.next())
+      expectNoDifference(observedGuestSession, guestSession)
 
       try await client.signOut()
       let signedOutGuestSession = try await client.authSession()
       expectNoDifference(signedOutGuestSession, nil)
+      let observedSignedOutGuestSession = try #require(await authIterator.next())
+      expectNoDifference(observedSignedOutGuestSession, nil)
 
       let challenge = try await client.sendMagicCode(email: " User@Example.COM ")
       expectNoDifference(challenge.code, "246810")
@@ -168,10 +186,14 @@ struct BootstrapTests {
       expectNoDifference(session.refreshToken, "challenge:246810")
       let persistedMagicSession = try await client.authSession()
       expectNoDifference(persistedMagicSession, session)
+      let observedMagicSession = try #require(await authIterator.next())
+      expectNoDifference(observedMagicSession, session)
 
       try await client.signOut()
       let signedOutMagicSession = try await client.authSession()
       expectNoDifference(signedOutMagicSession, nil)
+      let observedSignedOutMagicSession = try #require(await authIterator.next())
+      expectNoDifference(observedSignedOutMagicSession, nil)
 
       let tokenSession = try await client.signInWithRefreshToken(
         " refresh-token ",
@@ -182,6 +204,8 @@ struct BootstrapTests {
       expectNoDifference(tokenSession.isGuest, false)
       let persistedTokenSession = try await client.authSession()
       expectNoDifference(persistedTokenSession, tokenSession)
+      let observedTokenSession = try #require(await authIterator.next())
+      expectNoDifference(observedTokenSession, tokenSession)
     }
   }
 
@@ -221,6 +245,21 @@ struct BootstrapTests {
           createdAt: InstantTimestamp(milliseconds: 1),
           updatedAt: InstantTimestamp(milliseconds: 2)
         )
+      },
+      observeAuthSession: {
+        AsyncStream { continuation in
+          continuation.yield(
+            InstantAuthSession(
+              appID: "mock-app",
+              userID: "mock-observed-user",
+              refreshToken: "mock-observed-refresh",
+              isGuest: false,
+              createdAt: InstantTimestamp(milliseconds: 8),
+              updatedAt: InstantTimestamp(milliseconds: 9)
+            )
+          )
+          continuation.finish()
+        }
       },
       signInAsGuest: {
         InstantAuthSession(
@@ -278,6 +317,10 @@ struct BootstrapTests {
 
       let mockSession = try await client.authSession()
       expectNoDifference(mockSession?.userID, "mock-user")
+      let mockAuthStream = try await client.observeAuthSession()
+      var mockAuthIterator = mockAuthStream.makeAsyncIterator()
+      let mockObservedSession = try #require(await mockAuthIterator.next())
+      expectNoDifference(mockObservedSession?.userID, "mock-observed-user")
       let mockGuest = try await client.signInAsGuest()
       expectNoDifference(mockGuest.userID, "mock-guest")
       let mockChallenge = try await client.sendMagicCode(email: "mock@example.com")
@@ -354,6 +397,16 @@ struct BootstrapTests {
     do {
       _ = try await mock.authSession()
       #expect(Bool(false), "Expected old-shape mock client auth to fail without auth closures.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .implementationFailed)
+      expectNoDifference(error.operation, "access InstantSwiftData auth")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      _ = try await mock.observeAuthSession()
+      #expect(Bool(false), "Expected old-shape mock client auth observer to fail without auth closures.")
     } catch let error as InstantError {
       expectNoDifference(error.code, .implementationFailed)
       expectNoDifference(error.operation, "access InstantSwiftData auth")

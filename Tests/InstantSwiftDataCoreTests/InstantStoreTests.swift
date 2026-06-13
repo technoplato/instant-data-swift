@@ -1375,6 +1375,100 @@ struct InstantStoreTests {
   }
 
   @Test
+  func authSessionObservationEmitsCurrentAndDurableChanges() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        now: { timestamp },
+        makeID: { UUID().uuidString.lowercased() }
+      )
+    )
+
+    let stream = try await runtime.observeAuthSession()
+    var iterator = stream.makeAsyncIterator()
+    let initial = try #require(await iterator.next())
+    expectNoDifference(initial, nil)
+
+    let guest = try await runtime.signInAsGuest()
+    let observedGuest = try #require(await iterator.next())
+    expectNoDifference(observedGuest, guest)
+
+    try await runtime.signOut()
+    let observedSignOut = try #require(await iterator.next())
+    expectNoDifference(observedSignOut, nil)
+
+    let challenge = try await runtime.sendMagicCode(email: "User@Example.com")
+    let magic = try await runtime.signInWithMagicCode(
+      email: "user@example.com",
+      code: challenge.code
+    )
+    let observedMagic = try #require(await iterator.next())
+    expectNoDifference(observedMagic, magic)
+
+    let token = try await runtime.signInWithRefreshToken("refresh-token", userID: "token-user")
+    let observedToken = try #require(await iterator.next())
+    expectNoDifference(observedToken, token)
+  }
+
+  @Test
+  func authSessionObservationRegistersAtomicallyWithInFlightSignIn() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let verifyEntered = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+    let resumeVerify = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+    let exchange = InstantMagicCodeExchange(
+      send: { request in
+        InstantMagicCodeChallenge(
+          appID: request.appID,
+          email: request.email,
+          code: "135790",
+          createdAt: request.sentAt,
+          expiresAt: InstantTimestamp(milliseconds: request.sentAt.milliseconds + 60_000)
+        )
+      },
+      verify: { request in
+        verifyEntered.continuation.yield(())
+        var iterator = resumeVerify.stream.makeAsyncIterator()
+        _ = await iterator.next()
+        return InstantMagicCodeVerification(
+          userID: "email:\(request.email)",
+          refreshToken: "local-magic:\(request.appID):\(request.email)"
+        )
+      }
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        now: { timestamp },
+        magicCodeExchange: exchange
+      )
+    )
+
+    let challenge = try await runtime.sendMagicCode(email: "User@Example.com")
+    let signInTask = Task {
+      try await runtime.signInWithMagicCode(email: "user@example.com", code: challenge.code)
+    }
+    var verifyEnteredIterator = verifyEntered.stream.makeAsyncIterator()
+    _ = await verifyEnteredIterator.next()
+
+    let observeTask = Task {
+      try await runtime.observeAuthSession()
+    }
+    try await Task.sleep(nanoseconds: 10_000_000)
+    resumeVerify.continuation.yield(())
+
+    let stream = try await observeTask.value
+    var iterator = stream.makeAsyncIterator()
+    let observedSession = try #require(await iterator.next())
+    let signedInSession = try await signInTask.value
+    expectNoDifference(observedSession, signedInSession)
+  }
+
+  @Test
   func roomPresenceAndTopicsPersistByAppIDAcrossLaunches() async throws {
     let cacheURL = try temporaryCacheURL()
     let room = InstantRoomHandle(type: "chat", id: "lobby")
