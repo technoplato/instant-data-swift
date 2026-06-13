@@ -1997,33 +1997,24 @@ struct InstantSwiftDataCLI {
   }
 
   private static func runSync(arguments: [String], output: OutputMode) async throws {
-    var arguments = arguments
-    guard let command = arguments.popFirstArgument() else {
-      throw CLIError(syncUsage, exitCode: 64)
+    let invocation: CLISyncInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLISyncParser().parse(&input)
+    } catch let error as CLISyncArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
 
     let context = try await CLIContext.bootstrap(initialAttributes: [])
 
-    switch command {
-    case "inspect", "show", "status":
-      guard arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data sync inspect [--json|--jsonl]", exitCode: 64)
-      }
+    switch invocation {
+    case .inspect:
       let state = try await context.runtime.syncState()
       try printSync(context: context, event: "inspect", state: state, output: output)
 
-    case "mark-processed":
-      guard let transactionID = arguments.popFirstArgument(),
-        arguments.isEmpty,
-        !transactionID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      else {
-        throw CLIError("Usage: instant-swift-data sync mark-processed <tx-id> [--json|--jsonl]", exitCode: 64)
-      }
+    case let .markProcessed(transactionID):
       let state = try await context.runtime.markProcessedTransaction(id: transactionID)
       try printSync(context: context, event: "mark-processed", state: state, output: output)
-
-    default:
-      throw CLIError(syncUsage, exitCode: 64)
     }
   }
 
@@ -6104,11 +6095,7 @@ struct InstantSwiftDataCLI {
   }
 
   private static var syncUsage: String {
-    """
-    Usage: instant-swift-data sync <inspect|mark-processed>
-      instant-swift-data sync inspect [--json|--jsonl]
-      instant-swift-data sync mark-processed <tx-id> [--json|--jsonl]
-    """
+    CLISyncUsage.sync
   }
 
   private static var connectionUsage: String {

@@ -213,6 +213,22 @@ struct CLIArgumentParserTests {
       )
     )
     expectNoDifference(
+      try CLIArguments.parse(["sync", "status", "--json"]),
+      CLIInvocation(
+        output: .json,
+        command: .sync,
+        arguments: ["status"]
+      )
+    )
+    expectNoDifference(
+      try CLIArguments.parse(["sync", "--jsonl", "mark-processed", "tx-1"]),
+      CLIInvocation(
+        output: .jsonl,
+        command: .sync,
+        arguments: ["mark-processed", "tx-1"]
+      )
+    )
+    expectNoDifference(
       try CLIArguments.parse([
         "streams", "append", "chat/lobby", "--value", "{}", "--jsonl",
       ]),
@@ -446,6 +462,42 @@ struct CLIArgumentParserTests {
     try expectLocalIDParseError(
       ["dance"],
       contains: "Usage: instant-swift-data local-id"
+    )
+  }
+
+  @Test
+  func syncParserParsesCommandsAndAliases() throws {
+    expectNoDifference(try parseSync(["inspect"]), .inspect)
+    expectNoDifference(try parseSync(["show"]), .inspect)
+    expectNoDifference(try parseSync(["status"]), .inspect)
+    expectNoDifference(
+      try parseSync(["mark-processed", " tx-1 "]),
+      .markProcessed(transactionID: " tx-1 ")
+    )
+  }
+
+  @Test
+  func syncParserReportsMalformedArguments() throws {
+    try expectSyncParseError([], contains: "Usage: instant-swift-data sync")
+    try expectSyncParseError(
+      ["inspect", "extra"],
+      contains: "Unexpected argument: extra."
+    )
+    try expectSyncParseError(
+      ["mark-processed"],
+      contains: "sync mark-processed <tx-id>"
+    )
+    try expectSyncParseError(
+      ["mark-processed", "  "],
+      contains: "sync mark-processed <tx-id>"
+    )
+    try expectSyncParseError(
+      ["mark-processed", "tx-1", "extra"],
+      contains: "Unexpected argument: extra."
+    )
+    try expectSyncParseError(
+      ["dance"],
+      contains: "Usage: instant-swift-data sync"
     )
   }
 
@@ -1007,6 +1059,13 @@ private func parseLocalID(_ arguments: [String]) throws -> CLILocalIDInvocation 
   return invocation
 }
 
+private func parseSync(_ arguments: [String]) throws -> CLISyncInvocation {
+  var input = arguments[...]
+  let invocation = try CLISyncParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseRooms(_ arguments: [String]) throws -> CLIRoomsInvocation {
   var input = arguments[...]
   let invocation = try CLIRoomsParser().parse(&input)
@@ -1069,6 +1128,19 @@ private func expectLocalIDParseError(
     _ = try parseLocalID(arguments)
     Issue.record("Expected local-id parser to reject \(arguments).")
   } catch let error as CLILocalIDArgumentError {
+    #expect(error.description.contains(expectedFragment))
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectSyncParseError(
+  _ arguments: [String],
+  contains expectedFragment: String
+) throws {
+  do {
+    _ = try parseSync(arguments)
+    Issue.record("Expected sync parser to reject \(arguments).")
+  } catch let error as CLISyncArgumentError {
     #expect(error.description.contains(expectedFragment))
     expectNoDifference(error.exitCode, 64)
   }

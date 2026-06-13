@@ -133,6 +133,32 @@ public enum CLILocalIDArgumentError: Error, Equatable, Sendable {
   public var exitCode: Int32 { 64 }
 }
 
+public enum CLISyncInvocation: Equatable, Sendable {
+  case inspect
+  case markProcessed(transactionID: String)
+}
+
+public enum CLISyncUsage {
+  public static let sync = """
+    Usage: instant-swift-data sync <inspect|mark-processed>
+      instant-swift-data sync inspect [--json|--jsonl]
+      instant-swift-data sync mark-processed <tx-id> [--json|--jsonl]
+    """
+
+  public static let inspect = "Usage: instant-swift-data sync inspect [--json|--jsonl]"
+  public static let markProcessed =
+    "Usage: instant-swift-data sync mark-processed <tx-id> [--json|--jsonl]"
+}
+
+public enum CLISyncArgumentError: Error, Equatable, Sendable {
+  case missingCommand
+  case unknownCommand(String)
+  case missingArguments(usage: String)
+  case unexpectedArgument(String, usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
 public enum CLIRoomsInvocation: Equatable, Sendable {
   case presence(CLIRoomPresenceInvocation)
   case topics(CLIRoomTopicsInvocation)
@@ -839,6 +865,31 @@ public struct CLILocalIDParser: Parser {
 
     default:
       throw CLILocalIDArgumentError.unknownCommand(command)
+    }
+  }
+}
+
+public struct CLISyncParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLISyncInvocation {
+    guard let command = input.first else {
+      throw CLISyncArgumentError.missingCommand
+    }
+    input.removeFirst()
+
+    switch command {
+    case "inspect", "show", "status":
+      try requireNoRemainingSyncArguments(&input, usage: CLISyncUsage.inspect)
+      return .inspect
+
+    case "mark-processed":
+      let transactionID = try parseRequiredSyncArgument(from: &input, usage: CLISyncUsage.markProcessed)
+      try requireNoRemainingSyncArguments(&input, usage: CLISyncUsage.markProcessed)
+      return .markProcessed(transactionID: transactionID)
+
+    default:
+      throw CLISyncArgumentError.unknownCommand(command)
     }
   }
 }
@@ -2101,6 +2152,29 @@ private func requireNoRemainingLocalIDArguments(
   }
 }
 
+private func parseRequiredSyncArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLISyncArgumentError.missingArguments(usage: usage)
+  }
+  input.removeFirst()
+  guard !trimmed(value).isEmpty else {
+    throw CLISyncArgumentError.missingArguments(usage: usage)
+  }
+  return value
+}
+
+private func requireNoRemainingSyncArguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if let argument = input.first {
+    throw CLISyncArgumentError.unexpectedArgument(argument, usage: usage)
+  }
+}
+
 private func trimmed(_ string: String) -> String {
   string.trimmingCharacters(in: .whitespacesAndNewlines)
 }
@@ -2128,6 +2202,24 @@ extension CLILocalIDArgumentError: CustomStringConvertible {
 
     case .unknownCommand:
       return CLILocalIDUsage.localID
+
+    case let .missingArguments(usage):
+      return usage
+
+    case let .unexpectedArgument(argument, usage):
+      return "Unexpected argument: \(argument). \(usage)"
+    }
+  }
+}
+
+extension CLISyncArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case .missingCommand:
+      return CLISyncUsage.sync
+
+    case .unknownCommand:
+      return CLISyncUsage.sync
 
     case let .missingArguments(usage):
       return usage
