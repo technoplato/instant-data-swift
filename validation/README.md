@@ -41,21 +41,23 @@ Swift/TypeScript boundary cases remain required for final acceptance.
 
 ## Local TypeScript Fixture Evidence
 
-The TypeScript runner checks the committed `instant.schema.ts` and
-`instant.perms.ts` fixtures from the TypeScript side and emits JSONL evidence
-without requiring an Instant app or admin token:
+The TypeScript runner parses and compares the committed `instant.schema.ts` and
+`instant.perms.ts` fixture shapes from the TypeScript side and emits JSONL
+evidence without requiring an Instant app or admin token:
 
 ```bash
 node validation/ts-runner/src/main.ts --fixtures
 ```
 
-`validation/run-e2e.sh` runs both Swift local validations, records the local
-benchmark evidence, and then runs this fixture check when Node is available. Set
-`INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR` to direct artifacts to a specific
-directory, and `INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS` to adjust
-the benchmark iteration count. The harness records the real Instant boundary as
-pending until ephemeral app creation, schema push, and admin query/transact are
-implemented.
+The fixture rows include exact expected/actual evidence for entities, fields,
+field modifiers, links, room presence/topic shapes, permission namespaces, and
+allowed operations. `validation/run-e2e.sh` runs both Swift local validations,
+records the local benchmark evidence, and then runs this fixture check when Node
+is available. Set `INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR` to direct
+artifacts to a specific directory, and
+`INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS` to adjust the benchmark
+iteration count. The harness records the real Instant boundary as pending until
+ephemeral app creation, schema push, and admin query/transact are implemented.
 
 ## Required Cases
 
