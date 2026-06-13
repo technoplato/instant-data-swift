@@ -467,6 +467,125 @@ struct InstantQueryValidationParityTests {
   }
 
   @Test
+  func upstreamNestedIncludePaginationRestriction() async throws {
+    let runtime = try await queryValidationRuntime()
+    let source = queryValidationSource(
+      "pagination parameters can only be used at top-level namespaces",
+      assertion: "lines 795-981 nested pagination validation",
+      status:
+        "adapted: Swift allows pagination only on InstantQueryPlan; converting a plan into an include rejects pagination and nested includes."
+    )
+
+    let validTopLevelPagination = try await runtime.queryOnce(
+      InstantQueryPlan(
+        id: "query-validation-parity.posts.top-level-pagination",
+        namespace: "posts",
+        offset: 20,
+        limit: 10,
+        first: 5
+      )
+    )
+    expectNoDifference(validTopLevelPagination.values.map(\.id), [], source)
+
+    let validTopLevelBeforeInclusive = try await runtime.queryOnce(
+      InstantQueryPlan(
+        id: "query-validation-parity.posts.top-level-before-inclusive",
+        namespace: "posts",
+        before: InstantQueryCursor(
+          entityID: "post-1",
+          sortValue: .string("cursor"),
+          inclusive: true
+        )
+      )
+    )
+    expectNoDifference(validTopLevelBeforeInclusive.values.map(\.id), [], source)
+
+    let validTopLevelAfterInclusive = try await runtime.queryOnce(
+      InstantQueryPlan(
+        id: "query-validation-parity.posts.top-level-after-inclusive",
+        namespace: "posts",
+        after: InstantQueryCursor(
+          entityID: "post-1",
+          sortValue: .string("cursor"),
+          inclusive: true
+        )
+      )
+    )
+    expectNoDifference(validTopLevelAfterInclusive.values.map(\.id), [], source)
+
+    let validFilteredInclude = InstantQueryInclude(
+      "posts",
+      direction: .reverse,
+      query: InstantQueryPlan(
+        id: "query-validation-parity.users.posts.filtered-include",
+        namespace: "posts",
+        filters: [.equals(field: "title", value: .string("Test"))],
+        order: InstantQueryOrder("title"),
+        selectedFields: ["title"]
+      )
+    )
+    #expect(validFilteredInclude != nil, "Expected filtered include to be supported. \(source)")
+
+    let cursor = InstantQueryCursor(entityID: "post-1", sortValue: .string("cursor"))
+    let paginatedIncludePlans: [InstantQueryPlan] = [
+      InstantQueryPlan(
+        id: "query-validation-parity.users.posts.offset",
+        namespace: "posts",
+        offset: 10
+      ),
+      InstantQueryPlan(
+        id: "query-validation-parity.users.posts.first",
+        namespace: "posts",
+        first: 5
+      ),
+      InstantQueryPlan(
+        id: "query-validation-parity.users.posts.after",
+        namespace: "posts",
+        after: cursor
+      ),
+      InstantQueryPlan(
+        id: "query-validation-parity.users.posts.last",
+        namespace: "posts",
+        last: 5
+      ),
+      InstantQueryPlan(
+        id: "query-validation-parity.users.posts.before",
+        namespace: "posts",
+        before: cursor
+      ),
+    ]
+
+    for plan in paginatedIncludePlans {
+      #expect(
+        InstantQueryInclude("posts", direction: .reverse, query: plan) == nil,
+        "\(source) rejected include plan \(plan.id)"
+      )
+    }
+
+    let swiftOnlySource =
+      "Swift include conversion guard: InstantQueryIncludePlan intentionally omits pagination and nested include storage, so conversion rejects those plans before dropping fields."
+    let swiftOnlyUnsupportedIncludePlans: [InstantQueryPlan] = [
+      InstantQueryPlan(
+        id: "query-validation-parity.users.posts.limit",
+        namespace: "posts",
+        limit: 5
+      ),
+      InstantQueryPlan(
+        id: "query-validation-parity.users.posts.nested-include",
+        namespace: "posts",
+        includes: [InstantQueryInclude("comments")]
+      ),
+    ]
+
+    for plan in swiftOnlyUnsupportedIncludePlans {
+      #expect(
+        InstantQueryInclude("posts", direction: .reverse, query: plan) == nil,
+        "\(swiftOnlySource) rejected include plan \(plan.id)"
+      )
+    }
+  }
+
+  @Test
   func swiftSchemaBackedFilterValueEdges() async throws {
     let runtime = try await queryValidationRuntime()
     let source =
