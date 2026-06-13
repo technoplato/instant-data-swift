@@ -6482,7 +6482,7 @@ struct InstantStoreTests {
       ("missing.title", TodoExample.namespace),
       ("project.missing", TodoProjectExample.namespace),
       ("text.value", TodoExample.namespace),
-      ("project.title.extra", TodoExample.namespace),
+      ("project.title.extra", TodoProjectExample.namespace),
     ] {
       await expectQueryValidation(namespace: namespace, path: field) {
         _ = try await queryIDs(
@@ -6619,6 +6619,123 @@ struct InstantStoreTests {
     expectNoDifference(notSwiftArticles, ["article-1", "article-2", "article-3"])
     expectNoDifference(untaggedArticles, ["article-3"])
     expectNoDifference(swiftIDArticles, ["article-1"])
+  }
+
+  @Test
+  func queryFiltersSupportMultiHopNestedRelationFields() async throws {
+    let commentsBody = InstantAttribute(
+      id: "comments/body",
+      namespace: "comments",
+      name: "body",
+      valueType: .string,
+      isIndexed: true
+    )
+    let commentsPost = InstantAttribute(
+      id: "comments/post",
+      namespace: "comments",
+      name: "post",
+      valueType: .ref,
+      isIndexed: true,
+      forwardIdentity: "comments/post",
+      reverseIdentity: "posts/comments",
+      linkNamespace: "posts"
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: lookupTestAttributes() + [commentsBody, commentsPost]
+      )
+    )
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let transactionID = "tx-multi-hop-nested-filters"
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: transactionID,
+        operations: [
+          .insert(.init(entityID: "user-1", attributeID: "users/id", value: .string("user-1"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "user-1", attributeID: "users/name", value: .string("Ana"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "user-2", attributeID: "users/id", value: .string("user-2"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "user-2", attributeID: "users/name", value: .string("Ben"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "user-3", attributeID: "users/id", value: .string("user-3"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "user-3", attributeID: "users/name", value: .string("Cy"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "post-1", attributeID: "posts/id", value: .string("post-1"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "post-1", attributeID: "posts/title", value: .string("Swift"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "post-1", attributeID: "posts/author", value: .ref("user-1"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "post-2", attributeID: "posts/id", value: .string("post-2"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "post-2", attributeID: "posts/title", value: .string("Data"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "post-2", attributeID: "posts/author", value: .ref("user-2"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "post-3", attributeID: "posts/id", value: .string("post-3"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "post-3", attributeID: "posts/title", value: .string("Draft"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "post-3", attributeID: "posts/author", value: .ref("user-2"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "comment-1", attributeID: "comments/id", value: .string("comment-1"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "comment-1", attributeID: "comments/body", value: .string("Great comment!"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "comment-1", attributeID: "comments/post", value: .ref("post-1"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "comment-2", attributeID: "comments/id", value: .string("comment-2"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "comment-2", attributeID: "comments/body", value: .string("Needs work"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "comment-2", attributeID: "comments/post", value: .ref("post-2"), txID: transactionID, txTime: time)),
+        ]
+      ),
+      createdAt: time
+    )
+
+    func ids(id: String, namespace: String, filters: [InstantQueryFilter]) async throws -> [String] {
+      try await runtime.query(
+        InstantQueryPlan(id: id, namespace: namespace, filters: filters)
+      )
+      .map(\.id)
+    }
+
+    let usersWithGreatComments = try await ids(
+      id: "users.posts.comments.body.equals",
+      namespace: "users",
+      filters: [.equals(field: "posts.comments.body", value: .string("Great comment!"))]
+    )
+    expectNoDifference(usersWithGreatComments, ["user-1"])
+
+    let usersWithoutGreatComments = try await ids(
+      id: "users.posts.comments.body.not-equals",
+      namespace: "users",
+      filters: [.notEquals(field: "posts.comments.body", value: .string("Great comment!"))]
+    )
+    expectNoDifference(usersWithoutGreatComments, ["user-2", "user-3"])
+
+    let usersMissingCommentBodies = try await ids(
+      id: "users.posts.comments.body.null",
+      namespace: "users",
+      filters: [.isNull(field: "posts.comments.body")]
+    )
+    expectNoDifference(usersMissingCommentBodies, ["user-2", "user-3"])
+
+    let commentsByAna = try await ids(
+      id: "comments.post.author.name.equals",
+      namespace: "comments",
+      filters: [.equals(field: "post.author.name", value: .string("Ana"))]
+    )
+    expectNoDifference(commentsByAna, ["comment-1"])
+
+    let commentsByAuthorPattern = try await ids(
+      id: "comments.post.author.name.ilike",
+      namespace: "comments",
+      filters: [.iLike(field: "post.author.name", pattern: "%e%")]
+    )
+    expectNoDifference(commentsByAuthorPattern, ["comment-2"])
+
+    await expectQueryValidation(namespace: "comments", path: "posts.comments.missing") {
+      _ = try await ids(
+        id: "users.posts.comments.missing",
+        namespace: "users",
+        filters: [.equals(field: "posts.comments.missing", value: .string("missing"))]
+      )
+    }
+
+    await expectQueryValidation(namespace: "posts", path: "posts.title.body") {
+      _ = try await ids(
+        id: "users.posts.title.body",
+        namespace: "users",
+        filters: [.equals(field: "posts.title.body", value: .string("missing"))]
+      )
+    }
   }
 
   @Test

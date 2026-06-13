@@ -1022,32 +1022,29 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         namespace: namespace,
         path: field,
         message: "Nested field path '\(field)' is not supported.",
-        recovery: "Use one relation and one field, such as 'project.title'."
+        recovery: "Use one or more relations followed by a field, such as 'project.owner.name'."
       )
     }
-    guard
-      let targetNamespace = nestedFieldTargetNamespace(
-        nested,
-        namespace: namespace,
-        attributes: attributes
-      )
-    else {
+    switch nestedFieldTargetNamespace(nested, namespace: namespace, attributes: attributes) {
+    case let .success(targetNamespace):
+      guard isDeclaredField(nested.field, namespace: targetNamespace, attributes: attributes) else {
+        return undeclaredFieldIssue(
+          nested.field,
+          namespace: targetNamespace,
+          context: context,
+          path: field
+        )
+      }
+      return nil
+
+    case let .failure(invalidRelation):
       return InstantQueryValidationIssue(
-        namespace: namespace,
+        namespace: invalidRelation.namespace,
         path: field,
-        message: "'\(nested.relation)' is not a declared relation.",
+        message: "'\(invalidRelation.name)' is not a declared relation.",
         recovery: "Filter through a declared forward or reverse relation."
       )
     }
-    guard isDeclaredField(nested.field, namespace: targetNamespace, attributes: attributes) else {
-      return undeclaredFieldIssue(
-        nested.field,
-        namespace: targetNamespace,
-        context: context,
-        path: field
-      )
-    }
-    return nil
   }
 
   private static func undeclaredFieldIssue(
@@ -1074,17 +1071,39 @@ struct TripleIndexes: Hashable, Codable, Sendable {
 
   private static func nestedField(_ field: String) -> NestedField? {
     let parts = field.split(separator: ".", omittingEmptySubsequences: false)
-    guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
-    return NestedField(relation: String(parts[0]), field: String(parts[1]))
+    guard parts.count >= 2, parts.allSatisfy({ !$0.isEmpty }) else { return nil }
+    return NestedField(
+      relations: parts.dropLast().map(String.init),
+      field: String(parts[parts.count - 1])
+    )
   }
 
   private static func nestedFieldTargetNamespace(
     _ nested: NestedField,
     namespace: String,
     attributes: AttributeStore
+  ) -> Result<String, InvalidNestedRelation> {
+    var namespace = namespace
+    for relation in nested.relations {
+      guard let targetNamespace = relationTargetNamespace(
+        relation,
+        namespace: namespace,
+        attributes: attributes
+      ) else {
+        return .failure(InvalidNestedRelation(name: relation, namespace: namespace))
+      }
+      namespace = targetNamespace
+    }
+    return .success(namespace)
+  }
+
+  private static func relationTargetNamespace(
+    _ relation: String,
+    namespace: String,
+    attributes: AttributeStore
   ) -> String? {
     if
-      let attribute = attributes.attribute(namespace: namespace, name: nested.relation),
+      let attribute = attributes.attribute(namespace: namespace, name: relation),
       attribute.valueType == .ref,
       let linkNamespace = attribute.linkNamespace
     {
@@ -1093,7 +1112,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
 
     return reverseAttribute(
       namespace: namespace,
-      name: nested.relation,
+      name: relation,
       attributes: attributes
     )?.namespace
   }
@@ -1257,7 +1276,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     }
     guard
       let nested = nestedField(field),
-      let targetNamespace = nestedFieldTargetNamespace(
+      case let .success(targetNamespace) = Self.nestedFieldTargetNamespace(
         nested,
         namespace: namespace,
         attributes: attributes
@@ -1267,8 +1286,13 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   }
 
   private struct NestedField: Hashable, Sendable {
-    var relation: String
+    var relations: [String]
     var field: String
+  }
+
+  private struct InvalidNestedRelation: Error, Hashable, Sendable {
+    var name: String
+    var namespace: String
   }
 
   private struct NestedFieldSnapshots: Hashable, Sendable {
@@ -1278,42 +1302,41 @@ struct TripleIndexes: Hashable, Codable, Sendable {
 
   private func nestedField(_ field: String) -> NestedField? {
     let parts = field.split(separator: ".", omittingEmptySubsequences: false)
-    guard parts.count == 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
-    return NestedField(relation: String(parts[0]), field: String(parts[1]))
+    guard parts.count >= 2, parts.allSatisfy({ !$0.isEmpty }) else { return nil }
+    return NestedField(
+      relations: parts.dropLast().map(String.init),
+      field: String(parts[parts.count - 1])
+    )
   }
 
   private func nestedFieldTargetNamespace(
     _ nested: NestedField,
     namespace: String,
     attributes: AttributeStore
-  ) -> String? {
-    if
-      let attribute = attributes.attribute(namespace: namespace, name: nested.relation),
-      attribute.valueType == .ref,
-      let linkNamespace = attribute.linkNamespace
-    {
-      return linkNamespace
-    }
+  ) -> Result<String, InvalidNestedRelation> {
+    Self.nestedFieldTargetNamespace(nested, namespace: namespace, attributes: attributes)
+  }
 
-    return reverseAttribute(
-      namespace: namespace,
-      name: nested.relation,
-      attributes: attributes
-    )?.namespace
+  private func relationTargetNamespace(
+    _ relation: String,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> String? {
+    Self.relationTargetNamespace(relation, namespace: namespace, attributes: attributes)
   }
 
   private func linkedSnapshots(
     for snapshot: InstantEntitySnapshot,
-    nested: NestedField,
+    relation: String,
     namespace: String,
     attributes: AttributeStore
   ) -> NestedFieldSnapshots? {
     if
-      let attribute = attributes.attribute(namespace: namespace, name: nested.relation),
+      let attribute = attributes.attribute(namespace: namespace, name: relation),
       attribute.valueType == .ref,
       let linkNamespace = attribute.linkNamespace
     {
-      let ids = Set(snapshot.values[nested.relation]?.values.compactMap(\.refValue) ?? [])
+      let ids = Set(snapshot.values[relation]?.values.compactMap(\.refValue) ?? [])
       return NestedFieldSnapshots(
         namespace: linkNamespace,
         snapshots: ids.sorted().compactMap {
@@ -1325,7 +1348,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     if
       let attribute = reverseAttribute(
         namespace: namespace,
-        name: nested.relation,
+        name: relation,
         attributes: attributes
       )
     {
@@ -1350,10 +1373,29 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     namespace: String,
     attributes: AttributeStore
   ) -> Bool {
+    matchesNestedField(
+      snapshot,
+      relations: nested.relations[...],
+      filter: filter,
+      namespace: namespace,
+      attributes: attributes
+    )
+  }
+
+  private func matchesNestedField(
+    _ snapshot: InstantEntitySnapshot,
+    relations: ArraySlice<String>,
+    filter: InstantQueryFilter,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> Bool {
+    guard let relation = relations.first else {
+      return matches(snapshot, filter: filter, namespace: namespace, attributes: attributes)
+    }
     guard
       let linked = linkedSnapshots(
         for: snapshot,
-        nested: nested,
+        relation: relation,
         namespace: namespace,
         attributes: attributes
       )
@@ -1367,7 +1409,13 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       }
     }
     return linked.snapshots.contains {
-      matches($0, filter: filter, namespace: linked.namespace, attributes: attributes)
+      matchesNestedField(
+        $0,
+        relations: relations.dropFirst(),
+        filter: filter,
+        namespace: linked.namespace,
+        attributes: attributes
+      )
     }
   }
 
