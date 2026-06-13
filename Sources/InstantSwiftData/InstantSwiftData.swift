@@ -515,6 +515,16 @@ public struct FetchSubscription<Element: Sendable>: AsyncSequence, Sendable {
     }
   }
 
+  fileprivate static func finished() -> Self {
+    let finished = AsyncThrowingStream<Element, Error>.makeStream(
+      bufferingPolicy: .bufferingNewest(1)
+    )
+    finished.continuation.finish()
+    let subscription = Self(stream: finished.stream) {}
+    subscription.cancel()
+    return subscription
+  }
+
   public func map<Mapped: Sendable>(
     _ transform: @escaping @Sendable (Element) throws -> Mapped
   ) -> FetchSubscription<Mapped> {
@@ -903,6 +913,7 @@ extension DependencyValues {
   }
 }
 
+@dynamicMemberLookup
 @propertyWrapper
 public struct FetchAll<Element: Sendable>: Sendable {
   private let storage: FetchStorage<[Element]>
@@ -925,12 +936,22 @@ public struct FetchAll<Element: Sendable>: Sendable {
     set { storage.isLoading = newValue }
   }
 
+  public subscript<Member>(dynamicMember keyPath: KeyPath<[Element], Member>) -> Member {
+    wrappedValue[keyPath: keyPath]
+  }
+
   #if canImport(SwiftUI)
     public var binding: Binding<[Element]> {
       Binding(
         get: { storage.wrappedValue },
         set: { storage.wrappedValue = $0 }
       )
+    }
+
+    public subscript<Member>(
+      dynamicMember keyPath: WritableKeyPath<[Element], Member>
+    ) -> Binding<Member> {
+      binding[dynamicMember: keyPath]
     }
   #endif
 
@@ -1026,6 +1047,24 @@ public struct FetchAll<Element: Sendable>: Sendable {
     try await load(using: client)
   }
 
+  public mutating func load(
+    _ query: InstantEntityQuery<Element>?
+  ) async throws where Element: InstantEntityModel {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(query, using: client)
+  }
+
+  public mutating func load(
+    _ query: InstantEntityQuery<Element>?,
+    using client: InstantSwiftDataClient
+  ) async throws where Element: InstantEntityModel {
+    guard let query else {
+      clearQuery()
+      return
+    }
+    try await load(query, using: client)
+  }
+
   public mutating func subscribe() async throws -> FetchSubscription<[Element]> {
     @Dependency(\.defaultInstantSwiftData) var client
     return try await subscribe(using: client)
@@ -1067,6 +1106,24 @@ public struct FetchAll<Element: Sendable>: Sendable {
       await client.subscribe(query)
     }
     return try await subscribe(using: client)
+  }
+
+  public mutating func subscribe(
+    _ query: InstantEntityQuery<Element>?
+  ) async throws -> FetchSubscription<[Element]> where Element: InstantEntityModel {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(query, using: client)
+  }
+
+  public mutating func subscribe(
+    _ query: InstantEntityQuery<Element>?,
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[Element]> where Element: InstantEntityModel {
+    guard let query else {
+      clearQuery()
+      return .finished()
+    }
+    return try await subscribe(query, using: client)
   }
 
   public mutating func task() async throws {
@@ -1128,8 +1185,35 @@ public struct FetchAll<Element: Sendable>: Sendable {
     }
     try await task(using: client)
   }
+
+  public mutating func task(
+    _ query: InstantEntityQuery<Element>?
+  ) async throws where Element: InstantEntityModel {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(query, using: client)
+  }
+
+  public mutating func task(
+    _ query: InstantEntityQuery<Element>?,
+    using client: InstantSwiftDataClient
+  ) async throws where Element: InstantEntityModel {
+    guard let query else {
+      clearQuery()
+      return
+    }
+    try await task(query, using: client)
+  }
+
+  private mutating func clearQuery() {
+    loadOperation = nil
+    subscribeOperation = nil
+    wrappedValue = []
+    loadError = nil
+    isLoading = false
+  }
 }
 
+@dynamicMemberLookup
 @propertyWrapper
 public struct FetchOne<Value: Sendable>: Sendable {
   private let storage: FetchStorage<Value>
@@ -1152,12 +1236,22 @@ public struct FetchOne<Value: Sendable>: Sendable {
     set { storage.isLoading = newValue }
   }
 
+  public subscript<Member>(dynamicMember keyPath: KeyPath<Value, Member>) -> Member {
+    wrappedValue[keyPath: keyPath]
+  }
+
   #if canImport(SwiftUI)
     public var binding: Binding<Value> {
       Binding(
         get: { storage.wrappedValue },
         set: { storage.wrappedValue = $0 }
       )
+    }
+
+    public subscript<Member>(
+      dynamicMember keyPath: WritableKeyPath<Value, Member>
+    ) -> Binding<Member> {
+      binding[dynamicMember: keyPath]
     }
   #endif
 
@@ -1410,6 +1504,24 @@ extension FetchOne {
     try await load(using: client)
   }
 
+  public mutating func load<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>?
+  ) async throws where Value == Entity? {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(query, using: client)
+  }
+
+  public mutating func load<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>?,
+    using client: InstantSwiftDataClient
+  ) async throws where Value == Entity? {
+    guard let query else {
+      clearOptionalQuery()
+      return
+    }
+    try await load(query, using: client)
+  }
+
   public mutating func subscribe<Entity: InstantEntityModel>(
     _ query: InstantEntityQuery<Entity>
   ) async throws -> FetchSubscription<Value> where Value == Entity? {
@@ -1423,6 +1535,24 @@ extension FetchOne {
   ) async throws -> FetchSubscription<Value> where Value == Entity? {
     configureOptionalQuery(query)
     return try await subscribe(using: client)
+  }
+
+  public mutating func subscribe<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>?
+  ) async throws -> FetchSubscription<Value> where Value == Entity? {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(query, using: client)
+  }
+
+  public mutating func subscribe<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>?,
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<Value> where Value == Entity? {
+    guard let query else {
+      clearOptionalQuery()
+      return .finished()
+    }
+    return try await subscribe(query, using: client)
   }
 
   public mutating func task<Entity: InstantEntityModel>(
@@ -1440,6 +1570,24 @@ extension FetchOne {
     try await task(using: client)
   }
 
+  public mutating func task<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>?
+  ) async throws where Value == Entity? {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(query, using: client)
+  }
+
+  public mutating func task<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>?,
+    using client: InstantSwiftDataClient
+  ) async throws where Value == Entity? {
+    guard let query else {
+      clearOptionalQuery()
+      return
+    }
+    try await task(query, using: client)
+  }
+
   private mutating func configureOptionalQuery<Entity: InstantEntityModel>(
     _ query: InstantEntityQuery<Entity>
   ) where Value == Entity? {
@@ -1450,8 +1598,17 @@ extension FetchOne {
       await client.subscribe(Self.limitOne(query)).map(\.first)
     }
   }
+
+  private mutating func clearOptionalQuery<Entity: InstantEntityModel>() where Value == Entity? {
+    loadOperation = nil
+    subscribeOperation = nil
+    wrappedValue = nil
+    loadError = nil
+    isLoading = false
+  }
 }
 
+@dynamicMemberLookup
 @propertyWrapper
 public struct Fetch<Value: Sendable>: Sendable {
   private let storage: FetchStorage<Value>
@@ -1474,12 +1631,22 @@ public struct Fetch<Value: Sendable>: Sendable {
     set { storage.isLoading = newValue }
   }
 
+  public subscript<Member>(dynamicMember keyPath: KeyPath<Value, Member>) -> Member {
+    wrappedValue[keyPath: keyPath]
+  }
+
   #if canImport(SwiftUI)
     public var binding: Binding<Value> {
       Binding(
         get: { storage.wrappedValue },
         set: { storage.wrappedValue = $0 }
       )
+    }
+
+    public subscript<Member>(
+      dynamicMember keyPath: WritableKeyPath<Value, Member>
+    ) -> Binding<Member> {
+      binding[dynamicMember: keyPath]
     }
   #endif
 

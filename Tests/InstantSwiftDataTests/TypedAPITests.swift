@@ -3104,6 +3104,205 @@ struct TypedAPITests {
     expectNoDifference(fetch.isLoading, false)
   }
 
+  @Test
+  func fetchAllLoadNilQueryClearsResultsWithoutCallingClient() async throws {
+    let todo = TypedTodo(
+      id: InstantID(rawValue: "todo-nil-query"),
+      text: "Cached",
+      isCompleted: false,
+      createdAt: Date(timeIntervalSince1970: 1_700_000_366)
+    )
+    let recorder = ClientCallRecorder()
+    var fetch = FetchAll<TypedTodo>(wrappedValue: [todo], TypedTodo.query)
+    fetch.loadError = InstantError(
+      code: .implementationFailed,
+      operation: "previous load",
+      message: "previous failure",
+      recovery: "Retry with a query."
+    )
+    fetch.isLoading = true
+
+    try await fetch.load(nil as InstantEntityQuery<TypedTodo>?, using: recordingClient(recorder))
+
+    expectNoDifference(fetch.wrappedValue, [])
+    expectNoDifference(fetch.loadError, nil)
+    expectNoDifference(fetch.isLoading, false)
+    let counts = await recorder.counts()
+    expectNoDifference(counts.queryCount, 0)
+    expectNoDifference(counts.observationCount, 0)
+  }
+
+  @Test
+  func fetchOneLoadNilQuerySetsOptionalValueToNilWithoutCallingClient() async throws {
+    let todo = TypedTodo(
+      id: InstantID(rawValue: "todo-one-nil-query"),
+      text: "Cached one",
+      isCompleted: false,
+      createdAt: Date(timeIntervalSince1970: 1_700_000_367)
+    )
+    let recorder = ClientCallRecorder()
+    var fetch = FetchOne<TypedTodo?>(wrappedValue: todo, TypedTodo.query)
+    fetch.loadError = InstantError(
+      code: .implementationFailed,
+      operation: "previous optional load",
+      message: "previous failure",
+      recovery: "Retry with a query."
+    )
+    fetch.isLoading = true
+
+    try await fetch.load(nil as InstantEntityQuery<TypedTodo>?, using: recordingClient(recorder))
+
+    expectNoDifference(fetch.wrappedValue, nil)
+    expectNoDifference(fetch.loadError, nil)
+    expectNoDifference(fetch.isLoading, false)
+    let counts = await recorder.counts()
+    expectNoDifference(counts.queryCount, 0)
+    expectNoDifference(counts.observationCount, 0)
+  }
+
+  @Test
+  func fetchOneSubscribeNilQueryReturnsFinishedSubscriptionWithoutCallingClient() async throws {
+    let todo = TypedTodo(
+      id: InstantID(rawValue: "todo-one-subscribe-nil-query"),
+      text: "Optional subscribe cached",
+      isCompleted: false,
+      createdAt: Date(timeIntervalSince1970: 1_700_000_367.5)
+    )
+    let recorder = ClientCallRecorder()
+    var fetch = FetchOne<TypedTodo?>(wrappedValue: todo, TypedTodo.query)
+
+    let subscription = try await fetch.subscribe(
+      nil as InstantEntityQuery<TypedTodo>?,
+      using: recordingClient(recorder)
+    )
+    var iterator = subscription.makeAsyncIterator()
+    let first = try await iterator.next()
+
+    #expect(first == nil)
+    try await subscription.task
+    expectNoDifference(fetch.wrappedValue, nil)
+    expectNoDifference(fetch.loadError, nil)
+    expectNoDifference(fetch.isLoading, false)
+    let counts = await recorder.counts()
+    expectNoDifference(counts.queryCount, 0)
+    expectNoDifference(counts.observationCount, 0)
+  }
+
+  @Test
+  func fetchAllTaskNilQueryDoesNotStartObservationAndClearsLoading() async throws {
+    let todo = TypedTodo(
+      id: InstantID(rawValue: "todo-task-nil-query"),
+      text: "Task cached",
+      isCompleted: false,
+      createdAt: Date(timeIntervalSince1970: 1_700_000_368)
+    )
+    let recorder = ClientCallRecorder()
+    var fetch = FetchAll<TypedTodo>(wrappedValue: [todo], TypedTodo.query)
+    fetch.isLoading = true
+
+    try await fetch.task(nil as InstantEntityQuery<TypedTodo>?, using: recordingClient(recorder))
+
+    expectNoDifference(fetch.wrappedValue, [])
+    expectNoDifference(fetch.loadError, nil)
+    expectNoDifference(fetch.isLoading, false)
+    let counts = await recorder.counts()
+    expectNoDifference(counts.queryCount, 0)
+    expectNoDifference(counts.observationCount, 0)
+  }
+
+  @Test
+  func fetchOneTaskNilQueryDoesNotStartObservationAndClearsLoading() async throws {
+    let todo = TypedTodo(
+      id: InstantID(rawValue: "todo-one-task-nil-query"),
+      text: "Optional task cached",
+      isCompleted: false,
+      createdAt: Date(timeIntervalSince1970: 1_700_000_368.25)
+    )
+    let recorder = ClientCallRecorder()
+    var fetch = FetchOne<TypedTodo?>(wrappedValue: todo, TypedTodo.query)
+    fetch.isLoading = true
+
+    try await fetch.task(nil as InstantEntityQuery<TypedTodo>?, using: recordingClient(recorder))
+
+    expectNoDifference(fetch.wrappedValue, nil)
+    expectNoDifference(fetch.loadError, nil)
+    expectNoDifference(fetch.isLoading, false)
+    let counts = await recorder.counts()
+    expectNoDifference(counts.queryCount, 0)
+    expectNoDifference(counts.observationCount, 0)
+  }
+
+  @Test
+  func fetchAllSubscribeNilQueryReturnsFinishedSubscriptionWithoutCallingClient() async throws {
+    let todo = TypedTodo(
+      id: InstantID(rawValue: "todo-subscribe-nil-query"),
+      text: "Subscribe cached",
+      isCompleted: false,
+      createdAt: Date(timeIntervalSince1970: 1_700_000_368.5)
+    )
+    let recorder = ClientCallRecorder()
+    var fetch = FetchAll<TypedTodo>(wrappedValue: [todo], TypedTodo.query)
+
+    let subscription = try await fetch.subscribe(
+      nil as InstantEntityQuery<TypedTodo>?,
+      using: recordingClient(recorder)
+    )
+    var iterator = subscription.makeAsyncIterator()
+    let first = try await iterator.next()
+
+    #expect(first == nil)
+    try await subscription.task
+    expectNoDifference(fetch.wrappedValue, [])
+    expectNoDifference(fetch.loadError, nil)
+    expectNoDifference(fetch.isLoading, false)
+    let counts = await recorder.counts()
+    expectNoDifference(counts.queryCount, 0)
+    expectNoDifference(counts.observationCount, 0)
+  }
+
+  @Test
+  func fetchAllDynamicQueryPreservesCachedPriorResultsOnNonNilError() async throws {
+    let cached = typedTodoSnapshot(
+      id: "todo-dynamic-cached",
+      text: "Cached dynamic result",
+      isCompleted: false,
+      createdAt: Date(timeIntervalSince1970: 1_700_000_369)
+    )
+    let recorder = ClientCallRecorder(
+      queryResults: [[cached]],
+      fallbackError: InstantError(
+        code: .implementationFailed,
+        operation: "query dynamic FetchAll",
+        message: "dynamic query failed",
+        recovery: "Retry with a valid dynamic query."
+      )
+    )
+    let client = recordingClient(recorder)
+    var fetch = FetchAll<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt))
+
+    try await fetch.load(TypedTodo.query.order(TypedTodo.createdAt), using: client)
+    expectNoDifference(fetch.wrappedValue.map(\.text), ["Cached dynamic result"])
+
+    do {
+      try await fetch.load(
+        TypedTodo.query.where(TypedTodo.text == "missing"),
+        using: client
+      )
+      Issue.record("Expected non-nil dynamic query failure.")
+    } catch let error as InstantError {
+      expectNoDifference(error.operation, "query dynamic FetchAll")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+
+    expectNoDifference(fetch.wrappedValue.map(\.text), ["Cached dynamic result"])
+    expectNoDifference(fetch.loadError?.operation, "query dynamic FetchAll")
+    expectNoDifference(fetch.isLoading, false)
+    let counts = await recorder.counts()
+    expectNoDifference(counts.queryCount, 2)
+    expectNoDifference(counts.observationCount, 0)
+  }
+
   #if canImport(SwiftUI)
     @Test
     func projectedFetchWrappersExposeSwiftUIBindings() {
@@ -3117,14 +3316,22 @@ struct TypedAPITests {
       let all = FetchAll<TypedTodo>()
       all.binding.wrappedValue = [todo]
       expectNoDifference(all.wrappedValue.map(\.text), ["Binding"])
+      expectNoDifference(all.count, 1)
 
       let one = FetchOne<TypedTodo?>()
       one.binding.wrappedValue = todo
       expectNoDifference(one.wrappedValue?.text, "Binding")
 
-      let count = Fetch(wrappedValue: 0)
-      count.binding.wrappedValue = 42
-      expectNoDifference(count.wrappedValue, 42)
+      let required = FetchOne(wrappedValue: todo)
+      expectNoDifference(required.text, "Binding")
+      required.text.wrappedValue = "Edited through member binding"
+      expectNoDifference(required.wrappedValue.text, "Edited through member binding")
+
+      let count = Fetch(wrappedValue: FetchCounter(count: 0))
+      count.binding.wrappedValue = FetchCounter(count: 42)
+      expectNoDifference(count.wrappedValue.count, 42)
+      count.count.wrappedValue = 1729
+      expectNoDifference(count.wrappedValue.count, 1729)
     }
   #endif
 }
@@ -3141,6 +3348,69 @@ private struct DerivedFetchFailure: Error, CustomStringConvertible, Sendable {
   var description: String {
     "derived fetch failed"
   }
+}
+
+private struct FetchCounter: Hashable, Sendable {
+  var count: Int
+}
+
+private actor ClientCallRecorder {
+  private var queryResults: [[InstantEntitySnapshot]]
+  private var fallbackError: InstantError?
+  private var queryCount = 0
+  private var observationCount = 0
+
+  init(
+    queryResults: [[InstantEntitySnapshot]] = [],
+    fallbackError: InstantError? = nil
+  ) {
+    self.queryResults = queryResults
+    self.fallbackError = fallbackError
+  }
+
+  func query() throws -> [InstantEntitySnapshot] {
+    queryCount += 1
+    if !queryResults.isEmpty {
+      return queryResults.removeFirst()
+    }
+    if let fallbackError {
+      throw fallbackError
+    }
+    return []
+  }
+
+  func observe(plan: InstantQueryPlan) -> AsyncStream<InstantQueryEmission> {
+    observationCount += 1
+    return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+      continuation.yield(InstantQueryEmission(queryID: plan.id, sequence: 0, values: []))
+      continuation.finish()
+    }
+  }
+
+  func counts() -> (queryCount: Int, observationCount: Int) {
+    (queryCount, observationCount)
+  }
+}
+
+private func recordingClient(_ recorder: ClientCallRecorder) -> InstantSwiftDataClient {
+  InstantSwiftDataClient(
+    transact: { transaction in
+      InstantStoreMutationResult(
+        transactionID: transaction.id,
+        changedEntityIDs: [],
+        tripleCount: 0,
+        emissions: []
+      )
+    },
+    query: { _ in
+      try await recorder.query()
+    },
+    observe: { plan in
+      await recorder.observe(plan: plan)
+    },
+    pendingMutations: { [] },
+    localID: { name in "recording-\(name)" }
+  )
 }
 
 private func mockClient(recording termination: ObservationTermination) -> InstantSwiftDataClient {
