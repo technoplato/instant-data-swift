@@ -375,6 +375,13 @@ extension InstantEntityModel {
     _ assignment: InstantAttributeAssignment<Self>,
     allowRefs: Bool
   ) throws {
+    guard !isReservedMetadataPath(assignment.name) else {
+      throw reservedMetadataAttributeError(
+        operation: "write entity attribute",
+        path: assignment.name
+      )
+    }
+
     guard !isPrimaryKeyAssignment(assignment) else {
       throw primaryKeyAssignmentError(path: assignment.name)
     }
@@ -385,6 +392,12 @@ extension InstantEntityModel {
     else {
       return
     }
+
+    try validateUsableAttribute(
+      attribute,
+      operation: "write entity attribute",
+      path: assignment.name
+    )
 
     guard !attribute.primaryKey else {
       throw primaryKeyAssignmentError(path: assignment.name)
@@ -433,6 +446,14 @@ extension InstantEntityModel {
   private static func lookupAttribute(
     _ lookup: InstantEntityLookup<Self>
   ) throws -> InstantAttribute {
+    guard !isReservedMetadataPath(lookup.name) else {
+      throw reservedMetadataAttributeError(
+        operation: "lookup entity",
+        path: lookup.name,
+        localID: lookup.lookupRef.description
+      )
+    }
+
     if lookup.name == "id"
       || lookup.attributeID == InstantAttribute.primaryKeyID(namespace: instantNamespace)
     {
@@ -454,6 +475,13 @@ extension InstantEntityModel {
     }
 
     if let attribute = instantAttributes.first(where: { $0.id == lookup.attributeID }) {
+      try validateUsableAttribute(
+        attribute,
+        operation: "lookup entity",
+        path: lookup.name,
+        localID: lookup.lookupRef.description
+      )
+
       guard attribute.name == lookup.name else {
         throw lookupError(
           lookup,
@@ -487,6 +515,13 @@ extension InstantEntityModel {
       )
     }
 
+    try validateUsableAttribute(
+      attribute,
+      operation: "lookup entity",
+      path: lookup.name,
+      localID: lookup.lookupRef.description
+    )
+
     guard attribute.id == lookup.attributeID else {
       throw lookupError(
         lookup,
@@ -508,6 +543,25 @@ extension InstantEntityModel {
     }
 
     return attribute
+  }
+
+  fileprivate static func validateUsableAttribute(
+    _ attribute: InstantAttribute,
+    operation: String,
+    path: String,
+    localID: String? = nil
+  ) throws {
+    guard !isReservedMetadataPath(attribute.name) else {
+      throw reservedMetadataAttributeError(
+        operation: operation,
+        path: path,
+        localID: localID
+      )
+    }
+  }
+
+  private static func isReservedMetadataPath(_ path: String) -> Bool {
+    path == InstantQueryOrder.serverCreatedAtField
   }
 
   private static func isLookupValue(
@@ -554,6 +608,23 @@ extension InstantEntityModel {
       path: path,
       message: "The 'id' attribute is managed by Instant Swift Data.",
       recovery: "Pass the entity id to create/update/merge instead of assigning the id attribute directly."
+    )
+  }
+
+  private static func reservedMetadataAttributeError(
+    operation: String,
+    path: String,
+    localID: String? = nil
+  ) -> InstantError {
+    InstantError(
+      code: .validationFailed,
+      operation: operation,
+      namespace: instantNamespace,
+      path: path,
+      localID: localID,
+      message: "'\(InstantQueryOrder.serverCreatedAtField)' is reserved for order-only metadata.",
+      recovery:
+        "Rename the schema field, and use .order(.serverCreatedAt) when ordering by server creation time."
     )
   }
 }
@@ -783,6 +854,12 @@ public struct InstantAttributePath<
       )
     }
 
+    try Entity.validateUsableAttribute(
+      attribute,
+      operation: "build link mutation",
+      path: name
+    )
+
     guard attribute.valueType == .ref else {
       throw InstantError(
         code: .validationFailed,
@@ -807,6 +884,19 @@ public struct InstantAttributePath<
     }
 
     return attribute
+  }
+}
+
+public struct InstantReservedOrder<Entity: InstantEntityModel>: Hashable, Sendable {
+  /// Orders by Instant's server-created metadata instead of a schema attribute.
+  public static var serverCreatedAt: Self {
+    Self(field: InstantQueryOrder.serverCreatedAtField)
+  }
+
+  let field: String
+
+  private init(field: String) {
+    self.field = field
   }
 }
 
@@ -978,6 +1068,26 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
   ) -> Self {
     var copy = self
     copy.plan.order = InstantQueryOrder(field.name, direction)
+    copy.plan.id = Self.queryID(
+      filters: copy.plan.filters,
+      order: copy.plan.order,
+      offset: copy.plan.offset,
+      limit: copy.plan.limit,
+      first: copy.plan.first,
+      after: copy.plan.after,
+      last: copy.plan.last,
+      before: copy.plan.before,
+      selectedFields: copy.plan.selectedFields
+    )
+    return copy
+  }
+
+  public func order(
+    _ reserved: InstantReservedOrder<Entity>,
+    _ direction: InstantQuerySortDirection = .ascending
+  ) -> Self {
+    var copy = self
+    copy.plan.order = InstantQueryOrder(reserved.field, direction)
     copy.plan.id = Self.queryID(
       filters: copy.plan.filters,
       order: copy.plan.order,

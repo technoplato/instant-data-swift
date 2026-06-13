@@ -113,6 +113,11 @@ real Instant app.
   an order-only reserved field backed by the entity id triple's `txTime`, with a
   namespace-triple fallback for low-level local rows without an id triple. Local
   no-order queries remain id-sorted until the broader default-order parity slice.
+- The typed query surface exposes this reserved order as
+  `.order(.serverCreatedAt, .descending)`.
+- `serverCreatedAt` is not materialized into entity snapshots or decoded models,
+  and schema attributes using that name are rejected at bootstrap. User data
+  should use domain fields such as `createdAt`.
 - Pagination on top-level namespaces: `limit`, `offset`, `first`, `after`,
   `last`, `before`, inclusive cursors, and page info.
 - Infinite query subscriptions.
@@ -264,7 +269,7 @@ struct Todo: Identifiable, Codable, Sendable {
   var createdAt: Date
 }
 
-@FetchAll(Todo.where(\.done == false).order(by: \.createdAt.desc()))
+@FetchAll(Todo.query.where(Todo.done == false).order(.serverCreatedAt, .descending))
 var openTodos: [Todo]
 
 try await db.transact {

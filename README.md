@@ -187,7 +187,7 @@ try await db.transact {
 let openTodos = try await db.query(
   Todo.query
     .where(Todo.isCompleted == false)
-    .order(Todo.createdAt)
+    .order(.serverCreatedAt, .descending)
 )
 
 @FetchAll(Todo.query.where(Todo.isCompleted == false))
@@ -202,6 +202,10 @@ for try await todos in subscription {
   // Update model state from the latest local materialization.
 }
 ```
+
+`serverCreatedAt` is order-only metadata. Do not declare a model attribute with
+that name; use a domain field like `createdAt` for decoded data, and use
+`.order(.serverCreatedAt, ...)` when you want server-created ordering.
 
 `create` follows Instant's strict-insert semantics and fails when the entity
 already exists. Use `update` for upsert-style writes, `updateExisting` when a

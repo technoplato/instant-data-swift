@@ -92,6 +92,17 @@ struct TypedAPITests {
       filters: [.equals(field: "score", value: .number(.infinity))]
     )
     #expect(nonFiniteQuery.plan.id.hasPrefix("instant-query:"))
+
+    let defaultServerCreatedAtQuery = TypedTodo.query.order(.serverCreatedAt)
+    expectNoDifference(defaultServerCreatedAtQuery.plan.order, .serverCreatedAt)
+    #expect(defaultServerCreatedAtQuery.plan.id != TypedTodo.query.plan.id)
+    #expect(defaultServerCreatedAtQuery.plan.cacheKey != TypedTodo.query.plan.cacheKey)
+
+    let createdAtDescendingQuery = TypedTodo.query.order(TypedTodo.createdAt, .descending)
+    let serverCreatedAtQuery = TypedTodo.query.order(.serverCreatedAt, .descending)
+    expectNoDifference(serverCreatedAtQuery.plan.order, .serverCreatedAtDescending)
+    #expect(serverCreatedAtQuery.plan.id != createdAtDescendingQuery.plan.id)
+    #expect(serverCreatedAtQuery.plan.cacheKey != createdAtDescendingQuery.plan.cacheKey)
   }
 
   @Test
@@ -140,6 +151,131 @@ struct TypedAPITests {
       let pending = await db.pendingMutations()
       expectNoDifference(pending.map(\.id), [fixedUUID.uuidString.lowercased()])
     }
+  }
+
+  @Test
+  func typedQueryOrdersByServerCreatedAt() async throws {
+    let cacheURL = try typedTestCacheURL("typed-server-created-at")
+    let fixedDate = Date(timeIntervalSince1970: 1_700_000_500)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000500")!
+
+    try await withDependencies {
+      $0.date.now = fixedDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "typed-server-created-at",
+        persistenceURL: cacheURL,
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      try await db.transact(
+        id: "tx-typed-server-created-at-first",
+        createdAt: InstantTimestamp(milliseconds: 1_700_000_500_010)
+      ) {
+        TypedTodo.create(
+          id: InstantID(rawValue: "todo-a"),
+          TypedTodo.text.set("First"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(fixedDate)
+        )
+      }
+      try await db.transact(
+        id: "tx-typed-server-created-at-second",
+        createdAt: InstantTimestamp(milliseconds: 1_700_000_500_020)
+      ) {
+        TypedTodo.create(
+          id: InstantID(rawValue: "todo-b"),
+          TypedTodo.text.set("Second"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(fixedDate.addingTimeInterval(1))
+        )
+      }
+
+      let todos = try await db.query(TypedTodo.query.order(.serverCreatedAt, .descending))
+      expectNoDifference(todos.map(\.text), ["Second", "First"])
+
+      let ascendingTodos = try await db.query(TypedTodo.query.order(.serverCreatedAt))
+      expectNoDifference(ascendingTodos.map(\.text), ["First", "Second"])
+    }
+  }
+
+  @Test
+  func bootstrapRejectsServerCreatedAtSchemaAttribute() async throws {
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000501")!
+
+    do {
+      try await withDependencies {
+        $0.uuid = .constant(fixedUUID)
+        try await $0.bootstrapInstantSwiftData(
+          appID: "typed-reserved-server-created-at",
+          context: .test,
+          initialAttributes: TypedReservedServerCreatedAtEntity.instantAttributes
+        )
+      } operation: {}
+      #expect(Bool(false), "Expected bootstrap to reject a serverCreatedAt schema field.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "bootstrap attributes")
+      expectNoDifference(error.namespace, "reservedServerCreatedAtEntities")
+      expectNoDifference(error.path, "serverCreatedAt")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
+  func typedReservedServerCreatedAtAttributeRejectsWritesBeforeMockClientReceivesTransaction()
+    async throws
+  {
+    let recorder = TransactionRecorder()
+    let mock = InstantSwiftDataClient(
+      transact: { transaction in
+        await recorder.record(transaction)
+        return InstantStoreMutationResult(
+          transactionID: transaction.id,
+          changedEntityIDs: [],
+          tripleCount: transaction.operations.count,
+          emissions: []
+        )
+      },
+      query: { _ in [] },
+      observe: { _ in AsyncStream { continuation in continuation.finish() } },
+      pendingMutations: { [] },
+      localID: { name in "mock-\(name)" }
+    )
+
+    await withDependencies {
+      $0.date.now = Date(timeIntervalSince1970: 1_700_000_501)
+      $0.uuid = .constant(UUID(uuidString: "00000000-0000-0000-0000-000000000502")!)
+      $0.defaultInstantSwiftData = mock
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      do {
+        try await db.transact(id: "tx-mock-reserved-server-created-at") {
+          TypedReservedServerCreatedAtEntity.update(
+            id: InstantID(rawValue: "reserved-1"),
+            TypedReservedServerCreatedAtEntity.serverCreatedAt.set(
+              Date(timeIntervalSince1970: 1_700_000_501)
+            )
+          )
+        }
+        #expect(Bool(false), "Expected serverCreatedAt assignment validation to run first.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .validationFailed)
+        expectNoDifference(error.operation, "write entity attribute")
+        expectNoDifference(error.namespace, "reservedServerCreatedAtEntities")
+        expectNoDifference(error.path, "serverCreatedAt")
+      } catch {
+        #expect(Bool(false), "Unexpected error: \(error)")
+      }
+    }
+
+    let transactions = await recorder.transactions
+    expectNoDifference(transactions, [])
   }
 
   @Test
@@ -1677,6 +1813,56 @@ struct TypedAPITests {
   }
 
   @Test
+  func fetchAllPropertyWrapperSupportsServerCreatedAtOrder() async throws {
+    let cacheURL = try typedTestCacheURL("fetch-wrapper-server-created-at")
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_301)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000abe")!
+
+    try await withDependencies {
+      $0.date.now = baseDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "fetch-wrapper-server-created-at",
+        persistenceURL: cacheURL,
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      try await db.transact(
+        id: "tx-fetch-wrapper-server-created-at-first",
+        createdAt: InstantTimestamp(milliseconds: 1_700_000_301_010)
+      ) {
+        TypedTodo.create(
+          id: InstantID(rawValue: "todo-wrapper-first"),
+          TypedTodo.text.set("First"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate)
+        )
+      }
+      try await db.transact(
+        id: "tx-fetch-wrapper-server-created-at-second",
+        createdAt: InstantTimestamp(milliseconds: 1_700_000_301_020)
+      ) {
+        TypedTodo.create(
+          id: InstantID(rawValue: "todo-wrapper-second"),
+          TypedTodo.text.set("Second"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate.addingTimeInterval(1))
+        )
+      }
+
+      var model = TypedTodoServerCreatedAtFetchModel()
+      try await model.load()
+
+      expectNoDifference(model.todos.map(\.text), ["Second", "First"])
+      expectNoDifference(model.$todos.loadError, nil)
+      expectNoDifference(model.$todos.isLoading, false)
+    }
+  }
+
+  @Test
   func fetchOnePropertyWrapperProjectionLoadsTypedQuery() async throws {
     let baseDate = Date(timeIntervalSince1970: 1_700_000_325)
     let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000def")!
@@ -1758,6 +1944,15 @@ private func makeUnusedFetchSubscription(using client: InstantSwiftDataClient) a
   withExtendedLifetime(subscription) {}
 }
 
+private func typedTestCacheURL(_ name: String) throws -> URL {
+  let directory = FileManager.default.temporaryDirectory
+    .appendingPathComponent("InstantSwiftDataTypedAPITests", isDirectory: true)
+    .appendingPathComponent(name, isDirectory: true)
+  try? FileManager.default.removeItem(at: directory)
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  return directory.appendingPathComponent("state.sqlite")
+}
+
 private actor ObservationTermination {
   private var didTerminate = false
   private var continuations: [CheckedContinuation<Void, Never>] = []
@@ -1780,6 +1975,15 @@ private actor ObservationTermination {
 
 private struct TypedTodoFetchModel {
   @FetchAll(TypedTodo.query.where(TypedTodo.isCompleted == false).order(TypedTodo.createdAt))
+  var todos: [TypedTodo]
+
+  mutating func load() async throws {
+    try await $todos.load()
+  }
+}
+
+private struct TypedTodoServerCreatedAtFetchModel {
+  @FetchAll(TypedTodo.query.order(.serverCreatedAt, .descending))
   var todos: [TypedTodo]
 
   mutating func load() async throws {
@@ -1887,6 +2091,28 @@ private struct TypedBadIDEntity: Hashable, Codable, InstantEntityModel {
       namespace: instantNamespace,
       name: "id",
       valueType: .string,
+      isIndexed: true
+    )
+  ]
+
+  init(snapshot: InstantEntitySnapshot) throws {
+    self.id = InstantID(rawValue: snapshot.id)
+  }
+}
+
+private struct TypedReservedServerCreatedAtEntity: Hashable, Codable, InstantEntityModel {
+  var id: InstantID<TypedReservedServerCreatedAtEntity>
+
+  static let instantNamespace = "reservedServerCreatedAtEntities"
+  static let serverCreatedAt =
+    InstantAttributePath<TypedReservedServerCreatedAtEntity, Date>("serverCreatedAt")
+
+  static let instantAttributes = [
+    InstantAttribute(
+      id: "reservedServerCreatedAtEntities/serverCreatedAt",
+      namespace: instantNamespace,
+      name: "serverCreatedAt",
+      valueType: .date,
       isIndexed: true
     )
   ]

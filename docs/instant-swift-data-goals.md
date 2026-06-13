@@ -116,7 +116,7 @@ struct Todo: Identifiable, Codable, Sendable {
   var createdAt: Date
 }
 
-@FetchAll(Todo.query.order(\.createdAt, .descending))
+@FetchAll(Todo.query.order(.serverCreatedAt, .descending))
 var todos: [Todo]
 
 try await db.transact {
@@ -152,6 +152,10 @@ Queries should resemble InstantDB, but be strongly typed and Swift-native:
 )
 var posts: [Post.With<(\.author, \.likes)>]
 ```
+
+`serverCreatedAt` is reserved for order-only metadata and should not be emitted
+as a schema attribute or decoded model field. Models that need their own visible
+creation timestamp should use a domain field such as `createdAt`.
 
 Dynamic queries are a first-class requirement:
 

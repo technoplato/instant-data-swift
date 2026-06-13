@@ -49,6 +49,8 @@ public final class InstantRuntime: Sendable {
   }
 
   public static func bootstrap(configuration: InstantRuntimeConfiguration) async throws -> Self {
+    try validateInitialAttributes(configuration.initialAttributes)
+
     let persistence = try SQLitePersistenceStore(fileURL: configuration.persistenceURL)
     try await persistence.bootstrap()
     let state = try await persistence.loadState()
@@ -67,6 +69,24 @@ public final class InstantRuntime: Sendable {
     }
 
     return runtime
+  }
+
+  private static func validateInitialAttributes(_ attributes: [InstantAttribute]) throws {
+    if let attribute = attributes.first(where: {
+      $0.name == InstantQueryOrder.serverCreatedAtField
+    }) {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "bootstrap attributes",
+        namespace: attribute.namespace,
+        path: attribute.name,
+        localID: attribute.id,
+        message: "'\(InstantQueryOrder.serverCreatedAtField)' is reserved for order-only metadata.",
+        recovery:
+          "Rename the schema field, and use InstantQueryOrder.serverCreatedAt when ordering by "
+          + "server creation time."
+      )
+    }
   }
 
   @discardableResult

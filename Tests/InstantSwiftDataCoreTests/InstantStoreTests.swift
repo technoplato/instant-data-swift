@@ -55,6 +55,36 @@ struct InstantStoreTests {
   }
 
   @Test
+  func runtimeBootstrapRejectsServerCreatedAtAttributes() async throws {
+    do {
+      _ = try await InstantRuntime.bootstrap(
+        configuration: InstantRuntimeConfiguration(
+          appID: "test-app",
+          persistenceURL: try temporaryCacheURL(),
+          initialAttributes: [
+            InstantAttribute(
+              id: "todos/serverCreatedAt",
+              namespace: "todos",
+              name: "serverCreatedAt",
+              valueType: .date,
+              isIndexed: true
+            )
+          ]
+        )
+      )
+      #expect(Bool(false), "Expected bootstrap to reject serverCreatedAt schema attributes.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "bootstrap attributes")
+      expectNoDifference(error.namespace, "todos")
+      expectNoDifference(error.path, "serverCreatedAt")
+      expectNoDifference(error.localID, "todos/serverCreatedAt")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
   func queryResultsPersistInQueryCacheAcrossLaunches() async throws {
     let cacheURL = try temporaryCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
