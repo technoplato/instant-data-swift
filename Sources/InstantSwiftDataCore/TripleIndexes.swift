@@ -11,6 +11,10 @@ struct AttributeStore: Hashable, Codable, Sendable {
     attributesByID.values.sorted { $0.id < $1.id }
   }
 
+  var namespaces: Set<String> {
+    Set(attributesByID.values.map(\.namespace))
+  }
+
   mutating func replaceAll(_ attributes: [InstantAttribute]) {
     attributesByID = Dictionary(
       uniqueKeysWithValues: Self.withPrimaryKeys(attributes).map { ($0.id, $0) }
@@ -249,6 +253,16 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     _ plan: InstantQueryPlan,
     attributes: AttributeStore
   ) -> InstantQueryValidationIssue? {
+    let namespaces = attributes.namespaces
+    if !namespaces.isEmpty, !namespaces.contains(plan.namespace) {
+      return InstantQueryValidationIssue(
+        namespace: plan.namespace,
+        path: nil,
+        message: "Query namespace '\(plan.namespace)' is not declared in the schema attributes.",
+        recovery: "Declare the namespace before querying it, or bootstrap without schema attributes for schemaless queries."
+      )
+    }
+
     if plan.first != nil, plan.last != nil {
       return InstantQueryValidationIssue(
         namespace: plan.namespace,
