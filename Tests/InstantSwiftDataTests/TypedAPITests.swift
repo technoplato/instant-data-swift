@@ -2309,6 +2309,46 @@ struct TypedAPITests {
   }
 
   @Test
+  func typedTransactionBuilderSkipsEmptyMutationBody() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_210)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000988")!
+
+    try await withDependencies {
+      $0.date.now = baseDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "typed-empty-transact-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      let empty = try await db.transact(id: "tx-empty-builder") {
+      }
+      expectNoDifference(empty.transactionID, "tx-empty-builder")
+      expectNoDifference(empty.changedEntityIDs, [])
+      expectNoDifference(empty.tripleCount, 0)
+      let pendingAfterEmpty = await db.pendingMutations()
+      expectNoDifference(pendingAfterEmpty, [])
+
+      try await db.transact(id: "tx-empty-builder") {
+        TypedTodo.create(
+          id: InstantID(rawValue: "todo-after-empty-builder"),
+          TypedTodo.text.set("After empty builder"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate)
+        )
+      }
+
+      let todos = try await db.query(TypedTodo.query)
+      expectNoDifference(todos.map(\.id.rawValue), ["todo-after-empty-builder"])
+      let pendingAfterWrite = await db.pendingMutations()
+      expectNoDifference(pendingAfterWrite.map(\.id), ["tx-empty-builder"])
+    }
+  }
+
+  @Test
   func fetchAllPropertyWrapperProjectionLoadsTypedQuery() async throws {
     let baseDate = Date(timeIntervalSince1970: 1_700_000_300)
     let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000abc")!

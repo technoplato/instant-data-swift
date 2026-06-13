@@ -55,6 +55,48 @@ struct InstantStoreTests {
   }
 
   @Test
+  func emptyRuntimeTransactionDoesNotPersistPendingMutation() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+
+    let empty = try await runtime.transact(
+      InstantStoreTransaction(id: "tx-empty-runtime", operations: []),
+      createdAt: createdAt
+    )
+    expectNoDifference(empty.transactionID, "tx-empty-runtime")
+    expectNoDifference(empty.changedEntityIDs, [])
+    expectNoDifference(empty.tripleCount, 0)
+    expectNoDifference(empty.emissions, [])
+    let pendingAfterEmpty = await runtime.pendingMutations()
+    expectNoDifference(pendingAfterEmpty, [])
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-empty-runtime",
+        operations: TodoExample.createOperations(
+          id: "todo-after-empty",
+          text: "after empty",
+          createdAt: createdAt,
+          transactionID: "tx-empty-runtime"
+        )
+      ),
+      createdAt: createdAt
+    )
+
+    let todos = try await TodoExample.decode(runtime.query(TodoExample.query))
+    expectNoDifference(todos.map(\.id), ["todo-after-empty"])
+    let pendingAfterWrite = await runtime.pendingMutations()
+    expectNoDifference(pendingAfterWrite.map(\.id), ["tx-empty-runtime"])
+  }
+
+  @Test
   func runtimeBootstrapRejectsServerCreatedAtAttributes() async throws {
     do {
       _ = try await InstantRuntime.bootstrap(

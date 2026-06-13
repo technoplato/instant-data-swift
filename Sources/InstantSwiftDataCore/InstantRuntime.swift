@@ -298,6 +298,18 @@ public final class InstantRuntime: Sendable {
     for _ in 0..<5 {
       recordActorHop(.persistence)
       let state = try await persistence.loadState()
+      if transaction.operations.isEmpty {
+        recordActorHop(.store)
+        await store.replaceSnapshot(state.snapshot.store)
+        recordActorHop(.outbox)
+        await outbox.replace(with: state.snapshot.outbox)
+        return InstantStoreMutationResult(
+          transactionID: transaction.id,
+          changedEntityIDs: [],
+          tripleCount: state.snapshot.store.triples.count,
+          emissions: []
+        )
+      }
       try await authorizeSharedRootWrites(transaction: transaction, snapshot: state.snapshot.store)
       if let existingMutation = state.snapshot.outbox.first(where: { $0.id == transaction.id }) {
         recordActorHop(.store)
