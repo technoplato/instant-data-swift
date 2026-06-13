@@ -3466,6 +3466,32 @@ struct InstantStoreTests {
       #expect(Bool(false), "Unexpected error: \(error)")
     }
 
+    do {
+      try await inviteeRuntime.transact(
+        InstantStoreTransaction(
+          id: "tx-reader-tag",
+          operations: ReminderExample.addTagOperations(
+            reminderID: firstReminderID,
+            listID: listID,
+            tagID: "school",
+            title: "school",
+            updatedAt: timestamp,
+            transactionID: "tx-reader-tag"
+          )
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected reader tag creation for a shared list reminder to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "write shared root")
+      expectNoDifference(error.namespace, ReminderExample.listsNamespace)
+      expectNoDifference(error.localID, listID)
+      #expect(error.message.contains("reader access"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
     try await inviteeRuntime.transact(
       InstantStoreTransaction(
         id: "tx-reader-unshared-list",
@@ -3538,14 +3564,42 @@ struct InstantStoreTests {
       ),
       createdAt: timestamp
     )
+    try await inviteeRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-writer-tag",
+        operations: ReminderExample.addTagOperations(
+          reminderID: writerReminderID,
+          listID: listID,
+          tagID: "school",
+          title: "school",
+          updatedAt: timestamp,
+          transactionID: "tx-writer-tag"
+        )
+      ),
+      createdAt: timestamp
+    )
     let writerLists = try ReminderExample.decodeLists(
       (try await inviteeRuntime.queryOnce(ReminderExample.listsQuery)).values
     )
     let writerReminders = try ReminderExample.decodeReminders(
       (try await inviteeRuntime.queryOnce(ReminderExample.remindersForListQuery(listID))).values
     )
+    let writerTags = try ReminderExample.decodeTags(
+      (try await inviteeRuntime.queryOnce(ReminderExample.tagsQuery)).values
+    )
+    let writerTaggedReminders = try ReminderExample.decodeReminders(
+      (try await inviteeRuntime.queryOnce(ReminderExample.remindersSearchQuery(text: "", tagID: "school"))).values
+    )
+    let writerReminderTagLinks = try ReminderExample.decodeReminderTagLinks(
+      (try await inviteeRuntime.queryOnce(ReminderExample.remindersForListQuery(listID))).values
+    )
     expectNoDifference(writerLists.filter { $0.id == listID }.map(\.title), ["Writer Family"])
     expectNoDifference(writerReminders.map(\.title), ["Pack lunch", "Writer reminder"])
+    expectNoDifference(writerTags.map(\.title), ["school"])
+    expectNoDifference(writerTaggedReminders.map(\.id), [writerReminderID])
+    expectNoDifference(writerReminderTagLinks, [
+      ReminderTagLinkRecord(reminderID: writerReminderID, tagID: "school")
+    ])
 
     _ = try await ownerRuntime.signInWithRefreshToken("owner-refresh", userID: "user-1")
     let demoted = try await ownerRuntime.updateShareMembershipRole(
@@ -3569,6 +3623,28 @@ struct InstantStoreTests {
         createdAt: timestamp
       )
       #expect(Bool(false), "Expected demoted reader list rename to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "write shared root")
+      #expect(error.message.contains("reader access"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+    do {
+      try await inviteeRuntime.transact(
+        InstantStoreTransaction(
+          id: "tx-demoted-reader-remove-tag",
+          operations: ReminderExample.removeTagOperations(
+            reminderID: writerReminderID,
+            listID: listID,
+            tagID: "school",
+            updatedAt: timestamp,
+            transactionID: "tx-demoted-reader-remove-tag"
+          )
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected demoted reader tag removal to fail.")
     } catch let error as InstantError {
       expectNoDifference(error.code, .permissionRejected)
       expectNoDifference(error.operation, "write shared root")

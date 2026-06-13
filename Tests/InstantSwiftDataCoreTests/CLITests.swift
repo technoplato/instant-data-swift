@@ -787,6 +787,156 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliRemindersTagsSearchAndSeedPersistAcrossLaunches() throws {
+    let seedHomeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: seedHomeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: seedHomeURL) }
+
+    let seeded = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(["examples", "reminders", "seed", "--json"], homeURL: seedHomeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(seeded.event, "seed")
+    expectNoDifference(seeded.reminders.map(\.title), ["Groceries", "Haircut"])
+    expectNoDifference(seeded.tags.map(\.title), ["personal", "shopping"])
+    expectNoDifference(
+      seeded.reminderTags,
+      [
+        ReminderTagLinkRecord(reminderID: seeded.reminders[0].id, tagID: "shopping"),
+        ReminderTagLinkRecord(reminderID: seeded.reminders[1].id, tagID: "personal"),
+      ]
+    )
+
+    let seedSearch = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(["examples", "reminders", "search", "shop", "--tag", "shopping", "--json"], homeURL: seedHomeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(seedSearch.event, "search")
+    expectNoDifference(seedSearch.reminders.map(\.title), ["Groceries"])
+    expectNoDifference(seedSearch.reminderTags.map(\.tagID), ["shopping"])
+
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let addedList = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(["examples", "reminders", "add-list", "Family", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    let listID = try #require(addedList.changedID)
+    let addedTake = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(["examples", "reminders", "add", listID, "Take out trash", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    let takeID = try #require(addedTake.changedID)
+    let addedWalk = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(["examples", "reminders", "add", listID, "Take a walk", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    let walkID = try #require(addedWalk.changedID)
+    _ = try runCLI(["examples", "reminders", "complete", walkID, "--json"], homeURL: homeURL)
+
+    let taggedTake = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(["examples", "reminders", "add-tag", takeID, "#kids", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(taggedTake.event, "add-tag")
+    expectNoDifference(taggedTake.tags.map(\.title), ["kids"])
+    expectNoDifference(taggedTake.reminderTags, [
+      ReminderTagLinkRecord(reminderID: takeID, tagID: "kids")
+    ])
+
+    _ = try runCLI(["examples", "reminders", "add-tag", walkID, "social", "--json"], homeURL: homeURL)
+    let incompleteSearch = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(["examples", "reminders", "search", "Take", "--tag", "kids", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(incompleteSearch.event, "search")
+    expectNoDifference(incompleteSearch.reminders.map(\.id), [takeID])
+    expectNoDifference(incompleteSearch.reminderTags, [
+      ReminderTagLinkRecord(reminderID: takeID, tagID: "kids")
+    ])
+
+    let wildcardSearch = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(["examples", "reminders", "search", "%", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(wildcardSearch.reminders, [])
+    expectNoDifference(wildcardSearch.reminderTags, [])
+
+    let completedSearch = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "reminders", "search", "social", "--include-completed", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(completedSearch.reminders.map(\.id), [walkID])
+    expectNoDifference(completedSearch.reminders.map(\.isCompleted), [true])
+
+    let jsonlOutput = try runCLI(["examples", "reminders", "tags", "--jsonl"], homeURL: homeURL)
+    let rows = jsonlOutput.split(separator: "\n")
+    expectNoDifference(rows.count, 8)
+    let evidence = try JSONDecoder().decode(
+      CLIRemindersEvidence.self,
+      from: Data(try #require(rows.first).utf8)
+    )
+    expectNoDifference(evidence.event, "tags")
+    expectNoDifference(evidence.details.tags.map(\.title), ["kids", "social"])
+    expectNoDifference(Set(evidence.details.reminderTags.map(\.tagID)), ["kids", "social"])
+
+    let untaggedTake = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(["examples", "reminders", "remove-tag", takeID, "kids", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(untaggedTake.event, "remove-tag")
+    expectNoDifference(untaggedTake.reminderTags, [
+      ReminderTagLinkRecord(reminderID: walkID, tagID: "social")
+    ])
+
+    let emptySearch = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(["examples", "reminders", "search", "Take", "--tag", "kids", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(emptySearch.reminders, [])
+    expectNoDifference(emptySearch.reminderTags, [])
+  }
+
+  @Test
   func cliSyncUpsDemoPersistsEditsMeetingsAndCascadeDeletes() async throws {
     let seedHomeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -3937,6 +4087,8 @@ private struct CLIRemindersOutput: Decodable {
   var pendingMutationCount: Int
   var lists: [RemindersListSummary]
   var reminders: [ReminderRecord]
+  var tags: [ReminderTagRecord]
+  var reminderTags: [ReminderTagLinkRecord]
 }
 
 private struct CLIRemindersEvidence: Decodable {

@@ -1031,12 +1031,31 @@ struct InstantSwiftDataCLI {
         }
         reminders.append((id: id, listID: listID, seed: seed))
       }
+      let tagSeeds = Dictionary(
+        uniqueKeysWithValues: ReminderExample.seedTags.compactMap { seed in
+          ReminderExample.normalizedTagTitle(seed.title).map { ($0, seed) }
+        }
+      )
+      var tagsByID = tagSeeds
+      var reminderTags: [(reminderID: String, tagID: String)] = []
+      for reminder in reminders {
+        for rawTitle in reminder.seed.tagTitles {
+          guard let tagID = ReminderExample.normalizedTagTitle(rawTitle) else { continue }
+          tagsByID[tagID] = tagsByID[tagID] ?? ReminderTagSeedRecord(title: tagID)
+          reminderTags.append((reminderID: reminder.id, tagID: tagID))
+        }
+      }
+      let tags = tagsByID
+        .map { (id: $0.key, seed: $0.value) }
+        .sorted { $0.id < $1.id }
       try await context.runtime.transact(
         InstantStoreTransaction(
           id: transactionID,
           operations: ReminderExample.seedOperations(
             lists: lists,
             reminders: reminders,
+            tags: tags,
+            reminderTags: reminderTags,
             baseCreatedAt: now,
             transactionID: transactionID
           )
@@ -1069,6 +1088,12 @@ struct InstantSwiftDataCLI {
         }
       }
       try await printReminders(context: context, output: output, event: event, listID: listID)
+
+    case "tags", "list-tags":
+      guard arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data examples reminders tags [--json|--jsonl]", exitCode: 64)
+      }
+      try await printReminders(context: context, output: output, event: "tags")
 
     case "add-list":
       let title = arguments.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1258,6 +1283,111 @@ struct InstantSwiftDataCLI {
         event: "complete",
         changedID: reminderID,
         listID: reminder.remindersListID
+      )
+
+    case "add-tag", "tag":
+      guard let reminderID = arguments.popFirstArgument() else {
+        throw CLIError(
+          "Usage: instant-swift-data examples reminders add-tag <reminder-id> <tag>",
+          exitCode: 64
+        )
+      }
+      let rawTag = arguments.joined(separator: " ")
+      guard let tagID = ReminderExample.normalizedTagTitle(rawTag) else {
+        throw CLIError(
+          "Usage: instant-swift-data examples reminders add-tag <reminder-id> <tag>",
+          exitCode: 64
+        )
+      }
+      let currentReminders = try ReminderExample.decodeReminders(
+        (try await context.runtime.queryOnce(ReminderExample.remindersQuery)).values
+      )
+      guard let reminder = currentReminders.first(where: { $0.id == reminderID }) else {
+        throw CLIError("Reminder not found: \(reminderID)", exitCode: 66)
+      }
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: ReminderExample.addTagOperations(
+            reminderID: reminderID,
+            listID: reminder.remindersListID,
+            tagID: tagID,
+            title: tagID,
+            updatedAt: now,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.reminders.add-tag"
+      )
+      try await printReminders(
+        context: context,
+        output: output,
+        event: "add-tag",
+        changedID: reminderID,
+        listID: reminder.remindersListID
+      )
+
+    case "remove-tag", "untag":
+      guard let reminderID = arguments.popFirstArgument() else {
+        throw CLIError(
+          "Usage: instant-swift-data examples reminders remove-tag <reminder-id> <tag>",
+          exitCode: 64
+        )
+      }
+      let rawTag = arguments.joined(separator: " ")
+      guard let tagID = ReminderExample.normalizedTagTitle(rawTag) else {
+        throw CLIError(
+          "Usage: instant-swift-data examples reminders remove-tag <reminder-id> <tag>",
+          exitCode: 64
+        )
+      }
+      let currentReminders = try ReminderExample.decodeReminders(
+        (try await context.runtime.queryOnce(ReminderExample.remindersQuery)).values
+      )
+      guard let reminder = currentReminders.first(where: { $0.id == reminderID }) else {
+        throw CLIError("Reminder not found: \(reminderID)", exitCode: 66)
+      }
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: ReminderExample.removeTagOperations(
+            reminderID: reminderID,
+            listID: reminder.remindersListID,
+            tagID: tagID,
+            updatedAt: now,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.reminders.remove-tag"
+      )
+      try await printReminders(
+        context: context,
+        output: output,
+        event: "remove-tag",
+        changedID: reminderID,
+        listID: reminder.remindersListID
+      )
+
+    case "search":
+      let options = try parseRemindersSearchOptions(arguments: arguments)
+      let query = ReminderExample.remindersSearchQuery(
+        text: options.text,
+        listID: options.listID,
+        tagID: options.tagID,
+        includeCompleted: options.includeCompleted
+      )
+      try await printReminders(
+        context: context,
+        output: output,
+        event: "search",
+        listID: options.listID,
+        remindersQuery: query
       )
 
     default:
@@ -3738,18 +3868,23 @@ struct InstantSwiftDataCLI {
     output: OutputMode,
     event: String,
     changedID: String? = nil,
-    listID: String? = nil
+    listID: String? = nil,
+    remindersQuery explicitRemindersQuery: InstantQueryPlan? = nil
   ) async throws {
     let listsEmission = try await context.runtime.queryOnce(ReminderExample.listsQuery)
-    let remindersQuery = listID.map(ReminderExample.remindersForListQuery)
+    let remindersQuery = explicitRemindersQuery
+      ?? listID.map(ReminderExample.remindersForListQuery)
       ?? ReminderExample.remindersQuery
     let remindersEmission = try await context.runtime.queryOnce(remindersQuery)
     let allRemindersEmission = listID == nil
       ? remindersEmission
       : try await context.runtime.queryOnce(ReminderExample.remindersQuery)
+    let tagsEmission = try await context.runtime.queryOnce(ReminderExample.tagsQuery)
     let lists = try ReminderExample.decodeLists(listsEmission.values)
     let reminders = try ReminderExample.decodeReminders(remindersEmission.values)
     let allReminders = try ReminderExample.decodeReminders(allRemindersEmission.values)
+    let tags = try ReminderExample.decodeTags(tagsEmission.values)
+    let reminderTags = try ReminderExample.decodeReminderTagLinks(remindersEmission.values)
     let remindersByListID = Dictionary(grouping: allReminders, by: \.remindersListID)
     let listSummaries = lists.map { list in
       RemindersListSummary(
@@ -3766,11 +3901,15 @@ struct InstantSwiftDataCLI {
       transport: "not-implemented-local-cache-only",
       listQueryID: ReminderExample.listsQuery.id,
       reminderQueryID: remindersQuery.id,
+      tagQueryID: ReminderExample.tagsQuery.id,
       listCacheKey: ReminderExample.listsQuery.cacheKey,
       reminderCacheKey: remindersQuery.cacheKey,
+      tagCacheKey: ReminderExample.tagsQuery.cacheKey,
       pendingMutationCount: pending.count,
       lists: listSummaries,
-      reminders: reminders
+      reminders: reminders,
+      tags: tags,
+      reminderTags: reminderTags
     )
 
     switch output {
@@ -3787,11 +3926,19 @@ struct InstantSwiftDataCLI {
       if reminders.isEmpty {
         print("No reminders.")
       } else {
+        let tagsByReminderID = Dictionary(grouping: reminderTags, by: \.reminderID)
         for reminder in reminders {
           let mark = reminder.isCompleted ? "[x]" : "[ ]"
           let flag = reminder.isFlagged ? " flagged" : ""
-          print("\(mark) \(reminder.id) list=\(reminder.remindersListID)\(flag) \(reminder.title)")
+          let tagList = (tagsByReminderID[reminder.id] ?? [])
+            .map { "#\($0.tagID)" }
+            .joined(separator: " ")
+          let suffix = tagList.isEmpty ? "" : " \(tagList)"
+          print("\(mark) \(reminder.id) list=\(reminder.remindersListID)\(flag) \(reminder.title)\(suffix)")
         }
+      }
+      if !tags.isEmpty {
+        print("tags: \(tags.map { "#\($0.title)" }.joined(separator: " "))")
       }
       print("transport: \(payload.transport)")
       print("pending mutations: \(pending.count)")
@@ -3834,6 +3981,32 @@ struct InstantSwiftDataCLI {
             entityID: reminder.id,
             ok: true,
             details: reminder
+          )
+        )
+      }
+      for tag in tags {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.reminders",
+            side: "swift",
+            event: "tag",
+            appID: context.appID,
+            entityID: tag.id,
+            ok: true,
+            details: tag
+          )
+        )
+      }
+      for reminderTag in reminderTags {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.reminders",
+            side: "swift",
+            event: "reminder-tag",
+            appID: context.appID,
+            entityID: reminderTag.id,
+            ok: true,
+            details: reminderTag
           )
         )
       }
@@ -5541,6 +5714,50 @@ struct InstantSwiftDataCLI {
     )
   }
 
+  private static func parseRemindersSearchOptions(arguments: [String]) throws -> RemindersSearchOptions {
+    var arguments = arguments
+    var terms: [String] = []
+    var listID: String?
+    var tagID: String?
+    var includeCompleted = false
+
+    while let option = arguments.popFirstArgument() {
+      switch option {
+      case "--list-id":
+        guard let value = arguments.popFirstArgument(), !value.isEmpty else {
+          throw CLIError(remindersSearchUsage, exitCode: 64)
+        }
+        listID = value
+
+      case "--tag":
+        guard let rawValue = arguments.popFirstArgument(),
+          let normalized = ReminderExample.normalizedTagTitle(rawValue)
+        else {
+          throw CLIError(remindersSearchUsage, exitCode: 64)
+        }
+        tagID = normalized
+
+      case "--completed", "--include-completed":
+        includeCompleted = true
+
+      default:
+        terms.append(option)
+      }
+    }
+
+    let text = terms.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !text.isEmpty || tagID != nil || listID != nil else {
+      throw CLIError(remindersSearchUsage, exitCode: 64)
+    }
+
+    return RemindersSearchOptions(
+      text: text,
+      listID: listID,
+      tagID: tagID,
+      includeCompleted: includeCompleted
+    )
+  }
+
   private static func parseTodoCursor(
     _ value: String,
     inclusive: Bool,
@@ -5984,7 +6201,7 @@ struct InstantSwiftDataCLI {
     Usage: instant-swift-data examples <todos|todo-links|reminders|sync-ups>
       instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>
       instant-swift-data examples todo-links <seed|list|nested|unlink> [--json|--jsonl]
-      instant-swift-data examples reminders <seed|list|add-list|rename-list|add|update|complete> [--json|--jsonl]
+      instant-swift-data examples reminders <seed|list|tags|search|add-list|rename-list|add|update|complete|add-tag|remove-tag> [--json|--jsonl]
       instant-swift-data examples sync-ups <seed|list|detail|add|edit|add-attendee|record|delete> [--json|--jsonl]
     """
   }
@@ -6011,15 +6228,24 @@ struct InstantSwiftDataCLI {
 
   private static var remindersUsage: String {
     """
-    Usage: instant-swift-data examples reminders <seed|list|add-list|rename-list|add|update|complete>
+    Usage: instant-swift-data examples reminders <seed|list|tags|list-tags|search|add-list|rename-list|add|update|complete|add-tag|remove-tag>
       instant-swift-data examples reminders seed [--json|--jsonl]
       instant-swift-data examples reminders list [--refresh] [--list-id id] [--json|--jsonl]
+      instant-swift-data examples reminders tags [--json|--jsonl]
+      instant-swift-data examples reminders list-tags [--json|--jsonl]
+      instant-swift-data examples reminders search "text" [--list-id id] [--tag tag] [--include-completed] [--json|--jsonl]
       instant-swift-data examples reminders add-list "list title" [--json|--jsonl]
       instant-swift-data examples reminders rename-list <list-id> "new title" [--json|--jsonl]
       instant-swift-data examples reminders add <list-id> "reminder title" [--json|--jsonl]
       instant-swift-data examples reminders update <reminder-id> "new title" [--json|--jsonl]
       instant-swift-data examples reminders complete <reminder-id> [--json|--jsonl]
+      instant-swift-data examples reminders add-tag <reminder-id> <tag> [--json|--jsonl]
+      instant-swift-data examples reminders remove-tag <reminder-id> <tag> [--json|--jsonl]
     """
+  }
+
+  private static var remindersSearchUsage: String {
+    "Usage: instant-swift-data examples reminders search \"text\" [--list-id id] [--tag tag] [--include-completed] [--json|--jsonl]"
   }
 
   private static var todoLinksUsage: String {
@@ -6402,11 +6628,22 @@ private struct RemindersOutput: Codable, Sendable {
   var transport: String
   var listQueryID: String
   var reminderQueryID: String
+  var tagQueryID: String
   var listCacheKey: String
   var reminderCacheKey: String
+  var tagCacheKey: String
   var pendingMutationCount: Int
   var lists: [RemindersListSummary]
   var reminders: [ReminderRecord]
+  var tags: [ReminderTagRecord]
+  var reminderTags: [ReminderTagLinkRecord]
+}
+
+private struct RemindersSearchOptions: Sendable {
+  var text: String
+  var listID: String?
+  var tagID: String?
+  var includeCompleted: Bool
 }
 
 private struct SyncUpsOutput: Codable, Sendable {

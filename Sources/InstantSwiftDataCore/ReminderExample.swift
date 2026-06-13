@@ -53,6 +53,27 @@ public struct ReminderRecord: Hashable, Codable, Sendable, Identifiable {
   }
 }
 
+public struct ReminderTagRecord: Hashable, Codable, Sendable, Identifiable {
+  public var id: String
+  public var title: String
+
+  public init(id: String, title: String) {
+    self.id = id
+    self.title = title
+  }
+}
+
+public struct ReminderTagLinkRecord: Hashable, Codable, Sendable, Identifiable {
+  public var id: String { "\(reminderID)#\(tagID)" }
+  public var reminderID: String
+  public var tagID: String
+
+  public init(reminderID: String, tagID: String) {
+    self.reminderID = reminderID
+    self.tagID = tagID
+  }
+}
+
 public struct RemindersListSummary: Hashable, Codable, Sendable, Identifiable {
   public var id: String { list.id }
   public var list: RemindersListRecord
@@ -95,6 +116,7 @@ public struct ReminderSeedRecord: Hashable, Codable, Sendable {
   public var isFlagged: Bool
   public var position: Int
   public var createdAtOffsetMilliseconds: Int64
+  public var tagTitles: [String]
 
   public init(
     localIDName: String,
@@ -104,7 +126,8 @@ public struct ReminderSeedRecord: Hashable, Codable, Sendable {
     isCompleted: Bool,
     isFlagged: Bool,
     position: Int,
-    createdAtOffsetMilliseconds: Int64
+    createdAtOffsetMilliseconds: Int64,
+    tagTitles: [String] = []
   ) {
     self.localIDName = localIDName
     self.listLocalIDName = listLocalIDName
@@ -114,12 +137,22 @@ public struct ReminderSeedRecord: Hashable, Codable, Sendable {
     self.isFlagged = isFlagged
     self.position = position
     self.createdAtOffsetMilliseconds = createdAtOffsetMilliseconds
+    self.tagTitles = tagTitles
+  }
+}
+
+public struct ReminderTagSeedRecord: Hashable, Codable, Sendable {
+  public var title: String
+
+  public init(title: String) {
+    self.title = title
   }
 }
 
 public enum ReminderExample {
   public static let listsNamespace = "remindersLists"
   public static let remindersNamespace = "reminders"
+  public static let tagsNamespace = "tags"
   public static let defaultListColor = "#4a99ef"
 
   public static let seedLists: [RemindersListSeedRecord] = [
@@ -141,7 +174,8 @@ public enum ReminderExample {
       isCompleted: false,
       isFlagged: false,
       position: 0,
-      createdAtOffsetMilliseconds: 1
+      createdAtOffsetMilliseconds: 1,
+      tagTitles: ["shopping"]
     ),
     ReminderSeedRecord(
       localIDName: "examples.reminders.seed.haircut",
@@ -151,8 +185,14 @@ public enum ReminderExample {
       isCompleted: false,
       isFlagged: true,
       position: 1,
-      createdAtOffsetMilliseconds: 2
+      createdAtOffsetMilliseconds: 2,
+      tagTitles: ["personal"]
     ),
+  ]
+
+  public static let seedTags: [ReminderTagSeedRecord] = [
+    ReminderTagSeedRecord(title: "personal"),
+    ReminderTagSeedRecord(title: "shopping"),
   ]
 
   public static let attributes: [InstantAttribute] = [
@@ -228,6 +268,15 @@ public enum ReminderExample {
       valueType: .date,
       isIndexed: true
     ),
+    .primaryKey(namespace: tagsNamespace),
+    InstantAttribute(
+      id: "tags/title",
+      namespace: tagsNamespace,
+      name: "title",
+      valueType: .string,
+      isIndexed: true,
+      isUnique: true
+    ),
     InstantAttribute(
       id: "reminders/list",
       namespace: remindersNamespace,
@@ -239,6 +288,18 @@ public enum ReminderExample {
       reverseIdentity: "remindersLists/reminders",
       linkNamespace: listsNamespace,
       onDelete: .cascade
+    ),
+    InstantAttribute(
+      id: "reminders/tags",
+      namespace: remindersNamespace,
+      name: "tags",
+      valueType: .ref,
+      isRequired: false,
+      cardinality: .many,
+      isIndexed: true,
+      forwardIdentity: "reminders/tags",
+      reverseIdentity: "tags/reminders",
+      linkNamespace: tagsNamespace
     ),
   ]
 
@@ -254,6 +315,12 @@ public enum ReminderExample {
     order: InstantQueryOrder("position", .ascending)
   )
 
+  public static let tagsQuery = InstantQueryPlan(
+    id: "examples.reminders.tags",
+    namespace: tagsNamespace,
+    order: InstantQueryOrder("title", .ascending)
+  )
+
   public static func remindersForListQuery(_ listID: String) -> InstantQueryPlan {
     InstantQueryPlan(
       id: "examples.reminders.reminders.list-\(queryIDFragment(listID))",
@@ -261,6 +328,63 @@ public enum ReminderExample {
       filters: [.equals(field: "list", value: .ref(listID))],
       order: InstantQueryOrder("position", .ascending)
     )
+  }
+
+  public static func remindersSearchQuery(
+    text: String,
+    listID: String? = nil,
+    tagID: String? = nil,
+    includeCompleted: Bool = false
+  ) -> InstantQueryPlan {
+    let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    var fragments: [String] = []
+    var filters: [InstantQueryFilter] = []
+
+    if !trimmedText.isEmpty {
+      let pattern = "%\(likePatternLiteral(trimmedText))%"
+      fragments.append("text-\(queryIDFragment(trimmedText))")
+      filters.append(
+        .or([
+          .iLike(field: "title", pattern: pattern),
+          .iLike(field: "notes", pattern: pattern),
+          .iLike(field: "tags.title", pattern: pattern),
+          .iLike(field: "tags.id", pattern: pattern),
+        ])
+      )
+    }
+
+    if let listID {
+      fragments.append("list-\(queryIDFragment(listID))")
+      filters.append(.equals(field: "list", value: .ref(listID)))
+    }
+
+    if let tagID {
+      fragments.append("tag-\(queryIDFragment(tagID))")
+      filters.append(.equals(field: "tags", value: .ref(tagID)))
+    }
+
+    if !includeCompleted {
+      fragments.append("incomplete")
+      filters.append(.equals(field: "isCompleted", value: .bool(false)))
+    } else {
+      fragments.append("all")
+    }
+
+    return InstantQueryPlan(
+      id: "examples.reminders.search.\(fragments.isEmpty ? "all" : fragments.joined(separator: "."))",
+      namespace: remindersNamespace,
+      filters: filters,
+      order: InstantQueryOrder("position", .ascending)
+    )
+  }
+
+  public static func normalizedTagTitle(_ rawValue: String) -> String? {
+    var value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    if value.hasPrefix("#") {
+      value.removeFirst()
+    }
+    let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    return normalized.isEmpty ? nil : normalized
   }
 
   public static func createListOperations(
@@ -429,9 +553,83 @@ public enum ReminderExample {
     ]
   }
 
+  public static func upsertTagOperations(
+    id: String,
+    title: String,
+    updatedAt: InstantTimestamp,
+    transactionID: String
+  ) -> [InstantTripleOperation] {
+    [
+      tagIdentityOperation(id: id, updatedAt: updatedAt, transactionID: transactionID),
+      .insert(
+        InstantTriple(
+          entityID: id,
+          attributeID: "tags/title",
+          value: .string(title),
+          txID: transactionID,
+          txTime: updatedAt
+        )
+      ),
+    ]
+  }
+
+  public static func addTagOperations(
+    reminderID: String,
+    listID: String,
+    tagID: String,
+    title: String,
+    updatedAt: InstantTimestamp,
+    transactionID: String
+  ) -> [InstantTripleOperation] {
+    [
+      .requireEntityExists(entityID: listID, namespace: listsNamespace),
+      .requireEntityExists(entityID: reminderID, namespace: remindersNamespace),
+      requireReminderInListOperation(reminderID: reminderID, listID: listID),
+    ] + upsertTagOperations(
+      id: tagID,
+      title: title,
+      updatedAt: updatedAt,
+      transactionID: transactionID
+    ) + [
+      listRefOperation(reminderID: reminderID, listID: listID, updatedAt: updatedAt, transactionID: transactionID),
+      tagRefOperation(
+        reminderID: reminderID,
+        tagID: tagID,
+        updatedAt: updatedAt,
+        transactionID: transactionID
+      ),
+    ]
+  }
+
+  public static func removeTagOperations(
+    reminderID: String,
+    listID: String,
+    tagID: String,
+    updatedAt: InstantTimestamp,
+    transactionID: String
+  ) -> [InstantTripleOperation] {
+    [
+      .requireEntityExists(entityID: listID, namespace: listsNamespace),
+      .requireEntityExists(entityID: reminderID, namespace: remindersNamespace),
+      requireReminderInListOperation(reminderID: reminderID, listID: listID),
+      listRefOperation(reminderID: reminderID, listID: listID, updatedAt: updatedAt, transactionID: transactionID),
+      .retract(
+        InstantTriple(
+          entityID: reminderID,
+          attributeID: "reminders/tags",
+          value: .ref(tagID),
+          txID: transactionID,
+          txTime: updatedAt
+        )
+      ),
+    ]
+  }
+
   public static func seedOperations(
     lists: [(id: String, seed: RemindersListSeedRecord)],
     reminders: [(id: String, listID: String, seed: ReminderSeedRecord)],
+    tags: [(id: String, seed: ReminderTagSeedRecord)] = [],
+    reminderTags: [(reminderID: String, tagID: String)] = [],
     baseCreatedAt: InstantTimestamp,
     transactionID: String
   ) -> [InstantTripleOperation] {
@@ -447,6 +645,13 @@ public enum ReminderExample {
         updatedAt: createdAt,
         transactionID: transactionID
       )
+    } + tags.flatMap { id, seed in
+      upsertTagOperations(
+        id: id,
+        title: seed.title,
+        updatedAt: baseCreatedAt,
+        transactionID: transactionID
+      )
     } + reminders.flatMap { id, listID, seed in
       let createdAt = InstantTimestamp(
         milliseconds: baseCreatedAt.milliseconds + seed.createdAtOffsetMilliseconds
@@ -460,6 +665,13 @@ public enum ReminderExample {
         isFlagged: seed.isFlagged,
         position: seed.position,
         updatedAt: createdAt,
+        transactionID: transactionID
+      )
+    } + reminderTags.map { reminderID, tagID in
+      tagRefOperation(
+        reminderID: reminderID,
+        tagID: tagID,
+        updatedAt: baseCreatedAt,
         transactionID: transactionID
       )
     }
@@ -494,6 +706,36 @@ public enum ReminderExample {
         position: try intField("position", from: snapshot, namespace: remindersNamespace),
         createdAt: try timestampField("createdAt", from: snapshot, namespace: remindersNamespace)
       )
+    }
+  }
+
+  public static func decodeTags(
+    _ snapshots: [InstantEntitySnapshot]
+  ) throws -> [ReminderTagRecord] {
+    try snapshots.map { snapshot in
+      ReminderTagRecord(
+        id: snapshot.id,
+        title: try stringField("title", from: snapshot, namespace: tagsNamespace)
+      )
+    }
+  }
+
+  public static func decodeReminderTagLinks(
+    _ snapshots: [InstantEntitySnapshot]
+  ) throws -> [ReminderTagLinkRecord] {
+    try snapshots.flatMap { snapshot in
+      try (snapshot.values["tags"]?.values ?? []).map { value in
+        guard case let .ref(tagID) = value else {
+          throw decodeError(
+            namespace: remindersNamespace,
+            id: snapshot.id,
+            field: "tags",
+            expected: "ref"
+          )
+        }
+        return ReminderTagLinkRecord(reminderID: snapshot.id, tagID: tagID)
+      }
+      .sorted { $0.tagID < $1.tagID }
     }
   }
 
@@ -585,6 +827,23 @@ public enum ReminderExample {
     )
   }
 
+  private static func tagRefOperation(
+    reminderID: String,
+    tagID: String,
+    updatedAt: InstantTimestamp,
+    transactionID: String
+  ) -> InstantTripleOperation {
+    .insert(
+      InstantTriple(
+        entityID: reminderID,
+        attributeID: "reminders/tags",
+        value: .ref(tagID),
+        txID: transactionID,
+        txTime: updatedAt
+      )
+    )
+  }
+
   private static func requireReminderInListOperation(
     reminderID: String,
     listID: String
@@ -621,6 +880,22 @@ public enum ReminderExample {
       InstantTriple(
         entityID: id,
         attributeID: InstantAttribute.primaryKeyID(namespace: remindersNamespace),
+        value: .string(id),
+        txID: transactionID,
+        txTime: updatedAt
+      )
+    )
+  }
+
+  private static func tagIdentityOperation(
+    id: String,
+    updatedAt: InstantTimestamp,
+    transactionID: String
+  ) -> InstantTripleOperation {
+    .insert(
+      InstantTriple(
+        entityID: id,
+        attributeID: InstantAttribute.primaryKeyID(namespace: tagsNamespace),
         value: .string(id),
         txID: transactionID,
         txTime: updatedAt
@@ -698,6 +973,13 @@ public enum ReminderExample {
       message: "Expected \(expected) for '\(namespace).\(field)'.",
       recovery: "Inspect the local reminders example triples and attributes."
     )
+  }
+
+  private static func likePatternLiteral(_ value: String) -> String {
+    let sanitized = value.filter { character in
+      character != "%" && character != "_" && character != "\\"
+    }
+    return sanitized.isEmpty ? "\u{0}" : String(sanitized)
   }
 
   private static func queryIDFragment(_ value: String) -> String {

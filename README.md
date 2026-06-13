@@ -72,6 +72,9 @@ LIST_JSON="$(swift run instant-swift-data examples reminders add-list "Family" -
 LIST_ID="$(printf '%s' "$LIST_JSON" | jq -r '.changedID')"
 REMINDER_JSON="$(swift run instant-swift-data examples reminders add "$LIST_ID" "Pack lunch" --json)"
 REMINDER_ID="$(printf '%s' "$REMINDER_JSON" | jq -r '.changedID')"
+swift run instant-swift-data examples reminders add-tag "$REMINDER_ID" family --json
+swift run instant-swift-data examples reminders search "Pack" --tag family --json
+swift run instant-swift-data examples reminders tags --jsonl
 swift run instant-swift-data examples reminders list --refresh --jsonl
 SHARE_JSON="$(swift run instant-swift-data shares create remindersLists "$LIST_ID" --json)"
 SHARE_ID="$(printf '%s' "$SHARE_JSON" | jq -r '.shares[0].share.id')"
@@ -79,11 +82,13 @@ SHARE_TOKEN="$(printf '%s' "$SHARE_JSON" | jq -r '.shares[0].share.token')"
 swift run instant-swift-data auth token invitee-refresh --user-id user-2 --json
 swift run instant-swift-data shares accept "$SHARE_TOKEN" --json
 swift run instant-swift-data examples reminders update "$REMINDER_ID" "reader edit" --json || test "$?" -eq 77
+swift run instant-swift-data examples reminders add-tag "$REMINDER_ID" reader --json || test "$?" -eq 77
 swift run instant-swift-data auth token owner-refresh --user-id user-1 --json
 swift run instant-swift-data shares role "$SHARE_ID" user-2 writer --json
 swift run instant-swift-data auth token invitee-refresh --user-id user-2 --json
 swift run instant-swift-data examples reminders update "$REMINDER_ID" "writer edit" --json
 swift run instant-swift-data examples reminders complete "$REMINDER_ID" --json
+swift run instant-swift-data examples reminders search "writer" --include-completed --json
 swift run instant-swift-data auth token owner-refresh --user-id user-1 --json
 swift run instant-swift-data shares role "$SHARE_ID" user-2 reader --json
 swift run instant-swift-data auth token invitee-refresh --user-id user-2 --json

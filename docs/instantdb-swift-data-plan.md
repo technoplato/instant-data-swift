@@ -664,6 +664,12 @@ Create `validation/` with:
   `list --refresh` commands over `remindersLists`/`reminders` namespaces; reminder
   child mutations include the list ref so shared-list reader/writer roles are
   enforced before cache/outbox writes.
+- Reminders: local tags and LIKE-backed search now cover the next Reminders
+  slice with `examples reminders add-tag`, `remove-tag`, `tags --jsonl`, and
+  `search "text" [--tag tag] [--include-completed]`. Tags are modeled as Instant
+  entities with a many-ref `reminders/tags` relation, and JSON/JSONL output
+  derives visible reminder-tag rows. Full upstream FTS, highlighting, advanced
+  stats, and UI search models remain future work.
 - SyncUps: the first local SyncUps port slice exposes durable
   `examples sync-ups add`, `detail`, `edit`, `record`, `list`, and `delete`
   commands over `syncUps`/`attendees`/`meetings` namespaces; attendee and meeting

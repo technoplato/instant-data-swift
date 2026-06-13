@@ -564,6 +564,12 @@ Agent-oriented output modes are required:
   `instant-swift-data examples reminders list --refresh --jsonl`; reminder child
   mutations carry their list ref so the local shared-list guard can reject
   readers before cache/outbox persistence until containment-aware permissions land.
+- tag and search Reminders locally with commands such as
+  `instant-swift-data examples reminders add-tag <reminder-id> family`,
+  `instant-swift-data examples reminders search "Pack" --tag family --json`,
+  and `instant-swift-data examples reminders tags --jsonl`; this is a durable
+  Instant-shaped many-ref tag/search slice, not the full upstream FTS/highlight
+  search UI yet.
 - run the first local SyncUps port slice with commands such as
   `instant-swift-data examples sync-ups add "Design" --seconds 900 --theme appOrange --attendee Blob`,
   `instant-swift-data examples sync-ups edit <sync-up-id> --title "Design Review" --attendee Blob`,
