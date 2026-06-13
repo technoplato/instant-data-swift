@@ -68,6 +68,9 @@ struct InstantSwiftDataCLI {
     case "rooms", "room":
       try await runRooms(arguments: arguments, output: output)
 
+    case "files", "storage":
+      try await runFiles(arguments: arguments, output: output)
+
     case "validation", "validate":
       try await runValidation(arguments: arguments, output: output)
 
@@ -938,6 +941,63 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func runFiles(arguments: [String], output: OutputMode) async throws {
+    var arguments = arguments
+    guard let command = arguments.popFirstArgument() else {
+      throw CLIError(filesUsage, exitCode: 64)
+    }
+
+    let context = try await CLIContext.bootstrap(initialAttributes: [])
+
+    switch command {
+    case "upload", "put":
+      let options = try FileUploadOptions.parse(arguments: arguments)
+      let file = try await context.runtime.uploadFile(
+        from: options.sourceURL,
+        name: options.name,
+        contentType: options.contentType
+      )
+      let files = try await context.runtime.storedFiles()
+      try printFiles(
+        context: context,
+        event: "upload",
+        changedID: file.id,
+        files: files,
+        output: output
+      )
+
+    case "list", "ls":
+      guard arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data files list [--json|--jsonl]", exitCode: 64)
+      }
+      let files = try await context.runtime.storedFiles()
+      try printFiles(
+        context: context,
+        event: "list",
+        changedID: nil,
+        files: files,
+        output: output
+      )
+
+    case "delete", "rm":
+      guard let fileID = arguments.popFirstArgument(), arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data files delete <file-id> [--json|--jsonl]", exitCode: 64)
+      }
+      let file = try await context.runtime.deleteStoredFile(id: fileID)
+      let files = try await context.runtime.storedFiles()
+      try printFiles(
+        context: context,
+        event: "delete",
+        changedID: file.id,
+        files: files,
+        output: output
+      )
+
+    default:
+      throw CLIError(filesUsage, exitCode: 64)
+    }
+  }
+
   private static func printOutbox(
     context: CLIContext,
     output: OutputMode
@@ -1288,6 +1348,63 @@ struct InstantSwiftDataCLI {
             entityID: message.id,
             ok: true,
             details: message
+          )
+        )
+      }
+    }
+  }
+
+  private static func printFiles(
+    context: CLIContext,
+    event: String,
+    changedID: String?,
+    files: [InstantStoredFile],
+    output: OutputMode
+  ) throws {
+    let payload = FilesOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      changedID: changedID,
+      transport: "not-implemented-local-cache-only",
+      fileCount: files.count,
+      files: files
+    )
+
+    switch output {
+    case .human:
+      print("files: \(files.count)")
+      for file in files {
+        print("- \(file.id) \(file.name) bytes=\(file.byteCount)")
+      }
+      print("transport: \(payload.transport)")
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.files",
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          entityID: changedID,
+          ok: true,
+          details: payload
+        )
+      )
+      for file in files {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.files",
+            side: "swift",
+            event: "file",
+            appID: context.appID,
+            entityID: file.id,
+            ok: true,
+            details: file
           )
         )
       }
@@ -1847,6 +1964,9 @@ struct InstantSwiftDataCLI {
         rooms presence leave <room-type> <room-id> [--user-id id] [--json|--jsonl]
         rooms topics publish <room-type> <room-id> <topic> --value '{...}' [--user-id id] [--json|--jsonl]
         rooms topics list <room-type> <room-id> <topic> [--limit n] [--json|--jsonl]
+        files upload <path> [--name name] [--content-type type] [--json|--jsonl]
+        files list [--json|--jsonl]
+        files delete <file-id> [--json|--jsonl]
         app show [--json|--jsonl]
         app select <app-id> [--json|--jsonl]
         app ephemeral --title <title> [--json|--jsonl]
@@ -2959,6 +3079,15 @@ struct InstantSwiftDataCLI {
     """
   }
 
+  fileprivate static var filesUsage: String {
+    """
+    Usage: instant-swift-data files <upload|list|delete>
+      instant-swift-data files upload <path> [--name name] [--content-type type] [--json|--jsonl]
+      instant-swift-data files list [--json|--jsonl]
+      instant-swift-data files delete <file-id> [--json|--jsonl]
+    """
+  }
+
   private static var validationUsage: String {
     """
     Usage: instant-swift-data validation <local-todos>
@@ -3454,6 +3583,16 @@ private struct RoomTopicOutput: Codable, Sendable {
   var messages: [InstantRoomTopicMessage]
 }
 
+private struct FilesOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var changedID: String?
+  var transport: String
+  var fileCount: Int
+  var files: [InstantStoredFile]
+}
+
 private struct SchemaVerifyOutput: Codable, Sendable {
   var example: String
   var path: String
@@ -3711,6 +3850,53 @@ private struct RoomTopicListOptions: Sendable {
       topic: topic.trimmingCharacters(in: .whitespacesAndNewlines),
       limit: limit
     )
+  }
+}
+
+private struct FileUploadOptions: Sendable {
+  var sourceURL: URL
+  var name: String?
+  var contentType: String?
+
+  static func parse(arguments: [String]) throws -> Self {
+    var arguments = arguments
+    guard let path = arguments.popFirstArgument(),
+      !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else {
+      throw CLIError(InstantSwiftDataCLI.filesUsage, exitCode: 64)
+    }
+
+    var name: String?
+    var contentType: String?
+    while let option = arguments.popFirstArgument() {
+      switch option {
+      case "--name":
+        guard let value = arguments.popFirstArgument(),
+          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+          throw CLIError(InstantSwiftDataCLI.filesUsage, exitCode: 64)
+        }
+        name = value.trimmingCharacters(in: .whitespacesAndNewlines)
+
+      case "--content-type":
+        guard let value = arguments.popFirstArgument(),
+          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+          throw CLIError(InstantSwiftDataCLI.filesUsage, exitCode: 64)
+        }
+        contentType = value.trimmingCharacters(in: .whitespacesAndNewlines)
+
+      default:
+        throw CLIError(
+          "Unknown files upload option: \(option). \(InstantSwiftDataCLI.filesUsage)",
+          exitCode: 64
+        )
+      }
+    }
+
+    let currentDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    let sourceURL = URL(fileURLWithPath: path, relativeTo: currentDirectory).standardizedFileURL
+    return Self(sourceURL: sourceURL, name: name, contentType: contentType)
   }
 }
 

@@ -216,6 +216,13 @@ reconnect rejoin, and Swift/TypeScript boundary proof remain future work.
 - File permissions generation for `$files`.
 - Storage references that can be embedded in app entities.
 
+Current local progress: `InstantRuntime` can copy a local file into the CLI
+cache directory, persist `InstantStoredFile` metadata in SQLite scoped by app id,
+list local files, and delete the stored content and metadata. The CLI exposes
+`instant-swift-data files upload/list/delete` for durable terminal proof. Real
+Instant `$files` sync, progress reporting, remote delete, and permissions remain
+future work.
+
 ### Streams
 
 - Support Instant's stream abstractions exposed through the TypeScript core:

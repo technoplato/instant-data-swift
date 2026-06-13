@@ -521,6 +521,84 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  public func uploadFile(
+    from sourceURL: URL,
+    name rawName: String? = nil,
+    contentType rawContentType: String? = nil
+  ) async throws -> InstantStoredFile {
+    let name = try resolvedFileName(rawName, sourceURL: sourceURL, operation: "upload file")
+    let contentType = rawContentType?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .nilIfEmpty
+    let userID = try await resolvedFileUserID(operation: "upload file")
+    let now = configuration.now()
+    let file = InstantStoredFile(
+      id: configuration.makeID(),
+      appID: configuration.appID,
+      name: name,
+      contentType: contentType,
+      byteCount: 0,
+      localPath: "",
+      ownerUserID: userID,
+      createdAt: now,
+      updatedAt: now
+    )
+
+    await operationGate.enter()
+    do {
+      let savedFile = try await persistence.saveStoredFile(file, contentsOf: sourceURL)
+      await operationGate.leave()
+      return savedFile
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  public func storedFiles() async throws -> [InstantStoredFile] {
+    await operationGate.enter()
+    do {
+      _ = try await resolvedFileUserID(operation: "list files")
+      let files = try await persistence.loadStoredFiles(appID: configuration.appID)
+      await operationGate.leave()
+      return files
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  @discardableResult
+  public func deleteStoredFile(id rawID: String) async throws -> InstantStoredFile {
+    let id = try validatedNonEmpty(
+      rawID,
+      label: "File id",
+      operation: "delete file",
+      recovery: "Pass the id returned by 'instant-swift-data files list'."
+    )
+
+    await operationGate.enter()
+    do {
+      _ = try await resolvedFileUserID(operation: "delete file")
+      guard let file = try await persistence.deleteStoredFile(
+        appID: configuration.appID,
+        fileID: id
+      ) else {
+        throw validationFailed(
+          operation: "delete file",
+          localID: id,
+          message: "No local file exists for id '\(id)'.",
+          recovery: "Run 'instant-swift-data files list' to inspect local file ids."
+        )
+      }
+      await operationGate.leave()
+      return file
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
   public func pendingMutations() async -> [PendingMutation] {
     await outbox.pending()
   }
@@ -713,6 +791,7 @@ public final class InstantRuntime: Sendable {
     operation: String,
     namespace: String? = nil,
     path: String? = nil,
+    localID: String? = nil,
     message: String,
     recovery: String
   ) -> InstantError {
@@ -721,6 +800,7 @@ public final class InstantRuntime: Sendable {
       operation: operation,
       namespace: namespace,
       path: path,
+      localID: localID,
       message: message,
       recovery: recovery
     )
@@ -763,6 +843,34 @@ public final class InstantRuntime: Sendable {
       message: "Room operations require a signed-in user.",
       recovery: "Run 'instant-swift-data auth guest' first, or pass --user-id <id>."
     )
+  }
+
+  private func resolvedFileUserID(operation: String) async throws -> String {
+    if let session = try await persistence.loadAuthSession(key: authSessionKey) {
+      return session.userID
+    }
+    throw authValidationFailed(
+      operation: operation,
+      message: "File operations require a signed-in user.",
+      recovery: "Run 'instant-swift-data auth guest' first."
+    )
+  }
+
+  private func resolvedFileName(
+    _ rawName: String?,
+    sourceURL: URL,
+    operation: String
+  ) throws -> String {
+    let name = rawName?.trimmingCharacters(in: .whitespacesAndNewlines)
+      ?? sourceURL.lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !name.isEmpty else {
+      throw validationFailed(
+        operation: operation,
+        message: "File name must not be empty.",
+        recovery: "Pass --name <name>, or upload a file path with a non-empty last path component."
+      )
+    }
+    return name
   }
 
   private func validatedRoom(
@@ -821,5 +929,11 @@ public final class InstantRuntime: Sendable {
 
   private var processedTransactionIDMetadataKey: String {
     "sync.processed_transaction_id:\(configuration.appID)"
+  }
+}
+
+private extension String {
+  var nilIfEmpty: String? {
+    isEmpty ? nil : self
   }
 }

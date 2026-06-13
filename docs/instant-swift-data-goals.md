@@ -471,6 +471,9 @@ Agent-oriented output modes are required:
   `instant-swift-data rooms presence set chat lobby --value '{"name":"Ada"}'`
   and
   `instant-swift-data rooms topics publish chat lobby sendEmoji --value '{"emoji":"wave"}'`.
+- persist local file metadata and copied content after sign-in with commands
+  such as `instant-swift-data files upload ./photo.jpg --content-type image/jpeg`
+  and `instant-swift-data files list --json`.
 - run example business commands directly, such as todo/reminder/sync-up/chat
   create, list, update, delete, share, accept, upload, and stream operations.
 

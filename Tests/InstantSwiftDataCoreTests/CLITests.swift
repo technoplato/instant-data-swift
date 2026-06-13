@@ -1019,6 +1019,98 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliFilesUploadListAndDeletePersistAcrossLaunches() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+    let sourceURL = homeURL.appendingPathComponent("instant-demo-file.txt")
+    let contents = Data("hello instant files\n".utf8)
+    try contents.write(to: sourceURL)
+
+    _ = try runCLI(
+      ["auth", "token", "refresh-token", "--user-id", "user-1", "--json"],
+      homeURL: homeURL
+    )
+
+    let upload = try JSONDecoder().decode(
+      CLIFilesOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "files", "upload", sourceURL.path,
+            "--content-type", "text/plain",
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(upload.event, "upload")
+    expectNoDifference(upload.transport, "not-implemented-local-cache-only")
+    expectNoDifference(upload.fileCount, 1)
+    let file = try #require(upload.files.first)
+    expectNoDifference(upload.changedID, file.id)
+    expectNoDifference(file.name, "instant-demo-file.txt")
+    expectNoDifference(file.contentType, "text/plain")
+    expectNoDifference(file.byteCount, Int64(contents.count))
+    expectNoDifference(file.ownerUserID, "user-1")
+    expectNoDifference(FileManager.default.fileExists(atPath: file.localPath), true)
+
+    let list = try JSONDecoder().decode(
+      CLIFilesOutput.self,
+      from: Data(try runCLI(["files", "list", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(list.event, "list")
+    expectNoDifference(list.files, upload.files)
+
+    let jsonlOutput = try runCLI(["files", "list", "--jsonl"], homeURL: homeURL)
+    let lines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(lines.count, 2)
+    let evidence = try JSONDecoder().decode(
+      CLIFilesEvidence.self,
+      from: Data(try #require(lines.first).utf8)
+    )
+    expectNoDifference(evidence.caseID, "cli.files")
+    expectNoDifference(evidence.details.fileCount, 1)
+
+    _ = try runCLI(["auth", "sign-out", "--json"], homeURL: homeURL)
+    let signedOutList = try runCLIResult(["files", "list", "--json"], homeURL: homeURL)
+    #expect(signedOutList.status == 65)
+    #expect(signedOutList.error.contains("File operations require a signed-in user"))
+    let signedOutDelete = try runCLIResult(["files", "delete", file.id, "--json"], homeURL: homeURL)
+    #expect(signedOutDelete.status == 65)
+    #expect(signedOutDelete.error.contains("File operations require a signed-in user"))
+    _ = try runCLI(
+      ["auth", "token", "refresh-token", "--user-id", "user-1", "--json"],
+      homeURL: homeURL
+    )
+
+    let deleted = try JSONDecoder().decode(
+      CLIFilesOutput.self,
+      from: Data(try runCLI(["files", "delete", file.id, "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(deleted.event, "delete")
+    expectNoDifference(deleted.changedID, file.id)
+    expectNoDifference(deleted.fileCount, 0)
+    expectNoDifference(deleted.files, [])
+    expectNoDifference(FileManager.default.fileExists(atPath: file.localPath), false)
+
+    let anonymousHomeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: anonymousHomeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: anonymousHomeURL) }
+    let anonymousSourceURL = anonymousHomeURL.appendingPathComponent("anonymous.txt")
+    try Data("anonymous".utf8).write(to: anonymousSourceURL)
+    let anonymous = try runCLIResult(
+      ["files", "upload", anonymousSourceURL.path, "--json"],
+      homeURL: anonymousHomeURL
+    )
+    #expect(anonymous.status == 65)
+    #expect(anonymous.error.contains("File operations require a signed-in user"))
+  }
+
+  @Test
   func cliValidationLocalTodosEmitsEvidence() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -1529,6 +1621,26 @@ private struct CLIRoomTopicOutput: Decodable, Equatable {
   var publishedMessageID: String?
   var messageCount: Int
   var messages: [InstantRoomTopicMessage]
+}
+
+private struct CLIFilesOutput: Decodable, Equatable {
+  var event: String
+  var changedID: String?
+  var transport: String
+  var fileCount: Int
+  var files: [InstantStoredFile]
+}
+
+private struct CLIFilesEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLIFilesOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
 }
 
 private struct CLILocalTodoValidationOutput: Decodable {

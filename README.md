@@ -109,6 +109,17 @@ swift run instant-swift-data rooms topics list chat lobby sendEmoji --limit 1 --
 swift run instant-swift-data rooms presence leave chat lobby --json
 ```
 
+Persist local file metadata and copied file contents after signing in:
+
+```bash
+swift run instant-swift-data auth token local-refresh --user-id user-1 --json
+printf "hello instant files\n" > /tmp/instant-demo-file.txt
+swift run instant-swift-data files upload /tmp/instant-demo-file.txt --content-type text/plain --json
+swift run instant-swift-data files list --json
+FILE_ID="$(swift run instant-swift-data files list --json | jq -r '.files[0].id')"
+swift run instant-swift-data files delete "$FILE_ID" --json
+```
+
 Create and verify a local todo scaffold:
 
 ```bash
@@ -147,8 +158,9 @@ swift run instant-swift-data-benchmarks --suite local-todos --iterations 3 --jso
 The current transport is intentionally marked `not-implemented-local-cache-only`
 in command output. That means the demo proves durable local cache, typed triples,
 query materialization, plan-aware persisted query results, optimistic outbox
-persistence, local auth/session state, local room presence/topics, and
-non-captive CLI interaction, but it does not yet sync with a real Instant app.
+persistence, local auth/session state, local room presence/topics, local file
+metadata/content copies, and non-captive CLI interaction, but it does not yet
+sync with a real Instant app.
 
 ## Development
 

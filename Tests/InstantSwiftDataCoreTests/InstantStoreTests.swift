@@ -1603,6 +1603,104 @@ struct InstantStoreTests {
   }
 
   @Test
+  func storedFilesPersistByAppIDAcrossLaunchesAndDeleteContent() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let sourceURL = cacheURL.deletingLastPathComponent().appendingPathComponent("source.txt")
+    let contents = Data("hello instant files\n".utf8)
+    try contents.write(to: sourceURL)
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        now: { timestamp },
+        makeID: { "file-1" }
+      )
+    )
+    _ = try await runtime.signInWithRefreshToken("refresh-token", userID: "user-1")
+
+    let uploaded = try await runtime.uploadFile(
+      from: sourceURL,
+      name: " demo.txt ",
+      contentType: " text/plain "
+    )
+    expectNoDifference(
+      uploaded,
+      InstantStoredFile(
+        id: "file-1",
+        appID: "app-a",
+        name: "demo.txt",
+        contentType: "text/plain",
+        byteCount: Int64(contents.count),
+        localPath: uploaded.localPath,
+        ownerUserID: "user-1",
+        createdAt: timestamp,
+        updatedAt: timestamp
+      )
+    )
+    expectNoDifference(FileManager.default.fileExists(atPath: uploaded.localPath), true)
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "app-a", persistenceURL: cacheURL)
+    )
+    let relaunchedFiles = try await relaunchedRuntime.storedFiles()
+    expectNoDifference(relaunchedFiles, [uploaded])
+    try await relaunchedRuntime.signOut()
+    do {
+      _ = try await relaunchedRuntime.storedFiles()
+      #expect(Bool(false), "Expected signed-out file list to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .authFailed)
+      expectNoDifference(error.operation, "list files")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+    do {
+      _ = try await relaunchedRuntime.deleteStoredFile(id: uploaded.id)
+      #expect(Bool(false), "Expected signed-out file delete to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .authFailed)
+      expectNoDifference(error.operation, "delete file")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+    _ = try await relaunchedRuntime.signInWithRefreshToken("refresh-token", userID: "user-1")
+
+    let otherAppRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "app-b", persistenceURL: cacheURL)
+    )
+    _ = try await otherAppRuntime.signInWithRefreshToken("other-refresh", userID: "user-2")
+    let otherAppFiles = try await otherAppRuntime.storedFiles()
+    expectNoDifference(otherAppFiles, [])
+
+    let deleted = try await relaunchedRuntime.deleteStoredFile(id: " file-1 ")
+    let remainingFiles = try await relaunchedRuntime.storedFiles()
+    expectNoDifference(deleted, uploaded)
+    expectNoDifference(remainingFiles, [])
+    expectNoDifference(FileManager.default.fileExists(atPath: uploaded.localPath), false)
+  }
+
+  @Test
+  func fileUploadRequiresAuth() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let sourceURL = cacheURL.deletingLastPathComponent().appendingPathComponent("source.txt")
+    try Data("hello".utf8).write(to: sourceURL)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "test-app", persistenceURL: cacheURL)
+    )
+
+    do {
+      _ = try await runtime.uploadFile(from: sourceURL)
+      #expect(Bool(false), "Expected anonymous file upload to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .authFailed)
+      expectNoDifference(error.operation, "upload file")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
   func magicCodeChallengePersistsAndVerifiesAcrossLaunches() async throws {
     let cacheURL = try temporaryCacheURL()
     let sentAt = InstantTimestamp(milliseconds: 1_700_000_000_000)

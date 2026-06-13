@@ -272,6 +272,29 @@ public actor SQLitePersistenceStore {
         )
       }
     }
+    try withSQLiteBusyRetry {
+      try migrate(name: "0006_local_files") {
+        try execute(
+          """
+          CREATE TABLE IF NOT EXISTS instant_files (
+            app_id TEXT NOT NULL,
+            file_id TEXT NOT NULL,
+            name TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            updated_at_ms INTEGER NOT NULL,
+            json TEXT NOT NULL,
+            PRIMARY KEY (app_id, file_id)
+          )
+          """
+        )
+        try execute(
+          """
+          CREATE INDEX IF NOT EXISTS instant_files_app_idx
+          ON instant_files (app_id, created_at_ms, file_id)
+          """
+        )
+      }
+    }
   }
 
   public func loadSnapshot() throws -> InstantPersistenceSnapshot {
@@ -474,6 +497,109 @@ public actor SQLitePersistenceStore {
       return Array(messages.prefix(limit))
     }
     return messages
+  }
+
+  public func saveStoredFile(
+    _ file: InstantStoredFile,
+    contentsOf sourceURL: URL
+  ) throws -> InstantStoredFile {
+    let sourceValues: URLResourceValues
+    do {
+      sourceValues = try sourceURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+    } catch {
+      throw persistenceError(
+        operation: "upload file",
+        message: "Could not read source path '\(sourceURL.path)': \(error.localizedDescription)"
+      )
+    }
+    guard sourceValues.isRegularFile == true else {
+      throw persistenceError(
+        operation: "upload file",
+        message: "Source path '\(sourceURL.path)' is not a regular file."
+      )
+    }
+
+    let directory = localFilesRootURL
+      .appendingPathComponent(sanitizedFileComponent(file.appID), isDirectory: true)
+      .appendingPathComponent(sanitizedFileComponent(file.id), isDirectory: true)
+    let targetURL = directory.appendingPathComponent(sanitizedFileComponent(file.name))
+    do {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      if FileManager.default.fileExists(atPath: targetURL.path) {
+        try FileManager.default.removeItem(at: targetURL)
+      }
+      try FileManager.default.copyItem(at: sourceURL, to: targetURL)
+    } catch {
+      throw persistenceError(
+        operation: "upload file",
+        message:
+          "Could not copy source path '\(sourceURL.path)' into local file storage: \(error.localizedDescription)"
+      )
+    }
+
+    var savedFile = file
+    savedFile.byteCount = Int64(sourceValues.fileSize ?? 0)
+    savedFile.localPath = targetURL.path
+    do {
+      try execute(
+        """
+        INSERT OR REPLACE INTO instant_files
+          (app_id, file_id, name, created_at_ms, updated_at_ms, json)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        [
+          .text(savedFile.appID),
+          .text(savedFile.id),
+          .text(savedFile.name),
+          .int(savedFile.createdAt.milliseconds),
+          .int(savedFile.updatedAt.milliseconds),
+          .text(try encode(savedFile)),
+        ]
+      )
+    } catch {
+      try? FileManager.default.removeItem(at: targetURL)
+      throw error
+    }
+    return savedFile
+  }
+
+  public func loadStoredFiles(appID: String) throws -> [InstantStoredFile] {
+    try selectJSON(
+      """
+      SELECT json FROM instant_files
+      WHERE app_id = ?
+      ORDER BY created_at_ms, file_id
+      """,
+      [.text(appID)]
+    )
+  }
+
+  public func deleteStoredFile(appID: String, fileID: String) throws -> InstantStoredFile? {
+    let rows: [InstantStoredFile] = try selectJSON(
+      """
+      SELECT json FROM instant_files
+      WHERE app_id = ? AND file_id = ?
+      LIMIT 1
+      """,
+      [.text(appID), .text(fileID)]
+    )
+    guard let file = rows.first else { return nil }
+
+    try execute(
+      "DELETE FROM instant_files WHERE app_id = ? AND file_id = ?",
+      [.text(appID), .text(fileID)]
+    )
+    if FileManager.default.fileExists(atPath: file.localPath) {
+      do {
+        try FileManager.default.removeItem(atPath: file.localPath)
+      } catch {
+        throw persistenceError(
+          operation: "delete file",
+          message: "Could not remove stored file '\(file.localPath)': \(error.localizedDescription)"
+        )
+      }
+    }
+    return file
   }
 
   public func loadMagicCodeChallenge(key: String) throws -> InstantMagicCodeChallenge? {
@@ -856,6 +982,18 @@ public actor SQLitePersistenceStore {
 
   private static func nowMilliseconds() -> Int64 {
     Int64((Date().timeIntervalSince1970 * 1000).rounded())
+  }
+
+  private var localFilesRootURL: URL {
+    fileURL.deletingLastPathComponent().appendingPathComponent("files", isDirectory: true)
+  }
+
+  private func sanitizedFileComponent(_ value: String) -> String {
+    let sanitized = value.map { character in
+      character == "/" || character == ":" || character == "\u{0}" ? "_" : character
+    }
+    let string = String(sanitized).trimmingCharacters(in: .whitespacesAndNewlines)
+    return string.isEmpty || string == "." || string == ".." ? "file" : string
   }
 
   private static let storeRevisionKey = "store_revision"
