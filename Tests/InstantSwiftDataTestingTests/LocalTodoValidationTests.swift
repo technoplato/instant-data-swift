@@ -46,16 +46,56 @@ struct LocalTodoValidationTests {
   }
 
   @Test
+  func validationEvidenceSummaryCapturesFailures() throws {
+    let rows = [
+      evidenceRow(event: "seed", ok: true),
+      evidenceRow(event: "update", ok: false),
+    ]
+
+    let summary = InstantSwiftDataTestHarness.summarize(rows)
+
+    expectNoDifference(summary.caseID, "validation.local.todos")
+    expectNoDifference(summary.side, "swift")
+    expectNoDifference(summary.appID, "validation-test")
+    expectNoDifference(summary.rowCount, 2)
+    expectNoDifference(summary.ok, false)
+    expectNoDifference(summary.events, ["seed", "update"])
+    expectNoDifference(summary.failedEvents, ["update"])
+
+    do {
+      _ = try InstantSwiftDataTestHarness.requireAllEvidenceOK(rows)
+      #expect(Bool(false), "Expected failed evidence rows to throw.")
+    } catch let error as InstantValidationFailure {
+      expectNoDifference(error.summary, summary)
+      #expect(error.description.contains("update"))
+    }
+
+    do {
+      let empty: [ValidationEvidenceRow<LocalTodoValidationDetails>] = []
+      _ = try InstantSwiftDataTestHarness.requireAllEvidenceOK(empty)
+      #expect(Bool(false), "Expected empty evidence rows to throw.")
+    } catch let error as InstantValidationFailure {
+      expectNoDifference(error.summary.rowCount, 0)
+      #expect(error.description.contains("at least one"))
+    }
+  }
+
+  @Test
   func localTodoValidationProducesEvidenceAndPersistsCache() async throws {
     let cacheURL = temporaryCacheURL()
 
-    let result = try await InstantSwiftDataLocalTodoValidation.run(
+    let run = try await InstantSwiftDataTestHarness.runLocalTodoValidation(
       appID: "validation-test",
       cacheURL: cacheURL
     )
+    let result = run.result
 
     expectNoDifference(result.appID, "validation-test")
     expectNoDifference(result.cacheURL, cacheURL)
+    expectNoDifference(run.summary.caseID, "validation.local.todos")
+    expectNoDifference(run.summary.rowCount, 5)
+    expectNoDifference(run.summary.ok, true)
+    expectNoDifference(run.summary.events, ["seed", "update", "cache", "reset", "relaunch"])
     expectNoDifference(result.evidence.map(\.event), ["seed", "update", "cache", "reset", "relaunch"])
     expectNoDifference(result.evidence.map(\.ok), [true, true, true, true, true])
     expectNoDifference(
@@ -71,4 +111,25 @@ private func temporaryCacheURL() -> URL {
   FileManager.default.temporaryDirectory
     .appendingPathComponent("InstantSwiftDataValidationTests-\(UUID().uuidString)", isDirectory: true)
     .appendingPathComponent("state.sqlite")
+}
+
+private func evidenceRow(
+  event: String,
+  ok: Bool
+) -> ValidationEvidenceRow<LocalTodoValidationDetails> {
+  ValidationEvidenceRow(
+    caseID: "validation.local.todos",
+    side: "swift",
+    event: event,
+    appID: "validation-test",
+    timestampMs: 123,
+    ok: ok,
+    details: LocalTodoValidationDetails(
+      cachePath: "/tmp/state.sqlite",
+      todoIDs: [],
+      todoTexts: [],
+      pendingMutationIDs: [],
+      queryCacheCount: 0
+    )
+  )
 }

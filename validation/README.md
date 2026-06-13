@@ -21,7 +21,9 @@ prove this library.
 
 The Swift runner currently emits local-only evidence for the durable todo
 workflow. It proves the Swift core can seed, update, cache, reset, and relaunch
-against the same SQLite state without SwiftUI:
+against the same SQLite state without SwiftUI. The standalone runner goes
+through `InstantSwiftDataTesting.InstantSwiftDataTestHarness`, so the same
+evidence helpers are available to package tests and terminal validation:
 
 ```bash
 swift run instant-swift-data validation local-todos --jsonl

@@ -89,7 +89,7 @@ let package = Package(
     ),
     .executableTarget(
       name: "InstantSwiftDataValidationRunner",
-      dependencies: ["InstantSwiftDataCore"],
+      dependencies: ["InstantSwiftDataTesting"],
       swiftSettings: strictConcurrencySettings
     ),
     .executableTarget(

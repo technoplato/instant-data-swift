@@ -1,5 +1,5 @@
 import Foundation
-import InstantSwiftDataCore
+import InstantSwiftDataTesting
 
 @main
 struct InstantSwiftDataValidationRunner {
@@ -37,8 +37,8 @@ struct InstantSwiftDataValidationRunner {
       )
     }
 
-    let result = try await InstantSwiftDataLocalTodoValidation.run()
-    for row in result.evidence {
+    let run = try await InstantSwiftDataTestHarness.runLocalTodoValidation()
+    for row in run.result.evidence {
       try writeJSONLine(row)
     }
   }

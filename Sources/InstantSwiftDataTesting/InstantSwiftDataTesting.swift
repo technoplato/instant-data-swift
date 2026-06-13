@@ -1,1 +1,109 @@
 @_exported import InstantSwiftDataCore
+import Foundation
+
+public struct InstantValidationEvidenceSummary: Codable, Equatable, Sendable {
+  public var caseID: String?
+  public var side: String?
+  public var appID: String?
+  public var rowCount: Int
+  public var ok: Bool
+  public var events: [String]
+  public var failedEvents: [String]
+
+  public init<Details>(
+    rows: [ValidationEvidenceRow<Details>]
+  ) where Details: Encodable & Sendable {
+    self.caseID = rows.sameValue(\.caseID)
+    self.side = rows.sameValue(\.side)
+    self.appID = rows.sameValue(\.appID)
+    self.rowCount = rows.count
+    self.ok = !rows.isEmpty && rows.allSatisfy(\.ok)
+    self.events = rows.map(\.event)
+    self.failedEvents = rows.filter { !$0.ok }.map(\.event)
+  }
+}
+
+public struct InstantValidationFailure: Error, Codable, Equatable, Sendable, CustomStringConvertible {
+  public var summary: InstantValidationEvidenceSummary
+  public var message: String
+
+  public init(summary: InstantValidationEvidenceSummary, message: String) {
+    self.summary = summary
+    self.message = message
+  }
+
+  public var description: String {
+    message
+  }
+}
+
+public struct InstantLocalTodoValidationRun: Sendable {
+  public var result: LocalTodoValidationResult
+  public var summary: InstantValidationEvidenceSummary
+
+  public init(
+    result: LocalTodoValidationResult,
+    summary: InstantValidationEvidenceSummary
+  ) {
+    self.result = result
+    self.summary = summary
+  }
+}
+
+public enum InstantSwiftDataTestHarness {
+  public static func summarize<Details>(
+    _ rows: [ValidationEvidenceRow<Details>]
+  ) -> InstantValidationEvidenceSummary where Details: Encodable & Sendable {
+    InstantValidationEvidenceSummary(rows: rows)
+  }
+
+  public static func requireAllEvidenceOK<Details>(
+    _ rows: [ValidationEvidenceRow<Details>]
+  ) throws -> InstantValidationEvidenceSummary where Details: Encodable & Sendable {
+    let summary = summarize(rows)
+    guard summary.rowCount > 0 else {
+      throw InstantValidationFailure(
+        summary: summary,
+        message: "Expected at least one validation evidence row."
+      )
+    }
+    guard summary.ok else {
+      throw InstantValidationFailure(
+        summary: summary,
+        message: "Validation evidence contains failed events: \(summary.failedEvents.joined(separator: ", "))."
+      )
+    }
+    return summary
+  }
+
+  public static func runLocalTodoValidation(
+    appID: String = "local-validation",
+    cacheURL: URL? = nil,
+    timestamp: @escaping @Sendable () -> InstantTimestamp = {
+      InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
+    },
+    makeID: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() }
+  ) async throws -> InstantLocalTodoValidationRun {
+    let result = try await InstantSwiftDataLocalTodoValidation.run(
+      appID: appID,
+      cacheURL: cacheURL,
+      timestamp: timestamp,
+      makeID: makeID
+    )
+    return InstantLocalTodoValidationRun(
+      result: result,
+      summary: try requireAllEvidenceOK(result.evidence)
+    )
+  }
+}
+
+private extension Array {
+  func sameValue<Value: Equatable>(_ keyPath: KeyPath<Element, Value>) -> Value? {
+    guard let first = first?[keyPath: keyPath],
+      allSatisfy({ $0[keyPath: keyPath] == first })
+    else {
+      return nil
+    }
+    return first
+  }
+}
