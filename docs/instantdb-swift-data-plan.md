@@ -97,8 +97,10 @@ real Instant app.
 - Live subscriptions equivalent to `subscribeQuery`/React `useQuery`.
 - One-shot strict queries equivalent to `queryOnce`.
 - Top-level namespace queries and nested relation queries.
-- Explicit linked-entity inclusion, including multi-linked entities and reverse
-  links.
+- Explicit linked-entity inclusion, including typed forward includes like
+  `.include(Post.author, User.query.select(User.name))`. Raw core materialization
+  also supports multi-linked entities and reverse links; typed reverse includes
+  need generated reverse relation tokens.
 - Field selection, including typed `.select(Todo.text, Todo.isCompleted)`.
   Partial selections should be read as raw snapshots unless the selected fields
   satisfy the entity decoder.

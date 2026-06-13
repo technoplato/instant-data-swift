@@ -236,6 +236,12 @@ try await db.transact {
     to: User.email.lookup("blob@example.com")
   )
 }
+
+let posts = try await db.query(
+  Post.query
+    .include(Post.author, User.query.select(User.name))
+    .plan
+)
 ```
 
 Lookup writes are kept in lookup form in the pending outbox for future transport

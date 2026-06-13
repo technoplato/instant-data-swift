@@ -121,6 +121,51 @@ struct TypedAPITests {
     expectNoDifference(selectedThenOrderedQuery.plan.order, .serverCreatedAtDescending)
     expectNoDifference(selectedThenOrderedQuery.plan.selectedFields, ["text"])
     #expect(selectedThenOrderedQuery.plan.cacheKey != serverCreatedAtQuery.plan.cacheKey)
+
+    let includedQuery = TypedPost.query
+      .include(
+        TypedPost.author,
+        TypedUser.query
+          .select(TypedUser.name)
+          .order(TypedUser.name)
+      )
+    expectNoDifference(
+      includedQuery.plan.includes,
+      [
+        InstantQueryInclude(
+          "author",
+          query: InstantQueryIncludePlan(
+            id: TypedUser.query.select(TypedUser.name).order(TypedUser.name).plan.id,
+            namespace: TypedUser.instantNamespace,
+            order: InstantQueryOrder("name"),
+            selectedFields: ["name"]
+          )
+        )
+      ]
+    )
+    #expect(includedQuery.plan.id != TypedPost.query.plan.id)
+    #expect(includedQuery.plan.cacheKey != TypedPost.query.plan.cacheKey)
+
+    let filteredIncludedQuery = includedQuery.where(TypedPost.title == "Hello links")
+    #expect(filteredIncludedQuery.plan.id != includedQuery.plan.id)
+    expectNoDifference(filteredIncludedQuery.plan.includes, includedQuery.plan.includes)
+
+    let filteredChildIncludeQuery = TypedPost.query.include(
+      TypedPost.author,
+      TypedUser.query.where(TypedUser.name == "Blob").select(TypedUser.name)
+    )
+    #expect(filteredChildIncludeQuery.plan.id != includedQuery.plan.id)
+    #expect(filteredChildIncludeQuery.plan.cacheKey != includedQuery.plan.cacheKey)
+    expectNoDifference(
+      filteredChildIncludeQuery.plan.includes?.first?.query?.filters,
+      [.equals(field: "name", value: .string("Blob"))]
+    )
+
+    let replacedIncludeQuery = TypedPost.query
+      .include(TypedPost.author, TypedUser.query.select(TypedUser.name))
+      .include(TypedPost.author, TypedUser.query.select(TypedUser.email))
+    expectNoDifference(replacedIncludeQuery.plan.includes?.count, 1)
+    expectNoDifference(replacedIncludeQuery.plan.includes?.first?.query?.selectedFields, ["email"])
   }
 
   @Test
@@ -664,6 +709,63 @@ struct TypedAPITests {
 
       let pending = await db.pendingMutations()
       expectNoDifference(pending.map(\.id), ["tx-link", "tx-unlink"])
+    }
+  }
+
+  @Test
+  func typedQueryIncludesForwardLinkedSnapshots() async throws {
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_105_000)
+    let userID = InstantID<TypedUser>(rawValue: "included-user")
+    let postID = InstantID<TypedPost>(rawValue: "included-post")
+
+    try await withDependencies {
+      try await $0.bootstrapInstantSwiftData(
+        appID: "typed-includes-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedUser.instantAttributes + TypedPost.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      try await db.transact(id: "tx-typed-include", createdAt: createdAt) {
+        TypedUser.create(
+          id: userID,
+          TypedUser.name.set("Blob")
+        )
+        TypedPost.create(
+          id: postID,
+          TypedPost.title.set("Hello includes")
+        )
+        TypedPost.author.link(from: postID, to: userID)
+      }
+
+      let query = TypedPost.query.include(
+        TypedPost.author,
+        TypedUser.query.select(TypedUser.name)
+      )
+      let snapshots = try await db.query(query.plan)
+      expectNoDifference(snapshots.map(\.id), [postID.rawValue])
+      expectNoDifference(snapshots.first?.links?["author"]?.map(\.id), [userID.rawValue])
+      expectNoDifference(
+        snapshots.first?.links?["author"]?.first?.values,
+        ["name": .one(.string("Blob"))]
+      )
+
+      let decodedPosts = try await db.query(query)
+      expectNoDifference(
+        decodedPosts,
+        [TypedPost(id: postID, title: "Hello includes", authorID: userID)]
+      )
+
+      let hiddenByChildFilter = try await db.query(
+        TypedPost.query
+          .include(
+            TypedPost.author,
+            TypedUser.query.where(TypedUser.name == "Someone else").select(TypedUser.name)
+          )
+          .plan
+      )
+      expectNoDifference(hiddenByChildFilter.first?.links?["author"], [])
     }
   }
 

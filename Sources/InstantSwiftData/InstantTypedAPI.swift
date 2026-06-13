@@ -885,6 +885,16 @@ public struct InstantAttributePath<
 
     return attribute
   }
+
+  fileprivate func validateIncludeAttribute<Target: InstantEntityModel>(
+    target: Target.Type
+  ) where Value == InstantID<Target> {
+    do {
+      _ = try linkAttribute(target: target)
+    } catch {
+      preconditionFailure("Invalid Instant include relation '\(name)': \(error)")
+    }
+  }
 }
 
 public struct InstantReservedOrder<Entity: InstantEntityModel>: Hashable, Sendable {
@@ -1046,152 +1056,56 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
   }
 
   public func `where`(_ predicate: InstantPredicate<Entity>) -> Self {
-    var copy = self
-    copy.plan.filters.append(predicate.filter)
-    copy.plan.id = Self.queryID(
-      filters: copy.plan.filters,
-      order: copy.plan.order,
-      offset: copy.plan.offset,
-      limit: copy.plan.limit,
-      first: copy.plan.first,
-      after: copy.plan.after,
-      last: copy.plan.last,
-      before: copy.plan.before,
-      selectedFields: copy.plan.selectedFields
-    )
-    return copy
+    updatingPlan { $0.filters.append(predicate.filter) }
   }
 
   public func order<Value>(
     _ field: InstantAttributePath<Entity, Value>,
     _ direction: InstantQuerySortDirection = .ascending
   ) -> Self {
-    var copy = self
-    copy.plan.order = InstantQueryOrder(field.name, direction)
-    copy.plan.id = Self.queryID(
-      filters: copy.plan.filters,
-      order: copy.plan.order,
-      offset: copy.plan.offset,
-      limit: copy.plan.limit,
-      first: copy.plan.first,
-      after: copy.plan.after,
-      last: copy.plan.last,
-      before: copy.plan.before,
-      selectedFields: copy.plan.selectedFields
-    )
-    return copy
+    updatingPlan { $0.order = InstantQueryOrder(field.name, direction) }
   }
 
   public func order(
     _ reserved: InstantReservedOrder<Entity>,
     _ direction: InstantQuerySortDirection = .ascending
   ) -> Self {
-    var copy = self
-    copy.plan.order = InstantQueryOrder(reserved.field, direction)
-    copy.plan.id = Self.queryID(
-      filters: copy.plan.filters,
-      order: copy.plan.order,
-      offset: copy.plan.offset,
-      limit: copy.plan.limit,
-      first: copy.plan.first,
-      after: copy.plan.after,
-      last: copy.plan.last,
-      before: copy.plan.before,
-      selectedFields: copy.plan.selectedFields
-    )
-    return copy
+    updatingPlan { $0.order = InstantQueryOrder(reserved.field, direction) }
   }
 
   public func offset(_ offset: UInt) -> Self {
-    var copy = self
-    copy.plan.offset = Int(clamping: offset)
-    copy.plan.id = Self.queryID(
-      filters: copy.plan.filters,
-      order: copy.plan.order,
-      offset: copy.plan.offset,
-      limit: copy.plan.limit,
-      first: copy.plan.first,
-      after: copy.plan.after,
-      last: copy.plan.last,
-      before: copy.plan.before,
-      selectedFields: copy.plan.selectedFields
-    )
-    return copy
+    updatingPlan { $0.offset = Int(clamping: offset) }
   }
 
   public func limit(_ limit: UInt) -> Self {
-    var copy = self
-    copy.plan.limit = Int(clamping: limit)
-    copy.plan.id = Self.queryID(
-      filters: copy.plan.filters,
-      order: copy.plan.order,
-      offset: copy.plan.offset,
-      limit: copy.plan.limit,
-      first: copy.plan.first,
-      after: copy.plan.after,
-      last: copy.plan.last,
-      before: copy.plan.before,
-      selectedFields: copy.plan.selectedFields
-    )
-    return copy
+    updatingPlan { $0.limit = Int(clamping: limit) }
   }
 
   public func first(_ first: UInt) -> Self {
-    var copy = self
-    copy.plan.first = Int(clamping: first)
-    copy.plan.last = nil
-    copy.plan.id = Self.queryID(
-      filters: copy.plan.filters,
-      order: copy.plan.order,
-      offset: copy.plan.offset,
-      limit: copy.plan.limit,
-      first: copy.plan.first,
-      after: copy.plan.after,
-      last: copy.plan.last,
-      before: copy.plan.before,
-      selectedFields: copy.plan.selectedFields
-    )
-    return copy
+    updatingPlan {
+      $0.first = Int(clamping: first)
+      $0.last = nil
+    }
   }
 
   public func after(_ cursor: InstantQueryCursor) -> Self {
-    var copy = self
-    copy.plan.after = cursor
-    copy.plan.id = Self.queryID(
-      filters: copy.plan.filters,
-      order: copy.plan.order,
-      offset: copy.plan.offset,
-      limit: copy.plan.limit,
-      first: copy.plan.first,
-      after: copy.plan.after,
-      last: copy.plan.last,
-      before: copy.plan.before,
-      selectedFields: copy.plan.selectedFields
-    )
-    return copy
+    updatingPlan { $0.after = cursor }
   }
 
   public func last(_ last: UInt) -> Self {
-    var copy = self
-    copy.plan.first = nil
-    copy.plan.last = Int(clamping: last)
-    copy.plan.id = Self.queryID(
-      filters: copy.plan.filters,
-      order: copy.plan.order,
-      offset: copy.plan.offset,
-      limit: copy.plan.limit,
-      first: copy.plan.first,
-      after: copy.plan.after,
-      last: copy.plan.last,
-      before: copy.plan.before,
-      selectedFields: copy.plan.selectedFields
-    )
-    return copy
+    updatingPlan {
+      $0.first = nil
+      $0.last = Int(clamping: last)
+    }
   }
 
   public func before(_ cursor: InstantQueryCursor) -> Self {
+    updatingPlan { $0.before = cursor }
+  }
+
+  private func updatingPlan(_ update: (inout InstantQueryPlan) -> Void) -> Self {
     var copy = self
-    copy.plan.before = cursor
+    update(&copy.plan)
     copy.plan.id = Self.queryID(
       filters: copy.plan.filters,
       order: copy.plan.order,
@@ -1201,7 +1115,8 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
       after: copy.plan.after,
       last: copy.plan.last,
       before: copy.plan.before,
-      selectedFields: copy.plan.selectedFields
+      selectedFields: copy.plan.selectedFields,
+      includes: copy.plan.includes
     )
     return copy
   }
@@ -1263,6 +1178,66 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
     selecting([field0.name, field1.name, field2.name, field3.name, field4.name, field5.name])
   }
 
+  public func include<Target: InstantEntityModel>(
+    _ relation: InstantAttributePath<Entity, InstantID<Target>>,
+    _ query: InstantEntityQuery<Target> = Target.query
+  ) -> Self {
+    relation.validateIncludeAttribute(target: Target.self)
+    let includePlan = query.plan
+    precondition(
+      includePlan.offset == nil
+        && includePlan.limit == nil
+        && includePlan.first == nil
+        && includePlan.after == nil
+        && includePlan.last == nil
+        && includePlan.before == nil
+        && (includePlan.includes == nil || includePlan.includes?.isEmpty == true),
+      "InstantEntityQuery.include does not support nested includes or pagination."
+    )
+
+    var includes = (plan.includes ?? []).filter { $0.name != relation.name }
+    includes.append(
+      InstantQueryInclude(
+        relation.name,
+        query: InstantQueryIncludePlan(
+          id: includePlan.id,
+          namespace: includePlan.namespace,
+          filters: includePlan.filters,
+          order: includePlan.order,
+          selectedFields: includePlan.selectedFields
+        )
+      )
+    )
+
+    var copy = self
+    copy.plan = InstantQueryPlan(
+      id: Self.queryID(
+        filters: copy.plan.filters,
+        order: copy.plan.order,
+        offset: copy.plan.offset,
+        limit: copy.plan.limit,
+        first: copy.plan.first,
+        after: copy.plan.after,
+        last: copy.plan.last,
+        before: copy.plan.before,
+        selectedFields: copy.plan.selectedFields,
+        includes: includes
+      ),
+      namespace: copy.plan.namespace,
+      filters: copy.plan.filters,
+      order: copy.plan.order,
+      offset: copy.plan.offset,
+      limit: copy.plan.limit,
+      first: copy.plan.first,
+      after: copy.plan.after,
+      last: copy.plan.last,
+      before: copy.plan.before,
+      selectedFields: copy.plan.selectedFields,
+      includes: includes
+    )
+    return copy
+  }
+
   private func selecting(_ fieldNames: [String]) -> Self {
     precondition(!fieldNames.isEmpty, "InstantEntityQuery.select requires at least one field.")
     let selectedFields = Array(Set(fieldNames)).sorted()
@@ -1277,7 +1252,8 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
         after: copy.plan.after,
         last: copy.plan.last,
         before: copy.plan.before,
-        selectedFields: selectedFields
+        selectedFields: selectedFields,
+        includes: copy.plan.includes
       ),
       namespace: copy.plan.namespace,
       filters: copy.plan.filters,
@@ -1303,7 +1279,8 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
     after: InstantQueryCursor?,
     last: Int?,
     before: InstantQueryCursor?,
-    selectedFields: [String]?
+    selectedFields: [String]?,
+    includes: [InstantQueryInclude]? = nil
   ) -> String {
     let payload = QueryIDPayload(
       namespace: Entity.instantNamespace,
@@ -1315,7 +1292,8 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
       after: after,
       last: last,
       before: before,
-      selectedFields: selectedFields
+      selectedFields: selectedFields,
+      includes: includes
     )
     return "instant-query:" + payload.canonicalBase64ID()
   }
@@ -1332,6 +1310,7 @@ private struct QueryIDPayload: Encodable {
   var last: Int?
   var before: InstantQueryCursor?
   var selectedFields: [String]?
+  var includes: [InstantQueryInclude]?
 
   func canonicalBase64ID() -> String {
     let encoder = JSONEncoder()
