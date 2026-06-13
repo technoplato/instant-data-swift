@@ -139,10 +139,10 @@ public actor InstantStore {
     self.indexes = TripleIndexes(triples: prepared.snapshot.triples, attributes: self.attributes)
     self.sequence = prepared.sequence
 
-    var emissionsByQueryID: [String: InstantQueryEmission] = [:]
+    var emissionsByPlan: [InstantQueryPlan: InstantQueryEmission] = [:]
     for observer in observers.values {
       let emission: InstantQueryEmission
-      if let existing = emissionsByQueryID[observer.plan.id] {
+      if let existing = emissionsByPlan[observer.plan] {
         emission = existing
       } else {
         emission = InstantQueryEmission(
@@ -150,15 +150,30 @@ public actor InstantStore {
           sequence: sequence,
           values: indexes.materialize(observer.plan, attributes: attributes)
         )
-        emissionsByQueryID[observer.plan.id] = emission
+        emissionsByPlan[observer.plan] = emission
       }
       if shouldPublish {
         observer.continuation.yield(emission)
       }
     }
     var result = prepared.result
-    result.emissions = emissionsByQueryID.values.sorted { $0.queryID < $1.queryID }
+    result.emissions = emissionsByPlan
+      .sorted { lhs, rhs in Self.emissionSortKey(lhs.key) < Self.emissionSortKey(rhs.key) }
+      .map(\.value)
     return PreparedStoreMutation(result: result, snapshot: prepared.snapshot, sequence: sequence)
+  }
+
+  private static func emissionSortKey(_ plan: InstantQueryPlan) -> String {
+    [
+      plan.id,
+      plan.namespace,
+      String(describing: plan.filters),
+      plan.order?.field ?? "",
+      plan.order?.direction.rawValue ?? "",
+      plan.offset.map(String.init) ?? "",
+      plan.limit.map(String.init) ?? "",
+    ]
+    .joined(separator: "\u{1f}")
   }
 
   private func registerObserver(

@@ -1312,6 +1312,51 @@ struct InstantStoreTests {
   }
 
   @Test
+  func storeCommitDistinguishesObserversWithSameQueryIDDifferentPlans() async throws {
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let store = InstantStore(snapshot: InstantStoreSnapshot(attributes: TodoExample.attributes))
+    let transaction = InstantStoreTransaction(
+      id: "tx-shared-query-id",
+      operations: TodoExample.createOperations(
+        id: "todo-shared-query-id",
+        text: "shared query id",
+        createdAt: createdAt,
+        transactionID: "tx-shared-query-id"
+      )
+    )
+    let incompletePlan = InstantQueryPlan(
+      id: "shared-query-id",
+      namespace: TodoExample.namespace,
+      filters: [.equals(field: "isCompleted", value: .bool(false))]
+    )
+    let completedPlan = InstantQueryPlan(
+      id: "shared-query-id",
+      namespace: TodoExample.namespace,
+      filters: [.equals(field: "isCompleted", value: .bool(true))]
+    )
+    let prepared = await store.prepare(
+      transaction,
+      applyingTo: InstantStoreSnapshot(attributes: TodoExample.attributes)
+    )
+
+    let incompleteStream = await store.observe(incompletePlan)
+    var incompleteIterator = incompleteStream.makeAsyncIterator()
+    _ = await incompleteIterator.next()
+    let completedStream = await store.observe(completedPlan)
+    var completedIterator = completedStream.makeAsyncIterator()
+    _ = await completedIterator.next()
+
+    let committed = await store.commitAndPublish(prepared)
+    expectNoDifference(committed.result.emissions.map { $0.queryID }, ["shared-query-id", "shared-query-id"])
+    expectNoDifference(committed.result.emissions.map { $0.values.map(\.id) }, [["todo-shared-query-id"], []])
+
+    let incompleteUpdate = await incompleteIterator.next()
+    let completedUpdate = await completedIterator.next()
+    expectNoDifference(incompleteUpdate?.values.map(\.id), ["todo-shared-query-id"])
+    expectNoDifference(completedUpdate?.values, [])
+  }
+
+  @Test
   func liveObservationEmitsInitialAndOptimisticUpdates() async throws {
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
