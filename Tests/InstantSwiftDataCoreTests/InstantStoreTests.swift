@@ -3820,6 +3820,71 @@ struct InstantStoreTests {
   }
 
   @Test
+  func remindersExampleStatsUseUpstreamIncompletePredicates() {
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let today = InstantTimestamp(milliseconds: 1_700_000_100_000)
+    let tomorrow = InstantTimestamp(milliseconds: today.milliseconds + 24 * 60 * 60 * 1000)
+    let reminders = [
+      ReminderRecord(
+        id: "reminder-today",
+        remindersListID: "list-rich",
+        title: "Today",
+        notes: "",
+        isCompleted: false,
+        isFlagged: true,
+        dueDate: today,
+        priority: .high,
+        position: 0,
+        createdAt: timestamp
+      ),
+      ReminderRecord(
+        id: "reminder-future",
+        remindersListID: "list-rich",
+        title: "Future",
+        notes: "",
+        isCompleted: false,
+        isFlagged: false,
+        dueDate: tomorrow,
+        position: 1,
+        createdAt: timestamp
+      ),
+      ReminderRecord(
+        id: "reminder-completed",
+        remindersListID: "list-rich",
+        title: "Completed",
+        notes: "",
+        isCompleted: true,
+        isFlagged: true,
+        dueDate: today,
+        priority: .medium,
+        position: 2,
+        createdAt: timestamp
+      ),
+      ReminderRecord(
+        id: "reminder-open",
+        remindersListID: "list-rich",
+        title: "Open",
+        notes: "",
+        isCompleted: false,
+        isFlagged: false,
+        position: 3,
+        createdAt: timestamp
+      ),
+    ]
+
+    expectNoDifference(
+      ReminderExample.stats(for: reminders, today: today),
+      RemindersStats(
+        allCount: 3,
+        completedCount: 1,
+        flaggedCount: 1,
+        scheduledCount: 2,
+        todayCount: 1
+      )
+    )
+  }
+
+  @Test
   func syncUpsExamplePersistsMeetingsAndCascadesChildren() async throws {
     let cacheURL = try temporaryCacheURL()
     let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)

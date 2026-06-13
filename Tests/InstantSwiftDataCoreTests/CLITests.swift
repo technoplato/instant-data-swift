@@ -814,6 +814,10 @@ extension InstantStoreTests {
       InstantTimestamp(milliseconds: fixedNow.milliseconds + 3 * 24 * 60 * 60 * 1000),
     ])
     expectNoDifference(seeded.reminders.map(\.priority), [.medium, .high])
+    expectNoDifference(
+      seeded.stats,
+      RemindersStats(allCount: 2, completedCount: 0, flaggedCount: 1, scheduledCount: 2, todayCount: 0)
+    )
     expectNoDifference(seeded.tags.map(\.title), ["personal", "shopping"])
     expectNoDifference(
       seeded.reminderTags,
@@ -891,6 +895,22 @@ extension InstantStoreTests {
     )
     let walkID = try #require(addedWalk.changedID)
     _ = try runCLI(["examples", "reminders", "complete", walkID, "--json"], homeURL: homeURL)
+
+    let stats = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "reminders", "stats", "--json"],
+          homeURL: homeURL,
+          environment: fixedNowEnvironment
+        ).utf8
+      )
+    )
+    expectNoDifference(stats.event, "stats")
+    expectNoDifference(
+      stats.stats,
+      RemindersStats(allCount: 1, completedCount: 1, flaggedCount: 1, scheduledCount: 1, todayCount: 1)
+    )
 
     let badDueDate = try runCLIResult(
       ["examples", "reminders", "add", listID, "Bad date", "--due-date", "not-a-date", "--json"],
@@ -4352,6 +4372,7 @@ private struct CLIRemindersOutput: Decodable {
   var transport: String
   var pendingMutationCount: Int
   var lists: [RemindersListSummary]
+  var stats: RemindersStats
   var reminders: [ReminderRecord]
   var tags: [ReminderTagRecord]
   var reminderTags: [ReminderTagLinkRecord]

@@ -97,6 +97,28 @@ public struct RemindersListSummary: Hashable, Codable, Sendable, Identifiable {
   }
 }
 
+public struct RemindersStats: Hashable, Codable, Sendable {
+  public var allCount: Int
+  public var completedCount: Int
+  public var flaggedCount: Int
+  public var scheduledCount: Int
+  public var todayCount: Int
+
+  public init(
+    allCount: Int = 0,
+    completedCount: Int = 0,
+    flaggedCount: Int = 0,
+    scheduledCount: Int = 0,
+    todayCount: Int = 0
+  ) {
+    self.allCount = allCount
+    self.completedCount = completedCount
+    self.flaggedCount = flaggedCount
+    self.scheduledCount = scheduledCount
+    self.todayCount = todayCount
+  }
+}
+
 public struct RemindersListSeedRecord: Hashable, Codable, Sendable {
   public var localIDName: String
   public var title: String
@@ -508,6 +530,26 @@ public enum ReminderExample {
     }
     let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     return normalized.isEmpty ? nil : normalized
+  }
+
+  public static func stats(
+    for reminders: [ReminderRecord],
+    today: InstantTimestamp
+  ) -> RemindersStats {
+    let range = dayRange(containing: today)
+    let start = timestampMilliseconds(for: range.start)
+    let end = timestampMilliseconds(for: range.end)
+    let incompleteReminders = reminders.filter { !$0.isCompleted }
+    return RemindersStats(
+      allCount: incompleteReminders.count,
+      completedCount: reminders.filter(\.isCompleted).count,
+      flaggedCount: incompleteReminders.filter(\.isFlagged).count,
+      scheduledCount: incompleteReminders.filter { $0.dueDate != nil }.count,
+      todayCount: incompleteReminders.filter { reminder in
+        guard let dueDate = reminder.dueDate else { return false }
+        return dueDate.milliseconds >= start && dueDate.milliseconds < end
+      }.count
+    )
   }
 
   public static func createListOperations(

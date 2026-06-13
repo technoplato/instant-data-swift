@@ -77,6 +77,7 @@ swift run instant-swift-data examples reminders add-tag "$REMINDER_ID" family --
 swift run instant-swift-data examples reminders list --scheduled --json
 swift run instant-swift-data examples reminders list --today --json
 swift run instant-swift-data examples reminders list --flagged --priority high --json
+swift run instant-swift-data examples reminders stats --json
 swift run instant-swift-data examples reminders search "Pack" --tag family --json
 swift run instant-swift-data examples reminders tags --jsonl
 swift run instant-swift-data examples reminders list --refresh --jsonl

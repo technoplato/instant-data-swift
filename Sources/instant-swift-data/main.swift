@@ -1086,6 +1086,12 @@ struct InstantSwiftDataCLI {
         remindersQuery: query
       )
 
+    case "stats":
+      guard arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data examples reminders stats [--json|--jsonl]", exitCode: 64)
+      }
+      try await printReminders(context: context, output: output, event: "stats")
+
     case "tags", "list-tags":
       guard arguments.isEmpty else {
         throw CLIError("Usage: instant-swift-data examples reminders tags [--json|--jsonl]", exitCode: 64)
@@ -3999,6 +4005,10 @@ struct InstantSwiftDataCLI {
     let tags = try ReminderExample.decodeTags(tagsEmission.values)
     let reminderTags = try ReminderExample.decodeReminderTagLinks(remindersEmission.values)
     let remindersByListID = Dictionary(grouping: allReminders, by: \.remindersListID)
+    let stats = ReminderExample.stats(
+      for: allReminders,
+      today: context.runtime.configuration.now()
+    )
     let listSummaries = lists.map { list in
       RemindersListSummary(
         list: list,
@@ -4020,6 +4030,7 @@ struct InstantSwiftDataCLI {
       tagCacheKey: ReminderExample.tagsQuery.cacheKey,
       pendingMutationCount: pending.count,
       lists: listSummaries,
+      stats: stats,
       reminders: reminders,
       tags: tags,
       reminderTags: reminderTags
@@ -4036,6 +4047,9 @@ struct InstantSwiftDataCLI {
           )
         }
       }
+      print(
+        "stats: all=\(stats.allCount) completed=\(stats.completedCount) flagged=\(stats.flaggedCount) scheduled=\(stats.scheduledCount) today=\(stats.todayCount)"
+      )
       if reminders.isEmpty {
         print("No reminders.")
       } else {
@@ -6583,7 +6597,7 @@ struct InstantSwiftDataCLI {
     Usage: instant-swift-data examples <todos|todo-links|reminders|sync-ups>
       instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>
       instant-swift-data examples todo-links <seed|list|nested|unlink> [--json|--jsonl]
-      instant-swift-data examples reminders <seed|list|tags|list-tags|search|add-list|rename-list|delete-list|add|update|complete|delete|delete-completed|add-tag|remove-tag> [--json|--jsonl]
+      instant-swift-data examples reminders <seed|list|stats|tags|list-tags|search|add-list|rename-list|delete-list|add|update|complete|delete|delete-completed|add-tag|remove-tag> [--json|--jsonl]
       instant-swift-data examples sync-ups <seed|list|detail|add|edit|add-attendee|record|delete> [--json|--jsonl]
     """
   }
@@ -6610,9 +6624,10 @@ struct InstantSwiftDataCLI {
 
   private static var remindersUsage: String {
     """
-    Usage: instant-swift-data examples reminders <seed|list|tags|list-tags|search|add-list|rename-list|delete-list|add|update|complete|delete|delete-completed|add-tag|remove-tag>
+    Usage: instant-swift-data examples reminders <seed|list|stats|tags|list-tags|search|add-list|rename-list|delete-list|add|update|complete|delete|delete-completed|add-tag|remove-tag>
       instant-swift-data examples reminders seed [--json|--jsonl]
       instant-swift-data examples reminders list [--refresh] [--list-id id] [--completed true|false] [--flagged|--unflagged] [--scheduled] [--today] [--priority \(reminderPriorityList)] [--json|--jsonl]
+      instant-swift-data examples reminders stats [--json|--jsonl]
       instant-swift-data examples reminders tags [--json|--jsonl]
       instant-swift-data examples reminders list-tags [--json|--jsonl]
       instant-swift-data examples reminders search "text" [--list-id id] [--tag tag] [--include-completed] [--flagged|--unflagged] [--scheduled] [--today] [--priority \(reminderPriorityList)] [--json|--jsonl]
@@ -7079,6 +7094,7 @@ private struct RemindersOutput: Codable, Sendable {
   var tagCacheKey: String
   var pendingMutationCount: Int
   var lists: [RemindersListSummary]
+  var stats: RemindersStats
   var reminders: [ReminderRecord]
   var tags: [ReminderTagRecord]
   var reminderTags: [ReminderTagLinkRecord]

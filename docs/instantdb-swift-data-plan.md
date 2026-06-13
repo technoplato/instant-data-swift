@@ -682,8 +682,12 @@ Create `validation/` with:
   `list --priority high` filters. Scheduled/today/flagged/priority filters
   default to incomplete reminders, matching the upstream Reminders predicates.
   Priority is currently string-backed; upstream-exact integer rank ordering,
-  status states, FTS/highlighting, stats, and SwiftUI detail models remain future
-  work.
+  status states, FTS/highlighting, and SwiftUI detail models remain future work.
+- Reminders: local smart-list stats now expose `examples reminders stats --json`
+  with all incomplete, completed, flagged, scheduled, and today counts. The
+  flagged/scheduled/today counts exclude completed reminders, matching the
+  upstream Reminders list model. Upstream-exact integer priority rank ordering,
+  status states, FTS/highlighting, and SwiftUI detail models remain future work.
 - SyncUps: the first local SyncUps port slice exposes durable
   `examples sync-ups add`, `detail`, `edit`, `record`, `list`, and `delete`
   commands over `syncUps`/`attendees`/`meetings` namespaces; attendee and meeting
