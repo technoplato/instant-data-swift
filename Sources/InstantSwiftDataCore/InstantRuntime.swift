@@ -282,7 +282,13 @@ public final class InstantRuntime: Sendable {
   }
 
   public func observe(_ plan: InstantQueryPlan) async -> AsyncStream<InstantQueryEmission> {
-    await store.observe(plan)
+    await operationGate.enter()
+    if let state = try? await persistence.loadState() {
+      await store.replaceSnapshot(state.snapshot.store)
+    }
+    let stream = await store.observe(plan)
+    await operationGate.leave()
+    return stream
   }
 
   public func query(_ plan: InstantQueryPlan) async throws -> [InstantEntitySnapshot] {

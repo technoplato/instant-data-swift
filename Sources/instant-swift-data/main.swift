@@ -2875,7 +2875,11 @@ struct InstantSwiftDataCLI {
     output: OutputMode,
     options: TodoWatchOptions
   ) async throws {
-    _ = try await context.runtime.queryOnce(options.query)
+    do {
+      _ = try await context.runtime.queryOnce(options.query)
+    } catch let error as InstantError where error.code == .networkFailed {
+      // Offline watches can still emit from the local SQLite-backed snapshot.
+    }
     let stream = await context.runtime.observe(options.query)
     var iterator = stream.makeAsyncIterator()
     var emissions: [TodoWatchEmissionOutput] = []

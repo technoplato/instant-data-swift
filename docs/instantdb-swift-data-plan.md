@@ -199,7 +199,10 @@ Current local progress: durable `closed` connection state now makes
 fresh local materialization, while carrying the matching `InstantCachedQuery`
 when one exists. The CLI proves the non-captive shape by returning the network
 exit code and cached-query summary for `instant-swift-data query todos --json`
-after `instant-swift-data connection close --json`.
+after `instant-swift-data connection close --json`. Query observation refreshes
+the persisted SQLite snapshot before registering, so finite watchers such as
+`instant-swift-data examples todos watch --events 1 --jsonl` still emit cached
+local results while the connection is closed.
 
 ### Realtime Sync
 

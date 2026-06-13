@@ -92,6 +92,7 @@ swift run instant-swift-data local-id list --json
 swift run instant-swift-data connection status --json
 swift run instant-swift-data connection close --json
 swift run instant-swift-data query todos --json # exits non-zero while closed, with cached-query details
+swift run instant-swift-data examples todos watch --events 1 --jsonl # emits cached local state while closed
 swift run instant-swift-data connection connect --json
 swift run instant-swift-data sync inspect --json
 swift run instant-swift-data sync mark-processed demo-tx-1 --json

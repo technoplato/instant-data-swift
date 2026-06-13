@@ -244,6 +244,45 @@ struct InstantStoreTests {
   }
 
   @Test
+  func observeRefreshesDurableSnapshotBeforeInitialEmission() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let staleRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "observe-refresh",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let writerRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "observe-refresh",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await writerRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-observe-refresh",
+        operations: TodoExample.createOperations(
+          id: "todo-observe-refresh",
+          text: "offline observer refresh",
+          createdAt: createdAt,
+          transactionID: "tx-observe-refresh"
+        )
+      ),
+      createdAt: createdAt
+    )
+    try await writerRuntime.closeConnection()
+
+    let stream = await staleRuntime.observe(TodoExample.query)
+    var iterator = stream.makeAsyncIterator()
+    let emission = try #require(await iterator.next())
+    let todos = try TodoExample.decode(emission.values)
+    expectNoDifference(todos.map(\.text), ["offline observer refresh"])
+  }
+
+  @Test
   func deleteEntityRemovesTodoAndPersistsAcrossLaunches() async throws {
     let cacheURL = try temporaryCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_100)

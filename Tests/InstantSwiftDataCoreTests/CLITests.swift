@@ -778,6 +778,22 @@ extension InstantStoreTests {
     expectNoDifference(jsonWatch.emittedEventCount, 1)
     expectNoDifference(jsonWatch.emissions.map(\.todos.count), [2])
 
+    _ = try runCLI(["connection", "close", "--json"], homeURL: homeURL)
+    let closedWatchOutput = try runCLI(
+      ["examples", "todos", "watch", "--events", "1", "--completed", "false", "--jsonl"],
+      homeURL: homeURL
+    )
+    let closedWatchLines = closedWatchOutput.split(separator: "\n")
+    expectNoDifference(closedWatchLines.count, 1)
+    let closedWatch = try JSONDecoder().decode(
+      CLITodoWatchEvidence.self,
+      from: Data(try #require(closedWatchLines.first).utf8)
+    )
+    expectNoDifference(closedWatch.event, "watch")
+    expectNoDifference(closedWatch.details.todos.map(\.text), ["watch open"])
+    expectNoDifference(closedWatch.details.pendingMutationCount, 3)
+    _ = try runCLI(["connection", "connect", "--json"], homeURL: homeURL)
+
     let invalidEvents = try runCLIResult(
       ["examples", "todos", "watch", "--events", "2", "--json"],
       homeURL: homeURL
