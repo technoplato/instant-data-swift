@@ -81,6 +81,177 @@ public enum CLIExamplesTodosCommand: Equatable, Sendable {
   case unknown(String)
 }
 
+public enum CLIRoomsInvocation: Equatable, Sendable {
+  case presence(CLIRoomPresenceInvocation)
+  case topics(CLIRoomTopicsInvocation)
+}
+
+public enum CLIRoomPresenceInvocation: Equatable, Sendable {
+  case set(CLIRoomPresenceSetInvocation)
+  case list(CLIRoomIdentifier)
+  case watch(CLIRoomPresenceWatchInvocation)
+  case leave(CLIRoomPresenceLeaveInvocation)
+}
+
+public enum CLIRoomTopicsInvocation: Equatable, Sendable {
+  case publish(CLIRoomTopicPublishInvocation)
+  case list(CLIRoomTopicListInvocation)
+  case watch(CLIRoomTopicWatchInvocation)
+}
+
+public struct CLIRoomIdentifier: Equatable, Sendable {
+  public var type: String
+  public var id: String
+
+  public init(type: String, id: String) {
+    self.type = type
+    self.id = id
+  }
+}
+
+public struct CLIRoomPresenceSetInvocation: Equatable, Sendable {
+  public var room: CLIRoomIdentifier
+  public var userID: String?
+  public var values: [String]
+
+  public var value: String {
+    get { values.last ?? "" }
+    set { values = [newValue] }
+  }
+
+  public init(room: CLIRoomIdentifier, userID: String? = nil, value: String) {
+    self.init(room: room, userID: userID, values: [value])
+  }
+
+  public init(room: CLIRoomIdentifier, userID: String? = nil, values: [String]) {
+    self.room = room
+    self.userID = userID
+    self.values = values
+  }
+}
+
+public struct CLIRoomPresenceWatchInvocation: Equatable, Sendable {
+  public var room: CLIRoomIdentifier
+  public var eventCount: Int
+
+  public init(room: CLIRoomIdentifier, eventCount: Int = 1) {
+    self.room = room
+    self.eventCount = eventCount
+  }
+}
+
+public struct CLIRoomPresenceLeaveInvocation: Equatable, Sendable {
+  public var room: CLIRoomIdentifier
+  public var userID: String?
+
+  public init(room: CLIRoomIdentifier, userID: String? = nil) {
+    self.room = room
+    self.userID = userID
+  }
+}
+
+public struct CLIRoomTopicPublishInvocation: Equatable, Sendable {
+  public var room: CLIRoomIdentifier
+  public var topic: String
+  public var userID: String?
+  public var values: [String]
+
+  public var value: String {
+    get { values.last ?? "" }
+    set { values = [newValue] }
+  }
+
+  public init(
+    room: CLIRoomIdentifier,
+    topic: String,
+    userID: String? = nil,
+    value: String
+  ) {
+    self.init(room: room, topic: topic, userID: userID, values: [value])
+  }
+
+  public init(
+    room: CLIRoomIdentifier,
+    topic: String,
+    userID: String? = nil,
+    values: [String]
+  ) {
+    self.room = room
+    self.topic = topic
+    self.userID = userID
+    self.values = values
+  }
+}
+
+public struct CLIRoomTopicListInvocation: Equatable, Sendable {
+  public var room: CLIRoomIdentifier
+  public var topic: String
+  public var limit: Int?
+
+  public init(room: CLIRoomIdentifier, topic: String, limit: Int? = nil) {
+    self.room = room
+    self.topic = topic
+    self.limit = limit
+  }
+}
+
+public struct CLIRoomTopicWatchInvocation: Equatable, Sendable {
+  public var room: CLIRoomIdentifier
+  public var topic: String
+  public var eventCount: Int
+
+  public init(room: CLIRoomIdentifier, topic: String, eventCount: Int = 1) {
+    self.room = room
+    self.topic = topic
+    self.eventCount = eventCount
+  }
+}
+
+public enum CLIRoomsUsage {
+  public static let rooms = """
+    Usage: instant-swift-data rooms <presence|topics>
+      instant-swift-data rooms presence set <room-type> <room-id> --value '{...}' [--user-id id] [--json|--jsonl]
+      instant-swift-data rooms presence list <room-type> <room-id> [--json|--jsonl]
+      instant-swift-data rooms presence watch <room-type> <room-id> [--events 1] [--json|--jsonl]
+      instant-swift-data rooms presence leave <room-type> <room-id> [--user-id id] [--json|--jsonl]
+      instant-swift-data rooms topics publish <room-type> <room-id> <topic> --value '{...}' [--user-id id] [--json|--jsonl]
+      instant-swift-data rooms topics list <room-type> <room-id> <topic> [--limit n] [--json|--jsonl]
+      instant-swift-data rooms topics watch <room-type> <room-id> <topic> [--events 1] [--json|--jsonl]
+    """
+
+  public static let presence = """
+    Usage: instant-swift-data rooms presence <set|list|watch|leave>
+      instant-swift-data rooms presence set <room-type> <room-id> --value '{...}' [--user-id id] [--json|--jsonl]
+      instant-swift-data rooms presence list <room-type> <room-id> [--json|--jsonl]
+      instant-swift-data rooms presence watch <room-type> <room-id> [--events 1] [--json|--jsonl]
+      instant-swift-data rooms presence leave <room-type> <room-id> [--user-id id] [--json|--jsonl]
+    """
+
+  public static let topics = """
+    Usage: instant-swift-data rooms topics <publish|list|watch>
+      instant-swift-data rooms topics publish <room-type> <room-id> <topic> --value '{...}' [--user-id id] [--json|--jsonl]
+      instant-swift-data rooms topics list <room-type> <room-id> <topic> [--limit n] [--json|--jsonl]
+      instant-swift-data rooms topics watch <room-type> <room-id> <topic> [--events 1] [--json|--jsonl]
+    """
+}
+
+public enum CLIRoomsArgumentError: Error, Equatable, Sendable {
+  case missingDomain
+  case unknownDomain(String)
+  case missingCommand(usage: String)
+  case unknownCommand(command: String, usage: String)
+  case missingArguments(usage: String)
+  case missingValue(option: String, usage: String)
+  case emptyValue(option: String, usage: String)
+  case missingRequiredOption(option: String, usage: String)
+  case invalidLimit(String, usage: String)
+  case invalidEventCount(String, usageCommand: String)
+  case unknownOption(domain: String, option: String, usage: String)
+  case unexpectedArgument(String, usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
 public struct CLIBenchmarkInvocation: Equatable, Sendable {
   public static let defaultSuite = "local-todos"
 
@@ -230,6 +401,289 @@ public struct CLIExamplesTodosCommandParser: Parser {
   }
 }
 
+public struct CLIRoomsParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIRoomsInvocation {
+    guard let domain = input.first else {
+      throw CLIRoomsArgumentError.missingDomain
+    }
+    input.removeFirst()
+
+    switch domain {
+    case "presence":
+      return .presence(try CLIRoomPresenceParser().parse(&input))
+
+    case "topics", "topic":
+      return .topics(try CLIRoomTopicsParser().parse(&input))
+
+    default:
+      throw CLIRoomsArgumentError.unknownDomain(domain)
+    }
+  }
+}
+
+public struct CLIRoomPresenceParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIRoomPresenceInvocation {
+    guard let command = input.first else {
+      throw CLIRoomsArgumentError.missingCommand(usage: CLIRoomsUsage.presence)
+    }
+    input.removeFirst()
+
+    switch command {
+    case "set":
+      return .set(try CLIRoomPresenceSetParser().parse(&input))
+
+    case "list":
+      let room = try CLIRoomIdentifierParser(usage: CLIRoomsUsage.presence).parse(&input)
+      try requireNoRemainingArguments(&input, usage: CLIRoomsUsage.presence)
+      return .list(room)
+
+    case "watch":
+      return .watch(try CLIRoomPresenceWatchParser().parse(&input))
+
+    case "leave":
+      return .leave(try CLIRoomPresenceLeaveParser().parse(&input))
+
+    default:
+      throw CLIRoomsArgumentError.unknownCommand(command: command, usage: CLIRoomsUsage.presence)
+    }
+  }
+}
+
+public struct CLIRoomTopicsParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIRoomTopicsInvocation {
+    guard let command = input.first else {
+      throw CLIRoomsArgumentError.missingCommand(usage: CLIRoomsUsage.topics)
+    }
+    input.removeFirst()
+
+    switch command {
+    case "publish":
+      return .publish(try CLIRoomTopicPublishParser().parse(&input))
+
+    case "list":
+      return .list(try CLIRoomTopicListParser().parse(&input))
+
+    case "watch":
+      return .watch(try CLIRoomTopicWatchParser().parse(&input))
+
+    default:
+      throw CLIRoomsArgumentError.unknownCommand(command: command, usage: CLIRoomsUsage.topics)
+    }
+  }
+}
+
+public struct CLIRoomPresenceSetParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIRoomPresenceSetInvocation {
+    let room = try CLIRoomIdentifierParser(usage: CLIRoomsUsage.presence).parse(&input)
+    var userID: String?
+    var values: [String] = []
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--user-id":
+        userID = try parseNonEmptyOptionValue(
+          from: &input,
+          option: option,
+          usage: CLIRoomsUsage.presence
+        )
+
+      case "--value":
+        values.append(
+          try parseOptionValue(from: &input, option: option, usage: CLIRoomsUsage.presence)
+        )
+
+      default:
+        throw CLIRoomsArgumentError.unknownOption(
+          domain: "rooms presence set",
+          option: option,
+          usage: CLIRoomsUsage.presence
+        )
+      }
+    }
+    guard !values.isEmpty else {
+      throw CLIRoomsArgumentError.missingRequiredOption(
+        option: "--value",
+        usage: CLIRoomsUsage.presence
+      )
+    }
+    return CLIRoomPresenceSetInvocation(room: room, userID: userID, values: values)
+  }
+}
+
+public struct CLIRoomPresenceWatchParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIRoomPresenceWatchInvocation {
+    let room = try CLIRoomIdentifierParser(usage: CLIRoomsUsage.presence).parse(&input)
+    let eventCount = try parseFiniteWatchEventCount(
+      from: &input,
+      usageCommand: "instant-swift-data rooms presence watch <room-type> <room-id>",
+      domain: "rooms presence watch"
+    )
+    return CLIRoomPresenceWatchInvocation(room: room, eventCount: eventCount)
+  }
+}
+
+public struct CLIRoomPresenceLeaveParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIRoomPresenceLeaveInvocation {
+    let room = try CLIRoomIdentifierParser(usage: CLIRoomsUsage.presence).parse(&input)
+    var userID: String?
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--user-id":
+        userID = try parseNonEmptyOptionValue(
+          from: &input,
+          option: option,
+          usage: CLIRoomsUsage.presence
+        )
+
+      default:
+        throw CLIRoomsArgumentError.unknownOption(
+          domain: "rooms presence leave",
+          option: option,
+          usage: CLIRoomsUsage.presence
+        )
+      }
+    }
+    return CLIRoomPresenceLeaveInvocation(room: room, userID: userID)
+  }
+}
+
+public struct CLIRoomTopicPublishParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIRoomTopicPublishInvocation {
+    let (room, topic) = try CLIRoomTopicHeadParser(usage: CLIRoomsUsage.topics).parse(&input)
+    var userID: String?
+    var values: [String] = []
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--user-id":
+        userID = try parseNonEmptyOptionValue(
+          from: &input,
+          option: option,
+          usage: CLIRoomsUsage.topics
+        )
+
+      case "--value":
+        values.append(
+          try parseOptionValue(from: &input, option: option, usage: CLIRoomsUsage.topics)
+        )
+
+      default:
+        throw CLIRoomsArgumentError.unknownOption(
+          domain: "rooms topics publish",
+          option: option,
+          usage: CLIRoomsUsage.topics
+        )
+      }
+    }
+    guard !values.isEmpty else {
+      throw CLIRoomsArgumentError.missingRequiredOption(
+        option: "--value",
+        usage: CLIRoomsUsage.topics
+      )
+    }
+    return CLIRoomTopicPublishInvocation(
+      room: room,
+      topic: topic,
+      userID: userID,
+      values: values
+    )
+  }
+}
+
+public struct CLIRoomTopicListParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIRoomTopicListInvocation {
+    let (room, topic) = try CLIRoomTopicHeadParser(usage: CLIRoomsUsage.topics).parse(&input)
+    var limit: Int?
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--limit":
+        let value = try parseOptionValue(from: &input, option: option, usage: CLIRoomsUsage.topics)
+        guard let parsed = Int(value), parsed >= 0 else {
+          throw CLIRoomsArgumentError.invalidLimit(value, usage: CLIRoomsUsage.topics)
+        }
+        limit = parsed
+
+      default:
+        throw CLIRoomsArgumentError.unknownOption(
+          domain: "rooms topics list",
+          option: option,
+          usage: CLIRoomsUsage.topics
+        )
+      }
+    }
+    return CLIRoomTopicListInvocation(room: room, topic: topic, limit: limit)
+  }
+}
+
+public struct CLIRoomTopicWatchParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIRoomTopicWatchInvocation {
+    let (room, topic) = try CLIRoomTopicHeadParser(usage: CLIRoomsUsage.topics).parse(&input)
+    let eventCount = try parseFiniteWatchEventCount(
+      from: &input,
+      usageCommand: "instant-swift-data rooms topics watch <room-type> <room-id> <topic>",
+      domain: "rooms topics watch"
+    )
+    return CLIRoomTopicWatchInvocation(room: room, topic: topic, eventCount: eventCount)
+  }
+}
+
+public struct CLIRoomIdentifierParser: Parser {
+  public var usage: String
+
+  public init(usage: String) {
+    self.usage = usage
+  }
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIRoomIdentifier {
+    guard let roomType = input.first else {
+      throw CLIRoomsArgumentError.missingArguments(usage: usage)
+    }
+    input.removeFirst()
+    guard let roomID = input.first else {
+      throw CLIRoomsArgumentError.missingArguments(usage: usage)
+    }
+    input.removeFirst()
+    return CLIRoomIdentifier(type: trimmed(roomType), id: trimmed(roomID))
+  }
+}
+
+public struct CLIRoomTopicHeadParser: Parser {
+  public var usage: String
+
+  public init(usage: String) {
+    self.usage = usage
+  }
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> (CLIRoomIdentifier, String) {
+    let room = try CLIRoomIdentifierParser(usage: usage).parse(&input)
+    guard let topic = input.first else {
+      throw CLIRoomsArgumentError.missingArguments(usage: usage)
+    }
+    input.removeFirst()
+    return (room, trimmed(topic))
+  }
+}
+
 public struct CLIBenchmarkParser: Parser {
   public var defaultAppID: String
   public var allowsOutputFlags: Bool
@@ -363,6 +817,117 @@ public enum CLIBenchmarkArguments {
       usageCommand: usageCommand
     )
     .parse(&input)
+  }
+}
+
+private func parseOptionValue(
+  from input: inout ArraySlice<String>,
+  option: String,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIRoomsArgumentError.missingValue(option: option, usage: usage)
+  }
+  input.removeFirst()
+  return value
+}
+
+private func parseNonEmptyOptionValue(
+  from input: inout ArraySlice<String>,
+  option: String,
+  usage: String
+) throws -> String {
+  let value = try parseOptionValue(from: &input, option: option, usage: usage)
+  let trimmedValue = trimmed(value)
+  guard !trimmedValue.isEmpty else {
+    throw CLIRoomsArgumentError.emptyValue(option: option, usage: usage)
+  }
+  return trimmedValue
+}
+
+private func parseFiniteWatchEventCount(
+  from input: inout ArraySlice<String>,
+  usageCommand: String,
+  domain: String
+) throws -> Int {
+  var eventCount = 1
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--events":
+      let value = try parseOptionValue(
+        from: &input,
+        option: option,
+        usage: "Usage: \(usageCommand) --events 1"
+      )
+      guard let parsed = Int(value), parsed == 1 else {
+        throw CLIRoomsArgumentError.invalidEventCount(value, usageCommand: usageCommand)
+      }
+      eventCount = parsed
+
+    default:
+      throw CLIRoomsArgumentError.unknownOption(
+        domain: domain,
+        option: option,
+        usage: "Usage: \(usageCommand) [--events 1] [--json|--jsonl]"
+      )
+    }
+  }
+  return eventCount
+}
+
+private func requireNoRemainingArguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if let argument = input.first {
+    throw CLIRoomsArgumentError.unexpectedArgument(argument, usage: usage)
+  }
+}
+
+private func trimmed(_ string: String) -> String {
+  string.trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+extension CLIRoomsArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case .missingDomain:
+      return CLIRoomsUsage.rooms
+
+    case .unknownDomain:
+      return CLIRoomsUsage.rooms
+
+    case let .missingCommand(usage):
+      return usage
+
+    case let .unknownCommand(_, usage):
+      return usage
+
+    case let .missingArguments(usage):
+      return usage
+
+    case let .missingValue(option, usage):
+      return "Missing value for \(option). \(usage)"
+
+    case let .emptyValue(option, usage):
+      return "Missing non-empty value for \(option). \(usage)"
+
+    case let .missingRequiredOption(option, usage):
+      return "Missing required option \(option). \(usage)"
+
+    case let .invalidLimit(value, usage):
+      return "Invalid --limit value: \(value). \(usage)"
+
+    case let .invalidEventCount(_, usageCommand):
+      return "Usage: \(usageCommand) --events 1"
+
+    case let .unknownOption(domain, option, usage):
+      return "Unknown \(domain) option: \(option). \(usage)"
+
+    case let .unexpectedArgument(argument, usage):
+      return "Unexpected argument: \(argument). \(usage)"
+    }
   }
 }
 

@@ -2147,157 +2147,154 @@ struct InstantSwiftDataCLI {
   }
 
   private static func runRooms(arguments: [String], output: OutputMode) async throws {
-    var arguments = arguments
-    guard let domain = arguments.popFirstArgument() else {
-      throw CLIError(roomsUsage, exitCode: 64)
+    let invocation: CLIRoomsInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLIRoomsParser().parse(&input)
+    } catch let error as CLIRoomsArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
 
     let context = try await CLIContext.bootstrap(initialAttributes: [])
 
-    switch domain {
-    case "presence":
-      try await runRoomPresence(arguments: arguments, context: context, output: output)
+    switch invocation {
+    case let .presence(presence):
+      try await runRoomPresence(invocation: presence, context: context, output: output)
 
-    case "topics", "topic":
-      try await runRoomTopics(arguments: arguments, context: context, output: output)
-
-    default:
-      throw CLIError(roomsUsage, exitCode: 64)
+    case let .topics(topics):
+      try await runRoomTopics(invocation: topics, context: context, output: output)
     }
   }
 
   private static func runRoomPresence(
-    arguments: [String],
+    invocation: CLIRoomPresenceInvocation,
     context: CLIContext,
     output: OutputMode
   ) async throws {
-    var arguments = arguments
-    guard let command = arguments.popFirstArgument() else {
-      throw CLIError(roomPresenceUsage, exitCode: 64)
-    }
-
-    switch command {
-    case "set":
-      let options = try RoomPresenceSetOptions.parse(arguments: arguments)
-      let member = try await context.runtime.setPresence(
-        room: options.room,
-        userID: options.userID,
-        values: options.values
+    switch invocation {
+    case let .set(options):
+      let room = options.room.instantRoomHandle
+      let values = try parseLastJSONObject(
+        options.values,
+        operation: "set room presence",
+        usage: roomPresenceUsage
       )
-      let members = try await context.runtime.roomPresence(room: options.room)
+      let member = try await context.runtime.setPresence(
+        room: room,
+        userID: options.userID,
+        values: values
+      )
+      let members = try await context.runtime.roomPresence(room: room)
       try printRoomPresence(
         context: context,
         event: "presence-set",
-        room: options.room,
+        room: room,
         userID: member.userID,
         members: members,
         output: output
       )
 
-    case "list":
-      let options = try RoomPresenceListOptions.parse(arguments: arguments)
-      let members = try await context.runtime.roomPresence(room: options.room)
+    case let .list(roomIdentifier):
+      let room = roomIdentifier.instantRoomHandle
+      let members = try await context.runtime.roomPresence(room: room)
       try printRoomPresence(
         context: context,
         event: "presence-list",
-        room: options.room,
+        room: room,
         userID: nil,
         members: members,
         output: output
       )
 
-    case "watch":
-      let options = try RoomPresenceWatchOptions.parse(arguments: arguments)
+    case let .watch(options):
+      let room = options.room.instantRoomHandle
       let members = try await firstWatchSnapshot(
-        from: context.runtime.observeRoomPresence(room: options.room),
+        from: context.runtime.observeRoomPresence(room: room),
         operation: "room presence watch",
         eventCount: options.eventCount
       )
       try printRoomPresence(
         context: context,
         event: "presence-watch",
-        room: options.room,
+        room: room,
         userID: nil,
         members: members,
         output: output
       )
 
-    case "leave":
-      let options = try RoomPresenceLeaveOptions.parse(arguments: arguments)
+    case let .leave(options):
+      let room = options.room.instantRoomHandle
       let userID = try await context.runtime.leavePresence(
-        room: options.room,
+        room: room,
         userID: options.userID
       )
-      let members = try await context.runtime.roomPresence(room: options.room)
+      let members = try await context.runtime.roomPresence(room: room)
       try printRoomPresence(
         context: context,
         event: "presence-leave",
-        room: options.room,
+        room: room,
         userID: userID,
         members: members,
         output: output
       )
-
-    default:
-      throw CLIError(roomPresenceUsage, exitCode: 64)
     }
   }
 
   private static func runRoomTopics(
-    arguments: [String],
+    invocation: CLIRoomTopicsInvocation,
     context: CLIContext,
     output: OutputMode
   ) async throws {
-    var arguments = arguments
-    guard let command = arguments.popFirstArgument() else {
-      throw CLIError(roomTopicsUsage, exitCode: 64)
-    }
-
-    switch command {
-    case "publish":
-      let options = try RoomTopicPublishOptions.parse(arguments: arguments)
+    switch invocation {
+    case let .publish(options):
+      let room = options.room.instantRoomHandle
+      let payload = try parseLastJSONValue(
+        options.values,
+        operation: "publish room topic",
+        usage: roomTopicsUsage
+      )
       let message = try await context.runtime.publishTopicMessage(
-        room: options.room,
+        room: room,
         topic: options.topic,
         userID: options.userID,
-        payload: options.payload
+        payload: payload
       )
       let messages = try await context.runtime.roomTopicMessages(
-        room: options.room,
+        room: room,
         topic: options.topic
       )
       try printRoomTopic(
         context: context,
         event: "topic-publish",
-        room: options.room,
+        room: room,
         topic: options.topic,
         publishedMessageID: message.id,
         messages: messages,
         output: output
       )
 
-    case "list":
-      let options = try RoomTopicListOptions.parse(arguments: arguments)
+    case let .list(options):
+      let room = options.room.instantRoomHandle
       let messages = try await context.runtime.roomTopicMessages(
-        room: options.room,
+        room: room,
         topic: options.topic,
         limit: options.limit
       )
       try printRoomTopic(
         context: context,
         event: "topic-list",
-        room: options.room,
+        room: room,
         topic: options.topic,
         publishedMessageID: nil,
         messages: messages,
         output: output
       )
 
-    case "watch":
-      let options = try RoomTopicWatchOptions.parse(arguments: arguments)
+    case let .watch(options):
+      let room = options.room.instantRoomHandle
       let messages = try await firstWatchSnapshot(
         from: context.runtime.observeRoomTopicMessages(
-          room: options.room,
+          room: room,
           topic: options.topic
         ),
         operation: "room topic watch",
@@ -2306,15 +2303,12 @@ struct InstantSwiftDataCLI {
       try printRoomTopic(
         context: context,
         event: "topic-watch",
-        room: options.room,
+        room: room,
         topic: options.topic,
         publishedMessageID: nil,
         messages: messages,
         output: output
       )
-
-    default:
-      throw CLIError(roomTopicsUsage, exitCode: 64)
     }
   }
 
@@ -6399,35 +6393,15 @@ struct InstantSwiftDataCLI {
   }
 
   private static var roomsUsage: String {
-    """
-    Usage: instant-swift-data rooms <presence|topics>
-      instant-swift-data rooms presence set <room-type> <room-id> --value '{...}' [--user-id id] [--json|--jsonl]
-      instant-swift-data rooms presence list <room-type> <room-id> [--json|--jsonl]
-      instant-swift-data rooms presence watch <room-type> <room-id> [--events 1] [--json|--jsonl]
-      instant-swift-data rooms presence leave <room-type> <room-id> [--user-id id] [--json|--jsonl]
-      instant-swift-data rooms topics publish <room-type> <room-id> <topic> --value '{...}' [--user-id id] [--json|--jsonl]
-      instant-swift-data rooms topics list <room-type> <room-id> <topic> [--limit n] [--json|--jsonl]
-      instant-swift-data rooms topics watch <room-type> <room-id> <topic> [--events 1] [--json|--jsonl]
-    """
+    CLIRoomsUsage.rooms
   }
 
   fileprivate static var roomPresenceUsage: String {
-    """
-    Usage: instant-swift-data rooms presence <set|list|watch|leave>
-      instant-swift-data rooms presence set <room-type> <room-id> --value '{...}' [--user-id id] [--json|--jsonl]
-      instant-swift-data rooms presence list <room-type> <room-id> [--json|--jsonl]
-      instant-swift-data rooms presence watch <room-type> <room-id> [--events 1] [--json|--jsonl]
-      instant-swift-data rooms presence leave <room-type> <room-id> [--user-id id] [--json|--jsonl]
-    """
+    CLIRoomsUsage.presence
   }
 
   fileprivate static var roomTopicsUsage: String {
-    """
-    Usage: instant-swift-data rooms topics <publish|list|watch>
-      instant-swift-data rooms topics publish <room-type> <room-id> <topic> --value '{...}' [--user-id id] [--json|--jsonl]
-      instant-swift-data rooms topics list <room-type> <room-id> <topic> [--limit n] [--json|--jsonl]
-      instant-swift-data rooms topics watch <room-type> <room-id> <topic> [--events 1] [--json|--jsonl]
-    """
+    CLIRoomsUsage.topics
   }
 
   fileprivate static var filesUsage: String {
@@ -6841,6 +6815,42 @@ struct InstantSwiftDataCLI {
   ) throws -> [String: JSONValue] {
     guard case let .object(values) = try parseJSONValue(string, operation: operation) else {
       throw CLIError("\(operation): --value must be a JSON object.", exitCode: 64)
+    }
+    return values
+  }
+
+  fileprivate static func parseLastJSONValue(
+    _ strings: [String],
+    operation: String,
+    usage: String
+  ) throws -> JSONValue {
+    guard !strings.isEmpty else {
+      throw CLIError(usage, exitCode: 64)
+    }
+    var value: JSONValue?
+    for string in strings {
+      value = try parseJSONValue(string, operation: operation)
+    }
+    guard let value else {
+      throw CLIError(usage, exitCode: 64)
+    }
+    return value
+  }
+
+  fileprivate static func parseLastJSONObject(
+    _ strings: [String],
+    operation: String,
+    usage: String
+  ) throws -> [String: JSONValue] {
+    guard !strings.isEmpty else {
+      throw CLIError(usage, exitCode: 64)
+    }
+    var values: [String: JSONValue]?
+    for string in strings {
+      values = try parseJSONObject(string, operation: operation)
+    }
+    guard let values else {
+      throw CLIError(usage, exitCode: 64)
     }
     return values
   }
@@ -7754,272 +7764,9 @@ private struct ScaffoldFileSpec: Sendable {
   var kind: String
 }
 
-private struct RoomPresenceSetOptions: Sendable {
-  var room: InstantRoomHandle
-  var userID: String?
-  var values: [String: JSONValue]
-
-  static func parse(arguments: [String]) throws -> Self {
-    var arguments = arguments
-    guard let roomType = arguments.popFirstArgument(),
-      let roomID = arguments.popFirstArgument()
-    else {
-      throw CLIError(InstantSwiftDataCLI.roomPresenceUsage, exitCode: 64)
-    }
-
-    var userID: String?
-    var values: [String: JSONValue]?
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--user-id":
-        guard let value = arguments.popFirstArgument(),
-          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else {
-          throw CLIError(InstantSwiftDataCLI.roomPresenceUsage, exitCode: 64)
-        }
-        userID = value.trimmingCharacters(in: .whitespacesAndNewlines)
-
-      case "--value":
-        guard let value = arguments.popFirstArgument() else {
-          throw CLIError(InstantSwiftDataCLI.roomPresenceUsage, exitCode: 64)
-        }
-        values = try InstantSwiftDataCLI.parseJSONObject(value, operation: "set room presence")
-
-      default:
-        throw CLIError(
-          "Unknown rooms presence set option: \(option). \(InstantSwiftDataCLI.roomPresenceUsage)",
-          exitCode: 64
-        )
-      }
-    }
-
-    guard let values else {
-      throw CLIError(InstantSwiftDataCLI.roomPresenceUsage, exitCode: 64)
-    }
-    return Self(
-      room: InstantRoomHandle(
-        type: roomType.trimmingCharacters(in: .whitespacesAndNewlines),
-        id: roomID.trimmingCharacters(in: .whitespacesAndNewlines)
-      ),
-      userID: userID,
-      values: values
-    )
-  }
-}
-
-private struct RoomPresenceListOptions: Sendable {
-  var room: InstantRoomHandle
-
-  static func parse(arguments: [String]) throws -> Self {
-    var arguments = arguments
-    guard let roomType = arguments.popFirstArgument(),
-      let roomID = arguments.popFirstArgument(),
-      arguments.isEmpty
-    else {
-      throw CLIError(InstantSwiftDataCLI.roomPresenceUsage, exitCode: 64)
-    }
-    return Self(
-      room: InstantRoomHandle(
-        type: roomType.trimmingCharacters(in: .whitespacesAndNewlines),
-        id: roomID.trimmingCharacters(in: .whitespacesAndNewlines)
-      )
-    )
-  }
-}
-
-private struct RoomPresenceWatchOptions: Sendable {
-  var room: InstantRoomHandle
-  var eventCount: Int
-
-  static func parse(arguments: [String]) throws -> Self {
-    var arguments = arguments
-    guard let roomType = arguments.popFirstArgument(),
-      let roomID = arguments.popFirstArgument()
-    else {
-      throw CLIError(InstantSwiftDataCLI.roomPresenceUsage, exitCode: 64)
-    }
-    let eventCount = try InstantSwiftDataCLI.parseFiniteWatchEventCount(
-      arguments: arguments,
-      usageCommand: "instant-swift-data rooms presence watch <room-type> <room-id>",
-      domain: "rooms presence watch"
-    )
-    return Self(
-      room: InstantRoomHandle(
-        type: roomType.trimmingCharacters(in: .whitespacesAndNewlines),
-        id: roomID.trimmingCharacters(in: .whitespacesAndNewlines)
-      ),
-      eventCount: eventCount
-    )
-  }
-}
-
-private struct RoomPresenceLeaveOptions: Sendable {
-  var room: InstantRoomHandle
-  var userID: String?
-
-  static func parse(arguments: [String]) throws -> Self {
-    var arguments = arguments
-    guard let roomType = arguments.popFirstArgument(),
-      let roomID = arguments.popFirstArgument()
-    else {
-      throw CLIError(InstantSwiftDataCLI.roomPresenceUsage, exitCode: 64)
-    }
-
-    var userID: String?
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--user-id":
-        guard let value = arguments.popFirstArgument(),
-          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else {
-          throw CLIError(InstantSwiftDataCLI.roomPresenceUsage, exitCode: 64)
-        }
-        userID = value.trimmingCharacters(in: .whitespacesAndNewlines)
-
-      default:
-        throw CLIError(
-          "Unknown rooms presence leave option: \(option). \(InstantSwiftDataCLI.roomPresenceUsage)",
-          exitCode: 64
-        )
-      }
-    }
-    return Self(
-      room: InstantRoomHandle(
-        type: roomType.trimmingCharacters(in: .whitespacesAndNewlines),
-        id: roomID.trimmingCharacters(in: .whitespacesAndNewlines)
-      ),
-      userID: userID
-    )
-  }
-}
-
-private struct RoomTopicPublishOptions: Sendable {
-  var room: InstantRoomHandle
-  var topic: String
-  var userID: String?
-  var payload: JSONValue
-
-  static func parse(arguments: [String]) throws -> Self {
-    var arguments = arguments
-    guard let roomType = arguments.popFirstArgument(),
-      let roomID = arguments.popFirstArgument(),
-      let topic = arguments.popFirstArgument()
-    else {
-      throw CLIError(InstantSwiftDataCLI.roomTopicsUsage, exitCode: 64)
-    }
-
-    var userID: String?
-    var payload: JSONValue?
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--user-id":
-        guard let value = arguments.popFirstArgument(),
-          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else {
-          throw CLIError(InstantSwiftDataCLI.roomTopicsUsage, exitCode: 64)
-        }
-        userID = value.trimmingCharacters(in: .whitespacesAndNewlines)
-
-      case "--value":
-        guard let value = arguments.popFirstArgument() else {
-          throw CLIError(InstantSwiftDataCLI.roomTopicsUsage, exitCode: 64)
-        }
-        payload = try InstantSwiftDataCLI.parseJSONValue(value, operation: "publish room topic")
-
-      default:
-        throw CLIError(
-          "Unknown rooms topics publish option: \(option). \(InstantSwiftDataCLI.roomTopicsUsage)",
-          exitCode: 64
-        )
-      }
-    }
-
-    guard let payload else {
-      throw CLIError(InstantSwiftDataCLI.roomTopicsUsage, exitCode: 64)
-    }
-    return Self(
-      room: InstantRoomHandle(
-        type: roomType.trimmingCharacters(in: .whitespacesAndNewlines),
-        id: roomID.trimmingCharacters(in: .whitespacesAndNewlines)
-      ),
-      topic: topic.trimmingCharacters(in: .whitespacesAndNewlines),
-      userID: userID,
-      payload: payload
-    )
-  }
-}
-
-private struct RoomTopicListOptions: Sendable {
-  var room: InstantRoomHandle
-  var topic: String
-  var limit: Int?
-
-  static func parse(arguments: [String]) throws -> Self {
-    var arguments = arguments
-    guard let roomType = arguments.popFirstArgument(),
-      let roomID = arguments.popFirstArgument(),
-      let topic = arguments.popFirstArgument()
-    else {
-      throw CLIError(InstantSwiftDataCLI.roomTopicsUsage, exitCode: 64)
-    }
-
-    var limit: Int?
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--limit":
-        guard let value = arguments.popFirstArgument(),
-          let parsed = Int(value),
-          parsed >= 0
-        else {
-          throw CLIError(InstantSwiftDataCLI.roomTopicsUsage, exitCode: 64)
-        }
-        limit = parsed
-
-      default:
-        throw CLIError(
-          "Unknown rooms topics list option: \(option). \(InstantSwiftDataCLI.roomTopicsUsage)",
-          exitCode: 64
-        )
-      }
-    }
-
-    return Self(
-      room: InstantRoomHandle(
-        type: roomType.trimmingCharacters(in: .whitespacesAndNewlines),
-        id: roomID.trimmingCharacters(in: .whitespacesAndNewlines)
-      ),
-      topic: topic.trimmingCharacters(in: .whitespacesAndNewlines),
-      limit: limit
-    )
-  }
-}
-
-private struct RoomTopicWatchOptions: Sendable {
-  var room: InstantRoomHandle
-  var topic: String
-  var eventCount: Int
-
-  static func parse(arguments: [String]) throws -> Self {
-    var arguments = arguments
-    guard let roomType = arguments.popFirstArgument(),
-      let roomID = arguments.popFirstArgument(),
-      let topic = arguments.popFirstArgument()
-    else {
-      throw CLIError(InstantSwiftDataCLI.roomTopicsUsage, exitCode: 64)
-    }
-    let eventCount = try InstantSwiftDataCLI.parseFiniteWatchEventCount(
-      arguments: arguments,
-      usageCommand: "instant-swift-data rooms topics watch <room-type> <room-id> <topic>",
-      domain: "rooms topics watch"
-    )
-    return Self(
-      room: InstantRoomHandle(
-        type: roomType.trimmingCharacters(in: .whitespacesAndNewlines),
-        id: roomID.trimmingCharacters(in: .whitespacesAndNewlines)
-      ),
-      topic: topic.trimmingCharacters(in: .whitespacesAndNewlines),
-      eventCount: eventCount
-    )
+private extension CLIRoomIdentifier {
+  var instantRoomHandle: InstantRoomHandle {
+    InstantRoomHandle(type: type, id: id)
   }
 }
 

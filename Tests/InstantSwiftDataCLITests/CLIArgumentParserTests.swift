@@ -188,6 +188,155 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func roomsParserParsesPresenceCommands() throws {
+    expectNoDifference(
+      try parseRooms([
+        "presence", "set", " chat ", " lobby ", "--value", "{\"status\":\"online\"}",
+        "--user-id", " user-1 ",
+      ]),
+      .presence(
+        .set(
+          CLIRoomPresenceSetInvocation(
+            room: CLIRoomIdentifier(type: "chat", id: "lobby"),
+            userID: "user-1",
+            value: "{\"status\":\"online\"}"
+          )
+        )
+      )
+    )
+    expectNoDifference(
+      try parseRooms(["presence", "list", "chat", "lobby"]),
+      .presence(.list(CLIRoomIdentifier(type: "chat", id: "lobby")))
+    )
+    expectNoDifference(
+      try parseRooms(["presence", "watch", "chat", "lobby", "--events", "1"]),
+      .presence(
+        .watch(
+          CLIRoomPresenceWatchInvocation(
+            room: CLIRoomIdentifier(type: "chat", id: "lobby"),
+            eventCount: 1
+          )
+        )
+      )
+    )
+    expectNoDifference(
+      try parseRooms(["presence", "leave", "chat", "lobby", "--user-id", " user-1 "]),
+      .presence(
+        .leave(
+          CLIRoomPresenceLeaveInvocation(
+            room: CLIRoomIdentifier(type: "chat", id: "lobby"),
+            userID: "user-1"
+          )
+        )
+      )
+    )
+  }
+
+  @Test
+  func roomsParserParsesTopicCommandsAndAliases() throws {
+    expectNoDifference(
+      try parseRooms([
+        "topic", "publish", "chat", "lobby", " sendEmoji ", "--value", "{\"emoji\":\"wave\"}",
+        "--user-id", " user-1 ",
+      ]),
+      .topics(
+        .publish(
+          CLIRoomTopicPublishInvocation(
+            room: CLIRoomIdentifier(type: "chat", id: "lobby"),
+            topic: "sendEmoji",
+            userID: "user-1",
+            value: "{\"emoji\":\"wave\"}"
+          )
+        )
+      )
+    )
+    expectNoDifference(
+      try parseRooms(["topics", "list", "chat", "lobby", "sendEmoji", "--limit", "2"]),
+      .topics(
+        .list(
+          CLIRoomTopicListInvocation(
+            room: CLIRoomIdentifier(type: "chat", id: "lobby"),
+            topic: "sendEmoji",
+            limit: 2
+          )
+        )
+      )
+    )
+    expectNoDifference(
+      try parseRooms(["topics", "watch", "chat", "lobby", "sendEmoji", "--events", "1"]),
+      .topics(
+        .watch(
+          CLIRoomTopicWatchInvocation(
+            room: CLIRoomIdentifier(type: "chat", id: "lobby"),
+            topic: "sendEmoji",
+            eventCount: 1
+          )
+        )
+      )
+    )
+  }
+
+  @Test
+  func roomsParserPreservesDuplicateValuesInOrder() throws {
+    expectNoDifference(
+      try parseRooms([
+        "presence", "set", "chat", "lobby",
+        "--value", "not-json",
+        "--value", "{\"status\":\"online\"}",
+      ]),
+      .presence(
+        .set(
+          CLIRoomPresenceSetInvocation(
+            room: CLIRoomIdentifier(type: "chat", id: "lobby"),
+            values: ["not-json", "{\"status\":\"online\"}"]
+          )
+        )
+      )
+    )
+    expectNoDifference(
+      try parseRooms([
+        "topics", "publish", "chat", "lobby", "sendEmoji",
+        "--value", "not-json",
+        "--value", "{\"emoji\":\"wave\"}",
+      ]),
+      .topics(
+        .publish(
+          CLIRoomTopicPublishInvocation(
+            room: CLIRoomIdentifier(type: "chat", id: "lobby"),
+            topic: "sendEmoji",
+            values: ["not-json", "{\"emoji\":\"wave\"}"]
+          )
+        )
+      )
+    )
+  }
+
+  @Test
+  func roomsParserReportsMalformedArguments() throws {
+    try expectRoomsParseError([], contains: "Usage: instant-swift-data rooms")
+    try expectRoomsParseError(
+      ["presence", "set", "chat", "lobby"],
+      contains: "Missing required option --value."
+    )
+    try expectRoomsParseError(
+      ["presence", "set", "chat", "lobby", "--user-id", "  ", "--value", "{}"],
+      contains: "Missing non-empty value for --user-id."
+    )
+    try expectRoomsParseError(
+      ["presence", "watch", "chat", "lobby", "--events", "2"],
+      contains: "rooms presence watch <room-type> <room-id> --events 1"
+    )
+    try expectRoomsParseError(
+      ["topics", "list", "chat", "lobby", "sendEmoji", "--limit", "-1"],
+      contains: "Invalid --limit value: -1."
+    )
+    try expectRoomsParseError(
+      ["topics", "watch", "chat", "lobby", "sendEmoji", "--surprise"],
+      contains: "Unknown rooms topics watch option: --surprise."
+    )
+  }
+
+  @Test
   func benchmarkParserParsesOptionsAndDefaults() throws {
     expectNoDifference(
       try CLIBenchmarkArguments.parse([]),
@@ -276,6 +425,26 @@ private func parseExamples(_ arguments: [String]) throws -> CLIExamplesInvocatio
   let invocation = try CLIExamplesParser().parse(&input)
   expectNoDifference(Array(input), [])
   return invocation
+}
+
+private func parseRooms(_ arguments: [String]) throws -> CLIRoomsInvocation {
+  var input = arguments[...]
+  let invocation = try CLIRoomsParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
+private func expectRoomsParseError(
+  _ arguments: [String],
+  contains expectedFragment: String
+) throws {
+  do {
+    _ = try parseRooms(arguments)
+    Issue.record("Expected rooms parser to reject \(arguments).")
+  } catch let error as CLIRoomsArgumentError {
+    #expect(error.description.contains(expectedFragment))
+    expectNoDifference(error.exitCode, 64)
+  }
 }
 
 private func expectBenchmarkParseError(

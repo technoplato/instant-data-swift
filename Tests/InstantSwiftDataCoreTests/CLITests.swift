@@ -3076,6 +3076,18 @@ extension InstantStoreTests {
     expectNoDifference(setPresence.members.first?.userID, "user-1")
     expectNoDifference(setPresence.members.first?.values["name"], .string("Ada"))
 
+    let invalidDuplicatePresenceValue = try runCLIResult(
+      [
+        "rooms", "presence", "set", "chat", "lobby",
+        "--value", "not-json",
+        "--value", "{}",
+        "--json",
+      ],
+      homeURL: homeURL
+    )
+    #expect(invalidDuplicatePresenceValue.status == 64)
+    #expect(invalidDuplicatePresenceValue.error.contains("set room presence: Invalid JSON value"))
+
     let listedPresence = try JSONDecoder().decode(
       CLIRoomPresenceOutput.self,
       from: Data(
@@ -3138,6 +3150,18 @@ extension InstantStoreTests {
     expectNoDifference(firstTopic.messageCount, 1)
     expectNoDifference(firstTopic.messages.first?.userID, "user-1")
     expectNoDifference(firstTopic.messages.first?.payload, .object(["emoji": .string("wave")]))
+
+    let invalidDuplicateTopicValue = try runCLIResult(
+      [
+        "rooms", "topics", "publish", "chat", "lobby", "sendEmoji",
+        "--value", "not-json",
+        "--value", #"{"emoji":"valid"}"#,
+        "--json",
+      ],
+      homeURL: homeURL
+    )
+    #expect(invalidDuplicateTopicValue.status == 64)
+    #expect(invalidDuplicateTopicValue.error.contains("publish room topic: Invalid JSON value"))
 
     _ = try runCLI(
       [
