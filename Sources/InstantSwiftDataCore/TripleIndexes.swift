@@ -1407,7 +1407,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
 
   private static func canRangeCompare(_ lhs: InstantValue, _ rhs: InstantValue) -> Bool {
     switch (lhs, rhs) {
-    case (.string, .string), (.number, .number), (.date, .date):
+    case (.string, .string), (.number, .number), (.date, .date), (.bool, .bool):
       return true
     default:
       return false

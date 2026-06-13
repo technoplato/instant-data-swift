@@ -7416,11 +7416,18 @@ struct InstantStoreTests {
       name: "optional",
       valueType: .string
     )
+    let active = InstantAttribute(
+      id: "items/active",
+      namespace: "items",
+      name: "active",
+      valueType: .boolean,
+      isIndexed: true
+    )
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
         appID: "test-app",
         persistenceURL: temporaryCacheURL(),
-        initialAttributes: [score, tag, optional]
+        initialAttributes: [score, tag, optional, active]
       )
     )
     let time = InstantTimestamp(milliseconds: 10)
@@ -7431,18 +7438,23 @@ struct InstantStoreTests {
         operations: [
           .insert(.init(entityID: "item-1", attributeID: "items/score", value: .number(1), txID: "tx-filter-items", txTime: time)),
           .insert(.init(entityID: "item-1", attributeID: "items/tag", value: .string("red"), txID: "tx-filter-items", txTime: time)),
+          .insert(.init(entityID: "item-1", attributeID: "items/active", value: .bool(true), txID: "tx-filter-items", txTime: time)),
           .insert(.init(entityID: "item-2", attributeID: "items/score", value: .number(2), txID: "tx-filter-items", txTime: time)),
           .insert(.init(entityID: "item-2", attributeID: "items/tag", value: .string("blue"), txID: "tx-filter-items", txTime: time)),
           .insert(.init(entityID: "item-2", attributeID: "items/optional", value: .string("present"), txID: "tx-filter-items", txTime: time)),
+          .insert(.init(entityID: "item-2", attributeID: "items/active", value: .bool(false), txID: "tx-filter-items", txTime: time)),
           .insert(.init(entityID: "item-3", attributeID: "items/score", value: .number(3), txID: "tx-filter-items", txTime: time)),
           .insert(.init(entityID: "item-3", attributeID: "items/tag", value: .string("green"), txID: "tx-filter-items", txTime: time)),
+          .insert(.init(entityID: "item-3", attributeID: "items/active", value: .bool(true), txID: "tx-filter-items", txTime: time)),
           .insert(.init(entityID: "item-4", attributeID: "items/score", value: .number(4), txID: "tx-filter-items", txTime: time)),
           .insert(.init(entityID: "item-4", attributeID: "items/tag", value: .string("purple"), txID: "tx-filter-items", txTime: time)),
           .insert(.init(entityID: "item-4", attributeID: "items/optional", value: .null, txID: "tx-filter-items", txTime: time)),
+          .insert(.init(entityID: "item-4", attributeID: "items/active", value: .bool(false), txID: "tx-filter-items", txTime: time)),
           .insert(.init(entityID: "item-5", attributeID: "items/score", value: .number(5), txID: "tx-filter-items", txTime: time)),
           .insert(.init(entityID: "item-5", attributeID: "items/tag", value: .string("red"), txID: "tx-filter-items", txTime: time)),
           .insert(.init(entityID: "item-5", attributeID: "items/tag", value: .string("yellow"), txID: "tx-filter-items", txTime: time)),
           .insert(.init(entityID: "item-5", attributeID: "items/optional", value: .string("present"), txID: "tx-filter-items", txTime: time)),
+          .insert(.init(entityID: "item-5", attributeID: "items/active", value: .bool(true), txID: "tx-filter-items", txTime: time)),
           .insert(.init(entityID: "item-6", attributeID: "items/score", value: .number(6), txID: "tx-filter-items", txTime: time)),
         ]
       ),
@@ -7488,6 +7500,49 @@ struct InstantStoreTests {
       )
     )
     expectNoDifference(lessThanOrEqual.map(\.id), ["item-1", "item-2"])
+
+    let activeGreaterThanTrue = try await runtime.query(
+      .init(
+        id: "items.bool-gt",
+        namespace: "items",
+        filters: [.greaterThan(field: "active", value: .bool(true))],
+        order: .init("score")
+      )
+    )
+    expectNoDifference(activeGreaterThanTrue.map(\.id), [])
+
+    let activeGreaterThanOrEqualTrue = try await runtime.query(
+      .init(
+        id: "items.bool-gte",
+        namespace: "items",
+        filters: [.greaterThanOrEqual(field: "active", value: .bool(true))],
+        order: .init("score")
+      )
+    )
+    expectNoDifference(activeGreaterThanOrEqualTrue.map(\.id), ["item-1", "item-3", "item-5"])
+
+    let activeLessThanTrue = try await runtime.query(
+      .init(
+        id: "items.bool-lt",
+        namespace: "items",
+        filters: [.lessThan(field: "active", value: .bool(true))],
+        order: .init("score")
+      )
+    )
+    expectNoDifference(activeLessThanTrue.map(\.id), ["item-2", "item-4"])
+
+    let activeLessThanOrEqualTrue = try await runtime.query(
+      .init(
+        id: "items.bool-lte",
+        namespace: "items",
+        filters: [.lessThanOrEqual(field: "active", value: .bool(true))],
+        order: .init("score")
+      )
+    )
+    expectNoDifference(
+      activeLessThanOrEqualTrue.map(\.id),
+      ["item-1", "item-2", "item-3", "item-4", "item-5"]
+    )
 
     let inFilter = try await runtime.query(
       .init(
