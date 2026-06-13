@@ -136,6 +136,89 @@ public struct InstantAttributePath<
       value: value.instantValue
     )
   }
+
+  public func link<Target: InstantEntityModel>(
+    from sourceID: Entity.ID,
+    to targetID: InstantID<Target>
+  ) -> InstantMutation where Value == InstantID<Target> {
+    InstantMutation(throwing: { transactionID, txTime in
+      let attribute = try linkAttribute(target: Target.self)
+      return [
+        .insert(
+          InstantTriple(
+            entityID: sourceID.rawValue,
+            attributeID: attribute.id,
+            value: .ref(targetID.rawValue),
+            txID: transactionID,
+            txTime: txTime
+          )
+        )
+      ]
+    })
+  }
+
+  public func unlink<Target: InstantEntityModel>(
+    from sourceID: Entity.ID,
+    to targetID: InstantID<Target>
+  ) -> InstantMutation where Value == InstantID<Target> {
+    InstantMutation(throwing: { transactionID, txTime in
+      let attribute = try linkAttribute(target: Target.self)
+      return [
+        .retract(
+          InstantTriple(
+            entityID: sourceID.rawValue,
+            attributeID: attribute.id,
+            value: .ref(targetID.rawValue),
+            txID: transactionID,
+            txTime: txTime
+          )
+        )
+      ]
+    })
+  }
+
+  private func linkAttribute<Target: InstantEntityModel>(
+    target: Target.Type
+  ) throws -> InstantAttribute {
+    guard
+      let attribute = Entity.instantAttributes.first(where: { $0.id == attributeID })
+        ?? Entity.instantAttributes.first(where: { $0.name == name })
+    else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "build link mutation",
+        namespace: Entity.instantNamespace,
+        path: name,
+        message: "No attribute named '\(name)' is declared for '\(Entity.instantNamespace)'.",
+        recovery: "Declare '\(attributeID)' in \(Entity.self).instantAttributes before linking."
+      )
+    }
+
+    guard attribute.valueType == .ref else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "build link mutation",
+        namespace: Entity.instantNamespace,
+        path: name,
+        message: "Attribute '\(attribute.id)' is not a ref attribute.",
+        recovery: "Use link/unlink only with Instant ref attributes."
+      )
+    }
+
+    guard attribute.linkNamespace == nil || attribute.linkNamespace == Target.instantNamespace else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "build link mutation",
+        namespace: Entity.instantNamespace,
+        path: name,
+        message:
+          "Attribute '\(attribute.id)' links to '\(attribute.linkNamespace ?? "")', not '\(Target.instantNamespace)'.",
+        recovery: "Use an InstantID whose entity type matches the link namespace."
+      )
+    }
+
+    return attribute
+  }
 }
 
 public struct InstantAttributeAssignment<Entity: InstantEntityModel>: Hashable, Sendable {
@@ -485,10 +568,20 @@ private struct QueryIDPayload: Encodable {
 }
 
 public struct InstantMutation: Sendable {
-  fileprivate var makeOperations: @Sendable (String, InstantTimestamp) -> [InstantTripleOperation]
+  fileprivate var makeOperations:
+    @Sendable (String, InstantTimestamp) throws -> [InstantTripleOperation]
 
   public init(
     makeOperations: @escaping @Sendable (String, InstantTimestamp) -> [InstantTripleOperation]
+  ) {
+    self.makeOperations = { transactionID, txTime in
+      makeOperations(transactionID, txTime)
+    }
+  }
+
+  fileprivate init(
+    throwing makeOperations: @escaping @Sendable (String, InstantTimestamp) throws
+      -> [InstantTripleOperation]
   ) {
     self.makeOperations = makeOperations
   }
@@ -496,8 +589,8 @@ public struct InstantMutation: Sendable {
   fileprivate func operations(
     transactionID: String,
     txTime: InstantTimestamp
-  ) -> [InstantTripleOperation] {
-    makeOperations(transactionID, txTime)
+  ) throws -> [InstantTripleOperation] {
+    try makeOperations(transactionID, txTime)
   }
 }
 
@@ -553,7 +646,7 @@ extension InstantSwiftDataClient {
       ?? runtime?.configuration.now()
       ?? InstantTimestamp(milliseconds: Int64((date().timeIntervalSince1970 * 1000).rounded()))
     let operations = try build().flatMap {
-      $0.operations(transactionID: transactionID, txTime: createdAt)
+      try $0.operations(transactionID: transactionID, txTime: createdAt)
     }
     let transaction = InstantStoreTransaction(id: transactionID, operations: operations)
 

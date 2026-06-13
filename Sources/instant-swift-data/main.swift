@@ -193,8 +193,19 @@ struct InstantSwiftDataCLI {
 
   private static func runExamples(arguments: [String], output: OutputMode) async throws {
     var arguments = arguments
-    guard arguments.popFirstArgument() == "todos" else {
-      throw CLIError("Usage: instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>", exitCode: 64)
+    guard let example = arguments.popFirstArgument() else {
+      throw CLIError(examplesUsage, exitCode: 64)
+    }
+    switch example {
+    case "todo-links":
+      try await runTodoLinks(arguments: arguments, output: output)
+      return
+
+    case "todos":
+      break
+
+    default:
+      throw CLIError(examplesUsage, exitCode: 64)
     }
     guard let command = arguments.popFirstArgument() else {
       throw CLIError("Usage: instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>", exitCode: 64)
@@ -358,6 +369,83 @@ struct InstantSwiftDataCLI {
 
     default:
       throw CLIError("Unknown todos command: \(command)", exitCode: 64)
+    }
+  }
+
+  private static func runTodoLinks(arguments: [String], output: OutputMode) async throws {
+    var arguments = arguments
+    guard let command = arguments.popFirstArgument() else {
+      throw CLIError(todoLinksUsage, exitCode: 64)
+    }
+    let context = try await CLIContext.bootstrap(initialAttributes: TodoProjectExample.attributes)
+
+    switch command {
+    case "seed":
+      guard arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data examples todo-links seed [--json|--jsonl]", exitCode: 64)
+      }
+      let projectID = try await context.runtime.localID(named: TodoProjectExample.projectIDName)
+      let todoID = try await context.runtime.localID(named: TodoProjectExample.todoIDName)
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      let transaction = InstantStoreTransaction(
+        id: transactionID,
+        operations: TodoProjectExample.createProjectOperations(
+          id: projectID,
+          title: "Launch linked todos",
+          createdAt: now,
+          transactionID: transactionID
+        ) + TodoExample.createOperations(
+          id: todoID,
+          text: "Wire a project link",
+          createdAt: now,
+          transactionID: transactionID
+        ) + TodoProjectExample.linkOperations(
+          todoID: todoID,
+          projectID: projectID,
+          updatedAt: now,
+          transactionID: transactionID
+        )
+      )
+      try await context.runtime.transact(
+        transaction,
+        createdAt: now,
+        source: "cli.examples.todo-links.seed"
+      )
+      try await printTodoLinks(context: context, output: output, event: "seed", changedID: todoID)
+
+    case "list":
+      guard arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data examples todo-links list [--json|--jsonl]", exitCode: 64)
+      }
+      try await printTodoLinks(context: context, output: output, event: "list")
+
+    case "unlink":
+      guard arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data examples todo-links unlink [--json|--jsonl]", exitCode: 64)
+      }
+      let projectID = try await context.runtime.localID(named: TodoProjectExample.projectIDName)
+      let todoID = try await context.runtime.localID(named: TodoProjectExample.todoIDName)
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      let transaction = InstantStoreTransaction(
+        id: transactionID,
+        operations: TodoProjectExample.unlinkOperations(
+          todoID: todoID,
+          projectID: projectID,
+          updatedAt: now,
+          transactionID: transactionID
+        )
+      )
+      try await context.runtime.transact(
+        transaction,
+        createdAt: now,
+        source: "cli.examples.todo-links.unlink"
+      )
+      try await printTodoLinks(context: context, output: output, event: "unlink", changedID: todoID)
+
+    default:
+      throw CLIError("Unknown todo-links command: \(command). \(todoLinksUsage)", exitCode: 64)
     }
   }
 
@@ -1107,6 +1195,97 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func printTodoLinks(
+    context: CLIContext,
+    output: OutputMode,
+    event: String,
+    changedID: String? = nil
+  ) async throws {
+    let projectsEmission = try await context.runtime.queryOnce(TodoProjectExample.projectsQuery)
+    let todosEmission = try await context.runtime.queryOnce(TodoProjectExample.todosQuery)
+    let projects = try TodoProjectExample.decodeProjects(projectsEmission.values)
+    let todos = try TodoProjectExample.decodeLinkedTodos(todosEmission.values)
+    let pending = await context.runtime.pendingMutations()
+    let payload = TodoLinksOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      changedID: changedID,
+      transport: "not-implemented-local-cache-only",
+      projectQueryID: TodoProjectExample.projectsQuery.id,
+      todoQueryID: TodoProjectExample.todosQuery.id,
+      projectCacheKey: TodoProjectExample.projectsQuery.cacheKey,
+      todoCacheKey: TodoProjectExample.todosQuery.cacheKey,
+      pendingMutationCount: pending.count,
+      projects: projects,
+      todos: todos
+    )
+
+    switch output {
+    case .human:
+      if projects.isEmpty {
+        print("No projects.")
+      } else {
+        for project in projects {
+          print("project \(project.id) \(project.title)")
+        }
+      }
+      if todos.isEmpty {
+        print("No linked todos.")
+      } else {
+        for todo in todos {
+          let mark = todo.isCompleted ? "[x]" : "[ ]"
+          let project = todo.projectID.map { " project=\($0)" } ?? ""
+          print("\(mark) \(todo.id) \(todo.text)\(project)")
+        }
+      }
+      print("transport: \(payload.transport)")
+      print("pending mutations: \(pending.count)")
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.examples.todo-links",
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          ok: true,
+          details: payload
+        )
+      )
+      for project in projects {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.todo-links",
+            side: "swift",
+            event: "project",
+            appID: context.appID,
+            entityID: project.id,
+            ok: true,
+            details: project
+          )
+        )
+      }
+      for todo in todos {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.todo-links",
+            side: "swift",
+            event: "todo",
+            appID: context.appID,
+            entityID: todo.id,
+            ok: true,
+            details: todo
+          )
+        )
+      }
+    }
+  }
+
   private static func printSnapshots(
     context: CLIContext,
     output: OutputMode,
@@ -1289,6 +1468,9 @@ struct InstantSwiftDataCLI {
         examples todos delete <todo-id> [--json|--jsonl]
         examples todos reset [--json|--jsonl]
         examples todos refresh [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--json|--jsonl]
+        examples todo-links seed [--json|--jsonl]
+        examples todo-links list [--json|--jsonl]
+        examples todo-links unlink [--json|--jsonl]
         cache inspect [--json|--jsonl]
         outbox inspect [--json|--jsonl]
         outbox confirm <mutation-id> [--json|--jsonl]
@@ -2356,6 +2538,23 @@ struct InstantSwiftDataCLI {
     """
   }
 
+  private static var examplesUsage: String {
+    """
+    Usage: instant-swift-data examples <todos|todo-links>
+      instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>
+      instant-swift-data examples todo-links <seed|list|unlink> [--json|--jsonl]
+    """
+  }
+
+  private static var todoLinksUsage: String {
+    """
+    Usage: instant-swift-data examples todo-links <seed|list|unlink>
+      instant-swift-data examples todo-links seed [--json|--jsonl]
+      instant-swift-data examples todo-links list [--json|--jsonl]
+      instant-swift-data examples todo-links unlink [--json|--jsonl]
+    """
+  }
+
   private static func namespaceSummaries(
     _ snapshot: InstantStoreSnapshot
   ) -> [CacheNamespaceSummary] {
@@ -2551,6 +2750,21 @@ private struct TodosOutput: Codable, Sendable {
   var pageInfo: InstantQueryPageInfo?
   var pendingMutationCount: Int
   var todos: [TodoRecord]
+}
+
+private struct TodoLinksOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var changedID: String?
+  var transport: String
+  var projectQueryID: String
+  var todoQueryID: String
+  var projectCacheKey: String
+  var todoCacheKey: String
+  var pendingMutationCount: Int
+  var projects: [TodoProjectRecord]
+  var todos: [LinkedTodoRecord]
 }
 
 private struct QuerySnapshotsOutput: Codable, Sendable {

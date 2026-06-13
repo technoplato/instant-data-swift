@@ -143,6 +143,94 @@ struct TypedAPITests {
   }
 
   @Test
+  func typedLinkAndUnlinkMutationsRoundTripThroughDependencyClient() async throws {
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_100_000)
+    let userID = InstantID<TypedUser>(rawValue: "user-1")
+    let postID = InstantID<TypedPost>(rawValue: "post-1")
+
+    try await withDependencies {
+      try await $0.bootstrapInstantSwiftData(
+        appID: "typed-links-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedUser.instantAttributes + TypedPost.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      try await db.transact(id: "tx-link", createdAt: createdAt) {
+        TypedUser.create(
+          id: userID,
+          TypedUser.name.set("Blob")
+        )
+        TypedPost.create(
+          id: postID,
+          TypedPost.title.set("Hello links")
+        )
+        TypedPost.author.link(from: postID, to: userID)
+      }
+
+      let linkedPosts = try await db.query(TypedPost.query)
+      expectNoDifference(
+        linkedPosts,
+        [TypedPost(id: postID, title: "Hello links", authorID: userID)]
+      )
+
+      try await db.transact(
+        id: "tx-unlink",
+        createdAt: InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
+      ) {
+        TypedPost.author.unlink(from: postID, to: userID)
+      }
+
+      let unlinkedPosts = try await db.query(TypedPost.query)
+      expectNoDifference(
+        unlinkedPosts,
+        [TypedPost(id: postID, title: "Hello links", authorID: nil)]
+      )
+
+      let pending = await db.pendingMutations()
+      expectNoDifference(pending.map(\.id), ["tx-link", "tx-unlink"])
+    }
+  }
+
+  @Test
+  func typedLinkRejectsMismatchedTargetNamespaceBeforePersistence() async throws {
+    let postID = InstantID<TypedPost>(rawValue: "post-1")
+    let wrongTargetID = InstantID<TypedTodo>(rawValue: "todo-1")
+    let wrongAuthorPath = InstantAttributePath<TypedPost, InstantID<TypedTodo>>(
+      "author",
+      attributeID: "posts/author"
+    )
+
+    try await withDependencies {
+      try await $0.bootstrapInstantSwiftData(
+        appID: "typed-link-validation-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedUser.instantAttributes + TypedPost.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      do {
+        try await db.transact(id: "tx-invalid-link") {
+          wrongAuthorPath.link(from: postID, to: wrongTargetID)
+        }
+        #expect(Bool(false), "Expected mismatched link namespace to fail.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .validationFailed)
+        expectNoDifference(error.operation, "build link mutation")
+        expectNoDifference(error.namespace, "posts")
+        expectNoDifference(error.path, "author")
+      } catch {
+        #expect(Bool(false), "Unexpected error: \(error)")
+      }
+
+      let pending = await db.pendingMutations()
+      expectNoDifference(pending, [])
+    }
+  }
+
+  @Test
   func fetchAllLoadsTypedDynamicQuery() async throws {
     let baseDate = Date(timeIntervalSince1970: 1_700_000_100)
     let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000654")!
@@ -723,5 +811,116 @@ private struct TypedTodo: Hashable, Codable, InstantEntityModel {
       message: "Expected \(expected) for todo field '\(field)'.",
       recovery: "Check the Instant entity schema and server values for the todos namespace."
     )
+  }
+}
+
+private struct TypedUser: Hashable, Codable, InstantEntityModel {
+  var id: InstantID<TypedUser>
+  var name: String
+
+  static let instantNamespace = "users"
+  static let name = InstantAttributePath<TypedUser, String>("name")
+
+  static let instantAttributes = [
+    InstantAttribute(
+      id: "users/name",
+      namespace: instantNamespace,
+      name: "name",
+      valueType: .string,
+      isIndexed: true
+    )
+  ]
+
+  init(id: InstantID<TypedUser>, name: String) {
+    self.id = id
+    self.name = name
+  }
+
+  init(snapshot: InstantEntitySnapshot) throws {
+    guard case let .string(name) = snapshot.values["name"]?.first else {
+      throw InstantError(
+        code: .decodeFailed,
+        operation: "decode typed user",
+        namespace: Self.instantNamespace,
+        path: "name",
+        localID: snapshot.id,
+        message: "Expected string for user field 'name'.",
+        recovery: "Check the Instant entity schema and server values for the users namespace."
+      )
+    }
+    self.id = InstantID(rawValue: snapshot.id)
+    self.name = name
+  }
+}
+
+private struct TypedPost: Hashable, Codable, InstantEntityModel {
+  var id: InstantID<TypedPost>
+  var title: String
+  var authorID: InstantID<TypedUser>?
+
+  static let instantNamespace = "posts"
+  static let title = InstantAttributePath<TypedPost, String>("title")
+  static let author = InstantAttributePath<TypedPost, InstantID<TypedUser>>("author")
+
+  static let instantAttributes = [
+    InstantAttribute(
+      id: "posts/title",
+      namespace: instantNamespace,
+      name: "title",
+      valueType: .string,
+      isIndexed: true
+    ),
+    InstantAttribute(
+      id: "posts/author",
+      namespace: instantNamespace,
+      name: "author",
+      valueType: .ref,
+      isIndexed: true,
+      forwardIdentity: "posts/author",
+      reverseIdentity: "users/posts",
+      linkNamespace: TypedUser.instantNamespace
+    ),
+  ]
+
+  init(id: InstantID<TypedPost>, title: String, authorID: InstantID<TypedUser>?) {
+    self.id = id
+    self.title = title
+    self.authorID = authorID
+  }
+
+  init(snapshot: InstantEntitySnapshot) throws {
+    guard case let .string(title) = snapshot.values["title"]?.first else {
+      throw InstantError(
+        code: .decodeFailed,
+        operation: "decode typed post",
+        namespace: Self.instantNamespace,
+        path: "title",
+        localID: snapshot.id,
+        message: "Expected string for post field 'title'.",
+        recovery: "Check the Instant entity schema and server values for the posts namespace."
+      )
+    }
+
+    let authorID: InstantID<TypedUser>?
+    if let author = snapshot.values["author"]?.first {
+      guard case let .ref(rawValue) = author else {
+        throw InstantError(
+          code: .decodeFailed,
+          operation: "decode typed post",
+          namespace: Self.instantNamespace,
+          path: "author",
+          localID: snapshot.id,
+          message: "Expected ref for post field 'author'.",
+          recovery: "Check the Instant entity schema and server values for the posts namespace."
+        )
+      }
+      authorID = InstantID<TypedUser>(rawValue: rawValue)
+    } else {
+      authorID = nil
+    }
+
+    self.id = InstantID(rawValue: snapshot.id)
+    self.title = title
+    self.authorID = authorID
   }
 }

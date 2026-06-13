@@ -27,6 +27,9 @@ swift run instant-swift-data query todos --completed false --json
 swift run instant-swift-data query todos --completed false --select text,isCompleted --json
 PAGE_CURSOR="$(swift run instant-swift-data query todos --completed false --first 1 --json | jq -r '.pageInfo.endCursor.entityID')"
 swift run instant-swift-data query todos --completed false --first 1 --after "$PAGE_CURSOR" --json
+swift run instant-swift-data examples todo-links seed --json
+swift run instant-swift-data examples todo-links list --json
+swift run instant-swift-data examples todo-links unlink --json
 swift run instant-swift-data examples todos watch --events 1 --jsonl
 TODO_ID="$(swift run instant-swift-data examples todos add "ship the demo" --json | jq -r '.changedID')"
 swift run instant-swift-data examples todos complete "$TODO_ID"

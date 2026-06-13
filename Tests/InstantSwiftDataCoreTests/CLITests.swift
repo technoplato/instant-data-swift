@@ -245,6 +245,54 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliTodoLinksDemoPersistsAndUnlinksRefs() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let seed = try JSONDecoder().decode(
+      CLITodoLinksOutput.self,
+      from: Data(
+        try runCLI(["examples", "todo-links", "seed", "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(seed.event, "seed")
+    expectNoDifference(seed.transport, "not-implemented-local-cache-only")
+    expectNoDifference(seed.projects.map(\.title), ["Launch linked todos"])
+    expectNoDifference(seed.todos.map(\.text), ["Wire a project link"])
+    expectNoDifference(seed.todos.map(\.projectID), [seed.projects.first?.id])
+    expectNoDifference(seed.pendingMutationCount, 1)
+
+    let list = try JSONDecoder().decode(
+      CLITodoLinksOutput.self,
+      from: Data(
+        try runCLI(["examples", "todo-links", "list", "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(list.event, "list")
+    expectNoDifference(list.projects, seed.projects)
+    expectNoDifference(list.todos.map(\.projectID), [seed.projects.first?.id])
+
+    let unlinked = try JSONDecoder().decode(
+      CLITodoLinksOutput.self,
+      from: Data(
+        try runCLI(["examples", "todo-links", "unlink", "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(unlinked.event, "unlink")
+    expectNoDifference(unlinked.projects, seed.projects)
+    expectNoDifference(unlinked.todos.map(\.text), ["Wire a project link"])
+    expectNoDifference(unlinked.todos.map(\.projectID), [nil])
+    expectNoDifference(unlinked.pendingMutationCount, 2)
+
+    let human = try runCLI(["examples", "todo-links", "list"], homeURL: homeURL)
+    #expect(human.contains("project "))
+    #expect(human.contains("Wire a project link"))
+    #expect(!human.contains(" project="))
+  }
+
+  @Test
   func cliCacheInspectIncludesPlanAwareQuerySummaries() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -1098,6 +1146,27 @@ private struct CLITodosOutput: Decodable {
   var pageInfo: InstantQueryPageInfo?
   var pendingMutationCount: Int
   var todos: [CLITodo]
+}
+
+private struct CLITodoLinksOutput: Decodable {
+  var event: String
+  var changedID: String?
+  var transport: String
+  var pendingMutationCount: Int
+  var projects: [CLITodoProject]
+  var todos: [CLILinkedTodo]
+}
+
+private struct CLITodoProject: Decodable, Equatable {
+  var id: String
+  var title: String
+}
+
+private struct CLILinkedTodo: Decodable, Equatable {
+  var id: String
+  var text: String
+  var isCompleted: Bool
+  var projectID: String?
 }
 
 private struct CLITestProcessResult {
