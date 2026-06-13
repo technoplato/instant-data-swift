@@ -252,6 +252,80 @@ public enum CLIRoomsArgumentError: Error, Equatable, Sendable {
   public var exitCode: Int32 { 64 }
 }
 
+public enum CLIStreamsInvocation: Equatable, Sendable {
+  case append(CLIStreamAppendInvocation)
+  case read(CLIStreamReadInvocation)
+  case watch(CLIStreamWatchInvocation)
+}
+
+public struct CLIStreamAppendInvocation: Equatable, Sendable {
+  public var streamID: String
+  public var values: [String]
+
+  public var value: String {
+    get { values.last ?? "" }
+    set { values = [newValue] }
+  }
+
+  public init(streamID: String, value: String) {
+    self.init(streamID: streamID, values: [value])
+  }
+
+  public init(streamID: String, values: [String]) {
+    self.streamID = streamID
+    self.values = values
+  }
+}
+
+public struct CLIStreamReadInvocation: Equatable, Sendable {
+  public var streamID: String
+  public var limit: Int?
+
+  public init(streamID: String, limit: Int? = nil) {
+    self.streamID = streamID
+    self.limit = limit
+  }
+}
+
+public struct CLIStreamWatchInvocation: Equatable, Sendable {
+  public var streamID: String
+  public var eventCount: Int
+
+  public init(streamID: String, eventCount: Int = 1) {
+    self.streamID = streamID
+    self.eventCount = eventCount
+  }
+}
+
+public enum CLIStreamsUsage {
+  public static let streams = """
+    Usage: instant-swift-data streams <append|read|watch>
+      instant-swift-data streams append <stream-id> --value '{...}' [--json|--jsonl]
+      instant-swift-data streams read <stream-id> [--limit n] [--json|--jsonl]
+      instant-swift-data streams watch <stream-id> [--events 1] [--json|--jsonl]
+    """
+
+  public static let append =
+    "Usage: instant-swift-data streams append <stream-id> --value '{...}' [--json|--jsonl]"
+  public static let read =
+    "Usage: instant-swift-data streams read <stream-id> [--limit n] [--json|--jsonl]"
+  public static let watch =
+    "Usage: instant-swift-data streams watch <stream-id> [--events 1] [--json|--jsonl]"
+}
+
+public enum CLIStreamsArgumentError: Error, Equatable, Sendable {
+  case missingCommand
+  case unknownCommand(String)
+  case missingArguments(usage: String)
+  case missingValue(option: String, usage: String)
+  case missingRequiredOption(option: String, usage: String)
+  case invalidLimit(String, usage: String)
+  case invalidEventCount(String, usageCommand: String)
+  case unknownOption(domain: String, option: String, usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
 public enum CLISharesInvocation: Equatable, Sendable {
   case create(CLISharesCreateInvocation)
   case list
@@ -711,6 +785,105 @@ public struct CLIRoomTopicWatchParser: Parser {
   }
 }
 
+public struct CLIStreamsParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIStreamsInvocation {
+    guard let command = input.first else {
+      throw CLIStreamsArgumentError.missingCommand
+    }
+    input.removeFirst()
+
+    switch command {
+    case "append", "write":
+      return .append(try CLIStreamAppendParser().parse(&input))
+
+    case "read", "list":
+      return .read(try CLIStreamReadParser().parse(&input))
+
+    case "watch":
+      return .watch(try CLIStreamWatchParser().parse(&input))
+
+    default:
+      throw CLIStreamsArgumentError.unknownCommand(command)
+    }
+  }
+}
+
+public struct CLIStreamAppendParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIStreamAppendInvocation {
+    let streamID = try parseRequiredStreamArgument(from: &input, usage: CLIStreamsUsage.append)
+    var values: [String] = []
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--value":
+        values.append(
+          try parseStreamOptionValue(from: &input, option: option, usage: CLIStreamsUsage.append)
+        )
+
+      default:
+        throw CLIStreamsArgumentError.unknownOption(
+          domain: "streams append",
+          option: option,
+          usage: CLIStreamsUsage.streams
+        )
+      }
+    }
+    guard !values.isEmpty else {
+      throw CLIStreamsArgumentError.missingRequiredOption(
+        option: "--value",
+        usage: CLIStreamsUsage.append
+      )
+    }
+    return CLIStreamAppendInvocation(streamID: streamID, values: values)
+  }
+}
+
+public struct CLIStreamReadParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIStreamReadInvocation {
+    let streamID = try parseRequiredStreamArgument(from: &input, usage: CLIStreamsUsage.read)
+    var limit: Int?
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--limit":
+        let value = try parseStreamOptionValue(
+          from: &input,
+          option: option,
+          usage: CLIStreamsUsage.read
+        )
+        guard let parsed = Int(value), parsed >= 0 else {
+          throw CLIStreamsArgumentError.invalidLimit(value, usage: CLIStreamsUsage.read)
+        }
+        limit = parsed
+
+      default:
+        throw CLIStreamsArgumentError.unknownOption(
+          domain: "streams read",
+          option: option,
+          usage: CLIStreamsUsage.read
+        )
+      }
+    }
+    return CLIStreamReadInvocation(streamID: streamID, limit: limit)
+  }
+}
+
+public struct CLIStreamWatchParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIStreamWatchInvocation {
+    let streamID = try parseRequiredStreamArgument(from: &input, usage: CLIStreamsUsage.watch)
+    let eventCount = try parseStreamFiniteWatchEventCount(from: &input)
+    return CLIStreamWatchInvocation(streamID: streamID, eventCount: eventCount)
+  }
+}
+
 public struct CLISharesParser: Parser {
   public init() {}
 
@@ -1017,6 +1190,63 @@ private func requireNoRemainingArguments(
   }
 }
 
+private func parseRequiredStreamArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIStreamsArgumentError.missingArguments(usage: usage)
+  }
+  input.removeFirst()
+  let parsed = trimmed(value)
+  guard !parsed.isEmpty else {
+    throw CLIStreamsArgumentError.missingArguments(usage: usage)
+  }
+  return parsed
+}
+
+private func parseStreamOptionValue(
+  from input: inout ArraySlice<String>,
+  option: String,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIStreamsArgumentError.missingValue(option: option, usage: usage)
+  }
+  input.removeFirst()
+  return value
+}
+
+private func parseStreamFiniteWatchEventCount(
+  from input: inout ArraySlice<String>
+) throws -> Int {
+  let usageCommand = "instant-swift-data streams watch <stream-id>"
+  var eventCount = 1
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--events":
+      let value = try parseStreamOptionValue(
+        from: &input,
+        option: option,
+        usage: "Usage: \(usageCommand) --events 1"
+      )
+      guard let parsed = Int(value), parsed == 1 else {
+        throw CLIStreamsArgumentError.invalidEventCount(value, usageCommand: usageCommand)
+      }
+      eventCount = parsed
+
+    default:
+      throw CLIStreamsArgumentError.unknownOption(
+        domain: "streams watch",
+        option: option,
+        usage: CLIStreamsUsage.watch
+      )
+    }
+  }
+  return eventCount
+}
+
 private func parseSingleShareArgument(
   from input: inout ArraySlice<String>,
   usage: String
@@ -1092,6 +1322,36 @@ extension CLIRoomsArgumentError: CustomStringConvertible {
 
     case let .unexpectedArgument(argument, usage):
       return "Unexpected argument: \(argument). \(usage)"
+    }
+  }
+}
+
+extension CLIStreamsArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case .missingCommand:
+      return CLIStreamsUsage.streams
+
+    case .unknownCommand:
+      return CLIStreamsUsage.streams
+
+    case let .missingArguments(usage):
+      return usage
+
+    case let .missingValue(option, usage):
+      return "Missing value for \(option). \(usage)"
+
+    case let .missingRequiredOption(option, usage):
+      return "Missing required option \(option). \(usage)"
+
+    case let .invalidLimit(value, usage):
+      return "Invalid --limit value: \(value). \(usage)"
+
+    case let .invalidEventCount(_, usageCommand):
+      return "Usage: \(usageCommand) --events 1"
+
+    case let .unknownOption(domain, option, usage):
+      return "Unknown \(domain) option: \(option). \(usage)"
     }
   }
 }

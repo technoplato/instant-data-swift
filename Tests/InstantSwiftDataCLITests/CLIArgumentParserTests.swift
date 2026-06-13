@@ -164,6 +164,16 @@ struct CLIArgumentParserTests {
         arguments: ["ls"]
       )
     )
+    expectNoDifference(
+      try CLIArguments.parse([
+        "streams", "append", "chat/lobby", "--value", "{}", "--jsonl",
+      ]),
+      CLIInvocation(
+        output: .jsonl,
+        command: .streams,
+        arguments: ["append", "chat/lobby", "--value", "{}"]
+      )
+    )
   }
 
   @Test
@@ -422,6 +432,80 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func streamsParserParsesCommandsAndAliases() throws {
+    expectNoDifference(
+      try parseStreams(["append", " chat/lobby ", "--value", "{\"text\":\"hello\"}"]),
+      .append(CLIStreamAppendInvocation(streamID: "chat/lobby", value: "{\"text\":\"hello\"}"))
+    )
+    expectNoDifference(
+      try parseStreams(["write", "chat/lobby", "--value", "{\"text\":\"hello\"}"]),
+      .append(CLIStreamAppendInvocation(streamID: "chat/lobby", value: "{\"text\":\"hello\"}"))
+    )
+    expectNoDifference(
+      try parseStreams([
+        "append", "chat/lobby",
+        "--value", "{\"text\":\"first\"}",
+        "--value", "{\"text\":\"second\"}",
+      ]),
+      .append(
+        CLIStreamAppendInvocation(
+          streamID: "chat/lobby",
+          values: ["{\"text\":\"first\"}", "{\"text\":\"second\"}"]
+        )
+      )
+    )
+    expectNoDifference(
+      try parseStreams(["read", " chat/lobby "]),
+      .read(CLIStreamReadInvocation(streamID: "chat/lobby"))
+    )
+    expectNoDifference(
+      try parseStreams(["list", "chat/lobby", "--limit", "2"]),
+      .read(CLIStreamReadInvocation(streamID: "chat/lobby", limit: 2))
+    )
+    expectNoDifference(
+      try parseStreams(["watch", " chat/lobby ", "--events", "1"]),
+      .watch(CLIStreamWatchInvocation(streamID: "chat/lobby", eventCount: 1))
+    )
+  }
+
+  @Test
+  func streamsParserReportsMalformedArguments() throws {
+    try expectStreamsParseError([], contains: "Usage: instant-swift-data streams")
+    try expectStreamsParseError(
+      ["append", "chat/lobby"],
+      contains: "Missing required option --value."
+    )
+    try expectStreamsParseError(
+      ["append", "chat/lobby", "--value"],
+      contains: "Missing value for --value."
+    )
+    try expectStreamsParseError(
+      ["append", "chat/lobby", "--surprise"],
+      contains: "Unknown streams append option: --surprise."
+    )
+    try expectStreamsParseError(
+      ["read", "chat/lobby", "--limit", "-1"],
+      contains: "Invalid --limit value: -1."
+    )
+    try expectStreamsParseError(
+      ["read", "chat/lobby", "--limit"],
+      contains: "Missing value for --limit."
+    )
+    try expectStreamsParseError(
+      ["watch", "chat/lobby", "--events", "2"],
+      contains: "instant-swift-data streams watch <stream-id> --events 1"
+    )
+    try expectStreamsParseError(
+      ["watch", "chat/lobby", "--surprise"],
+      contains: "Unknown streams watch option: --surprise."
+    )
+    try expectStreamsParseError(
+      ["dance"],
+      contains: "Usage: instant-swift-data streams"
+    )
+  }
+
+  @Test
   func benchmarkParserParsesOptionsAndDefaults() throws {
     expectNoDifference(
       try CLIBenchmarkArguments.parse([]),
@@ -526,6 +610,13 @@ private func parseShares(_ arguments: [String]) throws -> CLISharesInvocation {
   return invocation
 }
 
+private func parseStreams(_ arguments: [String]) throws -> CLIStreamsInvocation {
+  var input = arguments[...]
+  let invocation = try CLIStreamsParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func expectRoomsParseError(
   _ arguments: [String],
   contains expectedFragment: String
@@ -547,6 +638,19 @@ private func expectSharesParseError(
     _ = try parseShares(arguments)
     Issue.record("Expected shares parser to reject \(arguments).")
   } catch let error as CLISharesArgumentError {
+    #expect(error.description.contains(expectedFragment))
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectStreamsParseError(
+  _ arguments: [String],
+  contains expectedFragment: String
+) throws {
+  do {
+    _ = try parseStreams(arguments)
+    Issue.record("Expected streams parser to reject \(arguments).")
+  } catch let error as CLIStreamsArgumentError {
     #expect(error.description.contains(expectedFragment))
     expectNoDifference(error.exitCode, 64)
   }

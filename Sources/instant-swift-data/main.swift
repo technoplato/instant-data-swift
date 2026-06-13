@@ -2404,19 +2404,28 @@ struct InstantSwiftDataCLI {
   }
 
   private static func runStreams(arguments: [String], output: OutputMode) async throws {
-    var arguments = arguments
-    guard let command = arguments.popFirstArgument() else {
-      throw CLIError(streamsUsage, exitCode: 64)
+    let invocation: CLIStreamsInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLIStreamsParser().parse(&input)
+    } catch let error as CLIStreamsArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
 
     let context = try await CLIContext.bootstrap(initialAttributes: [])
 
-    switch command {
-    case "append", "write":
-      let options = try StreamAppendOptions.parse(arguments: arguments)
+    switch invocation {
+    case let .append(options):
+      var payload: JSONValue?
+      for value in options.values {
+        payload = try parseJSONValue(value, operation: "append stream chunk")
+      }
+      guard let payload else {
+        throw CLIError(streamsUsage, exitCode: 64)
+      }
       let chunk = try await context.runtime.appendStreamChunk(
         streamID: options.streamID,
-        payload: options.payload
+        payload: payload
       )
       let chunks = try await context.runtime.streamChunks(streamID: options.streamID)
       try printStreamChunks(
@@ -2428,8 +2437,7 @@ struct InstantSwiftDataCLI {
         output: output
       )
 
-    case "read", "list":
-      let options = try StreamReadOptions.parse(arguments: arguments)
+    case let .read(options):
       let chunks = try await context.runtime.streamChunks(
         streamID: options.streamID,
         limit: options.limit
@@ -2443,8 +2451,7 @@ struct InstantSwiftDataCLI {
         output: output
       )
 
-    case "watch":
-      let options = try StreamWatchOptions.parse(arguments: arguments)
+    case let .watch(options):
       let chunks = try await firstWatchSnapshot(
         from: context.runtime.observeStreamChunks(streamID: options.streamID),
         operation: "stream watch",
@@ -2458,9 +2465,6 @@ struct InstantSwiftDataCLI {
         chunks: chunks,
         output: output
       )
-
-    default:
-      throw CLIError(streamsUsage, exitCode: 64)
     }
   }
 
@@ -6385,12 +6389,7 @@ struct InstantSwiftDataCLI {
   }
 
   fileprivate static var streamsUsage: String {
-    """
-    Usage: instant-swift-data streams <append|read|watch>
-      instant-swift-data streams append <stream-id> --value '{...}' [--json|--jsonl]
-      instant-swift-data streams read <stream-id> [--limit n] [--json|--jsonl]
-      instant-swift-data streams watch <stream-id> [--events 1] [--json|--jsonl]
-    """
+    CLIStreamsUsage.streams
   }
 
   fileprivate static var sharesUsage: String {
@@ -7788,107 +7787,6 @@ private struct FilesWatchOptions: Sendable {
       domain: "files watch"
     )
     return Self(eventCount: eventCount)
-  }
-}
-
-private struct StreamAppendOptions: Sendable {
-  var streamID: String
-  var payload: JSONValue
-
-  static func parse(arguments: [String]) throws -> Self {
-    var arguments = arguments
-    guard let streamID = arguments.popFirstArgument(),
-      !streamID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    else {
-      throw CLIError(InstantSwiftDataCLI.streamsUsage, exitCode: 64)
-    }
-
-    var payload: JSONValue?
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--value":
-        guard let value = arguments.popFirstArgument() else {
-          throw CLIError(InstantSwiftDataCLI.streamsUsage, exitCode: 64)
-        }
-        payload = try InstantSwiftDataCLI.parseJSONValue(value, operation: "append stream chunk")
-
-      default:
-        throw CLIError(
-          "Unknown streams append option: \(option). \(InstantSwiftDataCLI.streamsUsage)",
-          exitCode: 64
-        )
-      }
-    }
-
-    guard let payload else {
-      throw CLIError(InstantSwiftDataCLI.streamsUsage, exitCode: 64)
-    }
-    return Self(
-      streamID: streamID.trimmingCharacters(in: .whitespacesAndNewlines),
-      payload: payload
-    )
-  }
-}
-
-private struct StreamReadOptions: Sendable {
-  var streamID: String
-  var limit: Int?
-
-  static func parse(arguments: [String]) throws -> Self {
-    var arguments = arguments
-    guard let streamID = arguments.popFirstArgument(),
-      !streamID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    else {
-      throw CLIError(InstantSwiftDataCLI.streamsUsage, exitCode: 64)
-    }
-
-    var limit: Int?
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--limit":
-        guard let value = arguments.popFirstArgument(),
-          let parsed = Int(value),
-          parsed >= 0
-        else {
-          throw CLIError(InstantSwiftDataCLI.streamsUsage, exitCode: 64)
-        }
-        limit = parsed
-
-      default:
-        throw CLIError(
-          "Unknown streams read option: \(option). \(InstantSwiftDataCLI.streamsUsage)",
-          exitCode: 64
-        )
-      }
-    }
-
-    return Self(
-      streamID: streamID.trimmingCharacters(in: .whitespacesAndNewlines),
-      limit: limit
-    )
-  }
-}
-
-private struct StreamWatchOptions: Sendable {
-  var streamID: String
-  var eventCount: Int
-
-  static func parse(arguments: [String]) throws -> Self {
-    var arguments = arguments
-    guard let streamID = arguments.popFirstArgument(),
-      !streamID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    else {
-      throw CLIError(InstantSwiftDataCLI.streamsUsage, exitCode: 64)
-    }
-    let eventCount = try InstantSwiftDataCLI.parseFiniteWatchEventCount(
-      arguments: arguments,
-      usageCommand: "instant-swift-data streams watch <stream-id>",
-      domain: "streams watch"
-    )
-    return Self(
-      streamID: streamID.trimmingCharacters(in: .whitespacesAndNewlines),
-      eventCount: eventCount
-    )
   }
 }
 
