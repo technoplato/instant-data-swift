@@ -435,11 +435,7 @@ public final class InstantRuntime: Sendable {
   public func connect() async throws -> InstantConnectionStatus {
     await operationGate.enter()
     do {
-      try await persistence.saveMetadataValue(
-        InstantConnectionState.opened.rawValue,
-        key: connectionStateMetadataKey,
-        updatedAt: configuration.now()
-      )
+      try await saveOpenedConnectionMetadataWithGateHeld()
       let status = try await connectionStatusWithGateHeld()
       await operationGate.leave()
       return status
@@ -495,6 +491,39 @@ public final class InstantRuntime: Sendable {
     try await persistence.loadMetadataValue(key: connectionStateMetadataKey)
       .flatMap(InstantConnectionState.init(rawValue:))
       ?? .opened
+  }
+
+  private func saveOpenedConnectionMetadataWithGateHeld() async throws {
+    try await persistence.saveMetadataValue(
+      InstantConnectionState.opened.rawValue,
+      key: connectionStateMetadataKey,
+      updatedAt: configuration.now()
+    )
+    try await persistence.deleteMetadataValue(key: connectionLastErrorMetadataKey)
+  }
+
+  private func saveErroredConnectionMetadataWithGateHeld(message: String) async throws {
+    let now = configuration.now()
+    try await persistence.saveMetadataValue(
+      InstantConnectionState.errored.rawValue,
+      key: connectionStateMetadataKey,
+      updatedAt: now
+    )
+    try await persistence.saveMetadataValue(
+      message,
+      key: connectionLastErrorMetadataKey,
+      updatedAt: now
+    )
+  }
+
+  private func recordConnectionError(_ error: Error) async {
+    await operationGate.enter()
+    do {
+      try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
+      await operationGate.leave()
+    } catch {
+      await operationGate.leave()
+    }
   }
 
   private func connectionState(
@@ -1278,7 +1307,13 @@ public final class InstantRuntime: Sendable {
         throw error
       }
 
-      let response = try await configuration.mutationTransport.send(request)
+      let response: InstantMutationTransportResponse
+      do {
+        response = try await configuration.mutationTransport.send(request)
+      } catch {
+        await recordConnectionError(error)
+        throw error
+      }
       let results = response.results.filter { selectedMutationIDs.contains($0.mutationID) }
 
       await operationGate.enter()
@@ -1296,6 +1331,15 @@ public final class InstantRuntime: Sendable {
           )
           if didSave {
             await outbox.replace(with: update.mutations)
+            if let failed = update.failed.first {
+              try await saveErroredConnectionMetadataWithGateHeld(
+                message: failed.failureMessage ?? "Mutation '\(failed.id)' failed during transport flush."
+              )
+            } else if !update.mutations.contains(where: { $0.status == .failed }),
+              try await persistedConnectionState() != .closed
+            {
+              try await saveOpenedConnectionMetadataWithGateHeld()
+            }
             let remainingPendingCount = update.mutations.filter { $0.status == .pending }.count
             await operationGate.leave()
             await mutationFlushGate.leave()
@@ -1369,6 +1413,7 @@ public final class InstantRuntime: Sendable {
         )
         if didSave {
           await outbox.replace(with: update.mutations)
+          try await saveErroredConnectionMetadataWithGateHeld(message: message)
           await operationGate.leave()
           return update.mutation
         }
@@ -1397,6 +1442,11 @@ public final class InstantRuntime: Sendable {
         )
         if didSave {
           await outbox.replace(with: update.mutations)
+          if !update.mutations.contains(where: { $0.status == .failed }),
+            try await persistedConnectionState() != .closed
+          {
+            try await saveOpenedConnectionMetadataWithGateHeld()
+          }
           await operationGate.leave()
           return update.mutation
         }

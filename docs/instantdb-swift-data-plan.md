@@ -178,8 +178,11 @@ inspection with `instant-swift-data outbox transport --all --jsonl`.
 `InstantMutationTransportClient` provides the Sendable send/ack seam that future
 WebSocket transport will implement, and the current `.local` instance proves
 durable confirmation/failure application with
-`instant-swift-data outbox flush --jsonl`. Real WebSocket send/ack, retry
-scheduling, and server rejection rollback remain future transport work.
+`instant-swift-data outbox flush --jsonl`. Failed transport sends and explicit
+outbox failures now make `connection status --json` report an `errored` state
+with a last-error message, and retry/successful flush clears that local status
+when no failed mutations remain. Real WebSocket send/ack, retry scheduling, and
+server rejection rollback remain future transport work.
 
 ### Offline And Local First
 

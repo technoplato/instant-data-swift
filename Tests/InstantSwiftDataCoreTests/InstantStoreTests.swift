@@ -1462,6 +1462,9 @@ struct InstantStoreTests {
     expectNoDifference(result.failed.map(\.failureMessage), ["permission rejected"])
     expectNoDifference(result.pendingMutationCount, 1)
     expectNoDifference(result.mutationCount, 2)
+    let failedFlushStatus = try await runtime.connectionStatus()
+    expectNoDifference(failedFlushStatus.state, .errored)
+    expectNoDifference(failedFlushStatus.lastErrorMessage, "permission rejected")
 
     let requests = await recorder.requests()
     expectNoDifference(
@@ -1480,6 +1483,9 @@ struct InstantStoreTests {
     expectNoDifference(mutations.map(\.id), ["tx-flush-1", "tx-flush-2"])
     expectNoDifference(mutations.map(\.status), [.failed, .pending])
     expectNoDifference(mutations.map(\.failureMessage), ["permission rejected", nil])
+    let relaunchedStatus = try await relaunchedRuntime.connectionStatus()
+    expectNoDifference(relaunchedStatus.state, .errored)
+    expectNoDifference(relaunchedStatus.lastErrorMessage, "permission rejected")
   }
 
   @Test
@@ -1535,6 +1541,119 @@ struct InstantStoreTests {
     let mutations = await runtime.outboxMutations()
     expectNoDifference(mutations.map(\.id), ["tx-flush-1-ignored"])
     expectNoDifference(mutations.map(\.status), [.pending])
+  }
+
+  @Test
+  func outboxFlushTransportErrorUpdatesConnectionStatus() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let baseTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        mutationTransport: InstantMutationTransportClient { _ in
+          throw InstantError(
+            code: .networkFailed,
+            operation: "send mutations",
+            message: "The local transport is offline.",
+            recovery: "Reconnect before flushing pending mutations."
+          )
+        }
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-flush-error",
+        operations: TodoExample.createOperations(
+          id: "todo-flush-error",
+          text: "flush error",
+          createdAt: baseTime,
+          transactionID: "tx-flush-error"
+        )
+      ),
+      createdAt: baseTime
+    )
+
+    do {
+      _ = try await runtime.flushPendingMutations()
+      #expect(Bool(false), "Expected transport error to fail the flush.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .networkFailed)
+      expectNoDifference(error.operation, "send mutations")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    let erroredStatus = try await runtime.connectionStatus()
+    expectNoDifference(erroredStatus.state, .errored)
+    #expect(erroredStatus.lastErrorMessage?.contains("send mutations") == true)
+
+    let relaunchedErroredRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let relaunchedErroredStatus = try await relaunchedErroredRuntime.connectionStatus()
+    expectNoDifference(relaunchedErroredStatus.state, .errored)
+    #expect(relaunchedErroredStatus.lastErrorMessage?.contains("send mutations") == true)
+
+    let recoveryRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        mutationTransport: .local
+      )
+    )
+    _ = try await recoveryRuntime.flushPendingMutations()
+    let recoveredStatus = try await recoveryRuntime.connectionStatus()
+    expectNoDifference(recoveredStatus.state, .opened)
+    expectNoDifference(recoveredStatus.lastErrorMessage, nil)
+  }
+
+  @Test
+  func outboxFlushDoesNotClearConnectionErrorWhileFailedMutationsRemain() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let baseTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        mutationTransport: .local
+      )
+    )
+    for index in 0..<2 {
+      let transactionID = "tx-failed-remains-\(index)"
+      let createdAt = InstantTimestamp(milliseconds: baseTime.milliseconds + Int64(index))
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: TodoExample.createOperations(
+            id: "todo-failed-remains-\(index)",
+            text: "failed remains \(index)",
+            createdAt: createdAt,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: createdAt
+      )
+    }
+
+    _ = try await runtime.failMutation(id: "tx-failed-remains-0", message: "older failure")
+    let erroredStatus = try await runtime.connectionStatus()
+    expectNoDifference(erroredStatus.state, .errored)
+    expectNoDifference(erroredStatus.lastErrorMessage, "older failure")
+
+    let result = try await runtime.flushPendingMutations(limit: 1)
+    expectNoDifference(result.confirmed.map(\.id), ["tx-failed-remains-1"])
+    expectNoDifference(result.failed, [])
+    let stillErroredStatus = try await runtime.connectionStatus()
+    expectNoDifference(stillErroredStatus.state, .errored)
+    expectNoDifference(stillErroredStatus.lastErrorMessage, "older failure")
   }
 
   @Test

@@ -1603,6 +1603,12 @@ extension InstantStoreTests {
     )
     let mutationID = try #require(outbox.mutations.first?.id)
     _ = try runCLI(["outbox", "fail", mutationID, "server rejected", "--json"], homeURL: homeURL)
+    let erroredStatus = try JSONDecoder().decode(
+      CLIConnectionStatusOutput.self,
+      from: Data(try runCLI(["connection", "status", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(erroredStatus.state, "errored")
+    expectNoDifference(erroredStatus.lastErrorMessage, "server rejected")
 
     let pendingOnly = try #require(
       JSONSerialization.jsonObject(
@@ -1623,6 +1629,14 @@ extension InstantStoreTests {
       failedTransportMutations.first?["failureMessage"] as? String,
       "server rejected"
     )
+
+    _ = try runCLI(["outbox", "retry", mutationID, "--json"], homeURL: homeURL)
+    let retriedStatus = try JSONDecoder().decode(
+      CLIConnectionStatusOutput.self,
+      from: Data(try runCLI(["connection", "status", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(retriedStatus.state, "opened")
+    expectNoDifference(retriedStatus.lastErrorMessage, nil)
 
     let malformed = try runCLIResult(
       ["outbox", "transport", "--unknown", "--json"],

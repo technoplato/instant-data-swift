@@ -891,6 +891,13 @@ public actor SQLitePersistenceStore {
     )
   }
 
+  public func deleteMetadataValue(key: String) throws {
+    try execute(
+      "DELETE FROM instant_sync_metadata WHERE key = ?",
+      [.text(key)]
+    )
+  }
+
   public func saveSnapshot(_ snapshot: InstantPersistenceSnapshot) throws {
     try transaction {
       try saveStoreSnapshotWithoutTransaction(snapshot.store)
