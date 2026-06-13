@@ -323,14 +323,20 @@ extension InstantEntityModel {
 
   public static func delete(id: ID) -> InstantMutation {
     InstantMutation { _, _ in
-      [.deleteEntity(id.rawValue)]
+      [
+        .requireEntityExists(entityID: id.rawValue, namespace: Self.instantNamespace),
+        .deleteEntity(id.rawValue),
+      ]
     }
   }
 
   public static func delete(lookup: InstantEntityLookup<Self>) -> InstantMutation {
     InstantMutation(throwing: { _, _ in
       try validateLookup(lookup)
-      return [.deleteEntityByLookup(lookup.lookupRef)]
+      return [
+        .requireEntityExistsByLookup(lookup.lookupRef, namespace: Self.instantNamespace),
+        .deleteEntityByLookup(lookup.lookupRef),
+      ]
     })
   }
 

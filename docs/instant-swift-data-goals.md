@@ -231,6 +231,9 @@ Instant-shaped representation.
 - Preserve `ruleParams` operations in the pending outbox for transport lowering.
   Rule params affect server-side permission evaluation and should not mutate
   local materialized entities optimistically.
+- Pending mutations should expose a deterministic Instant-shaped transport
+  projection so agents can inspect `txSteps` before real WebSocket sync is
+  available.
 - Local delete must remove the entity, forward refs, and reverse refs, and must
   honor `onDelete`/`onDeleteReverse` cascade metadata. Until Swift transactions
   carry namespace-specific delete steps, `deleteEntity(String)` is a

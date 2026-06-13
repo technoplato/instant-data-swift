@@ -208,11 +208,14 @@ public enum TodoExample {
   }
 
   public static func deleteOperations(id: String) -> [InstantTripleOperation] {
-    [.deleteEntity(id)]
+    [
+      .requireEntityExists(entityID: id, namespace: namespace),
+      .deleteEntity(id),
+    ]
   }
 
   public static func resetOperations(ids: [String]) -> [InstantTripleOperation] {
-    ids.map(InstantTripleOperation.deleteEntity)
+    ids.flatMap(deleteOperations(id:))
   }
 
   private static func identityOperation(

@@ -77,10 +77,12 @@ swift run instant-swift-data cache inspect --json | jq '.queries[] | {queryID, n
 swift run instant-swift-data cache attributes todos --json
 swift run instant-swift-data cache triples todos --jsonl
 swift run instant-swift-data outbox inspect --jsonl
+swift run instant-swift-data outbox transport --json
 MUTATION_ID="$(swift run instant-swift-data outbox inspect --json | jq -r '.mutations[0].id')"
 swift run instant-swift-data outbox confirm "$MUTATION_ID" --json
 FAILED_MUTATION_ID="$(swift run instant-swift-data outbox inspect --json | jq -r '.mutations[0].id')"
 swift run instant-swift-data outbox fail "$FAILED_MUTATION_ID" "server rejected" --json
+swift run instant-swift-data outbox transport --all --jsonl
 swift run instant-swift-data outbox retry "$FAILED_MUTATION_ID" --json
 swift run instant-swift-data outbox drain --local-confirm --limit 1 --json
 swift run instant-swift-data outbox drain --local-confirm --jsonl
@@ -209,10 +211,11 @@ query materialization, plan-aware persisted query results, optimistic outbox
 persistence, local auth/session state, local room presence/topics, local file
 metadata/content copies, local stream chunks, local share metadata/memberships,
 local admin query/transact helpers, and non-captive CLI interaction, but it does
-not yet sync with a real Instant app. Endpoint helpers such as
-`auth oauth-url` and `auth issuer` mirror Instant's URL shape and use configured
-`INSTANT_API_URI`/`INSTANT_WEBSOCKET_URI` values, but they do not perform
-network I/O.
+not yet sync with a real Instant app. The outbox can lower pending mutations to
+Instant-shaped transport `txSteps` for inspection with `outbox transport`, and
+endpoint helpers such as `auth oauth-url` and `auth issuer` mirror Instant's URL
+shape and use configured `INSTANT_API_URI`/`INSTANT_WEBSOCKET_URI` values, but
+they do not perform network I/O.
 
 ## Development
 
@@ -367,6 +370,13 @@ try await db.transact {
     .object(["role": .string("owner")])
   )
 }
+```
+
+Inspect lowered transport payloads before real network sync is configured:
+
+```bash
+swift run instant-swift-data outbox transport --json
+swift run instant-swift-data outbox transport --all --jsonl
 ```
 
 Subscriptions are bounded newest-value streams, so slow consumers receive the

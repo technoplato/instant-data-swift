@@ -653,6 +653,183 @@ struct InstantStoreTests {
   }
 
   @Test
+  func transportMutationLowersPendingOperationsToInstantTxSteps() throws {
+    let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let lookup = InstantLookupRef(
+      attributeID: "users/email",
+      value: .string("blob@example.com")
+    )
+    let transaction = InstantStoreTransaction(
+      id: "tx-transport",
+      operations: [
+        .requireEntityMissing(entityID: "todo-1", namespace: "todos"),
+        .insert(
+          InstantTriple(
+            entityID: "todo-1",
+            attributeID: "todos/id",
+            value: .string("todo-1"),
+            txID: "tx-transport",
+            txTime: txTime
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "todo-1",
+            attributeID: "todos/text",
+            value: .string("Ship transport lowering"),
+            txID: "tx-transport",
+            txTime: txTime
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "todo-1",
+            attributeID: "todos/createdAt",
+            value: .date(Date(timeIntervalSince1970: Double(1_700_000_000_123) / 1000)),
+            txID: "tx-transport",
+            txTime: txTime
+          )
+        ),
+        .merge(
+          InstantTriple(
+            entityID: "todo-1",
+            attributeID: "todos/metadata",
+            value: .json(.object(["nested": .object(["done": .bool(false)])])),
+            txID: "tx-transport",
+            txTime: txTime
+          )
+        ),
+        .requireEntityExistsByLookup(lookup, namespace: "users"),
+        .insertByLookup(
+          entity: lookup,
+          attributeID: "users/name",
+          value: .string("Blob"),
+          txID: "tx-transport",
+          txTime: txTime
+        ),
+        .retract(
+          InstantTriple(
+            entityID: "todo-1",
+            attributeID: "todos/project",
+            value: .ref("project-1"),
+            txID: "tx-transport",
+            txTime: txTime
+          )
+        ),
+        .ruleParams(
+          entityID: "todo-1",
+          namespace: "todos",
+          params: .object(["role": .string("owner")])
+        ),
+        .requireEntityExists(entityID: "old-todo", namespace: "todos"),
+        .deleteEntity("old-todo"),
+      ]
+    )
+    let mutation = PendingMutation(id: "tx-transport", createdAt: txTime, transaction: transaction)
+    let transportMutation = InstantTransportMutation(mutation)
+
+    expectNoDifference(transportMutation.preconditions.count, 3)
+    expectNoDifference(transportMutation.txSteps.count, 8)
+
+    let data = try JSONEncoder().encode(transportMutation)
+    let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let preconditions = try #require(object["preconditions"] as? [[String: Any]])
+    expectNoDifference(preconditions.map { $0["kind"] as? String }, [
+      "entity-missing",
+      "entity-exists",
+      "entity-exists",
+    ])
+
+    let txSteps = try #require(object["txSteps"] as? [[Any]])
+    expectNoDifference(txSteps[0][0] as? String, "add-triple")
+    expectNoDifference(txSteps[0][1] as? String, "todo-1")
+    expectNoDifference(txSteps[0][2] as? String, "todos/id")
+    expectNoDifference(txSteps[0][3] as? String, "todo-1")
+    expectNoDifference((txSteps[0][4] as? [String: Any])?["mode"] as? String, "create")
+
+    expectNoDifference(txSteps[2][0] as? String, "add-triple")
+    expectNoDifference(txSteps[2][2] as? String, "todos/createdAt")
+    expectNoDifference(txSteps[2][3] as? String, "2023-11-14T22:13:20.123Z")
+    expectNoDifference((txSteps[2][4] as? [String: Any])?["mode"] as? String, "create")
+
+    expectNoDifference(txSteps[3][0] as? String, "deep-merge-triple")
+    let metadata = try #require(txSteps[3][3] as? [String: Any])
+    let nested = try #require(metadata["nested"] as? [String: Any])
+    expectNoDifference(nested["done"] as? Bool, false)
+
+    let lookupEntity = try #require(txSteps[4][1] as? [Any])
+    expectNoDifference(lookupEntity[0] as? String, "users/email")
+    expectNoDifference(lookupEntity[1] as? String, "blob@example.com")
+    expectNoDifference((txSteps[4][4] as? [String: Any])?["mode"] as? String, "update")
+
+    expectNoDifference(txSteps[5][0] as? String, "retract-triple")
+    expectNoDifference(txSteps[6][0] as? String, "rule-params")
+    expectNoDifference(txSteps[7][0] as? String, "delete-entity")
+    expectNoDifference(txSteps[7][2] as? String, "todos")
+  }
+
+  @Test
+  func transportMutationAppliesPreconditionMetadataInOperationOrder() throws {
+    let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let transaction = InstantStoreTransaction(
+      id: "tx-ordered-transport",
+      operations: [
+        .insert(
+          InstantTriple(
+            entityID: "todo-ordered",
+            attributeID: "todos/text",
+            value: .string("before precondition"),
+            txID: "tx-ordered-transport",
+            txTime: txTime
+          )
+        ),
+        .requireEntityMissing(entityID: "todo-ordered", namespace: "todos"),
+        .insert(
+          InstantTriple(
+            entityID: "todo-ordered",
+            attributeID: "todos/title",
+            value: .string("after create precondition"),
+            txID: "tx-ordered-transport",
+            txTime: txTime
+          )
+        ),
+        .requireEntityExists(entityID: "todo-ordered", namespace: "archivedTodos"),
+        .merge(
+          InstantTriple(
+            entityID: "todo-ordered",
+            attributeID: "todos/metadata",
+            value: .json(.object(["stage": .string("updated")])),
+            txID: "tx-ordered-transport",
+            txTime: txTime
+          )
+        ),
+        .deleteEntity("todo-ordered"),
+        .requireEntityExists(entityID: "todo-ordered", namespace: nil),
+        .deleteEntity("todo-ordered"),
+      ]
+    )
+    let mutation = InstantTransportMutation(
+      PendingMutation(id: "tx-ordered-transport", createdAt: txTime, transaction: transaction)
+    )
+
+    let data = try JSONEncoder().encode(mutation)
+    let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let txSteps = try #require(object["txSteps"] as? [[Any]])
+
+    expectNoDifference(txSteps.count, 5)
+    expectNoDifference(txSteps[0][0] as? String, "add-triple")
+    expectNoDifference(txSteps[0].count, 4)
+    expectNoDifference(txSteps[1][0] as? String, "add-triple")
+    expectNoDifference((txSteps[1][4] as? [String: Any])?["mode"] as? String, "create")
+    expectNoDifference(txSteps[2][0] as? String, "deep-merge-triple")
+    expectNoDifference((txSteps[2][4] as? [String: Any])?["mode"] as? String, "update")
+    expectNoDifference(txSteps[3][0] as? String, "delete-entity")
+    expectNoDifference(txSteps[3][2] as? String, "archivedTodos")
+    expectNoDifference(txSteps[4][0] as? String, "delete-entity")
+    expectNoDifference(txSteps[4].count, 2)
+  }
+
+  @Test
   func strictTodoUpdateRejectsMissingEntityBeforePersistence() async throws {
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(

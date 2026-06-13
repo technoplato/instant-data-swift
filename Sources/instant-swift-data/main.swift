@@ -654,6 +654,16 @@ struct InstantSwiftDataCLI {
       }
       try await printOutbox(context: context, output: output)
 
+    case "transport", "wire", "tx-steps":
+      let includeFailed = try parseOutboxTransportOptions(arguments: arguments)
+      let mutations = await context.runtime.outboxTransportMutations(includeFailed: includeFailed)
+      try printOutboxTransport(
+        context: context,
+        output: output,
+        includeFailed: includeFailed,
+        mutations: mutations
+      )
+
     case "confirm":
       guard let mutationID = arguments.popFirstArgument(), arguments.isEmpty else {
         throw CLIError("Usage: instant-swift-data outbox confirm <mutation-id> [--json|--jsonl]", exitCode: 64)
@@ -1530,6 +1540,68 @@ struct InstantSwiftDataCLI {
             event: "mutation",
             appID: context.appID,
             entityID: mutation.id,
+            ok: true,
+            details: mutation
+          )
+        )
+      }
+    }
+  }
+
+  private static func printOutboxTransport(
+    context: CLIContext,
+    output: OutputMode,
+    includeFailed: Bool,
+    mutations: [InstantTransportMutation]
+  ) throws {
+    let txStepCount = mutations.reduce(0) { $0 + $1.txSteps.count }
+    let preconditionCount = mutations.reduce(0) { $0 + $1.preconditions.count }
+    let payload = OutboxTransportOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: "transport",
+      transport: "not-implemented-local-cache-only",
+      includeFailed: includeFailed,
+      mutationCount: mutations.count,
+      txStepCount: txStepCount,
+      preconditionCount: preconditionCount,
+      mutations: mutations
+    )
+
+    switch output {
+    case .human:
+      print("outbox transport: \(payload.cachePath)")
+      print("mutations: \(payload.mutationCount)")
+      print("tx steps: \(payload.txStepCount)")
+      print("preconditions: \(payload.preconditionCount)")
+      for mutation in mutations {
+        print(
+          "- \(mutation.mutationID) status=\(mutation.status.rawValue) txSteps=\(mutation.txSteps.count) preconditions=\(mutation.preconditions.count)"
+        )
+      }
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.outbox.transport",
+          side: "swift",
+          event: "summary",
+          appID: context.appID,
+          ok: true,
+          details: payload
+        )
+      )
+      for mutation in mutations {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.outbox.transport",
+            side: "swift",
+            event: "mutation",
+            appID: context.appID,
+            entityID: mutation.mutationID,
             ok: true,
             details: mutation
           )
@@ -2745,6 +2817,7 @@ struct InstantSwiftDataCLI {
         cache attributes [namespace] [--json|--jsonl]
         cache triples [namespace] [--json|--jsonl]
         outbox inspect [--json|--jsonl]
+        outbox transport [--all] [--json|--jsonl]
         outbox confirm <mutation-id> [--json|--jsonl]
         outbox fail <mutation-id> "reason" [--json|--jsonl]
         outbox retry <mutation-id> [--json|--jsonl]
@@ -3921,13 +3994,34 @@ struct InstantSwiftDataCLI {
 
   private static var outboxUsage: String {
     """
-    Usage: instant-swift-data outbox <inspect|confirm|fail|retry|drain>
+    Usage: instant-swift-data outbox <inspect|transport|confirm|fail|retry|drain>
       instant-swift-data outbox inspect [--json|--jsonl]
+      instant-swift-data outbox transport [--all] [--json|--jsonl]
       instant-swift-data outbox confirm <mutation-id> [--json|--jsonl]
       instant-swift-data outbox fail <mutation-id> "reason" [--json|--jsonl]
       instant-swift-data outbox retry <mutation-id> [--json|--jsonl]
       instant-swift-data outbox drain --local-confirm [--limit n] [--json|--jsonl]
     """
+  }
+
+  private static func parseOutboxTransportOptions(arguments: [String]) throws -> Bool {
+    var arguments = arguments
+    var includeFailed = false
+
+    while let option = arguments.popFirstArgument() {
+      switch option {
+      case "--all":
+        includeFailed = true
+
+      default:
+        throw CLIError(
+          "Usage: instant-swift-data outbox transport [--all] [--json|--jsonl]",
+          exitCode: 64
+        )
+      }
+    }
+
+    return includeFailed
   }
 
   private static func parseOutboxDrainLimit(arguments: [String]) throws -> Int? {
@@ -4870,6 +4964,18 @@ private struct OutboxDrainOutput: Codable, Sendable {
   var mutationCount: Int
   var drainedMutationCount: Int
   var mutations: [PendingMutation]
+}
+
+private struct OutboxTransportOutput: Encodable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var transport: String
+  var includeFailed: Bool
+  var mutationCount: Int
+  var txStepCount: Int
+  var preconditionCount: Int
+  var mutations: [InstantTransportMutation]
 }
 
 private struct LocalIDOutput: Codable, Sendable {

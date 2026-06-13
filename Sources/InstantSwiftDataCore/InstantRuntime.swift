@@ -1097,6 +1097,23 @@ public final class InstantRuntime: Sendable {
     await outbox.all()
   }
 
+  public func outboxTransportMutations(includeFailed: Bool = false) async
+    -> [InstantTransportMutation]
+  {
+    await outbox.all()
+      .filter { mutation in
+        switch mutation.status {
+        case .pending:
+          return true
+        case .confirmed:
+          return false
+        case .failed:
+          return includeFailed
+        }
+      }
+      .map(InstantTransportMutation.init)
+  }
+
   @discardableResult
   public func confirmMutation(id: String) async throws -> PendingMutation {
     await operationGate.enter()

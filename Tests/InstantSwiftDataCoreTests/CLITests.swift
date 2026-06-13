@@ -1525,6 +1525,91 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliOutboxTransportLowersPendingMutations() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let addOutput = try runCLI(
+      ["examples", "todos", "add", "transport from cli", "--json"],
+      homeURL: homeURL
+    )
+    let add = try JSONDecoder().decode(CLIAddOutput.self, from: Data(addOutput.utf8))
+    let todoID = try #require(add.changedID)
+
+    let transportObject = try #require(
+      JSONSerialization.jsonObject(
+        with: Data(try runCLI(["outbox", "transport", "--json"], homeURL: homeURL).utf8)
+      ) as? [String: Any]
+    )
+    expectNoDifference(transportObject["event"] as? String, "transport")
+    expectNoDifference(transportObject["mutationCount"] as? Int, 1)
+    expectNoDifference(transportObject["txStepCount"] as? Int, 4)
+    expectNoDifference(transportObject["preconditionCount"] as? Int, 1)
+    let mutations = try #require(transportObject["mutations"] as? [[String: Any]])
+    let mutation = try #require(mutations.first)
+    expectNoDifference(mutation["status"] as? String, "pending")
+    let preconditions = try #require(mutation["preconditions"] as? [[String: Any]])
+    expectNoDifference(preconditions.first?["kind"] as? String, "entity-missing")
+    expectNoDifference(preconditions.first?["entity"] as? String, todoID)
+
+    let txSteps = try #require(mutation["txSteps"] as? [[Any]])
+    expectNoDifference(txSteps[0][0] as? String, "add-triple")
+    expectNoDifference(txSteps[0][1] as? String, todoID)
+    expectNoDifference(txSteps[0][2] as? String, "todos/id")
+    expectNoDifference(txSteps[0][3] as? String, todoID)
+    expectNoDifference((txSteps[0][4] as? [String: Any])?["mode"] as? String, "create")
+    let textStep = try #require(
+      txSteps.first { step in step.count > 2 && step[2] as? String == "todos/text" }
+    )
+    expectNoDifference(textStep[3] as? String, "transport from cli")
+
+    let jsonlOutput = try runCLI(["outbox", "transport", "--jsonl"], homeURL: homeURL)
+    let jsonlLines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(jsonlLines.count, 2)
+    let summary = try #require(
+      JSONSerialization.jsonObject(with: Data(jsonlLines[0].utf8)) as? [String: Any]
+    )
+    expectNoDifference(summary["case"] as? String, "cli.outbox.transport")
+    expectNoDifference(summary["event"] as? String, "summary")
+
+    let outbox = try JSONDecoder().decode(
+      CLIOutboxInspectOutput.self,
+      from: Data(try runCLI(["outbox", "inspect", "--json"], homeURL: homeURL).utf8)
+    )
+    let mutationID = try #require(outbox.mutations.first?.id)
+    _ = try runCLI(["outbox", "fail", mutationID, "server rejected", "--json"], homeURL: homeURL)
+
+    let pendingOnly = try #require(
+      JSONSerialization.jsonObject(
+        with: Data(try runCLI(["outbox", "transport", "--json"], homeURL: homeURL).utf8)
+      ) as? [String: Any]
+    )
+    expectNoDifference(pendingOnly["mutationCount"] as? Int, 0)
+
+    let includeFailed = try #require(
+      JSONSerialization.jsonObject(
+        with: Data(try runCLI(["outbox", "transport", "--all", "--json"], homeURL: homeURL).utf8)
+      ) as? [String: Any]
+    )
+    expectNoDifference(includeFailed["includeFailed"] as? Bool, true)
+    expectNoDifference(includeFailed["mutationCount"] as? Int, 1)
+    let failedTransportMutations = try #require(includeFailed["mutations"] as? [[String: Any]])
+    expectNoDifference(
+      failedTransportMutations.first?["failureMessage"] as? String,
+      "server rejected"
+    )
+
+    let malformed = try runCLIResult(
+      ["outbox", "transport", "--unknown", "--json"],
+      homeURL: homeURL
+    )
+    #expect(malformed.status == 64)
+    #expect(malformed.error.contains("outbox transport"))
+  }
+
+  @Test
   func cliEphemeralAppPersistsSelectionForLaterCommands() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)

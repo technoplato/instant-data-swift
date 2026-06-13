@@ -158,6 +158,17 @@ real Instant app.
 - Stable flush ordering after reconnect, especially link-before-create hazards.
 - High-bandwidth write path for repeated field updates and linked entities.
 
+Current local progress: pending mutations now lower into typed
+`InstantTransportMutation` values with Instant-shaped `txSteps` such as
+`add-triple`, `deep-merge-triple`, `retract-triple`, `delete-entity`, and
+`rule-params`. Local strict-create and strict-update preconditions are preserved
+and reflected as `{mode: "create"}` / `{mode: "update"}` transport options on
+matching steps. The CLI proves the bridge non-captively with
+`instant-swift-data outbox transport --json` and can include failed rows for
+inspection with `instant-swift-data outbox transport --all --jsonl`. Real
+WebSocket send/ack, retry scheduling, and server rejection rollback remain
+future transport work.
+
 ### Offline And Local First
 
 - Persist schema attributes, triples, cached query results, pending mutations,
