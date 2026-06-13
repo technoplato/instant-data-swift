@@ -445,6 +445,8 @@ implementation. Required auth flows:
   override `DependencyValues.instantMagicCodeExchange` before
   `bootstrapInstantSwiftData`; the CLI may use the same `.local` instance for
   non-captive proof until transport-backed auth is implemented.
+- app-facing auth should be available directly on the `InstantSwiftDataClient`
+  dependency, not by reaching through to private runtime internals.
 - token/session restore.
 - sign-out.
 - show current auth state.

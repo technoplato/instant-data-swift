@@ -30,6 +30,16 @@ struct BootstrapTests {
     } catch {
       #expect(Bool(false), "Unexpected error: \(error)")
     }
+
+    do {
+      _ = try await client.authSession()
+      #expect(Bool(false), "Expected the default client auth session to fail before bootstrap.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .implementationFailed)
+      expectNoDifference(error.operation, "access default InstantSwiftData client")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
   }
 
   @Test
@@ -134,20 +144,44 @@ struct BootstrapTests {
     } operation: {
       @Dependency(\.defaultInstantSwiftData) var client
 
-      guard let runtime = client.runtime else {
-        #expect(Bool(false), "Expected a runtime-backed client.")
-        return
-      }
+      let emptySession = try await client.authSession()
+      expectNoDifference(emptySession, nil)
 
-      let challenge = try await runtime.sendMagicCode(email: " User@Example.COM ")
+      let guestSession = try await client.signInAsGuest()
+      expectNoDifference(guestSession.appID, appID)
+      expectNoDifference(guestSession.isGuest, true)
+      let persistedGuestSession = try await client.authSession()
+      expectNoDifference(persistedGuestSession, guestSession)
+
+      try await client.signOut()
+      let signedOutGuestSession = try await client.authSession()
+      expectNoDifference(signedOutGuestSession, nil)
+
+      let challenge = try await client.sendMagicCode(email: " User@Example.COM ")
       expectNoDifference(challenge.code, "246810")
 
-      let session = try await runtime.signInWithMagicCode(
+      let session = try await client.signInWithMagicCode(
         email: "user@example.com",
         code: "246810"
       )
       expectNoDifference(session.userID, "dependency:\(appID):user@example.com:246810")
       expectNoDifference(session.refreshToken, "challenge:246810")
+      let persistedMagicSession = try await client.authSession()
+      expectNoDifference(persistedMagicSession, session)
+
+      try await client.signOut()
+      let signedOutMagicSession = try await client.authSession()
+      expectNoDifference(signedOutMagicSession, nil)
+
+      let tokenSession = try await client.signInWithRefreshToken(
+        " refresh-token ",
+        userID: " token-user "
+      )
+      expectNoDifference(tokenSession.userID, "token-user")
+      expectNoDifference(tokenSession.refreshToken, "refresh-token")
+      expectNoDifference(tokenSession.isGuest, false)
+      let persistedTokenSession = try await client.authSession()
+      expectNoDifference(persistedTokenSession, tokenSession)
     }
   }
 
@@ -177,7 +211,56 @@ struct BootstrapTests {
       },
       observe: { _ in AsyncStream { continuation in continuation.finish() } },
       pendingMutations: { [] },
-      localID: { name in "mock-\(name)" }
+      localID: { name in "mock-\(name)" },
+      authSession: {
+        InstantAuthSession(
+          appID: "mock-app",
+          userID: "mock-user",
+          refreshToken: "mock-refresh",
+          isGuest: false,
+          createdAt: InstantTimestamp(milliseconds: 1),
+          updatedAt: InstantTimestamp(milliseconds: 2)
+        )
+      },
+      signInAsGuest: {
+        InstantAuthSession(
+          appID: "mock-app",
+          userID: "mock-guest",
+          isGuest: true,
+          createdAt: InstantTimestamp(milliseconds: 3),
+          updatedAt: InstantTimestamp(milliseconds: 3)
+        )
+      },
+      sendMagicCode: { email in
+        InstantMagicCodeChallenge(
+          appID: "mock-app",
+          email: email,
+          code: "135790",
+          createdAt: InstantTimestamp(milliseconds: 4),
+          expiresAt: InstantTimestamp(milliseconds: 5)
+        )
+      },
+      signInWithMagicCode: { email, code in
+        InstantAuthSession(
+          appID: "mock-app",
+          userID: "\(email):\(code)",
+          refreshToken: "mock-magic-refresh",
+          isGuest: false,
+          createdAt: InstantTimestamp(milliseconds: 6),
+          updatedAt: InstantTimestamp(milliseconds: 6)
+        )
+      },
+      signInWithRefreshToken: { refreshToken, userID in
+        InstantAuthSession(
+          appID: "mock-app",
+          userID: userID ?? "mock-token-user",
+          refreshToken: refreshToken,
+          isGuest: false,
+          createdAt: InstantTimestamp(milliseconds: 7),
+          updatedAt: InstantTimestamp(milliseconds: 7)
+        )
+      },
+      signOut: {}
     )
 
     try await withDependencies {
@@ -192,6 +275,21 @@ struct BootstrapTests {
       let todos = try TodoExample.decode(snapshots)
       expectNoDifference(todos.map(\.text), ["Mocked"])
       expectNoDifference(todos.map(\.isCompleted), [true])
+
+      let mockSession = try await client.authSession()
+      expectNoDifference(mockSession?.userID, "mock-user")
+      let mockGuest = try await client.signInAsGuest()
+      expectNoDifference(mockGuest.userID, "mock-guest")
+      let mockChallenge = try await client.sendMagicCode(email: "mock@example.com")
+      expectNoDifference(mockChallenge.code, "135790")
+      let mockMagicSession = try await client.signInWithMagicCode(
+        email: "mock@example.com",
+        code: "135790"
+      )
+      expectNoDifference(mockMagicSession.userID, "mock@example.com:135790")
+      let mockTokenSession = try await client.signInWithRefreshToken("mock-token", userID: nil)
+      expectNoDifference(mockTokenSession.userID, "mock-token-user")
+      try await client.signOut()
     }
   }
 
@@ -252,5 +350,15 @@ struct BootstrapTests {
     expectNoDifference(emission.sequence, 0)
     expectNoDifference(emission.values.map(\.id), ["mock-todo"])
     expectNoDifference(emission.pageInfo, nil)
+
+    do {
+      _ = try await mock.authSession()
+      #expect(Bool(false), "Expected old-shape mock client auth to fail without auth closures.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .implementationFailed)
+      expectNoDifference(error.operation, "access InstantSwiftData auth")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
   }
 }

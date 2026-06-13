@@ -18,6 +18,14 @@ public struct InstantSwiftDataClient: Sendable {
   private var observeOperation: @Sendable (InstantQueryPlan) async -> AsyncStream<InstantQueryEmission>
   private var pendingMutationsOperation: @Sendable () async -> [PendingMutation]
   private var localIDOperation: @Sendable (String) async throws -> String
+  private var authSessionOperation: @Sendable () async throws -> InstantAuthSession?
+  private var signInAsGuestOperation: @Sendable () async throws -> InstantAuthSession
+  private var sendMagicCodeOperation: @Sendable (String) async throws -> InstantMagicCodeChallenge
+  private var signInWithMagicCodeOperation:
+    @Sendable (String, String) async throws -> InstantAuthSession
+  private var signInWithRefreshTokenOperation:
+    @Sendable (String, String?) async throws -> InstantAuthSession
+  private var signOutOperation: @Sendable () async throws -> Void
 
   public init(runtime: InstantRuntime) {
     self.runtime = runtime
@@ -39,6 +47,24 @@ public struct InstantSwiftDataClient: Sendable {
     self.localIDOperation = { name in
       try await runtime.localID(named: name)
     }
+    self.authSessionOperation = {
+      try await runtime.authSession()
+    }
+    self.signInAsGuestOperation = {
+      try await runtime.signInAsGuest()
+    }
+    self.sendMagicCodeOperation = { email in
+      try await runtime.sendMagicCode(email: email)
+    }
+    self.signInWithMagicCodeOperation = { email, code in
+      try await runtime.signInWithMagicCode(email: email, code: code)
+    }
+    self.signInWithRefreshTokenOperation = { refreshToken, userID in
+      try await runtime.signInWithRefreshToken(refreshToken, userID: userID)
+    }
+    self.signOutOperation = {
+      try await runtime.signOut()
+    }
   }
 
   public init(
@@ -48,8 +74,22 @@ public struct InstantSwiftDataClient: Sendable {
     query: @escaping @Sendable (InstantQueryPlan) async throws -> [InstantEntitySnapshot],
     observe: @escaping @Sendable (InstantQueryPlan) async -> AsyncStream<InstantQueryEmission>,
     pendingMutations: @escaping @Sendable () async -> [PendingMutation],
-    localID: @escaping @Sendable (String) async throws -> String
+    localID: @escaping @Sendable (String) async throws -> String,
+    authSession: (@Sendable () async throws -> InstantAuthSession?)? = nil,
+    signInAsGuest: (@Sendable () async throws -> InstantAuthSession)? = nil,
+    sendMagicCode: (@Sendable (String) async throws -> InstantMagicCodeChallenge)? = nil,
+    signInWithMagicCode: (@Sendable (String, String) async throws -> InstantAuthSession)? = nil,
+    signInWithRefreshToken:
+      (@Sendable (String, String?) async throws -> InstantAuthSession)? = nil,
+    signOut: (@Sendable () async throws -> Void)? = nil
   ) {
+    let authError = InstantError(
+      code: .implementationFailed,
+      operation: "access InstantSwiftData auth",
+      message: "No auth client has been configured.",
+      recovery: "Bootstrap Instant Swift Data before using auth, or override auth closures in tests."
+    )
+
     self.runtime = nil
     self.transactOperation = transact
     self.queryOnceOperation =
@@ -61,6 +101,12 @@ public struct InstantSwiftDataClient: Sendable {
     self.observeOperation = observe
     self.pendingMutationsOperation = pendingMutations
     self.localIDOperation = localID
+    self.authSessionOperation = authSession ?? { throw authError }
+    self.signInAsGuestOperation = signInAsGuest ?? { throw authError }
+    self.sendMagicCodeOperation = sendMagicCode ?? { _ in throw authError }
+    self.signInWithMagicCodeOperation = signInWithMagicCode ?? { _, _ in throw authError }
+    self.signInWithRefreshTokenOperation = signInWithRefreshToken ?? { _, _ in throw authError }
+    self.signOutOperation = signOut ?? { throw authError }
   }
 
   public static func unimplemented(_ message: String) -> Self {
@@ -89,6 +135,24 @@ public struct InstantSwiftDataClient: Sendable {
         return []
       },
       localID: { _ in
+        throw error
+      },
+      authSession: {
+        throw error
+      },
+      signInAsGuest: {
+        throw error
+      },
+      sendMagicCode: { _ in
+        throw error
+      },
+      signInWithMagicCode: { _, _ in
+        throw error
+      },
+      signInWithRefreshToken: { _, _ in
+        throw error
+      },
+      signOut: {
         throw error
       }
     )
@@ -125,6 +189,33 @@ public struct InstantSwiftDataClient: Sendable {
 
   public func localID(named name: String) async throws -> String {
     try await localIDOperation(name)
+  }
+
+  public func authSession() async throws -> InstantAuthSession? {
+    try await authSessionOperation()
+  }
+
+  public func signInAsGuest() async throws -> InstantAuthSession {
+    try await signInAsGuestOperation()
+  }
+
+  public func sendMagicCode(email: String) async throws -> InstantMagicCodeChallenge {
+    try await sendMagicCodeOperation(email)
+  }
+
+  public func signInWithMagicCode(email: String, code: String) async throws -> InstantAuthSession {
+    try await signInWithMagicCodeOperation(email, code)
+  }
+
+  public func signInWithRefreshToken(
+    _ refreshToken: String,
+    userID: String? = nil
+  ) async throws -> InstantAuthSession {
+    try await signInWithRefreshTokenOperation(refreshToken, userID)
+  }
+
+  public func signOut() async throws {
+    try await signOutOperation()
   }
 
   public func subscribe<Entity: InstantEntityModel>(

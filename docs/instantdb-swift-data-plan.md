@@ -357,7 +357,9 @@ public API into SQL:
   Current local progress: `InstantMagicCodeExchange` follows this shape, the
   public `InstantSwiftData` target exposes `DependencyValues.instantMagicCodeExchange`,
   and `bootstrapInstantSwiftData` resolves that value before constructing the
-  runtime configuration. Future transport/auth clients should preserve the same
+  runtime configuration. The public dependency client also exposes durable auth
+  operations directly, including guest, token, magic-code send/verify, session
+  lookup, and sign-out. Future transport/auth clients should preserve the same
   Sendable value-client boundary and local static-instance convention.
 - **Typed models above explicit migrations.** SQLiteData combines `@Table`,
   `Draft`, `@Selection`, typed expressions, and generated update helpers with

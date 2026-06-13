@@ -218,7 +218,10 @@ try await withDependencies {
   )
 } operation: {
   @Dependency(\.defaultInstantSwiftData) var db
+  let challenge = try await db.sendMagicCode(email: "user@example.com")
+  _ = try await db.signInWithMagicCode(email: challenge.email, code: challenge.code)
   _ = try await db.query(TodoExample.query)
+  try await db.signOut()
 }
 ```
 
@@ -228,6 +231,10 @@ auth behavior. Local/demo clients should be reusable static instances on the
 client type, for example `extension InstantMagicCodeExchange { public static let
 local = Self(...) }`, while dependency keys remain computed `static var`
 `liveValue`, `testValue`, and `previewValue` properties.
+The dependency client exposes durable auth directly with `authSession`,
+`signInAsGuest`, `sendMagicCode`, `signInWithMagicCode`,
+`signInWithRefreshToken`, and `signOut`, so app code does not need to reach
+through to the core runtime.
 
 ### Typed Queries And Writes
 
