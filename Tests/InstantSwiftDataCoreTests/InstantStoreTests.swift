@@ -1375,6 +1375,60 @@ struct InstantStoreTests {
   }
 
   @Test
+  func refreshTokenSignInUsesVerifierAndPersistsSession() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let signedInAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let requests = LockIsolated<[InstantRefreshTokenVerificationRequest]>([])
+    let verifier = InstantRefreshTokenVerifier(
+      verify: { request in
+        requests.withValue { $0.append(request) }
+        return InstantRefreshTokenVerification(
+          userID:
+            "dependency:\(request.appID):\(request.refreshToken):\(request.userID ?? "nil"):\(request.signedInAt.milliseconds):\(request.makeID())",
+          refreshToken: "verified:\(request.refreshToken)"
+        )
+      }
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        now: { signedInAt },
+        makeID: { "local-user-id" },
+        refreshTokenVerifier: verifier
+      )
+    )
+
+    let session = try await runtime.signInWithRefreshToken(
+      " refresh-token ",
+      userID: " token-user "
+    )
+    expectNoDifference(
+      session,
+      InstantAuthSession(
+        appID: "app-a",
+        userID: "dependency:app-a:refresh-token:token-user:1700000000000:local-user-id",
+        refreshToken: "verified:refresh-token",
+        isGuest: false,
+        createdAt: signedInAt,
+        updatedAt: signedInAt
+      )
+    )
+    let verifierRequests = requests.withValue { $0 }
+    expectNoDifference(verifierRequests.count, 1)
+    expectNoDifference(verifierRequests.first?.appID, "app-a")
+    expectNoDifference(verifierRequests.first?.refreshToken, "refresh-token")
+    expectNoDifference(verifierRequests.first?.userID, "token-user")
+    expectNoDifference(verifierRequests.first?.signedInAt, signedInAt)
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "app-a", persistenceURL: cacheURL)
+    )
+    let persistedSession = try await relaunchedRuntime.authSession()
+    expectNoDifference(persistedSession, session)
+  }
+
+  @Test
   func signOutInvalidatesRefreshTokenWhenRequestedAndClearsSession() async throws {
     let cacheURL = try temporaryCacheURL()
     let signedOutAt = InstantTimestamp(milliseconds: 1_700_000_000_000)

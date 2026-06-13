@@ -130,6 +130,7 @@ Concrete local/demo implementations can be exposed as extension static instances
 for example:
 
 - `extension InstantMagicCodeExchange { public static let local = Self(...) }`
+- `extension InstantRefreshTokenVerifier { public static let local = Self(...) }`
 - `extension InstantAuthTokenInvalidator { public static let local = Self(...) }`
 
 App-facing override points should still be registered through

@@ -6,6 +6,7 @@ public struct InstantRuntimeConfiguration: Sendable {
   public var initialAttributes: [InstantAttribute]
   public var now: @Sendable () -> InstantTimestamp
   public var makeID: @Sendable () -> String
+  public var refreshTokenVerifier: InstantRefreshTokenVerifier
   public var magicCodeExchange: InstantMagicCodeExchange
   public var idTokenExchange: InstantIDTokenExchange
   public var oauthExchange: InstantOAuthExchange
@@ -19,6 +20,7 @@ public struct InstantRuntimeConfiguration: Sendable {
       InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
     },
     makeID: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() },
+    refreshTokenVerifier: InstantRefreshTokenVerifier = .local,
     magicCodeExchange: InstantMagicCodeExchange = .local,
     idTokenExchange: InstantIDTokenExchange = .local,
     oauthExchange: InstantOAuthExchange = .local,
@@ -29,6 +31,7 @@ public struct InstantRuntimeConfiguration: Sendable {
     self.initialAttributes = initialAttributes
     self.now = now
     self.makeID = makeID
+    self.refreshTokenVerifier = refreshTokenVerifier
     self.magicCodeExchange = magicCodeExchange
     self.idTokenExchange = idTokenExchange
     self.oauthExchange = oauthExchange
@@ -424,18 +427,27 @@ public final class InstantRuntime: Sendable {
       )
     }
 
-    let trimmedUserID = userID?.trimmingCharacters(in: .whitespacesAndNewlines)
-    let resolvedUserID: String
-    if let trimmedUserID, !trimmedUserID.isEmpty {
-      resolvedUserID = trimmedUserID
-    } else {
-      resolvedUserID = "token-\(configuration.makeID())"
-    }
     let now = configuration.now()
+    let trimmedUserID = userID?.trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedUserID: String?
+    if let trimmedUserID, !trimmedUserID.isEmpty {
+      normalizedUserID = trimmedUserID
+    } else {
+      normalizedUserID = nil
+    }
+    let verification = try await configuration.refreshTokenVerifier.verify(
+      InstantRefreshTokenVerificationRequest(
+        appID: configuration.appID,
+        refreshToken: token,
+        userID: normalizedUserID,
+        signedInAt: now,
+        makeID: configuration.makeID
+      )
+    )
     let session = InstantAuthSession(
       appID: configuration.appID,
-      userID: resolvedUserID,
-      refreshToken: token,
+      userID: verification.userID,
+      refreshToken: verification.refreshToken,
       isGuest: false,
       createdAt: now,
       updatedAt: now

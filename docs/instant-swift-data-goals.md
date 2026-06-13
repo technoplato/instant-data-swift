@@ -458,6 +458,9 @@ implementation. Required auth flows:
   `InstantAuthTokenInvalidator` dependency with a reusable `.local` no-op for
   terminal demos and tests.
 - token/session restore.
+- refresh-token sign-in/session restore should be backed by an injectable
+  `InstantRefreshTokenVerifier` dependency with `.local` for deterministic CLI
+  and test runs.
 - sign-out.
 - show current auth state.
 - watch current auth state through a finite non-captive CLI command such as

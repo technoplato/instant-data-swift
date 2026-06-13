@@ -198,6 +198,7 @@ publishes auth-state changes through `observeAuthSession`, and the public
 token, id-token, magic-code, session lookup, and sign-out operations.
 `InstantIDTokenExchange` and `InstantMagicCodeExchange` are Swift Dependencies
 value clients with reusable `.local` instances for durable local proof,
+`InstantRefreshTokenVerifier` handles refresh-token sign-in/session restore,
 `InstantOAuthExchange` follows the same shape for authorization-code flows, and
 `InstantAuthTokenInvalidator` gives sign-out a dedicated token-invalidation
 dependency. The OAuth and id-token exchange requests carry the current refresh
@@ -210,7 +211,7 @@ The CLI proves this path non-captively with commands such as
 invalidation and can skip it locally with
 `instant-swift-data auth sign-out --skip-token-invalidation --json`.
 Transport-backed token verification, token refresh, and server auth
-invalidation remain future work.
+invalidation remain future work, but the Swift dependency slots are in place.
 
 ### Presence, Rooms, Topics
 
@@ -378,11 +379,13 @@ public API into SQL:
   register `TestDependencyKey` and `DependencyKey` values with computed
   `testValue`, `previewValue`, and `liveValue`, and thread the resolved dependency into
   `bootstrapInstantSwiftData`/`InstantRuntimeConfiguration`. This applies first
-  to magic-code, id-token, OAuth exchange, and auth token invalidation and
-  should later apply to transport/auth, sync, file storage, and network clients.
+  to magic-code, refresh-token, id-token, OAuth exchange, and auth token
+  invalidation and should later apply to transport/auth, sync, file storage, and
+  network clients.
   Current local progress: `InstantMagicCodeExchange` follows this shape, the
   public `InstantSwiftData` target exposes
   `DependencyValues.instantMagicCodeExchange` and
+  `DependencyValues.instantRefreshTokenVerifier` and
   `DependencyValues.instantIDTokenExchange` and
   `DependencyValues.instantOAuthExchange` and
   `DependencyValues.instantAuthTokenInvalidator`, and

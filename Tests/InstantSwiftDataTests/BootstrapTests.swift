@@ -230,6 +230,50 @@ struct BootstrapTests {
   }
 
   @Test
+  func bootstrapUsesRefreshTokenVerifierDependency() async throws {
+    let appID = "refresh-token-dependency-\(UUID().uuidString)"
+    let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataRefreshToken-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let verifier = InstantRefreshTokenVerifier(
+      verify: { request in
+        InstantRefreshTokenVerification(
+          userID:
+            "dependency:\(request.appID):\(request.refreshToken):\(request.userID ?? "nil"):\(request.signedInAt.milliseconds)",
+          refreshToken: "dependency-refresh:\(request.refreshToken)"
+        )
+      }
+    )
+
+    try await withDependencies {
+      $0.date.now = fixedDate
+      $0.instantRefreshTokenVerifier = verifier
+      try await $0.bootstrapInstantSwiftData(
+        appID: appID,
+        persistenceURL: directory.appendingPathComponent("cache.sqlite"),
+        context: .test
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var client
+
+      let session = try await client.signInWithRefreshToken(
+        " refresh-token ",
+        userID: " token-user "
+      )
+      expectNoDifference(
+        session.userID,
+        "dependency:\(appID):refresh-token:token-user:1700000000000"
+      )
+      expectNoDifference(session.refreshToken, "dependency-refresh:refresh-token")
+      let persistedSession = try await client.authSession()
+      expectNoDifference(persistedSession, session)
+    }
+  }
+
+  @Test
   func bootstrapUsesIDTokenExchangeDependency() async throws {
     let appID = "id-token-dependency-\(UUID().uuidString)"
     let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)

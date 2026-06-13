@@ -434,6 +434,22 @@ extension InstantMagicCodeExchangeKey: DependencyKey {
   }
 }
 
+private enum InstantRefreshTokenVerifierKey: TestDependencyKey {
+  static var testValue: InstantRefreshTokenVerifier {
+    .local
+  }
+
+  static var previewValue: InstantRefreshTokenVerifier {
+    .local
+  }
+}
+
+extension InstantRefreshTokenVerifierKey: DependencyKey {
+  static var liveValue: InstantRefreshTokenVerifier {
+    .local
+  }
+}
+
 private enum InstantIDTokenExchangeKey: TestDependencyKey {
   static var testValue: InstantIDTokenExchange {
     .local
@@ -493,6 +509,11 @@ extension DependencyValues {
     set { self[InstantMagicCodeExchangeKey.self] = newValue }
   }
 
+  public var instantRefreshTokenVerifier: InstantRefreshTokenVerifier {
+    get { self[InstantRefreshTokenVerifierKey.self] }
+    set { self[InstantRefreshTokenVerifierKey.self] = newValue }
+  }
+
   public var instantIDTokenExchange: InstantIDTokenExchange {
     get { self[InstantIDTokenExchangeKey.self] }
     set { self[InstantIDTokenExchangeKey.self] = newValue }
@@ -517,6 +538,7 @@ extension DependencyValues {
     let date = self.date
     let uuid = self.uuid
     let magicCodeExchange = self.instantMagicCodeExchange
+    let refreshTokenVerifier = self.instantRefreshTokenVerifier
     let idTokenExchange = self.instantIDTokenExchange
     let oauthExchange = self.instantOAuthExchange
     let authTokenInvalidator = self.instantAuthTokenInvalidator
@@ -539,6 +561,7 @@ extension DependencyValues {
         makeID: {
           uuid().uuidString.lowercased()
         },
+        refreshTokenVerifier: refreshTokenVerifier,
         magicCodeExchange: magicCodeExchange,
         idTokenExchange: idTokenExchange,
         oauthExchange: oauthExchange,

@@ -214,6 +214,7 @@ import InstantSwiftData
 
 try await withDependencies {
   $0.instantMagicCodeExchange = .local
+  $0.instantRefreshTokenVerifier = .local
   $0.instantIDTokenExchange = .local
   $0.instantOAuthExchange = .local
   $0.instantAuthTokenInvalidator = .local
@@ -234,9 +235,10 @@ try await withDependencies {
 }
 ```
 
-`instantMagicCodeExchange`, `instantIDTokenExchange`, `instantOAuthExchange`,
-and `instantAuthTokenInvalidator` default to `.local`, and app/test entry
-points can override them before `bootstrapInstantSwiftData` to install live or
+`instantMagicCodeExchange`, `instantRefreshTokenVerifier`,
+`instantIDTokenExchange`, `instantOAuthExchange`, and
+`instantAuthTokenInvalidator` default to `.local`, and app/test entry points can
+override them before `bootstrapInstantSwiftData` to install live or
 fixture-backed auth behavior. Local/demo clients should be reusable static
 instances on the client type, for example
 `extension InstantMagicCodeExchange { public static let local = Self(...) }`,
