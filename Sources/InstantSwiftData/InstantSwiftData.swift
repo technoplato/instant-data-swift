@@ -1131,13 +1131,13 @@ public struct FetchAll<Element: Sendable>: Sendable {
 }
 
 @propertyWrapper
-public struct FetchOne<Element: Sendable>: Sendable {
-  private let storage: FetchStorage<Element?>
-  private var loadOperation: (@Sendable (InstantSwiftDataClient) async throws -> Element?)?
+public struct FetchOne<Value: Sendable>: Sendable {
+  private let storage: FetchStorage<Value>
+  private var loadOperation: (@Sendable (InstantSwiftDataClient) async throws -> Value)?
   private var subscribeOperation:
-    (@Sendable (InstantSwiftDataClient) async -> FetchSubscription<Element?>)?
+    (@Sendable (InstantSwiftDataClient) async -> FetchSubscription<Value>)?
 
-  public var wrappedValue: Element? {
+  public var wrappedValue: Value {
     get { storage.wrappedValue }
     set { storage.wrappedValue = newValue }
   }
@@ -1153,7 +1153,7 @@ public struct FetchOne<Element: Sendable>: Sendable {
   }
 
   #if canImport(SwiftUI)
-    public var binding: Binding<Element?> {
+    public var binding: Binding<Value> {
       Binding(
         get: { storage.wrappedValue },
         set: { storage.wrappedValue = $0 }
@@ -1162,35 +1162,10 @@ public struct FetchOne<Element: Sendable>: Sendable {
   #endif
 
   @_disfavoredOverload
-  public init(wrappedValue: Element? = nil) {
+  public init(wrappedValue: Value) {
     self.storage = FetchStorage(value: wrappedValue)
     self.loadOperation = nil
     self.subscribeOperation = nil
-  }
-
-  public init(wrappedValue: Element? = nil) where Element: InstantEntityModel {
-    self.init(wrappedValue: wrappedValue, Element.query)
-  }
-
-  public init(
-    wrappedValue: Element? = nil,
-    _ query: InstantEntityQuery<Element>
-  ) where Element: InstantEntityModel {
-    self.storage = FetchStorage(value: wrappedValue)
-    self.loadOperation = { client in
-      var query = query
-      if query.plan.limit == nil {
-        query = query.limit(1)
-      }
-      return try await client.query(query).first
-    }
-    self.subscribeOperation = { client in
-      var query = query
-      if query.plan.limit == nil {
-        query = query.limit(1)
-      }
-      return await client.subscribe(query).map(\.first)
-    }
   }
 
   public var projectedValue: Self {
@@ -1241,42 +1216,14 @@ public struct FetchOne<Element: Sendable>: Sendable {
     }
   }
 
-  public mutating func load(
-    _ query: InstantEntityQuery<Element>
-  ) async throws where Element: InstantEntityModel {
-    @Dependency(\.defaultInstantSwiftData) var client
-    try await load(query, using: client)
-  }
-
-  public mutating func load(
-    _ query: InstantEntityQuery<Element>,
-    using client: InstantSwiftDataClient
-  ) async throws where Element: InstantEntityModel {
-    self.loadOperation = { client in
-      var query = query
-      if query.plan.limit == nil {
-        query = query.limit(1)
-      }
-      return try await client.query(query).first
-    }
-    self.subscribeOperation = { client in
-      var query = query
-      if query.plan.limit == nil {
-        query = query.limit(1)
-      }
-      return await client.subscribe(query).map(\.first)
-    }
-    try await load(using: client)
-  }
-
-  public mutating func subscribe() async throws -> FetchSubscription<Element?> {
+  public mutating func subscribe() async throws -> FetchSubscription<Value> {
     @Dependency(\.defaultInstantSwiftData) var client
     return try await subscribe(using: client)
   }
 
   public mutating func subscribe(
     using client: InstantSwiftDataClient
-  ) async throws -> FetchSubscription<Element?> {
+  ) async throws -> FetchSubscription<Value> {
     guard let subscribeOperation else {
       let error = InstantError(
         code: .implementationFailed,
@@ -1290,34 +1237,6 @@ public struct FetchOne<Element: Sendable>: Sendable {
 
     loadError = nil
     return await subscribeOperation(client)
-  }
-
-  public mutating func subscribe(
-    _ query: InstantEntityQuery<Element>
-  ) async throws -> FetchSubscription<Element?> where Element: InstantEntityModel {
-    @Dependency(\.defaultInstantSwiftData) var client
-    return try await subscribe(query, using: client)
-  }
-
-  public mutating func subscribe(
-    _ query: InstantEntityQuery<Element>,
-    using client: InstantSwiftDataClient
-  ) async throws -> FetchSubscription<Element?> where Element: InstantEntityModel {
-    self.loadOperation = { client in
-      var query = query
-      if query.plan.limit == nil {
-        query = query.limit(1)
-      }
-      return try await client.query(query).first
-    }
-    self.subscribeOperation = { client in
-      var query = query
-      if query.plan.limit == nil {
-        query = query.limit(1)
-      }
-      return await client.subscribe(query).map(\.first)
-    }
-    return try await subscribe(using: client)
   }
 
   public mutating func task() async throws {
@@ -1360,32 +1279,176 @@ public struct FetchOne<Element: Sendable>: Sendable {
     }
   }
 
+  fileprivate static func limitOne<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>
+  ) -> InstantEntityQuery<Entity> {
+    if query.plan.limit == nil {
+      return query.limit(1)
+    }
+    return query
+  }
+
+  fileprivate static func notFoundError<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>,
+    operation: String
+  ) -> InstantError {
+    InstantError(
+      code: .implementationFailed,
+      operation: operation,
+      namespace: Entity.instantNamespace,
+      path: query.plan.id,
+      message: "No '\(Entity.instantNamespace)' entity matched this FetchOne query.",
+      recovery: "Use an optional @FetchOne value if an empty result set is expected."
+    )
+  }
+}
+
+extension FetchOne where Value: InstantEntityModel {
+  public init(wrappedValue: Value) {
+    self.init(wrappedValue: wrappedValue, Value.query)
+  }
+
+  public init(
+    wrappedValue: Value,
+    _ query: InstantEntityQuery<Value>
+  ) {
+    self.storage = FetchStorage(value: wrappedValue)
+    self.configureRequiredQuery(query)
+  }
+
+  public mutating func load(
+    _ query: InstantEntityQuery<Value>
+  ) async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(query, using: client)
+  }
+
+  public mutating func load(
+    _ query: InstantEntityQuery<Value>,
+    using client: InstantSwiftDataClient
+  ) async throws {
+    configureRequiredQuery(query)
+    try await load(using: client)
+  }
+
+  public mutating func subscribe(
+    _ query: InstantEntityQuery<Value>
+  ) async throws -> FetchSubscription<Value> {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(query, using: client)
+  }
+
+  public mutating func subscribe(
+    _ query: InstantEntityQuery<Value>,
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<Value> {
+    configureRequiredQuery(query)
+    return try await subscribe(using: client)
+  }
+
   public mutating func task(
-    _ query: InstantEntityQuery<Element>
-  ) async throws where Element: InstantEntityModel {
+    _ query: InstantEntityQuery<Value>
+  ) async throws {
     @Dependency(\.defaultInstantSwiftData) var client
     try await task(query, using: client)
   }
 
   public mutating func task(
-    _ query: InstantEntityQuery<Element>,
+    _ query: InstantEntityQuery<Value>,
     using client: InstantSwiftDataClient
-  ) async throws where Element: InstantEntityModel {
+  ) async throws {
+    configureRequiredQuery(query)
+    try await task(using: client)
+  }
+
+  private mutating func configureRequiredQuery(_ query: InstantEntityQuery<Value>) {
     self.loadOperation = { client in
-      var query = query
-      if query.plan.limit == nil {
-        query = query.limit(1)
+      let values = try await client.query(Self.limitOne(query))
+      guard let value = values.first else {
+        throw Self.notFoundError(query, operation: "load FetchOne")
       }
-      return try await client.query(query).first
+      return value
     }
     self.subscribeOperation = { client in
-      var query = query
-      if query.plan.limit == nil {
-        query = query.limit(1)
+      await client.subscribe(Self.limitOne(query)).map { values in
+        guard let value = values.first else {
+          throw Self.notFoundError(query, operation: "subscribe FetchOne")
+        }
+        return value
       }
-      return await client.subscribe(query).map(\.first)
     }
+  }
+}
+
+extension FetchOne {
+  public init<Entity: InstantEntityModel>(
+    wrappedValue: Entity? = nil
+  ) where Value == Entity? {
+    self.init(wrappedValue: wrappedValue, Entity.query)
+  }
+
+  public init<Entity: InstantEntityModel>(
+    wrappedValue: Entity? = nil,
+    _ query: InstantEntityQuery<Entity>
+  ) where Value == Entity? {
+    self.storage = FetchStorage(value: wrappedValue)
+    self.configureOptionalQuery(query)
+  }
+
+  public mutating func load<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>
+  ) async throws where Value == Entity? {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(query, using: client)
+  }
+
+  public mutating func load<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>,
+    using client: InstantSwiftDataClient
+  ) async throws where Value == Entity? {
+    configureOptionalQuery(query)
+    try await load(using: client)
+  }
+
+  public mutating func subscribe<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>
+  ) async throws -> FetchSubscription<Value> where Value == Entity? {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(query, using: client)
+  }
+
+  public mutating func subscribe<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>,
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<Value> where Value == Entity? {
+    configureOptionalQuery(query)
+    return try await subscribe(using: client)
+  }
+
+  public mutating func task<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>
+  ) async throws where Value == Entity? {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(query, using: client)
+  }
+
+  public mutating func task<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>,
+    using client: InstantSwiftDataClient
+  ) async throws where Value == Entity? {
+    configureOptionalQuery(query)
     try await task(using: client)
+  }
+
+  private mutating func configureOptionalQuery<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>
+  ) where Value == Entity? {
+    self.loadOperation = { client in
+      try await client.query(Self.limitOne(query)).first
+    }
+    self.subscribeOperation = { client in
+      await client.subscribe(Self.limitOne(query)).map(\.first)
+    }
   }
 }
 

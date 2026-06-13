@@ -2108,7 +2108,7 @@ struct TypedAPITests {
         )
       }
 
-      var fetch = FetchOne<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt))
+      var fetch = FetchOne<TypedTodo?>(TypedTodo.query.order(TypedTodo.createdAt))
       try await fetch.load()
 
       expectNoDifference(fetch.wrappedValue?.text, "First")
@@ -2167,6 +2167,158 @@ struct TypedAPITests {
   }
 
   @Test
+  func nonOptionalFetchOnePreservesLastValueWhenQueryIsEmpty() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_156)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000679")!
+    let defaultTodo = TypedTodo(
+      id: InstantID(rawValue: "todo-default"),
+      text: "Default",
+      isCompleted: false,
+      createdAt: baseDate.addingTimeInterval(-1)
+    )
+
+    try await withDependencies {
+      $0.date.now = baseDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "required-fetch-one-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      let firstID = InstantID<TypedTodo>(rawValue: "todo-required-first")
+      let secondID = InstantID<TypedTodo>(rawValue: "todo-required-second")
+      try await db.transact {
+        TypedTodo.create(
+          id: firstID,
+          TypedTodo.text.set("First required"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate)
+        )
+        TypedTodo.create(
+          id: secondID,
+          TypedTodo.text.set("Second required"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate.addingTimeInterval(1))
+        )
+      }
+
+      var fetch = FetchOne(wrappedValue: defaultTodo, TypedTodo.query.order(TypedTodo.createdAt))
+      try await fetch.load()
+      expectNoDifference(fetch.wrappedValue.text, "First required")
+      expectNoDifference(fetch.loadError, nil)
+
+      do {
+        try await fetch.load(TypedTodo.query.where(TypedTodo.text == "Missing"))
+        #expect(Bool(false), "Expected non-optional FetchOne to throw when no entity matches.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .implementationFailed)
+        expectNoDifference(error.operation, "load FetchOne")
+        expectNoDifference(error.namespace, "todos")
+      } catch {
+        #expect(Bool(false), "Unexpected error: \(error)")
+      }
+      expectNoDifference(fetch.wrappedValue.text, "First required")
+      expectNoDifference(fetch.loadError?.operation, "load FetchOne")
+
+      var model = RequiredTypedTodoFetchOneModel(defaultTodo: defaultTodo)
+      try await model.load()
+      expectNoDifference(model.todo.text, "First required")
+
+      try await db.transact(id: "tx-required-fetch-one-delete") {
+        TypedTodo.delete(id: firstID)
+        TypedTodo.delete(id: secondID)
+      }
+
+      do {
+        try await model.load()
+        #expect(Bool(false), "Expected non-optional @FetchOne to throw after deleting all rows.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .implementationFailed)
+        expectNoDifference(error.operation, "load FetchOne")
+        expectNoDifference(error.namespace, "todos")
+      } catch {
+        #expect(Bool(false), "Unexpected error: \(error)")
+      }
+      expectNoDifference(model.todo.text, "First required")
+      expectNoDifference(model.$todo.loadError?.operation, "load FetchOne")
+    }
+  }
+
+  @Test
+  func nonOptionalFetchOneSubscriptionFailsWhenLiveQueryBecomesEmpty() async throws {
+    let stream = AsyncStream<InstantQueryEmission>.makeStream()
+    let client = InstantSwiftDataClient(
+      transact: { transaction in
+        InstantStoreMutationResult(
+          transactionID: transaction.id,
+          changedEntityIDs: [],
+          tripleCount: transaction.operations.count,
+          emissions: []
+        )
+      },
+      query: { _ in [] },
+      observe: { _ in stream.stream },
+      pendingMutations: { [] },
+      localID: { name in "mock-\(name)" }
+    )
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_157)
+    var fetch = FetchOne(
+      wrappedValue: TypedTodo(
+        id: InstantID(rawValue: "todo-live-required-default"),
+        text: "Default",
+        isCompleted: false,
+        createdAt: baseDate.addingTimeInterval(-1)
+      ),
+      TypedTodo.query.order(TypedTodo.createdAt)
+    )
+    let subscription = try await fetch.subscribe(using: client)
+    var iterator = subscription.makeAsyncIterator()
+
+    stream.continuation.yield(
+      InstantQueryEmission(
+        queryID: "required-fetch-one-live",
+        sequence: 0,
+        values: [
+          typedTodoSnapshot(
+            id: "todo-live-required",
+            text: "Live required",
+            isCompleted: false,
+            createdAt: baseDate
+          )
+        ],
+        pageInfo: nil
+      )
+    )
+    let first = try await iterator.next()
+    expectNoDifference(first?.text, "Live required")
+
+    stream.continuation.yield(
+      InstantQueryEmission(
+        queryID: "required-fetch-one-live",
+        sequence: 1,
+        values: [],
+        pageInfo: nil
+      )
+    )
+    do {
+      _ = try await iterator.next()
+      #expect(Bool(false), "Expected required FetchOne subscription to fail on an empty emission.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .implementationFailed)
+      expectNoDifference(error.operation, "subscribe FetchOne")
+      expectNoDifference(error.namespace, "todos")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+    expectNoDifference(fetch.wrappedValue.text, "Default")
+    subscription.cancel()
+    stream.continuation.finish()
+  }
+
+  @Test
   func fetchOneSubscriptionMapsLiveValuesToFirstEntity() async throws {
     let baseDate = Date(timeIntervalSince1970: 1_700_000_160)
     let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000658")!
@@ -2182,7 +2334,7 @@ struct TypedAPITests {
     } operation: {
       @Dependency(\.defaultInstantSwiftData) var db
 
-      var fetch = FetchOne<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt))
+      var fetch = FetchOne<TypedTodo?>(TypedTodo.query.order(TypedTodo.createdAt))
       let subscription = try await fetch.subscribe()
       var iterator = subscription.makeAsyncIterator()
 
@@ -2256,7 +2408,7 @@ struct TypedAPITests {
     let termination = ObservationTermination()
     let mock = mockClient(recording: termination)
 
-    var fetch = FetchOne<TypedTodo>(TypedTodo.query)
+    var fetch = FetchOne<TypedTodo?>(TypedTodo.query)
     let subscription = try await fetch.subscribe(using: mock)
     subscription.cancel()
 
@@ -2604,7 +2756,7 @@ struct TypedAPITests {
       ],
     ])
 
-    var fetch = FetchOne<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt))
+    var fetch = FetchOne<TypedTodo?>(TypedTodo.query.order(TypedTodo.createdAt))
     try await fetch.task(using: client)
 
     expectNoDifference(fetch.wrappedValue?.text, "First bound")
@@ -2801,7 +2953,7 @@ struct TypedAPITests {
       all.binding.wrappedValue = [todo]
       expectNoDifference(all.wrappedValue.map(\.text), ["Binding"])
 
-      let one = FetchOne<TypedTodo>()
+      let one = FetchOne<TypedTodo?>()
       one.binding.wrappedValue = todo
       expectNoDifference(one.wrappedValue?.text, "Binding")
 
@@ -3009,6 +3161,18 @@ private struct TypedTodoServerCreatedAtFetchModel {
 private struct TypedTodoFetchOneModel {
   @FetchOne(TypedTodo.query.where(TypedTodo.isCompleted == false).order(TypedTodo.createdAt))
   var todo: TypedTodo?
+
+  mutating func load() async throws {
+    try await $todo.load()
+  }
+}
+
+private struct RequiredTypedTodoFetchOneModel {
+  @FetchOne var todo: TypedTodo
+
+  init(defaultTodo: TypedTodo) {
+    _todo = FetchOne(wrappedValue: defaultTodo, TypedTodo.query.order(TypedTodo.createdAt))
+  }
 
   mutating func load() async throws {
     try await $todo.load()
