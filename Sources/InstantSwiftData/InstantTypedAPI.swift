@@ -415,7 +415,14 @@ extension InstantEntityModel {
     let attributeByID = instantAttributes.first { $0.id == assignment.attributeID }
     let attributeByName = instantAttributes.first { $0.name == assignment.name }
     guard let attribute = attributeByID ?? attributeByName else {
-      return assignment
+      throw InstantError(
+        code: .validationFailed,
+        operation: "write entity attribute",
+        namespace: instantNamespace,
+        path: assignment.name,
+        message: "No attribute named '\(assignment.name)' is declared for '\(instantNamespace)'.",
+        recovery: "Declare '\(assignment.attributeID)' in \(Self.self).instantAttributes before writing this field."
+      )
     }
 
     if let attributeByID, attributeByID.name != assignment.name {

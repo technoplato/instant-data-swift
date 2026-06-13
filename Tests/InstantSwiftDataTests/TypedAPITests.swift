@@ -664,6 +664,27 @@ struct TypedAPITests {
       let savedUpsertID = try await db.save(upsertedDraft, transactionID: "tx-draft-upsert")
       expectNoDifference(savedUpsertID, upsertedID)
 
+      do {
+        try await db.save(
+          DraftBackedTodo.Draft(
+            title: "Duplicate local id draft",
+            isCompleted: false,
+            createdAt: createdAt.addingTimeInterval(2),
+            notes: nil
+          ),
+          localIDName: "typed.drafts.todo",
+          transactionID: "tx-draft-duplicate-local-id"
+        )
+        #expect(Bool(false), "Expected strict create to reject a duplicate draft local id.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .validationFailed)
+        expectNoDifference(error.operation, "strict create entity")
+        expectNoDifference(error.namespace, "draftBackedTodos")
+        expectNoDifference(error.localID, createdID.rawValue)
+      } catch {
+        #expect(Bool(false), "Unexpected error: \(error)")
+      }
+
       let editedTodos = try await db.query(DraftBackedTodo.query.order(DraftBackedTodo.createdAt))
       expectNoDifference(editedTodos, [
         DraftBackedTodo(
@@ -688,6 +709,75 @@ struct TypedAPITests {
         ["tx-draft-create", "tx-draft-edit", "tx-draft-upsert"]
       )
     }
+  }
+
+  @Test
+  func generatedDraftRejectsUndeclaredStoredFieldsBeforeMockClientReceivesTransaction()
+    async throws
+  {
+    let recorder = TransactionRecorder()
+    let mock = InstantSwiftDataClient(
+      transact: { transaction in
+        await recorder.record(transaction)
+        return InstantStoreMutationResult(
+          transactionID: transaction.id,
+          changedEntityIDs: [],
+          tripleCount: transaction.operations.count,
+          emissions: []
+        )
+      },
+      query: { _ in [] },
+      observe: { _ in AsyncStream { continuation in continuation.finish() } },
+      pendingMutations: { [] },
+      localID: { name in "mock-\(name)" }
+    )
+
+    await withDependencies {
+      $0.date.now = Date(timeIntervalSince1970: 1_700_000_027)
+      $0.uuid = .constant(UUID(uuidString: "00000000-0000-0000-0000-000000000527")!)
+      $0.defaultInstantSwiftData = mock
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      do {
+        try await db.save(
+          DraftWithUndeclaredFieldTodo.Draft(title: "Draft with managed field"),
+          transactionID: "tx-draft-undeclared-field"
+        )
+        #expect(Bool(false), "Expected undeclared draft assignment validation to fail.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .validationFailed)
+        expectNoDifference(error.operation, "write entity attribute")
+        expectNoDifference(error.namespace, "draftWithUndeclaredFieldTodos")
+        expectNoDifference(error.path, "serverManaged")
+      } catch {
+        #expect(Bool(false), "Unexpected error: \(error)")
+      }
+
+      do {
+        try await db.transact(id: "tx-typed-undeclared-field") {
+          TypedTodo.update(
+            id: InstantID(rawValue: "todo-1"),
+            InstantAttributeAssignment<TypedTodo>(
+              name: "serverManaged",
+              attributeID: "todos/serverManaged",
+              value: .string("hidden")
+            )
+          )
+        }
+        #expect(Bool(false), "Expected undeclared typed assignment validation to fail.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .validationFailed)
+        expectNoDifference(error.operation, "write entity attribute")
+        expectNoDifference(error.namespace, "todos")
+        expectNoDifference(error.path, "serverManaged")
+      } catch {
+        #expect(Bool(false), "Unexpected error: \(error)")
+      }
+    }
+
+    let transactions = await recorder.transactions
+    expectNoDifference(transactions, [])
   }
 
   @Test
@@ -2922,6 +3012,52 @@ private struct TypedTodoFetchOneModel {
 
   mutating func load() async throws {
     try await $todo.load()
+  }
+}
+
+@InstantEntity
+private struct DraftWithUndeclaredFieldTodo: Hashable, Codable, InstantEntityModel {
+  var id: InstantID<DraftWithUndeclaredFieldTodo>
+  var title: String
+  var serverManaged = "server"
+
+  static let title = InstantAttributePath<DraftWithUndeclaredFieldTodo, String>("title")
+
+  static let instantAttributes = [
+    InstantAttribute(
+      id: "draftWithUndeclaredFieldTodos/title",
+      namespace: instantNamespace,
+      name: "title",
+      valueType: .string,
+      isIndexed: true
+    )
+  ]
+
+  init(
+    id: InstantID<DraftWithUndeclaredFieldTodo>,
+    title: String,
+    serverManaged: String = "server"
+  ) {
+    self.id = id
+    self.title = title
+    self.serverManaged = serverManaged
+  }
+
+  init(snapshot: InstantEntitySnapshot) throws {
+    guard case let .string(title) = snapshot.values["title"]?.first else {
+      throw InstantError(
+        code: .decodeFailed,
+        operation: "decode draft with undeclared field todo",
+        namespace: Self.instantNamespace,
+        path: "title",
+        localID: snapshot.id,
+        message: "Expected string for draft-with-undeclared-field todo field 'title'.",
+        recovery:
+          "Check the Instant entity schema and server values for the draft-with-undeclared-field todo namespace."
+      )
+    }
+    self.id = InstantID(rawValue: snapshot.id)
+    self.title = title
   }
 }
 
