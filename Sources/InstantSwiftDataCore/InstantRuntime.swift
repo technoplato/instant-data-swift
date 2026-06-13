@@ -1326,6 +1326,36 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  public func storedFileContents(id rawID: String) async throws -> InstantStoredFileContents {
+    let id = try validatedNonEmpty(
+      rawID,
+      label: "File id",
+      operation: "read file",
+      recovery: "Pass the id returned by 'instant-swift-data files list'."
+    )
+
+    await operationGate.enter()
+    do {
+      _ = try await resolvedFileUserID(operation: "read file")
+      guard let contents = try await persistence.readStoredFileContents(
+        appID: configuration.appID,
+        fileID: id
+      ) else {
+        throw validationFailed(
+          operation: "read file",
+          localID: id,
+          message: "No local file exists for id '\(id)'.",
+          recovery: "Run 'instant-swift-data files list' to inspect local file ids."
+        )
+      }
+      await operationGate.leave()
+      return contents
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
   @discardableResult
   public func deleteStoredFile(id rawID: String) async throws -> InstantStoredFile {
     let id = try validatedNonEmpty(

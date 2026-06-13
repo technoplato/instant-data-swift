@@ -2355,6 +2355,28 @@ extension InstantStoreTests {
     expectNoDifference(file.ownerUserID, "user-1")
     expectNoDifference(FileManager.default.fileExists(atPath: file.localPath), true)
 
+    let read = try JSONDecoder().decode(
+      CLIFileContentsOutput.self,
+      from: Data(try runCLI(["files", "read", file.id, "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(read.event, "read")
+    expectNoDifference(read.transport, "not-implemented-local-cache-only")
+    expectNoDifference(read.file, file)
+    expectNoDifference(read.byteCount, Int64(contents.count))
+    expectNoDifference(read.base64Content, contents.base64EncodedString())
+    expectNoDifference(read.utf8Content, "hello instant files\n")
+
+    let readJSONL = try runCLI(["files", "read", file.id, "--jsonl"], homeURL: homeURL)
+    let readLines = readJSONL.split(separator: "\n")
+    expectNoDifference(readLines.count, 1)
+    let readEvidence = try JSONDecoder().decode(
+      CLIFileContentsEvidence.self,
+      from: Data(try #require(readLines.first).utf8)
+    )
+    expectNoDifference(readEvidence.caseID, "cli.files.contents")
+    expectNoDifference(readEvidence.event, "read")
+    expectNoDifference(readEvidence.details.utf8Content, "hello instant files\n")
+
     let list = try JSONDecoder().decode(
       CLIFilesOutput.self,
       from: Data(try runCLI(["files", "list", "--json"], homeURL: homeURL).utf8)
@@ -2397,6 +2419,9 @@ extension InstantStoreTests {
     let signedOutWatch = try runCLIResult(["files", "watch", "--json"], homeURL: homeURL)
     #expect(signedOutWatch.status == 65)
     #expect(signedOutWatch.error.contains("File operations require a signed-in user"))
+    let signedOutRead = try runCLIResult(["files", "read", file.id, "--json"], homeURL: homeURL)
+    #expect(signedOutRead.status == 65)
+    #expect(signedOutRead.error.contains("File operations require a signed-in user"))
     let signedOutDelete = try runCLIResult(["files", "delete", file.id, "--json"], homeURL: homeURL)
     #expect(signedOutDelete.status == 65)
     #expect(signedOutDelete.error.contains("File operations require a signed-in user"))
@@ -2427,6 +2452,61 @@ extension InstantStoreTests {
     )
     #expect(anonymous.status == 65)
     #expect(anonymous.error.contains("File operations require a signed-in user"))
+  }
+
+  @Test
+  func cliFilesReadBinaryContentFallsBackToBase64() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+    let sourceURL = homeURL.appendingPathComponent("instant-binary-file.bin")
+    let contents = Data([0x00, 0xff, 0xfe, 0x41, 0x42])
+    try contents.write(to: sourceURL)
+
+    _ = try runCLI(
+      ["auth", "token", "refresh-token", "--user-id", "user-1", "--json"],
+      homeURL: homeURL
+    )
+
+    let upload = try JSONDecoder().decode(
+      CLIFilesOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "files", "upload", sourceURL.path,
+            "--content-type", "application/octet-stream",
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    let file = try #require(upload.files.first)
+
+    let read = try JSONDecoder().decode(
+      CLIFileContentsOutput.self,
+      from: Data(try runCLI(["files", "read", file.id, "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(read.file, file)
+    expectNoDifference(read.byteCount, Int64(contents.count))
+    expectNoDifference(read.base64Content, contents.base64EncodedString())
+    expectNoDifference(read.utf8Content, nil)
+
+    let readJSONL = try runCLI(["files", "read", file.id, "--jsonl"], homeURL: homeURL)
+    let readLines = readJSONL.split(separator: "\n")
+    expectNoDifference(readLines.count, 1)
+    let readEvidence = try JSONDecoder().decode(
+      CLIFileContentsEvidence.self,
+      from: Data(try #require(readLines.first).utf8)
+    )
+    expectNoDifference(readEvidence.caseID, "cli.files.contents")
+    expectNoDifference(readEvidence.event, "read")
+    expectNoDifference(readEvidence.details.base64Content, contents.base64EncodedString())
+    expectNoDifference(readEvidence.details.utf8Content, nil)
+
+    let humanOutput = try runCLI(["files", "read", file.id], homeURL: homeURL)
+    expectNoDifference(humanOutput, contents.base64EncodedString() + "\n")
   }
 
   @Test
@@ -3710,6 +3790,27 @@ private struct CLIFilesEvidence: Decodable {
   var caseID: String
   var event: String
   var details: CLIFilesOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
+}
+
+private struct CLIFileContentsOutput: Decodable, Equatable {
+  var event: String
+  var transport: String
+  var file: InstantStoredFile
+  var byteCount: Int64
+  var base64Content: String
+  var utf8Content: String?
+}
+
+private struct CLIFileContentsEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLIFileContentsOutput
 
   enum CodingKeys: String, CodingKey {
     case caseID = "case"

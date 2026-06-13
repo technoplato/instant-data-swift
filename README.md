@@ -160,8 +160,9 @@ printf "hello instant files\n" > /tmp/instant-demo-file.txt
 swift run instant-swift-data files upload /tmp/instant-demo-file.txt --content-type text/plain --json
 swift run instant-swift-data files upload-progress /tmp/instant-demo-file.txt --content-type text/plain --jsonl
 swift run instant-swift-data files list --json
-swift run instant-swift-data files watch --events 1 --jsonl
 FILE_ID="$(swift run instant-swift-data files list --json | jq -r '.files[0].id')"
+swift run instant-swift-data files read "$FILE_ID" --json
+swift run instant-swift-data files watch --events 1 --jsonl
 swift run instant-swift-data files delete "$FILE_ID" --json
 ```
 

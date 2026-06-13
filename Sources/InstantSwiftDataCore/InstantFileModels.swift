@@ -41,6 +41,18 @@ public struct InstantStoredFile: Hashable, Codable, Sendable, Identifiable {
   }
 }
 
+public struct InstantStoredFileContents: Hashable, Codable, Sendable {
+  public var file: InstantStoredFile
+  public var byteCount: Int64
+  public var data: Data
+
+  public init(file: InstantStoredFile, data: Data) {
+    self.file = file
+    self.byteCount = Int64(data.count)
+    self.data = data
+  }
+}
+
 public struct InstantFileUploadProgress: Hashable, Codable, Sendable, Identifiable {
   public var id: String { operationID }
   public var operationID: String

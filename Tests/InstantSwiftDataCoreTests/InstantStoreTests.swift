@@ -2758,6 +2758,10 @@ struct InstantStoreTests {
     )
     let relaunchedFiles = try await relaunchedRuntime.storedFiles()
     expectNoDifference(relaunchedFiles, [uploaded])
+    let relaunchedContents = try await relaunchedRuntime.storedFileContents(id: uploaded.id)
+    expectNoDifference(relaunchedContents.file, uploaded)
+    expectNoDifference(relaunchedContents.byteCount, Int64(contents.count))
+    expectNoDifference(relaunchedContents.data, contents)
     try await relaunchedRuntime.signOut()
     do {
       _ = try await relaunchedRuntime.storedFiles()
@@ -2765,6 +2769,15 @@ struct InstantStoreTests {
     } catch let error as InstantError {
       expectNoDifference(error.code, .authFailed)
       expectNoDifference(error.operation, "list files")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+    do {
+      _ = try await relaunchedRuntime.storedFileContents(id: uploaded.id)
+      #expect(Bool(false), "Expected signed-out file read to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .authFailed)
+      expectNoDifference(error.operation, "read file")
     } catch {
       #expect(Bool(false), "Unexpected error: \(error)")
     }
@@ -2785,12 +2798,50 @@ struct InstantStoreTests {
     _ = try await otherAppRuntime.signInWithRefreshToken("other-refresh", userID: "user-2")
     let otherAppFiles = try await otherAppRuntime.storedFiles()
     expectNoDifference(otherAppFiles, [])
+    do {
+      _ = try await otherAppRuntime.storedFileContents(id: uploaded.id)
+      #expect(Bool(false), "Expected other app file read to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "read file")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
 
     let deleted = try await relaunchedRuntime.deleteStoredFile(id: " file-1 ")
     let remainingFiles = try await relaunchedRuntime.storedFiles()
     expectNoDifference(deleted, uploaded)
     expectNoDifference(remainingFiles, [])
     expectNoDifference(FileManager.default.fileExists(atPath: uploaded.localPath), false)
+  }
+
+  @Test
+  func storedFileContentsFailsWhenCopiedContentIsMissing() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let sourceURL = cacheURL.deletingLastPathComponent().appendingPathComponent("missing-source.txt")
+    try Data("vanishing local content\n".utf8).write(to: sourceURL)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        makeID: { "missing-file" }
+      )
+    )
+    _ = try await runtime.signInWithRefreshToken("refresh-token", userID: "user-1")
+
+    let uploaded = try await runtime.uploadFile(from: sourceURL)
+    try FileManager.default.removeItem(atPath: uploaded.localPath)
+
+    do {
+      _ = try await runtime.storedFileContents(id: uploaded.id)
+      #expect(Bool(false), "Expected missing local file content to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .persistenceFailed)
+      expectNoDifference(error.operation, "read file")
+      #expect(error.message.contains("Could not read stored file"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
   }
 
   @Test

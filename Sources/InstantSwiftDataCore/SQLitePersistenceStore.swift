@@ -641,7 +641,7 @@ public actor SQLitePersistenceStore {
     )
   }
 
-  public func deleteStoredFile(appID: String, fileID: String) throws -> InstantStoredFile? {
+  public func loadStoredFile(appID: String, fileID: String) throws -> InstantStoredFile? {
     let rows: [InstantStoredFile] = try selectJSON(
       """
       SELECT json FROM instant_files
@@ -650,7 +650,29 @@ public actor SQLitePersistenceStore {
       """,
       [.text(appID), .text(fileID)]
     )
-    guard let file = rows.first else { return nil }
+    return rows.first
+  }
+
+  public func readStoredFileContents(
+    appID: String,
+    fileID: String
+  ) throws -> InstantStoredFileContents? {
+    guard let file = try loadStoredFile(appID: appID, fileID: fileID) else {
+      return nil
+    }
+    do {
+      let data = try Data(contentsOf: URL(fileURLWithPath: file.localPath))
+      return InstantStoredFileContents(file: file, data: data)
+    } catch {
+      throw persistenceError(
+        operation: "read file",
+        message: "Could not read stored file '\(file.localPath)': \(error.localizedDescription)"
+      )
+    }
+  }
+
+  public func deleteStoredFile(appID: String, fileID: String) throws -> InstantStoredFile? {
+    guard let file = try loadStoredFile(appID: appID, fileID: fileID) else { return nil }
 
     try execute(
       "DELETE FROM instant_files WHERE app_id = ? AND file_id = ?",

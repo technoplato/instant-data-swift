@@ -1353,6 +1353,17 @@ struct InstantSwiftDataCLI {
         output: output
       )
 
+    case "read", "cat":
+      guard let fileID = arguments.popFirstArgument(), arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data files read <file-id> [--json|--jsonl]", exitCode: 64)
+      }
+      let contents = try await context.runtime.storedFileContents(id: fileID)
+      try printFileContents(
+        context: context,
+        contents: contents,
+        output: output
+      )
+
     case "delete", "rm":
       guard let fileID = arguments.popFirstArgument(), arguments.isEmpty else {
         throw CLIError("Usage: instant-swift-data files delete <file-id> [--json|--jsonl]", exitCode: 64)
@@ -2491,6 +2502,49 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func printFileContents(
+    context: CLIContext,
+    contents: InstantStoredFileContents,
+    output: OutputMode
+  ) throws {
+    let utf8Content = String(data: contents.data, encoding: .utf8)
+    let payload = FileContentsOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: "read",
+      transport: "not-implemented-local-cache-only",
+      file: contents.file,
+      byteCount: contents.byteCount,
+      base64Content: contents.data.base64EncodedString(),
+      utf8Content: utf8Content
+    )
+
+    switch output {
+    case .human:
+      if let utf8Content {
+        print(utf8Content, terminator: utf8Content.hasSuffix("\n") ? "" : "\n")
+      } else {
+        print(payload.base64Content)
+      }
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.files.contents",
+          side: "swift",
+          event: "read",
+          appID: context.appID,
+          entityID: contents.file.id,
+          ok: true,
+          details: payload
+        )
+      )
+    }
+  }
+
   private static func printStreamChunks(
     context: CLIContext,
     event: String,
@@ -3275,7 +3329,10 @@ struct InstantSwiftDataCLI {
         rooms topics publish <room-type> <room-id> <topic> --value '{...}' [--user-id id] [--json|--jsonl]
         rooms topics list <room-type> <room-id> <topic> [--limit n] [--json|--jsonl]
         files upload <path> [--name name] [--content-type type] [--json|--jsonl]
+        files upload-progress <path> [--name name] [--content-type type] [--json|--jsonl]
         files list [--json|--jsonl]
+        files watch [--events 1] [--json|--jsonl]
+        files read <file-id> [--json|--jsonl]
         files delete <file-id> [--json|--jsonl]
         streams append <stream-id> --value '{...}' [--json|--jsonl]
         streams read <stream-id> [--limit n] [--json|--jsonl]
@@ -4643,11 +4700,12 @@ struct InstantSwiftDataCLI {
 
   fileprivate static var filesUsage: String {
     """
-    Usage: instant-swift-data files <upload|upload-progress|list|watch|delete>
+    Usage: instant-swift-data files <upload|upload-progress|list|watch|read|delete>
       instant-swift-data files upload <path> [--name name] [--content-type type] [--json|--jsonl]
       instant-swift-data files upload-progress <path> [--name name] [--content-type type] [--json|--jsonl]
       instant-swift-data files list [--json|--jsonl]
       instant-swift-data files watch [--events 1] [--json|--jsonl]
+      instant-swift-data files read <file-id> [--json|--jsonl]
       instant-swift-data files delete <file-id> [--json|--jsonl]
     """
   }
@@ -5673,6 +5731,17 @@ private struct FileUploadProgressSummaryOutput: Codable, Sendable {
   var emittedEventCount: Int
   var finalState: InstantStorageOperationState
   var events: [FileUploadProgressOutput]
+}
+
+private struct FileContentsOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var transport: String
+  var file: InstantStoredFile
+  var byteCount: Int64
+  var base64Content: String
+  var utf8Content: String?
 }
 
 private struct StreamsOutput: Codable, Sendable {
