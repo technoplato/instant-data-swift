@@ -13,10 +13,12 @@ runtime.
 
 Use `INSTANT_SWIFT_DATA_HOME` to keep the demo cache isolated.
 The ID-capture steps use `jq` to extract IDs from JSON output.
-Todo `complete` and `update` are strict: a missing ID exits non-zero before any
-local cache or outbox write.
-Local pending mutations persist typed `merge` and strict-update precondition
-steps; future transport adapters should lower these to Instant wire operations.
+Todo `add` uses strict create semantics, while `complete` and `update` are
+strict updates: strict-create conflicts or missing update IDs exit non-zero
+before any local cache or outbox write.
+Local pending mutations persist typed `merge`, strict-create precondition, and
+strict-update precondition steps; future transport adapters should lower these
+to Instant wire operations.
 
 ```bash
 export INSTANT_SWIFT_DATA_HOME="$(mktemp -d)"
@@ -199,6 +201,12 @@ for try await todos in subscription {
   // Update model state from the latest local materialization.
 }
 ```
+
+`create` follows Instant's strict-insert semantics and fails when the entity
+already exists. Use `update` for upsert-style writes, `updateExisting` when a
+missing entity should fail, and `merge` for deep JSON merges. The local seed
+demos use explicit upsert helpers so the same terminal commands can be run more
+than once against durable state.
 
 Subscriptions are bounded newest-value streams, so slow consumers receive the
 latest local materialization rather than every intermediate invalidation.

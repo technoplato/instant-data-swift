@@ -169,6 +169,24 @@ public struct InstantAttribute: Hashable, Codable, Sendable, Identifiable {
 }
 
 extension InstantAttribute {
+  public static func primaryKey(namespace: String) -> Self {
+    Self(
+      id: primaryKeyID(namespace: namespace),
+      namespace: namespace,
+      name: "id",
+      valueType: .string,
+      isIndexed: true,
+      isUnique: true,
+      primaryKey: true
+    )
+  }
+
+  public static func primaryKeyID(namespace: String) -> String {
+    "\(namespace)/id"
+  }
+}
+
+extension InstantAttribute {
   private enum CodingKeys: String, CodingKey {
     case id
     case namespace
@@ -250,6 +268,7 @@ public struct InstantTriple: Hashable, Codable, Sendable {
 }
 
 public enum InstantTripleOperation: Hashable, Codable, Sendable {
+  case requireEntityMissing(entityID: String, namespace: String?)
   case requireEntityExists(entityID: String, namespace: String?)
   case merge(InstantTriple)
   case insert(InstantTriple)

@@ -81,8 +81,12 @@ extension InstantEntityModel {
     id: ID,
     _ assignments: [InstantAttributeAssignment<Self>]
   ) -> InstantMutation {
-    InstantMutation { transactionID, txTime in
-      assignments.map { assignment in
+    InstantMutation(throwing: { transactionID, txTime in
+      try validateAssignments(assignments)
+      return [
+        .requireEntityMissing(entityID: id.rawValue, namespace: Self.instantNamespace),
+        identityOperation(id: id, transactionID: transactionID, txTime: txTime),
+      ] + assignments.map { assignment in
         .insert(
           InstantTriple(
             entityID: id.rawValue,
@@ -93,7 +97,7 @@ extension InstantEntityModel {
           )
         )
       }
-    }
+    })
   }
 
   public static func update(
@@ -107,7 +111,22 @@ extension InstantEntityModel {
     id: ID,
     _ assignments: [InstantAttributeAssignment<Self>]
   ) -> InstantMutation {
-    create(id: id, assignments)
+    InstantMutation(throwing: { transactionID, txTime in
+      try validateAssignments(assignments)
+      return [
+        identityOperation(id: id, transactionID: transactionID, txTime: txTime)
+      ] + assignments.map { assignment in
+        .insert(
+          InstantTriple(
+            entityID: id.rawValue,
+            attributeID: assignment.attributeID,
+            value: assignment.value,
+            txID: transactionID,
+            txTime: txTime
+          )
+        )
+      }
+    })
   }
 
   public static func merge(
@@ -122,10 +141,10 @@ extension InstantEntityModel {
     _ assignments: [InstantAttributeAssignment<Self>]
   ) -> InstantMutation {
     InstantMutation(throwing: { transactionID, txTime in
-      for assignment in assignments {
-        try validateMergeAttribute(assignment)
-      }
-      let operations: [InstantTripleOperation] = assignments.map { assignment in
+      try validateAssignments(assignments, allowRefs: false)
+      let operations: [InstantTripleOperation] = [
+        identityOperation(id: id, transactionID: transactionID, txTime: txTime)
+      ] + assignments.map { assignment in
         InstantTripleOperation.merge(
           InstantTriple(
             entityID: id.rawValue,
@@ -151,9 +170,11 @@ extension InstantEntityModel {
     id: ID,
     _ assignments: [InstantAttributeAssignment<Self>]
   ) -> InstantMutation {
-    InstantMutation { transactionID, txTime in
-      [
-        .requireEntityExists(entityID: id.rawValue, namespace: Self.instantNamespace)
+    InstantMutation(throwing: { transactionID, txTime in
+      try validateAssignments(assignments)
+      return [
+        .requireEntityExists(entityID: id.rawValue, namespace: Self.instantNamespace),
+        identityOperation(id: id, transactionID: transactionID, txTime: txTime),
       ] + assignments.map { assignment in
         .insert(
           InstantTriple(
@@ -165,7 +186,23 @@ extension InstantEntityModel {
           )
         )
       }
-    }
+    })
+  }
+
+  private static func identityOperation(
+    id: ID,
+    transactionID: String,
+    txTime: InstantTimestamp
+  ) -> InstantTripleOperation {
+    .insert(
+      InstantTriple(
+        entityID: id.rawValue,
+        attributeID: InstantAttribute.primaryKeyID(namespace: Self.instantNamespace),
+        value: .string(id.rawValue),
+        txID: transactionID,
+        txTime: txTime
+      )
+    )
   }
 
   public static func delete(id: ID) -> InstantMutation {
@@ -174,13 +211,35 @@ extension InstantEntityModel {
     }
   }
 
-  private static func validateMergeAttribute(_ assignment: InstantAttributeAssignment<Self>) throws {
+  private static func validateAssignments(
+    _ assignments: [InstantAttributeAssignment<Self>],
+    allowRefs: Bool = true
+  ) throws {
+    for assignment in assignments {
+      try validateAssignment(assignment, allowRefs: allowRefs)
+    }
+  }
+
+  private static func validateAssignment(
+    _ assignment: InstantAttributeAssignment<Self>,
+    allowRefs: Bool
+  ) throws {
+    guard !isPrimaryKeyAssignment(assignment) else {
+      throw primaryKeyAssignmentError(path: assignment.name)
+    }
+
     guard
       let attribute = instantAttributes.first(where: { $0.id == assignment.attributeID })
         ?? instantAttributes.first(where: { $0.name == assignment.name })
-    else { return }
+    else {
+      return
+    }
 
-    guard attribute.valueType != .ref else {
+    guard !attribute.primaryKey else {
+      throw primaryKeyAssignmentError(path: assignment.name)
+    }
+
+    guard allowRefs || attribute.valueType != .ref else {
       throw InstantError(
         code: .validationFailed,
         operation: "merge entity attribute",
@@ -190,6 +249,24 @@ extension InstantEntityModel {
         recovery: "Use link/unlink for relationships, or merge only scalar and JSON attributes."
       )
     }
+  }
+
+  private static func isPrimaryKeyAssignment(
+    _ assignment: InstantAttributeAssignment<Self>
+  ) -> Bool {
+    assignment.name == "id"
+      || assignment.attributeID == InstantAttribute.primaryKeyID(namespace: instantNamespace)
+  }
+
+  private static func primaryKeyAssignmentError(path: String) -> InstantError {
+    InstantError(
+      code: .validationFailed,
+      operation: "write entity attribute",
+      namespace: instantNamespace,
+      path: path,
+      message: "The 'id' attribute is managed by Instant Swift Data.",
+      recovery: "Pass the entity id to create/update/merge instead of assigning the id attribute directly."
+    )
   }
 }
 

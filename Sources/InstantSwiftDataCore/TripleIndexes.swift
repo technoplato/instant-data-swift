@@ -12,21 +12,43 @@ struct AttributeStore: Hashable, Codable, Sendable {
   }
 
   mutating func replaceAll(_ attributes: [InstantAttribute]) {
-    attributesByID = Dictionary(uniqueKeysWithValues: attributes.map { ($0.id, $0) })
+    attributesByID = Dictionary(
+      uniqueKeysWithValues: Self.withPrimaryKeys(attributes).map { ($0.id, $0) }
+    )
   }
 
   mutating func merge(_ attributes: [InstantAttribute]) {
-    for attribute in attributes {
+    for attribute in Self.withPrimaryKeys(attributes) {
       attributesByID[attribute.id] = attribute
     }
   }
 
   subscript(id: String) -> InstantAttribute? {
-    attributesByID[id]
+    attributesByID[id] ?? Self.primaryKeyAttribute(id: id)
   }
 
   func attribute(namespace: String, name: String) -> InstantAttribute? {
-    attributesByID.values.first { $0.namespace == namespace && $0.name == name }
+    if name == "id" {
+      return self[InstantAttribute.primaryKeyID(namespace: namespace)]
+    }
+    return attributesByID.values.first { $0.namespace == namespace && $0.name == name }
+  }
+
+  func primaryKeyAttribute(namespace: String) -> InstantAttribute {
+    self[InstantAttribute.primaryKeyID(namespace: namespace)] ?? .primaryKey(namespace: namespace)
+  }
+
+  private static func withPrimaryKeys(_ attributes: [InstantAttribute]) -> [InstantAttribute] {
+    let namespaces = Set(attributes.map(\.namespace))
+    let primaryKeys = namespaces.map(InstantAttribute.primaryKey(namespace:))
+    return primaryKeys + attributes.filter { !$0.primaryKey && $0.name != "id" }
+  }
+
+  private static func primaryKeyAttribute(id: String) -> InstantAttribute? {
+    guard id.hasSuffix("/id") else { return nil }
+    let namespace = String(id.dropLast("/id".count))
+    guard !namespace.isEmpty else { return nil }
+    return .primaryKey(namespace: namespace)
   }
 }
 
@@ -59,7 +81,17 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     namespace: String?,
     attributes: AttributeStore
   ) -> Bool {
-    triples(entityID: entityID).contains { triple in
+    let entityTriples = triples(entityID: entityID)
+    if let namespace {
+      let idAttribute = attributes.primaryKeyAttribute(namespace: namespace)
+      if entityTriples.contains(where: {
+        $0.attributeID == idAttribute.id && $0.value == .string(entityID)
+      }) {
+        return true
+      }
+    }
+
+    return entityTriples.contains { triple in
       guard let namespace else { return true }
       return attributes[triple.attributeID]?.namespace == namespace
     }
@@ -75,7 +107,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     attributes: AttributeStore
   ) -> Set<String> {
     switch operation {
-    case .requireEntityExists:
+    case .requireEntityMissing, .requireEntityExists:
       return []
 
     case let .merge(triple):

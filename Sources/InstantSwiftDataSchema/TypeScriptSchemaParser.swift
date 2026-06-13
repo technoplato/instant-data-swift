@@ -8,7 +8,8 @@ public struct ParsedInstantEntitySchema: Hashable, Codable, Sendable, Identifiab
 
   public init(namespace: String, attributes: [InstantAttribute]) {
     self.namespace = namespace
-    self.attributes = attributes.sorted { $0.name < $1.name }
+    self.attributes = ([.primaryKey(namespace: namespace)] + attributes.filter { !$0.primaryKey })
+      .sorted { $0.name < $1.name }
   }
 
   public init(_ schema: InstantEntitySchema) {
@@ -469,7 +470,9 @@ public struct TypeScriptSchemaParser: Sendable {
       )
     }
     return InstantRoomPayloadSchema(
-      attributes: try parseEntity(namespace: namespace, expression: expression).attributes
+      attributes: try parseEntity(namespace: namespace, expression: expression)
+        .attributes
+        .filter { !$0.primaryKey }
     )
   }
 }

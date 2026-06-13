@@ -302,6 +302,17 @@ extension InstantStoreTests {
     #expect(human.contains("project "))
     #expect(human.contains("Wire a project link"))
     #expect(!human.contains(" project="))
+
+    let relinked = try JSONDecoder().decode(
+      CLITodoLinksOutput.self,
+      from: Data(
+        try runCLI(["examples", "todo-links", "seed", "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(relinked.event, "seed")
+    expectNoDifference(relinked.projects, seed.projects)
+    expectNoDifference(relinked.todos.map(\.projectID), [seed.projects.first?.id])
+    expectNoDifference(relinked.pendingMutationCount, 3)
   }
 
   @Test

@@ -38,6 +38,7 @@ public enum TodoProjectExample {
   public static let todoIDName = "examples.todo-links.todo"
 
   public static let attributes: [InstantAttribute] = TodoExample.attributes + [
+    .primaryKey(namespace: namespace),
     InstantAttribute(
       id: "projects/title",
       namespace: namespace,
@@ -112,6 +113,23 @@ public enum TodoProjectExample {
     transactionID: String
   ) -> [InstantTripleOperation] {
     [
+      .requireEntityMissing(entityID: id, namespace: namespace),
+    ] + upsertProjectOperations(
+      id: id,
+      title: title,
+      createdAt: createdAt,
+      transactionID: transactionID
+    )
+  }
+
+  public static func upsertProjectOperations(
+    id: String,
+    title: String,
+    createdAt: InstantTimestamp,
+    transactionID: String
+  ) -> [InstantTripleOperation] {
+    [
+      identityOperation(id: id, updatedAt: createdAt, transactionID: transactionID),
       .insert(
         InstantTriple(
           entityID: id,
@@ -122,6 +140,22 @@ public enum TodoProjectExample {
         )
       )
     ]
+  }
+
+  private static func identityOperation(
+    id: String,
+    updatedAt: InstantTimestamp,
+    transactionID: String
+  ) -> InstantTripleOperation {
+    .insert(
+      InstantTriple(
+        entityID: id,
+        attributeID: InstantAttribute.primaryKeyID(namespace: namespace),
+        value: .string(id),
+        txID: transactionID,
+        txTime: updatedAt
+      )
+    )
   }
 
   public static func linkOperations(

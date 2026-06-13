@@ -196,6 +196,17 @@ machinery unless there is no cleaner Instant-shaped representation.
 - Support typed IDs and local IDs. Local IDs must persist by name, matching
   Instant's `getLocalId("name")` behavior.
 
+## Mutation Semantics
+
+- Match Instant transaction builder behavior: `create` is a strict insert,
+  `update` is the upsert-shaped write, `updateExisting`/no-upsert update must
+  fail before cache/outbox writes when the entity is missing, and `merge` should
+  deep-merge JSON values while rejecting relationship attributes in favor of
+  `link`/`unlink`.
+- Local seed/demo helpers may use explicit upsert operations so terminal demos
+  remain repeatable against durable state, but app-facing `create` must stay
+  strict.
+
 ## Triple Store Fidelity
 
 Instant stores client data as entity-attribute-value-time facts and indexes

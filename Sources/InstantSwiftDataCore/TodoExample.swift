@@ -58,6 +58,7 @@ public enum TodoExample {
   ]
 
   public static let attributes: [InstantAttribute] = [
+    .primaryKey(namespace: namespace),
     InstantAttribute(
       id: "todos/text",
       namespace: namespace,
@@ -94,6 +95,23 @@ public enum TodoExample {
     transactionID: String
   ) -> [InstantTripleOperation] {
     [
+      .requireEntityMissing(entityID: id, namespace: namespace),
+    ] + upsertOperations(
+      id: id,
+      text: text,
+      createdAt: createdAt,
+      transactionID: transactionID
+    )
+  }
+
+  public static func upsertOperations(
+    id: String,
+    text: String,
+    createdAt: InstantTimestamp,
+    transactionID: String
+  ) -> [InstantTripleOperation] {
+    [
+      identityOperation(id: id, updatedAt: createdAt, transactionID: transactionID),
       .insert(
         InstantTriple(
           entityID: id,
@@ -133,7 +151,7 @@ public enum TodoExample {
       let createdAt = InstantTimestamp(
         milliseconds: baseCreatedAt.milliseconds + seed.createdAtOffsetMilliseconds
       )
-      return createOperations(
+      return upsertOperations(
         id: id,
         text: seed.text,
         createdAt: createdAt,
@@ -155,6 +173,7 @@ public enum TodoExample {
   ) -> [InstantTripleOperation] {
     [
       .requireEntityExists(entityID: id, namespace: namespace),
+      identityOperation(id: id, updatedAt: updatedAt, transactionID: transactionID),
       .insert(
         InstantTriple(
           entityID: id,
@@ -175,6 +194,7 @@ public enum TodoExample {
   ) -> [InstantTripleOperation] {
     [
       .requireEntityExists(entityID: id, namespace: namespace),
+      identityOperation(id: id, updatedAt: updatedAt, transactionID: transactionID),
       .insert(
         InstantTriple(
           entityID: id,
@@ -193,6 +213,22 @@ public enum TodoExample {
 
   public static func resetOperations(ids: [String]) -> [InstantTripleOperation] {
     ids.map(InstantTripleOperation.deleteEntity)
+  }
+
+  private static func identityOperation(
+    id: String,
+    updatedAt: InstantTimestamp,
+    transactionID: String
+  ) -> InstantTripleOperation {
+    .insert(
+      InstantTriple(
+        entityID: id,
+        attributeID: InstantAttribute.primaryKeyID(namespace: namespace),
+        value: .string(id),
+        txID: transactionID,
+        txTime: updatedAt
+      )
+    )
   }
 
   public static func decode(_ snapshots: [InstantEntitySnapshot]) throws -> [TodoRecord] {

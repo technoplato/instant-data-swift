@@ -143,6 +143,128 @@ struct TypedAPITests {
   }
 
   @Test
+  func typedCreateIsStrictAndTypedUpdateUpserts() async throws {
+    let createdAt = Date(timeIntervalSince1970: 1_700_000_025)
+    let todoID = InstantID<TypedTodo>(rawValue: "todo-strict-create")
+    let upsertedID = InstantID<TypedTodo>(rawValue: "todo-upserted")
+    let idOnlyID = InstantID<TypedTodo>(rawValue: "todo-id-only")
+
+    try await withDependencies {
+      $0.date.now = createdAt
+      try await $0.bootstrapInstantSwiftData(
+        appID: "typed-strict-create-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      try await db.transact(id: "tx-typed-create") {
+        TypedTodo.create(
+          id: todoID,
+          TypedTodo.text.set("Created strictly"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(createdAt)
+        )
+      }
+
+      do {
+        try await db.transact(id: "tx-typed-duplicate-create") {
+          TypedTodo.create(
+            id: todoID,
+            TypedTodo.text.set("Duplicate")
+          )
+        }
+        #expect(Bool(false), "Expected typed create to reject an existing entity.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .validationFailed)
+        expectNoDifference(error.operation, "strict create entity")
+        expectNoDifference(error.namespace, "todos")
+        expectNoDifference(error.localID, todoID.rawValue)
+      } catch {
+        #expect(Bool(false), "Unexpected error: \(error)")
+      }
+
+      try await db.transact(id: "tx-typed-update-upsert") {
+        TypedTodo.update(
+          id: upsertedID,
+          TypedTodo.text.set("Upserted by update"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(createdAt.addingTimeInterval(1))
+        )
+      }
+
+      let todos = try await db.query(TypedTodo.query.order(TypedTodo.createdAt))
+      expectNoDifference(
+        todos,
+        [
+          TypedTodo(
+            id: todoID,
+            text: "Created strictly",
+            isCompleted: false,
+            createdAt: createdAt
+          ),
+          TypedTodo(
+            id: upsertedID,
+            text: "Upserted by update",
+            isCompleted: false,
+            createdAt: createdAt.addingTimeInterval(1)
+          ),
+        ]
+      )
+
+      try await db.transact(id: "tx-typed-id-only-create") {
+        TypedTodo.create(id: idOnlyID)
+      }
+
+      let idOnlySnapshots = try await db.query(
+        InstantQueryPlan(id: "typed.id-only", namespace: TypedTodo.instantNamespace)
+      )
+      expectNoDifference(
+        idOnlySnapshots.map(\.id),
+        [idOnlyID.rawValue, todoID.rawValue, upsertedID.rawValue]
+      )
+      expectNoDifference(idOnlySnapshots.first?.values["id"]?.first, .string(idOnlyID.rawValue))
+
+      do {
+        try await db.transact(id: "tx-typed-id-only-duplicate") {
+          TypedTodo.create(id: idOnlyID)
+        }
+        #expect(Bool(false), "Expected id-only typed create to reject an existing entity.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .validationFailed)
+        expectNoDifference(error.operation, "strict create entity")
+        expectNoDifference(error.namespace, "todos")
+        expectNoDifference(error.localID, idOnlyID.rawValue)
+      } catch {
+        #expect(Bool(false), "Unexpected error: \(error)")
+      }
+
+      let pending = await db.pendingMutations()
+      #expect(
+        pending.map(\.id)
+          == ["tx-typed-create", "tx-typed-id-only-create", "tx-typed-update-upsert"]
+      )
+      let idOnlyMutation = pending.first { $0.id == "tx-typed-id-only-create" }
+      expectNoDifference(
+        idOnlyMutation?.transaction.operations,
+        [
+          .requireEntityMissing(entityID: idOnlyID.rawValue, namespace: "todos"),
+          .insert(
+            InstantTriple(
+              entityID: idOnlyID.rawValue,
+              attributeID: "todos/id",
+              value: .string(idOnlyID.rawValue),
+              txID: "tx-typed-id-only-create",
+              txTime: InstantTimestamp(milliseconds: 1_700_000_025_000)
+            )
+          ),
+        ]
+      )
+    }
+  }
+
+  @Test
   func typedMergeAndStrictUpdateRoundTripThroughDependencyClient() async throws {
     let createdAt = Date(timeIntervalSince1970: 1_700_000_050)
     let todoID = InstantID<TypedTodo>(rawValue: "todo-merge")
@@ -156,6 +278,20 @@ struct TypedAPITests {
       )
     } operation: {
       @Dependency(\.defaultInstantSwiftData) var db
+
+      do {
+        try await db.transact(id: "tx-missing-empty-strict-update") {
+          TypedTodo.updateExisting(id: missingID)
+        }
+        #expect(Bool(false), "Expected empty strict update to reject a missing entity.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .validationFailed)
+        expectNoDifference(error.operation, "strict update entity")
+        expectNoDifference(error.namespace, "todos")
+        expectNoDifference(error.localID, missingID.rawValue)
+      } catch {
+        #expect(Bool(false), "Unexpected error: \(error)")
+      }
 
       do {
         try await db.transact(id: "tx-missing-strict-update") {
@@ -415,6 +551,72 @@ struct TypedAPITests {
         expectNoDifference(error.operation, "merge entity attribute")
         expectNoDifference(error.namespace, "posts")
         expectNoDifference(error.path, "author")
+      } catch {
+        #expect(Bool(false), "Unexpected error: \(error)")
+      }
+    }
+
+    let transactions = await recorder.transactions
+    expectNoDifference(transactions, [])
+  }
+
+  @Test
+  func typedMutationsRejectReservedIDAssignmentsBeforeMockClientReceivesTransaction() async throws {
+    let recorder = TransactionRecorder()
+    let mock = InstantSwiftDataClient(
+      transact: { transaction in
+        await recorder.record(transaction)
+        return InstantStoreMutationResult(
+          transactionID: transaction.id,
+          changedEntityIDs: [],
+          tripleCount: transaction.operations.count,
+          emissions: []
+        )
+      },
+      query: { _ in [] },
+      observe: { _ in AsyncStream { continuation in continuation.finish() } },
+      pendingMutations: { [] },
+      localID: { name in "mock-\(name)" }
+    )
+
+    await withDependencies {
+      $0.date.now = Date(timeIntervalSince1970: 1_700_000_275)
+      $0.uuid = .constant(UUID(uuidString: "00000000-0000-0000-0000-000000000777")!)
+      $0.defaultInstantSwiftData = mock
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+      let idPath = InstantAttributePath<TypedTodo, String>("id")
+
+      do {
+        try await db.transact(id: "tx-mock-invalid-id") {
+          TypedTodo.update(
+            id: InstantID(rawValue: "todo-1"),
+            idPath.set("other-id")
+          )
+        }
+        #expect(Bool(false), "Expected id assignment validation to run before the mock client.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .validationFailed)
+        expectNoDifference(error.operation, "write entity attribute")
+        expectNoDifference(error.namespace, "todos")
+        expectNoDifference(error.path, "id")
+      } catch {
+        #expect(Bool(false), "Unexpected error: \(error)")
+      }
+
+      do {
+        try await db.transact(id: "tx-mock-invalid-declared-id") {
+          TypedBadIDEntity.update(
+            id: InstantID(rawValue: "bad-1"),
+            TypedBadIDEntity.idAttribute.set("other-id")
+          )
+        }
+        #expect(Bool(false), "Expected declared id attribute validation to run before the mock client.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .validationFailed)
+        expectNoDifference(error.operation, "write entity attribute")
+        expectNoDifference(error.namespace, "badIDEntities")
+        expectNoDifference(error.path, "id")
       } catch {
         #expect(Bool(false), "Unexpected error: \(error)")
       }
@@ -753,7 +955,7 @@ struct TypedAPITests {
       }
 
       expectNoDifference(result.transactionID, fixedUUID.uuidString.lowercased())
-      expectNoDifference(result.tripleCount, 1)
+      expectNoDifference(result.tripleCount, 3)
     }
 
     let transactions = await recorder.transactions
@@ -764,6 +966,16 @@ struct TypedAPITests {
         InstantStoreTransaction(
           id: fixedUUID.uuidString.lowercased(),
           operations: [
+            .requireEntityMissing(entityID: "todo-mock", namespace: "todos"),
+            .insert(
+              InstantTriple(
+                entityID: "todo-mock",
+                attributeID: "todos/id",
+                value: .string("todo-mock"),
+                txID: fixedUUID.uuidString.lowercased(),
+                txTime: expectedTime
+              )
+            ),
             .insert(
               InstantTriple(
                 entityID: "todo-mock",
@@ -1005,6 +1217,30 @@ private struct TypedTodo: Hashable, Codable, InstantEntityModel {
       message: "Expected \(expected) for todo field '\(field)'.",
       recovery: "Check the Instant entity schema and server values for the todos namespace."
     )
+  }
+}
+
+private struct TypedBadIDEntity: Hashable, Codable, InstantEntityModel {
+  var id: InstantID<TypedBadIDEntity>
+
+  static let instantNamespace = "badIDEntities"
+  static let idAttribute = InstantAttributePath<TypedBadIDEntity, String>(
+    "id",
+    attributeID: "badIDEntities/id"
+  )
+
+  static let instantAttributes = [
+    InstantAttribute(
+      id: "badIDEntities/id",
+      namespace: instantNamespace,
+      name: "id",
+      valueType: .string,
+      isIndexed: true
+    )
+  ]
+
+  init(snapshot: InstantEntitySnapshot) throws {
+    self.id = InstantID(rawValue: snapshot.id)
   }
 }
 

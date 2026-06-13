@@ -302,6 +302,59 @@ struct InstantStoreTests {
   }
 
   @Test
+  func strictTodoCreateRejectsExistingEntityBeforePersistence() async throws {
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_275)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-create-strict-todo",
+        operations: TodoExample.createOperations(
+          id: "todo-strict-create",
+          text: "original text",
+          createdAt: createdAt,
+          transactionID: "tx-create-strict-todo"
+        )
+      ),
+      createdAt: createdAt
+    )
+
+    do {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-duplicate-strict-todo",
+          operations: TodoExample.createOperations(
+            id: "todo-strict-create",
+            text: "duplicate text",
+            createdAt: InstantTimestamp(milliseconds: createdAt.milliseconds + 1),
+            transactionID: "tx-duplicate-strict-todo"
+          )
+        ),
+        createdAt: InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
+      )
+      #expect(Bool(false), "Expected strict create to reject an existing todo.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "strict create entity")
+      expectNoDifference(error.namespace, TodoExample.namespace)
+      expectNoDifference(error.localID, "todo-strict-create")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    let pending = await runtime.pendingMutations()
+    expectNoDifference(pending.map(\.id), ["tx-create-strict-todo"])
+    let todos = try await TodoExample.decode(runtime.query(TodoExample.query))
+    expectNoDifference(todos.map(\.text), ["original text"])
+  }
+
+  @Test
   func seedAndResetTodoOperationsPersistAcrossLaunches() async throws {
     let cacheURL = try temporaryCacheURL()
     let seededAt = InstantTimestamp(milliseconds: 1_700_000_000_300)

@@ -386,7 +386,7 @@ public struct TypeScriptSchemaPrinter: Sendable {
 
     for entity in document.entities.sorted(by: { $0.namespace < $1.namespace }) {
       lines.append("    \(TypeScriptPrinterSupport.propertyKey(entity.namespace)): i.entity({")
-      for attribute in entity.attributes.sorted(by: { $0.name < $1.name }) {
+      for attribute in printableAttributes(entity.attributes).sorted(by: { $0.name < $1.name }) {
         lines.append(
           "      \(TypeScriptPrinterSupport.propertyKey(attribute.name)): \(typeExpression(for: attribute)),"
         )
@@ -458,12 +458,16 @@ public struct TypeScriptSchemaPrinter: Sendable {
     }
 
     lines.append("\(indentation)\(TypeScriptPrinterSupport.propertyKey(name)): i.entity({")
-    for attribute in attributes.sorted(by: { $0.name < $1.name }) {
+    for attribute in printableAttributes(attributes).sorted(by: { $0.name < $1.name }) {
       lines.append(
         "\(indentation)  \(TypeScriptPrinterSupport.propertyKey(attribute.name)): \(typeExpression(for: attribute)),"
       )
     }
     lines.append("\(indentation)}),")
+  }
+
+  private func printableAttributes(_ attributes: [InstantAttribute]) -> [InstantAttribute] {
+    attributes.filter { !$0.primaryKey }
   }
 
   private func validate(_ document: InstantSchemaDocument) throws {

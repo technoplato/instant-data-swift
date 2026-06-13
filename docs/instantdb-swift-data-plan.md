@@ -114,8 +114,9 @@ real Instant app.
 ### Mutations
 
 - Transaction builder parity with TypeScript `db.tx`.
-- `create`, `update`, strict update with no upsert, `merge`, `delete`, `link`,
-  `unlink`, and `ruleParams`.
+- Strict `create`, upserting `update`, strict update with no upsert, `merge`,
+  `delete`, `link`, `unlink`, and `ruleParams`. Repeatable local seed commands
+  should use explicit upsert helpers rather than weakening app-facing `create`.
 - Batch transactions with stable operation order.
 - Lookup refs by unique attribute.
 - Optimistic application before server confirmation.

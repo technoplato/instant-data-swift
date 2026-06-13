@@ -113,6 +113,11 @@ public actor InstantStore {
 
     for operation in transaction.operations {
       switch operation {
+      case let .requireEntityMissing(entityID, namespace):
+        guard !indexes.containsEntity(entityID, namespace: namespace, attributes: attributes) else {
+          throw Self.duplicateEntityError(entityID: entityID, namespace: namespace)
+        }
+
       case let .requireEntityExists(entityID, namespace):
         guard indexes.containsEntity(entityID, namespace: namespace, attributes: attributes) else {
           throw Self.missingEntityError(entityID: entityID, namespace: namespace)
@@ -187,6 +192,17 @@ public actor InstantStore {
 
   private static func emissionSortKey(_ plan: InstantQueryPlan) -> String {
     plan.cacheKey
+  }
+
+  private static func duplicateEntityError(entityID: String, namespace: String?) -> InstantError {
+    InstantError(
+      code: .validationFailed,
+      operation: "strict create entity",
+      namespace: namespace,
+      localID: entityID,
+      message: "An entity already exists for '\(entityID)'.",
+      recovery: "Use update for upsert-style writes, or choose a fresh id before creating."
+    )
   }
 
   private static func missingEntityError(entityID: String, namespace: String?) -> InstantError {

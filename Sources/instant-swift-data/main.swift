@@ -390,12 +390,12 @@ struct InstantSwiftDataCLI {
       let now = context.runtime.configuration.now()
       let transaction = InstantStoreTransaction(
         id: transactionID,
-        operations: TodoProjectExample.createProjectOperations(
+        operations: TodoProjectExample.upsertProjectOperations(
           id: projectID,
           title: "Launch linked todos",
           createdAt: now,
           transactionID: transactionID
-        ) + TodoExample.createOperations(
+        ) + TodoExample.upsertOperations(
           id: todoID,
           text: "Wire a project link",
           createdAt: now,
