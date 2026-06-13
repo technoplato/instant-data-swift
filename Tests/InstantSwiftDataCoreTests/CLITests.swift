@@ -408,8 +408,70 @@ extension InstantStoreTests {
     expectNoDifference(emptyOutbox.mutations, [])
   }
 
-  private func runCLI(_ arguments: [String], homeURL: URL) throws -> String {
-    let result = try runCLIResult(arguments, homeURL: homeURL)
+  @Test
+  func cliValidationLocalTodosEmitsEvidence() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let jsonOutput = try JSONDecoder().decode(
+      CLILocalTodoValidationOutput.self,
+      from: Data(
+        try runCLI(["validation", "local-todos", "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(jsonOutput.appID, "cli-cache-test")
+    expectNoDifference(jsonOutput.event, "local-todos")
+    expectNoDifference(jsonOutput.ok, true)
+    expectNoDifference(jsonOutput.evidenceCount, 5)
+    expectNoDifference(jsonOutput.events, ["seed", "update", "cache", "reset", "relaunch"])
+    expectNoDifference(jsonOutput.finalTodoCount, 0)
+    expectNoDifference(jsonOutput.pendingMutationCount, 3)
+
+    let jsonlOutput = try runCLI(["validation", "local-todos", "--jsonl"], homeURL: homeURL)
+    let lines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(lines.count, 5)
+    let firstEvidence = try JSONDecoder().decode(
+      CLILocalTodoValidationEvidence.self,
+      from: Data(try #require(lines.first).utf8)
+    )
+    expectNoDifference(firstEvidence.caseID, "validation.local.todos")
+    expectNoDifference(firstEvidence.appID, "cli-cache-test")
+    expectNoDifference(firstEvidence.event, "seed")
+    expectNoDifference(firstEvidence.details.todoTexts.count, 3)
+
+    let humanOutput = try runCLI(["validation", "local-todos"], homeURL: homeURL)
+    #expect(humanOutput.contains("validation: ok"))
+    #expect(humanOutput.contains("evidence rows: 5"))
+
+    let defaultAppIDHomeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: defaultAppIDHomeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: defaultAppIDHomeURL) }
+    let defaultAppIDOutput = try JSONDecoder().decode(
+      CLILocalTodoValidationOutput.self,
+      from: Data(
+        try runCLI(
+          ["validation", "local-todos", "--json"],
+          homeURL: defaultAppIDHomeURL,
+          environment: ["INSTANT_APP_ID": nil]
+        ).utf8
+      )
+    )
+    expectNoDifference(defaultAppIDOutput.appID, "local-demo")
+
+    let malformed = try runCLIResult(["validation", "remote", "--json"], homeURL: homeURL)
+    #expect(malformed.status == 64)
+    #expect(malformed.error.contains("validation <local-todos>"))
+  }
+
+  private func runCLI(
+    _ arguments: [String],
+    homeURL: URL,
+    environment: [String: String?] = [:]
+  ) throws -> String {
+    let result = try runCLIResult(arguments, homeURL: homeURL, environment: environment)
     guard result.status == 0 else {
       throw CLITestError(
         "instant-swift-data \(arguments.joined(separator: " ")) failed with status \(result.status): \(result.error)"
@@ -418,7 +480,11 @@ extension InstantStoreTests {
     return result.output
   }
 
-  private func runCLIResult(_ arguments: [String], homeURL: URL) throws -> CLITestProcessResult {
+  private func runCLIResult(
+    _ arguments: [String],
+    homeURL: URL,
+    environment: [String: String?] = [:]
+  ) throws -> CLITestProcessResult {
     let packageURL = packageRootURL()
     let executableURL = packageURL.appendingPathComponent(".build/debug/instant-swift-data")
 
@@ -431,13 +497,17 @@ extension InstantStoreTests {
       process.arguments = ["swift", "run", "instant-swift-data"] + arguments
     }
     process.currentDirectoryURL = packageURL
-    process.environment = ProcessInfo.processInfo.environment.merging(
+    var processEnvironment = ProcessInfo.processInfo.environment.merging(
       [
         "INSTANT_SWIFT_DATA_HOME": homeURL.path,
         "INSTANT_APP_ID": "cli-cache-test",
       ],
       uniquingKeysWith: { _, new in new }
     )
+    for (key, value) in environment {
+      processEnvironment[key] = value
+    }
+    process.environment = processEnvironment
 
     let outputPipe = Pipe()
     let errorPipe = Pipe()
@@ -587,6 +657,34 @@ private struct CLIOutboxMutation: Decodable, Hashable {
   var id: String
   var status: String
   var failureMessage: String?
+}
+
+private struct CLILocalTodoValidationOutput: Decodable {
+  var appID: String
+  var event: String
+  var ok: Bool
+  var evidenceCount: Int
+  var events: [String]
+  var finalTodoCount: Int
+  var pendingMutationCount: Int
+}
+
+private struct CLILocalTodoValidationEvidence: Decodable {
+  var caseID: String
+  var appID: String
+  var event: String
+  var details: CLILocalTodoValidationDetails
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case appID
+    case event
+    case details
+  }
+}
+
+private struct CLILocalTodoValidationDetails: Decodable {
+  var todoTexts: [String]
 }
 
 private struct CLITestError: Error, CustomStringConvertible {

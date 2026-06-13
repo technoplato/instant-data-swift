@@ -59,6 +59,9 @@ struct InstantSwiftDataCLI {
     case "sync":
       try await runSync(arguments: arguments, output: output)
 
+    case "validation", "validate":
+      try await runValidation(arguments: arguments, output: output)
+
     default:
       throw CLIError("Unknown command: \(command)", exitCode: 64)
     }
@@ -102,6 +105,30 @@ struct InstantSwiftDataCLI {
       try TypeScriptPermissionsPrinter().printPermissions(InstantSchemaExamples.todoPermissions),
       to: options.outputPath
     )
+  }
+
+  private static func runValidation(arguments: [String], output: OutputMode) async throws {
+    var arguments = arguments
+    guard let command = arguments.popFirstArgument(), arguments.isEmpty else {
+      throw CLIError(validationUsage, exitCode: 64)
+    }
+
+    switch command {
+    case "local-todos", "todos":
+      let appID = validationAppID()
+      do {
+        let result = try await InstantSwiftDataLocalTodoValidation.run(appID: appID)
+        try printLocalTodoValidation(result: result, output: output)
+      } catch {
+        if output == .jsonl {
+          try writeJSONLine(validationFailureRow(appID: appID, error: error))
+        }
+        throw error
+      }
+
+    default:
+      throw CLIError(validationUsage, exitCode: 64)
+    }
   }
 
   private static func runExamples(arguments: [String], output: OutputMode) async throws {
@@ -1115,6 +1142,7 @@ struct InstantSwiftDataCLI {
         app select <app-id> [--json|--jsonl]
         sync inspect [--json|--jsonl]
         sync mark-processed <tx-id> [--json|--jsonl]
+        validation local-todos [--json|--jsonl]
 
       Environment:
         INSTANT_SWIFT_DATA_HOME  Directory for CLI SQLite state. Defaults to ~/.instant-swift-data.
@@ -1250,6 +1278,65 @@ struct InstantSwiftDataCLI {
         )
       )
     }
+  }
+
+  private static func printLocalTodoValidation(
+    result: LocalTodoValidationResult,
+    output: OutputMode
+  ) throws {
+    let summary = LocalTodoValidationOutput(
+      appID: result.appID,
+      cachePath: result.cacheURL.path,
+      event: "local-todos",
+      transport: "not-implemented-local-cache-only",
+      ok: result.evidence.allSatisfy { $0.ok },
+      evidenceCount: result.evidence.count,
+      events: result.evidence.map(\.event),
+      finalTodoCount: result.evidence.last?.details.todoIDs.count ?? 0,
+      pendingMutationCount: result.evidence.last?.details.pendingMutationIDs.count ?? 0
+    )
+
+    switch output {
+    case .human:
+      print("validation: \(summary.ok ? "ok" : "failed")")
+      print("case: validation.local.todos")
+      print("events: \(summary.events.joined(separator: ", "))")
+      print("evidence rows: \(summary.evidenceCount)")
+      print("pending mutations: \(summary.pendingMutationCount)")
+      print("cache: \(summary.cachePath)")
+
+    case .json:
+      try writeJSON(summary)
+
+    case .jsonl:
+      for row in result.evidence {
+        try writeJSONLine(row)
+      }
+    }
+  }
+
+  private static func validationAppID() -> String {
+    let appID = ProcessInfo.processInfo.environment["INSTANT_APP_ID"]?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let appID, !appID.isEmpty else {
+      return "local-demo"
+    }
+    return appID
+  }
+
+  private static func validationFailureRow(
+    appID: String,
+    error: any Error
+  ) -> ValidationEvidenceRow<[String: String]> {
+    ValidationEvidenceRow(
+      caseID: "validation.local.todos",
+      side: "swift",
+      event: "failed",
+      appID: appID,
+      timestampMs: Int64((Date().timeIntervalSince1970 * 1000).rounded()),
+      ok: false,
+      details: ["message": String(describing: error)]
+    )
   }
 
   private static func allowRuleCount(in document: InstantPermissionsDocument) -> Int {
@@ -1577,6 +1664,13 @@ struct InstantSwiftDataCLI {
     Usage: instant-swift-data sync <inspect|mark-processed>
       instant-swift-data sync inspect [--json|--jsonl]
       instant-swift-data sync mark-processed <tx-id> [--json|--jsonl]
+    """
+  }
+
+  private static var validationUsage: String {
+    """
+    Usage: instant-swift-data validation <local-todos>
+      instant-swift-data validation local-todos [--json|--jsonl]
     """
   }
 
@@ -1927,6 +2021,18 @@ private struct PermissionsVerifyOutput: Codable, Sendable {
   var namespaceCount: Int
   var allowRuleCount: Int
   var rateLimitCount: Int
+}
+
+private struct LocalTodoValidationOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var transport: String
+  var ok: Bool
+  var evidenceCount: Int
+  var events: [String]
+  var finalTodoCount: Int
+  var pendingMutationCount: Int
 }
 
 private struct GenerateOptions: Sendable {

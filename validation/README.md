@@ -24,6 +24,7 @@ workflow. It proves the Swift core can seed, update, cache, reset, and relaunch
 against the same SQLite state without SwiftUI:
 
 ```bash
+swift run instant-swift-data validation local-todos --jsonl
 swift run instant-swift-data-validation-runner --local-todos
 ```
 
@@ -57,7 +58,7 @@ Each runner should emit JSON Lines. Every row should include:
 - `side`: `swift`, `typescript`, or `orchestrator`.
 - `event`: stable event name.
 - `appID`: ephemeral Instant app id.
-- `entityId` or `streamId` when applicable.
+- `entityID` or `streamID` when applicable.
 - `timestampMs`.
 - `latencyMs` for observed round trips.
 - `ok`: boolean.

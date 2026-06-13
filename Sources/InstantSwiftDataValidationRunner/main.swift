@@ -1,5 +1,5 @@
 import Foundation
-import InstantSwiftDataTesting
+import InstantSwiftDataCore
 
 @main
 struct InstantSwiftDataValidationRunner {

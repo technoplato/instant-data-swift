@@ -85,6 +85,7 @@ swift run instant-swift-data perms verify --example todos --from instant.perms.t
 Run the local Swift validation evidence runner:
 
 ```bash
+swift run instant-swift-data validation local-todos --jsonl
 swift run instant-swift-data-validation-runner --local-todos
 validation/run-e2e.sh
 ```

@@ -78,9 +78,7 @@ let package = Package(
     .target(
       name: "InstantSwiftDataTesting",
       dependencies: [
-        "InstantSwiftData",
         "InstantSwiftDataCore",
-        "InstantSwiftDataSchema",
       ],
       swiftSettings: strictConcurrencySettings
     ),
@@ -91,7 +89,7 @@ let package = Package(
     ),
     .executableTarget(
       name: "InstantSwiftDataValidationRunner",
-      dependencies: ["InstantSwiftDataTesting"],
+      dependencies: ["InstantSwiftDataCore"],
       swiftSettings: strictConcurrencySettings
     ),
     .executableTarget(
