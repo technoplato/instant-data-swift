@@ -103,6 +103,10 @@ public enum TodoExample {
     ]
   }
 
+  public static func deleteOperations(id: String) -> [InstantTripleOperation] {
+    [.deleteEntity(id)]
+  }
+
   public static func decode(_ snapshots: [InstantEntitySnapshot]) throws -> [TodoRecord] {
     try snapshots.map { snapshot in
       guard case let .string(text) = snapshot.values["text"]?.first

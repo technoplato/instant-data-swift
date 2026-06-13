@@ -5,8 +5,9 @@ typed schema, local persistence, optimistic writes, live observation, and
 agent-friendly command-line workflows.
 
 This repository is early, but the first local core slice is usable: todos can be
-created, listed, completed, and read back across separate CLI invocations through
-the same SQLite cache and outbox path used by the core runtime.
+created, listed, completed, deleted, and read back across separate CLI
+invocations through the same SQLite cache and outbox path used by the core
+runtime.
 
 ## Local Todo CLI Demo
 
@@ -23,6 +24,8 @@ swift run instant-swift-data examples todos list --search dishes
 swift run instant-swift-data examples todos watch --events 1 --jsonl
 TODO_ID="$(swift run instant-swift-data examples todos add "ship the demo" --json | jq -r '.changedID')"
 swift run instant-swift-data examples todos complete "$TODO_ID"
+DELETE_TODO_ID="$(swift run instant-swift-data examples todos add "delete after smoke" --json | jq -r '.changedID')"
+swift run instant-swift-data examples todos delete "$DELETE_TODO_ID" --json
 swift run instant-swift-data examples todos refresh
 ```
 

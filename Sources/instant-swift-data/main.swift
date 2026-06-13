@@ -107,10 +107,10 @@ struct InstantSwiftDataCLI {
   private static func runExamples(arguments: [String], output: OutputMode) async throws {
     var arguments = arguments
     guard arguments.popFirstArgument() == "todos" else {
-      throw CLIError("Usage: instant-swift-data examples todos <add|list|watch|complete|refresh>", exitCode: 64)
+      throw CLIError("Usage: instant-swift-data examples todos <add|list|watch|complete|delete|refresh>", exitCode: 64)
     }
     guard let command = arguments.popFirstArgument() else {
-      throw CLIError("Usage: instant-swift-data examples todos <add|list|watch|complete|refresh>", exitCode: 64)
+      throw CLIError("Usage: instant-swift-data examples todos <add|list|watch|complete|delete|refresh>", exitCode: 64)
     }
 
     let context = try await CLIContext.bootstrap()
@@ -168,6 +168,27 @@ struct InstantSwiftDataCLI {
         source: "cli.examples.todos.complete"
       )
       try await printTodos(context: context, output: output, event: "complete", changedID: todoID)
+
+    case "delete", "remove":
+      guard let todoID = arguments.popFirstArgument(), arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data examples todos delete <todo-id>", exitCode: 64)
+      }
+      let currentTodos = try await TodoExample.decode(context.runtime.query(TodoExample.query))
+      guard currentTodos.contains(where: { $0.id == todoID }) else {
+        throw CLIError("Todo not found: \(todoID)", exitCode: 66)
+      }
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      let transaction = InstantStoreTransaction(
+        id: transactionID,
+        operations: TodoExample.deleteOperations(id: todoID)
+      )
+      try await context.runtime.transact(
+        transaction,
+        createdAt: now,
+        source: "cli.examples.todos.delete"
+      )
+      try await printTodos(context: context, output: output, event: "delete", changedID: todoID)
 
     case "refresh":
       let query = try todoListQuery(arguments: arguments)
@@ -997,6 +1018,7 @@ struct InstantSwiftDataCLI {
         examples todos list [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--json|--jsonl]
         examples todos watch [--events 1] [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--json|--jsonl]
         examples todos complete <todo-id> [--json|--jsonl]
+        examples todos delete <todo-id> [--json|--jsonl]
         examples todos refresh [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--json|--jsonl]
         cache inspect [--json|--jsonl]
         outbox inspect [--json|--jsonl]

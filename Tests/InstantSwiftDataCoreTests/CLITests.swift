@@ -145,6 +145,63 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliTodoDeleteRemovesTodoFromDurableState() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let deleteAddOutput = try runCLI(
+      ["examples", "todos", "add", "delete from cli", "--json"],
+      homeURL: homeURL
+    )
+    let deleteAdd = try JSONDecoder().decode(CLIAddOutput.self, from: Data(deleteAddOutput.utf8))
+    let deletedID = try #require(deleteAdd.changedID)
+    _ = try runCLI(["examples", "todos", "add", "keep from cli", "--json"], homeURL: homeURL)
+
+    let malformed = try runCLIResult(
+      ["examples", "todos", "delete", deletedID, "unexpected", "--json"],
+      homeURL: homeURL
+    )
+    #expect(malformed.status == 64)
+    #expect(malformed.error.contains("examples todos delete <todo-id>"))
+
+    let afterMalformedDelete = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(try runCLI(["examples", "todos", "list", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(
+      Set(afterMalformedDelete.todos.map(\.text)),
+      Set(["delete from cli", "keep from cli"])
+    )
+
+    let deleteOutput = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(
+        try runCLI(["examples", "todos", "delete", deletedID, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(deleteOutput.event, "delete")
+    expectNoDifference(deleteOutput.changedID, deletedID)
+    expectNoDifference(deleteOutput.todos.map(\.text), ["keep from cli"])
+    expectNoDifference(deleteOutput.pendingMutationCount, 3)
+
+    let listOutput = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(try runCLI(["examples", "todos", "list", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(listOutput.todos.map(\.text), ["keep from cli"])
+
+    let missing = try runCLIResult(
+      ["examples", "todos", "delete", deletedID, "--json"],
+      homeURL: homeURL
+    )
+    #expect(missing.status == 66)
+    #expect(missing.error.contains("Todo not found"))
+  }
+
+  @Test
   func cliOutboxRetryAndDrainOperateOnDurableState() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -283,6 +340,13 @@ extension InstantStoreTests {
 
 private struct CLIAddOutput: Decodable {
   var changedID: String?
+}
+
+private struct CLITodosOutput: Decodable {
+  var event: String
+  var changedID: String?
+  var pendingMutationCount: Int
+  var todos: [CLITodo]
 }
 
 private struct CLITestProcessResult {

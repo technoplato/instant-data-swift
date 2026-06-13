@@ -141,6 +141,71 @@ struct InstantStoreTests {
   }
 
   @Test
+  func deleteEntityRemovesTodoAndPersistsAcrossLaunches() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_100)
+    let secondCreatedAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
+
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-create-deleted-todo",
+        operations: TodoExample.createOperations(
+          id: "todo-delete-me",
+          text: "delete me",
+          createdAt: createdAt,
+          transactionID: "tx-create-deleted-todo"
+        )
+      ),
+      createdAt: createdAt
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-create-kept-todo",
+        operations: TodoExample.createOperations(
+          id: "todo-keep-me",
+          text: "keep me",
+          createdAt: secondCreatedAt,
+          transactionID: "tx-create-kept-todo"
+        )
+      ),
+      createdAt: secondCreatedAt
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-delete-todo",
+        operations: TodoExample.deleteOperations(id: "todo-delete-me")
+      ),
+      createdAt: InstantTimestamp(milliseconds: createdAt.milliseconds + 2)
+    )
+
+    let todos = try await TodoExample.decode(runtime.query(TodoExample.query))
+    expectNoDifference(todos.map(\.id), ["todo-keep-me"])
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let relaunchedTodos = try await TodoExample.decode(relaunchedRuntime.query(TodoExample.query))
+    expectNoDifference(relaunchedTodos.map(\.id), ["todo-keep-me"])
+
+    let pending = await relaunchedRuntime.pendingMutations()
+    expectNoDifference(
+      pending.map(\.id),
+      ["tx-create-deleted-todo", "tx-create-kept-todo", "tx-delete-todo"]
+    )
+  }
+
+  @Test
   func queryCacheStoresSameQueryIDDifferentPlansSeparately() async throws {
     let cacheURL = try temporaryCacheURL()
     let runtime = try await InstantRuntime.bootstrap(
