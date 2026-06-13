@@ -7348,6 +7348,34 @@ struct InstantStoreTests {
     )
     expectNoDifference(usersMissingCommentBodies, ["user-2", "user-3"])
 
+    let usersWithPostOne = try await ids(
+      id: "users.posts.ref.equals",
+      namespace: "users",
+      filters: [.equals(field: "posts", value: .ref("post-1"))]
+    )
+    expectNoDifference(usersWithPostOne, ["user-1"])
+
+    let usersWithoutPostOne = try await ids(
+      id: "users.posts.ref.not-equals",
+      namespace: "users",
+      filters: [.notEquals(field: "posts", value: .ref("post-1"))]
+    )
+    expectNoDifference(usersWithoutPostOne, ["user-2", "user-3"])
+
+    let usersWithPostTwo = try await ids(
+      id: "users.posts.ref.in",
+      namespace: "users",
+      filters: [.in(field: "posts", values: [.ref("post-2")])]
+    )
+    expectNoDifference(usersWithPostTwo, ["user-2"])
+
+    let usersWithoutPosts = try await ids(
+      id: "users.posts.ref.null",
+      namespace: "users",
+      filters: [.isNull(field: "posts")]
+    )
+    expectNoDifference(usersWithoutPosts, ["user-3"])
+
     let commentsByAna = try await ids(
       id: "comments.post.author.name.equals",
       namespace: "comments",
@@ -7375,6 +7403,111 @@ struct InstantStoreTests {
         id: "users.posts.title.body",
         namespace: "users",
         filters: [.equals(field: "posts.title.body", value: .string("missing"))]
+      )
+    }
+
+    await expectQueryValidation(namespace: "users", path: "posts") {
+      _ = try await ids(
+        id: "users.posts.ref.invalid-type",
+        namespace: "users",
+        filters: [.equals(field: "posts", value: .string("post-1"))]
+      )
+    }
+  }
+
+  @Test
+  func queryFiltersSupportDirectReverseRelationFieldEdges() async throws {
+    let usersName = InstantAttribute(
+      id: "users/name",
+      namespace: "users",
+      name: "name",
+      valueType: .string,
+      isIndexed: true
+    )
+    let usersBio = InstantAttribute(
+      id: "users/bio",
+      namespace: "users",
+      name: "bio",
+      valueType: .string,
+      isRequired: false,
+      isIndexed: false
+    )
+    let postsTitle = InstantAttribute(
+      id: "posts/title",
+      namespace: "posts",
+      name: "title",
+      valueType: .string,
+      isIndexed: true
+    )
+    let postsAuthor = InstantAttribute(
+      id: "posts/author",
+      namespace: "posts",
+      name: "author",
+      valueType: .ref,
+      isIndexed: true,
+      forwardIdentity: "posts/author",
+      reverseIdentity: "users/posts",
+      linkNamespace: "users"
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: [usersName, usersBio, postsTitle, postsAuthor]
+      )
+    )
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let transactionID = "tx-direct-reverse-relation-filters"
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: transactionID,
+        operations: [
+          .insert(.init(entityID: "user-1", attributeID: "users/name", value: .string("Ana"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "user-1", attributeID: "users/bio", value: .string("Writes about Swift"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "user-2", attributeID: "users/name", value: .string("Ben"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "user-3", attributeID: "users/name", value: .string("Cy"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "post-1", attributeID: "posts/title", value: .string("First"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "post-1", attributeID: "posts/author", value: .ref("user-1"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "post-2", attributeID: "posts/title", value: .string("Second"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "post-2", attributeID: "posts/author", value: .ref("user-1"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "post-3", attributeID: "posts/title", value: .string("Third"), txID: transactionID, txTime: time)),
+          .insert(.init(entityID: "post-3", attributeID: "posts/author", value: .ref("user-2"), txID: transactionID, txTime: time)),
+        ]
+      ),
+      createdAt: time
+    )
+
+    func userIDs(id: String, filters: [InstantQueryFilter]) async throws -> [String] {
+      try await runtime.query(
+        InstantQueryPlan(
+          id: id,
+          namespace: "users",
+          filters: filters,
+          order: InstantQueryOrder("name")
+        )
+      )
+      .map(\.id)
+    }
+
+    let usersWithPosts = try await userIDs(
+      id: "users.posts.ref.not-null",
+      filters: [.isNotNull(field: "posts")]
+    )
+    expectNoDifference(usersWithPosts, ["user-1", "user-2"])
+
+    let usersWithoutPostOne = try await userIDs(
+      id: "users.posts.ref.not-equals-many",
+      filters: [.notEquals(field: "posts", value: .ref("post-1"))]
+    )
+    expectNoDifference(usersWithoutPostOne, ["user-1", "user-2", "user-3"])
+
+    await expectQueryValidation(namespace: "users", path: "author.bio") {
+      _ = try await runtime.query(
+        InstantQueryPlan(
+          id: "posts.author.bio.unindexed-ilike",
+          namespace: "posts",
+          filters: [.iLike(field: "author.bio", pattern: "%swift%")]
+        )
       )
     }
   }

@@ -737,7 +737,14 @@ struct TripleIndexes: Hashable, Codable, Sendable {
           continue
         }
         let value = normalizedValue(value, field: field, namespace: namespace, attributes: attributes)
-        guard materializedValue(snapshot, field: field)?.contains(value) == true else { return false }
+        guard
+          materializedValue(
+            snapshot,
+            field: field,
+            namespace: namespace,
+            attributes: attributes
+          )?.contains(value) == true
+        else { return false }
       case let .notEquals(field, value):
         if let nested = nestedField(field) {
           guard matchesNestedField(
@@ -751,8 +758,19 @@ struct TripleIndexes: Hashable, Codable, Sendable {
           continue
         }
         let value = normalizedValue(value, field: field, namespace: namespace, attributes: attributes)
-        guard isDeclaredField(field, namespace: namespace, attributes: attributes) else { return false }
-        guard matchesNotEquals(snapshot, field: field, value: value) else { return false }
+        guard isDeclaredField(
+          field,
+          namespace: namespace,
+          attributes: attributes,
+          allowReverseRelations: true
+        ) else { return false }
+        guard matchesNotEquals(
+          snapshot,
+          field: field,
+          value: value,
+          namespace: namespace,
+          attributes: attributes
+        ) else { return false }
       case let .greaterThan(field, value):
         if let nested = nestedField(field) {
           guard matchesNestedField(
@@ -766,7 +784,14 @@ struct TripleIndexes: Hashable, Codable, Sendable {
           continue
         }
         let value = normalizedValue(value, field: field, namespace: namespace, attributes: attributes)
-        guard matchesComparison(snapshot, field: field, value: value, allowed: [.orderedDescending])
+        guard matchesComparison(
+          snapshot,
+          field: field,
+          value: value,
+          namespace: namespace,
+          attributes: attributes,
+          allowed: [.orderedDescending]
+        )
         else { return false }
       case let .greaterThanOrEqual(field, value):
         if let nested = nestedField(field) {
@@ -785,6 +810,8 @@ struct TripleIndexes: Hashable, Codable, Sendable {
           snapshot,
           field: field,
           value: value,
+          namespace: namespace,
+          attributes: attributes,
           allowed: [.orderedSame, .orderedDescending]
         )
         else { return false }
@@ -801,7 +828,14 @@ struct TripleIndexes: Hashable, Codable, Sendable {
           continue
         }
         let value = normalizedValue(value, field: field, namespace: namespace, attributes: attributes)
-        guard matchesComparison(snapshot, field: field, value: value, allowed: [.orderedAscending])
+        guard matchesComparison(
+          snapshot,
+          field: field,
+          value: value,
+          namespace: namespace,
+          attributes: attributes,
+          allowed: [.orderedAscending]
+        )
         else { return false }
       case let .lessThanOrEqual(field, value):
         if let nested = nestedField(field) {
@@ -820,6 +854,8 @@ struct TripleIndexes: Hashable, Codable, Sendable {
           snapshot,
           field: field,
           value: value,
+          namespace: namespace,
+          attributes: attributes,
           allowed: [.orderedAscending, .orderedSame]
         )
         else { return false }
@@ -835,7 +871,14 @@ struct TripleIndexes: Hashable, Codable, Sendable {
           else { return false }
           continue
         }
-        guard let materialized = materializedValue(snapshot, field: field), !values.isEmpty
+        guard
+          let materialized = materializedValue(
+            snapshot,
+            field: field,
+            namespace: namespace,
+            attributes: attributes
+          ),
+          !values.isEmpty
         else { return false }
         let values = normalizedValues(values, field: field, namespace: namespace, attributes: attributes)
         guard materialized.values.contains(where: values.contains) else { return false }
@@ -851,7 +894,14 @@ struct TripleIndexes: Hashable, Codable, Sendable {
           else { return false }
           continue
         }
-        guard matchesStringPattern(snapshot, field: field, pattern: pattern, caseInsensitive: false)
+        guard matchesStringPattern(
+          snapshot,
+          field: field,
+          pattern: pattern,
+          caseInsensitive: false,
+          namespace: namespace,
+          attributes: attributes
+        )
         else { return false }
       case let .iLike(field, pattern):
         if let nested = nestedField(field) {
@@ -865,7 +915,14 @@ struct TripleIndexes: Hashable, Codable, Sendable {
           else { return false }
           continue
         }
-        guard matchesStringPattern(snapshot, field: field, pattern: pattern, caseInsensitive: true)
+        guard matchesStringPattern(
+          snapshot,
+          field: field,
+          pattern: pattern,
+          caseInsensitive: true,
+          namespace: namespace,
+          attributes: attributes
+        )
         else { return false }
       case let .isNull(field):
         if let nested = nestedField(field) {
@@ -879,8 +936,14 @@ struct TripleIndexes: Hashable, Codable, Sendable {
           else { return false }
           continue
         }
-        guard isDeclaredField(field, namespace: namespace, attributes: attributes) else { return false }
-        guard isFieldNull(snapshot, field: field) else { return false }
+        guard isDeclaredField(
+          field,
+          namespace: namespace,
+          attributes: attributes,
+          allowReverseRelations: true
+        ) else { return false }
+        guard isFieldNull(snapshot, field: field, namespace: namespace, attributes: attributes)
+        else { return false }
       case let .isNotNull(field):
         if let nested = nestedField(field) {
           guard matchesNestedField(
@@ -893,8 +956,14 @@ struct TripleIndexes: Hashable, Codable, Sendable {
           else { return false }
           continue
         }
-        guard isDeclaredField(field, namespace: namespace, attributes: attributes) else { return false }
-        guard !isFieldNull(snapshot, field: field) else { return false }
+        guard isDeclaredField(
+          field,
+          namespace: namespace,
+          attributes: attributes,
+          allowReverseRelations: true
+        ) else { return false }
+        guard !isFieldNull(snapshot, field: field, namespace: namespace, attributes: attributes)
+        else { return false }
       case let .and(filters):
         guard matches(snapshot, filters: filters, namespace: namespace, attributes: attributes)
         else { return false }
@@ -990,7 +1059,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         return issue
       }
 
-    case let .like(field, _), let .iLike(field, _):
+    case let .like(field, _):
       switch validateFilterField(
         field,
         namespace: namespace,
@@ -1010,13 +1079,37 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         return issue
       }
 
+    case let .iLike(field, _):
+      switch validateFilterField(
+        field,
+        namespace: namespace,
+        attributes: attributes
+      ) {
+      case let .success(attribute):
+        guard attribute.valueType == .string else {
+          return incompatibleFilterValueIssue(
+            field: field,
+            attribute: attribute,
+            received: "pattern"
+          )
+        }
+        guard attribute.isIndexed else {
+          return unindexedILikeFilterIssue(field: field, attribute: attribute)
+        }
+        return nil
+
+      case let .failure(issue):
+        return issue
+      }
+
     case let .isNull(field), let .isNotNull(field):
       return validateFieldReference(
         field,
         namespace: namespace,
         attributes: attributes,
         context: "query filter",
-        allowNested: true
+        allowNested: true,
+        allowReverseRelations: true
       )
 
     case let .and(filters), let .or(filters):
@@ -1123,14 +1216,16 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     namespace: String,
     attributes: AttributeStore,
     context: String,
-    allowNested: Bool
+    allowNested: Bool,
+    allowReverseRelations: Bool = false
   ) -> InstantQueryValidationIssue? {
     switch resolvedFieldAttribute(
       field,
       namespace: namespace,
       attributes: attributes,
       context: context,
-      allowNested: allowNested
+      allowNested: allowNested,
+      allowReverseRelations: allowReverseRelations
     ) {
     case .success:
       return nil
@@ -1150,7 +1245,8 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       namespace: namespace,
       attributes: attributes,
       context: "query filter",
-      allowNested: true
+      allowNested: true,
+      allowReverseRelations: true
     )
   }
 
@@ -1159,10 +1255,18 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     namespace: String,
     attributes: AttributeStore,
     context: String,
-    allowNested: Bool
+    allowNested: Bool,
+    allowReverseRelations: Bool = false
   ) -> Result<InstantAttribute, InstantQueryValidationIssue> {
     if !field.contains(".") {
-      guard let attribute = attributes.attribute(namespace: namespace, name: field) else {
+      guard
+        let attribute = fieldAttribute(
+          field,
+          namespace: namespace,
+          attributes: attributes,
+          allowReverseRelations: allowReverseRelations
+        )
+      else {
         return .failure(undeclaredFieldIssue(field, namespace: namespace, context: context))
       }
       return .success(attribute)
@@ -1190,7 +1294,13 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     }
     switch nestedFieldTargetNamespace(nested, namespace: namespace, attributes: attributes) {
     case let .success(targetNamespace):
-      guard let attribute = attributes.attribute(namespace: targetNamespace, name: nested.field)
+      guard
+        let attribute = fieldAttribute(
+          nested.field,
+          namespace: targetNamespace,
+          attributes: attributes,
+          allowReverseRelations: allowReverseRelations
+        )
       else {
         return .failure(
           undeclaredFieldIssue(
@@ -1291,12 +1401,58 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     )
   }
 
+  private static func unindexedILikeFilterIssue(
+    field: String,
+    attribute: InstantAttribute
+  ) -> InstantQueryValidationIssue {
+    InstantQueryValidationIssue(
+      namespace: attribute.namespace,
+      path: field,
+      message:
+        "query filter '\(field)' cannot use case-insensitive pattern matching because the schema attribute is not indexed.",
+      recovery: "Mark the attribute indexed, or use a different query predicate."
+    )
+  }
+
   private static func isDeclaredField(
     _ field: String,
     namespace: String,
-    attributes: AttributeStore
+    attributes: AttributeStore,
+    allowReverseRelations: Bool = false
   ) -> Bool {
-    attributes.attribute(namespace: namespace, name: field) != nil
+    fieldAttribute(
+      field,
+      namespace: namespace,
+      attributes: attributes,
+      allowReverseRelations: allowReverseRelations
+    ) != nil
+  }
+
+  private static func fieldAttribute(
+    _ field: String,
+    namespace: String,
+    attributes: AttributeStore,
+    allowReverseRelations: Bool = false
+  ) -> InstantAttribute? {
+    if let attribute = attributes.attribute(namespace: namespace, name: field) {
+      return attribute
+    }
+    guard
+      allowReverseRelations,
+      let reverse = reverseAttribute(namespace: namespace, name: field, attributes: attributes)
+    else { return nil }
+    return InstantAttribute(
+      id: "\(namespace)/\(field)",
+      namespace: namespace,
+      name: field,
+      valueType: .ref,
+      isRequired: false,
+      cardinality: .many,
+      isIndexed: reverse.isIndexed,
+      forwardIdentity: reverse.reverseIdentity,
+      reverseIdentity: reverse.forwardIdentity,
+      linkNamespace: reverse.namespace
+    )
   }
 
   private static func undeclaredFieldIssue(
@@ -1505,9 +1661,15 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   private func isDeclaredField(
     _ field: String,
     namespace: String,
-    attributes: AttributeStore
+    attributes: AttributeStore,
+    allowReverseRelations: Bool = false
   ) -> Bool {
-    attributes.attribute(namespace: namespace, name: field) != nil
+    Self.isDeclaredField(
+      field,
+      namespace: namespace,
+      attributes: attributes,
+      allowReverseRelations: allowReverseRelations
+    )
   }
 
   private func fieldReferencesDeclaredField(
@@ -1516,7 +1678,12 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     attributes: AttributeStore
   ) -> Bool {
     guard field.contains(".") else {
-      return isDeclaredField(field, namespace: namespace, attributes: attributes)
+      return isDeclaredField(
+        field,
+        namespace: namespace,
+        attributes: attributes,
+        allowReverseRelations: true
+      )
     }
     guard
       let nested = nestedField(field),
@@ -1526,7 +1693,12 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         attributes: attributes
       )
     else { return false }
-    return isDeclaredField(nested.field, namespace: targetNamespace, attributes: attributes)
+    return isDeclaredField(
+      nested.field,
+      namespace: targetNamespace,
+      attributes: attributes,
+      allowReverseRelations: true
+    )
   }
 
   private struct NestedField: Hashable, Sendable {
@@ -1665,9 +1837,22 @@ struct TripleIndexes: Hashable, Codable, Sendable {
 
   private func materializedValue(
     _ snapshot: InstantEntitySnapshot,
-    field: String
+    field: String,
+    namespace: String,
+    attributes: AttributeStore
   ) -> InstantMaterializedValue? {
-    snapshot.values[field] ?? (field == "id" ? .one(.string(snapshot.id)) : nil)
+    if let value = snapshot.values[field] {
+      return value
+    }
+    if field == "id" {
+      return .one(.string(snapshot.id))
+    }
+    guard
+      let reverse = reverseAttribute(namespace: namespace, name: field, attributes: attributes)
+    else { return nil }
+    let ids = vae[.ref(snapshot.id)]?[reverse.id]?.keys.sorted() ?? []
+    guard !ids.isEmpty else { return nil }
+    return .many(ids.map(InstantValue.ref))
   }
 
   private func normalizedValue(
@@ -1678,7 +1863,12 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   ) -> InstantValue {
     Self.normalizedValue(
       value,
-      attribute: attributes.attribute(namespace: namespace, name: field)
+      attribute: Self.fieldAttribute(
+        field,
+        namespace: namespace,
+        attributes: attributes,
+        allowReverseRelations: true
+      )
     )
   }
 
@@ -1688,21 +1878,47 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     namespace: String,
     attributes: AttributeStore
   ) -> [InstantValue] {
-    let attribute = attributes.attribute(namespace: namespace, name: field)
+    let attribute = Self.fieldAttribute(
+      field,
+      namespace: namespace,
+      attributes: attributes,
+      allowReverseRelations: true
+    )
     return values.map { Self.normalizedValue($0, attribute: attribute) }
   }
 
   private func matchesNotEquals(
     _ snapshot: InstantEntitySnapshot,
     field: String,
-    value: InstantValue
+    value: InstantValue,
+    namespace: String,
+    attributes: AttributeStore
   ) -> Bool {
-    guard let materialized = materializedValue(snapshot, field: field) else { return true }
+    guard
+      let materialized = materializedValue(
+        snapshot,
+        field: field,
+        namespace: namespace,
+        attributes: attributes
+      )
+    else { return true }
     return materialized.values.contains { $0 != value } || materialized.values.contains(.null)
   }
 
-  private func isFieldNull(_ snapshot: InstantEntitySnapshot, field: String) -> Bool {
-    guard let materialized = materializedValue(snapshot, field: field) else { return true }
+  private func isFieldNull(
+    _ snapshot: InstantEntitySnapshot,
+    field: String,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> Bool {
+    guard
+      let materialized = materializedValue(
+        snapshot,
+        field: field,
+        namespace: namespace,
+        attributes: attributes
+      )
+    else { return true }
     return materialized.values.contains(.null)
   }
 
@@ -1710,9 +1926,18 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     _ snapshot: InstantEntitySnapshot,
     field: String,
     value: InstantValue,
+    namespace: String,
+    attributes: AttributeStore,
     allowed: Set<ComparisonResult>
   ) -> Bool {
-    guard let materialized = materializedValue(snapshot, field: field) else { return false }
+    guard
+      let materialized = materializedValue(
+        snapshot,
+        field: field,
+        namespace: namespace,
+        attributes: attributes
+      )
+    else { return false }
     return materialized.values.contains {
       guard Self.canRangeCompare($0, value) else { return false }
       return allowed.contains($0.compare(to: value))
@@ -1732,9 +1957,18 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     _ snapshot: InstantEntitySnapshot,
     field: String,
     pattern: String,
-    caseInsensitive: Bool
+    caseInsensitive: Bool,
+    namespace: String,
+    attributes: AttributeStore
   ) -> Bool {
-    guard let materialized = materializedValue(snapshot, field: field) else { return false }
+    guard
+      let materialized = materializedValue(
+        snapshot,
+        field: field,
+        namespace: namespace,
+        attributes: attributes
+      )
+    else { return false }
     return materialized.values.contains {
       guard case let .string(value) = $0 else { return false }
       return Self.matchesLikePattern(value, pattern: pattern, caseInsensitive: caseInsensitive)

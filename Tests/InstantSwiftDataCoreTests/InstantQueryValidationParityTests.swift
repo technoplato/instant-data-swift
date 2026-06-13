@@ -152,7 +152,7 @@ struct InstantQueryValidationParityTests {
     let runtime = try await queryValidationRuntime()
     let source = queryValidationSource(
       "where clause operators",
-      assertion: "lines 307-371 $in element types; lines 409-448 string comparisons",
+      assertion: "lines 307-371 $in element types; lines 409-504 string/pattern/null operators",
       status:
         "adapted: Swift's enum makes unknown operators, non-array 'in' values, and non-string pattern payloads unrepresentable."
     )
@@ -202,6 +202,34 @@ struct InstantQueryValidationParityTests {
         )
       )
     }
+
+    let validLike = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.users.valid-like",
+        namespace: "users",
+        filters: [.like(field: "name", pattern: "%John%")]
+      )
+    )
+    expectNoDifference(validLike, [], source)
+
+    await expectQueryValidation(namespace: "users", path: "name", source) {
+      _ = try await runtime.query(
+        InstantQueryPlan(
+          id: "query-validation-parity.users.invalid-unindexed-ilike",
+          namespace: "users",
+          filters: [.iLike(field: "name", pattern: "%john%")]
+        )
+      )
+    }
+
+    let validILike = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.users.valid-indexed-ilike",
+        namespace: "users",
+        filters: [.iLike(field: "email", pattern: "%EXAMPLE.COM")]
+      )
+    )
+    expectNoDifference(validILike, [], source)
   }
 
   @Test
@@ -244,6 +272,198 @@ struct InstantQueryValidationParityTests {
       )
     )
     expectNoDifference(validIDIn, [], source)
+  }
+
+  @Test
+  func upstreamWhereClauseLogicalOperators() async throws {
+    let runtime = try await queryValidationRuntime()
+    let source = queryValidationSource(
+      "where clause logical operators",
+      assertion: "lines 565-598 logical and/or validation",
+      status: "ported: Swift's enum expresses logical clauses as recursive filter arrays."
+    )
+
+    let validOr = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.users.valid-or",
+        namespace: "users",
+        filters: [
+          .or([
+            .equals(field: "name", value: .string("John")),
+            .equals(field: "email", value: .string("jane@example.com")),
+          ])
+        ]
+      )
+    )
+    expectNoDifference(validOr, [], source)
+
+    let validAnd = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.users.valid-and",
+        namespace: "users",
+        filters: [
+          .and([
+            .equals(field: "name", value: .string("John")),
+            .isNotNull(field: "bio"),
+          ])
+        ]
+      )
+    )
+    expectNoDifference(validAnd, [], source)
+
+    await expectQueryValidation(namespace: "users", path: "name", source) {
+      _ = try await runtime.query(
+        InstantQueryPlan(
+          id: "query-validation-parity.users.invalid-or",
+          namespace: "users",
+          filters: [.or([.equals(field: "name", value: .number(123))])]
+        )
+      )
+    }
+  }
+
+  @Test
+  func upstreamWhereClauseDotNotationValidation() async throws {
+    let runtime = try await queryValidationRuntime()
+    let source = queryValidationSource(
+      "where clause dot notation validation",
+      assertion: "lines 600-792 relation path, id, $in, and direct relation ref filters",
+      status:
+        "adapted: Swift makes non-string like/ilike payloads unrepresentable and accepts the typed iLike case required by the package plan."
+    )
+
+    let validDotNotationCases: [(String, String, [InstantQueryFilter])] = [
+      (
+        "users.posts-title",
+        "users",
+        [.equals(field: "posts.title", value: .string("Some Title"))]
+      ),
+      (
+        "posts.author-name",
+        "posts",
+        [.equals(field: "author.name", value: .string("John Doe"))]
+      ),
+      (
+        "users.posts-comments-body",
+        "users",
+        [.equals(field: "posts.comments.body", value: .string("Great comment!"))]
+      ),
+      (
+        "users.posts-title-like",
+        "users",
+        [.like(field: "posts.title", pattern: "%tutorial%")]
+      ),
+      (
+        "users.posts-title-ilike",
+        "users",
+        [.iLike(field: "posts.title", pattern: "%TUTORIAL%")]
+      ),
+      (
+        "users.friends-name",
+        "users",
+        [.equals(field: "friends.name", value: .string("Friend Name"))]
+      ),
+      (
+        "users.posts-title-in",
+        "users",
+        [.in(field: "posts.title", values: [.string("Title 1"), .string("Title 2")])]
+      ),
+      (
+        "users.posts-id",
+        "users",
+        [.equals(field: "posts.id", value: .string("post-1"))]
+      ),
+      (
+        "posts.author-bio-null",
+        "posts",
+        [.isNull(field: "author.bio")]
+      ),
+      (
+        "comments.post-ref",
+        "comments",
+        [.equals(field: "post", value: .ref("post-1"))]
+      ),
+      (
+        "users.posts-comments-ref",
+        "users",
+        [.equals(field: "posts.comments", value: .ref("comment-1"))]
+      ),
+    ]
+
+    for (id, namespace, filters) in validDotNotationCases {
+      let result = try await runtime.query(
+        InstantQueryPlan(
+          id: "query-validation-parity.\(id)",
+          namespace: namespace,
+          filters: filters
+        )
+      )
+      expectNoDifference(result, [], source)
+    }
+
+    let invalidDotNotationCases: [(String, String, String, String, [InstantQueryFilter])] = [
+      (
+        "invalid-link",
+        "users",
+        "users",
+        "invalidLink.title",
+        [.equals(field: "invalidLink.title", value: .string("value"))]
+      ),
+      (
+        "nonexistent-attribute",
+        "users",
+        "posts",
+        "posts.nonexistent",
+        [.equals(field: "posts.nonexistent", value: .string("value"))]
+      ),
+      (
+        "unlinked-namespace",
+        "users",
+        "users",
+        "unlinkedWithAnything.animal",
+        [.equals(field: "unlinkedWithAnything.animal", value: .string("cat"))]
+      ),
+      (
+        "wrong-dot-type",
+        "users",
+        "posts",
+        "posts.title",
+        [.equals(field: "posts.title", value: .number(123))]
+      ),
+      (
+        "wrong-dot-in-type",
+        "users",
+        "posts",
+        "posts.title",
+        [.in(field: "posts.title", values: [.string("Title 1"), .number(123)])]
+      ),
+      (
+        "wrong-direct-relation-ref",
+        "comments",
+        "comments",
+        "post",
+        [.equals(field: "post", value: .string("not-a-uuid"))]
+      ),
+      (
+        "wrong-final-relation-ref",
+        "users",
+        "posts",
+        "posts.comments",
+        [.equals(field: "posts.comments", value: .string("not-a-uuid"))]
+      ),
+    ]
+
+    for (id, namespace, expectedNamespace, path, filters) in invalidDotNotationCases {
+      await expectQueryValidation(namespace: expectedNamespace, path: path, source) {
+        _ = try await runtime.query(
+          InstantQueryPlan(
+            id: "query-validation-parity.\(id)",
+            namespace: namespace,
+            filters: filters
+          )
+        )
+      }
+    }
   }
 
   @Test
@@ -387,8 +607,7 @@ private func queryValidationParityAttributes() -> [InstantAttribute] {
       id: "users/name",
       namespace: "users",
       name: "name",
-      valueType: .string,
-      isIndexed: true
+      valueType: .string
     ),
     InstantAttribute(
       id: "users/email",
@@ -406,6 +625,25 @@ private func queryValidationParityAttributes() -> [InstantAttribute] {
       isIndexed: true
     ),
     InstantAttribute(
+      id: "users/bio",
+      namespace: "users",
+      name: "bio",
+      valueType: .string,
+      isRequired: false,
+      isIndexed: false
+    ),
+    InstantAttribute(
+      id: "users/friends",
+      namespace: "users",
+      name: "friends",
+      valueType: .ref,
+      cardinality: .many,
+      isIndexed: true,
+      forwardIdentity: "users/friends",
+      reverseIdentity: "users/_friends",
+      linkNamespace: "users"
+    ),
+    InstantAttribute(
       id: "posts/title",
       namespace: "posts",
       name: "title",
@@ -418,6 +656,16 @@ private func queryValidationParityAttributes() -> [InstantAttribute] {
       name: "publishedAt",
       valueType: .date,
       isIndexed: true
+    ),
+    InstantAttribute(
+      id: "posts/author",
+      namespace: "posts",
+      name: "author",
+      valueType: .ref,
+      isIndexed: true,
+      forwardIdentity: "posts/author",
+      reverseIdentity: "users/posts",
+      linkNamespace: "users"
     ),
     InstantAttribute(
       id: "posts/comments",
@@ -436,6 +684,16 @@ private func queryValidationParityAttributes() -> [InstantAttribute] {
       name: "body",
       valueType: .string,
       isIndexed: true
+    ),
+    InstantAttribute(
+      id: "comments/post",
+      namespace: "comments",
+      name: "post",
+      valueType: .ref,
+      isIndexed: true,
+      forwardIdentity: "comments/post",
+      reverseIdentity: "posts/comments",
+      linkNamespace: "posts"
     ),
     InstantAttribute(
       id: "unlinkedWithAnything/animal",

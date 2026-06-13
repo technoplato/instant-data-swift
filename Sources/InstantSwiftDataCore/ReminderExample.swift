@@ -282,7 +282,7 @@ public enum ReminderExample {
       namespace: remindersNamespace,
       name: "notes",
       valueType: .string,
-      isIndexed: false
+      isIndexed: true
     ),
     InstantAttribute(
       id: "reminders/isCompleted",
