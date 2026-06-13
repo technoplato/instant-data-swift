@@ -78,7 +78,14 @@ public struct InstantEntityMacro: MemberMacro {
     let memberwiseParameters = (
       ["id: \(typeName).ID? = nil"]
         + draftProperties.map { property in
-          let defaultValue = property.defaultValue.map { " = \($0)" } ?? ""
+          let defaultValue: String
+          if let propertyDefaultValue = property.defaultValue {
+            defaultValue = " = \(propertyDefaultValue)"
+          } else if property.isOptional {
+            defaultValue = " = nil"
+          } else {
+            defaultValue = ""
+          }
           return "\(property.name): \(property.type)\(defaultValue)"
         }
     ).joined(separator: ",\n    ")
@@ -163,6 +170,7 @@ public struct InstantEntityMacro: MemberMacro {
       return StoredProperty(
         name: pattern.identifier.text,
         type: type,
+        isOptional: binding.typeAnnotation?.type.isInstantOptionalType ?? false,
         defaultValue: binding.initializer?.value.description.trimmed
       )
     }
@@ -230,6 +238,7 @@ private enum ExplicitNamespace {
 private struct StoredProperty {
   var name: String
   var type: String
+  var isOptional: Bool
   var defaultValue: String?
 }
 
@@ -245,6 +254,27 @@ private extension DeclGroupSyntax {
       return declaration.name.text
     }
     return nil
+  }
+}
+
+private extension TypeSyntax {
+  var isInstantOptionalType: Bool {
+    if self.is(OptionalTypeSyntax.self) || self.is(ImplicitlyUnwrappedOptionalTypeSyntax.self) {
+      return true
+    }
+
+    if let identifier = self.as(IdentifierTypeSyntax.self) {
+      return identifier.name.text == "Optional"
+        && identifier.genericArgumentClause?.arguments.count == 1
+    }
+
+    if let member = self.as(MemberTypeSyntax.self) {
+      return member.baseType.as(IdentifierTypeSyntax.self)?.name.text == "Swift"
+        && member.name.text == "Optional"
+        && member.genericArgumentClause?.arguments.count == 1
+    }
+
+    return false
   }
 }
 

@@ -72,6 +72,9 @@
           var text: String
           var isCompleted: Bool = false
           var isFlagged = false
+          var notes: String?
+          var category: Optional<String>
+          var owner: Swift.Optional<String>
           var createdAt: Date
 
           static let ignored = InstantAttributePath<Todo, String>("ignored")
@@ -89,10 +92,19 @@
       #expect(result.expanded.contains("public var text: String"))
       #expect(result.expanded.contains("public var isCompleted: Bool"))
       #expect(result.expanded.contains("public var isFlagged: Bool"))
+      #expect(result.expanded.contains("public var notes: String?"))
+      #expect(result.expanded.contains("public var category: Optional<String>"))
+      #expect(result.expanded.contains("public var owner: Swift.Optional<String>"))
       #expect(result.expanded.contains("isCompleted: Bool = false"))
       #expect(result.expanded.contains("isFlagged: Bool = false"))
+      #expect(result.expanded.contains("notes: String? = nil"))
+      #expect(result.expanded.contains("category: Optional<String> = nil"))
+      #expect(result.expanded.contains("owner: Swift.Optional<String> = nil"))
       #expect(result.expanded.contains("public init(_ entity: Todo)"))
       #expect(result.expanded.contains(#"name: "text""#))
+      #expect(result.expanded.contains(#"name: "notes""#))
+      #expect(result.expanded.contains(#"name: "category""#))
+      #expect(result.expanded.contains(#"name: "owner""#))
       #expect(result.expanded.contains(#"attributeID: Todo.instantNamespace + "/text""#))
       #expect(result.expanded.contains("value: self.text.instantValue"))
       #expect(!result.expanded.contains(#"name: "id""#))

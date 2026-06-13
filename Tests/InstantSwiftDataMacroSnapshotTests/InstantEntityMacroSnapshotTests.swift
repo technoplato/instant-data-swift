@@ -61,6 +61,9 @@
           var text: String
           var isCompleted: Bool = false
           var isFlagged = false
+          var notes: String?
+          var category: Optional<String>
+          var owner: Swift.Optional<String>
           var createdAt: Date
 
           static let ignored = InstantAttributePath<Todo, String>("ignored")
