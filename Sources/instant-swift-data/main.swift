@@ -74,6 +74,9 @@ struct InstantSwiftDataCLI {
     case "streams", "stream":
       try await runStreams(arguments: arguments, output: output)
 
+    case "shares", "share", "sharing":
+      try await runShares(arguments: arguments, output: output)
+
     case "validation", "validate":
       try await runValidation(arguments: arguments, output: output)
 
@@ -1046,6 +1049,78 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func runShares(arguments: [String], output: OutputMode) async throws {
+    var arguments = arguments
+    guard let command = arguments.popFirstArgument() else {
+      throw CLIError(sharesUsage, exitCode: 64)
+    }
+
+    let context = try await CLIContext.bootstrap(initialAttributes: [])
+
+    switch command {
+    case "create":
+      guard let namespace = arguments.popFirstArgument(),
+        let entityID = arguments.popFirstArgument(),
+        arguments.isEmpty
+      else {
+        throw CLIError(sharesUsage, exitCode: 64)
+      }
+      let snapshot = try await context.runtime.createShare(
+        rootNamespace: namespace,
+        rootID: entityID
+      )
+      try printShares(
+        context: context,
+        event: "create",
+        changedID: snapshot.share.id,
+        shares: [snapshot],
+        output: output
+      )
+
+    case "list", "ls":
+      guard arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data shares list [--json|--jsonl]", exitCode: 64)
+      }
+      let shares = try await context.runtime.shares()
+      try printShares(
+        context: context,
+        event: "list",
+        changedID: nil,
+        shares: shares,
+        output: output
+      )
+
+    case "accept":
+      guard let token = arguments.popFirstArgument(), arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data shares accept <token> [--json|--jsonl]", exitCode: 64)
+      }
+      let snapshot = try await context.runtime.acceptShare(token: token)
+      try printShares(
+        context: context,
+        event: "accept",
+        changedID: snapshot.share.id,
+        shares: [snapshot],
+        output: output
+      )
+
+    case "revoke":
+      guard let shareID = arguments.popFirstArgument(), arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data shares revoke <share-id> [--json|--jsonl]", exitCode: 64)
+      }
+      let snapshot = try await context.runtime.revokeShare(id: shareID)
+      try printShares(
+        context: context,
+        event: "revoke",
+        changedID: snapshot.share.id,
+        shares: [snapshot],
+        output: output
+      )
+
+    default:
+      throw CLIError(sharesUsage, exitCode: 64)
+    }
+  }
+
   private static func printOutbox(
     context: CLIContext,
     output: OutputMode
@@ -1513,6 +1588,66 @@ struct InstantSwiftDataCLI {
             entityID: chunk.id,
             ok: true,
             details: chunk
+          )
+        )
+      }
+    }
+  }
+
+  private static func printShares(
+    context: CLIContext,
+    event: String,
+    changedID: String?,
+    shares: [InstantShareSnapshot],
+    output: OutputMode
+  ) throws {
+    let payload = SharesOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      changedID: changedID,
+      transport: "not-implemented-local-cache-only",
+      shareCount: shares.count,
+      shares: shares
+    )
+
+    switch output {
+    case .human:
+      print("shares: \(shares.count)")
+      for snapshot in shares {
+        let share = snapshot.share
+        print("- \(share.id) root=\(share.rootNamespace)/\(share.rootID) owner=\(share.ownerUserID)")
+        print("  token: \(share.token)")
+        print("  members: \(snapshot.memberships.count)")
+      }
+      print("transport: \(payload.transport)")
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.shares",
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          entityID: changedID,
+          ok: true,
+          details: payload
+        )
+      )
+      for snapshot in shares {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.shares",
+            side: "swift",
+            event: "share",
+            appID: context.appID,
+            entityID: snapshot.share.id,
+            ok: true,
+            details: snapshot
           )
         )
       }
@@ -2077,6 +2212,10 @@ struct InstantSwiftDataCLI {
         files delete <file-id> [--json|--jsonl]
         streams append <stream-id> --value '{...}' [--json|--jsonl]
         streams read <stream-id> [--limit n] [--json|--jsonl]
+        shares create <namespace> <entity-id> [--json|--jsonl]
+        shares list [--json|--jsonl]
+        shares accept <token> [--json|--jsonl]
+        shares revoke <share-id> [--json|--jsonl]
         app show [--json|--jsonl]
         app select <app-id> [--json|--jsonl]
         app ephemeral --title <title> [--json|--jsonl]
@@ -3206,6 +3345,16 @@ struct InstantSwiftDataCLI {
     """
   }
 
+  fileprivate static var sharesUsage: String {
+    """
+    Usage: instant-swift-data shares <create|list|accept|revoke>
+      instant-swift-data shares create <namespace> <entity-id> [--json|--jsonl]
+      instant-swift-data shares list [--json|--jsonl]
+      instant-swift-data shares accept <token> [--json|--jsonl]
+      instant-swift-data shares revoke <share-id> [--json|--jsonl]
+    """
+  }
+
   private static var validationUsage: String {
     """
     Usage: instant-swift-data validation <local-todos>
@@ -3720,6 +3869,16 @@ private struct StreamsOutput: Codable, Sendable {
   var streamID: String
   var chunkCount: Int
   var chunks: [InstantStreamChunk]
+}
+
+private struct SharesOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var changedID: String?
+  var transport: String
+  var shareCount: Int
+  var shares: [InstantShareSnapshot]
 }
 
 private struct SchemaVerifyOutput: Codable, Sendable {

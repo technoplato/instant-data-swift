@@ -129,6 +129,20 @@ swift run instant-swift-data streams append chat/lobby --value '{"text":"again"}
 swift run instant-swift-data streams read chat/lobby --limit 2 --json
 ```
 
+Create, accept, and revoke a local share with two users:
+
+```bash
+swift run instant-swift-data auth token owner-refresh --user-id user-1 --json
+SHARE_JSON="$(swift run instant-swift-data shares create remindersLists list-1 --json)"
+SHARE_ID="$(printf '%s' "$SHARE_JSON" | jq -r '.shares[0].share.id')"
+SHARE_TOKEN="$(printf '%s' "$SHARE_JSON" | jq -r '.shares[0].share.token')"
+swift run instant-swift-data auth token invitee-refresh --user-id user-2 --json
+swift run instant-swift-data shares accept "$SHARE_TOKEN" --json
+swift run instant-swift-data shares list --json
+swift run instant-swift-data auth token owner-refresh --user-id user-1 --json
+swift run instant-swift-data shares revoke "$SHARE_ID" --json
+```
+
 Create and verify a local todo scaffold:
 
 ```bash
@@ -168,8 +182,9 @@ The current transport is intentionally marked `not-implemented-local-cache-only`
 in command output. That means the demo proves durable local cache, typed triples,
 query materialization, plan-aware persisted query results, optimistic outbox
 persistence, local auth/session state, local room presence/topics, local file
-metadata/content copies, local stream chunks, and non-captive CLI interaction,
-but it does not yet sync with a real Instant app.
+metadata/content copies, local stream chunks, local share metadata/memberships,
+and non-captive CLI interaction, but it does not yet sync with a real Instant
+app.
 
 ## Development
 

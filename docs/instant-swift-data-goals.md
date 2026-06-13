@@ -477,6 +477,11 @@ Agent-oriented output modes are required:
 - persist ordered local stream chunks after sign-in with commands such as
   `instant-swift-data streams append chat/lobby --value '{"text":"hello"}'`
   and `instant-swift-data streams read chat/lobby --json`.
+- persist local share metadata, memberships, accept, and revoke flows after
+  sign-in with commands such as
+  `instant-swift-data shares create remindersLists list-1`,
+  `instant-swift-data shares accept <token>`, and
+  `instant-swift-data shares revoke <share-id>`.
 - run example business commands directly, such as todo/reminder/sync-up/chat
   create, list, update, delete, share, accept, upload, and stream operations.
 

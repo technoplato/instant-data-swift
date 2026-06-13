@@ -257,6 +257,13 @@ subscriptions, and Swift/TypeScript boundary proof remain future work.
   `auth.ref` and `data.ref` where applicable.
 - The Reminders port must prove list sharing with two users.
 
+Current local progress: `InstantRuntime` persists local share root metadata,
+owner/member rows, share tokens, accept, list, and owner-only revoke flows in
+SQLite scoped by app id. The CLI exposes `instant-swift-data shares
+create/list/accept/revoke` for durable two-user terminal proof. Real Instant
+sharing entities, generated permissions, read-only rejection behavior, Reminders
+UI sharing, and Swift/TypeScript boundary proof remain future work.
+
 ## Proposed Package Architecture
 
 One repository, multiple targets:

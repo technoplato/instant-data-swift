@@ -665,6 +665,132 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  public func createShare(
+    rootNamespace rawRootNamespace: String,
+    rootID rawRootID: String
+  ) async throws -> InstantShareSnapshot {
+    let rootNamespace = try validatedNonEmpty(
+      rawRootNamespace,
+      label: "Share root namespace",
+      operation: "create share",
+      recovery: "Pass the namespace of the root record to share, such as 'remindersLists'."
+    )
+    let rootID = try validatedNonEmpty(
+      rawRootID,
+      label: "Share root id",
+      operation: "create share",
+      recovery: "Pass the id of the root record to share."
+    )
+
+    await operationGate.enter()
+    do {
+      let userID = try await resolvedAuthenticatedUserID(operation: "create share", noun: "Share")
+      let now = configuration.now()
+      let shareID = configuration.makeID()
+      let share = InstantShare(
+        id: shareID,
+        appID: configuration.appID,
+        rootNamespace: rootNamespace,
+        rootID: rootID,
+        ownerUserID: userID,
+        token: "local-share-\(configuration.makeID())",
+        createdAt: now,
+        updatedAt: now
+      )
+      let membership = InstantShareMembership(
+        appID: configuration.appID,
+        shareID: shareID,
+        userID: userID,
+        role: .owner,
+        acceptedAt: now
+      )
+      let snapshot = try await persistence.createShare(share, ownerMembership: membership)
+      await operationGate.leave()
+      return snapshot
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  public func acceptShare(token rawToken: String) async throws -> InstantShareSnapshot {
+    let token = try validatedNonEmpty(
+      rawToken,
+      label: "Share token",
+      operation: "accept share",
+      recovery: "Pass the token printed by 'instant-swift-data shares create'."
+    )
+
+    await operationGate.enter()
+    do {
+      let userID = try await resolvedAuthenticatedUserID(operation: "accept share", noun: "Share")
+      guard
+        let snapshot = try await persistence.acceptShare(
+          appID: configuration.appID,
+          token: token,
+          userID: userID,
+          acceptedAt: configuration.now()
+        )
+      else {
+        throw shareNotFound(operation: "accept share", localID: token)
+      }
+      await operationGate.leave()
+      return snapshot
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  public func shares() async throws -> [InstantShareSnapshot] {
+    await operationGate.enter()
+    do {
+      let userID = try await resolvedAuthenticatedUserID(operation: "list shares", noun: "Share")
+      let snapshots = try await persistence.loadShareSnapshots(
+        appID: configuration.appID,
+        userID: userID
+      )
+      await operationGate.leave()
+      return snapshots
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  public func revokeShare(id rawShareID: String) async throws -> InstantShareSnapshot {
+    let shareID = try validatedNonEmpty(
+      rawShareID,
+      label: "Share id",
+      operation: "revoke share",
+      recovery: "Pass a share id from 'instant-swift-data shares list'."
+    )
+
+    await operationGate.enter()
+    do {
+      let userID = try await resolvedAuthenticatedUserID(operation: "revoke share", noun: "Share")
+      guard let snapshot = try await persistence.loadShareSnapshot(
+        appID: configuration.appID,
+        shareID: shareID
+      ) else {
+        throw shareNotFound(operation: "revoke share", localID: shareID)
+      }
+      guard snapshot.share.ownerUserID == userID else {
+        throw sharePermissionRejected(snapshot: snapshot, userID: userID)
+      }
+      let revoked = try await persistence.revokeShare(
+        appID: configuration.appID,
+        shareID: shareID,
+        revokedAt: configuration.now()
+      ) ?? snapshot
+      await operationGate.leave()
+      return revoked
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
   public func pendingMutations() async -> [PendingMutation] {
     await outbox.pending()
   }
@@ -882,6 +1008,26 @@ public final class InstantRuntime: Sendable {
       operation: operation,
       message: message,
       recovery: recovery
+    )
+  }
+
+  private func shareNotFound(operation: String, localID: String) -> InstantError {
+    validationFailed(
+      operation: operation,
+      localID: localID,
+      message: "Share '\(localID)' was not found or has been revoked.",
+      recovery: "Check the share id or token, then create a new share if needed."
+    )
+  }
+
+  private func sharePermissionRejected(snapshot: InstantShareSnapshot, userID: String) -> InstantError {
+    InstantError(
+      code: .permissionRejected,
+      operation: "revoke share",
+      localID: snapshot.share.id,
+      message:
+        "User '\(userID)' cannot revoke share '\(snapshot.share.id)' owned by '\(snapshot.share.ownerUserID)'.",
+      recovery: "Sign in as the share owner before revoking it."
     )
   }
 

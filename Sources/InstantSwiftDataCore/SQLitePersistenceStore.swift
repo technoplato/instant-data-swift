@@ -318,6 +318,59 @@ public actor SQLitePersistenceStore {
         )
       }
     }
+    try withSQLiteBusyRetry {
+      try migrate(name: "0008_local_shares") {
+        try execute(
+          """
+          CREATE TABLE IF NOT EXISTS instant_shares (
+            app_id TEXT NOT NULL,
+            share_id TEXT NOT NULL,
+            root_namespace TEXT NOT NULL,
+            root_id TEXT NOT NULL,
+            owner_user_id TEXT NOT NULL,
+            token TEXT NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            updated_at_ms INTEGER NOT NULL,
+            revoked_at_ms INTEGER,
+            json TEXT NOT NULL,
+            PRIMARY KEY (app_id, share_id)
+          )
+          """
+        )
+        try execute(
+          """
+          CREATE UNIQUE INDEX IF NOT EXISTS instant_shares_token_idx
+          ON instant_shares (app_id, token)
+          """
+        )
+        try execute(
+          """
+          CREATE INDEX IF NOT EXISTS instant_shares_owner_idx
+          ON instant_shares (app_id, owner_user_id, created_at_ms, share_id)
+          """
+        )
+        try execute(
+          """
+          CREATE TABLE IF NOT EXISTS instant_share_memberships (
+            app_id TEXT NOT NULL,
+            share_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            role TEXT NOT NULL,
+            accepted_at_ms INTEGER NOT NULL,
+            revoked_at_ms INTEGER,
+            json TEXT NOT NULL,
+            PRIMARY KEY (app_id, share_id, user_id)
+          )
+          """
+        )
+        try execute(
+          """
+          CREATE INDEX IF NOT EXISTS instant_share_memberships_user_idx
+          ON instant_share_memberships (app_id, user_id, revoked_at_ms, accepted_at_ms, share_id)
+          """
+        )
+      }
+    }
   }
 
   public func loadSnapshot() throws -> InstantPersistenceSnapshot {
@@ -682,6 +735,105 @@ public actor SQLitePersistenceStore {
     return try selectJSON(sql, bindings)
   }
 
+  public func createShare(
+    _ share: InstantShare,
+    ownerMembership: InstantShareMembership
+  ) throws -> InstantShareSnapshot {
+    try transaction {
+      try saveShareWithoutTransaction(share)
+      try saveShareMembershipWithoutTransaction(ownerMembership)
+      return try shareSnapshotWithoutTransaction(appID: share.appID, shareID: share.id)
+    }
+  }
+
+  public func acceptShare(
+    appID: String,
+    token: String,
+    userID: String,
+    acceptedAt: InstantTimestamp
+  ) throws -> InstantShareSnapshot? {
+    try transaction {
+      guard let share = try shareWithoutTransaction(appID: appID, token: token),
+        share.revokedAt == nil
+      else {
+        return nil
+      }
+      let existingMembership = try shareMembershipWithoutTransaction(
+        appID: appID,
+        shareID: share.id,
+        userID: userID
+      )
+      if let existingMembership, existingMembership.revokedAt == nil {
+        return try shareSnapshotWithoutTransaction(appID: appID, shareID: share.id)
+      }
+      try saveShareMembershipWithoutTransaction(
+        InstantShareMembership(
+          appID: appID,
+          shareID: share.id,
+          userID: userID,
+          role: .reader,
+          acceptedAt: acceptedAt
+        )
+      )
+      return try shareSnapshotWithoutTransaction(appID: appID, shareID: share.id)
+    }
+  }
+
+  public func loadShareSnapshot(appID: String, shareID: String) throws -> InstantShareSnapshot? {
+    try readTransaction {
+      guard try shareWithoutTransaction(appID: appID, shareID: shareID) != nil else { return nil }
+      return try shareSnapshotWithoutTransaction(appID: appID, shareID: shareID)
+    }
+  }
+
+  public func loadShareSnapshots(appID: String, userID: String) throws -> [InstantShareSnapshot] {
+    try readTransaction {
+      let shares: [InstantShare] = try selectJSON(
+        """
+        SELECT s.json FROM instant_shares s
+        INNER JOIN instant_share_memberships m
+          ON m.app_id = s.app_id AND m.share_id = s.share_id
+        WHERE s.app_id = ? AND m.user_id = ?
+          AND s.revoked_at_ms IS NULL AND m.revoked_at_ms IS NULL
+        ORDER BY s.created_at_ms, s.share_id
+        """,
+        [.text(appID), .text(userID)]
+      )
+      return try shares.map {
+        try shareSnapshotWithoutTransaction(appID: appID, shareID: $0.id, activeMembershipsOnly: true)
+      }
+    }
+  }
+
+  public func revokeShare(
+    appID: String,
+    shareID: String,
+    revokedAt: InstantTimestamp
+  ) throws -> InstantShareSnapshot? {
+    try transaction {
+      guard var share = try shareWithoutTransaction(appID: appID, shareID: shareID) else {
+        return nil
+      }
+      if share.revokedAt != nil {
+        return try shareSnapshotWithoutTransaction(appID: appID, shareID: shareID)
+      }
+      share.revokedAt = revokedAt
+      share.updatedAt = revokedAt
+      try saveShareWithoutTransaction(share)
+
+      let memberships = try shareMembershipsWithoutTransaction(
+        appID: appID,
+        shareID: shareID,
+        activeOnly: false
+      )
+      for var membership in memberships where membership.revokedAt == nil {
+        membership.revokedAt = revokedAt
+        try saveShareMembershipWithoutTransaction(membership)
+      }
+      return try shareSnapshotWithoutTransaction(appID: appID, shareID: shareID)
+    }
+  }
+
   public func loadMagicCodeChallenge(key: String) throws -> InstantMagicCodeChallenge? {
     let rows: [InstantMagicCodeChallenge] = try selectJSON(
       "SELECT json FROM instant_magic_code_challenges WHERE key = ? LIMIT 1",
@@ -1011,6 +1163,121 @@ public actor SQLitePersistenceStore {
       [.text(appID), .text(streamID)]
     )
     return value.flatMap(Int64.init) ?? 0
+  }
+
+  private func saveShareWithoutTransaction(_ share: InstantShare) throws {
+    try execute(
+      """
+      INSERT OR REPLACE INTO instant_shares
+        (app_id, share_id, root_namespace, root_id, owner_user_id, token,
+         created_at_ms, updated_at_ms, revoked_at_ms, json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      """,
+      [
+        .text(share.appID),
+        .text(share.id),
+        .text(share.rootNamespace),
+        .text(share.rootID),
+        .text(share.ownerUserID),
+        .text(share.token),
+        .int(share.createdAt.milliseconds),
+        .int(share.updatedAt.milliseconds),
+        share.revokedAt.map { .int($0.milliseconds) } ?? .null,
+        .text(try encode(share)),
+      ]
+    )
+  }
+
+  private func saveShareMembershipWithoutTransaction(_ membership: InstantShareMembership) throws {
+    try execute(
+      """
+      INSERT OR REPLACE INTO instant_share_memberships
+        (app_id, share_id, user_id, role, accepted_at_ms, revoked_at_ms, json)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      """,
+      [
+        .text(membership.appID),
+        .text(membership.shareID),
+        .text(membership.userID),
+        .text(membership.role.rawValue),
+        .int(membership.acceptedAt.milliseconds),
+        membership.revokedAt.map { .int($0.milliseconds) } ?? .null,
+        .text(try encode(membership)),
+      ]
+    )
+  }
+
+  private func shareWithoutTransaction(appID: String, shareID: String) throws -> InstantShare? {
+    let shares: [InstantShare] = try selectJSON(
+      """
+      SELECT json FROM instant_shares
+      WHERE app_id = ? AND share_id = ?
+      LIMIT 1
+      """,
+      [.text(appID), .text(shareID)]
+    )
+    return shares.first
+  }
+
+  private func shareWithoutTransaction(appID: String, token: String) throws -> InstantShare? {
+    let shares: [InstantShare] = try selectJSON(
+      """
+      SELECT json FROM instant_shares
+      WHERE app_id = ? AND token = ?
+      LIMIT 1
+      """,
+      [.text(appID), .text(token)]
+    )
+    return shares.first
+  }
+
+  private func shareMembershipWithoutTransaction(
+    appID: String,
+    shareID: String,
+    userID: String
+  ) throws -> InstantShareMembership? {
+    let memberships: [InstantShareMembership] = try selectJSON(
+      """
+      SELECT json FROM instant_share_memberships
+      WHERE app_id = ? AND share_id = ? AND user_id = ?
+      LIMIT 1
+      """,
+      [.text(appID), .text(shareID), .text(userID)]
+    )
+    return memberships.first
+  }
+
+  private func shareMembershipsWithoutTransaction(
+    appID: String,
+    shareID: String,
+    activeOnly: Bool
+  ) throws -> [InstantShareMembership] {
+    var sql =
+      """
+      SELECT json FROM instant_share_memberships
+      WHERE app_id = ? AND share_id = ?
+      """
+    if activeOnly {
+      sql.append("\nAND revoked_at_ms IS NULL")
+    }
+    sql.append("\nORDER BY accepted_at_ms, user_id")
+    return try selectJSON(sql, [.text(appID), .text(shareID)])
+  }
+
+  private func shareSnapshotWithoutTransaction(
+    appID: String,
+    shareID: String,
+    activeMembershipsOnly: Bool = false
+  ) throws -> InstantShareSnapshot {
+    guard let share = try shareWithoutTransaction(appID: appID, shareID: shareID) else {
+      throw persistenceError(operation: "read share", message: "Share '\(shareID)' disappeared.")
+    }
+    let memberships = try shareMembershipsWithoutTransaction(
+      appID: appID,
+      shareID: shareID,
+      activeOnly: activeMembershipsOnly
+    )
+    return InstantShareSnapshot(share: share, memberships: memberships)
   }
 
   private func execute(_ sql: String, _ bindings: [SQLiteBinding] = []) throws {

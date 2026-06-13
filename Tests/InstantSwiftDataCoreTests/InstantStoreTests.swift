@@ -1788,6 +1788,124 @@ struct InstantStoreTests {
   }
 
   @Test
+  func sharesPersistMembershipsAndRevocationAcrossUsersAndApps() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let idSequence = LockIsolated(0)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        now: { timestamp },
+        makeID: {
+          let nextID = idSequence.withValue { value in
+            value += 1
+            return value
+          }
+          return "id-\(nextID)"
+        }
+      )
+    )
+    _ = try await runtime.signInWithRefreshToken("owner-refresh", userID: "user-1")
+
+    let created = try await runtime.createShare(
+      rootNamespace: " remindersLists ",
+      rootID: " list-1 "
+    )
+    expectNoDifference(created.share.id, "id-1")
+    expectNoDifference(created.share.appID, "app-a")
+    expectNoDifference(created.share.rootNamespace, "remindersLists")
+    expectNoDifference(created.share.rootID, "list-1")
+    expectNoDifference(created.share.ownerUserID, "user-1")
+    expectNoDifference(created.share.token, "local-share-id-2")
+    expectNoDifference(created.share.createdAt, timestamp)
+    expectNoDifference(created.share.updatedAt, timestamp)
+    expectNoDifference(created.share.revokedAt, nil)
+    expectNoDifference(created.memberships.map(\.userID), ["user-1"])
+    expectNoDifference(created.memberships.map(\.role), [.owner])
+    expectNoDifference(created.memberships.map(\.acceptedAt), [timestamp])
+
+    let inviteeRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "app-a", persistenceURL: cacheURL)
+    )
+    _ = try await inviteeRuntime.signInWithRefreshToken("invitee-refresh", userID: "user-2")
+    let accepted = try await inviteeRuntime.acceptShare(token: created.share.token)
+    expectNoDifference(accepted.share.id, created.share.id)
+    expectNoDifference(accepted.share.token, created.share.token)
+    expectNoDifference(accepted.memberships.map(\.userID), ["user-1", "user-2"])
+    expectNoDifference(accepted.memberships.map(\.role), [.owner, .reader])
+
+    let inviteeShares = try await inviteeRuntime.shares()
+    expectNoDifference(inviteeShares.map(\.share.id), [accepted.share.id])
+    expectNoDifference(inviteeShares.first?.memberships.map(\.userID), ["user-1", "user-2"])
+    do {
+      _ = try await inviteeRuntime.revokeShare(id: created.share.id)
+      #expect(Bool(false), "Expected non-owner share revoke to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "revoke share")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    _ = try await runtime.signInWithRefreshToken("owner-refresh", userID: "user-1")
+    let ownerShares = try await runtime.shares()
+    expectNoDifference(ownerShares.map(\.share.id), [accepted.share.id])
+    expectNoDifference(ownerShares.first?.memberships.map(\.userID), ["user-1", "user-2"])
+    let revoked = try await runtime.revokeShare(id: created.share.id)
+    expectNoDifference(revoked.share.revokedAt, timestamp)
+    expectNoDifference(revoked.memberships.map(\.revokedAt), [timestamp, timestamp])
+    let revokedAgain = try await runtime.revokeShare(id: created.share.id)
+    expectNoDifference(revokedAgain.share.revokedAt, timestamp)
+    expectNoDifference(revokedAgain.memberships.map(\.revokedAt), [timestamp, timestamp])
+    let ownerSharesAfterRevoke = try await runtime.shares()
+    expectNoDifference(ownerSharesAfterRevoke, [])
+
+    do {
+      _ = try await inviteeRuntime.acceptShare(token: created.share.token)
+      #expect(Bool(false), "Expected revoked share accept to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "accept share")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+    let inviteeSharesAfterRevoke = try await inviteeRuntime.shares()
+    expectNoDifference(inviteeSharesAfterRevoke, [])
+
+    let otherAppRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "app-b", persistenceURL: cacheURL)
+    )
+    _ = try await otherAppRuntime.signInWithRefreshToken("other-refresh", userID: "user-2")
+    do {
+      _ = try await otherAppRuntime.acceptShare(token: created.share.token)
+      #expect(Bool(false), "Expected cross-app share accept to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "accept share")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
+  func shareCreateRequiresAuth() async throws {
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "test-app", persistenceURL: temporaryCacheURL())
+    )
+
+    do {
+      _ = try await runtime.createShare(rootNamespace: "remindersLists", rootID: "list-1")
+      #expect(Bool(false), "Expected anonymous share create to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .authFailed)
+      expectNoDifference(error.operation, "create share")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
   func magicCodeChallengePersistsAndVerifiesAcrossLaunches() async throws {
     let cacheURL = try temporaryCacheURL()
     let sentAt = InstantTimestamp(milliseconds: 1_700_000_000_000)

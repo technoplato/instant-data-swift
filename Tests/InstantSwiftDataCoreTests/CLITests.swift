@@ -1224,6 +1224,118 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliSharesCreateAcceptListAndRevokePersistAcrossLaunches() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    _ = try runCLI(
+      ["auth", "token", "owner-refresh", "--user-id", "user-1", "--json"],
+      homeURL: homeURL
+    )
+
+    let created = try JSONDecoder().decode(
+      CLIShareOutput.self,
+      from: Data(
+        try runCLI(["shares", "create", "remindersLists", "list-1", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(created.event, "create")
+    expectNoDifference(created.transport, "not-implemented-local-cache-only")
+    expectNoDifference(created.shareCount, 1)
+    let createdSnapshot = try #require(created.shares.first)
+    expectNoDifference(created.changedID, createdSnapshot.share.id)
+    expectNoDifference(createdSnapshot.share.rootNamespace, "remindersLists")
+    expectNoDifference(createdSnapshot.share.rootID, "list-1")
+    expectNoDifference(createdSnapshot.share.ownerUserID, "user-1")
+    expectNoDifference(createdSnapshot.memberships.map(\.role), [.owner])
+    let shareID = createdSnapshot.share.id
+    let token = createdSnapshot.share.token
+
+    let ownerList = try JSONDecoder().decode(
+      CLIShareOutput.self,
+      from: Data(try runCLI(["shares", "list", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(ownerList.shares.map(\.share.id), [shareID])
+    expectNoDifference(ownerList.shares.first?.memberships.map(\.userID), ["user-1"])
+
+    _ = try runCLI(
+      ["auth", "token", "invitee-refresh", "--user-id", "user-2", "--json"],
+      homeURL: homeURL
+    )
+    let accepted = try JSONDecoder().decode(
+      CLIShareOutput.self,
+      from: Data(try runCLI(["shares", "accept", token, "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(accepted.event, "accept")
+    let acceptedSnapshot = try #require(accepted.shares.first)
+    expectNoDifference(acceptedSnapshot.memberships.map(\.userID), ["user-1", "user-2"])
+    expectNoDifference(acceptedSnapshot.memberships.map(\.role), [.owner, .reader])
+
+    let inviteeListJSONL = try runCLI(["shares", "list", "--jsonl"], homeURL: homeURL)
+    let lines = inviteeListJSONL.split(separator: "\n")
+    expectNoDifference(lines.count, 2)
+    let evidence = try JSONDecoder().decode(
+      CLIShareEvidence.self,
+      from: Data(try #require(lines.first).utf8)
+    )
+    expectNoDifference(evidence.caseID, "cli.shares")
+    expectNoDifference(evidence.event, "list")
+    expectNoDifference(evidence.details.shares.map(\.share.id), [acceptedSnapshot.share.id])
+    expectNoDifference(evidence.details.shares.first?.memberships.map(\.userID), ["user-1", "user-2"])
+    let shareRow = try JSONDecoder().decode(
+      CLIShareSnapshotEvidence.self,
+      from: Data(try #require(lines.dropFirst().first).utf8)
+    )
+    expectNoDifference(shareRow.event, "share")
+    expectNoDifference(shareRow.details.share.id, acceptedSnapshot.share.id)
+    expectNoDifference(shareRow.details.memberships.map(\.userID), ["user-1", "user-2"])
+
+    let inviteeRevoke = try runCLIResult(["shares", "revoke", shareID, "--json"], homeURL: homeURL)
+    #expect(inviteeRevoke.status == 77)
+    #expect(inviteeRevoke.error.contains("cannot revoke share"))
+
+    _ = try runCLI(
+      ["auth", "token", "owner-refresh", "--user-id", "user-1", "--json"],
+      homeURL: homeURL
+    )
+    let revoked = try JSONDecoder().decode(
+      CLIShareOutput.self,
+      from: Data(try runCLI(["shares", "revoke", shareID, "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(revoked.event, "revoke")
+    expectNoDifference(revoked.changedID, shareID)
+    expectNoDifference(revoked.shares.first?.share.isRevoked, true)
+    expectNoDifference(revoked.shares.first?.memberships.map(\.isRevoked), [true, true])
+
+    _ = try runCLI(
+      ["auth", "token", "invitee-refresh", "--user-id", "user-2", "--json"],
+      homeURL: homeURL
+    )
+    let inviteeAfterRevoke = try JSONDecoder().decode(
+      CLIShareOutput.self,
+      from: Data(try runCLI(["shares", "list", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(inviteeAfterRevoke.shares, [])
+    let revokedAccept = try runCLIResult(["shares", "accept", token, "--json"], homeURL: homeURL)
+    #expect(revokedAccept.status == 66)
+    #expect(revokedAccept.error.contains("was not found or has been revoked"))
+
+    let anonymousHomeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: anonymousHomeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: anonymousHomeURL) }
+    let anonymous = try runCLIResult(
+      ["shares", "create", "remindersLists", "list-1", "--json"],
+      homeURL: anonymousHomeURL
+    )
+    #expect(anonymous.status == 65)
+    #expect(anonymous.error.contains("Share operations require a signed-in user"))
+  }
+
+  @Test
   func cliValidationLocalTodosEmitsEvidence() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -1787,6 +1899,31 @@ private struct CLIStreamChunkEvidence: Decodable {
     case event
     case details
   }
+}
+
+private struct CLIShareOutput: Decodable, Equatable {
+  var event: String
+  var changedID: String?
+  var transport: String
+  var shareCount: Int
+  var shares: [InstantShareSnapshot]
+}
+
+private struct CLIShareEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLIShareOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
+}
+
+private struct CLIShareSnapshotEvidence: Decodable {
+  var event: String
+  var details: InstantShareSnapshot
 }
 
 private struct CLILocalTodoValidationOutput: Decodable {
