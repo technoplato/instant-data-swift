@@ -604,6 +604,89 @@ struct TypedAPITests {
   }
 
   @Test
+  func generatedDraftSaveCreatesAndEditsEntities() async throws {
+    let createdAt = Date(timeIntervalSince1970: 1_700_000_026)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000526")!
+
+    try await withDependencies {
+      $0.date.now = createdAt
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "typed-draft-save-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: DraftBackedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      let draft = DraftBackedTodo.Draft(
+        title: "Create from draft",
+        isCompleted: false,
+        createdAt: createdAt
+      )
+      let createdID = try await db.save(
+        draft,
+        localIDName: "typed.drafts.todo",
+        transactionID: "tx-draft-create"
+      )
+      expectNoDifference(createdID.rawValue, fixedUUID.uuidString.lowercased())
+
+      let createdTodos = try await db.query(DraftBackedTodo.query.order(DraftBackedTodo.createdAt))
+      expectNoDifference(createdTodos, [
+        DraftBackedTodo(
+          id: createdID,
+          title: "Create from draft",
+          isCompleted: false,
+          createdAt: createdAt,
+          notes: nil
+        )
+      ])
+
+      var editDraft = DraftBackedTodo.Draft(try #require(createdTodos.first))
+      editDraft.title = "Update from draft"
+      editDraft.isCompleted = true
+      editDraft.notes = "Edited from a draft"
+      let editedID = try await db.save(editDraft, transactionID: "tx-draft-edit")
+      expectNoDifference(editedID, createdID)
+
+      let upsertedID = InstantID<DraftBackedTodo>(rawValue: "draft-upserted")
+      let upsertedDraft = DraftBackedTodo.Draft(
+        id: upsertedID,
+        title: "Upsert from draft",
+        isCompleted: false,
+        createdAt: createdAt.addingTimeInterval(1),
+        notes: nil
+      )
+      let savedUpsertID = try await db.save(upsertedDraft, transactionID: "tx-draft-upsert")
+      expectNoDifference(savedUpsertID, upsertedID)
+
+      let editedTodos = try await db.query(DraftBackedTodo.query.order(DraftBackedTodo.createdAt))
+      expectNoDifference(editedTodos, [
+        DraftBackedTodo(
+          id: createdID,
+          title: "Update from draft",
+          isCompleted: true,
+          createdAt: createdAt,
+          notes: "Edited from a draft"
+        ),
+        DraftBackedTodo(
+          id: upsertedID,
+          title: "Upsert from draft",
+          isCompleted: false,
+          createdAt: createdAt.addingTimeInterval(1),
+          notes: nil
+        )
+      ])
+
+      let pending = await db.pendingMutations()
+      expectNoDifference(
+        pending.map(\.id),
+        ["tx-draft-create", "tx-draft-edit", "tx-draft-upsert"]
+      )
+    }
+  }
+
+  @Test
   func typedMergeAndStrictUpdateRoundTripThroughDependencyClient() async throws {
     let createdAt = Date(timeIntervalSince1970: 1_700_000_050)
     let todoID = InstantID<TypedTodo>(rawValue: "todo-merge")
@@ -1630,6 +1713,27 @@ struct TypedAPITests {
       }
 
       do {
+        try await db.transact(id: "tx-mock-required-null") {
+          TypedTodo.update(
+            id: InstantID(rawValue: "todo-1"),
+            InstantAttributeAssignment<TypedTodo>(
+              name: "text",
+              attributeID: "todos/text",
+              value: .null
+            )
+          )
+        }
+        #expect(Bool(false), "Expected required null validation to run before the mock client.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .validationFailed)
+        expectNoDifference(error.operation, "write entity attribute")
+        expectNoDifference(error.namespace, "todos")
+        expectNoDifference(error.path, "text")
+      } catch {
+        #expect(Bool(false), "Unexpected error: \(error)")
+      }
+
+      do {
         try await db.transact(id: "tx-mock-invalid-declared-id") {
           TypedBadIDEntity.update(
             id: InstantID(rawValue: "bad-1"),
@@ -2282,6 +2386,112 @@ private struct TypedTodoFetchOneModel {
 
   mutating func load() async throws {
     try await $todo.load()
+  }
+}
+
+@InstantEntity
+private struct DraftBackedTodo: Hashable, Codable, InstantEntityModel {
+  var id: InstantID<DraftBackedTodo>
+  var title: String
+  var isCompleted = false
+  var createdAt: Date
+  var notes: String? = nil
+
+  static let title = InstantAttributePath<DraftBackedTodo, String>(
+    "title",
+    attributeID: "draftBackedTodos/body"
+  )
+  static let isCompleted = InstantAttributePath<DraftBackedTodo, Bool>("isCompleted")
+  static let createdAt = InstantAttributePath<DraftBackedTodo, Date>("createdAt")
+  static let notes = InstantAttributePath<DraftBackedTodo, String?>("notes")
+
+  static let instantAttributes = [
+    InstantAttribute(
+      id: "draftBackedTodos/body",
+      namespace: instantNamespace,
+      name: "title",
+      valueType: .string,
+      isIndexed: true
+    ),
+    InstantAttribute(
+      id: "draftBackedTodos/isCompleted",
+      namespace: instantNamespace,
+      name: "isCompleted",
+      valueType: .boolean,
+      isIndexed: true
+    ),
+    InstantAttribute(
+      id: "draftBackedTodos/createdAt",
+      namespace: instantNamespace,
+      name: "createdAt",
+      valueType: .date,
+      isIndexed: true
+    ),
+    InstantAttribute(
+      id: "draftBackedTodos/notes",
+      namespace: instantNamespace,
+      name: "notes",
+      valueType: .string,
+      isRequired: false,
+      isIndexed: false
+    ),
+  ]
+
+  init(
+    id: InstantID<DraftBackedTodo>,
+    title: String,
+    isCompleted: Bool,
+    createdAt: Date,
+    notes: String? = nil
+  ) {
+    self.id = id
+    self.title = title
+    self.isCompleted = isCompleted
+    self.createdAt = createdAt
+    self.notes = notes
+  }
+
+  init(snapshot: InstantEntitySnapshot) throws {
+    guard case let .string(title) = snapshot.values["title"]?.first else {
+      throw Self.decodeError(snapshot: snapshot, field: "title", expected: "string")
+    }
+    guard case let .bool(isCompleted) = snapshot.values["isCompleted"]?.first else {
+      throw Self.decodeError(snapshot: snapshot, field: "isCompleted", expected: "boolean")
+    }
+    guard case let .date(createdAt) = snapshot.values["createdAt"]?.first else {
+      throw Self.decodeError(snapshot: snapshot, field: "createdAt", expected: "date")
+    }
+    let notes: String?
+    switch snapshot.values["notes"]?.first {
+    case .none, .some(.null):
+      notes = nil
+    case let .some(.string(value)):
+      notes = value
+    default:
+      throw Self.decodeError(snapshot: snapshot, field: "notes", expected: "string or null")
+    }
+
+    self.id = InstantID(rawValue: snapshot.id)
+    self.title = title
+    self.isCompleted = isCompleted
+    self.createdAt = createdAt
+    self.notes = notes
+  }
+
+  private static func decodeError(
+    snapshot: InstantEntitySnapshot,
+    field: String,
+    expected: String
+  ) -> InstantError {
+    InstantError(
+      code: .decodeFailed,
+      operation: "decode draft-backed todo",
+      namespace: instantNamespace,
+      path: field,
+      localID: snapshot.id,
+      message: "Expected \(expected) for draft-backed todo field '\(field)'.",
+      recovery: "Check the Instant entity schema and server values for the draft-backed todo namespace."
+    )
   }
 }
 

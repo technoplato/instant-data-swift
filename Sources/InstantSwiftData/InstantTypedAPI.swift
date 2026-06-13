@@ -50,6 +50,17 @@ extension AnyInstantID: InstantValueRepresentable {
   public var instantValue: InstantValue { .ref(rawValue) }
 }
 
+extension Optional: InstantValueRepresentable where Wrapped: InstantValueRepresentable {
+  public var instantValue: InstantValue {
+    switch self {
+    case let .some(value):
+      return value.instantValue
+    case .none:
+      return .null
+    }
+  }
+}
+
 extension JSONValue: InstantValueRepresentable {
   public var instantValue: InstantValue { .json(self) }
 }
@@ -59,6 +70,15 @@ public protocol InstantEntityModel: Identifiable, Sendable where ID == InstantID
   static var instantAttributes: [InstantAttribute] { get }
 
   init(snapshot: InstantEntitySnapshot) throws
+}
+
+public protocol InstantEntityDraft: Sendable {
+  associatedtype Entity: InstantEntityModel
+
+  var id: Entity.ID? { get set }
+  var instantAssignments: [InstantAttributeAssignment<Entity>] { get }
+
+  init(_ entity: Entity)
 }
 
 public struct InstantEntityLookup<Entity: InstantEntityModel>: Hashable, Sendable {
@@ -98,7 +118,7 @@ extension InstantEntityModel {
     _ assignments: [InstantAttributeAssignment<Self>]
   ) -> InstantMutation {
     InstantMutation(throwing: { transactionID, txTime in
-      try validateAssignments(assignments)
+      let assignments = try validateAssignments(assignments)
       return [
         .requireEntityMissing(entityID: id.rawValue, namespace: Self.instantNamespace),
         identityOperation(id: id, transactionID: transactionID, txTime: txTime),
@@ -128,7 +148,7 @@ extension InstantEntityModel {
     _ assignments: [InstantAttributeAssignment<Self>]
   ) -> InstantMutation {
     InstantMutation(throwing: { transactionID, txTime in
-      try validateAssignments(assignments)
+      let assignments = try validateAssignments(assignments)
       return [
         identityOperation(id: id, transactionID: transactionID, txTime: txTime)
       ] + assignments.map { assignment in
@@ -158,7 +178,7 @@ extension InstantEntityModel {
   ) -> InstantMutation {
     InstantMutation(throwing: { transactionID, txTime in
       try validateLookup(lookup)
-      try validateAssignments(assignments)
+      let assignments = try validateAssignments(assignments)
       return [
         identityOperation(lookup: lookup, transactionID: transactionID, txTime: txTime)
       ] + assignments.map { assignment in
@@ -185,7 +205,7 @@ extension InstantEntityModel {
     _ assignments: [InstantAttributeAssignment<Self>]
   ) -> InstantMutation {
     InstantMutation(throwing: { transactionID, txTime in
-      try validateAssignments(assignments, allowRefs: false)
+      let assignments = try validateAssignments(assignments, allowRefs: false)
       let operations: [InstantTripleOperation] = [
         identityOperation(id: id, transactionID: transactionID, txTime: txTime)
       ] + assignments.map { assignment in
@@ -216,7 +236,7 @@ extension InstantEntityModel {
   ) -> InstantMutation {
     InstantMutation(throwing: { transactionID, txTime in
       try validateLookup(lookup)
-      try validateAssignments(assignments, allowRefs: false)
+      let assignments = try validateAssignments(assignments, allowRefs: false)
       let operations: [InstantTripleOperation] = [
         identityOperation(lookup: lookup, transactionID: transactionID, txTime: txTime)
       ] + assignments.map { assignment in
@@ -244,7 +264,7 @@ extension InstantEntityModel {
     _ assignments: [InstantAttributeAssignment<Self>]
   ) -> InstantMutation {
     InstantMutation(throwing: { transactionID, txTime in
-      try validateAssignments(assignments)
+      let assignments = try validateAssignments(assignments)
       return [
         .requireEntityExists(entityID: id.rawValue, namespace: Self.instantNamespace),
         identityOperation(id: id, transactionID: transactionID, txTime: txTime),
@@ -275,7 +295,7 @@ extension InstantEntityModel {
   ) -> InstantMutation {
     InstantMutation(throwing: { transactionID, txTime in
       try validateLookup(lookup)
-      try validateAssignments(assignments)
+      let assignments = try validateAssignments(assignments)
       return [
         .requireEntityExistsByLookup(lookup.lookupRef, namespace: Self.instantNamespace),
         identityOperation(lookup: lookup, transactionID: transactionID, txTime: txTime),
@@ -371,8 +391,8 @@ extension InstantEntityModel {
   private static func validateAssignments(
     _ assignments: [InstantAttributeAssignment<Self>],
     allowRefs: Bool = true
-  ) throws {
-    for assignment in assignments {
+  ) throws -> [InstantAttributeAssignment<Self>] {
+    try assignments.map { assignment in
       try validateAssignment(assignment, allowRefs: allowRefs)
     }
   }
@@ -380,7 +400,7 @@ extension InstantEntityModel {
   private static func validateAssignment(
     _ assignment: InstantAttributeAssignment<Self>,
     allowRefs: Bool
-  ) throws {
+  ) throws -> InstantAttributeAssignment<Self> {
     guard !isReservedMetadataPath(assignment.name) else {
       throw reservedMetadataAttributeError(
         operation: "write entity attribute",
@@ -392,11 +412,22 @@ extension InstantEntityModel {
       throw primaryKeyAssignmentError(path: assignment.name)
     }
 
-    guard
-      let attribute = instantAttributes.first(where: { $0.id == assignment.attributeID })
-        ?? instantAttributes.first(where: { $0.name == assignment.name })
-    else {
-      return
+    let attributeByID = instantAttributes.first { $0.id == assignment.attributeID }
+    let attributeByName = instantAttributes.first { $0.name == assignment.name }
+    guard let attribute = attributeByID ?? attributeByName else {
+      return assignment
+    }
+
+    if let attributeByID, attributeByID.name != assignment.name {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "write entity attribute",
+        namespace: instantNamespace,
+        path: assignment.name,
+        message:
+          "Assignment path '\(assignment.name)' uses attribute id '\(assignment.attributeID)', but the schema declares that id as '\(attributeByID.name)'.",
+        recovery: "Use the schema field name that belongs to the assignment attribute id."
+      )
     }
 
     try validateUsableAttribute(
@@ -404,6 +435,7 @@ extension InstantEntityModel {
       operation: "write entity attribute",
       path: assignment.name
     )
+    try validateAssignmentValue(assignment.value, compatibleWith: attribute, path: assignment.name)
 
     guard !attribute.primaryKey else {
       throw primaryKeyAssignmentError(path: assignment.name)
@@ -417,6 +449,50 @@ extension InstantEntityModel {
         path: assignment.name,
         message: "Merge is not supported for ref attributes.",
         recovery: "Use link/unlink for relationships, or merge only scalar and JSON attributes."
+      )
+    }
+
+    return InstantAttributeAssignment(
+      name: assignment.name,
+      attributeID: attribute.id,
+      value: assignment.value
+    )
+  }
+
+  private static func validateAssignmentValue(
+    _ value: InstantValue,
+    compatibleWith attribute: InstantAttribute,
+    path: String
+  ) throws {
+    switch (value, attribute.valueType) {
+    case (.null, _) where !attribute.isRequired,
+      (.string, .string),
+      (.number, .number),
+      (.bool, .boolean),
+      (.date, .date),
+      (.json, .json),
+      (.ref, .ref),
+      (.lookupRef, .ref):
+      return
+
+    case (.null, _):
+      throw InstantError(
+        code: .validationFailed,
+        operation: "write entity attribute",
+        namespace: instantNamespace,
+        path: path,
+        message: "Required attribute '\(attribute.id)' cannot be set to null.",
+        recovery: "Make the schema attribute optional, or provide a non-nil value."
+      )
+
+    default:
+      throw InstantError(
+        code: .validationFailed,
+        operation: "write entity attribute",
+        namespace: instantNamespace,
+        path: path,
+        message: "Value does not match the declared type of '\(attribute.id)'.",
+        recovery: "Use a Swift value whose type matches the Instant schema attribute."
       )
     }
   }
@@ -1492,6 +1568,38 @@ extension InstantSwiftDataClient {
   ) async throws -> (values: [Entity], pageInfo: InstantQueryPageInfo?) {
     let emission = try await queryOnce(query)
     return (try Entity.decode(emission.values), emission.pageInfo)
+  }
+
+  @discardableResult
+  public func save<Draft: InstantEntityDraft>(
+    _ draft: Draft,
+    localIDName: String? = nil,
+    transactionID: String? = nil,
+    createdAt: InstantTimestamp? = nil
+  ) async throws -> Draft.Entity.ID {
+    let entityID: Draft.Entity.ID
+    let mutation: InstantMutation
+    if let id = draft.id {
+      entityID = id
+      mutation = Draft.Entity.update(id: id, draft.instantAssignments)
+    } else {
+      let rawID: String
+      if let localIDName {
+        rawID = try await localID(named: localIDName)
+      } else if let runtime {
+        rawID = runtime.configuration.makeID()
+      } else {
+        @Dependency(\.uuid) var uuid
+        rawID = uuid().uuidString.lowercased()
+      }
+      entityID = InstantID<Draft.Entity>(rawValue: rawID)
+      mutation = Draft.Entity.create(id: entityID, draft.instantAssignments)
+    }
+
+    try await transact(id: transactionID, createdAt: createdAt) {
+      mutation
+    }
+    return entityID
   }
 
   @discardableResult

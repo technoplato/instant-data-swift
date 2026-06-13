@@ -3,7 +3,7 @@ import Dependencies
 import Foundation
 import IssueReporting
 
-@attached(member, names: named(instantNamespace))
+@attached(member, names: named(instantNamespace), named(Draft))
 public macro InstantEntity(_ namespace: String? = nil) =
   #externalMacro(module: "InstantSwiftDataMacros", type: "InstantEntityMacro")
 

@@ -63,6 +63,89 @@
     }
 
     @Test
+    func generatedDraft() {
+      let result = expand(
+        """
+        @InstantEntity
+        struct Todo {
+          var id: InstantID<Todo>
+          var text: String
+          var isCompleted: Bool = false
+          var isFlagged = false
+          var createdAt: Date
+
+          static let ignored = InstantAttributePath<Todo, String>("ignored")
+
+          var computed: String {
+            text
+          }
+        }
+        """
+      )
+
+      #expect(result.expanded.contains("public struct Draft: InstantEntityDraft"))
+      #expect(result.expanded.contains("public typealias Entity = Todo"))
+      #expect(result.expanded.contains("public var id: Todo.ID? = nil"))
+      #expect(result.expanded.contains("public var text: String"))
+      #expect(result.expanded.contains("public var isCompleted: Bool"))
+      #expect(result.expanded.contains("public var isFlagged: Bool"))
+      #expect(result.expanded.contains("isCompleted: Bool = false"))
+      #expect(result.expanded.contains("isFlagged: Bool = false"))
+      #expect(result.expanded.contains("public init(_ entity: Todo)"))
+      #expect(result.expanded.contains(#"name: "text""#))
+      #expect(result.expanded.contains(#"attributeID: Todo.instantNamespace + "/text""#))
+      #expect(result.expanded.contains("value: self.text.instantValue"))
+      #expect(!result.expanded.contains(#"name: "id""#))
+      #expect(!result.expanded.contains(#"name: "ignored""#))
+      #expect(!result.expanded.contains(#"name: "computed""#))
+      #expect(result.diagnostics.isEmpty)
+    }
+
+    @Test
+    func inferredDraftPropertyDiagnostic() {
+      let result = expand(
+        """
+        @InstantEntity
+        struct Todo {
+          var id: InstantID<Todo>
+          var tags = ["swift"]
+        }
+        """
+      )
+
+      #expect(
+        result.diagnostics.contains(
+          MacroDiagnostic(
+            message: "Stored property 'tags' needs an explicit type annotation for @InstantEntity draft generation.",
+            severity: .error
+          )
+        )
+      )
+    }
+
+    @Test
+    func multiBindingDraftPropertyDiagnostic() {
+      let result = expand(
+        """
+        @InstantEntity
+        struct Todo {
+          var id: InstantID<Todo>
+          var count = 0, title = "Untitled"
+        }
+        """
+      )
+
+      #expect(
+        result.diagnostics.contains(
+          MacroDiagnostic(
+            message: "@InstantEntity draft generation requires one stored property per var declaration.",
+            severity: .error
+          )
+        )
+      )
+    }
+
+    @Test
     func redundantNamespaceDiagnostic() {
       let result = expand(
         """

@@ -52,6 +52,54 @@
     }
 
     @Test
+    func generatedDraft() {
+      assertMacro {
+        """
+        @InstantEntity
+        struct Todo {
+          var id: InstantID<Todo>
+          var text: String
+          var isCompleted: Bool = false
+          var isFlagged = false
+          var createdAt: Date
+
+          static let ignored = InstantAttributePath<Todo, String>("ignored")
+
+          var computed: String {
+            text
+          }
+        }
+        """
+      }
+    }
+
+    @Test
+    func inferredDraftPropertyDiagnostic() {
+      assertMacro {
+        """
+        @InstantEntity
+        struct Todo {
+          var id: InstantID<Todo>
+          var tags = ["swift"]
+        }
+        """
+      }
+    }
+
+    @Test
+    func multiBindingDraftPropertyDiagnostic() {
+      assertMacro {
+        """
+        @InstantEntity
+        struct Todo {
+          var id: InstantID<Todo>
+          var count = 0, title = "Untitled"
+        }
+        """
+      }
+    }
+
+    @Test
     func redundantNamespaceDiagnostic() {
       assertMacro {
         """

@@ -451,6 +451,24 @@ missing entity should fail, and `merge` for deep JSON merges. The local seed
 demos use explicit upsert helpers so the same terminal commands can be run more
 than once against durable state.
 
+Primary-keyed `@InstantEntity` models also derive SQLiteData-style drafts for
+form flows. New drafts may omit `id`; saving allocates the Instant id and
+returns it. Edit drafts copy an existing entity and save back through the same
+typed mutation surface:
+
+```swift
+var draft = Todo.Draft(
+  text: "Ship generated drafts",
+  isCompleted: false,
+  createdAt: Date()
+)
+let todoID = try await db.save(draft, localIDName: "todos.compose")
+
+var editDraft = Todo.Draft(try await db.query(Todo.query).first!)
+editDraft.text = "Ship generated draft edits"
+try await db.save(editDraft)
+```
+
 Unique attributes can identify entities and link targets with lookup refs, just
 like Instant's `lookup(...)` transaction helper:
 

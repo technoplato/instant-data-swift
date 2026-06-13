@@ -1,3 +1,4 @@
+import Foundation
 import SwiftCompilerPlugin
 import SwiftDiagnostics
 import SwiftSyntax
@@ -47,13 +48,141 @@ public struct InstantEntityMacro: MemberMacro {
       )
     }
 
-    return [
+    var members: [DeclSyntax] = [
       """
       public static var instantNamespace: String {
         "\(raw: namespace)"
       }
       """
     ]
+    if let draft = draftDeclaration(in: declaration, typeName: typeName, context: context) {
+      members.append(draft)
+    }
+    return members
+  }
+
+  private static func draftDeclaration(
+    in declaration: some DeclGroupSyntax,
+    typeName: String,
+    context: some MacroExpansionContext
+  ) -> DeclSyntax? {
+    let properties = storedProperties(in: declaration, context: context)
+    guard properties.contains(where: { $0.name == "id" }) else {
+      return nil
+    }
+
+    let draftProperties = properties.filter { $0.name != "id" }
+    let declarations = draftProperties.map { property in
+      "  public var \(property.name): \(property.type)"
+    }.joined(separator: "\n")
+    let memberwiseParameters = (
+      ["id: \(typeName).ID? = nil"]
+        + draftProperties.map { property in
+          let defaultValue = property.defaultValue.map { " = \($0)" } ?? ""
+          return "\(property.name): \(property.type)\(defaultValue)"
+        }
+    ).joined(separator: ",\n    ")
+    let memberwiseAssignments = (
+      ["    self.id = id"]
+        + draftProperties.map { "    self.\($0.name) = \($0.name)" }
+    ).joined(separator: "\n")
+    let entityAssignments = properties.map { property in
+      "    self.\(property.name) = entity.\(property.name)"
+    }.joined(separator: "\n")
+    let instantAssignments = draftProperties.map { property in
+      """
+          InstantAttributeAssignment<\(typeName)>(
+            name: "\(property.name)",
+            attributeID: \(typeName).instantNamespace + "/\(property.name)",
+            value: self.\(property.name).instantValue
+          )
+      """
+    }.joined(separator: ",\n")
+
+    return DeclSyntax(
+      stringLiteral: """
+      public struct Draft: InstantEntityDraft {
+        public typealias Entity = \(typeName)
+        public var id: \(typeName).ID? = nil
+      \(declarations.isEmpty ? "" : "\n\(declarations)")
+
+        public init(
+          \(memberwiseParameters)
+        ) {
+      \(memberwiseAssignments)
+        }
+
+        public init(_ entity: \(typeName)) {
+      \(entityAssignments)
+        }
+
+        public var instantAssignments: [InstantAttributeAssignment<\(typeName)>] {
+          [
+      \(instantAssignments)
+          ]
+        }
+      }
+      """
+    )
+  }
+
+  private static func storedProperties(
+    in declaration: some DeclGroupSyntax,
+    context: some MacroExpansionContext
+  ) -> [StoredProperty] {
+    declaration.memberBlock.members.compactMap { member in
+      guard let variable = member.decl.as(VariableDeclSyntax.self),
+        !variable.modifiers.contains(where: { modifier in
+          modifier.name.tokenKind == .keyword(.static)
+            || modifier.name.tokenKind == .keyword(.class)
+        })
+      else { return nil }
+
+      guard variable.bindings.count == 1, let binding = variable.bindings.first else {
+        context.diagnose(
+          InstantEntityDiagnostic.requiresSingleDraftPropertyBinding
+            .diagnose(at: Syntax(variable))
+        )
+        return nil
+      }
+
+      guard binding.accessorBlock == nil,
+        let pattern = binding.pattern.as(IdentifierPatternSyntax.self)
+      else { return nil }
+
+      let type = binding.typeAnnotation?.type.description.trimmed
+        ?? inferredType(from: binding.initializer?.value)
+      guard let type else {
+        context.diagnose(
+          InstantEntityDiagnostic.requiresDraftTypeAnnotation(pattern.identifier.text)
+            .diagnose(at: Syntax(binding.pattern))
+        )
+        return nil
+      }
+
+      return StoredProperty(
+        name: pattern.identifier.text,
+        type: type,
+        defaultValue: binding.initializer?.value.description.trimmed
+      )
+    }
+  }
+
+  private static func inferredType(from expression: ExprSyntax?) -> String? {
+    guard let expression else { return nil }
+    if expression.is(BooleanLiteralExprSyntax.self) {
+      return "Bool"
+    }
+    if expression.is(StringLiteralExprSyntax.self) {
+      return "String"
+    }
+    if expression.is(IntegerLiteralExprSyntax.self) {
+      return "Int"
+    }
+    if expression.is(FloatLiteralExprSyntax.self) {
+      return "Double"
+    }
+    return nil
   }
 
   private static func explicitNamespace(from node: AttributeSyntax) -> ExplicitNamespace {
@@ -98,6 +227,12 @@ private enum ExplicitNamespace {
   case unsupported
 }
 
+private struct StoredProperty {
+  var name: String
+  var type: String
+  var defaultValue: String?
+}
+
 private extension DeclGroupSyntax {
   var instantTypeName: String? {
     if let declaration = self.as(StructDeclSyntax.self) {
@@ -113,9 +248,17 @@ private extension DeclGroupSyntax {
   }
 }
 
+private extension String {
+  var trimmed: String {
+    trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+}
+
 private enum InstantEntityDiagnostic {
   case redundantNamespace(String)
+  case requiresDraftTypeAnnotation(String)
   case requiresNominalType
+  case requiresSingleDraftPropertyBinding
   case unsupportedNamespaceArgument
 
   func diagnose(at node: Syntax) -> Diagnostic {
@@ -128,8 +271,12 @@ extension InstantEntityDiagnostic: DiagnosticMessage {
     switch self {
     case let .redundantNamespace(namespace):
       return #"@InstantEntity("\#(namespace)") is redundant; omit the argument to use the default namespace."#
+    case let .requiresDraftTypeAnnotation(name):
+      return "Stored property '\(name)' needs an explicit type annotation for @InstantEntity draft generation."
     case .requiresNominalType:
       return "@InstantEntity can only be attached to a struct, class, or actor."
+    case .requiresSingleDraftPropertyBinding:
+      return "@InstantEntity draft generation requires one stored property per var declaration."
     case .unsupportedNamespaceArgument:
       return "@InstantEntity namespace overrides must be string literals."
     }
@@ -139,8 +286,12 @@ extension InstantEntityDiagnostic: DiagnosticMessage {
     switch self {
     case .redundantNamespace:
       return MessageID(domain: "InstantSwiftDataMacros", id: "redundantNamespace")
+    case .requiresDraftTypeAnnotation:
+      return MessageID(domain: "InstantSwiftDataMacros", id: "requiresDraftTypeAnnotation")
     case .requiresNominalType:
       return MessageID(domain: "InstantSwiftDataMacros", id: "requiresNominalType")
+    case .requiresSingleDraftPropertyBinding:
+      return MessageID(domain: "InstantSwiftDataMacros", id: "requiresSingleDraftPropertyBinding")
     case .unsupportedNamespaceArgument:
       return MessageID(domain: "InstantSwiftDataMacros", id: "unsupportedNamespaceArgument")
     }
@@ -150,7 +301,10 @@ extension InstantEntityDiagnostic: DiagnosticMessage {
     switch self {
     case .redundantNamespace:
       return .warning
-    case .requiresNominalType, .unsupportedNamespaceArgument:
+    case .requiresDraftTypeAnnotation,
+      .requiresNominalType,
+      .requiresSingleDraftPropertyBinding,
+      .unsupportedNamespaceArgument:
       return .error
     }
   }
