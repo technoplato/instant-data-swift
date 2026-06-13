@@ -90,6 +90,13 @@ swift run instant-swift-data-validation-runner --local-todos
 validation/run-e2e.sh
 ```
 
+Run local core benchmarks:
+
+```bash
+swift run instant-swift-data-benchmarks --suite local-todos --iterations 3 --json
+swift run instant-swift-data-benchmarks --suite local-todos --iterations 3 --jsonl
+```
+
 The current transport is intentionally marked `not-implemented-local-cache-only`
 in command output. That means the demo proves durable local cache, typed triples,
 query materialization, plan-aware persisted query results, optimistic outbox
