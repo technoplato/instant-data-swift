@@ -186,12 +186,17 @@ public actor InstantStore {
         for concreteOperation in concreteOperations {
           switch concreteOperation {
           case let .merge(triple):
+            try Self.validateWriteValue(triple.value, triple: triple, attributes: attributes)
             if attributes[triple.attributeID]?.valueType == .ref {
               throw Self.unsupportedMergeError(triple: triple, attributes: attributes)
             }
             changedEntityIDs.formUnion(indexes.apply(concreteOperation, attributes: attributes))
 
-          case .insert, .retract, .deleteEntity:
+          case let .insert(triple), let .retract(triple):
+            try Self.validateWriteValue(triple.value, triple: triple, attributes: attributes)
+            changedEntityIDs.formUnion(indexes.apply(concreteOperation, attributes: attributes))
+
+          case .deleteEntity:
             changedEntityIDs.formUnion(indexes.apply(concreteOperation, attributes: attributes))
 
           case .requireEntityMissing, .requireEntityMissingByLookup,
@@ -527,6 +532,114 @@ public actor InstantStore {
     }
   }
 
+  private static func validateWriteValue(
+    _ value: InstantValue,
+    triple: InstantTriple,
+    attributes: AttributeStore
+  ) throws {
+    let attributeNamespace = namespace(in: triple.attributeID)
+    if
+      !attributes.namespaces.isEmpty,
+      let attributeNamespace,
+      !attributes.namespaces.contains(attributeNamespace)
+    {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "write entity attribute",
+        namespace: attributeNamespace,
+        localID: triple.entityID,
+        message: "Entity namespace '\(attributeNamespace)' does not exist in the local schema.",
+        recovery: "Declare the entity namespace before writing attributes for it."
+      )
+    }
+
+    guard let attribute = attributes[triple.attributeID] else {
+      guard isFinitePayload(value) else {
+        throw InstantError(
+          code: .validationFailed,
+          operation: "write entity attribute",
+          namespace: attributeNamespace,
+          path: triple.attributeID,
+          localID: triple.entityID,
+          message: "Invalid non-finite number in attribute '\(triple.attributeID)'.",
+          recovery: "Use only finite numbers in local writes."
+        )
+      }
+
+      switch value {
+      case .ref, .lookupRef:
+        throw InstantError(
+          code: .validationFailed,
+          operation: "write entity attribute",
+          path: triple.attributeID,
+          localID: triple.entityID,
+          message: "No ref attribute named '\(triple.attributeID)' is declared.",
+          recovery: "Declare the link in the schema before writing ref values."
+        )
+
+      case .null, .string, .number, .bool, .date, .json:
+        return
+      }
+    }
+
+    guard isFinitePayload(value) else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "write entity attribute",
+        namespace: attribute.namespace,
+        path: attribute.name,
+        localID: triple.entityID,
+        message: "Invalid non-finite number in attribute '\(attribute.id)'.",
+        recovery: "Use only finite numbers in local writes."
+      )
+    }
+
+    guard isWriteValue(value, compatibleWith: attribute) else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "write entity attribute",
+        namespace: attribute.namespace,
+        path: attribute.name,
+        localID: triple.entityID,
+        message:
+          "Invalid value for attribute '\(attribute.id)'. Expected \(attribute.valueType.storeValidationDescription), but received \(value.storeValidationTypeDescription).",
+        recovery: "Use a value that matches the declared schema attribute type."
+      )
+    }
+  }
+
+  private static func isWriteValue(
+    _ value: InstantValue,
+    compatibleWith attribute: InstantAttribute
+  ) -> Bool {
+    if case .null = value { return true }
+
+    switch (value, attribute.valueType) {
+    case (.string, .string),
+      (.bool, .boolean),
+      (.date, .date),
+      (.json, .json),
+      (.ref, .ref):
+      return true
+
+    case let (.number(value), .number):
+      return value.isFinite
+
+    case (.string, .date), (.number, .date):
+      return InstantDateCoercion.coerce(value) != nil
+
+    case (.null, _),
+      (.string, _),
+      (.number, _),
+      (.bool, _),
+      (.date, _),
+      (.json, _),
+      (.ref, _),
+      (.lookupRef, _):
+      return false
+    }
+  }
+
   private static func resolveEntityID(
     _ lookup: InstantLookupRef,
     expectedNamespace: String?,
@@ -546,6 +659,51 @@ public actor InstantStore {
     guard let entityID = entityIDs.first else { return nil }
     resolvedLookups[lookup] = entityID
     return entityID
+  }
+
+  private static func namespace(in attributeID: String) -> String? {
+    guard let separator = attributeID.firstIndex(of: "/"), separator != attributeID.startIndex
+    else { return nil }
+    return String(attributeID[..<separator])
+  }
+
+  private static func isFinitePayload(_ value: InstantValue) -> Bool {
+    switch value {
+    case .null, .string, .bool, .ref, .lookupRef:
+      return true
+    case let .number(number):
+      return number.isFinite
+    case let .date(date):
+      return date.timeIntervalSince1970.isFinite
+    case let .json(json):
+      return isFinitePayload(json)
+    }
+  }
+
+  private static func isFinitePayload(_ value: InstantLookupValue) -> Bool {
+    switch value {
+    case .null, .string, .bool, .ref:
+      return true
+    case let .number(number):
+      return number.isFinite
+    case let .date(date):
+      return date.timeIntervalSince1970.isFinite
+    case let .json(json):
+      return isFinitePayload(json)
+    }
+  }
+
+  private static func isFinitePayload(_ value: JSONValue) -> Bool {
+    switch value {
+    case .null, .bool, .string:
+      return true
+    case let .number(number):
+      return number.isFinite
+    case let .array(values):
+      return values.allSatisfy(isFinitePayload)
+    case let .object(fields):
+      return fields.values.allSatisfy(isFinitePayload)
+    }
   }
 
   private static func validateLookup(
@@ -586,6 +744,18 @@ public actor InstantStore {
         localID: lookup.description,
         message: "Attribute '\(attribute.id)' is not unique, so it cannot be used as a lookup ref.",
         recovery: "Mark the attribute unique in the schema, or write the entity by id."
+      )
+    }
+
+    guard isFinitePayload(lookup.value) else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "lookup entity",
+        namespace: attribute.namespace,
+        path: attribute.name,
+        localID: lookup.description,
+        message: "Lookup value contains a non-finite number.",
+        recovery: "Use only finite numbers in lookup refs."
       )
     }
 
@@ -631,12 +801,17 @@ public actor InstantStore {
     switch (value, attribute.valueType) {
     case (.null, _),
       (.string, .string),
-      (.number, .number),
       (.bool, .boolean),
       (.date, .date),
       (.json, .json),
       (.ref, .ref):
       return true
+
+    case let (.number(value), .number):
+      return value.isFinite
+
+    case (.string, .date), (.number, .date):
+      return InstantDateCoercion.coerce(value.instantValue) != nil
 
     default:
       return false
@@ -705,5 +880,47 @@ public actor InstantStore {
 
   func activeObservationCount() -> Int {
     observers.count
+  }
+}
+
+private extension InstantValue {
+  var storeValidationTypeDescription: String {
+    switch self {
+    case .null:
+      return "null"
+    case .string:
+      return "string"
+    case .number:
+      return "number"
+    case .bool:
+      return "boolean"
+    case .date:
+      return "date"
+    case .json:
+      return "json"
+    case .ref:
+      return "ref"
+    case .lookupRef:
+      return "lookup ref"
+    }
+  }
+}
+
+private extension InstantValueType {
+  var storeValidationDescription: String {
+    switch self {
+    case .string:
+      return "string"
+    case .number:
+      return "number"
+    case .boolean:
+      return "boolean"
+    case .date:
+      return "date"
+    case .json:
+      return "json"
+    case .ref:
+      return "ref"
+    }
   }
 }

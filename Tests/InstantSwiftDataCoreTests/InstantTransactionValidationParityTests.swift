@@ -6,6 +6,738 @@ import Testing
 @Suite(.serialized)
 struct InstantTransactionValidationParityTests {
   @Test
+  func upstreamValidatesBasicTransactionChunks() async throws {
+    let runtime = try await parityRuntime()
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let source = transactionValidationSource(
+      "validates basic transaction chunk",
+      assertion: "lines 88-106 basic chunk and chunk arrays",
+      status:
+        "adapted: Swift transactions are already structured, so this covers valid concrete chunks."
+    )
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-parity-basic",
+        operations: [
+          .insert(
+            triple("user-basic", "users/name", .string("John"), txID: "tx-parity-basic", time: time)
+          ),
+          .insert(
+            triple(
+              "user-basic", "users/email", .string("john@example.com"), txID: "tx-parity-basic",
+              time: time)),
+        ]
+      ),
+      createdAt: time
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-parity-array",
+        operations: [
+          .insert(
+            triple("user-array", "users/name", .string("Jane"), txID: "tx-parity-array", time: time)
+          ),
+          .insert(
+            triple(
+              "user-array", "users/email", .string("jane@example.com"), txID: "tx-parity-array",
+              time: time)),
+          .insert(
+            triple(
+              "post-array", "posts/title", .string("Hello"), txID: "tx-parity-array", time: time)),
+          .insert(
+            triple(
+              "post-array", "posts/body", .string("World"), txID: "tx-parity-array", time: time)),
+        ]
+      ),
+      createdAt: time
+    )
+
+    let users = try await runtime.query(
+      InstantQueryPlan(id: "parity.basic.users", namespace: "users"))
+    expectNoDifference(users.map(\.id), ["user-array", "user-basic"], source)
+  }
+
+  @Test
+  func upstreamValidatesCreateAndUpdateOperations() async throws {
+    let runtime = try await parityRuntime()
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_010)
+    let source = transactionValidationSource(
+      "validates create/update operations",
+      assertion: "lines 109-169 create/update valid, wrong type, and unknown attrs",
+      status:
+        "adapted: Swift writes triples directly, so unknown scalar attrs remain permissive while declared attrs are type checked."
+    )
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-parity-create",
+        operations: [
+          .insert(
+            triple(
+              "user-create", "users/name", .string("John"), txID: "tx-parity-create", time: time)),
+          .insert(
+            triple(
+              "user-create", "users/email", .string("john-create@example.com"),
+              txID: "tx-parity-create", time: time)),
+          .insert(
+            triple(
+              "user-create", "users/bio", .string("Developer"), txID: "tx-parity-create", time: time
+            )),
+          .insert(
+            triple(
+              "user-create", "users/unknownField", .string("value"), txID: "tx-parity-create",
+              time: time)),
+        ]
+      ),
+      createdAt: time
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-parity-update",
+        operations: [
+          .insert(
+            triple(
+              "user-create", "users/name", .string("Jane"), txID: "tx-parity-update", time: time)),
+          .insert(
+            triple(
+              "user-create", "users/bio", .string("Updated bio"), txID: "tx-parity-update",
+              time: time)),
+        ]
+      ),
+      createdAt: time
+    )
+
+    let users = try await runtime.query(
+      InstantQueryPlan(id: "parity.create.users", namespace: "users"))
+    expectNoDifference(users.map { $0.values["name"]?.first }, [.string("Jane")], source)
+    expectNoDifference(users.map { $0.values["unknownField"]?.first }, [nil], source)
+
+    await expectTransactionValidation(namespace: "unknownNamespace", path: nil, source: source) {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-parity-unknown-namespace",
+          operations: [
+            .insert(
+              triple(
+                "unknown-1",
+                "unknownNamespace/field",
+                .string("value"),
+                txID: "tx-parity-unknown-namespace",
+                time: time
+              )
+            )
+          ]
+        ),
+        createdAt: time
+      )
+    }
+
+    await expectTransactionValidation(namespace: "unknownNamespace", path: nil, source: source) {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-parity-unknown-namespace-id",
+          operations: [
+            .insert(
+              triple(
+                "unknown-1",
+                "unknownNamespace/id",
+                .string("unknown-1"),
+                txID: "tx-parity-unknown-namespace-id",
+                time: time
+              )
+            )
+          ]
+        ),
+        createdAt: time
+      )
+    }
+
+    await expectTransactionValidation(namespace: "users", path: "name", source: source) {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-parity-create-wrong-number",
+          operations: [
+            .insert(
+              triple(
+                "user-create-wrong",
+                "users/name",
+                .number(123),
+                txID: "tx-parity-create-wrong-number",
+                time: time
+              )
+            )
+          ]
+        ),
+        createdAt: time
+      )
+    }
+
+    await expectTransactionValidation(namespace: "users", path: "name", source: source) {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-parity-update-wrong-bool",
+          operations: [
+            .insert(
+              triple(
+                "user-create",
+                "users/name",
+                .bool(true),
+                txID: "tx-parity-update-wrong-bool",
+                time: time
+              )
+            )
+          ]
+        ),
+        createdAt: time
+      )
+    }
+  }
+
+  @Test
+  func upstreamValidatesMergeAndDeleteOperations() async throws {
+    let runtime = try await parityRuntime()
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_020)
+    let source = transactionValidationSource(
+      "validates merge/delete operations",
+      assertion: "lines 172-187 merge valid, merge wrong type, and delete valid",
+      status: "adapted: Swift merge is a triple operation and delete removes the entity by id."
+    )
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-parity-merge-seed",
+        operations: [
+          .insert(
+            triple(
+              "user-merge", "users/name", .string("John"), txID: "tx-parity-merge-seed", time: time)
+          ),
+          .insert(
+            triple(
+              "user-merge", "users/email", .string("john-merge@example.com"),
+              txID: "tx-parity-merge-seed", time: time)),
+          .insert(
+            triple(
+              "user-merge",
+              "users/stuff",
+              .json(.object(["custom": .string("before")])),
+              txID: "tx-parity-merge-seed",
+              time: time
+            )
+          ),
+        ]
+      ),
+      createdAt: time
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-parity-merge",
+        operations: [
+          .merge(
+            triple(
+              "user-merge",
+              "users/stuff",
+              .json(.object(["other": .string("value")])),
+              txID: "tx-parity-merge",
+              time: time
+            )
+          )
+        ]
+      ),
+      createdAt: time
+    )
+    let merged = try await runtime.query(
+      InstantQueryPlan(id: "parity.merge.users", namespace: "users"))
+    expectNoDifference(
+      merged.first?.values["stuff"]?.first,
+      .json(.object(["custom": .string("before"), "other": .string("value")])),
+      source
+    )
+
+    await expectTransactionValidation(namespace: "users", path: "name", source: source) {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-parity-merge-wrong-type",
+          operations: [
+            .merge(
+              triple(
+                "user-merge",
+                "users/name",
+                .number(123),
+                txID: "tx-parity-merge-wrong-type",
+                time: time
+              )
+            )
+          ]
+        ),
+        createdAt: time
+      )
+    }
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-parity-delete",
+        operations: [.deleteEntity("user-merge")]
+      ),
+      createdAt: time
+    )
+    let afterDelete = try await runtime.query(
+      InstantQueryPlan(id: "parity.merge.after-delete", namespace: "users"))
+    expectNoDifference(afterDelete.map(\.id), [], source)
+  }
+
+  @Test
+  func upstreamValidatesLinkAndUnlinkOperations() async throws {
+    let runtime = try await parityRuntime()
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_030)
+    let source = transactionValidationSource(
+      "validates link/unlink operations",
+      assertion: "lines 189-222 valid links, arrays, unknown links, and invalid link values",
+      status:
+        "adapted: Swift links are ref triples; inserting multiple triples represents an array link, and retracting represents unlink."
+    )
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-parity-link-seed",
+        operations: [
+          .insert(
+            triple(
+              "user-link", "users/name", .string("John"), txID: "tx-parity-link-seed", time: time)),
+          .insert(
+            triple(
+              "post-link-1", "posts/title", .string("Hello"), txID: "tx-parity-link-seed",
+              time: time)),
+          .insert(
+            triple(
+              "post-link-2", "posts/title", .string("Again"), txID: "tx-parity-link-seed",
+              time: time)),
+          .insert(
+            triple(
+              "comment-link", "comments/body", .string("Nice"), txID: "tx-parity-link-seed",
+              time: time)),
+        ]
+      ),
+      createdAt: time
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-parity-link",
+        operations: [
+          .insert(
+            triple(
+              "post-link-1", "posts/author", .ref("user-link"), txID: "tx-parity-link", time: time)),
+          .insert(
+            triple(
+              "post-link-2", "posts/author", .ref("user-link"), txID: "tx-parity-link", time: time)),
+          .insert(
+            triple(
+              "comment-link", "comments/post", .ref("post-link-1"), txID: "tx-parity-link",
+              time: time)),
+        ]
+      ),
+      createdAt: time
+    )
+    var posts = try await runtime.query(
+      InstantQueryPlan(id: "parity.link.posts", namespace: "posts"))
+    expectNoDifference(
+      posts.map { $0.values["author"]?.first }, [.ref("user-link"), .ref("user-link")], source)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-parity-unlink",
+        operations: [
+          .retract(
+            triple(
+              "post-link-2", "posts/author", .ref("user-link"), txID: "tx-parity-unlink", time: time
+            ))
+        ]
+      ),
+      createdAt: time
+    )
+    posts = try await runtime.query(InstantQueryPlan(id: "parity.unlink.posts", namespace: "posts"))
+    expectNoDifference(posts.map { $0.values["author"]?.first }, [.ref("user-link"), nil], source)
+
+    await expectTransactionValidation(namespace: nil, path: "users/unknownLink", source: source) {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-parity-unknown-link",
+          operations: [
+            .insert(
+              triple(
+                "user-link",
+                "users/unknownLink",
+                .ref("post-link-1"),
+                txID: "tx-parity-unknown-link",
+                time: time
+              )
+            )
+          ]
+        ),
+        createdAt: time
+      )
+    }
+
+    await expectTransactionValidation(namespace: "posts", path: "author", source: source) {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-parity-invalid-link-value",
+          operations: [
+            .insert(
+              triple(
+                "post-link-1",
+                "posts/author",
+                .string("not-a-ref"),
+                txID: "tx-parity-invalid-link-value",
+                time: time
+              )
+            )
+          ]
+        ),
+        createdAt: time
+      )
+    }
+  }
+
+  @Test
+  func upstreamValidatesChainedOperationsAndMultipleEntityTypes() async throws {
+    let runtime = try await parityRuntime()
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_040)
+    let source = transactionValidationSource(
+      "validates chained operations and multiple entity types",
+      assertion: "lines 305-358 chains, users/posts/comments, and self links",
+      status:
+        "adapted: Swift chains are a single transaction containing the same concrete create, update, and link triples."
+    )
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-parity-chain",
+        operations: [
+          .insert(
+            triple("user-chain", "users/name", .string("John"), txID: "tx-parity-chain", time: time)
+          ),
+          .insert(
+            triple(
+              "user-chain", "users/email", .string("john-chain@example.com"),
+              txID: "tx-parity-chain", time: time)),
+          .insert(
+            triple(
+              "user-chain", "users/bio", .string("Updated"), txID: "tx-parity-chain", time: time)),
+          .insert(
+            triple(
+              "user-friend", "users/name", .string("Friend"), txID: "tx-parity-chain", time: time)),
+          .insert(
+            triple(
+              "post-chain", "posts/title", .string("Hello"), txID: "tx-parity-chain", time: time)),
+          .insert(
+            triple(
+              "post-chain", "posts/body", .string("World"), txID: "tx-parity-chain", time: time)),
+          .insert(
+            triple(
+              "comment-chain", "comments/body", .string("Nice post!"), txID: "tx-parity-chain",
+              time: time)),
+          .insert(
+            triple(
+              "post-chain", "posts/author", .ref("user-chain"), txID: "tx-parity-chain", time: time)
+          ),
+          .insert(
+            triple(
+              "comment-chain", "comments/post", .ref("post-chain"), txID: "tx-parity-chain",
+              time: time)),
+          .insert(
+            triple(
+              "user-chain", "users/friends", .ref("user-friend"), txID: "tx-parity-chain",
+              time: time)),
+        ]
+      ),
+      createdAt: time
+    )
+
+    let users = try await runtime.query(
+      InstantQueryPlan(id: "parity.chain.users", namespace: "users"))
+    let posts = try await runtime.query(
+      InstantQueryPlan(id: "parity.chain.posts", namespace: "posts"))
+    let comments = try await runtime.query(
+      InstantQueryPlan(id: "parity.chain.comments", namespace: "comments"))
+    expectNoDifference(users.map(\.id), ["user-chain", "user-friend"], source)
+    expectNoDifference(posts.map { $0.values["author"]?.first }, [.ref("user-chain")], source)
+    expectNoDifference(comments.map { $0.values["post"]?.first }, [.ref("post-chain")], source)
+
+    await expectTransactionValidation(
+      namespace: nil, path: "users/unlinkedWithAnything", source: source
+    ) {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-parity-unlinked-link",
+          operations: [
+            .insert(
+              triple(
+                "user-chain",
+                "users/unlinkedWithAnything",
+                .ref("unlinked-1"),
+                txID: "tx-parity-unlinked-link",
+                time: time
+              )
+            )
+          ]
+        ),
+        createdAt: time
+      )
+    }
+  }
+
+  @Test
+  func upstreamValidatesDateAndLookupValueTypes() async throws {
+    let runtime = try await parityRuntime()
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_045)
+    let source = transactionValidationSource(
+      "validates attribute types and lookup proxy",
+      assertion: "lines 244-280 and 415-449 date-compatible lookup values",
+      status:
+        "adapted: Swift has no any type, so this covers declared string/json/date/ref compatibility and date lookup coercion."
+    )
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-parity-date-values",
+        operations: [
+          .insert(
+            triple(
+              "user-date-string", "users/name", .string("String Date"),
+              txID: "tx-parity-date-values", time: time)),
+          .insert(
+            triple(
+              "user-date-string", "users/email", .string("date-string@example.com"),
+              txID: "tx-parity-date-values", time: time)),
+          .insert(
+            triple(
+              "user-date-string",
+              "users/createdAt",
+              .string("2025-01-15 20:53:08.200"),
+              txID: "tx-parity-date-values",
+              time: time
+            )
+          ),
+          .insert(
+            triple(
+              "user-date-number", "users/name", .string("Number Date"),
+              txID: "tx-parity-date-values", time: time)),
+          .insert(
+            triple(
+              "user-date-number", "users/email", .string("date-number@example.com"),
+              txID: "tx-parity-date-values", time: time)),
+          .insert(
+            triple(
+              "user-date-number",
+              "users/createdAt",
+              .number(1_642_234_800_000),
+              txID: "tx-parity-date-values",
+              time: time
+            )
+          ),
+          .insert(
+            triple(
+              "user-date-string",
+              "users/stuff",
+              .json(.object(["complex": .string("object")])),
+              txID: "tx-parity-date-values",
+              time: time
+            )
+          ),
+        ]
+      ),
+      createdAt: time
+    )
+    let ordered = try await runtime.query(
+      InstantQueryPlan(
+        id: "parity.date.users",
+        namespace: "users",
+        order: InstantQueryOrder("createdAt")
+      )
+    )
+    expectNoDifference(ordered.map(\.id), ["user-date-number", "user-date-string"], source)
+    let dateMilliseconds = ordered.compactMap { entity -> Int64? in
+      entity.values["createdAt"]?.first?.storeParityDateMilliseconds
+    }
+    #expect(dateMilliseconds == [1_642_234_800_000, 1_736_974_388_200], "\(source)")
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-parity-date-lookup-source",
+        operations: [
+          .insertByLookup(
+            entity: InstantLookupRef(
+              attributeID: "users/createdAt", value: .string("2025-01-15 20:53:08.200")),
+            attributeID: "users/bio",
+            value: .string("Found by date"),
+            txID: "tx-parity-date-lookup-source",
+            txTime: time
+          )
+        ]
+      ),
+      createdAt: time
+    )
+    let dateLookupUsers = try await runtime.query(
+      InstantQueryPlan(id: "parity.date.lookup.users", namespace: "users")
+    )
+    expectNoDifference(
+      dateLookupUsers.first(where: { $0.id == "user-date-string" })?.values["bio"]?.first,
+      .string("Found by date"), source)
+
+    await expectTransactionValidation(namespace: "users", path: "createdAt", source: source) {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-parity-date-wrong",
+          operations: [
+            .insert(
+              triple(
+                "user-date-wrong",
+                "users/createdAt",
+                .bool(true),
+                txID: "tx-parity-date-wrong",
+                time: time
+              )
+            )
+          ]
+        ),
+        createdAt: time
+      )
+    }
+
+    let strictDateSource = transactionValidationSource(
+      "lookup proxy",
+      assertion: "line 433 date lookup proxy note",
+      status:
+        "Swift-local tightening: local date writes and lookup values must coerce before indexing."
+    )
+    await expectTransactionValidation(namespace: "users", path: "createdAt", source: strictDateSource)
+    {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-parity-date-unparseable",
+          operations: [
+            .insert(
+              triple(
+                "user-date-unparseable",
+                "users/createdAt",
+                .string("8932"),
+                txID: "tx-parity-date-unparseable",
+                time: time
+              )
+            )
+          ]
+        ),
+        createdAt: time
+      )
+    }
+
+    await expectTransactionValidation(namespace: "users", path: "createdAt", source: strictDateSource)
+    {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-parity-date-nan",
+          operations: [
+            .insert(
+              triple(
+                "user-date-nan",
+                "users/createdAt",
+                .date(Date(timeIntervalSince1970: .nan)),
+                txID: "tx-parity-date-nan",
+                time: time
+              )
+            )
+          ]
+        ),
+        createdAt: time
+      )
+    }
+
+    let numberSource = transactionValidationSource(
+      "validates attribute types",
+      assertion: "line 35 number validator rejects NaN",
+      status: "adapted: Swift rejects non-finite number writes before local indexing."
+    )
+    await expectTransactionValidation(namespace: "users", path: "score", source: numberSource) {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-parity-number-nan",
+          operations: [
+            .insert(
+              triple(
+                "user-number-nan",
+                "users/score",
+                .number(.nan),
+                txID: "tx-parity-number-nan",
+                time: time
+              )
+            )
+          ]
+        ),
+        createdAt: time
+      )
+    }
+
+    await expectTransactionValidation(namespace: "users", path: "users/unknownNumber", source: numberSource) {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-parity-unknown-number-nan",
+          operations: [
+            .insert(
+              triple(
+                "user-unknown-number-nan",
+                "users/unknownNumber",
+                .number(.nan),
+                txID: "tx-parity-unknown-number-nan",
+                time: time
+              )
+            )
+          ]
+        ),
+        createdAt: time
+      )
+    }
+
+    await expectTransactionValidation(namespace: "users", path: "stuff", source: numberSource) {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-parity-json-nan",
+          operations: [
+            .insert(
+              triple(
+                "user-json-nan",
+                "users/stuff",
+                .json(.object(["nested": .number(.nan)])),
+                txID: "tx-parity-json-nan",
+                time: time
+              )
+            )
+          ]
+        ),
+        createdAt: time
+      )
+    }
+
+    await expectTransactionValidation(namespace: "users", path: "rank", source: numberSource) {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-parity-lookup-number-nan",
+          operations: [
+            .insertByLookup(
+              entity: InstantLookupRef(attributeID: "users/rank", value: .number(.nan)),
+              attributeID: "users/name",
+              value: .string("Nope"),
+              txID: "tx-parity-lookup-number-nan",
+              txTime: time
+            )
+          ]
+        ),
+        createdAt: time
+      )
+    }
+  }
+
+  @Test
   func upstreamAllowsLookupValuesForEntityWrites() async throws {
     let runtime = try await parityRuntime()
     let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
@@ -13,8 +745,13 @@ struct InstantTransactionValidationParityTests {
       InstantStoreTransaction(
         id: "tx-parity-seed-user",
         operations: [
-          .insert(triple("user-1", "users/name", .string("Before"), txID: "tx-parity-seed-user", time: time)),
-          .insert(triple("user-1", "users/email", .string("john@example.net"), txID: "tx-parity-seed-user", time: time)),
+          .insert(
+            triple(
+              "user-1", "users/name", .string("Before"), txID: "tx-parity-seed-user", time: time)),
+          .insert(
+            triple(
+              "user-1", "users/email", .string("john@example.net"), txID: "tx-parity-seed-user",
+              time: time)),
         ]
       ),
       createdAt: time
@@ -30,7 +767,8 @@ struct InstantTransactionValidationParityTests {
         id: "tx-parity-update-user-by-lookup",
         operations: [
           .insertByLookup(
-            entity: InstantLookupRef(attributeID: "users/email", value: .string("john@example.net")),
+            entity: InstantLookupRef(
+              attributeID: "users/email", value: .string("john@example.net")),
             attributeID: "users/name",
             value: .string("John"),
             txID: "tx-parity-update-user-by-lookup",
@@ -55,10 +793,22 @@ struct InstantTransactionValidationParityTests {
       InstantStoreTransaction(
         id: "tx-parity-seed-source-link-lookup",
         operations: [
-          .insert(triple("user-1", "users/name", .string("John"), txID: "tx-parity-seed-source-link-lookup", time: time)),
-          .insert(triple("user-1", "users/email", .string("john@example.net"), txID: "tx-parity-seed-source-link-lookup", time: time)),
-          .insert(triple("post-1", "posts/title", .string("Hello"), txID: "tx-parity-seed-source-link-lookup", time: time)),
-          .insert(triple("post-1", "posts/slug", .string("hello"), txID: "tx-parity-seed-source-link-lookup", time: time)),
+          .insert(
+            triple(
+              "user-1", "users/name", .string("John"), txID: "tx-parity-seed-source-link-lookup",
+              time: time)),
+          .insert(
+            triple(
+              "user-1", "users/email", .string("john@example.net"),
+              txID: "tx-parity-seed-source-link-lookup", time: time)),
+          .insert(
+            triple(
+              "post-1", "posts/title", .string("Hello"), txID: "tx-parity-seed-source-link-lookup",
+              time: time)),
+          .insert(
+            triple(
+              "post-1", "posts/slug", .string("hello"), txID: "tx-parity-seed-source-link-lookup",
+              time: time)),
         ]
       ),
       createdAt: time
@@ -100,9 +850,18 @@ struct InstantTransactionValidationParityTests {
       InstantStoreTransaction(
         id: "tx-parity-seed-link-lookup",
         operations: [
-          .insert(triple("user-1", "users/name", .string("John"), txID: "tx-parity-seed-link-lookup", time: time)),
-          .insert(triple("user-1", "users/email", .string("john@example.net"), txID: "tx-parity-seed-link-lookup", time: time)),
-          .insert(triple("post-1", "posts/title", .string("Hello"), txID: "tx-parity-seed-link-lookup", time: time)),
+          .insert(
+            triple(
+              "user-1", "users/name", .string("John"), txID: "tx-parity-seed-link-lookup",
+              time: time)),
+          .insert(
+            triple(
+              "user-1", "users/email", .string("john@example.net"),
+              txID: "tx-parity-seed-link-lookup", time: time)),
+          .insert(
+            triple(
+              "post-1", "posts/title", .string("Hello"), txID: "tx-parity-seed-link-lookup",
+              time: time)),
         ]
       ),
       createdAt: time
@@ -122,7 +881,8 @@ struct InstantTransactionValidationParityTests {
             triple(
               "post-1",
               "posts/author",
-              .lookupRef(InstantLookupRef(attributeID: "users/email", value: .string("john@example.net"))),
+              .lookupRef(
+                InstantLookupRef(attributeID: "users/email", value: .string("john@example.net"))),
               txID: "tx-parity-link-by-lookup",
               time: time
             )
@@ -224,6 +984,24 @@ private func transactionValidationSource(
   "\(upstreamTransactionValidationTestSource) \(testName) \(assertion) [\(status)]"
 }
 
+private func expectTransactionValidation(
+  namespace: String?,
+  path: String?,
+  source: String,
+  _ operation: () async throws -> Void
+) async {
+  do {
+    try await operation()
+    #expect(Bool(false), "Expected transaction validation to fail. \(source)")
+  } catch let error as InstantError {
+    expectNoDifference(error.code, .validationFailed, source)
+    expectNoDifference(error.namespace, namespace, source)
+    expectNoDifference(error.path, path, source)
+  } catch {
+    #expect(Bool(false), "Unexpected error: \(error). \(source)")
+  }
+}
+
 private func parityRuntime() async throws -> InstantRuntime {
   try await InstantRuntime.bootstrap(
     configuration: InstantRuntimeConfiguration(
@@ -261,9 +1039,65 @@ private func transactionValidationParityAttributes() -> [InstantAttribute] {
       isUnique: true
     ),
     InstantAttribute(
+      id: "users/bio",
+      namespace: "users",
+      name: "bio",
+      valueType: .string,
+      isRequired: false
+    ),
+    InstantAttribute(
+      id: "users/stuff",
+      namespace: "users",
+      name: "stuff",
+      valueType: .json,
+      isRequired: false
+    ),
+    InstantAttribute(
+      id: "users/createdAt",
+      namespace: "users",
+      name: "createdAt",
+      valueType: .date,
+      isRequired: false,
+      isIndexed: true,
+      isUnique: true
+    ),
+    InstantAttribute(
+      id: "users/score",
+      namespace: "users",
+      name: "score",
+      valueType: .number,
+      isRequired: false
+    ),
+    InstantAttribute(
+      id: "users/rank",
+      namespace: "users",
+      name: "rank",
+      valueType: .number,
+      isRequired: false,
+      isUnique: true
+    ),
+    InstantAttribute(
+      id: "users/friends",
+      namespace: "users",
+      name: "friends",
+      valueType: .ref,
+      cardinality: .many,
+      isIndexed: true,
+      forwardIdentity: "users/friends",
+      reverseIdentity: "users/_friends",
+      linkNamespace: "users"
+    ),
+    InstantAttribute(
       id: "posts/title",
       namespace: "posts",
       name: "title",
+      valueType: .string,
+      isIndexed: true
+    ),
+    InstantAttribute(
+      id: "posts/body",
+      namespace: "posts",
+      name: "body",
       valueType: .string,
       isIndexed: true
     ),
@@ -285,6 +1119,22 @@ private func transactionValidationParityAttributes() -> [InstantAttribute] {
       reverseIdentity: "users/posts",
       linkNamespace: "users"
     ),
+    InstantAttribute(
+      id: "comments/body",
+      namespace: "comments",
+      name: "body",
+      valueType: .string
+    ),
+    InstantAttribute(
+      id: "comments/post",
+      namespace: "comments",
+      name: "post",
+      valueType: .ref,
+      isIndexed: true,
+      forwardIdentity: "comments/post",
+      reverseIdentity: "posts/comments",
+      linkNamespace: "posts"
+    ),
   ]
 }
 
@@ -302,4 +1152,11 @@ private func triple(
     txID: txID,
     txTime: time
   )
+}
+
+extension InstantValue {
+  fileprivate var storeParityDateMilliseconds: Int64? {
+    guard case .date(let date) = self else { return nil }
+    return Int64((date.timeIntervalSince1970 * 1000).rounded())
+  }
 }
