@@ -219,11 +219,12 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       )
     }
 
+    let effectiveOrder = Self.effectiveOrder(plan.order)
     snapshots.sort {
-      Self.compare($0, $1, order: plan.order) == .orderedAscending
+      Self.compare($0, $1, order: effectiveOrder) == .orderedAscending
     }
 
-    let paged = paginate(snapshots, plan: plan)
+    let paged = paginate(snapshots, plan: plan, effectiveOrder: effectiveOrder)
     let linked = includeLinks(paged.values.map(\.snapshot), plan: plan, attributes: attributes)
     return InstantQueryPage(
       values: project(linked, selectedFields: plan.selectedFields),
@@ -361,10 +362,11 @@ struct TripleIndexes: Hashable, Codable, Sendable {
 
   private func paginate(
     _ snapshots: [QuerySnapshot],
-    plan: InstantQueryPlan
+    plan: InstantQueryPlan,
+    effectiveOrder: InstantQueryOrder
   ) -> (values: [QuerySnapshot], pageInfo: InstantQueryPageInfo?) {
     guard isValidPagination(plan) else {
-      return ([], pageInfo(for: [], plan: plan))
+      return ([], pageInfo(for: [], plan: plan, effectiveOrder: effectiveOrder))
     }
 
     var page = snapshots
@@ -380,7 +382,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         startIndex = after.inclusive ? index : index + 1
       } else {
         startIndex = page.firstIndex {
-          let comparison = Self.compare($0, to: after, order: plan.order)
+          let comparison = Self.compare($0, to: after, order: effectiveOrder)
           return after.inclusive
             ? comparison != .orderedAscending
             : comparison == .orderedDescending
@@ -399,7 +401,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         endIndex = before.inclusive ? index + 1 : index
       } else {
         endIndex = page.firstIndex {
-          let comparison = Self.compare($0, to: before, order: plan.order)
+          let comparison = Self.compare($0, to: before, order: effectiveOrder)
           return before.inclusive
             ? comparison == .orderedDescending
             : comparison != .orderedAscending
@@ -439,6 +441,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       pageInfo(
         for: page,
         plan: plan,
+        effectiveOrder: effectiveOrder,
         hasPreviousPage: removedBefore > 0,
         hasNextPage: removedAfter > 0
       )
@@ -457,13 +460,15 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   private func pageInfo(
     for snapshots: [QuerySnapshot],
     plan: InstantQueryPlan,
+    effectiveOrder: InstantQueryOrder? = nil,
     hasPreviousPage: Bool = false,
     hasNextPage: Bool = false
   ) -> InstantQueryPageInfo? {
     guard requestsPageInfo(plan) else { return nil }
+    let order = effectiveOrder ?? Self.effectiveOrder(plan.order)
     return InstantQueryPageInfo(
-      startCursor: snapshots.first.map { cursor(for: $0, order: plan.order) },
-      endCursor: snapshots.last.map { cursor(for: $0, order: plan.order) },
+      startCursor: snapshots.first.map { cursor(for: $0, order: order) },
+      endCursor: snapshots.last.map { cursor(for: $0, order: order) },
       hasPreviousPage: hasPreviousPage,
       hasNextPage: hasNextPage
     )
@@ -1218,6 +1223,10 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     case .descending:
       return rhs.snapshot.id.compare(lhs.snapshot.id)
     }
+  }
+
+  private static func effectiveOrder(_ order: InstantQueryOrder?) -> InstantQueryOrder {
+    order ?? .serverCreatedAt
   }
 
   private static func compare(

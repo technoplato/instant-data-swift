@@ -267,6 +267,20 @@ extension InstantStoreTests {
         ?? ordered.endIndex
         < (ordered.range(of: "Plan the Instant Swift Data demo")?.lowerBound ?? ordered.startIndex)
     )
+
+    let implicit = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(
+        try runCLI(
+          ["query", "todos", "--order-by", "none", "--first", "1", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(implicit.queryID, "examples.todos.list.order-by-none.first-1")
+    expectNoDifference(implicit.todos.count, 1)
+    expectNoDifference(implicit.pageInfo?.hasNextPage, true)
+    #expect(implicit.pageInfo?.endCursor?.sortValue != nil)
   }
 
   @Test

@@ -31,6 +31,7 @@ swift run instant-swift-data examples todos list --completed false --first 2 --j
 swift run instant-swift-data examples todos list --search dishes
 swift run instant-swift-data query todos --completed false --json
 swift run instant-swift-data query todos --completed false --select text,isCompleted --json
+swift run instant-swift-data query todos --order-by none --first 1 --json
 swift run instant-swift-data query todos --order-by serverCreatedAt --order desc --json
 PAGE_CURSOR="$(swift run instant-swift-data query todos --completed false --first 1 --json | jq -r '.pageInfo.endCursor.entityID')"
 swift run instant-swift-data query todos --completed false --first 1 --after "$PAGE_CURSOR" --json
@@ -218,6 +219,8 @@ for try await todos in subscription {
 `serverCreatedAt` is order-only metadata. Do not declare a model attribute with
 that name; use a domain field like `createdAt` for decoded data, and use
 `.order(.serverCreatedAt, ...)` when you want server-created ordering.
+Queries without an explicit order follow Instant's implicit
+`serverCreatedAt` ascending order.
 `queryOnceDecoded` returns decoded typed values plus `pageInfo` for paginated
 one-shot reads; use raw `queryOnce` when you need snapshots or emissions.
 Partial field selection returns raw snapshots unless your entity decoder can

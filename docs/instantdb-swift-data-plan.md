@@ -115,10 +115,11 @@ real Instant app.
   rejects deeper paths such as `relation.child.field` by returning no local
   results until full InstaQL path parity is implemented.
 - Ordering on indexed fields and `serverCreatedAt`.
-- Local triple materialization supports explicit `serverCreatedAt` ordering as
+- Local triple materialization uses `serverCreatedAt` ascending as the implicit
+  no-order query order, matching Instant, and supports explicit
+  `serverCreatedAt` ordering as
   an order-only reserved field backed by the entity id triple's `txTime`, with a
-  namespace-triple fallback for low-level local rows without an id triple. Local
-  no-order queries remain id-sorted until the broader default-order parity slice.
+  namespace-triple fallback for low-level local rows without an id triple.
 - The typed query surface exposes this reserved order as
   `.order(.serverCreatedAt, .descending)`.
 - `serverCreatedAt` is not materialized into entity snapshots or decoded models,

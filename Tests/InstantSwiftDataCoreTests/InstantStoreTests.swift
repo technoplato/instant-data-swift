@@ -3216,6 +3216,11 @@ struct InstantStoreTests {
       order: .serverCreatedAtDescending
     )
     let noOrderPlan = InstantQueryPlan(id: "todos.server-created-at.no-order", namespace: TodoExample.namespace)
+    let noOrderFirstPlan = InstantQueryPlan(
+      id: "todos.server-created-at.no-order.first",
+      namespace: TodoExample.namespace,
+      first: 1
+    )
     let createdAtFieldPlan = InstantQueryPlan(
       id: "todos.created-at.asc",
       namespace: TodoExample.namespace,
@@ -3225,6 +3230,14 @@ struct InstantStoreTests {
     let ascending = try await runtime.query(ascendingPlan)
     let descending = try await runtime.query(descendingPlan)
     let noOrder = try await runtime.query(noOrderPlan)
+    let noOrderFirst = try await runtime.queryOnce(noOrderFirstPlan)
+    let noOrderNext = try await runtime.queryOnce(
+      InstantQueryPlan(
+        id: "todos.server-created-at.no-order.next",
+        namespace: TodoExample.namespace,
+        after: try #require(noOrderFirst.pageInfo?.endCursor)
+      )
+    )
     let selected = try await runtime.query(
       InstantQueryPlan(
         id: "todos.server-created-at.selected",
@@ -3243,7 +3256,18 @@ struct InstantStoreTests {
 
     expectNoDifference(ascending.map(\.id), ["todo-a", "todo-c", "todo-b"])
     expectNoDifference(descending.map(\.id), ["todo-b", "todo-c", "todo-a"])
-    expectNoDifference(noOrder.map(\.id), ["todo-a", "todo-b", "todo-c"])
+    expectNoDifference(noOrder.map(\.id), ["todo-a", "todo-c", "todo-b"])
+    expectNoDifference(noOrderPlan.order, nil)
+    #expect(noOrderPlan.cacheKey != ascendingPlan.cacheKey)
+    expectNoDifference(noOrderFirst.values.map(\.id), ["todo-a"])
+    expectNoDifference(
+      noOrderFirst.pageInfo?.endCursor,
+      InstantQueryCursor(
+        entityID: "todo-a",
+        sortValue: .number(Double(firstCreatedAt.milliseconds))
+      )
+    )
+    expectNoDifference(noOrderNext.values.map(\.id), ["todo-c", "todo-b"])
     expectNoDifference(selected.map(\.values), [
       ["text": .one(.string("updated without moving"))],
       ["text": .one(.string("same time c"))],
