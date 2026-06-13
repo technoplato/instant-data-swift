@@ -173,6 +173,14 @@ struct CLIArgumentParserTests {
       )
     )
     expectNoDifference(
+      try CLIArguments.parse(["auth", "token", "refresh-token", "--user-id", "user-1", "--json"]),
+      CLIInvocation(
+        output: .json,
+        command: .auth,
+        arguments: ["token", "refresh-token", "--user-id", "user-1"]
+      )
+    )
+    expectNoDifference(
       try CLIArguments.parse([
         "streams", "append", "chat/lobby", "--value", "{}", "--jsonl",
       ]),
@@ -181,6 +189,164 @@ struct CLIArgumentParserTests {
         command: .streams,
         arguments: ["append", "chat/lobby", "--value", "{}"]
       )
+    )
+  }
+
+  @Test
+  func authParserParsesCommandsAndAliases() throws {
+    expectNoDifference(try parseAuth(["show"]), .show)
+    expectNoDifference(try parseAuth(["status"]), .show)
+    expectNoDifference(try parseAuth(["guest"]), .guest)
+    expectNoDifference(
+      try parseAuth(["token", "refresh-token", "--user-id", " user-1 "]),
+      .token(CLIAuthTokenInvocation(refreshToken: "refresh-token", userID: " user-1 "))
+    )
+    expectNoDifference(
+      try parseAuth(["id-token", "google-ios", " local-jwt ", "--nonce", " nonce-1 "]),
+      .idToken(
+        CLIAuthIDTokenInvocation(
+          clientName: "google-ios",
+          idToken: " local-jwt ",
+          nonce: " nonce-1 "
+        )
+      )
+    )
+    expectNoDifference(
+      try parseAuth(["idtoken", "google-ios", "local-jwt"]),
+      .idToken(CLIAuthIDTokenInvocation(clientName: "google-ios", idToken: "local-jwt"))
+    )
+    expectNoDifference(
+      try parseAuth(["oauth", " local-code ", "--code-verifier", " verifier-1 "]),
+      .oauth(CLIAuthOAuthInvocation(code: " local-code ", codeVerifier: " verifier-1 "))
+    )
+    expectNoDifference(
+      try parseAuth(["oauth-url", "google-ios", "myapp://oauth/callback?state=abc"]),
+      .oauthURL(
+        CLIAuthOAuthURLInvocation(
+          clientName: "google-ios",
+          redirectURL: "myapp://oauth/callback?state=abc"
+        )
+      )
+    )
+    expectNoDifference(
+      try parseAuth(["authorization-url", "google-ios", "myapp://oauth/callback"]),
+      .oauthURL(
+        CLIAuthOAuthURLInvocation(
+          clientName: "google-ios",
+          redirectURL: "myapp://oauth/callback"
+        )
+      )
+    )
+    expectNoDifference(try parseAuth(["issuer"]), .issuer)
+    expectNoDifference(try parseAuth(["issuer-uri"]), .issuer)
+    expectNoDifference(
+      try parseAuth(["magic-code", "send", " user@example.com "]),
+      .magicCode(.send(email: " user@example.com "))
+    )
+    expectNoDifference(
+      try parseAuth(["magic", "verify", "user@example.com", "123456"]),
+      .magicCode(.verify(email: "user@example.com", code: "123456"))
+    )
+    expectNoDifference(
+      try parseAuth(["watch", "--events", "1"]),
+      .watch(CLIAuthWatchInvocation(eventCount: 1))
+    )
+    expectNoDifference(
+      try parseAuth(["observe"]),
+      .watch(CLIAuthWatchInvocation())
+    )
+    expectNoDifference(
+      try parseAuth(["sign-out"]),
+      .signOut(CLIAuthSignOutInvocation())
+    )
+    expectNoDifference(
+      try parseAuth(["signout", "--skip-token-invalidation"]),
+      .signOut(CLIAuthSignOutInvocation(invalidateToken: false))
+    )
+    expectNoDifference(
+      try parseAuth(["logout", "--skip-token-invalidation", "--invalidate-token"]),
+      .signOut(CLIAuthSignOutInvocation(invalidateToken: true))
+    )
+  }
+
+  @Test
+  func authParserReportsMalformedArguments() throws {
+    try expectAuthParseError([], contains: "Usage: instant-swift-data auth")
+    try expectAuthParseError(
+      ["show", "extra"],
+      contains: "Unexpected argument: extra."
+    )
+    try expectAuthParseError(
+      ["token"],
+      contains: "auth token <refresh-token>"
+    )
+    try expectAuthParseError(
+      ["token", "refresh-token", "--user-id"],
+      contains: "Missing value for --user-id."
+    )
+    try expectAuthParseError(
+      ["token", "refresh-token", "--user-id", "  "],
+      contains: "Missing non-empty value for --user-id."
+    )
+    try expectAuthParseError(
+      ["token", "refresh-token", "--surprise"],
+      contains: "Unknown auth token option: --surprise."
+    )
+    try expectAuthParseError(
+      ["id-token", "google-ios"],
+      contains: "auth id-token <client-name> <id-token>"
+    )
+    try expectAuthParseError(
+      ["id-token", "google-ios", "local-jwt", "--nonce", " "],
+      contains: "Missing non-empty value for --nonce."
+    )
+    try expectAuthParseError(
+      ["oauth", "local-code", "--code-verifier", " "],
+      contains: "Missing non-empty value for --code-verifier."
+    )
+    try expectAuthParseError(
+      ["oauth-url", "google-ios"],
+      contains: "auth oauth-url <client-name> <redirect-url>"
+    )
+    try expectAuthParseError(
+      ["issuer", "extra"],
+      contains: "Unexpected argument: extra."
+    )
+    try expectAuthParseError(
+      ["magic-code"],
+      contains: "Usage: instant-swift-data auth magic-code"
+    )
+    try expectAuthParseError(
+      ["magic-code", "send"],
+      contains: "magic-code send <email>"
+    )
+    try expectAuthParseError(
+      ["magic-code", "send", "user@example.com", "extra"],
+      contains: "Unexpected argument: extra."
+    )
+    try expectAuthParseError(
+      ["magic-code", "verify", "user@example.com"],
+      contains: "magic-code verify <email> <code>"
+    )
+    try expectAuthParseError(
+      ["magic-code", "dance"],
+      contains: "Usage: instant-swift-data auth magic-code"
+    )
+    try expectAuthParseError(
+      ["watch", "--events", "2"],
+      contains: "instant-swift-data auth watch --events 1"
+    )
+    try expectAuthParseError(
+      ["watch", "--surprise"],
+      contains: "Unknown auth watch option: --surprise."
+    )
+    try expectAuthParseError(
+      ["sign-out", "--surprise"],
+      contains: "Unknown auth sign-out option: --surprise."
+    )
+    try expectAuthParseError(
+      ["dance"],
+      contains: "Usage: instant-swift-data auth"
     )
   }
 
@@ -721,6 +887,13 @@ private func parseExamples(_ arguments: [String]) throws -> CLIExamplesInvocatio
   return invocation
 }
 
+private func parseAuth(_ arguments: [String]) throws -> CLIAuthInvocation {
+  var input = arguments[...]
+  let invocation = try CLIAuthParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseRooms(_ arguments: [String]) throws -> CLIRoomsInvocation {
   var input = arguments[...]
   let invocation = try CLIRoomsParser().parse(&input)
@@ -747,6 +920,19 @@ private func parseStreams(_ arguments: [String]) throws -> CLIStreamsInvocation 
   let invocation = try CLIStreamsParser().parse(&input)
   expectNoDifference(Array(input), [])
   return invocation
+}
+
+private func expectAuthParseError(
+  _ arguments: [String],
+  contains expectedFragment: String
+) throws {
+  do {
+    _ = try parseAuth(arguments)
+    Issue.record("Expected auth parser to reject \(arguments).")
+  } catch let error as CLIAuthArgumentError {
+    #expect(error.description.contains(expectedFragment))
+    expectNoDifference(error.exitCode, 64)
+  }
 }
 
 private func expectRoomsParseError(

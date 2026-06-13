@@ -1881,85 +1881,56 @@ struct InstantSwiftDataCLI {
   }
 
   private static func runAuth(arguments: [String], output: OutputMode) async throws {
-    var arguments = arguments
-    guard let command = arguments.popFirstArgument() else {
-      throw CLIError(authUsage, exitCode: 64)
+    let invocation: CLIAuthInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLIAuthParser().parse(&input)
+    } catch let error as CLIAuthArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
 
     let context = try await CLIContext.bootstrap(initialAttributes: [])
 
-    switch command {
-    case "show", "status":
-      guard arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data auth show [--json|--jsonl]", exitCode: 64)
-      }
+    switch invocation {
+    case .show:
       let session = try await context.runtime.authSession()
       try printAuth(context: context, event: "show", session: session, output: output)
 
-    case "guest":
-      guard arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data auth guest [--json|--jsonl]", exitCode: 64)
-      }
+    case .guest:
       let session = try await context.runtime.signInAsGuest()
       try printAuth(context: context, event: "guest", session: session, output: output)
 
-    case "token":
-      guard let refreshToken = arguments.popFirstArgument() else {
-        throw CLIError("Usage: instant-swift-data auth token <refresh-token> [--user-id id] [--json|--jsonl]", exitCode: 64)
-      }
-      let userID = try parseAuthUserID(arguments: arguments)
-      let session = try await context.runtime.signInWithRefreshToken(refreshToken, userID: userID)
+    case let .token(options):
+      let session = try await context.runtime.signInWithRefreshToken(
+        options.refreshToken,
+        userID: options.userID
+      )
       try printAuth(context: context, event: "token", session: session, output: output)
 
-    case "id-token", "idtoken":
-      guard let clientName = arguments.popFirstArgument(),
-        let idToken = arguments.popFirstArgument()
-      else {
-        throw CLIError(
-          "Usage: instant-swift-data auth id-token <client-name> <id-token> [--nonce nonce] [--json|--jsonl]",
-          exitCode: 64
-        )
-      }
-      let nonce = try parseAuthIDTokenNonce(arguments: arguments)
+    case let .idToken(options):
       let session = try await context.runtime.signInWithIDToken(
-        clientName: clientName,
-        idToken: idToken,
-        nonce: nonce
+        clientName: options.clientName,
+        idToken: options.idToken,
+        nonce: options.nonce
       )
       try printAuth(context: context, event: "id-token", session: session, output: output)
 
-    case "oauth":
-      guard let code = arguments.popFirstArgument() else {
-        throw CLIError(
-          "Usage: instant-swift-data auth oauth <code> [--code-verifier verifier] [--json|--jsonl]",
-          exitCode: 64
-        )
-      }
-      let codeVerifier = try parseAuthOAuthCodeVerifier(arguments: arguments)
+    case let .oauth(options):
       let session = try await context.runtime.signInWithOAuth(
-        code: code,
-        codeVerifier: codeVerifier
+        code: options.code,
+        codeVerifier: options.codeVerifier
       )
       try printAuth(context: context, event: "oauth", session: session, output: output)
 
-    case "oauth-url", "authorization-url":
-      guard let clientName = arguments.popFirstArgument(),
-        let redirectURLValue = arguments.popFirstArgument(),
-        arguments.isEmpty
-      else {
+    case let .oauthURL(options):
+      guard let redirectURL = URL(string: options.redirectURL) else {
         throw CLIError(
-          "Usage: instant-swift-data auth oauth-url <client-name> <redirect-url> [--json|--jsonl]",
-          exitCode: 64
-        )
-      }
-      guard let redirectURL = URL(string: redirectURLValue) else {
-        throw CLIError(
-          "Usage: instant-swift-data auth oauth-url <client-name> <redirect-url> [--json|--jsonl]",
+          CLIAuthUsage.oauthURL,
           exitCode: 64
         )
       }
       let authorizationURL = try context.runtime.oauthAuthorizationURL(
-        clientName: clientName,
+        clientName: options.clientName,
         redirectURL: redirectURL
       )
       let issuerURI = try context.runtime.issuerURI()
@@ -1971,10 +1942,7 @@ struct InstantSwiftDataCLI {
         output: output
       )
 
-    case "issuer", "issuer-uri":
-      guard arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data auth issuer [--json|--jsonl]", exitCode: 64)
-      }
+    case .issuer:
       let issuerURI = try context.runtime.issuerURI()
       try printAuthEndpoint(
         context: context,
@@ -1984,53 +1952,20 @@ struct InstantSwiftDataCLI {
         output: output
       )
 
-    case "magic-code", "magic":
-      try await runMagicCode(arguments: arguments, context: context, output: output)
-
-    case "watch", "observe":
-      let eventCount = try parseAuthWatchEventCount(arguments: arguments)
-      try await watchAuth(context: context, output: output, eventCount: eventCount)
-
-    case "sign-out", "signout", "logout":
-      let invalidateToken = try parseAuthSignOutInvalidateToken(arguments: arguments)
-      try await context.runtime.signOut(invalidateToken: invalidateToken)
-      try printAuth(context: context, event: "sign-out", session: nil, output: output)
-
-    default:
-      throw CLIError(authUsage, exitCode: 64)
-    }
-  }
-
-  private static func runMagicCode(
-    arguments: [String],
-    context: CLIContext,
-    output: OutputMode
-  ) async throws {
-    var arguments = arguments
-    guard let command = arguments.popFirstArgument() else {
-      throw CLIError(magicCodeUsage, exitCode: 64)
-    }
-
-    switch command {
-    case "send":
-      guard let email = arguments.popFirstArgument(), arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data auth magic-code send <email> [--json|--jsonl]", exitCode: 64)
-      }
+    case let .magicCode(.send(email)):
       let challenge = try await context.runtime.sendMagicCode(email: email)
       try printMagicCodeChallenge(context: context, challenge: challenge, output: output)
 
-    case "verify":
-      guard let email = arguments.popFirstArgument(),
-        let code = arguments.popFirstArgument(),
-        arguments.isEmpty
-      else {
-        throw CLIError("Usage: instant-swift-data auth magic-code verify <email> <code> [--json|--jsonl]", exitCode: 64)
-      }
+    case let .magicCode(.verify(email, code)):
       let session = try await context.runtime.signInWithMagicCode(email: email, code: code)
       try printAuth(context: context, event: "magic-code", session: session, output: output)
 
-    default:
-      throw CLIError(magicCodeUsage, exitCode: 64)
+    case let .watch(options):
+      try await watchAuth(context: context, output: output, eventCount: options.eventCount)
+
+    case let .signOut(options):
+      try await context.runtime.signOut(invalidateToken: options.invalidateToken)
+      try printAuth(context: context, event: "sign-out", session: nil, output: output)
     }
   }
 
@@ -5176,129 +5111,6 @@ struct InstantSwiftDataCLI {
       + document.namespaces.reduce(0) { $0 + $1.allow.count }
   }
 
-  private static func parseAuthUserID(arguments: [String]) throws -> String? {
-    var arguments = arguments
-    var userID: String?
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--user-id":
-        guard let value = arguments.popFirstArgument(),
-          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else {
-          throw CLIError(
-            "Usage: instant-swift-data auth token <refresh-token> [--user-id id] [--json|--jsonl]",
-            exitCode: 64
-          )
-        }
-        userID = value
-
-      default:
-        throw CLIError(
-          "Unknown auth token option: \(option). Usage: instant-swift-data auth token <refresh-token> [--user-id id] [--json|--jsonl]",
-          exitCode: 64
-        )
-      }
-    }
-    return userID
-  }
-
-  private static func parseAuthIDTokenNonce(arguments: [String]) throws -> String? {
-    var arguments = arguments
-    var nonce: String?
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--nonce":
-        guard let value = arguments.popFirstArgument(),
-          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else {
-          throw CLIError(
-            "Usage: instant-swift-data auth id-token <client-name> <id-token> [--nonce nonce] [--json|--jsonl]",
-            exitCode: 64
-          )
-        }
-        nonce = value
-
-      default:
-        throw CLIError(
-          "Unknown auth id-token option: \(option). Usage: instant-swift-data auth id-token <client-name> <id-token> [--nonce nonce] [--json|--jsonl]",
-          exitCode: 64
-        )
-      }
-    }
-    return nonce
-  }
-
-  private static func parseAuthOAuthCodeVerifier(arguments: [String]) throws -> String? {
-    var arguments = arguments
-    var codeVerifier: String?
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--code-verifier":
-        guard let value = arguments.popFirstArgument(),
-          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else {
-          throw CLIError(
-            "Usage: instant-swift-data auth oauth <code> [--code-verifier verifier] [--json|--jsonl]",
-            exitCode: 64
-          )
-        }
-        codeVerifier = value
-
-      default:
-        throw CLIError(
-          "Unknown auth oauth option: \(option). Usage: instant-swift-data auth oauth <code> [--code-verifier verifier] [--json|--jsonl]",
-          exitCode: 64
-        )
-      }
-    }
-    return codeVerifier
-  }
-
-  private static func parseAuthSignOutInvalidateToken(arguments: [String]) throws -> Bool {
-    var arguments = arguments
-    var invalidateToken = true
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--invalidate-token":
-        invalidateToken = true
-
-      case "--skip-token-invalidation", "--no-invalidate-token":
-        invalidateToken = false
-
-      default:
-        throw CLIError(
-          "Unknown auth sign-out option: \(option). Usage: instant-swift-data auth sign-out [--skip-token-invalidation] [--json|--jsonl]",
-          exitCode: 64
-        )
-      }
-    }
-    return invalidateToken
-  }
-
-  private static func parseAuthWatchEventCount(arguments: [String]) throws -> Int {
-    var arguments = arguments
-    var eventCount = 1
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--events":
-        guard let value = arguments.popFirstArgument(),
-          let parsed = Int(value),
-          parsed == 1
-        else {
-          throw CLIError("Usage: instant-swift-data auth watch --events 1", exitCode: 64)
-        }
-        eventCount = parsed
-
-      default:
-        throw CLIError(
-          "Unknown auth watch option: \(option). Usage: instant-swift-data auth watch [--events 1] [--json|--jsonl]",
-          exitCode: 64
-        )
-      }
-    }
-    return eventCount
-  }
-
   fileprivate static func parseFiniteWatchEventCount(
     arguments: [String],
     usageCommand: String,
@@ -6307,28 +6119,7 @@ struct InstantSwiftDataCLI {
   }
 
   private static var authUsage: String {
-    """
-    Usage: instant-swift-data auth <show|guest|token|id-token|oauth|oauth-url|issuer|magic-code|watch|sign-out>
-      instant-swift-data auth show [--json|--jsonl]
-      instant-swift-data auth guest [--json|--jsonl]
-      instant-swift-data auth token <refresh-token> [--user-id id] [--json|--jsonl]
-      instant-swift-data auth id-token <client-name> <id-token> [--nonce nonce] [--json|--jsonl]
-      instant-swift-data auth oauth <code> [--code-verifier verifier] [--json|--jsonl]
-      instant-swift-data auth oauth-url <client-name> <redirect-url> [--json|--jsonl]
-      instant-swift-data auth issuer [--json|--jsonl]
-      instant-swift-data auth magic-code send <email> [--json|--jsonl]
-      instant-swift-data auth magic-code verify <email> <code> [--json|--jsonl]
-      instant-swift-data auth watch [--events 1] [--json|--jsonl]
-      instant-swift-data auth sign-out [--skip-token-invalidation] [--json|--jsonl]
-    """
-  }
-
-  private static var magicCodeUsage: String {
-    """
-    Usage: instant-swift-data auth magic-code <send|verify>
-      instant-swift-data auth magic-code send <email> [--json|--jsonl]
-      instant-swift-data auth magic-code verify <email> <code> [--json|--jsonl]
-    """
+    CLIAuthUsage.auth
   }
 
   private static var appUsage: String {

@@ -252,6 +252,138 @@ public enum CLIRoomsArgumentError: Error, Equatable, Sendable {
   public var exitCode: Int32 { 64 }
 }
 
+public enum CLIAuthInvocation: Equatable, Sendable {
+  case show
+  case guest
+  case token(CLIAuthTokenInvocation)
+  case idToken(CLIAuthIDTokenInvocation)
+  case oauth(CLIAuthOAuthInvocation)
+  case oauthURL(CLIAuthOAuthURLInvocation)
+  case issuer
+  case magicCode(CLIAuthMagicCodeInvocation)
+  case watch(CLIAuthWatchInvocation)
+  case signOut(CLIAuthSignOutInvocation)
+}
+
+public struct CLIAuthTokenInvocation: Equatable, Sendable {
+  public var refreshToken: String
+  public var userID: String?
+
+  public init(refreshToken: String, userID: String? = nil) {
+    self.refreshToken = refreshToken
+    self.userID = userID
+  }
+}
+
+public struct CLIAuthIDTokenInvocation: Equatable, Sendable {
+  public var clientName: String
+  public var idToken: String
+  public var nonce: String?
+
+  public init(clientName: String, idToken: String, nonce: String? = nil) {
+    self.clientName = clientName
+    self.idToken = idToken
+    self.nonce = nonce
+  }
+}
+
+public struct CLIAuthOAuthInvocation: Equatable, Sendable {
+  public var code: String
+  public var codeVerifier: String?
+
+  public init(code: String, codeVerifier: String? = nil) {
+    self.code = code
+    self.codeVerifier = codeVerifier
+  }
+}
+
+public struct CLIAuthOAuthURLInvocation: Equatable, Sendable {
+  public var clientName: String
+  public var redirectURL: String
+
+  public init(clientName: String, redirectURL: String) {
+    self.clientName = clientName
+    self.redirectURL = redirectURL
+  }
+}
+
+public enum CLIAuthMagicCodeInvocation: Equatable, Sendable {
+  case send(email: String)
+  case verify(email: String, code: String)
+}
+
+public struct CLIAuthWatchInvocation: Equatable, Sendable {
+  public var eventCount: Int
+
+  public init(eventCount: Int = 1) {
+    self.eventCount = eventCount
+  }
+}
+
+public struct CLIAuthSignOutInvocation: Equatable, Sendable {
+  public var invalidateToken: Bool
+
+  public init(invalidateToken: Bool = true) {
+    self.invalidateToken = invalidateToken
+  }
+}
+
+public enum CLIAuthUsage {
+  public static let auth = """
+    Usage: instant-swift-data auth <show|guest|token|id-token|oauth|oauth-url|issuer|magic-code|watch|sign-out>
+      instant-swift-data auth show [--json|--jsonl]
+      instant-swift-data auth guest [--json|--jsonl]
+      instant-swift-data auth token <refresh-token> [--user-id id] [--json|--jsonl]
+      instant-swift-data auth id-token <client-name> <id-token> [--nonce nonce] [--json|--jsonl]
+      instant-swift-data auth oauth <code> [--code-verifier verifier] [--json|--jsonl]
+      instant-swift-data auth oauth-url <client-name> <redirect-url> [--json|--jsonl]
+      instant-swift-data auth issuer [--json|--jsonl]
+      instant-swift-data auth magic-code send <email> [--json|--jsonl]
+      instant-swift-data auth magic-code verify <email> <code> [--json|--jsonl]
+      instant-swift-data auth watch [--events 1] [--json|--jsonl]
+      instant-swift-data auth sign-out [--skip-token-invalidation] [--json|--jsonl]
+    """
+
+  public static let show = "Usage: instant-swift-data auth show [--json|--jsonl]"
+  public static let guest = "Usage: instant-swift-data auth guest [--json|--jsonl]"
+  public static let token =
+    "Usage: instant-swift-data auth token <refresh-token> [--user-id id] [--json|--jsonl]"
+  public static let idToken =
+    "Usage: instant-swift-data auth id-token <client-name> <id-token> [--nonce nonce] [--json|--jsonl]"
+  public static let oauth =
+    "Usage: instant-swift-data auth oauth <code> [--code-verifier verifier] [--json|--jsonl]"
+  public static let oauthURL =
+    "Usage: instant-swift-data auth oauth-url <client-name> <redirect-url> [--json|--jsonl]"
+  public static let issuer = "Usage: instant-swift-data auth issuer [--json|--jsonl]"
+  public static let magicCode = """
+    Usage: instant-swift-data auth magic-code <send|verify>
+      instant-swift-data auth magic-code send <email> [--json|--jsonl]
+      instant-swift-data auth magic-code verify <email> <code> [--json|--jsonl]
+    """
+  public static let magicCodeSend =
+    "Usage: instant-swift-data auth magic-code send <email> [--json|--jsonl]"
+  public static let magicCodeVerify =
+    "Usage: instant-swift-data auth magic-code verify <email> <code> [--json|--jsonl]"
+  public static let watch = "Usage: instant-swift-data auth watch [--events 1] [--json|--jsonl]"
+  public static let signOut =
+    "Usage: instant-swift-data auth sign-out [--skip-token-invalidation] [--json|--jsonl]"
+}
+
+public enum CLIAuthArgumentError: Error, Equatable, Sendable {
+  case missingCommand
+  case unknownCommand(String)
+  case missingMagicCodeCommand
+  case unknownMagicCodeCommand(String)
+  case missingArguments(usage: String)
+  case missingValue(option: String, usage: String)
+  case emptyValue(option: String, usage: String)
+  case invalidEventCount(String, usageCommand: String)
+  case unknownOption(domain: String, option: String, usage: String)
+  case unexpectedArgument(String, usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
 public enum CLIFilesInvocation: Equatable, Sendable {
   case upload(CLIFileUploadInvocation)
   case uploadProgress(CLIFileUploadInvocation)
@@ -852,6 +984,220 @@ public struct CLIRoomTopicWatchParser: Parser {
   }
 }
 
+public struct CLIAuthParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIAuthInvocation {
+    guard let command = input.first else {
+      throw CLIAuthArgumentError.missingCommand
+    }
+    input.removeFirst()
+
+    switch command {
+    case "show", "status":
+      try requireNoRemainingAuthArguments(&input, usage: CLIAuthUsage.show)
+      return .show
+
+    case "guest":
+      try requireNoRemainingAuthArguments(&input, usage: CLIAuthUsage.guest)
+      return .guest
+
+    case "token":
+      return .token(try CLIAuthTokenParser().parse(&input))
+
+    case "id-token", "idtoken":
+      return .idToken(try CLIAuthIDTokenParser().parse(&input))
+
+    case "oauth":
+      return .oauth(try CLIAuthOAuthParser().parse(&input))
+
+    case "oauth-url", "authorization-url":
+      return .oauthURL(try CLIAuthOAuthURLParser().parse(&input))
+
+    case "issuer", "issuer-uri":
+      try requireNoRemainingAuthArguments(&input, usage: CLIAuthUsage.issuer)
+      return .issuer
+
+    case "magic-code", "magic":
+      return .magicCode(try CLIAuthMagicCodeParser().parse(&input))
+
+    case "watch", "observe":
+      return .watch(try CLIAuthWatchParser().parse(&input))
+
+    case "sign-out", "signout", "logout":
+      return .signOut(try CLIAuthSignOutParser().parse(&input))
+
+    default:
+      throw CLIAuthArgumentError.unknownCommand(command)
+    }
+  }
+}
+
+public struct CLIAuthTokenParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIAuthTokenInvocation {
+    let refreshToken = try parseRawAuthArgument(from: &input, usage: CLIAuthUsage.token)
+    var userID: String?
+
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--user-id":
+        userID = try parseNonEmptyAuthOptionValue(
+          from: &input,
+          option: option,
+          usage: CLIAuthUsage.token
+        )
+
+      default:
+        throw CLIAuthArgumentError.unknownOption(
+          domain: "auth token",
+          option: option,
+          usage: CLIAuthUsage.token
+        )
+      }
+    }
+
+    return CLIAuthTokenInvocation(refreshToken: refreshToken, userID: userID)
+  }
+}
+
+public struct CLIAuthIDTokenParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIAuthIDTokenInvocation {
+    let clientName = try parseRawAuthArgument(from: &input, usage: CLIAuthUsage.idToken)
+    let idToken = try parseRawAuthArgument(from: &input, usage: CLIAuthUsage.idToken)
+    var nonce: String?
+
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--nonce":
+        nonce = try parseNonEmptyAuthOptionValue(
+          from: &input,
+          option: option,
+          usage: CLIAuthUsage.idToken
+        )
+
+      default:
+        throw CLIAuthArgumentError.unknownOption(
+          domain: "auth id-token",
+          option: option,
+          usage: CLIAuthUsage.idToken
+        )
+      }
+    }
+
+    return CLIAuthIDTokenInvocation(clientName: clientName, idToken: idToken, nonce: nonce)
+  }
+}
+
+public struct CLIAuthOAuthParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIAuthOAuthInvocation {
+    let code = try parseRawAuthArgument(from: &input, usage: CLIAuthUsage.oauth)
+    var codeVerifier: String?
+
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--code-verifier":
+        codeVerifier = try parseNonEmptyAuthOptionValue(
+          from: &input,
+          option: option,
+          usage: CLIAuthUsage.oauth
+        )
+
+      default:
+        throw CLIAuthArgumentError.unknownOption(
+          domain: "auth oauth",
+          option: option,
+          usage: CLIAuthUsage.oauth
+        )
+      }
+    }
+
+    return CLIAuthOAuthInvocation(code: code, codeVerifier: codeVerifier)
+  }
+}
+
+public struct CLIAuthOAuthURLParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIAuthOAuthURLInvocation {
+    let clientName = try parseRawAuthArgument(from: &input, usage: CLIAuthUsage.oauthURL)
+    let redirectURL = try parseRawAuthArgument(from: &input, usage: CLIAuthUsage.oauthURL)
+    try requireNoRemainingAuthArguments(&input, usage: CLIAuthUsage.oauthURL)
+    return CLIAuthOAuthURLInvocation(clientName: clientName, redirectURL: redirectURL)
+  }
+}
+
+public struct CLIAuthMagicCodeParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIAuthMagicCodeInvocation {
+    guard let command = input.first else {
+      throw CLIAuthArgumentError.missingMagicCodeCommand
+    }
+    input.removeFirst()
+
+    switch command {
+    case "send":
+      let email = try parseRawAuthArgument(from: &input, usage: CLIAuthUsage.magicCodeSend)
+      try requireNoRemainingAuthArguments(&input, usage: CLIAuthUsage.magicCodeSend)
+      return .send(email: email)
+
+    case "verify":
+      let email = try parseRawAuthArgument(from: &input, usage: CLIAuthUsage.magicCodeVerify)
+      let code = try parseRawAuthArgument(from: &input, usage: CLIAuthUsage.magicCodeVerify)
+      try requireNoRemainingAuthArguments(&input, usage: CLIAuthUsage.magicCodeVerify)
+      return .verify(email: email, code: code)
+
+    default:
+      throw CLIAuthArgumentError.unknownMagicCodeCommand(command)
+    }
+  }
+}
+
+public struct CLIAuthWatchParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIAuthWatchInvocation {
+    CLIAuthWatchInvocation(eventCount: try parseAuthFiniteWatchEventCount(from: &input))
+  }
+}
+
+public struct CLIAuthSignOutParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIAuthSignOutInvocation {
+    var invalidateToken = true
+
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--invalidate-token":
+        invalidateToken = true
+
+      case "--skip-token-invalidation", "--no-invalidate-token":
+        invalidateToken = false
+
+      default:
+        throw CLIAuthArgumentError.unknownOption(
+          domain: "auth sign-out",
+          option: option,
+          usage: CLIAuthUsage.signOut
+        )
+      }
+    }
+
+    return CLIAuthSignOutInvocation(invalidateToken: invalidateToken)
+  }
+}
+
 public struct CLIFilesParser: Parser {
   public init() {}
 
@@ -1352,6 +1698,80 @@ private func requireNoRemainingArguments(
   }
 }
 
+private func parseRawAuthArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIAuthArgumentError.missingArguments(usage: usage)
+  }
+  input.removeFirst()
+  return value
+}
+
+private func parseAuthOptionValue(
+  from input: inout ArraySlice<String>,
+  option: String,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIAuthArgumentError.missingValue(option: option, usage: usage)
+  }
+  input.removeFirst()
+  return value
+}
+
+private func parseNonEmptyAuthOptionValue(
+  from input: inout ArraySlice<String>,
+  option: String,
+  usage: String
+) throws -> String {
+  let value = try parseAuthOptionValue(from: &input, option: option, usage: usage)
+  guard !trimmed(value).isEmpty else {
+    throw CLIAuthArgumentError.emptyValue(option: option, usage: usage)
+  }
+  return value
+}
+
+private func parseAuthFiniteWatchEventCount(
+  from input: inout ArraySlice<String>
+) throws -> Int {
+  let usageCommand = "instant-swift-data auth watch"
+  var eventCount = 1
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--events":
+      let value = try parseAuthOptionValue(
+        from: &input,
+        option: option,
+        usage: "Usage: \(usageCommand) --events 1"
+      )
+      guard let parsed = Int(value), parsed == 1 else {
+        throw CLIAuthArgumentError.invalidEventCount(value, usageCommand: usageCommand)
+      }
+      eventCount = parsed
+
+    default:
+      throw CLIAuthArgumentError.unknownOption(
+        domain: "auth watch",
+        option: option,
+        usage: CLIAuthUsage.watch
+      )
+    }
+  }
+  return eventCount
+}
+
+private func requireNoRemainingAuthArguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if let argument = input.first {
+    throw CLIAuthArgumentError.unexpectedArgument(argument, usage: usage)
+  }
+}
+
 private func parseSingleFileArgument(
   from input: inout ArraySlice<String>,
   usage: String
@@ -1577,6 +1997,42 @@ extension CLIRoomsArgumentError: CustomStringConvertible {
 
     case let .invalidLimit(value, usage):
       return "Invalid --limit value: \(value). \(usage)"
+
+    case let .invalidEventCount(_, usageCommand):
+      return "Usage: \(usageCommand) --events 1"
+
+    case let .unknownOption(domain, option, usage):
+      return "Unknown \(domain) option: \(option). \(usage)"
+
+    case let .unexpectedArgument(argument, usage):
+      return "Unexpected argument: \(argument). \(usage)"
+    }
+  }
+}
+
+extension CLIAuthArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case .missingCommand:
+      return CLIAuthUsage.auth
+
+    case .unknownCommand:
+      return CLIAuthUsage.auth
+
+    case .missingMagicCodeCommand:
+      return CLIAuthUsage.magicCode
+
+    case .unknownMagicCodeCommand:
+      return CLIAuthUsage.magicCode
+
+    case let .missingArguments(usage):
+      return usage
+
+    case let .missingValue(option, usage):
+      return "Missing value for \(option). \(usage)"
+
+    case let .emptyValue(option, usage):
+      return "Missing non-empty value for \(option). \(usage)"
 
     case let .invalidEventCount(_, usageCommand):
       return "Usage: \(usageCommand) --events 1"
