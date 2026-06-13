@@ -520,6 +520,9 @@ public API into SQL:
   cancellation. Instant Swift Data's `@LocalID` should follow the same wrapper
   conventions for local ID values: optional current value, loading/error state,
   dynamic `load`, projected task helpers, and SwiftUI bindings when available.
+  `@AuthSession` should adapt Instant auth observation into the same
+  value/loading/error/task/subscription shape instead of exposing raw auth
+  callbacks to app features.
   Client adapters must transform subscribable/live Instant values into
   Swift-native wrappers, projected bindings, observable model state, and
   `AsyncSequence` streams rather than exposing raw subscription callbacks to app

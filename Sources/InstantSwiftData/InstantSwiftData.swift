@@ -1857,6 +1857,169 @@ public struct Fetch<Value: Sendable>: Sendable {
 }
 
 @propertyWrapper
+public struct AuthSession: Sendable {
+  private let storage: FetchStorage<InstantAuthSession?>
+
+  public var wrappedValue: InstantAuthSession? {
+    get { storage.wrappedValue }
+    set { storage.wrappedValue = newValue }
+  }
+
+  public var loadError: InstantError? {
+    get { storage.loadError }
+    set { storage.loadError = newValue }
+  }
+
+  public var isLoading: Bool {
+    get { storage.isLoading }
+    set { storage.isLoading = newValue }
+  }
+
+  #if canImport(SwiftUI)
+    public var binding: Binding<InstantAuthSession?> {
+      Binding(
+        get: { storage.wrappedValue },
+        set: { storage.wrappedValue = $0 }
+      )
+    }
+  #endif
+
+  public init(wrappedValue: InstantAuthSession? = nil) {
+    self.storage = FetchStorage(value: wrappedValue)
+  }
+
+  public var projectedValue: Self {
+    get { self }
+    set { self = newValue }
+  }
+
+  public mutating func load() async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(using: client)
+  }
+
+  public mutating func load(using client: InstantSwiftDataClient) async throws {
+    isLoading = true
+    do {
+      let session = try await client.authSession()
+      try Task.checkCancellation()
+      wrappedValue = session
+      loadError = nil
+      isLoading = false
+    } catch let error as CancellationError {
+      loadError = nil
+      isLoading = false
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      isLoading = false
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "load AuthSession",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient auth operation."
+      )
+      loadError = error
+      isLoading = false
+      throw error
+    }
+  }
+
+  public mutating func subscribe() async throws -> FetchSubscription<InstantAuthSession?> {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(using: client)
+  }
+
+  public mutating func subscribe(
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<InstantAuthSession?> {
+    do {
+      let sessions = try await client.observeAuthSession()
+      let stream = AsyncThrowingStream<InstantAuthSession?, Error>.makeStream(
+        bufferingPolicy: .bufferingNewest(1)
+      )
+      let task = Task {
+        for await session in sessions {
+          do {
+            try Task.checkCancellation()
+            stream.continuation.yield(session)
+          } catch {
+            stream.continuation.finish(throwing: error)
+            return
+          }
+        }
+        stream.continuation.finish()
+      }
+      stream.continuation.onTermination = { @Sendable _ in
+        task.cancel()
+      }
+      loadError = nil
+      return FetchSubscription(stream: stream.stream) {
+        task.cancel()
+        stream.continuation.finish()
+      }
+    } catch let error as CancellationError {
+      loadError = nil
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "subscribe AuthSession",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient auth observation operation."
+      )
+      loadError = error
+      throw error
+    }
+  }
+
+  public mutating func task() async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(using: client)
+  }
+
+  public mutating func task(using client: InstantSwiftDataClient) async throws {
+    isLoading = true
+    do {
+      let subscription = try await subscribe(using: client)
+      defer { subscription.cancel() }
+      for try await value in subscription {
+        try Task.checkCancellation()
+        wrappedValue = value
+        loadError = nil
+        isLoading = false
+      }
+      try Task.checkCancellation()
+      loadError = nil
+      isLoading = false
+    } catch let error as CancellationError {
+      loadError = nil
+      isLoading = false
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      isLoading = false
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "observe AuthSession",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient auth observation operation."
+      )
+      loadError = error
+      isLoading = false
+      throw error
+    }
+  }
+}
+
+@propertyWrapper
 public struct LocalID: Sendable {
   private let storage: FetchStorage<String?>
   private var name: String?

@@ -696,6 +696,157 @@ struct BootstrapTests {
   }
 
   @Test
+  func authSessionPropertyWrapperStartsNil() {
+    @AuthSession var session: InstantAuthSession?
+
+    expectNoDifference(session, nil)
+    expectNoDifference($session.loadError, nil)
+    expectNoDifference($session.isLoading, false)
+  }
+
+  @Test
+  func authSessionPropertyWrapperLoadsUsingDependencyClient() async throws {
+    let loaded = mockAuthSession(userID: "cached-user")
+    let client = authSessionClient(
+      load: { loaded },
+      observe: { AsyncStream { continuation in continuation.finish() } }
+    )
+
+    try await withDependencies {
+      $0.defaultInstantSwiftData = client
+    } operation: {
+      @AuthSession var session: InstantAuthSession?
+
+      try await $session.load()
+
+      expectNoDifference(session, loaded)
+      expectNoDifference($session.loadError, nil)
+      expectNoDifference($session.isLoading, false)
+    }
+  }
+
+  @Test
+  func authSessionPropertyWrapperLoadCancellationDoesNotOverwriteCachedValue() async throws {
+    let gate = AuthSessionLoadGate()
+    let cached = mockAuthSession(userID: "cached-user")
+    let loaded = mockAuthSession(userID: "late-user")
+    let client = authSessionClient(
+      load: {
+        await gate.recordStarted()
+        await gate.waitUntilReleased()
+        return loaded
+      },
+      observe: { AsyncStream { continuation in continuation.finish() } }
+    )
+    let auth = AuthSession(wrappedValue: cached)
+
+    let task = Task {
+      var auth = auth
+      try await auth.load(using: client)
+    }
+
+    await gate.waitUntilStarted()
+    task.cancel()
+    await gate.release()
+
+    do {
+      try await task.value
+      Issue.record("Expected @AuthSession load cancellation to throw CancellationError.")
+    } catch is CancellationError {
+    } catch {
+      Issue.record("Expected CancellationError, got \(error).")
+    }
+
+    expectNoDifference(auth.wrappedValue, cached)
+    expectNoDifference(auth.loadError, nil)
+    expectNoDifference(auth.isLoading, false)
+  }
+
+  @Test
+  func authSessionPropertyWrapperTaskBindsObservedSessions() async throws {
+    let signedIn = mockAuthSession(userID: "observed-user")
+    let client = authSessionClient(
+      load: { nil },
+      observe: {
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield(nil)
+          continuation.yield(signedIn)
+          continuation.finish()
+        }
+      }
+    )
+
+    @AuthSession var session: InstantAuthSession?
+
+    try await $session.task(using: client)
+
+    expectNoDifference(session, signedIn)
+    expectNoDifference($session.loadError, nil)
+    expectNoDifference($session.isLoading, false)
+  }
+
+  @Test
+  func authSessionPropertyWrapperSubscribeCancelsUnderlyingObservation() async throws {
+    let termination = AuthSessionTermination()
+    let client = authSessionClient(
+      load: { nil },
+      observe: {
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield(nil)
+          continuation.onTermination = { @Sendable _ in
+            Task {
+              await termination.record()
+            }
+          }
+        }
+      }
+    )
+
+    var auth = AuthSession()
+    let subscription = try await auth.subscribe(using: client)
+    var iterator = subscription.makeAsyncIterator()
+    let initial = try await iterator.next()
+    if case .some(nil) = initial {
+    } else {
+      #expect(Bool(false), "Expected initial auth session emission to be nil.")
+    }
+
+    subscription.cancel()
+    #expect(try await iterator.next() == nil)
+    await termination.wait()
+  }
+
+  @Test
+  func authSessionPropertyWrapperPreservesCachedValueAndRecordsLoadError() async throws {
+    let cached = mockAuthSession(userID: "cached-user")
+    let expectedError = InstantError(
+      code: .implementationFailed,
+      operation: "load test AuthSession",
+      message: "auth failed",
+      recovery: "Retry with a working auth client."
+    )
+    let client = authSessionClient(
+      load: { throw expectedError },
+      observe: { AsyncStream { continuation in continuation.finish() } }
+    )
+
+    @AuthSession var session: InstantAuthSession? = cached
+
+    do {
+      try await $session.load(using: client)
+      #expect(Bool(false), "Expected @AuthSession to surface client failures.")
+    } catch let error as InstantError {
+      expectNoDifference(error.operation, "load test AuthSession")
+      expectNoDifference($session.loadError?.operation, "load test AuthSession")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    expectNoDifference(session, cached)
+    expectNoDifference($session.isLoading, false)
+  }
+
+  @Test
   func cliDefaultPersistenceURLHonorsHomeEnvironment() {
     let key = "INSTANT_SWIFT_DATA_HOME"
     let previous = getenv(key).map { String(cString: $0) }
@@ -859,4 +1010,94 @@ private actor SignOutOptionsRecorder {
   func values() -> [Bool] {
     recordedValues
   }
+}
+
+private actor AuthSessionTermination {
+  private var didTerminate = false
+  private var continuations: [CheckedContinuation<Void, Never>] = []
+
+  func record() {
+    didTerminate = true
+    for continuation in continuations {
+      continuation.resume()
+    }
+    continuations.removeAll()
+  }
+
+  func wait() async {
+    if didTerminate { return }
+    await withCheckedContinuation { continuation in
+      continuations.append(continuation)
+    }
+  }
+}
+
+private actor AuthSessionLoadGate {
+  private var didStart = false
+  private var didRelease = false
+  private var startContinuations: [CheckedContinuation<Void, Never>] = []
+  private var releaseContinuations: [CheckedContinuation<Void, Never>] = []
+
+  func recordStarted() {
+    didStart = true
+    for continuation in startContinuations {
+      continuation.resume()
+    }
+    startContinuations.removeAll()
+  }
+
+  func waitUntilStarted() async {
+    if didStart { return }
+    await withCheckedContinuation { continuation in
+      startContinuations.append(continuation)
+    }
+  }
+
+  func release() {
+    didRelease = true
+    for continuation in releaseContinuations {
+      continuation.resume()
+    }
+    releaseContinuations.removeAll()
+  }
+
+  func waitUntilReleased() async {
+    if didRelease { return }
+    await withCheckedContinuation { continuation in
+      releaseContinuations.append(continuation)
+    }
+  }
+}
+
+private func mockAuthSession(userID: String, isGuest: Bool = false) -> InstantAuthSession {
+  InstantAuthSession(
+    appID: "mock-app",
+    userID: userID,
+    refreshToken: isGuest ? nil : "mock-refresh-\(userID)",
+    isGuest: isGuest,
+    createdAt: InstantTimestamp(milliseconds: 1),
+    updatedAt: InstantTimestamp(milliseconds: 2)
+  )
+}
+
+private func authSessionClient(
+  load: @escaping @Sendable () async throws -> InstantAuthSession?,
+  observe: @escaping @Sendable () async throws -> AsyncStream<InstantAuthSession?>
+) -> InstantSwiftDataClient {
+  InstantSwiftDataClient(
+    transact: { transaction in
+      InstantStoreMutationResult(
+        transactionID: transaction.id,
+        changedEntityIDs: [],
+        tripleCount: transaction.operations.count,
+        emissions: []
+      )
+    },
+    query: { _ in [] },
+    observe: { _ in AsyncStream { continuation in continuation.finish() } },
+    pendingMutations: { [] },
+    localID: { name in "mock-\(name)" },
+    authSession: load,
+    observeAuthSession: observe
+  )
 }

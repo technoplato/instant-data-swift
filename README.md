@@ -433,6 +433,9 @@ for try await todos in subscription {
 @LocalID("todos.compose") var composeTodoID: String?
 try await $composeTodoID.load()
 try await $composeTodoID.load("todos.viewer")
+
+@AuthSession var authSession: InstantAuthSession?
+try await $authSession.load()
 ```
 
 `serverCreatedAt` is order-only metadata. Do not declare a model attribute with
