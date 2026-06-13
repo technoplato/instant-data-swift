@@ -787,6 +787,223 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliSyncUpsDemoPersistsEditsMeetingsAndCascadeDeletes() async throws {
+    let seedHomeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: seedHomeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: seedHomeURL) }
+
+    let seeded = try JSONDecoder().decode(
+      CLISyncUpsOutput.self,
+      from: Data(
+        try runCLI(["examples", "sync-ups", "seed", "--json"], homeURL: seedHomeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(seeded.event, "seed")
+    expectNoDifference(seeded.syncUps.map(\.syncUp.title), ["Design", "Engineering", "Product"])
+    expectNoDifference(seeded.syncUps.map(\.syncUp.seconds), [60, 600, 1_800])
+    expectNoDifference(seeded.syncUps.map(\.attendeeCount), [6, 2, 2])
+    expectNoDifference(seeded.syncUps.map(\.meetingCount), [1, 0, 0])
+    expectNoDifference(seeded.attendees.count, 10)
+    expectNoDifference(seeded.meetings.count, 1)
+    #expect(seeded.meetings.first?.transcript.contains("Lorem ipsum dolor sit amet") == true)
+
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let added = try JSONDecoder().decode(
+      CLISyncUpsOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "examples", "sync-ups", "add", "Design",
+            "--seconds", "900",
+            "--theme", "appOrange",
+            "--attendee", "Blob",
+            "--attendee", "Blob Jr",
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(added.event, "add")
+    expectNoDifference(added.transport, "not-implemented-local-cache-only")
+    expectNoDifference(added.syncUps.map(\.syncUp.title), ["Design"])
+    expectNoDifference(added.syncUps.map(\.attendeeCount), [2])
+    expectNoDifference(added.attendees.map(\.name), ["Blob", "Blob Jr"])
+    expectNoDifference(added.pendingMutationCount, 1)
+    let syncUpID = try #require(added.changedID)
+
+    let other = try JSONDecoder().decode(
+      CLISyncUpsOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "examples", "sync-ups", "add", "Engineering",
+            "--seconds", "600",
+            "--theme", "periwinkle",
+            "--attendee", "Blob Sr",
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(other.syncUps.map(\.syncUp.title), ["Engineering"])
+
+    let detail = try JSONDecoder().decode(
+      CLISyncUpsOutput.self,
+      from: Data(
+        try runCLI(["examples", "sync-ups", "detail", syncUpID, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(detail.event, "detail")
+    expectNoDifference(detail.syncUps.map(\.syncUp.id), [syncUpID])
+    expectNoDifference(detail.syncUps.map(\.syncUp.title), ["Design"])
+    expectNoDifference(detail.attendees.map(\.name), ["Blob", "Blob Jr"])
+    expectNoDifference(detail.meetings, [])
+
+    let scopedList = try JSONDecoder().decode(
+      CLISyncUpsOutput.self,
+      from: Data(
+        try runCLI(["examples", "sync-ups", "list", "--sync-up-id", syncUpID, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(scopedList.event, "list")
+    expectNoDifference(scopedList.syncUps.map(\.syncUp.id), [syncUpID])
+    expectNoDifference(scopedList.syncUps.map(\.syncUp.title), ["Design"])
+    expectNoDifference(scopedList.attendees.map(\.name), ["Blob", "Blob Jr"])
+    expectNoDifference(scopedList.meetings, [])
+
+    let edited = try JSONDecoder().decode(
+      CLISyncUpsOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "examples", "sync-ups", "edit", syncUpID,
+            "--title", "Design Review",
+            "--seconds", "1200",
+            "--theme", "periwinkle",
+            "--attendee", "Blob",
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(edited.event, "edit")
+    expectNoDifference(edited.syncUps.map(\.syncUp.title), ["Design Review"])
+    expectNoDifference(edited.syncUps.map(\.syncUp.seconds), [1_200])
+    expectNoDifference(edited.syncUps.map(\.syncUp.theme), [.periwinkle])
+    expectNoDifference(edited.syncUps.map(\.attendeeCount), [1])
+    expectNoDifference(edited.attendees.map(\.name), ["Blob"])
+    let onlyAttendeeID = try #require(edited.attendees.first?.id)
+
+    let rejectedDeleteAttendee = try runCLIResult(
+      ["examples", "sync-ups", "delete-attendee", onlyAttendeeID, "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(rejectedDeleteAttendee.status, 66)
+    #expect(rejectedDeleteAttendee.error.contains("at least one attendee"))
+
+    let recorded = try JSONDecoder().decode(
+      CLISyncUpsOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "examples", "sync-ups", "record", syncUpID,
+            "--transcript", "Reviewed launch risks.",
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(recorded.event, "record")
+    expectNoDifference(recorded.syncUps.map(\.meetingCount), [1])
+    expectNoDifference(recorded.meetings.map(\.transcript), ["Reviewed launch risks."])
+    let meetingID = try #require(recorded.changedID)
+
+    let jsonlOutput = try runCLI(["examples", "sync-ups", "list", "--jsonl"], homeURL: homeURL)
+    let rows = jsonlOutput.split(separator: "\n")
+    expectNoDifference(rows.count, 6)
+    let evidence = try JSONDecoder().decode(
+      CLISyncUpsEvidence.self,
+      from: Data(try #require(rows.first).utf8)
+    )
+    expectNoDifference(evidence.caseID, "cli.examples.sync-ups")
+    expectNoDifference(evidence.event, "list")
+    expectNoDifference(evidence.details.syncUps.map(\.meetingCount), [1, 0])
+
+    let deletedMeeting = try JSONDecoder().decode(
+      CLISyncUpsOutput.self,
+      from: Data(
+        try runCLI(["examples", "sync-ups", "delete-meeting", meetingID, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(deletedMeeting.event, "delete-meeting")
+    expectNoDifference(deletedMeeting.meetings, [])
+    expectNoDifference(deletedMeeting.syncUps.map(\.meetingCount), [0, 0])
+
+    let deleted = try JSONDecoder().decode(
+      CLISyncUpsOutput.self,
+      from: Data(
+        try runCLI(["examples", "sync-ups", "delete", syncUpID, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(deleted.event, "delete")
+    expectNoDifference(deleted.syncUps.map(\.syncUp.title), ["Engineering"])
+    expectNoDifference(deleted.attendees.map(\.name), ["Blob Sr"])
+    expectNoDifference(deleted.meetings, [])
+
+    let emptyHomeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: emptyHomeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: emptyHomeURL) }
+    do {
+      let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+      let emptyRuntime = try await InstantRuntime.bootstrap(
+        configuration: InstantRuntimeConfiguration(
+          appID: "cli-cache-test",
+          persistenceURL: emptyHomeURL.appendingPathComponent("state.sqlite"),
+          initialAttributes: SyncUpsExample.attributes,
+          now: { timestamp }
+        )
+      )
+      try await emptyRuntime.transact(
+        InstantStoreTransaction(
+          id: "tx-empty-sync-up",
+          operations: SyncUpsExample.createSyncUpOperations(
+            id: "empty-sync-up",
+            title: "Empty",
+            seconds: 300,
+            theme: .bubblegum,
+            updatedAt: timestamp,
+            transactionID: "tx-empty-sync-up"
+          )
+        ),
+        createdAt: timestamp,
+        source: "cli.test.sync-ups.empty"
+      )
+    }
+
+    let rejectedRecord = try runCLIResult(
+      ["examples", "sync-ups", "record", "empty-sync-up", "--transcript", "No attendees", "--json"],
+      homeURL: emptyHomeURL
+    )
+    expectNoDifference(rejectedRecord.status, 66)
+    #expect(rejectedRecord.error.contains("without at least one attendee"))
+  }
+
+  @Test
   func cliCacheInspectIncludesPlanAwareQuerySummaries() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -3726,6 +3943,28 @@ private struct CLIRemindersEvidence: Decodable {
   var caseID: String
   var event: String
   var details: CLIRemindersOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
+}
+
+private struct CLISyncUpsOutput: Decodable {
+  var event: String
+  var changedID: String?
+  var transport: String
+  var pendingMutationCount: Int
+  var syncUps: [SyncUpSummary]
+  var attendees: [SyncUpAttendeeRecord]
+  var meetings: [SyncUpMeetingRecord]
+}
+
+private struct CLISyncUpsEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLISyncUpsOutput
 
   enum CodingKeys: String, CodingKey {
     case caseID = "case"

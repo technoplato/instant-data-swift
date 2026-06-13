@@ -299,6 +299,10 @@ struct InstantSwiftDataCLI {
       throw CLIError(examplesUsage, exitCode: 64)
     }
     switch example {
+    case "sync-ups", "syncups":
+      try await runSyncUps(arguments: arguments, output: output)
+      return
+
     case "reminders":
       try await runReminders(arguments: arguments, output: output)
       return
@@ -533,6 +537,465 @@ struct InstantSwiftDataCLI {
 
     default:
       throw CLIError("Unknown todos command: \(command)", exitCode: 64)
+    }
+  }
+
+  private static func runSyncUps(arguments: [String], output: OutputMode) async throws {
+    var arguments = arguments
+    guard let command = arguments.popFirstArgument() else {
+      throw CLIError(syncUpsUsage, exitCode: 64)
+    }
+    let context = try await CLIContext.bootstrap(initialAttributes: SyncUpsExample.attributes)
+
+    switch command {
+    case "seed":
+      guard arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data examples sync-ups seed [--json|--jsonl]", exitCode: 64)
+      }
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      var syncUpIDs: [String: String] = [:]
+      var syncUps: [(id: String, seed: SyncUpSeedRecord)] = []
+      for seed in SyncUpsExample.seedSyncUps {
+        let id = try await context.runtime.localID(named: seed.localIDName)
+        syncUpIDs[seed.localIDName] = id
+        syncUps.append((id: id, seed: seed))
+      }
+      var attendees: [(id: String, syncUpID: String, seed: SyncUpAttendeeSeedRecord)] = []
+      for seed in SyncUpsExample.seedAttendees {
+        let id = try await context.runtime.localID(named: seed.localIDName)
+        let syncUpID: String
+        if let seededSyncUpID = syncUpIDs[seed.syncUpLocalIDName] {
+          syncUpID = seededSyncUpID
+        } else {
+          syncUpID = try await context.runtime.localID(named: seed.syncUpLocalIDName)
+        }
+        attendees.append((id: id, syncUpID: syncUpID, seed: seed))
+      }
+      var meetings: [(id: String, syncUpID: String, seed: SyncUpMeetingSeedRecord)] = []
+      for seed in SyncUpsExample.seedMeetings {
+        let id = try await context.runtime.localID(named: seed.localIDName)
+        let syncUpID: String
+        if let seededSyncUpID = syncUpIDs[seed.syncUpLocalIDName] {
+          syncUpID = seededSyncUpID
+        } else {
+          syncUpID = try await context.runtime.localID(named: seed.syncUpLocalIDName)
+        }
+        meetings.append((id: id, syncUpID: syncUpID, seed: seed))
+      }
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: SyncUpsExample.seedOperations(
+            syncUps: syncUps,
+            attendees: attendees,
+            meetings: meetings,
+            baseCreatedAt: now,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.sync-ups.seed"
+      )
+      try await printSyncUps(context: context, output: output, event: "seed")
+
+    case "list", "refresh", "detail":
+      var event = command == "refresh" ? "refresh" : "list"
+      var syncUpID: String?
+      if command == "detail" {
+        guard let value = arguments.popFirstArgument(), arguments.isEmpty else {
+          throw CLIError(
+            "Usage: instant-swift-data examples sync-ups detail <sync-up-id> [--json|--jsonl]",
+            exitCode: 64
+          )
+        }
+        syncUpID = value
+        event = "detail"
+      } else {
+        while let option = arguments.popFirstArgument() {
+          switch option {
+          case "--refresh":
+            event = "refresh"
+          case "--sync-up-id":
+            guard let value = arguments.popFirstArgument(), !value.isEmpty else {
+              throw CLIError(
+                "Usage: instant-swift-data examples sync-ups list [--refresh] [--sync-up-id id] [--json|--jsonl]",
+                exitCode: 64
+              )
+            }
+            syncUpID = value
+          default:
+            throw CLIError(
+              "Usage: instant-swift-data examples sync-ups list [--refresh] [--sync-up-id id] [--json|--jsonl]",
+              exitCode: 64
+            )
+          }
+        }
+      }
+      try await printSyncUps(context: context, output: output, event: event, syncUpID: syncUpID)
+
+    case "add":
+      guard let rawTitle = arguments.popFirstArgument() else {
+        throw CLIError(
+          "Usage: instant-swift-data examples sync-ups add \"title\" [--seconds n] [--theme theme] [--attendee name ...]",
+          exitCode: 64
+        )
+      }
+      let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !title.isEmpty else {
+        throw CLIError(
+          "Usage: instant-swift-data examples sync-ups add \"title\" [--seconds n] [--theme theme] [--attendee name ...]",
+          exitCode: 64
+        )
+      }
+      var seconds = 60 * 5
+      var theme = SyncUpTheme.bubblegum
+      var attendeeNames: [String] = []
+      while let option = arguments.popFirstArgument() {
+        switch option {
+        case "--seconds":
+          guard let value = arguments.popFirstArgument(),
+            let parsed = Int(value),
+            parsed > 0
+          else {
+            throw CLIError("Sync-up seconds must be a positive integer.", exitCode: 64)
+          }
+          seconds = parsed
+        case "--theme":
+          guard let value = arguments.popFirstArgument(), let parsed = SyncUpTheme(rawValue: value)
+          else {
+            throw CLIError("Unknown SyncUps theme. Use one of: \(syncUpThemeList).", exitCode: 64)
+          }
+          theme = parsed
+        case "--attendee":
+          guard let value = arguments.popFirstArgument() else {
+            throw CLIError("Usage: instant-swift-data examples sync-ups add \"title\" --attendee name", exitCode: 64)
+          }
+          let name = value.trimmingCharacters(in: .whitespacesAndNewlines)
+          if !name.isEmpty {
+            attendeeNames.append(name)
+          }
+        default:
+          throw CLIError("Unknown sync-ups add option: \(option). \(syncUpsUsage)", exitCode: 64)
+        }
+      }
+      guard !attendeeNames.isEmpty else {
+        throw CLIError("Sync-ups require at least one --attendee name.", exitCode: 64)
+      }
+      let transactionID = context.runtime.configuration.makeID()
+      let syncUpID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      var operations = SyncUpsExample.createSyncUpOperations(
+        id: syncUpID,
+        title: title,
+        seconds: seconds,
+        theme: theme,
+        updatedAt: now,
+        transactionID: transactionID
+      )
+      for name in attendeeNames {
+        operations += SyncUpsExample.createAttendeeOperations(
+          id: context.runtime.configuration.makeID(),
+          syncUpID: syncUpID,
+          name: name,
+          updatedAt: now,
+          transactionID: transactionID
+        )
+      }
+      try await context.runtime.transact(
+        InstantStoreTransaction(id: transactionID, operations: operations),
+        createdAt: now,
+        source: "cli.examples.sync-ups.add"
+      )
+      try await printSyncUps(
+        context: context,
+        output: output,
+        event: "add",
+        changedID: syncUpID,
+        syncUpID: syncUpID
+      )
+
+    case "update", "edit":
+      guard let syncUpID = arguments.popFirstArgument() else {
+        throw CLIError(
+          "Usage: instant-swift-data examples sync-ups edit <sync-up-id> [--title title] [--seconds n] [--theme theme] [--attendee name ...]",
+          exitCode: 64
+        )
+      }
+      let currentSyncUps = try SyncUpsExample.decodeSyncUps(
+        (try await context.runtime.queryOnce(SyncUpsExample.syncUpsQuery)).values
+      )
+      guard let current = currentSyncUps.first(where: { $0.id == syncUpID }) else {
+        throw CLIError("Sync-up not found: \(syncUpID)", exitCode: 66)
+      }
+      var title = current.title
+      var seconds = current.seconds
+      var theme = current.theme
+      var didChange = false
+      var replacementAttendeeNames: [String]?
+      while let option = arguments.popFirstArgument() {
+        switch option {
+        case "--title":
+          guard let rawValue = arguments.popFirstArgument() else {
+            throw CLIError("Sync-up title must not be empty.", exitCode: 64)
+          }
+          let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+          guard !value.isEmpty else {
+            throw CLIError("Sync-up title must not be empty.", exitCode: 64)
+          }
+          title = value
+          didChange = true
+        case "--seconds":
+          guard let value = arguments.popFirstArgument(),
+            let parsed = Int(value),
+            parsed > 0
+          else {
+            throw CLIError("Sync-up seconds must be a positive integer.", exitCode: 64)
+          }
+          seconds = parsed
+          didChange = true
+        case "--theme":
+          guard let value = arguments.popFirstArgument(), let parsed = SyncUpTheme(rawValue: value)
+          else {
+            throw CLIError("Unknown SyncUps theme. Use one of: \(syncUpThemeList).", exitCode: 64)
+          }
+          theme = parsed
+          didChange = true
+        case "--attendee":
+          guard let value = arguments.popFirstArgument() else {
+            throw CLIError(
+              "Usage: instant-swift-data examples sync-ups edit <sync-up-id> --attendee name",
+              exitCode: 64
+            )
+          }
+          let name = value.trimmingCharacters(in: .whitespacesAndNewlines)
+          if replacementAttendeeNames == nil {
+            replacementAttendeeNames = []
+          }
+          if !name.isEmpty {
+            replacementAttendeeNames?.append(name)
+          }
+          didChange = true
+        default:
+          throw CLIError("Unknown sync-ups update option: \(option). \(syncUpsUsage)", exitCode: 64)
+        }
+      }
+      guard didChange else {
+        throw CLIError(
+          "Usage: instant-swift-data examples sync-ups edit <sync-up-id> [--title title] [--seconds n] [--theme theme] [--attendee name ...]",
+          exitCode: 64
+        )
+      }
+      if let replacementAttendeeNames, replacementAttendeeNames.isEmpty {
+        throw CLIError("Sync-up attendee replacement requires at least one non-empty --attendee.", exitCode: 64)
+      }
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      var operations = SyncUpsExample.updateSyncUpOperations(
+        id: syncUpID,
+        title: title,
+        seconds: seconds,
+        theme: theme,
+        updatedAt: now,
+        transactionID: transactionID
+      )
+      if let replacementAttendeeNames {
+        let existingAttendees = try SyncUpsExample.decodeAttendees(
+          (try await context.runtime.queryOnce(SyncUpsExample.attendeesForSyncUpQuery(syncUpID))).values
+        )
+        operations += SyncUpsExample.replaceAttendeesOperations(
+          syncUpID: syncUpID,
+          existingAttendeeIDs: existingAttendees.map(\.id),
+          newAttendees: replacementAttendeeNames.map { name in
+            SyncUpAttendeeDraft(id: context.runtime.configuration.makeID(), name: name)
+          },
+          updatedAt: now,
+          transactionID: transactionID
+        )
+      }
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: operations
+        ),
+        createdAt: now,
+        source: "cli.examples.sync-ups.edit"
+      )
+      try await printSyncUps(
+        context: context,
+        output: output,
+        event: command == "edit" ? "edit" : "update",
+        changedID: syncUpID,
+        syncUpID: syncUpID
+      )
+
+    case "add-attendee":
+      guard let syncUpID = arguments.popFirstArgument() else {
+        throw CLIError(
+          "Usage: instant-swift-data examples sync-ups add-attendee <sync-up-id> \"name\"",
+          exitCode: 64
+        )
+      }
+      let name = arguments.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !name.isEmpty else {
+        throw CLIError(
+          "Usage: instant-swift-data examples sync-ups add-attendee <sync-up-id> \"name\"",
+          exitCode: 64
+        )
+      }
+      let attendeeID = context.runtime.configuration.makeID()
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: SyncUpsExample.createAttendeeOperations(
+            id: attendeeID,
+            syncUpID: syncUpID,
+            name: name,
+            updatedAt: now,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.sync-ups.add-attendee"
+      )
+      try await printSyncUps(
+        context: context,
+        output: output,
+        event: "add-attendee",
+        changedID: attendeeID,
+        syncUpID: syncUpID
+      )
+
+    case "record", "record-meeting":
+      guard let syncUpID = arguments.popFirstArgument() else {
+        throw CLIError(
+          "Usage: instant-swift-data examples sync-ups record <sync-up-id> [--transcript] \"transcript\"",
+          exitCode: 64
+        )
+      }
+      var transcriptParts: [String] = []
+      while let value = arguments.popFirstArgument() {
+        if value == "--transcript" {
+          guard let transcript = arguments.popFirstArgument() else {
+            throw CLIError(
+              "Usage: instant-swift-data examples sync-ups record <sync-up-id> --transcript \"text\"",
+              exitCode: 64
+            )
+          }
+          transcriptParts.append(transcript)
+        } else {
+          transcriptParts.append(value)
+        }
+      }
+      let transcript = transcriptParts.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !transcript.isEmpty else {
+        throw CLIError(
+          "Usage: instant-swift-data examples sync-ups record <sync-up-id> [--transcript] \"transcript\"",
+          exitCode: 64
+        )
+      }
+      let currentAttendees = try SyncUpsExample.decodeAttendees(
+        (try await context.runtime.queryOnce(SyncUpsExample.attendeesForSyncUpQuery(syncUpID))).values
+      )
+      guard !currentAttendees.isEmpty else {
+        throw CLIError(
+          "Cannot record a sync-up meeting without at least one attendee.",
+          exitCode: 66
+        )
+      }
+      let meetingID = context.runtime.configuration.makeID()
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: SyncUpsExample.recordMeetingOperations(
+            id: meetingID,
+            syncUpID: syncUpID,
+            transcript: transcript,
+            date: now,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.sync-ups.record"
+      )
+      try await printSyncUps(
+        context: context,
+        output: output,
+        event: "record",
+        changedID: meetingID,
+        syncUpID: syncUpID
+      )
+
+    case "delete":
+      guard let syncUpID = arguments.popFirstArgument(), arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data examples sync-ups delete <sync-up-id>", exitCode: 64)
+      }
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: SyncUpsExample.deleteSyncUpOperations(id: syncUpID)
+        ),
+        createdAt: now,
+        source: "cli.examples.sync-ups.delete"
+      )
+      try await printSyncUps(context: context, output: output, event: "delete", changedID: syncUpID)
+
+    case "delete-attendee":
+      guard let attendeeID = arguments.popFirstArgument(), arguments.isEmpty else {
+        throw CLIError(
+          "Usage: instant-swift-data examples sync-ups delete-attendee <attendee-id>",
+          exitCode: 64
+        )
+      }
+      let allAttendees = try SyncUpsExample.decodeAttendees(
+        (try await context.runtime.queryOnce(SyncUpsExample.attendeesQuery)).values
+      )
+      guard let attendee = allAttendees.first(where: { $0.id == attendeeID }) else {
+        throw CLIError("Attendee not found: \(attendeeID)", exitCode: 66)
+      }
+      let siblingCount = allAttendees.filter { $0.syncUpID == attendee.syncUpID }.count
+      guard siblingCount > 1 else {
+        throw CLIError("Sync-ups require at least one attendee.", exitCode: 66)
+      }
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: SyncUpsExample.deleteAttendeeOperations(id: attendeeID)
+        ),
+        createdAt: now,
+        source: "cli.examples.sync-ups.delete-attendee"
+      )
+      try await printSyncUps(context: context, output: output, event: "delete-attendee", changedID: attendeeID)
+
+    case "delete-meeting":
+      guard let meetingID = arguments.popFirstArgument(), arguments.isEmpty else {
+        throw CLIError(
+          "Usage: instant-swift-data examples sync-ups delete-meeting <meeting-id>",
+          exitCode: 64
+        )
+      }
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: SyncUpsExample.deleteMeetingOperations(id: meetingID)
+        ),
+        createdAt: now,
+        source: "cli.examples.sync-ups.delete-meeting"
+      )
+      try await printSyncUps(context: context, output: output, event: "delete-meeting", changedID: meetingID)
+
+    default:
+      throw CLIError("Unknown sync-ups command: \(command). \(syncUpsUsage)", exitCode: 64)
     }
   }
 
@@ -3377,6 +3840,153 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func printSyncUps(
+    context: CLIContext,
+    output: OutputMode,
+    event: String,
+    changedID: String? = nil,
+    syncUpID: String? = nil
+  ) async throws {
+    let syncUpsEmission = try await context.runtime.queryOnce(SyncUpsExample.syncUpsQuery)
+    let attendeeQuery = syncUpID.map(SyncUpsExample.attendeesForSyncUpQuery)
+      ?? SyncUpsExample.attendeesQuery
+    let meetingQuery = syncUpID.map(SyncUpsExample.meetingsForSyncUpQuery)
+      ?? SyncUpsExample.meetingsQuery
+    let attendeesEmission = try await context.runtime.queryOnce(attendeeQuery)
+    let meetingsEmission = try await context.runtime.queryOnce(meetingQuery)
+    let allAttendeesEmission = syncUpID == nil
+      ? attendeesEmission
+      : try await context.runtime.queryOnce(SyncUpsExample.attendeesQuery)
+    let allMeetingsEmission = syncUpID == nil
+      ? meetingsEmission
+      : try await context.runtime.queryOnce(SyncUpsExample.meetingsQuery)
+
+    let syncUps = try SyncUpsExample.decodeSyncUps(syncUpsEmission.values)
+    let attendees = try SyncUpsExample.decodeAttendees(attendeesEmission.values)
+    let meetings = try SyncUpsExample.decodeMeetings(meetingsEmission.values)
+    let allAttendees = try SyncUpsExample.decodeAttendees(allAttendeesEmission.values)
+    let allMeetings = try SyncUpsExample.decodeMeetings(allMeetingsEmission.values)
+    let attendeesBySyncUpID = Dictionary(grouping: allAttendees, by: \.syncUpID)
+    let meetingsBySyncUpID = Dictionary(grouping: allMeetings, by: \.syncUpID)
+    let visibleSyncUps = syncUpID.map { id in
+      syncUps.filter { $0.id == id }
+    } ?? syncUps
+    let summaries = visibleSyncUps.map { syncUp in
+      SyncUpSummary(
+        syncUp: syncUp,
+        attendeeCount: attendeesBySyncUpID[syncUp.id]?.count ?? 0,
+        meetingCount: meetingsBySyncUpID[syncUp.id]?.count ?? 0
+      )
+    }
+    let pending = await context.runtime.pendingMutations()
+    let payload = SyncUpsOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      changedID: changedID,
+      transport: "not-implemented-local-cache-only",
+      syncUpQueryID: SyncUpsExample.syncUpsQuery.id,
+      attendeeQueryID: attendeeQuery.id,
+      meetingQueryID: meetingQuery.id,
+      syncUpCacheKey: SyncUpsExample.syncUpsQuery.cacheKey,
+      attendeeCacheKey: attendeeQuery.cacheKey,
+      meetingCacheKey: meetingQuery.cacheKey,
+      pendingMutationCount: pending.count,
+      syncUps: summaries,
+      attendees: attendees,
+      meetings: meetings
+    )
+
+    switch output {
+    case .human:
+      if summaries.isEmpty {
+        print("No sync-ups.")
+      } else {
+        for summary in summaries {
+          print(
+            "sync-up \(summary.syncUp.id) \(summary.syncUp.title) "
+              + "attendees=\(summary.attendeeCount) meetings=\(summary.meetingCount) "
+              + "seconds=\(summary.syncUp.seconds) theme=\(summary.syncUp.theme.rawValue)"
+          )
+        }
+      }
+      if attendees.isEmpty {
+        print("No attendees.")
+      } else {
+        for attendee in attendees {
+          print("attendee \(attendee.id) syncUp=\(attendee.syncUpID) \(attendee.name)")
+        }
+      }
+      if meetings.isEmpty {
+        print("No meetings.")
+      } else {
+        for meeting in meetings {
+          print(
+            "meeting \(meeting.id) syncUp=\(meeting.syncUpID) "
+              + "date=\(meeting.date.milliseconds) transcript=\(meeting.transcript)"
+          )
+        }
+      }
+      print("transport: \(payload.transport)")
+      print("pending mutations: \(pending.count)")
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.examples.sync-ups",
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          ok: true,
+          details: payload
+        )
+      )
+      for summary in summaries {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.sync-ups",
+            side: "swift",
+            event: "sync-up",
+            appID: context.appID,
+            entityID: summary.id,
+            ok: true,
+            details: summary
+          )
+        )
+      }
+      for attendee in attendees {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.sync-ups",
+            side: "swift",
+            event: "sync-up-attendee",
+            appID: context.appID,
+            entityID: attendee.id,
+            ok: true,
+            details: attendee
+          )
+        )
+      }
+      for meeting in meetings {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.sync-ups",
+            side: "swift",
+            event: "sync-up-meeting",
+            appID: context.appID,
+            entityID: meeting.id,
+            ok: true,
+            details: meeting
+          )
+        )
+      }
+    }
+  }
+
   private static func printTodoLinkSnapshots(
     context: CLIContext,
     output: OutputMode,
@@ -5371,11 +5981,32 @@ struct InstantSwiftDataCLI {
 
   private static var examplesUsage: String {
     """
-    Usage: instant-swift-data examples <todos|todo-links|reminders>
+    Usage: instant-swift-data examples <todos|todo-links|reminders|sync-ups>
       instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>
       instant-swift-data examples todo-links <seed|list|nested|unlink> [--json|--jsonl]
       instant-swift-data examples reminders <seed|list|add-list|rename-list|add|update|complete> [--json|--jsonl]
+      instant-swift-data examples sync-ups <seed|list|detail|add|edit|add-attendee|record|delete> [--json|--jsonl]
     """
+  }
+
+  private static var syncUpsUsage: String {
+    """
+    Usage: instant-swift-data examples sync-ups <seed|list|detail|add|edit|add-attendee|record|delete|delete-attendee|delete-meeting>
+      instant-swift-data examples sync-ups seed [--json|--jsonl]
+      instant-swift-data examples sync-ups list [--refresh] [--sync-up-id id] [--json|--jsonl]
+      instant-swift-data examples sync-ups detail <sync-up-id> [--json|--jsonl]
+      instant-swift-data examples sync-ups add "title" --attendee "name" [--seconds n] [--theme theme] [--json|--jsonl]
+      instant-swift-data examples sync-ups edit <sync-up-id> [--title title] [--seconds n] [--theme theme] [--attendee name ...] [--json|--jsonl]
+      instant-swift-data examples sync-ups add-attendee <sync-up-id> "name" [--json|--jsonl]
+      instant-swift-data examples sync-ups record <sync-up-id> [--transcript] "transcript" [--json|--jsonl]
+      instant-swift-data examples sync-ups delete <sync-up-id> [--json|--jsonl]
+      instant-swift-data examples sync-ups delete-attendee <attendee-id> [--json|--jsonl]
+      instant-swift-data examples sync-ups delete-meeting <meeting-id> [--json|--jsonl]
+    """
+  }
+
+  private static var syncUpThemeList: String {
+    SyncUpTheme.allCases.map(\.rawValue).joined(separator: ", ")
   }
 
   private static var remindersUsage: String {
@@ -5776,6 +6407,24 @@ private struct RemindersOutput: Codable, Sendable {
   var pendingMutationCount: Int
   var lists: [RemindersListSummary]
   var reminders: [ReminderRecord]
+}
+
+private struct SyncUpsOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var changedID: String?
+  var transport: String
+  var syncUpQueryID: String
+  var attendeeQueryID: String
+  var meetingQueryID: String
+  var syncUpCacheKey: String
+  var attendeeCacheKey: String
+  var meetingCacheKey: String
+  var pendingMutationCount: Int
+  var syncUps: [SyncUpSummary]
+  var attendees: [SyncUpAttendeeRecord]
+  var meetings: [SyncUpMeetingRecord]
 }
 
 private struct TodoLinkSnapshotsOutput: Codable, Sendable {

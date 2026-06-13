@@ -564,6 +564,12 @@ Agent-oriented output modes are required:
   `instant-swift-data examples reminders list --refresh --jsonl`; reminder child
   mutations carry their list ref so the local shared-list guard can reject
   readers before cache/outbox persistence until containment-aware permissions land.
+- run the first local SyncUps port slice with commands such as
+  `instant-swift-data examples sync-ups add "Design" --seconds 900 --theme appOrange --attendee Blob`,
+  `instant-swift-data examples sync-ups edit <sync-up-id> --title "Design Review" --attendee Blob`,
+  and `instant-swift-data examples sync-ups record <sync-up-id> --transcript "Reviewed launch risks."`;
+  sync-up attendee and meeting records are linked children with cascade delete
+  and shared-root role checks.
 - run local admin write/query helpers such as
   `instant-swift-data admin transact notes note-1 --merge '{"title":"admin note"}' --transaction-id tx-admin-note-1`
   and `instant-swift-data admin query notes --json` for durable terminal

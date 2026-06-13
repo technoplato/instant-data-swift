@@ -664,6 +664,12 @@ Create `validation/` with:
   `list --refresh` commands over `remindersLists`/`reminders` namespaces; reminder
   child mutations include the list ref so shared-list reader/writer roles are
   enforced before cache/outbox writes.
+- SyncUps: the first local SyncUps port slice exposes durable
+  `examples sync-ups add`, `detail`, `edit`, `record`, `list`, and `delete`
+  commands over `syncUps`/`attendees`/`meetings` namespaces; attendee and meeting
+  children cascade with their parent sync-up and shared-root role checks cover
+  child writes before cache/outbox persistence. Speech, sound, settings, live
+  meeting timers, and UI navigation remain app-facing future work.
 - CLI: `instant-swift-data examples todos add "do the dishes"` persists auth,
   local IDs, cache, and outbox state for a later CLI invocation.
 - Permissions: generated permissions reject an unauthorized write in both

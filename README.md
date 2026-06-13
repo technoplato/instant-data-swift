@@ -90,6 +90,19 @@ swift run instant-swift-data auth token invitee-refresh --user-id user-2 --json
 swift run instant-swift-data examples reminders rename-list "$LIST_ID" "reader list" --json || test "$?" -eq 77
 ```
 
+Create and edit a local SyncUps meeting, record a transcript, and prove parent
+cascade delete:
+
+```bash
+SYNCUP_JSON="$(swift run instant-swift-data examples sync-ups add "Design" --seconds 900 --theme appOrange --attendee Blob --attendee "Blob Jr" --json)"
+SYNCUP_ID="$(printf '%s' "$SYNCUP_JSON" | jq -r '.changedID')"
+swift run instant-swift-data examples sync-ups detail "$SYNCUP_ID" --json
+swift run instant-swift-data examples sync-ups edit "$SYNCUP_ID" --title "Design Review" --seconds 1200 --theme periwinkle --attendee Blob --json
+swift run instant-swift-data examples sync-ups record "$SYNCUP_ID" --transcript "Reviewed launch risks." --json
+swift run instant-swift-data examples sync-ups list --jsonl
+swift run instant-swift-data examples sync-ups delete "$SYNCUP_ID" --json
+```
+
 Inspect the durable cache and optimistic outbox:
 
 ```bash

@@ -3583,6 +3583,348 @@ struct InstantStoreTests {
   }
 
   @Test
+  func syncUpsExamplePersistsMeetingsAndCascadesChildren() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let meetingTimestamp = InstantTimestamp(milliseconds: 1_700_000_001_000)
+    let syncUpID = "syncup-design"
+    let firstAttendeeID = "attendee-blob"
+    let secondAttendeeID = "attendee-blob-jr"
+    let replacementAttendeeID = "attendee-blob-sr"
+    let meetingID = "meeting-design"
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: SyncUpsExample.attributes,
+        now: { timestamp }
+      )
+    )
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-syncup-create",
+        operations: SyncUpsExample.createSyncUpOperations(
+          id: syncUpID,
+          title: "Design",
+          seconds: 900,
+          theme: .appOrange,
+          updatedAt: timestamp,
+          transactionID: "tx-syncup-create"
+        )
+          + SyncUpsExample.createAttendeeOperations(
+            id: firstAttendeeID,
+            syncUpID: syncUpID,
+            name: "Blob",
+            updatedAt: timestamp,
+            transactionID: "tx-syncup-create"
+          )
+          + SyncUpsExample.createAttendeeOperations(
+            id: secondAttendeeID,
+            syncUpID: syncUpID,
+            name: "Blob Jr",
+            updatedAt: timestamp,
+            transactionID: "tx-syncup-create"
+          )
+      ),
+      createdAt: timestamp
+    )
+
+    let createdSyncUps = try SyncUpsExample.decodeSyncUps(
+      (try await runtime.queryOnce(SyncUpsExample.syncUpsQuery)).values
+    )
+    let createdAttendees = try SyncUpsExample.decodeAttendees(
+      (try await runtime.queryOnce(SyncUpsExample.attendeesForSyncUpQuery(syncUpID))).values
+    )
+    expectNoDifference(
+      createdSyncUps,
+      [SyncUpRecord(id: syncUpID, title: "Design", seconds: 900, theme: .appOrange)]
+    )
+    expectNoDifference(createdAttendees.map(\.name), ["Blob", "Blob Jr"])
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-syncup-edit",
+        operations: SyncUpsExample.updateSyncUpOperations(
+          id: syncUpID,
+          title: "Design Review",
+          seconds: 1_200,
+          theme: .periwinkle,
+          updatedAt: meetingTimestamp,
+          transactionID: "tx-syncup-edit"
+        )
+          + SyncUpsExample.replaceAttendeesOperations(
+            syncUpID: syncUpID,
+            existingAttendeeIDs: createdAttendees.map(\.id),
+            newAttendees: [
+              SyncUpAttendeeDraft(id: replacementAttendeeID, name: "Blob Sr")
+            ],
+            updatedAt: meetingTimestamp,
+            transactionID: "tx-syncup-edit"
+          )
+          + SyncUpsExample.recordMeetingOperations(
+            id: meetingID,
+            syncUpID: syncUpID,
+            transcript: "Reviewed launch risks.",
+            date: meetingTimestamp,
+            transactionID: "tx-syncup-edit"
+          )
+      ),
+      createdAt: meetingTimestamp
+    )
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: SyncUpsExample.attributes
+      )
+    )
+    let updatedSyncUps = try SyncUpsExample.decodeSyncUps(
+      (try await relaunchedRuntime.queryOnce(SyncUpsExample.syncUpsQuery)).values
+    )
+    let updatedAttendees = try SyncUpsExample.decodeAttendees(
+      (try await relaunchedRuntime.queryOnce(SyncUpsExample.attendeesForSyncUpQuery(syncUpID))).values
+    )
+    let meetings = try SyncUpsExample.decodeMeetings(
+      (try await relaunchedRuntime.queryOnce(SyncUpsExample.meetingsForSyncUpQuery(syncUpID))).values
+    )
+    expectNoDifference(
+      updatedSyncUps,
+      [SyncUpRecord(id: syncUpID, title: "Design Review", seconds: 1_200, theme: .periwinkle)]
+    )
+    expectNoDifference(updatedAttendees, [
+      SyncUpAttendeeRecord(id: replacementAttendeeID, name: "Blob Sr", syncUpID: syncUpID)
+    ])
+    expectNoDifference(meetings, [
+      SyncUpMeetingRecord(
+        id: meetingID,
+        date: meetingTimestamp,
+        syncUpID: syncUpID,
+        transcript: "Reviewed launch risks."
+      )
+    ])
+
+    try await relaunchedRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-syncup-delete",
+        operations: SyncUpsExample.deleteSyncUpOperations(id: syncUpID)
+      ),
+      createdAt: meetingTimestamp
+    )
+    let finalSyncUps = try SyncUpsExample.decodeSyncUps(
+      (try await relaunchedRuntime.queryOnce(SyncUpsExample.syncUpsQuery)).values
+    )
+    let finalAttendees = try SyncUpsExample.decodeAttendees(
+      (try await relaunchedRuntime.queryOnce(SyncUpsExample.attendeesQuery)).values
+    )
+    let finalMeetings = try SyncUpsExample.decodeMeetings(
+      (try await relaunchedRuntime.queryOnce(SyncUpsExample.meetingsQuery)).values
+    )
+    expectNoDifference(finalSyncUps, [])
+    expectNoDifference(finalAttendees, [])
+    expectNoDifference(finalMeetings, [])
+  }
+
+  @Test
+  func syncUpsExampleSharedRootRolesProtectChildren() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let syncUpID = "syncup-shared"
+    let attendeeID = "attendee-owner"
+    let ownerRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: SyncUpsExample.attributes,
+        now: { timestamp }
+      )
+    )
+    _ = try await ownerRuntime.signInWithRefreshToken("owner-refresh", userID: "user-1")
+    try await ownerRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-owner-syncup",
+        operations: SyncUpsExample.createSyncUpOperations(
+          id: syncUpID,
+          title: "Design",
+          seconds: 900,
+          theme: .appOrange,
+          updatedAt: timestamp,
+          transactionID: "tx-owner-syncup"
+        )
+          + SyncUpsExample.createAttendeeOperations(
+            id: attendeeID,
+            syncUpID: syncUpID,
+            name: "Blob",
+            updatedAt: timestamp,
+            transactionID: "tx-owner-syncup"
+          )
+      ),
+      createdAt: timestamp
+    )
+    let createdShare = try await ownerRuntime.createShare(
+      rootNamespace: SyncUpsExample.syncUpsNamespace,
+      rootID: syncUpID
+    )
+
+    let inviteeRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: SyncUpsExample.attributes,
+        now: { timestamp }
+      )
+    )
+    _ = try await inviteeRuntime.signInWithRefreshToken("invitee-refresh", userID: "user-2")
+    let accepted = try await inviteeRuntime.acceptShare(token: createdShare.share.token)
+    expectNoDifference(accepted.memberships.map(\.role), [.owner, .reader])
+
+    do {
+      try await inviteeRuntime.transact(
+        InstantStoreTransaction(
+          id: "tx-reader-edit-syncup",
+          operations: SyncUpsExample.updateSyncUpOperations(
+            id: syncUpID,
+            title: "Reader Design",
+            seconds: 900,
+            theme: .appOrange,
+            updatedAt: timestamp,
+            transactionID: "tx-reader-edit-syncup"
+          )
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected reader sync-up edit to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "write shared root")
+      expectNoDifference(error.namespace, SyncUpsExample.syncUpsNamespace)
+      expectNoDifference(error.localID, syncUpID)
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      try await inviteeRuntime.transact(
+        InstantStoreTransaction(
+          id: "tx-reader-attendee",
+          operations: SyncUpsExample.createAttendeeOperations(
+            id: "attendee-reader",
+            syncUpID: syncUpID,
+            name: "Reader",
+            updatedAt: timestamp,
+            transactionID: "tx-reader-attendee"
+          )
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected reader attendee creation to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "write shared root")
+      expectNoDifference(error.namespace, SyncUpsExample.syncUpsNamespace)
+      expectNoDifference(error.localID, syncUpID)
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      try await inviteeRuntime.transact(
+        InstantStoreTransaction(
+          id: "tx-reader-meeting",
+          operations: SyncUpsExample.recordMeetingOperations(
+            id: "meeting-reader",
+            syncUpID: syncUpID,
+            transcript: "Reader transcript",
+            date: timestamp,
+            transactionID: "tx-reader-meeting"
+          )
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected reader meeting record to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "write shared root")
+      expectNoDifference(error.namespace, SyncUpsExample.syncUpsNamespace)
+      expectNoDifference(error.localID, syncUpID)
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    _ = try await ownerRuntime.signInWithRefreshToken("owner-refresh", userID: "user-1")
+    let promoted = try await ownerRuntime.updateShareMembershipRole(
+      shareID: createdShare.share.id,
+      userID: "user-2",
+      role: .writer
+    )
+    expectNoDifference(promoted.memberships.map(\.role), [.owner, .writer])
+    _ = try await inviteeRuntime.signInWithRefreshToken("invitee-refresh", userID: "user-2")
+    try await inviteeRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-writer-syncup",
+        operations: SyncUpsExample.updateSyncUpOperations(
+          id: syncUpID,
+          title: "Writer Design",
+          seconds: 1_200,
+          theme: .periwinkle,
+          updatedAt: timestamp,
+          transactionID: "tx-writer-syncup"
+        )
+          + SyncUpsExample.recordMeetingOperations(
+            id: "meeting-writer",
+            syncUpID: syncUpID,
+            transcript: "Writer transcript",
+            date: timestamp,
+            transactionID: "tx-writer-syncup"
+          )
+      ),
+      createdAt: timestamp
+    )
+
+    _ = try await ownerRuntime.signInWithRefreshToken("owner-refresh", userID: "user-1")
+    let demoted = try await ownerRuntime.updateShareMembershipRole(
+      shareID: createdShare.share.id,
+      userID: "user-2",
+      role: .reader
+    )
+    expectNoDifference(demoted.memberships.map(\.role), [.owner, .reader])
+    _ = try await inviteeRuntime.signInWithRefreshToken("invitee-refresh", userID: "user-2")
+    do {
+      try await inviteeRuntime.transact(
+        InstantStoreTransaction(
+          id: "tx-demoted-attendee",
+          operations: SyncUpsExample.createAttendeeOperations(
+            id: "attendee-demoted",
+            syncUpID: syncUpID,
+            name: "Demoted",
+            updatedAt: timestamp,
+            transactionID: "tx-demoted-attendee"
+          )
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected demoted reader attendee creation to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "write shared root")
+      expectNoDifference(error.namespace, SyncUpsExample.syncUpsNamespace)
+      expectNoDifference(error.localID, syncUpID)
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    let finalSyncUps = try SyncUpsExample.decodeSyncUps(
+      (try await inviteeRuntime.queryOnce(SyncUpsExample.syncUpsQuery)).values
+    )
+    let finalMeetings = try SyncUpsExample.decodeMeetings(
+      (try await inviteeRuntime.queryOnce(SyncUpsExample.meetingsForSyncUpQuery(syncUpID))).values
+    )
+    expectNoDifference(finalSyncUps.map(\.title), ["Writer Design"])
+    expectNoDifference(finalMeetings.map(\.transcript), ["Writer transcript"])
+  }
+
+  @Test
   func sharedRootWritePermissionsRejectReadersBeforeOutboxPersistence() async throws {
     let cacheURL = try temporaryCacheURL()
     let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
