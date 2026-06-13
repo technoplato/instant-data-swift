@@ -210,6 +210,11 @@ The CLI proves this path non-captively with commands such as
 `instant-swift-data auth watch --events 1 --jsonl`; sign-out defaults to token
 invalidation and can skip it locally with
 `instant-swift-data auth sign-out --skip-token-invalidation --json`.
+`InstantRuntimeConfiguration` now carries Instant-compatible `apiURI` and
+`websocketURI` values, and endpoint helpers such as
+`instant-swift-data auth oauth-url <client-name> <redirect-url> --json` and
+`instant-swift-data auth issuer --json` prove the configured URL shape
+non-captively.
 Transport-backed token verification, token refresh, and server auth
 invalidation remain future work, but the Swift dependency slots are in place.
 

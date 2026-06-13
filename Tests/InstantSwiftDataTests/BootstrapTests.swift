@@ -83,6 +83,8 @@ struct BootstrapTests {
       $0.uuid = .constant(fixedUUID)
       try await $0.bootstrapInstantSwiftData(
         appID: appID,
+        apiURI: try #require(URL(string: "https://api.example.test/custom")),
+        websocketURI: try #require(URL(string: "wss://ws.example.test/runtime/session")),
         context: .test,
         initialAttributes: TodoExample.attributes
       )
@@ -94,6 +96,22 @@ struct BootstrapTests {
         return
       }
       #expect(runtime.configuration.persistenceURL.path.contains(fixedUUID.uuidString.lowercased()))
+      expectNoDifference(runtime.configuration.apiURI.absoluteString, "https://api.example.test/custom")
+      expectNoDifference(
+        runtime.configuration.websocketURI.absoluteString,
+        "wss://ws.example.test/runtime/session"
+      )
+
+      let authorizationURL = try client.oauthAuthorizationURL(
+        clientName: "google-ios",
+        redirectURL: try #require(URL(string: "myapp://oauth/callback"))
+      )
+      let authorizationComponents = try #require(
+        URLComponents(url: authorizationURL, resolvingAgainstBaseURL: false)
+      )
+      expectNoDifference(authorizationComponents.host, "api.example.test")
+      let issuerURI = try client.issuerURI()
+      expectNoDifference(issuerURI.absoluteString, "https://api.example.test/custom/runtime/\(appID)")
 
       let localID = try await client.localID(named: "todos.bootstrap")
       expectNoDifference(localID, fixedUUID.uuidString.lowercased())
@@ -508,6 +526,17 @@ struct BootstrapTests {
           updatedAt: InstantTimestamp(milliseconds: 7)
         )
       },
+      oauthAuthorizationURL: { clientName, redirectURL in
+        var components = URLComponents(string: "https://mock.example/runtime/oauth/start")!
+        components.queryItems = [
+          URLQueryItem(name: "client", value: clientName),
+          URLQueryItem(name: "redirect", value: redirectURL.absoluteString),
+        ]
+        return components.url!
+      },
+      issuerURI: {
+        URL(string: "https://mock.example/runtime/mock-app")!
+      },
       signOut: {},
       signInWithIDToken: { clientName, idToken, nonce in
         InstantAuthSession(
@@ -564,6 +593,16 @@ struct BootstrapTests {
       expectNoDifference(mockMagicSession.userID, "mock@example.com:135790")
       let mockTokenSession = try await client.signInWithRefreshToken("mock-token", userID: nil)
       expectNoDifference(mockTokenSession.userID, "mock-token-user")
+      let mockAuthorizationURL = try client.oauthAuthorizationURL(
+        clientName: "mock-client",
+        redirectURL: try #require(URL(string: "myapp://oauth"))
+      )
+      let mockAuthorizationComponents = try #require(
+        URLComponents(url: mockAuthorizationURL, resolvingAgainstBaseURL: false)
+      )
+      expectNoDifference(mockAuthorizationComponents.host, "mock.example")
+      let mockIssuerURI = try client.issuerURI()
+      expectNoDifference(mockIssuerURI.absoluteString, "https://mock.example/runtime/mock-app")
       let mockIDTokenSession = try await client.signInWithIDToken(
         clientName: "mock-client",
         idToken: "mock-id-token",

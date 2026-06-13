@@ -106,11 +106,21 @@ swift run instant-swift-data auth show --json
 swift run instant-swift-data auth token <refresh-token> --user-id <user-id> --json
 swift run instant-swift-data auth id-token google-ios <id-token> --nonce <nonce> --json
 swift run instant-swift-data auth oauth <code> --code-verifier <verifier> --json
+swift run instant-swift-data auth oauth-url google-ios myapp://oauth/callback --json
+swift run instant-swift-data auth issuer --json
 swift run instant-swift-data auth magic-code send user@example.com --json
 swift run instant-swift-data auth magic-code verify user@example.com <local-verification-code> --json
 swift run instant-swift-data auth watch --events 1 --jsonl
 swift run instant-swift-data auth sign-out --json
 swift run instant-swift-data auth sign-out --skip-token-invalidation --json
+```
+
+Use Instant-compatible endpoint overrides for local/staging URL generation:
+
+```bash
+INSTANT_API_URI=https://api.example.test/custom \
+INSTANT_WEBSOCKET_URI=wss://ws.example.test/runtime/session \
+swift run instant-swift-data auth oauth-url google-ios myapp://oauth/callback --json
 ```
 
 Persist local room presence and topic messages after signing in:
@@ -199,7 +209,10 @@ query materialization, plan-aware persisted query results, optimistic outbox
 persistence, local auth/session state, local room presence/topics, local file
 metadata/content copies, local stream chunks, local share metadata/memberships,
 local admin query/transact helpers, and non-captive CLI interaction, but it does
-not yet sync with a real Instant app.
+not yet sync with a real Instant app. Endpoint helpers such as
+`auth oauth-url` and `auth issuer` mirror Instant's URL shape and use configured
+`INSTANT_API_URI`/`INSTANT_WEBSOCKET_URI` values, but they do not perform
+network I/O.
 
 ## Development
 
@@ -247,8 +260,9 @@ while dependency keys remain computed `static var` `liveValue`, `testValue`, and
 The dependency client exposes durable auth directly with `authSession`,
 `observeAuthSession`, `signInAsGuest`, `sendMagicCode`,
 `signInWithMagicCode`, `signInWithRefreshToken`, `signInWithIDToken`, and
-`signInWithOAuth`, and `signOut(invalidateToken:)`, so app code does not need to
-reach through to the core runtime.
+`signInWithOAuth`, `oauthAuthorizationURL`, `issuerURI`, and
+`signOut(invalidateToken:)`, so app code does not need to reach through to the
+core runtime.
 
 ### Typed Queries And Writes
 

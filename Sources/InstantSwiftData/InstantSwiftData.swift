@@ -31,6 +31,8 @@ public struct InstantSwiftDataClient: Sendable {
     @Sendable (String, String, String?) async throws -> InstantAuthSession
   private var signInWithOAuthOperation:
     @Sendable (String, String?) async throws -> InstantAuthSession
+  private var oauthAuthorizationURLOperation: @Sendable (String, URL) throws -> URL
+  private var issuerURIOperation: @Sendable () throws -> URL
   private var signOutOperation: @Sendable (Bool) async throws -> Void
 
   public init(runtime: InstantRuntime) {
@@ -81,6 +83,12 @@ public struct InstantSwiftDataClient: Sendable {
     self.signInWithOAuthOperation = { code, codeVerifier in
       try await runtime.signInWithOAuth(code: code, codeVerifier: codeVerifier)
     }
+    self.oauthAuthorizationURLOperation = { clientName, redirectURL in
+      try runtime.oauthAuthorizationURL(clientName: clientName, redirectURL: redirectURL)
+    }
+    self.issuerURIOperation = {
+      try runtime.issuerURI()
+    }
     self.signOutOperation = { invalidateToken in
       try await runtime.signOut(invalidateToken: invalidateToken)
     }
@@ -101,6 +109,52 @@ public struct InstantSwiftDataClient: Sendable {
     signInWithMagicCode: (@Sendable (String, String) async throws -> InstantAuthSession)? = nil,
     signInWithRefreshToken:
       (@Sendable (String, String?) async throws -> InstantAuthSession)? = nil,
+    signOut: (@Sendable () async throws -> Void)? = nil,
+    signInWithIDToken:
+      (@Sendable (String, String, String?) async throws -> InstantAuthSession)? = nil,
+    signInWithOAuth:
+      (@Sendable (String, String?) async throws -> InstantAuthSession)? = nil,
+    signOutWithOptions: (@Sendable (Bool) async throws -> Void)? = nil
+  ) {
+    self.init(
+      transact: transact,
+      queryOnce: queryOnce,
+      query: query,
+      observe: observe,
+      pendingMutations: pendingMutations,
+      localID: localID,
+      authSession: authSession,
+      observeAuthSession: observeAuthSession,
+      signInAsGuest: signInAsGuest,
+      sendMagicCode: sendMagicCode,
+      signInWithMagicCode: signInWithMagicCode,
+      signInWithRefreshToken: signInWithRefreshToken,
+      oauthAuthorizationURL: nil,
+      issuerURI: nil,
+      signOut: signOut,
+      signInWithIDToken: signInWithIDToken,
+      signInWithOAuth: signInWithOAuth,
+      signOutWithOptions: signOutWithOptions
+    )
+  }
+
+  public init(
+    transact: @escaping @Sendable (InstantStoreTransaction) async throws
+      -> InstantStoreMutationResult,
+    queryOnce: (@Sendable (InstantQueryPlan) async throws -> InstantQueryEmission)? = nil,
+    query: @escaping @Sendable (InstantQueryPlan) async throws -> [InstantEntitySnapshot],
+    observe: @escaping @Sendable (InstantQueryPlan) async -> AsyncStream<InstantQueryEmission>,
+    pendingMutations: @escaping @Sendable () async -> [PendingMutation],
+    localID: @escaping @Sendable (String) async throws -> String,
+    authSession: (@Sendable () async throws -> InstantAuthSession?)? = nil,
+    observeAuthSession: (@Sendable () async throws -> AsyncStream<InstantAuthSession?>)? = nil,
+    signInAsGuest: (@Sendable () async throws -> InstantAuthSession)? = nil,
+    sendMagicCode: (@Sendable (String) async throws -> InstantMagicCodeChallenge)? = nil,
+    signInWithMagicCode: (@Sendable (String, String) async throws -> InstantAuthSession)? = nil,
+    signInWithRefreshToken:
+      (@Sendable (String, String?) async throws -> InstantAuthSession)? = nil,
+    oauthAuthorizationURL: (@Sendable (String, URL) throws -> URL)? = nil,
+    issuerURI: (@Sendable () throws -> URL)? = nil,
     signOut: (@Sendable () async throws -> Void)? = nil,
     signInWithIDToken:
       (@Sendable (String, String, String?) async throws -> InstantAuthSession)? = nil,
@@ -134,6 +188,8 @@ public struct InstantSwiftDataClient: Sendable {
     self.signInWithRefreshTokenOperation = signInWithRefreshToken ?? { _, _ in throw authError }
     self.signInWithIDTokenOperation = signInWithIDToken ?? { _, _, _ in throw authError }
     self.signInWithOAuthOperation = signInWithOAuth ?? { _, _ in throw authError }
+    self.oauthAuthorizationURLOperation = oauthAuthorizationURL ?? { _, _ in throw authError }
+    self.issuerURIOperation = issuerURI ?? { throw authError }
     self.signOutOperation =
       signOutWithOptions ?? { _ in
         if let signOut {
@@ -188,6 +244,12 @@ public struct InstantSwiftDataClient: Sendable {
         throw error
       },
       signInWithRefreshToken: { _, _ in
+        throw error
+      },
+      oauthAuthorizationURL: { _, _ in
+        throw error
+      },
+      issuerURI: {
         throw error
       },
       signOut: {
@@ -278,6 +340,17 @@ public struct InstantSwiftDataClient: Sendable {
     codeVerifier: String? = nil
   ) async throws -> InstantAuthSession {
     try await signInWithOAuthOperation(code, codeVerifier)
+  }
+
+  public func oauthAuthorizationURL(
+    clientName: String,
+    redirectURL: URL
+  ) throws -> URL {
+    try oauthAuthorizationURLOperation(clientName, redirectURL)
+  }
+
+  public func issuerURI() throws -> URL {
+    try issuerURIOperation()
   }
 
   public func signOut() async throws {
@@ -535,6 +608,24 @@ extension DependencyValues {
     context: InstantSwiftDataBootstrapContext = .live,
     initialAttributes: [InstantAttribute] = []
   ) async throws {
+    try await self.bootstrapInstantSwiftData(
+      appID: appID,
+      apiURI: InstantRuntimeConfiguration.defaultAPIURI,
+      websocketURI: InstantRuntimeConfiguration.defaultWebSocketURI,
+      persistenceURL: persistenceURL,
+      context: context,
+      initialAttributes: initialAttributes
+    )
+  }
+
+  public mutating func bootstrapInstantSwiftData(
+    appID: String,
+    apiURI: URL = InstantRuntimeConfiguration.defaultAPIURI,
+    websocketURI: URL = InstantRuntimeConfiguration.defaultWebSocketURI,
+    persistenceURL: URL? = nil,
+    context: InstantSwiftDataBootstrapContext = .live,
+    initialAttributes: [InstantAttribute] = []
+  ) async throws {
     let date = self.date
     let uuid = self.uuid
     let magicCodeExchange = self.instantMagicCodeExchange
@@ -553,6 +644,8 @@ extension DependencyValues {
     self.defaultInstantSwiftData = try await InstantSwiftDataClient.bootstrap(
       configuration: InstantRuntimeConfiguration(
         appID: appID,
+        apiURI: apiURI,
+        websocketURI: websocketURI,
         persistenceURL: url,
         initialAttributes: initialAttributes,
         now: {

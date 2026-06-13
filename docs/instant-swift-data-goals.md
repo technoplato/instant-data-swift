@@ -454,6 +454,9 @@ implementation. Required auth flows:
   includes `observeAuthSession` for auth-state subscriptions and
   `signInWithIDToken(clientName:idToken:nonce:)` for native OAuth token flows
   plus `signInWithOAuth(code:codeVerifier:)` for authorization-code flows.
+- OAuth authorization URL and issuer helpers should mirror Instant's
+  `apiURI`/`appID` URL shape and be available through both the runtime and the
+  app-facing dependency client.
 - sign-out token invalidation should be backed by an injectable
   `InstantAuthTokenInvalidator` dependency with a reusable `.local` no-op for
   terminal demos and tests.

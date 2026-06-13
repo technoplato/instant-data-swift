@@ -838,6 +838,48 @@ struct InstantSwiftDataCLI {
       )
       try printAuth(context: context, event: "oauth", session: session, output: output)
 
+    case "oauth-url", "authorization-url":
+      guard let clientName = arguments.popFirstArgument(),
+        let redirectURLValue = arguments.popFirstArgument(),
+        arguments.isEmpty
+      else {
+        throw CLIError(
+          "Usage: instant-swift-data auth oauth-url <client-name> <redirect-url> [--json|--jsonl]",
+          exitCode: 64
+        )
+      }
+      guard let redirectURL = URL(string: redirectURLValue) else {
+        throw CLIError(
+          "Usage: instant-swift-data auth oauth-url <client-name> <redirect-url> [--json|--jsonl]",
+          exitCode: 64
+        )
+      }
+      let authorizationURL = try context.runtime.oauthAuthorizationURL(
+        clientName: clientName,
+        redirectURL: redirectURL
+      )
+      let issuerURI = try context.runtime.issuerURI()
+      try printAuthEndpoint(
+        context: context,
+        event: "oauth-url",
+        authorizationURL: authorizationURL,
+        issuerURI: issuerURI,
+        output: output
+      )
+
+    case "issuer", "issuer-uri":
+      guard arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data auth issuer [--json|--jsonl]", exitCode: 64)
+      }
+      let issuerURI = try context.runtime.issuerURI()
+      try printAuthEndpoint(
+        context: context,
+        event: "issuer",
+        authorizationURL: nil,
+        issuerURI: issuerURI,
+        output: output
+      )
+
     case "magic-code", "magic":
       try await runMagicCode(arguments: arguments, context: context, output: output)
 
@@ -1556,6 +1598,52 @@ struct InstantSwiftDataCLI {
       print("auth: signed out")
     }
     print("cache: \(payload.cachePath)")
+  }
+
+  private static func printAuthEndpoint(
+    context: CLIContext,
+    event: String,
+    authorizationURL: URL?,
+    issuerURI: URL,
+    output: OutputMode
+  ) throws {
+    let payload = AuthEndpointOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      transport: "not-implemented-local-cache-only",
+      apiURI: context.runtime.configuration.apiURI.absoluteString,
+      websocketURI: context.runtime.configuration.websocketURI.absoluteString,
+      authorizationURL: authorizationURL?.absoluteString,
+      issuerURI: issuerURI.absoluteString
+    )
+
+    switch output {
+    case .human:
+      if let authorizationURL = payload.authorizationURL {
+        print("authorization URL: \(authorizationURL)")
+      }
+      print("issuer URI: \(payload.issuerURI)")
+      print("api URI: \(payload.apiURI)")
+      print("websocket URI: \(payload.websocketURI)")
+      print("cache: \(payload.cachePath)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.auth.endpoint",
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          entityID: payload.authorizationURL ?? payload.issuerURI,
+          ok: true,
+          details: payload
+        )
+      )
+    }
   }
 
   private static func watchAuth(
@@ -2668,6 +2756,8 @@ struct InstantSwiftDataCLI {
         auth token <refresh-token> [--user-id id] [--json|--jsonl]
         auth id-token <client-name> <id-token> [--nonce nonce] [--json|--jsonl]
         auth oauth <code> [--code-verifier verifier] [--json|--jsonl]
+        auth oauth-url <client-name> <redirect-url> [--json|--jsonl]
+        auth issuer [--json|--jsonl]
         auth magic-code send <email> [--json|--jsonl]
         auth magic-code verify <email> <code> [--json|--jsonl]
         auth watch [--events 1] [--json|--jsonl]
@@ -2697,6 +2787,8 @@ struct InstantSwiftDataCLI {
       Environment:
         INSTANT_SWIFT_DATA_HOME  Directory for CLI SQLite state. Defaults to ~/.instant-swift-data.
         INSTANT_APP_ID           Logical app id recorded in output. Defaults to local-demo.
+        INSTANT_API_URI          Instant HTTP API endpoint. Defaults to https://api.instantdb.com.
+        INSTANT_WEBSOCKET_URI    Instant WebSocket endpoint. Defaults to wss://api.instantdb.com/runtime/session.
       """
     )
   }
@@ -3879,12 +3971,14 @@ struct InstantSwiftDataCLI {
 
   private static var authUsage: String {
     """
-    Usage: instant-swift-data auth <show|guest|token|id-token|oauth|magic-code|watch|sign-out>
+    Usage: instant-swift-data auth <show|guest|token|id-token|oauth|oauth-url|issuer|magic-code|watch|sign-out>
       instant-swift-data auth show [--json|--jsonl]
       instant-swift-data auth guest [--json|--jsonl]
       instant-swift-data auth token <refresh-token> [--user-id id] [--json|--jsonl]
       instant-swift-data auth id-token <client-name> <id-token> [--nonce nonce] [--json|--jsonl]
       instant-swift-data auth oauth <code> [--code-verifier verifier] [--json|--jsonl]
+      instant-swift-data auth oauth-url <client-name> <redirect-url> [--json|--jsonl]
+      instant-swift-data auth issuer [--json|--jsonl]
       instant-swift-data auth magic-code send <email> [--json|--jsonl]
       instant-swift-data auth magic-code verify <email> <code> [--json|--jsonl]
       instant-swift-data auth watch [--events 1] [--json|--jsonl]
@@ -4367,9 +4461,25 @@ private struct CLIContext: Sendable {
       environment: environment,
       cacheURL: cacheURL
     )
+    let apiURI = try endpointURL(
+      environment["INSTANT_API_URI"],
+      defaultURL: InstantRuntimeConfiguration.defaultAPIURI,
+      name: "INSTANT_API_URI",
+      isValid: InstantRuntimeConfiguration.isValidAPIURI,
+      requirement: "an absolute http or https URL with a host and no query or fragment"
+    )
+    let websocketURI = try endpointURL(
+      environment["INSTANT_WEBSOCKET_URI"],
+      defaultURL: InstantRuntimeConfiguration.defaultWebSocketURI,
+      name: "INSTANT_WEBSOCKET_URI",
+      isValid: InstantRuntimeConfiguration.isValidWebSocketURI,
+      requirement: "an absolute ws or wss URL with a host and no query or fragment"
+    )
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
         appID: resolved.appID,
+        apiURI: apiURI,
+        websocketURI: websocketURI,
         persistenceURL: cacheURL,
         initialAttributes: initialAttributes
       )
@@ -4403,6 +4513,26 @@ private struct CLIContext: Sendable {
     }
 
     return ("local-demo", .default)
+  }
+
+  private static func endpointURL(
+    _ value: String?,
+    defaultURL: URL,
+    name: String,
+    isValid: (URL) -> Bool,
+    requirement: String
+  ) throws
+    -> URL
+  {
+    guard let rawValue = value?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !rawValue.isEmpty
+    else {
+      return defaultURL
+    }
+    guard let url = URL(string: rawValue), isValid(url) else {
+      throw CLIError("\(name) must be \(requirement).", exitCode: 64)
+    }
+    return url
   }
 
   private static func persistedSelectedAppID(cacheURL: URL) async throws -> String? {
@@ -4779,6 +4909,17 @@ private struct AuthOutput: Codable, Sendable {
   var hasRefreshToken: Bool
   var createdAt: InstantTimestamp?
   var updatedAt: InstantTimestamp?
+}
+
+private struct AuthEndpointOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var transport: String
+  var apiURI: String
+  var websocketURI: String
+  var authorizationURL: String?
+  var issuerURI: String
 }
 
 private struct MagicCodeOutput: Codable, Sendable {

@@ -1,7 +1,14 @@
 import Foundation
 
 public struct InstantRuntimeConfiguration: Sendable {
+  public static let defaultAPIURI = URL(string: "https://api.instantdb.com")!
+  public static let defaultWebSocketURI = URL(
+    string: "wss://api.instantdb.com/runtime/session"
+  )!
+
   public var appID: String
+  public var apiURI: URL
+  public var websocketURI: URL
   public var persistenceURL: URL
   public var initialAttributes: [InstantAttribute]
   public var now: @Sendable () -> InstantTimestamp
@@ -26,7 +33,41 @@ public struct InstantRuntimeConfiguration: Sendable {
     oauthExchange: InstantOAuthExchange = .local,
     authTokenInvalidator: InstantAuthTokenInvalidator = .local
   ) {
+    self.init(
+      appID: appID,
+      apiURI: Self.defaultAPIURI,
+      websocketURI: Self.defaultWebSocketURI,
+      persistenceURL: persistenceURL,
+      initialAttributes: initialAttributes,
+      now: now,
+      makeID: makeID,
+      refreshTokenVerifier: refreshTokenVerifier,
+      magicCodeExchange: magicCodeExchange,
+      idTokenExchange: idTokenExchange,
+      oauthExchange: oauthExchange,
+      authTokenInvalidator: authTokenInvalidator
+    )
+  }
+
+  public init(
+    appID: String,
+    apiURI: URL = Self.defaultAPIURI,
+    websocketURI: URL = Self.defaultWebSocketURI,
+    persistenceURL: URL,
+    initialAttributes: [InstantAttribute] = [],
+    now: @escaping @Sendable () -> InstantTimestamp = {
+      InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
+    },
+    makeID: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() },
+    refreshTokenVerifier: InstantRefreshTokenVerifier = .local,
+    magicCodeExchange: InstantMagicCodeExchange = .local,
+    idTokenExchange: InstantIDTokenExchange = .local,
+    oauthExchange: InstantOAuthExchange = .local,
+    authTokenInvalidator: InstantAuthTokenInvalidator = .local
+  ) {
     self.appID = appID
+    self.apiURI = apiURI
+    self.websocketURI = websocketURI
     self.persistenceURL = persistenceURL
     self.initialAttributes = initialAttributes
     self.now = now
@@ -36,6 +77,27 @@ public struct InstantRuntimeConfiguration: Sendable {
     self.idTokenExchange = idTokenExchange
     self.oauthExchange = oauthExchange
     self.authTokenInvalidator = authTokenInvalidator
+  }
+
+  public static func isValidAPIURI(_ url: URL) -> Bool {
+    isValidEndpointURI(url, allowedSchemes: ["http", "https"])
+  }
+
+  public static func isValidWebSocketURI(_ url: URL) -> Bool {
+    isValidEndpointURI(url, allowedSchemes: ["ws", "wss"])
+  }
+
+  private static func isValidEndpointURI(_ url: URL, allowedSchemes: Set<String>) -> Bool {
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+      let scheme = components.scheme?.lowercased(),
+      allowedSchemes.contains(scheme),
+      components.host?.isEmpty == false,
+      components.query == nil,
+      components.fragment == nil
+    else {
+      return false
+    }
+    return true
   }
 }
 
@@ -87,6 +149,7 @@ public final class InstantRuntime: Sendable {
   }
 
   public static func bootstrap(configuration: InstantRuntimeConfiguration) async throws -> Self {
+    try validateEndpoints(configuration)
     try validateInitialAttributes(configuration.initialAttributes)
 
     let persistence = try SQLitePersistenceStore(fileURL: configuration.persistenceURL)
@@ -125,6 +188,31 @@ public final class InstantRuntime: Sendable {
           + "server creation time."
       )
     }
+  }
+
+  private static func validateEndpoints(_ configuration: InstantRuntimeConfiguration) throws {
+    guard InstantRuntimeConfiguration.isValidAPIURI(configuration.apiURI) else {
+      throw Self.endpointValidationFailed(
+        name: "apiURI",
+        requirement: "an absolute http or https URL with a host and no query or fragment"
+      )
+    }
+    guard InstantRuntimeConfiguration.isValidWebSocketURI(configuration.websocketURI) else {
+      throw endpointValidationFailed(
+        name: "websocketURI",
+        requirement: "an absolute ws or wss URL with a host and no query or fragment"
+      )
+    }
+  }
+
+  private static func endpointValidationFailed(name: String, requirement: String) -> InstantError {
+    InstantError(
+      code: .validationFailed,
+      operation: "bootstrap endpoint configuration",
+      path: name,
+      message: "\(name) must be \(requirement).",
+      recovery: "Check the Instant runtime endpoint configuration before bootstrapping."
+    )
   }
 
   @discardableResult
@@ -539,6 +627,47 @@ public final class InstantRuntime: Sendable {
     )
     try await saveAuthSession(session)
     return session
+  }
+
+  public func oauthAuthorizationURL(
+    clientName rawClientName: String,
+    redirectURL: URL
+  ) throws -> URL {
+    let clientName = rawClientName.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !clientName.isEmpty else {
+      throw authValidationFailed(
+        operation: "create oauth authorization URL",
+        message: "OAuth client name must not be empty.",
+        recovery: "Pass the Instant OAuth client name, for example 'google'."
+      )
+    }
+    guard redirectURL.scheme?.isEmpty == false else {
+      throw authValidationFailed(
+        operation: "create oauth authorization URL",
+        message: "OAuth redirect URL must be absolute.",
+        recovery: "Pass the redirect URL registered with the OAuth client."
+      )
+    }
+
+    var components = try endpointComponents(path: ["runtime", "oauth", "start"])
+    components.queryItems = [
+      URLQueryItem(name: "app_id", value: configuration.appID),
+      URLQueryItem(name: "client_name", value: clientName),
+      URLQueryItem(name: "redirect_uri", value: redirectURL.absoluteString),
+    ]
+    guard let url = components.url else {
+      throw endpointFailed(operation: "create oauth authorization URL")
+    }
+    return url
+  }
+
+  public func issuerURI() throws -> URL {
+    var components = try endpointComponents(path: ["runtime", configuration.appID])
+    components.queryItems = nil
+    guard let url = components.url else {
+      throw endpointFailed(operation: "create oauth issuer URI")
+    }
+    return url
   }
 
   public func signOut() async throws {
@@ -1182,6 +1311,32 @@ public final class InstantRuntime: Sendable {
       operation: operation,
       message: message,
       recovery: recovery
+    )
+  }
+
+  private func endpointComponents(path pathComponents: [String]) throws -> URLComponents {
+    guard InstantRuntimeConfiguration.isValidAPIURI(configuration.apiURI) else {
+      throw Self.endpointValidationFailed(
+        name: "apiURI",
+        requirement: "an absolute http or https URL with a host and no query or fragment"
+      )
+    }
+    var url = configuration.apiURI
+    for pathComponent in pathComponents {
+      url.appendPathComponent(pathComponent)
+    }
+    guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+      throw endpointFailed(operation: "create Instant endpoint URL")
+    }
+    return components
+  }
+
+  private func endpointFailed(operation: String) -> InstantError {
+    InstantError(
+      code: .implementationFailed,
+      operation: operation,
+      message: "The Instant endpoint URL could not be constructed.",
+      recovery: "Check the configured apiURI and appID before retrying."
     )
   }
 

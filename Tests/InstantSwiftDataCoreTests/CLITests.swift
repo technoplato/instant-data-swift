@@ -1019,6 +1019,109 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliAuthOAuthEndpointCommandsUseConfiguredEndpoints() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let environment = [
+      "INSTANT_APP_ID": "oauth-endpoint-app",
+      "INSTANT_API_URI": "https://api.example.test/custom",
+      "INSTANT_WEBSOCKET_URI": "wss://ws.example.test/runtime/session",
+    ]
+    let endpoint = try JSONDecoder().decode(
+      CLIAuthEndpointOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "auth", "oauth-url", "google-ios",
+            "myapp://oauth/callback?state=abc&next=/home", "--json",
+          ],
+          homeURL: homeURL,
+          environment: environment
+        ).utf8
+      )
+    )
+    expectNoDifference(endpoint.appID, "oauth-endpoint-app")
+    expectNoDifference(endpoint.event, "oauth-url")
+    expectNoDifference(endpoint.apiURI, "https://api.example.test/custom")
+    expectNoDifference(endpoint.websocketURI, "wss://ws.example.test/runtime/session")
+    expectNoDifference(endpoint.issuerURI, "https://api.example.test/custom/runtime/oauth-endpoint-app")
+    let authorizationURL = try #require(endpoint.authorizationURL.flatMap(URL.init(string:)))
+    let components = try #require(URLComponents(url: authorizationURL, resolvingAgainstBaseURL: false))
+    expectNoDifference(components.host, "api.example.test")
+    expectNoDifference(components.path, "/custom/runtime/oauth/start")
+    let queryItems = Dictionary(
+      uniqueKeysWithValues: (components.queryItems ?? []).compactMap { item in
+        item.value.map { (item.name, $0) }
+      }
+    )
+    expectNoDifference(queryItems["app_id"], "oauth-endpoint-app")
+    expectNoDifference(queryItems["client_name"], "google-ios")
+    expectNoDifference(
+      queryItems["redirect_uri"],
+      "myapp://oauth/callback?state=abc&next=/home"
+    )
+
+    let issuer = try JSONDecoder().decode(
+      CLIAuthEndpointOutput.self,
+      from: Data(
+        try runCLI(["auth", "issuer", "--json"], homeURL: homeURL, environment: environment)
+          .utf8
+      )
+    )
+    expectNoDifference(issuer.event, "issuer")
+    expectNoDifference(issuer.authorizationURL, nil)
+    expectNoDifference(issuer.issuerURI, "https://api.example.test/custom/runtime/oauth-endpoint-app")
+
+    let jsonl = try runCLI(
+      ["auth", "issuer", "--jsonl"],
+      homeURL: homeURL,
+      environment: environment
+    )
+    let line = try #require(jsonl.split(separator: "\n").first)
+    let evidence = try JSONDecoder().decode(
+      CLIAuthEndpointEvidence.self,
+      from: Data(line.utf8)
+    )
+    expectNoDifference(evidence.caseID, "cli.auth.endpoint")
+    expectNoDifference(evidence.details.issuerURI, issuer.issuerURI)
+
+    let missingRedirect = try runCLIResult(
+      ["auth", "oauth-url", "google-ios", "--json"],
+      homeURL: homeURL,
+      environment: environment
+    )
+    #expect(missingRedirect.status == 64)
+    #expect(missingRedirect.error.contains("auth oauth-url"))
+
+    let emptyClient = try runCLIResult(
+      ["auth", "oauth-url", " ", "myapp://oauth", "--json"],
+      homeURL: homeURL,
+      environment: environment
+    )
+    #expect(emptyClient.status == 65)
+    #expect(emptyClient.error.contains("OAuth client name must not be empty"))
+
+    let invalidEnvironment = try runCLIResult(
+      ["auth", "issuer", "--json"],
+      homeURL: homeURL,
+      environment: ["INSTANT_API_URI": "https://api.example.test?query=1"]
+    )
+    #expect(invalidEnvironment.status == 64)
+    #expect(invalidEnvironment.error.contains("INSTANT_API_URI"))
+
+    let invalidWebSocketEnvironment = try runCLIResult(
+      ["auth", "issuer", "--json"],
+      homeURL: homeURL,
+      environment: ["INSTANT_WEBSOCKET_URI": "https://ws.example.test/runtime/session"]
+    )
+    #expect(invalidWebSocketEnvironment.status == 64)
+    #expect(invalidWebSocketEnvironment.error.contains("INSTANT_WEBSOCKET_URI"))
+  }
+
+  @Test
   func cliTodoCompleteMarksTodoDurably() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -2446,6 +2549,27 @@ private struct CLIAuthWatchEvidence: Decodable {
     case side
     case event
     case ok
+    case details
+  }
+}
+
+private struct CLIAuthEndpointOutput: Decodable {
+  var appID: String
+  var event: String
+  var apiURI: String
+  var websocketURI: String
+  var authorizationURL: String?
+  var issuerURI: String
+}
+
+private struct CLIAuthEndpointEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLIAuthEndpointOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
     case details
   }
 }

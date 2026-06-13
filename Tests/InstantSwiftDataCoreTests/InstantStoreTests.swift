@@ -85,6 +85,43 @@ struct InstantStoreTests {
   }
 
   @Test
+  func runtimeConfigurationInitializerReferenceKeepsLegacyShape() throws {
+    let make:
+      (
+        String,
+        URL,
+        [InstantAttribute],
+        @escaping @Sendable () -> InstantTimestamp,
+        @escaping @Sendable () -> String,
+        InstantRefreshTokenVerifier,
+        InstantMagicCodeExchange,
+        InstantIDTokenExchange,
+        InstantOAuthExchange,
+        InstantAuthTokenInvalidator
+      ) -> InstantRuntimeConfiguration = InstantRuntimeConfiguration.init
+
+    let configuration = make(
+      "test-app",
+      try temporaryCacheURL(),
+      TodoExample.attributes,
+      { InstantTimestamp(milliseconds: 1_700_000_000_000) },
+      { "fixed-id" },
+      .local,
+      .local,
+      .local,
+      .local,
+      .local
+    )
+
+    expectNoDifference(configuration.appID, "test-app")
+    expectNoDifference(configuration.apiURI, InstantRuntimeConfiguration.defaultAPIURI)
+    expectNoDifference(configuration.websocketURI, InstantRuntimeConfiguration.defaultWebSocketURI)
+    expectNoDifference(configuration.initialAttributes, TodoExample.attributes)
+    expectNoDifference(configuration.now(), InstantTimestamp(milliseconds: 1_700_000_000_000))
+    expectNoDifference(configuration.makeID(), "fixed-id")
+  }
+
+  @Test
   func queryResultsPersistInQueryCacheAcrossLaunches() async throws {
     let cacheURL = try temporaryCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
@@ -1426,6 +1463,119 @@ struct InstantStoreTests {
     )
     let persistedSession = try await relaunchedRuntime.authSession()
     expectNoDifference(persistedSession, session)
+  }
+
+  @Test
+  func oauthEndpointHelpersUseConfiguredEndpoints() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        apiURI: try #require(URL(string: "https://api.example.test/custom")),
+        websocketURI: try #require(URL(string: "wss://ws.example.test/runtime/session")),
+        persistenceURL: cacheURL
+      )
+    )
+
+    let redirectURL = try #require(URL(string: "myapp://oauth/callback?state=abc&next=/home"))
+    let authorizationURL = try runtime.oauthAuthorizationURL(
+      clientName: " google-ios ",
+      redirectURL: redirectURL
+    )
+    let components = try #require(URLComponents(url: authorizationURL, resolvingAgainstBaseURL: false))
+    expectNoDifference(components.scheme, "https")
+    expectNoDifference(components.host, "api.example.test")
+    expectNoDifference(components.path, "/custom/runtime/oauth/start")
+    let queryItems = Dictionary(
+      uniqueKeysWithValues: (components.queryItems ?? []).compactMap { item in
+        item.value.map { (item.name, $0) }
+      }
+    )
+    expectNoDifference(queryItems["app_id"], "app-a")
+    expectNoDifference(queryItems["client_name"], "google-ios")
+    expectNoDifference(queryItems["redirect_uri"], redirectURL.absoluteString)
+
+    let issuerURI = try runtime.issuerURI()
+    expectNoDifference(issuerURI.absoluteString, "https://api.example.test/custom/runtime/app-a")
+    expectNoDifference(
+      runtime.configuration.websocketURI.absoluteString,
+      "wss://ws.example.test/runtime/session"
+    )
+  }
+
+  @Test
+  func invalidOAuthEndpointInputsFailWithAuthError() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "app-a", persistenceURL: cacheURL)
+    )
+
+    do {
+      _ = try runtime.oauthAuthorizationURL(
+        clientName: " ",
+        redirectURL: try #require(URL(string: "myapp://oauth"))
+      )
+      #expect(Bool(false), "Expected empty OAuth client name to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .authFailed)
+      expectNoDifference(error.operation, "create oauth authorization URL")
+      #expect(error.description.contains("OAuth client name must not be empty"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      _ = try runtime.oauthAuthorizationURL(
+        clientName: "google-ios",
+        redirectURL: try #require(URL(string: "relative/path"))
+      )
+      #expect(Bool(false), "Expected relative OAuth redirect URL to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .authFailed)
+      expectNoDifference(error.operation, "create oauth authorization URL")
+      #expect(error.description.contains("OAuth redirect URL must be absolute"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
+  func invalidEndpointConfigurationFailsBootstrap() async throws {
+    do {
+      _ = try await InstantRuntime.bootstrap(
+        configuration: InstantRuntimeConfiguration(
+          appID: "app-a",
+          apiURI: try #require(URL(string: "https://api.example.test?query=1")),
+          persistenceURL: try temporaryCacheURL()
+        )
+      )
+      #expect(Bool(false), "Expected apiURI with a query to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "bootstrap endpoint configuration")
+      expectNoDifference(error.path, "apiURI")
+      #expect(error.description.contains("no query or fragment"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      _ = try await InstantRuntime.bootstrap(
+        configuration: InstantRuntimeConfiguration(
+          appID: "app-a",
+          websocketURI: try #require(URL(string: "https://ws.example.test/runtime/session")),
+          persistenceURL: try temporaryCacheURL()
+        )
+      )
+      #expect(Bool(false), "Expected websocketURI with an HTTP scheme to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "bootstrap endpoint configuration")
+      expectNoDifference(error.path, "websocketURI")
+      #expect(error.description.contains("absolute ws or wss URL"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
   }
 
   @Test
