@@ -190,6 +190,12 @@ let openTodos = try await db.query(
     .order(.serverCreatedAt, .descending)
 )
 
+let selectedSnapshots = try await db.query(
+  Todo.query
+    .select(Todo.text, Todo.isCompleted)
+    .plan
+)
+
 @FetchAll(Todo.query.where(Todo.isCompleted == false))
 var todos: [Todo]
 
@@ -206,6 +212,8 @@ for try await todos in subscription {
 `serverCreatedAt` is order-only metadata. Do not declare a model attribute with
 that name; use a domain field like `createdAt` for decoded data, and use
 `.order(.serverCreatedAt, ...)` when you want server-created ordering.
+Partial field selection returns raw snapshots unless your entity decoder can
+build a value from the selected fields.
 
 `create` follows Instant's strict-insert semantics and fails when the entity
 already exists. Use `update` for upsert-style writes, `updateExisting` when a

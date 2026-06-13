@@ -156,6 +156,9 @@ var posts: [Post.With<(\.author, \.likes)>]
 `serverCreatedAt` is reserved for order-only metadata and should not be emitted
 as a schema attribute or decoded model field. Models that need their own visible
 creation timestamp should use a domain field such as `createdAt`.
+Typed field selection should use declared attribute paths, for example
+`.select(Todo.text, Todo.isCompleted)`. Partial selections should be consumed as
+snapshots unless a model's decoder explicitly supports the reduced shape.
 
 Dynamic queries are a first-class requirement:
 
@@ -180,8 +183,10 @@ final class ReminderSearchModel {
 }
 ```
 
-The API should avoid SQL noise. Do not expose `select`, `leftJoin`, or row-shape
-machinery unless there is no cleaner Instant-shaped representation.
+The API should avoid SQL noise. Instant field projection may use `.select(...)`
+with declared attribute paths because it maps to Instant field selection, but do
+not expose `leftJoin` or SQL row-shape machinery unless there is no cleaner
+Instant-shaped representation.
 
 ## Schema And Type Safety
 

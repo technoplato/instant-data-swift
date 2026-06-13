@@ -103,6 +103,24 @@ struct TypedAPITests {
     expectNoDifference(serverCreatedAtQuery.plan.order, .serverCreatedAtDescending)
     #expect(serverCreatedAtQuery.plan.id != createdAtDescendingQuery.plan.id)
     #expect(serverCreatedAtQuery.plan.cacheKey != createdAtDescendingQuery.plan.cacheKey)
+
+    let selectedQuery = TypedTodo.query
+      .where(TypedTodo.isCompleted == false)
+      .select(TypedTodo.text, TypedTodo.isCompleted, TypedTodo.text)
+    let unselectedFilteredQuery = TypedTodo.query.where(TypedTodo.isCompleted == false)
+    expectNoDifference(selectedQuery.plan.selectedFields, ["isCompleted", "text"])
+    #expect(selectedQuery.plan.id != unselectedFilteredQuery.plan.id)
+    #expect(selectedQuery.plan.cacheKey != unselectedFilteredQuery.plan.cacheKey)
+
+    let dynamicSelectedQuery = TypedTodo.query.select([TypedTodo.text])
+    expectNoDifference(dynamicSelectedQuery.plan.selectedFields, ["text"])
+
+    let selectedThenOrderedQuery = TypedTodo.query
+      .select(TypedTodo.text)
+      .order(.serverCreatedAt, .descending)
+    expectNoDifference(selectedThenOrderedQuery.plan.order, .serverCreatedAtDescending)
+    expectNoDifference(selectedThenOrderedQuery.plan.selectedFields, ["text"])
+    #expect(selectedThenOrderedQuery.plan.cacheKey != serverCreatedAtQuery.plan.cacheKey)
   }
 
   @Test
@@ -150,6 +168,61 @@ struct TypedAPITests {
 
       let pending = await db.pendingMutations()
       expectNoDifference(pending.map(\.id), [fixedUUID.uuidString.lowercased()])
+    }
+  }
+
+  @Test
+  func typedQuerySelectsFieldsForSnapshotsAndCompleteDecoding() async throws {
+    let cacheURL = try typedTestCacheURL("typed-field-selection")
+    let fixedDate = Date(timeIntervalSince1970: 1_700_000_450)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000450")!
+    let todoID = InstantID<TypedTodo>(rawValue: "todo-selected")
+
+    try await withDependencies {
+      $0.date.now = fixedDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "typed-field-selection",
+        persistenceURL: cacheURL,
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      try await db.transact {
+        TypedTodo.create(
+          id: todoID,
+          TypedTodo.text.set("Project only what you need"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(fixedDate)
+        )
+      }
+
+      let selectedSnapshots = try await db.query(
+        TypedTodo.query
+          .where(TypedTodo.isCompleted == false)
+          .select(TypedTodo.text, TypedTodo.isCompleted)
+          .plan
+      )
+      expectNoDifference(selectedSnapshots.map { $0.values.keys.sorted() }, [["isCompleted", "text"]])
+      expectNoDifference(selectedSnapshots.first?.values["createdAt"], nil)
+
+      let decodedTodos = try await db.query(
+        TypedTodo.query
+          .select(TypedTodo.text, TypedTodo.isCompleted, TypedTodo.createdAt)
+      )
+      expectNoDifference(
+        decodedTodos,
+        [
+          TypedTodo(
+            id: todoID,
+            text: "Project only what you need",
+            isCompleted: false,
+            createdAt: fixedDate
+          )
+        ]
+      )
     }
   }
 

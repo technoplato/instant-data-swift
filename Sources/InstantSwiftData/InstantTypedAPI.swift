@@ -1206,6 +1206,94 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
     return copy
   }
 
+  public func select<Value>(
+    _ field: InstantAttributePath<Entity, Value>
+  ) -> Self {
+    selecting([field.name])
+  }
+
+  public func select<Value>(
+    _ fields: [InstantAttributePath<Entity, Value>]
+  ) -> Self {
+    selecting(fields.map(\.name))
+  }
+
+  public func select<Value0, Value1>(
+    _ field0: InstantAttributePath<Entity, Value0>,
+    _ field1: InstantAttributePath<Entity, Value1>
+  ) -> Self {
+    selecting([field0.name, field1.name])
+  }
+
+  public func select<Value0, Value1, Value2>(
+    _ field0: InstantAttributePath<Entity, Value0>,
+    _ field1: InstantAttributePath<Entity, Value1>,
+    _ field2: InstantAttributePath<Entity, Value2>
+  ) -> Self {
+    selecting([field0.name, field1.name, field2.name])
+  }
+
+  public func select<Value0, Value1, Value2, Value3>(
+    _ field0: InstantAttributePath<Entity, Value0>,
+    _ field1: InstantAttributePath<Entity, Value1>,
+    _ field2: InstantAttributePath<Entity, Value2>,
+    _ field3: InstantAttributePath<Entity, Value3>
+  ) -> Self {
+    selecting([field0.name, field1.name, field2.name, field3.name])
+  }
+
+  public func select<Value0, Value1, Value2, Value3, Value4>(
+    _ field0: InstantAttributePath<Entity, Value0>,
+    _ field1: InstantAttributePath<Entity, Value1>,
+    _ field2: InstantAttributePath<Entity, Value2>,
+    _ field3: InstantAttributePath<Entity, Value3>,
+    _ field4: InstantAttributePath<Entity, Value4>
+  ) -> Self {
+    selecting([field0.name, field1.name, field2.name, field3.name, field4.name])
+  }
+
+  public func select<Value0, Value1, Value2, Value3, Value4, Value5>(
+    _ field0: InstantAttributePath<Entity, Value0>,
+    _ field1: InstantAttributePath<Entity, Value1>,
+    _ field2: InstantAttributePath<Entity, Value2>,
+    _ field3: InstantAttributePath<Entity, Value3>,
+    _ field4: InstantAttributePath<Entity, Value4>,
+    _ field5: InstantAttributePath<Entity, Value5>
+  ) -> Self {
+    selecting([field0.name, field1.name, field2.name, field3.name, field4.name, field5.name])
+  }
+
+  private func selecting(_ fieldNames: [String]) -> Self {
+    precondition(!fieldNames.isEmpty, "InstantEntityQuery.select requires at least one field.")
+    let selectedFields = Array(Set(fieldNames)).sorted()
+    var copy = self
+    copy.plan = InstantQueryPlan(
+      id: Self.queryID(
+        filters: copy.plan.filters,
+        order: copy.plan.order,
+        offset: copy.plan.offset,
+        limit: copy.plan.limit,
+        first: copy.plan.first,
+        after: copy.plan.after,
+        last: copy.plan.last,
+        before: copy.plan.before,
+        selectedFields: selectedFields
+      ),
+      namespace: copy.plan.namespace,
+      filters: copy.plan.filters,
+      order: copy.plan.order,
+      offset: copy.plan.offset,
+      limit: copy.plan.limit,
+      first: copy.plan.first,
+      after: copy.plan.after,
+      last: copy.plan.last,
+      before: copy.plan.before,
+      selectedFields: selectedFields,
+      includes: copy.plan.includes ?? []
+    )
+    return copy
+  }
+
   private static func queryID(
     filters: [InstantQueryFilter],
     order: InstantQueryOrder?,

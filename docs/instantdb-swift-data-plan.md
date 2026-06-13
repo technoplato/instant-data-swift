@@ -99,7 +99,9 @@ real Instant app.
 - Top-level namespace queries and nested relation queries.
 - Explicit linked-entity inclusion, including multi-linked entities and reverse
   links.
-- Field selection.
+- Field selection, including typed `.select(Todo.text, Todo.isCompleted)`.
+  Partial selections should be read as raw snapshots unless the selected fields
+  satisfy the entity decoder.
 - `where` operators: equality, `$ne`, `$isNull`, `$gt`, `$lt`, `$gte`, `$lte`,
   `$in`, `$like`, `$ilike`, `and`, `or`, and nested field paths like
   `relation.field`.
