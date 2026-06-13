@@ -255,15 +255,53 @@ public final class InstantRuntime: Sendable {
     createdAt: InstantTimestamp?,
     source: String
   ) async throws -> InstantStoreMutationResult {
-    let mutation = PendingMutation(
-      id: transaction.id,
-      createdAt: createdAt ?? configuration.now(),
-      transaction: transaction
-    )
+    var mutation: PendingMutation?
 
     for _ in 0..<5 {
       let state = try await persistence.loadState()
-      let outboxSnapshot = (state.snapshot.outbox + [mutation])
+      if let existingMutation = state.snapshot.outbox.first(where: { $0.id == transaction.id }) {
+        await store.replaceSnapshot(state.snapshot.store)
+        await outbox.replace(with: state.snapshot.outbox)
+        guard existingMutation.status == .pending else {
+          throw validationFailed(
+            operation: "transact",
+            localID: transaction.id,
+            message:
+              "Mutation '\(transaction.id)' already exists in the local outbox with status '\(existingMutation.status.rawValue)'.",
+            recovery:
+              "Use a new transaction id, or retry the existing outbox mutation before sending it again."
+          )
+        }
+        guard existingMutation.transaction == transaction else {
+          throw validationFailed(
+            operation: "transact",
+            localID: transaction.id,
+            message:
+              "Mutation '\(transaction.id)' is already pending with different operations.",
+            recovery:
+              "Reuse the same prepared transaction when retrying, or generate a new transaction id."
+          )
+        }
+        return InstantStoreMutationResult(
+          transactionID: transaction.id,
+          changedEntityIDs: [],
+          tripleCount: state.snapshot.store.triples.count,
+          emissions: []
+        )
+      }
+      let pendingMutation: PendingMutation
+      if let mutation {
+        pendingMutation = mutation
+      } else {
+        let newMutation = PendingMutation(
+          id: transaction.id,
+          createdAt: createdAt ?? configuration.now(),
+          transaction: transaction
+        )
+        mutation = newMutation
+        pendingMutation = newMutation
+      }
+      let outboxSnapshot = (state.snapshot.outbox + [pendingMutation])
         .sorted(by: PendingMutation.creationOrder)
       let prepared = try await store.prepare(transaction, applyingTo: state.snapshot.store)
       let didSave = try await persistence.saveSnapshot(

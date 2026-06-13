@@ -106,7 +106,10 @@ swift run instant-swift-data sync mark-processed demo-tx-1 --json
 Write and query arbitrary local namespaces with admin helpers:
 
 ```bash
-swift run instant-swift-data admin transact notes note-1 --merge '{"title":"admin note","done":false}' --json
+swift run instant-swift-data admin transact notes note-1 --merge '{"title":"admin note","done":false}' --transaction-id tx-admin-note-1 --json
+# Replay the same pending transaction id; the outbox still has one mutation.
+swift run instant-swift-data admin transact notes note-1 --merge '{"title":"admin note","done":false}' --transaction-id tx-admin-note-1 --json
+swift run instant-swift-data outbox inspect --json
 swift run instant-swift-data admin query notes --json
 swift run instant-swift-data admin query notes --jsonl
 ```

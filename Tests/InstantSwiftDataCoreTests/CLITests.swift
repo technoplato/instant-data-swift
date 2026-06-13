@@ -341,6 +341,7 @@ extension InstantStoreTests {
     try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: homeURL) }
 
+    let adminTransactionID = "tx-admin-note-1"
     let created = try JSONDecoder().decode(
       CLIAdminTransactOutput.self,
       from: Data(
@@ -348,6 +349,7 @@ extension InstantStoreTests {
           [
             "admin", "transact", "notes", "note-1", "--merge",
             #"{"done":false,"meta":{"source":"cli"},"title":"Admin note"}"#,
+            "--transaction-id", adminTransactionID,
             "--json",
           ],
           homeURL: homeURL
@@ -358,6 +360,7 @@ extension InstantStoreTests {
     expectNoDifference(created.changedID, "note-1")
     expectNoDifference(created.transport, "not-implemented-local-cache-only")
     expectNoDifference(created.namespace, "notes")
+    expectNoDifference(created.transactionID, adminTransactionID)
     expectNoDifference(created.changedEntityIDs, ["note-1"])
     expectNoDifference(created.pendingMutationCount, 1)
     expectNoDifference(created.snapshotCount, 1)
@@ -370,6 +373,42 @@ extension InstantStoreTests {
       createdSnapshot.values["meta"]?.first,
       .some(.json(.object(["source": .string("cli")])))
     )
+
+    let replayed = try JSONDecoder().decode(
+      CLIAdminTransactOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "admin", "transact", "notes", "note-1", "--merge",
+            #"{"done":false,"meta":{"source":"cli"},"title":"Admin note"}"#,
+            "--transaction-id", adminTransactionID,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(replayed.transactionID, adminTransactionID)
+    expectNoDifference(replayed.changedEntityIDs, [])
+    expectNoDifference(replayed.pendingMutationCount, 1)
+    expectNoDifference(replayed.snapshots, created.snapshots)
+
+    let conflictingReplay = try runCLIResult(
+      [
+        "admin", "transact", "notes", "note-2", "--merge", #"{"title":"Different note"}"#,
+        "--transaction-id", adminTransactionID, "--json",
+      ],
+      homeURL: homeURL
+    )
+    #expect(conflictingReplay.status == 66)
+    #expect(conflictingReplay.error.contains("already pending with different operations"))
+
+    let outbox = try JSONDecoder().decode(
+      CLIOutboxInspectOutput.self,
+      from: Data(try runCLI(["outbox", "inspect", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(outbox.pendingMutationCount, 1)
+    expectNoDifference(outbox.mutations.map(\.id), [adminTransactionID])
 
     let queried = try JSONDecoder().decode(
       CLIAdminQueryOutput.self,

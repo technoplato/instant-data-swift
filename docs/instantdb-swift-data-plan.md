@@ -163,7 +163,9 @@ transitions remain future WebSocket transport work.
 - Optimistic application before server confirmation.
 - Rollback or visible failure state when the server rejects a mutation.
 - Durable pending mutation persistence across process restart.
-- In-flight mutation de-duplication.
+- In-flight mutation de-duplication: a pending transaction id can be replayed
+  idempotently only with the same prepared operations, while mismatched
+  operations fail validation before another outbox row is persisted.
 - Stable flush ordering after reconnect, especially link-before-create hazards.
 - High-bandwidth write path for repeated field updates and linked entities.
 
@@ -172,7 +174,10 @@ Current local progress: pending mutations now lower into typed
 `add-triple`, `deep-merge-triple`, `retract-triple`, `delete-entity`, and
 `rule-params`. Local strict-create and strict-update preconditions are preserved
 and reflected as `{mode: "create"}` / `{mode: "update"}` transport options on
-matching steps. The CLI proves the bridge non-captively with
+matching steps. Pending mutations also de-duplicate in-flight transaction IDs:
+exact replays return the durable store state without appending another outbox
+row, and conflicting replays fail validation. The CLI proves the bridge
+non-captively with
 `instant-swift-data outbox transport --json` and can include failed rows for
 inspection with `instant-swift-data outbox transport --all --jsonl`.
 `InstantMutationTransportClient` provides the Sendable send/ack seam that future
@@ -325,9 +330,10 @@ instant.schema.ts --json` and `instant-swift-data perms generate --example todos
 work.
 
 Current local progress: the CLI exposes non-captive local admin helpers:
-`instant-swift-data admin transact <namespace> <entity-id> --merge '{...}'`
+`instant-swift-data admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id]`
 infers scalar/json attributes for the namespace, writes through the same
-runtime/outbox/cache path as examples, and `instant-swift-data admin query
+runtime/outbox/cache path as examples, supports deterministic fixed transaction
+IDs for replay/de-duplication proof, and `instant-swift-data admin query
 <namespace>` reads the durable local snapshots back across process launches.
 It also exposes local cache detail commands, `instant-swift-data cache
 attributes [namespace]` and `instant-swift-data cache triples [namespace]`, so

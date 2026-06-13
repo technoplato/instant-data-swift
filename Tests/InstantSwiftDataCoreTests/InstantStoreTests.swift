@@ -1277,6 +1277,81 @@ struct InstantStoreTests {
   }
 
   @Test
+  func duplicatePendingTransactionIDsAreIdempotentOnlyForMatchingTransactions() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let transactionID = "tx-dedupe"
+    let transaction = InstantStoreTransaction(
+      id: transactionID,
+      operations: TodoExample.createOperations(
+        id: "todo-dedupe",
+        text: "dedupe me",
+        createdAt: createdAt,
+        transactionID: transactionID
+      )
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+
+    let first = try await runtime.transact(transaction, createdAt: createdAt)
+    let replayed = try await runtime.transact(
+      transaction,
+      createdAt: InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
+    )
+
+    expectNoDifference(first.changedEntityIDs, Set(["todo-dedupe"]))
+    expectNoDifference(replayed.changedEntityIDs, Set<String>())
+    expectNoDifference(replayed.tripleCount, first.tripleCount)
+    expectNoDifference(replayed.emissions, [])
+
+    let mismatchedTransaction = InstantStoreTransaction(
+      id: transactionID,
+      operations: TodoExample.createOperations(
+        id: "todo-dedupe-other",
+        text: "different write",
+        createdAt: InstantTimestamp(milliseconds: createdAt.milliseconds + 2),
+        transactionID: transactionID
+      )
+    )
+    do {
+      try await runtime.transact(
+        mismatchedTransaction,
+        createdAt: InstantTimestamp(milliseconds: createdAt.milliseconds + 2)
+      )
+      #expect(Bool(false), "Expected duplicate transaction id to reject different operations.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "transact")
+      expectNoDifference(error.localID, transactionID)
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    let pending = await runtime.pendingMutations()
+    expectNoDifference(pending.map(\.id), [transactionID])
+    expectNoDifference(pending.map(\.createdAt), [createdAt])
+    expectNoDifference(pending.map(\.transaction), [transaction])
+    let todos = try await TodoExample.decode(runtime.query(TodoExample.query))
+    expectNoDifference(todos.map(\.id), ["todo-dedupe"])
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let relaunchedPending = await relaunchedRuntime.pendingMutations()
+    expectNoDifference(relaunchedPending.map(\.id), [transactionID])
+    expectNoDifference(relaunchedPending.map(\.transaction), [transaction])
+  }
+
+  @Test
   func outboxConfirmationCleansUpAndFailuresPersistAcrossLaunches() async throws {
     let cacheURL = try temporaryCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)

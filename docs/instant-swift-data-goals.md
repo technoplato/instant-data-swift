@@ -511,7 +511,8 @@ Agent-oriented output modes are required:
   `instant-swift-data connection close --json` and
   `instant-swift-data connection connect --json`.
 - inspect pending mutation outbox.
-- replay or drain pending mutations.
+- replay or drain pending mutations, including fixed transaction-id admin writes
+  that de-duplicate exact pending replays and reject mismatched operations.
 - print decoded query results.
 - produce JSONL evidence for CI.
 - persist local room presence and topic messages after sign-in or with
@@ -531,7 +532,7 @@ Agent-oriented output modes are required:
   `instant-swift-data shares accept <token>`, and
   `instant-swift-data shares revoke <share-id>`.
 - run local admin write/query helpers such as
-  `instant-swift-data admin transact notes note-1 --merge '{"title":"admin note"}'`
+  `instant-swift-data admin transact notes note-1 --merge '{"title":"admin note"}' --transaction-id tx-admin-note-1`
   and `instant-swift-data admin query notes --json` for durable terminal
   ground-truth checks until real Instant admin transport is available.
 - run example business commands directly, such as todo/reminder/sync-up/chat

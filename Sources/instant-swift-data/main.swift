@@ -242,8 +242,10 @@ struct InstantSwiftDataCLI {
     case "transact", "tx":
       let options = try AdminTransactOptions.parse(arguments: arguments)
       let context = try await CLIContext.bootstrap(initialAttributes: options.attributes)
-      let transactionID = context.runtime.configuration.makeID()
-      let now = context.runtime.configuration.now()
+      let transactionID = options.transactionID ?? context.runtime.configuration.makeID()
+      let existingPendingMutation = await context.runtime.outboxMutations()
+        .first { $0.id == transactionID && $0.status == .pending }
+      let now = existingPendingMutation?.createdAt ?? context.runtime.configuration.now()
       let operations = adminUpsertOperations(
         options: options,
         transactionID: transactionID,
@@ -3055,7 +3057,7 @@ struct InstantSwiftDataCLI {
         perms verify --example todos --from instant.perms.ts [--json|--jsonl]
         query todos [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt] [--raw] [--select field[,field]] [--json|--jsonl]
         admin query <namespace> [--limit n] [--json|--jsonl]
-        admin transact <namespace> <entity-id> --merge '{...}' [--json|--jsonl]
+        admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id] [--json|--jsonl]
         examples todos seed [--json|--jsonl]
         examples todos add "do the dishes" [--json|--jsonl]
         examples todos list [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt] [--json|--jsonl]
@@ -4494,7 +4496,7 @@ struct InstantSwiftDataCLI {
     """
     Usage: instant-swift-data admin <query|transact>
       instant-swift-data admin query <namespace> [--limit n] [--json|--jsonl]
-      instant-swift-data admin transact <namespace> <entity-id> --merge '{...}' [--json|--jsonl]
+      instant-swift-data admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id] [--json|--jsonl]
     """
   }
 
@@ -5056,10 +5058,12 @@ private struct AdminTransactOptions: Sendable {
   var fields: [AdminFieldValue]
   var attributes: [InstantAttribute]
   var query: InstantQueryPlan
+  var transactionID: String?
 
   static func parse(arguments: [String]) throws -> Self {
     var arguments = arguments
-    let usage = "Usage: instant-swift-data admin transact <namespace> <entity-id> --merge '{...}'"
+    let usage =
+      "Usage: instant-swift-data admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id]"
     guard let namespaceArgument = arguments.popFirstArgument(),
       let entityIDArgument = arguments.popFirstArgument()
     else {
@@ -5074,6 +5078,7 @@ private struct AdminTransactOptions: Sendable {
       usage: usage
     )
     var merge: [String: JSONValue]?
+    var transactionID: String?
 
     while let option = arguments.popFirstArgument() {
       switch option {
@@ -5082,6 +5087,16 @@ private struct AdminTransactOptions: Sendable {
           throw CLIError(usage, exitCode: 64)
         }
         merge = try InstantSwiftDataCLI.parseAdminMergeObject(value, usage: usage)
+
+      case "--transaction-id":
+        guard transactionID == nil, let value = arguments.popFirstArgument() else {
+          throw CLIError(usage, exitCode: 64)
+        }
+        let trimmedValue = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedValue.isEmpty else {
+          throw CLIError("\(usage): transaction id must not be empty.", exitCode: 64)
+        }
+        transactionID = trimmedValue
 
       default:
         throw CLIError("Unknown admin transact option: \(option). \(usage)", exitCode: 64)
@@ -5121,7 +5136,8 @@ private struct AdminTransactOptions: Sendable {
       entityID: entityID,
       fields: fields,
       attributes: attributes,
-      query: InstantSwiftDataCLI.adminQueryOptions(namespace: namespace).query
+      query: InstantSwiftDataCLI.adminQueryOptions(namespace: namespace).query,
+      transactionID: transactionID
     )
   }
 }
