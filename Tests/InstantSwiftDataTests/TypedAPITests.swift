@@ -4,6 +4,10 @@ import Foundation
 import InstantSwiftData
 import Testing
 
+#if canImport(SwiftUI)
+  import SwiftUI
+#endif
+
 @Suite(.serialized)
 struct TypedAPITests {
   @Test
@@ -2289,6 +2293,179 @@ struct TypedAPITests {
       expectNoDifference(model.$todo.isLoading, false)
     }
   }
+
+  @Test
+  func fetchAllTaskBindsSubscriptionEmissionsIntoWrappedValue() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_350)
+    let client = finiteObservationClient([
+      [],
+      [
+        typedTodoSnapshot(
+          id: "todo-bound",
+          text: "Bound through task",
+          isCompleted: false,
+          createdAt: baseDate
+        )
+      ],
+    ])
+
+    var fetch = FetchAll<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt))
+    try await fetch.task(using: client)
+
+    expectNoDifference(fetch.wrappedValue.map(\.text), ["Bound through task"])
+    expectNoDifference(fetch.loadError, nil)
+    expectNoDifference(fetch.isLoading, false)
+  }
+
+  @Test
+  func fetchOneTaskBindsSubscriptionEmissionsIntoWrappedValue() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_360)
+    let client = finiteObservationClient([
+      [],
+      [
+        typedTodoSnapshot(
+          id: "todo-first-bound",
+          text: "First bound",
+          isCompleted: false,
+          createdAt: baseDate
+        ),
+        typedTodoSnapshot(
+          id: "todo-second-bound",
+          text: "Second bound",
+          isCompleted: false,
+          createdAt: baseDate.addingTimeInterval(1)
+        ),
+      ],
+    ])
+
+    var fetch = FetchOne<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt))
+    try await fetch.task(using: client)
+
+    expectNoDifference(fetch.wrappedValue?.text, "First bound")
+    expectNoDifference(fetch.loadError, nil)
+    expectNoDifference(fetch.isLoading, false)
+  }
+
+  @Test
+  func fetchSubscriptionTaskCancelsUnderlyingObservation() async throws {
+    let termination = ObservationTermination()
+    let mock = mockClient(recording: termination)
+
+    var fetch = FetchAll<TypedTodo>(TypedTodo.query)
+    let subscription = try await fetch.subscribe(using: mock)
+    let task = Task {
+      try await subscription.task
+    }
+
+    task.cancel()
+    do {
+      try await task.value
+    } catch is CancellationError {
+    }
+    await termination.wait()
+  }
+
+  @Test
+  func fetchSubscriptionTaskDoesNotConsumeValues() async throws {
+    let stream = AsyncThrowingStream<String, Error>.makeStream(
+      bufferingPolicy: .bufferingNewest(1)
+    )
+    let subscription = FetchSubscription<String>(stream: stream.stream) {
+      stream.continuation.finish()
+    }
+    let lifetime = Task {
+      try await subscription.task
+    }
+
+    try await Task.sleep(nanoseconds: 10_000_000)
+    stream.continuation.yield("visible to callers")
+    stream.continuation.finish()
+
+    var iterator = subscription.makeAsyncIterator()
+    let value = try await iterator.next()
+    expectNoDifference(value, "visible to callers")
+
+    lifetime.cancel()
+    do {
+      try await lifetime.value
+    } catch is CancellationError {
+    }
+  }
+
+  @Test
+  func fetchAllTaskCancellationTerminatesUnderlyingObservation() async throws {
+    let termination = ObservationTermination()
+    let mock = mockClient(recording: termination)
+    let fetch = FetchAll<TypedTodo>(TypedTodo.query)
+    let task = Task {
+      var fetch = fetch
+      try await fetch.task(using: mock)
+    }
+
+    try await Task.sleep(nanoseconds: 10_000_000)
+    task.cancel()
+    do {
+      try await task.value
+    } catch is CancellationError {
+    }
+    await termination.wait()
+    expectNoDifference(fetch.isLoading, false)
+    expectNoDifference(fetch.loadError, nil)
+  }
+
+  @Test
+  func fetchAllTaskPreservesLastValueAndRecordsDecodeError() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_365)
+    let client = stagedObservationClient([
+      [
+        typedTodoSnapshot(
+          id: "todo-before-error",
+          text: "Before error",
+          isCompleted: false,
+          createdAt: baseDate
+        )
+      ],
+      [
+        InstantEntitySnapshot(id: "todo-invalid", namespace: TypedTodo.instantNamespace, values: [:])
+      ],
+    ])
+
+    var fetch = FetchAll<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt))
+    do {
+      try await fetch.task(using: client)
+      Issue.record("Expected malformed subscription emission to fail decoding.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .decodeFailed)
+    }
+
+    #expect(fetch.wrappedValue.map(\.text) == ["Before error"])
+    expectNoDifference(fetch.loadError?.code, .decodeFailed)
+    expectNoDifference(fetch.isLoading, false)
+  }
+
+  #if canImport(SwiftUI)
+    @Test
+    func projectedFetchWrappersExposeSwiftUIBindings() {
+      let todo = TypedTodo(
+        id: InstantID(rawValue: "todo-binding"),
+        text: "Binding",
+        isCompleted: false,
+        createdAt: Date(timeIntervalSince1970: 1_700_000_370)
+      )
+
+      let all = FetchAll<TypedTodo>()
+      all.binding.wrappedValue = [todo]
+      expectNoDifference(all.wrappedValue.map(\.text), ["Binding"])
+
+      let one = FetchOne<TypedTodo>()
+      one.binding.wrappedValue = todo
+      expectNoDifference(one.wrappedValue?.text, "Binding")
+
+      let count = Fetch(wrappedValue: 0)
+      count.binding.wrappedValue = 42
+      expectNoDifference(count.wrappedValue, 42)
+    }
+  #endif
 }
 
 private actor TransactionRecorder {
@@ -2327,10 +2504,94 @@ private func mockClient(recording termination: ObservationTermination) -> Instan
   )
 }
 
+private func finiteObservationClient(
+  _ emissions: [[InstantEntitySnapshot]]
+) -> InstantSwiftDataClient {
+  InstantSwiftDataClient(
+    transact: { _ in
+      InstantStoreMutationResult(
+        transactionID: "tx",
+        changedEntityIDs: [],
+        tripleCount: 0,
+        emissions: []
+      )
+    },
+    query: { _ in
+      emissions.last ?? []
+    },
+    observe: { plan in
+      AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+        for (sequence, values) in emissions.enumerated() {
+          continuation.yield(
+            InstantQueryEmission(queryID: plan.id, sequence: Int64(sequence), values: values)
+          )
+        }
+        continuation.finish()
+      }
+    },
+    pendingMutations: { [] },
+    localID: { name in "mock-\(name)" }
+  )
+}
+
+private func stagedObservationClient(
+  _ emissions: [[InstantEntitySnapshot]],
+  nanosecondsBetweenEmissions: UInt64 = 10_000_000
+) -> InstantSwiftDataClient {
+  InstantSwiftDataClient(
+    transact: { _ in
+      InstantStoreMutationResult(
+        transactionID: "tx",
+        changedEntityIDs: [],
+        tripleCount: 0,
+        emissions: []
+      )
+    },
+    query: { _ in
+      emissions.last ?? []
+    },
+    observe: { plan in
+      AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+        let task = Task {
+          for (sequence, values) in emissions.enumerated() {
+            continuation.yield(
+              InstantQueryEmission(queryID: plan.id, sequence: Int64(sequence), values: values)
+            )
+            try? await Task.sleep(nanoseconds: nanosecondsBetweenEmissions)
+          }
+          continuation.finish()
+        }
+        continuation.onTermination = { @Sendable _ in
+          task.cancel()
+        }
+      }
+    },
+    pendingMutations: { [] },
+    localID: { name in "mock-\(name)" }
+  )
+}
+
 private func makeUnusedFetchSubscription(using client: InstantSwiftDataClient) async throws {
   var fetch = FetchAll<TypedTodo>(TypedTodo.query)
   let subscription = try await fetch.subscribe(using: client)
   withExtendedLifetime(subscription) {}
+}
+
+private func typedTodoSnapshot(
+  id: String,
+  text: String,
+  isCompleted: Bool,
+  createdAt: Date
+) -> InstantEntitySnapshot {
+  InstantEntitySnapshot(
+    id: id,
+    namespace: TypedTodo.instantNamespace,
+    values: [
+      "text": .one(.string(text)),
+      "isCompleted": .one(.bool(isCompleted)),
+      "createdAt": .one(.date(createdAt)),
+    ]
+  )
 }
 
 private func typedTestCacheURL(_ name: String) throws -> URL {

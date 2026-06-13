@@ -3,6 +3,10 @@ import Dependencies
 import Foundation
 import IssueReporting
 
+#if canImport(SwiftUI)
+  public import SwiftUI
+#endif
+
 @attached(member, names: named(instantNamespace), named(Draft))
 public macro InstantEntity(_ namespace: String? = nil) =
   #externalMacro(module: "InstantSwiftDataMacros", type: "InstantEntityMacro")
@@ -500,6 +504,18 @@ public struct FetchSubscription<Element: Sendable>: AsyncSequence, Sendable {
     cancellation.cancel()
   }
 
+  public var task: Void {
+    get async throws {
+      try await withTaskCancellationHandler {
+        while true {
+          try await Task.sleep(nanoseconds: 3_600_000_000_000)
+        }
+      } onCancel: {
+        self.cancel()
+      }
+    }
+  }
+
   public func map<Mapped: Sendable>(
     _ transform: @escaping @Sendable (Element) throws -> Mapped
   ) -> FetchSubscription<Mapped> {
@@ -526,6 +542,59 @@ public struct FetchSubscription<Element: Sendable>: AsyncSequence, Sendable {
       mapped.continuation.finish()
       self.cancel()
     }
+  }
+}
+
+// SAFETY: all mutable fetch state is protected by `lock`.
+private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
+  private let lock = NSLock()
+  private var _wrappedValue: Value
+  private var _loadError: InstantError?
+  private var _isLoading: Bool
+
+  init(value: Value) {
+    self._wrappedValue = value
+    self._loadError = nil
+    self._isLoading = false
+  }
+
+  var wrappedValue: Value {
+    get {
+      withLock { _wrappedValue }
+    }
+    set {
+      withLock {
+        _wrappedValue = newValue
+      }
+    }
+  }
+
+  var loadError: InstantError? {
+    get {
+      withLock { _loadError }
+    }
+    set {
+      withLock {
+        _loadError = newValue
+      }
+    }
+  }
+
+  var isLoading: Bool {
+    get {
+      withLock { _isLoading }
+    }
+    set {
+      withLock {
+        _isLoading = newValue
+      }
+    }
+  }
+
+  private func withLock<Result>(_ operation: () throws -> Result) rethrows -> Result {
+    lock.lock()
+    defer { lock.unlock() }
+    return try operation()
   }
 }
 
@@ -818,17 +887,37 @@ extension DependencyValues {
 
 @propertyWrapper
 public struct FetchAll<Element: Sendable>: Sendable {
-  public var wrappedValue: [Element]
-  public var loadError: InstantError?
-  public var isLoading: Bool
+  private let storage: FetchStorage<[Element]>
   private var loadOperation: (@Sendable (InstantSwiftDataClient) async throws -> [Element])?
   private var subscribeOperation:
     (@Sendable (InstantSwiftDataClient) async -> FetchSubscription<[Element]>)?
 
+  public var wrappedValue: [Element] {
+    get { storage.wrappedValue }
+    set { storage.wrappedValue = newValue }
+  }
+
+  public var loadError: InstantError? {
+    get { storage.loadError }
+    set { storage.loadError = newValue }
+  }
+
+  public var isLoading: Bool {
+    get { storage.isLoading }
+    set { storage.isLoading = newValue }
+  }
+
+  #if canImport(SwiftUI)
+    public var binding: Binding<[Element]> {
+      Binding(
+        get: { storage.wrappedValue },
+        set: { storage.wrappedValue = $0 }
+      )
+    }
+  #endif
+
   public init(wrappedValue: [Element] = []) {
-    self.wrappedValue = wrappedValue
-    self.loadError = nil
-    self.isLoading = false
+    self.storage = FetchStorage(value: wrappedValue)
     self.loadOperation = nil
     self.subscribeOperation = nil
   }
@@ -837,9 +926,7 @@ public struct FetchAll<Element: Sendable>: Sendable {
     wrappedValue: [Element] = [],
     _ query: InstantEntityQuery<Element>
   ) where Element: InstantEntityModel {
-    self.wrappedValue = wrappedValue
-    self.loadError = nil
-    self.isLoading = false
+    self.storage = FetchStorage(value: wrappedValue)
     self.loadOperation = { client in
       try await client.query(query)
     }
@@ -958,21 +1045,100 @@ public struct FetchAll<Element: Sendable>: Sendable {
     }
     return try await subscribe(using: client)
   }
+
+  public mutating func task() async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(using: client)
+  }
+
+  public mutating func task(using client: InstantSwiftDataClient) async throws {
+    isLoading = true
+    do {
+      let subscription = try await subscribe(using: client)
+      defer { subscription.cancel() }
+      for try await value in subscription {
+        try Task.checkCancellation()
+        wrappedValue = value
+        loadError = nil
+        isLoading = false
+      }
+      loadError = nil
+      isLoading = false
+    } catch let error as CancellationError {
+      loadError = nil
+      isLoading = false
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      isLoading = false
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "observe FetchAll",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient and query decoder."
+      )
+      loadError = error
+      isLoading = false
+      throw error
+    }
+  }
+
+  public mutating func task(
+    _ query: InstantEntityQuery<Element>
+  ) async throws where Element: InstantEntityModel {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(query, using: client)
+  }
+
+  public mutating func task(
+    _ query: InstantEntityQuery<Element>,
+    using client: InstantSwiftDataClient
+  ) async throws where Element: InstantEntityModel {
+    self.loadOperation = { client in
+      try await client.query(query)
+    }
+    self.subscribeOperation = { client in
+      await client.subscribe(query)
+    }
+    try await task(using: client)
+  }
 }
 
 @propertyWrapper
 public struct FetchOne<Element: Sendable>: Sendable {
-  public var wrappedValue: Element?
-  public var loadError: InstantError?
-  public var isLoading: Bool
+  private let storage: FetchStorage<Element?>
   private var loadOperation: (@Sendable (InstantSwiftDataClient) async throws -> Element?)?
   private var subscribeOperation:
     (@Sendable (InstantSwiftDataClient) async -> FetchSubscription<Element?>)?
 
+  public var wrappedValue: Element? {
+    get { storage.wrappedValue }
+    set { storage.wrappedValue = newValue }
+  }
+
+  public var loadError: InstantError? {
+    get { storage.loadError }
+    set { storage.loadError = newValue }
+  }
+
+  public var isLoading: Bool {
+    get { storage.isLoading }
+    set { storage.isLoading = newValue }
+  }
+
+  #if canImport(SwiftUI)
+    public var binding: Binding<Element?> {
+      Binding(
+        get: { storage.wrappedValue },
+        set: { storage.wrappedValue = $0 }
+      )
+    }
+  #endif
+
   public init(wrappedValue: Element? = nil) {
-    self.wrappedValue = wrappedValue
-    self.loadError = nil
-    self.isLoading = false
+    self.storage = FetchStorage(value: wrappedValue)
     self.loadOperation = nil
     self.subscribeOperation = nil
   }
@@ -981,9 +1147,7 @@ public struct FetchOne<Element: Sendable>: Sendable {
     wrappedValue: Element? = nil,
     _ query: InstantEntityQuery<Element>
   ) where Element: InstantEntityModel {
-    self.wrappedValue = wrappedValue
-    self.loadError = nil
-    self.isLoading = false
+    self.storage = FetchStorage(value: wrappedValue)
     self.loadOperation = { client in
       var query = query
       if query.plan.limit == nil {
@@ -1126,19 +1290,106 @@ public struct FetchOne<Element: Sendable>: Sendable {
     }
     return try await subscribe(using: client)
   }
+
+  public mutating func task() async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(using: client)
+  }
+
+  public mutating func task(using client: InstantSwiftDataClient) async throws {
+    isLoading = true
+    do {
+      let subscription = try await subscribe(using: client)
+      defer { subscription.cancel() }
+      for try await value in subscription {
+        try Task.checkCancellation()
+        wrappedValue = value
+        loadError = nil
+        isLoading = false
+      }
+      loadError = nil
+      isLoading = false
+    } catch let error as CancellationError {
+      loadError = nil
+      isLoading = false
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      isLoading = false
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "observe FetchOne",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient and query decoder."
+      )
+      loadError = error
+      isLoading = false
+      throw error
+    }
+  }
+
+  public mutating func task(
+    _ query: InstantEntityQuery<Element>
+  ) async throws where Element: InstantEntityModel {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(query, using: client)
+  }
+
+  public mutating func task(
+    _ query: InstantEntityQuery<Element>,
+    using client: InstantSwiftDataClient
+  ) async throws where Element: InstantEntityModel {
+    self.loadOperation = { client in
+      var query = query
+      if query.plan.limit == nil {
+        query = query.limit(1)
+      }
+      return try await client.query(query).first
+    }
+    self.subscribeOperation = { client in
+      var query = query
+      if query.plan.limit == nil {
+        query = query.limit(1)
+      }
+      return await client.subscribe(query).map(\.first)
+    }
+    try await task(using: client)
+  }
 }
 
 @propertyWrapper
 public struct Fetch<Value: Sendable>: Sendable {
-  public var wrappedValue: Value
-  public var loadError: InstantError?
-  public var isLoading: Bool
+  private let storage: FetchStorage<Value>
   private var loadOperation: (@Sendable (InstantSwiftDataClient) async throws -> Value)?
 
+  public var wrappedValue: Value {
+    get { storage.wrappedValue }
+    set { storage.wrappedValue = newValue }
+  }
+
+  public var loadError: InstantError? {
+    get { storage.loadError }
+    set { storage.loadError = newValue }
+  }
+
+  public var isLoading: Bool {
+    get { storage.isLoading }
+    set { storage.isLoading = newValue }
+  }
+
+  #if canImport(SwiftUI)
+    public var binding: Binding<Value> {
+      Binding(
+        get: { storage.wrappedValue },
+        set: { storage.wrappedValue = $0 }
+      )
+    }
+  #endif
+
   public init(wrappedValue: Value) {
-    self.wrappedValue = wrappedValue
-    self.loadError = nil
-    self.isLoading = false
+    self.storage = FetchStorage(value: wrappedValue)
     self.loadOperation = nil
   }
 
@@ -1146,9 +1397,7 @@ public struct Fetch<Value: Sendable>: Sendable {
     wrappedValue: Value,
     load: @escaping @Sendable (InstantSwiftDataClient) async throws -> Value
   ) {
-    self.wrappedValue = wrappedValue
-    self.loadError = nil
-    self.isLoading = false
+    self.storage = FetchStorage(value: wrappedValue)
     self.loadOperation = load
   }
 
