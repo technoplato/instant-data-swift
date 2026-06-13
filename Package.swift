@@ -38,8 +38,11 @@ let package = Package(
     ),
   ],
   dependencies: [
+    // Keep swift-parsing on the non-macro CasePaths release compatible with SwiftSyntax 602.
+    .package(url: "https://github.com/pointfreeco/swift-case-paths", exact: "1.0.0"),
     .package(url: "https://github.com/pointfreeco/swift-custom-dump", from: "1.0.0"),
     .package(url: "https://github.com/pointfreeco/swift-dependencies", from: "1.0.0"),
+    .package(url: "https://github.com/pointfreeco/swift-parsing", from: "0.14.1"),
     .package(url: "https://github.com/pointfreeco/xctest-dynamic-overlay", from: "1.0.0"),
     .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "602.0.0"),
     .package(url: "https://github.com/swiftlang/swift-testing.git", exact: "6.2.3"),
@@ -82,9 +85,22 @@ let package = Package(
       ],
       swiftSettings: strictConcurrencySettings
     ),
+    .target(
+      name: "InstantSwiftDataCLIParsing",
+      dependencies: [
+        .product(name: "CasePaths", package: "swift-case-paths"),
+        .product(name: "Parsing", package: "swift-parsing"),
+      ],
+      path: "Sources/InstantSwiftDataCLI",
+      swiftSettings: strictConcurrencySettings
+    ),
     .executableTarget(
       name: "instant-swift-data",
-      dependencies: ["InstantSwiftDataCore", "InstantSwiftDataSchema"],
+      dependencies: [
+        "InstantSwiftDataCLIParsing",
+        "InstantSwiftDataCore",
+        "InstantSwiftDataSchema",
+      ],
       swiftSettings: strictConcurrencySettings
     ),
     .executableTarget(
@@ -131,6 +147,16 @@ let package = Package(
         .product(name: "CustomDump", package: "swift-custom-dump"),
         .product(name: "Testing", package: "swift-testing"),
       ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .testTarget(
+      name: "InstantSwiftDataCLIParsingTests",
+      dependencies: [
+        "InstantSwiftDataCLIParsing",
+        .product(name: "CustomDump", package: "swift-custom-dump"),
+        .product(name: "Testing", package: "swift-testing"),
+      ],
+      path: "Tests/InstantSwiftDataCLITests",
       swiftSettings: strictConcurrencySettings
     ),
     .testTarget(

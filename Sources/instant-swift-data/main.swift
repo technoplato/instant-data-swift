@@ -1,4 +1,5 @@
 import Foundation
+import InstantSwiftDataCLIParsing
 import InstantSwiftDataCore
 import InstantSwiftDataSchema
 
@@ -20,76 +21,77 @@ struct InstantSwiftDataCLI {
   }
 
   private static func run() async throws {
-    var arguments = Array(CommandLine.arguments.dropFirst())
-    let output = OutputMode.consume(from: &arguments)
+    let invocation = try CLIArguments.parse(Array(CommandLine.arguments.dropFirst()))
+    let arguments = invocation.arguments
+    let output = OutputMode(invocation.output)
 
-    guard let command = arguments.popFirstArgument() else {
+    guard let command = invocation.command else {
       printHelp()
       return
     }
 
     switch command {
-    case "help", "--help", "-h":
+    case .help:
       printHelp()
 
-    case "init":
+    case .initScaffold:
       try runInit(arguments: arguments, output: output)
 
-    case "schema":
+    case .schema:
       try runSchema(arguments: arguments, output: output)
 
-    case "perms", "permissions":
+    case .permissions:
       try runPermissions(arguments: arguments, output: output)
 
-    case "examples":
+    case .examples:
       try await runExamples(arguments: arguments, output: output)
 
-    case "query":
+    case .query:
       try await runQuery(arguments: arguments, output: output)
 
-    case "admin":
+    case .admin:
       try await runAdmin(arguments: arguments, output: output)
 
-    case "cache":
+    case .cache:
       try await runCache(arguments: arguments, output: output)
 
-    case "outbox":
+    case .outbox:
       try await runOutbox(arguments: arguments, output: output)
 
-    case "local-id", "localid":
+    case .localID:
       try await runLocalID(arguments: arguments, output: output)
 
-    case "auth":
+    case .auth:
       try await runAuth(arguments: arguments, output: output)
 
-    case "app":
+    case .app:
       try await runApp(arguments: arguments, output: output)
 
-    case "sync":
+    case .sync:
       try await runSync(arguments: arguments, output: output)
 
-    case "connection", "connect":
+    case .connection:
       try await runConnection(arguments: arguments, output: output)
 
-    case "rooms", "room":
+    case .rooms:
       try await runRooms(arguments: arguments, output: output)
 
-    case "files", "storage":
+    case .files:
       try await runFiles(arguments: arguments, output: output)
 
-    case "streams", "stream":
+    case .streams:
       try await runStreams(arguments: arguments, output: output)
 
-    case "shares", "share", "sharing":
+    case .shares:
       try await runShares(arguments: arguments, output: output)
 
-    case "validation", "validate":
+    case .validation:
       try await runValidation(arguments: arguments, output: output)
 
-    case "benchmark", "benchmarks":
+    case .benchmark:
       try await runBenchmark(arguments: arguments, output: output)
 
-    default:
+    case let .unknown(command):
       throw CLIError("Unknown command: \(command)", exitCode: 64)
     }
   }
@@ -7048,16 +7050,15 @@ private enum OutputMode: Equatable, Sendable {
   case json
   case jsonl
 
-  static func consume(from arguments: inout [String]) -> Self {
-    if let index = arguments.firstIndex(of: "--jsonl") {
-      arguments.remove(at: index)
-      return .jsonl
+  init(_ outputMode: CLIOutputMode) {
+    switch outputMode {
+    case .human:
+      self = .human
+    case .json:
+      self = .json
+    case .jsonl:
+      self = .jsonl
     }
-    if let index = arguments.firstIndex(of: "--json") {
-      arguments.remove(at: index)
-      return .json
-    }
-    return .human
   }
 }
 
