@@ -668,9 +668,10 @@ Current local progress: `instant-swift-data benchmark --suite local-todos`
 records JSON/JSONL metrics for local bootstrap, triple insert/retract, todo
 query materialization, pending mutation enqueue, query-cache reads, offline
 SQLite restore, high-bandwidth scalar update streams, and high-bandwidth linked
-write batches, storage metadata queries, and stream read/write throughput.
-Swift/TypeScript comparison, memory-growth budgets, actor-hop counts, and
-cancellation latency remain future benchmark work.
+write batches, storage metadata queries, stream read/write throughput, and
+live-query cancellation latency. Swift/TypeScript comparison, memory-growth
+budgets, actor-hop counts, and presence/topic/storage/stream cancellation
+latency remain future benchmark work.
 
 Success criterion: Swift matches or exceeds TypeScript for equivalent workloads.
 If Swift is slower, the benchmark must name the reason, quantify the gap, and

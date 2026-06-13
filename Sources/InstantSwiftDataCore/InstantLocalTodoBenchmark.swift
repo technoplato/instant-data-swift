@@ -498,6 +498,31 @@ public enum InstantSwiftDataLocalBenchmarks {
         )
       )
 
+      let observationTask = try await liveQueryObservationTask(runtime: runtime)
+      let (observedEmissionCount, cancellationDuration) = try await measured(clockNanoseconds) {
+        observationTask.cancel()
+        let observedEmissionCount = await observationTask.value
+        try await waitForLiveQueryObserverCancellation(runtime: runtime)
+        return observedEmissionCount
+      }
+      guard observedEmissionCount == 1 else {
+        throw InstantError(
+          code: .validationFailed,
+          operation: "run local todo benchmark",
+          message: "Expected live query cancellation to finish after the initial emission.",
+          recovery: "Inspect observation cancellation before trusting benchmark timings."
+        )
+      }
+      record(
+        "subscription-cancel.live-query",
+        InstantBenchmarkSample(
+          iteration: iteration,
+          durationNanoseconds: cancellationDuration,
+          operationCount: 1,
+          resultCount: observedEmissionCount
+        )
+      )
+
       let refreshedTodos = try await TodoExample.decode(runtime.query(TodoExample.query))
       guard refreshedTodos.contains(where: { $0.id == terminalID && $0.text == finalScalarText }) else {
         throw InstantError(
@@ -588,6 +613,7 @@ public enum InstantSwiftDataLocalBenchmarks {
       "storage-metadata.query",
       "stream-write.chunks",
       "stream-read.chunks",
+      "subscription-cancel.live-query",
       "query-cache-read.todos",
       "triple-retract.reset",
       "offline-restore.relaunch",
@@ -618,5 +644,53 @@ public enum InstantSwiftDataLocalBenchmarks {
     let value = try await operation()
     let endedAt = clockNanoseconds()
     return (value, endedAt >= startedAt ? endedAt - startedAt : 0)
+  }
+
+  private static func liveQueryObservationTask(
+    runtime: InstantRuntime
+  ) async throws -> Task<Int, Never> {
+    let stream = await runtime.observe(TodoExample.query)
+    let firstEmission = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
+    let observationTask = Task<Int, Never> {
+      var iterator = stream.makeAsyncIterator()
+      var emissionCount = 0
+      while await iterator.next() != nil {
+        emissionCount += 1
+        if emissionCount == 1 {
+          firstEmission.continuation.yield()
+          firstEmission.continuation.finish()
+        }
+      }
+      return emissionCount
+    }
+
+    var firstEmissionIterator = firstEmission.stream.makeAsyncIterator()
+    guard await firstEmissionIterator.next() != nil else {
+      observationTask.cancel()
+      throw InstantError(
+        code: .validationFailed,
+        operation: "run local todo benchmark",
+        message: "Expected live query observation to emit before cancellation.",
+        recovery: "Inspect observation registration before trusting benchmark timings."
+      )
+    }
+    return observationTask
+  }
+
+  private static func waitForLiveQueryObserverCancellation(
+    runtime: InstantRuntime
+  ) async throws {
+    for _ in 0..<100 {
+      if await runtime.store.activeObservationCount() == 0 {
+        return
+      }
+      await Task.yield()
+    }
+    throw InstantError(
+      code: .validationFailed,
+      operation: "run local todo benchmark",
+      message: "Expected live query cancellation to remove its store observer.",
+      recovery: "Inspect AsyncStream termination and observer cleanup before trusting benchmark timings."
+    )
   }
 }

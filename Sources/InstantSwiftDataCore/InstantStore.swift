@@ -667,4 +667,8 @@ public actor InstantStore {
   private func cancelObservation(id: UUID) {
     observers[id] = nil
   }
+
+  func activeObservationCount() -> Int {
+    observers.count
+  }
 }

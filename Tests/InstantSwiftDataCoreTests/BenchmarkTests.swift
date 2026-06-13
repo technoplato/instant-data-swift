@@ -41,15 +41,16 @@ extension InstantStoreTests {
         "storage-metadata.query",
         "stream-write.chunks",
         "stream-read.chunks",
+        "subscription-cancel.live-query",
         "query-cache-read.todos",
         "triple-retract.reset",
         "offline-restore.relaunch",
       ]
     )
-    expectNoDifference(result.metrics.map(\.samples.count), Array(repeating: 2, count: 12))
+    expectNoDifference(result.metrics.map(\.samples.count), Array(repeating: 2, count: 13))
     expectNoDifference(
       result.metrics.flatMap { $0.samples.map(\.durationNanoseconds) },
-      Array(repeating: 100, count: 24)
+      Array(repeating: 100, count: 26)
     )
     expectNoDifference(
       result.metrics.first { $0.name == "triple-insert.seed" }?.samples.map(\.operationCount),
@@ -84,18 +85,26 @@ extension InstantStoreTests {
       [25, 25]
     )
     expectNoDifference(
+      result.metrics.first { $0.name == "subscription-cancel.live-query" }?.samples.map(\.operationCount),
+      [1, 1]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "subscription-cancel.live-query" }?.samples.map(\.resultCount),
+      [1, 1]
+    )
+    expectNoDifference(
       result.metrics.first { $0.name == "offline-restore.relaunch" }?.samples.map(\.pendingMutationCount),
       [54, 54]
     )
 
     let evidenceRows = result.evidenceRows
-    expectNoDifference(evidenceRows.count, 13)
+    expectNoDifference(evidenceRows.count, 14)
     expectNoDifference(evidenceRows.first?.caseID, "benchmark.local.todos")
     expectNoDifference(evidenceRows.first?.event, "summary")
     expectNoDifference(evidenceRows.first?.details.transport, "not-implemented-local-cache-only")
     expectNoDifference(evidenceRows.first?.details.iterations, 2)
     expectNoDifference(evidenceRows.first?.details.metric, nil)
-    expectNoDifference(evidenceRows.dropFirst().map(\.details.transport), Array(repeating: result.transport, count: 12))
+    expectNoDifference(evidenceRows.dropFirst().map(\.details.transport), Array(repeating: result.transport, count: 13))
     expectNoDifference(
       evidenceRows.dropFirst().compactMap(\.details.metric?.name),
       result.metrics.map(\.name)
