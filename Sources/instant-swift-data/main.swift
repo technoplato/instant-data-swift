@@ -47,6 +47,9 @@ struct InstantSwiftDataCLI {
     case "query":
       try await runQuery(arguments: arguments, output: output)
 
+    case "admin":
+      try await runAdmin(arguments: arguments, output: output)
+
     case "cache":
       try await runCache(arguments: arguments, output: output)
 
@@ -200,6 +203,52 @@ struct InstantSwiftDataCLI {
 
     default:
       throw CLIError(queryUsage, exitCode: 64)
+    }
+  }
+
+  private static func runAdmin(arguments: [String], output: OutputMode) async throws {
+    var arguments = arguments
+    guard let command = arguments.popFirstArgument() else {
+      throw CLIError(adminUsage, exitCode: 64)
+    }
+
+    switch command {
+    case "query":
+      let options = try AdminQueryOptions.parse(arguments: arguments)
+      let context = try await CLIContext.bootstrap(initialAttributes: [])
+      try await printSnapshots(
+        context: context,
+        output: output,
+        event: "admin-query",
+        query: options.query,
+        caseID: "cli.admin.query"
+      )
+
+    case "transact", "tx":
+      let options = try AdminTransactOptions.parse(arguments: arguments)
+      let context = try await CLIContext.bootstrap(initialAttributes: options.attributes)
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      let operations = adminUpsertOperations(
+        options: options,
+        transactionID: transactionID,
+        txTime: now
+      )
+      let transaction = InstantStoreTransaction(id: transactionID, operations: operations)
+      let result = try await context.runtime.transact(
+        transaction,
+        createdAt: now,
+        source: "cli.admin.transact"
+      )
+      try await printAdminTransact(
+        context: context,
+        output: output,
+        options: options,
+        result: result
+      )
+
+    default:
+      throw CLIError(adminUsage, exitCode: 64)
     }
   }
 
@@ -2070,6 +2119,75 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func printAdminTransact(
+    context: CLIContext,
+    output: OutputMode,
+    options: AdminTransactOptions,
+    result: InstantStoreMutationResult
+  ) async throws {
+    let emission = try await context.runtime.queryOnce(options.query)
+    let pending = await context.runtime.pendingMutations()
+    let payload = AdminTransactOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: "transact",
+      changedID: options.entityID,
+      transport: "not-implemented-local-cache-only",
+      namespace: options.namespace,
+      transactionID: result.transactionID,
+      changedEntityIDs: result.changedEntityIDs.sorted(),
+      tripleCount: result.tripleCount,
+      queryID: options.query.id,
+      cacheKey: options.query.cacheKey,
+      pendingMutationCount: pending.count,
+      snapshotCount: emission.values.count,
+      snapshots: emission.values
+    )
+
+    switch output {
+    case .human:
+      print("transact: \(options.namespace)/\(options.entityID)")
+      print("transaction: \(payload.transactionID)")
+      print("changed entities: \(payload.changedEntityIDs.joined(separator: ","))")
+      for snapshot in payload.snapshots {
+        let fields = snapshot.values.keys.sorted().joined(separator: ",")
+        print("\(snapshot.namespace)/\(snapshot.id) fields=\(fields)")
+      }
+      print("transport: \(payload.transport)")
+      print("pending mutations: \(pending.count)")
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.admin.transact",
+          side: "swift",
+          event: "transact",
+          appID: context.appID,
+          entityID: options.entityID,
+          ok: true,
+          details: payload
+        )
+      )
+      for snapshot in payload.snapshots {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.admin.transact",
+            side: "swift",
+            event: "snapshot",
+            appID: context.appID,
+            entityID: snapshot.id,
+            ok: true,
+            details: snapshot
+          )
+        )
+      }
+    }
+  }
+
   private static func printPageInfo(_ pageInfo: InstantQueryPageInfo?) {
     guard let pageInfo else { return }
     let start = pageInfo.startCursor?.entityID ?? "-"
@@ -2176,6 +2294,8 @@ struct InstantSwiftDataCLI {
         perms generate --example todos [--to instant.perms.ts]
         perms verify --example todos --from instant.perms.ts [--json|--jsonl]
         query todos [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt] [--raw] [--select field[,field]] [--json|--jsonl]
+        admin query <namespace> [--limit n] [--json|--jsonl]
+        admin transact <namespace> <entity-id> --merge '{...}' [--json|--jsonl]
         examples todos seed [--json|--jsonl]
         examples todos add "do the dishes" [--json|--jsonl]
         examples todos list [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt] [--json|--jsonl]
@@ -3369,6 +3489,124 @@ struct InstantSwiftDataCLI {
     """
   }
 
+  private static var adminUsage: String {
+    """
+    Usage: instant-swift-data admin <query|transact>
+      instant-swift-data admin query <namespace> [--limit n] [--json|--jsonl]
+      instant-swift-data admin transact <namespace> <entity-id> --merge '{...}' [--json|--jsonl]
+    """
+  }
+
+  fileprivate static func adminQueryOptions(
+    namespace: String,
+    limit: Int? = nil
+  ) -> AdminQueryOptions {
+    let limitFragment = limit.map { ".limit-\($0)" } ?? ""
+    return AdminQueryOptions(
+      query: InstantQueryPlan(
+        id: "admin.\(queryIDFragment(namespace)).query\(limitFragment)",
+        namespace: namespace,
+        limit: limit
+      )
+    )
+  }
+
+  private static func adminUpsertOperations(
+    options: AdminTransactOptions,
+    transactionID: String,
+    txTime: InstantTimestamp
+  ) -> [InstantTripleOperation] {
+    let identity = InstantTripleOperation.insert(
+      InstantTriple(
+        entityID: options.entityID,
+        attributeID: InstantAttribute.primaryKeyID(namespace: options.namespace),
+        value: .string(options.entityID),
+        txID: transactionID,
+        txTime: txTime
+      )
+    )
+    let fields = options.fields.map { field in
+      InstantTripleOperation.insert(
+        InstantTriple(
+          entityID: options.entityID,
+          attributeID: "\(options.namespace)/\(field.name)",
+          value: field.value,
+          txID: transactionID,
+          txTime: txTime
+        )
+      )
+    }
+    return [identity] + fields
+  }
+
+  fileprivate static func parseAdminNamespace(_ value: String, usage: String) throws -> String {
+    let namespace = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard isValidAdminPathComponent(namespace) else {
+      throw CLIError("\(usage): namespace must not be empty or contain whitespace or '/'.", exitCode: 64)
+    }
+    return namespace
+  }
+
+  fileprivate static func parseAdminEntityID(_ value: String, usage: String) throws -> String {
+    let entityID = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !entityID.isEmpty else {
+      throw CLIError("\(usage): entity id must not be empty.", exitCode: 64)
+    }
+    return entityID
+  }
+
+  fileprivate static func parseAdminField(_ value: String, usage: String) throws -> String {
+    let field = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard isValidAdminPathComponent(field) else {
+      throw CLIError("\(usage): field names must not be empty or contain whitespace or '/'.", exitCode: 64)
+    }
+    guard field != "id" else {
+      throw CLIError("\(usage): --merge must not include the reserved 'id' field.", exitCode: 64)
+    }
+    guard field != InstantQueryOrder.serverCreatedAtField else {
+      throw CLIError(
+        "\(usage): --merge must not include reserved order metadata '\(InstantQueryOrder.serverCreatedAtField)'.",
+        exitCode: 64
+      )
+    }
+    return field
+  }
+
+  fileprivate static func parseAdminMergeObject(
+    _ string: String,
+    usage: String
+  ) throws -> [String: JSONValue] {
+    guard case let .object(values) = try parseJSONValue(string, operation: "admin transact")
+    else {
+      throw CLIError("\(usage): --merge must be a JSON object.", exitCode: 64)
+    }
+    guard !values.isEmpty else {
+      throw CLIError("\(usage): --merge must include at least one field.", exitCode: 64)
+    }
+    return values
+  }
+
+  fileprivate static func adminFieldValue(
+    _ value: JSONValue
+  ) -> (value: InstantValue, valueType: InstantValueType) {
+    switch value {
+    case let .string(value):
+      return (.string(value), .string)
+    case let .number(value):
+      return (.number(value), .number)
+    case let .bool(value):
+      return (.bool(value), .boolean)
+    case .null, .array, .object:
+      return (.json(value), .json)
+    }
+  }
+
+  private static func isValidAdminPathComponent(_ value: String) -> Bool {
+    !value.isEmpty
+      && !value.contains("/")
+      && !value.contains(where: { $0.isWhitespace })
+  }
+
   private static var examplesUsage: String {
     """
     Usage: instant-swift-data examples <todos|todo-links>
@@ -3676,6 +3914,140 @@ private struct QuerySnapshotsOutput: Codable, Sendable {
   var selectedFields: [String]?
   var pageInfo: InstantQueryPageInfo?
   var pendingMutationCount: Int
+  var snapshots: [InstantEntitySnapshot]
+}
+
+private struct AdminQueryOptions: Sendable {
+  var query: InstantQueryPlan
+
+  static func parse(arguments: [String]) throws -> Self {
+    var arguments = arguments
+    let usage = "Usage: instant-swift-data admin query <namespace> [--limit n]"
+    guard let namespaceArgument = arguments.popFirstArgument() else {
+      throw CLIError(usage, exitCode: 64)
+    }
+    let namespace = try InstantSwiftDataCLI.parseAdminNamespace(
+      namespaceArgument,
+      usage: usage
+    )
+    var limit: Int?
+
+    while let option = arguments.popFirstArgument() {
+      switch option {
+      case "--limit":
+        guard let value = arguments.popFirstArgument(),
+          let parsed = Int(value),
+          parsed >= 0
+        else {
+          throw CLIError("\(usage): --limit must be a non-negative integer.", exitCode: 64)
+        }
+        limit = parsed
+
+      default:
+        throw CLIError("Unknown admin query option: \(option). \(usage)", exitCode: 64)
+      }
+    }
+
+    return InstantSwiftDataCLI.adminQueryOptions(namespace: namespace, limit: limit)
+  }
+}
+
+private struct AdminTransactOptions: Sendable {
+  var namespace: String
+  var entityID: String
+  var fields: [AdminFieldValue]
+  var attributes: [InstantAttribute]
+  var query: InstantQueryPlan
+
+  static func parse(arguments: [String]) throws -> Self {
+    var arguments = arguments
+    let usage = "Usage: instant-swift-data admin transact <namespace> <entity-id> --merge '{...}'"
+    guard let namespaceArgument = arguments.popFirstArgument(),
+      let entityIDArgument = arguments.popFirstArgument()
+    else {
+      throw CLIError(usage, exitCode: 64)
+    }
+    let namespace = try InstantSwiftDataCLI.parseAdminNamespace(
+      namespaceArgument,
+      usage: usage
+    )
+    let entityID = try InstantSwiftDataCLI.parseAdminEntityID(
+      entityIDArgument,
+      usage: usage
+    )
+    var merge: [String: JSONValue]?
+
+    while let option = arguments.popFirstArgument() {
+      switch option {
+      case "--merge":
+        guard merge == nil, let value = arguments.popFirstArgument() else {
+          throw CLIError(usage, exitCode: 64)
+        }
+        merge = try InstantSwiftDataCLI.parseAdminMergeObject(value, usage: usage)
+
+      default:
+        throw CLIError("Unknown admin transact option: \(option). \(usage)", exitCode: 64)
+      }
+    }
+
+    guard let merge else {
+      throw CLIError(usage, exitCode: 64)
+    }
+
+    var fields: [AdminFieldValue] = []
+    var seenFields: Set<String> = []
+    for key in merge.keys.sorted() {
+      let field = try InstantSwiftDataCLI.parseAdminField(key, usage: usage)
+      guard seenFields.insert(field).inserted else {
+        throw CLIError("\(usage): duplicate field '\(field)' after normalization.", exitCode: 64)
+      }
+      let typed = InstantSwiftDataCLI.adminFieldValue(merge[key] ?? .null)
+      fields.append(AdminFieldValue(name: field, value: typed.value, valueType: typed.valueType))
+    }
+
+    let attributes =
+      [InstantAttribute.primaryKey(namespace: namespace)]
+      + fields.map { field in
+        InstantAttribute(
+          id: "\(namespace)/\(field.name)",
+          namespace: namespace,
+          name: field.name,
+          valueType: field.valueType,
+          isRequired: false,
+          isIndexed: true
+        )
+      }
+
+    return Self(
+      namespace: namespace,
+      entityID: entityID,
+      fields: fields,
+      attributes: attributes,
+      query: InstantSwiftDataCLI.adminQueryOptions(namespace: namespace).query
+    )
+  }
+}
+
+private struct AdminFieldValue: Hashable, Codable, Sendable {
+  var name: String
+  var value: InstantValue
+  var valueType: InstantValueType
+}
+
+private struct AdminTransactOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var changedID: String
+  var transport: String
+  var namespace: String
+  var transactionID: String
+  var changedEntityIDs: [String]
+  var tripleCount: Int
+  var queryID: String
+  var cacheKey: String
+  var pendingMutationCount: Int
+  var snapshotCount: Int
   var snapshots: [InstantEntitySnapshot]
 }
 

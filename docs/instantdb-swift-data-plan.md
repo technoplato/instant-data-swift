@@ -248,6 +248,14 @@ subscriptions, and Swift/TypeScript boundary proof remain future work.
   auth, and benchmarks.
 - Dev logging hooks should be optional and removable from production targets.
 
+Current local progress: the CLI exposes non-captive local admin helpers:
+`instant-swift-data admin transact <namespace> <entity-id> --merge '{...}'`
+infers scalar/json attributes for the namespace, writes through the same
+runtime/outbox/cache path as examples, and `instant-swift-data admin query
+<namespace>` reads the durable local snapshots back across process launches.
+Real Instant admin tokens, schema push/pull, and remote ground-truth transport
+remain future work.
+
 ### Sharing
 
 - Instant-native sharing that reproduces SQLiteData/CloudKit-style shared record

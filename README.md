@@ -87,6 +87,14 @@ swift run instant-swift-data sync inspect --json
 swift run instant-swift-data sync mark-processed demo-tx-1 --json
 ```
 
+Write and query arbitrary local namespaces with admin helpers:
+
+```bash
+swift run instant-swift-data admin transact notes note-1 --merge '{"title":"admin note","done":false}' --json
+swift run instant-swift-data admin query notes --json
+swift run instant-swift-data admin query notes --jsonl
+```
+
 Persist local CLI auth/session state:
 
 ```bash
@@ -183,8 +191,8 @@ in command output. That means the demo proves durable local cache, typed triples
 query materialization, plan-aware persisted query results, optimistic outbox
 persistence, local auth/session state, local room presence/topics, local file
 metadata/content copies, local stream chunks, local share metadata/memberships,
-and non-captive CLI interaction, but it does not yet sync with a real Instant
-app.
+local admin query/transact helpers, and non-captive CLI interaction, but it does
+not yet sync with a real Instant app.
 
 ## Development
 

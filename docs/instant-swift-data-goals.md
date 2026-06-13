@@ -491,6 +491,10 @@ Agent-oriented output modes are required:
   `instant-swift-data shares create remindersLists list-1`,
   `instant-swift-data shares accept <token>`, and
   `instant-swift-data shares revoke <share-id>`.
+- run local admin write/query helpers such as
+  `instant-swift-data admin transact notes note-1 --merge '{"title":"admin note"}'`
+  and `instant-swift-data admin query notes --json` for durable terminal
+  ground-truth checks until real Instant admin transport is available.
 - run example business commands directly, such as todo/reminder/sync-up/chat
   create, list, update, delete, share, accept, upload, and stream operations.
 
@@ -499,7 +503,8 @@ Example command shapes:
 ```bash
 instant-swift-data schema generate --from Sources/AppSchema --to instant.schema.ts
 instant-swift-data app ephemeral --title reminders-port
-instant-swift-data query '{ reminders: { tags: {} } }' --admin
+instant-swift-data admin transact reminders reminder-1 --merge '{"title":"call Ada"}'
+instant-swift-data admin query reminders --json
 instant-swift-data validate --suite reminders --evidence .evidence/reminders.jsonl
 instant-swift-data benchmark --suite typeScript-parity --compare ../instant
 instant-swift-data auth guest

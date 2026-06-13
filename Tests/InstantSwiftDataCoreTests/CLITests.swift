@@ -246,6 +246,136 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliAdminTransactAndQueryUseDurableLocalStore() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let created = try JSONDecoder().decode(
+      CLIAdminTransactOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "admin", "transact", "notes", "note-1", "--merge",
+            #"{"done":false,"meta":{"source":"cli"},"title":"Admin note"}"#,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(created.event, "transact")
+    expectNoDifference(created.changedID, "note-1")
+    expectNoDifference(created.transport, "not-implemented-local-cache-only")
+    expectNoDifference(created.namespace, "notes")
+    expectNoDifference(created.changedEntityIDs, ["note-1"])
+    expectNoDifference(created.pendingMutationCount, 1)
+    expectNoDifference(created.snapshotCount, 1)
+    let createdSnapshot = try #require(created.snapshots.first)
+    expectNoDifference(createdSnapshot.namespace, "notes")
+    expectNoDifference(createdSnapshot.id, "note-1")
+    expectNoDifference(createdSnapshot.values["title"]?.first, .some(.string("Admin note")))
+    expectNoDifference(createdSnapshot.values["done"]?.first, .some(.bool(false)))
+    expectNoDifference(
+      createdSnapshot.values["meta"]?.first,
+      .some(.json(.object(["source": .string("cli")])))
+    )
+
+    let queried = try JSONDecoder().decode(
+      CLIAdminQueryOutput.self,
+      from: Data(
+        try runCLI(["admin", "query", "notes", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(queried.event, "admin-query")
+    expectNoDifference(queried.transport, "not-implemented-local-cache-only")
+    expectNoDifference(queried.pendingMutationCount, 1)
+    expectNoDifference(queried.snapshots, created.snapshots)
+
+    let jsonlOutput = try runCLI(["admin", "query", "notes", "--jsonl"], homeURL: homeURL)
+    let lines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(lines.count, 2)
+    let evidence = try JSONDecoder().decode(
+      CLIAdminQueryEvidence.self,
+      from: Data(try #require(lines.first).utf8)
+    )
+    expectNoDifference(evidence.caseID, "cli.admin.query")
+    expectNoDifference(evidence.event, "admin-query")
+    expectNoDifference(evidence.details.snapshots.map(\.id), ["note-1"])
+    let snapshotRow = try JSONDecoder().decode(
+      CLIAdminSnapshotEvidence.self,
+      from: Data(try #require(lines.dropFirst().first).utf8)
+    )
+    expectNoDifference(snapshotRow.caseID, "cli.admin.query")
+    expectNoDifference(snapshotRow.event, "snapshot")
+    expectNoDifference(snapshotRow.details.id, "note-1")
+
+    let limited = try JSONDecoder().decode(
+      CLIAdminQueryOutput.self,
+      from: Data(
+        try runCLI(["admin", "query", "notes", "--limit", "1", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(limited.snapshots.map(\.id), ["note-1"])
+
+    let transactJSONL = try runCLI(
+      ["admin", "transact", "notes", "note-2", "--merge", #"{"title":"JSONL note"}"#, "--jsonl"],
+      homeURL: homeURL
+    )
+    let transactLines = transactJSONL.split(separator: "\n")
+    expectNoDifference(transactLines.count, 3)
+    let transactEvidence = try JSONDecoder().decode(
+      CLIAdminTransactEvidence.self,
+      from: Data(try #require(transactLines.first).utf8)
+    )
+    expectNoDifference(transactEvidence.caseID, "cli.admin.transact")
+    expectNoDifference(transactEvidence.event, "transact")
+    expectNoDifference(transactEvidence.details.changedID, "note-2")
+    expectNoDifference(transactEvidence.details.snapshots.map(\.id), ["note-1", "note-2"])
+    let transactRows = try transactLines.dropFirst().map {
+      try JSONDecoder().decode(CLIAdminSnapshotEvidence.self, from: Data($0.utf8))
+    }
+    expectNoDifference(transactRows.map(\.caseID), ["cli.admin.transact", "cli.admin.transact"])
+    expectNoDifference(transactRows.map(\.event), ["snapshot", "snapshot"])
+    expectNoDifference(transactRows.map(\.details.id), ["note-1", "note-2"])
+
+    let updated = try JSONDecoder().decode(
+      CLIAdminTransactOutput.self,
+      from: Data(
+        try runCLI(
+          ["admin", "transact", "notes", "note-1", "--merge", #"{"done":true}"#, "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(updated.pendingMutationCount, 3)
+    let updatedSnapshot = try #require(updated.snapshots.first { $0.id == "note-1" })
+    expectNoDifference(updatedSnapshot.values["title"]?.first, .some(.string("Admin note")))
+    expectNoDifference(updatedSnapshot.values["done"]?.first, .some(.bool(true)))
+
+    let missingMerge = try runCLIResult(
+      ["admin", "transact", "notes", "note-2", "--json"],
+      homeURL: homeURL
+    )
+    #expect(missingMerge.status == 64)
+    #expect(missingMerge.error.contains("admin transact"))
+
+    let reservedID = try runCLIResult(
+      ["admin", "transact", "notes", "note-2", "--merge", #"{"id":"blocked"}"#, "--json"],
+      homeURL: homeURL
+    )
+    #expect(reservedID.status == 64)
+    #expect(reservedID.error.contains("reserved 'id' field"))
+
+    let badNamespace = try runCLIResult(["admin", "query", "bad/namespace", "--json"], homeURL: homeURL)
+    #expect(badNamespace.status == 64)
+    #expect(badNamespace.error.contains("namespace must not be empty"))
+  }
+
+  @Test
   func cliQueryTodosSupportsServerCreatedAtOrder() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -1669,6 +1799,64 @@ private struct CLITodoLinkSnapshotsOutput: Decodable {
   var event: String
   var todos: [InstantEntitySnapshot]
   var projects: [InstantEntitySnapshot]
+}
+
+private struct CLIAdminQueryOutput: Decodable, Equatable {
+  var event: String
+  var transport: String
+  var queryID: String
+  var pendingMutationCount: Int
+  var snapshots: [InstantEntitySnapshot]
+}
+
+private struct CLIAdminTransactOutput: Decodable, Equatable {
+  var event: String
+  var changedID: String
+  var transport: String
+  var namespace: String
+  var transactionID: String
+  var changedEntityIDs: [String]
+  var tripleCount: Int
+  var queryID: String
+  var pendingMutationCount: Int
+  var snapshotCount: Int
+  var snapshots: [InstantEntitySnapshot]
+}
+
+private struct CLIAdminQueryEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLIAdminQueryOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
+}
+
+private struct CLIAdminTransactEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLIAdminTransactOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
+}
+
+private struct CLIAdminSnapshotEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: InstantEntitySnapshot
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
 }
 
 private struct CLITodoProject: Decodable, Equatable {
