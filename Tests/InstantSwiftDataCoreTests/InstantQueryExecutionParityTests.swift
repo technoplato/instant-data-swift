@@ -606,6 +606,324 @@ struct InstantQueryExecutionParityTests {
     expectParityEqual(stopaBookshelvesByHandle.map(bookshelfProjection), stopaBookshelvesByID.map(bookshelfProjection), source)
     expectParityEqual(stopaBookshelvesByHandle.map(bookshelfProjection), stopaBookshelvesByLinkField.map(bookshelfProjection), source)
   }
+
+  @Test
+  func upstreamInstaQLNamespaceIsolationAndObjectValues() async throws {
+    let fixture = try await UpstreamInstantFixture.zeneca()
+    let stopa = try #require(
+      await fixture.query(
+        InstantQueryPlan(
+          id: "users.where.handle.stopa.namespace",
+          namespace: "users",
+          filters: [.equals(field: "handle", value: .string("stopa"))]
+        )
+      ).first
+    )
+
+    var source = instaQLSource("objects are created by etype")
+    let notUsersEmail = fixtureAttribute(namespace: "not_users", name: "email", valueType: .string)
+    let notUsers = try await fixture.transacting(
+      attributes: [notUsersEmail],
+      operations: [
+        .insert(
+          InstantTriple(
+            entityID: stopa.id,
+            attributeID: notUsersEmail.id,
+            value: .string("this-should-not-change-users-stopa@gmail.com"),
+            txID: "upstream-fixture-not-users",
+            txTime: InstantTimestamp(milliseconds: 9_000_000_000_100)
+          )
+        )
+      ]
+    )
+    let unchangedStopa = try #require(
+      await notUsers.query(
+        InstantQueryPlan(
+          id: "users.where.handle.stopa.after-not-users",
+          namespace: "users",
+          filters: [.equals(field: "handle", value: .string("stopa"))]
+        )
+      ).first
+    )
+    expectParityEqual(unchangedStopa.string("email"), "stopa@instantdb.com", source)
+
+    source = instaQLSource("object values")
+    let jsonField = fixtureAttribute(namespace: "users", name: "jsonField", valueType: .json)
+    let otherJsonField = fixtureAttribute(namespace: "users", name: "otherJsonField", valueType: .json)
+    let objectValues = try await fixture.transacting(
+      attributes: [jsonField, otherJsonField],
+      operations: [
+        .insert(
+          InstantTriple(
+            entityID: stopa.id,
+            attributeID: jsonField.id,
+            value: .json(.object(["hello": .string("world")])),
+            txID: "upstream-fixture-object-values",
+            txTime: InstantTimestamp(milliseconds: 9_000_000_000_200)
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: stopa.id,
+            attributeID: otherJsonField.id,
+            value: .json(.object(["world": .string("hello")])),
+            txID: "upstream-fixture-object-values",
+            txTime: InstantTimestamp(milliseconds: 9_000_000_000_200)
+          )
+        ),
+      ]
+    )
+    let objectStopa = try #require(
+      await objectValues.query(
+        InstantQueryPlan(
+          id: "users.where.handle.stopa.object-values",
+          namespace: "users",
+          filters: [.equals(field: "handle", value: .string("stopa"))]
+        )
+      ).first
+    )
+    expectParityEqual(
+      objectStopa.values["jsonField"]?.first,
+      .json(.object(["hello": .string("world")])),
+      source
+    )
+  }
+
+  @Test
+  func upstreamInstaQLPaginationOrderingAndFields() async throws {
+    let fixture = try await UpstreamInstantFixture.zeneca()
+
+    var source = instaQLSource("pagination limit")
+    var books = await fixture.query(
+      InstantQueryPlan(id: "books.limit", namespace: "books", limit: 10)
+    )
+    expectParityEqual(books.count, 10, source)
+
+    source = instaQLSource("pagination last")
+    books = await fixture.query(
+      InstantQueryPlan(id: "books.last", namespace: "books", last: 10)
+    )
+    expectParityEqual(books.count, 10, source)
+
+    source = instaQLSource("pagination first")
+    books = await fixture.query(
+      InstantQueryPlan(id: "books.first", namespace: "books", first: 10)
+    )
+    expectParityEqual(books.count, 10, source)
+
+    source = instaQLSource("arbitrary ordering")
+    books = await fixture.query(
+      InstantQueryPlan(
+        id: "books.title-ascending",
+        namespace: "books",
+        order: InstantQueryOrder("title", .ascending),
+        first: 10
+      )
+    )
+    expectParityEqual(
+      books.compactMap { $0.string("title") },
+      [
+        "\"Surely You're Joking, Mr. Feynman!\": Adventures of a Curious Character",
+        "\"What Do You Care What Other People Think?\": Further Adventures of a Curious Character",
+        "12 Rules for Life",
+        "1984",
+        "21 Lessons for the 21st Century",
+        "A Conflict of Visions",
+        "A Damsel in Distress",
+        "A Guide to the Good Life",
+        "A Hero Of Our Time",
+        "A History of Private Life: From pagan Rome to Byzantium",
+      ],
+      source
+    )
+
+    source = instaQLSource("fields")
+    let users = await fixture.query(
+      InstantQueryPlan(
+        id: "users.fields.handle",
+        namespace: "users",
+        selectedFields: ["handle"]
+      )
+    )
+    expectParityEqual(
+      users.map { [$0.id, $0.string("handle") ?? "", $0.values.keys.sorted().joined(separator: ",")] },
+      [
+        ["ce942051-2d74-404a-9c7d-4aa3f2d54ae4", "joe", "handle"],
+        ["ad45e100-777a-4de8-8978-aa13200a4824", "alex", "handle"],
+        ["a55a5231-5c4d-4033-b859-7790c45c22d5", "stopa", "handle"],
+        ["0f3d67fc-8b37-4b03-ac47-29fec4edc4f7", "nicolegf", "handle"],
+      ],
+      "\(source) top-level selected fields"
+    )
+
+    let alex = await fixture.query(
+      InstantQueryPlan(
+        id: "users.fields.handle.with-bookshelves",
+        namespace: "users",
+        filters: [.equals(field: "handle", value: .string("alex"))],
+        selectedFields: ["handle"],
+        includes: [
+          InstantQueryInclude(
+            "bookshelves",
+            query: InstantQueryIncludePlan(
+              id: "bookshelves.fields.name",
+              namespace: "bookshelves",
+              selectedFields: ["name"]
+            )
+          )
+        ]
+      )
+    )
+    expectParityEqual(
+      alex.map {
+        [
+          $0.id,
+          $0.values.keys.sorted().joined(separator: ","),
+          ($0.links?["bookshelves"] ?? [])
+            .map { "\($0.id):\($0.values.keys.sorted().joined(separator: ",")):\($0.string("name") ?? "")" }
+            .sorted()
+            .joined(separator: "|"),
+        ]
+      },
+      [
+        [
+          "ad45e100-777a-4de8-8978-aa13200a4824",
+          "handle",
+          "4ad10e00-1353-437e-9fee-2a89eb53575d:name:Short Stories|8164fb78-6fa3-4aab-8b92-80e706bae93a:name:Nonfiction",
+        ]
+      ],
+      "\(source) nested selected fields"
+    )
+  }
+
+  @Test
+  func upstreamInstaQLNullNotEqualsAndComparators() async throws {
+    let fixture = try await UpstreamInstantFixture.zeneca()
+
+    var source = instaQLSource("$isNull")
+    let booksTitleIsNull = InstantQueryPlan(
+      id: "books.where.title-is-null",
+      namespace: "books",
+      filters: [.isNull(field: "title")]
+    )
+    var books = await fixture.query(booksTitleIsNull)
+    expectParityEqual(books.count, 0, source)
+
+    let title = try #require(fixture.attribute(namespace: "books", name: "title"))
+    let pageCount = try #require(fixture.attribute(namespace: "books", name: "pageCount"))
+    let booksWithNulls = try await fixture.transacting(
+      operations: [
+        .insert(
+          InstantTriple(
+            entityID: "fixture-book-null-title",
+            attributeID: title.id,
+            value: .null,
+            txID: "upstream-fixture-null-books",
+            txTime: InstantTimestamp(milliseconds: 9_000_000_000_300)
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "fixture-book-missing-title",
+            attributeID: pageCount.id,
+            value: .number(20),
+            txID: "upstream-fixture-null-books",
+            txTime: InstantTimestamp(milliseconds: 9_000_000_000_301)
+          )
+        ),
+      ]
+    )
+    books = await booksWithNulls.query(booksTitleIsNull)
+    expectParityEqual(books.map { $0.values["title"]?.first }, [.null, nil], source)
+
+    source = instaQLSource("$not and $ne")
+    let val = fixtureAttribute(namespace: "tests", name: "val", valueType: .string)
+    let undefinedVal = fixtureAttribute(namespace: "tests", name: "undefinedVal", valueType: .string)
+    let notEqualsFixture = try await fixture.transacting(
+      attributes: [val, undefinedVal],
+      operations: [
+        testTriple("test-ne-a", val, .string("a"), 0),
+        testTriple("test-ne-b", val, .string("b"), 1),
+        testTriple("test-ne-c", val, .string("c"), 2),
+        testTriple("test-ne-null", val, .null, 3),
+        testTriple("test-ne-missing", undefinedVal, .string("d"), 4),
+      ].map(InstantTripleOperation.insert)
+    )
+    let notEquals = await notEqualsFixture.query(
+      InstantQueryPlan(
+        id: "tests.where.val-ne-a",
+        namespace: "tests",
+        filters: [.notEquals(field: "val", value: .string("a"))]
+      )
+    )
+    expectParityEqual(
+      notEquals.map { $0.values["val"]?.first },
+      [.string("b"), .string("c"), .null, nil],
+      "\(source) adapted: Swift represents both upstream $not and $ne with InstantQueryFilter.notEquals."
+    )
+
+    source = instaQLSource("comparators")
+    let string = fixtureAttribute(namespace: "comparators", name: "string", valueType: .string)
+    let number = fixtureAttribute(namespace: "comparators", name: "number", valueType: .number)
+    let date = fixtureAttribute(namespace: "comparators", name: "date", valueType: .date)
+    let boolean = fixtureAttribute(namespace: "comparators", name: "boolean", valueType: .boolean)
+    let comparators = try await fixture.transacting(
+      attributes: [string, number, date, boolean],
+      operations: (0..<5).flatMap { value in
+        [
+          testTriple("test-comparator-\(value)", string, .string("\(value)"), value),
+          testTriple("test-comparator-\(value)", number, .number(Double(value)), value),
+          testTriple(
+            "test-comparator-\(value)",
+            date,
+            .date(Date(timeIntervalSince1970: Double(value))),
+            value
+          ),
+          testTriple("test-comparator-\(value)", boolean, .bool(value.isMultiple(of: 2)), value),
+        ].map(InstantTripleOperation.insert)
+      }
+    )
+
+    func values(
+      _ field: String,
+      _ filter: InstantQueryFilter
+    ) async -> [InstantValue?] {
+      await comparators.query(
+        InstantQueryPlan(
+          id: "comparators.\(field)",
+          namespace: "comparators",
+          filters: [filter]
+        )
+      )
+      .map { $0.values[field]?.first }
+    }
+
+    expectParityEqual(await values("string", .greaterThan(field: "string", value: .string("2"))), [.string("3"), .string("4")], source)
+    expectParityEqual(await values("string", .greaterThanOrEqual(field: "string", value: .string("2"))), [.string("2"), .string("3"), .string("4")], source)
+    expectParityEqual(await values("string", .lessThan(field: "string", value: .string("2"))), [.string("0"), .string("1")], source)
+    expectParityEqual(await values("string", .lessThanOrEqual(field: "string", value: .string("2"))), [.string("0"), .string("1"), .string("2")], source)
+
+    expectParityEqual(await values("number", .greaterThan(field: "number", value: .number(2))), [.number(3), .number(4)], source)
+    expectParityEqual(await values("number", .greaterThanOrEqual(field: "number", value: .number(2))), [.number(2), .number(3), .number(4)], source)
+    expectParityEqual(await values("number", .lessThan(field: "number", value: .number(2))), [.number(0), .number(1)], source)
+    expectParityEqual(await values("number", .lessThanOrEqual(field: "number", value: .number(2))), [.number(0), .number(1), .number(2)], source)
+
+    expectParityEqual(
+      await values("date", .greaterThan(field: "date", value: .date(Date(timeIntervalSince1970: 2)))),
+      [.date(Date(timeIntervalSince1970: 3)), .date(Date(timeIntervalSince1970: 4))],
+      source
+    )
+    expectParityEqual(
+      await values("date", .lessThanOrEqual(field: "date", value: .date(Date(timeIntervalSince1970: 2)))),
+      [.date(Date(timeIntervalSince1970: 0)), .date(Date(timeIntervalSince1970: 1)), .date(Date(timeIntervalSince1970: 2))],
+      source
+    )
+
+    expectParityEqual(await values("boolean", .greaterThan(field: "boolean", value: .bool(true))), [], source)
+    expectParityEqual(await values("boolean", .greaterThanOrEqual(field: "boolean", value: .bool(true))), [.bool(true), .bool(true), .bool(true)], source)
+    expectParityEqual(await values("boolean", .lessThan(field: "boolean", value: .bool(true))), [.bool(false), .bool(false)], source)
+    expectParityEqual(await values("boolean", .lessThanOrEqual(field: "boolean", value: .bool(true))), [.bool(true), .bool(false), .bool(true), .bool(false), .bool(true)], source)
+  }
 }
 
 private let upstreamInstaQLTestSource =
@@ -649,6 +967,31 @@ private struct UpstreamInstantFixture {
 
   func query(_ plan: InstantQueryPlan) async -> [InstantEntitySnapshot] {
     await store.materialize(plan)
+  }
+
+  func attribute(namespace: String, name: String) -> InstantAttribute? {
+    attributes.first { $0.namespace == namespace && $0.name == name }
+  }
+
+  func transacting(
+    attributes extraAttributes: [InstantAttribute] = [],
+    operations: [InstantTripleOperation]
+  ) async throws -> Self {
+    let snapshot = await store.snapshot()
+    let mergedAttributes = mergeAttributes(self.attributes, extraAttributes)
+    let store = InstantStore(
+      snapshot: InstantStoreSnapshot(
+        attributes: mergedAttributes,
+        triples: snapshot.triples
+      )
+    )
+    _ = try await store.prepare(
+      InstantStoreTransaction(
+        id: "upstream-fixture-transaction-\(abs(operations.hashValue))",
+        operations: operations
+      )
+    )
+    return Self(store: store, attributes: mergedAttributes)
   }
 
   func replacingUserFullName(handle: String, with fullName: String) async throws -> Self {
@@ -861,6 +1204,50 @@ private struct UpstreamInstantFixture {
   }
 }
 
+private func fixtureAttribute(
+  namespace: String,
+  name: String,
+  valueType: InstantValueType,
+  cardinality: InstantCardinality = .one,
+  isIndexed: Bool = true
+) -> InstantAttribute {
+  InstantAttribute(
+    id: "\(namespace)/\(name)",
+    namespace: namespace,
+    name: name,
+    valueType: valueType,
+    cardinality: cardinality,
+    isIndexed: isIndexed,
+    forwardIdentity: "\(namespace)/\(name)"
+  )
+}
+
+private func mergeAttributes(
+  _ existing: [InstantAttribute],
+  _ additional: [InstantAttribute]
+) -> [InstantAttribute] {
+  Array(
+    Dictionary(uniqueKeysWithValues: (existing + additional).map { ($0.id, $0) })
+      .values
+  )
+  .sorted { $0.id < $1.id }
+}
+
+private func testTriple(
+  _ entityID: String,
+  _ attribute: InstantAttribute,
+  _ value: InstantValue,
+  _ offset: Int
+) -> InstantTriple {
+  InstantTriple(
+    entityID: entityID,
+    attributeID: attribute.id,
+    value: value,
+    txID: "upstream-fixture-\(attribute.namespace)",
+    txTime: InstantTimestamp(milliseconds: 9_100_000_000_000 + Int64(offset))
+  )
+}
+
 private extension InstantEntitySnapshot {
   var materializedScalarKeysIncludingID: [String] {
     Array(values.filter { !$0.value.containsRef }.keys).appending("id").sorted()
@@ -888,6 +1275,11 @@ private extension InstantEntitySnapshot {
 }
 
 private extension InstantLinkedEntitySnapshot {
+  func string(_ field: String) -> String? {
+    guard case let .string(value) = values[field]?.first else { return nil }
+    return value
+  }
+
   func linkedStrings(_ relation: String, field: String) -> [String] {
     links?[relation]?.compactMap { linked in
       guard case let .string(value) = linked.values[field]?.first else { return nil }
