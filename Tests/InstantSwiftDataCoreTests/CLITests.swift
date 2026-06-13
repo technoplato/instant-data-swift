@@ -614,6 +614,179 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliRemindersDemoPersistsAndSharesListRootsAcrossLaunches() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    _ = try runCLI(
+      ["auth", "token", "owner-refresh", "--user-id", "user-1", "--json"],
+      homeURL: homeURL
+    )
+    let addedList = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(["examples", "reminders", "add-list", "Family", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(addedList.event, "add-list")
+    expectNoDifference(addedList.transport, "not-implemented-local-cache-only")
+    expectNoDifference(addedList.lists.map(\.list.title), ["Family"])
+    expectNoDifference(addedList.lists.map(\.reminderCount), [0])
+    expectNoDifference(addedList.pendingMutationCount, 1)
+    let listID = try #require(addedList.changedID)
+
+    let addedMilk = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(["examples", "reminders", "add", listID, "Milk", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(addedMilk.event, "add")
+    expectNoDifference(addedMilk.lists.map(\.reminderCount), [1])
+    expectNoDifference(addedMilk.reminders.map(\.title), ["Milk"])
+    let milkID = try #require(addedMilk.changedID)
+
+    let completedMilk = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(["examples", "reminders", "complete", milkID, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(completedMilk.event, "complete")
+    expectNoDifference(completedMilk.lists.map(\.reminderCount), [0])
+    expectNoDifference(completedMilk.reminders.map(\.isCompleted), [true])
+
+    let addedEggs = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(["examples", "reminders", "add", listID, "Eggs", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(addedEggs.lists.map(\.reminderCount), [1])
+    expectNoDifference(addedEggs.reminders.map(\.title), ["Milk", "Eggs"])
+    let eggsID = try #require(addedEggs.changedID)
+
+    let refreshJSONL = try runCLI(
+      ["examples", "reminders", "list", "--refresh", "--jsonl"],
+      homeURL: homeURL
+    )
+    let refreshLines = refreshJSONL.split(separator: "\n")
+    expectNoDifference(refreshLines.count, 4)
+    let refreshEvidence = try JSONDecoder().decode(
+      CLIRemindersEvidence.self,
+      from: Data(try #require(refreshLines.first).utf8)
+    )
+    expectNoDifference(refreshEvidence.caseID, "cli.examples.reminders")
+    expectNoDifference(refreshEvidence.event, "refresh")
+    expectNoDifference(refreshEvidence.details.lists.map(\.reminderCount), [1])
+
+    let createdShare = try JSONDecoder().decode(
+      CLIShareOutput.self,
+      from: Data(
+        try runCLI(
+          ["shares", "create", ReminderExample.listsNamespace, listID, "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    let share = try #require(createdShare.shares.first)
+    expectNoDifference(share.share.rootNamespace, ReminderExample.listsNamespace)
+    expectNoDifference(share.share.rootID, listID)
+    expectNoDifference(share.memberships.map(\.role), [.owner])
+
+    _ = try runCLI(
+      ["auth", "token", "invitee-refresh", "--user-id", "user-2", "--json"],
+      homeURL: homeURL
+    )
+    let accepted = try JSONDecoder().decode(
+      CLIShareOutput.self,
+      from: Data(try runCLI(["shares", "accept", share.share.token, "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(accepted.shares.first?.memberships.map(\.role), [.owner, .reader])
+
+    let readerUpdate = try runCLIResult(
+      ["examples", "reminders", "update", eggsID, "Reader eggs", "--json"],
+      homeURL: homeURL
+    )
+    #expect(readerUpdate.status == 77)
+    #expect(readerUpdate.error.contains("reader access"))
+
+    let readerRenameList = try runCLIResult(
+      ["examples", "reminders", "rename-list", listID, "Reader Family", "--json"],
+      homeURL: homeURL
+    )
+    #expect(readerRenameList.status == 77)
+    #expect(readerRenameList.error.contains("reader access"))
+
+    _ = try runCLI(
+      ["auth", "token", "owner-refresh", "--user-id", "user-1", "--json"],
+      homeURL: homeURL
+    )
+    let promoted = try JSONDecoder().decode(
+      CLIShareOutput.self,
+      from: Data(
+        try runCLI(["shares", "role", share.share.id, "user-2", "writer", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(promoted.shares.first?.memberships.map(\.role), [.owner, .writer])
+
+    _ = try runCLI(
+      ["auth", "token", "invitee-refresh", "--user-id", "user-2", "--json"],
+      homeURL: homeURL
+    )
+    let writerUpdate = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(["examples", "reminders", "update", eggsID, "Writer eggs", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(writerUpdate.reminders.map(\.title), ["Milk", "Writer eggs"])
+    expectNoDifference(writerUpdate.lists.map(\.reminderCount), [1])
+
+    let writerComplete = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(["examples", "reminders", "complete", eggsID, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(writerComplete.reminders.map(\.isCompleted), [true, true])
+    expectNoDifference(writerComplete.lists.map(\.reminderCount), [0])
+
+    _ = try runCLI(
+      ["auth", "token", "owner-refresh", "--user-id", "user-1", "--json"],
+      homeURL: homeURL
+    )
+    let demoted = try JSONDecoder().decode(
+      CLIShareOutput.self,
+      from: Data(
+        try runCLI(["shares", "role", share.share.id, "user-2", "reader", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(demoted.shares.first?.memberships.map(\.role), [.owner, .reader])
+
+    _ = try runCLI(
+      ["auth", "token", "invitee-refresh", "--user-id", "user-2", "--json"],
+      homeURL: homeURL
+    )
+    let demotedReaderUpdate = try runCLIResult(
+      ["examples", "reminders", "update", eggsID, "Reader again", "--json"],
+      homeURL: homeURL
+    )
+    #expect(demotedReaderUpdate.status == 77)
+    #expect(demotedReaderUpdate.error.contains("reader access"))
+  }
+
+  @Test
   func cliCacheInspectIncludesPlanAwareQuerySummaries() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -3538,6 +3711,27 @@ private struct CLITodoLinksOutput: Decodable {
   var pendingMutationCount: Int
   var projects: [CLITodoProject]
   var todos: [CLILinkedTodo]
+}
+
+private struct CLIRemindersOutput: Decodable {
+  var event: String
+  var changedID: String?
+  var transport: String
+  var pendingMutationCount: Int
+  var lists: [RemindersListSummary]
+  var reminders: [ReminderRecord]
+}
+
+private struct CLIRemindersEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLIRemindersOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
 }
 
 private struct CLITodoLinkSnapshotsOutput: Decodable {

@@ -299,6 +299,10 @@ struct InstantSwiftDataCLI {
       throw CLIError(examplesUsage, exitCode: 64)
     }
     switch example {
+    case "reminders":
+      try await runReminders(arguments: arguments, output: output)
+      return
+
     case "todo-links":
       try await runTodoLinks(arguments: arguments, output: output)
       return
@@ -529,6 +533,272 @@ struct InstantSwiftDataCLI {
 
     default:
       throw CLIError("Unknown todos command: \(command)", exitCode: 64)
+    }
+  }
+
+  private static func runReminders(arguments: [String], output: OutputMode) async throws {
+    var arguments = arguments
+    guard let command = arguments.popFirstArgument() else {
+      throw CLIError(remindersUsage, exitCode: 64)
+    }
+    let context = try await CLIContext.bootstrap(initialAttributes: ReminderExample.attributes)
+
+    switch command {
+    case "seed":
+      guard arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data examples reminders seed [--json|--jsonl]", exitCode: 64)
+      }
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      var listIDs: [String: String] = [:]
+      var lists: [(id: String, seed: RemindersListSeedRecord)] = []
+      for seed in ReminderExample.seedLists {
+        let id = try await context.runtime.localID(named: seed.localIDName)
+        listIDs[seed.localIDName] = id
+        lists.append((id: id, seed: seed))
+      }
+      var reminders: [(id: String, listID: String, seed: ReminderSeedRecord)] = []
+      for seed in ReminderExample.seedReminders {
+        let id = try await context.runtime.localID(named: seed.localIDName)
+        let listID: String
+        if let seededListID = listIDs[seed.listLocalIDName] {
+          listID = seededListID
+        } else {
+          listID = try await context.runtime.localID(named: seed.listLocalIDName)
+        }
+        reminders.append((id: id, listID: listID, seed: seed))
+      }
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: ReminderExample.seedOperations(
+            lists: lists,
+            reminders: reminders,
+            baseCreatedAt: now,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.reminders.seed"
+      )
+      try await printReminders(context: context, output: output, event: "seed")
+
+    case "list", "lists", "refresh":
+      var event = command == "refresh" ? "refresh" : "list"
+      var listID: String?
+      while let option = arguments.popFirstArgument() {
+        switch option {
+        case "--refresh":
+          event = "refresh"
+        case "--list-id":
+          guard let value = arguments.popFirstArgument(), !value.isEmpty else {
+            throw CLIError(
+              "Usage: instant-swift-data examples reminders list [--refresh] [--list-id id] [--json|--jsonl]",
+              exitCode: 64
+            )
+          }
+          listID = value
+        default:
+          throw CLIError(
+            "Usage: instant-swift-data examples reminders list [--refresh] [--list-id id] [--json|--jsonl]",
+            exitCode: 64
+          )
+        }
+      }
+      try await printReminders(context: context, output: output, event: event, listID: listID)
+
+    case "add-list":
+      let title = arguments.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !title.isEmpty else {
+        throw CLIError(
+          "Usage: instant-swift-data examples reminders add-list \"list title\"",
+          exitCode: 64
+        )
+      }
+      let existingLists = try ReminderExample.decodeLists(
+        (try await context.runtime.queryOnce(ReminderExample.listsQuery)).values
+      )
+      let transactionID = context.runtime.configuration.makeID()
+      let listID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: ReminderExample.createListOperations(
+            id: listID,
+            title: title,
+            position: existingLists.count,
+            createdAt: now,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.reminders.add-list"
+      )
+      try await printReminders(context: context, output: output, event: "add-list", changedID: listID)
+
+    case "rename-list", "update-list":
+      guard let listID = arguments.popFirstArgument() else {
+        throw CLIError(
+          "Usage: instant-swift-data examples reminders rename-list <list-id> \"new title\"",
+          exitCode: 64
+        )
+      }
+      let title = arguments.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !title.isEmpty else {
+        throw CLIError(
+          "Usage: instant-swift-data examples reminders rename-list <list-id> \"new title\"",
+          exitCode: 64
+        )
+      }
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: ReminderExample.renameListOperations(
+            id: listID,
+            title: title,
+            updatedAt: now,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.reminders.rename-list"
+      )
+      try await printReminders(
+        context: context,
+        output: output,
+        event: "rename-list",
+        changedID: listID,
+        listID: listID
+      )
+
+    case "add":
+      guard let listID = arguments.popFirstArgument() else {
+        throw CLIError(
+          "Usage: instant-swift-data examples reminders add <list-id> \"reminder title\"",
+          exitCode: 64
+        )
+      }
+      let title = arguments.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !title.isEmpty else {
+        throw CLIError(
+          "Usage: instant-swift-data examples reminders add <list-id> \"reminder title\"",
+          exitCode: 64
+        )
+      }
+      let existingReminders = try ReminderExample.decodeReminders(
+        (try await context.runtime.queryOnce(ReminderExample.remindersForListQuery(listID))).values
+      )
+      let transactionID = context.runtime.configuration.makeID()
+      let reminderID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: ReminderExample.createReminderOperations(
+            id: reminderID,
+            listID: listID,
+            title: title,
+            position: existingReminders.count,
+            createdAt: now,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.reminders.add"
+      )
+      try await printReminders(
+        context: context,
+        output: output,
+        event: "add",
+        changedID: reminderID,
+        listID: listID
+      )
+
+    case "update", "edit":
+      guard let reminderID = arguments.popFirstArgument() else {
+        throw CLIError(
+          "Usage: instant-swift-data examples reminders update <reminder-id> \"new title\"",
+          exitCode: 64
+        )
+      }
+      let title = arguments.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !title.isEmpty else {
+        throw CLIError(
+          "Usage: instant-swift-data examples reminders update <reminder-id> \"new title\"",
+          exitCode: 64
+        )
+      }
+      let currentReminders = try ReminderExample.decodeReminders(
+        (try await context.runtime.queryOnce(ReminderExample.remindersQuery)).values
+      )
+      guard let reminder = currentReminders.first(where: { $0.id == reminderID }) else {
+        throw CLIError("Reminder not found: \(reminderID)", exitCode: 66)
+      }
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: ReminderExample.updateReminderTitleOperations(
+            id: reminderID,
+            listID: reminder.remindersListID,
+            title: title,
+            updatedAt: now,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.reminders.update"
+      )
+      try await printReminders(
+        context: context,
+        output: output,
+        event: "update",
+        changedID: reminderID,
+        listID: reminder.remindersListID
+      )
+
+    case "complete":
+      guard let reminderID = arguments.popFirstArgument(), arguments.isEmpty else {
+        throw CLIError(
+          "Usage: instant-swift-data examples reminders complete <reminder-id>",
+          exitCode: 64
+        )
+      }
+      let currentReminders = try ReminderExample.decodeReminders(
+        (try await context.runtime.queryOnce(ReminderExample.remindersQuery)).values
+      )
+      guard let reminder = currentReminders.first(where: { $0.id == reminderID }) else {
+        throw CLIError("Reminder not found: \(reminderID)", exitCode: 66)
+      }
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: ReminderExample.completeReminderOperations(
+            id: reminderID,
+            listID: reminder.remindersListID,
+            updatedAt: now,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.reminders.complete"
+      )
+      try await printReminders(
+        context: context,
+        output: output,
+        event: "complete",
+        changedID: reminderID,
+        listID: reminder.remindersListID
+      )
+
+    default:
+      throw CLIError("Unknown reminders command: \(command). \(remindersUsage)", exitCode: 64)
     }
   }
 
@@ -3000,6 +3270,113 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func printReminders(
+    context: CLIContext,
+    output: OutputMode,
+    event: String,
+    changedID: String? = nil,
+    listID: String? = nil
+  ) async throws {
+    let listsEmission = try await context.runtime.queryOnce(ReminderExample.listsQuery)
+    let remindersQuery = listID.map(ReminderExample.remindersForListQuery)
+      ?? ReminderExample.remindersQuery
+    let remindersEmission = try await context.runtime.queryOnce(remindersQuery)
+    let allRemindersEmission = listID == nil
+      ? remindersEmission
+      : try await context.runtime.queryOnce(ReminderExample.remindersQuery)
+    let lists = try ReminderExample.decodeLists(listsEmission.values)
+    let reminders = try ReminderExample.decodeReminders(remindersEmission.values)
+    let allReminders = try ReminderExample.decodeReminders(allRemindersEmission.values)
+    let remindersByListID = Dictionary(grouping: allReminders, by: \.remindersListID)
+    let listSummaries = lists.map { list in
+      RemindersListSummary(
+        list: list,
+        reminderCount: remindersByListID[list.id]?.filter { !$0.isCompleted }.count ?? 0
+      )
+    }
+    let pending = await context.runtime.pendingMutations()
+    let payload = RemindersOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      changedID: changedID,
+      transport: "not-implemented-local-cache-only",
+      listQueryID: ReminderExample.listsQuery.id,
+      reminderQueryID: remindersQuery.id,
+      listCacheKey: ReminderExample.listsQuery.cacheKey,
+      reminderCacheKey: remindersQuery.cacheKey,
+      pendingMutationCount: pending.count,
+      lists: listSummaries,
+      reminders: reminders
+    )
+
+    switch output {
+    case .human:
+      if listSummaries.isEmpty {
+        print("No reminder lists.")
+      } else {
+        for summary in listSummaries {
+          print(
+            "list \(summary.list.id) \(summary.list.title) reminders=\(summary.reminderCount)"
+          )
+        }
+      }
+      if reminders.isEmpty {
+        print("No reminders.")
+      } else {
+        for reminder in reminders {
+          let mark = reminder.isCompleted ? "[x]" : "[ ]"
+          let flag = reminder.isFlagged ? " flagged" : ""
+          print("\(mark) \(reminder.id) list=\(reminder.remindersListID)\(flag) \(reminder.title)")
+        }
+      }
+      print("transport: \(payload.transport)")
+      print("pending mutations: \(pending.count)")
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.examples.reminders",
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          ok: true,
+          details: payload
+        )
+      )
+      for summary in listSummaries {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.reminders",
+            side: "swift",
+            event: "reminders-list",
+            appID: context.appID,
+            entityID: summary.id,
+            ok: true,
+            details: summary
+          )
+        )
+      }
+      for reminder in reminders {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.reminders",
+            side: "swift",
+            event: "reminder",
+            appID: context.appID,
+            entityID: reminder.id,
+            ok: true,
+            details: reminder
+          )
+        )
+      }
+    }
+  }
+
   private static func printTodoLinkSnapshots(
     context: CLIContext,
     output: OutputMode,
@@ -3353,6 +3730,7 @@ struct InstantSwiftDataCLI {
         admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id] [--json|--jsonl]
         examples todos seed [--json|--jsonl]
         examples todos add "do the dishes" [--json|--jsonl]
+        examples reminders list [--refresh] [--json|--jsonl]
         examples todos list [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt] [--json|--jsonl]
         examples todos watch [--events 1] [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt] [--json|--jsonl]
         examples todos complete <todo-id> [--json|--jsonl]
@@ -4993,9 +5371,23 @@ struct InstantSwiftDataCLI {
 
   private static var examplesUsage: String {
     """
-    Usage: instant-swift-data examples <todos|todo-links>
+    Usage: instant-swift-data examples <todos|todo-links|reminders>
       instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>
       instant-swift-data examples todo-links <seed|list|nested|unlink> [--json|--jsonl]
+      instant-swift-data examples reminders <seed|list|add-list|rename-list|add|update|complete> [--json|--jsonl]
+    """
+  }
+
+  private static var remindersUsage: String {
+    """
+    Usage: instant-swift-data examples reminders <seed|list|add-list|rename-list|add|update|complete>
+      instant-swift-data examples reminders seed [--json|--jsonl]
+      instant-swift-data examples reminders list [--refresh] [--list-id id] [--json|--jsonl]
+      instant-swift-data examples reminders add-list "list title" [--json|--jsonl]
+      instant-swift-data examples reminders rename-list <list-id> "new title" [--json|--jsonl]
+      instant-swift-data examples reminders add <list-id> "reminder title" [--json|--jsonl]
+      instant-swift-data examples reminders update <reminder-id> "new title" [--json|--jsonl]
+      instant-swift-data examples reminders complete <reminder-id> [--json|--jsonl]
     """
   }
 
@@ -5369,6 +5761,21 @@ private struct TodoLinksOutput: Codable, Sendable {
   var pendingMutationCount: Int
   var projects: [TodoProjectRecord]
   var todos: [LinkedTodoRecord]
+}
+
+private struct RemindersOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var changedID: String?
+  var transport: String
+  var listQueryID: String
+  var reminderQueryID: String
+  var listCacheKey: String
+  var reminderCacheKey: String
+  var pendingMutationCount: Int
+  var lists: [RemindersListSummary]
+  var reminders: [ReminderRecord]
 }
 
 private struct TodoLinkSnapshotsOutput: Codable, Sendable {

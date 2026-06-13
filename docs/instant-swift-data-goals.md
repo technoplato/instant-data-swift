@@ -558,6 +558,12 @@ Agent-oriented output modes are required:
   able to mutate active shared roots, while demoted readers are rejected before
   local cache/outbox persistence and share ownership/duplicate-share creation
   remains owner-only.
+- run the first local Reminders port slice with commands such as
+  `instant-swift-data examples reminders add-list "Family"`,
+  `instant-swift-data examples reminders add <list-id> "Pack lunch"`, and
+  `instant-swift-data examples reminders list --refresh --jsonl`; reminder child
+  mutations carry their list ref so the local shared-list guard can reject
+  readers before cache/outbox persistence until containment-aware permissions land.
 - run local admin write/query helpers such as
   `instant-swift-data admin transact notes note-1 --merge '{"title":"admin note"}' --transaction-id tx-admin-note-1`
   and `instant-swift-data admin query notes --json` for durable terminal
@@ -572,7 +578,8 @@ instant-swift-data schema generate --from Sources/AppSchema --to instant.schema.
 instant-swift-data app ephemeral --title reminders-port
 instant-swift-data admin transact reminders reminder-1 --merge '{"title":"call Ada"}'
 instant-swift-data admin query reminders --json
-instant-swift-data validate --suite reminders --evidence .evidence/reminders.jsonl
+# Future validation harness:
+# instant-swift-data validate --suite reminders --evidence .evidence/reminders.jsonl
 instant-swift-data benchmark --suite typeScript-parity --compare ../instant
 instant-swift-data auth guest
 instant-swift-data examples todos add "do the dishes" --json

@@ -659,6 +659,11 @@ Create `validation/` with:
   mutate active shared roots through the normal transaction path, and demoted
   readers are rejected again before cache/outbox writes; share creation for an
   active shared root remains owner-only and non-duplicating.
+- Reminders: the first local Reminders port slice exposes durable
+  `examples reminders add-list`, `add`, `update`, `complete`, and
+  `list --refresh` commands over `remindersLists`/`reminders` namespaces; reminder
+  child mutations include the list ref so shared-list reader/writer roles are
+  enforced before cache/outbox writes.
 - CLI: `instant-swift-data examples todos add "do the dishes"` persists auth,
   local IDs, cache, and outbox state for a later CLI invocation.
 - Permissions: generated permissions reject an unauthorized write in both

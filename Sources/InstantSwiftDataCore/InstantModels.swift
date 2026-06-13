@@ -356,6 +356,7 @@ public enum InstantTripleOperation: Hashable, Codable, Sendable {
   case requireEntityMissingByLookup(InstantLookupRef, namespace: String?)
   case requireEntityExists(entityID: String, namespace: String?)
   case requireEntityExistsByLookup(InstantLookupRef, namespace: String?)
+  case requireTripleExists(entityID: String, attributeID: String, value: InstantValue)
   case merge(InstantTriple)
   case mergeByLookup(
     entity: InstantLookupRef,

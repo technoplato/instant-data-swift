@@ -305,6 +305,9 @@ extension InstantStoreTransaction {
         modes[entity] = .update
         namespaces[entity] = namespace
 
+      case .requireTripleExists:
+        break
+
       case let .merge(triple):
         let entity = InstantTransportEntityRef.id(triple.entityID)
         txSteps.append(

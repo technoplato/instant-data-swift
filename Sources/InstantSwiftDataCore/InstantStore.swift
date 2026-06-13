@@ -138,6 +138,16 @@ public actor InstantStore {
           throw Self.missingEntityError(entityID: entityID, namespace: namespace)
         }
 
+      case let .requireTripleExists(entityID, attributeID, value):
+        guard indexes.containsTriple(entityID: entityID, attributeID: attributeID, value: value) else {
+          throw Self.missingTripleError(
+            entityID: entityID,
+            attributeID: attributeID,
+            value: value,
+            attributes: attributes
+          )
+        }
+
       case let .requireEntityExistsByLookup(lookup, namespace):
         let attribute = try Self.validateLookup(
           lookup,
@@ -181,6 +191,7 @@ public actor InstantStore {
 
           case .requireEntityMissing, .requireEntityMissingByLookup,
             .requireEntityExists, .requireEntityExistsByLookup,
+            .requireTripleExists,
             .mergeByLookup, .insertByLookup, .retractByLookup,
             .deleteEntityByLookup, .ruleParams, .ruleParamsByLookup:
             break
@@ -268,6 +279,24 @@ public actor InstantStore {
       localID: entityID,
       message: "No existing entity was found for '\(entityID)'.",
       recovery: "Create the entity before using a strict update, or use merge for upsert-style writes."
+    )
+  }
+
+  private static func missingTripleError(
+    entityID: String,
+    attributeID: String,
+    value: InstantValue,
+    attributes: AttributeStore
+  ) -> InstantError {
+    let attribute = attributes[attributeID]
+    return InstantError(
+      code: .validationFailed,
+      operation: "require triple",
+      namespace: attribute?.namespace,
+      path: attribute?.name ?? attributeID,
+      localID: entityID,
+      message: "No existing triple was found for '\(entityID)' at '\(attributeID)' with value '\(value)'.",
+      recovery: "Refresh the local cache and retry with the current relationship value."
     )
   }
 
@@ -436,6 +465,7 @@ public actor InstantStore {
 
     case .requireEntityMissing, .requireEntityMissingByLookup,
       .requireEntityExists, .requireEntityExistsByLookup,
+      .requireTripleExists,
       .ruleParams, .ruleParamsByLookup:
       return []
     }

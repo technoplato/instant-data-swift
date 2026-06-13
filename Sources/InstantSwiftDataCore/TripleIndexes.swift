@@ -109,6 +109,10 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     }
   }
 
+  func containsTriple(entityID: String, attributeID: String, value: InstantValue) -> Bool {
+    eav[entityID]?[attributeID]?[value] != nil
+  }
+
   func entityIDs(matching lookup: InstantLookupRef) -> [String] {
     let value = lookup.value.instantValue
     return aev[lookup.attributeID]?
@@ -131,6 +135,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     switch operation {
     case .requireEntityMissing, .requireEntityMissingByLookup,
       .requireEntityExists, .requireEntityExistsByLookup,
+      .requireTripleExists,
       .mergeByLookup, .insertByLookup, .retractByLookup,
       .deleteEntityByLookup, .ruleParams, .ruleParamsByLookup:
       return []

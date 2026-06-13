@@ -728,6 +728,57 @@ struct InstantStoreTests {
   }
 
   @Test
+  func requireTripleExistsRejectsMissingTripleBeforePersistence() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: ReminderExample.attributes,
+        now: { timestamp }
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-list",
+        operations: ReminderExample.createListOperations(
+          id: "list-a",
+          title: "A",
+          position: 0,
+          createdAt: timestamp,
+          transactionID: "tx-list"
+        )
+      ),
+      createdAt: timestamp
+    )
+    do {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-require-missing",
+          operations: [
+            .requireTripleExists(
+              entityID: "reminder-a",
+              attributeID: "reminders/list",
+              value: .ref("list-a")
+            )
+          ]
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected missing triple precondition to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "require triple")
+      expectNoDifference(error.namespace, ReminderExample.remindersNamespace)
+      expectNoDifference(error.path, "list")
+      expectNoDifference(error.localID, "reminder-a")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
   func transportMutationLowersPendingOperationsToInstantTxSteps() throws {
     let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let lookup = InstantLookupRef(
@@ -3295,6 +3346,240 @@ struct InstantStoreTests {
     } catch {
       #expect(Bool(false), "Unexpected error: \(error)")
     }
+  }
+
+  @Test
+  func remindersExampleSharesListRootRolesAndPersistsCounts() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let listID = "list-shared"
+    let firstReminderID = "reminder-owner"
+    let writerReminderID = "reminder-writer"
+    let ownerRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: ReminderExample.attributes,
+        now: { timestamp }
+      )
+    )
+    _ = try await ownerRuntime.signInWithRefreshToken("owner-refresh", userID: "user-1")
+    try await ownerRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-owner-reminders-list",
+        operations: ReminderExample.createListOperations(
+          id: listID,
+          title: "Family",
+          position: 0,
+          createdAt: timestamp,
+          transactionID: "tx-owner-reminders-list"
+        )
+      ),
+      createdAt: timestamp
+    )
+    try await ownerRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-owner-reminder",
+        operations: ReminderExample.createReminderOperations(
+          id: firstReminderID,
+          listID: listID,
+          title: "Pack lunch",
+          position: 0,
+          createdAt: timestamp,
+          transactionID: "tx-owner-reminder"
+        )
+      ),
+      createdAt: timestamp
+    )
+    let ownerLists = try ReminderExample.decodeLists(
+      (try await ownerRuntime.queryOnce(ReminderExample.listsQuery)).values
+    )
+    let ownerReminders = try ReminderExample.decodeReminders(
+      (try await ownerRuntime.queryOnce(ReminderExample.remindersForListQuery(listID))).values
+    )
+    expectNoDifference(ownerLists.map(\.title), ["Family"])
+    expectNoDifference(ownerReminders.map(\.title), ["Pack lunch"])
+
+    let createdShare = try await ownerRuntime.createShare(
+      rootNamespace: ReminderExample.listsNamespace,
+      rootID: listID
+    )
+    let inviteeRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: ReminderExample.attributes,
+        now: { timestamp }
+      )
+    )
+    _ = try await inviteeRuntime.signInWithRefreshToken("invitee-refresh", userID: "user-2")
+    let accepted = try await inviteeRuntime.acceptShare(token: createdShare.share.token)
+    expectNoDifference(accepted.memberships.map(\.role), [.owner, .reader])
+
+    do {
+      try await inviteeRuntime.transact(
+        InstantStoreTransaction(
+          id: "tx-reader-rename-list",
+          operations: ReminderExample.renameListOperations(
+            id: listID,
+            title: "Reader Family",
+            updatedAt: timestamp,
+            transactionID: "tx-reader-rename-list"
+          )
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected reader list rename to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "write shared root")
+      expectNoDifference(error.namespace, ReminderExample.listsNamespace)
+      expectNoDifference(error.localID, listID)
+      #expect(error.message.contains("reader access"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      try await inviteeRuntime.transact(
+        InstantStoreTransaction(
+          id: "tx-reader-reminder",
+          operations: ReminderExample.createReminderOperations(
+            id: "reminder-reader",
+            listID: listID,
+            title: "Reader reminder",
+            position: 1,
+            createdAt: timestamp,
+            transactionID: "tx-reader-reminder"
+          )
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected reader reminder creation for a shared list to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "write shared root")
+      expectNoDifference(error.namespace, ReminderExample.listsNamespace)
+      expectNoDifference(error.localID, listID)
+      #expect(error.message.contains("reader access"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    try await inviteeRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-reader-unshared-list",
+        operations: ReminderExample.createListOperations(
+          id: "list-unshared",
+          title: "Unshared",
+          position: 1,
+          createdAt: timestamp,
+          transactionID: "tx-reader-unshared-list"
+        )
+      ),
+      createdAt: timestamp
+    )
+    do {
+      try await inviteeRuntime.transact(
+        InstantStoreTransaction(
+          id: "tx-reader-hostile-parent",
+          operations: ReminderExample.updateReminderTitleOperations(
+            id: firstReminderID,
+            listID: "list-unshared",
+            title: "Hostile parent",
+            updatedAt: timestamp,
+            transactionID: "tx-reader-hostile-parent"
+          )
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected mismatched reminder list update to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "require triple")
+      expectNoDifference(error.namespace, ReminderExample.remindersNamespace)
+      expectNoDifference(error.path, "list")
+      expectNoDifference(error.localID, firstReminderID)
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    _ = try await ownerRuntime.signInWithRefreshToken("owner-refresh", userID: "user-1")
+    let promoted = try await ownerRuntime.updateShareMembershipRole(
+      shareID: createdShare.share.id,
+      userID: "user-2",
+      role: .writer
+    )
+    expectNoDifference(promoted.memberships.map(\.role), [.owner, .writer])
+    _ = try await inviteeRuntime.signInWithRefreshToken("invitee-refresh", userID: "user-2")
+    try await inviteeRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-writer-rename-list",
+        operations: ReminderExample.renameListOperations(
+          id: listID,
+          title: "Writer Family",
+          updatedAt: timestamp,
+          transactionID: "tx-writer-rename-list"
+        )
+      ),
+      createdAt: timestamp
+    )
+    try await inviteeRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-writer-reminder",
+        operations: ReminderExample.createReminderOperations(
+          id: writerReminderID,
+          listID: listID,
+          title: "Writer reminder",
+          position: 1,
+          createdAt: timestamp,
+          transactionID: "tx-writer-reminder"
+        )
+      ),
+      createdAt: timestamp
+    )
+    let writerLists = try ReminderExample.decodeLists(
+      (try await inviteeRuntime.queryOnce(ReminderExample.listsQuery)).values
+    )
+    let writerReminders = try ReminderExample.decodeReminders(
+      (try await inviteeRuntime.queryOnce(ReminderExample.remindersForListQuery(listID))).values
+    )
+    expectNoDifference(writerLists.filter { $0.id == listID }.map(\.title), ["Writer Family"])
+    expectNoDifference(writerReminders.map(\.title), ["Pack lunch", "Writer reminder"])
+
+    _ = try await ownerRuntime.signInWithRefreshToken("owner-refresh", userID: "user-1")
+    let demoted = try await ownerRuntime.updateShareMembershipRole(
+      shareID: createdShare.share.id,
+      userID: "user-2",
+      role: .reader
+    )
+    expectNoDifference(demoted.memberships.map(\.role), [.owner, .reader])
+    _ = try await inviteeRuntime.signInWithRefreshToken("invitee-refresh", userID: "user-2")
+    do {
+      try await inviteeRuntime.transact(
+        InstantStoreTransaction(
+          id: "tx-demoted-reader-rename-list",
+          operations: ReminderExample.renameListOperations(
+            id: listID,
+            title: "Reader Again",
+            updatedAt: timestamp,
+            transactionID: "tx-demoted-reader-rename-list"
+          )
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected demoted reader list rename to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "write shared root")
+      #expect(error.message.contains("reader access"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+    let finalReminders = try ReminderExample.decodeReminders(
+      (try await inviteeRuntime.queryOnce(ReminderExample.remindersForListQuery(listID))).values
+    )
+    expectNoDifference(finalReminders.count, 2)
   }
 
   @Test

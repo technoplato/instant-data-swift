@@ -1860,7 +1860,7 @@ public final class InstantRuntime: Sendable {
         }
 
       case .requireEntityMissing, .requireEntityMissingByLookup, .requireEntityExists,
-        .requireEntityExistsByLookup, .ruleParams, .ruleParamsByLookup:
+        .requireEntityExistsByLookup, .requireTripleExists, .ruleParams, .ruleParamsByLookup:
         break
       }
     }
