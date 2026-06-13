@@ -234,6 +234,9 @@ Instant-shaped representation.
 - Pending mutations should expose a deterministic Instant-shaped transport
   projection so agents can inspect `txSteps` before real WebSocket sync is
   available.
+- Mutation transport should be an injectable Sendable client so local demos,
+  tests, previews, and future live WebSocket transport share the same
+  send/ack/failure application path.
 - Local delete must remove the entity, forward refs, and reverse refs, and must
   honor `onDelete`/`onDeleteReverse` cascade metadata. Until Swift transactions
   carry namespace-specific delete steps, `deleteEntity(String)` is a
@@ -307,10 +310,10 @@ Instant's triple store and network model:
   reaching for globals. Magic-code exchange, transport/auth clients, clocks,
   UUIDs, file/storage clients, sync engines, and
   future network clients should follow this pattern.
-  Current package policy starts with `InstantMagicCodeExchange`: it is a
-  Sendable value client, exposes `.local` as an extension static instance for
-  terminal demos, registers `instantMagicCodeExchange` in `DependencyValues`,
-  and is resolved by `bootstrapInstantSwiftData` into
+  Current package policy follows this shape with the auth exchange/verifier
+  clients and `InstantMutationTransportClient`: each is a Sendable value client,
+  exposes `.local` as an extension static instance for terminal demos, registers
+  a `DependencyValues` key, and is resolved by `bootstrapInstantSwiftData` into
   `InstantRuntimeConfiguration`. New app-facing effect seams should copy that
   shape instead of adding hidden mutable singletons or parallel setup paths.
 - **Context-aware database configuration.** SQLiteData uses context-dependent

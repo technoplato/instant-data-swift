@@ -18,6 +18,7 @@ public struct InstantRuntimeConfiguration: Sendable {
   public var idTokenExchange: InstantIDTokenExchange
   public var oauthExchange: InstantOAuthExchange
   public var authTokenInvalidator: InstantAuthTokenInvalidator
+  public var mutationTransport: InstantMutationTransportClient
 
   public init(
     appID: String,
@@ -45,7 +46,8 @@ public struct InstantRuntimeConfiguration: Sendable {
       magicCodeExchange: magicCodeExchange,
       idTokenExchange: idTokenExchange,
       oauthExchange: oauthExchange,
-      authTokenInvalidator: authTokenInvalidator
+      authTokenInvalidator: authTokenInvalidator,
+      mutationTransport: .local
     )
   }
 
@@ -63,7 +65,8 @@ public struct InstantRuntimeConfiguration: Sendable {
     magicCodeExchange: InstantMagicCodeExchange = .local,
     idTokenExchange: InstantIDTokenExchange = .local,
     oauthExchange: InstantOAuthExchange = .local,
-    authTokenInvalidator: InstantAuthTokenInvalidator = .local
+    authTokenInvalidator: InstantAuthTokenInvalidator = .local,
+    mutationTransport: InstantMutationTransportClient = .local
   ) {
     self.appID = appID
     self.apiURI = apiURI
@@ -77,6 +80,7 @@ public struct InstantRuntimeConfiguration: Sendable {
     self.idTokenExchange = idTokenExchange
     self.oauthExchange = oauthExchange
     self.authTokenInvalidator = authTokenInvalidator
+    self.mutationTransport = mutationTransport
   }
 
   public static func isValidAPIURI(_ url: URL) -> Bool {
@@ -135,6 +139,7 @@ public final class InstantRuntime: Sendable {
   let outbox: InstantOutbox
   private let authSessionObservers = InstantAuthSessionObservers()
   private let operationGate = AsyncSerialGate()
+  private let mutationFlushGate = AsyncSerialGate()
 
   private init(
     configuration: InstantRuntimeConfiguration,
@@ -1114,6 +1119,100 @@ public final class InstantRuntime: Sendable {
       .map(InstantTransportMutation.init)
   }
 
+  public func flushPendingMutations(limit: Int? = nil) async throws
+    -> InstantMutationTransportFlushResult
+  {
+    if let limit, limit < 0 {
+      throw validationFailed(
+        operation: "flush outbox",
+        message: "Flush limit must be greater than or equal to 0.",
+        recovery: "Pass a non-negative --limit value, or omit --limit to flush every pending mutation."
+      )
+    }
+
+    await mutationFlushGate.enter()
+    do {
+      let request: InstantMutationTransportRequest
+      let selectedMutationIDs: Set<String>
+
+      await operationGate.enter()
+      do {
+        let state = try await persistence.loadState()
+        let pending = state.snapshot.outbox
+          .filter { $0.status == .pending }
+          .sorted(by: PendingMutation.creationOrder)
+        let selected = Array(pending.prefix(limit ?? pending.count))
+        request = InstantMutationTransportRequest(
+          appID: configuration.appID,
+          apiURI: configuration.apiURI,
+          websocketURI: configuration.websocketURI,
+          mutations: selected.map(InstantTransportMutation.init)
+        )
+        selectedMutationIDs = Set(selected.map(\.id))
+
+        guard !selected.isEmpty else {
+          await outbox.replace(with: state.snapshot.outbox)
+          await operationGate.leave()
+          await mutationFlushGate.leave()
+          return InstantMutationTransportFlushResult(
+            request: request,
+            results: [],
+            confirmed: [],
+            failed: [],
+            pendingMutationCount: pending.count,
+            mutationCount: state.snapshot.outbox.count
+          )
+        }
+
+        await operationGate.leave()
+      } catch {
+        await operationGate.leave()
+        throw error
+      }
+
+      let response = try await configuration.mutationTransport.send(request)
+      let results = response.results.filter { selectedMutationIDs.contains($0.mutationID) }
+
+      await operationGate.enter()
+      do {
+        for _ in 0..<5 {
+          let latestState = try await persistence.loadState()
+          let update = InstantOutbox.applyingTransportResults(
+            results,
+            in: latestState.snapshot.outbox,
+            allowedMutationIDs: selectedMutationIDs
+          )
+          let didSave = try await persistence.saveOutbox(
+            update.mutations,
+            expectedOutboxRevision: latestState.outboxRevision
+          )
+          if didSave {
+            await outbox.replace(with: update.mutations)
+            let remainingPendingCount = update.mutations.filter { $0.status == .pending }.count
+            await operationGate.leave()
+            await mutationFlushGate.leave()
+            return InstantMutationTransportFlushResult(
+              request: request,
+              results: results,
+              confirmed: update.confirmed,
+              failed: update.failed,
+              pendingMutationCount: remainingPendingCount,
+              mutationCount: update.mutations.count
+            )
+          }
+        }
+
+        throw outboxChangedDuringFlush()
+      } catch {
+        await operationGate.leave()
+        throw error
+      }
+    } catch {
+      await mutationFlushGate.leave()
+      throw error
+    }
+  }
+
   @discardableResult
   public func confirmMutation(id: String) async throws -> PendingMutation {
     await operationGate.enter()
@@ -1286,6 +1385,15 @@ public final class InstantRuntime: Sendable {
       operation: "drain outbox",
       message: "The local outbox changed repeatedly while draining pending mutations.",
       recovery: "Retry the drain after inspecting the current outbox."
+    )
+  }
+
+  private func outboxChangedDuringFlush() -> InstantError {
+    InstantError(
+      code: .persistenceFailed,
+      operation: "flush outbox",
+      message: "The local outbox changed repeatedly while applying transport results.",
+      recovery: "Retry the flush after inspecting the current outbox."
     )
   }
 

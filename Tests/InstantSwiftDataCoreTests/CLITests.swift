@@ -1610,6 +1610,63 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliOutboxFlushUsesLocalMutationTransport() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    _ = try runCLI(["examples", "todos", "add", "flush one", "--json"], homeURL: homeURL)
+    _ = try runCLI(["examples", "todos", "add", "flush two", "--json"], homeURL: homeURL)
+
+    let firstFlush = try #require(
+      JSONSerialization.jsonObject(
+        with: Data(
+          try runCLI(["outbox", "flush", "--limit", "1", "--json"], homeURL: homeURL).utf8
+        )
+      ) as? [String: Any]
+    )
+    expectNoDifference(firstFlush["event"] as? String, "flush-local-transport")
+    expectNoDifference(firstFlush["transport"] as? String, "local-mutation-transport")
+    expectNoDifference(firstFlush["attemptedMutationCount"] as? Int, 1)
+    expectNoDifference(firstFlush["confirmedMutationCount"] as? Int, 1)
+    expectNoDifference(firstFlush["failedMutationCount"] as? Int, 0)
+    expectNoDifference(firstFlush["pendingMutationCount"] as? Int, 1)
+    expectNoDifference(firstFlush["mutationCount"] as? Int, 1)
+    let firstResults = try #require(firstFlush["results"] as? [[String: Any]])
+    expectNoDifference(firstResults.map { $0["outcome"] as? String }, ["confirmed"])
+    let request = try #require(firstFlush["request"] as? [String: Any])
+    let requestMutations = try #require(request["mutations"] as? [[String: Any]])
+    expectNoDifference(requestMutations.count, 1)
+
+    let jsonlOutput = try runCLI(["outbox", "flush", "--jsonl"], homeURL: homeURL)
+    let jsonlLines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(jsonlLines.count, 2)
+    let summary = try #require(
+      JSONSerialization.jsonObject(with: Data(jsonlLines[0].utf8)) as? [String: Any]
+    )
+    expectNoDifference(summary["case"] as? String, "cli.outbox.flush")
+    expectNoDifference(summary["event"] as? String, "summary")
+    expectNoDifference(summary["ok"] as? Bool, true)
+    let summaryDetails = try #require(summary["details"] as? [String: Any])
+    expectNoDifference(summaryDetails["pendingMutationCount"] as? Int, 0)
+
+    let emptyOutbox = try JSONDecoder().decode(
+      CLIOutboxInspectOutput.self,
+      from: Data(try runCLI(["outbox", "inspect", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(emptyOutbox.pendingMutationCount, 0)
+    expectNoDifference(emptyOutbox.mutations, [])
+
+    let malformed = try runCLIResult(
+      ["outbox", "flush", "--limit", "-1", "--json"],
+      homeURL: homeURL
+    )
+    #expect(malformed.status == 64)
+    #expect(malformed.error.contains("outbox flush"))
+  }
+
+  @Test
   func cliEphemeralAppPersistsSelectionForLaterCommands() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)

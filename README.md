@@ -78,6 +78,7 @@ swift run instant-swift-data cache attributes todos --json
 swift run instant-swift-data cache triples todos --jsonl
 swift run instant-swift-data outbox inspect --jsonl
 swift run instant-swift-data outbox transport --json
+swift run instant-swift-data outbox flush --limit 1 --json
 MUTATION_ID="$(swift run instant-swift-data outbox inspect --json | jq -r '.mutations[0].id')"
 swift run instant-swift-data outbox confirm "$MUTATION_ID" --json
 FAILED_MUTATION_ID="$(swift run instant-swift-data outbox inspect --json | jq -r '.mutations[0].id')"
@@ -212,8 +213,9 @@ persistence, local auth/session state, local room presence/topics, local file
 metadata/content copies, local stream chunks, local share metadata/memberships,
 local admin query/transact helpers, and non-captive CLI interaction, but it does
 not yet sync with a real Instant app. The outbox can lower pending mutations to
-Instant-shaped transport `txSteps` for inspection with `outbox transport`, and
-endpoint helpers such as `auth oauth-url` and `auth issuer` mirror Instant's URL
+Instant-shaped transport `txSteps` for inspection with `outbox transport` and
+can exercise the local mutation transport ack path with `outbox flush`.
+Endpoint helpers such as `auth oauth-url` and `auth issuer` mirror Instant's URL
 shape and use configured `INSTANT_API_URI`/`INSTANT_WEBSOCKET_URI` values, but
 they do not perform network I/O.
 
@@ -234,6 +236,7 @@ try await withDependencies {
   $0.instantIDTokenExchange = .local
   $0.instantOAuthExchange = .local
   $0.instantAuthTokenInvalidator = .local
+  $0.instantMutationTransport = .local
   try await $0.bootstrapInstantSwiftData(
     appID: "local-demo",
     persistenceURL: cacheURL,
@@ -252,11 +255,12 @@ try await withDependencies {
 ```
 
 `instantMagicCodeExchange`, `instantRefreshTokenVerifier`,
-`instantIDTokenExchange`, `instantOAuthExchange`, and
-`instantAuthTokenInvalidator` default to `.local`, and app/test entry points can
-override them before `bootstrapInstantSwiftData` to install live or
-fixture-backed auth behavior. Local/demo clients should be reusable static
-instances on the client type, for example
+`instantIDTokenExchange`, `instantOAuthExchange`,
+`instantAuthTokenInvalidator`, and `instantMutationTransport` default to
+`.local`, and app/test entry points can override them before
+`bootstrapInstantSwiftData` to install live or fixture-backed auth/transport
+behavior. Local/demo clients should be reusable static instances on the client
+type, for example
 `extension InstantMagicCodeExchange { public static let local = Self(...) }`,
 while dependency keys remain computed `static var` `liveValue`, `testValue`, and
 `previewValue` properties.
@@ -377,6 +381,8 @@ Inspect lowered transport payloads before real network sync is configured:
 ```bash
 swift run instant-swift-data outbox transport --json
 swift run instant-swift-data outbox transport --all --jsonl
+swift run instant-swift-data outbox flush --limit 1 --json
+swift run instant-swift-data outbox flush --jsonl
 ```
 
 Subscriptions are bounded newest-value streams, so slow consumers receive the

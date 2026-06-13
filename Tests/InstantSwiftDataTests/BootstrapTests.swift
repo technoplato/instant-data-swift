@@ -436,6 +436,62 @@ struct BootstrapTests {
   }
 
   @Test
+  func bootstrapUsesMutationTransportDependency() async throws {
+    let appID = "mutation-transport-dependency-\(UUID().uuidString)"
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataMutationTransport-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let recorder = BootstrapMutationTransportRecorder()
+    let transport = InstantMutationTransportClient { request in
+      await recorder.record(request)
+      return InstantMutationTransportResponse(
+        results: request.mutations.map { mutation in
+          InstantMutationTransportResult(mutationID: mutation.mutationID, outcome: .confirmed)
+        }
+      )
+    }
+
+    try await withDependencies {
+      $0.instantMutationTransport = transport
+      try await $0.bootstrapInstantSwiftData(
+        appID: appID,
+        persistenceURL: directory.appendingPathComponent("cache.sqlite"),
+        context: .test,
+        initialAttributes: TodoExample.attributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var client
+      let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+
+      try await client.transact(
+        InstantStoreTransaction(
+          id: "tx-dependency-flush",
+          operations: TodoExample.createOperations(
+            id: "todo-dependency-flush",
+            text: "dependency transport",
+            createdAt: createdAt,
+            transactionID: "tx-dependency-flush"
+          )
+        )
+      )
+
+      let result = try await client.flushPendingMutations()
+      expectNoDifference(result.request.appID, appID)
+      expectNoDifference(result.request.mutations.map(\.mutationID), ["tx-dependency-flush"])
+      expectNoDifference(result.confirmed.map(\.id), ["tx-dependency-flush"])
+      expectNoDifference(result.pendingMutationCount, 0)
+
+      let requests = await recorder.requests()
+      expectNoDifference(requests.map { $0.appID }, [appID])
+      expectNoDifference(requests.first?.mutations.map(\.mutationID), ["tx-dependency-flush"])
+      let pendingMutations = await client.pendingMutations()
+      expectNoDifference(pendingMutations, [])
+    }
+  }
+
+  @Test
   func dependencyOverrideCanInstallMockClient() async throws {
     let signOutOptions = SignOutOptionsRecorder()
     let mock = InstantSwiftDataClient(
@@ -729,6 +785,18 @@ private actor AuthTokenInvalidationRecorder {
 
   func requests() -> [InstantAuthTokenInvalidationRequest] {
     values
+  }
+}
+
+private actor BootstrapMutationTransportRecorder {
+  private var recordedRequests: [InstantMutationTransportRequest] = []
+
+  func record(_ request: InstantMutationTransportRequest) {
+    recordedRequests.append(request)
+  }
+
+  func requests() -> [InstantMutationTransportRequest] {
+    recordedRequests
   }
 }
 

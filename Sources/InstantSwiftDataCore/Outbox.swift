@@ -10,6 +10,12 @@ struct InstantOutboxUpdate: Hashable, Codable, Sendable {
   }
 }
 
+struct InstantOutboxTransportUpdate: Hashable, Codable, Sendable {
+  var confirmed: [PendingMutation]
+  var failed: [PendingMutation]
+  var mutations: [PendingMutation]
+}
+
 actor InstantOutbox {
   private var mutations: [PendingMutation]
 
@@ -87,6 +93,42 @@ actor InstantOutbox {
     }
 
     return (confirmed, remaining.sorted(by: PendingMutation.creationOrder))
+  }
+
+  static func applyingTransportResults(
+    _ results: [InstantMutationTransportResult],
+    in mutations: [PendingMutation],
+    allowedMutationIDs: Set<String>
+  ) -> InstantOutboxTransportUpdate {
+    var confirmed: [PendingMutation] = []
+    var failed: [PendingMutation] = []
+    var nextMutations = mutations
+
+    for result in results {
+      guard allowedMutationIDs.contains(result.mutationID),
+        let index = nextMutations.firstIndex(where: { $0.id == result.mutationID }),
+        nextMutations[index].status == .pending
+      else { continue }
+
+      switch result.outcome {
+      case .confirmed:
+        var mutation = nextMutations.remove(at: index)
+        mutation.status = .confirmed
+        mutation.failureMessage = nil
+        confirmed.append(mutation)
+
+      case .failed:
+        nextMutations[index].status = .failed
+        nextMutations[index].failureMessage = result.message
+        failed.append(nextMutations[index])
+      }
+    }
+
+    return InstantOutboxTransportUpdate(
+      confirmed: confirmed.sorted(by: PendingMutation.creationOrder),
+      failed: failed.sorted(by: PendingMutation.creationOrder),
+      mutations: nextMutations.sorted(by: PendingMutation.creationOrder)
+    )
   }
 
   func replace(with mutations: [PendingMutation]) {

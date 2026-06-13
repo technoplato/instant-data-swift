@@ -17,6 +17,8 @@ public struct InstantSwiftDataClient: Sendable {
   private var queryOperation: @Sendable (InstantQueryPlan) async throws -> [InstantEntitySnapshot]
   private var observeOperation: @Sendable (InstantQueryPlan) async -> AsyncStream<InstantQueryEmission>
   private var pendingMutationsOperation: @Sendable () async -> [PendingMutation]
+  private var flushPendingMutationsOperation:
+    @Sendable (Int?) async throws -> InstantMutationTransportFlushResult
   private var localIDOperation: @Sendable (String) async throws -> String
   private var authSessionOperation: @Sendable () async throws -> InstantAuthSession?
   private var observeAuthSessionOperation:
@@ -51,6 +53,9 @@ public struct InstantSwiftDataClient: Sendable {
     }
     self.pendingMutationsOperation = {
       await runtime.pendingMutations()
+    }
+    self.flushPendingMutationsOperation = { limit in
+      try await runtime.flushPendingMutations(limit: limit)
     }
     self.localIDOperation = { name in
       try await runtime.localID(named: name)
@@ -101,6 +106,8 @@ public struct InstantSwiftDataClient: Sendable {
     query: @escaping @Sendable (InstantQueryPlan) async throws -> [InstantEntitySnapshot],
     observe: @escaping @Sendable (InstantQueryPlan) async -> AsyncStream<InstantQueryEmission>,
     pendingMutations: @escaping @Sendable () async -> [PendingMutation],
+    flushPendingMutations:
+      (@Sendable (Int?) async throws -> InstantMutationTransportFlushResult)? = nil,
     localID: @escaping @Sendable (String) async throws -> String,
     authSession: (@Sendable () async throws -> InstantAuthSession?)? = nil,
     observeAuthSession: (@Sendable () async throws -> AsyncStream<InstantAuthSession?>)? = nil,
@@ -122,6 +129,7 @@ public struct InstantSwiftDataClient: Sendable {
       query: query,
       observe: observe,
       pendingMutations: pendingMutations,
+      flushPendingMutations: flushPendingMutations,
       localID: localID,
       authSession: authSession,
       observeAuthSession: observeAuthSession,
@@ -145,6 +153,8 @@ public struct InstantSwiftDataClient: Sendable {
     query: @escaping @Sendable (InstantQueryPlan) async throws -> [InstantEntitySnapshot],
     observe: @escaping @Sendable (InstantQueryPlan) async -> AsyncStream<InstantQueryEmission>,
     pendingMutations: @escaping @Sendable () async -> [PendingMutation],
+    flushPendingMutations:
+      (@Sendable (Int?) async throws -> InstantMutationTransportFlushResult)? = nil,
     localID: @escaping @Sendable (String) async throws -> String,
     authSession: (@Sendable () async throws -> InstantAuthSession?)? = nil,
     observeAuthSession: (@Sendable () async throws -> AsyncStream<InstantAuthSession?>)? = nil,
@@ -168,6 +178,13 @@ public struct InstantSwiftDataClient: Sendable {
       message: "No auth client has been configured.",
       recovery: "Bootstrap Instant Swift Data before using auth, or override auth closures in tests."
     )
+    let transportError = InstantError(
+      code: .implementationFailed,
+      operation: "flush InstantSwiftData mutations",
+      message: "No mutation transport client has been configured.",
+      recovery:
+        "Bootstrap Instant Swift Data before flushing mutations, or override the flush closure in tests."
+    )
 
     self.runtime = nil
     self.transactOperation = transact
@@ -179,6 +196,7 @@ public struct InstantSwiftDataClient: Sendable {
     self.queryOperation = query
     self.observeOperation = observe
     self.pendingMutationsOperation = pendingMutations
+    self.flushPendingMutationsOperation = flushPendingMutations ?? { _ in throw transportError }
     self.localIDOperation = localID
     self.authSessionOperation = authSession ?? { throw authError }
     self.observeAuthSessionOperation = observeAuthSession ?? { throw authError }
@@ -224,6 +242,9 @@ public struct InstantSwiftDataClient: Sendable {
       pendingMutations: {
         reportIssue(error)
         return []
+      },
+      flushPendingMutations: { _ in
+        throw error
       },
       localID: { _ in
         throw error
@@ -294,6 +315,12 @@ public struct InstantSwiftDataClient: Sendable {
 
   public func pendingMutations() async -> [PendingMutation] {
     await pendingMutationsOperation()
+  }
+
+  public func flushPendingMutations(limit: Int? = nil) async throws
+    -> InstantMutationTransportFlushResult
+  {
+    try await flushPendingMutationsOperation(limit)
   }
 
   public func localID(named name: String) async throws -> String {
@@ -571,6 +598,22 @@ extension InstantAuthTokenInvalidatorKey: DependencyKey {
   }
 }
 
+private enum InstantMutationTransportKey: TestDependencyKey {
+  static var testValue: InstantMutationTransportClient {
+    .local
+  }
+
+  static var previewValue: InstantMutationTransportClient {
+    .local
+  }
+}
+
+extension InstantMutationTransportKey: DependencyKey {
+  static var liveValue: InstantMutationTransportClient {
+    .local
+  }
+}
+
 extension DependencyValues {
   public var defaultInstantSwiftData: InstantSwiftDataClient {
     get { self[DefaultInstantSwiftDataKey.self] }
@@ -600,6 +643,11 @@ extension DependencyValues {
   public var instantAuthTokenInvalidator: InstantAuthTokenInvalidator {
     get { self[InstantAuthTokenInvalidatorKey.self] }
     set { self[InstantAuthTokenInvalidatorKey.self] = newValue }
+  }
+
+  public var instantMutationTransport: InstantMutationTransportClient {
+    get { self[InstantMutationTransportKey.self] }
+    set { self[InstantMutationTransportKey.self] = newValue }
   }
 
   public mutating func bootstrapInstantSwiftData(
@@ -633,6 +681,7 @@ extension DependencyValues {
     let idTokenExchange = self.instantIDTokenExchange
     let oauthExchange = self.instantOAuthExchange
     let authTokenInvalidator = self.instantAuthTokenInvalidator
+    let mutationTransport = self.instantMutationTransport
     let url =
       persistenceURL
       ?? Self.defaultInstantSwiftDataPersistenceURL(
@@ -658,7 +707,8 @@ extension DependencyValues {
         magicCodeExchange: magicCodeExchange,
         idTokenExchange: idTokenExchange,
         oauthExchange: oauthExchange,
-        authTokenInvalidator: authTokenInvalidator
+        authTokenInvalidator: authTokenInvalidator,
+        mutationTransport: mutationTransport
       )
     )
   }

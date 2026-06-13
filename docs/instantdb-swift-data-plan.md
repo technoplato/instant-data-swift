@@ -165,9 +165,12 @@ Current local progress: pending mutations now lower into typed
 and reflected as `{mode: "create"}` / `{mode: "update"}` transport options on
 matching steps. The CLI proves the bridge non-captively with
 `instant-swift-data outbox transport --json` and can include failed rows for
-inspection with `instant-swift-data outbox transport --all --jsonl`. Real
-WebSocket send/ack, retry scheduling, and server rejection rollback remain
-future transport work.
+inspection with `instant-swift-data outbox transport --all --jsonl`.
+`InstantMutationTransportClient` provides the Sendable send/ack seam that future
+WebSocket transport will implement, and the current `.local` instance proves
+durable confirmation/failure application with
+`instant-swift-data outbox flush --jsonl`. Real WebSocket send/ack, retry
+scheduling, and server rejection rollback remain future transport work.
 
 ### Offline And Local First
 
@@ -395,21 +398,24 @@ public API into SQL:
   register `TestDependencyKey` and `DependencyKey` values with computed
   `testValue`, `previewValue`, and `liveValue`, and thread the resolved dependency into
   `bootstrapInstantSwiftData`/`InstantRuntimeConfiguration`. This applies first
-  to magic-code, refresh-token, id-token, OAuth exchange, and auth token
-  invalidation and should later apply to transport/auth, sync, file storage, and
-  network clients.
-  Current local progress: `InstantMagicCodeExchange` follows this shape, the
+  to magic-code, refresh-token, id-token, OAuth exchange, auth token
+  invalidation, and mutation transport, and should later apply to live sync,
+  file storage, and network clients.
+  Current local progress: `InstantMagicCodeExchange` and
+  `InstantMutationTransportClient` follow this shape, the
   public `InstantSwiftData` target exposes
   `DependencyValues.instantMagicCodeExchange` and
   `DependencyValues.instantRefreshTokenVerifier` and
   `DependencyValues.instantIDTokenExchange` and
   `DependencyValues.instantOAuthExchange` and
-  `DependencyValues.instantAuthTokenInvalidator`, and
+  `DependencyValues.instantAuthTokenInvalidator` and
+  `DependencyValues.instantMutationTransport`, and
   `bootstrapInstantSwiftData` resolves those values before constructing the
   runtime configuration. The public dependency client also exposes durable auth
   operations directly, including guest, token, id-token, OAuth, magic-code
   send/verify, session lookup, auth-state observation, and
-  `signOut(invalidateToken:)`. Future transport/auth clients should preserve
+  `signOut(invalidateToken:)`, plus outbox flush over the injected mutation
+  transport. Future transport/auth clients should preserve
   the same Sendable value-client boundary and local static-instance convention.
 - **Typed models above explicit migrations.** SQLiteData combines `@Table`,
   `Draft`, `@Selection`, typed expressions, and generated update helpers with

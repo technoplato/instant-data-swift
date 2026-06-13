@@ -1324,6 +1324,220 @@ struct InstantStoreTests {
   }
 
   @Test
+  func outboxFlushUsesMutationTransportResults() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let baseTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let recorder = MutationTransportRecorder()
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        apiURI: try #require(URL(string: "https://api.example.test")),
+        websocketURI: try #require(URL(string: "wss://socket.example.test/runtime/session")),
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        mutationTransport: InstantMutationTransportClient { request in
+          await recorder.record(request)
+          return InstantMutationTransportResponse(
+            results: request.mutations.map { mutation in
+              if mutation.mutationID == "tx-flush-1" {
+                return InstantMutationTransportResult(
+                  mutationID: mutation.mutationID,
+                  outcome: .failed,
+                  message: "permission rejected"
+                )
+              }
+              return InstantMutationTransportResult(
+                mutationID: mutation.mutationID,
+                outcome: .confirmed
+              )
+            }
+          )
+        }
+      )
+    )
+
+    for index in 0..<3 {
+      let createdAt = InstantTimestamp(milliseconds: baseTime.milliseconds + Int64(index))
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-flush-\(index)",
+          operations: TodoExample.createOperations(
+            id: "todo-flush-\(index)",
+            text: "flush \(index)",
+            createdAt: createdAt,
+            transactionID: "tx-flush-\(index)"
+          )
+        ),
+        createdAt: createdAt
+      )
+    }
+
+    let result = try await runtime.flushPendingMutations(limit: 2)
+    expectNoDifference(result.request.appID, "test-app")
+    expectNoDifference(result.request.apiURI.absoluteString, "https://api.example.test")
+    expectNoDifference(
+      result.request.websocketURI.absoluteString,
+      "wss://socket.example.test/runtime/session"
+    )
+    expectNoDifference(result.request.mutations.map(\.mutationID), ["tx-flush-0", "tx-flush-1"])
+    expectNoDifference(result.results.map(\.mutationID), ["tx-flush-0", "tx-flush-1"])
+    expectNoDifference(result.results.map(\.outcome), [.confirmed, .failed])
+    expectNoDifference(result.confirmed.map(\.id), ["tx-flush-0"])
+    expectNoDifference(result.failed.map(\.id), ["tx-flush-1"])
+    expectNoDifference(result.failed.map(\.failureMessage), ["permission rejected"])
+    expectNoDifference(result.pendingMutationCount, 1)
+    expectNoDifference(result.mutationCount, 2)
+
+    let requests = await recorder.requests()
+    expectNoDifference(
+      requests.map { $0.mutations.map(\.mutationID) },
+      [["tx-flush-0", "tx-flush-1"]]
+    )
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let mutations = await relaunchedRuntime.outboxMutations()
+    expectNoDifference(mutations.map(\.id), ["tx-flush-1", "tx-flush-2"])
+    expectNoDifference(mutations.map(\.status), [.failed, .pending])
+    expectNoDifference(mutations.map(\.failureMessage), ["permission rejected", nil])
+  }
+
+  @Test
+  func outboxFlushIgnoresTransportResultsOutsideRequestedBatch() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let baseTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        mutationTransport: InstantMutationTransportClient { request in
+          let requestedMutationID = request.mutations.first?.mutationID ?? "missing-mutation"
+          return InstantMutationTransportResponse(
+            results: [
+              InstantMutationTransportResult(
+                mutationID: requestedMutationID,
+                outcome: .confirmed
+              ),
+              InstantMutationTransportResult(
+                mutationID: "tx-flush-1-ignored",
+                outcome: .confirmed
+              ),
+            ]
+          )
+        }
+      )
+    )
+
+    for index in 0..<2 {
+      let transactionID = "tx-flush-\(index)-\(index == 0 ? "requested" : "ignored")"
+      let createdAt = InstantTimestamp(milliseconds: baseTime.milliseconds + Int64(index))
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: TodoExample.createOperations(
+            id: "todo-\(transactionID)",
+            text: transactionID,
+            createdAt: createdAt,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: createdAt
+      )
+    }
+
+    let result = try await runtime.flushPendingMutations(limit: 1)
+    expectNoDifference(result.request.mutations.map(\.mutationID), ["tx-flush-0-requested"])
+    expectNoDifference(result.results.map(\.mutationID), ["tx-flush-0-requested"])
+    expectNoDifference(result.confirmed.map(\.id), ["tx-flush-0-requested"])
+    expectNoDifference(result.pendingMutationCount, 1)
+
+    let mutations = await runtime.outboxMutations()
+    expectNoDifference(mutations.map(\.id), ["tx-flush-1-ignored"])
+    expectNoDifference(mutations.map(\.status), [.pending])
+  }
+
+  @Test
+  func outboxFlushDoesNotBlockLocalTransactsWhileTransportIsSuspended() async throws {
+    let baseTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let transport = SuspendedMutationTransport()
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        mutationTransport: InstantMutationTransportClient { request in
+          await transport.send(request)
+        }
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-before-suspended-flush",
+        operations: TodoExample.createOperations(
+          id: "todo-before-suspended-flush",
+          text: "before suspended flush",
+          createdAt: baseTime,
+          transactionID: "tx-before-suspended-flush"
+        )
+      ),
+      createdAt: baseTime
+    )
+
+    let flushTask = Task {
+      try await runtime.flushPendingMutations(limit: 1)
+    }
+    await transport.waitForRequest()
+
+    let transactedWhileFlushWasSuspended = await withTaskGroup(of: Bool.self) { group in
+      group.addTask {
+        do {
+          try await runtime.transact(
+            InstantStoreTransaction(
+              id: "tx-during-suspended-flush",
+              operations: TodoExample.createOperations(
+                id: "todo-during-suspended-flush",
+                text: "during suspended flush",
+                createdAt: InstantTimestamp(milliseconds: baseTime.milliseconds + 1),
+                transactionID: "tx-during-suspended-flush"
+              )
+            ),
+            createdAt: InstantTimestamp(milliseconds: baseTime.milliseconds + 1)
+          )
+          return true
+        } catch {
+          return false
+        }
+      }
+      group.addTask {
+        try? await Task.sleep(nanoseconds: 1_000_000_000)
+        return false
+      }
+
+      let completed = await group.next() ?? false
+      if !completed {
+        await transport.resumeConfirmingRequest()
+      }
+      group.cancelAll()
+      return completed
+    }
+
+    #expect(transactedWhileFlushWasSuspended)
+    await transport.resumeConfirmingRequest()
+    let result = try await flushTask.value
+    expectNoDifference(result.confirmed.map(\.id), ["tx-before-suspended-flush"])
+
+    let mutations = await runtime.outboxMutations()
+    expectNoDifference(mutations.map(\.id), ["tx-during-suspended-flush"])
+    expectNoDifference(mutations.map(\.status), [.pending])
+  }
+
+  @Test
   func outboxDrainUsesIDAsStableTieBreakerForSameTimestampMutations() async throws {
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
@@ -5549,6 +5763,53 @@ private struct LegacyCachedQuery: Encodable, Sendable {
   var emission: InstantQueryEmission
   var updatedAt: InstantTimestamp
   var storeRevision: Int64
+}
+
+private actor MutationTransportRecorder {
+  private var recordedRequests: [InstantMutationTransportRequest] = []
+
+  func record(_ request: InstantMutationTransportRequest) {
+    recordedRequests.append(request)
+  }
+
+  func requests() -> [InstantMutationTransportRequest] {
+    recordedRequests
+  }
+}
+
+private actor SuspendedMutationTransport {
+  private var continuation: CheckedContinuation<InstantMutationTransportResponse, Never>?
+  private var request: InstantMutationTransportRequest?
+  private var requestWaiter: CheckedContinuation<Void, Never>?
+
+  func send(_ request: InstantMutationTransportRequest) async -> InstantMutationTransportResponse {
+    self.request = request
+    requestWaiter?.resume()
+    requestWaiter = nil
+
+    return await withCheckedContinuation { continuation in
+      self.continuation = continuation
+    }
+  }
+
+  func waitForRequest() async {
+    guard request == nil else { return }
+    await withCheckedContinuation { continuation in
+      requestWaiter = continuation
+    }
+  }
+
+  func resumeConfirmingRequest() {
+    guard let request, let continuation else { return }
+    self.continuation = nil
+    continuation.resume(
+      returning: InstantMutationTransportResponse(
+        results: request.mutations.map { mutation in
+          InstantMutationTransportResult(mutationID: mutation.mutationID, outcome: .confirmed)
+        }
+      )
+    )
+  }
 }
 
 private final class LockIsolated<Value>: @unchecked Sendable {
