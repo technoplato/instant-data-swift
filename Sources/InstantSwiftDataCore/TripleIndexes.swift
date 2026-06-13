@@ -118,6 +118,8 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       attributes: attributes
     )
     else { return InstantQueryPage(values: [], pageInfo: pageInfo(for: [], plan: plan)) }
+    guard includesReferenceDeclaredLinks(plan.includes, namespace: plan.namespace, attributes: attributes)
+    else { return InstantQueryPage(values: [], pageInfo: pageInfo(for: [], plan: plan)) }
 
     var snapshots: [InstantEntitySnapshot] = []
 
@@ -154,10 +156,90 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     }
 
     let paged = paginate(snapshots, plan: plan)
+    let linked = includeLinks(paged.values, plan: plan, attributes: attributes)
     return InstantQueryPage(
-      values: project(paged.values, selectedFields: plan.selectedFields),
+      values: project(linked, selectedFields: plan.selectedFields),
       pageInfo: paged.pageInfo
     )
+  }
+
+  private func includeLinks(
+    _ snapshots: [InstantEntitySnapshot],
+    plan: InstantQueryPlan,
+    attributes: AttributeStore
+  ) -> [InstantEntitySnapshot] {
+    guard let includes = plan.includes, !includes.isEmpty else { return snapshots }
+
+    return snapshots.map { snapshot in
+      var links = snapshot.links ?? [:]
+      for include in includes {
+        switch include.direction {
+        case .forward:
+          guard
+            let attribute = attributes.attribute(namespace: plan.namespace, name: include.name),
+            let linkNamespace = attribute.linkNamespace
+          else { continue }
+          let entityIDs = snapshot.values[include.name]?.values.compactMap(\.refValue) ?? []
+          guard !entityIDs.isEmpty else {
+            links[include.name] = []
+            continue
+          }
+          links[include.name] = materializeIncludedSnapshots(
+            ids: Set(entityIDs),
+            namespace: linkNamespace,
+            include: include,
+            attributes: attributes
+          )
+
+        case .reverse:
+          guard
+            let attribute = reverseAttribute(
+              namespace: plan.namespace,
+              name: include.name,
+              attributes: attributes
+            )
+          else { continue }
+          let entityIDs =
+            vae[.ref(snapshot.id)]?[attribute.id]?.keys.sorted()
+            ?? []
+          guard !entityIDs.isEmpty else {
+            links[include.name] = []
+            continue
+          }
+          links[include.name] = materializeIncludedSnapshots(
+            ids: Set(entityIDs),
+            namespace: attribute.namespace,
+            include: include,
+            attributes: attributes
+          )
+        }
+      }
+
+      return InstantEntitySnapshot(
+        id: snapshot.id,
+        namespace: snapshot.namespace,
+        values: snapshot.values,
+        links: links.isEmpty ? nil : links
+      )
+    }
+  }
+
+  private func materializeIncludedSnapshots(
+    ids: Set<String>,
+    namespace: String,
+    include: InstantQueryInclude,
+    attributes: AttributeStore
+  ) -> [InstantLinkedEntitySnapshot] {
+    let query =
+      include.query?.queryPlan
+      ?? InstantQueryPlan(
+        id: "\(namespace).included.\(include.name)",
+        namespace: namespace
+      )
+    return materializePage(query, attributes: attributes)
+      .values
+      .filter { ids.contains($0.id) }
+      .map(InstantLinkedEntitySnapshot.init)
   }
 
   private func paginate(
@@ -415,6 +497,61 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     fields?.allSatisfy { isDeclaredField($0, namespace: namespace, attributes: attributes) } ?? true
   }
 
+  private func includesReferenceDeclaredLinks(
+    _ includes: [InstantQueryInclude]?,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> Bool {
+    guard let includes else { return true }
+    return includes.allSatisfy { include in
+      let childNamespace: String?
+      switch include.direction {
+      case .forward:
+        childNamespace = attributes.attribute(namespace: namespace, name: include.name).flatMap {
+          attribute in
+          guard attribute.valueType == .ref else { return nil }
+          return attribute.linkNamespace
+        }
+
+      case .reverse:
+        childNamespace = reverseAttribute(
+          namespace: namespace,
+          name: include.name,
+          attributes: attributes
+        )?.namespace
+      }
+
+      guard let childNamespace else { return false }
+      guard let query = include.query else { return true }
+      guard query.namespace == childNamespace else { return false }
+      guard filtersReferenceDeclaredFields(
+        query.filters,
+        namespace: query.namespace,
+        attributes: attributes
+      )
+      else { return false }
+      guard selectedFieldsReferenceDeclaredFields(
+        query.selectedFields,
+        namespace: query.namespace,
+        attributes: attributes
+      )
+      else { return false }
+      return true
+    }
+  }
+
+  private func reverseAttribute(
+    namespace: String,
+    name: String,
+    attributes: AttributeStore
+  ) -> InstantAttribute? {
+    attributes.attributes.first {
+      $0.valueType == .ref
+        && $0.linkNamespace == namespace
+        && $0.reverseIdentity == "\(namespace)/\(name)"
+    }
+  }
+
   private func project(
     _ snapshots: [InstantEntitySnapshot],
     selectedFields: [String]?
@@ -425,7 +562,8 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       InstantEntitySnapshot(
         id: snapshot.id,
         namespace: snapshot.namespace,
-        values: snapshot.values.filter { selectedFieldSet.contains($0.key) }
+        values: snapshot.values.filter { selectedFieldSet.contains($0.key) },
+        links: snapshot.links
       )
     }
   }

@@ -70,6 +70,41 @@ public enum TodoProjectExample {
     order: InstantQueryOrder("createdAt", .ascending)
   )
 
+  public static let todosWithProjectQuery = InstantQueryPlan(
+    id: "examples.todo-links.todos.with-project",
+    namespace: TodoExample.namespace,
+    order: InstantQueryOrder("createdAt", .ascending),
+    includes: [
+      InstantQueryInclude(
+        "project",
+        query: InstantQueryIncludePlan(
+          id: "examples.todo-links.included-projects",
+          namespace: namespace,
+          order: InstantQueryOrder("title", .ascending),
+          selectedFields: ["title"]
+        )
+      )
+    ]
+  )
+
+  public static let projectsWithTodosQuery = InstantQueryPlan(
+    id: "examples.todo-links.projects.with-todos",
+    namespace: namespace,
+    order: InstantQueryOrder("title", .ascending),
+    includes: [
+      InstantQueryInclude(
+        "todos",
+        direction: .reverse,
+        query: InstantQueryIncludePlan(
+          id: "examples.todo-links.included-todos",
+          namespace: TodoExample.namespace,
+          order: InstantQueryOrder("createdAt", .ascending),
+          selectedFields: ["text", "project"]
+        )
+      )
+    ]
+  )
+
   public static func createProjectOperations(
     id: String,
     title: String,

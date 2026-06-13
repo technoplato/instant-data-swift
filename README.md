@@ -29,6 +29,7 @@ PAGE_CURSOR="$(swift run instant-swift-data query todos --completed false --firs
 swift run instant-swift-data query todos --completed false --first 1 --after "$PAGE_CURSOR" --json
 swift run instant-swift-data examples todo-links seed --json
 swift run instant-swift-data examples todo-links list --json
+swift run instant-swift-data examples todo-links nested --json
 swift run instant-swift-data examples todo-links unlink --json
 swift run instant-swift-data examples todos watch --events 1 --jsonl
 TODO_ID="$(swift run instant-swift-data examples todos add "ship the demo" --json | jq -r '.changedID')"

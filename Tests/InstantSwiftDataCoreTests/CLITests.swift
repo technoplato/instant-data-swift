@@ -274,6 +274,18 @@ extension InstantStoreTests {
     expectNoDifference(list.projects, seed.projects)
     expectNoDifference(list.todos.map(\.projectID), [seed.projects.first?.id])
 
+    let nested = try JSONDecoder().decode(
+      CLITodoLinkSnapshotsOutput.self,
+      from: Data(
+        try runCLI(["examples", "todo-links", "nested", "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(nested.event, "nested")
+    expectNoDifference(nested.todos.map(\.id), seed.todos.map(\.id))
+    expectNoDifference(nested.todos.first?.links?["project"]?.map(\.id), seed.projects.map(\.id))
+    expectNoDifference(nested.projects.map(\.id), seed.projects.map(\.id))
+    expectNoDifference(nested.projects.first?.links?["todos"]?.map(\.id), seed.todos.map(\.id))
+
     let unlinked = try JSONDecoder().decode(
       CLITodoLinksOutput.self,
       from: Data(
@@ -1155,6 +1167,12 @@ private struct CLITodoLinksOutput: Decodable {
   var pendingMutationCount: Int
   var projects: [CLITodoProject]
   var todos: [CLILinkedTodo]
+}
+
+private struct CLITodoLinkSnapshotsOutput: Decodable {
+  var event: String
+  var todos: [InstantEntitySnapshot]
+  var projects: [InstantEntitySnapshot]
 }
 
 private struct CLITodoProject: Decodable, Equatable {

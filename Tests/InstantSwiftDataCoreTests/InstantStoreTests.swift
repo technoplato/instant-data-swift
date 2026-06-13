@@ -1676,6 +1676,215 @@ struct InstantStoreTests {
   }
 
   @Test
+  func queryIncludesMaterializeForwardAndReverseLinkedSnapshots() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoProjectExample.attributes
+      )
+    )
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-linked-todos",
+        operations: TodoProjectExample.createProjectOperations(
+          id: "project-1",
+          title: "Launch",
+          createdAt: createdAt,
+          transactionID: "tx-linked-todos"
+        ) + TodoExample.createOperations(
+          id: "todo-1",
+          text: "Wire links",
+          createdAt: createdAt,
+          transactionID: "tx-linked-todos"
+        ) + TodoProjectExample.linkOperations(
+          todoID: "todo-1",
+          projectID: "project-1",
+          updatedAt: createdAt,
+          transactionID: "tx-linked-todos"
+        )
+      ),
+      createdAt: createdAt
+    )
+
+    let todoSnapshots = try await runtime.query(TodoProjectExample.todosWithProjectQuery)
+    expectNoDifference(todoSnapshots.map(\.id), ["todo-1"])
+    expectNoDifference(todoSnapshots.first?.links?["project"]?.map(\.id), ["project-1"])
+    expectNoDifference(todoSnapshots.first?.links?["project"]?.first?.values, [
+      "title": .one(.string("Launch"))
+    ])
+
+    let projectSnapshots = try await runtime.query(TodoProjectExample.projectsWithTodosQuery)
+    expectNoDifference(projectSnapshots.map(\.id), ["project-1"])
+    expectNoDifference(projectSnapshots.first?.links?["todos"]?.map(\.id), ["todo-1"])
+    expectNoDifference(projectSnapshots.first?.links?["todos"]?.first?.values, [
+      "project": .one(.ref("project-1")),
+      "text": .one(.string("Wire links")),
+    ])
+
+    let cachedTodos = try await runtime.cachedQuery(TodoProjectExample.todosWithProjectQuery)
+    let cachedProjects = try await runtime.cachedQuery(TodoProjectExample.projectsWithTodosQuery)
+    expectNoDifference(cachedTodos?.emission.values.first?.links?["project"]?.map(\.id), [
+      "project-1"
+    ])
+    expectNoDifference(cachedProjects?.emission.values.first?.links?["todos"]?.map(\.id), [
+      "todo-1"
+    ])
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoProjectExample.attributes
+      )
+    )
+    let relaunchedTodos = try await relaunchedRuntime.cachedQuery(
+      TodoProjectExample.todosWithProjectQuery
+    )
+    let relaunchedProjects = try await relaunchedRuntime.cachedQuery(
+      TodoProjectExample.projectsWithTodosQuery
+    )
+    expectNoDifference(relaunchedTodos?.plan, TodoProjectExample.todosWithProjectQuery)
+    expectNoDifference(relaunchedProjects?.plan, TodoProjectExample.projectsWithTodosQuery)
+    expectNoDifference(relaunchedTodos?.emission.values.first?.links?["project"]?.map(\.id), [
+      "project-1"
+    ])
+    expectNoDifference(relaunchedProjects?.emission.values.first?.links?["todos"]?.map(\.id), [
+      "todo-1"
+    ])
+
+    let fullPlan = InstantQueryPlan(id: "todos.full", namespace: "todos")
+    let includePlan = InstantQueryPlan(
+      id: "todos.full",
+      namespace: "todos",
+      includes: [InstantQueryInclude("project")]
+    )
+    #expect(fullPlan.cacheKey != includePlan.cacheKey)
+  }
+
+  @Test
+  func queryIncludesRoundTripPublicCodableShape() throws {
+    let plan = InstantQueryPlan(
+      id: "todos.codable-include",
+      namespace: TodoExample.namespace,
+      includes: [
+        InstantQueryInclude(
+          "project",
+          query: InstantQueryIncludePlan(
+            id: "projects.codable-include",
+            namespace: "projects",
+            selectedFields: ["title"]
+          )
+        )
+      ]
+    )
+
+    let data = try JSONEncoder().encode(plan)
+    let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let includes = try #require(object["includes"] as? [[String: Any]])
+    #expect(includes.first?["rejectsQuery"] == nil)
+
+    let decoded = try JSONDecoder().decode(InstantQueryPlan.self, from: data)
+    expectNoDifference(decoded, plan)
+    expectNoDifference(decoded.cacheKey, plan.cacheKey)
+  }
+
+  @Test
+  func queryIncludesRejectUndeclaredLinksAndInvalidIncludePlans() async throws {
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: TodoProjectExample.attributes
+      )
+    )
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-invalid-include",
+        operations: TodoProjectExample.createProjectOperations(
+          id: "project-1",
+          title: "Launch",
+          createdAt: createdAt,
+          transactionID: "tx-invalid-include"
+        ) + TodoExample.createOperations(
+          id: "todo-1",
+          text: "Wire links",
+          createdAt: createdAt,
+          transactionID: "tx-invalid-include"
+        ) + TodoProjectExample.linkOperations(
+          todoID: "todo-1",
+          projectID: "project-1",
+          updatedAt: createdAt,
+          transactionID: "tx-invalid-include"
+        )
+      ),
+      createdAt: createdAt
+    )
+
+    let undeclared = try await runtime.query(
+      .init(
+        id: "todos.bad-include",
+        namespace: TodoExample.namespace,
+        includes: [InstantQueryInclude("missing")]
+      )
+    )
+    expectNoDifference(undeclared, [])
+
+    let mismatchedNamespace = try await runtime.query(
+      .init(
+        id: "todos.mismatched-include",
+        namespace: TodoExample.namespace,
+        includes: [
+          InstantQueryInclude(
+            "project",
+            query: InstantQueryIncludePlan(id: "comments", namespace: "comments")
+          )
+        ]
+      )
+    )
+    expectNoDifference(mismatchedNamespace, [])
+
+    let undeclaredNestedFilter = try await runtime.query(
+      .init(
+        id: "todos.bad-nested-filter",
+        namespace: TodoExample.namespace,
+        includes: [
+          InstantQueryInclude(
+            "project",
+            query: InstantQueryIncludePlan(
+              id: "projects.bad-filter",
+              namespace: "projects",
+              filters: [.equals(field: "missing", value: .string("Launch"))]
+            )
+          )
+        ]
+      )
+    )
+    expectNoDifference(undeclaredNestedFilter, [])
+
+    #expect(
+      InstantQueryInclude(
+        "project",
+        query: InstantQueryPlan(id: "projects.paginated", namespace: "projects", limit: 1)
+      ) == nil
+    )
+    #expect(
+      InstantQueryInclude(
+        "project",
+        query: InstantQueryPlan(
+          id: "projects.with-todos",
+          namespace: "projects",
+          includes: [InstantQueryInclude("todos", direction: .reverse)]
+        )
+      ) == nil
+    )
+  }
+
+  @Test
   func storeCommitPublishesToObserversRegisteredAfterPrepare() async throws {
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let store = InstantStore(snapshot: InstantStoreSnapshot(attributes: TodoExample.attributes))

@@ -420,6 +420,12 @@ struct InstantSwiftDataCLI {
       }
       try await printTodoLinks(context: context, output: output, event: "list")
 
+    case "nested":
+      guard arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data examples todo-links nested [--json|--jsonl]", exitCode: 64)
+      }
+      try await printTodoLinkSnapshots(context: context, output: output, event: "nested")
+
     case "unlink":
       guard arguments.isEmpty else {
         throw CLIError("Usage: instant-swift-data examples todo-links unlink [--json|--jsonl]", exitCode: 64)
@@ -1286,6 +1292,89 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func printTodoLinkSnapshots(
+    context: CLIContext,
+    output: OutputMode,
+    event: String
+  ) async throws {
+    let todosEmission = try await context.runtime.queryOnce(TodoProjectExample.todosWithProjectQuery)
+    let projectsEmission = try await context.runtime.queryOnce(TodoProjectExample.projectsWithTodosQuery)
+    let pending = await context.runtime.pendingMutations()
+    let payload = TodoLinkSnapshotsOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      transport: "not-implemented-local-cache-only",
+      todoQueryID: TodoProjectExample.todosWithProjectQuery.id,
+      projectQueryID: TodoProjectExample.projectsWithTodosQuery.id,
+      todoCacheKey: TodoProjectExample.todosWithProjectQuery.cacheKey,
+      projectCacheKey: TodoProjectExample.projectsWithTodosQuery.cacheKey,
+      pendingMutationCount: pending.count,
+      todos: todosEmission.values,
+      projects: projectsEmission.values
+    )
+
+    switch output {
+    case .human:
+      if todosEmission.values.isEmpty, projectsEmission.values.isEmpty {
+        print("No nested snapshots.")
+      } else {
+        for snapshot in todosEmission.values {
+          let links = snapshot.links?.keys.sorted().joined(separator: ",") ?? ""
+          print("\(snapshot.namespace)/\(snapshot.id) links=\(links)")
+        }
+        for snapshot in projectsEmission.values {
+          let links = snapshot.links?.keys.sorted().joined(separator: ",") ?? ""
+          print("\(snapshot.namespace)/\(snapshot.id) links=\(links)")
+        }
+      }
+      print("transport: \(payload.transport)")
+      print("pending mutations: \(pending.count)")
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.examples.todo-links.nested",
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          ok: true,
+          details: payload
+        )
+      )
+      for snapshot in todosEmission.values {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.todo-links.nested",
+            side: "swift",
+            event: "todo",
+            appID: context.appID,
+            entityID: snapshot.id,
+            ok: true,
+            details: snapshot
+          )
+        )
+      }
+      for snapshot in projectsEmission.values {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.todo-links.nested",
+            side: "swift",
+            event: "project",
+            appID: context.appID,
+            entityID: snapshot.id,
+            ok: true,
+            details: snapshot
+          )
+        )
+      }
+    }
+  }
+
   private static func printSnapshots(
     context: CLIContext,
     output: OutputMode,
@@ -1470,6 +1559,7 @@ struct InstantSwiftDataCLI {
         examples todos refresh [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--json|--jsonl]
         examples todo-links seed [--json|--jsonl]
         examples todo-links list [--json|--jsonl]
+        examples todo-links nested [--json|--jsonl]
         examples todo-links unlink [--json|--jsonl]
         cache inspect [--json|--jsonl]
         outbox inspect [--json|--jsonl]
@@ -2542,15 +2632,16 @@ struct InstantSwiftDataCLI {
     """
     Usage: instant-swift-data examples <todos|todo-links>
       instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>
-      instant-swift-data examples todo-links <seed|list|unlink> [--json|--jsonl]
+      instant-swift-data examples todo-links <seed|list|nested|unlink> [--json|--jsonl]
     """
   }
 
   private static var todoLinksUsage: String {
     """
-    Usage: instant-swift-data examples todo-links <seed|list|unlink>
+    Usage: instant-swift-data examples todo-links <seed|list|nested|unlink>
       instant-swift-data examples todo-links seed [--json|--jsonl]
       instant-swift-data examples todo-links list [--json|--jsonl]
+      instant-swift-data examples todo-links nested [--json|--jsonl]
       instant-swift-data examples todo-links unlink [--json|--jsonl]
     """
   }
@@ -2765,6 +2856,20 @@ private struct TodoLinksOutput: Codable, Sendable {
   var pendingMutationCount: Int
   var projects: [TodoProjectRecord]
   var todos: [LinkedTodoRecord]
+}
+
+private struct TodoLinkSnapshotsOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var transport: String
+  var todoQueryID: String
+  var projectQueryID: String
+  var todoCacheKey: String
+  var projectCacheKey: String
+  var pendingMutationCount: Int
+  var todos: [InstantEntitySnapshot]
+  var projects: [InstantEntitySnapshot]
 }
 
 private struct QuerySnapshotsOutput: Codable, Sendable {

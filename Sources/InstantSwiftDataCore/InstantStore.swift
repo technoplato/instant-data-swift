@@ -172,39 +172,7 @@ public actor InstantStore {
   }
 
   private static func emissionSortKey(_ plan: InstantQueryPlan) -> String {
-    let orderField = plan.order?.field ?? ""
-    let orderDirection = plan.order?.direction.rawValue ?? ""
-    let offset = plan.offset.map(String.init) ?? ""
-    let limit = plan.limit.map(String.init) ?? ""
-    let first = plan.first.map(String.init) ?? ""
-    let after = plan.after.map(Self.cursorSortKey) ?? ""
-    let last = plan.last.map(String.init) ?? ""
-    let before = plan.before.map(Self.cursorSortKey) ?? ""
-    let selectedFields = plan.selectedFields?.joined(separator: ",") ?? ""
-    return [
-      plan.id,
-      plan.namespace,
-      String(describing: plan.filters),
-      orderField,
-      orderDirection,
-      offset,
-      limit,
-      first,
-      after,
-      last,
-      before,
-      selectedFields,
-    ]
-    .joined(separator: "\u{1f}")
-  }
-
-  private static func cursorSortKey(_ cursor: InstantQueryCursor) -> String {
-    [
-      cursor.entityID,
-      String(describing: cursor.sortValue),
-      "\(cursor.inclusive)",
-    ]
-    .joined(separator: "\u{1f}")
+    plan.cacheKey
   }
 
   private func registerObserver(

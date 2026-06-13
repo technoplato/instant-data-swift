@@ -407,6 +407,58 @@ public struct InstantQueryPageInfo: Hashable, Codable, Sendable {
   }
 }
 
+public enum InstantQueryIncludeDirection: String, Codable, Sendable {
+  case forward
+  case reverse
+}
+
+public struct InstantQueryIncludePlan: Hashable, Codable, Sendable, Identifiable {
+  public var id: String
+  public var namespace: String
+  public var filters: [InstantQueryFilter]
+  public var order: InstantQueryOrder?
+  public var selectedFields: [String]?
+
+  public init(
+    id: String,
+    namespace: String,
+    filters: [InstantQueryFilter] = [],
+    order: InstantQueryOrder? = nil,
+    selectedFields: [String]? = nil
+  ) {
+    precondition(
+      selectedFields?.allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        ?? true,
+      "InstantQueryIncludePlan selected fields must not be empty strings."
+    )
+    self.id = id
+    self.namespace = namespace
+    self.filters = filters
+    self.order = order
+    self.selectedFields = selectedFields.map { Array(Set($0)).sorted() }
+  }
+}
+
+public struct InstantQueryInclude: Hashable, Codable, Sendable {
+  public var name: String
+  public var direction: InstantQueryIncludeDirection
+  public var query: InstantQueryIncludePlan?
+
+  public init(
+    _ name: String,
+    direction: InstantQueryIncludeDirection = .forward,
+    query: InstantQueryIncludePlan? = nil
+  ) {
+    precondition(
+      !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      "InstantQueryInclude name must not be empty."
+    )
+    self.name = name
+    self.direction = direction
+    self.query = query
+  }
+}
+
 public enum InstantQueryFilter: Hashable, Codable, Sendable {
   case equals(field: String, value: InstantValue)
   case notEquals(field: String, value: InstantValue)
@@ -435,6 +487,7 @@ public struct InstantQueryPlan: Hashable, Codable, Sendable, Identifiable {
   public var last: Int?
   public var before: InstantQueryCursor?
   public var selectedFields: [String]?
+  public var includes: [InstantQueryInclude]?
 
   public var cacheKey: String {
     Self.cacheKey(for: self)
@@ -451,7 +504,8 @@ public struct InstantQueryPlan: Hashable, Codable, Sendable, Identifiable {
     after: InstantQueryCursor? = nil,
     last: Int? = nil,
     before: InstantQueryCursor? = nil,
-    selectedFields: [String]? = nil
+    selectedFields: [String]? = nil,
+    includes: [InstantQueryInclude] = []
   ) {
     precondition(
       offset == nil || offset! >= 0,
@@ -485,11 +539,57 @@ public struct InstantQueryPlan: Hashable, Codable, Sendable, Identifiable {
     self.last = last
     self.before = before
     self.selectedFields = selectedFields.map { Array(Set($0)).sorted() }
+    self.includes = includes.isEmpty ? nil : includes
   }
 
   public static func cacheKey(for plan: Self) -> String {
     let data = Data(plan.canonicalCacheKeyPayload.utf8)
     return "plan:\(data.base64EncodedString())"
+  }
+}
+
+public extension InstantQueryInclude {
+  init?(
+    _ name: String,
+    direction: InstantQueryIncludeDirection = .forward,
+    query: InstantQueryPlan
+  ) {
+    guard query.isSupportedIncludeQuery else { return nil }
+    self.init(name, direction: direction, query: InstantQueryIncludePlan(query))
+  }
+}
+
+extension InstantQueryIncludePlan {
+  init(_ plan: InstantQueryPlan) {
+    self.init(
+      id: plan.id,
+      namespace: plan.namespace,
+      filters: plan.filters,
+      order: plan.order,
+      selectedFields: plan.selectedFields
+    )
+  }
+
+  var queryPlan: InstantQueryPlan {
+    InstantQueryPlan(
+      id: id,
+      namespace: namespace,
+      filters: filters,
+      order: order,
+      selectedFields: selectedFields
+    )
+  }
+}
+
+private extension InstantQueryPlan {
+  var isSupportedIncludeQuery: Bool {
+    offset == nil
+      && limit == nil
+      && first == nil
+      && after == nil
+      && last == nil
+      && before == nil
+      && (includes == nil || includes?.isEmpty == true)
   }
 }
 
@@ -507,6 +607,7 @@ private extension InstantQueryPlan {
       "last:\(last.map(String.init) ?? "nil")",
       "before:\(before?.canonicalCacheKeyPayload ?? "nil")",
       "selectedFields:\(selectedFields.map { $0.joined(separator: ",").cacheKeyEncodedString } ?? "nil")",
+      "includes:[\((includes ?? []).map(\.canonicalCacheKeyPayload).joined(separator: ","))]",
     ]
     .joined(separator: "|")
   }
@@ -515,6 +616,30 @@ private extension InstantQueryPlan {
 private extension InstantQueryOrder {
   var canonicalCacheKeyPayload: String {
     "field:\(field.cacheKeyEncodedString)|direction:\(direction.rawValue)"
+  }
+}
+
+private extension InstantQueryIncludePlan {
+  var canonicalCacheKeyPayload: String {
+    [
+      "id:\(id.cacheKeyEncodedString)",
+      "namespace:\(namespace.cacheKeyEncodedString)",
+      "filters:[\(filters.map(\.canonicalCacheKeyPayload).joined(separator: ","))]",
+      "order:\(order?.canonicalCacheKeyPayload ?? "nil")",
+      "selectedFields:\(selectedFields.map { $0.joined(separator: ",").cacheKeyEncodedString } ?? "nil")",
+    ]
+    .joined(separator: "|")
+  }
+}
+
+private extension InstantQueryInclude {
+  var canonicalCacheKeyPayload: String {
+    [
+      "name:\(name.cacheKeyEncodedString)",
+      "direction:\(direction.rawValue)",
+      "query:\(query?.canonicalCacheKeyPayload ?? "nil")",
+    ]
+    .joined(separator: "|")
   }
 }
 
@@ -645,7 +770,7 @@ public enum InstantMaterializedValue: Hashable, Codable, Sendable {
   }
 }
 
-public struct InstantEntitySnapshot: Hashable, Codable, Sendable, Identifiable {
+public struct InstantLinkedEntitySnapshot: Hashable, Codable, Sendable, Identifiable {
   public var id: String
   public var namespace: String
   public var values: [String: InstantMaterializedValue]
@@ -654,6 +779,36 @@ public struct InstantEntitySnapshot: Hashable, Codable, Sendable, Identifiable {
     self.id = id
     self.namespace = namespace
     self.values = values
+  }
+
+  public init(_ snapshot: InstantEntitySnapshot) {
+    self.init(id: snapshot.id, namespace: snapshot.namespace, values: snapshot.values)
+  }
+}
+
+public struct InstantEntitySnapshot: Hashable, Codable, Sendable, Identifiable {
+  public var id: String
+  public var namespace: String
+  public var values: [String: InstantMaterializedValue]
+  public var links: [String: [InstantLinkedEntitySnapshot]]?
+
+  public init(id: String, namespace: String, values: [String: InstantMaterializedValue]) {
+    self.id = id
+    self.namespace = namespace
+    self.values = values
+    self.links = nil
+  }
+
+  public init(
+    id: String,
+    namespace: String,
+    values: [String: InstantMaterializedValue],
+    links: [String: [InstantLinkedEntitySnapshot]]?
+  ) {
+    self.id = id
+    self.namespace = namespace
+    self.values = values
+    self.links = links
   }
 }
 
