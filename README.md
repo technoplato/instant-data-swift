@@ -141,5 +141,12 @@ swift build
 swift test
 ```
 
+Macro snapshot tests use Point-Free's MacroTesting library and are available on
+toolchains that provide XCTest:
+
+```bash
+INSTANT_SWIFT_DATA_ENABLE_MACRO_TESTING=1 swift test --filter InstantEntityMacroSnapshotTests
+```
+
 The core package is compiled in Swift 6 mode. Mutable runtime state is owned by
 actors, and values crossing actor boundaries are immutable `Sendable` types.
