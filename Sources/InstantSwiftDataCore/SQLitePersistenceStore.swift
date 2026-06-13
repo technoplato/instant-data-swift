@@ -959,6 +959,43 @@ public actor SQLitePersistenceStore {
     )
   }
 
+  public func loadLocalIDs() throws -> [InstantLocalID] {
+    var statement: OpaquePointer?
+    try prepare(
+      """
+      SELECT name, entity_id FROM instant_local_ids
+      ORDER BY name
+      """,
+      statement: &statement
+    )
+    defer { sqlite3_finalize(statement) }
+
+    var localIDs: [InstantLocalID] = []
+    while true {
+      let code = sqlite3_step(statement)
+      if code == SQLITE_DONE {
+        return localIDs
+      }
+      guard code == SQLITE_ROW else {
+        throw persistenceError(operation: "list local ids", message: lastErrorMessage())
+      }
+      guard let name = sqlite3_column_text(statement, 0),
+        let entityID = sqlite3_column_text(statement, 1)
+      else {
+        throw persistenceError(
+          operation: "list local ids",
+          message: "SQLite returned a NULL local id row."
+        )
+      }
+      localIDs.append(
+        InstantLocalID(
+          name: String(cString: name),
+          entityID: String(cString: entityID)
+        )
+      )
+    }
+  }
+
   private func migrate(name: String, body: () throws -> Void) throws {
     try transaction {
       let alreadyApplied: String? = try selectScalar(

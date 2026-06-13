@@ -929,6 +929,10 @@ public final class InstantRuntime: Sendable {
     try await persistence.localID(named: name, makeID: configuration.makeID)
   }
 
+  public func localIDs() async throws -> [InstantLocalID] {
+    try await persistence.loadLocalIDs()
+  }
+
   private func saveAuthSession(_ session: InstantAuthSession) async throws {
     await operationGate.enter()
     do {

@@ -474,6 +474,9 @@ Agent-oriented output modes are required:
   triples with commands such as `instant-swift-data cache inspect`,
   `instant-swift-data cache attributes todos --json`, and
   `instant-swift-data cache triples todos --jsonl`.
+- inspect durable local IDs with commands such as
+  `instant-swift-data local-id get todos.viewer --json` and
+  `instant-swift-data local-id list --json`.
 - inspect pending mutation outbox.
 - replay or drain pending mutations.
 - print decoded query results.

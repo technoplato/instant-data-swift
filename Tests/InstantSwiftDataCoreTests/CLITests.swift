@@ -896,6 +896,90 @@ extension InstantStoreTests {
     )
     expectNoDifference(seedOutput.todos.first?.id, planID.id)
 
+    let localIDs = try JSONDecoder().decode(
+      CLILocalIDsOutput.self,
+      from: Data(
+        try runCLI(["local-id", "list", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(localIDs.transport, "not-implemented-local-cache-only")
+    expectNoDifference(localIDs.localIDCount, 3)
+    expectNoDifference(
+      localIDs.localIDs.map(\.name),
+      [
+        "examples.todos.seed.audit",
+        "examples.todos.seed.plan",
+        "examples.todos.seed.terminal",
+      ]
+    )
+    expectNoDifference(
+      localIDs.localIDs.first { $0.name == "examples.todos.seed.plan" }?.entityID,
+      planID.id
+    )
+
+    let localIDJSONL = try runCLI(["local-id", "list", "--jsonl"], homeURL: homeURL)
+    let localIDLines = localIDJSONL.split(separator: "\n")
+    expectNoDifference(localIDLines.count, 4)
+    let localIDSummary = try JSONDecoder().decode(
+      CLILocalIDsEvidence.self,
+      from: Data(try #require(localIDLines.first).utf8)
+    )
+    expectNoDifference(localIDSummary.caseID, "cli.local-id.list")
+    expectNoDifference(localIDSummary.event, "summary")
+    expectNoDifference(localIDSummary.details.localIDCount, 3)
+    let localIDRows = try localIDLines.dropFirst().map {
+      try JSONDecoder().decode(CLILocalIDRowEvidence.self, from: Data($0.utf8))
+    }
+    expectNoDifference(localIDRows.map(\.caseID), Array(repeating: "cli.local-id.list", count: 3))
+    expectNoDifference(localIDRows.map(\.event), Array(repeating: "local-id", count: 3))
+    expectNoDifference(localIDRows.map(\.details.name), localIDs.localIDs.map(\.name))
+
+    let localIDHuman = try runCLI(["local-id", "list"], homeURL: homeURL)
+    #expect(localIDHuman.contains("examples.todos.seed.plan \(planID.id)"))
+    #expect(localIDHuman.contains("transport: not-implemented-local-cache-only"))
+
+    let malformedLocalIDList = try runCLIResult(
+      ["local-id", "list", "unexpected", "--json"],
+      homeURL: homeURL
+    )
+    #expect(malformedLocalIDList.status == 64)
+    #expect(malformedLocalIDList.error.contains("local-id list"))
+
+    let malformedLocalIDListHomeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: malformedLocalIDListHomeURL,
+      withIntermediateDirectories: true
+    )
+    defer { try? FileManager.default.removeItem(at: malformedLocalIDListHomeURL) }
+    let malformedEmptyHomeList = try runCLIResult(
+      ["local-id", "list", "unexpected", "--json"],
+      homeURL: malformedLocalIDListHomeURL
+    )
+    #expect(malformedEmptyHomeList.status == 64)
+    expectNoDifference(
+      try FileManager.default.contentsOfDirectory(atPath: malformedLocalIDListHomeURL.path),
+      []
+    )
+
+    let malformedLocalIDGetHomeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(
+      at: malformedLocalIDGetHomeURL,
+      withIntermediateDirectories: true
+    )
+    defer { try? FileManager.default.removeItem(at: malformedLocalIDGetHomeURL) }
+    let malformedEmptyHomeGet = try runCLIResult(
+      ["local-id", "get", "--json"],
+      homeURL: malformedLocalIDGetHomeURL
+    )
+    #expect(malformedEmptyHomeGet.status == 64)
+    expectNoDifference(
+      try FileManager.default.contentsOfDirectory(atPath: malformedLocalIDGetHomeURL.path),
+      []
+    )
+
     let malformedSeed = try runCLIResult(
       ["examples", "todos", "seed", "unexpected", "--json"],
       homeURL: homeURL
@@ -2000,6 +2084,36 @@ private struct CLITodo: Decodable, Equatable {
 
 private struct CLILocalIDOutput: Decodable {
   var id: String
+}
+
+private struct CLILocalIDsOutput: Decodable {
+  var transport: String
+  var localIDCount: Int
+  var localIDs: [InstantLocalID]
+}
+
+private struct CLILocalIDsEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLILocalIDsOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
+}
+
+private struct CLILocalIDRowEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: InstantLocalID
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
 }
 
 private struct CLICacheInspectEvidence: Decodable {

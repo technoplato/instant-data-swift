@@ -24,6 +24,17 @@ public struct AnyInstantID: Hashable, Codable, Sendable, CustomStringConvertible
   }
 }
 
+public struct InstantLocalID: Hashable, Codable, Sendable, Identifiable {
+  public var id: String { name }
+  public var name: String
+  public var entityID: String
+
+  public init(name: String, entityID: String) {
+    self.name = name
+    self.entityID = entityID
+  }
+}
+
 public struct InstantTimestamp: Hashable, Codable, Comparable, Sendable {
   public var milliseconds: Int64
 

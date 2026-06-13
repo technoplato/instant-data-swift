@@ -705,45 +705,62 @@ struct InstantSwiftDataCLI {
 
   private static func runLocalID(arguments: [String], output: OutputMode) async throws {
     var arguments = arguments
-    guard arguments.popFirstArgument() == "get",
-      let name = arguments.popFirstArgument(),
-      arguments.isEmpty,
-      !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    else {
-      throw CLIError("Usage: instant-swift-data local-id get <name> [--json|--jsonl]", exitCode: 64)
+    guard let command = arguments.popFirstArgument() else {
+      throw CLIError(localIDUsage, exitCode: 64)
     }
 
-    let context = try await CLIContext.bootstrap(initialAttributes: [])
-    let id = try await context.runtime.localID(named: name)
-    let payload = LocalIDOutput(
-      appID: context.appID,
-      cachePath: context.cacheURL.path,
-      transport: "not-implemented-local-cache-only",
-      name: name,
-      id: id
-    )
+    switch command {
+    case "get":
+      guard let name = arguments.popFirstArgument(),
+        arguments.isEmpty,
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      else {
+        throw CLIError("Usage: instant-swift-data local-id get <name> [--json|--jsonl]", exitCode: 64)
+      }
 
-    switch output {
-    case .human:
-      print(id)
-      print("name: \(name)")
-      print("cache: \(context.cacheURL.path)")
-
-    case .json:
-      try writeJSON(payload)
-
-    case .jsonl:
-      try writeJSONLine(
-        EvidenceRow(
-          caseID: "cli.local-id.get",
-          side: "swift",
-          event: "local-id",
-          appID: context.appID,
-          entityID: id,
-          ok: true,
-          details: payload
-        )
+      let context = try await CLIContext.bootstrap(initialAttributes: [])
+      let id = try await context.runtime.localID(named: name)
+      let payload = LocalIDOutput(
+        appID: context.appID,
+        cachePath: context.cacheURL.path,
+        transport: "not-implemented-local-cache-only",
+        name: name,
+        id: id
       )
+
+      switch output {
+      case .human:
+        print(id)
+        print("name: \(name)")
+        print("cache: \(context.cacheURL.path)")
+
+      case .json:
+        try writeJSON(payload)
+
+      case .jsonl:
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.local-id.get",
+            side: "swift",
+            event: "local-id",
+            appID: context.appID,
+            entityID: id,
+            ok: true,
+            details: payload
+          )
+        )
+      }
+
+    case "list", "ls":
+      guard arguments.isEmpty else {
+        throw CLIError("Usage: instant-swift-data local-id list [--json|--jsonl]", exitCode: 64)
+      }
+      let context = try await CLIContext.bootstrap(initialAttributes: [])
+      let localIDs = try await context.runtime.localIDs()
+      try printLocalIDs(context: context, output: output, localIDs: localIDs)
+
+    default:
+      throw CLIError(localIDUsage, exitCode: 64)
     }
   }
 
@@ -1201,6 +1218,61 @@ struct InstantSwiftDataCLI {
 
     default:
       throw CLIError(sharesUsage, exitCode: 64)
+    }
+  }
+
+  private static func printLocalIDs(
+    context: CLIContext,
+    output: OutputMode,
+    localIDs: [InstantLocalID]
+  ) throws {
+    let payload = LocalIDsOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      transport: "not-implemented-local-cache-only",
+      localIDCount: localIDs.count,
+      localIDs: localIDs
+    )
+
+    switch output {
+    case .human:
+      if localIDs.isEmpty {
+        print("No local IDs.")
+      } else {
+        for localID in localIDs {
+          print("\(localID.name) \(localID.entityID)")
+        }
+      }
+      print("transport: \(payload.transport)")
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.local-id.list",
+          side: "swift",
+          event: "summary",
+          appID: context.appID,
+          ok: true,
+          details: payload
+        )
+      )
+      for localID in localIDs {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.local-id.list",
+            side: "swift",
+            event: "local-id",
+            appID: context.appID,
+            entityID: localID.entityID,
+            ok: true,
+            details: localID
+          )
+        )
+      }
     }
   }
 
@@ -2472,6 +2544,7 @@ struct InstantSwiftDataCLI {
         outbox retry <mutation-id> [--json|--jsonl]
         outbox drain --local-confirm [--limit n] [--json|--jsonl]
         local-id get <name> [--json|--jsonl]
+        local-id list [--json|--jsonl]
         auth show [--json|--jsonl]
         auth guest [--json|--jsonl]
         auth token <refresh-token> [--user-id id] [--json|--jsonl]
@@ -3654,6 +3727,14 @@ struct InstantSwiftDataCLI {
     """
   }
 
+  private static var localIDUsage: String {
+    """
+    Usage: instant-swift-data local-id <get|list>
+      instant-swift-data local-id get <name> [--json|--jsonl]
+      instant-swift-data local-id list [--json|--jsonl]
+    """
+  }
+
   private static var adminUsage: String {
     """
     Usage: instant-swift-data admin <query|transact>
@@ -4399,6 +4480,14 @@ private struct LocalIDOutput: Codable, Sendable {
   var transport: String
   var name: String
   var id: String
+}
+
+private struct LocalIDsOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var transport: String
+  var localIDCount: Int
+  var localIDs: [InstantLocalID]
 }
 
 private struct AuthOutput: Codable, Sendable {
