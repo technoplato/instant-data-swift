@@ -245,6 +245,31 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliQueryTodosSupportsServerCreatedAtOrder() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    _ = try runCLI(["examples", "todos", "seed", "--json"], homeURL: homeURL)
+    let ordered = try runCLI(
+      ["query", "todos", "--order-by", "serverCreatedAt", "--order", "desc", "--json"],
+      homeURL: homeURL
+    )
+    #expect(ordered.contains(#""queryID" : "examples.todos.list.order-descending.order-by-serverCreatedAt""#))
+    #expect(
+      ordered.range(of: "Audit the local cache and outbox")?.lowerBound
+        ?? ordered.endIndex
+        < (ordered.range(of: "Run the non-captive terminal workflow")?.lowerBound ?? ordered.startIndex)
+    )
+    #expect(
+      ordered.range(of: "Run the non-captive terminal workflow")?.lowerBound
+        ?? ordered.endIndex
+        < (ordered.range(of: "Plan the Instant Swift Data demo")?.lowerBound ?? ordered.startIndex)
+    )
+  }
+
+  @Test
   func cliTodoLinksDemoPersistsAndUnlinksRefs() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)

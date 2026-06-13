@@ -483,8 +483,21 @@ public enum InstantQuerySortDirection: String, Codable, Sendable {
 }
 
 public struct InstantQueryOrder: Hashable, Codable, Sendable {
+  public static let serverCreatedAtField = "serverCreatedAt"
+  public static var serverCreatedAt: Self { Self(serverCreatedAtField) }
+  public static var serverCreatedAtDescending: Self {
+    Self(serverCreatedAtField, .descending)
+  }
+  public static func serverCreatedAt(_ direction: InstantQuerySortDirection) -> Self {
+    Self(serverCreatedAtField, direction)
+  }
+
   public var field: String
   public var direction: InstantQuerySortDirection
+
+  public var isServerCreatedAt: Bool {
+    field == Self.serverCreatedAtField
+  }
 
   public init(_ field: String, _ direction: InstantQuerySortDirection = .ascending) {
     self.field = field

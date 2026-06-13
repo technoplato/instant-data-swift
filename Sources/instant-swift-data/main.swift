@@ -1547,16 +1547,16 @@ struct InstantSwiftDataCLI {
         schema verify --example todos --from instant.schema.ts [--json|--jsonl]
         perms generate --example todos [--to instant.perms.ts]
         perms verify --example todos --from instant.perms.ts [--json|--jsonl]
-        query todos [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--raw] [--select field[,field]] [--json|--jsonl]
+        query todos [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by createdAt|serverCreatedAt] [--raw] [--select field[,field]] [--json|--jsonl]
         examples todos seed [--json|--jsonl]
         examples todos add "do the dishes" [--json|--jsonl]
-        examples todos list [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--json|--jsonl]
-        examples todos watch [--events 1] [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--json|--jsonl]
+        examples todos list [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by createdAt|serverCreatedAt] [--json|--jsonl]
+        examples todos watch [--events 1] [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by createdAt|serverCreatedAt] [--json|--jsonl]
         examples todos complete <todo-id> [--json|--jsonl]
         examples todos update <todo-id> "new text" [--json|--jsonl]
         examples todos delete <todo-id> [--json|--jsonl]
         examples todos reset [--json|--jsonl]
-        examples todos refresh [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--json|--jsonl]
+        examples todos refresh [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by createdAt|serverCreatedAt] [--json|--jsonl]
         examples todo-links seed [--json|--jsonl]
         examples todo-links list [--json|--jsonl]
         examples todo-links nested [--json|--jsonl]
@@ -2005,7 +2005,7 @@ struct InstantSwiftDataCLI {
     usageCommand: String = "instant-swift-data examples todos list"
   ) throws -> InstantQueryPlan {
     var arguments = arguments
-    let usage = "\(usageCommand) [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc]"
+    let usage = "\(usageCommand) [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by createdAt|serverCreatedAt]"
     var completed: Bool?
     var search: String?
     var offset: Int?
@@ -2015,6 +2015,7 @@ struct InstantSwiftDataCLI {
     var last: Int?
     var before: InstantQueryCursor?
     var direction = InstantQuerySortDirection.ascending
+    var orderField = "createdAt"
 
     while let option = arguments.popFirstArgument() {
       switch option {
@@ -2096,6 +2097,12 @@ struct InstantSwiftDataCLI {
         }
         direction = parsed
 
+      case "--order-by":
+        guard let value = arguments.popFirstArgument(), let parsed = parseTodoOrderField(value) else {
+          throw CLIError("Usage: \(usageCommand) --order-by createdAt|serverCreatedAt", exitCode: 64)
+        }
+        orderField = parsed
+
       default:
         throw CLIError(
           "Unknown todo list option: \(option). Usage: \(usage)",
@@ -2120,7 +2127,8 @@ struct InstantSwiftDataCLI {
       after: after,
       last: last,
       before: before,
-      direction: direction
+      direction: direction,
+      orderField: orderField
     )
   }
 
@@ -2130,7 +2138,7 @@ struct InstantSwiftDataCLI {
   ) throws -> TodoQueryOptions {
     var arguments = arguments
     let usage =
-      "\(usageCommand) [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--raw] [--select field[,field]]"
+      "\(usageCommand) [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by createdAt|serverCreatedAt] [--raw] [--select field[,field]]"
     var completed: Bool?
     var search: String?
     var offset: Int?
@@ -2140,6 +2148,7 @@ struct InstantSwiftDataCLI {
     var last: Int?
     var before: InstantQueryCursor?
     var direction = InstantQuerySortDirection.ascending
+    var orderField = "createdAt"
     var selectedFields: [String]?
     var rawSnapshots = false
 
@@ -2223,6 +2232,12 @@ struct InstantSwiftDataCLI {
         }
         direction = parsed
 
+      case "--order-by":
+        guard let value = arguments.popFirstArgument(), let parsed = parseTodoOrderField(value) else {
+          throw CLIError("Usage: \(usageCommand) --order-by createdAt|serverCreatedAt", exitCode: 64)
+        }
+        orderField = parsed
+
       case "--raw", "--snapshots":
         rawSnapshots = true
 
@@ -2259,6 +2274,7 @@ struct InstantSwiftDataCLI {
         last: last,
         before: before,
         direction: direction,
+        orderField: orderField,
         selectedFields: selectedFields
       ),
       rawSnapshots: rawSnapshots
@@ -2276,6 +2292,7 @@ struct InstantSwiftDataCLI {
     var last: Int?
     var before: InstantQueryCursor?
     var direction = InstantQuerySortDirection.ascending
+    var orderField = "createdAt"
     var eventCount = 1
 
     while let option = arguments.popFirstArgument() {
@@ -2358,6 +2375,12 @@ struct InstantSwiftDataCLI {
         }
         direction = parsed
 
+      case "--order-by":
+        guard let value = arguments.popFirstArgument(), let parsed = parseTodoOrderField(value) else {
+          throw CLIError("Usage: instant-swift-data examples todos watch --order-by createdAt|serverCreatedAt", exitCode: 64)
+        }
+        orderField = parsed
+
       case "--events":
         guard let value = arguments.popFirstArgument(),
           let parsed = Int(value),
@@ -2369,7 +2392,7 @@ struct InstantSwiftDataCLI {
 
       default:
         throw CLIError(
-          "Unknown todo watch option: \(option). Usage: instant-swift-data examples todos watch [--events 1] [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc]",
+          "Unknown todo watch option: \(option). Usage: instant-swift-data examples todos watch [--events 1] [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by createdAt|serverCreatedAt]",
           exitCode: 64
         )
       }
@@ -2377,7 +2400,7 @@ struct InstantSwiftDataCLI {
 
     guard first == nil || last == nil else {
       throw CLIError(
-        "Use either --first or --last, not both. Usage: instant-swift-data examples todos watch [--events 1] [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc]",
+        "Use either --first or --last, not both. Usage: instant-swift-data examples todos watch [--events 1] [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by createdAt|serverCreatedAt]",
         exitCode: 64
       )
     }
@@ -2392,7 +2415,8 @@ struct InstantSwiftDataCLI {
         after: after,
         last: last,
         before: before,
-        direction: direction
+        direction: direction,
+        orderField: orderField
       ),
       eventCount: eventCount
     )
@@ -2408,6 +2432,7 @@ struct InstantSwiftDataCLI {
     last: Int?,
     before: InstantQueryCursor?,
     direction: InstantQuerySortDirection,
+    orderField: String = "createdAt",
     selectedFields: [String]? = nil
   ) -> InstantQueryPlan {
     var filters: [InstantQueryFilter] = []
@@ -2423,6 +2448,9 @@ struct InstantSwiftDataCLI {
     }
     if direction != .ascending {
       id += ".order-\(direction.rawValue)"
+    }
+    if orderField != "createdAt" {
+      id += ".order-by-\(orderField)"
     }
     if let offset {
       id += ".offset-\(offset)"
@@ -2456,7 +2484,9 @@ struct InstantSwiftDataCLI {
       id: id,
       namespace: TodoExample.namespace,
       filters: filters,
-      order: InstantQueryOrder("createdAt", direction),
+      order: orderField == InstantQueryOrder.serverCreatedAtField
+        ? .serverCreatedAt(direction)
+        : InstantQueryOrder(orderField, direction),
       offset: offset,
       limit: limit,
       first: first,
@@ -2522,6 +2552,17 @@ struct InstantSwiftDataCLI {
       return .ascending
     case "desc", "descending":
       return .descending
+    default:
+      return nil
+    }
+  }
+
+  private static func parseTodoOrderField(_ value: String) -> String? {
+    switch value {
+    case "createdAt":
+      return "createdAt"
+    case InstantQueryOrder.serverCreatedAtField:
+      return InstantQueryOrder.serverCreatedAtField
     default:
       return nil
     }

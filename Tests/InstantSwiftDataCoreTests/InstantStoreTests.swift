@@ -3128,6 +3128,177 @@ struct InstantStoreTests {
   }
 
   @Test
+  func queryOrderingSupportsServerCreatedAtReservedField() async throws {
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let firstCreatedAt = InstantTimestamp(milliseconds: 1_700_000_000_010)
+    let secondCreatedAt = InstantTimestamp(milliseconds: 1_700_000_000_020)
+    let updateTime = InstantTimestamp(milliseconds: 1_700_000_000_100)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-server-created-at",
+        operations: TodoExample.createOperations(
+          id: "todo-c",
+          text: "same time c",
+          createdAt: firstCreatedAt,
+          transactionID: "tx-server-created-at"
+        ) + TodoExample.createOperations(
+          id: "todo-a",
+          text: "same time a",
+          createdAt: firstCreatedAt,
+          transactionID: "tx-server-created-at"
+        ) + TodoExample.createOperations(
+          id: "todo-b",
+          text: "later b",
+          createdAt: secondCreatedAt,
+          transactionID: "tx-server-created-at"
+        )
+      ),
+      createdAt: firstCreatedAt
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-server-created-at-update",
+        operations: TodoExample.updateTextOperations(
+          id: "todo-a",
+          text: "updated without moving",
+          updatedAt: updateTime,
+          transactionID: "tx-server-created-at-update"
+        )
+      ),
+      createdAt: updateTime
+    )
+
+    let ascendingPlan = InstantQueryPlan(
+      id: "todos.server-created-at.asc",
+      namespace: TodoExample.namespace,
+      order: .serverCreatedAt
+    )
+    let descendingPlan = InstantQueryPlan(
+      id: "todos.server-created-at.desc",
+      namespace: TodoExample.namespace,
+      order: .serverCreatedAtDescending
+    )
+    let noOrderPlan = InstantQueryPlan(id: "todos.server-created-at.no-order", namespace: TodoExample.namespace)
+    let createdAtFieldPlan = InstantQueryPlan(
+      id: "todos.created-at.asc",
+      namespace: TodoExample.namespace,
+      order: InstantQueryOrder("createdAt")
+    )
+
+    let ascending = try await runtime.query(ascendingPlan)
+    let descending = try await runtime.query(descendingPlan)
+    let noOrder = try await runtime.query(noOrderPlan)
+    let selected = try await runtime.query(
+      InstantQueryPlan(
+        id: "todos.server-created-at.selected",
+        namespace: TodoExample.namespace,
+        order: .serverCreatedAt,
+        selectedFields: ["text"]
+      )
+    )
+    let invalidSelection = try await runtime.query(
+      InstantQueryPlan(
+        id: "todos.server-created-at.invalid-selection",
+        namespace: TodoExample.namespace,
+        selectedFields: ["serverCreatedAt"]
+      )
+    )
+
+    expectNoDifference(ascending.map(\.id), ["todo-a", "todo-c", "todo-b"])
+    expectNoDifference(descending.map(\.id), ["todo-b", "todo-c", "todo-a"])
+    expectNoDifference(noOrder.map(\.id), ["todo-a", "todo-b", "todo-c"])
+    expectNoDifference(selected.map(\.values), [
+      ["text": .one(.string("updated without moving"))],
+      ["text": .one(.string("same time c"))],
+      ["text": .one(.string("later b"))],
+    ])
+    expectNoDifference(invalidSelection, [])
+    #expect(ascendingPlan.cacheKey != createdAtFieldPlan.cacheKey)
+  }
+
+  @Test
+  func serverCreatedAtCursorsUseNumericTimestampsAndFallbackToNamespaceTriples() async throws {
+    let title = InstantAttribute(
+      id: "items/title",
+      namespace: "items",
+      name: "title",
+      valueType: .string
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: [title]
+      )
+    )
+    let firstTime = InstantTimestamp(milliseconds: 1_700_000_000_010)
+    let secondTime = InstantTimestamp(milliseconds: 1_700_000_000_020)
+    let thirdTime = InstantTimestamp(milliseconds: 1_700_000_000_030)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-server-created-at-fallback",
+        operations: [
+          .insert(.init(entityID: "item-c", attributeID: "items/title", value: .string("third"), txID: "tx-server-created-at-fallback", txTime: thirdTime)),
+          .insert(.init(entityID: "item-a", attributeID: "items/title", value: .string("first"), txID: "tx-server-created-at-fallback", txTime: firstTime)),
+          .insert(.init(entityID: "item-b", attributeID: "items/title", value: .string("second"), txID: "tx-server-created-at-fallback", txTime: secondTime)),
+        ]
+      ),
+      createdAt: firstTime
+    )
+
+    let firstPage = try await runtime.queryOnce(
+      InstantQueryPlan(
+        id: "items.server-created-at.first",
+        namespace: "items",
+        order: .serverCreatedAt,
+        first: 1
+      )
+    )
+    expectNoDifference(firstPage.values.map(\.id), ["item-a"])
+    expectNoDifference(firstPage.pageInfo?.startCursor?.sortValue, .number(Double(firstTime.milliseconds)))
+    expectNoDifference(firstPage.pageInfo?.endCursor?.sortValue, .number(Double(firstTime.milliseconds)))
+
+    let afterCursor = try #require(firstPage.pageInfo?.endCursor)
+    let nextPage = try await runtime.queryOnce(
+      InstantQueryPlan(
+        id: "items.server-created-at.next",
+        namespace: "items",
+        order: .serverCreatedAt,
+        first: 2,
+        after: afterCursor
+      )
+    )
+    expectNoDifference(nextPage.values.map(\.id), ["item-b", "item-c"])
+
+    let previousPage = try await runtime.queryOnce(
+      InstantQueryPlan(
+        id: "items.server-created-at.previous",
+        namespace: "items",
+        order: .serverCreatedAt,
+        last: 2,
+        before: InstantQueryCursor(
+          entityID: "item-c",
+          sortValue: .number(Double(thirdTime.milliseconds))
+        )
+      )
+    )
+    expectNoDifference(previousPage.values.map(\.id), ["item-a", "item-b"])
+
+    let unknownOrder = try await runtime.query(
+      InstantQueryPlan(id: "items.unknown-order", namespace: "items", order: InstantQueryOrder("missing"))
+    )
+    expectNoDifference(unknownOrder, [])
+  }
+
+  @Test
   func queryCursorPaginationReturnsPageInfoAfterSorting() async throws {
     let score = InstantAttribute(
       id: "items/score",

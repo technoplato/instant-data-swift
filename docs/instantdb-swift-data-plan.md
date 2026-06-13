@@ -109,6 +109,10 @@ real Instant app.
   rejects deeper paths such as `relation.child.field` by returning no local
   results until full InstaQL path parity is implemented.
 - Ordering on indexed fields and `serverCreatedAt`.
+- Local triple materialization supports explicit `serverCreatedAt` ordering as
+  an order-only reserved field backed by the entity id triple's `txTime`, with a
+  namespace-triple fallback for low-level local rows without an id triple. Local
+  no-order queries remain id-sorted until the broader default-order parity slice.
 - Pagination on top-level namespaces: `limit`, `offset`, `first`, `after`,
   `last`, `before`, inclusive cursors, and page info.
 - Infinite query subscriptions.

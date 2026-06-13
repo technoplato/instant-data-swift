@@ -57,6 +57,11 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   private var aev: [String: [String: [InstantValue: InstantTriple]]] = [:]
   private var vae: [InstantValue: [String: [String: InstantTriple]]] = [:]
 
+  private struct QuerySnapshot: Hashable, Sendable {
+    var snapshot: InstantEntitySnapshot
+    var serverCreatedAt: InstantValue?
+  }
+
   init(triples: [InstantTriple] = [], attributes: AttributeStore = AttributeStore()) {
     for triple in triples {
       self.insert(triple, attribute: attributes[triple.attributeID])
@@ -170,10 +175,12 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       attributes: attributes
     )
     else { return InstantQueryPage(values: [], pageInfo: pageInfo(for: [], plan: plan)) }
+    guard orderReferencesDeclaredField(plan.order, namespace: plan.namespace, attributes: attributes)
+    else { return InstantQueryPage(values: [], pageInfo: pageInfo(for: [], plan: plan)) }
     guard includesReferenceDeclaredLinks(plan.includes, namespace: plan.namespace, attributes: attributes)
     else { return InstantQueryPage(values: [], pageInfo: pageInfo(for: [], plan: plan)) }
 
-    var snapshots: [InstantEntitySnapshot] = []
+    var snapshots: [QuerySnapshot] = []
 
     for (entityID, attributesByID) in eav {
       var values: [String: InstantMaterializedValue] = [:]
@@ -200,7 +207,16 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       let snapshot = InstantEntitySnapshot(id: entityID, namespace: plan.namespace, values: values)
       guard matches(snapshot, filters: plan.filters, namespace: plan.namespace, attributes: attributes)
       else { continue }
-      snapshots.append(snapshot)
+      snapshots.append(
+        QuerySnapshot(
+          snapshot: snapshot,
+          serverCreatedAt: serverCreatedAtValue(
+            entityID: entityID,
+            namespace: plan.namespace,
+            attributes: attributes
+          )
+        )
+      )
     }
 
     snapshots.sort {
@@ -208,7 +224,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     }
 
     let paged = paginate(snapshots, plan: plan)
-    let linked = includeLinks(paged.values, plan: plan, attributes: attributes)
+    let linked = includeLinks(paged.values.map(\.snapshot), plan: plan, attributes: attributes)
     return InstantQueryPage(
       values: project(linked, selectedFields: plan.selectedFields),
       pageInfo: paged.pageInfo
@@ -324,10 +340,29 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     return InstantEntitySnapshot(id: entityID, namespace: namespace, values: values)
   }
 
+  private func serverCreatedAtValue(
+    entityID: String,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> InstantValue? {
+    let idAttribute = attributes.primaryKeyAttribute(namespace: namespace)
+    if let triple = eav[entityID]?[idAttribute.id]?[.string(entityID)] {
+      return .number(Double(triple.txTime.milliseconds))
+    }
+
+    let earliestNamespaceTime = eav[entityID]?
+      .flatMap { attributeID, valuesByValue -> [InstantTimestamp] in
+        guard attributes[attributeID]?.namespace == namespace else { return [] }
+        return valuesByValue.values.map(\.txTime)
+      }
+      .min()
+    return earliestNamespaceTime.map { .number(Double($0.milliseconds)) }
+  }
+
   private func paginate(
-    _ snapshots: [InstantEntitySnapshot],
+    _ snapshots: [QuerySnapshot],
     plan: InstantQueryPlan
-  ) -> (values: [InstantEntitySnapshot], pageInfo: InstantQueryPageInfo?) {
+  ) -> (values: [QuerySnapshot], pageInfo: InstantQueryPageInfo?) {
     guard isValidPagination(plan) else {
       return ([], pageInfo(for: [], plan: plan))
     }
@@ -339,7 +374,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     if let after = plan.after {
       let startIndex: Int
       if after.sortValue == nil {
-        guard let index = page.firstIndex(where: { $0.id == after.entityID }) else {
+        guard let index = page.firstIndex(where: { $0.snapshot.id == after.entityID }) else {
           return ([], pageInfo(for: [], plan: plan))
         }
         startIndex = after.inclusive ? index : index + 1
@@ -358,7 +393,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     if let before = plan.before {
       let endIndex: Int
       if before.sortValue == nil {
-        guard let index = page.firstIndex(where: { $0.id == before.entityID }) else {
+        guard let index = page.firstIndex(where: { $0.snapshot.id == before.entityID }) else {
           return ([], pageInfo(for: [], plan: plan))
         }
         endIndex = before.inclusive ? index + 1 : index
@@ -420,7 +455,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   }
 
   private func pageInfo(
-    for snapshots: [InstantEntitySnapshot],
+    for snapshots: [QuerySnapshot],
     plan: InstantQueryPlan,
     hasPreviousPage: Bool = false,
     hasNextPage: Bool = false
@@ -444,16 +479,21 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   }
 
   private func cursor(
-    for snapshot: InstantEntitySnapshot,
+    for querySnapshot: QuerySnapshot,
     order: InstantQueryOrder?
   ) -> InstantQueryCursor {
     InstantQueryCursor(
-      entityID: snapshot.id,
-      sortValue: order.flatMap { snapshot.values[$0.field]?.first }
+      entityID: querySnapshot.snapshot.id,
+      sortValue: order.flatMap { Self.orderValue(querySnapshot, field: $0.field) }
     )
   }
 
   private mutating func insert(_ triple: InstantTriple, attribute: InstantAttribute?) {
+    var triple = triple
+    if let existing = eav[triple.entityID]?[triple.attributeID]?[triple.value] {
+      triple.txTime = existing.txTime
+    }
+
     if attribute?.cardinality == .one {
       if let existingValues = eav[triple.entityID]?[triple.attributeID]?.values {
         for existing in Array(existingValues) {
@@ -782,6 +822,16 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     fields?.allSatisfy { isDeclaredField($0, namespace: namespace, attributes: attributes) } ?? true
   }
 
+  private func orderReferencesDeclaredField(
+    _ order: InstantQueryOrder?,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> Bool {
+    guard let order else { return true }
+    guard !order.isServerCreatedAt else { return true }
+    return isDeclaredField(order.field, namespace: namespace, attributes: attributes)
+  }
+
   private func includesReferenceDeclaredLinks(
     _ includes: [InstantQueryInclude]?,
     namespace: String,
@@ -820,6 +870,8 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         namespace: query.namespace,
         attributes: attributes
       )
+      else { return false }
+      guard orderReferencesDeclaredField(query.order, namespace: query.namespace, attributes: attributes)
       else { return false }
       return true
     }
@@ -1138,16 +1190,16 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   }
 
   private static func compare(
-    _ lhs: InstantEntitySnapshot,
-    _ rhs: InstantEntitySnapshot,
+    _ lhs: QuerySnapshot,
+    _ rhs: QuerySnapshot,
     order: InstantQueryOrder?
   ) -> ComparisonResult {
     guard let order else {
-      return lhs.id.compare(rhs.id)
+      return lhs.snapshot.id.compare(rhs.snapshot.id)
     }
 
-    let lhsValue = lhs.values[order.field]?.first
-    let rhsValue = rhs.values[order.field]?.first
+    let lhsValue = orderValue(lhs, field: order.field)
+    let rhsValue = orderValue(rhs, field: order.field)
     let valueComparison = compare(lhsValue, rhsValue)
     let directedComparison: ComparisonResult
     switch order.direction {
@@ -1162,22 +1214,22 @@ struct TripleIndexes: Hashable, Codable, Sendable {
 
     switch order.direction {
     case .ascending:
-      return lhs.id.compare(rhs.id)
+      return lhs.snapshot.id.compare(rhs.snapshot.id)
     case .descending:
-      return rhs.id.compare(lhs.id)
+      return rhs.snapshot.id.compare(lhs.snapshot.id)
     }
   }
 
   private static func compare(
-    _ snapshot: InstantEntitySnapshot,
+    _ querySnapshot: QuerySnapshot,
     to cursor: InstantQueryCursor,
     order: InstantQueryOrder?
   ) -> ComparisonResult {
     guard let order, let sortValue = cursor.sortValue else {
-      return snapshot.id.compare(cursor.entityID)
+      return querySnapshot.snapshot.id.compare(cursor.entityID)
     }
 
-    let value = snapshot.values[order.field]?.first
+    let value = orderValue(querySnapshot, field: order.field)
     let valueComparison = compare(value, sortValue)
     let directedComparison: ComparisonResult
     switch order.direction {
@@ -1192,10 +1244,16 @@ struct TripleIndexes: Hashable, Codable, Sendable {
 
     switch order.direction {
     case .ascending:
-      return snapshot.id.compare(cursor.entityID)
+      return querySnapshot.snapshot.id.compare(cursor.entityID)
     case .descending:
-      return cursor.entityID.compare(snapshot.id)
+      return cursor.entityID.compare(querySnapshot.snapshot.id)
     }
+  }
+
+  private static func orderValue(_ querySnapshot: QuerySnapshot, field: String) -> InstantValue? {
+    field == InstantQueryOrder.serverCreatedAtField
+      ? querySnapshot.serverCreatedAt
+      : querySnapshot.snapshot.values[field]?.first
   }
 
   private static func compare(_ lhs: InstantValue?, _ rhs: InstantValue?) -> ComparisonResult {
