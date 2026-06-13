@@ -934,10 +934,15 @@ public struct FetchAll<Element: Sendable>: Sendable {
     }
   #endif
 
+  @_disfavoredOverload
   public init(wrappedValue: [Element] = []) {
     self.storage = FetchStorage(value: wrappedValue)
     self.loadOperation = nil
     self.subscribeOperation = nil
+  }
+
+  public init(wrappedValue: [Element] = []) where Element: InstantEntityModel {
+    self.init(wrappedValue: wrappedValue, Element.query)
   }
 
   public init(
@@ -1156,10 +1161,15 @@ public struct FetchOne<Element: Sendable>: Sendable {
     }
   #endif
 
+  @_disfavoredOverload
   public init(wrappedValue: Element? = nil) {
     self.storage = FetchStorage(value: wrappedValue)
     self.loadOperation = nil
     self.subscribeOperation = nil
+  }
+
+  public init(wrappedValue: Element? = nil) where Element: InstantEntityModel {
+    self.init(wrappedValue: wrappedValue, Element.query)
   }
 
   public init(

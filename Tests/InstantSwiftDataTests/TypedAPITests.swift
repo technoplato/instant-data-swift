@@ -1852,6 +1852,60 @@ struct TypedAPITests {
   }
 
   @Test
+  func bareFetchAllDefaultsToEntityQuery() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_110)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000674")!
+
+    try await withDependencies {
+      $0.date.now = baseDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "bare-fetch-all-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      let firstID = InstantID<TypedTodo>(rawValue: "todo-bare-first")
+      let secondID = InstantID<TypedTodo>(rawValue: "todo-bare-second")
+      try await db.transact {
+        TypedTodo.create(
+          id: firstID,
+          TypedTodo.text.set("Bare first"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate)
+        )
+        TypedTodo.create(
+          id: secondID,
+          TypedTodo.text.set("Bare second"),
+          TypedTodo.isCompleted.set(true),
+          TypedTodo.createdAt.set(baseDate.addingTimeInterval(1))
+        )
+      }
+
+      @FetchAll var todos: [TypedTodo]
+      expectNoDifference(todos, [])
+
+      try await $todos.load()
+      expectNoDifference(
+        todos.map(\.id.rawValue).sorted(),
+        ["todo-bare-first", "todo-bare-second"]
+      )
+      expectNoDifference($todos.loadError, nil)
+      expectNoDifference($todos.isLoading, false)
+
+      try await db.transact(id: "tx-bare-fetch-all-delete") {
+        TypedTodo.delete(id: firstID)
+        TypedTodo.delete(id: secondID)
+      }
+      try await $todos.load()
+      expectNoDifference(todos, [])
+      expectNoDifference($todos.loadError, nil)
+    }
+  }
+
+  @Test
   func fetchAllSubscriptionEmitsInitialAndOptimisticUpdates() async throws {
     let baseDate = Date(timeIntervalSince1970: 1_700_000_125)
     let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000657")!
@@ -1889,6 +1943,45 @@ struct TypedAPITests {
 
       let updated = try await iterator.next()
       expectNoDifference(updated?.map(\.text), ["Live"])
+      expectNoDifference(fetch.loadError, nil)
+      subscription.cancel()
+    }
+  }
+
+  @Test
+  func bareFetchAllSubscribeDefaultsToEntityQuery() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_135)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000675")!
+
+    try await withDependencies {
+      $0.date.now = baseDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "bare-fetch-all-subscription-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      var fetch = FetchAll<TypedTodo>()
+      let subscription = try await fetch.subscribe()
+      var iterator = subscription.makeAsyncIterator()
+
+      let initial = try await iterator.next()
+      expectNoDifference(initial, [])
+
+      try await db.transact {
+        TypedTodo.create(
+          id: InstantID(rawValue: "todo-bare-live"),
+          TypedTodo.text.set("Bare live"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate)
+        )
+      }
+
+      let updated = try await iterator.next()
+      expectNoDifference(updated?.map(\.text), ["Bare live"])
       expectNoDifference(fetch.loadError, nil)
       subscription.cancel()
     }
@@ -1937,6 +2030,49 @@ struct TypedAPITests {
       expectNoDifference(fetch.wrappedValue, nil)
       expectNoDifference(fetch.isLoading, false)
       expectNoDifference(fetch.loadError, nil)
+    }
+  }
+
+  @Test
+  func bareOptionalFetchOneDefaultsToEntityQuery() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_155)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000676")!
+
+    try await withDependencies {
+      $0.date.now = baseDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "bare-fetch-one-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      let id = InstantID<TypedTodo>(rawValue: "todo-bare-one")
+      try await db.transact {
+        TypedTodo.create(
+          id: id,
+          TypedTodo.text.set("Bare one"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate)
+        )
+      }
+
+      @FetchOne var todo: TypedTodo?
+      expectNoDifference(todo, nil)
+
+      try await $todo.load()
+      expectNoDifference(todo?.text, "Bare one")
+      expectNoDifference($todo.loadError, nil)
+      expectNoDifference($todo.isLoading, false)
+
+      try await db.transact(id: "tx-bare-fetch-one-delete") {
+        TypedTodo.delete(id: id)
+      }
+      try await $todo.load()
+      expectNoDifference(todo, nil)
+      expectNoDifference($todo.loadError, nil)
     }
   }
 
