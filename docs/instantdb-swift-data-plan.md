@@ -118,7 +118,10 @@ real Instant app.
   `delete`, `link`, `unlink`, and `ruleParams`. Repeatable local seed commands
   should use explicit upsert helpers rather than weakening app-facing `create`.
 - Batch transactions with stable operation order.
-- Lookup refs by unique attribute.
+- Lookup refs by unique attribute for writes and links. Preserve lookup-shaped
+  pending mutations for transport lowering; resolve local optimistic effects
+  sequentially against the AEV index, no-op unresolved non-strict lookups, and
+  reject strict lookup updates before cache/outbox writes when missing.
 - Optimistic application before server confirmation.
 - Rollback or visible failure state when the server rejects a mutation.
 - Durable pending mutation persistence across process restart.

@@ -61,6 +61,22 @@ public protocol InstantEntityModel: Identifiable, Sendable where ID == InstantID
   init(snapshot: InstantEntitySnapshot) throws
 }
 
+public struct InstantEntityLookup<Entity: InstantEntityModel>: Hashable, Sendable {
+  public var name: String
+  public var attributeID: String
+  public var value: InstantLookupValue
+
+  public init(name: String, attributeID: String, value: InstantLookupValue) {
+    self.name = name
+    self.attributeID = attributeID
+    self.value = value
+  }
+
+  public var lookupRef: InstantLookupRef {
+    InstantLookupRef(attributeID: attributeID, value: value)
+  }
+}
+
 extension InstantEntityModel {
   public static var query: InstantEntityQuery<Self> {
     InstantEntityQuery()
@@ -129,6 +145,34 @@ extension InstantEntityModel {
     })
   }
 
+  public static func update(
+    lookup: InstantEntityLookup<Self>,
+    _ assignments: InstantAttributeAssignment<Self>...
+  ) -> InstantMutation {
+    update(lookup: lookup, assignments)
+  }
+
+  public static func update(
+    lookup: InstantEntityLookup<Self>,
+    _ assignments: [InstantAttributeAssignment<Self>]
+  ) -> InstantMutation {
+    InstantMutation(throwing: { transactionID, txTime in
+      try validateLookup(lookup)
+      try validateAssignments(assignments)
+      return [
+        identityOperation(lookup: lookup, transactionID: transactionID, txTime: txTime)
+      ] + assignments.map { assignment in
+        .insertByLookup(
+          entity: lookup.lookupRef,
+          attributeID: assignment.attributeID,
+          value: assignment.value,
+          txID: transactionID,
+          txTime: txTime
+        )
+      }
+    })
+  }
+
   public static func merge(
     id: ID,
     _ assignments: InstantAttributeAssignment<Self>...
@@ -153,6 +197,35 @@ extension InstantEntityModel {
             txID: transactionID,
             txTime: txTime
           )
+        )
+      }
+      return operations
+    })
+  }
+
+  public static func merge(
+    lookup: InstantEntityLookup<Self>,
+    _ assignments: InstantAttributeAssignment<Self>...
+  ) -> InstantMutation {
+    merge(lookup: lookup, assignments)
+  }
+
+  public static func merge(
+    lookup: InstantEntityLookup<Self>,
+    _ assignments: [InstantAttributeAssignment<Self>]
+  ) -> InstantMutation {
+    InstantMutation(throwing: { transactionID, txTime in
+      try validateLookup(lookup)
+      try validateAssignments(assignments, allowRefs: false)
+      let operations: [InstantTripleOperation] = [
+        identityOperation(lookup: lookup, transactionID: transactionID, txTime: txTime)
+      ] + assignments.map { assignment in
+        InstantTripleOperation.mergeByLookup(
+          entity: lookup.lookupRef,
+          attributeID: assignment.attributeID,
+          value: assignment.value,
+          txID: transactionID,
+          txTime: txTime
         )
       }
       return operations
@@ -189,7 +262,36 @@ extension InstantEntityModel {
     })
   }
 
-  private static func identityOperation(
+  public static func updateExisting(
+    lookup: InstantEntityLookup<Self>,
+    _ assignments: InstantAttributeAssignment<Self>...
+  ) -> InstantMutation {
+    updateExisting(lookup: lookup, assignments)
+  }
+
+  public static func updateExisting(
+    lookup: InstantEntityLookup<Self>,
+    _ assignments: [InstantAttributeAssignment<Self>]
+  ) -> InstantMutation {
+    InstantMutation(throwing: { transactionID, txTime in
+      try validateLookup(lookup)
+      try validateAssignments(assignments)
+      return [
+        .requireEntityExistsByLookup(lookup.lookupRef, namespace: Self.instantNamespace),
+        identityOperation(lookup: lookup, transactionID: transactionID, txTime: txTime),
+      ] + assignments.map { assignment in
+        .insertByLookup(
+          entity: lookup.lookupRef,
+          attributeID: assignment.attributeID,
+          value: assignment.value,
+          txID: transactionID,
+          txTime: txTime
+        )
+      }
+    })
+  }
+
+  fileprivate static func identityOperation(
     id: ID,
     transactionID: String,
     txTime: InstantTimestamp
@@ -205,10 +307,31 @@ extension InstantEntityModel {
     )
   }
 
+  fileprivate static func identityOperation(
+    lookup: InstantEntityLookup<Self>,
+    transactionID: String,
+    txTime: InstantTimestamp
+  ) -> InstantTripleOperation {
+    .insertByLookup(
+      entity: lookup.lookupRef,
+      attributeID: InstantAttribute.primaryKeyID(namespace: Self.instantNamespace),
+      value: .lookupRef(lookup.lookupRef),
+      txID: transactionID,
+      txTime: txTime
+    )
+  }
+
   public static func delete(id: ID) -> InstantMutation {
     InstantMutation { _, _ in
       [.deleteEntity(id.rawValue)]
     }
+  }
+
+  public static func delete(lookup: InstantEntityLookup<Self>) -> InstantMutation {
+    InstantMutation(throwing: { _, _ in
+      try validateLookup(lookup)
+      return [.deleteEntityByLookup(lookup.lookupRef)]
+    })
   }
 
   private static func validateAssignments(
@@ -258,6 +381,143 @@ extension InstantEntityModel {
       || assignment.attributeID == InstantAttribute.primaryKeyID(namespace: instantNamespace)
   }
 
+  fileprivate static func validateLookup(_ lookup: InstantEntityLookup<Self>) throws {
+    let attribute = try lookupAttribute(lookup)
+    guard attribute.isUnique || attribute.primaryKey else {
+      throw lookupError(
+        lookup,
+        attribute: attribute,
+        message: "Attribute '\(attribute.id)' is not unique, so it cannot be used as a lookup ref.",
+        recovery: "Mark the attribute unique in the schema, or write the entity by id."
+      )
+    }
+
+    guard isLookupValue(lookup.value, compatibleWith: attribute) else {
+      throw lookupError(
+        lookup,
+        attribute: attribute,
+        message: "Lookup value does not match the declared type of '\(attribute.id)'.",
+        recovery: "Use a lookup value whose Swift type matches the unique attribute."
+      )
+    }
+  }
+
+  private static func lookupAttribute(
+    _ lookup: InstantEntityLookup<Self>
+  ) throws -> InstantAttribute {
+    if lookup.name == "id"
+      || lookup.attributeID == InstantAttribute.primaryKeyID(namespace: instantNamespace)
+    {
+      guard lookup.name == "id"
+        && lookup.attributeID == InstantAttribute.primaryKeyID(namespace: instantNamespace)
+      else {
+        throw InstantError(
+          code: .validationFailed,
+          operation: "lookup entity",
+          namespace: instantNamespace,
+          path: lookup.name,
+          localID: lookup.lookupRef.description,
+          message:
+            "Lookup path '\(lookup.name)' does not match the managed id attribute '\(InstantAttribute.primaryKeyID(namespace: instantNamespace))'.",
+          recovery: "Use an id lookup path named 'id', or use a unique attribute from the entity schema."
+        )
+      }
+      return .primaryKey(namespace: instantNamespace)
+    }
+
+    if let attribute = instantAttributes.first(where: { $0.id == lookup.attributeID }) {
+      guard attribute.name == lookup.name else {
+        throw lookupError(
+          lookup,
+          attribute: attribute,
+          message:
+            "Lookup path '\(lookup.name)' does not match attribute '\(attribute.id)' named '\(attribute.name)'.",
+          recovery: "Use the schema field name that belongs to the lookup attribute id."
+        )
+      }
+      guard attribute.namespace == instantNamespace else {
+        throw lookupError(
+          lookup,
+          attribute: attribute,
+          message:
+            "Lookup attribute '\(attribute.id)' belongs to '\(attribute.namespace)', not '\(instantNamespace)'.",
+          recovery: "Use a lookup attribute from the same namespace as the entity being written."
+        )
+      }
+      return attribute
+    }
+
+    guard let attribute = instantAttributes.first(where: { $0.name == lookup.name }) else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "lookup entity",
+        namespace: instantNamespace,
+        path: lookup.name,
+        localID: lookup.lookupRef.description,
+        message: "No attribute named '\(lookup.name)' is declared for '\(instantNamespace)'.",
+        recovery: "Declare '\(lookup.attributeID)' in \(Self.self).instantAttributes before writing by lookup ref."
+      )
+    }
+
+    guard attribute.id == lookup.attributeID else {
+      throw lookupError(
+        lookup,
+        attribute: attribute,
+        message:
+          "Lookup path '\(lookup.name)' uses attribute id '\(lookup.attributeID)', but the schema declares '\(attribute.id)'.",
+        recovery: "Use the schema attribute id for the lookup path, or construct the path without overriding it."
+      )
+    }
+
+    guard attribute.namespace == instantNamespace else {
+      throw lookupError(
+        lookup,
+        attribute: attribute,
+        message:
+          "Lookup attribute '\(attribute.id)' belongs to '\(attribute.namespace)', not '\(instantNamespace)'.",
+        recovery: "Use a lookup attribute from the same namespace as the entity being written."
+      )
+    }
+
+    return attribute
+  }
+
+  private static func isLookupValue(
+    _ value: InstantLookupValue,
+    compatibleWith attribute: InstantAttribute
+  ) -> Bool {
+    switch (value, attribute.valueType) {
+    case (.null, _),
+      (.string, .string),
+      (.number, .number),
+      (.bool, .boolean),
+      (.date, .date),
+      (.json, .json),
+      (.ref, .ref):
+      return true
+
+    default:
+      return false
+    }
+  }
+
+  private static func lookupError(
+    _ lookup: InstantEntityLookup<Self>,
+    attribute: InstantAttribute,
+    message: String,
+    recovery: String
+  ) -> InstantError {
+    InstantError(
+      code: .validationFailed,
+      operation: "lookup entity",
+      namespace: instantNamespace,
+      path: attribute.name,
+      localID: lookup.lookupRef.description,
+      message: message,
+      recovery: recovery
+    )
+  }
+
   private static func primaryKeyAssignmentError(path: String) -> InstantError {
     InstantError(
       code: .validationFailed,
@@ -290,6 +550,14 @@ public struct InstantAttributePath<
     )
   }
 
+  public func lookup(_ value: Value) -> InstantEntityLookup<Entity> {
+    InstantEntityLookup(
+      name: name,
+      attributeID: attributeID,
+      value: InstantLookupValue(value.instantValue)
+    )
+  }
+
   public func link<Target: InstantEntityModel>(
     from sourceID: Entity.ID,
     to targetID: InstantID<Target>
@@ -310,6 +578,76 @@ public struct InstantAttributePath<
     })
   }
 
+  public func link<Target: InstantEntityModel>(
+    from sourceLookup: InstantEntityLookup<Entity>,
+    to targetID: InstantID<Target>
+  ) -> InstantMutation where Value == InstantID<Target> {
+    InstantMutation(throwing: { transactionID, txTime in
+      try Entity.validateLookup(sourceLookup)
+      let attribute = try linkAttribute(target: Target.self)
+      return [
+        Entity.identityOperation(
+          lookup: sourceLookup,
+          transactionID: transactionID,
+          txTime: txTime
+        ),
+        .insertByLookup(
+          entity: sourceLookup.lookupRef,
+          attributeID: attribute.id,
+          value: .ref(targetID.rawValue),
+          txID: transactionID,
+          txTime: txTime
+        ),
+      ]
+    })
+  }
+
+  public func link<Target: InstantEntityModel>(
+    from sourceID: Entity.ID,
+    to targetLookup: InstantEntityLookup<Target>
+  ) -> InstantMutation where Value == InstantID<Target> {
+    InstantMutation(throwing: { transactionID, txTime in
+      try Target.validateLookup(targetLookup)
+      let attribute = try linkAttribute(target: Target.self)
+      return [
+        .insert(
+          InstantTriple(
+            entityID: sourceID.rawValue,
+            attributeID: attribute.id,
+            value: .lookupRef(targetLookup.lookupRef),
+            txID: transactionID,
+            txTime: txTime
+          )
+        )
+      ]
+    })
+  }
+
+  public func link<Target: InstantEntityModel>(
+    from sourceLookup: InstantEntityLookup<Entity>,
+    to targetLookup: InstantEntityLookup<Target>
+  ) -> InstantMutation where Value == InstantID<Target> {
+    InstantMutation(throwing: { transactionID, txTime in
+      try Entity.validateLookup(sourceLookup)
+      try Target.validateLookup(targetLookup)
+      let attribute = try linkAttribute(target: Target.self)
+      return [
+        Entity.identityOperation(
+          lookup: sourceLookup,
+          transactionID: transactionID,
+          txTime: txTime
+        ),
+        .insertByLookup(
+          entity: sourceLookup.lookupRef,
+          attributeID: attribute.id,
+          value: .lookupRef(targetLookup.lookupRef),
+          txID: transactionID,
+          txTime: txTime
+        ),
+      ]
+    })
+  }
+
   public func unlink<Target: InstantEntityModel>(
     from sourceID: Entity.ID,
     to targetID: InstantID<Target>
@@ -326,6 +664,76 @@ public struct InstantAttributePath<
             txTime: txTime
           )
         )
+      ]
+    })
+  }
+
+  public func unlink<Target: InstantEntityModel>(
+    from sourceLookup: InstantEntityLookup<Entity>,
+    to targetID: InstantID<Target>
+  ) -> InstantMutation where Value == InstantID<Target> {
+    InstantMutation(throwing: { transactionID, txTime in
+      try Entity.validateLookup(sourceLookup)
+      let attribute = try linkAttribute(target: Target.self)
+      return [
+        Entity.identityOperation(
+          lookup: sourceLookup,
+          transactionID: transactionID,
+          txTime: txTime
+        ),
+        .retractByLookup(
+          entity: sourceLookup.lookupRef,
+          attributeID: attribute.id,
+          value: .ref(targetID.rawValue),
+          txID: transactionID,
+          txTime: txTime
+        ),
+      ]
+    })
+  }
+
+  public func unlink<Target: InstantEntityModel>(
+    from sourceID: Entity.ID,
+    to targetLookup: InstantEntityLookup<Target>
+  ) -> InstantMutation where Value == InstantID<Target> {
+    InstantMutation(throwing: { transactionID, txTime in
+      try Target.validateLookup(targetLookup)
+      let attribute = try linkAttribute(target: Target.self)
+      return [
+        .retract(
+          InstantTriple(
+            entityID: sourceID.rawValue,
+            attributeID: attribute.id,
+            value: .lookupRef(targetLookup.lookupRef),
+            txID: transactionID,
+            txTime: txTime
+          )
+        )
+      ]
+    })
+  }
+
+  public func unlink<Target: InstantEntityModel>(
+    from sourceLookup: InstantEntityLookup<Entity>,
+    to targetLookup: InstantEntityLookup<Target>
+  ) -> InstantMutation where Value == InstantID<Target> {
+    InstantMutation(throwing: { transactionID, txTime in
+      try Entity.validateLookup(sourceLookup)
+      try Target.validateLookup(targetLookup)
+      let attribute = try linkAttribute(target: Target.self)
+      return [
+        Entity.identityOperation(
+          lookup: sourceLookup,
+          transactionID: transactionID,
+          txTime: txTime
+        ),
+        .retractByLookup(
+          entity: sourceLookup.lookupRef,
+          attributeID: attribute.id,
+          value: .lookupRef(targetLookup.lookupRef),
+          txID: transactionID,
+          txTime: txTime
+        ),
       ]
     })
   }

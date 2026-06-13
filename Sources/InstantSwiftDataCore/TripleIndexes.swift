@@ -97,6 +97,16 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     }
   }
 
+  func entityIDs(matching lookup: InstantLookupRef) -> [String] {
+    let value = lookup.value.instantValue
+    return aev[lookup.attributeID]?
+      .compactMap { entityID, valuesByValue in
+        valuesByValue[value] == nil ? nil : entityID
+      }
+      .sorted()
+      ?? []
+  }
+
   func reverseRefTriples(targetEntityID: String) -> [InstantTriple] {
     vae[.ref(targetEntityID)]?.values.flatMap(\.values) ?? []
   }
@@ -107,7 +117,10 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     attributes: AttributeStore
   ) -> Set<String> {
     switch operation {
-    case .requireEntityMissing, .requireEntityExists:
+    case .requireEntityMissing, .requireEntityMissingByLookup,
+      .requireEntityExists, .requireEntityExistsByLookup,
+      .mergeByLookup, .insertByLookup, .retractByLookup,
+      .deleteEntityByLookup:
       return []
 
     case let .merge(triple):

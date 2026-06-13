@@ -203,6 +203,12 @@ machinery unless there is no cleaner Instant-shaped representation.
   fail before cache/outbox writes when the entity is missing, and `merge` should
   deep-merge JSON values while rejecting relationship attributes in favor of
   `link`/`unlink`.
+- Support lookup refs by unique attribute for entity writes and link targets.
+  Pending mutations should preserve lookup-shaped operations for server
+  lowering, while local optimistic application resolves them against the current
+  AEV index in transaction order. Unresolved non-strict lookup writes may no-op
+  locally and remain pending for the server, but strict lookup updates must fail
+  before cache/outbox writes.
 - Local seed/demo helpers may use explicit upsert operations so terminal demos
   remain repeatable against durable state, but app-facing `create` must stay
   strict.

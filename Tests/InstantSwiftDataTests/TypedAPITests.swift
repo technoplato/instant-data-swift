@@ -459,6 +459,268 @@ struct TypedAPITests {
   }
 
   @Test
+  func typedLookupMutationsResolveUniqueAttributesAndPreservePendingLookups() async throws {
+    let createdAt = Date(timeIntervalSince1970: 1_700_000_300)
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_300_000)
+    let userID = InstantID<TypedUser>(rawValue: "lookup-user")
+    let postID = InstantID<TypedPost>(rawValue: "lookup-post")
+    let userLookup = TypedUser.email.lookup("blob@example.com")
+    let renamedUserLookup = TypedUser.email.lookup("blob@instantdb.com")
+    let postLookup = TypedPost.slug.lookup("hello-lookup")
+
+    try await withDependencies {
+      $0.date.now = createdAt
+      try await $0.bootstrapInstantSwiftData(
+        appID: "typed-lookup-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedUser.instantAttributes + TypedPost.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      try await db.transact(id: "tx-seed-lookup") {
+        TypedUser.create(
+          id: userID,
+          TypedUser.name.set("Blob"),
+          TypedUser.email.set("blob@example.com")
+        )
+        TypedPost.create(
+          id: postID,
+          TypedPost.title.set("Hello lookups"),
+          TypedPost.slug.set("hello-lookup")
+        )
+      }
+
+      try await db.transact(id: "tx-lookup-update") {
+        TypedUser.update(
+          lookup: userLookup,
+          TypedUser.name.set("Blob Jr."),
+          TypedUser.email.set("blob@instantdb.com")
+        )
+      }
+
+      let userSnapshots = try await db.query(
+        InstantQueryPlan(id: "typed.lookup.users", namespace: TypedUser.instantNamespace)
+      )
+      expectNoDifference(userSnapshots.map(\.id), [userID.rawValue])
+      expectNoDifference(userSnapshots.first?.values["name"]?.first, .string("Blob Jr."))
+      expectNoDifference(
+        userSnapshots.first?.values["email"]?.first,
+        .string("blob@instantdb.com")
+      )
+
+      try await db.transact(id: "tx-lookup-link") {
+        TypedPost.author.link(from: postLookup, to: renamedUserLookup)
+      }
+
+      let linkedPosts = try await db.query(TypedPost.query)
+      expectNoDifference(
+        linkedPosts,
+        [TypedPost(id: postID, title: "Hello lookups", authorID: userID)]
+      )
+
+      try await db.transact(id: "tx-lookup-unlink") {
+        TypedPost.author.unlink(from: postLookup, to: renamedUserLookup)
+      }
+
+      let unlinkedPosts = try await db.query(TypedPost.query)
+      expectNoDifference(
+        unlinkedPosts,
+        [TypedPost(id: postID, title: "Hello lookups", authorID: nil)]
+      )
+
+      let pending = await db.pendingMutations()
+      let lookupUpdate = pending.first { $0.id == "tx-lookup-update" }
+      expectNoDifference(
+        lookupUpdate?.transaction.operations,
+        [
+          .insertByLookup(
+            entity: userLookup.lookupRef,
+            attributeID: "users/id",
+            value: .lookupRef(userLookup.lookupRef),
+            txID: "tx-lookup-update",
+            txTime: timestamp
+          ),
+          .insertByLookup(
+            entity: userLookup.lookupRef,
+            attributeID: "users/name",
+            value: .string("Blob Jr."),
+            txID: "tx-lookup-update",
+            txTime: timestamp
+          ),
+          .insertByLookup(
+            entity: userLookup.lookupRef,
+            attributeID: "users/email",
+            value: .string("blob@instantdb.com"),
+            txID: "tx-lookup-update",
+            txTime: timestamp
+          ),
+        ]
+      )
+
+      let lookupLink = pending.first { $0.id == "tx-lookup-link" }
+      expectNoDifference(
+        lookupLink?.transaction.operations,
+        [
+          .insertByLookup(
+            entity: postLookup.lookupRef,
+            attributeID: "posts/id",
+            value: .lookupRef(postLookup.lookupRef),
+            txID: "tx-lookup-link",
+            txTime: timestamp
+          ),
+          .insertByLookup(
+            entity: postLookup.lookupRef,
+            attributeID: "posts/author",
+            value: .lookupRef(renamedUserLookup.lookupRef),
+            txID: "tx-lookup-link",
+            txTime: timestamp
+          ),
+        ]
+      )
+    }
+  }
+
+  @Test
+  func typedLookupUpdateCanResolveEntityCreatedEarlierInSameTransaction() async throws {
+    let createdAt = Date(timeIntervalSince1970: 1_700_000_325)
+    let userID = InstantID<TypedUser>(rawValue: "lookup-same-tx-user")
+
+    try await withDependencies {
+      $0.date.now = createdAt
+      try await $0.bootstrapInstantSwiftData(
+        appID: "typed-lookup-same-tx-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedUser.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      try await db.transact(id: "tx-lookup-same-transaction") {
+        TypedUser.create(
+          id: userID,
+          TypedUser.name.set("Draft"),
+          TypedUser.email.set("same-tx@example.com")
+        )
+        TypedUser.update(
+          lookup: TypedUser.email.lookup("same-tx@example.com"),
+          TypedUser.name.set("Resolved in order")
+        )
+      }
+
+      let users = try await db.query(
+        InstantQueryPlan(id: "typed.lookup.same-tx", namespace: TypedUser.instantNamespace)
+      )
+      expectNoDifference(users.map(\.id), [userID.rawValue])
+      expectNoDifference(users.first?.values["name"]?.first, .string("Resolved in order"))
+    }
+  }
+
+  @Test
+  func unresolvedLookupUpdateNoOpsLocallyButPersistsPendingMutation() async throws {
+    let createdAt = Date(timeIntervalSince1970: 1_700_000_350)
+
+    try await withDependencies {
+      $0.date.now = createdAt
+      try await $0.bootstrapInstantSwiftData(
+        appID: "typed-unresolved-lookup-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedUser.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      try await db.transact(id: "tx-unresolved-lookup-update") {
+        TypedUser.update(
+          lookup: TypedUser.email.lookup("missing@example.com"),
+          TypedUser.name.set("Server may resolve later")
+        )
+      }
+
+      let users = try await db.query(
+        InstantQueryPlan(id: "typed.unresolved.lookup.users", namespace: TypedUser.instantNamespace)
+      )
+      expectNoDifference(users, [])
+
+      let pending = await db.pendingMutations()
+      expectNoDifference(pending.map(\.id), ["tx-unresolved-lookup-update"])
+      #expect(
+        pending.first?.transaction.operations.contains {
+          if case .insertByLookup = $0 { return true }
+          return false
+        } == true
+      )
+    }
+  }
+
+  @Test
+  func strictLookupUpdateRejectsMissingAndAmbiguousLocalMatches() async throws {
+    let createdAt = Date(timeIntervalSince1970: 1_700_000_375)
+    let duplicateLookup = TypedUser.email.lookup("duplicate@example.com")
+
+    try await withDependencies {
+      $0.date.now = createdAt
+      try await $0.bootstrapInstantSwiftData(
+        appID: "typed-strict-lookup-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedUser.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      do {
+        try await db.transact(id: "tx-missing-strict-lookup") {
+          TypedUser.updateExisting(
+            lookup: TypedUser.email.lookup("missing@example.com"),
+            TypedUser.name.set("Missing")
+          )
+        }
+        #expect(Bool(false), "Expected missing strict lookup update to fail.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .validationFailed)
+        expectNoDifference(error.operation, "strict update entity")
+        expectNoDifference(error.namespace, "users")
+        expectNoDifference(error.path, "email")
+      } catch {
+        #expect(Bool(false), "Unexpected error: \(error)")
+      }
+
+      try await db.transact(id: "tx-duplicate-lookup-seed") {
+        TypedUser.create(
+          id: InstantID(rawValue: "duplicate-user-1"),
+          TypedUser.name.set("One"),
+          TypedUser.email.set("duplicate@example.com")
+        )
+        TypedUser.create(
+          id: InstantID(rawValue: "duplicate-user-2"),
+          TypedUser.name.set("Two"),
+          TypedUser.email.set("duplicate@example.com")
+        )
+      }
+
+      do {
+        try await db.transact(id: "tx-ambiguous-strict-lookup") {
+          TypedUser.updateExisting(
+            lookup: duplicateLookup,
+            TypedUser.name.set("Ambiguous")
+          )
+        }
+        #expect(Bool(false), "Expected duplicate local lookup values to fail deterministically.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .validationFailed)
+        expectNoDifference(error.operation, "lookup entity")
+        expectNoDifference(error.namespace, "users")
+        expectNoDifference(error.path, "email")
+      } catch {
+        #expect(Bool(false), "Unexpected error: \(error)")
+      }
+
+      let pending = await db.pendingMutations()
+      expectNoDifference(pending.map(\.id), ["tx-duplicate-lookup-seed"])
+    }
+  }
+
+  @Test
   func typedLinkRejectsMismatchedTargetNamespaceBeforePersistence() async throws {
     let postID = InstantID<TypedPost>(rawValue: "post-1")
     let wrongTargetID = InstantID<TypedTodo>(rawValue: "todo-1")
@@ -554,6 +816,27 @@ struct TypedAPITests {
       } catch {
         #expect(Bool(false), "Unexpected error: \(error)")
       }
+
+      let mismatchedEmail = InstantAttributePath<TypedUser, String>(
+        "email",
+        attributeID: "users/notEmail"
+      )
+      do {
+        try await db.transact(id: "tx-mock-mismatched-lookup") {
+          TypedUser.update(
+            lookup: mismatchedEmail.lookup("blob@example.com"),
+            TypedUser.name.set("Blob")
+          )
+        }
+        #expect(Bool(false), "Expected mismatched lookup path validation to run before the mock client.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .validationFailed)
+        expectNoDifference(error.operation, "lookup entity")
+        expectNoDifference(error.namespace, "users")
+        expectNoDifference(error.path, "email")
+      } catch {
+        #expect(Bool(false), "Unexpected error: \(error)")
+      }
     }
 
     let transactions = await recorder.transactions
@@ -617,6 +900,54 @@ struct TypedAPITests {
         expectNoDifference(error.operation, "write entity attribute")
         expectNoDifference(error.namespace, "badIDEntities")
         expectNoDifference(error.path, "id")
+      } catch {
+        #expect(Bool(false), "Unexpected error: \(error)")
+      }
+    }
+
+    let transactions = await recorder.transactions
+    expectNoDifference(transactions, [])
+  }
+
+  @Test
+  func typedLookupRejectsNonUniqueAttributeBeforeMockClientReceivesTransaction() async throws {
+    let recorder = TransactionRecorder()
+    let mock = InstantSwiftDataClient(
+      transact: { transaction in
+        await recorder.record(transaction)
+        return InstantStoreMutationResult(
+          transactionID: transaction.id,
+          changedEntityIDs: [],
+          tripleCount: transaction.operations.count,
+          emissions: []
+        )
+      },
+      query: { _ in [] },
+      observe: { _ in AsyncStream { continuation in continuation.finish() } },
+      pendingMutations: { [] },
+      localID: { name in "mock-\(name)" }
+    )
+
+    await withDependencies {
+      $0.date.now = Date(timeIntervalSince1970: 1_700_000_400)
+      $0.uuid = .constant(UUID(uuidString: "00000000-0000-0000-0000-000000000778")!)
+      $0.defaultInstantSwiftData = mock
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      do {
+        try await db.transact(id: "tx-mock-invalid-lookup") {
+          TypedUser.update(
+            lookup: TypedUser.name.lookup("Blob"),
+            TypedUser.email.set("blob@example.com")
+          )
+        }
+        #expect(Bool(false), "Expected lookup validation to run before the mock client.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .validationFailed)
+        expectNoDifference(error.operation, "lookup entity")
+        expectNoDifference(error.namespace, "users")
+        expectNoDifference(error.path, "name")
       } catch {
         #expect(Bool(false), "Unexpected error: \(error)")
       }
@@ -1250,6 +1581,7 @@ private struct TypedUser: Hashable, Codable, InstantEntityModel {
 
   static let instantNamespace = "users"
   static let name = InstantAttributePath<TypedUser, String>("name")
+  static let email = InstantAttributePath<TypedUser, String>("email")
 
   static let instantAttributes = [
     InstantAttribute(
@@ -1258,6 +1590,14 @@ private struct TypedUser: Hashable, Codable, InstantEntityModel {
       name: "name",
       valueType: .string,
       isIndexed: true
+    ),
+    InstantAttribute(
+      id: "users/email",
+      namespace: instantNamespace,
+      name: "email",
+      valueType: .string,
+      isIndexed: true,
+      isUnique: true
     )
   ]
 
@@ -1328,6 +1668,7 @@ private struct TypedPost: Hashable, Codable, InstantEntityModel {
 
   static let instantNamespace = "posts"
   static let title = InstantAttributePath<TypedPost, String>("title")
+  static let slug = InstantAttributePath<TypedPost, String>("slug")
   static let author = InstantAttributePath<TypedPost, InstantID<TypedUser>>("author")
 
   static let instantAttributes = [
@@ -1337,6 +1678,14 @@ private struct TypedPost: Hashable, Codable, InstantEntityModel {
       name: "title",
       valueType: .string,
       isIndexed: true
+    ),
+    InstantAttribute(
+      id: "posts/slug",
+      namespace: instantNamespace,
+      name: "slug",
+      valueType: .string,
+      isIndexed: true,
+      isUnique: true
     ),
     InstantAttribute(
       id: "posts/author",

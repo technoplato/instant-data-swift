@@ -208,6 +208,29 @@ missing entity should fail, and `merge` for deep JSON merges. The local seed
 demos use explicit upsert helpers so the same terminal commands can be run more
 than once against durable state.
 
+Unique attributes can identify entities and link targets with lookup refs, just
+like Instant's `lookup(...)` transaction helper:
+
+```swift
+try await db.transact {
+  User.update(
+    lookup: User.email.lookup("blob@example.com"),
+    User.name.set("Blob")
+  )
+
+  Post.author.link(
+    from: Post.slug.lookup("lookup-refs-in-swift"),
+    to: User.email.lookup("blob@example.com")
+  )
+}
+```
+
+Lookup writes are kept in lookup form in the pending outbox for future transport
+lowering. The local store resolves them optimistically when the unique value is
+already present; unresolved non-strict lookup writes remain pending for the
+server to resolve later, while `updateExisting(lookup:)` fails before cache or
+outbox writes when the lookup is missing.
+
 Subscriptions are bounded newest-value streams, so slow consumers receive the
 latest local materialization rather than every intermediate invalidation.
 

@@ -53,6 +53,7 @@ public enum InstantValue: Hashable, Codable, Sendable {
   case date(Date)
   case json(JSONValue)
   case ref(String)
+  case lookupRef(InstantLookupRef)
 }
 
 extension InstantValue {
@@ -77,6 +78,8 @@ extension InstantValue {
       return "5:\(value)"
     case let .json(value):
       return "6:\(String(describing: value))"
+    case let .lookupRef(lookup):
+      return "7:\(lookup.attributeID)=\(lookup.value.comparableKey)"
     }
   }
 
@@ -97,6 +100,76 @@ extension InstantValue {
     default:
       return comparableKey.compare(other.comparableKey)
     }
+  }
+}
+
+public enum InstantLookupValue: Hashable, Codable, Sendable {
+  case null
+  case string(String)
+  case number(Double)
+  case bool(Bool)
+  case date(Date)
+  case json(JSONValue)
+  case ref(String)
+}
+
+extension InstantLookupValue {
+  public init(_ value: InstantValue) {
+    switch value {
+    case .null:
+      self = .null
+    case let .bool(value):
+      self = .bool(value)
+    case let .number(value):
+      self = .number(value)
+    case let .string(value):
+      self = .string(value)
+    case let .date(value):
+      self = .date(value)
+    case let .json(value):
+      self = .json(value)
+    case let .ref(value):
+      self = .ref(value)
+    case .lookupRef:
+      preconditionFailure("Instant lookup values cannot contain nested lookup refs.")
+    }
+  }
+
+  public var instantValue: InstantValue {
+    switch self {
+    case .null:
+      return .null
+    case let .bool(value):
+      return .bool(value)
+    case let .number(value):
+      return .number(value)
+    case let .string(value):
+      return .string(value)
+    case let .date(value):
+      return .date(value)
+    case let .json(value):
+      return .json(value)
+    case let .ref(value):
+      return .ref(value)
+    }
+  }
+
+  public var comparableKey: String {
+    instantValue.comparableKey
+  }
+}
+
+public struct InstantLookupRef: Hashable, Codable, Sendable, CustomStringConvertible {
+  public var attributeID: String
+  public var value: InstantLookupValue
+
+  public init(attributeID: String, value: InstantLookupValue) {
+    self.attributeID = attributeID
+    self.value = value
+  }
+
+  public var description: String {
+    "\(attributeID)=\(value.comparableKey)"
   }
 }
 
@@ -269,11 +342,35 @@ public struct InstantTriple: Hashable, Codable, Sendable {
 
 public enum InstantTripleOperation: Hashable, Codable, Sendable {
   case requireEntityMissing(entityID: String, namespace: String?)
+  case requireEntityMissingByLookup(InstantLookupRef, namespace: String?)
   case requireEntityExists(entityID: String, namespace: String?)
+  case requireEntityExistsByLookup(InstantLookupRef, namespace: String?)
   case merge(InstantTriple)
+  case mergeByLookup(
+    entity: InstantLookupRef,
+    attributeID: String,
+    value: InstantValue,
+    txID: String,
+    txTime: InstantTimestamp
+  )
   case insert(InstantTriple)
+  case insertByLookup(
+    entity: InstantLookupRef,
+    attributeID: String,
+    value: InstantValue,
+    txID: String,
+    txTime: InstantTimestamp
+  )
   case retract(InstantTriple)
+  case retractByLookup(
+    entity: InstantLookupRef,
+    attributeID: String,
+    value: InstantValue,
+    txID: String,
+    txTime: InstantTimestamp
+  )
   case deleteEntity(String)
+  case deleteEntityByLookup(InstantLookupRef)
 }
 
 public struct InstantStoreTransaction: Hashable, Codable, Sendable {
@@ -710,6 +807,29 @@ private extension InstantQueryFilter {
 }
 
 private extension InstantValue {
+  var canonicalCacheKeyPayload: String {
+    switch self {
+    case .null:
+      return "null"
+    case let .string(value):
+      return "string:\(value.cacheKeyEncodedString)"
+    case let .number(value):
+      return "number:\(value.bitPattern)"
+    case let .bool(value):
+      return "bool:\(value)"
+    case let .date(value):
+      return "date:\(value.timeIntervalSinceReferenceDate.bitPattern)"
+    case let .json(value):
+      return "json:\(value.canonicalCacheKeyPayload)"
+    case let .ref(value):
+      return "ref:\(value.cacheKeyEncodedString)"
+    case let .lookupRef(lookup):
+      return "lookupRef:\(lookup.attributeID.cacheKeyEncodedString)=\(lookup.value.canonicalCacheKeyPayload)"
+    }
+  }
+}
+
+private extension InstantLookupValue {
   var canonicalCacheKeyPayload: String {
     switch self {
     case .null:

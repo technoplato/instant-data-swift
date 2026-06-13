@@ -118,19 +118,64 @@ public actor InstantStore {
           throw Self.duplicateEntityError(entityID: entityID, namespace: namespace)
         }
 
+      case let .requireEntityMissingByLookup(lookup, namespace):
+        let attribute = try Self.validateLookup(
+          lookup,
+          expectedNamespace: namespace,
+          attributes: attributes
+        )
+        let entityIDs = try Self.entityIDs(matching: lookup, in: indexes, attribute: attribute)
+        if let entityID = entityIDs.first {
+          throw Self.duplicateEntityError(
+            lookup: lookup,
+            entityID: entityID,
+            attribute: attribute
+          )
+        }
+
       case let .requireEntityExists(entityID, namespace):
         guard indexes.containsEntity(entityID, namespace: namespace, attributes: attributes) else {
           throw Self.missingEntityError(entityID: entityID, namespace: namespace)
         }
 
-      case let .merge(triple):
-        if attributes[triple.attributeID]?.valueType == .ref {
-          throw Self.unsupportedMergeError(triple: triple, attributes: attributes)
+      case let .requireEntityExistsByLookup(lookup, namespace):
+        let attribute = try Self.validateLookup(
+          lookup,
+          expectedNamespace: namespace,
+          attributes: attributes
+        )
+        let entityIDs = try Self.entityIDs(matching: lookup, in: indexes, attribute: attribute)
+        guard !entityIDs.isEmpty else {
+          throw Self.missingEntityError(lookup: lookup, attribute: attribute)
         }
-        changedEntityIDs.formUnion(indexes.apply(operation, attributes: attributes))
 
-      case .insert, .retract, .deleteEntity:
-        changedEntityIDs.formUnion(indexes.apply(operation, attributes: attributes))
+      case .merge, .mergeByLookup, .insert, .insertByLookup, .retract, .retractByLookup,
+        .deleteEntity, .deleteEntityByLookup:
+        var resolvedLookups: [InstantLookupRef: String] = [:]
+        let concreteOperations = try Self.concreteOperations(
+          for: operation,
+          indexes: indexes,
+          attributes: attributes,
+          resolvedLookups: &resolvedLookups
+        )
+        for concreteOperation in concreteOperations {
+          switch concreteOperation {
+          case let .merge(triple):
+            if attributes[triple.attributeID]?.valueType == .ref {
+              throw Self.unsupportedMergeError(triple: triple, attributes: attributes)
+            }
+            changedEntityIDs.formUnion(indexes.apply(concreteOperation, attributes: attributes))
+
+          case .insert, .retract, .deleteEntity:
+            changedEntityIDs.formUnion(indexes.apply(concreteOperation, attributes: attributes))
+
+          case .requireEntityMissing, .requireEntityMissingByLookup,
+            .requireEntityExists, .requireEntityExistsByLookup,
+            .mergeByLookup, .insertByLookup, .retractByLookup,
+            .deleteEntityByLookup:
+            break
+          }
+        }
       }
     }
 
@@ -213,6 +258,373 @@ public actor InstantStore {
       localID: entityID,
       message: "No existing entity was found for '\(entityID)'.",
       recovery: "Create the entity before using a strict update, or use merge for upsert-style writes."
+    )
+  }
+
+  private static func concreteOperations(
+    for operation: InstantTripleOperation,
+    indexes: TripleIndexes,
+    attributes: AttributeStore,
+    resolvedLookups: inout [InstantLookupRef: String]
+  ) throws -> [InstantTripleOperation] {
+    switch operation {
+    case let .insert(triple):
+      guard
+        let value = try resolveLookupValue(
+          triple.value,
+          forAttributeID: triple.attributeID,
+          indexes: indexes,
+          attributes: attributes,
+          resolvedLookups: &resolvedLookups
+        )
+      else { return [] }
+      var triple = triple
+      triple.value = value
+      return [.insert(triple)]
+
+    case let .merge(triple):
+      guard
+        let value = try resolveLookupValue(
+          triple.value,
+          forAttributeID: triple.attributeID,
+          indexes: indexes,
+          attributes: attributes,
+          resolvedLookups: &resolvedLookups
+        )
+      else { return [] }
+      var triple = triple
+      triple.value = value
+      return [.merge(triple)]
+
+    case let .retract(triple):
+      guard
+        let value = try resolveLookupValue(
+          triple.value,
+          forAttributeID: triple.attributeID,
+          indexes: indexes,
+          attributes: attributes,
+          resolvedLookups: &resolvedLookups
+        )
+      else { return [] }
+      var triple = triple
+      triple.value = value
+      return [.retract(triple)]
+
+    case .deleteEntity:
+      return [operation]
+
+    case let .insertByLookup(entity, attributeID, value, txID, txTime):
+      guard
+        let entityID = try resolveEntityID(
+          entity,
+          expectedNamespace: attributes[attributeID]?.namespace,
+          indexes: indexes,
+          attributes: attributes,
+          resolvedLookups: &resolvedLookups
+        ),
+        let value = try resolveLookupValue(
+          value,
+          forAttributeID: attributeID,
+          indexes: indexes,
+          attributes: attributes,
+          resolvedLookups: &resolvedLookups
+        )
+      else { return [] }
+      return [
+        .insert(
+          InstantTriple(
+            entityID: entityID,
+            attributeID: attributeID,
+            value: value,
+            txID: txID,
+            txTime: txTime
+          )
+        )
+      ]
+
+    case let .mergeByLookup(entity, attributeID, value, txID, txTime):
+      if attributes[attributeID]?.valueType == .ref {
+        throw unsupportedMergeError(
+          triple: InstantTriple(
+            entityID: entity.description,
+            attributeID: attributeID,
+            value: value,
+            txID: txID,
+            txTime: txTime
+          ),
+          attributes: attributes
+        )
+      }
+      guard
+        let entityID = try resolveEntityID(
+          entity,
+          expectedNamespace: attributes[attributeID]?.namespace,
+          indexes: indexes,
+          attributes: attributes,
+          resolvedLookups: &resolvedLookups
+        ),
+        let value = try resolveLookupValue(
+          value,
+          forAttributeID: attributeID,
+          indexes: indexes,
+          attributes: attributes,
+          resolvedLookups: &resolvedLookups
+        )
+      else { return [] }
+      return [
+        .merge(
+          InstantTriple(
+            entityID: entityID,
+            attributeID: attributeID,
+            value: value,
+            txID: txID,
+            txTime: txTime
+          )
+        )
+      ]
+
+    case let .retractByLookup(entity, attributeID, value, txID, txTime):
+      guard
+        let entityID = try resolveEntityID(
+          entity,
+          expectedNamespace: attributes[attributeID]?.namespace,
+          indexes: indexes,
+          attributes: attributes,
+          resolvedLookups: &resolvedLookups
+        ),
+        let value = try resolveLookupValue(
+          value,
+          forAttributeID: attributeID,
+          indexes: indexes,
+          attributes: attributes,
+          resolvedLookups: &resolvedLookups
+        )
+      else { return [] }
+      return [
+        .retract(
+          InstantTriple(
+            entityID: entityID,
+            attributeID: attributeID,
+            value: value,
+            txID: txID,
+            txTime: txTime
+          )
+        )
+      ]
+
+    case let .deleteEntityByLookup(lookup):
+      guard
+        let entityID = try resolveEntityID(
+          lookup,
+          expectedNamespace: nil,
+          indexes: indexes,
+          attributes: attributes,
+          resolvedLookups: &resolvedLookups
+        )
+      else { return [] }
+      return [.deleteEntity(entityID)]
+
+    case .requireEntityMissing, .requireEntityMissingByLookup,
+      .requireEntityExists, .requireEntityExistsByLookup:
+      return []
+    }
+  }
+
+  private static func resolveLookupValue(
+    _ value: InstantValue,
+    forAttributeID attributeID: String,
+    indexes: TripleIndexes,
+    attributes: AttributeStore,
+    resolvedLookups: inout [InstantLookupRef: String]
+  ) throws -> InstantValue? {
+    guard case let .lookupRef(lookup) = value else { return value }
+
+    guard let attribute = attributes[attributeID] else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "resolve lookup ref",
+        path: attributeID,
+        localID: lookup.description,
+        message: "Lookup ref values require a declared destination attribute.",
+        recovery: "Declare '\(attributeID)' before using a lookup ref as a triple value."
+      )
+    }
+
+    let expectedNamespace = attribute.valueType == .ref ? attribute.linkNamespace : attribute.namespace
+    guard
+      let entityID = try resolveEntityID(
+        lookup,
+        expectedNamespace: expectedNamespace,
+        indexes: indexes,
+        attributes: attributes,
+        resolvedLookups: &resolvedLookups
+      )
+    else { return nil }
+
+    switch attribute.valueType {
+    case .ref:
+      return .ref(entityID)
+
+    case .string where attribute.primaryKey || attribute.name == "id":
+      return .string(entityID)
+
+    case .string, .number, .boolean, .date, .json:
+      throw InstantError(
+        code: .validationFailed,
+        operation: "resolve lookup ref",
+        namespace: attribute.namespace,
+        path: attribute.name,
+        localID: lookup.description,
+        message: "Lookup ref values can only fill id and ref attributes.",
+        recovery: "Use lookup refs to identify the entity being written or to link to another entity."
+      )
+    }
+  }
+
+  private static func resolveEntityID(
+    _ lookup: InstantLookupRef,
+    expectedNamespace: String?,
+    indexes: TripleIndexes,
+    attributes: AttributeStore,
+    resolvedLookups: inout [InstantLookupRef: String]
+  ) throws -> String? {
+    let attribute = try validateLookup(
+      lookup,
+      expectedNamespace: expectedNamespace,
+      attributes: attributes
+    )
+    if let entityID = resolvedLookups[lookup] {
+      return entityID
+    }
+    let entityIDs = try entityIDs(matching: lookup, in: indexes, attribute: attribute)
+    guard let entityID = entityIDs.first else { return nil }
+    resolvedLookups[lookup] = entityID
+    return entityID
+  }
+
+  private static func validateLookup(
+    _ lookup: InstantLookupRef,
+    expectedNamespace: String?,
+    attributes: AttributeStore
+  ) throws -> InstantAttribute {
+    guard let attribute = attributes[lookup.attributeID] else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "lookup entity",
+        path: lookup.attributeID,
+        localID: lookup.description,
+        message: "No attribute named '\(lookup.attributeID)' is declared for this lookup ref.",
+        recovery: "Declare the lookup attribute in the schema before writing by lookup ref."
+      )
+    }
+
+    if let expectedNamespace, attribute.namespace != expectedNamespace {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "lookup entity",
+        namespace: expectedNamespace,
+        path: attribute.name,
+        localID: lookup.description,
+        message:
+          "Lookup attribute '\(attribute.id)' belongs to '\(attribute.namespace)', not '\(expectedNamespace)'.",
+        recovery: "Use a lookup attribute from the same namespace as the entity being written."
+      )
+    }
+
+    guard attribute.isUnique || attribute.primaryKey else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "lookup entity",
+        namespace: attribute.namespace,
+        path: attribute.name,
+        localID: lookup.description,
+        message: "Attribute '\(attribute.id)' is not unique, so it cannot be used as a lookup ref.",
+        recovery: "Mark the attribute unique in the schema, or write the entity by id."
+      )
+    }
+
+    guard isLookupValue(lookup.value, compatibleWith: attribute) else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "lookup entity",
+        namespace: attribute.namespace,
+        path: attribute.name,
+        localID: lookup.description,
+        message: "Lookup value does not match the declared type of '\(attribute.id)'.",
+        recovery: "Use a lookup value whose Swift type matches the unique attribute."
+      )
+    }
+
+    return attribute
+  }
+
+  private static func entityIDs(
+    matching lookup: InstantLookupRef,
+    in indexes: TripleIndexes,
+    attribute: InstantAttribute
+  ) throws -> [String] {
+    let entityIDs = indexes.entityIDs(matching: lookup)
+    guard entityIDs.count < 2 else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "lookup entity",
+        namespace: attribute.namespace,
+        path: attribute.name,
+        localID: lookup.description,
+        message: "Lookup ref '\(lookup.description)' matched more than one local entity.",
+        recovery: "Repair the local cache so unique attributes map to one entity before writing by lookup ref."
+      )
+    }
+    return entityIDs
+  }
+
+  private static func isLookupValue(
+    _ value: InstantLookupValue,
+    compatibleWith attribute: InstantAttribute
+  ) -> Bool {
+    switch (value, attribute.valueType) {
+    case (.null, _),
+      (.string, .string),
+      (.number, .number),
+      (.bool, .boolean),
+      (.date, .date),
+      (.json, .json),
+      (.ref, .ref):
+      return true
+
+    default:
+      return false
+    }
+  }
+
+  private static func duplicateEntityError(
+    lookup: InstantLookupRef,
+    entityID: String,
+    attribute: InstantAttribute
+  ) -> InstantError {
+    InstantError(
+      code: .validationFailed,
+      operation: "strict create entity",
+      namespace: attribute.namespace,
+      path: attribute.name,
+      localID: entityID,
+      message: "An entity already exists for lookup '\(lookup.description)'.",
+      recovery: "Use update for upsert-style writes, or choose a fresh unique lookup value before creating."
+    )
+  }
+
+  private static func missingEntityError(
+    lookup: InstantLookupRef,
+    attribute: InstantAttribute
+  ) -> InstantError {
+    InstantError(
+      code: .validationFailed,
+      operation: "strict update entity",
+      namespace: attribute.namespace,
+      path: attribute.name,
+      localID: lookup.description,
+      message: "No existing entity was found for lookup '\(lookup.description)'.",
+      recovery: "Create the entity before using a strict update, or use update/merge for server-resolved upserts."
     )
   }
 

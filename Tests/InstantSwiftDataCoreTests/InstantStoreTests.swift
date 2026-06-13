@@ -262,6 +262,209 @@ struct InstantStoreTests {
   }
 
   @Test
+  func lookupOperationsApplyOptimisticallyAndPersistOutboxAcrossLaunches() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let seedTime = InstantTimestamp(milliseconds: 1_700_000_000_300)
+    let lookupTime = InstantTimestamp(milliseconds: seedTime.milliseconds + 1)
+    let attributes = lookupTestAttributes()
+    let userLookup = InstantLookupRef(
+      attributeID: "users/email",
+      value: .string("blob@example.com")
+    )
+    let renamedUserLookup = InstantLookupRef(
+      attributeID: "users/email",
+      value: .string("blob@instantdb.com")
+    )
+    let postLookup = InstantLookupRef(
+      attributeID: "posts/slug",
+      value: .string("hello-lookup")
+    )
+    let seedTransaction = InstantStoreTransaction(
+      id: "tx-core-lookup-seed",
+      operations: [
+        .insert(
+          InstantTriple(
+            entityID: "user-1",
+            attributeID: "users/id",
+            value: .string("user-1"),
+            txID: "tx-core-lookup-seed",
+            txTime: seedTime
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "user-1",
+            attributeID: "users/email",
+            value: .string("blob@example.com"),
+            txID: "tx-core-lookup-seed",
+            txTime: seedTime
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "user-1",
+            attributeID: "users/name",
+            value: .string("Blob"),
+            txID: "tx-core-lookup-seed",
+            txTime: seedTime
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "post-1",
+            attributeID: "posts/id",
+            value: .string("post-1"),
+            txID: "tx-core-lookup-seed",
+            txTime: seedTime
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "post-1",
+            attributeID: "posts/slug",
+            value: .string("hello-lookup"),
+            txID: "tx-core-lookup-seed",
+            txTime: seedTime
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "post-1",
+            attributeID: "posts/title",
+            value: .string("Hello lookup"),
+            txID: "tx-core-lookup-seed",
+            txTime: seedTime
+          )
+        ),
+      ]
+    )
+    let lookupTransaction = InstantStoreTransaction(
+      id: "tx-core-lookup",
+      operations: [
+        .insertByLookup(
+          entity: userLookup,
+          attributeID: "users/id",
+          value: .lookupRef(userLookup),
+          txID: "tx-core-lookup",
+          txTime: lookupTime
+        ),
+        .insertByLookup(
+          entity: userLookup,
+          attributeID: "users/name",
+          value: .string("Blob Jr."),
+          txID: "tx-core-lookup",
+          txTime: lookupTime
+        ),
+        .insertByLookup(
+          entity: userLookup,
+          attributeID: "users/email",
+          value: .string("blob@instantdb.com"),
+          txID: "tx-core-lookup",
+          txTime: lookupTime
+        ),
+        .insertByLookup(
+          entity: userLookup,
+          attributeID: "users/name",
+          value: .string("Should not apply after the lookup value changes"),
+          txID: "tx-core-lookup",
+          txTime: lookupTime
+        ),
+        .insertByLookup(
+          entity: postLookup,
+          attributeID: "posts/id",
+          value: .lookupRef(postLookup),
+          txID: "tx-core-lookup",
+          txTime: lookupTime
+        ),
+        .insertByLookup(
+          entity: postLookup,
+          attributeID: "posts/author",
+          value: .lookupRef(renamedUserLookup),
+          txID: "tx-core-lookup",
+          txTime: lookupTime
+        ),
+      ]
+    )
+
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: attributes
+      )
+    )
+    try await runtime.transact(seedTransaction, createdAt: seedTime)
+    try await runtime.transact(lookupTransaction, createdAt: lookupTime)
+
+    let users = try await runtime.query(InstantQueryPlan(id: "lookup.users", namespace: "users"))
+    expectNoDifference(users.map(\.id), ["user-1"])
+    expectNoDifference(users.first?.values["email"]?.first, .string("blob@instantdb.com"))
+    expectNoDifference(users.first?.values["name"]?.first, .string("Blob Jr."))
+
+    let posts = try await runtime.query(InstantQueryPlan(id: "lookup.posts", namespace: "posts"))
+    expectNoDifference(posts.map(\.id), ["post-1"])
+    expectNoDifference(posts.first?.values["author"]?.first, .ref("user-1"))
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: attributes
+      )
+    )
+    let relaunchedPending = await relaunchedRuntime.pendingMutations()
+    expectNoDifference(relaunchedPending.map(\.id), ["tx-core-lookup-seed", "tx-core-lookup"])
+    expectNoDifference(
+      relaunchedPending.first { $0.id == "tx-core-lookup" }?.transaction,
+      lookupTransaction
+    )
+  }
+
+  @Test
+  func unresolvedLookupOperationsNoOpLocallyButPersistPendingAcrossLaunches() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_325)
+    let lookup = InstantLookupRef(
+      attributeID: "users/email",
+      value: .string("missing@example.com")
+    )
+    let transaction = InstantStoreTransaction(
+      id: "tx-unresolved-core-lookup",
+      operations: [
+        .insertByLookup(
+          entity: lookup,
+          attributeID: "users/name",
+          value: .string("Server may resolve later"),
+          txID: "tx-unresolved-core-lookup",
+          txTime: createdAt
+        )
+      ]
+    )
+
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: lookupTestAttributes()
+      )
+    )
+    try await runtime.transact(transaction, createdAt: createdAt)
+
+    let users = try await runtime.query(InstantQueryPlan(id: "lookup.empty-users", namespace: "users"))
+    expectNoDifference(users, [])
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: lookupTestAttributes()
+      )
+    )
+    let relaunchedPending = await relaunchedRuntime.pendingMutations()
+    expectNoDifference(relaunchedPending.map(\.transaction), [transaction])
+  }
+
+  @Test
   func strictTodoUpdateRejectsMissingEntityBeforePersistence() async throws {
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
@@ -2831,6 +3034,51 @@ struct InstantStoreTests {
       .appendingPathComponent("InstantSwiftDataTests-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     return directory.appendingPathComponent("state.sqlite")
+  }
+
+  private func lookupTestAttributes() -> [InstantAttribute] {
+    [
+      InstantAttribute(
+        id: "users/name",
+        namespace: "users",
+        name: "name",
+        valueType: .string,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "users/email",
+        namespace: "users",
+        name: "email",
+        valueType: .string,
+        isIndexed: true,
+        isUnique: true
+      ),
+      InstantAttribute(
+        id: "posts/title",
+        namespace: "posts",
+        name: "title",
+        valueType: .string,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "posts/slug",
+        namespace: "posts",
+        name: "slug",
+        valueType: .string,
+        isIndexed: true,
+        isUnique: true
+      ),
+      InstantAttribute(
+        id: "posts/author",
+        namespace: "posts",
+        name: "author",
+        valueType: .ref,
+        isIndexed: true,
+        forwardIdentity: "posts/author",
+        reverseIdentity: "users/posts",
+        linkNamespace: "users"
+      ),
+    ]
   }
 
   private func seedLegacyQueryCache(at url: URL, entry: LegacyCachedQuery) throws {
