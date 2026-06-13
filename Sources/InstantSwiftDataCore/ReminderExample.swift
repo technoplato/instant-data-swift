@@ -625,6 +625,45 @@ public enum ReminderExample {
     ]
   }
 
+  public static func deleteReminderOperations(
+    id: String,
+    listID: String,
+    updatedAt: InstantTimestamp,
+    transactionID: String
+  ) -> [InstantTripleOperation] {
+    [
+      .requireEntityExists(entityID: listID, namespace: listsNamespace),
+      .requireEntityExists(entityID: id, namespace: remindersNamespace),
+      requireReminderInListOperation(reminderID: id, listID: listID),
+      listRefOperation(reminderID: id, listID: listID, updatedAt: updatedAt, transactionID: transactionID),
+      .deleteEntity(id),
+    ]
+  }
+
+  public static func deleteCompletedReminderOperations(
+    reminders: [(id: String, listID: String)],
+    updatedAt: InstantTimestamp,
+    transactionID: String
+  ) -> [InstantTripleOperation] {
+    reminders.flatMap { id, listID in
+      deleteReminderOperations(
+        id: id,
+        listID: listID,
+        updatedAt: updatedAt,
+        transactionID: transactionID
+      )
+    }
+  }
+
+  public static func deleteListOperations(
+    id: String
+  ) -> [InstantTripleOperation] {
+    [
+      .requireEntityExists(entityID: id, namespace: listsNamespace),
+      .deleteEntity(id),
+    ]
+  }
+
   public static func seedOperations(
     lists: [(id: String, seed: RemindersListSeedRecord)],
     reminders: [(id: String, listID: String, seed: ReminderSeedRecord)],

@@ -570,6 +570,12 @@ Agent-oriented output modes are required:
   and `instant-swift-data examples reminders tags --jsonl`; this is a durable
   Instant-shaped many-ref tag/search slice, not the full upstream FTS/highlight
   search UI yet.
+- delete Reminders locally with commands such as
+  `instant-swift-data examples reminders delete <reminder-id>`,
+  `instant-swift-data examples reminders delete-completed --list-id <list-id>`,
+  and `instant-swift-data examples reminders delete-list <list-id>`; reminder
+  deletes reassert list membership for shared-list permission checks, and list
+  deletes prove local cascade cleanup through the triple store.
 - run the first local SyncUps port slice with commands such as
   `instant-swift-data examples sync-ups add "Design" --seconds 900 --theme appOrange --attendee Blob`,
   `instant-swift-data examples sync-ups edit <sync-up-id> --title "Design Review" --attendee Blob`,

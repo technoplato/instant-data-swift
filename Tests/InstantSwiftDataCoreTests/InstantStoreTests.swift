@@ -3492,6 +3492,49 @@ struct InstantStoreTests {
       #expect(Bool(false), "Unexpected error: \(error)")
     }
 
+    do {
+      try await inviteeRuntime.transact(
+        InstantStoreTransaction(
+          id: "tx-reader-delete-reminder",
+          operations: ReminderExample.deleteReminderOperations(
+            id: firstReminderID,
+            listID: listID,
+            updatedAt: timestamp,
+            transactionID: "tx-reader-delete-reminder"
+          )
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected reader reminder delete for a shared list to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "write shared root")
+      expectNoDifference(error.namespace, ReminderExample.listsNamespace)
+      expectNoDifference(error.localID, listID)
+      #expect(error.message.contains("reader access"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      try await inviteeRuntime.transact(
+        InstantStoreTransaction(
+          id: "tx-reader-delete-list",
+          operations: ReminderExample.deleteListOperations(id: listID)
+        ),
+        createdAt: timestamp
+      )
+      #expect(Bool(false), "Expected reader list delete to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .permissionRejected)
+      expectNoDifference(error.operation, "write shared root")
+      expectNoDifference(error.namespace, ReminderExample.listsNamespace)
+      expectNoDifference(error.localID, listID)
+      #expect(error.message.contains("reader access"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
     try await inviteeRuntime.transact(
       InstantStoreTransaction(
         id: "tx-reader-unshared-list",

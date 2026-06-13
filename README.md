@@ -89,10 +89,12 @@ swift run instant-swift-data auth token invitee-refresh --user-id user-2 --json
 swift run instant-swift-data examples reminders update "$REMINDER_ID" "writer edit" --json
 swift run instant-swift-data examples reminders complete "$REMINDER_ID" --json
 swift run instant-swift-data examples reminders search "writer" --include-completed --json
+swift run instant-swift-data examples reminders delete-completed --list-id "$LIST_ID" --json
 swift run instant-swift-data auth token owner-refresh --user-id user-1 --json
 swift run instant-swift-data shares role "$SHARE_ID" user-2 reader --json
 swift run instant-swift-data auth token invitee-refresh --user-id user-2 --json
 swift run instant-swift-data examples reminders rename-list "$LIST_ID" "reader list" --json || test "$?" -eq 77
+swift run instant-swift-data examples reminders delete-list "$LIST_ID" --json || test "$?" -eq 77
 ```
 
 Create and edit a local SyncUps meeting, record a transcript, and prove parent

@@ -670,6 +670,12 @@ Create `validation/` with:
   entities with a many-ref `reminders/tags` relation, and JSON/JSONL output
   derives visible reminder-tag rows. Full upstream FTS, highlighting, advanced
   stats, and UI search models remain future work.
+- Reminders: local delete workflows now cover
+  `examples reminders delete <reminder-id>`,
+  `delete-completed [--list-id id]`, and `delete-list <list-id>`. Reminder
+  deletes carry the parent list ref for shared-root guards, completed deletes
+  batch the same protected operation, and list deletes exercise cascade cleanup
+  through the existing `reminders/list` link metadata.
 - SyncUps: the first local SyncUps port slice exposes durable
   `examples sync-ups add`, `detail`, `edit`, `record`, `list`, and `delete`
   commands over `syncUps`/`attendees`/`meetings` namespaces; attendee and meeting

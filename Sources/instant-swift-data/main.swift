@@ -1285,6 +1285,122 @@ struct InstantSwiftDataCLI {
         listID: reminder.remindersListID
       )
 
+    case "delete":
+      guard let reminderID = arguments.popFirstArgument(), arguments.isEmpty else {
+        throw CLIError(
+          "Usage: instant-swift-data examples reminders delete <reminder-id>",
+          exitCode: 64
+        )
+      }
+      let currentReminders = try ReminderExample.decodeReminders(
+        (try await context.runtime.queryOnce(ReminderExample.remindersQuery)).values
+      )
+      guard let reminder = currentReminders.first(where: { $0.id == reminderID }) else {
+        throw CLIError("Reminder not found: \(reminderID)", exitCode: 66)
+      }
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: ReminderExample.deleteReminderOperations(
+            id: reminderID,
+            listID: reminder.remindersListID,
+            updatedAt: now,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.reminders.delete"
+      )
+      try await printReminders(
+        context: context,
+        output: output,
+        event: "delete",
+        changedID: reminderID,
+        listID: reminder.remindersListID
+      )
+
+    case "delete-completed":
+      var listID: String?
+      while let option = arguments.popFirstArgument() {
+        switch option {
+        case "--list-id":
+          guard let value = arguments.popFirstArgument(), !value.isEmpty else {
+            throw CLIError(
+              "Usage: instant-swift-data examples reminders delete-completed [--list-id id]",
+              exitCode: 64
+            )
+          }
+          listID = value
+        default:
+          throw CLIError(
+            "Usage: instant-swift-data examples reminders delete-completed [--list-id id]",
+            exitCode: 64
+          )
+        }
+      }
+      let query = listID.map(ReminderExample.remindersForListQuery) ?? ReminderExample.remindersQuery
+      if let listID {
+        let lists = try ReminderExample.decodeLists(
+          (try await context.runtime.queryOnce(ReminderExample.listsQuery)).values
+        )
+        guard lists.contains(where: { $0.id == listID }) else {
+          throw CLIError("Reminder list not found: \(listID)", exitCode: 66)
+        }
+      }
+      let currentReminders = try ReminderExample.decodeReminders(
+        (try await context.runtime.queryOnce(query)).values
+      )
+      let completedReminders = currentReminders.filter(\.isCompleted)
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      if !completedReminders.isEmpty {
+        try await context.runtime.transact(
+          InstantStoreTransaction(
+            id: transactionID,
+            operations: ReminderExample.deleteCompletedReminderOperations(
+              reminders: completedReminders.map { ($0.id, $0.remindersListID) },
+              updatedAt: now,
+              transactionID: transactionID
+            )
+          ),
+          createdAt: now,
+          source: "cli.examples.reminders.delete-completed"
+        )
+      }
+      try await printReminders(
+        context: context,
+        output: output,
+        event: "delete-completed",
+        changedID: completedReminders.isEmpty ? nil : completedReminders.map(\.id).joined(separator: ","),
+        listID: listID
+      )
+
+    case "delete-list":
+      guard let listID = arguments.popFirstArgument(), arguments.isEmpty else {
+        throw CLIError(
+          "Usage: instant-swift-data examples reminders delete-list <list-id>",
+          exitCode: 64
+        )
+      }
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: ReminderExample.deleteListOperations(id: listID)
+        ),
+        createdAt: now,
+        source: "cli.examples.reminders.delete-list"
+      )
+      try await printReminders(
+        context: context,
+        output: output,
+        event: "delete-list",
+        changedID: listID
+      )
+
     case "add-tag", "tag":
       guard let reminderID = arguments.popFirstArgument() else {
         throw CLIError(
@@ -6201,7 +6317,7 @@ struct InstantSwiftDataCLI {
     Usage: instant-swift-data examples <todos|todo-links|reminders|sync-ups>
       instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>
       instant-swift-data examples todo-links <seed|list|nested|unlink> [--json|--jsonl]
-      instant-swift-data examples reminders <seed|list|tags|search|add-list|rename-list|add|update|complete|add-tag|remove-tag> [--json|--jsonl]
+      instant-swift-data examples reminders <seed|list|tags|list-tags|search|add-list|rename-list|delete-list|add|update|complete|delete|delete-completed|add-tag|remove-tag> [--json|--jsonl]
       instant-swift-data examples sync-ups <seed|list|detail|add|edit|add-attendee|record|delete> [--json|--jsonl]
     """
   }
@@ -6228,7 +6344,7 @@ struct InstantSwiftDataCLI {
 
   private static var remindersUsage: String {
     """
-    Usage: instant-swift-data examples reminders <seed|list|tags|list-tags|search|add-list|rename-list|add|update|complete|add-tag|remove-tag>
+    Usage: instant-swift-data examples reminders <seed|list|tags|list-tags|search|add-list|rename-list|delete-list|add|update|complete|delete|delete-completed|add-tag|remove-tag>
       instant-swift-data examples reminders seed [--json|--jsonl]
       instant-swift-data examples reminders list [--refresh] [--list-id id] [--json|--jsonl]
       instant-swift-data examples reminders tags [--json|--jsonl]
@@ -6236,9 +6352,12 @@ struct InstantSwiftDataCLI {
       instant-swift-data examples reminders search "text" [--list-id id] [--tag tag] [--include-completed] [--json|--jsonl]
       instant-swift-data examples reminders add-list "list title" [--json|--jsonl]
       instant-swift-data examples reminders rename-list <list-id> "new title" [--json|--jsonl]
+      instant-swift-data examples reminders delete-list <list-id> [--json|--jsonl]
       instant-swift-data examples reminders add <list-id> "reminder title" [--json|--jsonl]
       instant-swift-data examples reminders update <reminder-id> "new title" [--json|--jsonl]
       instant-swift-data examples reminders complete <reminder-id> [--json|--jsonl]
+      instant-swift-data examples reminders delete <reminder-id> [--json|--jsonl]
+      instant-swift-data examples reminders delete-completed [--list-id id] [--json|--jsonl]
       instant-swift-data examples reminders add-tag <reminder-id> <tag> [--json|--jsonl]
       instant-swift-data examples reminders remove-tag <reminder-id> <tag> [--json|--jsonl]
     """

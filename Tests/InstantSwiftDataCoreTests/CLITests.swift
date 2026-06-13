@@ -934,6 +934,61 @@ extension InstantStoreTests {
     )
     expectNoDifference(emptySearch.reminders, [])
     expectNoDifference(emptySearch.reminderTags, [])
+
+    let badDeleteCompleted = try runCLIResult(
+      ["examples", "reminders", "delete-completed", "--list-id", "missing-list", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(badDeleteCompleted.status, 66)
+    #expect(badDeleteCompleted.error.contains("Reminder list not found"))
+
+    let deletedTake = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(["examples", "reminders", "delete", takeID, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(deletedTake.event, "delete")
+    expectNoDifference(deletedTake.changedID, takeID)
+    expectNoDifference(deletedTake.reminders.map(\.id), [walkID])
+    expectNoDifference(deletedTake.reminderTags, [
+      ReminderTagLinkRecord(reminderID: walkID, tagID: "social")
+    ])
+
+    let deletedCompleted = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(["examples", "reminders", "delete-completed", "--list-id", listID, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(deletedCompleted.event, "delete-completed")
+    expectNoDifference(deletedCompleted.changedID, walkID)
+    expectNoDifference(deletedCompleted.reminders, [])
+    expectNoDifference(deletedCompleted.reminderTags, [])
+
+    let tagsAfterReminderDeletes = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(["examples", "reminders", "tags", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(tagsAfterReminderDeletes.tags.map(\.title), ["kids", "social"])
+    expectNoDifference(tagsAfterReminderDeletes.reminderTags, [])
+
+    let deletedList = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(["examples", "reminders", "delete-list", listID, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(deletedList.event, "delete-list")
+    expectNoDifference(deletedList.changedID, listID)
+    expectNoDifference(deletedList.lists, [])
+    expectNoDifference(deletedList.reminders, [])
   }
 
   @Test
