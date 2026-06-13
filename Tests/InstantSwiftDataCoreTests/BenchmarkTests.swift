@@ -40,6 +40,9 @@ extension InstantStoreTests {
         "pending-mutation-enqueue.update",
         "high-bandwidth.scalar-updates",
         "high-bandwidth.linked-writes",
+        "memory-growth.triples.1k",
+        "memory-growth.triples.10k",
+        "memory-growth.triples.50k",
         "storage-metadata.query",
         "stream-write.chunks",
         "stream-read.chunks",
@@ -50,10 +53,10 @@ extension InstantStoreTests {
         "outbox-flush.local-transport",
       ]
     )
-    expectNoDifference(result.metrics.map(\.samples.count), Array(repeating: 2, count: 14))
+    expectNoDifference(result.metrics.map(\.samples.count), Array(repeating: 2, count: 17))
     expectNoDifference(
       result.metrics.flatMap { $0.samples.map(\.durationNanoseconds) },
-      Array(repeating: 100, count: 28)
+      Array(repeating: 100, count: 34)
     )
     expectNoDifference(
       result.metrics.first { $0.name == "triple-insert.seed" }?.samples.map(\.operationCount),
@@ -129,6 +132,78 @@ extension InstantStoreTests {
       [67_108_864, 67_108_864]
     )
     expectNoDifference(
+      result.metrics.first { $0.name == "memory-growth.triples.1k" }?.samples.map(\.operationCount),
+      [1_000, 1_000]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "memory-growth.triples.1k" }?.samples.map(\.resultCount),
+      [250, 250]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "memory-growth.triples.1k" }?.samples.map(\.pendingMutationCount),
+      [1, 1]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "memory-growth.triples.1k" }?.samples.map(\.memoryDeltaBytes),
+      [100, 100]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "memory-growth.triples.1k" }?.samples.map(\.memoryBudgetBytes),
+      [67_108_864, 67_108_864]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "memory-growth.triples.1k" }?.samples.map(\.actorHopCount),
+      [7, 7]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "memory-growth.triples.10k" }?.samples.map(\.operationCount),
+      [10_000, 10_000]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "memory-growth.triples.10k" }?.samples.map(\.resultCount),
+      [2_500, 2_500]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "memory-growth.triples.10k" }?.samples.map(\.pendingMutationCount),
+      [1, 1]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "memory-growth.triples.10k" }?.samples.map(\.memoryDeltaBytes),
+      [100, 100]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "memory-growth.triples.10k" }?.samples.map(\.memoryBudgetBytes),
+      [268_435_456, 268_435_456]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "memory-growth.triples.10k" }?.samples.map(\.actorHopCount),
+      [7, 7]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "memory-growth.triples.50k" }?.samples.map(\.operationCount),
+      [50_000, 50_000]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "memory-growth.triples.50k" }?.samples.map(\.resultCount),
+      [12_500, 12_500]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "memory-growth.triples.50k" }?.samples.map(\.pendingMutationCount),
+      [1, 1]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "memory-growth.triples.50k" }?.samples.map(\.memoryDeltaBytes),
+      [100, 100]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "memory-growth.triples.50k" }?.samples.map(\.memoryBudgetBytes),
+      [1_073_741_824, 1_073_741_824]
+    )
+    expectNoDifference(
+      result.metrics.first { $0.name == "memory-growth.triples.50k" }?.samples.map(\.actorHopCount),
+      [7, 7]
+    )
+    expectNoDifference(
       result.metrics.first { $0.name == "storage-metadata.query" }?.samples.map(\.resultCount),
       [5, 5]
     )
@@ -200,13 +275,13 @@ extension InstantStoreTests {
     )
 
     let evidenceRows = result.evidenceRows
-    expectNoDifference(evidenceRows.count, 15)
+    expectNoDifference(evidenceRows.count, 18)
     expectNoDifference(evidenceRows.first?.caseID, "benchmark.local.todos")
     expectNoDifference(evidenceRows.first?.event, "summary")
     expectNoDifference(evidenceRows.first?.details.transport, "not-implemented-local-cache-only")
     expectNoDifference(evidenceRows.first?.details.iterations, 2)
     expectNoDifference(evidenceRows.first?.details.metric, nil)
-    expectNoDifference(evidenceRows.dropFirst().map(\.details.transport), Array(repeating: result.transport, count: 14))
+    expectNoDifference(evidenceRows.dropFirst().map(\.details.transport), Array(repeating: result.transport, count: 17))
     expectNoDifference(
       evidenceRows.dropFirst().compactMap(\.details.metric?.name),
       result.metrics.map(\.name)

@@ -187,6 +187,12 @@ public enum InstantSwiftDataLocalBenchmarks {
   private static let highBandwidthScalarUpdateCount = 50
   private static let highBandwidthLinkedWriteCount = 20
   private static let highBandwidthMemoryBudgetBytes: UInt64 = 64 * 1024 * 1024
+  private static let tripleMemoryTiers: [(metricName: String, tripleCount: Int, budgetBytes: UInt64)] = [
+    ("memory-growth.triples.1k", 1_000, 64 * 1024 * 1024),
+    ("memory-growth.triples.10k", 10_000, 256 * 1024 * 1024),
+    ("memory-growth.triples.50k", 50_000, 1_024 * 1024 * 1024),
+  ]
+  private static let tripleMemoryTodoOperationCount = 4
   private static let storageMetadataFileCount = 5
   private static let streamChunkCount = 25
 
@@ -480,6 +486,64 @@ public enum InstantSwiftDataLocalBenchmarks {
         )
       )
 
+      for tier in tripleMemoryTiers {
+        let memoryCacheURL = cacheDirectory
+          .appendingPathComponent("\(tier.metricName)-\(iteration).sqlite")
+        let memoryRuntime = try await InstantRuntime.bootstrap(
+          configuration: runtimeConfiguration(persistenceURL: memoryCacheURL)
+        )
+        let memoryBefore = measureMemoryBytes()
+        let memoryTransactionID = makeID()
+        let memoryCreatedAt = timestamp()
+        let memoryOperations = tripleMemoryOperations(
+          iteration: iteration,
+          tripleCount: tier.tripleCount,
+          transactionID: memoryTransactionID,
+          createdAt: memoryCreatedAt
+        )
+        let memoryActorHopBaseline = actorHopRecorder.baseline()
+        let (_, memoryDuration) = try await measured(clockNanoseconds) {
+          try await memoryRuntime.transact(
+            InstantStoreTransaction(id: memoryTransactionID, operations: memoryOperations),
+            createdAt: memoryCreatedAt,
+            source: "benchmark.local.todos.\(tier.metricName)"
+          )
+        }
+        let memoryActorHops = actorHopRecorder.summary(since: memoryActorHopBaseline)
+        let memoryAfter = measureMemoryBytes()
+        let memoryDelta = try validatedMemoryDelta(
+          before: memoryBefore,
+          after: memoryAfter,
+          budget: tier.budgetBytes,
+          operation: "\(tier.tripleCount) triple memory workload"
+        )
+        let memoryTodos = try await TodoExample.decode(memoryRuntime.query(TodoExample.query))
+        guard memoryTodos.count == tier.tripleCount / tripleMemoryTodoOperationCount else {
+          throw InstantError(
+            code: .validationFailed,
+            operation: "run local todo benchmark",
+            message: "Expected \(tier.tripleCount) triple memory workload to materialize every todo.",
+            recovery: "Inspect bulk triple transaction application before trusting memory timings."
+          )
+        }
+        record(
+          tier.metricName,
+          InstantBenchmarkSample(
+            iteration: iteration,
+            durationNanoseconds: memoryDuration,
+            operationCount: memoryOperations.count,
+            resultCount: memoryTodos.count,
+            pendingMutationCount: await memoryRuntime.pendingMutations().count,
+            memoryBeforeBytes: memoryBefore,
+            memoryAfterBytes: memoryAfter,
+            memoryDeltaBytes: memoryDelta,
+            memoryBudgetBytes: tier.budgetBytes,
+            actorHopCount: memoryActorHops.count,
+            actorHopBreakdown: memoryActorHops.breakdown
+          )
+        )
+      }
+
       var expectedFileByteCounts: [String: Int64] = [:]
       for fileIndex in 0..<storageMetadataFileCount {
         let fileName = "storage-source-\(fileIndex).txt"
@@ -712,6 +776,9 @@ public enum InstantSwiftDataLocalBenchmarks {
       "pending-mutation-enqueue.update",
       "high-bandwidth.scalar-updates",
       "high-bandwidth.linked-writes",
+      "memory-growth.triples.1k",
+      "memory-growth.triples.10k",
+      "memory-growth.triples.50k",
       "storage-metadata.query",
       "stream-write.chunks",
       "stream-read.chunks",
@@ -737,6 +804,31 @@ public enum InstantSwiftDataLocalBenchmarks {
       finalTodoCount: finalTodoCount,
       pendingMutationCount: pendingMutationCount
     )
+  }
+
+  private static func tripleMemoryOperations(
+    iteration: Int,
+    tripleCount: Int,
+    transactionID: String,
+    createdAt: InstantTimestamp
+  ) -> [InstantTripleOperation] {
+    let recordCount = tripleCount / tripleMemoryTodoOperationCount
+    var operations: [InstantTripleOperation] = []
+    operations.reserveCapacity(recordCount * tripleMemoryTodoOperationCount)
+
+    for recordIndex in 0..<recordCount {
+      let recordCreatedAt = InstantTimestamp(
+        milliseconds: createdAt.milliseconds + Int64(recordIndex)
+      )
+      operations += TodoExample.upsertOperations(
+        id: "benchmark.memory.\(tripleCount).\(iteration).\(recordIndex)",
+        text: "Memory benchmark \(tripleCount) triple todo \(recordIndex)",
+        createdAt: recordCreatedAt,
+        transactionID: transactionID
+      )
+    }
+
+    return operations
   }
 
   private static func measured<Value>(
@@ -809,7 +901,7 @@ public enum InstantSwiftDataLocalBenchmarks {
       throw InstantError(
         code: .validationFailed,
         operation: "run local todo benchmark",
-        message: "Expected \(operation) memory growth to stay within \(budget) bytes.",
+        message: "Expected \(operation) resident high-water growth to stay within \(budget) bytes.",
         recovery: "Inspect batching and retained benchmark state before trusting high-bandwidth timings."
       )
     }

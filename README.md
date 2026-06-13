@@ -225,9 +225,10 @@ swift run instant-swift-data-benchmarks --suite local-todos --iterations 3 --jso
 The `local-todos` suite records bootstrap, insert, query, enqueue, cache,
 reset, offline-restore, high-bandwidth scalar update, high-bandwidth linked
 write, storage metadata query, stream read/write, and live-query cancellation
-timings as structured JSON metrics. High-bandwidth scalar and linked samples
-also include resident-memory growth and budget fields, and local store/query/
-outbox hot-path samples include actor-hop breakdowns.
+timings as structured JSON metrics. High-bandwidth scalar, linked, and 1k/10k/
+50k triple workload samples include resident-memory high-water growth and budget
+fields, and local store/query/outbox hot-path samples include actor-hop
+breakdowns.
 
 The current transport is intentionally marked `not-implemented-local-cache-only`
 in command output. That means the demo proves durable local cache, typed triples,

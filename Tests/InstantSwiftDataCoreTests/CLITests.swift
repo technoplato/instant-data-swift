@@ -2684,6 +2684,9 @@ extension InstantStoreTests {
         "pending-mutation-enqueue.update",
         "high-bandwidth.scalar-updates",
         "high-bandwidth.linked-writes",
+        "memory-growth.triples.1k",
+        "memory-growth.triples.10k",
+        "memory-growth.triples.50k",
         "storage-metadata.query",
         "stream-write.chunks",
         "stream-read.chunks",
@@ -2721,6 +2724,46 @@ extension InstantStoreTests {
       })
     #else
       expectNoDifference(linkedMemorySamples.map(\.memoryDeltaBytes), [UInt64?.none])
+    #endif
+    let oneThousandTripleMemorySamples = try #require(
+      jsonOutput.metrics.first { $0.name == "memory-growth.triples.1k" }?.samples
+    )
+    expectNoDifference(oneThousandTripleMemorySamples.map(\.operationCount), [1_000])
+    expectNoDifference(oneThousandTripleMemorySamples.map(\.resultCount), [250])
+    expectNoDifference(oneThousandTripleMemorySamples.map(\.pendingMutationCount), [1])
+    expectNoDifference(oneThousandTripleMemorySamples.map(\.memoryBudgetBytes), [67_108_864])
+    let tenThousandTripleMemorySamples = try #require(
+      jsonOutput.metrics.first { $0.name == "memory-growth.triples.10k" }?.samples
+    )
+    expectNoDifference(tenThousandTripleMemorySamples.map(\.operationCount), [10_000])
+    expectNoDifference(tenThousandTripleMemorySamples.map(\.resultCount), [2_500])
+    expectNoDifference(tenThousandTripleMemorySamples.map(\.pendingMutationCount), [1])
+    expectNoDifference(tenThousandTripleMemorySamples.map(\.memoryBudgetBytes), [268_435_456])
+    let fiftyThousandTripleMemorySamples = try #require(
+      jsonOutput.metrics.first { $0.name == "memory-growth.triples.50k" }?.samples
+    )
+    expectNoDifference(fiftyThousandTripleMemorySamples.map(\.operationCount), [50_000])
+    expectNoDifference(fiftyThousandTripleMemorySamples.map(\.resultCount), [12_500])
+    expectNoDifference(fiftyThousandTripleMemorySamples.map(\.pendingMutationCount), [1])
+    expectNoDifference(fiftyThousandTripleMemorySamples.map(\.memoryBudgetBytes), [1_073_741_824])
+    #if canImport(Darwin)
+      #expect(
+        (
+          oneThousandTripleMemorySamples
+            + tenThousandTripleMemorySamples
+            + fiftyThousandTripleMemorySamples
+        )
+        .allSatisfy { sample in
+          guard let delta = sample.memoryDeltaBytes,
+            let budget = sample.memoryBudgetBytes
+          else { return false }
+          return delta <= budget
+        }
+      )
+    #else
+      expectNoDifference(oneThousandTripleMemorySamples.map(\.memoryDeltaBytes), [UInt64?.none])
+      expectNoDifference(tenThousandTripleMemorySamples.map(\.memoryDeltaBytes), [UInt64?.none])
+      expectNoDifference(fiftyThousandTripleMemorySamples.map(\.memoryDeltaBytes), [UInt64?.none])
     #endif
     expectNoDifference(
       jsonOutput.metrics.first { $0.name == "storage-metadata.query" }?.samples.map(\.resultCount),
@@ -2805,7 +2848,7 @@ extension InstantStoreTests {
       homeURL: homeURL
     )
     let lines = jsonlOutput.split(separator: "\n")
-    expectNoDifference(lines.count, 15)
+    expectNoDifference(lines.count, 18)
     let firstEvidence = try JSONDecoder().decode(
       CLIBenchmarkEvidence.self,
       from: Data(try #require(lines.first).utf8)
