@@ -95,7 +95,9 @@ real Instant app.
 ### Querying
 
 - Live subscriptions equivalent to `subscribeQuery`/React `useQuery`.
-- One-shot strict queries equivalent to `queryOnce`.
+- One-shot strict queries equivalent to `queryOnce`, exposed through
+  `InstantSwiftDataClient.queryOnce(_:)` for raw snapshots/emissions and typed
+  `queryOnceDecoded(_:)` for decoded values plus pagination `pageInfo`.
 - Top-level namespace queries and nested relation queries.
 - Explicit linked-entity inclusion, including typed forward includes like
   `.include(Post.author, User.query.select(User.name))`. Raw core materialization

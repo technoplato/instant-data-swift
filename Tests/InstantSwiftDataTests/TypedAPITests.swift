@@ -217,6 +217,66 @@ struct TypedAPITests {
   }
 
   @Test
+  func typedQueryOnceDecodedReturnsPageInfo() async throws {
+    let cacheURL = try typedTestCacheURL("typed-query-once-decoded")
+    let fixedDate = Date(timeIntervalSince1970: 1_700_000_410)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000410")!
+
+    try await withDependencies {
+      $0.date.now = fixedDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "typed-query-once-decoded",
+        persistenceURL: cacheURL,
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      try await db.transact(
+        id: "tx-typed-query-once-first",
+        createdAt: InstantTimestamp(milliseconds: 1_700_000_410_010)
+      ) {
+        TypedTodo.create(
+          id: InstantID(rawValue: "todo-query-once-first"),
+          TypedTodo.text.set("First page"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(fixedDate)
+        )
+      }
+      try await db.transact(
+        id: "tx-typed-query-once-second",
+        createdAt: InstantTimestamp(milliseconds: 1_700_000_410_020)
+      ) {
+        TypedTodo.create(
+          id: InstantID(rawValue: "todo-query-once-second"),
+          TypedTodo.text.set("Second page"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(fixedDate.addingTimeInterval(1))
+        )
+      }
+
+      let page = try await db.queryOnceDecoded(
+        TypedTodo.query
+          .order(TypedTodo.createdAt)
+          .first(1)
+      )
+
+      expectNoDifference(page.values.map(\.text), ["First page"])
+      expectNoDifference(page.pageInfo?.hasNextPage, true)
+      expectNoDifference(
+        page.pageInfo?.endCursor,
+        InstantQueryCursor(
+          entityID: "todo-query-once-first",
+          sortValue: .date(fixedDate),
+          inclusive: false
+        )
+      )
+    }
+  }
+
+  @Test
   func typedQuerySelectsFieldsForSnapshotsAndCompleteDecoding() async throws {
     let cacheURL = try typedTestCacheURL("typed-field-selection")
     let fixedDate = Date(timeIntervalSince1970: 1_700_000_450)

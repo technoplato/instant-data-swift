@@ -162,6 +162,9 @@ snapshots unless a model's decoder explicitly supports the reduced shape.
 Typed forward includes should use declared ref attributes, for example
 `.include(Post.author, User.query.select(User.name))`; reverse includes should
 be generated relation tokens rather than raw string names.
+One-shot typed queries should use `queryOnceDecoded` when callers need decoded
+values plus pagination `pageInfo`, and raw `queryOnce` when they need snapshots
+or the full query emission.
 
 Dynamic queries are a first-class requirement:
 

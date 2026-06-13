@@ -12,6 +12,8 @@ public struct InstantSwiftDataClient: Sendable {
 
   private var transactOperation:
     @Sendable (InstantStoreTransaction) async throws -> InstantStoreMutationResult
+  private var queryOnceOperation:
+    @Sendable (InstantQueryPlan) async throws -> InstantQueryEmission
   private var queryOperation: @Sendable (InstantQueryPlan) async throws -> [InstantEntitySnapshot]
   private var observeOperation: @Sendable (InstantQueryPlan) async -> AsyncStream<InstantQueryEmission>
   private var pendingMutationsOperation: @Sendable () async -> [PendingMutation]
@@ -21,6 +23,9 @@ public struct InstantSwiftDataClient: Sendable {
     self.runtime = runtime
     self.transactOperation = { transaction in
       try await runtime.transact(transaction)
+    }
+    self.queryOnceOperation = { plan in
+      try await runtime.queryOnce(plan)
     }
     self.queryOperation = { plan in
       try await runtime.query(plan)
@@ -39,6 +44,7 @@ public struct InstantSwiftDataClient: Sendable {
   public init(
     transact: @escaping @Sendable (InstantStoreTransaction) async throws
       -> InstantStoreMutationResult,
+    queryOnce: (@Sendable (InstantQueryPlan) async throws -> InstantQueryEmission)? = nil,
     query: @escaping @Sendable (InstantQueryPlan) async throws -> [InstantEntitySnapshot],
     observe: @escaping @Sendable (InstantQueryPlan) async -> AsyncStream<InstantQueryEmission>,
     pendingMutations: @escaping @Sendable () async -> [PendingMutation],
@@ -46,6 +52,11 @@ public struct InstantSwiftDataClient: Sendable {
   ) {
     self.runtime = nil
     self.transactOperation = transact
+    self.queryOnceOperation =
+      queryOnce
+      ?? { plan in
+        InstantQueryEmission(queryID: plan.id, sequence: 0, values: try await query(plan))
+      }
     self.queryOperation = query
     self.observeOperation = observe
     self.pendingMutationsOperation = pendingMutations
@@ -98,6 +109,10 @@ public struct InstantSwiftDataClient: Sendable {
 
   public func query(_ plan: InstantQueryPlan) async throws -> [InstantEntitySnapshot] {
     try await queryOperation(plan)
+  }
+
+  public func queryOnce(_ plan: InstantQueryPlan) async throws -> InstantQueryEmission {
+    try await queryOnceOperation(plan)
   }
 
   public func observe(_ plan: InstantQueryPlan) async -> AsyncStream<InstantQueryEmission> {

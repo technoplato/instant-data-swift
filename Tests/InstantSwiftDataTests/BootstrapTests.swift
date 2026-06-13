@@ -82,6 +82,17 @@ struct BootstrapTests {
           )
         ]
       )
+
+      let emission = try await client.queryOnce(
+        InstantQueryPlan(
+          id: "bootstrap-test.first",
+          namespace: TodoExample.namespace,
+          first: 1
+        )
+      )
+      expectNoDifference(emission.queryID, "bootstrap-test.first")
+      expectNoDifference(emission.values.map(\.id), ["todo-bootstrap"])
+      expectNoDifference(emission.pageInfo?.hasNextPage, false)
     }
   }
 
@@ -206,5 +217,40 @@ struct BootstrapTests {
     )
 
     expectNoDifference(url.path, directory.appendingPathComponent("state.sqlite").path)
+  }
+
+  @Test
+  func mockClientQueryOnceFallsBackToSnapshots() async throws {
+    let mock = InstantSwiftDataClient(
+      transact: { transaction in
+        InstantStoreMutationResult(
+          transactionID: transaction.id,
+          changedEntityIDs: [],
+          tripleCount: transaction.operations.count,
+          emissions: []
+        )
+      },
+      query: { plan in
+        [
+          InstantEntitySnapshot(
+            id: "mock-todo",
+            namespace: plan.namespace,
+            values: [
+              "text": .one(.string("Mock once"))
+            ]
+          )
+        ]
+      },
+      observe: { _ in AsyncStream { continuation in continuation.finish() } },
+      pendingMutations: { [] },
+      localID: { name in "mock-\(name)" }
+    )
+
+    let plan = InstantQueryPlan(id: "mock.once", namespace: TodoExample.namespace)
+    let emission = try await mock.queryOnce(plan)
+    expectNoDifference(emission.queryID, "mock.once")
+    expectNoDifference(emission.sequence, 0)
+    expectNoDifference(emission.values.map(\.id), ["mock-todo"])
+    expectNoDifference(emission.pageInfo, nil)
   }
 }

@@ -1394,6 +1394,19 @@ extension InstantSwiftDataClient {
     try Entity.decode(try await self.query(query.plan))
   }
 
+  public func queryOnce<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>
+  ) async throws -> InstantQueryEmission {
+    try await queryOnce(query.plan)
+  }
+
+  public func queryOnceDecoded<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>
+  ) async throws -> (values: [Entity], pageInfo: InstantQueryPageInfo?) {
+    let emission = try await queryOnce(query)
+    return (try Entity.decode(emission.values), emission.pageInfo)
+  }
+
   @discardableResult
   public func transact(
     id explicitID: String? = nil,

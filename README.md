@@ -190,6 +190,12 @@ let openTodos = try await db.query(
     .order(.serverCreatedAt, .descending)
 )
 
+let firstPage = try await db.queryOnceDecoded(
+  Todo.query
+    .order(Todo.createdAt)
+    .first(10)
+)
+
 let selectedSnapshots = try await db.query(
   Todo.query
     .select(Todo.text, Todo.isCompleted)
@@ -212,6 +218,8 @@ for try await todos in subscription {
 `serverCreatedAt` is order-only metadata. Do not declare a model attribute with
 that name; use a domain field like `createdAt` for decoded data, and use
 `.order(.serverCreatedAt, ...)` when you want server-created ordering.
+`queryOnceDecoded` returns decoded typed values plus `pageInfo` for paginated
+one-shot reads; use raw `queryOnce` when you need snapshots or emissions.
 Partial field selection returns raw snapshots unless your entity decoder can
 build a value from the selected fields.
 
