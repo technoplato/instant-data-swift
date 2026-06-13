@@ -8594,15 +8594,16 @@ struct InstantStoreTests {
       )
     }
 
-    let mixedTypeComparison = try await runtime.query(
-      .init(
-        id: "items.mixed-type-range",
-        namespace: "items",
-        filters: [.greaterThan(field: "tag", value: .number(1))],
-        order: .init("score")
+    await expectQueryValidation(namespace: "items", path: "tag") {
+      _ = try await runtime.query(
+        .init(
+          id: "items.mixed-type-range",
+          namespace: "items",
+          filters: [.greaterThan(field: "tag", value: .number(1))],
+          order: .init("score")
+        )
       )
-    )
-    expectNoDifference(mixedTypeComparison, [])
+    }
   }
 
   @Test

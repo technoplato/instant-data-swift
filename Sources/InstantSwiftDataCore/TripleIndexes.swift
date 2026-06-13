@@ -56,7 +56,7 @@ struct AttributeStore: Hashable, Codable, Sendable {
   }
 }
 
-struct InstantQueryValidationIssue: Hashable, Sendable {
+struct InstantQueryValidationIssue: Error, Hashable, Sendable {
   var namespace: String
   var path: String?
   var message: String
@@ -937,17 +937,80 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     attributes: AttributeStore
   ) -> InstantQueryValidationIssue? {
     switch filter {
-    case let .equals(field, _),
-      let .notEquals(field, _),
-      let .greaterThan(field, _),
-      let .greaterThanOrEqual(field, _),
-      let .lessThan(field, _),
-      let .lessThanOrEqual(field, _),
-      let .in(field, _),
-      let .like(field, _),
-      let .iLike(field, _),
-      let .isNull(field),
-      let .isNotNull(field):
+    case let .equals(field, value), let .notEquals(field, value):
+      switch validateFilterField(
+        field,
+        namespace: namespace,
+        attributes: attributes
+      ) {
+      case let .success(attribute):
+        return validateFilterValue(value, field: field, attribute: attribute)
+
+      case let .failure(issue):
+        return issue
+      }
+
+    case let .greaterThan(field, value),
+      let .greaterThanOrEqual(field, value),
+      let .lessThan(field, value),
+      let .lessThanOrEqual(field, value):
+      switch validateFilterField(
+        field,
+        namespace: namespace,
+        attributes: attributes
+      ) {
+      case let .success(attribute):
+        if let issue = validateFilterValue(value, field: field, attribute: attribute) {
+          return issue
+        }
+        guard attribute.valueType.isRangeComparableInQueries else {
+          return unsupportedRangeFilterIssue(field: field, attribute: attribute)
+        }
+        return nil
+
+      case let .failure(issue):
+        return issue
+      }
+
+    case let .in(field, values):
+      switch validateFilterField(
+        field,
+        namespace: namespace,
+        attributes: attributes
+      ) {
+      case let .success(attribute):
+        for value in values {
+          if let issue = validateFilterValue(value, field: field, attribute: attribute) {
+            return issue
+          }
+        }
+        return nil
+
+      case let .failure(issue):
+        return issue
+      }
+
+    case let .like(field, _), let .iLike(field, _):
+      switch validateFilterField(
+        field,
+        namespace: namespace,
+        attributes: attributes
+      ) {
+      case let .success(attribute):
+        guard attribute.valueType == .string else {
+          return incompatibleFilterValueIssue(
+            field: field,
+            attribute: attribute,
+            received: "pattern"
+          )
+        }
+        return nil
+
+      case let .failure(issue):
+        return issue
+      }
+
+    case let .isNull(field), let .isNotNull(field):
       return validateFieldReference(
         field,
         namespace: namespace,
@@ -1062,53 +1125,178 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     context: String,
     allowNested: Bool
   ) -> InstantQueryValidationIssue? {
-    if !field.contains(".") {
-      guard isDeclaredField(field, namespace: namespace, attributes: attributes) else {
-        return undeclaredFieldIssue(
-          field,
-          namespace: namespace,
-          context: context
-        )
-      }
+    switch resolvedFieldAttribute(
+      field,
+      namespace: namespace,
+      attributes: attributes,
+      context: context,
+      allowNested: allowNested
+    ) {
+    case .success:
       return nil
+
+    case let .failure(issue):
+      return issue
+    }
+  }
+
+  private static func validateFilterField(
+    _ field: String,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> Result<InstantAttribute, InstantQueryValidationIssue> {
+    resolvedFieldAttribute(
+      field,
+      namespace: namespace,
+      attributes: attributes,
+      context: "query filter",
+      allowNested: true
+    )
+  }
+
+  private static func resolvedFieldAttribute(
+    _ field: String,
+    namespace: String,
+    attributes: AttributeStore,
+    context: String,
+    allowNested: Bool
+  ) -> Result<InstantAttribute, InstantQueryValidationIssue> {
+    if !field.contains(".") {
+      guard let attribute = attributes.attribute(namespace: namespace, name: field) else {
+        return .failure(undeclaredFieldIssue(field, namespace: namespace, context: context))
+      }
+      return .success(attribute)
     }
 
     guard allowNested else {
-      return InstantQueryValidationIssue(
-        namespace: namespace,
-        path: field,
-        message: "\(context) '\(field)' cannot use a nested relation path.",
-        recovery: "Use a direct field for this query clause."
+      return .failure(
+        InstantQueryValidationIssue(
+          namespace: namespace,
+          path: field,
+          message: "\(context) '\(field)' cannot use a nested relation path.",
+          recovery: "Use a direct field for this query clause."
+        )
       )
     }
     guard let nested = nestedField(field) else {
-      return InstantQueryValidationIssue(
-        namespace: namespace,
-        path: field,
-        message: "Nested field path '\(field)' is not supported.",
-        recovery: "Use one or more relations followed by a field, such as 'project.owner.name'."
+      return .failure(
+        InstantQueryValidationIssue(
+          namespace: namespace,
+          path: field,
+          message: "Nested field path '\(field)' is not supported.",
+          recovery: "Use one or more relations followed by a field, such as 'project.owner.name'."
+        )
       )
     }
     switch nestedFieldTargetNamespace(nested, namespace: namespace, attributes: attributes) {
     case let .success(targetNamespace):
-      guard isDeclaredField(nested.field, namespace: targetNamespace, attributes: attributes) else {
-        return undeclaredFieldIssue(
-          nested.field,
-          namespace: targetNamespace,
-          context: context,
-          path: field
+      guard let attribute = attributes.attribute(namespace: targetNamespace, name: nested.field)
+      else {
+        return .failure(
+          undeclaredFieldIssue(
+            nested.field,
+            namespace: targetNamespace,
+            context: context,
+            path: field
+          )
         )
       }
-      return nil
+      return .success(attribute)
 
     case let .failure(invalidRelation):
-      return InstantQueryValidationIssue(
-        namespace: invalidRelation.namespace,
-        path: field,
-        message: "'\(invalidRelation.name)' is not a declared relation.",
-        recovery: "Filter through a declared forward or reverse relation."
+      return .failure(
+        InstantQueryValidationIssue(
+          namespace: invalidRelation.namespace,
+          path: field,
+          message: "'\(invalidRelation.name)' is not a declared relation.",
+          recovery: "Filter through a declared forward or reverse relation."
+        )
       )
     }
+  }
+
+  private static func validateFilterValue(
+    _ value: InstantValue,
+    field: String,
+    attribute: InstantAttribute
+  ) -> InstantQueryValidationIssue? {
+    if isCompatibleFilterValue(value, with: attribute) {
+      return nil
+    }
+    return incompatibleFilterValueIssue(
+      field: field,
+      attribute: attribute,
+      received: value.queryValidationTypeDescription
+    )
+  }
+
+  private static func isCompatibleFilterValue(
+    _ value: InstantValue,
+    with attribute: InstantAttribute
+  ) -> Bool {
+    if case .null = value {
+      return !attribute.isRequired
+    }
+
+    switch (value, attribute.valueType) {
+    case (.string, .string),
+      (.number, .number),
+      (.bool, .boolean),
+      (.json, .json),
+      (.ref, .ref):
+      return true
+
+    case (.date, .date):
+      return true
+
+    case (.string, .date), (.number, .date):
+      return InstantDateCoercion.coerce(value) != nil
+
+    case (.null, _),
+      (.string, _),
+      (.number, _),
+      (.bool, _),
+      (.date, _),
+      (.json, _),
+      (.ref, _),
+      (.lookupRef, _):
+      return false
+    }
+  }
+
+  private static func incompatibleFilterValueIssue(
+    field: String,
+    attribute: InstantAttribute,
+    received: String
+  ) -> InstantQueryValidationIssue {
+    InstantQueryValidationIssue(
+      namespace: attribute.namespace,
+      path: field,
+      message:
+        "query filter '\(field)' expects \(attribute.valueType.queryValidationDescription) values, but received \(received).",
+      recovery: "Use a filter value that matches the schema attribute type."
+    )
+  }
+
+  private static func unsupportedRangeFilterIssue(
+    field: String,
+    attribute: InstantAttribute
+  ) -> InstantQueryValidationIssue {
+    InstantQueryValidationIssue(
+      namespace: attribute.namespace,
+      path: field,
+      message:
+        "query filter '\(field)' cannot use range operators with \(attribute.valueType.queryValidationDescription) values.",
+      recovery: "Use range operators with string, number, boolean, or date fields."
+    )
+  }
+
+  private static func isDeclaredField(
+    _ field: String,
+    namespace: String,
+    attributes: AttributeStore
+  ) -> Bool {
+    attributes.attribute(namespace: namespace, name: field) != nil
   }
 
   private static func undeclaredFieldIssue(
@@ -1123,14 +1311,6 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       message: "\(context) '\(path ?? field)' references an undeclared field.",
       recovery: "Declare the field in the schema attributes, or remove it from the query."
     )
-  }
-
-  private static func isDeclaredField(
-    _ field: String,
-    namespace: String,
-    attributes: AttributeStore
-  ) -> Bool {
-    attributes.attribute(namespace: namespace, name: field) != nil
   }
 
   private static func nestedField(_ field: String) -> NestedField? {
@@ -1744,6 +1924,57 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       case .orderedSame:
         return lexicographicallyPrecedes(lhsTieBreaker, rhsTieBreaker)
       }
+    }
+  }
+}
+
+private extension InstantValue {
+  var queryValidationTypeDescription: String {
+    switch self {
+    case .null:
+      return "null"
+    case .string:
+      return "string"
+    case .number:
+      return "number"
+    case .bool:
+      return "boolean"
+    case .date:
+      return "date"
+    case .json:
+      return "json"
+    case .ref:
+      return "ref"
+    case .lookupRef:
+      return "lookup ref"
+    }
+  }
+}
+
+private extension InstantValueType {
+  var queryValidationDescription: String {
+    switch self {
+    case .string:
+      return "string"
+    case .number:
+      return "number"
+    case .boolean:
+      return "boolean"
+    case .date:
+      return "date"
+    case .json:
+      return "json"
+    case .ref:
+      return "ref"
+    }
+  }
+
+  var isRangeComparableInQueries: Bool {
+    switch self {
+    case .string, .number, .boolean, .date:
+      return true
+    case .json, .ref:
+      return false
     }
   }
 }

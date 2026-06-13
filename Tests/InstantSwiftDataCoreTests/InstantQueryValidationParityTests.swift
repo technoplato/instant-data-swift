@@ -96,6 +96,259 @@ struct InstantQueryValidationParityTests {
       )
     }
   }
+
+  @Test
+  func upstreamWhereClauseTypeValidation() async throws {
+    let runtime = try await queryValidationRuntime()
+    let source = queryValidationSource(
+      "where clause type validation",
+      assertion: "lines 241-272 string field value types",
+      status: "adapted: Swift has no InstantValueType.any, so this covers the schema-backed string cases."
+    )
+
+    let valid = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.users.valid-string-filters",
+        namespace: "users",
+        filters: [
+          .equals(field: "name", value: .string("John")),
+          .equals(field: "email", value: .string("john@example.com")),
+        ]
+      )
+    )
+    expectNoDifference(valid, [], source)
+
+    await expectQueryValidation(
+      namespace: "users",
+      path: "name",
+      source
+    ) {
+      _ = try await runtime.query(
+        InstantQueryPlan(
+          id: "query-validation-parity.users.invalid-name-type",
+          namespace: "users",
+          filters: [.equals(field: "name", value: .number(123))]
+        )
+      )
+    }
+
+    await expectQueryValidation(
+      namespace: "users",
+      path: "email",
+      source
+    ) {
+      _ = try await runtime.query(
+        InstantQueryPlan(
+          id: "query-validation-parity.users.invalid-email-type",
+          namespace: "users",
+          filters: [.equals(field: "email", value: .bool(true))]
+        )
+      )
+    }
+  }
+
+  @Test
+  func upstreamWhereClauseOperatorValueTypes() async throws {
+    let runtime = try await queryValidationRuntime()
+    let source = queryValidationSource(
+      "where clause operators",
+      assertion: "lines 307-371 $in element types; lines 409-448 string comparisons",
+      status:
+        "adapted: Swift's enum makes unknown operators, non-array 'in' values, and non-string pattern payloads unrepresentable."
+    )
+
+    let validIn = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.users.valid-in",
+        namespace: "users",
+        filters: [.in(field: "name", values: [.string("John"), .string("Jane")])]
+      )
+    )
+    expectNoDifference(validIn, [], source)
+
+    await expectQueryValidation(
+      namespace: "users",
+      path: "name",
+      source
+    ) {
+      _ = try await runtime.query(
+        InstantQueryPlan(
+          id: "query-validation-parity.users.invalid-in",
+          namespace: "users",
+          filters: [.in(field: "name", values: [.string("John"), .number(123)])]
+        )
+      )
+    }
+
+    let validComparison = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.posts.valid-comparison",
+        namespace: "posts",
+        filters: [.greaterThan(field: "title", value: .string("A"))]
+      )
+    )
+    expectNoDifference(validComparison, [], source)
+
+    await expectQueryValidation(
+      namespace: "posts",
+      path: "title",
+      source
+    ) {
+      _ = try await runtime.query(
+        InstantQueryPlan(
+          id: "query-validation-parity.posts.invalid-comparison-type",
+          namespace: "posts",
+          filters: [.lessThan(field: "title", value: .number(123))]
+        )
+      )
+    }
+  }
+
+  @Test
+  func upstreamWhereClauseIDValidation() async throws {
+    let runtime = try await queryValidationRuntime()
+    let source = queryValidationSource(
+      "where clause id validation",
+      assertion: "lines 530-563 id value types",
+      status: "adapted: Swift's synthetic primary-key attribute is validated as a string field."
+    )
+
+    let validID = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.users.valid-id",
+        namespace: "users",
+        filters: [.equals(field: "id", value: .string("user-123"))]
+      )
+    )
+    expectNoDifference(validID, [], source)
+
+    await expectQueryValidation(
+      namespace: "users",
+      path: "id",
+      source
+    ) {
+      _ = try await runtime.query(
+        InstantQueryPlan(
+          id: "query-validation-parity.users.invalid-id",
+          namespace: "users",
+          filters: [.equals(field: "id", value: .number(123))]
+        )
+      )
+    }
+
+    let validIDIn = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.users.valid-id-in",
+        namespace: "users",
+        filters: [.in(field: "id", values: [.string("user-1"), .string("user-2")])]
+      )
+    )
+    expectNoDifference(validIDIn, [], source)
+  }
+
+  @Test
+  func swiftSchemaBackedFilterValueEdges() async throws {
+    let runtime = try await queryValidationRuntime()
+    let source =
+      "Swift core query filter value validation: dates coerce, refs/json are strict, nested fields validate their target attribute."
+
+    let validDateString = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.posts.valid-date-string",
+        namespace: "posts",
+        filters: [.equals(field: "publishedAt", value: .string("2025-01-15T20:53:08.200Z"))]
+      )
+    )
+    expectNoDifference(validDateString, [], source)
+
+    let validDateNumber = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.posts.valid-date-number",
+        namespace: "posts",
+        filters: [.greaterThan(field: "publishedAt", value: .number(1_642_234_800_000))]
+      )
+    )
+    expectNoDifference(validDateNumber, [], source)
+
+    await expectQueryValidation(namespace: "posts", path: "publishedAt", source) {
+      _ = try await runtime.query(
+        InstantQueryPlan(
+          id: "query-validation-parity.posts.invalid-date",
+          namespace: "posts",
+          filters: [.equals(field: "publishedAt", value: .bool(true))]
+        )
+      )
+    }
+
+    let validRef = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.posts.valid-ref",
+        namespace: "posts",
+        filters: [.equals(field: "comments", value: .ref("comment-1"))]
+      )
+    )
+    expectNoDifference(validRef, [], source)
+
+    await expectQueryValidation(namespace: "posts", path: "comments", source) {
+      _ = try await runtime.query(
+        InstantQueryPlan(
+          id: "query-validation-parity.posts.invalid-ref-string",
+          namespace: "posts",
+          filters: [.equals(field: "comments", value: .string("comment-1"))]
+        )
+      )
+    }
+
+    await expectQueryValidation(namespace: "posts", path: "comments", source) {
+      _ = try await runtime.query(
+        InstantQueryPlan(
+          id: "query-validation-parity.posts.invalid-ref-range",
+          namespace: "posts",
+          filters: [.greaterThan(field: "comments", value: .ref("comment-1"))]
+        )
+      )
+    }
+
+    let validJSON = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.users.valid-json",
+        namespace: "users",
+        filters: [
+          .equals(field: "stuff", value: .json(.object(["custom": .string("value")])))
+        ]
+      )
+    )
+    expectNoDifference(validJSON, [], source)
+
+    await expectQueryValidation(namespace: "users", path: "stuff", source) {
+      _ = try await runtime.query(
+        InstantQueryPlan(
+          id: "query-validation-parity.users.invalid-json-string",
+          namespace: "users",
+          filters: [.equals(field: "stuff", value: .string("value"))]
+        )
+      )
+    }
+
+    let validNestedID = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.posts.valid-nested-id",
+        namespace: "posts",
+        filters: [.equals(field: "comments.id", value: .string("comment-1"))]
+      )
+    )
+    expectNoDifference(validNestedID, [], source)
+
+    await expectQueryValidation(namespace: "comments", path: "comments.body", source) {
+      _ = try await runtime.query(
+        InstantQueryPlan(
+          id: "query-validation-parity.posts.invalid-nested-body",
+          namespace: "posts",
+          filters: [.equals(field: "comments.body", value: .number(123))]
+        )
+      )
+    }
+  }
 }
 
 private let upstreamQueryValidationTestSource =
@@ -138,10 +391,32 @@ private func queryValidationParityAttributes() -> [InstantAttribute] {
       isIndexed: true
     ),
     InstantAttribute(
+      id: "users/email",
+      namespace: "users",
+      name: "email",
+      valueType: .string,
+      isIndexed: true,
+      isUnique: true
+    ),
+    InstantAttribute(
+      id: "users/stuff",
+      namespace: "users",
+      name: "stuff",
+      valueType: .json,
+      isIndexed: true
+    ),
+    InstantAttribute(
       id: "posts/title",
       namespace: "posts",
       name: "title",
       valueType: .string,
+      isIndexed: true
+    ),
+    InstantAttribute(
+      id: "posts/publishedAt",
+      namespace: "posts",
+      name: "publishedAt",
+      valueType: .date,
       isIndexed: true
     ),
     InstantAttribute(
