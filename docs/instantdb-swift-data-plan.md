@@ -248,6 +248,12 @@ subscriptions, and Swift/TypeScript boundary proof remain future work.
   auth, and benchmarks.
 - Dev logging hooks should be optional and removable from production targets.
 
+Current local progress: schema and permissions generation can emit structured
+local evidence with `instant-swift-data schema generate --example todos --to
+instant.schema.ts --json` and `instant-swift-data perms generate --example todos
+--to instant.perms.ts --jsonl`. Real remote push/pull remains future transport
+work.
+
 Current local progress: the CLI exposes non-captive local admin helpers:
 `instant-swift-data admin transact <namespace> <entity-id> --merge '{...}'`
 infers scalar/json attributes for the namespace, writes through the same

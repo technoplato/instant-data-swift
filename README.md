@@ -165,8 +165,8 @@ swift run instant-swift-data perms verify --example todos --from .instant-swift-
 Generate just the current todo example schema and permissions:
 
 ```bash
-swift run instant-swift-data schema generate --example todos --to instant.schema.ts
-swift run instant-swift-data perms generate --example todos --to instant.perms.ts
+swift run instant-swift-data schema generate --example todos --to instant.schema.ts --json
+swift run instant-swift-data perms generate --example todos --to instant.perms.ts --jsonl
 swift run instant-swift-data schema verify --example todos --from instant.schema.ts --json
 swift run instant-swift-data perms verify --example todos --from instant.perms.ts --json
 ```

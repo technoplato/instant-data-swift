@@ -43,6 +43,88 @@ extension InstantStoreTests {
       homeURL: homeURL
     )
 
+    let schemaStdout = try JSONDecoder().decode(
+      CLIGeneratedArtifactOutput.self,
+      from: Data(
+        try runCLI(["schema", "generate", "--example", "todos", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(schemaStdout.kind, "schema")
+    expectNoDifference(schemaStdout.fileName, "instant.schema.ts")
+    expectNoDifference(schemaStdout.path, nil)
+    #expect(try #require(schemaStdout.contents).contains("export default i.schema({"))
+
+    let rawSchema = try runCLI(["schema", "generate", "--example", "todos"], homeURL: homeURL)
+    #expect(rawSchema.contains("export default i.schema({"))
+    #expect(!rawSchema.contains(#""kind""#))
+
+    let rawPermissions = try runCLI(["perms", "generate", "--example", "todos"], homeURL: homeURL)
+    #expect(rawPermissions.contains("export default rules;"))
+    #expect(!rawPermissions.contains(#""kind""#))
+
+    let generatedSchemaURL = homeURL.appendingPathComponent("Generated/instant.schema.ts")
+    let generatedSchema = try JSONDecoder().decode(
+      CLIGeneratedArtifactOutput.self,
+      from: Data(
+        try runCLI(
+          ["schema", "generate", "--example", "todos", "--to", generatedSchemaURL.path, "--json"],
+          homeURL: homeURL
+        )
+        .utf8
+      )
+    )
+    expectNoDifference(generatedSchema.kind, "schema")
+    expectNoDifference(generatedSchema.path, generatedSchemaURL.path)
+    expectNoDifference(generatedSchema.contents, nil)
+    #expect(generatedSchema.byteCount > 0)
+    _ = try runCLI(
+      ["schema", "verify", "--example", "todos", "--from", generatedSchemaURL.path, "--json"],
+      homeURL: homeURL
+    )
+    let quietSchemaURL = homeURL.appendingPathComponent("Generated/quiet.schema.ts")
+    let quietSchema = try runCLI(
+      ["schema", "generate", "--example", "todos", "--to", quietSchemaURL.path],
+      homeURL: homeURL
+    )
+    expectNoDifference(quietSchema, "")
+    _ = try runCLI(
+      ["schema", "verify", "--example", "todos", "--from", quietSchemaURL.path, "--json"],
+      homeURL: homeURL
+    )
+
+    let generatedPermissionsURL = homeURL.appendingPathComponent("Generated/instant.perms.ts")
+    let permissionsJSONL = try runCLI(
+      ["perms", "generate", "--example", "todos", "--to", generatedPermissionsURL.path, "--jsonl"],
+      homeURL: homeURL
+    )
+    let permissionsLines = permissionsJSONL.split(separator: "\n")
+    expectNoDifference(permissionsLines.count, 1)
+    let permissionsEvidence = try JSONDecoder().decode(
+      CLIGeneratedArtifactEvidence.self,
+      from: Data(try #require(permissionsLines.first).utf8)
+    )
+    expectNoDifference(permissionsEvidence.caseID, "cli.perms.generate")
+    expectNoDifference(permissionsEvidence.appID, "permissions-tooling")
+    expectNoDifference(permissionsEvidence.event, "artifact")
+    expectNoDifference(permissionsEvidence.details.kind, "permissions")
+    expectNoDifference(permissionsEvidence.details.path, generatedPermissionsURL.path)
+    expectNoDifference(permissionsEvidence.details.contents, nil)
+    _ = try runCLI(
+      ["perms", "verify", "--example", "todos", "--from", generatedPermissionsURL.path, "--json"],
+      homeURL: homeURL
+    )
+    let quietPermissionsURL = homeURL.appendingPathComponent("Generated/quiet.perms.ts")
+    let quietPermissions = try runCLI(
+      ["perms", "generate", "--example", "todos", "--to", quietPermissionsURL.path],
+      homeURL: homeURL
+    )
+    expectNoDifference(quietPermissions, "")
+    _ = try runCLI(
+      ["perms", "verify", "--example", "todos", "--from", quietPermissionsURL.path, "--json"],
+      homeURL: homeURL
+    )
+
     let collisionURL = homeURL.appendingPathComponent("TodoScaffoldCollision", isDirectory: true)
     try FileManager.default.createDirectory(at: collisionURL, withIntermediateDirectories: true)
     let collisionReadmeURL = collisionURL.appendingPathComponent("README.md")
@@ -1924,6 +2006,28 @@ private struct CLIInitEvidence: Decodable {
 
   enum CodingKeys: String, CodingKey {
     case caseID = "case"
+    case event
+    case details
+  }
+}
+
+private struct CLIGeneratedArtifactOutput: Decodable {
+  var kind: String
+  var fileName: String
+  var path: String?
+  var byteCount: Int
+  var contents: String?
+}
+
+private struct CLIGeneratedArtifactEvidence: Decodable {
+  var caseID: String
+  var appID: String
+  var event: String
+  var details: CLIGeneratedArtifactOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case appID
     case event
     case details
   }

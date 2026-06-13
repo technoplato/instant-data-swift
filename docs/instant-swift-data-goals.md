@@ -463,7 +463,9 @@ Agent-oriented output modes are required:
 `instant-swift-data` should support:
 
 - initialize package scaffolding.
-- generate schema and permissions from Swift.
+- generate schema and permissions from Swift with structured local evidence, for
+  example `instant-swift-data schema generate --example todos --to instant.schema.ts --json`
+  and `instant-swift-data perms generate --example todos --to instant.perms.ts --jsonl`.
 - push/pull schema and permissions.
 - create ephemeral test app.
 - run admin query.

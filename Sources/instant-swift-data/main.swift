@@ -107,13 +107,19 @@ struct InstantSwiftDataCLI {
 
     let options = try GenerateOptions.parse(
       arguments: arguments,
-      usage: "Usage: instant-swift-data schema generate --example todos [--to instant.schema.ts]"
+      usage: "Usage: instant-swift-data schema generate --example todos [--to instant.schema.ts] [--json|--jsonl]"
     )
     try requireTodoExample(options.example)
 
-    try writeGenerated(
+    try printGeneratedArtifact(
       try TypeScriptSchemaPrinter().printSchema(InstantSchemaExamples.todosDocument),
-      to: options.outputPath
+      kind: "schema",
+      fileName: "instant.schema.ts",
+      example: options.example,
+      to: options.outputPath,
+      output: output,
+      caseID: "cli.schema.generate",
+      appID: "schema-tooling"
     )
   }
 
@@ -127,13 +133,19 @@ struct InstantSwiftDataCLI {
 
     let options = try GenerateOptions.parse(
       arguments: arguments,
-      usage: "Usage: instant-swift-data perms generate --example todos [--to instant.perms.ts]"
+      usage: "Usage: instant-swift-data perms generate --example todos [--to instant.perms.ts] [--json|--jsonl]"
     )
     try requireTodoExample(options.example)
 
-    try writeGenerated(
+    try printGeneratedArtifact(
       try TypeScriptPermissionsPrinter().printPermissions(InstantSchemaExamples.todoPermissions),
-      to: options.outputPath
+      kind: "permissions",
+      fileName: "instant.perms.ts",
+      example: options.example,
+      to: options.outputPath,
+      output: output,
+      caseID: "cli.perms.generate",
+      appID: "permissions-tooling"
     )
   }
 
@@ -2515,9 +2527,9 @@ struct InstantSwiftDataCLI {
 
       Commands:
         init --example todos --to <directory> [--force] [--json|--jsonl]
-        schema generate --example todos [--to instant.schema.ts]
+        schema generate --example todos [--to instant.schema.ts] [--json|--jsonl]
         schema verify --example todos --from instant.schema.ts [--json|--jsonl]
-        perms generate --example todos [--to instant.perms.ts]
+        perms generate --example todos [--to instant.perms.ts] [--json|--jsonl]
         perms verify --example todos --from instant.perms.ts [--json|--jsonl]
         query todos [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt] [--raw] [--select field[,field]] [--json|--jsonl]
         admin query <namespace> [--limit n] [--json|--jsonl]
@@ -2586,13 +2598,59 @@ struct InstantSwiftDataCLI {
     }
   }
 
-  private static func writeGenerated(_ contents: String, to outputPath: String?) throws {
+  private static func printGeneratedArtifact(
+    _ contents: String,
+    kind: String,
+    fileName: String,
+    example: String,
+    to outputPath: String?,
+    output: OutputMode,
+    caseID: String,
+    appID: String
+  ) throws {
     let data = Data(contents.utf8)
-    guard let outputPath else {
-      FileHandle.standardOutput.write(data)
-      return
+    let path: String?
+    if let outputPath {
+      path = try writeGenerated(contents, to: outputPath)
+    } else {
+      path = nil
     }
 
+    let summary = GeneratedArtifactOutput(
+      example: example,
+      kind: kind,
+      fileName: fileName,
+      path: path,
+      byteCount: data.count,
+      transport: "not-implemented-local-cache-only",
+      contents: path == nil ? contents : nil
+    )
+
+    switch output {
+    case .human:
+      guard outputPath == nil else { return }
+      FileHandle.standardOutput.write(data)
+
+    case .json:
+      try writeJSON(summary)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: caseID,
+          side: "swift",
+          event: "artifact",
+          appID: appID,
+          entityID: path ?? fileName,
+          ok: true,
+          details: summary
+        )
+      )
+    }
+  }
+
+  private static func writeGenerated(_ contents: String, to outputPath: String) throws -> String {
+    let data = Data(contents.utf8)
     let currentDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
     let url = URL(fileURLWithPath: outputPath, relativeTo: currentDirectory).standardizedFileURL
     try FileManager.default.createDirectory(
@@ -2600,6 +2658,7 @@ struct InstantSwiftDataCLI {
       withIntermediateDirectories: true
     )
     try data.write(to: url, options: .atomic)
+    return url.path
   }
 
   private static func scaffoldTodoExample(
@@ -4600,6 +4659,16 @@ private struct PermissionsVerifyOutput: Codable, Sendable {
   var namespaceCount: Int
   var allowRuleCount: Int
   var rateLimitCount: Int
+}
+
+private struct GeneratedArtifactOutput: Codable, Sendable {
+  var example: String
+  var kind: String
+  var fileName: String
+  var path: String?
+  var byteCount: Int
+  var transport: String
+  var contents: String?
 }
 
 private struct LocalTodoValidationOutput: Codable, Sendable {
