@@ -33,6 +33,20 @@ swift run instant-swift-data-validation-runner --local-todos
 The output is JSON Lines using the evidence format below. Real InstantDB and
 Swift/TypeScript boundary cases remain required for final acceptance.
 
+## Local TypeScript Fixture Evidence
+
+The TypeScript runner checks the committed `instant.schema.ts` and
+`instant.perms.ts` fixtures from the TypeScript side and emits JSONL evidence
+without requiring an Instant app or admin token:
+
+```bash
+node validation/ts-runner/src/main.ts --fixtures
+```
+
+`validation/run-e2e.sh` runs this fixture check after Swift local validation when
+Node is available, then records the real Instant boundary as pending until
+ephemeral app creation, schema push, and admin query/transact are implemented.
+
 ## Required Cases
 
 - Swift writes, TypeScript observes.

@@ -74,7 +74,25 @@ else
 fi
 
 if command -v node >/dev/null 2>&1; then
-  log_json "typescript-boundary-pending" true "{\"reason\":\"TypeScript runner remains scaffolded until real Instant transport lands\"}"
+  log_json "typescript-fixtures-start" true
+  if (
+    cd "${ROOT}"
+    VALIDATION_APP_ID="${VALIDATION_APP_ID}" node validation/ts-runner/src/main.ts --fixtures --app-id "${VALIDATION_APP_ID}"
+  ) | tee "${RESULTS_DIR}/typescript-fixtures.jsonl"; then
+    log_json "typescript-fixtures-complete" true "{\"path\":\"${RESULTS_DIR}/typescript-fixtures.jsonl\"}"
+  else
+    status=$?
+    log_json \
+      "typescript-fixtures-failed" \
+      false \
+      "{\"path\":\"${RESULTS_DIR}/typescript-fixtures.jsonl\",\"exitCode\":${status}}"
+    log_json \
+      "complete" \
+      false \
+      "{\"resultsDir\":\"${RESULTS_DIR}\",\"failed\":\"typescript-fixtures\",\"exitCode\":${status}}"
+    exit "${status}"
+  fi
+  log_json "typescript-boundary-pending" true "{\"reason\":\"Real Instant app creation, schema push, and admin query/transact remain pending\"}"
 else
   log_json "typescript-boundary-skipped" true "{\"reason\":\"node is not available and Swift local validation completed\"}"
 fi

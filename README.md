@@ -102,6 +102,7 @@ Run the local Swift validation evidence runner:
 ```bash
 swift run instant-swift-data validation local-todos --jsonl
 swift run instant-swift-data-validation-runner --local-todos
+node validation/ts-runner/src/main.ts --fixtures
 validation/run-e2e.sh
 ```
 
