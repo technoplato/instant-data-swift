@@ -62,6 +62,9 @@ struct InstantSwiftDataCLI {
     case "validation", "validate":
       try await runValidation(arguments: arguments, output: output)
 
+    case "benchmark", "benchmarks":
+      try await runBenchmark(arguments: arguments, output: output)
+
     default:
       throw CLIError("Unknown command: \(command)", exitCode: 64)
     }
@@ -131,6 +134,15 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func runBenchmark(arguments: [String], output: OutputMode) async throws {
+    let options = try BenchmarkOptions.parse(arguments: arguments)
+    let result = try await InstantSwiftDataLocalBenchmarks.runLocalTodos(
+      appID: options.appID,
+      iterations: options.iterations
+    )
+    try printBenchmark(result: result, output: output)
+  }
+
   private static func runExamples(arguments: [String], output: OutputMode) async throws {
     var arguments = arguments
     guard arguments.popFirstArgument() == "todos" else {
@@ -197,7 +209,7 @@ struct InstantSwiftDataCLI {
       try await watchTodos(context: context, output: output, options: options)
 
     case "complete":
-      guard let todoID = arguments.popFirstArgument() else {
+      guard let todoID = arguments.popFirstArgument(), arguments.isEmpty else {
         throw CLIError("Usage: instant-swift-data examples todos complete <todo-id>", exitCode: 64)
       }
       let currentTodos = try await TodoExample.decode(context.runtime.query(TodoExample.query))
@@ -1143,6 +1155,7 @@ struct InstantSwiftDataCLI {
         sync inspect [--json|--jsonl]
         sync mark-processed <tx-id> [--json|--jsonl]
         validation local-todos [--json|--jsonl]
+        benchmark [--suite local-todos] [--iterations n] [--app-id id] [--json|--jsonl]
 
       Environment:
         INSTANT_SWIFT_DATA_HOME  Directory for CLI SQLite state. Defaults to ~/.instant-swift-data.
@@ -1310,6 +1323,35 @@ struct InstantSwiftDataCLI {
 
     case .jsonl:
       for row in result.evidence {
+        try writeJSONLine(row)
+      }
+    }
+  }
+
+  private static func printBenchmark(
+    result: InstantLocalTodoBenchmarkResult,
+    output: OutputMode
+  ) throws {
+    switch output {
+    case .human:
+      print("benchmark: \(result.ok ? "ok" : "failed")")
+      print("suite: \(result.suite)")
+      print("iterations: \(result.iterations)")
+      print("transport: \(result.transport)")
+      print("final todos: \(result.finalTodoCount)")
+      print("pending mutations: \(result.pendingMutationCount)")
+      print("cache: \(result.cachePath)")
+      for metric in result.metrics {
+        print(
+          "\(metric.name): p50 \(metric.p50Nanoseconds) ns, p95 \(metric.p95Nanoseconds) ns"
+        )
+      }
+
+    case .json:
+      try writeJSON(result)
+
+    case .jsonl:
+      for row in result.evidenceRows {
         try writeJSONLine(row)
       }
     }
@@ -2033,6 +2075,62 @@ private struct LocalTodoValidationOutput: Codable, Sendable {
   var events: [String]
   var finalTodoCount: Int
   var pendingMutationCount: Int
+}
+
+private struct BenchmarkOptions: Sendable {
+  var suite: String
+  var iterations: Int
+  var appID: String
+
+  static func parse(arguments: [String]) throws -> Self {
+    var arguments = arguments
+    var suite = InstantSwiftDataLocalBenchmarks.localTodosSuite
+    var iterations = 3
+    var appID = ProcessInfo.processInfo.environment["INSTANT_APP_ID"]?
+      .trimmingCharacters(in: .whitespacesAndNewlines) ?? "local-demo"
+    if appID.isEmpty {
+      appID = "local-demo"
+    }
+
+    while let option = arguments.popFirstArgument() {
+      switch option {
+      case "--suite":
+        guard let value = arguments.popFirstArgument(), !value.isEmpty else {
+          throw CLIError(usage, exitCode: 64)
+        }
+        suite = value
+
+      case "--iterations":
+        guard let value = arguments.popFirstArgument(), let parsed = Int(value), parsed > 0 else {
+          throw CLIError(usage, exitCode: 64)
+        }
+        iterations = parsed
+
+      case "--app-id":
+        guard let value = arguments.popFirstArgument(),
+          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+          throw CLIError(usage, exitCode: 64)
+        }
+        appID = value
+
+      default:
+        throw CLIError("Unknown benchmark option: \(option). \(usage)", exitCode: 64)
+      }
+    }
+
+    guard suite == InstantSwiftDataLocalBenchmarks.localTodosSuite else {
+      throw CLIError("Unsupported benchmark suite: \(suite). \(usage)", exitCode: 64)
+    }
+
+    return Self(suite: suite, iterations: iterations, appID: appID)
+  }
+
+  private static var usage: String {
+    """
+    Usage: instant-swift-data benchmark [--suite local-todos] [--iterations n] [--app-id id] [--json|--jsonl]
+    """
+  }
 }
 
 private struct GenerateOptions: Sendable {

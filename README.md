@@ -36,6 +36,8 @@ Agent-readable output is available with `--json` or `--jsonl`:
 
 ```bash
 swift run instant-swift-data examples todos add "do the dishes" --json
+TODO_ID="$(swift run instant-swift-data examples todos add "complete through JSONL" --json | jq -r '.changedID')"
+swift run instant-swift-data examples todos complete "$TODO_ID" --jsonl
 swift run instant-swift-data examples todos seed --jsonl
 swift run instant-swift-data examples todos list --jsonl
 swift run instant-swift-data examples todos watch --events 1 --jsonl
@@ -93,6 +95,8 @@ validation/run-e2e.sh
 Run local core benchmarks:
 
 ```bash
+swift run instant-swift-data benchmark --suite local-todos --iterations 3 --json
+swift run instant-swift-data benchmark --suite local-todos --iterations 3 --jsonl
 swift run instant-swift-data-benchmarks --suite local-todos --iterations 3 --json
 swift run instant-swift-data-benchmarks --suite local-todos --iterations 3 --jsonl
 ```

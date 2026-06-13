@@ -145,6 +145,61 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliTodoCompleteMarksTodoDurably() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let addOutput = try runCLI(
+      ["examples", "todos", "add", "complete from cli", "--json"],
+      homeURL: homeURL
+    )
+    let add = try JSONDecoder().decode(CLIAddOutput.self, from: Data(addOutput.utf8))
+    let todoID = try #require(add.changedID)
+
+    let malformed = try runCLIResult(
+      ["examples", "todos", "complete", todoID, "unexpected", "--json"],
+      homeURL: homeURL
+    )
+    #expect(malformed.status == 64)
+    #expect(malformed.error.contains("examples todos complete <todo-id>"))
+
+    let afterMalformedComplete = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(try runCLI(["examples", "todos", "list", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(afterMalformedComplete.todos.map(\.isCompleted), [false])
+
+    let completeOutput = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(
+        try runCLI(["examples", "todos", "complete", todoID, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(completeOutput.event, "complete")
+    expectNoDifference(completeOutput.changedID, todoID)
+    expectNoDifference(completeOutput.todos.map(\.text), ["complete from cli"])
+    expectNoDifference(completeOutput.todos.map(\.isCompleted), [true])
+    expectNoDifference(completeOutput.pendingMutationCount, 2)
+
+    let listOutput = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(try runCLI(["examples", "todos", "list", "--completed", "true", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(listOutput.todos.map(\.id), [todoID])
+    expectNoDifference(listOutput.todos.map(\.isCompleted), [true])
+
+    let missing = try runCLIResult(
+      ["examples", "todos", "complete", "missing-todo", "--json"],
+      homeURL: homeURL
+    )
+    #expect(missing.status == 66)
+    #expect(missing.error.contains("Todo not found"))
+  }
+
+  @Test
   func cliTodoDeleteRemovesTodoFromDurableState() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -466,6 +521,101 @@ extension InstantStoreTests {
     #expect(malformed.error.contains("validation <local-todos>"))
   }
 
+  @Test
+  func cliBenchmarkLocalTodosEmitsJSONAndEvidence() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let jsonOutput = try JSONDecoder().decode(
+      CLIBenchmarkOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "benchmark", "--suite", "local-todos", "--iterations", "1", "--app-id",
+            "cli-benchmark", "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(jsonOutput.suite, "local-todos")
+    expectNoDifference(jsonOutput.appID, "cli-benchmark")
+    expectNoDifference(jsonOutput.iterations, 1)
+    expectNoDifference(jsonOutput.ok, true)
+    expectNoDifference(jsonOutput.transport, "not-implemented-local-cache-only")
+    expectNoDifference(jsonOutput.finalTodoCount, 0)
+    expectNoDifference(jsonOutput.pendingMutationCount, 3)
+    expectNoDifference(
+      jsonOutput.metrics.map(\.name),
+      [
+        "bootstrap.local-sqlite",
+        "triple-insert.seed",
+        "query-materialization.todos",
+        "pending-mutation-enqueue.update",
+        "query-cache-read.todos",
+        "triple-retract.reset",
+        "offline-restore.relaunch",
+      ]
+    )
+
+    let environmentDefaultOutput = try JSONDecoder().decode(
+      CLIBenchmarkOutput.self,
+      from: Data(
+        try runCLI(["benchmark", "--iterations", "1", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(environmentDefaultOutput.appID, "cli-cache-test")
+
+    let fallbackDefaultHomeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: fallbackDefaultHomeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: fallbackDefaultHomeURL) }
+    let fallbackDefaultOutput = try JSONDecoder().decode(
+      CLIBenchmarkOutput.self,
+      from: Data(
+        try runCLI(
+          ["benchmark", "--iterations", "1", "--json"],
+          homeURL: fallbackDefaultHomeURL,
+          environment: ["INSTANT_APP_ID": nil]
+        ).utf8
+      )
+    )
+    expectNoDifference(fallbackDefaultOutput.appID, "local-demo")
+
+    let jsonlOutput = try runCLI(
+      ["benchmark", "--suite", "local-todos", "--iterations", "1", "--app-id", "cli-benchmark", "--jsonl"],
+      homeURL: homeURL
+    )
+    let lines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(lines.count, 8)
+    let firstEvidence = try JSONDecoder().decode(
+      CLIBenchmarkEvidence.self,
+      from: Data(try #require(lines.first).utf8)
+    )
+    expectNoDifference(firstEvidence.caseID, "benchmark.local.todos")
+    expectNoDifference(firstEvidence.event, "summary")
+    expectNoDifference(firstEvidence.details.transport, "not-implemented-local-cache-only")
+    expectNoDifference(firstEvidence.details.iterations, 1)
+    expectNoDifference(firstEvidence.details.metric, nil)
+    expectNoDifference(
+      try lines.dropFirst().compactMap {
+        try JSONDecoder().decode(CLIBenchmarkEvidence.self, from: Data($0.utf8)).details.metric?.name
+      },
+      jsonOutput.metrics.map(\.name)
+    )
+
+    let humanOutput = try runCLI(["benchmark", "--iterations", "1"], homeURL: homeURL)
+    #expect(humanOutput.contains("benchmark: ok"))
+    #expect(humanOutput.contains("suite: local-todos"))
+
+    let malformed = try runCLIResult(["benchmark", "--iterations", "0", "--json"], homeURL: homeURL)
+    #expect(malformed.status == 64)
+    #expect(malformed.error.contains("instant-swift-data benchmark"))
+  }
+
   private func runCLI(
     _ arguments: [String],
     homeURL: URL,
@@ -490,6 +640,7 @@ extension InstantStoreTests {
 
     let process = Process()
     if FileManager.default.isExecutableFile(atPath: executableURL.path) {
+      try requireFreshCLIExecutable(executableURL, packageURL: packageURL)
       process.executableURL = executableURL
       process.arguments = arguments
     } else {
@@ -537,6 +688,59 @@ extension InstantStoreTests {
       .deletingLastPathComponent()
       .deletingLastPathComponent()
       .deletingLastPathComponent()
+  }
+
+  private func requireFreshCLIExecutable(_ executableURL: URL, packageURL: URL) throws {
+    let executableModifiedAt = try modificationDate(of: executableURL)
+    let newestSourceModifiedAt = try newestModificationDate(
+      under: [
+        packageURL.appendingPathComponent("Sources/instant-swift-data", isDirectory: true),
+        packageURL.appendingPathComponent("Sources/InstantSwiftDataCore", isDirectory: true),
+        packageURL.appendingPathComponent("Sources/InstantSwiftDataSchema", isDirectory: true),
+      ]
+    )
+    guard executableModifiedAt >= newestSourceModifiedAt else {
+      throw CLITestError(
+        """
+        .build/debug/instant-swift-data is older than CLI sources. Run \
+        'swift build --product instant-swift-data' before process-level CLI tests.
+        """
+      )
+    }
+  }
+
+  private func newestModificationDate(under roots: [URL]) throws -> Date {
+    let fileManager = FileManager.default
+    var newest = Date.distantPast
+
+    for root in roots {
+      guard let enumerator = fileManager.enumerator(
+        at: root,
+        includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey]
+      ) else {
+        continue
+      }
+
+      for case let fileURL as URL in enumerator {
+        let values = try fileURL.resourceValues(forKeys: [
+          .isRegularFileKey,
+          .contentModificationDateKey,
+        ])
+        guard values.isRegularFile == true, fileURL.pathExtension == "swift" else {
+          continue
+        }
+        if let modifiedAt = values.contentModificationDate, modifiedAt > newest {
+          newest = modifiedAt
+        }
+      }
+    }
+
+    return newest
+  }
+
+  private func modificationDate(of url: URL) throws -> Date {
+    let values = try url.resourceValues(forKeys: [.contentModificationDateKey])
+    return try #require(values.contentModificationDate)
   }
 }
 
@@ -685,6 +889,39 @@ private struct CLILocalTodoValidationEvidence: Decodable {
 
 private struct CLILocalTodoValidationDetails: Decodable {
   var todoTexts: [String]
+}
+
+private struct CLIBenchmarkOutput: Decodable {
+  var suite: String
+  var appID: String
+  var transport: String
+  var iterations: Int
+  var ok: Bool
+  var metrics: [CLIBenchmarkMetric]
+  var finalTodoCount: Int
+  var pendingMutationCount: Int
+}
+
+private struct CLIBenchmarkMetric: Decodable, Equatable {
+  var name: String
+}
+
+private struct CLIBenchmarkEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLIBenchmarkEvidenceDetails
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
+}
+
+private struct CLIBenchmarkEvidenceDetails: Decodable {
+  var transport: String
+  var iterations: Int
+  var metric: CLIBenchmarkMetric?
 }
 
 private struct CLITestError: Error, CustomStringConvertible {
