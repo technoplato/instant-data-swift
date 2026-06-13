@@ -68,6 +68,9 @@ struct InstantSwiftDataCLI {
     case "sync":
       try await runSync(arguments: arguments, output: output)
 
+    case "connection", "connect":
+      try await runConnection(arguments: arguments, output: output)
+
     case "rooms", "room":
       try await runRooms(arguments: arguments, output: output)
 
@@ -1010,6 +1013,30 @@ struct InstantSwiftDataCLI {
 
     default:
       throw CLIError(syncUsage, exitCode: 64)
+    }
+  }
+
+  private static func runConnection(arguments: [String], output: OutputMode) async throws {
+    var arguments = arguments
+    guard let command = arguments.popFirstArgument() else {
+      throw CLIError(connectionUsage, exitCode: 64)
+    }
+
+    let context = try await CLIContext.bootstrap(initialAttributes: [])
+
+    switch command {
+    case "inspect", "show", "status":
+      guard arguments.isEmpty else {
+        throw CLIError(
+          "Usage: instant-swift-data connection status [--json|--jsonl]",
+          exitCode: 64
+        )
+      }
+      let status = try await context.runtime.connectionStatus()
+      try printConnectionStatus(context: context, event: "status", status: status, output: output)
+
+    default:
+      throw CLIError(connectionUsage, exitCode: 64)
     }
   }
 
@@ -1972,6 +1999,57 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func printConnectionStatus(
+    context: CLIContext,
+    event: String,
+    status: InstantConnectionStatus,
+    output: OutputMode
+  ) throws {
+    let payload = ConnectionStatusOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      apiURI: status.apiURI.absoluteString,
+      websocketURI: status.websocketURI.absoluteString,
+      transport: status.transport.rawValue,
+      state: status.state.rawValue,
+      isAuthenticated: status.isAuthenticated,
+      userID: status.userID,
+      pendingMutationCount: status.pendingMutationCount,
+      processedTransactionID: status.processedTransactionID,
+      lastErrorMessage: status.lastErrorMessage
+    )
+
+    switch output {
+    case .human:
+      print("connection: \(payload.state)")
+      print("transport: \(payload.transport)")
+      print("authenticated: \(payload.isAuthenticated)")
+      print("user: \(payload.userID ?? "none")")
+      print("pending mutations: \(payload.pendingMutationCount)")
+      print("processed transaction: \(payload.processedTransactionID ?? "none")")
+      print("api: \(payload.apiURI)")
+      print("websocket: \(payload.websocketURI)")
+      print("cache: \(payload.cachePath)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.connection.status",
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          entityID: status.userID,
+          ok: status.lastErrorMessage == nil,
+          details: payload
+        )
+      )
+    }
+  }
+
   private static func printRoomPresence(
     context: CLIContext,
     event: String,
@@ -2924,6 +3002,7 @@ struct InstantSwiftDataCLI {
         app show [--json|--jsonl]
         app select <app-id> [--json|--jsonl]
         app ephemeral --title <title> [--json|--jsonl]
+        connection status [--json|--jsonl]
         sync inspect [--json|--jsonl]
         sync mark-processed <tx-id> [--json|--jsonl]
         validation local-todos [--json|--jsonl]
@@ -4207,6 +4286,13 @@ struct InstantSwiftDataCLI {
     """
   }
 
+  private static var connectionUsage: String {
+    """
+    Usage: instant-swift-data connection <status>
+      instant-swift-data connection status [--json|--jsonl]
+    """
+  }
+
   private static var roomsUsage: String {
     """
     Usage: instant-swift-data rooms <presence|topics>
@@ -5173,6 +5259,21 @@ private struct SyncOutput: Codable, Sendable {
   var event: String
   var transport: String
   var processedTransactionID: String?
+}
+
+private struct ConnectionStatusOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var apiURI: String
+  var websocketURI: String
+  var transport: String
+  var state: String
+  var isAuthenticated: Bool
+  var userID: String?
+  var pendingMutationCount: Int
+  var processedTransactionID: String?
+  var lastErrorMessage: String?
 }
 
 private struct RoomPresenceOutput: Codable, Sendable {

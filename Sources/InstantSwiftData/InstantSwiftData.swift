@@ -19,6 +19,7 @@ public struct InstantSwiftDataClient: Sendable {
   private var pendingMutationsOperation: @Sendable () async -> [PendingMutation]
   private var flushPendingMutationsOperation:
     @Sendable (Int?) async throws -> InstantMutationTransportFlushResult
+  private var connectionStatusOperation: @Sendable () async throws -> InstantConnectionStatus
   private var localIDOperation: @Sendable (String) async throws -> String
   private var authSessionOperation: @Sendable () async throws -> InstantAuthSession?
   private var observeAuthSessionOperation:
@@ -56,6 +57,9 @@ public struct InstantSwiftDataClient: Sendable {
     }
     self.flushPendingMutationsOperation = { limit in
       try await runtime.flushPendingMutations(limit: limit)
+    }
+    self.connectionStatusOperation = {
+      try await runtime.connectionStatus()
     }
     self.localIDOperation = { name in
       try await runtime.localID(named: name)
@@ -108,6 +112,7 @@ public struct InstantSwiftDataClient: Sendable {
     pendingMutations: @escaping @Sendable () async -> [PendingMutation],
     flushPendingMutations:
       (@Sendable (Int?) async throws -> InstantMutationTransportFlushResult)? = nil,
+    connectionStatus: (@Sendable () async throws -> InstantConnectionStatus)? = nil,
     localID: @escaping @Sendable (String) async throws -> String,
     authSession: (@Sendable () async throws -> InstantAuthSession?)? = nil,
     observeAuthSession: (@Sendable () async throws -> AsyncStream<InstantAuthSession?>)? = nil,
@@ -130,6 +135,7 @@ public struct InstantSwiftDataClient: Sendable {
       observe: observe,
       pendingMutations: pendingMutations,
       flushPendingMutations: flushPendingMutations,
+      connectionStatus: connectionStatus,
       localID: localID,
       authSession: authSession,
       observeAuthSession: observeAuthSession,
@@ -155,6 +161,7 @@ public struct InstantSwiftDataClient: Sendable {
     pendingMutations: @escaping @Sendable () async -> [PendingMutation],
     flushPendingMutations:
       (@Sendable (Int?) async throws -> InstantMutationTransportFlushResult)? = nil,
+    connectionStatus: (@Sendable () async throws -> InstantConnectionStatus)? = nil,
     localID: @escaping @Sendable (String) async throws -> String,
     authSession: (@Sendable () async throws -> InstantAuthSession?)? = nil,
     observeAuthSession: (@Sendable () async throws -> AsyncStream<InstantAuthSession?>)? = nil,
@@ -185,6 +192,13 @@ public struct InstantSwiftDataClient: Sendable {
       recovery:
         "Bootstrap Instant Swift Data before flushing mutations, or override the flush closure in tests."
     )
+    let runtimeStatusError = InstantError(
+      code: .implementationFailed,
+      operation: "inspect InstantSwiftData connection",
+      message: "No runtime connection status client has been configured.",
+      recovery:
+        "Bootstrap Instant Swift Data before inspecting connection status, or override the status closure in tests."
+    )
 
     self.runtime = nil
     self.transactOperation = transact
@@ -197,6 +211,7 @@ public struct InstantSwiftDataClient: Sendable {
     self.observeOperation = observe
     self.pendingMutationsOperation = pendingMutations
     self.flushPendingMutationsOperation = flushPendingMutations ?? { _ in throw transportError }
+    self.connectionStatusOperation = connectionStatus ?? { throw runtimeStatusError }
     self.localIDOperation = localID
     self.authSessionOperation = authSession ?? { throw authError }
     self.observeAuthSessionOperation = observeAuthSession ?? { throw authError }
@@ -244,6 +259,9 @@ public struct InstantSwiftDataClient: Sendable {
         return []
       },
       flushPendingMutations: { _ in
+        throw error
+      },
+      connectionStatus: {
         throw error
       },
       localID: { _ in
@@ -321,6 +339,10 @@ public struct InstantSwiftDataClient: Sendable {
     -> InstantMutationTransportFlushResult
   {
     try await flushPendingMutationsOperation(limit)
+  }
+
+  public func connectionStatus() async throws -> InstantConnectionStatus {
+    try await connectionStatusOperation()
   }
 
   public func localID(named name: String) async throws -> String {

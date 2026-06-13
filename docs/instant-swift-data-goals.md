@@ -505,6 +505,8 @@ Agent-oriented output modes are required:
 - inspect durable local IDs with commands such as
   `instant-swift-data local-id get todos.viewer --json` and
   `instant-swift-data local-id list --json`.
+- inspect local runtime connection status with
+  `instant-swift-data connection status --json`.
 - inspect pending mutation outbox.
 - replay or drain pending mutations.
 - print decoded query results.

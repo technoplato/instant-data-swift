@@ -401,6 +401,32 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  public func connectionStatus() async throws -> InstantConnectionStatus {
+    await operationGate.enter()
+    do {
+      let state = try await persistence.loadState()
+      let session = try await persistence.loadAuthSession(key: authSessionKey)
+      let processedTransactionID = try await persistence.loadMetadataValue(
+        key: processedTransactionIDMetadataKey
+      )
+      await operationGate.leave()
+      return InstantConnectionStatus(
+        appID: configuration.appID,
+        apiURI: configuration.apiURI,
+        websocketURI: configuration.websocketURI,
+        transport: .localCacheOnly,
+        state: session == nil ? .opened : .authenticated,
+        isAuthenticated: session != nil,
+        userID: session?.userID,
+        pendingMutationCount: state.snapshot.outbox.filter { $0.status == .pending }.count,
+        processedTransactionID: processedTransactionID
+      )
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
   public func authSession() async throws -> InstantAuthSession? {
     try await persistence.loadAuthSession(key: authSessionKey)
   }

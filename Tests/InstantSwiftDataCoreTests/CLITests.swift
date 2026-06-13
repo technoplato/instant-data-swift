@@ -1667,6 +1667,72 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliConnectionStatusReportsDurableLocalRuntime() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let initialStatus = try JSONDecoder().decode(
+      CLIConnectionStatusOutput.self,
+      from: Data(try runCLI(["connection", "status", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(initialStatus.event, "status")
+    expectNoDifference(initialStatus.transport, "local-cache-only")
+    expectNoDifference(initialStatus.state, "opened")
+    expectNoDifference(initialStatus.isAuthenticated, false)
+    expectNoDifference(initialStatus.pendingMutationCount, 0)
+    #expect(initialStatus.processedTransactionID == nil)
+
+    _ = try runCLI(["examples", "todos", "add", "status proof", "--json"], homeURL: homeURL)
+    _ = try runCLI(["sync", "mark-processed", "tx-remote-status", "--json"], homeURL: homeURL)
+    _ = try runCLI(["auth", "guest", "--json"], homeURL: homeURL)
+
+    let authenticatedStatus = try JSONDecoder().decode(
+      CLIConnectionStatusOutput.self,
+      from: Data(try runCLI(["connection", "status", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(authenticatedStatus.event, "status")
+    expectNoDifference(authenticatedStatus.appID, "cli-cache-test")
+    expectNoDifference(
+      authenticatedStatus.cachePath,
+      homeURL.appendingPathComponent("state.sqlite").path
+    )
+    expectNoDifference(authenticatedStatus.apiURI, "https://api.instantdb.com")
+    expectNoDifference(
+      authenticatedStatus.websocketURI,
+      "wss://api.instantdb.com/runtime/session"
+    )
+    expectNoDifference(authenticatedStatus.transport, "local-cache-only")
+    expectNoDifference(authenticatedStatus.state, "authenticated")
+    expectNoDifference(authenticatedStatus.isAuthenticated, true)
+    #expect(authenticatedStatus.userID?.isEmpty == false)
+    expectNoDifference(authenticatedStatus.pendingMutationCount, 1)
+    expectNoDifference(authenticatedStatus.processedTransactionID, "tx-remote-status")
+    #expect(authenticatedStatus.lastErrorMessage == nil)
+
+    let jsonlOutput = try runCLI(["connection", "status", "--jsonl"], homeURL: homeURL)
+    let jsonlLines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(jsonlLines.count, 1)
+    let evidence = try JSONDecoder().decode(
+      CLIConnectionStatusEvidence.self,
+      from: Data(jsonlLines[0].utf8)
+    )
+    expectNoDifference(evidence.caseID, "cli.connection.status")
+    expectNoDifference(evidence.event, "status")
+    expectNoDifference(evidence.ok, true)
+    expectNoDifference(evidence.details.state, "authenticated")
+    expectNoDifference(evidence.details.pendingMutationCount, 1)
+
+    let malformed = try runCLIResult(
+      ["connection", "status", "unexpected", "--json"],
+      homeURL: homeURL
+    )
+    #expect(malformed.status == 64)
+    #expect(malformed.error.contains("connection status"))
+  }
+
+  @Test
   func cliEphemeralAppPersistsSelectionForLaterCommands() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -2862,6 +2928,35 @@ private struct CLIOutboxMutation: Decodable, Hashable {
   var id: String
   var status: String
   var failureMessage: String?
+}
+
+private struct CLIConnectionStatusOutput: Decodable, Equatable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var apiURI: String
+  var websocketURI: String
+  var transport: String
+  var state: String
+  var isAuthenticated: Bool
+  var userID: String?
+  var pendingMutationCount: Int
+  var processedTransactionID: String?
+  var lastErrorMessage: String?
+}
+
+private struct CLIConnectionStatusEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var ok: Bool
+  var details: CLIConnectionStatusOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case ok
+    case details
+  }
 }
 
 private struct CLIAppOutput: Decodable {

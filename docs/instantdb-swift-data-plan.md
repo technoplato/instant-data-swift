@@ -73,6 +73,13 @@ real Instant app.
 - Support WebSocket first. Keep SSE as a target if Instant's public protocol
   remains available and useful for server-like Swift environments.
 
+Current local progress: `InstantRuntime.connectionStatus()` reports the
+configured app id, HTTP/WebSocket endpoints, local-cache transport kind, opened
+vs authenticated state, current user id, pending outbox count, and processed
+transaction checkpoint. The CLI proves this local runtime shape with
+`instant-swift-data connection status --jsonl`. Live connecting/closed/errored
+transitions remain future WebSocket transport work.
+
 ### Schema
 
 - Entities with scalar attributes: string, number, boolean, date, json.

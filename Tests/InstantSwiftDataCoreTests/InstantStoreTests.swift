@@ -3007,6 +3007,71 @@ struct InstantStoreTests {
   }
 
   @Test
+  func connectionStatusReflectsLocalTransportAuthAndOutbox() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "status-app",
+        apiURI: try #require(URL(string: "https://api.example.test")),
+        websocketURI: try #require(URL(string: "wss://socket.example.test/runtime/session")),
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+
+    let initialStatus = try await runtime.connectionStatus()
+    expectNoDifference(initialStatus.appID, "status-app")
+    expectNoDifference(initialStatus.apiURI.absoluteString, "https://api.example.test")
+    expectNoDifference(
+      initialStatus.websocketURI.absoluteString,
+      "wss://socket.example.test/runtime/session"
+    )
+    expectNoDifference(initialStatus.transport, .localCacheOnly)
+    expectNoDifference(initialStatus.state, .opened)
+    expectNoDifference(initialStatus.isAuthenticated, false)
+    expectNoDifference(initialStatus.userID, nil)
+    expectNoDifference(initialStatus.pendingMutationCount, 0)
+    expectNoDifference(initialStatus.processedTransactionID, nil)
+    expectNoDifference(initialStatus.lastErrorMessage, nil)
+
+    let session = try await runtime.signInAsGuest()
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-status",
+        operations: TodoExample.createOperations(
+          id: "todo-status",
+          text: "status",
+          createdAt: createdAt,
+          transactionID: "tx-status"
+        )
+      ),
+      createdAt: createdAt
+    )
+    _ = try await runtime.markProcessedTransaction(id: "tx-remote")
+
+    let authenticatedStatus = try await runtime.connectionStatus()
+    expectNoDifference(authenticatedStatus.state, .authenticated)
+    expectNoDifference(authenticatedStatus.isAuthenticated, true)
+    expectNoDifference(authenticatedStatus.userID, session.userID)
+    expectNoDifference(authenticatedStatus.pendingMutationCount, 1)
+    expectNoDifference(authenticatedStatus.processedTransactionID, "tx-remote")
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "status-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let relaunchedStatus = try await relaunchedRuntime.connectionStatus()
+    expectNoDifference(relaunchedStatus.state, .authenticated)
+    expectNoDifference(relaunchedStatus.userID, session.userID)
+    expectNoDifference(relaunchedStatus.pendingMutationCount, 1)
+    expectNoDifference(relaunchedStatus.processedTransactionID, "tx-remote")
+  }
+
+  @Test
   func concurrentOutboxCleanupAndTransactionPersistAcrossLaunches() async throws {
     let cacheURL = try temporaryCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)

@@ -431,6 +431,57 @@ public struct PendingMutation: Hashable, Codable, Sendable, Identifiable {
   }
 }
 
+public enum InstantConnectionState: String, Codable, Sendable {
+  case connecting
+  case opened
+  case authenticated
+  case closed
+  case errored
+}
+
+public enum InstantRuntimeTransportKind: String, Codable, Sendable {
+  case localCacheOnly = "local-cache-only"
+  case webSocket = "websocket"
+  case serverSentEvents = "sse"
+}
+
+public struct InstantConnectionStatus: Hashable, Codable, Sendable {
+  public var appID: String
+  public var apiURI: URL
+  public var websocketURI: URL
+  public var transport: InstantRuntimeTransportKind
+  public var state: InstantConnectionState
+  public var isAuthenticated: Bool
+  public var userID: String?
+  public var pendingMutationCount: Int
+  public var processedTransactionID: String?
+  public var lastErrorMessage: String?
+
+  public init(
+    appID: String,
+    apiURI: URL,
+    websocketURI: URL,
+    transport: InstantRuntimeTransportKind,
+    state: InstantConnectionState,
+    isAuthenticated: Bool,
+    userID: String?,
+    pendingMutationCount: Int,
+    processedTransactionID: String?,
+    lastErrorMessage: String? = nil
+  ) {
+    self.appID = appID
+    self.apiURI = apiURI
+    self.websocketURI = websocketURI
+    self.transport = transport
+    self.state = state
+    self.isAuthenticated = isAuthenticated
+    self.userID = userID
+    self.pendingMutationCount = pendingMutationCount
+    self.processedTransactionID = processedTransactionID
+    self.lastErrorMessage = lastErrorMessage
+  }
+}
+
 public struct InstantAuthSession: Hashable, Codable, Sendable, Identifiable {
   public var id: String { userID }
   public var appID: String

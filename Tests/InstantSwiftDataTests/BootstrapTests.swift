@@ -151,6 +151,17 @@ struct BootstrapTests {
       expectNoDifference(emission.queryID, "bootstrap-test.first")
       expectNoDifference(emission.values.map(\.id), ["todo-bootstrap"])
       expectNoDifference(emission.pageInfo?.hasNextPage, false)
+
+      let status = try await client.connectionStatus()
+      expectNoDifference(status.appID, appID)
+      expectNoDifference(status.apiURI.absoluteString, "https://api.example.test/custom")
+      expectNoDifference(
+        status.websocketURI.absoluteString,
+        "wss://ws.example.test/runtime/session"
+      )
+      expectNoDifference(status.transport, .localCacheOnly)
+      expectNoDifference(status.state, .opened)
+      expectNoDifference(status.pendingMutationCount, 1)
     }
   }
 
@@ -750,6 +761,16 @@ struct BootstrapTests {
     } catch let error as InstantError {
       expectNoDifference(error.code, .implementationFailed)
       expectNoDifference(error.operation, "access InstantSwiftData auth")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      _ = try await mock.connectionStatus()
+      #expect(Bool(false), "Expected old-shape mock client status to fail without status closure.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .implementationFailed)
+      expectNoDifference(error.operation, "inspect InstantSwiftData connection")
     } catch {
       #expect(Bool(false), "Unexpected error: \(error)")
     }
