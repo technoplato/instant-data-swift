@@ -1,5 +1,6 @@
 import CustomDump
 import Foundation
+@testable import InstantSwiftDataCore
 import Testing
 
 extension InstantStoreTests {
@@ -116,6 +117,7 @@ extension InstantStoreTests {
     let completedAdd = try JSONDecoder().decode(CLIAddOutput.self, from: Data(completedAddOutput.utf8))
     let completedID = try #require(completedAdd.changedID)
     _ = try runCLI(["examples", "todos", "complete", completedID, "--json"], homeURL: homeURL)
+    _ = try runCLI(["examples", "todos", "add", "query second open", "--json"], homeURL: homeURL)
 
     let completedQuery = try JSONDecoder().decode(
       CLITodosOutput.self,
@@ -127,14 +129,14 @@ extension InstantStoreTests {
     #expect(completedQuery.cacheKey.hasPrefix("plan:"))
     expectNoDifference(completedQuery.todos.map(\.text), ["query completed"])
     expectNoDifference(completedQuery.todos.map(\.isCompleted), [true])
-    expectNoDifference(completedQuery.pendingMutationCount, 3)
+    expectNoDifference(completedQuery.pendingMutationCount, 4)
 
     let jsonlOutput = try runCLI(
       ["query", "todos", "--completed", "false", "--jsonl"],
       homeURL: homeURL
     )
     let lines = jsonlOutput.split(separator: "\n")
-    expectNoDifference(lines.count, 2)
+    expectNoDifference(lines.count, 3)
     let summary = try JSONDecoder().decode(
       CLITodosEvidence.self,
       from: Data(try #require(lines.first).utf8)
@@ -143,7 +145,55 @@ extension InstantStoreTests {
     expectNoDifference(summary.event, "query")
     expectNoDifference(summary.details.transport, "not-implemented-local-cache-only")
     expectNoDifference(summary.details.queryID, "examples.todos.list.completed-false")
-    expectNoDifference(summary.details.todos.map(\.text), ["query open"])
+    expectNoDifference(summary.details.todos.map(\.text), ["query open", "query second open"])
+
+    let firstPage = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(
+        try runCLI(
+          ["query", "todos", "--completed", "false", "--first", "1", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(firstPage.todos.map(\.text), ["query open"])
+    expectNoDifference(firstPage.pageInfo?.hasPreviousPage, false)
+    expectNoDifference(firstPage.pageInfo?.hasNextPage, true)
+
+    let cursorID = try #require(firstPage.pageInfo?.endCursor?.entityID)
+    let secondPage = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(
+        try runCLI(
+          ["query", "todos", "--completed", "false", "--first", "1", "--after", cursorID, "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(secondPage.todos.map(\.text), ["query second open"])
+    expectNoDifference(secondPage.pageInfo?.hasPreviousPage, true)
+    expectNoDifference(secondPage.pageInfo?.hasNextPage, false)
+
+    let inclusivePage = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "query", "todos", "--completed", "false", "--first", "1",
+            "--after-inclusive", cursorID, "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(inclusivePage.todos.map(\.text), ["query open"])
+
+    let invalidBidirectionalPage = try runCLIResult(
+      ["query", "todos", "--first", "1", "--last", "1", "--json"],
+      homeURL: homeURL
+    )
+    #expect(invalidBidirectionalPage.status == 64)
+    #expect(invalidBidirectionalPage.error.contains("Use either --first or --last"))
 
     let selectedSnapshotsJSON = try runCLI(
       ["query", "todos", "--completed", "false", "--select", "text,isCompleted", "--json"],
@@ -156,6 +206,7 @@ extension InstantStoreTests {
     #expect(selectedSnapshotsJSON.contains(#""text""#))
     #expect(!selectedSnapshotsJSON.contains(#""createdAt""#))
     #expect(selectedSnapshotsJSON.contains("query open"))
+    #expect(selectedSnapshotsJSON.contains("query second open"))
     #expect(!selectedSnapshotsJSON.contains("query completed"))
 
     let explicitRawSnapshots = try runCLI(
@@ -1044,6 +1095,7 @@ private struct CLITodosOutput: Decodable {
   var transport: String
   var queryID: String
   var cacheKey: String
+  var pageInfo: InstantQueryPageInfo?
   var pendingMutationCount: Int
   var todos: [CLITodo]
 }

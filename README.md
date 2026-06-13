@@ -21,9 +21,12 @@ swift run instant-swift-data examples todos seed --json
 swift run instant-swift-data examples todos add "do the dishes"
 swift run instant-swift-data examples todos list
 swift run instant-swift-data examples todos list --completed false --offset 0 --limit 10 --order desc
+swift run instant-swift-data examples todos list --completed false --first 2 --json
 swift run instant-swift-data examples todos list --search dishes
 swift run instant-swift-data query todos --completed false --json
 swift run instant-swift-data query todos --completed false --select text,isCompleted --json
+PAGE_CURSOR="$(swift run instant-swift-data query todos --completed false --first 1 --json | jq -r '.pageInfo.endCursor.entityID')"
+swift run instant-swift-data query todos --completed false --first 1 --after "$PAGE_CURSOR" --json
 swift run instant-swift-data examples todos watch --events 1 --jsonl
 TODO_ID="$(swift run instant-swift-data examples todos add "ship the demo" --json | jq -r '.changedID')"
 swift run instant-swift-data examples todos complete "$TODO_ID"

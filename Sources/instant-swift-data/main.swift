@@ -1046,8 +1046,8 @@ struct InstantSwiftDataCLI {
     query: InstantQueryPlan = TodoExample.query,
     caseID: String = "cli.examples.todos"
   ) async throws {
-    let snapshots = try await context.runtime.query(query)
-    let todos = try TodoExample.decode(snapshots)
+    let emission = try await context.runtime.queryOnce(query)
+    let todos = try TodoExample.decode(emission.values)
     let pending = await context.runtime.pendingMutations()
     let payload = TodosOutput(
       appID: context.appID,
@@ -1057,6 +1057,7 @@ struct InstantSwiftDataCLI {
       transport: "not-implemented-local-cache-only",
       queryID: query.id,
       cacheKey: query.cacheKey,
+      pageInfo: emission.pageInfo,
       pendingMutationCount: pending.count,
       todos: todos
     )
@@ -1072,6 +1073,7 @@ struct InstantSwiftDataCLI {
         }
       }
       print("transport: \(payload.transport)")
+      printPageInfo(payload.pageInfo)
       print("pending mutations: \(pending.count)")
       print("cache: \(context.cacheURL.path)")
 
@@ -1122,6 +1124,7 @@ struct InstantSwiftDataCLI {
       queryID: query.id,
       cacheKey: query.cacheKey,
       selectedFields: query.selectedFields,
+      pageInfo: emission.pageInfo,
       pendingMutationCount: pending.count,
       snapshots: emission.values
     )
@@ -1137,6 +1140,7 @@ struct InstantSwiftDataCLI {
         }
       }
       print("transport: \(payload.transport)")
+      printPageInfo(payload.pageInfo)
       print("pending mutations: \(pending.count)")
       print("cache: \(context.cacheURL.path)")
 
@@ -1170,6 +1174,15 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func printPageInfo(_ pageInfo: InstantQueryPageInfo?) {
+    guard let pageInfo else { return }
+    let start = pageInfo.startCursor?.entityID ?? "-"
+    let end = pageInfo.endCursor?.entityID ?? "-"
+    print(
+      "page: start=\(start) end=\(end) previous=\(pageInfo.hasPreviousPage) next=\(pageInfo.hasNextPage)"
+    )
+  }
+
   private static func watchTodos(
     context: CLIContext,
     output: OutputMode,
@@ -1194,6 +1207,7 @@ struct InstantSwiftDataCLI {
         cacheKey: options.query.cacheKey,
         emissionIndex: emissions.count,
         sequence: emission.sequence,
+        pageInfo: emission.pageInfo,
         pendingMutationCount: pending.count,
         todos: todos
       )
@@ -1209,6 +1223,7 @@ struct InstantSwiftDataCLI {
             print("\(mark) \(todo.id) \(todo.text)")
           }
         }
+        printPageInfo(payload.pageInfo)
         print("pending mutations: \(pending.count)")
         print("cache: \(context.cacheURL.path)")
 
@@ -1264,16 +1279,16 @@ struct InstantSwiftDataCLI {
         schema verify --example todos --from instant.schema.ts [--json|--jsonl]
         perms generate --example todos [--to instant.perms.ts]
         perms verify --example todos --from instant.perms.ts [--json|--jsonl]
-        query todos [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--raw] [--select field[,field]] [--json|--jsonl]
+        query todos [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--raw] [--select field[,field]] [--json|--jsonl]
         examples todos seed [--json|--jsonl]
         examples todos add "do the dishes" [--json|--jsonl]
-        examples todos list [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--json|--jsonl]
-        examples todos watch [--events 1] [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--json|--jsonl]
+        examples todos list [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--json|--jsonl]
+        examples todos watch [--events 1] [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--json|--jsonl]
         examples todos complete <todo-id> [--json|--jsonl]
         examples todos update <todo-id> "new text" [--json|--jsonl]
         examples todos delete <todo-id> [--json|--jsonl]
         examples todos reset [--json|--jsonl]
-        examples todos refresh [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--json|--jsonl]
+        examples todos refresh [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--json|--jsonl]
         cache inspect [--json|--jsonl]
         outbox inspect [--json|--jsonl]
         outbox confirm <mutation-id> [--json|--jsonl]
@@ -1718,11 +1733,15 @@ struct InstantSwiftDataCLI {
     usageCommand: String = "instant-swift-data examples todos list"
   ) throws -> InstantQueryPlan {
     var arguments = arguments
-    let usage = "\(usageCommand) [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc]"
+    let usage = "\(usageCommand) [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc]"
     var completed: Bool?
     var search: String?
     var offset: Int?
     var limit: Int?
+    var first: Int?
+    var after: InstantQueryCursor?
+    var last: Int?
+    var before: InstantQueryCursor?
     var direction = InstantQuerySortDirection.ascending
 
     while let option = arguments.popFirstArgument() {
@@ -1750,6 +1769,46 @@ struct InstantSwiftDataCLI {
         }
         limit = parsed
 
+      case "--first":
+        guard let value = arguments.popFirstArgument(),
+          let parsed = Int(value),
+          parsed >= 0
+        else {
+          throw CLIError("Usage: \(usageCommand) --first n", exitCode: 64)
+        }
+        first = parsed
+
+      case "--after", "--after-inclusive":
+        guard let value = arguments.popFirstArgument() else {
+          throw CLIError("Usage: \(usageCommand) \(option) id", exitCode: 64)
+        }
+        after = try parseTodoCursor(
+          value,
+          inclusive: option == "--after-inclusive",
+          usageCommand: usageCommand,
+          option: option
+        )
+
+      case "--last":
+        guard let value = arguments.popFirstArgument(),
+          let parsed = Int(value),
+          parsed >= 0
+        else {
+          throw CLIError("Usage: \(usageCommand) --last n", exitCode: 64)
+        }
+        last = parsed
+
+      case "--before", "--before-inclusive":
+        guard let value = arguments.popFirstArgument() else {
+          throw CLIError("Usage: \(usageCommand) \(option) id", exitCode: 64)
+        }
+        before = try parseTodoCursor(
+          value,
+          inclusive: option == "--before-inclusive",
+          usageCommand: usageCommand,
+          option: option
+        )
+
       case "--offset":
         guard let value = arguments.popFirstArgument(),
           let parsed = Int(value),
@@ -1773,11 +1832,22 @@ struct InstantSwiftDataCLI {
       }
     }
 
+    guard first == nil || last == nil else {
+      throw CLIError(
+        "Use either --first or --last, not both. Usage: \(usage)",
+        exitCode: 64
+      )
+    }
+
     return makeTodoListQuery(
       completed: completed,
       search: search,
       offset: offset,
       limit: limit,
+      first: first,
+      after: after,
+      last: last,
+      before: before,
       direction: direction
     )
   }
@@ -1788,11 +1858,15 @@ struct InstantSwiftDataCLI {
   ) throws -> TodoQueryOptions {
     var arguments = arguments
     let usage =
-      "\(usageCommand) [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--raw] [--select field[,field]]"
+      "\(usageCommand) [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--raw] [--select field[,field]]"
     var completed: Bool?
     var search: String?
     var offset: Int?
     var limit: Int?
+    var first: Int?
+    var after: InstantQueryCursor?
+    var last: Int?
+    var before: InstantQueryCursor?
     var direction = InstantQuerySortDirection.ascending
     var selectedFields: [String]?
     var rawSnapshots = false
@@ -1821,6 +1895,46 @@ struct InstantSwiftDataCLI {
           throw CLIError("Usage: \(usageCommand) --limit n", exitCode: 64)
         }
         limit = parsed
+
+      case "--first":
+        guard let value = arguments.popFirstArgument(),
+          let parsed = Int(value),
+          parsed >= 0
+        else {
+          throw CLIError("Usage: \(usageCommand) --first n", exitCode: 64)
+        }
+        first = parsed
+
+      case "--after", "--after-inclusive":
+        guard let value = arguments.popFirstArgument() else {
+          throw CLIError("Usage: \(usageCommand) \(option) id", exitCode: 64)
+        }
+        after = try parseTodoCursor(
+          value,
+          inclusive: option == "--after-inclusive",
+          usageCommand: usageCommand,
+          option: option
+        )
+
+      case "--last":
+        guard let value = arguments.popFirstArgument(),
+          let parsed = Int(value),
+          parsed >= 0
+        else {
+          throw CLIError("Usage: \(usageCommand) --last n", exitCode: 64)
+        }
+        last = parsed
+
+      case "--before", "--before-inclusive":
+        guard let value = arguments.popFirstArgument() else {
+          throw CLIError("Usage: \(usageCommand) \(option) id", exitCode: 64)
+        }
+        before = try parseTodoCursor(
+          value,
+          inclusive: option == "--before-inclusive",
+          usageCommand: usageCommand,
+          option: option
+        )
 
       case "--offset":
         guard let value = arguments.popFirstArgument(),
@@ -1855,12 +1969,23 @@ struct InstantSwiftDataCLI {
       }
     }
 
+    guard first == nil || last == nil else {
+      throw CLIError(
+        "Use either --first or --last, not both. Usage: \(usage)",
+        exitCode: 64
+      )
+    }
+
     return TodoQueryOptions(
       query: makeTodoListQuery(
         completed: completed,
         search: search,
         offset: offset,
         limit: limit,
+        first: first,
+        after: after,
+        last: last,
+        before: before,
         direction: direction,
         selectedFields: selectedFields
       ),
@@ -1874,6 +1999,10 @@ struct InstantSwiftDataCLI {
     var search: String?
     var offset: Int?
     var limit: Int?
+    var first: Int?
+    var after: InstantQueryCursor?
+    var last: Int?
+    var before: InstantQueryCursor?
     var direction = InstantQuerySortDirection.ascending
     var eventCount = 1
 
@@ -1902,6 +2031,46 @@ struct InstantSwiftDataCLI {
         }
         limit = parsed
 
+      case "--first":
+        guard let value = arguments.popFirstArgument(),
+          let parsed = Int(value),
+          parsed >= 0
+        else {
+          throw CLIError("Usage: instant-swift-data examples todos watch --first n", exitCode: 64)
+        }
+        first = parsed
+
+      case "--after", "--after-inclusive":
+        guard let value = arguments.popFirstArgument() else {
+          throw CLIError("Usage: instant-swift-data examples todos watch \(option) id", exitCode: 64)
+        }
+        after = try parseTodoCursor(
+          value,
+          inclusive: option == "--after-inclusive",
+          usageCommand: "instant-swift-data examples todos watch",
+          option: option
+        )
+
+      case "--last":
+        guard let value = arguments.popFirstArgument(),
+          let parsed = Int(value),
+          parsed >= 0
+        else {
+          throw CLIError("Usage: instant-swift-data examples todos watch --last n", exitCode: 64)
+        }
+        last = parsed
+
+      case "--before", "--before-inclusive":
+        guard let value = arguments.popFirstArgument() else {
+          throw CLIError("Usage: instant-swift-data examples todos watch \(option) id", exitCode: 64)
+        }
+        before = try parseTodoCursor(
+          value,
+          inclusive: option == "--before-inclusive",
+          usageCommand: "instant-swift-data examples todos watch",
+          option: option
+        )
+
       case "--offset":
         guard let value = arguments.popFirstArgument(),
           let parsed = Int(value),
@@ -1928,10 +2097,17 @@ struct InstantSwiftDataCLI {
 
       default:
         throw CLIError(
-          "Unknown todo watch option: \(option). Usage: instant-swift-data examples todos watch [--events 1] [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc]",
+          "Unknown todo watch option: \(option). Usage: instant-swift-data examples todos watch [--events 1] [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc]",
           exitCode: 64
         )
       }
+    }
+
+    guard first == nil || last == nil else {
+      throw CLIError(
+        "Use either --first or --last, not both. Usage: instant-swift-data examples todos watch [--events 1] [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc]",
+        exitCode: 64
+      )
     }
 
     return TodoWatchOptions(
@@ -1940,6 +2116,10 @@ struct InstantSwiftDataCLI {
         search: search,
         offset: offset,
         limit: limit,
+        first: first,
+        after: after,
+        last: last,
+        before: before,
         direction: direction
       ),
       eventCount: eventCount
@@ -1951,6 +2131,10 @@ struct InstantSwiftDataCLI {
     search: String?,
     offset: Int?,
     limit: Int?,
+    first: Int?,
+    after: InstantQueryCursor?,
+    last: Int?,
+    before: InstantQueryCursor?,
     direction: InstantQuerySortDirection,
     selectedFields: [String]? = nil
   ) -> InstantQueryPlan {
@@ -1974,6 +2158,24 @@ struct InstantSwiftDataCLI {
     if let limit {
       id += ".limit-\(limit)"
     }
+    if let first {
+      id += ".first-\(first)"
+    }
+    if let after {
+      id += ".after-\(queryIDFragment(after.entityID))"
+      if after.inclusive {
+        id += "-inclusive"
+      }
+    }
+    if let last {
+      id += ".last-\(last)"
+    }
+    if let before {
+      id += ".before-\(queryIDFragment(before.entityID))"
+      if before.inclusive {
+        id += "-inclusive"
+      }
+    }
     if let selectedFields {
       id += ".select-\(queryIDFragment(selectedFields.joined(separator: ",")))"
     }
@@ -1985,8 +2187,25 @@ struct InstantSwiftDataCLI {
       order: InstantQueryOrder("createdAt", direction),
       offset: offset,
       limit: limit,
+      first: first,
+      after: after,
+      last: last,
+      before: before,
       selectedFields: selectedFields
     )
+  }
+
+  private static func parseTodoCursor(
+    _ value: String,
+    inclusive: Bool,
+    usageCommand: String,
+    option: String
+  ) throws -> InstantQueryCursor {
+    let entityID = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !entityID.isEmpty else {
+      throw CLIError("Usage: \(usageCommand) \(option) id", exitCode: 64)
+    }
+    return InstantQueryCursor(entityID: entityID, inclusive: inclusive)
   }
 
   private static func parseTodoSelectedFields(
@@ -2133,7 +2352,7 @@ struct InstantSwiftDataCLI {
   private static var queryUsage: String {
     """
     Usage: instant-swift-data query <namespace>
-      instant-swift-data query todos [--completed true|false] [--search text] [--offset n] [--limit n] [--order asc|desc] [--raw] [--select field[,field]] [--json|--jsonl]
+      instant-swift-data query todos [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--raw] [--select field[,field]] [--json|--jsonl]
     """
   }
 
@@ -2329,6 +2548,7 @@ private struct TodosOutput: Codable, Sendable {
   var transport: String
   var queryID: String
   var cacheKey: String
+  var pageInfo: InstantQueryPageInfo?
   var pendingMutationCount: Int
   var todos: [TodoRecord]
 }
@@ -2341,6 +2561,7 @@ private struct QuerySnapshotsOutput: Codable, Sendable {
   var queryID: String
   var cacheKey: String
   var selectedFields: [String]?
+  var pageInfo: InstantQueryPageInfo?
   var pendingMutationCount: Int
   var snapshots: [InstantEntitySnapshot]
 }
@@ -2376,6 +2597,7 @@ private struct TodoWatchEmissionOutput: Codable, Sendable {
   var cacheKey: String
   var emissionIndex: Int
   var sequence: Int64
+  var pageInfo: InstantQueryPageInfo?
   var pendingMutationCount: Int
   var todos: [TodoRecord]
 }

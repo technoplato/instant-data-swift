@@ -1934,6 +1934,152 @@ struct InstantStoreTests {
   }
 
   @Test
+  func queryCursorPaginationReturnsPageInfoAfterSorting() async throws {
+    let score = InstantAttribute(
+      id: "items/score",
+      namespace: "items",
+      name: "score",
+      valueType: .number,
+      isIndexed: true
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: [score]
+      )
+    )
+    let time = InstantTimestamp(milliseconds: 10)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-cursor-items",
+        operations: (1...4).map { index in
+          .insert(
+            .init(
+              entityID: "item-\(index)",
+              attributeID: "items/score",
+              value: .number(Double(index)),
+              txID: "tx-cursor-items",
+              txTime: time
+            )
+          )
+        }
+      ),
+      createdAt: time
+    )
+
+    let firstPage = try await runtime.queryOnce(
+      .init(
+        id: "items.cursor.first",
+        namespace: "items",
+        order: .init("score"),
+        first: 2
+      )
+    )
+    expectNoDifference(firstPage.values.map(\.id), ["item-1", "item-2"])
+    expectNoDifference(firstPage.pageInfo?.startCursor?.entityID, "item-1")
+    expectNoDifference(firstPage.pageInfo?.startCursor?.sortValue, .number(1))
+    expectNoDifference(firstPage.pageInfo?.endCursor?.entityID, "item-2")
+    expectNoDifference(firstPage.pageInfo?.endCursor?.sortValue, .number(2))
+    expectNoDifference(firstPage.pageInfo?.hasPreviousPage, false)
+    expectNoDifference(firstPage.pageInfo?.hasNextPage, true)
+
+    let nextCursor = try #require(firstPage.pageInfo?.endCursor)
+    let nextPage = try await runtime.queryOnce(
+      .init(
+        id: "items.cursor.next",
+        namespace: "items",
+        order: .init("score"),
+        first: 2,
+        after: nextCursor
+      )
+    )
+    expectNoDifference(nextPage.values.map(\.id), ["item-3", "item-4"])
+    expectNoDifference(nextPage.pageInfo?.hasPreviousPage, true)
+    expectNoDifference(nextPage.pageInfo?.hasNextPage, false)
+
+    let inclusivePage = try await runtime.query(
+      .init(
+        id: "items.cursor.inclusive",
+        namespace: "items",
+        order: .init("score"),
+        first: 2,
+        after: InstantQueryCursor(entityID: "item-2", inclusive: true)
+      )
+    )
+    expectNoDifference(inclusivePage.map(\.id), ["item-2", "item-3"])
+
+    let previousPage = try await runtime.queryOnce(
+      .init(
+        id: "items.cursor.previous",
+        namespace: "items",
+        order: .init("score"),
+        last: 2,
+        before: InstantQueryCursor(entityID: "item-4", sortValue: .number(4))
+      )
+    )
+    expectNoDifference(previousPage.values.map(\.id), ["item-2", "item-3"])
+    expectNoDifference(previousPage.pageInfo?.hasPreviousPage, true)
+    expectNoDifference(previousPage.pageInfo?.hasNextPage, true)
+
+    let customCursorPage = try await runtime.query(
+      .init(
+        id: "items.cursor.custom",
+        namespace: "items",
+        order: .init("score"),
+        first: 1,
+        after: InstantQueryCursor(entityID: "item-2.5", sortValue: .number(2.5))
+      )
+    )
+    expectNoDifference(customCursorPage.map(\.id), ["item-3"])
+
+    let descendingFirstPage = try await runtime.queryOnce(
+      .init(
+        id: "items.cursor.desc.first",
+        namespace: "items",
+        order: .init("score", .descending),
+        first: 2
+      )
+    )
+    expectNoDifference(descendingFirstPage.values.map(\.id), ["item-4", "item-3"])
+
+    let descendingNextCursor = try #require(descendingFirstPage.pageInfo?.endCursor)
+    let descendingNextPage = try await runtime.query(
+      .init(
+        id: "items.cursor.desc.next",
+        namespace: "items",
+        order: .init("score", .descending),
+        first: 2,
+        after: descendingNextCursor
+      )
+    )
+    expectNoDifference(descendingNextPage.map(\.id), ["item-2", "item-1"])
+
+    let descendingPreviousPage = try await runtime.queryOnce(
+      .init(
+        id: "items.cursor.desc.previous",
+        namespace: "items",
+        order: .init("score", .descending),
+        last: 2,
+        before: InstantQueryCursor(entityID: "item-1", sortValue: .number(1))
+      )
+    )
+    expectNoDifference(descendingPreviousPage.values.map(\.id), ["item-3", "item-2"])
+    expectNoDifference(descendingPreviousPage.pageInfo?.hasPreviousPage, true)
+    expectNoDifference(descendingPreviousPage.pageInfo?.hasNextPage, true)
+
+    let firstPlan = InstantQueryPlan(id: "items.cache", namespace: "items", first: 1)
+    let afterPlan = InstantQueryPlan(
+      id: "items.cache",
+      namespace: "items",
+      first: 1,
+      after: InstantQueryCursor(entityID: "item-1")
+    )
+    #expect(firstPlan.cacheKey != afterPlan.cacheKey)
+  }
+
+  @Test
   func queryFieldSelectionTrimsReturnedValuesAfterFilteringAndOrdering() async throws {
     let score = InstantAttribute(
       id: "items/score",

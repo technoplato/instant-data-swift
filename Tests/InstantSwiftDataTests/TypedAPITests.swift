@@ -8,22 +8,44 @@ import Testing
 struct TypedAPITests {
   @Test
   func queryBuilderProducesInstantPlan() {
+    let cursorDate = Date(timeIntervalSince1970: 1_700_000_000)
+    let cursor = InstantQueryCursor(
+      entityID: "todo-cursor",
+      sortValue: .date(cursorDate),
+      inclusive: true
+    )
     let query = TypedTodo.query
       .where(TypedTodo.isCompleted == false)
       .order(TypedTodo.createdAt, .descending)
       .offset(5)
       .limit(10)
+      .first(3)
+      .after(cursor)
 
     expectNoDifference(query.plan.namespace, "todos")
     expectNoDifference(query.plan.filters, [.equals(field: "isCompleted", value: .bool(false))])
     expectNoDifference(query.plan.order, InstantQueryOrder("createdAt", .descending))
     expectNoDifference(query.plan.offset, 5)
     expectNoDifference(query.plan.limit, 10)
+    expectNoDifference(query.plan.first, 3)
+    expectNoDifference(query.plan.after, cursor)
+    expectNoDifference(query.plan.last, nil)
+    expectNoDifference(query.plan.before, nil)
     expectNoDifference(query.plan.selectedFields, nil)
 
-    let initializedWithLimit = InstantEntityQuery<TypedTodo>(offset: 1, limit: 2)
+    let initializedWithLimit = InstantEntityQuery<TypedTodo>(offset: 1, limit: 2, first: 1, after: cursor)
     expectNoDifference(initializedWithLimit.plan.offset, 1)
     expectNoDifference(initializedWithLimit.plan.limit, 2)
+    expectNoDifference(initializedWithLimit.plan.first, 1)
+    expectNoDifference(initializedWithLimit.plan.after, cursor)
+
+    let previousPageQuery = query
+      .last(2)
+      .before(InstantQueryCursor(entityID: "todo-before"))
+    expectNoDifference(previousPageQuery.plan.first, nil)
+    expectNoDifference(previousPageQuery.plan.last, 2)
+    expectNoDifference(previousPageQuery.plan.before, InstantQueryCursor(entityID: "todo-before"))
+    #expect(previousPageQuery.plan.id != query.plan.id)
 
     let comparisonQuery = TypedTodo.query
       .where(TypedTodo.createdAt >= Date(timeIntervalSince1970: 1_700_000_000))

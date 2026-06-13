@@ -372,6 +372,41 @@ public struct InstantQueryOrder: Hashable, Codable, Sendable {
   }
 }
 
+public struct InstantQueryCursor: Hashable, Codable, Sendable {
+  public var entityID: String
+  public var sortValue: InstantValue?
+  public var inclusive: Bool
+
+  public init(entityID: String, sortValue: InstantValue? = nil, inclusive: Bool = false) {
+    precondition(
+      !entityID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      "InstantQueryCursor entityID must not be empty."
+    )
+    self.entityID = entityID
+    self.sortValue = sortValue
+    self.inclusive = inclusive
+  }
+}
+
+public struct InstantQueryPageInfo: Hashable, Codable, Sendable {
+  public var startCursor: InstantQueryCursor?
+  public var endCursor: InstantQueryCursor?
+  public var hasPreviousPage: Bool
+  public var hasNextPage: Bool
+
+  public init(
+    startCursor: InstantQueryCursor?,
+    endCursor: InstantQueryCursor?,
+    hasPreviousPage: Bool,
+    hasNextPage: Bool
+  ) {
+    self.startCursor = startCursor
+    self.endCursor = endCursor
+    self.hasPreviousPage = hasPreviousPage
+    self.hasNextPage = hasNextPage
+  }
+}
+
 public enum InstantQueryFilter: Hashable, Codable, Sendable {
   case equals(field: String, value: InstantValue)
   case notEquals(field: String, value: InstantValue)
@@ -395,6 +430,10 @@ public struct InstantQueryPlan: Hashable, Codable, Sendable, Identifiable {
   public var order: InstantQueryOrder?
   public var offset: Int?
   public var limit: Int?
+  public var first: Int?
+  public var after: InstantQueryCursor?
+  public var last: Int?
+  public var before: InstantQueryCursor?
   public var selectedFields: [String]?
 
   public var cacheKey: String {
@@ -408,6 +447,10 @@ public struct InstantQueryPlan: Hashable, Codable, Sendable, Identifiable {
     order: InstantQueryOrder? = nil,
     offset: Int? = nil,
     limit: Int? = nil,
+    first: Int? = nil,
+    after: InstantQueryCursor? = nil,
+    last: Int? = nil,
+    before: InstantQueryCursor? = nil,
     selectedFields: [String]? = nil
   ) {
     precondition(
@@ -417,6 +460,14 @@ public struct InstantQueryPlan: Hashable, Codable, Sendable, Identifiable {
     precondition(
       limit == nil || limit! >= 0,
       "InstantQueryPlan limit must be greater than or equal to 0."
+    )
+    precondition(
+      first == nil || first! >= 0,
+      "InstantQueryPlan first must be greater than or equal to 0."
+    )
+    precondition(
+      last == nil || last! >= 0,
+      "InstantQueryPlan last must be greater than or equal to 0."
     )
     precondition(
       selectedFields?.allSatisfy { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -429,6 +480,10 @@ public struct InstantQueryPlan: Hashable, Codable, Sendable, Identifiable {
     self.order = order
     self.offset = offset
     self.limit = limit
+    self.first = first
+    self.after = after
+    self.last = last
+    self.before = before
     self.selectedFields = selectedFields.map { Array(Set($0)).sorted() }
   }
 
@@ -447,6 +502,10 @@ private extension InstantQueryPlan {
       "order:\(order?.canonicalCacheKeyPayload ?? "nil")",
       "offset:\(offset.map(String.init) ?? "nil")",
       "limit:\(limit.map(String.init) ?? "nil")",
+      "first:\(first.map(String.init) ?? "nil")",
+      "after:\(after?.canonicalCacheKeyPayload ?? "nil")",
+      "last:\(last.map(String.init) ?? "nil")",
+      "before:\(before?.canonicalCacheKeyPayload ?? "nil")",
       "selectedFields:\(selectedFields.map { $0.joined(separator: ",").cacheKeyEncodedString } ?? "nil")",
     ]
     .joined(separator: "|")
@@ -456,6 +515,17 @@ private extension InstantQueryPlan {
 private extension InstantQueryOrder {
   var canonicalCacheKeyPayload: String {
     "field:\(field.cacheKeyEncodedString)|direction:\(direction.rawValue)"
+  }
+}
+
+private extension InstantQueryCursor {
+  var canonicalCacheKeyPayload: String {
+    [
+      "entityID:\(entityID.cacheKeyEncodedString)",
+      "sortValue:\(sortValue?.canonicalCacheKeyPayload ?? "nil")",
+      "inclusive:\(inclusive)",
+    ]
+    .joined(separator: "|")
   }
 }
 
@@ -587,15 +657,32 @@ public struct InstantEntitySnapshot: Hashable, Codable, Sendable, Identifiable {
   }
 }
 
+public struct InstantQueryPage: Hashable, Codable, Sendable {
+  public var values: [InstantEntitySnapshot]
+  public var pageInfo: InstantQueryPageInfo?
+
+  public init(values: [InstantEntitySnapshot], pageInfo: InstantQueryPageInfo? = nil) {
+    self.values = values
+    self.pageInfo = pageInfo
+  }
+}
+
 public struct InstantQueryEmission: Hashable, Codable, Sendable {
   public var queryID: String
   public var sequence: Int64
   public var values: [InstantEntitySnapshot]
+  public var pageInfo: InstantQueryPageInfo?
 
-  public init(queryID: String, sequence: Int64, values: [InstantEntitySnapshot]) {
+  public init(
+    queryID: String,
+    sequence: Int64,
+    values: [InstantEntitySnapshot],
+    pageInfo: InstantQueryPageInfo? = nil
+  ) {
     self.queryID = queryID
     self.sequence = sequence
     self.values = values
+    self.pageInfo = pageInfo
   }
 }
 

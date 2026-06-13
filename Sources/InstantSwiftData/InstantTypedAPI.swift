@@ -249,23 +249,37 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
     filters: [InstantQueryFilter] = [],
     order: InstantQueryOrder? = nil,
     offset: UInt? = nil,
-    limit: UInt? = nil
+    limit: UInt? = nil,
+    first: UInt? = nil,
+    after: InstantQueryCursor? = nil,
+    last: UInt? = nil,
+    before: InstantQueryCursor? = nil
   ) {
     let offset = offset.map { Int(clamping: $0) }
     let limit = limit.map { Int(clamping: $0) }
+    let first = first.map { Int(clamping: $0) }
+    let last = last.map { Int(clamping: $0) }
     self.plan = InstantQueryPlan(
       id: Self.queryID(
         filters: filters,
         order: order,
         offset: offset,
         limit: limit,
+        first: first,
+        after: after,
+        last: last,
+        before: before,
         selectedFields: nil
       ),
       namespace: Entity.instantNamespace,
       filters: filters,
       order: order,
       offset: offset,
-      limit: limit
+      limit: limit,
+      first: first,
+      after: after,
+      last: last,
+      before: before
     )
   }
 
@@ -277,6 +291,10 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
       order: copy.plan.order,
       offset: copy.plan.offset,
       limit: copy.plan.limit,
+      first: copy.plan.first,
+      after: copy.plan.after,
+      last: copy.plan.last,
+      before: copy.plan.before,
       selectedFields: copy.plan.selectedFields
     )
     return copy
@@ -293,6 +311,10 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
       order: copy.plan.order,
       offset: copy.plan.offset,
       limit: copy.plan.limit,
+      first: copy.plan.first,
+      after: copy.plan.after,
+      last: copy.plan.last,
+      before: copy.plan.before,
       selectedFields: copy.plan.selectedFields
     )
     return copy
@@ -306,6 +328,10 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
       order: copy.plan.order,
       offset: copy.plan.offset,
       limit: copy.plan.limit,
+      first: copy.plan.first,
+      after: copy.plan.after,
+      last: copy.plan.last,
+      before: copy.plan.before,
       selectedFields: copy.plan.selectedFields
     )
     return copy
@@ -319,6 +345,80 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
       order: copy.plan.order,
       offset: copy.plan.offset,
       limit: copy.plan.limit,
+      first: copy.plan.first,
+      after: copy.plan.after,
+      last: copy.plan.last,
+      before: copy.plan.before,
+      selectedFields: copy.plan.selectedFields
+    )
+    return copy
+  }
+
+  public func first(_ first: UInt) -> Self {
+    var copy = self
+    copy.plan.first = Int(clamping: first)
+    copy.plan.last = nil
+    copy.plan.id = Self.queryID(
+      filters: copy.plan.filters,
+      order: copy.plan.order,
+      offset: copy.plan.offset,
+      limit: copy.plan.limit,
+      first: copy.plan.first,
+      after: copy.plan.after,
+      last: copy.plan.last,
+      before: copy.plan.before,
+      selectedFields: copy.plan.selectedFields
+    )
+    return copy
+  }
+
+  public func after(_ cursor: InstantQueryCursor) -> Self {
+    var copy = self
+    copy.plan.after = cursor
+    copy.plan.id = Self.queryID(
+      filters: copy.plan.filters,
+      order: copy.plan.order,
+      offset: copy.plan.offset,
+      limit: copy.plan.limit,
+      first: copy.plan.first,
+      after: copy.plan.after,
+      last: copy.plan.last,
+      before: copy.plan.before,
+      selectedFields: copy.plan.selectedFields
+    )
+    return copy
+  }
+
+  public func last(_ last: UInt) -> Self {
+    var copy = self
+    copy.plan.first = nil
+    copy.plan.last = Int(clamping: last)
+    copy.plan.id = Self.queryID(
+      filters: copy.plan.filters,
+      order: copy.plan.order,
+      offset: copy.plan.offset,
+      limit: copy.plan.limit,
+      first: copy.plan.first,
+      after: copy.plan.after,
+      last: copy.plan.last,
+      before: copy.plan.before,
+      selectedFields: copy.plan.selectedFields
+    )
+    return copy
+  }
+
+  public func before(_ cursor: InstantQueryCursor) -> Self {
+    var copy = self
+    copy.plan.before = cursor
+    copy.plan.id = Self.queryID(
+      filters: copy.plan.filters,
+      order: copy.plan.order,
+      offset: copy.plan.offset,
+      limit: copy.plan.limit,
+      first: copy.plan.first,
+      after: copy.plan.after,
+      last: copy.plan.last,
+      before: copy.plan.before,
       selectedFields: copy.plan.selectedFields
     )
     return copy
@@ -329,6 +429,10 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
     order: InstantQueryOrder?,
     offset: Int?,
     limit: Int?,
+    first: Int?,
+    after: InstantQueryCursor?,
+    last: Int?,
+    before: InstantQueryCursor?,
     selectedFields: [String]?
   ) -> String {
     let payload = QueryIDPayload(
@@ -337,6 +441,10 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
       order: order,
       offset: offset,
       limit: limit,
+      first: first,
+      after: after,
+      last: last,
+      before: before,
       selectedFields: selectedFields
     )
     return "instant-query:" + payload.canonicalBase64ID()
@@ -349,6 +457,10 @@ private struct QueryIDPayload: Encodable {
   var order: InstantQueryOrder?
   var offset: Int?
   var limit: Int?
+  var first: Int?
+  var after: InstantQueryCursor?
+  var last: Int?
+  var before: InstantQueryCursor?
   var selectedFields: [String]?
 
   func canonicalBase64ID() -> String {

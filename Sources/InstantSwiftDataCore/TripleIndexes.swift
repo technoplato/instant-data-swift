@@ -103,14 +103,21 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     _ plan: InstantQueryPlan,
     attributes: AttributeStore
   ) -> [InstantEntitySnapshot] {
+    materializePage(plan, attributes: attributes).values
+  }
+
+  func materializePage(
+    _ plan: InstantQueryPlan,
+    attributes: AttributeStore
+  ) -> InstantQueryPage {
     guard filtersReferenceDeclaredFields(plan.filters, namespace: plan.namespace, attributes: attributes)
-    else { return [] }
+    else { return InstantQueryPage(values: [], pageInfo: pageInfo(for: [], plan: plan)) }
     guard selectedFieldsReferenceDeclaredFields(
       plan.selectedFields,
       namespace: plan.namespace,
       attributes: attributes
     )
-    else { return [] }
+    else { return InstantQueryPage(values: [], pageInfo: pageInfo(for: [], plan: plan)) }
 
     var snapshots: [InstantEntitySnapshot] = []
 
@@ -142,46 +149,144 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       snapshots.append(snapshot)
     }
 
-    if let order = plan.order {
-      snapshots.sort(by: { (lhs: InstantEntitySnapshot, rhs: InstantEntitySnapshot) in
-        let lhsValue = lhs.values[order.field]?.first?.comparableKey ?? ""
-        let rhsValue = rhs.values[order.field]?.first?.comparableKey ?? ""
-        let lhsInstantValue = lhs.values[order.field]?.first
-        let rhsInstantValue = rhs.values[order.field]?.first
-        switch order.direction {
-        case .ascending:
-          return Self.valuePrecedes(
-            lhsInstantValue,
-            rhsInstantValue,
-            lhsTieBreaker: [lhsValue, lhs.id],
-            rhsTieBreaker: [rhsValue, rhs.id]
-          )
-        case .descending:
-          return Self.valuePrecedes(
-            rhsInstantValue,
-            lhsInstantValue,
-            lhsTieBreaker: [rhsValue, rhs.id],
-            rhsTieBreaker: [lhsValue, lhs.id]
-          )
+    snapshots.sort {
+      Self.compare($0, $1, order: plan.order) == .orderedAscending
+    }
+
+    let paged = paginate(snapshots, plan: plan)
+    return InstantQueryPage(
+      values: project(paged.values, selectedFields: plan.selectedFields),
+      pageInfo: paged.pageInfo
+    )
+  }
+
+  private func paginate(
+    _ snapshots: [InstantEntitySnapshot],
+    plan: InstantQueryPlan
+  ) -> (values: [InstantEntitySnapshot], pageInfo: InstantQueryPageInfo?) {
+    guard isValidPagination(plan) else {
+      return ([], pageInfo(for: [], plan: plan))
+    }
+
+    var page = snapshots
+    var removedBefore = 0
+    var removedAfter = 0
+
+    if let after = plan.after {
+      let startIndex: Int
+      if after.sortValue == nil {
+        guard let index = page.firstIndex(where: { $0.id == after.entityID }) else {
+          return ([], pageInfo(for: [], plan: plan))
         }
-      })
-    } else {
-      snapshots.sort { $0.id < $1.id }
+        startIndex = after.inclusive ? index : index + 1
+      } else {
+        startIndex = page.firstIndex {
+          let comparison = Self.compare($0, to: after, order: plan.order)
+          return after.inclusive
+            ? comparison != .orderedAscending
+            : comparison == .orderedDescending
+        } ?? page.count
+      }
+      removedBefore += min(startIndex, page.count)
+      page = Array(page.dropFirst(startIndex))
+    }
+
+    if let before = plan.before {
+      let endIndex: Int
+      if before.sortValue == nil {
+        guard let index = page.firstIndex(where: { $0.id == before.entityID }) else {
+          return ([], pageInfo(for: [], plan: plan))
+        }
+        endIndex = before.inclusive ? index + 1 : index
+      } else {
+        endIndex = page.firstIndex {
+          let comparison = Self.compare($0, to: before, order: plan.order)
+          return before.inclusive
+            ? comparison == .orderedDescending
+            : comparison != .orderedAscending
+        } ?? page.count
+      }
+      let boundedEndIndex = max(0, min(endIndex, page.count))
+      removedAfter += page.count - boundedEndIndex
+      page = Array(page.prefix(boundedEndIndex))
     }
 
     if let offset = plan.offset {
-      guard offset >= 0 else { return [] }
-      if offset >= snapshots.count {
-        return []
-      }
-      snapshots = Array(snapshots.dropFirst(offset))
+      let count = min(offset, page.count)
+      removedBefore += count
+      page = Array(page.dropFirst(offset))
+    }
+
+    if let first = plan.first {
+      let count = min(first, page.count)
+      removedAfter += page.count - count
+      page = Array(page.prefix(first))
+    }
+
+    if let last = plan.last {
+      let count = min(last, page.count)
+      removedBefore += page.count - count
+      page = Array(page.suffix(last))
     }
 
     if let limit = plan.limit {
-      guard limit > 0 else { return [] }
-      snapshots = Array(snapshots.prefix(limit))
+      let count = min(limit, page.count)
+      removedAfter += page.count - count
+      page = Array(page.prefix(limit))
     }
-    return project(snapshots, selectedFields: plan.selectedFields)
+
+    return (
+      page,
+      pageInfo(
+        for: page,
+        plan: plan,
+        hasPreviousPage: removedBefore > 0,
+        hasNextPage: removedAfter > 0
+      )
+    )
+  }
+
+  private func isValidPagination(_ plan: InstantQueryPlan) -> Bool {
+    guard plan.offset.map({ $0 >= 0 }) ?? true else { return false }
+    guard plan.limit.map({ $0 >= 0 }) ?? true else { return false }
+    guard plan.first.map({ $0 >= 0 }) ?? true else { return false }
+    guard plan.last.map({ $0 >= 0 }) ?? true else { return false }
+    guard plan.first == nil || plan.last == nil else { return false }
+    return true
+  }
+
+  private func pageInfo(
+    for snapshots: [InstantEntitySnapshot],
+    plan: InstantQueryPlan,
+    hasPreviousPage: Bool = false,
+    hasNextPage: Bool = false
+  ) -> InstantQueryPageInfo? {
+    guard requestsPageInfo(plan) else { return nil }
+    return InstantQueryPageInfo(
+      startCursor: snapshots.first.map { cursor(for: $0, order: plan.order) },
+      endCursor: snapshots.last.map { cursor(for: $0, order: plan.order) },
+      hasPreviousPage: hasPreviousPage,
+      hasNextPage: hasNextPage
+    )
+  }
+
+  private func requestsPageInfo(_ plan: InstantQueryPlan) -> Bool {
+    plan.offset != nil
+      || plan.limit != nil
+      || plan.first != nil
+      || plan.after != nil
+      || plan.last != nil
+      || plan.before != nil
+  }
+
+  private func cursor(
+    for snapshot: InstantEntitySnapshot,
+    order: InstantQueryOrder?
+  ) -> InstantQueryCursor {
+    InstantQueryCursor(
+      entityID: snapshot.id,
+      sortValue: order.flatMap { snapshot.values[$0.field]?.first }
+    )
   }
 
   private mutating func insert(_ triple: InstantTriple, attribute: InstantAttribute?) {
@@ -478,6 +583,80 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     }
   }
 
+  private static func compare(
+    _ lhs: InstantEntitySnapshot,
+    _ rhs: InstantEntitySnapshot,
+    order: InstantQueryOrder?
+  ) -> ComparisonResult {
+    guard let order else {
+      return lhs.id.compare(rhs.id)
+    }
+
+    let lhsValue = lhs.values[order.field]?.first
+    let rhsValue = rhs.values[order.field]?.first
+    let valueComparison = compare(lhsValue, rhsValue)
+    let directedComparison: ComparisonResult
+    switch order.direction {
+    case .ascending:
+      directedComparison = valueComparison
+    case .descending:
+      directedComparison = valueComparison.reversed
+    }
+    guard directedComparison == .orderedSame else {
+      return directedComparison
+    }
+
+    switch order.direction {
+    case .ascending:
+      return lhs.id.compare(rhs.id)
+    case .descending:
+      return rhs.id.compare(lhs.id)
+    }
+  }
+
+  private static func compare(
+    _ snapshot: InstantEntitySnapshot,
+    to cursor: InstantQueryCursor,
+    order: InstantQueryOrder?
+  ) -> ComparisonResult {
+    guard let order, let sortValue = cursor.sortValue else {
+      return snapshot.id.compare(cursor.entityID)
+    }
+
+    let value = snapshot.values[order.field]?.first
+    let valueComparison = compare(value, sortValue)
+    let directedComparison: ComparisonResult
+    switch order.direction {
+    case .ascending:
+      directedComparison = valueComparison
+    case .descending:
+      directedComparison = valueComparison.reversed
+    }
+    guard directedComparison == .orderedSame else {
+      return directedComparison
+    }
+
+    switch order.direction {
+    case .ascending:
+      return snapshot.id.compare(cursor.entityID)
+    case .descending:
+      return cursor.entityID.compare(snapshot.id)
+    }
+  }
+
+  private static func compare(_ lhs: InstantValue?, _ rhs: InstantValue?) -> ComparisonResult {
+    switch (lhs, rhs) {
+    case (nil, nil):
+      return .orderedSame
+    case (nil, .some):
+      return .orderedAscending
+    case (.some, nil):
+      return .orderedDescending
+    case let (.some(lhs), .some(rhs)):
+      return lhs.compare(to: rhs)
+    }
+  }
+
   private static func tripleSortKey(_ triple: InstantTriple) -> [String] {
     [triple.entityID, triple.attributeID, triple.value.comparableKey]
   }
@@ -513,6 +692,19 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       case .orderedSame:
         return lexicographicallyPrecedes(lhsTieBreaker, rhsTieBreaker)
       }
+    }
+  }
+}
+
+private extension ComparisonResult {
+  var reversed: Self {
+    switch self {
+    case .orderedAscending:
+      return .orderedDescending
+    case .orderedDescending:
+      return .orderedAscending
+    case .orderedSame:
+      return .orderedSame
     }
   }
 }

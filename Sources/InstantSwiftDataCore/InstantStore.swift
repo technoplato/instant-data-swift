@@ -70,11 +70,17 @@ public actor InstantStore {
     indexes.materialize(plan, attributes: attributes)
   }
 
+  public func materializePage(_ plan: InstantQueryPlan) -> InstantQueryPage {
+    indexes.materializePage(plan, attributes: attributes)
+  }
+
   public func materializeEmission(_ plan: InstantQueryPlan) -> InstantQueryEmission {
-    InstantQueryEmission(
+    let page = indexes.materializePage(plan, attributes: attributes)
+    return InstantQueryEmission(
       queryID: plan.id,
       sequence: sequence,
-      values: indexes.materialize(plan, attributes: attributes)
+      values: page.values,
+      pageInfo: page.pageInfo
     )
   }
 
@@ -145,10 +151,12 @@ public actor InstantStore {
       if let existing = emissionsByPlan[observer.plan] {
         emission = existing
       } else {
+        let page = indexes.materializePage(observer.plan, attributes: attributes)
         emission = InstantQueryEmission(
           queryID: observer.plan.id,
           sequence: sequence,
-          values: indexes.materialize(observer.plan, attributes: attributes)
+          values: page.values,
+          pageInfo: page.pageInfo
         )
         emissionsByPlan[observer.plan] = emission
       }
@@ -168,6 +176,10 @@ public actor InstantStore {
     let orderDirection = plan.order?.direction.rawValue ?? ""
     let offset = plan.offset.map(String.init) ?? ""
     let limit = plan.limit.map(String.init) ?? ""
+    let first = plan.first.map(String.init) ?? ""
+    let after = plan.after.map(Self.cursorSortKey) ?? ""
+    let last = plan.last.map(String.init) ?? ""
+    let before = plan.before.map(Self.cursorSortKey) ?? ""
     let selectedFields = plan.selectedFields?.joined(separator: ",") ?? ""
     return [
       plan.id,
@@ -177,7 +189,20 @@ public actor InstantStore {
       orderDirection,
       offset,
       limit,
+      first,
+      after,
+      last,
+      before,
       selectedFields,
+    ]
+    .joined(separator: "\u{1f}")
+  }
+
+  private static func cursorSortKey(_ cursor: InstantQueryCursor) -> String {
+    [
+      cursor.entityID,
+      String(describing: cursor.sortValue),
+      "\(cursor.inclusive)",
     ]
     .joined(separator: "\u{1f}")
   }
