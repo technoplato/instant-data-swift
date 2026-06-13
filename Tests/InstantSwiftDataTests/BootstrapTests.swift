@@ -847,6 +847,311 @@ struct BootstrapTests {
   }
 
   @Test
+  func roomClientOperationsUseInjectedClosures() async throws {
+    let room = InstantRoomHandle(type: "chat", id: "lobby")
+    let member = mockRoomPresenceMember(room: room, userID: "user-1")
+    let message = mockRoomTopicMessage(room: room, topic: "sendEmoji")
+    let client = roomClient(
+      setPresence: { room, userID, values in
+        expectNoDifference(room, InstantRoomHandle(type: "chat", id: "lobby"))
+        expectNoDifference(userID, "user-1")
+        expectNoDifference(values, ["status": .string("online")])
+        return member
+      },
+      roomPresence: { room in
+        expectNoDifference(room, InstantRoomHandle(type: "chat", id: "lobby"))
+        return [member]
+      },
+      observeRoomPresence: { room in
+        expectNoDifference(room, InstantRoomHandle(type: "chat", id: "lobby"))
+        return AsyncStream { continuation in
+          continuation.yield([member])
+          continuation.finish()
+        }
+      },
+      leavePresence: { room, userID in
+        expectNoDifference(room, InstantRoomHandle(type: "chat", id: "lobby"))
+        expectNoDifference(userID, "user-1")
+        return "user-1"
+      },
+      publishTopicMessage: { room, topic, userID, payload in
+        expectNoDifference(room, InstantRoomHandle(type: "chat", id: "lobby"))
+        expectNoDifference(topic, "sendEmoji")
+        expectNoDifference(userID, "user-1")
+        expectNoDifference(payload, .object(["emoji": .string("wave")]))
+        return message
+      },
+      roomTopicMessages: { room, topic, limit in
+        expectNoDifference(room, InstantRoomHandle(type: "chat", id: "lobby"))
+        expectNoDifference(topic, "sendEmoji")
+        expectNoDifference(limit, 1)
+        return [message]
+      },
+      observeRoomTopicMessages: { room, topic in
+        expectNoDifference(room, InstantRoomHandle(type: "chat", id: "lobby"))
+        expectNoDifference(topic, "sendEmoji")
+        return AsyncStream { continuation in
+          continuation.yield([message])
+          continuation.finish()
+        }
+      }
+    )
+
+    let setMember = try await client.setRoomPresence(
+      room: room,
+      userID: "user-1",
+      values: ["status": .string("online")]
+    )
+    expectNoDifference(setMember, member)
+    let listedMembers = try await client.roomPresence(room: room)
+    expectNoDifference(listedMembers, [member])
+
+    var presenceIterator = try await client.observeRoomPresence(room: room).makeAsyncIterator()
+    let observedMembers = await presenceIterator.next()
+    expectNoDifference(observedMembers, [member])
+
+    let leftUserID = try await client.leaveRoomPresence(room: room, userID: "user-1")
+    expectNoDifference(leftUserID, "user-1")
+    let publishedMessage = try await client.publishRoomTopicMessage(
+      room: room,
+      topic: "sendEmoji",
+      userID: "user-1",
+      payload: .object(["emoji": .string("wave")])
+    )
+    expectNoDifference(publishedMessage, message)
+    let listedMessages = try await client.roomTopicMessages(
+      room: room,
+      topic: "sendEmoji",
+      limit: 1
+    )
+    expectNoDifference(listedMessages, [message])
+
+    var topicIterator = try await client.observeRoomTopicMessages(
+      room: room,
+      topic: "sendEmoji"
+    ).makeAsyncIterator()
+    let observedMessages = await topicIterator.next()
+    expectNoDifference(observedMessages, [message])
+  }
+
+  @Test
+  func roomPresencePropertyWrapperLoadsUsingDependencyClient() async throws {
+    let room = InstantRoomHandle(type: "chat", id: "lobby")
+    let member = mockRoomPresenceMember(room: room, userID: "user-1")
+    let client = roomClient(
+      roomPresence: { room in
+        expectNoDifference(room, InstantRoomHandle(type: "chat", id: "lobby"))
+        return [member]
+      }
+    )
+
+    try await withDependencies {
+      $0.defaultInstantSwiftData = client
+    } operation: {
+      @RoomPresence("chat", "lobby") var members: [InstantRoomPresenceMember]
+
+      try await $members.load()
+
+      expectNoDifference(members, [member])
+      expectNoDifference($members.loadError, nil)
+      expectNoDifference($members.isLoading, false)
+    }
+  }
+
+  @Test
+  func roomPresencePropertyWrapperTaskBindsObservedMembers() async throws {
+    let room = InstantRoomHandle(type: "chat", id: "lobby")
+    let member = mockRoomPresenceMember(room: room, userID: "user-1")
+    let client = roomClient(
+      observeRoomPresence: { room in
+        expectNoDifference(room, InstantRoomHandle(type: "chat", id: "lobby"))
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield([])
+          continuation.yield([member])
+          continuation.finish()
+        }
+      }
+    )
+
+    @RoomPresence var members: [InstantRoomPresenceMember]
+
+    try await $members.task("chat", "lobby", using: client)
+
+    expectNoDifference(members, [member])
+    expectNoDifference($members.loadError, nil)
+    expectNoDifference($members.isLoading, false)
+  }
+
+  @Test
+  func roomPresencePropertyWrapperSubscribeCancelsUnderlyingObservation() async throws {
+    let termination = RoomObservationTermination()
+    let client = roomClient(
+      observeRoomPresence: { _ in
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield([])
+          continuation.onTermination = { @Sendable _ in
+            Task {
+              await termination.record()
+            }
+          }
+        }
+      }
+    )
+
+    var presence = RoomPresence("chat", "lobby")
+    let subscription = try await presence.subscribe(using: client)
+    var iterator = subscription.makeAsyncIterator()
+    let initialMembers = try await iterator.next()
+    expectNoDifference(initialMembers, [])
+
+    subscription.cancel()
+    #expect(try await iterator.next() == nil)
+    await termination.wait()
+  }
+
+  @Test
+  func roomPresencePropertyWrapperRecordsMissingRoomError() async throws {
+    var presence = RoomPresence()
+
+    do {
+      _ = try await presence.subscribe(using: roomClient())
+      Issue.record("Expected @RoomPresence without a room to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.operation, "subscribe RoomPresence")
+      expectNoDifference(presence.loadError?.operation, "subscribe RoomPresence")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+
+    expectNoDifference(presence.wrappedValue, [])
+    expectNoDifference(presence.isLoading, false)
+  }
+
+  @Test
+  func roomPresencePropertyWrapperSubscribeCancellationAfterObserveDoesNotSucceed() async throws {
+    let gate = AuthSessionLoadGate()
+    let client = roomClient(
+      observeRoomPresence: { _ in
+        await gate.recordStarted()
+        await gate.waitUntilReleased()
+        return AsyncStream { continuation in continuation.finish() }
+      }
+    )
+    let presence = RoomPresence("chat", "lobby")
+
+    let task = Task {
+      var presence = presence
+      _ = try await presence.subscribe(using: client)
+    }
+
+    await gate.waitUntilStarted()
+    task.cancel()
+    await gate.release()
+
+    do {
+      try await task.value
+      Issue.record("Expected @RoomPresence subscribe cancellation to throw CancellationError.")
+    } catch is CancellationError {
+    } catch {
+      Issue.record("Expected CancellationError, got \(error).")
+    }
+  }
+
+  @Test
+  func roomTopicMessagesPropertyWrapperLoadsUsingDependencyClient() async throws {
+    let room = InstantRoomHandle(type: "chat", id: "lobby")
+    let message = mockRoomTopicMessage(room: room, topic: "sendEmoji")
+    let client = roomClient(
+      roomTopicMessages: { room, topic, limit in
+        expectNoDifference(room, InstantRoomHandle(type: "chat", id: "lobby"))
+        expectNoDifference(topic, "sendEmoji")
+        expectNoDifference(limit, 1)
+        return [message]
+      }
+    )
+
+    try await withDependencies {
+      $0.defaultInstantSwiftData = client
+    } operation: {
+      @RoomTopicMessages("chat", "lobby", "sendEmoji", limit: 1)
+      var messages: [InstantRoomTopicMessage]
+
+      try await $messages.load()
+
+      expectNoDifference(messages, [message])
+      expectNoDifference($messages.loadError, nil)
+      expectNoDifference($messages.isLoading, false)
+    }
+  }
+
+  @Test
+  func roomTopicMessagesPropertyWrapperRecordsNegativeLimitErrors() async throws {
+    var messages = RoomTopicMessages("chat", "lobby", "sendEmoji", limit: -1)
+
+    do {
+      try await messages.load(using: roomClient())
+      Issue.record("Expected @RoomTopicMessages negative load limit to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "load RoomTopicMessages")
+      expectNoDifference(messages.loadError?.operation, "load RoomTopicMessages")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+
+    expectNoDifference(messages.wrappedValue, [])
+    expectNoDifference(messages.isLoading, false)
+
+    do {
+      _ = try await messages.subscribe(
+        "chat",
+        "lobby",
+        "sendEmoji",
+        limit: -1,
+        using: roomClient()
+      )
+      Issue.record("Expected @RoomTopicMessages negative subscribe limit to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "subscribe RoomTopicMessages")
+      expectNoDifference(messages.loadError?.operation, "subscribe RoomTopicMessages")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+  }
+
+  @Test
+  func roomTopicMessagesPropertyWrapperTaskBindsObservedMessages() async throws {
+    let room = InstantRoomHandle(type: "chat", id: "lobby")
+    let message = mockRoomTopicMessage(room: room, topic: "sendEmoji")
+    let laterMessage = mockRoomTopicMessage(
+      room: room,
+      topic: "sendEmoji",
+      id: "message-2",
+      payload: .object(["emoji": .string("sparkles")])
+    )
+    let client = roomClient(
+      observeRoomTopicMessages: { room, topic in
+        expectNoDifference(room, InstantRoomHandle(type: "chat", id: "lobby"))
+        expectNoDifference(topic, "sendEmoji")
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield([])
+          continuation.yield([message, laterMessage])
+          continuation.finish()
+        }
+      }
+    )
+
+    @RoomTopicMessages var messages: [InstantRoomTopicMessage]
+
+    try await $messages.task("chat", "lobby", "sendEmoji", limit: 1, using: client)
+
+    expectNoDifference(messages, [message])
+    expectNoDifference($messages.loadError, nil)
+    expectNoDifference($messages.isLoading, false)
+  }
+
+  @Test
   func cliDefaultPersistenceURLHonorsHomeEnvironment() {
     let key = "INSTANT_SWIFT_DATA_HOME"
     let previous = getenv(key).map { String(cString: $0) }
@@ -973,6 +1278,26 @@ struct BootstrapTests {
     } catch {
       #expect(Bool(false), "Unexpected error: \(error)")
     }
+
+    do {
+      _ = try await mock.roomPresence(room: InstantRoomHandle(type: "chat", id: "lobby"))
+      #expect(Bool(false), "Expected old-shape mock client rooms to fail without room closures.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .implementationFailed)
+      expectNoDifference(error.operation, "access InstantSwiftData rooms")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      _ = try await mock.observeRoomPresence(room: InstantRoomHandle(type: "chat", id: "lobby"))
+      #expect(Bool(false), "Expected old-shape mock client room observers to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .implementationFailed)
+      expectNoDifference(error.operation, "access InstantSwiftData rooms")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
   }
 }
 
@@ -1069,6 +1394,26 @@ private actor AuthSessionLoadGate {
   }
 }
 
+private actor RoomObservationTermination {
+  private var didTerminate = false
+  private var continuations: [CheckedContinuation<Void, Never>] = []
+
+  func record() {
+    didTerminate = true
+    for continuation in continuations {
+      continuation.resume()
+    }
+    continuations.removeAll()
+  }
+
+  func wait() async {
+    if didTerminate { return }
+    await withCheckedContinuation { continuation in
+      continuations.append(continuation)
+    }
+  }
+}
+
 private func mockAuthSession(userID: String, isGuest: Bool = false) -> InstantAuthSession {
   InstantAuthSession(
     appID: "mock-app",
@@ -1077,6 +1422,37 @@ private func mockAuthSession(userID: String, isGuest: Bool = false) -> InstantAu
     isGuest: isGuest,
     createdAt: InstantTimestamp(milliseconds: 1),
     updatedAt: InstantTimestamp(milliseconds: 2)
+  )
+}
+
+private func mockRoomPresenceMember(
+  room: InstantRoomHandle,
+  userID: String,
+  values: [String: JSONValue] = ["status": .string("online")]
+) -> InstantRoomPresenceMember {
+  InstantRoomPresenceMember(
+    appID: "mock-app",
+    room: room,
+    userID: userID,
+    values: values,
+    updatedAt: InstantTimestamp(milliseconds: 3)
+  )
+}
+
+private func mockRoomTopicMessage(
+  room: InstantRoomHandle,
+  topic: String,
+  id: String = "message-1",
+  payload: JSONValue = .object(["emoji": .string("wave")])
+) -> InstantRoomTopicMessage {
+  InstantRoomTopicMessage(
+    id: id,
+    appID: "mock-app",
+    room: room,
+    topic: topic,
+    userID: "user-1",
+    payload: payload,
+    createdAt: InstantTimestamp(milliseconds: 4)
   )
 }
 
@@ -1099,5 +1475,59 @@ private func authSessionClient(
     localID: { name in "mock-\(name)" },
     authSession: load,
     observeAuthSession: observe
+  )
+}
+
+private func roomClient(
+  setPresence: @escaping @Sendable (
+    InstantRoomHandle,
+    String?,
+    [String: JSONValue]
+  ) async throws -> InstantRoomPresenceMember = { room, userID, values in
+    mockRoomPresenceMember(room: room, userID: userID ?? "mock-user", values: values)
+  },
+  roomPresence: @escaping @Sendable (InstantRoomHandle) async throws
+    -> [InstantRoomPresenceMember] = { _ in [] },
+  observeRoomPresence: @escaping @Sendable (InstantRoomHandle) async throws
+    -> AsyncStream<[InstantRoomPresenceMember]> = { _ in
+      AsyncStream { continuation in continuation.finish() }
+    },
+  leavePresence: @escaping @Sendable (InstantRoomHandle, String?) async throws
+    -> String = { _, userID in userID ?? "mock-user" },
+  publishTopicMessage: @escaping @Sendable (
+    InstantRoomHandle,
+    String,
+    String?,
+    JSONValue
+  ) async throws -> InstantRoomTopicMessage = { room, topic, _, payload in
+    mockRoomTopicMessage(room: room, topic: topic, payload: payload)
+  },
+  roomTopicMessages: @escaping @Sendable (InstantRoomHandle, String, Int?) async throws
+    -> [InstantRoomTopicMessage] = { _, _, _ in [] },
+  observeRoomTopicMessages: @escaping @Sendable (InstantRoomHandle, String) async throws
+    -> AsyncStream<[InstantRoomTopicMessage]> = { _, _ in
+      AsyncStream { continuation in continuation.finish() }
+    }
+) -> InstantSwiftDataClient {
+  InstantSwiftDataClient(
+    transact: { transaction in
+      InstantStoreMutationResult(
+        transactionID: transaction.id,
+        changedEntityIDs: [],
+        tripleCount: transaction.operations.count,
+        emissions: []
+      )
+    },
+    query: { _ in [] },
+    observe: { _ in AsyncStream { continuation in continuation.finish() } },
+    pendingMutations: { [] },
+    localID: { name in "mock-\(name)" },
+    setRoomPresence: setPresence,
+    roomPresence: roomPresence,
+    observeRoomPresence: observeRoomPresence,
+    leaveRoomPresence: leavePresence,
+    publishRoomTopicMessage: publishTopicMessage,
+    roomTopicMessages: roomTopicMessages,
+    observeRoomTopicMessages: observeRoomTopicMessages
   )
 }

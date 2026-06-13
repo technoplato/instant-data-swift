@@ -43,6 +43,22 @@ public struct InstantSwiftDataClient: Sendable {
   private var oauthAuthorizationURLOperation: @Sendable (String, URL) throws -> URL
   private var issuerURIOperation: @Sendable () throws -> URL
   private var signOutOperation: @Sendable (Bool) async throws -> Void
+  private var setRoomPresenceOperation:
+    @Sendable (InstantRoomHandle, String?, [String: JSONValue]) async throws
+      -> InstantRoomPresenceMember
+  private var roomPresenceOperation:
+    @Sendable (InstantRoomHandle) async throws -> [InstantRoomPresenceMember]
+  private var observeRoomPresenceOperation:
+    @Sendable (InstantRoomHandle) async throws -> AsyncStream<[InstantRoomPresenceMember]>
+  private var leaveRoomPresenceOperation:
+    @Sendable (InstantRoomHandle, String?) async throws -> String
+  private var publishRoomTopicMessageOperation:
+    @Sendable (InstantRoomHandle, String, String?, JSONValue) async throws
+      -> InstantRoomTopicMessage
+  private var roomTopicMessagesOperation:
+    @Sendable (InstantRoomHandle, String, Int?) async throws -> [InstantRoomTopicMessage]
+  private var observeRoomTopicMessagesOperation:
+    @Sendable (InstantRoomHandle, String) async throws -> AsyncStream<[InstantRoomTopicMessage]>
 
   public init(runtime: InstantRuntime) {
     self.runtime = runtime
@@ -113,6 +129,32 @@ public struct InstantSwiftDataClient: Sendable {
     self.signOutOperation = { invalidateToken in
       try await runtime.signOut(invalidateToken: invalidateToken)
     }
+    self.setRoomPresenceOperation = { room, userID, values in
+      try await runtime.setPresence(room: room, userID: userID, values: values)
+    }
+    self.roomPresenceOperation = { room in
+      try await runtime.roomPresence(room: room)
+    }
+    self.observeRoomPresenceOperation = { room in
+      try await runtime.observeRoomPresence(room: room)
+    }
+    self.leaveRoomPresenceOperation = { room, userID in
+      try await runtime.leavePresence(room: room, userID: userID)
+    }
+    self.publishRoomTopicMessageOperation = { room, topic, userID, payload in
+      try await runtime.publishTopicMessage(
+        room: room,
+        topic: topic,
+        userID: userID,
+        payload: payload
+      )
+    }
+    self.roomTopicMessagesOperation = { room, topic, limit in
+      try await runtime.roomTopicMessages(room: room, topic: topic, limit: limit)
+    }
+    self.observeRoomTopicMessagesOperation = { room, topic in
+      try await runtime.observeRoomTopicMessages(room: room, topic: topic)
+    }
   }
 
   public init(
@@ -140,7 +182,25 @@ public struct InstantSwiftDataClient: Sendable {
       (@Sendable (String, String, String?) async throws -> InstantAuthSession)? = nil,
     signInWithOAuth:
       (@Sendable (String, String?) async throws -> InstantAuthSession)? = nil,
-    signOutWithOptions: (@Sendable (Bool) async throws -> Void)? = nil
+    signOutWithOptions: (@Sendable (Bool) async throws -> Void)? = nil,
+    setRoomPresence:
+      (@Sendable (InstantRoomHandle, String?, [String: JSONValue]) async throws
+        -> InstantRoomPresenceMember)? = nil,
+    roomPresence:
+      (@Sendable (InstantRoomHandle) async throws -> [InstantRoomPresenceMember])? = nil,
+    observeRoomPresence:
+      (@Sendable (InstantRoomHandle) async throws -> AsyncStream<[InstantRoomPresenceMember]>)? =
+        nil,
+    leaveRoomPresence: (@Sendable (InstantRoomHandle, String?) async throws -> String)? = nil,
+    publishRoomTopicMessage:
+      (@Sendable (InstantRoomHandle, String, String?, JSONValue) async throws
+        -> InstantRoomTopicMessage)? = nil,
+    roomTopicMessages:
+      (@Sendable (InstantRoomHandle, String, Int?) async throws
+        -> [InstantRoomTopicMessage])? = nil,
+    observeRoomTopicMessages:
+      (@Sendable (InstantRoomHandle, String) async throws
+        -> AsyncStream<[InstantRoomTopicMessage]>)? = nil
   ) {
     self.init(
       transact: transact,
@@ -164,7 +224,14 @@ public struct InstantSwiftDataClient: Sendable {
       signOut: signOut,
       signInWithIDToken: signInWithIDToken,
       signInWithOAuth: signInWithOAuth,
-      signOutWithOptions: signOutWithOptions
+      signOutWithOptions: signOutWithOptions,
+      setRoomPresence: setRoomPresence,
+      roomPresence: roomPresence,
+      observeRoomPresence: observeRoomPresence,
+      leaveRoomPresence: leaveRoomPresence,
+      publishRoomTopicMessage: publishRoomTopicMessage,
+      roomTopicMessages: roomTopicMessages,
+      observeRoomTopicMessages: observeRoomTopicMessages
     )
   }
 
@@ -195,7 +262,25 @@ public struct InstantSwiftDataClient: Sendable {
       (@Sendable (String, String, String?) async throws -> InstantAuthSession)? = nil,
     signInWithOAuth:
       (@Sendable (String, String?) async throws -> InstantAuthSession)? = nil,
-    signOutWithOptions: (@Sendable (Bool) async throws -> Void)? = nil
+    signOutWithOptions: (@Sendable (Bool) async throws -> Void)? = nil,
+    setRoomPresence:
+      (@Sendable (InstantRoomHandle, String?, [String: JSONValue]) async throws
+        -> InstantRoomPresenceMember)? = nil,
+    roomPresence:
+      (@Sendable (InstantRoomHandle) async throws -> [InstantRoomPresenceMember])? = nil,
+    observeRoomPresence:
+      (@Sendable (InstantRoomHandle) async throws -> AsyncStream<[InstantRoomPresenceMember]>)? =
+        nil,
+    leaveRoomPresence: (@Sendable (InstantRoomHandle, String?) async throws -> String)? = nil,
+    publishRoomTopicMessage:
+      (@Sendable (InstantRoomHandle, String, String?, JSONValue) async throws
+        -> InstantRoomTopicMessage)? = nil,
+    roomTopicMessages:
+      (@Sendable (InstantRoomHandle, String, Int?) async throws
+        -> [InstantRoomTopicMessage])? = nil,
+    observeRoomTopicMessages:
+      (@Sendable (InstantRoomHandle, String) async throws
+        -> AsyncStream<[InstantRoomTopicMessage]>)? = nil
   ) {
     let authError = InstantError(
       code: .implementationFailed,
@@ -216,6 +301,13 @@ public struct InstantSwiftDataClient: Sendable {
       message: "No runtime connection status client has been configured.",
       recovery:
         "Bootstrap Instant Swift Data before inspecting connection status, or override the status closure in tests."
+    )
+    let roomsError = InstantError(
+      code: .implementationFailed,
+      operation: "access InstantSwiftData rooms",
+      message: "No room client has been configured.",
+      recovery:
+        "Bootstrap Instant Swift Data before using rooms, or override room closures in tests."
     )
 
     self.runtime = nil
@@ -251,6 +343,15 @@ public struct InstantSwiftDataClient: Sendable {
           throw authError
         }
       }
+    self.setRoomPresenceOperation = setRoomPresence ?? { _, _, _ in throw roomsError }
+    self.roomPresenceOperation = roomPresence ?? { _ in throw roomsError }
+    self.observeRoomPresenceOperation = observeRoomPresence ?? { _ in throw roomsError }
+    self.leaveRoomPresenceOperation = leaveRoomPresence ?? { _, _ in throw roomsError }
+    self.publishRoomTopicMessageOperation =
+      publishRoomTopicMessage ?? { _, _, _, _ in throw roomsError }
+    self.roomTopicMessagesOperation = roomTopicMessages ?? { _, _, _ in throw roomsError }
+    self.observeRoomTopicMessagesOperation =
+      observeRoomTopicMessages ?? { _, _ in throw roomsError }
   }
 
   public static func unimplemented(_ message: String) -> Self {
@@ -327,6 +428,27 @@ public struct InstantSwiftDataClient: Sendable {
         throw error
       },
       signOutWithOptions: { _ in
+        throw error
+      },
+      setRoomPresence: { _, _, _ in
+        throw error
+      },
+      roomPresence: { _ in
+        throw error
+      },
+      observeRoomPresence: { _ in
+        throw error
+      },
+      leaveRoomPresence: { _, _ in
+        throw error
+      },
+      publishRoomTopicMessage: { _, _, _, _ in
+        throw error
+      },
+      roomTopicMessages: { _, _, _ in
+        throw error
+      },
+      observeRoomTopicMessages: { _, _ in
         throw error
       }
     )
@@ -446,6 +568,60 @@ public struct InstantSwiftDataClient: Sendable {
     try await signOutOperation(invalidateToken)
   }
 
+  @discardableResult
+  public func setRoomPresence(
+    room: InstantRoomHandle,
+    userID: String? = nil,
+    values: [String: JSONValue]
+  ) async throws -> InstantRoomPresenceMember {
+    try await setRoomPresenceOperation(room, userID, values)
+  }
+
+  public func roomPresence(
+    room: InstantRoomHandle
+  ) async throws -> [InstantRoomPresenceMember] {
+    try await roomPresenceOperation(room)
+  }
+
+  public func observeRoomPresence(
+    room: InstantRoomHandle
+  ) async throws -> AsyncStream<[InstantRoomPresenceMember]> {
+    try await observeRoomPresenceOperation(room)
+  }
+
+  @discardableResult
+  public func leaveRoomPresence(
+    room: InstantRoomHandle,
+    userID: String? = nil
+  ) async throws -> String {
+    try await leaveRoomPresenceOperation(room, userID)
+  }
+
+  @discardableResult
+  public func publishRoomTopicMessage(
+    room: InstantRoomHandle,
+    topic: String,
+    userID: String? = nil,
+    payload: JSONValue
+  ) async throws -> InstantRoomTopicMessage {
+    try await publishRoomTopicMessageOperation(room, topic, userID, payload)
+  }
+
+  public func roomTopicMessages(
+    room: InstantRoomHandle,
+    topic: String,
+    limit: Int? = nil
+  ) async throws -> [InstantRoomTopicMessage] {
+    try await roomTopicMessagesOperation(room, topic, limit)
+  }
+
+  public func observeRoomTopicMessages(
+    room: InstantRoomHandle,
+    topic: String
+  ) async throws -> AsyncStream<[InstantRoomTopicMessage]> {
+    try await observeRoomTopicMessagesOperation(room, topic)
+  }
+
   public func subscribe<Entity: InstantEntityModel>(
     _ query: InstantEntityQuery<Entity>
   ) async -> FetchSubscription<[Entity]> {
@@ -551,6 +727,33 @@ public struct FetchSubscription<Element: Sendable>: AsyncSequence, Sendable {
       mapped.continuation.finish()
       self.cancel()
     }
+  }
+}
+
+private func fetchSubscription<Element: Sendable>(
+  from values: AsyncStream<Element>
+) -> FetchSubscription<Element> {
+  let stream = AsyncThrowingStream<Element, Error>.makeStream(
+    bufferingPolicy: .bufferingNewest(1)
+  )
+  let task = Task {
+    for await value in values {
+      do {
+        try Task.checkCancellation()
+        stream.continuation.yield(value)
+      } catch {
+        stream.continuation.finish(throwing: error)
+        return
+      }
+    }
+    stream.continuation.finish()
+  }
+  stream.continuation.onTermination = { @Sendable _ in
+    task.cancel()
+  }
+  return FetchSubscription(stream: stream.stream) {
+    task.cancel()
+    stream.continuation.finish()
   }
 }
 
@@ -1937,29 +2140,9 @@ public struct AuthSession: Sendable {
   ) async throws -> FetchSubscription<InstantAuthSession?> {
     do {
       let sessions = try await client.observeAuthSession()
-      let stream = AsyncThrowingStream<InstantAuthSession?, Error>.makeStream(
-        bufferingPolicy: .bufferingNewest(1)
-      )
-      let task = Task {
-        for await session in sessions {
-          do {
-            try Task.checkCancellation()
-            stream.continuation.yield(session)
-          } catch {
-            stream.continuation.finish(throwing: error)
-            return
-          }
-        }
-        stream.continuation.finish()
-      }
-      stream.continuation.onTermination = { @Sendable _ in
-        task.cancel()
-      }
+      try Task.checkCancellation()
       loadError = nil
-      return FetchSubscription(stream: stream.stream) {
-        task.cancel()
-        stream.continuation.finish()
-      }
+      return fetchSubscription(from: sessions)
     } catch let error as CancellationError {
       loadError = nil
       throw error
@@ -2016,6 +2199,645 @@ public struct AuthSession: Sendable {
       isLoading = false
       throw error
     }
+  }
+}
+
+@propertyWrapper
+public struct RoomPresence: Sendable {
+  private let storage: FetchStorage<[InstantRoomPresenceMember]>
+  private var room: InstantRoomHandle?
+
+  public var wrappedValue: [InstantRoomPresenceMember] {
+    get { storage.wrappedValue }
+    set { storage.wrappedValue = newValue }
+  }
+
+  public var loadError: InstantError? {
+    get { storage.loadError }
+    set { storage.loadError = newValue }
+  }
+
+  public var isLoading: Bool {
+    get { storage.isLoading }
+    set { storage.isLoading = newValue }
+  }
+
+  #if canImport(SwiftUI)
+    public var binding: Binding<[InstantRoomPresenceMember]> {
+      Binding(
+        get: { storage.wrappedValue },
+        set: { storage.wrappedValue = $0 }
+      )
+    }
+  #endif
+
+  public init(wrappedValue: [InstantRoomPresenceMember] = []) {
+    self.storage = FetchStorage(value: wrappedValue)
+    self.room = nil
+  }
+
+  public init(_ type: String, _ id: String) {
+    self.storage = FetchStorage(value: [])
+    self.room = InstantRoomHandle(type: type, id: id)
+  }
+
+  public init(room: InstantRoomHandle) {
+    self.storage = FetchStorage(value: [])
+    self.room = room
+  }
+
+  public init(wrappedValue: [InstantRoomPresenceMember], _ type: String, _ id: String) {
+    self.storage = FetchStorage(value: wrappedValue)
+    self.room = InstantRoomHandle(type: type, id: id)
+  }
+
+  public init(wrappedValue: [InstantRoomPresenceMember], room: InstantRoomHandle) {
+    self.storage = FetchStorage(value: wrappedValue)
+    self.room = room
+  }
+
+  public var projectedValue: Self {
+    get { self }
+    set { self = newValue }
+  }
+
+  public mutating func load() async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(using: client)
+  }
+
+  public mutating func load(using client: InstantSwiftDataClient) async throws {
+    guard let room else {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "load RoomPresence",
+        message: "No Instant room has been configured for this wrapper.",
+        recovery: "Initialize @RoomPresence with a room, or pass a room to load(_:_:using:)."
+      )
+      loadError = error
+      throw error
+    }
+    try await load(room: room, using: client)
+  }
+
+  public mutating func load(_ type: String, _ id: String) async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(type, id, using: client)
+  }
+
+  public mutating func load(
+    _ type: String,
+    _ id: String,
+    using client: InstantSwiftDataClient
+  ) async throws {
+    try await load(room: InstantRoomHandle(type: type, id: id), using: client)
+  }
+
+  public mutating func load(room: InstantRoomHandle) async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(room: room, using: client)
+  }
+
+  public mutating func load(
+    room: InstantRoomHandle,
+    using client: InstantSwiftDataClient
+  ) async throws {
+    self.room = room
+    isLoading = true
+    do {
+      let members = try await client.roomPresence(room: room)
+      try Task.checkCancellation()
+      wrappedValue = members
+      loadError = nil
+      isLoading = false
+    } catch let error as CancellationError {
+      loadError = nil
+      isLoading = false
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      isLoading = false
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "load RoomPresence",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient room presence operation."
+      )
+      loadError = error
+      isLoading = false
+      throw error
+    }
+  }
+
+  public mutating func subscribe()
+    async throws -> FetchSubscription<[InstantRoomPresenceMember]>
+  {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(using: client)
+  }
+
+  public mutating func subscribe(
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[InstantRoomPresenceMember]> {
+    guard let room else {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "subscribe RoomPresence",
+        message: "No Instant room has been configured for this wrapper.",
+        recovery: "Initialize @RoomPresence with a room, or pass a room to subscribe(_:_:using:)."
+      )
+      loadError = error
+      throw error
+    }
+    return try await subscribe(room: room, using: client)
+  }
+
+  public mutating func subscribe(
+    _ type: String,
+    _ id: String
+  ) async throws -> FetchSubscription<[InstantRoomPresenceMember]> {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(type, id, using: client)
+  }
+
+  public mutating func subscribe(
+    _ type: String,
+    _ id: String,
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[InstantRoomPresenceMember]> {
+    try await subscribe(room: InstantRoomHandle(type: type, id: id), using: client)
+  }
+
+  public mutating func subscribe(
+    room: InstantRoomHandle
+  ) async throws -> FetchSubscription<[InstantRoomPresenceMember]> {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(room: room, using: client)
+  }
+
+  public mutating func subscribe(
+    room: InstantRoomHandle,
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[InstantRoomPresenceMember]> {
+    self.room = room
+    do {
+      let members = try await client.observeRoomPresence(room: room)
+      try Task.checkCancellation()
+      loadError = nil
+      return fetchSubscription(from: members)
+    } catch let error as CancellationError {
+      loadError = nil
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "subscribe RoomPresence",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient room presence observer."
+      )
+      loadError = error
+      throw error
+    }
+  }
+
+  public mutating func task() async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(using: client)
+  }
+
+  public mutating func task(_ type: String, _ id: String) async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(type, id, using: client)
+  }
+
+  public mutating func task(
+    _ type: String,
+    _ id: String,
+    using client: InstantSwiftDataClient
+  ) async throws {
+    self.room = InstantRoomHandle(type: type, id: id)
+    try await task(using: client)
+  }
+
+  public mutating func task(room: InstantRoomHandle) async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(room: room, using: client)
+  }
+
+  public mutating func task(
+    room: InstantRoomHandle,
+    using client: InstantSwiftDataClient
+  ) async throws {
+    self.room = room
+    try await task(using: client)
+  }
+
+  public mutating func task(using client: InstantSwiftDataClient) async throws {
+    isLoading = true
+    do {
+      let subscription = try await subscribe(using: client)
+      defer { subscription.cancel() }
+      for try await value in subscription {
+        try Task.checkCancellation()
+        wrappedValue = value
+        loadError = nil
+        isLoading = false
+      }
+      try Task.checkCancellation()
+      loadError = nil
+      isLoading = false
+    } catch let error as CancellationError {
+      loadError = nil
+      isLoading = false
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      isLoading = false
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "observe RoomPresence",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient room presence observer."
+      )
+      loadError = error
+      isLoading = false
+      throw error
+    }
+  }
+}
+
+@propertyWrapper
+public struct RoomTopicMessages: Sendable {
+  private let storage: FetchStorage<[InstantRoomTopicMessage]>
+  private var room: InstantRoomHandle?
+  private var topic: String?
+  private var limit: Int?
+
+  public var wrappedValue: [InstantRoomTopicMessage] {
+    get { storage.wrappedValue }
+    set { storage.wrappedValue = newValue }
+  }
+
+  public var loadError: InstantError? {
+    get { storage.loadError }
+    set { storage.loadError = newValue }
+  }
+
+  public var isLoading: Bool {
+    get { storage.isLoading }
+    set { storage.isLoading = newValue }
+  }
+
+  #if canImport(SwiftUI)
+    public var binding: Binding<[InstantRoomTopicMessage]> {
+      Binding(
+        get: { storage.wrappedValue },
+        set: { storage.wrappedValue = $0 }
+      )
+    }
+  #endif
+
+  public init(wrappedValue: [InstantRoomTopicMessage] = []) {
+    self.storage = FetchStorage(value: wrappedValue)
+    self.room = nil
+    self.topic = nil
+    self.limit = nil
+  }
+
+  public init(_ type: String, _ id: String, _ topic: String, limit: Int? = nil) {
+    self.storage = FetchStorage(value: [])
+    self.room = InstantRoomHandle(type: type, id: id)
+    self.topic = topic
+    self.limit = limit
+  }
+
+  public init(room: InstantRoomHandle, topic: String, limit: Int? = nil) {
+    self.storage = FetchStorage(value: [])
+    self.room = room
+    self.topic = topic
+    self.limit = limit
+  }
+
+  public init(
+    wrappedValue: [InstantRoomTopicMessage],
+    _ type: String,
+    _ id: String,
+    _ topic: String,
+    limit: Int? = nil
+  ) {
+    self.storage = FetchStorage(value: wrappedValue)
+    self.room = InstantRoomHandle(type: type, id: id)
+    self.topic = topic
+    self.limit = limit
+  }
+
+  public init(
+    wrappedValue: [InstantRoomTopicMessage],
+    room: InstantRoomHandle,
+    topic: String,
+    limit: Int? = nil
+  ) {
+    self.storage = FetchStorage(value: wrappedValue)
+    self.room = room
+    self.topic = topic
+    self.limit = limit
+  }
+
+  public var projectedValue: Self {
+    get { self }
+    set { self = newValue }
+  }
+
+  public mutating func load() async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(using: client)
+  }
+
+  public mutating func load(using client: InstantSwiftDataClient) async throws {
+    guard let room, let topic else {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "load RoomTopicMessages",
+        message: "No Instant room topic has been configured for this wrapper.",
+        recovery:
+          "Initialize @RoomTopicMessages with a room and topic, or pass them to load(_:_:_:using:)."
+      )
+      loadError = error
+      throw error
+    }
+    try await load(room: room, topic: topic, limit: limit, using: client)
+  }
+
+  public mutating func load(
+    _ type: String,
+    _ id: String,
+    _ topic: String,
+    limit: Int? = nil
+  ) async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(type, id, topic, limit: limit, using: client)
+  }
+
+  public mutating func load(
+    _ type: String,
+    _ id: String,
+    _ topic: String,
+    limit: Int? = nil,
+    using client: InstantSwiftDataClient
+  ) async throws {
+    try await load(
+      room: InstantRoomHandle(type: type, id: id),
+      topic: topic,
+      limit: limit,
+      using: client
+    )
+  }
+
+  public mutating func load(
+    room: InstantRoomHandle,
+    topic: String,
+    limit: Int? = nil
+  ) async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(room: room, topic: topic, limit: limit, using: client)
+  }
+
+  public mutating func load(
+    room: InstantRoomHandle,
+    topic: String,
+    limit: Int? = nil,
+    using client: InstantSwiftDataClient
+  ) async throws {
+    self.room = room
+    self.topic = topic
+    self.limit = limit
+    isLoading = true
+    do {
+      try Self.validateLimit(limit, operation: "load RoomTopicMessages")
+      let messages = try await client.roomTopicMessages(
+        room: room,
+        topic: topic,
+        limit: limit
+      )
+      try Task.checkCancellation()
+      wrappedValue = messages
+      loadError = nil
+      isLoading = false
+    } catch let error as CancellationError {
+      loadError = nil
+      isLoading = false
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      isLoading = false
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "load RoomTopicMessages",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient room topic operation."
+      )
+      loadError = error
+      isLoading = false
+      throw error
+    }
+  }
+
+  public mutating func subscribe()
+    async throws -> FetchSubscription<[InstantRoomTopicMessage]>
+  {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(using: client)
+  }
+
+  public mutating func subscribe(
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[InstantRoomTopicMessage]> {
+    guard let room, let topic else {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "subscribe RoomTopicMessages",
+        message: "No Instant room topic has been configured for this wrapper.",
+        recovery:
+          "Initialize @RoomTopicMessages with a room and topic, or pass them to subscribe(_:_:_:using:)."
+      )
+      loadError = error
+      throw error
+    }
+    return try await subscribe(room: room, topic: topic, limit: limit, using: client)
+  }
+
+  public mutating func subscribe(
+    _ type: String,
+    _ id: String,
+    _ topic: String,
+    limit: Int? = nil
+  ) async throws -> FetchSubscription<[InstantRoomTopicMessage]> {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(type, id, topic, limit: limit, using: client)
+  }
+
+  public mutating func subscribe(
+    _ type: String,
+    _ id: String,
+    _ topic: String,
+    limit: Int? = nil,
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[InstantRoomTopicMessage]> {
+    try await subscribe(
+      room: InstantRoomHandle(type: type, id: id),
+      topic: topic,
+      limit: limit,
+      using: client
+    )
+  }
+
+  public mutating func subscribe(
+    room: InstantRoomHandle,
+    topic: String,
+    limit: Int? = nil
+  ) async throws -> FetchSubscription<[InstantRoomTopicMessage]> {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(room: room, topic: topic, limit: limit, using: client)
+  }
+
+  public mutating func subscribe(
+    room: InstantRoomHandle,
+    topic: String,
+    limit: Int? = nil,
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[InstantRoomTopicMessage]> {
+    self.room = room
+    self.topic = topic
+    self.limit = limit
+    do {
+      try Self.validateLimit(limit, operation: "subscribe RoomTopicMessages")
+      let messages = try await client.observeRoomTopicMessages(room: room, topic: topic)
+      try Task.checkCancellation()
+      loadError = nil
+      let subscription = fetchSubscription(from: messages)
+      if let limit {
+        return subscription.map { Array($0.prefix(limit)) }
+      }
+      return subscription
+    } catch let error as CancellationError {
+      loadError = nil
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "subscribe RoomTopicMessages",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient room topic observer."
+      )
+      loadError = error
+      throw error
+    }
+  }
+
+  public mutating func task() async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(using: client)
+  }
+
+  public mutating func task(
+    _ type: String,
+    _ id: String,
+    _ topic: String,
+    limit: Int? = nil
+  ) async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(type, id, topic, limit: limit, using: client)
+  }
+
+  public mutating func task(
+    _ type: String,
+    _ id: String,
+    _ topic: String,
+    limit: Int? = nil,
+    using client: InstantSwiftDataClient
+  ) async throws {
+    self.room = InstantRoomHandle(type: type, id: id)
+    self.topic = topic
+    self.limit = limit
+    try await task(using: client)
+  }
+
+  public mutating func task(
+    room: InstantRoomHandle,
+    topic: String,
+    limit: Int? = nil
+  ) async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(room: room, topic: topic, limit: limit, using: client)
+  }
+
+  public mutating func task(
+    room: InstantRoomHandle,
+    topic: String,
+    limit: Int? = nil,
+    using client: InstantSwiftDataClient
+  ) async throws {
+    self.room = room
+    self.topic = topic
+    self.limit = limit
+    try await task(using: client)
+  }
+
+  public mutating func task(using client: InstantSwiftDataClient) async throws {
+    isLoading = true
+    do {
+      let subscription = try await subscribe(using: client)
+      defer { subscription.cancel() }
+      for try await value in subscription {
+        try Task.checkCancellation()
+        wrappedValue = value
+        loadError = nil
+        isLoading = false
+      }
+      try Task.checkCancellation()
+      loadError = nil
+      isLoading = false
+    } catch let error as CancellationError {
+      loadError = nil
+      isLoading = false
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      isLoading = false
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "observe RoomTopicMessages",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient room topic observer."
+      )
+      loadError = error
+      isLoading = false
+      throw error
+    }
+  }
+
+  private static func validateLimit(_ limit: Int?, operation: String) throws {
+    guard let limit, limit < 0 else { return }
+    throw InstantError(
+      code: .validationFailed,
+      operation: operation,
+      message: "Topic message limit must be greater than or equal to 0.",
+      recovery: "Pass a non-negative limit, or omit limit to observe every local message."
+    )
   }
 }
 

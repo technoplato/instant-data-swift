@@ -436,6 +436,13 @@ try await $composeTodoID.load("todos.viewer")
 
 @AuthSession var authSession: InstantAuthSession?
 try await $authSession.load()
+
+@RoomPresence("chat", "lobby") var presence: [InstantRoomPresenceMember]
+try await $presence.load()
+
+@RoomTopicMessages("chat", "lobby", "sendEmoji", limit: 10)
+var messages: [InstantRoomTopicMessage]
+try await $messages.load()
 ```
 
 `serverCreatedAt` is order-only metadata. Do not declare a model attribute with

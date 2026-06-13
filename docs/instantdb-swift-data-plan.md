@@ -522,7 +522,9 @@ public API into SQL:
   dynamic `load`, projected task helpers, and SwiftUI bindings when available.
   `@AuthSession` should adapt Instant auth observation into the same
   value/loading/error/task/subscription shape instead of exposing raw auth
-  callbacks to app features.
+  callbacks to app features. `@RoomPresence` and `@RoomTopicMessages` should do
+  the same for room presence and topic streams, including dynamic room/topic
+  replacement for SwiftUI task lifetimes.
   Client adapters must transform subscribable/live Instant values into
   Swift-native wrappers, projected bindings, observable model state, and
   `AsyncSequence` streams rather than exposing raw subscription callbacks to app
