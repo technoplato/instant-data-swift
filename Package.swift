@@ -127,6 +127,15 @@ let package = Package(
       swiftSettings: strictConcurrencySettings
     ),
     .testTarget(
+      name: "InstantSwiftDataTestingTests",
+      dependencies: [
+        "InstantSwiftDataTesting",
+        .product(name: "CustomDump", package: "swift-custom-dump"),
+        .product(name: "Testing", package: "swift-testing"),
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .testTarget(
       name: "InstantSwiftDataMacrosTests",
       dependencies: [
         "InstantSwiftDataMacros",

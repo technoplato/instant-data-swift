@@ -126,13 +126,14 @@ values themselves `Sendable` and immutable. A dependency may be a value client
 with `@Sendable` closures, or a handle to an actor that owns mutable state. It
 must not be a hidden mutable singleton.
 
-Concrete local/demo implementations can be exposed as static instances such as
-`InstantMagicCodeExchange.local`. App-facing override points should still be
-registered through `TestDependencyKey`/`DependencyKey` and resolved in
-`bootstrapInstantSwiftData`, then passed into `InstantRuntimeConfiguration`.
-This keeps live, preview, test, CLI, and non-captive terminal runs on the same
-concurrency path while allowing auth, transport, sync, and storage behavior to
-vary by context.
+Concrete local/demo implementations can be exposed as extension static instances
+such as `extension InstantMagicCodeExchange { public static let local =
+Self(...) }`. App-facing override points should still be registered through
+`TestDependencyKey`/`DependencyKey` with computed `static var` dependency
+values, resolved in `bootstrapInstantSwiftData`, then passed into
+`InstantRuntimeConfiguration`. This keeps live, preview, test, CLI, and
+non-captive terminal runs on the same concurrency path while allowing auth,
+transport, sync, and storage behavior to vary by context.
 
 ## Isolation Rules
 

@@ -254,10 +254,11 @@ Instant's triple store and network model:
   live, preview, test, CLI, or local-demo context. Keys should conform to
   `TestDependencyKey`, extend `DependencyValues` for key-path access, and use
   computed `liveValue`, `testValue`, and `previewValue` properties. Concrete
-  Sendable clients can expose reusable instances such as
-  `InstantMagicCodeExchange.local`, but the runtime must receive them through
-  bootstrap/configuration rather than reaching for globals. Magic-code exchange,
-  transport/auth clients, clocks, UUIDs, file/storage clients, sync engines, and
+  Sendable clients can expose reusable extension instances such as
+  `extension InstantMagicCodeExchange { public static let local = Self(...) }`,
+  but the runtime must receive them through bootstrap/configuration rather than
+  reaching for globals. Magic-code exchange, transport/auth clients, clocks,
+  UUIDs, file/storage clients, sync engines, and
   future network clients should follow this pattern.
 - **Context-aware database configuration.** SQLiteData uses context-dependent
   default databases, debug-only query tracing, in-memory or temporary databases

@@ -17,6 +17,19 @@ prove this library.
 - `run-e2e.sh`: orchestration entry point.
 - `results/`: per-run JSONL evidence and timing output.
 
+## Local Swift Evidence
+
+The Swift runner currently emits local-only evidence for the durable todo
+workflow. It proves the Swift core can seed, update, cache, reset, and relaunch
+against the same SQLite state without SwiftUI:
+
+```bash
+swift run instant-swift-data-validation-runner --local-todos
+```
+
+The output is JSON Lines using the evidence format below. Real InstantDB and
+Swift/TypeScript boundary cases remain required for final acceptance.
+
 ## Required Cases
 
 - Swift writes, TypeScript observes.
@@ -43,7 +56,7 @@ Each runner should emit JSON Lines. Every row should include:
 - `case`: stable case id.
 - `side`: `swift`, `typescript`, or `orchestrator`.
 - `event`: stable event name.
-- `appId`: ephemeral Instant app id.
+- `appID`: ephemeral Instant app id.
 - `entityId` or `streamId` when applicable.
 - `timestampMs`.
 - `latencyMs` for observed round trips.

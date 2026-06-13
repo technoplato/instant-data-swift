@@ -275,10 +275,10 @@ public API into SQL:
 - **Swift Dependencies for overridable effects.** App-facing clients that vary
   across live, preview, test, CLI, and local terminal contexts should be modeled
   as Point-Free `swift-dependencies` values. Define a Sendable interface in the
-  appropriate module, expose reusable concrete instances such as
-  `InstantMagicCodeExchange.local`, register `TestDependencyKey` and
-  `DependencyKey` values with computed `testValue`, `previewValue`, and
-  `liveValue`, and thread the resolved dependency into
+  appropriate module, expose reusable concrete instances in extensions such as
+  `extension InstantMagicCodeExchange { public static let local = Self(...) }`,
+  register `TestDependencyKey` and `DependencyKey` values with computed
+  `testValue`, `previewValue`, and `liveValue`, and thread the resolved dependency into
   `bootstrapInstantSwiftData`/`InstantRuntimeConfiguration`. This applies first
   to magic-code exchange and should later apply to transport/auth, sync, file
   storage, and network clients.

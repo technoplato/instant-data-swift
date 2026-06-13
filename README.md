@@ -82,6 +82,13 @@ swift run instant-swift-data schema verify --example todos --from instant.schema
 swift run instant-swift-data perms verify --example todos --from instant.perms.ts --json
 ```
 
+Run the local Swift validation evidence runner:
+
+```bash
+swift run instant-swift-data-validation-runner --local-todos
+validation/run-e2e.sh
+```
+
 The current transport is intentionally marked `not-implemented-local-cache-only`
 in command output. That means the demo proves durable local cache, typed triples,
 query materialization, plan-aware persisted query results, optimistic outbox
@@ -115,7 +122,10 @@ try await withDependencies {
 
 `instantMagicCodeExchange` defaults to `.local`, and app/test entry points can
 override it before `bootstrapInstantSwiftData` to install live or fixture-backed
-auth behavior.
+auth behavior. Local/demo clients should be reusable static instances on the
+client type, for example `extension InstantMagicCodeExchange { public static let
+local = Self(...) }`, while dependency keys remain computed `static var`
+`liveValue`, `testValue`, and `previewValue` properties.
 
 ### Typed Queries And Writes
 
