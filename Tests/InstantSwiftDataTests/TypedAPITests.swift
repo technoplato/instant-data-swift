@@ -721,6 +721,180 @@ struct TypedAPITests {
   }
 
   @Test
+  func typedLookupMergeAndDeleteRoundTripThroughDependencyClient() async throws {
+    let profileID = InstantID<TypedProfile>(rawValue: "lookup-profile")
+    let profileLookup = TypedProfile.handle.lookup("blob")
+
+    try await withDependencies {
+      try await $0.bootstrapInstantSwiftData(
+        appID: "typed-lookup-merge-delete-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedProfile.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      try await db.transact(id: "tx-profile-lookup-create") {
+        TypedProfile.create(
+          id: profileID,
+          TypedProfile.handle.set("blob"),
+          TypedProfile.metadata.set(
+            .object([
+              "nested": .object([
+                "keep": .bool(true),
+                "size": .number(1),
+              ]),
+              "theme": .string("light"),
+            ])
+          )
+        )
+      }
+      try await db.transact(id: "tx-profile-lookup-merge") {
+        TypedProfile.merge(
+          lookup: profileLookup,
+          TypedProfile.metadata.set(
+            .object([
+              "nested": .object([
+                "size": .number(2)
+              ]),
+              "theme": .string("dark"),
+            ])
+          )
+        )
+      }
+
+      let profiles = try await db.query(TypedProfile.query)
+      expectNoDifference(
+        profiles,
+        [
+          TypedProfile(
+            id: profileID,
+            metadata: .object([
+              "nested": .object([
+                "keep": .bool(true),
+                "size": .number(2),
+              ]),
+              "theme": .string("dark"),
+            ])
+          )
+        ]
+      )
+
+      try await db.transact(id: "tx-profile-lookup-delete") {
+        TypedProfile.delete(lookup: profileLookup)
+      }
+
+      let deletedProfiles = try await db.query(TypedProfile.query)
+      expectNoDifference(deletedProfiles, [])
+
+      let pending = await db.pendingMutations()
+      expectNoDifference(
+        Set(pending.map(\.id)),
+        Set(["tx-profile-lookup-create", "tx-profile-lookup-delete", "tx-profile-lookup-merge"])
+      )
+    }
+  }
+
+  @Test
+  func typedLookupLinkOverloadsResolveSourceAndTargetIndependently() async throws {
+    let userID = InstantID<TypedUser>(rawValue: "lookup-link-user")
+    let secondUserID = InstantID<TypedUser>(rawValue: "lookup-link-user-2")
+    let postID = InstantID<TypedPost>(rawValue: "lookup-link-post")
+    let secondPostID = InstantID<TypedPost>(rawValue: "lookup-link-post-2")
+
+    try await withDependencies {
+      try await $0.bootstrapInstantSwiftData(
+        appID: "typed-lookup-link-overloads-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedUser.instantAttributes + TypedPost.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      try await db.transact(id: "tx-lookup-link-overload-seed") {
+        TypedUser.create(
+          id: userID,
+          TypedUser.name.set("Blob"),
+          TypedUser.email.set("blob@example.com")
+        )
+        TypedUser.create(
+          id: secondUserID,
+          TypedUser.name.set("Nub"),
+          TypedUser.email.set("nub@example.com")
+        )
+        TypedPost.create(
+          id: postID,
+          TypedPost.title.set("Source lookup"),
+          TypedPost.slug.set("source-lookup")
+        )
+        TypedPost.create(
+          id: secondPostID,
+          TypedPost.title.set("Target lookup"),
+          TypedPost.slug.set("target-lookup")
+        )
+      }
+
+      try await db.transact(id: "tx-link-source-lookup") {
+        TypedPost.author.link(
+          from: TypedPost.slug.lookup("source-lookup"),
+          to: userID
+        )
+      }
+      try await db.transact(id: "tx-link-target-lookup") {
+        TypedPost.author.link(
+          from: secondPostID,
+          to: TypedUser.email.lookup("nub@example.com")
+        )
+      }
+
+      let sourceLookupPost = try await db.query(
+        TypedPost.query.where(TypedPost.slug == "source-lookup")
+      )
+      expectNoDifference(
+        sourceLookupPost,
+        [TypedPost(id: postID, title: "Source lookup", authorID: userID)]
+      )
+
+      let targetLookupPost = try await db.query(
+        TypedPost.query.where(TypedPost.slug == "target-lookup")
+      )
+      expectNoDifference(
+        targetLookupPost,
+        [TypedPost(id: secondPostID, title: "Target lookup", authorID: secondUserID)]
+      )
+
+      try await db.transact(id: "tx-unlink-source-lookup") {
+        TypedPost.author.unlink(
+          from: TypedPost.slug.lookup("source-lookup"),
+          to: userID
+        )
+      }
+      try await db.transact(id: "tx-unlink-target-lookup") {
+        TypedPost.author.unlink(
+          from: secondPostID,
+          to: TypedUser.email.lookup("nub@example.com")
+        )
+      }
+
+      let unlinkedSourceLookupPost = try await db.query(
+        TypedPost.query.where(TypedPost.slug == "source-lookup")
+      )
+      expectNoDifference(
+        unlinkedSourceLookupPost,
+        [TypedPost(id: postID, title: "Source lookup", authorID: nil)]
+      )
+
+      let unlinkedTargetLookupPost = try await db.query(
+        TypedPost.query.where(TypedPost.slug == "target-lookup")
+      )
+      expectNoDifference(
+        unlinkedTargetLookupPost,
+        [TypedPost(id: secondPostID, title: "Target lookup", authorID: nil)]
+      )
+    }
+  }
+
+  @Test
   func typedLinkRejectsMismatchedTargetNamespaceBeforePersistence() async throws {
     let postID = InstantID<TypedPost>(rawValue: "post-1")
     let wrongTargetID = InstantID<TypedTodo>(rawValue: "todo-1")
@@ -1628,9 +1802,18 @@ private struct TypedProfile: Hashable, Codable, InstantEntityModel {
   var metadata: JSONValue
 
   static let instantNamespace = "profiles"
+  static let handle = InstantAttributePath<TypedProfile, String>("handle")
   static let metadata = InstantAttributePath<TypedProfile, JSONValue>("metadata")
 
   static let instantAttributes = [
+    InstantAttribute(
+      id: "profiles/handle",
+      namespace: instantNamespace,
+      name: "handle",
+      valueType: .string,
+      isIndexed: true,
+      isUnique: true
+    ),
     InstantAttribute(
       id: "profiles/metadata",
       namespace: instantNamespace,
