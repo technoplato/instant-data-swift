@@ -250,6 +250,8 @@ public struct InstantTriple: Hashable, Codable, Sendable {
 }
 
 public enum InstantTripleOperation: Hashable, Codable, Sendable {
+  case requireEntityExists(entityID: String, namespace: String?)
+  case merge(InstantTriple)
   case insert(InstantTriple)
   case retract(InstantTriple)
   case deleteEntity(String)

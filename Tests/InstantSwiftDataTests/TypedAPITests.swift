@@ -143,6 +143,135 @@ struct TypedAPITests {
   }
 
   @Test
+  func typedMergeAndStrictUpdateRoundTripThroughDependencyClient() async throws {
+    let createdAt = Date(timeIntervalSince1970: 1_700_000_050)
+    let todoID = InstantID<TypedTodo>(rawValue: "todo-merge")
+    let missingID = InstantID<TypedTodo>(rawValue: "todo-missing")
+
+    try await withDependencies {
+      try await $0.bootstrapInstantSwiftData(
+        appID: "typed-strict-update-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      do {
+        try await db.transact(id: "tx-missing-strict-update") {
+          TypedTodo.updateExisting(
+            id: missingID,
+            TypedTodo.text.set("Should not upsert")
+          )
+        }
+        #expect(Bool(false), "Expected strict update to reject a missing entity.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .validationFailed)
+        expectNoDifference(error.operation, "strict update entity")
+        expectNoDifference(error.namespace, "todos")
+        expectNoDifference(error.localID, missingID.rawValue)
+      } catch {
+        #expect(Bool(false), "Unexpected error: \(error)")
+      }
+
+      let initialPending = await db.pendingMutations()
+      expectNoDifference(initialPending, [])
+
+      try await db.transact(id: "tx-merge-todo") {
+        TypedTodo.merge(
+          id: todoID,
+          TypedTodo.text.set("Merged"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(createdAt)
+        )
+      }
+      try await db.transact(id: "tx-strict-update-todo") {
+        TypedTodo.updateExisting(
+          id: todoID,
+          TypedTodo.text.set("Updated strictly")
+        )
+      }
+
+      let todos = try await db.query(TypedTodo.query)
+      expectNoDifference(
+        todos,
+        [
+          TypedTodo(
+            id: todoID,
+            text: "Updated strictly",
+            isCompleted: false,
+            createdAt: createdAt
+          )
+        ]
+      )
+      let pending = await db.pendingMutations()
+      expectNoDifference(pending.map(\.id), ["tx-merge-todo", "tx-strict-update-todo"])
+    }
+  }
+
+  @Test
+  func typedMergeDeepMergesJSONValues() async throws {
+    let profileID = InstantID<TypedProfile>(rawValue: "profile-merge")
+
+    try await withDependencies {
+      try await $0.bootstrapInstantSwiftData(
+        appID: "typed-json-merge-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedProfile.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      try await db.transact(id: "tx-profile-create") {
+        TypedProfile.create(
+          id: profileID,
+          TypedProfile.metadata.set(
+            .object([
+              "nested": .object([
+                "keep": .bool(true),
+                "size": .number(1),
+              ]),
+              "theme": .string("light"),
+            ])
+          )
+        )
+      }
+      try await db.transact(id: "tx-profile-merge") {
+        TypedProfile.merge(
+          id: profileID,
+          TypedProfile.metadata.set(
+            .object([
+              "nested": .object([
+                "size": .number(2)
+              ]),
+              "theme": .string("dark"),
+              "timezone": .string("UTC"),
+            ])
+          )
+        )
+      }
+
+      let profiles = try await db.query(TypedProfile.query)
+      expectNoDifference(
+        profiles,
+        [
+          TypedProfile(
+            id: profileID,
+            metadata: .object([
+              "nested": .object([
+                "keep": .bool(true),
+                "size": .number(2),
+              ]),
+              "theme": .string("dark"),
+              "timezone": .string("UTC"),
+            ])
+          )
+        ]
+      )
+    }
+  }
+
+  @Test
   func typedLinkAndUnlinkMutationsRoundTripThroughDependencyClient() async throws {
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_100_000)
     let userID = InstantID<TypedUser>(rawValue: "user-1")
@@ -225,9 +354,74 @@ struct TypedAPITests {
         #expect(Bool(false), "Unexpected error: \(error)")
       }
 
+      do {
+        try await db.transact(id: "tx-invalid-merge-ref") {
+          TypedPost.merge(
+            id: postID,
+            TypedPost.author.set(InstantID<TypedUser>(rawValue: "user-1"))
+          )
+        }
+        #expect(Bool(false), "Expected merge on a ref attribute to fail.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .validationFailed)
+        expectNoDifference(error.operation, "merge entity attribute")
+        expectNoDifference(error.namespace, "posts")
+        expectNoDifference(error.path, "author")
+      } catch {
+        #expect(Bool(false), "Unexpected error: \(error)")
+      }
+
       let pending = await db.pendingMutations()
       expectNoDifference(pending, [])
     }
+  }
+
+  @Test
+  func typedMergeRejectsRefAttributesBeforeMockClientReceivesTransaction() async throws {
+    let recorder = TransactionRecorder()
+    let mock = InstantSwiftDataClient(
+      transact: { transaction in
+        await recorder.record(transaction)
+        return InstantStoreMutationResult(
+          transactionID: transaction.id,
+          changedEntityIDs: [],
+          tripleCount: transaction.operations.count,
+          emissions: []
+        )
+      },
+      query: { _ in [] },
+      observe: { _ in AsyncStream { continuation in continuation.finish() } },
+      pendingMutations: { [] },
+      localID: { name in "mock-\(name)" }
+    )
+
+    await withDependencies {
+      $0.date.now = Date(timeIntervalSince1970: 1_700_000_250)
+      $0.uuid = .constant(UUID(uuidString: "00000000-0000-0000-0000-000000000999")!)
+      $0.defaultInstantSwiftData = mock
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      do {
+        try await db.transact(id: "tx-mock-invalid-merge") {
+          TypedPost.merge(
+            id: InstantID(rawValue: "post-1"),
+            TypedPost.author.set(InstantID<TypedUser>(rawValue: "user-1"))
+          )
+        }
+        #expect(Bool(false), "Expected typed merge validation to run before the mock client.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .validationFailed)
+        expectNoDifference(error.operation, "merge entity attribute")
+        expectNoDifference(error.namespace, "posts")
+        expectNoDifference(error.path, "author")
+      } catch {
+        #expect(Bool(false), "Unexpected error: \(error)")
+      }
+    }
+
+    let transactions = await recorder.transactions
+    expectNoDifference(transactions, [])
   }
 
   @Test
@@ -850,6 +1044,44 @@ private struct TypedUser: Hashable, Codable, InstantEntityModel {
     }
     self.id = InstantID(rawValue: snapshot.id)
     self.name = name
+  }
+}
+
+private struct TypedProfile: Hashable, Codable, InstantEntityModel {
+  var id: InstantID<TypedProfile>
+  var metadata: JSONValue
+
+  static let instantNamespace = "profiles"
+  static let metadata = InstantAttributePath<TypedProfile, JSONValue>("metadata")
+
+  static let instantAttributes = [
+    InstantAttribute(
+      id: "profiles/metadata",
+      namespace: instantNamespace,
+      name: "metadata",
+      valueType: .json
+    )
+  ]
+
+  init(id: InstantID<TypedProfile>, metadata: JSONValue) {
+    self.id = id
+    self.metadata = metadata
+  }
+
+  init(snapshot: InstantEntitySnapshot) throws {
+    guard case let .json(metadata) = snapshot.values["metadata"]?.first else {
+      throw InstantError(
+        code: .decodeFailed,
+        operation: "decode typed profile",
+        namespace: Self.instantNamespace,
+        path: "metadata",
+        localID: snapshot.id,
+        message: "Expected json for profile field 'metadata'.",
+        recovery: "Check the Instant entity schema and server values for the profiles namespace."
+      )
+    }
+    self.id = InstantID(rawValue: snapshot.id)
+    self.metadata = metadata
   }
 }
 

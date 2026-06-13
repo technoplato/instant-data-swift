@@ -13,6 +13,10 @@ runtime.
 
 Use `INSTANT_SWIFT_DATA_HOME` to keep the demo cache isolated.
 The ID-capture steps use `jq` to extract IDs from JSON output.
+Todo `complete` and `update` are strict: a missing ID exits non-zero before any
+local cache or outbox write.
+Local pending mutations persist typed `merge` and strict-update precondition
+steps; future transport adapters should lower these to Instant wire operations.
 
 ```bash
 export INSTANT_SWIFT_DATA_HOME="$(mktemp -d)"

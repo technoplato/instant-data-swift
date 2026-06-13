@@ -114,7 +114,7 @@ public final class InstantRuntime: Sendable {
       let state = try await persistence.loadState()
       let outboxSnapshot = (state.snapshot.outbox + [mutation])
         .sorted(by: PendingMutation.creationOrder)
-      let prepared = await store.prepare(transaction, applyingTo: state.snapshot.store)
+      let prepared = try await store.prepare(transaction, applyingTo: state.snapshot.store)
       let didSave = try await persistence.saveSnapshot(
         InstantPersistenceSnapshot(store: prepared.snapshot, outbox: outboxSnapshot),
         expectedStoreRevision: state.storeRevision,

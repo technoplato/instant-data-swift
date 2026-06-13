@@ -98,21 +98,35 @@ public actor InstantStore {
     return stream.stream
   }
 
-  func prepare(_ transaction: InstantStoreTransaction) -> PreparedStoreMutation {
-    let prepared = prepare(transaction, applyingTo: snapshot())
+  func prepare(_ transaction: InstantStoreTransaction) throws -> PreparedStoreMutation {
+    let prepared = try prepare(transaction, applyingTo: snapshot())
     return commit(prepared)
   }
 
   func prepare(
     _ transaction: InstantStoreTransaction,
     applyingTo snapshot: InstantStoreSnapshot
-  ) -> PreparedStoreMutation {
+  ) throws -> PreparedStoreMutation {
     let attributes = AttributeStore(attributes: snapshot.attributes)
     var indexes = TripleIndexes(triples: snapshot.triples, attributes: attributes)
     var changedEntityIDs: Set<String> = []
 
     for operation in transaction.operations {
-      changedEntityIDs.formUnion(indexes.apply(operation, attributes: attributes))
+      switch operation {
+      case let .requireEntityExists(entityID, namespace):
+        guard indexes.containsEntity(entityID, namespace: namespace, attributes: attributes) else {
+          throw Self.missingEntityError(entityID: entityID, namespace: namespace)
+        }
+
+      case let .merge(triple):
+        if attributes[triple.attributeID]?.valueType == .ref {
+          throw Self.unsupportedMergeError(triple: triple, attributes: attributes)
+        }
+        changedEntityIDs.formUnion(indexes.apply(operation, attributes: attributes))
+
+      case .insert, .retract, .deleteEntity:
+        changedEntityIDs.formUnion(indexes.apply(operation, attributes: attributes))
+      }
     }
 
     let nextSequence = sequence + 1
@@ -173,6 +187,33 @@ public actor InstantStore {
 
   private static func emissionSortKey(_ plan: InstantQueryPlan) -> String {
     plan.cacheKey
+  }
+
+  private static func missingEntityError(entityID: String, namespace: String?) -> InstantError {
+    InstantError(
+      code: .validationFailed,
+      operation: "strict update entity",
+      namespace: namespace,
+      localID: entityID,
+      message: "No existing entity was found for '\(entityID)'.",
+      recovery: "Create the entity before using a strict update, or use merge for upsert-style writes."
+    )
+  }
+
+  private static func unsupportedMergeError(
+    triple: InstantTriple,
+    attributes: AttributeStore
+  ) -> InstantError {
+    let attribute = attributes[triple.attributeID]
+    return InstantError(
+      code: .validationFailed,
+      operation: "merge entity attribute",
+      namespace: attribute?.namespace,
+      path: attribute?.name ?? triple.attributeID,
+      localID: triple.entityID,
+      message: "Merge is not supported for ref attributes.",
+      recovery: "Use link/unlink for relationships, or merge only scalar and JSON attributes."
+    )
   }
 
   private func registerObserver(

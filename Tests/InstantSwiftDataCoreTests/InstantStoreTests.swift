@@ -262,6 +262,46 @@ struct InstantStoreTests {
   }
 
   @Test
+  func strictTodoUpdateRejectsMissingEntityBeforePersistence() async throws {
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let updatedAt = InstantTimestamp(milliseconds: 1_700_000_000_250)
+
+    do {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-update-missing-todo",
+          operations: TodoExample.updateTextOperations(
+            id: "missing-todo",
+            text: "ghost text",
+            updatedAt: updatedAt,
+            transactionID: "tx-update-missing-todo"
+          )
+        ),
+        createdAt: updatedAt
+      )
+      #expect(Bool(false), "Expected strict update to reject a missing todo.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "strict update entity")
+      expectNoDifference(error.namespace, TodoExample.namespace)
+      expectNoDifference(error.localID, "missing-todo")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    let pending = await runtime.pendingMutations()
+    expectNoDifference(pending, [])
+    let todos = try await TodoExample.decode(runtime.query(TodoExample.query))
+    expectNoDifference(todos, [])
+  }
+
+  @Test
   func seedAndResetTodoOperationsPersistAcrossLaunches() async throws {
     let cacheURL = try temporaryCacheURL()
     let seededAt = InstantTimestamp(milliseconds: 1_700_000_000_300)
@@ -1897,7 +1937,7 @@ struct InstantStoreTests {
         transactionID: "tx-observer-after-prepare"
       )
     )
-    let prepared = await store.prepare(
+    let prepared = try await store.prepare(
       transaction,
       applyingTo: InstantStoreSnapshot(attributes: TodoExample.attributes)
     )
@@ -1963,7 +2003,7 @@ struct InstantStoreTests {
       namespace: TodoExample.namespace,
       filters: [.equals(field: "isCompleted", value: .bool(true))]
     )
-    let prepared = await store.prepare(
+    let prepared = try await store.prepare(
       transaction,
       applyingTo: InstantStoreSnapshot(attributes: TodoExample.attributes)
     )

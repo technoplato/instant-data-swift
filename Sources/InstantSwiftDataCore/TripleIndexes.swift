@@ -54,6 +54,17 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     eav[entityID]?.values.flatMap(\.values) ?? []
   }
 
+  func containsEntity(
+    _ entityID: String,
+    namespace: String?,
+    attributes: AttributeStore
+  ) -> Bool {
+    triples(entityID: entityID).contains { triple in
+      guard let namespace else { return true }
+      return attributes[triple.attributeID]?.namespace == namespace
+    }
+  }
+
   func reverseRefTriples(targetEntityID: String) -> [InstantTriple] {
     vae[.ref(targetEntityID)]?.values.flatMap(\.values) ?? []
   }
@@ -64,6 +75,13 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     attributes: AttributeStore
   ) -> Set<String> {
     switch operation {
+    case .requireEntityExists:
+      return []
+
+    case let .merge(triple):
+      merge(triple, attribute: attributes[triple.attributeID])
+      return [triple.entityID]
+
     case let .insert(triple):
       var changed: Set<String> = [triple.entityID]
       let attribute = attributes[triple.attributeID]
@@ -386,6 +404,45 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     if attribute?.valueType == .ref {
       vae[triple.value, default: [:]][triple.attributeID, default: [:]][triple.entityID] = triple
     }
+  }
+
+  private mutating func merge(_ triple: InstantTriple, attribute: InstantAttribute?) {
+    guard
+      attribute?.cardinality != .many,
+      let existing = eav[triple.entityID]?[triple.attributeID]?.values.first
+    else {
+      insert(triple, attribute: attribute)
+      return
+    }
+
+    var merged = triple
+    merged.value = Self.deepMerge(existing.value, with: triple.value)
+    insert(merged, attribute: attribute)
+  }
+
+  private static func deepMerge(_ current: InstantValue, with update: InstantValue) -> InstantValue {
+    guard
+      case let .json(currentJSON) = current,
+      case let .json(updateJSON) = update
+    else { return update }
+    return .json(deepMerge(currentJSON, with: updateJSON))
+  }
+
+  private static func deepMerge(_ current: JSONValue, with update: JSONValue) -> JSONValue {
+    guard
+      case let .object(currentFields) = current,
+      case let .object(updateFields) = update
+    else { return update }
+
+    var merged = currentFields
+    for (key, value) in updateFields {
+      if let currentValue = merged[key] {
+        merged[key] = deepMerge(currentValue, with: value)
+      } else {
+        merged[key] = value
+      }
+    }
+    return .object(merged)
   }
 
   private mutating func remove(_ triple: InstantTriple, attribute: InstantAttribute?) {

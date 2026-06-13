@@ -110,9 +110,85 @@ extension InstantEntityModel {
     create(id: id, assignments)
   }
 
+  public static func merge(
+    id: ID,
+    _ assignments: InstantAttributeAssignment<Self>...
+  ) -> InstantMutation {
+    merge(id: id, assignments)
+  }
+
+  public static func merge(
+    id: ID,
+    _ assignments: [InstantAttributeAssignment<Self>]
+  ) -> InstantMutation {
+    InstantMutation(throwing: { transactionID, txTime in
+      for assignment in assignments {
+        try validateMergeAttribute(assignment)
+      }
+      let operations: [InstantTripleOperation] = assignments.map { assignment in
+        InstantTripleOperation.merge(
+          InstantTriple(
+            entityID: id.rawValue,
+            attributeID: assignment.attributeID,
+            value: assignment.value,
+            txID: transactionID,
+            txTime: txTime
+          )
+        )
+      }
+      return operations
+    })
+  }
+
+  public static func updateExisting(
+    id: ID,
+    _ assignments: InstantAttributeAssignment<Self>...
+  ) -> InstantMutation {
+    updateExisting(id: id, assignments)
+  }
+
+  public static func updateExisting(
+    id: ID,
+    _ assignments: [InstantAttributeAssignment<Self>]
+  ) -> InstantMutation {
+    InstantMutation { transactionID, txTime in
+      [
+        .requireEntityExists(entityID: id.rawValue, namespace: Self.instantNamespace)
+      ] + assignments.map { assignment in
+        .insert(
+          InstantTriple(
+            entityID: id.rawValue,
+            attributeID: assignment.attributeID,
+            value: assignment.value,
+            txID: transactionID,
+            txTime: txTime
+          )
+        )
+      }
+    }
+  }
+
   public static func delete(id: ID) -> InstantMutation {
     InstantMutation { _, _ in
       [.deleteEntity(id.rawValue)]
+    }
+  }
+
+  private static func validateMergeAttribute(_ assignment: InstantAttributeAssignment<Self>) throws {
+    guard
+      let attribute = instantAttributes.first(where: { $0.id == assignment.attributeID })
+        ?? instantAttributes.first(where: { $0.name == assignment.name })
+    else { return }
+
+    guard attribute.valueType != .ref else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "merge entity attribute",
+        namespace: instantNamespace,
+        path: assignment.name,
+        message: "Merge is not supported for ref attributes.",
+        recovery: "Use link/unlink for relationships, or merge only scalar and JSON attributes."
+      )
     }
   }
 }

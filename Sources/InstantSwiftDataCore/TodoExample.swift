@@ -154,6 +154,7 @@ public enum TodoExample {
     transactionID: String
   ) -> [InstantTripleOperation] {
     [
+      .requireEntityExists(entityID: id, namespace: namespace),
       .insert(
         InstantTriple(
           entityID: id,
@@ -173,6 +174,7 @@ public enum TodoExample {
     transactionID: String
   ) -> [InstantTripleOperation] {
     [
+      .requireEntityExists(entityID: id, namespace: namespace),
       .insert(
         InstantTriple(
           entityID: id,
