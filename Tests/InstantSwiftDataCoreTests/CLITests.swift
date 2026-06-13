@@ -2674,7 +2674,7 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.ok, true)
     expectNoDifference(jsonOutput.transport, "not-implemented-local-cache-only")
     expectNoDifference(jsonOutput.finalTodoCount, 0)
-    expectNoDifference(jsonOutput.pendingMutationCount, 3)
+    expectNoDifference(jsonOutput.pendingMutationCount, 54)
     expectNoDifference(
       jsonOutput.metrics.map(\.name),
       [
@@ -2682,6 +2682,8 @@ extension InstantStoreTests {
         "triple-insert.seed",
         "query-materialization.todos",
         "pending-mutation-enqueue.update",
+        "high-bandwidth.scalar-updates",
+        "high-bandwidth.linked-writes",
         "query-cache-read.todos",
         "triple-retract.reset",
         "offline-restore.relaunch",
@@ -2718,7 +2720,7 @@ extension InstantStoreTests {
       homeURL: homeURL
     )
     let lines = jsonlOutput.split(separator: "\n")
-    expectNoDifference(lines.count, 8)
+    expectNoDifference(lines.count, 10)
     let firstEvidence = try JSONDecoder().decode(
       CLIBenchmarkEvidence.self,
       from: Data(try #require(lines.first).utf8)

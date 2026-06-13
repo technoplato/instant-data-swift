@@ -162,6 +162,8 @@ extension InstantLocalTodoBenchmarkResult {
 
 public enum InstantSwiftDataLocalBenchmarks {
   public static let localTodosSuite = "local-todos"
+  private static let highBandwidthScalarUpdateCount = 50
+  private static let highBandwidthLinkedWriteCount = 20
 
   public static func runLocalTodos(
     appID: String = "local-benchmark",
@@ -206,7 +208,7 @@ public enum InstantSwiftDataLocalBenchmarks {
           configuration: InstantRuntimeConfiguration(
             appID: appID,
             persistenceURL: cacheURL,
-            initialAttributes: TodoExample.attributes,
+            initialAttributes: TodoProjectExample.attributes,
             now: timestamp,
             makeID: makeID
           )
@@ -288,12 +290,119 @@ public enum InstantSwiftDataLocalBenchmarks {
         )
       )
 
-      let refreshedTodos = try await TodoExample.decode(runtime.query(TodoExample.query))
-      guard refreshedTodos.contains(where: { $0.id == terminalID && $0.text == updatedTerminalText }) else {
+      var scalarOperationCount = 0
+      let (_, scalarDuration) = try await measured(clockNanoseconds) {
+        for updateIndex in 0..<highBandwidthScalarUpdateCount {
+          let scalarTransactionID = makeID()
+          let scalarUpdatedAt = timestamp()
+          let scalarOperations = TodoExample.updateTextOperations(
+            id: terminalID,
+            text: "High-bandwidth scalar update \(updateIndex)",
+            updatedAt: scalarUpdatedAt,
+            transactionID: scalarTransactionID
+          )
+          scalarOperationCount += scalarOperations.count
+          try await runtime.transact(
+            InstantStoreTransaction(
+              id: scalarTransactionID,
+              operations: scalarOperations
+            ),
+            createdAt: scalarUpdatedAt,
+            source: "benchmark.local.todos.scalar-update"
+          )
+        }
+      }
+      record(
+        "high-bandwidth.scalar-updates",
+        InstantBenchmarkSample(
+          iteration: iteration,
+          durationNanoseconds: scalarDuration,
+          operationCount: scalarOperationCount,
+          pendingMutationCount: await runtime.pendingMutations().count
+        )
+      )
+
+      let finalScalarText = "High-bandwidth scalar update \(highBandwidthScalarUpdateCount - 1)"
+      let scalarTodos = try await TodoExample.decode(runtime.query(TodoExample.query))
+      guard scalarTodos.contains(where: { $0.id == terminalID && $0.text == finalScalarText }) else {
         throw InstantError(
           code: .validationFailed,
           operation: "run local todo benchmark",
-          message: "Expected query materialization to include the updated seed todo.",
+          message: "Expected high-bandwidth scalar updates to converge on the final value.",
+          recovery: "Inspect repeated update transaction application before trusting benchmark timings."
+        )
+      }
+
+      let linkedProjectID = try await runtime.localID(named: "examples.benchmark.linked.project")
+      let linkedTransactionID = makeID()
+      let linkedAt = timestamp()
+      var linkedOperations = TodoProjectExample.createProjectOperations(
+        id: linkedProjectID,
+        title: "Benchmark linked writes",
+        createdAt: linkedAt,
+        transactionID: linkedTransactionID
+      )
+      var linkedTodoIDs: [String] = []
+      for linkedIndex in 0..<highBandwidthLinkedWriteCount {
+        let todoID = try await runtime.localID(named: "examples.benchmark.linked.todo.\(linkedIndex)")
+        linkedTodoIDs.append(todoID)
+        let todoCreatedAt = InstantTimestamp(milliseconds: linkedAt.milliseconds + Int64(linkedIndex + 1))
+        linkedOperations += TodoExample.createOperations(
+          id: todoID,
+          text: "Linked benchmark todo \(linkedIndex)",
+          createdAt: todoCreatedAt,
+          transactionID: linkedTransactionID
+        )
+        linkedOperations += TodoProjectExample.linkOperations(
+          todoID: todoID,
+          projectID: linkedProjectID,
+          updatedAt: todoCreatedAt,
+          transactionID: linkedTransactionID
+        )
+      }
+      let (_, linkedDuration) = try await measured(clockNanoseconds) {
+        try await runtime.transact(
+          InstantStoreTransaction(id: linkedTransactionID, operations: linkedOperations),
+          createdAt: linkedAt,
+          source: "benchmark.local.todos.linked-writes"
+        )
+      }
+      let linkedTodos = try await TodoProjectExample.decodeLinkedTodos(
+        runtime.query(TodoProjectExample.todosQuery)
+      )
+      let materializedLinkedTodoIDs = linkedTodos
+        .filter { $0.projectID == linkedProjectID }
+        .map(\.id)
+      let projectsWithTodos = try await runtime.query(TodoProjectExample.projectsWithTodosQuery)
+      let includedLinkedTodoIDs =
+        projectsWithTodos.first { $0.id == linkedProjectID }?.links?["todos"]?.map(\.id) ?? []
+      guard materializedLinkedTodoIDs == linkedTodoIDs,
+        includedLinkedTodoIDs == linkedTodoIDs
+      else {
+        throw InstantError(
+          code: .validationFailed,
+          operation: "run local todo benchmark",
+          message: "Expected high-bandwidth linked writes to materialize every linked todo.",
+          recovery: "Inspect linked transaction application and include materialization before trusting benchmark timings."
+        )
+      }
+      record(
+        "high-bandwidth.linked-writes",
+        InstantBenchmarkSample(
+          iteration: iteration,
+          durationNanoseconds: linkedDuration,
+          operationCount: linkedOperations.count,
+          resultCount: includedLinkedTodoIDs.count,
+          pendingMutationCount: await runtime.pendingMutations().count
+        )
+      )
+
+      let refreshedTodos = try await TodoExample.decode(runtime.query(TodoExample.query))
+      guard refreshedTodos.contains(where: { $0.id == terminalID && $0.text == finalScalarText }) else {
+        throw InstantError(
+          code: .validationFailed,
+          operation: "run local todo benchmark",
+          message: "Expected query materialization to include the final scalar update.",
           recovery: "Inspect local triple materialization before trusting benchmark timings."
         )
       }
@@ -301,11 +410,11 @@ public enum InstantSwiftDataLocalBenchmarks {
       let (cachedTodos, cacheDuration) = try await measured(clockNanoseconds) {
         try TodoExample.decode((try await runtime.cachedQuery(TodoExample.query))?.emission.values ?? [])
       }
-      guard cachedTodos.contains(where: { $0.id == terminalID && $0.text == updatedTerminalText }) else {
+      guard cachedTodos.contains(where: { $0.id == terminalID && $0.text == finalScalarText }) else {
         throw InstantError(
           code: .validationFailed,
           operation: "run local todo benchmark",
-          message: "Expected the query cache to contain the updated seed todo.",
+          message: "Expected the query cache to contain the final scalar update.",
           recovery: "Inspect local query cache persistence and materialization before trusting cache timings."
         )
       }
@@ -344,7 +453,7 @@ public enum InstantSwiftDataLocalBenchmarks {
           configuration: InstantRuntimeConfiguration(
             appID: appID,
             persistenceURL: cacheURL,
-            initialAttributes: TodoExample.attributes,
+            initialAttributes: TodoProjectExample.attributes,
             now: timestamp,
             makeID: makeID
           )
@@ -373,6 +482,8 @@ public enum InstantSwiftDataLocalBenchmarks {
       "triple-insert.seed",
       "query-materialization.todos",
       "pending-mutation-enqueue.update",
+      "high-bandwidth.scalar-updates",
+      "high-bandwidth.linked-writes",
       "query-cache-read.todos",
       "triple-retract.reset",
       "offline-restore.relaunch",
