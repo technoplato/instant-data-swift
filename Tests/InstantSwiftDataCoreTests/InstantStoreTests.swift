@@ -2093,6 +2093,231 @@ struct InstantStoreTests {
   }
 
   @Test
+  func deleteEntityCascadesSourcesWhenForwardEndpointRequestsCascade() async throws {
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: [
+          InstantAttribute(
+            id: "posts/author",
+            namespace: "posts",
+            name: "author",
+            valueType: .ref,
+            isIndexed: true,
+            forwardIdentity: "posts/author",
+            reverseIdentity: "users/posts",
+            linkNamespace: "users",
+            onDelete: .cascade
+          ),
+          InstantAttribute(
+            id: "posts/title",
+            namespace: "posts",
+            name: "title",
+            valueType: .string
+          ),
+          InstantAttribute(
+            id: "users/name",
+            namespace: "users",
+            name: "name",
+            valueType: .string
+          ),
+        ]
+      )
+    )
+    let time = InstantTimestamp(milliseconds: 20)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-cascade-seed",
+        operations: [
+          .insert(.init(entityID: "user-1", attributeID: "users/name", value: .string("Blob"), txID: "tx-cascade-seed", txTime: time)),
+          .insert(.init(entityID: "post-1", attributeID: "posts/title", value: .string("Hello"), txID: "tx-cascade-seed", txTime: time)),
+          .insert(.init(entityID: "post-1", attributeID: "posts/author", value: .ref("user-1"), txID: "tx-cascade-seed", txTime: time)),
+        ]
+      ),
+      createdAt: time
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(id: "tx-cascade-delete-user", operations: [.deleteEntity("user-1")]),
+      createdAt: InstantTimestamp(milliseconds: time.milliseconds + 1)
+    )
+
+    let users = try await runtime.query(.init(id: "cascade.users", namespace: "users"))
+    let posts = try await runtime.query(.init(id: "cascade.posts", namespace: "posts"))
+    expectNoDifference(users, [])
+    expectNoDifference(posts, [])
+  }
+
+  @Test
+  func deleteEntityCascadesTargetsWhenReverseEndpointRequestsCascade() async throws {
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: [
+          InstantAttribute(
+            id: "posts/author",
+            namespace: "posts",
+            name: "author",
+            valueType: .ref,
+            isIndexed: true,
+            forwardIdentity: "posts/author",
+            reverseIdentity: "users/posts",
+            linkNamespace: "users",
+            onDeleteReverse: .cascade
+          ),
+          InstantAttribute(
+            id: "posts/title",
+            namespace: "posts",
+            name: "title",
+            valueType: .string
+          ),
+          InstantAttribute(
+            id: "users/name",
+            namespace: "users",
+            name: "name",
+            valueType: .string
+          ),
+        ]
+      )
+    )
+    let time = InstantTimestamp(milliseconds: 30)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-reverse-cascade-seed",
+        operations: [
+          .insert(.init(entityID: "user-1", attributeID: "users/name", value: .string("Blob"), txID: "tx-reverse-cascade-seed", txTime: time)),
+          .insert(.init(entityID: "post-1", attributeID: "posts/title", value: .string("Hello"), txID: "tx-reverse-cascade-seed", txTime: time)),
+          .insert(.init(entityID: "post-1", attributeID: "posts/author", value: .ref("user-1"), txID: "tx-reverse-cascade-seed", txTime: time)),
+        ]
+      ),
+      createdAt: time
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(id: "tx-reverse-cascade-delete-post", operations: [.deleteEntity("post-1")]),
+      createdAt: InstantTimestamp(milliseconds: time.milliseconds + 1)
+    )
+
+    let users = try await runtime.query(.init(id: "reverse-cascade.users", namespace: "users"))
+    let posts = try await runtime.query(.init(id: "reverse-cascade.posts", namespace: "posts"))
+    expectNoDifference(users, [])
+    expectNoDifference(posts, [])
+  }
+
+  @Test
+  func deleteEntityCascadesAcrossRelaunchAndPreservesOriginalPendingMutation() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let time = InstantTimestamp(milliseconds: 40)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: cascadeChainAttributes()
+      )
+    )
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-cascade-chain-seed",
+        operations: [
+          .insert(.init(entityID: "grandparent-1", attributeID: "grandparents/name", value: .string("Grand"), txID: "tx-cascade-chain-seed", txTime: time)),
+          .insert(.init(entityID: "parent-1", attributeID: "parents/name", value: .string("Parent"), txID: "tx-cascade-chain-seed", txTime: time)),
+          .insert(.init(entityID: "child-1", attributeID: "children/name", value: .string("Child"), txID: "tx-cascade-chain-seed", txTime: time)),
+          .insert(.init(entityID: "parent-1", attributeID: "parents/grandparent", value: .ref("grandparent-1"), txID: "tx-cascade-chain-seed", txTime: time)),
+          .insert(.init(entityID: "child-1", attributeID: "children/parent", value: .ref("parent-1"), txID: "tx-cascade-chain-seed", txTime: time)),
+        ]
+      ),
+      createdAt: time
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-delete-cascade-chain",
+        operations: [.deleteEntity("grandparent-1")]
+      ),
+      createdAt: InstantTimestamp(milliseconds: time.milliseconds + 1)
+    )
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: cascadeChainAttributes()
+      )
+    )
+    let grandparents = try await relaunchedRuntime.query(
+      .init(id: "cascade-chain.grandparents", namespace: "grandparents")
+    )
+    let parents = try await relaunchedRuntime.query(
+      .init(id: "cascade-chain.parents", namespace: "parents")
+    )
+    let children = try await relaunchedRuntime.query(
+      .init(id: "cascade-chain.children", namespace: "children")
+    )
+    let pending = await relaunchedRuntime.pendingMutations()
+
+    expectNoDifference(grandparents, [])
+    expectNoDifference(parents, [])
+    expectNoDifference(children, [])
+    expectNoDifference(pending.map(\.transaction.id), [
+      "tx-cascade-chain-seed",
+      "tx-delete-cascade-chain",
+    ])
+    expectNoDifference(pending.last?.transaction.operations, [.deleteEntity("grandparent-1")])
+  }
+
+  @Test
+  func cyclicCascadeDeletionTerminatesAndRemovesDanglingTriples() async throws {
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: [
+          InstantAttribute(
+            id: "nodes/name",
+            namespace: "nodes",
+            name: "name",
+            valueType: .string
+          ),
+          InstantAttribute(
+            id: "nodes/next",
+            namespace: "nodes",
+            name: "next",
+            valueType: .ref,
+            isIndexed: true,
+            forwardIdentity: "nodes/next",
+            reverseIdentity: "nodes/previous",
+            linkNamespace: "nodes",
+            onDelete: .cascade
+          ),
+        ]
+      )
+    )
+    let time = InstantTimestamp(milliseconds: 50)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-cycle-seed",
+        operations: [
+          .insert(.init(entityID: "node-1", attributeID: "nodes/name", value: .string("One"), txID: "tx-cycle-seed", txTime: time)),
+          .insert(.init(entityID: "node-2", attributeID: "nodes/name", value: .string("Two"), txID: "tx-cycle-seed", txTime: time)),
+          .insert(.init(entityID: "node-1", attributeID: "nodes/next", value: .ref("node-2"), txID: "tx-cycle-seed", txTime: time)),
+          .insert(.init(entityID: "node-2", attributeID: "nodes/next", value: .ref("node-1"), txID: "tx-cycle-seed", txTime: time)),
+        ]
+      ),
+      createdAt: time
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(id: "tx-cycle-delete", operations: [.deleteEntity("node-1")]),
+      createdAt: InstantTimestamp(milliseconds: time.milliseconds + 1)
+    )
+
+    let nodes = try await runtime.query(.init(id: "cycle.nodes", namespace: "nodes"))
+    expectNoDifference(nodes, [])
+  }
+
+  @Test
   func queryIncludesMaterializeForwardAndReverseLinkedSnapshots() async throws {
     let cacheURL = try temporaryCacheURL()
     let runtime = try await InstantRuntime.bootstrap(
@@ -3198,6 +3423,51 @@ struct InstantStoreTests {
         forwardIdentity: "posts/author",
         reverseIdentity: "users/posts",
         linkNamespace: "users"
+      ),
+    ]
+  }
+
+  private func cascadeChainAttributes() -> [InstantAttribute] {
+    [
+      InstantAttribute(
+        id: "grandparents/name",
+        namespace: "grandparents",
+        name: "name",
+        valueType: .string
+      ),
+      InstantAttribute(
+        id: "parents/name",
+        namespace: "parents",
+        name: "name",
+        valueType: .string
+      ),
+      InstantAttribute(
+        id: "children/name",
+        namespace: "children",
+        name: "name",
+        valueType: .string
+      ),
+      InstantAttribute(
+        id: "parents/grandparent",
+        namespace: "parents",
+        name: "grandparent",
+        valueType: .ref,
+        isIndexed: true,
+        forwardIdentity: "parents/grandparent",
+        reverseIdentity: "grandparents/parents",
+        linkNamespace: "grandparents",
+        onDelete: .cascade
+      ),
+      InstantAttribute(
+        id: "children/parent",
+        namespace: "children",
+        name: "parent",
+        valueType: .ref,
+        isIndexed: true,
+        forwardIdentity: "children/parent",
+        reverseIdentity: "parents/children",
+        linkNamespace: "parents",
+        onDelete: .cascade
       ),
     ]
   }

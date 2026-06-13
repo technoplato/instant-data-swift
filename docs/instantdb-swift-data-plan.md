@@ -125,6 +125,10 @@ real Instant app.
 - Preserve `ruleParams` operations for transport lowering. They should validate
   lookup refs but otherwise no-op local optimistic materialization because their
   effect is server-side permission evaluation.
+- Delete locally removes entity triples plus forward/reverse refs and honors
+  cascade metadata. Add namespace-specific delete steps later; until then the
+  Swift `.deleteEntity(String)` fallback applies cascades for every matching
+  local incoming ref edge for that raw id.
 - Optimistic application before server confirmation.
 - Rollback or visible failure state when the server rejects a mutation.
 - Durable pending mutation persistence across process restart.

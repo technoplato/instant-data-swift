@@ -146,19 +146,8 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       return changed
 
     case let .deleteEntity(entityID):
-      var changed: Set<String> = [entityID]
-      for triple in triples(entityID: entityID) {
-        let attribute = attributes[triple.attributeID]
-        if attribute?.valueType == .ref, let targetID = triple.value.refValue {
-          changed.insert(targetID)
-        }
-        remove(triple, attribute: attribute)
-      }
-      for triple in reverseRefTriples(targetEntityID: entityID) {
-        changed.insert(triple.entityID)
-        remove(triple, attribute: attributes[triple.attributeID])
-      }
-      return changed
+      var visited: Set<String> = []
+      return deleteEntity(entityID, attributes: attributes, visited: &visited)
     }
   }
 
@@ -516,6 +505,48 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         vae[triple.value] = nil
       }
     }
+  }
+
+  private mutating func deleteEntity(
+    _ entityID: String,
+    attributes: AttributeStore,
+    visited: inout Set<String>
+  ) -> Set<String> {
+    guard visited.insert(entityID).inserted else { return [] }
+
+    var changed: Set<String> = [entityID]
+    let outgoingTriples = triples(entityID: entityID)
+    let incomingTriples = reverseRefTriples(targetEntityID: entityID)
+
+    for triple in outgoingTriples {
+      guard
+        let attribute = attributes[triple.attributeID],
+        attribute.valueType == .ref,
+        let targetID = triple.value.refValue
+      else { continue }
+
+      changed.insert(targetID)
+      if attribute.onDeleteReverse == .cascade {
+        changed.formUnion(deleteEntity(targetID, attributes: attributes, visited: &visited))
+      }
+    }
+
+    for triple in incomingTriples {
+      let attribute = attributes[triple.attributeID]
+      changed.insert(triple.entityID)
+      if attribute?.onDelete == .cascade {
+        changed.formUnion(deleteEntity(triple.entityID, attributes: attributes, visited: &visited))
+      }
+    }
+
+    for triple in outgoingTriples {
+      remove(triple, attribute: attributes[triple.attributeID])
+    }
+    for triple in incomingTriples {
+      remove(triple, attribute: attributes[triple.attributeID])
+    }
+
+    return changed
   }
 
   private func matches(
