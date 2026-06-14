@@ -1911,6 +1911,14 @@ public struct CLIInitParser: Parser {
   public init() {}
 
   public func parse(_ input: inout ArraySlice<String>) throws -> CLIScaffoldInvocation {
+    try CLIInitOptionsParser().parse(&input)
+  }
+}
+
+public struct CLIInitOptionsParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIScaffoldInvocation {
     var example: String?
     var outputDirectory: String?
     var force = false
@@ -2507,6 +2515,14 @@ public struct CLIAppParser: Parser {
 }
 
 public struct CLIAppEphemeralParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIAppEphemeralInvocation {
+    try CLIAppEphemeralOptionsParser().parse(&input)
+  }
+}
+
+public struct CLIAppEphemeralOptionsParser: Parser {
   public init() {}
 
   public func parse(_ input: inout ArraySlice<String>) throws -> CLIAppEphemeralInvocation {

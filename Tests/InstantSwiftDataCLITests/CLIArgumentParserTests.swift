@@ -1292,6 +1292,35 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func initOptionsParserConsumesScaffoldOptions() throws {
+    expectNoDifference(
+      try parseInitOptions(["--example", "todos", "--to", "Scaffold"]),
+      CLIScaffoldInvocation(example: "todos", outputDirectory: "Scaffold")
+    )
+    expectNoDifference(
+      try parseInitOptions([
+        "--example", "rooms", "--example", "todos", "--to", "First", "--to", "Second",
+        "--force", "--force",
+      ]),
+      CLIScaffoldInvocation(example: "todos", outputDirectory: "Second", force: true)
+    )
+  }
+
+  @Test
+  func initOptionsParserReportsMalformedArguments() throws {
+    try expectInitOptionsParseError([], description: CLIInitUsage.initScaffold)
+    try expectInitOptionsParseError(["--example"], description: CLIInitUsage.initScaffold)
+    try expectInitOptionsParseError(
+      ["--example", "todos", "--to", "  "],
+      description: CLIInitUsage.initScaffold
+    )
+    try expectInitOptionsParseError(
+      ["--example", "todos", "--to", "Out", "--unknown"],
+      description: "Unknown init option: --unknown. \(CLIInitUsage.initScaffold)"
+    )
+  }
+
+  @Test
   func schemaParserParsesGenerateAndVerifyOptions() throws {
     expectNoDifference(
       try parseSchema(["generate", "--example", "todos"]),
@@ -1472,6 +1501,32 @@ struct CLIArgumentParserTests {
     try expectAppParseError(
       ["dance"],
       contains: "Usage: instant-swift-data app"
+    )
+  }
+
+  @Test
+  func appEphemeralOptionsParserConsumesTitleOptions() throws {
+    expectNoDifference(
+      try parseAppEphemeralOptions(["--title", " Reminders Port "]),
+      CLIAppEphemeralInvocation(title: " Reminders Port ")
+    )
+    expectNoDifference(
+      try parseAppEphemeralOptions(["--title", "First", "--title", "Second"]),
+      CLIAppEphemeralInvocation(title: "Second")
+    )
+  }
+
+  @Test
+  func appEphemeralOptionsParserReportsMalformedArguments() throws {
+    try expectAppEphemeralOptionsParseError([], contains: "app ephemeral --title <title>")
+    try expectAppEphemeralOptionsParseError(["--title"], contains: "app ephemeral --title <title>")
+    try expectAppEphemeralOptionsParseError(
+      ["--title", "   "],
+      contains: "app ephemeral --title <title>"
+    )
+    try expectAppEphemeralOptionsParseError(
+      ["--surprise"],
+      contains: "Unknown ephemeral app option: --surprise."
     )
   }
 
@@ -2614,6 +2669,13 @@ private func parseInit(_ arguments: [String]) throws -> CLIScaffoldInvocation {
   return invocation
 }
 
+private func parseInitOptions(_ arguments: [String]) throws -> CLIScaffoldInvocation {
+  var input = arguments[...]
+  let invocation = try CLIInitOptionsParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseSchema(_ arguments: [String]) throws -> CLISchemaInvocation {
   var input = arguments[...]
   let invocation = try CLISchemaParser().parse(&input)
@@ -2667,6 +2729,15 @@ private func parseVerifyArtifactOptions(
 private func parseApp(_ arguments: [String]) throws -> CLIAppInvocation {
   var input = arguments[...]
   let invocation = try CLIAppParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
+private func parseAppEphemeralOptions(
+  _ arguments: [String]
+) throws -> CLIAppEphemeralInvocation {
+  var input = arguments[...]
+  let invocation = try CLIAppEphemeralOptionsParser().parse(&input)
   expectNoDifference(Array(input), [])
   return invocation
 }
@@ -2858,6 +2929,19 @@ private func expectInitParseError(
   }
 }
 
+private func expectInitOptionsParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseInitOptions(arguments)
+    Issue.record("Expected init options parser to reject \(arguments).")
+  } catch let error as CLIInitArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
 private func expectSchemaParseError(
   _ arguments: [String],
   description expectedDescription: String
@@ -2917,6 +3001,19 @@ private func expectAppParseError(
   do {
     _ = try parseApp(arguments)
     Issue.record("Expected app parser to reject \(arguments).")
+  } catch let error as CLIAppArgumentError {
+    #expect(error.description.contains(expectedFragment))
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectAppEphemeralOptionsParseError(
+  _ arguments: [String],
+  contains expectedFragment: String
+) throws {
+  do {
+    _ = try parseAppEphemeralOptions(arguments)
+    Issue.record("Expected app ephemeral options parser to reject \(arguments).")
   } catch let error as CLIAppArgumentError {
     #expect(error.description.contains(expectedFragment))
     expectNoDifference(error.exitCode, 64)
