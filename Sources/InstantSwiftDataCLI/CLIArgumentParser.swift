@@ -3409,6 +3409,48 @@ public enum CLIBenchmarkArguments {
   }
 }
 
+public enum CLIAdminArguments {
+  public static func firstMergeJSONAfterValidTransactHead(_ arguments: [String]) -> String? {
+    var input = arguments[...]
+    guard let command = input.first, command == "transact" || command == "tx" else {
+      return nil
+    }
+    input.removeFirst()
+
+    guard let rawNamespace = input.first else { return nil }
+    input.removeFirst()
+    let namespace = trimmed(rawNamespace)
+    guard isValidAdminPathComponent(namespace) else { return nil }
+
+    guard let rawEntityID = input.first else { return nil }
+    input.removeFirst()
+    let entityID = trimmed(rawEntityID)
+    guard !entityID.isEmpty else { return nil }
+
+    var sawTransactionID = false
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--merge":
+        guard let mergeJSON = input.first else { return nil }
+        return mergeJSON
+
+      case "--transaction-id":
+        guard !sawTransactionID, let rawTransactionID = input.first else {
+          return nil
+        }
+        input.removeFirst()
+        guard !trimmed(rawTransactionID).isEmpty else { return nil }
+        sawTransactionID = true
+
+      default:
+        return nil
+      }
+    }
+    return nil
+  }
+}
+
 private func parseOptionValue(
   from input: inout ArraySlice<String>,
   option: String,

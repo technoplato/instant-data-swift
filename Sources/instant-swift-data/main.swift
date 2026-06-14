@@ -272,7 +272,7 @@ struct InstantSwiftDataCLI {
       var input = arguments[...]
       invocation = try CLIAdminParser().parse(&input)
     } catch let error as CLIAdminArgumentError {
-      if let mergeJSON = firstAdminMergeJSONAfterValidTransactHead(arguments: arguments) {
+      if let mergeJSON = CLIAdminArguments.firstMergeJSONAfterValidTransactHead(arguments) {
         _ = try parseAdminMergeObject(mergeJSON, usage: CLIAdminUsage.transact)
       }
       throw CLIError(error.description, exitCode: error.exitCode)
@@ -5050,42 +5050,6 @@ struct InstantSwiftDataCLI {
       )
     }
     return [identity] + fields
-  }
-
-  private static func firstAdminMergeJSONAfterValidTransactHead(
-    arguments: [String]
-  ) -> String? {
-    var arguments = arguments
-    guard let command = arguments.popFirstArgument(),
-      command == "transact" || command == "tx",
-      let namespace = arguments.popFirstArgument()?.trimmingCharacters(in: .whitespacesAndNewlines),
-      let entityID = arguments.popFirstArgument()?.trimmingCharacters(in: .whitespacesAndNewlines),
-      isValidAdminPathComponent(namespace),
-      !entityID.isEmpty
-    else {
-      return nil
-    }
-
-    var sawTransactionID = false
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--merge":
-        return arguments.popFirstArgument()
-
-      case "--transaction-id":
-        guard !sawTransactionID,
-          let value = arguments.popFirstArgument()?.trimmingCharacters(in: .whitespacesAndNewlines),
-          !value.isEmpty
-        else {
-          return nil
-        }
-        sawTransactionID = true
-
-      default:
-        return nil
-      }
-    }
-    return nil
   }
 
   fileprivate static func parseAdminField(_ value: String, usage: String) throws -> String {

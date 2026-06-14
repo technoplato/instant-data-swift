@@ -1631,6 +1631,38 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func adminMergeHeadScannerExtractsMergeJSONOnlyAfterValidTransactHead() {
+    expectNoDifference(
+      CLIAdminArguments.firstMergeJSONAfterValidTransactHead([
+        "transact", " notes ", " note-1 ", "--merge", #"{"title":"Hi"}"#,
+      ]),
+      #"{"title":"Hi"}"#
+    )
+    expectNoDifference(
+      CLIAdminArguments.firstMergeJSONAfterValidTransactHead([
+        "tx", "notes", "note-1", "--transaction-id", " tx-1 ", "--merge", "[",
+      ]),
+      "["
+    )
+
+    let invalidHeads: [[String]] = [
+      ["query", "notes", "--merge", "{}"],
+      ["transact", "bad namespace", "note-1", "--merge", "{}"],
+      ["transact", "notes", "  ", "--merge", "{}"],
+      ["transact", "notes", "note-1", "--transaction-id", "  ", "--merge", "{}"],
+      [
+        "transact", "notes", "note-1", "--transaction-id", "tx-1",
+        "--transaction-id", "tx-2", "--merge", "{}",
+      ],
+      ["transact", "notes", "note-1", "--unknown", "--merge", "{}"],
+      ["transact", "notes", "note-1", "--merge"],
+    ]
+    for arguments in invalidHeads {
+      expectNoDifference(CLIAdminArguments.firstMergeJSONAfterValidTransactHead(arguments), nil)
+    }
+  }
+
+  @Test
   func cacheParserParsesCommandsAndAliases() throws {
     expectNoDifference(try parseCache(["inspect"]), .inspect)
     expectNoDifference(try parseCache(["attributes"]), .attributes(namespace: nil))
