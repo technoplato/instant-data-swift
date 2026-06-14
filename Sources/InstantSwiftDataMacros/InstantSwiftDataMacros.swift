@@ -101,7 +101,9 @@ public struct InstantEntityMacro: MemberMacro {
       """
           InstantAttributeAssignment<\(typeName)>(
             name: "\(property.name)",
-            attributeID: \(typeName).instantNamespace + "/\(property.name)",
+            attributeID: \(typeName).instantAttributes
+              .first(where: { $0.name == "\(property.name)" })?.id
+              ?? \(typeName).instantNamespace + "/\(property.name)",
             value: self.\(property.name).instantValue
           )
       """
