@@ -437,7 +437,7 @@ One repository, multiple targets:
   validation, auth, example commands, cache/outbox inspection, fixture app
   creation, parity scripts, and benchmarks.
 - `InstantSwiftDataTesting`: ephemeral app helpers, generated draft validation
-  helpers, and end-to-end assertion tools.
+  helpers, platform adapter validation helpers, and end-to-end assertion tools.
 - `InstantSwiftDataBenchmarks`: benchmark executable for Swift/TypeScript
   parity measurements.
 

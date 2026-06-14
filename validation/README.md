@@ -42,6 +42,7 @@ swift run instant-swift-data validation parity-report --jsonl
 swift run instant-swift-data-validation-runner --local-todos
 swift run instant-swift-data-validation-runner --local-integrations
 swift run instant-swift-data-validation-runner --typed-drafts
+swift run instant-swift-data-validation-runner --platform-adapters
 swift run instant-swift-data-benchmarks --suite local-todos --iterations 1 --jsonl
 ```
 

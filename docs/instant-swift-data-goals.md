@@ -49,7 +49,8 @@ examples do not satisfy the goal.
     permission printer, code generation.
   - `InstantSwiftDataMacros`: macros such as `@InstantEntity`.
   - `InstantSwiftDataTesting`: ephemeral apps, admin clients, fixtures,
-    generated draft validation, real-run assertions.
+    generated draft validation, platform adapter validation, real-run
+    assertions.
   - `instant-swift-data`: command-line interface.
   - `InstantSwiftDataBenchmarks`: Swift benchmark targets.
 

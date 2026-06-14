@@ -34,6 +34,8 @@ struct InstantSwiftDataValidationRunner {
       "validation.local.integrations"
     case ["--typed-drafts"]:
       "validation.typed.drafts"
+    case ["--platform-adapters"]:
+      "validation.platform.adapters"
     case [], ["--local-todos"]:
       "validation.local.todos"
     default:
@@ -45,6 +47,8 @@ struct InstantSwiftDataValidationRunner {
     switch caseID {
     case "validation.typed.drafts":
       "draft-validation"
+    case "validation.platform.adapters":
+      "platform-adapter-validation"
     default:
       "local-validation"
     }
@@ -56,13 +60,20 @@ struct InstantSwiftDataValidationRunner {
       || arguments == ["--local-todos"]
       || arguments == ["--local-integrations"]
       || arguments == ["--typed-drafts"]
+      || arguments == ["--platform-adapters"]
     else {
       throw ValidationFailure(
         caseID: "validation.arguments",
         appID: "local-validation",
         message:
-          "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--typed-drafts]"
+          "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--typed-drafts|--platform-adapters]"
       )
+    }
+
+    if ProcessInfo.processInfo.environment["INSTANT_SWIFT_DATA_VALIDATION_RUNNER_FAIL_CASE"]
+      == requestedCaseID()
+    {
+      throw ForcedValidationRunnerFailure(caseID: requestedCaseID())
     }
 
     if arguments == ["--local-integrations"] {
@@ -72,6 +83,11 @@ struct InstantSwiftDataValidationRunner {
       }
     } else if arguments == ["--typed-drafts"] {
       let run = try await InstantSwiftDataTestHarness.runDraftValidation()
+      for row in run.result.evidence {
+        try writeJSONLine(row)
+      }
+    } else if arguments == ["--platform-adapters"] {
+      let run = try await InstantSwiftDataTestHarness.runPlatformAdapterValidation()
       for row in run.result.evidence {
         try writeJSONLine(row)
       }
@@ -116,4 +132,12 @@ private struct ValidationFailure: Error {
   var caseID: String
   var appID: String
   var message: String
+}
+
+private struct ForcedValidationRunnerFailure: Error, CustomStringConvertible {
+  var caseID: String
+
+  var description: String {
+    "Forced validation runner failure for \(caseID)."
+  }
 }

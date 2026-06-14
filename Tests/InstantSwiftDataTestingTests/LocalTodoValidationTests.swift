@@ -284,6 +284,100 @@ struct LocalTodoValidationTests {
   }
 
   @Test
+  func platformAdapterValidationHarnessSummarizesWrapperEvidence() async throws {
+    let cacheURL = temporaryCacheURL()
+
+    let run = try await InstantSwiftDataTestHarness.runPlatformAdapterValidation(
+      appID: "validation-adapters-test",
+      cacheURL: cacheURL,
+      timestamp: { InstantTimestamp(milliseconds: 1_700_002_000_000) }
+    )
+    let result = run.result
+
+    expectNoDifference(result.appID, "validation-adapters-test")
+    expectNoDifference(result.cacheURL, cacheURL)
+    expectNoDifference(run.summary.caseID, "validation.platform.adapters")
+    expectNoDifference(run.summary.rowCount, 10)
+    expectNoDifference(run.summary.ok, true)
+    expectNoDifference(run.summary.events, platformAdapterValidationEvents)
+    expectNoDifference(result.evidence.map(\.event), run.summary.events)
+    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 10))
+    expectNoDifference(result.evidence.map(\.details.adapter), platformAdapterValidationAdapters)
+
+    let fetchAll = result.evidence[0].details
+    expectNoDifference(fetchAll.todoIDs.count, 1)
+    expectNoDifference(fetchAll.todoTitles, ["Bind public adapter wrappers"])
+    expectNoDifference(fetchAll.todoCount, 1)
+
+    let fetchOne = result.evidence[1].details
+    expectNoDifference(fetchOne.selectedTodoID, fetchAll.todoIDs.first)
+    expectNoDifference(fetchOne.selectedTodoTitle, "Bind public adapter wrappers")
+
+    let localID = try #require(result.evidence[3].details.localID)
+    #expect(!localID.isEmpty)
+    expectNoDifference(result.evidence[4].details.authUserID, "adapter-user")
+    expectNoDifference(result.evidence[5].details.roomMemberIDs, ["adapter-user"])
+    expectNoDifference(result.evidence[6].details.topicMessageIDs.count, 1)
+    expectNoDifference(result.evidence[7].details.fileIDs.count, 1)
+    expectNoDifference(result.evidence[8].details.streamChunkIDs.count, 1)
+    expectNoDifference(result.evidence[9].details.shareIDs.count, 1)
+  }
+
+  @Test
+  func validationRunnerPlatformAdaptersCommandEmitsJSONL() throws {
+    let result = try runValidationRunner(arguments: ["--platform-adapters"])
+
+    #expect(
+      result.status == 0,
+      """
+      instant-swift-data-validation-runner --platform-adapters failed.
+      stdout:
+      \(result.stdout)
+      stderr:
+      \(result.stderr)
+      """
+    )
+
+    let rows = try parseJSONLines(result.stdout)
+    expectNoDifference(rows.map { $0["case"] as? String ?? "" }, Array(
+      repeating: "validation.platform.adapters",
+      count: 10
+    ))
+    expectNoDifference(rows.map { $0["appID"] as? String ?? "" }, Array(
+      repeating: "platform-adapter-validation",
+      count: 10
+    ))
+    expectNoDifference(rows.map { $0["event"] as? String ?? "" }, platformAdapterValidationEvents)
+    expectNoDifference(rows.map { $0["ok"] as? Bool ?? false }, Array(repeating: true, count: 10))
+
+    let adapters = try rows.map { row in
+      try #require((row["details"] as? [String: Any])?["adapter"] as? String)
+    }
+    expectNoDifference(adapters, platformAdapterValidationAdapters)
+
+    let shares = try #require(rows.last?["details"] as? [String: Any])
+    expectNoDifference((shares["shareIDs"] as? [String])?.count, 1)
+  }
+
+  @Test
+  func validationRunnerPlatformAdaptersFailureEmitsMappedJSONL() throws {
+    let result = try runValidationRunner(
+      arguments: ["--platform-adapters"],
+      environment: [
+        "INSTANT_SWIFT_DATA_VALIDATION_RUNNER_FAIL_CASE": "validation.platform.adapters"
+      ]
+    )
+
+    #expect(result.status == 1)
+    let rows = try parseJSONLines(result.stdout)
+    let row = try #require(rows.first)
+    expectNoDifference(row["case"] as? String, "validation.platform.adapters")
+    expectNoDifference(row["appID"] as? String, "platform-adapter-validation")
+    expectNoDifference(row["event"] as? String, "failed")
+    expectNoDifference(row["ok"] as? Bool, false)
+  }
+
+  @Test
   func syncUpsRecordingValidationHarnessSummarizesEvidence() async throws {
     let cacheURL = temporaryCacheURL()
 
@@ -365,6 +459,8 @@ struct LocalTodoValidationTests {
     )
     #expect(runnerSource.contains("--typed-drafts"))
     #expect(runnerSource.contains("runDraftValidation()"))
+    #expect(runnerSource.contains("--platform-adapters"))
+    #expect(runnerSource.contains("runPlatformAdapterValidation()"))
 
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/bin/bash")
@@ -972,6 +1068,32 @@ struct LocalTodoValidationTests {
   }
 }
 
+private let platformAdapterValidationEvents = [
+  "fetch-all",
+  "fetch-one",
+  "fetch",
+  "local-id",
+  "auth-session",
+  "room-presence",
+  "room-topic-messages",
+  "stored-files",
+  "stream-chunks",
+  "shares",
+]
+
+private let platformAdapterValidationAdapters = [
+  "@FetchAll",
+  "@FetchOne",
+  "@Fetch",
+  "@LocalID",
+  "@AuthSession",
+  "@RoomPresence",
+  "@RoomTopicMessages",
+  "@StoredFiles",
+  "@StreamChunks",
+  "@Shares",
+]
+
 private func temporaryCacheURL() -> URL {
   FileManager.default.temporaryDirectory
     .appendingPathComponent("InstantSwiftDataValidationTests-\(UUID().uuidString)", isDirectory: true)
@@ -987,7 +1109,8 @@ private func packageRootURL(filePath: String = #filePath) -> URL {
 
 @discardableResult
 private func runValidationRunner(
-  arguments: [String]
+  arguments: [String],
+  environment: [String: String?] = [:]
 ) throws -> (status: Int32, stdout: String, stderr: String) {
   let packageURL = packageRootURL()
   let executableURL = packageURL.appendingPathComponent(
@@ -1003,7 +1126,11 @@ private func runValidationRunner(
     process.arguments = ["swift", "run", "instant-swift-data-validation-runner"] + arguments
   }
   process.currentDirectoryURL = packageURL
-  process.environment = ProcessInfo.processInfo.environment
+  var processEnvironment = ProcessInfo.processInfo.environment
+  for (key, value) in environment {
+    processEnvironment[key] = value
+  }
+  process.environment = processEnvironment
 
   let outputPipe = Pipe()
   let errorPipe = Pipe()
