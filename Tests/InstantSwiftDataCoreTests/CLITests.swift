@@ -786,6 +786,50 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliMalformedTodoLinksArgumentsDoNotBootstrapState() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    func expectMalformed(_ arguments: [String], contains expectedFragment: String) throws {
+      let result = try runCLIResult(arguments, homeURL: homeURL)
+      expectNoDifference(result.status, 64)
+      #expect(result.error.contains(expectedFragment))
+    }
+
+    try expectMalformed(
+      ["examples", "todo-links", "--json"],
+      contains: "examples todo-links <seed|list|nested|unlink>"
+    )
+    try expectMalformed(
+      ["examples", "todo-links", "seed", "unexpected", "--json"],
+      contains: "examples todo-links seed"
+    )
+    try expectMalformed(
+      ["examples", "todo-links", "list", "unexpected", "--json"],
+      contains: "examples todo-links list"
+    )
+    try expectMalformed(
+      ["examples", "todo-links", "nested", "unexpected", "--json"],
+      contains: "examples todo-links nested"
+    )
+    try expectMalformed(
+      ["examples", "todo-links", "unlink", "unexpected", "--json"],
+      contains: "examples todo-links unlink"
+    )
+    try expectMalformed(
+      ["examples", "todo-links", "dance", "--json"],
+      contains: "Unknown todo-links command: dance"
+    )
+
+    expectNoDifference(
+      try FileManager.default.contentsOfDirectory(atPath: homeURL.path),
+      []
+    )
+  }
+
+  @Test
   func cliQueryTodosSupportsServerCreatedAtOrder() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)

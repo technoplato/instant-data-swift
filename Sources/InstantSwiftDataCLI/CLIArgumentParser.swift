@@ -135,6 +135,38 @@ public enum CLIExamplesTodosArgumentError: Error, Equatable, Sendable {
   public var exitCode: Int32 { 64 }
 }
 
+public enum CLIExamplesTodoLinksLeafInvocation: Equatable, Sendable {
+  case seed
+  case list
+  case nested
+  case unlink
+  case unknown(String)
+}
+
+public enum CLIExamplesTodoLinksUsage {
+  public static let todoLinks = """
+    Usage: instant-swift-data examples todo-links <seed|list|nested|unlink>
+      instant-swift-data examples todo-links seed [--json|--jsonl]
+      instant-swift-data examples todo-links list [--json|--jsonl]
+      instant-swift-data examples todo-links nested [--json|--jsonl]
+      instant-swift-data examples todo-links unlink [--json|--jsonl]
+    """
+  public static let seed =
+    "Usage: instant-swift-data examples todo-links seed [--json|--jsonl]"
+  public static let list =
+    "Usage: instant-swift-data examples todo-links list [--json|--jsonl]"
+  public static let nested =
+    "Usage: instant-swift-data examples todo-links nested [--json|--jsonl]"
+  public static let unlink =
+    "Usage: instant-swift-data examples todo-links unlink [--json|--jsonl]"
+}
+
+public enum CLIExamplesTodoLinksArgumentError: Error, Equatable, Sendable {
+  case invalidArguments(usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
 public struct CLIScaffoldInvocation: Equatable, Sendable {
   public var example: String
   public var outputDirectory: String
@@ -1317,6 +1349,53 @@ public struct CLIExamplesTodosLeafParser: Parser {
       )
 
     case let .unknown(command):
+      input.removeAll()
+      return .unknown(command)
+    }
+  }
+}
+
+public struct CLIExamplesTodoLinksLeafParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIExamplesTodoLinksLeafInvocation {
+    guard let command = input.first else {
+      throw CLIExamplesTodoLinksArgumentError.invalidArguments(
+        usage: CLIExamplesTodoLinksUsage.todoLinks
+      )
+    }
+    input.removeFirst()
+
+    switch command {
+    case "seed":
+      try requireNoRemainingExamplesTodoLinksArguments(
+        &input,
+        usage: CLIExamplesTodoLinksUsage.seed
+      )
+      return .seed
+
+    case "list":
+      try requireNoRemainingExamplesTodoLinksArguments(
+        &input,
+        usage: CLIExamplesTodoLinksUsage.list
+      )
+      return .list
+
+    case "nested":
+      try requireNoRemainingExamplesTodoLinksArguments(
+        &input,
+        usage: CLIExamplesTodoLinksUsage.nested
+      )
+      return .nested
+
+    case "unlink":
+      try requireNoRemainingExamplesTodoLinksArguments(
+        &input,
+        usage: CLIExamplesTodoLinksUsage.unlink
+      )
+      return .unlink
+
+    default:
       input.removeAll()
       return .unknown(command)
     }
@@ -3783,6 +3862,15 @@ private func requireNoRemainingExamplesTodosArguments(
   }
 }
 
+private func requireNoRemainingExamplesTodoLinksArguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if !input.isEmpty {
+    throw CLIExamplesTodoLinksArgumentError.invalidArguments(usage: usage)
+  }
+}
+
 private func joinedTrimmed(_ input: ArraySlice<String>) -> String {
   input.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
 }
@@ -3940,6 +4028,15 @@ extension CLIExamplesTodosArgumentError: CustomStringConvertible {
 
     case let .unknownWatchOption(option, usage):
       return "Unknown todo watch option: \(option). Usage: \(usage)"
+    }
+  }
+}
+
+extension CLIExamplesTodoLinksArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case let .invalidArguments(usage):
+      return usage
     }
   }
 }

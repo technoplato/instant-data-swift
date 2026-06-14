@@ -274,6 +274,42 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func examplesTodoLinksLeafParserParsesCommands() throws {
+    expectNoDifference(try parseExamplesTodoLinksLeaf(["seed"]), .seed)
+    expectNoDifference(try parseExamplesTodoLinksLeaf(["list"]), .list)
+    expectNoDifference(try parseExamplesTodoLinksLeaf(["nested"]), .nested)
+    expectNoDifference(try parseExamplesTodoLinksLeaf(["unlink"]), .unlink)
+    expectNoDifference(
+      try parseExamplesTodoLinksLeaf(["dance", "--fast"]),
+      .unknown("dance")
+    )
+  }
+
+  @Test
+  func examplesTodoLinksLeafParserReportsMalformedArguments() throws {
+    try expectExamplesTodoLinksLeafParseError(
+      [],
+      description: CLIExamplesTodoLinksUsage.todoLinks
+    )
+    try expectExamplesTodoLinksLeafParseError(
+      ["seed", "unexpected"],
+      description: CLIExamplesTodoLinksUsage.seed
+    )
+    try expectExamplesTodoLinksLeafParseError(
+      ["list", "unexpected"],
+      description: CLIExamplesTodoLinksUsage.list
+    )
+    try expectExamplesTodoLinksLeafParseError(
+      ["nested", "unexpected"],
+      description: CLIExamplesTodoLinksUsage.nested
+    )
+    try expectExamplesTodoLinksLeafParseError(
+      ["unlink", "unexpected"],
+      description: CLIExamplesTodoLinksUsage.unlink
+    )
+  }
+
+  @Test
   func topLevelOutputModeNormalizesAroundExamplesCommand() throws {
     expectNoDifference(
       try CLIArguments.parse(["examples", "todos", "observe", "--events", "1", "--jsonl"]),
@@ -1826,6 +1862,15 @@ private func parseExamplesTodosLeaf(
   return invocation
 }
 
+private func parseExamplesTodoLinksLeaf(
+  _ arguments: [String]
+) throws -> CLIExamplesTodoLinksLeafInvocation {
+  var input = arguments[...]
+  let invocation = try CLIExamplesTodoLinksLeafParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseAuth(_ arguments: [String]) throws -> CLIAuthInvocation {
   var input = arguments[...]
   let invocation = try CLIAuthParser().parse(&input)
@@ -2057,6 +2102,19 @@ private func expectExamplesTodosLeafParseError(
     _ = try parseExamplesTodosLeaf(arguments)
     Issue.record("Expected examples todos parser to reject \(arguments).")
   } catch let error as CLIExamplesTodosArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectExamplesTodoLinksLeafParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseExamplesTodoLinksLeaf(arguments)
+    Issue.record("Expected examples todo-links parser to reject \(arguments).")
+  } catch let error as CLIExamplesTodoLinksArgumentError {
     expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }

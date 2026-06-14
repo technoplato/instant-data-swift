@@ -1534,17 +1534,22 @@ struct InstantSwiftDataCLI {
   }
 
   private static func runTodoLinks(arguments: [String], output: OutputMode) async throws {
-    var arguments = arguments
-    guard let command = arguments.popFirstArgument() else {
-      throw CLIError(todoLinksUsage, exitCode: 64)
+    let invocation: CLIExamplesTodoLinksLeafInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLIExamplesTodoLinksLeafParser().parse(&input)
+    } catch let error as CLIExamplesTodoLinksArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
+
+    if case let .unknown(command) = invocation {
+      throw CLIError("Unknown todo-links command: \(command). \(todoLinksUsage)", exitCode: 64)
+    }
+
     let context = try await CLIContext.bootstrap(initialAttributes: TodoProjectExample.attributes)
 
-    switch command {
-    case "seed":
-      guard arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data examples todo-links seed [--json|--jsonl]", exitCode: 64)
-      }
+    switch invocation {
+    case .seed:
       let projectID = try await context.runtime.localID(named: TodoProjectExample.projectIDName)
       let todoID = try await context.runtime.localID(named: TodoProjectExample.todoIDName)
       let transactionID = context.runtime.configuration.makeID()
@@ -1575,22 +1580,13 @@ struct InstantSwiftDataCLI {
       )
       try await printTodoLinks(context: context, output: output, event: "seed", changedID: todoID)
 
-    case "list":
-      guard arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data examples todo-links list [--json|--jsonl]", exitCode: 64)
-      }
+    case .list:
       try await printTodoLinks(context: context, output: output, event: "list")
 
-    case "nested":
-      guard arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data examples todo-links nested [--json|--jsonl]", exitCode: 64)
-      }
+    case .nested:
       try await printTodoLinkSnapshots(context: context, output: output, event: "nested")
 
-    case "unlink":
-      guard arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data examples todo-links unlink [--json|--jsonl]", exitCode: 64)
-      }
+    case .unlink:
       let projectID = try await context.runtime.localID(named: TodoProjectExample.projectIDName)
       let todoID = try await context.runtime.localID(named: TodoProjectExample.todoIDName)
       let transactionID = context.runtime.configuration.makeID()
@@ -1611,8 +1607,8 @@ struct InstantSwiftDataCLI {
       )
       try await printTodoLinks(context: context, output: output, event: "unlink", changedID: todoID)
 
-    default:
-      throw CLIError("Unknown todo-links command: \(command). \(todoLinksUsage)", exitCode: 64)
+    case .unknown:
+      preconditionFailure("Unknown todo-links commands are handled before bootstrapping.")
     }
   }
 
