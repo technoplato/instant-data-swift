@@ -7,6 +7,10 @@ import Testing
 struct InstantStoreParityTests {
   @Test
   func cardinalityOneAddKeepsLastValueInSameTransaction() async throws {
+    let source = storeParitySource(
+      "cardinality-one add",
+      status: "exact: cardinality-one attrs keep only the latest value in a transaction."
+    )
     let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
@@ -35,13 +39,17 @@ struct InstantStoreParityTests {
     )
 
     let users = try await runtime.query(InstantQueryPlan(id: "users", namespace: "users"))
-    expectNoDifference(result.changedEntityIDs, ["user-1"])
-    expectNoDifference(result.tripleCount, 1)
-    expectNoDifference(users.map { $0.values["handle"]?.first }, [.string("bob")])
+    expectNoDifference(result.changedEntityIDs, ["user-1"], source)
+    expectNoDifference(result.tripleCount, 1, source)
+    expectNoDifference(users.map { $0.values["handle"]?.first }, [.string("bob")], source)
   }
 
   @Test
   func linkAndUnlinkWithoutScalarUpdatesMaintainForwardAndReverseIndexes() async throws {
+    let source = storeParitySource(
+      "link/unlink without update",
+      status: "adapted: Swift asserts forward and reverse materialized links."
+    )
     let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
@@ -86,13 +94,17 @@ struct InstantStoreParityTests {
       ),
       createdAt: InstantTimestamp(milliseconds: time.milliseconds + 1)
     )
-    expectNoDifference(linkResult.changedEntityIDs, ["project-1", "todo-1"])
+    expectNoDifference(linkResult.changedEntityIDs, ["project-1", "todo-1"], source)
 
     var todos = try await runtime.query(TodoProjectExample.todosWithProjectQuery)
-    expectNoDifference(todos.first?.values["project"]?.first, .ref("project-1"))
-    expectNoDifference(todos.first?.links?["project"]?.map(\.id), ["project-1"])
+    expectNoDifference(todos.first?.values["project"]?.first, .ref("project-1"), source)
+    expectNoDifference(todos.first?.links?["project"]?.map(\.id), ["project-1"], source)
     var projects = try await runtime.query(TodoProjectExample.projectsWithTodosQuery)
-    expectNoDifference(projects.first { $0.id == "project-1" }?.links?["todos"]?.map(\.id), ["todo-1"])
+    expectNoDifference(
+      projects.first { $0.id == "project-1" }?.links?["todos"]?.map(\.id),
+      ["todo-1"],
+      source
+    )
 
     let relinkResult = try await runtime.transact(
       InstantStoreTransaction(
@@ -111,23 +123,40 @@ struct InstantStoreParityTests {
       ),
       createdAt: InstantTimestamp(milliseconds: time.milliseconds + 2)
     )
-    expectNoDifference(relinkResult.changedEntityIDs, ["project-1", "project-2", "todo-1"])
+    expectNoDifference(relinkResult.changedEntityIDs, ["project-1", "project-2", "todo-1"], source)
 
     todos = try await runtime.query(TodoProjectExample.todosWithProjectQuery)
-    expectNoDifference(todos.first?.values["project"]?.first, .ref("project-2"))
-    expectNoDifference(todos.first?.links?["project"]?.map(\.id), ["project-2"])
-    expectNoDifference(todos.first?.links?["project"]?.first?.values["title"]?.first, .string("Archive"))
+    expectNoDifference(todos.first?.values["project"]?.first, .ref("project-2"), source)
+    expectNoDifference(todos.first?.links?["project"]?.map(\.id), ["project-2"], source)
+    expectNoDifference(
+      todos.first?.links?["project"]?.first?.values["title"]?.first,
+      .string("Archive"),
+      source
+    )
     projects = try await runtime.query(TodoProjectExample.projectsWithTodosQuery)
-    expectNoDifference(projects.first { $0.id == "project-1" }?.links?["todos"]?.map(\.id), [])
-    expectNoDifference(projects.first { $0.id == "project-2" }?.links?["todos"]?.map(\.id), ["todo-1"])
+    expectNoDifference(
+      projects.first { $0.id == "project-1" }?.links?["todos"]?.map(\.id),
+      [],
+      source
+    )
+    expectNoDifference(
+      projects.first { $0.id == "project-2" }?.links?["todos"]?.map(\.id),
+      ["todo-1"],
+      source
+    )
     expectNoDifference(
       projects.first { $0.id == "project-2" }?.links?["todos"]?.first?.values["text"]?.first,
-      .string("Wire links")
+      .string("Wire links"),
+      source
     )
   }
 
   @Test
   func manyLinkUnlinkAndRelinkPortsUpstreamMultiLinkShape() async throws {
+    let source = storeParitySource(
+      "link/unlink multi",
+      status: "adapted: Swift uses article/tag many-ref fixtures and reverse includes."
+    )
     let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let attributes = articleTagAttributes()
     let runtime = try await InstantRuntime.bootstrap(
@@ -170,16 +199,37 @@ struct InstantStoreParityTests {
     )
 
     var articles = try await runtime.query(query)
-    expectNoDifference(articles.first { $0.id == "article-1" }?.values["tags"]?.values, [.ref("tag-data"), .ref("tag-swift")])
-    expectNoDifference(articles.first { $0.id == "article-1" }?.links?["tags"]?.map(\.id), ["tag-data", "tag-swift"])
+    expectNoDifference(
+      articles.first { $0.id == "article-1" }?.values["tags"]?.values,
+      [.ref("tag-data"), .ref("tag-swift")],
+      source
+    )
+    expectNoDifference(
+      articles.first { $0.id == "article-1" }?.links?["tags"]?.map(\.id),
+      ["tag-data", "tag-swift"],
+      source
+    )
     expectNoDifference(
       articles.first { $0.id == "article-1" }?.links?["tags"]?.map { $0.values["name"]?.first },
-      [.string("Data"), .string("Swift")]
+      [.string("Data"), .string("Swift")],
+      source
     )
     var tags = try await runtime.query(tagsWithArticlesQuery())
-    expectNoDifference(tags.first { $0.id == "tag-data" }?.links?["articles"]?.map(\.id), ["article-1"])
-    expectNoDifference(tags.first { $0.id == "tag-swift" }?.links?["articles"]?.map(\.id), ["article-1"])
-    expectNoDifference(tags.first { $0.id == "tag-ui" }?.links?["articles"]?.map(\.id), ["article-2"])
+    expectNoDifference(
+      tags.first { $0.id == "tag-data" }?.links?["articles"]?.map(\.id),
+      ["article-1"],
+      source
+    )
+    expectNoDifference(
+      tags.first { $0.id == "tag-swift" }?.links?["articles"]?.map(\.id),
+      ["article-1"],
+      source
+    )
+    expectNoDifference(
+      tags.first { $0.id == "tag-ui" }?.links?["articles"]?.map(\.id),
+      ["article-2"],
+      source
+    )
 
     try await runtime.transact(
       InstantStoreTransaction(
@@ -194,17 +244,45 @@ struct InstantStoreParityTests {
     )
 
     articles = try await runtime.query(query)
-    expectNoDifference(articles.first { $0.id == "article-1" }?.values["tags"]?.values, [.ref("tag-ui")])
-    expectNoDifference(articles.first { $0.id == "article-1" }?.links?["tags"]?.map(\.id), ["tag-ui"])
-    expectNoDifference(articles.first { $0.id == "article-1" }?.links?["tags"]?.first?.values["name"]?.first, .string("UI"))
+    expectNoDifference(
+      articles.first { $0.id == "article-1" }?.values["tags"]?.values,
+      [.ref("tag-ui")],
+      source
+    )
+    expectNoDifference(
+      articles.first { $0.id == "article-1" }?.links?["tags"]?.map(\.id),
+      ["tag-ui"],
+      source
+    )
+    expectNoDifference(
+      articles.first { $0.id == "article-1" }?.links?["tags"]?.first?.values["name"]?.first,
+      .string("UI"),
+      source
+    )
     tags = try await runtime.query(tagsWithArticlesQuery())
-    expectNoDifference(tags.first { $0.id == "tag-data" }?.links?["articles"]?.map(\.id), [])
-    expectNoDifference(tags.first { $0.id == "tag-swift" }?.links?["articles"]?.map(\.id), [])
-    expectNoDifference(tags.first { $0.id == "tag-ui" }?.links?["articles"]?.map(\.id), ["article-1", "article-2"])
+    expectNoDifference(
+      tags.first { $0.id == "tag-data" }?.links?["articles"]?.map(\.id),
+      [],
+      source
+    )
+    expectNoDifference(
+      tags.first { $0.id == "tag-swift" }?.links?["articles"]?.map(\.id),
+      [],
+      source
+    )
+    expectNoDifference(
+      tags.first { $0.id == "tag-ui" }?.links?["articles"]?.map(\.id),
+      ["article-1", "article-2"],
+      source
+    )
   }
 
   @Test
   func storeSnapshotJSONRoundTripsAndRestoresMaterializedLinks() async throws {
+    let source = storeParitySource(
+      "JSON serialization round-trips",
+      status: "adapted: Swift snapshots encode attributes and triples, then rematerialize links."
+    )
     let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
@@ -239,19 +317,31 @@ struct InstantStoreParityTests {
     let snapshot = await runtime.store.snapshot()
     let data = try JSONEncoder().encode(snapshot)
     let decoded = try JSONDecoder().decode(InstantStoreSnapshot.self, from: data)
-    expectNoDifference(decoded, snapshot)
+    expectNoDifference(decoded, snapshot, source)
 
     let restoredStore = InstantStore(snapshot: decoded)
     let restoredTodos = await restoredStore.materialize(TodoProjectExample.todosWithProjectQuery)
     let liveTodos = try await runtime.query(TodoProjectExample.todosWithProjectQuery)
-    expectNoDifference(restoredTodos, liveTodos)
+    expectNoDifference(restoredTodos, liveTodos, source)
     let restoredProjects = await restoredStore.materialize(TodoProjectExample.projectsWithTodosQuery)
     let liveProjects = try await runtime.query(TodoProjectExample.projectsWithTodosQuery)
-    expectNoDifference(restoredProjects, liveProjects)
+    expectNoDifference(restoredProjects, liveProjects, source)
   }
 
   @Test
   func addingAndRenamingAttributesReindexesExistingTriples() async throws {
+    let newAttrSource = storeParitySource(
+      "new attrs",
+      status: "adapted: Swift merges link attributes and reindexes existing triples."
+    )
+    let updateAttrSource = storeParitySource(
+      "update attr",
+      status: "adapted: Swift updates an attribute name by replacing the attribute with the same id."
+    )
+    let deleteAttrSource = storeParitySource(
+      "delete attr",
+      status: "adapted: Swift replaces the attribute set and hides triples for removed attrs."
+    )
     let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let handle = InstantAttribute(
       id: "users/handle",
@@ -294,8 +384,8 @@ struct InstantStoreParityTests {
     )
 
     var users = await store.materialize(InstantQueryPlan(id: "users", namespace: "users"))
-    expectNoDifference(users.first?.values["handle"]?.first, .string("bobby"))
-    expectNoDifference(users.first?.values["fullName"]?.first, .string("Bob Bobby"))
+    expectNoDifference(users.first?.values["handle"]?.first, .string("bobby"), newAttrSource)
+    expectNoDifference(users.first?.values["fullName"]?.first, .string("Bob Bobby"), newAttrSource)
     #expect(users.first?.values["colors"] == nil)
 
     _ = await store.mergeAttributes([colorsName, usersColors])
@@ -306,9 +396,17 @@ struct InstantStoreParityTests {
         includes: [InstantQueryInclude("colors")]
       )
     )
-    expectNoDifference(usersWithColors.first?.values["colors"]?.values, [.ref("color-1")])
-    expectNoDifference(usersWithColors.first?.links?["colors"]?.map(\.id), ["color-1"])
-    expectNoDifference(usersWithColors.first?.links?["colors"]?.first?.values["name"]?.first, .string("red"))
+    expectNoDifference(
+      usersWithColors.first?.values["colors"]?.values,
+      [.ref("color-1")],
+      newAttrSource
+    )
+    expectNoDifference(usersWithColors.first?.links?["colors"]?.map(\.id), ["color-1"], newAttrSource)
+    expectNoDifference(
+      usersWithColors.first?.links?["colors"]?.first?.values["name"]?.first,
+      .string("red"),
+      newAttrSource
+    )
     let colorsWithUsers = await store.materialize(
       InstantQueryPlan(
         id: "colors.users",
@@ -316,8 +414,16 @@ struct InstantStoreParityTests {
         includes: [InstantQueryInclude("users", direction: .reverse)]
       )
     )
-    expectNoDifference(colorsWithUsers.first?.links?["users"]?.map(\.id), ["user-1"])
-    expectNoDifference(colorsWithUsers.first?.links?["users"]?.first?.values["handle"]?.first, .string("bobby"))
+    expectNoDifference(
+      colorsWithUsers.first?.links?["users"]?.map(\.id),
+      ["user-1"],
+      newAttrSource
+    )
+    expectNoDifference(
+      colorsWithUsers.first?.links?["users"]?.first?.values["handle"]?.first,
+      .string("bobby"),
+      newAttrSource
+    )
 
     let renamedFullName = InstantAttribute(
       id: "users/fullName",
@@ -329,11 +435,33 @@ struct InstantStoreParityTests {
 
     users = await store.materialize(InstantQueryPlan(id: "users.renamed", namespace: "users"))
     #expect(users.first?.values["fullName"] == nil)
-    expectNoDifference(users.first?.values["fullNamez"]?.first, .string("Bob Bobby"))
+    expectNoDifference(users.first?.values["fullNamez"]?.first, .string("Bob Bobby"), updateAttrSource)
+
+    _ = await store.replaceAttributes([handle, colorsName, usersColors])
+
+    users = await store.materialize(InstantQueryPlan(id: "users.deleted-attr", namespace: "users"))
+    expectNoDifference(users.first?.values["handle"]?.first, .string("bobby"), deleteAttrSource)
+    #expect(users.first?.values["fullNamez"] == nil)
+    let usersAfterDeleteAttr = await store.materialize(
+      InstantQueryPlan(
+        id: "users.deleted-attr.colors",
+        namespace: "users",
+        includes: [InstantQueryInclude("colors")]
+      )
+    )
+    expectNoDifference(
+      usersAfterDeleteAttr.first?.links?["colors"]?.map(\.id),
+      ["color-1"],
+      deleteAttrSource
+    )
   }
 
   @Test
   func storeDeepMergePortsUpstreamObjectArrayAndNullSemantics() async throws {
+    let source = storeParitySource(
+      "deepMerge",
+      status: "adapted: Swift JSONValue has null but not undefined, so null deletion and array overwrite are covered."
+    )
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
         appID: "test-app",
@@ -432,12 +560,12 @@ struct InstantStoreParityTests {
       ),
       createdAt: mergeTime
     )
-    expectNoDifference(mergeResult.changedEntityIDs, ["game-1"])
+    expectNoDifference(mergeResult.changedEntityIDs, ["game-1"], source)
 
     let games = try await runtime.query(
       InstantQueryPlan(id: "games", namespace: "games", order: .serverCreatedAt)
     )
-    expectNoDifference(games.map(\.id), ["game-1", "game-2"])
+    expectNoDifference(games.map(\.id), ["game-1", "game-2"], source)
     let state = try #require(games.first { $0.id == "game-1" }?.values["state"]?.first)
     expectNoDifference(
       state,
@@ -456,7 +584,8 @@ struct InstantStoreParityTests {
           "locations": .array([.string("forest"), .null, .string("castle")]),
           "level": .number(2),
         ])
-      )
+      ),
+      source
     )
   }
 
@@ -528,4 +657,11 @@ struct InstantStoreParityTests {
       ]
     )
   }
+}
+
+private let upstreamStoreTestSource =
+  "upstream/instant/client/packages/core/__tests__/src/store.test.ts"
+
+private func storeParitySource(_ testName: String, status: String) -> String {
+  "\(upstreamStoreTestSource) \(testName) [\(status)]"
 }
