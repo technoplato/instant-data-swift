@@ -481,9 +481,13 @@ struct BootstrapTests {
       "stored-files",
       "stream-chunks",
       "shares",
+      "fetch-all-dynamic-query",
+      "fetch-all-nil-query",
+      "fetch-all-cached-prior-error",
+      "fetch-all-cancellation",
     ])
-    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 10))
-    expectNoDifference(result.evidence.map(\.appID), Array(repeating: result.appID, count: 10))
+    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 14))
+    expectNoDifference(result.evidence.map(\.appID), Array(repeating: result.appID, count: 14))
     expectNoDifference(result.evidence.map(\.details.adapter), [
       "@FetchAll",
       "@FetchOne",
@@ -495,6 +499,10 @@ struct BootstrapTests {
       "@StoredFiles",
       "@StreamChunks",
       "@Shares",
+      "@FetchAll(dynamic)",
+      "@FetchAll(nil)",
+      "@FetchAll(error)",
+      "@FetchAll(cancellation)",
     ])
 
     let fetchAll = try #require(result.evidence.first?.details)
@@ -519,6 +527,33 @@ struct BootstrapTests {
 
     let file = try #require(result.evidence.first { $0.event == "stored-files" }?.details)
     expectNoDifference(file.fileIDs, ["platform-adapter-validation-id"])
+
+    let dynamic = try #require(
+      result.evidence.first { $0.event == "fetch-all-dynamic-query" }?.details
+    )
+    expectNoDifference(dynamic.previousTodoTitles, ["Open dynamic"])
+    expectNoDifference(dynamic.todoTitles, ["Done dynamic"])
+    expectNoDifference(dynamic.queryCount, 2)
+
+    let nilQuery = try #require(
+      result.evidence.first { $0.event == "fetch-all-nil-query" }?.details
+    )
+    expectNoDifference(nilQuery.previousTodoTitles, ["Cached nil query"])
+    expectNoDifference(nilQuery.todoTitles, [])
+    expectNoDifference(nilQuery.queryCount, 0)
+    expectNoDifference(nilQuery.nilQueryCleared, true)
+
+    let cachedPrior = try #require(
+      result.evidence.first { $0.event == "fetch-all-cached-prior-error" }?.details
+    )
+    expectNoDifference(cachedPrior.todoTitles, ["Cached before error"])
+    expectNoDifference(cachedPrior.loadErrorOperation, "query dynamic FetchAll")
+
+    let cancellation = try #require(
+      result.evidence.first { $0.event == "fetch-all-cancellation" }?.details
+    )
+    expectNoDifference(cancellation.observationCount, 1)
+    expectNoDifference(cancellation.cancellationTerminated, true)
 
     let stream = try #require(result.evidence.first { $0.event == "stream-chunks" }?.details)
     expectNoDifference(stream.streamChunkIDs, ["platform-adapter-validation-id"])

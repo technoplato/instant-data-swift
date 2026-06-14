@@ -352,9 +352,11 @@ and for auth, rooms, files, streams, and shares with
 port now emits terminal JSONL evidence with
 `instant-swift-data validation reminders --jsonl`, covering search, tags, rich
 fields, smart-list stats, list sharing roles, permission rejections, writer
-updates, and relaunch persistence. Public adapter wrappers can be proven from the terminal with
-`instant-swift-data validation platform-adapters --jsonl`, and the SyncUps
-recording/dependency flow, including meeting restore after relaunch, can be proven with
+updates, and relaunch persistence. Public adapter wrappers can be proven from
+the terminal with `instant-swift-data validation platform-adapters --jsonl`,
+including `@FetchAll` dynamic reload, nil-query, cached-prior-error, and
+cancellation cleanup evidence. The SyncUps recording/dependency flow,
+including meeting restore after relaunch, can be proven with
 `instant-swift-data validation syncups-recording --jsonl`.
 `validation/run-e2e.sh` now records the Swift local todo, local integration,
 Reminders, typed draft, platform adapter, SyncUps recording, and parity coverage

@@ -5161,7 +5161,7 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.appID, "cli-cache-test")
     expectNoDifference(jsonOutput.event, "platform-adapters")
     expectNoDifference(jsonOutput.ok, true)
-    expectNoDifference(jsonOutput.evidenceCount, 10)
+    expectNoDifference(jsonOutput.evidenceCount, 14)
     expectNoDifference(jsonOutput.events, [
       "fetch-all",
       "fetch-one",
@@ -5173,6 +5173,10 @@ extension InstantStoreTests {
       "stored-files",
       "stream-chunks",
       "shares",
+      "fetch-all-dynamic-query",
+      "fetch-all-nil-query",
+      "fetch-all-cached-prior-error",
+      "fetch-all-cancellation",
     ])
     expectNoDifference(jsonOutput.adapters, [
       "@FetchAll",
@@ -5185,6 +5189,10 @@ extension InstantStoreTests {
       "@StoredFiles",
       "@StreamChunks",
       "@Shares",
+      "@FetchAll(dynamic)",
+      "@FetchAll(nil)",
+      "@FetchAll(error)",
+      "@FetchAll(cancellation)",
     ])
     expectNoDifference(jsonOutput.todoCount, 1)
     expectNoDifference(jsonOutput.authUserID, "adapter-user")
@@ -5193,12 +5201,17 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.fileCount, 1)
     expectNoDifference(jsonOutput.streamChunkCount, 1)
     expectNoDifference(jsonOutput.shareCount, 1)
+    expectNoDifference(jsonOutput.lifecycleEventCount, 4)
+    expectNoDifference(jsonOutput.queryProbeCount, 4)
+    expectNoDifference(jsonOutput.observationProbeCount, 1)
+    expectNoDifference(jsonOutput.loadErrorOperations, ["query dynamic FetchAll"])
+    expectNoDifference(jsonOutput.cancellationTerminated, true)
     #expect(jsonOutput.selectedTodoID != nil)
     #expect(jsonOutput.localID != nil)
 
     let jsonlOutput = try runCLI(["validation", "wrappers", "--jsonl"], homeURL: homeURL)
     let lines = jsonlOutput.split(separator: "\n")
-    expectNoDifference(lines.count, 10)
+    expectNoDifference(lines.count, 14)
     let fetchEvidence = try JSONDecoder().decode(
       CLIPlatformAdapterValidationEvidence.self,
       from: Data(try #require(lines.first).utf8)
@@ -5210,19 +5223,31 @@ extension InstantStoreTests {
     expectNoDifference(fetchEvidence.details.todoTitles, ["Bind public adapter wrappers"])
     expectNoDifference(fetchEvidence.details.todoCount, 1)
 
-    let shareEvidence = try JSONDecoder().decode(
-      CLIPlatformAdapterValidationEvidence.self,
-      from: Data(try #require(lines.last).utf8)
-    )
+    let evidenceRows = try lines.map {
+      try JSONDecoder().decode(
+        CLIPlatformAdapterValidationEvidence.self,
+        from: Data($0.utf8)
+      )
+    }
+    let shareEvidence = try #require(evidenceRows.first { $0.event == "shares" })
     expectNoDifference(shareEvidence.event, "shares")
     expectNoDifference(shareEvidence.details.adapter, "@Shares")
     expectNoDifference(shareEvidence.details.authUserID, "adapter-user")
     expectNoDifference(shareEvidence.details.shareIDs.count, 1)
 
+    let cancellationEvidence = try #require(
+      evidenceRows.first { $0.event == "fetch-all-cancellation" }
+    )
+    expectNoDifference(cancellationEvidence.details.adapter, "@FetchAll(cancellation)")
+    expectNoDifference(cancellationEvidence.details.observationCount, 1)
+    expectNoDifference(cancellationEvidence.details.cancellationTerminated, true)
+
     let humanOutput = try runCLI(["validation", "adapters"], homeURL: homeURL)
     #expect(humanOutput.contains("validation: ok"))
     #expect(humanOutput.contains("case: validation.platform.adapters"))
-    #expect(humanOutput.contains("evidence rows: 10"))
+    #expect(humanOutput.contains("evidence rows: 14"))
+    #expect(humanOutput.contains("lifecycle probes: 4"))
+    #expect(humanOutput.contains("cancellation terminated: true"))
     #expect(humanOutput.contains("@FetchAll"))
     #expect(humanOutput.contains("@Shares"))
   }
@@ -6646,6 +6671,11 @@ private struct CLIPlatformAdapterValidationOutput: Decodable {
   var fileCount: Int
   var streamChunkCount: Int
   var shareCount: Int
+  var lifecycleEventCount: Int
+  var queryProbeCount: Int
+  var observationProbeCount: Int
+  var loadErrorOperations: [String]
+  var cancellationTerminated: Bool
 }
 
 private struct CLIPlatformAdapterValidationEvidence: Decodable {
@@ -6674,6 +6704,9 @@ private struct CLIPlatformAdapterValidationDetails: Decodable {
   var fileIDs: [String]
   var streamChunkIDs: [String]
   var shareIDs: [String]
+  var queryCount: Int?
+  var observationCount: Int?
+  var cancellationTerminated: Bool?
 }
 
 private struct CLISyncUpsRecordingValidationOutput: Decodable {

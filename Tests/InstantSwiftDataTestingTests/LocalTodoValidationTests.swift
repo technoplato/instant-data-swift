@@ -389,11 +389,14 @@ struct LocalTodoValidationTests {
     expectNoDifference(result.appID, "validation-adapters-test")
     expectNoDifference(result.cacheURL, cacheURL)
     expectNoDifference(run.summary.caseID, "validation.platform.adapters")
-    expectNoDifference(run.summary.rowCount, 10)
+    expectNoDifference(run.summary.rowCount, platformAdapterValidationEvents.count)
     expectNoDifference(run.summary.ok, true)
     expectNoDifference(run.summary.events, platformAdapterValidationEvents)
     expectNoDifference(result.evidence.map(\.event), run.summary.events)
-    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 10))
+    expectNoDifference(
+      result.evidence.map(\.ok),
+      Array(repeating: true, count: platformAdapterValidationEvents.count)
+    )
     expectNoDifference(result.evidence.map(\.details.adapter), platformAdapterValidationAdapters)
 
     let fetchAll = result.evidence[0].details
@@ -413,6 +416,39 @@ struct LocalTodoValidationTests {
     expectNoDifference(result.evidence[7].details.fileIDs.count, 1)
     expectNoDifference(result.evidence[8].details.streamChunkIDs.count, 1)
     expectNoDifference(result.evidence[9].details.shareIDs.count, 1)
+
+    let dynamic = try #require(
+      result.evidence.first { $0.event == "fetch-all-dynamic-query" }?.details
+    )
+    expectNoDifference(dynamic.previousTodoTitles, ["Open dynamic"])
+    expectNoDifference(dynamic.todoTitles, ["Done dynamic"])
+    expectNoDifference(dynamic.queryCount, 2)
+    expectNoDifference(dynamic.observationCount, 0)
+
+    let nilQuery = try #require(
+      result.evidence.first { $0.event == "fetch-all-nil-query" }?.details
+    )
+    expectNoDifference(nilQuery.previousTodoTitles, ["Cached nil query"])
+    expectNoDifference(nilQuery.todoTitles, [])
+    expectNoDifference(nilQuery.queryCount, 0)
+    expectNoDifference(nilQuery.observationCount, 0)
+    expectNoDifference(nilQuery.nilQueryCleared, true)
+
+    let cachedPrior = try #require(
+      result.evidence.first { $0.event == "fetch-all-cached-prior-error" }?.details
+    )
+    expectNoDifference(cachedPrior.previousTodoTitles, ["Cached before error"])
+    expectNoDifference(cachedPrior.todoTitles, ["Cached before error"])
+    expectNoDifference(cachedPrior.queryCount, 2)
+    expectNoDifference(cachedPrior.loadErrorOperation, "query dynamic FetchAll")
+
+    let cancellation = try #require(
+      result.evidence.first { $0.event == "fetch-all-cancellation" }?.details
+    )
+    expectNoDifference(cancellation.queryCount, 0)
+    expectNoDifference(cancellation.observationCount, 1)
+    expectNoDifference(cancellation.cancellationTerminated, true)
+    expectNoDifference(cancellation.isLoading, false)
   }
 
   @Test
@@ -433,22 +469,33 @@ struct LocalTodoValidationTests {
     let rows = try parseJSONLines(result.stdout)
     expectNoDifference(rows.map { $0["case"] as? String ?? "" }, Array(
       repeating: "validation.platform.adapters",
-      count: 10
+      count: platformAdapterValidationEvents.count
     ))
     expectNoDifference(rows.map { $0["appID"] as? String ?? "" }, Array(
       repeating: "platform-adapter-validation",
-      count: 10
+      count: platformAdapterValidationEvents.count
     ))
     expectNoDifference(rows.map { $0["event"] as? String ?? "" }, platformAdapterValidationEvents)
-    expectNoDifference(rows.map { $0["ok"] as? Bool ?? false }, Array(repeating: true, count: 10))
+    expectNoDifference(
+      rows.map { $0["ok"] as? Bool ?? false },
+      Array(repeating: true, count: platformAdapterValidationEvents.count)
+    )
 
     let adapters = try rows.map { row in
       try #require((row["details"] as? [String: Any])?["adapter"] as? String)
     }
     expectNoDifference(adapters, platformAdapterValidationAdapters)
 
-    let shares = try #require(rows.last?["details"] as? [String: Any])
+    let shares = try #require(
+      rows.first { $0["event"] as? String == "shares" }?["details"] as? [String: Any]
+    )
     expectNoDifference((shares["shareIDs"] as? [String])?.count, 1)
+
+    let cancellation = try #require(
+      rows.first { $0["event"] as? String == "fetch-all-cancellation" }?["details"]
+        as? [String: Any]
+    )
+    expectNoDifference(cancellation["cancellationTerminated"] as? Bool, true)
   }
 
   @Test
@@ -1450,6 +1497,10 @@ private let platformAdapterValidationEvents = [
   "stored-files",
   "stream-chunks",
   "shares",
+  "fetch-all-dynamic-query",
+  "fetch-all-nil-query",
+  "fetch-all-cached-prior-error",
+  "fetch-all-cancellation",
 ]
 
 private let platformAdapterValidationAdapters = [
@@ -1463,6 +1514,10 @@ private let platformAdapterValidationAdapters = [
   "@StoredFiles",
   "@StreamChunks",
   "@Shares",
+  "@FetchAll(dynamic)",
+  "@FetchAll(nil)",
+  "@FetchAll(error)",
+  "@FetchAll(cancellation)",
 ]
 
 private let syncUpsRecordingValidationEvents = [

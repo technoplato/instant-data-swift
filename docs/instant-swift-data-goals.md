@@ -544,7 +544,9 @@ Agent-oriented output modes are required:
   `instant-swift-data validation reminders --jsonl`,
   `instant-swift-data validation typed-drafts --jsonl`,
   `instant-swift-data validation platform-adapters --jsonl`, and
-  `instant-swift-data validation syncups-recording --jsonl`.
+  `instant-swift-data validation syncups-recording --jsonl`; the platform
+  adapter stream covers binding plus `@FetchAll` dynamic reload, nil-query,
+  cached-prior-error, and cancellation-cleanup behavior.
 - run Swift/TypeScript parity suites.
 - run benchmarks.
 - inspect local SQLite cache, including namespace summaries, attributes, and

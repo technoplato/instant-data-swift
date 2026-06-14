@@ -4977,7 +4977,14 @@ struct InstantSwiftDataCLI {
       topicMessageCount: Set(result.evidence.flatMap(\.details.topicMessageIDs)).count,
       fileCount: Set(result.evidence.flatMap(\.details.fileIDs)).count,
       streamChunkCount: Set(result.evidence.flatMap(\.details.streamChunkIDs)).count,
-      shareCount: Set(result.evidence.flatMap(\.details.shareIDs)).count
+      shareCount: Set(result.evidence.flatMap(\.details.shareIDs)).count,
+      lifecycleEventCount: result.evidence.filter { $0.event.hasPrefix("fetch-all-") }.count,
+      queryProbeCount: result.evidence.compactMap(\.details.queryCount).reduce(0, +),
+      observationProbeCount: result.evidence.compactMap(\.details.observationCount).reduce(0, +),
+      loadErrorOperations: result.evidence.compactMap(\.details.loadErrorOperation),
+      cancellationTerminated: result.evidence.contains {
+        $0.details.cancellationTerminated == true
+      }
     )
 
     switch output {
@@ -4994,6 +5001,11 @@ struct InstantSwiftDataCLI {
       print("files: \(summary.fileCount)")
       print("stream chunks: \(summary.streamChunkCount)")
       print("shares: \(summary.shareCount)")
+      print("lifecycle probes: \(summary.lifecycleEventCount)")
+      print("query probes: \(summary.queryProbeCount)")
+      print("observation probes: \(summary.observationProbeCount)")
+      print("load errors: \(summary.loadErrorOperations.joined(separator: ", "))")
+      print("cancellation terminated: \(summary.cancellationTerminated)")
       print("cache: \(summary.cachePath)")
 
     case .json:
@@ -6731,6 +6743,11 @@ private struct PlatformAdapterValidationOutput: Codable, Sendable {
   var fileCount: Int
   var streamChunkCount: Int
   var shareCount: Int
+  var lifecycleEventCount: Int
+  var queryProbeCount: Int
+  var observationProbeCount: Int
+  var loadErrorOperations: [String]
+  var cancellationTerminated: Bool
 }
 
 private struct SyncUpsRecordingValidationOutput: Codable, Sendable {

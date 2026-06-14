@@ -85,7 +85,9 @@ INSTANT_SWIFT_DATA_NODE=/path/to/node validation/run-e2e.sh
 
 The fixture rows include exact expected/actual evidence for entities, fields,
 field modifiers, links, room presence/topic shapes, permission namespaces, and
-allowed operations. `validation/run-e2e.sh` records all Swift local validation
+allowed operations. Platform adapter evidence also records dynamic reload,
+nil-query, cached-prior-error, and cancellation-cleanup probes for `@FetchAll`.
+`validation/run-e2e.sh` records all Swift local validation
 streams (`swift-local.jsonl`, `swift-local-integrations.jsonl`,
 `swift-reminders.jsonl`, `swift-typed-drafts.jsonl`,
 `swift-platform-adapters.jsonl`, `swift-syncups-recording.jsonl`, and

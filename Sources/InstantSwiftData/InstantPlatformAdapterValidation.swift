@@ -5,6 +5,7 @@ public struct PlatformAdapterValidationDetails: Codable, Equatable, Sendable {
   public var adapter: String
   public var todoIDs: [String]
   public var todoTitles: [String]
+  public var previousTodoTitles: [String]
   public var todoCount: Int
   public var selectedTodoID: String?
   public var selectedTodoTitle: String?
@@ -15,12 +16,19 @@ public struct PlatformAdapterValidationDetails: Codable, Equatable, Sendable {
   public var fileIDs: [String]
   public var streamChunkIDs: [String]
   public var shareIDs: [String]
+  public var queryCount: Int?
+  public var observationCount: Int?
+  public var loadErrorOperation: String?
+  public var isLoading: Bool?
+  public var nilQueryCleared: Bool?
+  public var cancellationTerminated: Bool?
 
   public init(
     cachePath: String,
     adapter: String,
     todoIDs: [String] = [],
     todoTitles: [String] = [],
+    previousTodoTitles: [String] = [],
     todoCount: Int = 0,
     selectedTodoID: String? = nil,
     selectedTodoTitle: String? = nil,
@@ -30,12 +38,19 @@ public struct PlatformAdapterValidationDetails: Codable, Equatable, Sendable {
     topicMessageIDs: [String] = [],
     fileIDs: [String] = [],
     streamChunkIDs: [String] = [],
-    shareIDs: [String] = []
+    shareIDs: [String] = [],
+    queryCount: Int? = nil,
+    observationCount: Int? = nil,
+    loadErrorOperation: String? = nil,
+    isLoading: Bool? = nil,
+    nilQueryCleared: Bool? = nil,
+    cancellationTerminated: Bool? = nil
   ) {
     self.cachePath = cachePath
     self.adapter = adapter
     self.todoIDs = todoIDs
     self.todoTitles = todoTitles
+    self.previousTodoTitles = previousTodoTitles
     self.todoCount = todoCount
     self.selectedTodoID = selectedTodoID
     self.selectedTodoTitle = selectedTodoTitle
@@ -46,6 +61,12 @@ public struct PlatformAdapterValidationDetails: Codable, Equatable, Sendable {
     self.fileIDs = fileIDs
     self.streamChunkIDs = streamChunkIDs
     self.shareIDs = shareIDs
+    self.queryCount = queryCount
+    self.observationCount = observationCount
+    self.loadErrorOperation = loadErrorOperation
+    self.isLoading = isLoading
+    self.nilQueryCleared = nilQueryCleared
+    self.cancellationTerminated = cancellationTerminated
   }
 }
 
@@ -376,7 +397,327 @@ public enum InstantSwiftDataPlatformAdapterValidation {
       )
     )
 
+    evidence.append(
+      try await validateDynamicQueryReload(
+        appID: appID,
+        cacheURL: cacheURL,
+        timestamp: timestamp
+      )
+    )
+    evidence.append(
+      try await validateNilQueryClearsWithoutClient(
+        appID: appID,
+        cacheURL: cacheURL,
+        timestamp: timestamp
+      )
+    )
+    evidence.append(
+      try await validateCachedPriorOnError(
+        appID: appID,
+        cacheURL: cacheURL,
+        timestamp: timestamp
+      )
+    )
+    evidence.append(
+      try await validateCancellationCleanup(
+        appID: appID,
+        cacheURL: cacheURL,
+        timestamp: timestamp
+      )
+    )
+
     return PlatformAdapterValidationResult(appID: appID, cacheURL: cacheURL, evidence: evidence)
+  }
+
+  private static func validateDynamicQueryReload(
+    appID: String,
+    cacheURL: URL,
+    timestamp: @escaping @Sendable () -> InstantTimestamp
+  ) async throws -> ValidationEvidenceRow<PlatformAdapterValidationDetails> {
+    let open = todoSnapshot(
+      id: "adapter-dynamic-open",
+      title: "Open dynamic",
+      isCompleted: false,
+      createdAt: date(from: timestamp())
+    )
+    let done = todoSnapshot(
+      id: "adapter-dynamic-done",
+      title: "Done dynamic",
+      isCompleted: true,
+      createdAt: date(from: timestamp())
+    )
+    let recorder = PlatformAdapterLifecycleRecorder(queryResults: [[open], [done]])
+    let client = lifecycleClient(recorder)
+    let fetch = FetchAll<PlatformAdapterTodo>(
+      PlatformAdapterTodo.query.order(PlatformAdapterTodo.createdAt)
+    )
+
+    try await fetch.load(
+      PlatformAdapterTodo.query
+        .where(PlatformAdapterTodo.isCompleted == false)
+        .order(PlatformAdapterTodo.createdAt),
+      using: client
+    )
+    let previousTitles = fetch.wrappedValue.map(\.title)
+
+    try await fetch.load(
+      PlatformAdapterTodo.query
+        .where(PlatformAdapterTodo.isCompleted == true)
+        .order(PlatformAdapterTodo.createdAt),
+      using: client
+    )
+    let titles = fetch.wrappedValue.map(\.title)
+    let counts = await recorder.counts()
+    let plans = await recorder.queryPlans()
+
+    guard
+      previousTitles == ["Open dynamic"],
+      titles == ["Done dynamic"],
+      counts.queryCount == 2,
+      counts.observationCount == 0,
+      plans.map(\.filters) == [
+        [.equals(field: "isCompleted", value: .bool(false))],
+        [.equals(field: "isCompleted", value: .bool(true))],
+      ],
+      plans.map(\.order) == [
+        InstantQueryOrder("createdAt"),
+        InstantQueryOrder("createdAt"),
+      ],
+      fetch.loadError == nil,
+      fetch.isLoading == false
+    else {
+      throw validationFailure(
+        operation: "validate platform adapter dynamic FetchAll",
+        message: "Expected dynamic FetchAll loads to reload from two non-nil queries."
+      )
+    }
+
+    return evidenceRow(
+      event: "fetch-all-dynamic-query",
+      appID: appID,
+      timestamp: timestamp,
+      details: PlatformAdapterValidationDetails(
+        cachePath: cacheURL.path,
+        adapter: "@FetchAll(dynamic)",
+        todoIDs: fetch.wrappedValue.map(\.id.rawValue),
+        todoTitles: titles,
+        previousTodoTitles: previousTitles,
+        todoCount: fetch.wrappedValue.count,
+        queryCount: counts.queryCount,
+        observationCount: counts.observationCount,
+        isLoading: fetch.isLoading
+      )
+    )
+  }
+
+  private static func validateNilQueryClearsWithoutClient(
+    appID: String,
+    cacheURL: URL,
+    timestamp: @escaping @Sendable () -> InstantTimestamp
+  ) async throws -> ValidationEvidenceRow<PlatformAdapterValidationDetails> {
+    let cached = PlatformAdapterTodo(
+      id: InstantID(rawValue: "adapter-nil-query-cached"),
+      title: "Cached nil query",
+      isCompleted: false,
+      createdAt: date(from: timestamp())
+    )
+    let recorder = PlatformAdapterLifecycleRecorder()
+    let fetch = FetchAll<PlatformAdapterTodo>(
+      wrappedValue: [cached],
+      PlatformAdapterTodo.query.order(PlatformAdapterTodo.createdAt)
+    )
+    fetch.loadError = InstantError(
+      code: .implementationFailed,
+      operation: "previous adapter FetchAll load",
+      message: "previous failure",
+      recovery: "Retry with a non-nil query."
+    )
+    fetch.isLoading = true
+
+    try await fetch.load(
+      nil as InstantEntityQuery<PlatformAdapterTodo>?,
+      using: lifecycleClient(recorder)
+    )
+    let counts = await recorder.counts()
+
+    guard
+      fetch.wrappedValue.isEmpty,
+      counts.queryCount == 0,
+      counts.observationCount == 0,
+      fetch.loadError == nil,
+      fetch.isLoading == false
+    else {
+      throw validationFailure(
+        operation: "validate platform adapter nil FetchAll query",
+        message: "Expected a nil FetchAll query to clear cached results without calling the client."
+      )
+    }
+
+    return evidenceRow(
+      event: "fetch-all-nil-query",
+      appID: appID,
+      timestamp: timestamp,
+      details: PlatformAdapterValidationDetails(
+        cachePath: cacheURL.path,
+        adapter: "@FetchAll(nil)",
+        previousTodoTitles: [cached.title],
+        todoCount: fetch.wrappedValue.count,
+        queryCount: counts.queryCount,
+        observationCount: counts.observationCount,
+        isLoading: fetch.isLoading,
+        nilQueryCleared: fetch.wrappedValue.isEmpty
+      )
+    )
+  }
+
+  private static func validateCachedPriorOnError(
+    appID: String,
+    cacheURL: URL,
+    timestamp: @escaping @Sendable () -> InstantTimestamp
+  ) async throws -> ValidationEvidenceRow<PlatformAdapterValidationDetails> {
+    let cached = todoSnapshot(
+      id: "adapter-error-cached",
+      title: "Cached before error",
+      isCompleted: false,
+      createdAt: date(from: timestamp())
+    )
+    let error = InstantError(
+      code: .implementationFailed,
+      operation: "query dynamic FetchAll",
+      message: "dynamic query failed",
+      recovery: "Retry with a valid dynamic query."
+    )
+    let recorder = PlatformAdapterLifecycleRecorder(
+      queryResults: [[cached]],
+      fallbackError: error
+    )
+    let client = lifecycleClient(recorder)
+    let fetch = FetchAll<PlatformAdapterTodo>(
+      PlatformAdapterTodo.query.order(PlatformAdapterTodo.createdAt)
+    )
+
+    try await fetch.load(
+      PlatformAdapterTodo.query.order(PlatformAdapterTodo.createdAt),
+      using: client
+    )
+    let previousTitles = fetch.wrappedValue.map(\.title)
+
+    do {
+      try await fetch.load(
+        PlatformAdapterTodo.query.where(PlatformAdapterTodo.title == "missing"),
+        using: client
+      )
+      throw validationFailure(
+        operation: "validate platform adapter cached FetchAll error",
+        message: "Expected the second non-nil FetchAll query to fail."
+      )
+    } catch let error as InstantError {
+      guard error.operation == "query dynamic FetchAll" else {
+        throw error
+      }
+    }
+
+    let counts = await recorder.counts()
+    let titles = fetch.wrappedValue.map(\.title)
+    guard
+      previousTitles == ["Cached before error"],
+      titles == previousTitles,
+      counts.queryCount == 2,
+      counts.observationCount == 0,
+      fetch.loadError?.operation == "query dynamic FetchAll",
+      fetch.isLoading == false
+    else {
+      throw validationFailure(
+        operation: "validate platform adapter cached FetchAll error",
+        message: "Expected FetchAll to keep cached prior results and record the load error."
+      )
+    }
+
+    return evidenceRow(
+      event: "fetch-all-cached-prior-error",
+      appID: appID,
+      timestamp: timestamp,
+      details: PlatformAdapterValidationDetails(
+        cachePath: cacheURL.path,
+        adapter: "@FetchAll(error)",
+        todoIDs: fetch.wrappedValue.map(\.id.rawValue),
+        todoTitles: titles,
+        previousTodoTitles: previousTitles,
+        todoCount: fetch.wrappedValue.count,
+        queryCount: counts.queryCount,
+        observationCount: counts.observationCount,
+        loadErrorOperation: fetch.loadError?.operation,
+        isLoading: fetch.isLoading
+      )
+    )
+  }
+
+  private static func validateCancellationCleanup(
+    appID: String,
+    cacheURL: URL,
+    timestamp: @escaping @Sendable () -> InstantTimestamp
+  ) async throws -> ValidationEvidenceRow<PlatformAdapterValidationDetails> {
+    let recorder = PlatformAdapterLifecycleRecorder()
+    let fetch = FetchAll<PlatformAdapterTodo>(
+      PlatformAdapterTodo.query.order(PlatformAdapterTodo.createdAt)
+    )
+    let task = Task {
+      let fetch = fetch
+      try await fetch.task(using: lifecycleClient(recorder))
+    }
+
+    try await waitForLifecycle(
+      operation: "wait for platform adapter FetchAll observation"
+    ) {
+      let counts = await recorder.counts()
+      return counts.observationCount == 1
+    }
+
+    task.cancel()
+    do {
+      try await task.value
+      throw validationFailure(
+        operation: "validate platform adapter FetchAll cancellation",
+        message: "Expected wrapper task cancellation to throw CancellationError."
+      )
+    } catch is CancellationError {
+    }
+
+    try await waitForLifecycle(
+      operation: "wait for platform adapter FetchAll cancellation cleanup"
+    ) {
+      let counts = await recorder.counts()
+      return counts.terminationCount == 1
+    }
+
+    let counts = await recorder.counts()
+    guard
+      counts.queryCount == 0,
+      counts.observationCount == 1,
+      counts.terminationCount == 1,
+      fetch.loadError == nil,
+      fetch.isLoading == false
+    else {
+      throw validationFailure(
+        operation: "validate platform adapter FetchAll cancellation cleanup",
+        message: "Expected cancellation to terminate observation without recording a load error."
+      )
+    }
+
+    return evidenceRow(
+      event: "fetch-all-cancellation",
+      appID: appID,
+      timestamp: timestamp,
+      details: PlatformAdapterValidationDetails(
+        cachePath: cacheURL.path,
+        adapter: "@FetchAll(cancellation)",
+        todoCount: fetch.wrappedValue.count,
+        queryCount: counts.queryCount,
+        observationCount: counts.observationCount,
+        isLoading: fetch.isLoading,
+        cancellationTerminated: counts.terminationCount == 1
+      )
+    )
   }
 
   private static func evidenceRow(
@@ -398,6 +739,75 @@ public enum InstantSwiftDataPlatformAdapterValidation {
 
   private static func date(from timestamp: InstantTimestamp) -> Date {
     Date(timeIntervalSince1970: Double(timestamp.milliseconds) / 1000)
+  }
+
+  private static func todoSnapshot(
+    id: String,
+    title: String,
+    isCompleted: Bool,
+    createdAt: Date
+  ) -> InstantEntitySnapshot {
+    InstantEntitySnapshot(
+      id: id,
+      namespace: PlatformAdapterTodo.instantNamespace,
+      values: [
+        "title": .one(.string(title)),
+        "isCompleted": .one(.bool(isCompleted)),
+        "createdAt": .one(.date(createdAt)),
+      ]
+    )
+  }
+
+  private static func lifecycleClient(
+    _ recorder: PlatformAdapterLifecycleRecorder
+  ) -> InstantSwiftDataClient {
+    InstantSwiftDataClient(
+      transact: { transaction in
+        InstantStoreMutationResult(
+          transactionID: transaction.id,
+          changedEntityIDs: [],
+          tripleCount: transaction.operations.count,
+          emissions: []
+        )
+      },
+      query: { plan in
+        try await recorder.query(plan: plan)
+      },
+      observe: { plan in
+        await recorder.observe(plan: plan)
+      },
+      pendingMutations: { [] },
+      localID: { name in "adapter-lifecycle-\(name)" }
+    )
+  }
+
+  private static func waitForLifecycle(
+    operation: String,
+    until condition: @escaping @Sendable () async -> Bool
+  ) async throws {
+    for _ in 0..<100 {
+      if await condition() {
+        return
+      }
+      try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    throw validationFailure(
+      operation: operation,
+      message: "Timed out waiting for platform adapter lifecycle evidence."
+    )
+  }
+
+  private static func validationFailure(
+    operation: String,
+    message: String
+  ) -> InstantError {
+    InstantError(
+      code: .validationFailed,
+      operation: operation,
+      message: message,
+      recovery:
+        "Inspect public adapter wrapper dynamic query, nil query, error, and cancellation handling."
+    )
   }
 
   private static func runTask(
@@ -442,6 +852,59 @@ public enum InstantSwiftDataPlatformAdapterValidation {
       recovery:
         "Inspect wrapper task/subscription cancellation and local InstantRuntime observation delivery."
     )
+  }
+}
+
+private actor PlatformAdapterLifecycleRecorder {
+  private var queryResults: [[InstantEntitySnapshot]]
+  private var fallbackError: InstantError?
+  private var queryCount = 0
+  private var observationCount = 0
+  private var terminationCount = 0
+  private var plans: [InstantQueryPlan] = []
+
+  init(
+    queryResults: [[InstantEntitySnapshot]] = [],
+    fallbackError: InstantError? = nil
+  ) {
+    self.queryResults = queryResults
+    self.fallbackError = fallbackError
+  }
+
+  func query(plan: InstantQueryPlan) throws -> [InstantEntitySnapshot] {
+    queryCount += 1
+    plans.append(plan)
+    if !queryResults.isEmpty {
+      return queryResults.removeFirst()
+    }
+    if let fallbackError {
+      throw fallbackError
+    }
+    return []
+  }
+
+  func observe(plan: InstantQueryPlan) -> AsyncStream<InstantQueryEmission> {
+    observationCount += 1
+    return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+      continuation.yield(InstantQueryEmission(queryID: plan.id, sequence: 0, values: []))
+      continuation.onTermination = { @Sendable _ in
+        Task {
+          await self.recordTermination()
+        }
+      }
+    }
+  }
+
+  func counts() -> (queryCount: Int, observationCount: Int, terminationCount: Int) {
+    (queryCount, observationCount, terminationCount)
+  }
+
+  func queryPlans() -> [InstantQueryPlan] {
+    plans
+  }
+
+  private func recordTermination() {
+    terminationCount += 1
   }
 }
 
