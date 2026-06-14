@@ -365,7 +365,7 @@ local IDs are inspectable with `instant-swift-data local-id get <name>` and
 `instant-swift-data local-id list`. The `swift-parsing` CLI grammar now covers
 top-level command/output normalization, the todos example leaf, auth
 show/guest/token/id-token/OAuth/OAuth URL/issuer/magic-code/watch/sign-out,
-connection status/connect/close, local-id get/list, sync inspect/mark-processed,
+app show/select/ephemeral, connection status/connect/close, local-id get/list, sync inspect/mark-processed,
 room presence/topics, benchmark options, file upload/upload-progress/list/watch/read/delete,
 stream append/read/watch, and share create/list/accept/role/revoke commands with parser-level
 tests. Real

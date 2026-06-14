@@ -159,6 +159,44 @@ public enum CLISyncArgumentError: Error, Equatable, Sendable {
   public var exitCode: Int32 { 64 }
 }
 
+public enum CLIAppInvocation: Equatable, Sendable {
+  case show
+  case select(appID: String)
+  case ephemeral(CLIAppEphemeralInvocation)
+}
+
+public struct CLIAppEphemeralInvocation: Equatable, Sendable {
+  public var title: String
+
+  public init(title: String) {
+    self.title = title
+  }
+}
+
+public enum CLIAppUsage {
+  public static let app = """
+    Usage: instant-swift-data app <show|select|ephemeral>
+      instant-swift-data app show [--json|--jsonl]
+      instant-swift-data app select <app-id> [--json|--jsonl]
+      instant-swift-data app ephemeral --title <title> [--json|--jsonl]
+    """
+
+  public static let show = "Usage: instant-swift-data app show [--json|--jsonl]"
+  public static let select = "Usage: instant-swift-data app select <app-id> [--json|--jsonl]"
+  public static let ephemeral =
+    "Usage: instant-swift-data app ephemeral --title <title> [--json|--jsonl]"
+}
+
+public enum CLIAppArgumentError: Error, Equatable, Sendable {
+  case missingCommand
+  case unknownCommand(String)
+  case missingArguments(usage: String)
+  case unknownEphemeralOption(String)
+  case unexpectedArgument(String, usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
 public enum CLIRoomsInvocation: Equatable, Sendable {
   case presence(CLIRoomPresenceInvocation)
   case topics(CLIRoomTopicsInvocation)
@@ -891,6 +929,61 @@ public struct CLISyncParser: Parser {
     default:
       throw CLISyncArgumentError.unknownCommand(command)
     }
+  }
+}
+
+public struct CLIAppParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIAppInvocation {
+    guard let command = input.first else {
+      throw CLIAppArgumentError.missingCommand
+    }
+    input.removeFirst()
+
+    switch command {
+    case "show", "status", "current":
+      try requireNoRemainingAppArguments(&input, usage: CLIAppUsage.show)
+      return .show
+
+    case "select":
+      let appID = try parseRequiredAppArgument(from: &input, usage: CLIAppUsage.select)
+      try requireNoRemainingAppArguments(&input, usage: CLIAppUsage.select)
+      return .select(appID: appID)
+
+    case "ephemeral":
+      return .ephemeral(try CLIAppEphemeralParser().parse(&input))
+
+    default:
+      throw CLIAppArgumentError.unknownCommand(command)
+    }
+  }
+}
+
+public struct CLIAppEphemeralParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIAppEphemeralInvocation {
+    var title: String?
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--title":
+        guard let value = input.first else {
+          throw CLIAppArgumentError.missingArguments(usage: CLIAppUsage.ephemeral)
+        }
+        input.removeFirst()
+        title = value
+
+      default:
+        throw CLIAppArgumentError.unknownEphemeralOption(option)
+      }
+    }
+
+    guard let title, !trimmed(title).isEmpty else {
+      throw CLIAppArgumentError.missingArguments(usage: CLIAppUsage.ephemeral)
+    }
+    return CLIAppEphemeralInvocation(title: title)
   }
 }
 
@@ -2175,6 +2268,29 @@ private func requireNoRemainingSyncArguments(
   }
 }
 
+private func parseRequiredAppArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIAppArgumentError.missingArguments(usage: usage)
+  }
+  input.removeFirst()
+  guard !trimmed(value).isEmpty else {
+    throw CLIAppArgumentError.missingArguments(usage: usage)
+  }
+  return value
+}
+
+private func requireNoRemainingAppArguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if let argument = input.first {
+    throw CLIAppArgumentError.unexpectedArgument(argument, usage: usage)
+  }
+}
+
 private func trimmed(_ string: String) -> String {
   string.trimmingCharacters(in: .whitespacesAndNewlines)
 }
@@ -2223,6 +2339,27 @@ extension CLISyncArgumentError: CustomStringConvertible {
 
     case let .missingArguments(usage):
       return usage
+
+    case let .unexpectedArgument(argument, usage):
+      return "Unexpected argument: \(argument). \(usage)"
+    }
+  }
+}
+
+extension CLIAppArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case .missingCommand:
+      return CLIAppUsage.app
+
+    case .unknownCommand:
+      return CLIAppUsage.app
+
+    case let .missingArguments(usage):
+      return usage
+
+    case let .unknownEphemeralOption(option):
+      return "Unknown ephemeral app option: \(option). \(CLIAppUsage.ephemeral)"
 
     case let .unexpectedArgument(argument, usage):
       return "Unexpected argument: \(argument). \(usage)"

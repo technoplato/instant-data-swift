@@ -229,6 +229,22 @@ struct CLIArgumentParserTests {
       )
     )
     expectNoDifference(
+      try CLIArguments.parse(["app", "status", "--json"]),
+      CLIInvocation(
+        output: .json,
+        command: .app,
+        arguments: ["status"]
+      )
+    )
+    expectNoDifference(
+      try CLIArguments.parse(["app", "--jsonl", "ephemeral", "--title", "Reminders"]),
+      CLIInvocation(
+        output: .jsonl,
+        command: .app,
+        arguments: ["ephemeral", "--title", "Reminders"]
+      )
+    )
+    expectNoDifference(
       try CLIArguments.parse([
         "streams", "append", "chat/lobby", "--value", "{}", "--jsonl",
       ]),
@@ -498,6 +514,66 @@ struct CLIArgumentParserTests {
     try expectSyncParseError(
       ["dance"],
       contains: "Usage: instant-swift-data sync"
+    )
+  }
+
+  @Test
+  func appParserParsesCommandsAndAliases() throws {
+    expectNoDifference(try parseApp(["show"]), .show)
+    expectNoDifference(try parseApp(["status"]), .show)
+    expectNoDifference(try parseApp(["current"]), .show)
+    expectNoDifference(
+      try parseApp(["select", " local-demo "]),
+      .select(appID: " local-demo ")
+    )
+    expectNoDifference(
+      try parseApp(["ephemeral", "--title", " Reminders Port "]),
+      .ephemeral(CLIAppEphemeralInvocation(title: " Reminders Port "))
+    )
+    expectNoDifference(
+      try parseApp(["ephemeral", "--title", "First", "--title", "Second"]),
+      .ephemeral(CLIAppEphemeralInvocation(title: "Second"))
+    )
+  }
+
+  @Test
+  func appParserReportsMalformedArguments() throws {
+    try expectAppParseError([], contains: "Usage: instant-swift-data app")
+    try expectAppParseError(
+      ["show", "extra"],
+      contains: "Unexpected argument: extra."
+    )
+    try expectAppParseError(
+      ["select"],
+      contains: "app select <app-id>"
+    )
+    try expectAppParseError(
+      ["select", "  "],
+      contains: "app select <app-id>"
+    )
+    try expectAppParseError(
+      ["select", "local-demo", "extra"],
+      contains: "Unexpected argument: extra."
+    )
+    try expectAppParseError(
+      ["ephemeral"],
+      contains: "app ephemeral --title <title>"
+    )
+    try expectAppParseError(
+      ["ephemeral", "--title"],
+      contains: "app ephemeral --title <title>"
+    )
+    try expectAppParseError(
+      ["ephemeral", "--title", "   "],
+      contains: "app ephemeral --title <title>"
+    )
+    try expectAppParseError(
+      ["ephemeral", "--surprise"],
+      contains: "Unknown ephemeral app option: --surprise."
+    )
+    try expectAppParseError(
+      ["dance"],
+      contains: "Usage: instant-swift-data app"
     )
   }
 
@@ -1066,6 +1142,13 @@ private func parseSync(_ arguments: [String]) throws -> CLISyncInvocation {
   return invocation
 }
 
+private func parseApp(_ arguments: [String]) throws -> CLIAppInvocation {
+  var input = arguments[...]
+  let invocation = try CLIAppParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseRooms(_ arguments: [String]) throws -> CLIRoomsInvocation {
   var input = arguments[...]
   let invocation = try CLIRoomsParser().parse(&input)
@@ -1141,6 +1224,19 @@ private func expectSyncParseError(
     _ = try parseSync(arguments)
     Issue.record("Expected sync parser to reject \(arguments).")
   } catch let error as CLISyncArgumentError {
+    #expect(error.description.contains(expectedFragment))
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectAppParseError(
+  _ arguments: [String],
+  contains expectedFragment: String
+) throws {
+  do {
+    _ = try parseApp(arguments)
+    Issue.record("Expected app parser to reject \(arguments).")
+  } catch let error as CLIAppArgumentError {
     #expect(error.description.contains(expectedFragment))
     expectNoDifference(error.exitCode, 64)
   }
