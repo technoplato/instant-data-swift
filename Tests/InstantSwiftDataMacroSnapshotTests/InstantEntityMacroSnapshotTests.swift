@@ -3,16 +3,11 @@
   import MacroTesting
   import Testing
 
-  @Suite(
-    .macros(
-      ["InstantEntity": InstantEntityMacro.self],
-      record: .failed
-    )
-  )
+  @Suite
   struct InstantEntityMacroSnapshotTests {
     @Test
     func defaultNamespace() {
-      assertMacro {
+      assertInstantEntityMacro {
         """
         @InstantEntity
         struct Todo {
@@ -23,7 +18,7 @@
 
     @Test
     func defaultPluralization() {
-      assertMacro {
+      assertInstantEntityMacro {
         """
         @InstantEntity
         struct Category {
@@ -42,7 +37,7 @@
 
     @Test
     func manualNamespace() {
-      assertMacro {
+      assertInstantEntityMacro {
         """
         @InstantEntity("people")
         struct Person {
@@ -53,7 +48,7 @@
 
     @Test
     func generatedDraft() {
-      assertMacro {
+      assertInstantEntityMacro {
         """
         @InstantEntity
         struct Todo {
@@ -81,7 +76,7 @@
 
     @Test
     func generatedSchemaHelpers() {
-      assertMacro {
+      assertInstantEntityMacro {
         """
         @InstantEntity
         struct Todo {
@@ -100,7 +95,7 @@
 
     @Test
     func inferredDraftPropertyDiagnostic() {
-      assertMacro {
+      assertInstantEntityMacro {
         """
         @InstantEntity
         struct Todo {
@@ -113,7 +108,7 @@
 
     @Test
     func multiBindingDraftPropertyDiagnostic() {
-      assertMacro {
+      assertInstantEntityMacro {
         """
         @InstantEntity
         struct Todo {
@@ -126,7 +121,7 @@
 
     @Test
     func redundantNamespaceDiagnostic() {
-      assertMacro {
+      assertInstantEntityMacro {
         """
         @InstantEntity("todos")
         struct Todo {
@@ -137,12 +132,35 @@
 
     @Test
     func unsupportedNamespaceArgumentDiagnostic() {
-      assertMacro {
+      assertInstantEntityMacro {
         """
         @InstantEntity(namespace)
         struct Todo {
         }
         """
+      }
+    }
+
+    private func assertInstantEntityMacro(
+      _ originalSource: () throws -> String,
+      fileID: StaticString = #fileID,
+      file filePath: StaticString = #filePath,
+      function: StaticString = #function,
+      line: UInt = #line,
+      column: UInt = #column
+    ) {
+      withMacroTesting(
+        record: .failed,
+        macros: ["InstantEntity": InstantEntityMacro.self]
+      ) {
+        assertMacro(
+          of: originalSource,
+          fileID: fileID,
+          file: filePath,
+          function: function,
+          line: line,
+          column: column
+        )
       }
     }
   }

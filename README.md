@@ -561,11 +561,26 @@ swift build
 swift test
 ```
 
-Macro snapshot tests use Point-Free's MacroTesting library and are available on
-toolchains that provide XCTest:
+Macro snapshot tests use Point-Free's MacroTesting library and are opt-in. On
+macOS, use Xcode's XCTest search paths, a dedicated scratch path, and disable
+SwiftSyntax prebuilts when compiling the snapshot target:
 
 ```bash
-INSTANT_SWIFT_DATA_ENABLE_MACRO_TESTING=1 swift test --filter InstantEntityMacroSnapshotTests
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+xcode_macos_dev="$DEVELOPER_DIR/Platforms/MacOSX.platform/Developer"
+xcode_flags=(
+  -Xswiftc -I -Xswiftc "$xcode_macos_dev/usr/lib"
+  -Xswiftc -F -Xswiftc "$xcode_macos_dev/Library/Frameworks"
+  -Xlinker -L -Xlinker "$xcode_macos_dev/usr/lib"
+  -Xlinker -rpath -Xlinker "$xcode_macos_dev/usr/lib"
+  -Xlinker -F -Xlinker "$xcode_macos_dev/Library/Frameworks"
+)
+
+INSTANT_SWIFT_DATA_ENABLE_MACRO_TESTING=1 \
+  swift build --scratch-path .build-macrotesting \
+  --disable-experimental-prebuilts -j 1 \
+  --target InstantSwiftDataMacroSnapshotTests \
+  "${xcode_flags[@]}"
 ```
 
 The core package is compiled in Swift 6 mode. Mutable runtime state is owned by
