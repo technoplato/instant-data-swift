@@ -3031,6 +3031,77 @@ struct TypedAPITests {
   }
 
   @Test
+  func platformAdapterWrappersTaskBindFiniteSubscriptionEmissions() async throws {
+    let client = adapterSurfaceClient()
+    let room = InstantRoomHandle(type: "chat", id: "lobby")
+
+    @LocalID var localID: String?
+    try await $localID.task("compose", using: client)
+    expectNoDifference(localID, "local-compose")
+    expectNoDifference($localID.loadError, nil)
+    expectNoDifference($localID.isLoading, false)
+
+    let authSession = AuthSession()
+    try await authSession.task(using: client)
+    expectNoDifference(authSession.wrappedValue?.userID, "user-adapter")
+    expectNoDifference(authSession.loadError, nil)
+    expectNoDifference(authSession.isLoading, false)
+
+    let presence = RoomPresence()
+    try await presence.task(room: room, using: client)
+    expectNoDifference(presence.wrappedValue.map(\.userID), ["presence-chat-lobby"])
+    expectNoDifference(presence.loadError, nil)
+    expectNoDifference(presence.isLoading, false)
+
+    let messages = RoomTopicMessages()
+    try await messages.task(room: room, topic: "sendEmoji", limit: 1, using: client)
+    expectNoDifference(messages.wrappedValue.map(\.id), ["topic-sendEmoji-1"])
+    expectNoDifference(messages.loadError, nil)
+    expectNoDifference(messages.isLoading, false)
+
+    let files = StoredFiles()
+    try await files.task(using: client)
+    expectNoDifference(files.wrappedValue.map(\.id), ["file-adapter"])
+    expectNoDifference(files.loadError, nil)
+    expectNoDifference(files.isLoading, false)
+
+    let chunks = StreamChunks()
+    try await chunks.task("chat/lobby", limit: 1, using: client)
+    expectNoDifference(chunks.wrappedValue.map(\.id), ["chunk-chat/lobby-1"])
+    expectNoDifference(chunks.loadError, nil)
+    expectNoDifference(chunks.isLoading, false)
+
+    let shares = Shares()
+    try await shares.task(using: client)
+    expectNoDifference(shares.wrappedValue.map(\.share.id), ["share-adapter"])
+    expectNoDifference(shares.loadError, nil)
+    expectNoDifference(shares.isLoading, false)
+  }
+
+  @Test
+  func sharesTaskCancellationTerminatesUnderlyingObservation() async throws {
+    let termination = ObservationTermination()
+    let shares = Shares()
+    let task = Task {
+      try await shares.task(using: sharesObservationClient(recording: termination))
+    }
+
+    try await waitForShares(shares, ids: ["share-live"])
+
+    task.cancel()
+    do {
+      try await task.value
+      Issue.record("Expected @Shares task cancellation to throw CancellationError.")
+    } catch is CancellationError {
+    } catch {
+      Issue.record("Expected CancellationError, got \(error).")
+    }
+    await termination.wait()
+    expectNoDifference(shares.loadError, nil)
+    expectNoDifference(shares.isLoading, false)
+  }
+
+  @Test
   func localIDPropertyWrapperRecordsMissingNameError() async throws {
     @LocalID var localID: String?
 
@@ -3854,6 +3925,45 @@ struct TypedAPITests {
       count.count.wrappedValue = 1729
       expectNoDifference(count.wrappedValue.count, 1729)
     }
+
+    @Test
+    func projectedPlatformAdapterWrappersExposeSwiftUIBindings() {
+      let room = InstantRoomHandle(type: "chat", id: "binding")
+      let session = adapterAuthSession(userID: "user-binding")
+      let presenceMember = adapterPresenceMember(room: room, userID: "presence-binding")
+      let topicMessage = adapterTopicMessage(room: room, topic: "sendEmoji", id: "topic-binding")
+      let file = adapterStoredFile(id: "file-binding")
+      let chunk = adapterStreamChunk(streamID: "chat/binding", id: "chunk-binding")
+      let share = adapterShareSnapshot(id: "share-binding")
+
+      @LocalID var localID: String?
+      $localID.binding.wrappedValue = "local-binding"
+      expectNoDifference(localID, "local-binding")
+
+      @AuthSession var auth: InstantAuthSession?
+      $auth.binding.wrappedValue = session
+      expectNoDifference(auth?.userID, "user-binding")
+
+      @RoomPresence var presence: [InstantRoomPresenceMember]
+      $presence.binding.wrappedValue = [presenceMember]
+      expectNoDifference(presence.map(\.userID), ["presence-binding"])
+
+      @RoomTopicMessages var messages: [InstantRoomTopicMessage]
+      $messages.binding.wrappedValue = [topicMessage]
+      expectNoDifference(messages.map(\.id), ["topic-binding"])
+
+      @StoredFiles var files: [InstantStoredFile]
+      $files.binding.wrappedValue = [file]
+      expectNoDifference(files.map(\.id), ["file-binding"])
+
+      @StreamChunks var chunks: [InstantStreamChunk]
+      $chunks.binding.wrappedValue = [chunk]
+      expectNoDifference(chunks.map(\.id), ["chunk-binding"])
+
+      @Shares var shares: [InstantShareSnapshot]
+      $shares.binding.wrappedValue = [share]
+      expectNoDifference(shares.map(\.share.id), ["share-binding"])
+    }
   #endif
 }
 
@@ -3874,6 +3984,214 @@ private struct DerivedFetchFailure: Error, CustomStringConvertible, Sendable {
 private struct FetchCounter: Hashable, Sendable {
   var count: Int
 }
+
+private func adapterSurfaceClient() -> InstantSwiftDataClient {
+  InstantSwiftDataClient(
+    transact: { transaction in
+      InstantStoreMutationResult(
+        transactionID: transaction.id,
+        changedEntityIDs: [],
+        tripleCount: transaction.operations.count,
+        emissions: []
+      )
+    },
+    query: { _ in [] },
+    observe: { _ in finiteStream([] as [InstantQueryEmission]) },
+    pendingMutations: { [] },
+    localID: { name in "local-\(name)" },
+    authSession: { adapterAuthSession(userID: "user-load") },
+    observeAuthSession: {
+      finiteStream([adapterAuthSession(userID: "user-adapter")])
+    },
+    roomPresence: { room in
+      [adapterPresenceMember(room: room, userID: "presence-load")]
+    },
+    observeRoomPresence: { room in
+      finiteStream([
+        [adapterPresenceMember(room: room, userID: "presence-\(room.type)-\(room.id)")]
+      ])
+    },
+    roomTopicMessages: { room, topic, limit in
+      let messages = [
+        adapterTopicMessage(room: room, topic: topic, id: "topic-load-1"),
+        adapterTopicMessage(room: room, topic: topic, id: "topic-load-2"),
+      ]
+      return Array(messages.prefix(limit ?? messages.count))
+    },
+    observeRoomTopicMessages: { room, topic in
+      finiteStream([
+        [
+          adapterTopicMessage(room: room, topic: topic, id: "topic-\(topic)-1"),
+          adapterTopicMessage(room: room, topic: topic, id: "topic-\(topic)-2"),
+        ],
+      ])
+    },
+    storedFiles: { [adapterStoredFile(id: "file-load")] },
+    observeStoredFiles: {
+      finiteStream([[adapterStoredFile(id: "file-adapter")]])
+    },
+    streamChunks: { streamID, limit in
+      let chunks = [
+        adapterStreamChunk(streamID: streamID, id: "chunk-load-1"),
+        adapterStreamChunk(streamID: streamID, id: "chunk-load-2"),
+      ]
+      return Array(chunks.prefix(limit ?? chunks.count))
+    },
+    observeStreamChunks: { streamID in
+      finiteStream([
+        [
+          adapterStreamChunk(streamID: streamID, id: "chunk-\(streamID)-1"),
+          adapterStreamChunk(streamID: streamID, id: "chunk-\(streamID)-2"),
+        ],
+      ])
+    },
+    shares: { [adapterShareSnapshot(id: "share-load")] },
+    observeShares: {
+      finiteStream([[adapterShareSnapshot(id: "share-adapter")]])
+    }
+  )
+}
+
+private func sharesObservationClient(recording termination: ObservationTermination)
+  -> InstantSwiftDataClient
+{
+  InstantSwiftDataClient(
+    transact: { transaction in
+      InstantStoreMutationResult(
+        transactionID: transaction.id,
+        changedEntityIDs: [],
+        tripleCount: transaction.operations.count,
+        emissions: []
+      )
+    },
+    query: { _ in [] },
+    observe: { _ in finiteStream([] as [InstantQueryEmission]) },
+    pendingMutations: { [] },
+    localID: { name in "local-\(name)" },
+    shares: { [] },
+    observeShares: {
+      AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+        continuation.yield([adapterShareSnapshot(id: "share-live")])
+        continuation.onTermination = { @Sendable _ in
+          Task {
+            await termination.record()
+          }
+        }
+      }
+    }
+  )
+}
+
+private func adapterAuthSession(userID: String) -> InstantAuthSession {
+  InstantAuthSession(
+    appID: "adapter-app",
+    userID: userID,
+    refreshToken: "refresh-\(userID)",
+    isGuest: false,
+    createdAt: adapterTimestamp,
+    updatedAt: adapterTimestamp
+  )
+}
+
+private func adapterPresenceMember(
+  room: InstantRoomHandle,
+  userID: String
+) -> InstantRoomPresenceMember {
+  InstantRoomPresenceMember(
+    appID: "adapter-app",
+    room: room,
+    userID: userID,
+    values: ["name": .string(userID)],
+    updatedAt: adapterTimestamp
+  )
+}
+
+private func adapterTopicMessage(
+  room: InstantRoomHandle,
+  topic: String,
+  id: String
+) -> InstantRoomTopicMessage {
+  InstantRoomTopicMessage(
+    id: id,
+    appID: "adapter-app",
+    room: room,
+    topic: topic,
+    userID: "user-adapter",
+    payload: .object(["topic": .string(topic)]),
+    createdAt: adapterTimestamp
+  )
+}
+
+private func adapterStoredFile(id: String) -> InstantStoredFile {
+  InstantStoredFile(
+    id: id,
+    appID: "adapter-app",
+    name: "\(id).txt",
+    contentType: "text/plain",
+    byteCount: 12,
+    localPath: "/tmp/\(id).txt",
+    ownerUserID: "user-adapter",
+    createdAt: adapterTimestamp,
+    updatedAt: adapterTimestamp
+  )
+}
+
+private func adapterStreamChunk(streamID: String, id: String) -> InstantStreamChunk {
+  InstantStreamChunk(
+    id: id,
+    appID: "adapter-app",
+    streamID: streamID,
+    index: id.hasSuffix("-1") ? 0 : 1,
+    payload: .object(["streamID": .string(streamID)]),
+    userID: "user-adapter",
+    createdAt: adapterTimestamp
+  )
+}
+
+private func adapterShareSnapshot(id: String) -> InstantShareSnapshot {
+  InstantShareSnapshot(
+    share: InstantShare(
+      id: id,
+      appID: "adapter-app",
+      rootNamespace: "todos",
+      rootID: "todo-\(id)",
+      ownerUserID: "user-adapter",
+      token: "token-\(id)",
+      createdAt: adapterTimestamp,
+      updatedAt: adapterTimestamp
+    ),
+    memberships: [
+      InstantShareMembership(
+        appID: "adapter-app",
+        shareID: id,
+        userID: "user-adapter",
+        role: .owner,
+        acceptedAt: adapterTimestamp
+      )
+    ]
+  )
+}
+
+private func finiteStream<Element: Sendable>(_ values: [Element]) -> AsyncStream<Element> {
+  AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+    for value in values {
+      continuation.yield(value)
+    }
+    continuation.finish()
+  }
+}
+
+private func waitForShares(_ shares: Shares, ids expectedIDs: [String]) async throws {
+  for _ in 0..<100 {
+    if shares.wrappedValue.map(\.share.id) == expectedIDs {
+      return
+    }
+    try await Task.sleep(nanoseconds: 1_000_000)
+  }
+  expectNoDifference(shares.wrappedValue.map(\.share.id), expectedIDs)
+}
+
+private let adapterTimestamp = InstantTimestamp(milliseconds: 1_700_000_390_000)
 
 // SAFETY: mutable state is protected by `lock`.
 private final class ObservationChangeFlag: @unchecked Sendable {
