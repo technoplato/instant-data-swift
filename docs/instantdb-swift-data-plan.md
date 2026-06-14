@@ -350,7 +350,7 @@ and for auth, rooms, files, streams, and shares with
 `instant-swift-data validation local-integrations --jsonl`. Public adapter
 wrappers can be proven from the terminal with
 `instant-swift-data validation platform-adapters --jsonl`, and the SyncUps
-recording/dependency flow can be proven with
+recording/dependency flow, including meeting restore after relaunch, can be proven with
 `instant-swift-data validation syncups-recording --jsonl`.
 `validation/run-e2e.sh` now records the Swift local todo, local integration,
 typed draft, platform adapter, SyncUps recording, and parity coverage evidence

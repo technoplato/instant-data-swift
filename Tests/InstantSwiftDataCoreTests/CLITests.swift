@@ -4983,7 +4983,7 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.appID, "cli-cache-test")
     expectNoDifference(jsonOutput.event, "syncups-recording")
     expectNoDifference(jsonOutput.ok, true)
-    expectNoDifference(jsonOutput.evidenceCount, 6)
+    expectNoDifference(jsonOutput.evidenceCount, 7)
     expectNoDifference(jsonOutput.events, [
       "seed",
       "speech-task",
@@ -4991,6 +4991,7 @@ extension InstantStoreTests {
       "finish",
       "meeting-save",
       "settings-open",
+      "relaunch",
     ])
     expectNoDifference(jsonOutput.meetingTranscripts, ["Reviewed launch risks. Final notes."])
     expectNoDifference(jsonOutput.transcript, "Reviewed launch risks. Final notes.")
@@ -5008,7 +5009,7 @@ extension InstantStoreTests {
 
     let jsonlOutput = try runCLI(["validation", "recording", "--jsonl"], homeURL: homeURL)
     let lines = jsonlOutput.split(separator: "\n")
-    expectNoDifference(lines.count, 6)
+    expectNoDifference(lines.count, 7)
     let seedEvidence = try JSONDecoder().decode(
       CLISyncUpsRecordingValidationEvidence.self,
       from: Data(try #require(lines.first).utf8)
@@ -5032,7 +5033,7 @@ extension InstantStoreTests {
 
     let settingsEvidence = try JSONDecoder().decode(
       CLISyncUpsRecordingValidationEvidence.self,
-      from: Data(try #require(lines.last).utf8)
+      from: Data(lines[5].utf8)
     )
     expectNoDifference(settingsEvidence.event, "settings-open")
     expectNoDifference(settingsEvidence.details.meetingTranscripts, ["Reviewed launch risks. Final notes."])
@@ -5041,10 +5042,18 @@ extension InstantStoreTests {
     expectNoDifference(settingsEvidence.details.alertOutcome, .settingsOpened)
     expectNoDifference(settingsEvidence.details.openSettingsCount, 1)
 
+    let relaunchEvidence = try JSONDecoder().decode(
+      CLISyncUpsRecordingValidationEvidence.self,
+      from: Data(try #require(lines.last).utf8)
+    )
+    expectNoDifference(relaunchEvidence.event, "relaunch")
+    expectNoDifference(relaunchEvidence.details.meetingIDs, settingsEvidence.details.meetingIDs)
+    expectNoDifference(relaunchEvidence.details.meetingTranscripts, ["Reviewed launch risks. Final notes."])
+
     let humanOutput = try runCLI(["validation", "syncups"], homeURL: homeURL)
     #expect(humanOutput.contains("validation: ok"))
     #expect(humanOutput.contains("case: validation.syncups.recording"))
-    #expect(humanOutput.contains("evidence rows: 6"))
+    #expect(humanOutput.contains("evidence rows: 7"))
     #expect(humanOutput.contains("Reviewed launch risks. Final notes."))
     #expect(humanOutput.contains("open settings: 1"))
   }
@@ -6321,6 +6330,7 @@ private struct CLISyncUpsRecordingValidationOutput: Decodable {
   var ok: Bool
   var evidenceCount: Int
   var events: [String]
+  var meetingID: String
   var meetingTranscripts: [String]
   var transcript: String
   var authorizationStatus: SyncUpSpeechAuthorizationStatus?
@@ -6332,7 +6342,7 @@ private struct CLISyncUpsRecordingValidationOutput: Decodable {
   var speakerIndex: Int
   var currentSpeakerName: String?
   var openSettingsCount: Int
-  var finalAlert: SyncUpRecordingAlert?
+  var finalAlert: CLIRecordingAlert?
   var isDismissed: Bool
 }
 
@@ -6353,11 +6363,50 @@ private struct CLISyncUpsRecordingValidationEvidence: Decodable {
 private struct CLISyncUpsRecordingValidationDetails: Decodable {
   var syncUpTitles: [String]
   var attendeeNames: [String]
+  var meetingIDs: [String]
   var meetingTranscripts: [String]
-  var recording: SyncUpRecordingSummary?
+  var recording: CLISyncUpsRecordingValidationSummary?
   var tickEvent: String?
   var alertOutcome: SyncUpRecordingAlertOutcome?
   var openSettingsCount: Int
+}
+
+private struct CLISyncUpsRecordingValidationSummary: Decodable {
+  var authorizationStatus: SyncUpSpeechAuthorizationStatus?
+  var soundEffectPlayCount: Int
+  var secondsElapsed: Int
+  var currentSpeakerName: String?
+  var alert: CLIRecordingAlert?
+}
+
+private enum CLIRecordingAlert: Equatable, Decodable {
+  case endMeeting
+  case speechRecognitionDenied
+  case speechRecognitionFailed
+
+  private enum CodingKeys: String, CodingKey {
+    case endMeeting
+    case speechRecognitionDenied
+    case speechRecognitionFailed
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    if container.contains(.speechRecognitionDenied) {
+      self = .speechRecognitionDenied
+    } else if container.contains(.speechRecognitionFailed) {
+      self = .speechRecognitionFailed
+    } else if container.contains(.endMeeting) {
+      self = .endMeeting
+    } else {
+      throw DecodingError.dataCorrupted(
+        DecodingError.Context(
+          codingPath: decoder.codingPath,
+          debugDescription: "Unknown SyncUps recording alert."
+        )
+      )
+    }
+  }
 }
 
 private struct CLIParityCoverageOutput: Decodable {

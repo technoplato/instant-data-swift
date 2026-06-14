@@ -5375,7 +5375,7 @@ struct InstantStoreTests {
     expectNoDifference(result.syncUpID, "syncup-validation")
     expectNoDifference(result.attendeeIDs, ["attendee-blob", "attendee-blob-jr"])
     expectNoDifference(result.meetingID, "meeting-validation")
-    expectNoDifference(result.evidence.map(\.caseID), Array(repeating: "validation.syncups.recording", count: 6))
+    expectNoDifference(result.evidence.map(\.caseID), Array(repeating: "validation.syncups.recording", count: 7))
     expectNoDifference(result.evidence.map(\.event), [
       "seed",
       "speech-task",
@@ -5383,8 +5383,9 @@ struct InstantStoreTests {
       "finish",
       "meeting-save",
       "settings-open",
+      "relaunch",
     ])
-    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 6))
+    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 7))
 
     let seed = result.evidence[0].details
     expectNoDifference(seed.syncUpIDs, ["syncup-validation"])
@@ -5423,6 +5424,11 @@ struct InstantStoreTests {
     expectNoDifference(deniedRecording.alert, .speechRecognitionDenied)
     expectNoDifference(settings.alertOutcome, .settingsOpened)
     expectNoDifference(settings.openSettingsCount, 1)
+
+    let relaunch = result.evidence[6].details
+    expectNoDifference(relaunch.meetingIDs, ["meeting-validation"])
+    expectNoDifference(relaunch.meetingTranscripts, ["Reviewed launch risks. Final notes."])
+    expectNoDifference(relaunch.recording?.meetingID, "meeting-validation")
   }
 
   @Test

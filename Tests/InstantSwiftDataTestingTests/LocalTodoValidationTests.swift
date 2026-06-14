@@ -190,7 +190,7 @@ struct LocalTodoValidationTests {
     expectNoDifference(result.appID, "validation-syncups-test")
     expectNoDifference(result.cacheURL, cacheURL)
     expectNoDifference(run.summary.caseID, "validation.syncups.recording")
-    expectNoDifference(run.summary.rowCount, 6)
+    expectNoDifference(run.summary.rowCount, 7)
     expectNoDifference(run.summary.ok, true)
     expectNoDifference(run.summary.events, [
       "seed",
@@ -199,9 +199,10 @@ struct LocalTodoValidationTests {
       "finish",
       "meeting-save",
       "settings-open",
+      "relaunch",
     ])
     expectNoDifference(result.evidence.map(\.event), run.summary.events)
-    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 6))
+    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 7))
 
     let meetingSave = result.evidence[4].details
     expectNoDifference(meetingSave.meetingTranscripts, ["Reviewed launch risks. Final notes."])
@@ -213,6 +214,10 @@ struct LocalTodoValidationTests {
     expectNoDifference(openSettings.recording?.alert, .speechRecognitionDenied)
     expectNoDifference(openSettings.alertOutcome, .settingsOpened)
     expectNoDifference(openSettings.openSettingsCount, 1)
+
+    let relaunch = result.evidence[6].details
+    expectNoDifference(relaunch.meetingTranscripts, ["Reviewed launch risks. Final notes."])
+    expectNoDifference(relaunch.recording?.meetingID, result.meetingID)
   }
 
   @Test

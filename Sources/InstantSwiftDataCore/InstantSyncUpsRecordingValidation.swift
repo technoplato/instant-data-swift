@@ -215,8 +215,8 @@ public enum InstantSwiftDataSyncUpsRecordingValidation {
       createdAt: recordedAt,
       source: "validation.syncups.recording.meeting"
     )
-    let meetings = try await meetings(runtime: runtime, syncUpID: syncUp.id)
-    guard meetings.map(\.transcript) == [save.transcript] else {
+    let savedMeetings = try await meetings(runtime: runtime, syncUpID: syncUp.id)
+    guard savedMeetings.map(\.transcript) == [save.transcript] else {
       throw recordingStateError(
         operation: "validate sync-up meeting save",
         message: "Expected the saved meeting transcript to round-trip through the local runtime.",
@@ -268,6 +268,33 @@ public enum InstantSwiftDataSyncUpsRecordingValidation {
         recording: SyncUpRecordingSummary(model: deniedModel),
         alertOutcome: outcome,
         openSettingsCount: openSettingsCount
+      )
+    )
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: appID,
+        persistenceURL: cacheURL,
+        initialAttributes: SyncUpsExample.attributes,
+        now: timestamp,
+        makeID: makeID
+      )
+    )
+    let relaunchedMeetings = try await meetings(runtime: relaunchedRuntime, syncUpID: syncUp.id)
+    guard relaunchedMeetings == savedMeetings else {
+      throw recordingStateError(
+        operation: "validate sync-up meeting relaunch",
+        message: "Expected the saved meeting transcript to restore after a fresh runtime bootstrap.",
+        recovery: "Inspect SyncUps meeting persistence and SQLite query restoration."
+      )
+    }
+    evidence.append(
+      try await evidenceRow(
+        event: "relaunch",
+        runtime: relaunchedRuntime,
+        cacheURL: cacheURL,
+        timestamp: timestamp,
+        recording: recording
       )
     )
 
