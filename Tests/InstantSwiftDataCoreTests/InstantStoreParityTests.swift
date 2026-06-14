@@ -251,6 +251,127 @@ struct InstantStoreParityTests {
   }
 
   @Test
+  func onDeleteCascadePortsUpstreamBookSeriesShape() async throws {
+    let source = storeParitySource(
+      "on-delete cascade",
+      status: "exact: deleting the first book cascades through prequel links."
+    )
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: bookCascadeAttributes(
+          linkName: "prequel",
+          reverseName: "next",
+          onDelete: .cascade
+        )
+      )
+    )
+    let book1Time = time
+    let book2Time = InstantTimestamp(milliseconds: time.milliseconds + 1)
+    let book3Time = InstantTimestamp(milliseconds: time.milliseconds + 2)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-on-delete-cascade-seed",
+        operations: [
+          .insert(triple("book-1", "books/title", .string("book1"), txID: "tx-on-delete-cascade-seed", time: book1Time)),
+          .insert(triple("book-1", "books/description", .string("series"), txID: "tx-on-delete-cascade-seed", time: book1Time)),
+          .insert(triple("book-2", "books/title", .string("book2"), txID: "tx-on-delete-cascade-seed", time: book2Time)),
+          .insert(triple("book-2", "books/description", .string("series"), txID: "tx-on-delete-cascade-seed", time: book2Time)),
+          .insert(triple("book-2", "books/prequel", .ref("book-1"), txID: "tx-on-delete-cascade-seed", time: book2Time)),
+          .insert(triple("book-3", "books/title", .string("book3"), txID: "tx-on-delete-cascade-seed", time: book3Time)),
+          .insert(triple("book-3", "books/description", .string("series"), txID: "tx-on-delete-cascade-seed", time: book3Time)),
+          .insert(triple("book-3", "books/prequel", .ref("book-2"), txID: "tx-on-delete-cascade-seed", time: book3Time)),
+        ]
+      ),
+      createdAt: time
+    )
+
+    var books = try await runtime.query(bookSeriesQuery(id: "books.series.before-forward-cascade"))
+    expectNoDifference(
+      books.map { $0.values["title"]?.first },
+      [.string("book1"), .string("book2"), .string("book3")],
+      source
+    )
+
+    let deleted = try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-on-delete-cascade-delete",
+        operations: [.deleteEntity("book-1")]
+      ),
+      createdAt: InstantTimestamp(milliseconds: time.milliseconds + 3)
+    )
+
+    books = try await runtime.query(bookSeriesQuery(id: "books.series.after-forward-cascade"))
+    expectNoDifference(deleted.changedEntityIDs, ["book-1", "book-2", "book-3"], source)
+    expectNoDifference(deleted.tripleCount, 0, source)
+    expectNoDifference(books.map { $0.values["title"]?.first }, [], source)
+  }
+
+  @Test
+  func onDeleteReverseCascadePortsUpstreamBookSeriesShape() async throws {
+    let source = storeParitySource(
+      "on-delete-reverse cascade",
+      status: "exact: deleting the source book cascades through next links."
+    )
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: bookCascadeAttributes(
+          linkName: "next",
+          reverseName: "prequel",
+          cardinality: .many,
+          onDeleteReverse: .cascade
+        )
+      )
+    )
+    let book2Time = time
+    let book3Time = InstantTimestamp(milliseconds: time.milliseconds + 1)
+    let book1Time = InstantTimestamp(milliseconds: time.milliseconds + 2)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-on-delete-reverse-cascade-seed",
+        operations: [
+          .insert(triple("book-2", "books/title", .string("book2"), txID: "tx-on-delete-reverse-cascade-seed", time: book2Time)),
+          .insert(triple("book-2", "books/description", .string("series"), txID: "tx-on-delete-reverse-cascade-seed", time: book2Time)),
+          .insert(triple("book-3", "books/title", .string("book3"), txID: "tx-on-delete-reverse-cascade-seed", time: book3Time)),
+          .insert(triple("book-3", "books/description", .string("series"), txID: "tx-on-delete-reverse-cascade-seed", time: book3Time)),
+          .insert(triple("book-1", "books/title", .string("book1"), txID: "tx-on-delete-reverse-cascade-seed", time: book1Time)),
+          .insert(triple("book-1", "books/description", .string("series"), txID: "tx-on-delete-reverse-cascade-seed", time: book1Time)),
+          .insert(triple("book-1", "books/next", .ref("book-2"), txID: "tx-on-delete-reverse-cascade-seed", time: book1Time)),
+          .insert(triple("book-1", "books/next", .ref("book-3"), txID: "tx-on-delete-reverse-cascade-seed", time: book1Time)),
+        ]
+      ),
+      createdAt: time
+    )
+
+    var books = try await runtime.query(bookSeriesQuery(id: "books.series.before-reverse-cascade"))
+    expectNoDifference(
+      books.map { $0.values["title"]?.first },
+      [.string("book2"), .string("book3"), .string("book1")],
+      source
+    )
+
+    let deleted = try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-on-delete-reverse-cascade-delete",
+        operations: [.deleteEntity("book-1")]
+      ),
+      createdAt: InstantTimestamp(milliseconds: time.milliseconds + 3)
+    )
+
+    books = try await runtime.query(bookSeriesQuery(id: "books.series.after-reverse-cascade"))
+    expectNoDifference(deleted.changedEntityIDs, ["book-1", "book-2", "book-3"], source)
+    expectNoDifference(deleted.tripleCount, 0, source)
+    expectNoDifference(books.map { $0.values["title"]?.first }, [], source)
+  }
+
+  @Test
   func linkAndUnlinkWithoutScalarUpdatesMaintainForwardAndReverseIndexes() async throws {
     let source = storeParitySource(
       "link/unlink without update",
@@ -1031,6 +1152,51 @@ struct InstantStoreParityTests {
           )
         )
       ]
+    )
+  }
+
+  private func bookCascadeAttributes(
+    linkName: String,
+    reverseName: String,
+    cardinality: InstantCardinality = .one,
+    onDelete: InstantDeleteRule = .none,
+    onDeleteReverse: InstantDeleteRule = .none
+  ) -> [InstantAttribute] {
+    [
+      InstantAttribute(
+        id: "books/title",
+        namespace: "books",
+        name: "title",
+        valueType: .string
+      ),
+      InstantAttribute(
+        id: "books/description",
+        namespace: "books",
+        name: "description",
+        valueType: .string,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "books/\(linkName)",
+        namespace: "books",
+        name: linkName,
+        valueType: .ref,
+        cardinality: cardinality,
+        isIndexed: true,
+        forwardIdentity: "books/\(linkName)",
+        reverseIdentity: "books/\(reverseName)",
+        linkNamespace: "books",
+        onDelete: onDelete,
+        onDeleteReverse: onDeleteReverse
+      ),
+    ]
+  }
+
+  private func bookSeriesQuery(id: String) -> InstantQueryPlan {
+    InstantQueryPlan(
+      id: id,
+      namespace: "books",
+      filters: [.equals(field: "description", value: .string("series"))]
     )
   }
 }
