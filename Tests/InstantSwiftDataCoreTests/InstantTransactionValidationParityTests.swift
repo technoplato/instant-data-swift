@@ -968,6 +968,122 @@ struct InstantTransactionValidationParityTests {
   }
 
   @Test
+  func upstreamValidatesLookupProxyUniqueAttributes() async throws {
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_150)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "transaction-validation-lookup-proxy",
+        persistenceURL: temporaryParityCacheURL(),
+        initialAttributes: animalLookupProxyAttributes()
+      )
+    )
+    let source = transactionValidationSource(
+      "lookup proxy",
+      assertion: "lines 415-449 unique string/date lookup attrs and non-unique lookup rejection",
+      status:
+        "adapted: Swift core validates lookup attrs at runtime, including date coercion for unique date lookups."
+    )
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-parity-animal-seed",
+        operations: [
+          .insert(triple("otter-name", "otter/name", .string("Old Otter"), txID: "tx-parity-animal-seed", time: time)),
+          .insert(triple("otter-name", "otter/uniqueName", .string("8932"), txID: "tx-parity-animal-seed", time: time)),
+          .insert(triple("otter-date", "otter/name", .string("Date Otter"), txID: "tx-parity-animal-seed", time: time)),
+          .insert(
+            triple(
+              "otter-date",
+              "otter/uniqueDate",
+              .date(Date(timeIntervalSince1970: 1_736_974_388.2)),
+              txID: "tx-parity-animal-seed",
+              time: time
+            )
+          ),
+          .insert(triple("elephant-1", "elephant/name", .string("Old Elephant"), txID: "tx-parity-animal-seed", time: time)),
+          .insert(triple("elephant-1", "elephant/uniqueIdNumber", .string("1234567890"), txID: "tx-parity-animal-seed", time: time)),
+          .insert(triple("elephant-1", "elephant/favoriteColor", .string("blue"), txID: "tx-parity-animal-seed", time: time)),
+        ]
+      ),
+      createdAt: time
+    )
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-parity-animal-lookups",
+        operations: [
+          .insertByLookup(
+            entity: InstantLookupRef(attributeID: "otter/uniqueName", value: .string("8932")),
+            attributeID: "otter/name",
+            value: .string("Name lookup otter"),
+            txID: "tx-parity-animal-lookups",
+            txTime: time
+          ),
+          .insertByLookup(
+            entity: InstantLookupRef(
+              attributeID: "otter/uniqueDate",
+              value: .string("2025-01-15T20:53:08.200Z")
+            ),
+            attributeID: "otter/name",
+            value: .string("Date lookup otter"),
+            txID: "tx-parity-animal-lookups",
+            txTime: time
+          ),
+          .insertByLookup(
+            entity: InstantLookupRef(
+              attributeID: "elephant/uniqueIdNumber",
+              value: .string("1234567890")
+            ),
+            attributeID: "elephant/name",
+            value: .string("Lookup elephant"),
+            txID: "tx-parity-animal-lookups",
+            txTime: time
+          ),
+        ]
+      ),
+      createdAt: InstantTimestamp(milliseconds: time.milliseconds + 1)
+    )
+
+    let otters = try await runtime.query(InstantQueryPlan(id: "parity.lookup-proxy.otters", namespace: "otter"))
+    let elephants = try await runtime.query(
+      InstantQueryPlan(id: "parity.lookup-proxy.elephants", namespace: "elephant")
+    )
+    expectNoDifference(otters.map(\.id), ["otter-date", "otter-name"], source)
+    expectNoDifference(
+      otters.map { $0.values["name"]?.first },
+      [.string("Date lookup otter"), .string("Name lookup otter")],
+      source
+    )
+    expectNoDifference(elephants.map { $0.values["name"]?.first }, [.string("Lookup elephant")], source)
+
+    do {
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: "tx-parity-animal-nonunique-lookup",
+          operations: [
+            .insertByLookup(
+              entity: InstantLookupRef(attributeID: "elephant/favoriteColor", value: .string("blue")),
+              attributeID: "elephant/name",
+              value: .string("Invalid lookup"),
+              txID: "tx-parity-animal-nonunique-lookup",
+              txTime: time
+            )
+          ]
+        ),
+        createdAt: InstantTimestamp(milliseconds: time.milliseconds + 2)
+      )
+      #expect(Bool(false), "Expected non-unique animal lookup to fail. \(source)")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed, source)
+      expectNoDifference(error.operation, "lookup entity", source)
+      expectNoDifference(error.namespace, "elephant", source)
+      expectNoDifference(error.path, "favoriteColor", source)
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error). \(source)")
+    }
+  }
+
+  @Test
   func upstreamRejectsNonUniqueLookupAttributes() async throws {
     let runtime = try await parityRuntime()
     let time = InstantTimestamp(milliseconds: 1_700_000_000_200)
@@ -1203,6 +1319,53 @@ private func transactionValidationParityAttributes() -> [InstantAttribute] {
       forwardIdentity: "comments/post",
       reverseIdentity: "posts/comments",
       linkNamespace: "posts"
+    ),
+  ]
+}
+
+private func animalLookupProxyAttributes() -> [InstantAttribute] {
+  [
+    InstantAttribute(
+      id: "otter/name",
+      namespace: "otter",
+      name: "name",
+      valueType: .string
+    ),
+    InstantAttribute(
+      id: "otter/uniqueName",
+      namespace: "otter",
+      name: "uniqueName",
+      valueType: .string,
+      isIndexed: true,
+      isUnique: true
+    ),
+    InstantAttribute(
+      id: "otter/uniqueDate",
+      namespace: "otter",
+      name: "uniqueDate",
+      valueType: .date,
+      isIndexed: true,
+      isUnique: true
+    ),
+    InstantAttribute(
+      id: "elephant/name",
+      namespace: "elephant",
+      name: "name",
+      valueType: .string
+    ),
+    InstantAttribute(
+      id: "elephant/uniqueIdNumber",
+      namespace: "elephant",
+      name: "uniqueIdNumber",
+      valueType: .string,
+      isIndexed: true,
+      isUnique: true
+    ),
+    InstantAttribute(
+      id: "elephant/favoriteColor",
+      namespace: "elephant",
+      name: "favoriteColor",
+      valueType: .string
     ),
   ]
 }
