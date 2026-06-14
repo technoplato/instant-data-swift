@@ -1216,6 +1216,67 @@ struct BootstrapTests {
   }
 
   @Test
+  func roomTopicMessagesPropertyWrapperSubscribeCancelsUnderlyingObservation() async throws {
+    let termination = RoomObservationTermination()
+    let client = roomClient(
+      observeRoomTopicMessages: { room, topic in
+        expectNoDifference(room, InstantRoomHandle(type: "chat", id: "lobby"))
+        expectNoDifference(topic, "sendEmoji")
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield([])
+          continuation.onTermination = { @Sendable _ in
+            Task {
+              await termination.record()
+            }
+          }
+        }
+      }
+    )
+
+    var messages = RoomTopicMessages("chat", "lobby", "sendEmoji")
+    let subscription = try await messages.subscribe(using: client)
+    var iterator = subscription.makeAsyncIterator()
+    let initialMessages = try await iterator.next()
+    expectNoDifference(initialMessages, [])
+
+    subscription.cancel()
+    #expect(try await iterator.next() == nil)
+    await termination.wait()
+  }
+
+  @Test
+  func roomTopicMessagesPropertyWrapperSubscribeCancellationAfterObserveDoesNotSucceed()
+    async throws
+  {
+    let gate = AuthSessionLoadGate()
+    let client = roomClient(
+      observeRoomTopicMessages: { _, _ in
+        await gate.recordStarted()
+        await gate.waitUntilReleased()
+        return AsyncStream { continuation in continuation.finish() }
+      }
+    )
+    let messages = RoomTopicMessages("chat", "lobby", "sendEmoji")
+
+    let task = Task {
+      var messages = messages
+      _ = try await messages.subscribe(using: client)
+    }
+
+    await gate.waitUntilStarted()
+    task.cancel()
+    await gate.release()
+
+    do {
+      try await task.value
+      Issue.record("Expected @RoomTopicMessages subscribe cancellation to throw CancellationError.")
+    } catch is CancellationError {
+    } catch {
+      Issue.record("Expected CancellationError, got \(error).")
+    }
+  }
+
+  @Test
   func fileAndStreamClientOperationsUseInjectedClosures() async throws {
     let sourceURL = URL(fileURLWithPath: "/tmp/mock-file.txt")
     let file = mockStoredFile(id: "file-1", name: "mock-file.txt")
