@@ -708,11 +708,11 @@ extension InstantStoreTests {
     )
     try expectMalformed(
       ["validation", "remote", "--json"],
-      contains: "validation <local-todos|local-integrations|typed-drafts|platform-adapters|syncups-recording|parity-report>"
+      contains: "validation <local-todos|local-integrations|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>"
     )
     try expectMalformed(
       ["validation", "todos", "extra", "--json"],
-      contains: "validation <local-todos|local-integrations|typed-drafts|platform-adapters|syncups-recording|parity-report>"
+      contains: "validation <local-todos|local-integrations|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>"
     )
 
     expectNoDifference(
@@ -4729,7 +4729,7 @@ extension InstantStoreTests {
     #expect(malformed.status == 64)
     #expect(
       malformed.error.contains(
-        "validation <local-todos|local-integrations|typed-drafts|platform-adapters|syncups-recording|parity-report>"
+        "validation <local-todos|local-integrations|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>"
       )
     )
   }

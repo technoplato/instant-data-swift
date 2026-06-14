@@ -39,6 +39,7 @@ swift run instant-swift-data validation typed-drafts --jsonl
 swift run instant-swift-data validation platform-adapters --jsonl
 swift run instant-swift-data validation syncups-recording --jsonl
 swift run instant-swift-data validation parity-report --jsonl
+swift run instant-swift-data validation coverage --jsonl
 swift run instant-swift-data-validation-runner --local-todos
 swift run instant-swift-data-validation-runner --local-integrations
 swift run instant-swift-data-validation-runner --typed-drafts

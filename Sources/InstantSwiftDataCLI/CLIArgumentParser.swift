@@ -663,13 +663,14 @@ public enum CLIValidationInvocation: Equatable, Sendable {
 
 public enum CLIValidationUsage {
   public static let validation = """
-    Usage: instant-swift-data validation <local-todos|local-integrations|typed-drafts|platform-adapters|syncups-recording|parity-report>
+    Usage: instant-swift-data validation <local-todos|local-integrations|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>
       instant-swift-data validation local-todos [--json|--jsonl]
       instant-swift-data validation local-integrations [--json|--jsonl]
       instant-swift-data validation typed-drafts [--json|--jsonl]
       instant-swift-data validation platform-adapters [--json|--jsonl]
       instant-swift-data validation syncups-recording [--json|--jsonl]
       instant-swift-data validation parity-report [--json|--jsonl]
+      instant-swift-data validation coverage [--json|--jsonl]
     """
 }
 

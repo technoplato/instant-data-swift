@@ -1759,6 +1759,8 @@ struct CLIArgumentParserTests {
 
   @Test
   func validationParserReportsMalformedArguments() throws {
+    #expect(CLIValidationUsage.validation.contains("parity-report|coverage"))
+    #expect(CLIValidationUsage.validation.contains("validation coverage [--json|--jsonl]"))
     try expectValidationParseError([], description: CLIValidationUsage.validation)
     try expectValidationParseError(["remote"], description: CLIValidationUsage.validation)
     try expectValidationParseError(["todos", "extra"], description: CLIValidationUsage.validation)
