@@ -280,6 +280,199 @@ public enum CLIExamplesSyncUpsArgumentError: Error, Equatable, Sendable {
   public var exitCode: Int32 { 64 }
 }
 
+public enum CLIExamplesRemindersLeafInvocation: Equatable, Sendable {
+  case seed
+  case list(CLIExamplesRemindersListInvocation)
+  case stats
+  case tags
+  case addList(title: String)
+  case renameList(listID: String, title: String)
+  case add(CLIExamplesReminderAddInvocation)
+  case update(CLIExamplesReminderUpdateInvocation)
+  case complete(reminderID: String)
+  case delete(reminderID: String)
+  case deleteCompleted(listID: String?)
+  case deleteList(listID: String)
+  case addTag(reminderID: String, rawTag: String)
+  case removeTag(reminderID: String, rawTag: String)
+  case search(CLIExamplesRemindersSearchInvocation)
+  case unknown(String)
+}
+
+public struct CLIExamplesRemindersListInvocation: Equatable, Sendable {
+  public var event: String
+  public var listID: String?
+  public var includeCompleted: Bool
+  public var flagged: Bool?
+  public var scheduled: Bool
+  public var today: Bool
+  public var priorityRawValue: String?
+
+  public init(
+    event: String = "list",
+    listID: String? = nil,
+    includeCompleted: Bool = true,
+    flagged: Bool? = nil,
+    scheduled: Bool = false,
+    today: Bool = false,
+    priorityRawValue: String? = nil
+  ) {
+    self.event = event
+    self.listID = listID
+    self.includeCompleted = includeCompleted
+    self.flagged = flagged
+    self.scheduled = scheduled
+    self.today = today
+    self.priorityRawValue = priorityRawValue
+  }
+}
+
+public struct CLIExamplesRemindersSearchInvocation: Equatable, Sendable {
+  public var text: String
+  public var listID: String?
+  public var rawTag: String?
+  public var includeCompleted: Bool
+  public var flagged: Bool?
+  public var scheduled: Bool
+  public var today: Bool
+  public var priorityRawValue: String?
+
+  public init(
+    text: String,
+    listID: String? = nil,
+    rawTag: String? = nil,
+    includeCompleted: Bool = false,
+    flagged: Bool? = nil,
+    scheduled: Bool = false,
+    today: Bool = false,
+    priorityRawValue: String? = nil
+  ) {
+    self.text = text
+    self.listID = listID
+    self.rawTag = rawTag
+    self.includeCompleted = includeCompleted
+    self.flagged = flagged
+    self.scheduled = scheduled
+    self.today = today
+    self.priorityRawValue = priorityRawValue
+  }
+}
+
+public struct CLIExamplesReminderAddInvocation: Equatable, Sendable {
+  public var listID: String
+  public var title: String
+  public var notes: String
+  public var isFlagged: Bool
+  public var dueDateRawValue: String?
+  public var priorityRawValue: String?
+
+  public init(
+    listID: String,
+    title: String,
+    notes: String = "",
+    isFlagged: Bool = false,
+    dueDateRawValue: String? = nil,
+    priorityRawValue: String? = nil
+  ) {
+    self.listID = listID
+    self.title = title
+    self.notes = notes
+    self.isFlagged = isFlagged
+    self.dueDateRawValue = dueDateRawValue
+    self.priorityRawValue = priorityRawValue
+  }
+}
+
+public struct CLIExamplesReminderUpdateInvocation: Equatable, Sendable {
+  public var reminderID: String
+  public var title: String?
+  public var notes: String?
+  public var isFlagged: Bool?
+  public var dueDateRawValue: String?
+  public var clearsDueDate: Bool
+  public var priorityRawValue: String?
+  public var clearsPriority: Bool
+
+  public init(
+    reminderID: String,
+    title: String? = nil,
+    notes: String? = nil,
+    isFlagged: Bool? = nil,
+    dueDateRawValue: String? = nil,
+    clearsDueDate: Bool = false,
+    priorityRawValue: String? = nil,
+    clearsPriority: Bool = false
+  ) {
+    self.reminderID = reminderID
+    self.title = title
+    self.notes = notes
+    self.isFlagged = isFlagged
+    self.dueDateRawValue = dueDateRawValue
+    self.clearsDueDate = clearsDueDate
+    self.priorityRawValue = priorityRawValue
+    self.clearsPriority = clearsPriority
+  }
+}
+
+public enum CLIExamplesRemindersUsage {
+  public static let priorityList = "low|medium|high"
+  public static let reminders = """
+    Usage: instant-swift-data examples reminders <seed|list|stats|tags|list-tags|search|add-list|rename-list|delete-list|add|update|complete|delete|delete-completed|add-tag|remove-tag>
+      instant-swift-data examples reminders seed [--json|--jsonl]
+      instant-swift-data examples reminders list [--refresh] [--list-id id] [--completed true|false] [--flagged|--unflagged] [--scheduled] [--today] [--priority \(priorityList)] [--json|--jsonl]
+      instant-swift-data examples reminders stats [--json|--jsonl]
+      instant-swift-data examples reminders tags [--json|--jsonl]
+      instant-swift-data examples reminders list-tags [--json|--jsonl]
+      instant-swift-data examples reminders search "text" [--list-id id] [--tag tag] [--include-completed] [--flagged|--unflagged] [--scheduled] [--today] [--priority \(priorityList)] [--json|--jsonl]
+      instant-swift-data examples reminders add-list "list title" [--json|--jsonl]
+      instant-swift-data examples reminders rename-list <list-id> "new title" [--json|--jsonl]
+      instant-swift-data examples reminders delete-list <list-id> [--json|--jsonl]
+      instant-swift-data examples reminders add <list-id> "reminder title" [--notes text] [--due-date date] [--priority \(priorityList)] [--flagged] [--json|--jsonl]
+      instant-swift-data examples reminders update <reminder-id> ["new title"] [--notes text] [--due-date date|--clear-due-date] [--priority \(priorityList)|none|--clear-priority] [--flagged|--unflagged] [--json|--jsonl]
+      instant-swift-data examples reminders complete <reminder-id> [--json|--jsonl]
+      instant-swift-data examples reminders delete <reminder-id> [--json|--jsonl]
+      instant-swift-data examples reminders delete-completed [--list-id id] [--json|--jsonl]
+      instant-swift-data examples reminders add-tag <reminder-id> <tag> [--json|--jsonl]
+      instant-swift-data examples reminders remove-tag <reminder-id> <tag> [--json|--jsonl]
+    """
+  public static let seed =
+    "Usage: instant-swift-data examples reminders seed [--json|--jsonl]"
+  public static let list =
+    "Usage: instant-swift-data examples reminders list [--refresh] [--list-id id] [--completed true|false] [--flagged|--unflagged] [--scheduled] [--today] [--priority \(priorityList)] [--json|--jsonl]"
+  public static let stats =
+    "Usage: instant-swift-data examples reminders stats [--json|--jsonl]"
+  public static let tags =
+    "Usage: instant-swift-data examples reminders tags [--json|--jsonl]"
+  public static let search =
+    #"Usage: instant-swift-data examples reminders search "text" [--list-id id] [--tag tag] [--include-completed] [--flagged|--unflagged] [--scheduled] [--today] [--priority \#(priorityList)] [--json|--jsonl]"#
+  public static let addList =
+    #"Usage: instant-swift-data examples reminders add-list "list title""#
+  public static let renameList =
+    #"Usage: instant-swift-data examples reminders rename-list <list-id> "new title""#
+  public static let deleteList =
+    "Usage: instant-swift-data examples reminders delete-list <list-id>"
+  public static let add =
+    "Usage: instant-swift-data examples reminders add <list-id> \"reminder title\" [--notes text] [--due-date YYYY-MM-DD|ISO-8601|milliseconds] [--priority \(priorityList)] [--flagged] [--json|--jsonl]"
+  public static let update =
+    "Usage: instant-swift-data examples reminders update <reminder-id> [\"new title\"] [--notes text] [--due-date YYYY-MM-DD|ISO-8601|milliseconds] [--clear-due-date] [--priority \(priorityList)|none] [--clear-priority] [--flagged|--unflagged] [--json|--jsonl]"
+  public static let complete =
+    "Usage: instant-swift-data examples reminders complete <reminder-id>"
+  public static let delete =
+    "Usage: instant-swift-data examples reminders delete <reminder-id>"
+  public static let deleteCompleted =
+    "Usage: instant-swift-data examples reminders delete-completed [--list-id id]"
+  public static let addTag =
+    "Usage: instant-swift-data examples reminders add-tag <reminder-id> <tag>"
+  public static let removeTag =
+    "Usage: instant-swift-data examples reminders remove-tag <reminder-id> <tag>"
+}
+
+public enum CLIExamplesRemindersArgumentError: Error, Equatable, Sendable {
+  case invalidArguments(String)
+
+  public var exitCode: Int32 { 64 }
+}
+
 public struct CLIScaffoldInvocation: Equatable, Sendable {
   public var example: String
   public var outputDirectory: String
@@ -1587,6 +1780,125 @@ public struct CLIExamplesSyncUpsLeafParser: Parser {
           usage: CLIExamplesSyncUpsUsage.deleteMeeting
         )
       )
+
+    default:
+      input.removeAll()
+      return .unknown(command)
+    }
+  }
+}
+
+public struct CLIExamplesRemindersLeafParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIExamplesRemindersLeafInvocation {
+    guard let command = input.first else {
+      throw CLIExamplesRemindersArgumentError.invalidArguments(
+        CLIExamplesRemindersUsage.reminders
+      )
+    }
+    input.removeFirst()
+
+    switch command {
+    case "seed":
+      try requireNoRemainingExamplesRemindersArguments(
+        &input,
+        usage: CLIExamplesRemindersUsage.seed
+      )
+      return .seed
+
+    case "list", "lists", "refresh":
+      return .list(try parseExamplesRemindersListOptions(from: &input, command: command))
+
+    case "stats":
+      try requireNoRemainingExamplesRemindersArguments(
+        &input,
+        usage: CLIExamplesRemindersUsage.stats
+      )
+      return .stats
+
+    case "tags", "list-tags":
+      try requireNoRemainingExamplesRemindersArguments(
+        &input,
+        usage: command == "list-tags" ? "Usage: instant-swift-data examples reminders list-tags [--json|--jsonl]" : CLIExamplesRemindersUsage.tags
+      )
+      return .tags
+
+    case "add-list":
+      let title = joinedTrimmed(input)
+      input.removeAll()
+      guard !title.isEmpty else {
+        throw CLIExamplesRemindersArgumentError.invalidArguments(
+          CLIExamplesRemindersUsage.addList
+        )
+      }
+      return .addList(title: title)
+
+    case "rename-list", "update-list":
+      let listID = try parseRequiredExamplesRemindersArgument(
+        from: &input,
+        usage: CLIExamplesRemindersUsage.renameList
+      )
+      let title = joinedTrimmed(input)
+      input.removeAll()
+      guard !title.isEmpty else {
+        throw CLIExamplesRemindersArgumentError.invalidArguments(
+          CLIExamplesRemindersUsage.renameList
+        )
+      }
+      return .renameList(listID: listID, title: title)
+
+    case "add":
+      return .add(try parseExamplesReminderAddOptions(from: &input))
+
+    case "update", "edit":
+      return .update(try parseExamplesReminderUpdateOptions(from: &input))
+
+    case "complete":
+      return .complete(
+        reminderID: try parseSingleExamplesRemindersArgument(
+          from: &input,
+          usage: CLIExamplesRemindersUsage.complete
+        )
+      )
+
+    case "delete":
+      return .delete(
+        reminderID: try parseSingleExamplesRemindersArgument(
+          from: &input,
+          usage: CLIExamplesRemindersUsage.delete
+        )
+      )
+
+    case "delete-completed":
+      return .deleteCompleted(
+        listID: try parseExamplesRemindersDeleteCompletedOptions(from: &input)
+      )
+
+    case "delete-list":
+      return .deleteList(
+        listID: try parseSingleExamplesRemindersArgument(
+          from: &input,
+          usage: CLIExamplesRemindersUsage.deleteList
+        )
+      )
+
+    case "add-tag", "tag":
+      let (reminderID, rawTag) = try parseExamplesReminderTagArguments(
+        from: &input,
+        usage: CLIExamplesRemindersUsage.addTag
+      )
+      return .addTag(reminderID: reminderID, rawTag: rawTag)
+
+    case "remove-tag", "untag":
+      let (reminderID, rawTag) = try parseExamplesReminderTagArguments(
+        from: &input,
+        usage: CLIExamplesRemindersUsage.removeTag
+      )
+      return .removeTag(reminderID: reminderID, rawTag: rawTag)
+
+    case "search":
+      return .search(try parseExamplesRemindersSearchOptions(from: &input))
 
     default:
       input.removeAll()
@@ -4313,6 +4625,380 @@ private func requireNoRemainingExamplesSyncUpsArguments(
   }
 }
 
+private func parseExamplesRemindersListOptions(
+  from input: inout ArraySlice<String>,
+  command: String
+) throws -> CLIExamplesRemindersListInvocation {
+  var invocation = CLIExamplesRemindersListInvocation(
+    event: command == "refresh" ? "refresh" : "list"
+  )
+  var didSetCompleted = false
+
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--refresh":
+      invocation.event = "refresh"
+
+    case "--list-id":
+      invocation.listID = try parseExamplesRemindersOptionValue(
+        from: &input,
+        usage: CLIExamplesRemindersUsage.list
+      )
+
+    case "--completed":
+      guard let value = input.first, let parsed = parseCLIQueryBool(value) else {
+        throw CLIExamplesRemindersArgumentError.invalidArguments(
+          CLIExamplesRemindersUsage.list
+        )
+      }
+      input.removeFirst()
+      invocation.includeCompleted = parsed
+      didSetCompleted = true
+
+    case "--flagged":
+      invocation.flagged = true
+      if !didSetCompleted {
+        invocation.includeCompleted = false
+      }
+
+    case "--unflagged":
+      invocation.flagged = false
+      if !didSetCompleted {
+        invocation.includeCompleted = false
+      }
+
+    case "--scheduled":
+      invocation.scheduled = true
+      if !didSetCompleted {
+        invocation.includeCompleted = false
+      }
+
+    case "--today":
+      invocation.today = true
+      invocation.scheduled = true
+      if !didSetCompleted {
+        invocation.includeCompleted = false
+      }
+
+    case "--priority":
+      invocation.priorityRawValue = try parseExamplesRemindersOptionValue(
+        from: &input,
+        usage: CLIExamplesRemindersUsage.list
+      )
+      if !didSetCompleted {
+        invocation.includeCompleted = false
+      }
+
+    default:
+      throw CLIExamplesRemindersArgumentError.invalidArguments(
+        CLIExamplesRemindersUsage.list
+      )
+    }
+  }
+
+  return invocation
+}
+
+private func parseExamplesRemindersSearchOptions(
+  from input: inout ArraySlice<String>
+) throws -> CLIExamplesRemindersSearchInvocation {
+  var terms: [String] = []
+  var listID: String?
+  var rawTag: String?
+  var includeCompleted = false
+  var flagged: Bool?
+  var scheduled = false
+  var today = false
+  var priorityRawValue: String?
+
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--list-id":
+      listID = try parseExamplesRemindersOptionValue(
+        from: &input,
+        usage: CLIExamplesRemindersUsage.search
+      )
+
+    case "--tag":
+      rawTag = try parseExamplesRemindersOptionValue(
+        from: &input,
+        usage: CLIExamplesRemindersUsage.search
+      )
+
+    case "--completed", "--include-completed":
+      includeCompleted = true
+
+    case "--flagged":
+      flagged = true
+
+    case "--unflagged":
+      flagged = false
+
+    case "--scheduled":
+      scheduled = true
+
+    case "--today":
+      today = true
+      scheduled = true
+
+    case "--priority":
+      priorityRawValue = try parseExamplesRemindersOptionValue(
+        from: &input,
+        usage: CLIExamplesRemindersUsage.search
+      )
+
+    default:
+      terms.append(option)
+    }
+  }
+
+  let text = terms.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+  guard !text.isEmpty || rawTag != nil || listID != nil || flagged != nil || scheduled
+    || today || priorityRawValue != nil
+  else {
+    throw CLIExamplesRemindersArgumentError.invalidArguments(
+      CLIExamplesRemindersUsage.search
+    )
+  }
+
+  return CLIExamplesRemindersSearchInvocation(
+    text: text,
+    listID: listID,
+    rawTag: rawTag,
+    includeCompleted: includeCompleted,
+    flagged: flagged,
+    scheduled: scheduled,
+    today: today,
+    priorityRawValue: priorityRawValue
+  )
+}
+
+private func parseExamplesReminderAddOptions(
+  from input: inout ArraySlice<String>
+) throws -> CLIExamplesReminderAddInvocation {
+  let listID = try parseRequiredExamplesRemindersArgument(
+    from: &input,
+    usage: CLIExamplesRemindersUsage.add
+  )
+
+  var titleParts: [String] = []
+  var notes = ""
+  var isFlagged = false
+  var dueDateRawValue: String?
+  var priorityRawValue: String?
+
+  while let value = input.first {
+    input.removeFirst()
+    switch value {
+    case "--notes":
+      guard let rawNotes = input.first else {
+        throw CLIExamplesRemindersArgumentError.invalidArguments(
+          CLIExamplesRemindersUsage.add
+        )
+      }
+      input.removeFirst()
+      notes = rawNotes
+
+    case "--flagged":
+      isFlagged = true
+
+    case "--unflagged":
+      isFlagged = false
+
+    case "--due-date":
+      dueDateRawValue = try parseExamplesRemindersOptionValue(
+        from: &input,
+        usage: CLIExamplesRemindersUsage.add
+      )
+
+    case "--priority":
+      priorityRawValue = try parseExamplesRemindersOptionValue(
+        from: &input,
+        usage: CLIExamplesRemindersUsage.add
+      )
+
+    default:
+      titleParts.append(value)
+    }
+  }
+
+  let title = titleParts.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+  guard !title.isEmpty else {
+    throw CLIExamplesRemindersArgumentError.invalidArguments(CLIExamplesRemindersUsage.add)
+  }
+
+  return CLIExamplesReminderAddInvocation(
+    listID: listID,
+    title: title,
+    notes: notes,
+    isFlagged: isFlagged,
+    dueDateRawValue: dueDateRawValue,
+    priorityRawValue: priorityRawValue
+  )
+}
+
+private func parseExamplesReminderUpdateOptions(
+  from input: inout ArraySlice<String>
+) throws -> CLIExamplesReminderUpdateInvocation {
+  let reminderID = try parseRequiredExamplesRemindersArgument(
+    from: &input,
+    usage: CLIExamplesRemindersUsage.update
+  )
+
+  var invocation = CLIExamplesReminderUpdateInvocation(reminderID: reminderID)
+  var titleParts: [String] = []
+  var didSetField = false
+
+  while let value = input.first {
+    input.removeFirst()
+    switch value {
+    case "--notes":
+      guard let rawNotes = input.first else {
+        throw CLIExamplesRemindersArgumentError.invalidArguments(
+          CLIExamplesRemindersUsage.update
+        )
+      }
+      input.removeFirst()
+      invocation.notes = rawNotes
+      didSetField = true
+
+    case "--flagged":
+      invocation.isFlagged = true
+      didSetField = true
+
+    case "--unflagged":
+      invocation.isFlagged = false
+      didSetField = true
+
+    case "--due-date":
+      invocation.dueDateRawValue = try parseExamplesRemindersOptionValue(
+        from: &input,
+        usage: CLIExamplesRemindersUsage.update
+      )
+      invocation.clearsDueDate = false
+      didSetField = true
+
+    case "--clear-due-date":
+      invocation.dueDateRawValue = nil
+      invocation.clearsDueDate = true
+      didSetField = true
+
+    case "--priority":
+      invocation.priorityRawValue = try parseExamplesRemindersOptionValue(
+        from: &input,
+        usage: CLIExamplesRemindersUsage.update
+      )
+      invocation.clearsPriority = false
+      didSetField = true
+
+    case "--clear-priority":
+      invocation.priorityRawValue = nil
+      invocation.clearsPriority = true
+      didSetField = true
+
+    default:
+      titleParts.append(value)
+    }
+  }
+
+  let title = titleParts.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+  if !title.isEmpty {
+    invocation.title = title
+  }
+  guard invocation.title != nil || didSetField else {
+    throw CLIExamplesRemindersArgumentError.invalidArguments(CLIExamplesRemindersUsage.update)
+  }
+
+  return invocation
+}
+
+private func parseExamplesRemindersDeleteCompletedOptions(
+  from input: inout ArraySlice<String>
+) throws -> String? {
+  var listID: String?
+
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--list-id":
+      listID = try parseExamplesRemindersOptionValue(
+        from: &input,
+        usage: CLIExamplesRemindersUsage.deleteCompleted
+      )
+
+    default:
+      throw CLIExamplesRemindersArgumentError.invalidArguments(
+        CLIExamplesRemindersUsage.deleteCompleted
+      )
+    }
+  }
+
+  return listID
+}
+
+private func parseExamplesReminderTagArguments(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> (reminderID: String, rawTag: String) {
+  let reminderID = try parseRequiredExamplesRemindersArgument(from: &input, usage: usage)
+  let rawTag = joinedTrimmed(input)
+  input.removeAll()
+  guard !rawTag.isEmpty else {
+    throw CLIExamplesRemindersArgumentError.invalidArguments(usage)
+  }
+  return (reminderID, rawTag)
+}
+
+private func parseSingleExamplesRemindersArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  let value = try parseRequiredExamplesRemindersArgument(from: &input, usage: usage)
+  try requireNoRemainingExamplesRemindersArguments(&input, usage: usage)
+  return value
+}
+
+private func parseRequiredExamplesRemindersArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIExamplesRemindersArgumentError.invalidArguments(usage)
+  }
+  input.removeFirst()
+  let parsed = trimmed(value)
+  guard !parsed.isEmpty else {
+    throw CLIExamplesRemindersArgumentError.invalidArguments(usage)
+  }
+  return value
+}
+
+private func parseExamplesRemindersOptionValue(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIExamplesRemindersArgumentError.invalidArguments(usage)
+  }
+  input.removeFirst()
+  let parsed = trimmed(value)
+  guard !parsed.isEmpty else {
+    throw CLIExamplesRemindersArgumentError.invalidArguments(usage)
+  }
+  return value
+}
+
+private func requireNoRemainingExamplesRemindersArguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if !input.isEmpty {
+    throw CLIExamplesRemindersArgumentError.invalidArguments(usage)
+  }
+}
+
 private func joinedTrimmed(_ input: ArraySlice<String>) -> String {
   input.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
 }
@@ -4491,6 +5177,15 @@ extension CLIExamplesSyncUpsArgumentError: CustomStringConvertible {
 
     case .invalidTheme:
       return "Unknown SyncUps theme."
+    }
+  }
+}
+
+extension CLIExamplesRemindersArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case let .invalidArguments(message):
+      return message
     }
   }
 }

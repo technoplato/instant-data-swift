@@ -506,6 +506,266 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func examplesRemindersLeafParserParsesCommandsAndOptions() throws {
+    expectNoDifference(try parseExamplesRemindersLeaf(["seed"]), .seed)
+    expectNoDifference(
+      try parseExamplesRemindersLeaf([
+        "list", "--refresh", "--list-id", "list-1", "--completed", "false",
+        "--flagged", "--scheduled", "--today", "--priority", "high",
+      ]),
+      .list(
+        CLIExamplesRemindersListInvocation(
+          event: "refresh",
+          listID: "list-1",
+          includeCompleted: false,
+          flagged: true,
+          scheduled: true,
+          today: true,
+          priorityRawValue: "high"
+        )
+      )
+    )
+    expectNoDifference(
+      try parseExamplesRemindersLeaf(["lists", "--priority", "medium"]),
+      .list(
+        CLIExamplesRemindersListInvocation(
+          event: "list",
+          includeCompleted: false,
+          priorityRawValue: "medium"
+        )
+      )
+    )
+    expectNoDifference(
+      try parseExamplesRemindersLeaf(["refresh", "--list-id", "list-1"]),
+      .list(CLIExamplesRemindersListInvocation(event: "refresh", listID: "list-1"))
+    )
+    expectNoDifference(try parseExamplesRemindersLeaf(["stats"]), .stats)
+    expectNoDifference(try parseExamplesRemindersLeaf(["tags"]), .tags)
+    expectNoDifference(try parseExamplesRemindersLeaf(["list-tags"]), .tags)
+    expectNoDifference(
+      try parseExamplesRemindersLeaf(["add-list", "Family", "Errands"]),
+      .addList(title: "Family Errands")
+    )
+    expectNoDifference(
+      try parseExamplesRemindersLeaf(["update-list", "list-1", "New", "Title"]),
+      .renameList(listID: "list-1", title: "New Title")
+    )
+    expectNoDifference(
+      try parseExamplesRemindersLeaf([
+        "add", "list-1", "Take", "out", "trash", "--notes", "Bins",
+        "--due-date", "2026-06-13", "--priority", "high", "--flagged",
+      ]),
+      .add(
+        CLIExamplesReminderAddInvocation(
+          listID: "list-1",
+          title: "Take out trash",
+          notes: "Bins",
+          isFlagged: true,
+          dueDateRawValue: "2026-06-13",
+          priorityRawValue: "high"
+        )
+      )
+    )
+    expectNoDifference(
+      try parseExamplesRemindersLeaf([
+        "edit", "reminder-1", "New", "title", "--notes", "Updated",
+        "--due-date", "1700000000000", "--priority", "none", "--unflagged",
+      ]),
+      .update(
+        CLIExamplesReminderUpdateInvocation(
+          reminderID: "reminder-1",
+          title: "New title",
+          notes: "Updated",
+          isFlagged: false,
+          dueDateRawValue: "1700000000000",
+          priorityRawValue: "none"
+        )
+      )
+    )
+    expectNoDifference(
+      try parseExamplesRemindersLeaf([
+        "update", "reminder-1", "--clear-due-date", "--clear-priority", "--flagged",
+      ]),
+      .update(
+        CLIExamplesReminderUpdateInvocation(
+          reminderID: "reminder-1",
+          isFlagged: true,
+          clearsDueDate: true,
+          clearsPriority: true
+        )
+      )
+    )
+    expectNoDifference(
+      try parseExamplesRemindersLeaf(["complete", "reminder-1"]),
+      .complete(reminderID: "reminder-1")
+    )
+    expectNoDifference(
+      try parseExamplesRemindersLeaf(["delete", "reminder-1"]),
+      .delete(reminderID: "reminder-1")
+    )
+    expectNoDifference(
+      try parseExamplesRemindersLeaf(["delete-completed", "--list-id", "list-1"]),
+      .deleteCompleted(listID: "list-1")
+    )
+    expectNoDifference(
+      try parseExamplesRemindersLeaf(["delete-list", "list-1"]),
+      .deleteList(listID: "list-1")
+    )
+    expectNoDifference(
+      try parseExamplesRemindersLeaf(["tag", "reminder-1", "#Kids"]),
+      .addTag(reminderID: "reminder-1", rawTag: "#Kids")
+    )
+    expectNoDifference(
+      try parseExamplesRemindersLeaf(["untag", "reminder-1", "social"]),
+      .removeTag(reminderID: "reminder-1", rawTag: "social")
+    )
+    expectNoDifference(
+      try parseExamplesRemindersLeaf([
+        "search", "Take", "trash", "--list-id", "list-1", "--tag", "kids",
+        "--include-completed", "--flagged", "--scheduled", "--today",
+        "--priority", "high",
+      ]),
+      .search(
+        CLIExamplesRemindersSearchInvocation(
+          text: "Take trash",
+          listID: "list-1",
+          rawTag: "kids",
+          includeCompleted: true,
+          flagged: true,
+          scheduled: true,
+          today: true,
+          priorityRawValue: "high"
+        )
+      )
+    )
+    expectNoDifference(
+      try parseExamplesRemindersLeaf(["dance", "--json"]),
+      .unknown("dance")
+    )
+  }
+
+  @Test
+  func examplesRemindersLeafParserReportsMalformedArguments() throws {
+    try expectExamplesRemindersLeafParseError([], description: CLIExamplesRemindersUsage.reminders)
+    try expectExamplesRemindersLeafParseError(
+      ["seed", "unexpected"],
+      description: CLIExamplesRemindersUsage.seed
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["list", "--completed", "maybe"],
+      description: CLIExamplesRemindersUsage.list
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["list", "--list-id", "  "],
+      description: CLIExamplesRemindersUsage.list
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["list", "--unknown"],
+      description: CLIExamplesRemindersUsage.list
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["stats", "unexpected"],
+      description: CLIExamplesRemindersUsage.stats
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["tags", "unexpected"],
+      description: CLIExamplesRemindersUsage.tags
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["add-list", "  "],
+      description: CLIExamplesRemindersUsage.addList
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["rename-list"],
+      description: CLIExamplesRemindersUsage.renameList
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["rename-list", "list-1", "  "],
+      description: CLIExamplesRemindersUsage.renameList
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["add"],
+      description: CLIExamplesRemindersUsage.add
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["add", "list-1", "  "],
+      description: CLIExamplesRemindersUsage.add
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["add", "list-1", "Title", "--notes"],
+      description: CLIExamplesRemindersUsage.add
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["add", "list-1", "Title", "--due-date"],
+      description: CLIExamplesRemindersUsage.add
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["add", "list-1", "Title", "--priority"],
+      description: CLIExamplesRemindersUsage.add
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["update"],
+      description: CLIExamplesRemindersUsage.update
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["update", "reminder-1"],
+      description: CLIExamplesRemindersUsage.update
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["update", "reminder-1", "--notes"],
+      description: CLIExamplesRemindersUsage.update
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["update", "reminder-1", "--due-date"],
+      description: CLIExamplesRemindersUsage.update
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["update", "reminder-1", "--priority"],
+      description: CLIExamplesRemindersUsage.update
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["complete", "reminder-1", "extra"],
+      description: CLIExamplesRemindersUsage.complete
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["delete"],
+      description: CLIExamplesRemindersUsage.delete
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["delete-completed", "--list-id"],
+      description: CLIExamplesRemindersUsage.deleteCompleted
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["delete-completed", "--unknown"],
+      description: CLIExamplesRemindersUsage.deleteCompleted
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["delete-list", "list-1", "extra"],
+      description: CLIExamplesRemindersUsage.deleteList
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["add-tag", "reminder-1", "  "],
+      description: CLIExamplesRemindersUsage.addTag
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["remove-tag"],
+      description: CLIExamplesRemindersUsage.removeTag
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["search"],
+      description: CLIExamplesRemindersUsage.search
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["search", "--tag"],
+      description: CLIExamplesRemindersUsage.search
+    )
+    try expectExamplesRemindersLeafParseError(
+      ["search", "--priority"],
+      description: CLIExamplesRemindersUsage.search
+    )
+  }
+
+  @Test
   func topLevelOutputModeNormalizesAroundExamplesCommand() throws {
     expectNoDifference(
       try CLIArguments.parse(["examples", "todos", "observe", "--events", "1", "--jsonl"]),
@@ -2076,6 +2336,15 @@ private func parseExamplesSyncUpsLeaf(
   return invocation
 }
 
+private func parseExamplesRemindersLeaf(
+  _ arguments: [String]
+) throws -> CLIExamplesRemindersLeafInvocation {
+  var input = arguments[...]
+  let invocation = try CLIExamplesRemindersLeafParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseAuth(_ arguments: [String]) throws -> CLIAuthInvocation {
   var input = arguments[...]
   let invocation = try CLIAuthParser().parse(&input)
@@ -2333,6 +2602,19 @@ private func expectExamplesSyncUpsLeafParseError(
     _ = try parseExamplesSyncUpsLeaf(arguments)
     Issue.record("Expected examples sync-ups parser to reject \(arguments).")
   } catch let error as CLIExamplesSyncUpsArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectExamplesRemindersLeafParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseExamplesRemindersLeaf(arguments)
+    Issue.record("Expected examples reminders parser to reject \(arguments).")
+  } catch let error as CLIExamplesRemindersArgumentError {
     expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }

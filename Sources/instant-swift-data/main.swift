@@ -834,17 +834,24 @@ struct InstantSwiftDataCLI {
   }
 
   private static func runReminders(arguments: [String], output: OutputMode) async throws {
-    var arguments = arguments
-    guard let command = arguments.popFirstArgument() else {
-      throw CLIError(remindersUsage, exitCode: 64)
+    let invocation: CLIExamplesRemindersLeafInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLIExamplesRemindersLeafParser().parse(&input)
+    } catch let error as CLIExamplesRemindersArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
+
+    if case let .unknown(command) = invocation {
+      throw CLIError("Unknown reminders command: \(command). \(remindersUsage)", exitCode: 64)
+    }
+
+    try validateReminderRawValues(in: invocation)
+
     let context = try await CLIContext.bootstrap(initialAttributes: ReminderExample.attributes)
 
-    switch command {
-    case "seed":
-      guard arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data examples reminders seed [--json|--jsonl]", exitCode: 64)
-      }
+    switch invocation {
+    case .seed:
       let transactionID = context.runtime.configuration.makeID()
       let now = context.runtime.configuration.now()
       var listIDs: [String: String] = [:]
@@ -899,18 +906,14 @@ struct InstantSwiftDataCLI {
       )
       try await printReminders(context: context, output: output, event: "seed")
 
-    case "list", "lists", "refresh":
-      let options = try parseRemindersListOptions(
-        arguments: arguments,
-        event: command == "refresh" ? "refresh" : "list"
-      )
+    case let .list(options):
       let query = ReminderExample.remindersFilterQuery(
         listID: options.listID,
         includeCompleted: options.includeCompleted,
         flagged: options.flagged,
         scheduled: options.scheduled,
         today: options.today ? context.runtime.configuration.now() : nil,
-        priority: options.priority
+        priority: try reminderPriority(options.priorityRawValue, usage: remindersListUsage)
       )
       try await printReminders(
         context: context,
@@ -920,26 +923,13 @@ struct InstantSwiftDataCLI {
         remindersQuery: query
       )
 
-    case "stats":
-      guard arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data examples reminders stats [--json|--jsonl]", exitCode: 64)
-      }
+    case .stats:
       try await printReminders(context: context, output: output, event: "stats")
 
-    case "tags", "list-tags":
-      guard arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data examples reminders tags [--json|--jsonl]", exitCode: 64)
-      }
+    case .tags:
       try await printReminders(context: context, output: output, event: "tags")
 
-    case "add-list":
-      let title = arguments.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !title.isEmpty else {
-        throw CLIError(
-          "Usage: instant-swift-data examples reminders add-list \"list title\"",
-          exitCode: 64
-        )
-      }
+    case let .addList(title):
       let existingLists = try ReminderExample.decodeLists(
         (try await context.runtime.queryOnce(ReminderExample.listsQuery)).values
       )
@@ -962,20 +952,7 @@ struct InstantSwiftDataCLI {
       )
       try await printReminders(context: context, output: output, event: "add-list", changedID: listID)
 
-    case "rename-list", "update-list":
-      guard let listID = arguments.popFirstArgument() else {
-        throw CLIError(
-          "Usage: instant-swift-data examples reminders rename-list <list-id> \"new title\"",
-          exitCode: 64
-        )
-      }
-      let title = arguments.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !title.isEmpty else {
-        throw CLIError(
-          "Usage: instant-swift-data examples reminders rename-list <list-id> \"new title\"",
-          exitCode: 64
-        )
-      }
+    case let .renameList(listID, title):
       let transactionID = context.runtime.configuration.makeID()
       let now = context.runtime.configuration.now()
       try await context.runtime.transact(
@@ -999,17 +976,12 @@ struct InstantSwiftDataCLI {
         listID: listID
       )
 
-    case "add":
-      guard let listID = arguments.popFirstArgument() else {
-        throw CLIError(
-          remindersAddUsage,
-          exitCode: 64
-        )
-      }
-      let options = try parseReminderAddOptions(arguments: arguments)
+    case let .add(options):
       let existingReminders = try ReminderExample.decodeReminders(
-        (try await context.runtime.queryOnce(ReminderExample.remindersForListQuery(listID))).values
+        (try await context.runtime.queryOnce(ReminderExample.remindersForListQuery(options.listID))).values
       )
+      let dueDate = try reminderDueDate(options.dueDateRawValue)
+      let priority = try reminderPriority(options.priorityRawValue, usage: remindersAddUsage)
       let transactionID = context.runtime.configuration.makeID()
       let reminderID = context.runtime.configuration.makeID()
       let now = context.runtime.configuration.now()
@@ -1018,12 +990,12 @@ struct InstantSwiftDataCLI {
           id: transactionID,
           operations: ReminderExample.createReminderOperations(
             id: reminderID,
-            listID: listID,
+            listID: options.listID,
             title: options.title,
             notes: options.notes,
             isFlagged: options.isFlagged,
-            dueDate: options.dueDate,
-            priority: options.priority,
+            dueDate: dueDate,
+            priority: priority,
             position: existingReminders.count,
             createdAt: now,
             transactionID: transactionID
@@ -1037,36 +1009,49 @@ struct InstantSwiftDataCLI {
         output: output,
         event: "add",
         changedID: reminderID,
-        listID: listID
+        listID: options.listID
       )
 
-    case "update", "edit":
-      guard let reminderID = arguments.popFirstArgument() else {
-        throw CLIError(
-          remindersUpdateUsage,
-          exitCode: 64
-        )
-      }
+    case let .update(options):
       let currentReminders = try ReminderExample.decodeReminders(
         (try await context.runtime.queryOnce(ReminderExample.remindersQuery)).values
       )
-      guard let reminder = currentReminders.first(where: { $0.id == reminderID }) else {
-        throw CLIError("Reminder not found: \(reminderID)", exitCode: 66)
+      guard let reminder = currentReminders.first(where: { $0.id == options.reminderID }) else {
+        throw CLIError("Reminder not found: \(options.reminderID)", exitCode: 66)
       }
-      let options = try parseReminderUpdateOptions(arguments: arguments, current: reminder)
+      let dueDate: InstantTimestamp?
+      if options.clearsDueDate {
+        dueDate = nil
+      } else if let rawDueDate = options.dueDateRawValue {
+        dueDate = try parseReminderDueDate(rawDueDate)
+      } else {
+        dueDate = reminder.dueDate
+      }
+      let priority: ReminderPriority?
+      if options.clearsPriority {
+        priority = nil
+      } else if let rawPriority = options.priorityRawValue {
+        priority = try reminderPriority(
+          rawPriority,
+          usage: remindersUpdateUsage,
+          allowsNone: true
+        )
+      } else {
+        priority = reminder.priority
+      }
       let transactionID = context.runtime.configuration.makeID()
       let now = context.runtime.configuration.now()
       try await context.runtime.transact(
         InstantStoreTransaction(
           id: transactionID,
           operations: ReminderExample.updateReminderDetailsOperations(
-            id: reminderID,
+            id: options.reminderID,
             listID: reminder.remindersListID,
-            title: options.title,
-            notes: options.notes,
-            isFlagged: options.isFlagged,
-            dueDate: options.dueDate,
-            priority: options.priority,
+            title: options.title ?? reminder.title,
+            notes: options.notes ?? reminder.notes,
+            isFlagged: options.isFlagged ?? reminder.isFlagged,
+            dueDate: dueDate,
+            priority: priority,
             updatedAt: now,
             transactionID: transactionID
           )
@@ -1078,17 +1063,11 @@ struct InstantSwiftDataCLI {
         context: context,
         output: output,
         event: "update",
-        changedID: reminderID,
+        changedID: options.reminderID,
         listID: reminder.remindersListID
       )
 
-    case "complete":
-      guard let reminderID = arguments.popFirstArgument(), arguments.isEmpty else {
-        throw CLIError(
-          "Usage: instant-swift-data examples reminders complete <reminder-id>",
-          exitCode: 64
-        )
-      }
+    case let .complete(reminderID):
       let currentReminders = try ReminderExample.decodeReminders(
         (try await context.runtime.queryOnce(ReminderExample.remindersQuery)).values
       )
@@ -1118,13 +1097,7 @@ struct InstantSwiftDataCLI {
         listID: reminder.remindersListID
       )
 
-    case "delete":
-      guard let reminderID = arguments.popFirstArgument(), arguments.isEmpty else {
-        throw CLIError(
-          "Usage: instant-swift-data examples reminders delete <reminder-id>",
-          exitCode: 64
-        )
-      }
+    case let .delete(reminderID):
       let currentReminders = try ReminderExample.decodeReminders(
         (try await context.runtime.queryOnce(ReminderExample.remindersQuery)).values
       )
@@ -1154,25 +1127,7 @@ struct InstantSwiftDataCLI {
         listID: reminder.remindersListID
       )
 
-    case "delete-completed":
-      var listID: String?
-      while let option = arguments.popFirstArgument() {
-        switch option {
-        case "--list-id":
-          guard let value = arguments.popFirstArgument(), !value.isEmpty else {
-            throw CLIError(
-              "Usage: instant-swift-data examples reminders delete-completed [--list-id id]",
-              exitCode: 64
-            )
-          }
-          listID = value
-        default:
-          throw CLIError(
-            "Usage: instant-swift-data examples reminders delete-completed [--list-id id]",
-            exitCode: 64
-          )
-        }
-      }
+    case let .deleteCompleted(listID):
       let query = listID.map(ReminderExample.remindersForListQuery) ?? ReminderExample.remindersQuery
       if let listID {
         let lists = try ReminderExample.decodeLists(
@@ -1210,13 +1165,7 @@ struct InstantSwiftDataCLI {
         listID: listID
       )
 
-    case "delete-list":
-      guard let listID = arguments.popFirstArgument(), arguments.isEmpty else {
-        throw CLIError(
-          "Usage: instant-swift-data examples reminders delete-list <list-id>",
-          exitCode: 64
-        )
-      }
+    case let .deleteList(listID):
       let transactionID = context.runtime.configuration.makeID()
       let now = context.runtime.configuration.now()
       try await context.runtime.transact(
@@ -1234,20 +1183,8 @@ struct InstantSwiftDataCLI {
         changedID: listID
       )
 
-    case "add-tag", "tag":
-      guard let reminderID = arguments.popFirstArgument() else {
-        throw CLIError(
-          "Usage: instant-swift-data examples reminders add-tag <reminder-id> <tag>",
-          exitCode: 64
-        )
-      }
-      let rawTag = arguments.joined(separator: " ")
-      guard let tagID = ReminderExample.normalizedTagTitle(rawTag) else {
-        throw CLIError(
-          "Usage: instant-swift-data examples reminders add-tag <reminder-id> <tag>",
-          exitCode: 64
-        )
-      }
+    case let .addTag(reminderID, rawTag):
+      let tagID = try normalizedReminderTag(rawTag, usage: CLIExamplesRemindersUsage.addTag)
       let currentReminders = try ReminderExample.decodeReminders(
         (try await context.runtime.queryOnce(ReminderExample.remindersQuery)).values
       )
@@ -1279,20 +1216,8 @@ struct InstantSwiftDataCLI {
         listID: reminder.remindersListID
       )
 
-    case "remove-tag", "untag":
-      guard let reminderID = arguments.popFirstArgument() else {
-        throw CLIError(
-          "Usage: instant-swift-data examples reminders remove-tag <reminder-id> <tag>",
-          exitCode: 64
-        )
-      }
-      let rawTag = arguments.joined(separator: " ")
-      guard let tagID = ReminderExample.normalizedTagTitle(rawTag) else {
-        throw CLIError(
-          "Usage: instant-swift-data examples reminders remove-tag <reminder-id> <tag>",
-          exitCode: 64
-        )
-      }
+    case let .removeTag(reminderID, rawTag):
+      let tagID = try normalizedReminderTag(rawTag, usage: CLIExamplesRemindersUsage.removeTag)
       let currentReminders = try ReminderExample.decodeReminders(
         (try await context.runtime.queryOnce(ReminderExample.remindersQuery)).values
       )
@@ -1323,17 +1248,17 @@ struct InstantSwiftDataCLI {
         listID: reminder.remindersListID
       )
 
-    case "search":
-      let options = try parseRemindersSearchOptions(arguments: arguments)
+    case let .search(options):
+      let tagID = try normalizedReminderTagIfPresent(options.rawTag, usage: remindersSearchUsage)
       let query = ReminderExample.remindersSearchQuery(
         text: options.text,
         listID: options.listID,
-        tagID: options.tagID,
+        tagID: tagID,
         includeCompleted: options.includeCompleted,
         flagged: options.flagged,
         scheduled: options.scheduled,
         today: options.today ? context.runtime.configuration.now() : nil,
-        priority: options.priority
+        priority: try reminderPriority(options.priorityRawValue, usage: remindersSearchUsage)
       )
       try await printReminders(
         context: context,
@@ -1343,8 +1268,8 @@ struct InstantSwiftDataCLI {
         remindersQuery: query
       )
 
-    default:
-      throw CLIError("Unknown reminders command: \(command). \(remindersUsage)", exitCode: 64)
+    case .unknown:
+      preconditionFailure("Unknown reminders commands are handled before bootstrapping.")
     }
   }
 
@@ -5014,285 +4939,6 @@ struct InstantSwiftDataCLI {
     )
   }
 
-  private static func parseRemindersSearchOptions(arguments: [String]) throws -> RemindersSearchOptions {
-    var arguments = arguments
-    var terms: [String] = []
-    var listID: String?
-    var tagID: String?
-    var includeCompleted = false
-    var flagged: Bool?
-    var scheduled = false
-    var today = false
-    var priority: ReminderPriority?
-
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--list-id":
-        guard let value = arguments.popFirstArgument(), !value.isEmpty else {
-          throw CLIError(remindersSearchUsage, exitCode: 64)
-        }
-        listID = value
-
-      case "--tag":
-        guard let rawValue = arguments.popFirstArgument(),
-          let normalized = ReminderExample.normalizedTagTitle(rawValue)
-        else {
-          throw CLIError(remindersSearchUsage, exitCode: 64)
-        }
-        tagID = normalized
-
-      case "--completed", "--include-completed":
-        includeCompleted = true
-
-      case "--flagged":
-        flagged = true
-
-      case "--unflagged":
-        flagged = false
-
-      case "--scheduled":
-        scheduled = true
-
-      case "--today":
-        today = true
-        scheduled = true
-
-      case "--priority":
-        guard let value = arguments.popFirstArgument(), let parsed = ReminderPriority(rawValue: value) else {
-          throw CLIError(remindersSearchUsage, exitCode: 64)
-        }
-        priority = parsed
-
-      default:
-        terms.append(option)
-      }
-    }
-
-    let text = terms.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !text.isEmpty || tagID != nil || listID != nil || flagged != nil || scheduled || today || priority != nil else {
-      throw CLIError(remindersSearchUsage, exitCode: 64)
-    }
-
-    return RemindersSearchOptions(
-      text: text,
-      listID: listID,
-      tagID: tagID,
-      includeCompleted: includeCompleted,
-      flagged: flagged,
-      scheduled: scheduled,
-      today: today,
-      priority: priority
-    )
-  }
-
-  private static func parseRemindersListOptions(arguments: [String], event: String) throws -> RemindersListOptions {
-    var arguments = arguments
-    var event = event
-    var listID: String?
-    var includeCompleted = true
-    var didSetCompleted = false
-    var flagged: Bool?
-    var scheduled = false
-    var today = false
-    var priority: ReminderPriority?
-
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--refresh":
-        event = "refresh"
-
-      case "--list-id":
-        guard let value = arguments.popFirstArgument(), !value.isEmpty else {
-          throw CLIError(remindersListUsage, exitCode: 64)
-        }
-        listID = value
-
-      case "--completed":
-        guard let value = arguments.popFirstArgument(), let parsed = parseBool(value) else {
-          throw CLIError(remindersListUsage, exitCode: 64)
-        }
-        includeCompleted = parsed
-        didSetCompleted = true
-
-      case "--flagged":
-        flagged = true
-        if !didSetCompleted {
-          includeCompleted = false
-        }
-
-      case "--unflagged":
-        flagged = false
-        if !didSetCompleted {
-          includeCompleted = false
-        }
-
-      case "--scheduled":
-        scheduled = true
-        if !didSetCompleted {
-          includeCompleted = false
-        }
-
-      case "--today":
-        today = true
-        scheduled = true
-        if !didSetCompleted {
-          includeCompleted = false
-        }
-
-      case "--priority":
-        guard let value = arguments.popFirstArgument(), let parsed = ReminderPriority(rawValue: value) else {
-          throw CLIError(remindersListUsage, exitCode: 64)
-        }
-        priority = parsed
-        if !didSetCompleted {
-          includeCompleted = false
-        }
-
-      default:
-        throw CLIError(remindersListUsage, exitCode: 64)
-      }
-    }
-
-    return RemindersListOptions(
-      event: event,
-      listID: listID,
-      includeCompleted: includeCompleted,
-      flagged: flagged,
-      scheduled: scheduled,
-      today: today,
-      priority: priority
-    )
-  }
-
-  private static func parseReminderAddOptions(arguments: [String]) throws -> ReminderAddOptions {
-    var arguments = arguments
-    var titleParts: [String] = []
-    var notes = ""
-    var isFlagged = false
-    var dueDate: InstantTimestamp?
-    var priority: ReminderPriority?
-
-    while let value = arguments.popFirstArgument() {
-      switch value {
-      case "--notes":
-        guard let rawNotes = arguments.popFirstArgument() else {
-          throw CLIError(remindersAddUsage, exitCode: 64)
-        }
-        notes = rawNotes
-
-      case "--flagged":
-        isFlagged = true
-
-      case "--unflagged":
-        isFlagged = false
-
-      case "--due-date":
-        guard let rawDueDate = arguments.popFirstArgument() else {
-          throw CLIError(remindersAddUsage, exitCode: 64)
-        }
-        dueDate = try parseReminderDueDate(rawDueDate)
-
-      case "--priority":
-        guard let rawPriority = arguments.popFirstArgument(), let parsed = ReminderPriority(rawValue: rawPriority) else {
-          throw CLIError(remindersAddUsage, exitCode: 64)
-        }
-        priority = parsed
-
-      default:
-        titleParts.append(value)
-      }
-    }
-
-    let title = titleParts.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !title.isEmpty else {
-      throw CLIError(remindersAddUsage, exitCode: 64)
-    }
-
-    return ReminderAddOptions(
-      title: title,
-      notes: notes,
-      isFlagged: isFlagged,
-      dueDate: dueDate,
-      priority: priority
-    )
-  }
-
-  private static func parseReminderUpdateOptions(
-    arguments: [String],
-    current: ReminderRecord
-  ) throws -> ReminderUpdateOptions {
-    var arguments = arguments
-    var titleParts: [String] = []
-    var notes = current.notes
-    var isFlagged = current.isFlagged
-    var dueDate = current.dueDate
-    var priority = current.priority
-    var didSetField = false
-
-    while let value = arguments.popFirstArgument() {
-      switch value {
-      case "--notes":
-        guard let rawNotes = arguments.popFirstArgument() else {
-          throw CLIError(remindersUpdateUsage, exitCode: 64)
-        }
-        notes = rawNotes
-        didSetField = true
-
-      case "--flagged":
-        isFlagged = true
-        didSetField = true
-
-      case "--unflagged":
-        isFlagged = false
-        didSetField = true
-
-      case "--due-date":
-        guard let rawDueDate = arguments.popFirstArgument() else {
-          throw CLIError(remindersUpdateUsage, exitCode: 64)
-        }
-        dueDate = try parseReminderDueDate(rawDueDate)
-        didSetField = true
-
-      case "--clear-due-date":
-        dueDate = nil
-        didSetField = true
-
-      case "--priority":
-        guard let rawPriority = arguments.popFirstArgument() else {
-          throw CLIError(remindersUpdateUsage, exitCode: 64)
-        }
-        if rawPriority == "none" {
-          priority = nil
-        } else if let parsed = ReminderPriority(rawValue: rawPriority) {
-          priority = parsed
-        } else {
-          throw CLIError(remindersUpdateUsage, exitCode: 64)
-        }
-        didSetField = true
-
-      case "--clear-priority":
-        priority = nil
-        didSetField = true
-
-      default:
-        titleParts.append(value)
-      }
-    }
-
-    let title = titleParts.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-    if title.isEmpty && !didSetField {
-      throw CLIError(remindersUpdateUsage, exitCode: 64)
-    }
-
-    return ReminderUpdateOptions(
-      title: title.isEmpty ? current.title : title,
-      notes: notes,
-      isFlagged: isFlagged,
-      dueDate: dueDate,
-      priority: priority
-    )
-  }
-
   private static func parseReminderDueDate(_ rawValue: String) throws -> InstantTimestamp {
     if let timestamp = parseInstantTimestamp(rawValue) {
       return timestamp
@@ -5326,17 +4972,6 @@ struct InstantSwiftDataCLI {
       .replacingOccurrences(of: "+", with: "-")
       .replacingOccurrences(of: "/", with: "_")
       .replacingOccurrences(of: "=", with: "")
-  }
-
-  private static func parseBool(_ value: String) -> Bool? {
-    switch value.lowercased() {
-    case "true", "yes", "1":
-      return true
-    case "false", "no", "0":
-      return false
-    default:
-      return nil
-    }
   }
 
   private static var outboxUsage: String {
@@ -5592,6 +5227,79 @@ struct InstantSwiftDataCLI {
 
   private static var syncUpThemeList: String {
     SyncUpTheme.allCases.map(\.rawValue).joined(separator: ", ")
+  }
+
+  private static func validateReminderRawValues(
+    in invocation: CLIExamplesRemindersLeafInvocation
+  ) throws {
+    switch invocation {
+    case let .list(options):
+      _ = try reminderPriority(options.priorityRawValue, usage: remindersListUsage)
+
+    case let .add(options):
+      _ = try reminderDueDate(options.dueDateRawValue)
+      _ = try reminderPriority(options.priorityRawValue, usage: remindersAddUsage)
+
+    case let .update(options):
+      _ = try reminderDueDate(options.dueDateRawValue)
+      _ = try reminderPriority(
+        options.priorityRawValue,
+        usage: remindersUpdateUsage,
+        allowsNone: true
+      )
+
+    case let .addTag(_, rawTag):
+      _ = try normalizedReminderTag(rawTag, usage: CLIExamplesRemindersUsage.addTag)
+
+    case let .removeTag(_, rawTag):
+      _ = try normalizedReminderTag(rawTag, usage: CLIExamplesRemindersUsage.removeTag)
+
+    case let .search(options):
+      _ = try normalizedReminderTagIfPresent(options.rawTag, usage: remindersSearchUsage)
+      _ = try reminderPriority(options.priorityRawValue, usage: remindersSearchUsage)
+
+    case .seed, .stats, .tags, .addList, .renameList, .complete, .delete,
+      .deleteCompleted, .deleteList, .unknown:
+      break
+    }
+  }
+
+  private static func reminderDueDate(_ rawValue: String?) throws -> InstantTimestamp? {
+    guard let rawValue else { return nil }
+    return try parseReminderDueDate(rawValue)
+  }
+
+  private static func reminderPriority(
+    _ rawValue: String?,
+    usage: String,
+    allowsNone: Bool = false
+  ) throws -> ReminderPriority? {
+    guard let rawValue else { return nil }
+    if allowsNone, rawValue == "none" {
+      return nil
+    }
+    guard let priority = ReminderPriority(rawValue: rawValue) else {
+      throw CLIError(usage, exitCode: 64)
+    }
+    return priority
+  }
+
+  private static func normalizedReminderTagIfPresent(
+    _ rawTag: String?,
+    usage: String
+  ) throws -> String? {
+    guard let rawTag else { return nil }
+    return try normalizedReminderTag(rawTag, usage: usage)
+  }
+
+  private static func normalizedReminderTag(
+    _ rawTag: String,
+    usage: String
+  ) throws -> String {
+    guard let tagID = ReminderExample.normalizedTagTitle(rawTag) else {
+      throw CLIError(usage, exitCode: 64)
+    }
+    return tagID
   }
 
   private static var remindersUsage: String {
@@ -6093,43 +5801,6 @@ private struct RemindersOutput: Codable, Sendable {
   var reminders: [ReminderRecord]
   var tags: [ReminderTagRecord]
   var reminderTags: [ReminderTagLinkRecord]
-}
-
-private struct RemindersSearchOptions: Sendable {
-  var text: String
-  var listID: String?
-  var tagID: String?
-  var includeCompleted: Bool
-  var flagged: Bool?
-  var scheduled: Bool
-  var today: Bool
-  var priority: ReminderPriority?
-}
-
-private struct RemindersListOptions: Sendable {
-  var event: String
-  var listID: String?
-  var includeCompleted: Bool
-  var flagged: Bool?
-  var scheduled: Bool
-  var today: Bool
-  var priority: ReminderPriority?
-}
-
-private struct ReminderAddOptions: Sendable {
-  var title: String
-  var notes: String
-  var isFlagged: Bool
-  var dueDate: InstantTimestamp?
-  var priority: ReminderPriority?
-}
-
-private struct ReminderUpdateOptions: Sendable {
-  var title: String
-  var notes: String
-  var isFlagged: Bool
-  var dueDate: InstantTimestamp?
-  var priority: ReminderPriority?
 }
 
 private struct SyncUpsOutput: Codable, Sendable {

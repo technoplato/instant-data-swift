@@ -917,6 +917,118 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliMalformedRemindersArgumentsDoNotBootstrapState() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    func expectMalformed(_ arguments: [String], contains expectedFragment: String) throws {
+      let result = try runCLIResult(arguments, homeURL: homeURL)
+      expectNoDifference(result.status, 64)
+      #expect(result.error.contains(expectedFragment))
+    }
+
+    try expectMalformed(
+      ["examples", "reminders", "--json"],
+      contains: "examples reminders <seed|list|stats|tags|list-tags|search|add-list"
+    )
+    try expectMalformed(
+      ["examples", "reminders", "seed", "unexpected", "--json"],
+      contains: "examples reminders seed"
+    )
+    try expectMalformed(
+      ["examples", "reminders", "list", "--completed", "maybe", "--json"],
+      contains: "examples reminders list"
+    )
+    try expectMalformed(
+      ["examples", "reminders", "list", "--priority", "urgent", "--json"],
+      contains: "examples reminders list"
+    )
+    try expectMalformed(
+      ["examples", "reminders", "stats", "unexpected", "--json"],
+      contains: "examples reminders stats"
+    )
+    try expectMalformed(
+      ["examples", "reminders", "add-list", "  ", "--json"],
+      contains: "examples reminders add-list"
+    )
+    try expectMalformed(
+      ["examples", "reminders", "rename-list", "list-1", "--json"],
+      contains: "examples reminders rename-list"
+    )
+    try expectMalformed(
+      ["examples", "reminders", "add", "list-1", "Bad date", "--due-date", "not-a-date", "--json"],
+      contains: "Invalid due date"
+    )
+    try expectMalformed(
+      ["examples", "reminders", "add", "list-1", "Bad priority", "--priority", "urgent", "--json"],
+      contains: "examples reminders add"
+    )
+    try expectMalformed(
+      ["examples", "reminders", "add", "list-1", "Title", "--priority", "--json"],
+      contains: "examples reminders add"
+    )
+    try expectMalformed(
+      ["examples", "reminders", "update", "reminder-1", "--json"],
+      contains: "examples reminders update"
+    )
+    try expectMalformed(
+      ["examples", "reminders", "update", "reminder-1", "--due-date", "not-a-date", "--json"],
+      contains: "Invalid due date"
+    )
+    try expectMalformed(
+      ["examples", "reminders", "update", "reminder-1", "--priority", "urgent", "--json"],
+      contains: "examples reminders update"
+    )
+    try expectMalformed(
+      ["examples", "reminders", "complete", "reminder-1", "extra", "--json"],
+      contains: "examples reminders complete"
+    )
+    try expectMalformed(
+      ["examples", "reminders", "delete", "--json"],
+      contains: "examples reminders delete <reminder-id>"
+    )
+    try expectMalformed(
+      ["examples", "reminders", "delete-completed", "--list-id", "--json"],
+      contains: "examples reminders delete-completed"
+    )
+    try expectMalformed(
+      ["examples", "reminders", "delete-list", "list-1", "extra", "--json"],
+      contains: "examples reminders delete-list"
+    )
+    try expectMalformed(
+      ["examples", "reminders", "add-tag", "reminder-1", "#", "--json"],
+      contains: "examples reminders add-tag"
+    )
+    try expectMalformed(
+      ["examples", "reminders", "remove-tag", "reminder-1", "  ", "--json"],
+      contains: "examples reminders remove-tag"
+    )
+    try expectMalformed(
+      ["examples", "reminders", "search", "--json"],
+      contains: "examples reminders search"
+    )
+    try expectMalformed(
+      ["examples", "reminders", "search", "--tag", "#", "--json"],
+      contains: "examples reminders search"
+    )
+    try expectMalformed(
+      ["examples", "reminders", "search", "Take", "--priority", "urgent", "--json"],
+      contains: "examples reminders search"
+    )
+    try expectMalformed(
+      ["examples", "reminders", "dance", "--json"],
+      contains: "Unknown reminders command: dance"
+    )
+
+    expectNoDifference(
+      try FileManager.default.contentsOfDirectory(atPath: homeURL.path),
+      []
+    )
+  }
+
+  @Test
   func cliQueryTodosSupportsServerCreatedAtOrder() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
