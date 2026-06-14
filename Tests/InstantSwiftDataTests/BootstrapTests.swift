@@ -1616,6 +1616,36 @@ struct BootstrapTests {
   }
 
   @Test
+  func storedFilesClientSubscriptionAdapterCancellationAfterObserveDoesNotSucceed()
+    async throws
+  {
+    let gate = AuthSessionLoadGate()
+    let client = integrationClient(
+      observeStoredFiles: {
+        await gate.recordStarted()
+        await gate.waitUntilReleased()
+        return AsyncStream { continuation in continuation.finish() }
+      }
+    )
+
+    let task = Task {
+      _ = try await client.subscribeStoredFiles()
+    }
+
+    await gate.waitUntilStarted()
+    task.cancel()
+    await gate.release()
+
+    do {
+      try await task.value
+      Issue.record("Expected stored files subscription cancellation to throw CancellationError.")
+    } catch is CancellationError {
+    } catch {
+      Issue.record("Expected CancellationError, got \(error).")
+    }
+  }
+
+  @Test
   func streamChunksPropertyWrapperLoadsUsingDependencyClient() async throws {
     let chunk = mockStreamChunk(streamID: "chat/lobby")
     let client = integrationClient(
@@ -1757,6 +1787,36 @@ struct BootstrapTests {
   }
 
   @Test
+  func streamClientSubscriptionAdapterCancellationAfterObserveDoesNotSucceed()
+    async throws
+  {
+    let gate = AuthSessionLoadGate()
+    let client = integrationClient(
+      observeStreamChunks: { _ in
+        await gate.recordStarted()
+        await gate.waitUntilReleased()
+        return AsyncStream { continuation in continuation.finish() }
+      }
+    )
+
+    let task = Task {
+      _ = try await client.subscribeStreamChunks(streamID: "chat/lobby")
+    }
+
+    await gate.waitUntilStarted()
+    task.cancel()
+    await gate.release()
+
+    do {
+      try await task.value
+      Issue.record("Expected stream chunk subscription cancellation to throw CancellationError.")
+    } catch is CancellationError {
+    } catch {
+      Issue.record("Expected CancellationError, got \(error).")
+    }
+  }
+
+  @Test
   func shareClientOperationsUseInjectedClosures() async throws {
     let snapshot = mockShareSnapshot()
     let accepted = mockShareSnapshot(
@@ -1811,6 +1871,61 @@ struct BootstrapTests {
     expectNoDifference(promotedShare, promoted)
     let revokedShare = try await client.revokeShare(id: snapshot.share.id)
     expectNoDifference(revokedShare, snapshot)
+  }
+
+  @Test
+  func shareClientSubscriptionAdapterCancelsUnderlyingObservation() async throws {
+    let snapshot = mockShareSnapshot()
+    let termination = RoomObservationTermination()
+    let client = integrationClient(
+      observeShares: {
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield([snapshot])
+          continuation.onTermination = { @Sendable _ in
+            Task {
+              await termination.record()
+            }
+          }
+        }
+      }
+    )
+
+    let subscription = try await client.subscribeShares()
+    var iterator = subscription.makeAsyncIterator()
+    let firstEmission = try await iterator.next()
+    expectNoDifference(firstEmission, [snapshot])
+
+    subscription.cancel()
+    #expect(try await iterator.next() == nil)
+    await termination.wait()
+  }
+
+  @Test
+  func shareClientSubscriptionAdapterCancellationAfterObserveDoesNotSucceed() async throws {
+    let gate = AuthSessionLoadGate()
+    let client = integrationClient(
+      observeShares: {
+        await gate.recordStarted()
+        await gate.waitUntilReleased()
+        return AsyncStream { continuation in continuation.finish() }
+      }
+    )
+
+    let task = Task {
+      _ = try await client.subscribeShares()
+    }
+
+    await gate.waitUntilStarted()
+    task.cancel()
+    await gate.release()
+
+    do {
+      try await task.value
+      Issue.record("Expected share subscription cancellation to throw CancellationError.")
+    } catch is CancellationError {
+    } catch {
+      Issue.record("Expected CancellationError, got \(error).")
+    }
   }
 
   @Test
@@ -1913,6 +2028,59 @@ struct BootstrapTests {
     subscription.cancel()
     #expect(try await iterator.next() == nil)
     await termination.wait()
+  }
+
+  @Test
+  func projectedStorageStreamShareLifecycleAPIsWorkFromImmutableModels() async throws {
+    let file = mockStoredFile(id: "immutable-file")
+    let firstChunk = mockStreamChunk(streamID: "chat/lobby")
+    let laterChunk = mockStreamChunk(id: "chunk-2", streamID: "chat/lobby", index: 1)
+    let share = mockShareSnapshot(id: "immutable-share")
+    let acceptedShare = mockShareSnapshot(
+      id: "immutable-share",
+      memberships: [("user-1", .owner), ("user-2", .reader)]
+    )
+    let client = integrationClient(
+      storedFiles: { [file] },
+      observeStoredFiles: {
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield([])
+          continuation.yield([file])
+          continuation.finish()
+        }
+      },
+      streamChunks: { streamID, limit in
+        expectNoDifference(streamID, "chat/lobby")
+        expectNoDifference(limit, 1)
+        return [firstChunk]
+      },
+      observeStreamChunks: { streamID in
+        expectNoDifference(streamID, "chat/lobby")
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield([])
+          continuation.yield([firstChunk, laterChunk])
+          continuation.finish()
+        }
+      },
+      shares: { [share] },
+      observeShares: {
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield([share])
+          continuation.yield([acceptedShare])
+          continuation.finish()
+        }
+      }
+    )
+    let model = ImmutableProjectedStorageStreamShareLifecycleModel()
+
+    try await model.exercise(streamID: "chat/lobby", using: client)
+
+    expectNoDifference(model.files, [file])
+    expectNoDifference(model.chunks, [firstChunk])
+    expectNoDifference(model.shares, [acceptedShare])
+    expectNoDifference(model.$files.loadError, nil)
+    expectNoDifference(model.$chunks.loadError, nil)
+    expectNoDifference(model.$shares.loadError, nil)
   }
 
   @Test
@@ -2258,6 +2426,29 @@ private struct ImmutableProjectedAdapterLifecycleModel {
   func exerciseLocalID(using client: InstantSwiftDataClient) async throws {
     try await $localID.load("device", using: client)
     try await $localID.task("session", using: client)
+  }
+}
+
+private struct ImmutableProjectedStorageStreamShareLifecycleModel {
+  @StoredFiles var files: [InstantStoredFile]
+  @StreamChunks var chunks: [InstantStreamChunk]
+  @Shares var shares: [InstantShareSnapshot]
+
+  func exercise(streamID: String, using client: InstantSwiftDataClient) async throws {
+    try await $files.load(using: client)
+    let filesSubscription = try await $files.subscribe(using: client)
+    filesSubscription.cancel()
+    try await $files.task(using: client)
+
+    try await $chunks.load(streamID, limit: 1, using: client)
+    let chunksSubscription = try await $chunks.subscribe(streamID, limit: 1, using: client)
+    chunksSubscription.cancel()
+    try await $chunks.task(streamID, limit: 1, using: client)
+
+    try await $shares.load(using: client)
+    let sharesSubscription = try await $shares.subscribe(using: client)
+    sharesSubscription.cancel()
+    try await $shares.task(using: client)
   }
 }
 
