@@ -2083,6 +2083,27 @@ struct BootstrapTests {
     expectNoDifference(model.$shares.loadError, nil)
   }
 
+  #if canImport(SwiftUI)
+    @Test
+    func storageStreamShareWrappersExposeSwiftUIBindings() {
+      let file = mockStoredFile(id: "binding-file")
+      let chunk = mockStreamChunk(streamID: "chat/bindings")
+      let share = mockShareSnapshot(id: "binding-share")
+
+      let files = StoredFiles()
+      files.binding.wrappedValue = [file]
+      expectNoDifference(files.wrappedValue, [file])
+
+      let chunks = StreamChunks("chat/bindings")
+      chunks.binding.wrappedValue = [chunk]
+      expectNoDifference(chunks.wrappedValue, [chunk])
+
+      let shares = Shares()
+      shares.binding.wrappedValue = [share]
+      expectNoDifference(shares.wrappedValue, [share])
+    }
+  #endif
+
   @Test
   func cliDefaultPersistenceURLHonorsHomeEnvironment() {
     let key = "INSTANT_SWIFT_DATA_HOME"
