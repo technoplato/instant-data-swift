@@ -1527,8 +1527,8 @@ private extension InstantError {
   }
 }
 
-// SQLite's raw pointer is confined to SQLitePersistenceStore. The wrapper is
-// immutable outside the actor and only closes the connection when released.
+// SAFETY: SQLite's raw pointer is confined to the `SQLitePersistenceStore` actor.
+// The wrapper is immutable outside that actor and only closes the connection when released.
 private final class SQLiteConnection: @unchecked Sendable {
   var raw: OpaquePointer?
 

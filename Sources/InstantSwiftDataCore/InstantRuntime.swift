@@ -132,6 +132,7 @@ private actor InstantAuthSessionObservers {
   }
 }
 
+// SAFETY: upload cancellation state is protected by `lock`.
 private final class InstantFileUploadProgressCancellation: @unchecked Sendable {
   private let lock = NSLock()
   private var isCancelled = false

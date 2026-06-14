@@ -9621,6 +9621,7 @@ private actor SuspendedMutationTransport {
   }
 }
 
+// SAFETY: mutable test state is protected by `lock`.
 private final class LockIsolated<Value>: @unchecked Sendable {
   private var value: Value
   private let lock = NSLock()
