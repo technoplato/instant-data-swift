@@ -6,6 +6,33 @@ import Testing
 @Suite(.serialized)
 struct InstantStoreParityTests {
   @Test
+  func parityCoverageReportRecordsCurrentSourceProvenance() {
+    let report = InstantSwiftDataParityCoverage.current
+
+    expectNoDifference(report.event, "parity-report")
+    expectNoDifference(report.coverageComplete, false)
+    expectNoDifference(report.recordCount, 38)
+    expectNoDifference(report.exactCount, 11)
+    expectNoDifference(report.adaptedCount, 24)
+    expectNoDifference(report.blockedCount, 3)
+    expectNoDifference(report.notApplicableCount, 0)
+    #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/store.test.ts"))
+    #expect(report.sourceFiles.contains("upstream/sqlite-data/Tests/SQLiteDataTests/FetchSubscriptionTests.swift"))
+    #expect(report.swiftFiles.contains("Tests/InstantSwiftDataTests/TypedAPITests.swift"))
+    #expect(report.records.contains { $0.id == "instant.store.simple-add" && $0.status == .exact })
+    #expect(report.records.contains { $0.id == "sqlite.fetch-subscription.explicit-cancel" && $0.status == .adapted })
+    #expect(report.records.contains { $0.id == "instant.live-transport.swift-to-typescript" && $0.status == .blocked })
+
+    let evidenceRows = report.evidenceRows(appID: "parity-test")
+    expectNoDifference(evidenceRows.count, report.recordCount)
+    expectNoDifference(evidenceRows.first?.caseID, "validation.parity.report")
+    expectNoDifference(evidenceRows.first?.appID, "parity-test")
+    expectNoDifference(evidenceRows.first?.event, "parity-record")
+    expectNoDifference(evidenceRows.first?.ok, true)
+    expectNoDifference(evidenceRows.last?.ok, false)
+  }
+
+  @Test
   func simpleAddMaterializesScalarAttribute() async throws {
     let source = storeParitySource(
       "simple add",

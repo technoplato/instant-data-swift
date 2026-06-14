@@ -708,11 +708,11 @@ extension InstantStoreTests {
     )
     try expectMalformed(
       ["validation", "remote", "--json"],
-      contains: "validation <local-todos|local-integrations|typed-drafts>"
+      contains: "validation <local-todos|local-integrations|typed-drafts|parity-report>"
     )
     try expectMalformed(
       ["validation", "todos", "extra", "--json"],
-      contains: "validation <local-todos|local-integrations|typed-drafts>"
+      contains: "validation <local-todos|local-integrations|typed-drafts|parity-report>"
     )
 
     expectNoDifference(
@@ -4659,7 +4659,9 @@ extension InstantStoreTests {
 
     let malformed = try runCLIResult(["validation", "remote", "--json"], homeURL: homeURL)
     #expect(malformed.status == 64)
-    #expect(malformed.error.contains("validation <local-todos|local-integrations|typed-drafts>"))
+    #expect(
+      malformed.error.contains("validation <local-todos|local-integrations|typed-drafts|parity-report>")
+    )
   }
 
   @Test
@@ -4811,6 +4813,75 @@ extension InstantStoreTests {
     #expect(humanOutput.contains("validation: ok"))
     #expect(humanOutput.contains("case: validation.typed.drafts"))
     #expect(humanOutput.contains("evidence rows: 3"))
+  }
+
+  @Test
+  func cliValidationParityReportEmitsCoverageProvenance() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let jsonOutput = try JSONDecoder().decode(
+      CLIParityCoverageOutput.self,
+      from: Data(
+        try runCLI(["validation", "parity-report", "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(jsonOutput.event, "parity-report")
+    expectNoDifference(jsonOutput.coverageComplete, false)
+    expectNoDifference(jsonOutput.recordCount, 38)
+    expectNoDifference(jsonOutput.exactCount, 11)
+    expectNoDifference(jsonOutput.adaptedCount, 24)
+    expectNoDifference(jsonOutput.blockedCount, 3)
+    #expect(
+      jsonOutput.sourceFiles.contains(
+        "upstream/instant/client/packages/core/__tests__/src/store.test.ts"
+      )
+    )
+    #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataTests/TypedAPITests.swift"))
+    #expect(jsonOutput.records.contains { $0.id == "instant.store.simple-add" && $0.status == "exact" })
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "sqlite.fetch-subscription.explicit-cancel" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.live-transport.swift-to-typescript" && $0.status == "blocked"
+      }
+    )
+
+    let jsonlOutput = try runCLI(["validation", "coverage", "--jsonl"], homeURL: homeURL)
+    let lines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(lines.count, jsonOutput.recordCount)
+    let firstEvidence = try JSONDecoder().decode(
+      CLIParityCoverageEvidence.self,
+      from: Data(try #require(lines.first).utf8)
+    )
+    expectNoDifference(firstEvidence.caseID, "validation.parity.report")
+    expectNoDifference(firstEvidence.side, "instant-typescript")
+    expectNoDifference(firstEvidence.event, "parity-record")
+    expectNoDifference(firstEvidence.entityID, "instant.store.simple-add")
+    expectNoDifference(firstEvidence.ok, true)
+    expectNoDifference(firstEvidence.details.id, "instant.store.simple-add")
+    expectNoDifference(firstEvidence.details.sourceKind, "instant-typescript")
+    expectNoDifference(
+      firstEvidence.details.sourceFile,
+      "upstream/instant/client/packages/core/__tests__/src/store.test.ts"
+    )
+    expectNoDifference(firstEvidence.details.status, "exact")
+    let blockedEvidence = try JSONDecoder().decode(
+      CLIParityCoverageEvidence.self,
+      from: Data(try #require(lines.last).utf8)
+    )
+    expectNoDifference(blockedEvidence.ok, false)
+    expectNoDifference(blockedEvidence.details.status, "blocked")
+
+    let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
+    #expect(humanOutput.contains("parity coverage: incomplete"))
+    #expect(humanOutput.contains("records: 38"))
+    #expect(humanOutput.contains("blocked: 3"))
   }
 
   @Test
@@ -5956,6 +6027,50 @@ private struct CLIDraftValidationDetails: Decodable {
   var pendingMutationIDs: [String]
   var createdID: String?
   var editedID: String?
+}
+
+private struct CLIParityCoverageOutput: Decodable {
+  var event: String
+  var coverageComplete: Bool
+  var recordCount: Int
+  var exactCount: Int
+  var adaptedCount: Int
+  var blockedCount: Int
+  var sourceFiles: [String]
+  var swiftFiles: [String]
+  var records: [CLIParityCoverageRecord]
+}
+
+private struct CLIParityCoverageRecord: Decodable {
+  var id: String
+  var sourceKind: String
+  var sourceFile: String
+  var sourceTestName: String
+  var swiftFile: String
+  var swiftTestName: String
+  var surface: String
+  var status: String
+  var notes: String
+}
+
+private struct CLIParityCoverageEvidence: Decodable {
+  var caseID: String
+  var side: String
+  var event: String
+  var appID: String
+  var entityID: String?
+  var ok: Bool
+  var details: CLIParityCoverageRecord
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case side
+    case event
+    case appID
+    case entityID
+    case ok
+    case details
+  }
 }
 
 private struct CLIBenchmarkOutput: Decodable {

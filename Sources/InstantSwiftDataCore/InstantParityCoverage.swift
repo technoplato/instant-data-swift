@@ -1,0 +1,555 @@
+import Foundation
+
+public enum InstantParityCoverageSourceKind: String, Codable, Hashable, Sendable {
+  case instantTypeScript = "instant-typescript"
+  case sqliteData = "sqlite-data"
+}
+
+public enum InstantParityCoverageStatus: String, Codable, CaseIterable, Hashable, Sendable {
+  case exact
+  case adapted
+  case blocked
+  case notApplicable = "not-applicable"
+}
+
+public struct InstantParityCoverageRecord: Codable, Equatable, Identifiable, Sendable {
+  public var id: String
+  public var sourceKind: InstantParityCoverageSourceKind
+  public var sourceFile: String
+  public var sourceTestName: String
+  public var swiftFile: String
+  public var swiftTestName: String
+  public var surface: String
+  public var status: InstantParityCoverageStatus
+  public var notes: String
+
+  public init(
+    id: String,
+    sourceKind: InstantParityCoverageSourceKind,
+    sourceFile: String,
+    sourceTestName: String,
+    swiftFile: String,
+    swiftTestName: String,
+    surface: String,
+    status: InstantParityCoverageStatus,
+    notes: String
+  ) {
+    self.id = id
+    self.sourceKind = sourceKind
+    self.sourceFile = sourceFile
+    self.sourceTestName = sourceTestName
+    self.swiftFile = swiftFile
+    self.swiftTestName = swiftTestName
+    self.surface = surface
+    self.status = status
+    self.notes = notes
+  }
+}
+
+public struct InstantParityCoverageReport: Codable, Equatable, Sendable {
+  public var event: String
+  public var coverageComplete: Bool
+  public var recordCount: Int
+  public var exactCount: Int
+  public var adaptedCount: Int
+  public var blockedCount: Int
+  public var notApplicableCount: Int
+  public var sourceFiles: [String]
+  public var swiftFiles: [String]
+  public var records: [InstantParityCoverageRecord]
+
+  public init(records: [InstantParityCoverageRecord]) {
+    self.event = "parity-report"
+    self.coverageComplete = records.allSatisfy { $0.status != .blocked }
+    self.recordCount = records.count
+    self.exactCount = records.filter { $0.status == .exact }.count
+    self.adaptedCount = records.filter { $0.status == .adapted }.count
+    self.blockedCount = records.filter { $0.status == .blocked }.count
+    self.notApplicableCount = records.filter { $0.status == .notApplicable }.count
+    self.sourceFiles = records.map(\.sourceFile).uniquedSorted()
+    self.swiftFiles = records.map(\.swiftFile).uniquedSorted()
+    self.records = records
+  }
+
+  public func evidenceRows(
+    appID: String,
+    timestampMs: Int64 = 0
+  ) -> [ValidationEvidenceRow<InstantParityCoverageRecord>] {
+    records.map { record in
+      ValidationEvidenceRow(
+        caseID: "validation.parity.report",
+        side: record.sourceKind.rawValue,
+        event: "parity-record",
+        appID: appID,
+        entityID: record.id,
+        timestampMs: timestampMs,
+        ok: record.status != .blocked,
+        details: record
+      )
+    }
+  }
+}
+
+public enum InstantSwiftDataParityCoverage {
+  public static var current: InstantParityCoverageReport {
+    InstantParityCoverageReport(records: records)
+  }
+
+  public static let records: [InstantParityCoverageRecord] = [
+    instant(
+      id: "instant.store.simple-add",
+      sourceFile: storeSource,
+      sourceTestName: "simple add",
+      swiftFile: storeParitySwiftFile,
+      swiftTestName: "simpleAddMaterializesScalarAttribute",
+      surface: "triple-store",
+      status: .exact,
+      notes: "A single scalar add creates one materialized entity."
+    ),
+    instant(
+      id: "instant.store.cardinality-one-add",
+      sourceFile: storeSource,
+      sourceTestName: "cardinality-one add",
+      swiftFile: storeParitySwiftFile,
+      swiftTestName: "cardinalityOneAddKeepsLastValueInSameTransaction",
+      surface: "triple-store",
+      status: .exact,
+      notes: "Cardinality-one attributes keep only the newest value in a transaction."
+    ),
+    instant(
+      id: "instant.store.link-unlink",
+      sourceFile: storeSource,
+      sourceTestName: "link/unlink",
+      swiftFile: storeParitySwiftFile,
+      swiftTestName: "linkAndUnlinkPortsUpstreamUserBookshelfShape",
+      surface: "links",
+      status: .exact,
+      notes: "User/bookshelf scalar writes, links, unlink, and relink materialize through the core store."
+    ),
+    instant(
+      id: "instant.store.delete-entity",
+      sourceFile: storeSource,
+      sourceTestName: "delete entity",
+      swiftFile: storeParitySwiftFile,
+      swiftTestName: "deleteEntityRemovesEntityAndInboundReferences",
+      surface: "mutations",
+      status: .exact,
+      notes: "Entity deletion removes local triples and inbound refs."
+    ),
+    instant(
+      id: "instant.store.schema-lifecycle",
+      sourceFile: storeSource,
+      sourceTestName: "schema attrs add/update/delete",
+      swiftFile: storeParitySwiftFile,
+      swiftTestName: "addingAndRenamingAttributesReindexesExistingTriples",
+      surface: "schema",
+      status: .adapted,
+      notes: "Swift replaces declared attributes directly instead of applying the TypeScript schema patch representation."
+    ),
+    instant(
+      id: "instant.store.merge-json",
+      sourceFile: storeSource,
+      sourceTestName: "merge",
+      swiftFile: storeParitySwiftFile,
+      swiftTestName: "storeDeepMergePortsUpstreamObjectArrayAndNullSemantics",
+      surface: "mutations",
+      status: .adapted,
+      notes: "Swift covers JSON merge semantics and rejects relationship attributes before local materialization."
+    ),
+    instant(
+      id: "instant.store.cascade-delete",
+      sourceFile: storeSource,
+      sourceTestName: "cascade delete",
+      swiftFile: storeParitySwiftFile,
+      swiftTestName: "onDeleteCascadePortsUpstreamBookSeriesShape",
+      surface: "links",
+      status: .adapted,
+      notes: "Swift uses schema-aware delete steps and local cascade metadata."
+    ),
+    instant(
+      id: "instant.store.date-conversion",
+      sourceFile: storeSource,
+      sourceTestName: "date conversion",
+      swiftFile: storeParitySwiftFile,
+      swiftTestName: "dateConversionMaterializesDateTypedSchemaValues",
+      surface: "dates",
+      status: .adapted,
+      notes: "Swift materializes date attributes as Date values after coercing Instant-compatible inputs."
+    ),
+    instant(
+      id: "instant.query.simple-where",
+      sourceFile: instaQLSource,
+      sourceTestName: "Simple Where",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLSimpleWhereAndDeepRelationFilters",
+      surface: "query",
+      status: .exact,
+      notes: "Top-level scalar equality filters match the upstream fixture results."
+    ),
+    instant(
+      id: "instant.query.where-in-like",
+      sourceFile: instaQLSource,
+      sourceTestName: "Where in / Where %like%",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLSimpleWhereAndDeepRelationFilters",
+      surface: "query",
+      status: .exact,
+      notes: "IN and LIKE filters over the Zeneca fixture match the upstream result sets."
+    ),
+    instant(
+      id: "instant.query.like-edges",
+      sourceFile: instaQLSource,
+      sourceTestName: "like case sensitivity / like special regex characters",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLLikeAndAndFilterEdges",
+      surface: "query",
+      status: .exact,
+      notes: "LIKE/ILIKE case behavior and pattern escaping are covered by fixture mutations."
+    ),
+    instant(
+      id: "instant.query.logical-or",
+      sourceFile: instaQLSource,
+      sourceTestName: "Where OR test.each",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLCompoundOrFilters",
+      surface: "query",
+      status: .exact,
+      notes: "Compound OR cases are ported as Swift table-driven assertions."
+    ),
+    instant(
+      id: "instant.query.associations",
+      sourceFile: instaQLSource,
+      sourceTestName: "Get association / Get reverse association / Get deep association",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLForwardAndReverseAssociations",
+      surface: "query",
+      status: .adapted,
+      notes: "Swift uses explicit include plans for forward, reverse, and deep linked materialization."
+    ),
+    instant(
+      id: "instant.query.pagination-ordering",
+      sourceFile: instaQLSource,
+      sourceTestName: "pagination and arbitrary ordering",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLPaginationOrderingAndFields",
+      surface: "query",
+      status: .adapted,
+      notes: "Swift exercises local pagination/order fields with typed query plans."
+    ),
+    instant(
+      id: "instant.query.fields",
+      sourceFile: instaQLSource,
+      sourceTestName: "fields",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLPaginationOrderingAndFields",
+      surface: "query",
+      status: .adapted,
+      notes: "Swift treats partial selections as snapshots rather than decoded full entities."
+    ),
+    instant(
+      id: "instant.query.null-not-comparators",
+      sourceFile: instaQLSource,
+      sourceTestName: "$isNull / $not and $ne / comparators",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLNullNotEqualsAndComparators",
+      surface: "query",
+      status: .exact,
+      notes: "Null, negation, not-equals, and comparison filters are matched against the upstream fixture."
+    ),
+    instant(
+      id: "instant.datalog.movie-fixture",
+      sourceFile: datalogSource,
+      sourceTestName: "querySingle / queryWhere / play",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamDatalogMovieFixtureQueries",
+      surface: "query",
+      status: .adapted,
+      notes: "Swift materializes the same movie/person facts through Instant snapshots."
+    ),
+    instant(
+      id: "instant.query-validation.shape",
+      sourceFile: queryValidationSource,
+      sourceTestName: "top-level object validation",
+      swiftFile: queryValidationSwiftFile,
+      swiftTestName: "upstreamTypedQueryShapeAndDollarOptions",
+      surface: "query-validation",
+      status: .adapted,
+      notes: "Swift query plans are typed, so malformed JavaScript object shapes map to explicit invalid plan cases."
+    ),
+    instant(
+      id: "instant.query-validation.namespace-relation",
+      sourceFile: queryValidationSource,
+      sourceTestName: "namespace validation / relation validation",
+      swiftFile: queryValidationSwiftFile,
+      swiftTestName: "upstreamTopLevelEntityNames",
+      surface: "query-validation",
+      status: .exact,
+      notes: "Unknown namespaces and invalid relation includes fail before cache writes."
+    ),
+    instant(
+      id: "instant.query-validation.where",
+      sourceFile: queryValidationSource,
+      sourceTestName: "where clause type/id/dot-notation validation",
+      swiftFile: queryValidationSwiftFile,
+      swiftTestName: "upstreamWhereClauseTypeValidation",
+      surface: "query-validation",
+      status: .adapted,
+      notes: "Swift validates field paths and typed filter values through declared attributes."
+    ),
+    instant(
+      id: "instant.query-validation.pagination",
+      sourceFile: queryValidationSource,
+      sourceTestName: "nested pagination validation",
+      swiftFile: queryValidationSwiftFile,
+      swiftTestName: "upstreamNestedIncludePaginationRestriction",
+      surface: "query-validation",
+      status: .exact,
+      notes: "Nested pagination is rejected while top-level pagination remains valid."
+    ),
+    instant(
+      id: "instant.transaction-validation.basic",
+      sourceFile: transactionValidationSource,
+      sourceTestName: "validates basic transaction chunk",
+      swiftFile: transactionValidationSwiftFile,
+      swiftTestName: "upstreamValidatesBasicTransactionChunks",
+      surface: "transaction-validation",
+      status: .adapted,
+      notes: "Swift starts from structured transaction values rather than JavaScript chunks."
+    ),
+    instant(
+      id: "instant.transaction-validation.create-update",
+      sourceFile: transactionValidationSource,
+      sourceTestName: "validates create/update operations",
+      swiftFile: transactionValidationSwiftFile,
+      swiftTestName: "upstreamValidatesCreateAndUpdateOperations",
+      surface: "transaction-validation",
+      status: .adapted,
+      notes: "Declared attributes are type checked while schemaless unknown scalar attributes remain hidden from materialization."
+    ),
+    instant(
+      id: "instant.transaction-validation.merge-delete",
+      sourceFile: transactionValidationSource,
+      sourceTestName: "validates merge/delete operations",
+      swiftFile: transactionValidationSwiftFile,
+      swiftTestName: "upstreamValidatesMergeAndDeleteOperations",
+      surface: "transaction-validation",
+      status: .adapted,
+      notes: "Swift validates merge values and deletes entities through typed triple operations."
+    ),
+    instant(
+      id: "instant.transaction-validation.lookup-rule-params",
+      sourceFile: transactionValidationSource,
+      sourceTestName: "lookup refs and rule params",
+      swiftFile: transactionValidationSwiftFile,
+      swiftTestName: "upstreamAllowsLookupValuesForEntityWrites",
+      surface: "transaction-validation",
+      status: .adapted,
+      notes: "Lookup refs and rule params are preserved for transport lowering while local optimistic effects stay deterministic."
+    ),
+    instant(
+      id: "instant.weak-hash",
+      sourceFile: weakHashSource,
+      sourceTestName: "selected fields / object key order / date / known query",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantQueryCacheKeyParityTests.swift",
+      swiftTestName: "upstreamWeakHashCanonicalQueryShapeInvariants",
+      surface: "query-cache",
+      status: .adapted,
+      notes: "Swift pins stable cache keys for equivalent query plans and canonical JSON/date values."
+    ),
+    sqlite(
+      id: "sqlite.fetch-subscription.task-cancel",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchSubscriptionTests.swift",
+      sourceTestName: "stopSubscriptionWhenTaskCancelled",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "fetchSubscriptionTaskCancelsUnderlyingObservation",
+      surface: "adapter-fetch",
+      status: .adapted,
+      notes: "Swift cancellation tears down the underlying Instant observation."
+    ),
+    sqlite(
+      id: "sqlite.fetch-subscription.explicit-cancel",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchSubscriptionTests.swift",
+      sourceTestName: "completeWhenTaskExplicitlyCancelled",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "fetchSubscriptionTaskCompletesWhenSubscriptionExplicitlyCancelled",
+      surface: "adapter-fetch",
+      status: .adapted,
+      notes: "Explicit subscription cancellation completes the lifecycle task without surfacing an error."
+    ),
+    sqlite(
+      id: "sqlite.fetch-subscription.independent-lifetimes",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchSubscriptionTests.swift",
+      sourceTestName: "cancellingOneFetchDoesNotCancelAnother",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "cancellingOneFetchSubscriptionDoesNotCancelAnother",
+      surface: "adapter-fetch",
+      status: .adapted,
+      notes: "Independent Instant subscriptions keep separate cancellation tokens."
+    ),
+    sqlite(
+      id: "sqlite.fetch-one.required-empty",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchOneTests.swift",
+      sourceTestName: "tableInit / selectStatementInit",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "nonOptionalFetchOnePreservesLastValueWhenQueryIsEmpty",
+      surface: "adapter-fetch",
+      status: .adapted,
+      notes: "A required FetchOne preserves its previous value and records an InstantError when a live query becomes empty."
+    ),
+    sqlite(
+      id: "sqlite.fetch-one.optional-empty",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchOneTests.swift",
+      sourceTestName: "optionalTableInit / optionalStatementInit",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "bareOptionalFetchOneDefaultsToEntityQuery",
+      surface: "adapter-fetch",
+      status: .adapted,
+      notes: "Optional FetchOne defaults to the entity query and clears to nil for empty result sets."
+    ),
+    sqlite(
+      id: "sqlite.fetch-all.dynamic-query",
+      sourceFile: "upstream/sqlite-data/Examples/CaseStudies/DynamicQuery.swift",
+      sourceTestName: "@Fetch projected load dynamic query",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "observableModelLoadsDynamicFetchQueriesThroughWrapperState",
+      surface: "adapter-fetch",
+      status: .adapted,
+      notes: "The Instant adapter updates observable model state through projected wrapper dynamic query loading."
+    ),
+    sqlite(
+      id: "sqlite.bindings.fetch-wrappers",
+      sourceFile: "upstream/sqlite-data/Sources/SQLiteData/FetchAll.swift",
+      sourceTestName: "projectedValue binding",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "projectedFetchWrappersExposeSwiftUIBindings",
+      surface: "adapter-bindings",
+      status: .adapted,
+      notes: "FetchAll, FetchOne, and Fetch expose projected SwiftUI bindings over Instant values."
+    ),
+    sqlite(
+      id: "sqlite.syncups.form-new",
+      sourceFile: "upstream/sqlite-data/Examples/SyncUpTests/SyncUpFormTests.swift",
+      sourceTestName: "new sync-up draft save",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "syncUpFormModelSavesNewDraftWithNonBlankAttendees",
+      surface: "examples-syncups",
+      status: .adapted,
+      notes: "SyncUps form draft behavior maps to Instant create/link transaction steps."
+    ),
+    sqlite(
+      id: "sqlite.syncups.form-edit",
+      sourceFile: "upstream/sqlite-data/Examples/SyncUpTests/SyncUpFormTests.swift",
+      sourceTestName: "existing sync-up draft edit",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "syncUpFormModelUpdatesExistingDraftAndReplacesAttendees",
+      surface: "examples-syncups",
+      status: .adapted,
+      notes: "Existing SyncUps drafts preserve identity and update attendees through Instant mutations."
+    ),
+    instant(
+      id: "instant.live-transport.swift-to-typescript",
+      sourceFile: "upstream/instant/client/packages/core/__tests__",
+      sourceTestName: "real server Swift write observed by TypeScript",
+      swiftFile: "validation/run-e2e.sh",
+      swiftTestName: "Swift/TypeScript real-run validation",
+      surface: "live-transport",
+      status: .blocked,
+      notes: "Local validation exists, but real WebSocket/server-backed Swift-to-TypeScript observation remains future transport work."
+    ),
+    instant(
+      id: "instant.live-transport.typescript-to-swift",
+      sourceFile: "upstream/instant/client/packages/core/__tests__",
+      sourceTestName: "real server TypeScript write observed by Swift",
+      swiftFile: "validation/run-e2e.sh",
+      swiftTestName: "Swift/TypeScript real-run validation",
+      surface: "live-transport",
+      status: .blocked,
+      notes: "The TypeScript fixture runner is present, but Swift live subscription against a real Instant app remains incomplete."
+    ),
+    sqlite(
+      id: "sqlite.cloudkit-demo.remote-share",
+      sourceFile: "upstream/sqlite-data/Examples/CloudKitDemo",
+      sourceTestName: "CloudKit shared records and participants",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "Instant share model local coverage",
+      surface: "sharing",
+      status: .blocked,
+      notes: "Local Instant share entities are covered; remote permission rejection and CloudKitDemo-equivalent app proof remain future work."
+    ),
+  ]
+
+  private static func instant(
+    id: String,
+    sourceFile: String,
+    sourceTestName: String,
+    swiftFile: String,
+    swiftTestName: String,
+    surface: String,
+    status: InstantParityCoverageStatus,
+    notes: String
+  ) -> InstantParityCoverageRecord {
+    InstantParityCoverageRecord(
+      id: id,
+      sourceKind: .instantTypeScript,
+      sourceFile: sourceFile,
+      sourceTestName: sourceTestName,
+      swiftFile: swiftFile,
+      swiftTestName: swiftTestName,
+      surface: surface,
+      status: status,
+      notes: notes
+    )
+  }
+
+  private static func sqlite(
+    id: String,
+    sourceFile: String,
+    sourceTestName: String,
+    swiftFile: String,
+    swiftTestName: String,
+    surface: String,
+    status: InstantParityCoverageStatus,
+    notes: String
+  ) -> InstantParityCoverageRecord {
+    InstantParityCoverageRecord(
+      id: id,
+      sourceKind: .sqliteData,
+      sourceFile: sourceFile,
+      sourceTestName: sourceTestName,
+      swiftFile: swiftFile,
+      swiftTestName: swiftTestName,
+      surface: surface,
+      status: status,
+      notes: notes
+    )
+  }
+
+  private static let storeSource =
+    "upstream/instant/client/packages/core/__tests__/src/store.test.ts"
+  private static let instaQLSource =
+    "upstream/instant/client/packages/core/__tests__/src/instaql.test.ts"
+  private static let datalogSource =
+    "upstream/instant/client/packages/core/__tests__/src/datalog.test.ts"
+  private static let queryValidationSource =
+    "upstream/instant/client/packages/core/__tests__/src/queryValidation.test.ts"
+  private static let transactionValidationSource =
+    "upstream/instant/client/packages/core/__tests__/src/transactionValidation.test.ts"
+  private static let weakHashSource =
+    "upstream/instant/client/packages/core/__tests__/src/utils/weakHash.test.ts"
+  private static let storeParitySwiftFile =
+    "Tests/InstantSwiftDataCoreTests/InstantStoreParityTests.swift"
+  private static let queryExecutionSwiftFile =
+    "Tests/InstantSwiftDataCoreTests/InstantQueryExecutionParityTests.swift"
+  private static let queryValidationSwiftFile =
+    "Tests/InstantSwiftDataCoreTests/InstantQueryValidationParityTests.swift"
+  private static let transactionValidationSwiftFile =
+    "Tests/InstantSwiftDataCoreTests/InstantTransactionValidationParityTests.swift"
+  private static let typedAPISwiftFile =
+    "Tests/InstantSwiftDataTests/TypedAPITests.swift"
+}
+
+extension Sequence where Element: Comparable & Hashable {
+  fileprivate func uniquedSorted() -> [Element] {
+    Array(Set(self)).sorted()
+  }
+}

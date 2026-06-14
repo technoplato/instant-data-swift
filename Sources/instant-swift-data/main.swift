@@ -223,6 +223,14 @@ struct InstantSwiftDataCLI {
         throw error
       }
 
+    case .parityReport:
+      let appID = validationAppID()
+      try printParityCoverageReport(
+        result: InstantSwiftDataParityCoverage.current,
+        appID: appID,
+        output: output
+      )
+
     case .typedDrafts:
       let appID = validationAppID()
       do {
@@ -4294,6 +4302,7 @@ struct InstantSwiftDataCLI {
         validation local-todos [--json|--jsonl]
         validation local-integrations [--json|--jsonl]
         validation typed-drafts [--json|--jsonl]
+        validation parity-report [--json|--jsonl]
         benchmark [--suite local-todos] [--iterations n] [--app-id id] [--json|--jsonl]
 
       Environment:
@@ -4762,6 +4771,32 @@ struct InstantSwiftDataCLI {
 
     case .jsonl:
       for row in result.evidence {
+        try writeJSONLine(row)
+      }
+    }
+  }
+
+  private static func printParityCoverageReport(
+    result: InstantParityCoverageReport,
+    appID: String,
+    output: OutputMode
+  ) throws {
+    switch output {
+    case .human:
+      print("parity coverage: \(result.coverageComplete ? "complete" : "incomplete")")
+      print("records: \(result.recordCount)")
+      print("exact: \(result.exactCount)")
+      print("adapted: \(result.adaptedCount)")
+      print("blocked: \(result.blockedCount)")
+      print("not applicable: \(result.notApplicableCount)")
+      print("source files: \(result.sourceFiles.count)")
+      print("swift files: \(result.swiftFiles.count)")
+
+    case .json:
+      try writeJSON(result)
+
+    case .jsonl:
+      for row in result.evidenceRows(appID: appID) {
         try writeJSONLine(row)
       }
     }
