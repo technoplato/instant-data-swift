@@ -6,6 +6,45 @@ import Testing
 @Suite(.serialized)
 struct InstantStoreParityTests {
   @Test
+  func simpleAddMaterializesScalarAttribute() async throws {
+    let source = storeParitySource(
+      "simple add",
+      status: "exact: a single scalar write creates and materializes the entity."
+    )
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: [
+          InstantAttribute(
+            id: "users/handle",
+            namespace: "users",
+            name: "handle",
+            valueType: .string
+          )
+        ]
+      )
+    )
+
+    let result = try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-simple-add",
+        operations: [
+          .insert(triple("user-1", "users/handle", .string("bobby"), txID: "tx-simple-add", time: time))
+        ]
+      ),
+      createdAt: time
+    )
+
+    let users = try await runtime.query(InstantQueryPlan(id: "users", namespace: "users"))
+    expectNoDifference(result.changedEntityIDs, ["user-1"], source)
+    expectNoDifference(result.tripleCount, 1, source)
+    expectNoDifference(users.map(\.id), ["user-1"], source)
+    expectNoDifference(users.map { $0.values["handle"]?.first }, [.string("bobby")], source)
+  }
+
+  @Test
   func cardinalityOneAddKeepsLastValueInSameTransaction() async throws {
     let source = storeParitySource(
       "cardinality-one add",
