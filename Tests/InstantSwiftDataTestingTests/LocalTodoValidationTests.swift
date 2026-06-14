@@ -467,6 +467,109 @@ struct LocalTodoValidationTests {
   }
 
   @Test
+  func parityCoverageValidationHarnessSummarizesIncompleteCoverage() throws {
+    let run = try InstantSwiftDataTestHarness.runParityCoverageValidation(
+      appID: "validation-parity-test",
+      timestamp: { InstantTimestamp(milliseconds: 1_700_003_000_000) }
+    )
+
+    expectNoDifference(run.result.event, "parity-report")
+    expectNoDifference(run.result.coverageComplete, false)
+    expectNoDifference(run.result.recordCount, 41)
+    expectNoDifference(run.result.exactCount, 11)
+    expectNoDifference(run.result.adaptedCount, 27)
+    expectNoDifference(run.result.blockedCount, 3)
+    expectNoDifference(run.summary.caseID, "validation.parity.report")
+    expectNoDifference(run.summary.appID, "validation-parity-test")
+    expectNoDifference(run.summary.rowCount, run.result.recordCount)
+    expectNoDifference(run.summary.ok, false)
+    expectNoDifference(run.summary.events, Array(repeating: "parity-record", count: 41))
+    expectNoDifference(run.summary.failedEvents, Array(repeating: "parity-record", count: 3))
+    #expect(
+      run.result.sourceFiles.contains(
+        "upstream/instant/client/packages/core/__tests__/src/store.test.ts"
+      )
+    )
+    #expect(
+      run.result.records.contains {
+        $0.id == "instant.live-transport.swift-to-typescript" && $0.status == .blocked
+      }
+    )
+  }
+
+  @Test
+  func validationRunnerParityReportCommandEmitsJSONL() throws {
+    let result = try runValidationRunner(arguments: ["--parity-report"])
+
+    #expect(
+      result.status == 0,
+      """
+      instant-swift-data-validation-runner --parity-report failed.
+      stdout:
+      \(result.stdout)
+      stderr:
+      \(result.stderr)
+      """
+    )
+
+    let rows = try parseJSONLines(result.stdout)
+    expectNoDifference(rows.count, 41)
+    expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
+      "validation.parity.report"
+    ]))
+    expectNoDifference(Set(rows.map { $0["appID"] as? String ?? "" }), Set(["local-validation"]))
+    expectNoDifference(Set(rows.map { $0["event"] as? String ?? "" }), Set(["parity-record"]))
+    expectNoDifference(rows.filter { ($0["ok"] as? Bool) == false }.count, 3)
+
+    let first = try #require(rows.first)
+    expectNoDifference(first["entityID"] as? String, "instant.store.simple-add")
+    expectNoDifference(first["side"] as? String, "instant-typescript")
+    expectNoDifference(first["ok"] as? Bool, true)
+    let firstDetails = try #require(first["details"] as? [String: Any])
+    expectNoDifference(firstDetails["status"] as? String, "exact")
+
+    let blocked = try #require(
+      rows.first { row in
+        row["entityID"] as? String == "instant.live-transport.swift-to-typescript"
+      }
+    )
+    expectNoDifference(blocked["ok"] as? Bool, false)
+    let blockedDetails = try #require(blocked["details"] as? [String: Any])
+    expectNoDifference(blockedDetails["status"] as? String, "blocked")
+  }
+
+  @Test
+  func validationRunnerCoverageAliasEmitsParityJSONL() throws {
+    let result = try runValidationRunner(arguments: ["--coverage"])
+
+    #expect(result.status == 0)
+    let rows = try parseJSONLines(result.stdout)
+    expectNoDifference(rows.count, 41)
+    expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
+      "validation.parity.report"
+    ]))
+    expectNoDifference(rows.filter { ($0["ok"] as? Bool) == false }.count, 3)
+  }
+
+  @Test
+  func validationRunnerParityReportFailureEmitsMappedJSONL() throws {
+    let result = try runValidationRunner(
+      arguments: ["--parity-report"],
+      environment: [
+        "INSTANT_SWIFT_DATA_VALIDATION_RUNNER_FAIL_CASE": "validation.parity.report"
+      ]
+    )
+
+    #expect(result.status == 1)
+    let rows = try parseJSONLines(result.stdout)
+    let row = try #require(rows.first)
+    expectNoDifference(row["case"] as? String, "validation.parity.report")
+    expectNoDifference(row["appID"] as? String, "local-validation")
+    expectNoDifference(row["event"] as? String, "failed")
+    expectNoDifference(row["ok"] as? Bool, false)
+  }
+
+  @Test
   func validationRunE2EScriptOrchestratesLocalIntegrationEvidence() throws {
     let packageURL = packageRootURL()
     let scriptURL = packageURL.appendingPathComponent("validation/run-e2e.sh")
@@ -508,6 +611,8 @@ struct LocalTodoValidationTests {
     #expect(runnerSource.contains("runPlatformAdapterValidation()"))
     #expect(runnerSource.contains("--syncups-recording"))
     #expect(runnerSource.contains("runSyncUpsRecordingValidation()"))
+    #expect(runnerSource.contains("--parity-report"))
+    #expect(runnerSource.contains("runParityCoverageValidation()"))
 
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/bin/bash")

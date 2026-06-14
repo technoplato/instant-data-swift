@@ -103,6 +103,19 @@ public struct InstantSyncUpsRecordingValidationRun: Sendable {
   }
 }
 
+public struct InstantParityCoverageValidationRun: Sendable {
+  public var result: InstantParityCoverageReport
+  public var summary: InstantValidationEvidenceSummary
+
+  public init(
+    result: InstantParityCoverageReport,
+    summary: InstantValidationEvidenceSummary
+  ) {
+    self.result = result
+    self.summary = summary
+  }
+}
+
 public enum InstantSwiftDataTestHarness {
   public static func summarize<Details>(
     _ rows: [ValidationEvidenceRow<Details>]
@@ -226,6 +239,19 @@ public enum InstantSwiftDataTestHarness {
     return InstantSyncUpsRecordingValidationRun(
       result: result,
       summary: try requireAllEvidenceOK(result.evidence)
+    )
+  }
+
+  public static func runParityCoverageValidation(
+    appID: String = "local-validation",
+    timestamp: @escaping @Sendable () -> InstantTimestamp = {
+      InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
+    }
+  ) throws -> InstantParityCoverageValidationRun {
+    let result = InstantSwiftDataParityCoverage.current
+    return InstantParityCoverageValidationRun(
+      result: result,
+      summary: summarize(result.evidenceRows(appID: appID, timestampMs: timestamp().milliseconds))
     )
   }
 }

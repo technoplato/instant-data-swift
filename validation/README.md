@@ -44,6 +44,8 @@ swift run instant-swift-data-validation-runner --local-integrations
 swift run instant-swift-data-validation-runner --typed-drafts
 swift run instant-swift-data-validation-runner --platform-adapters
 swift run instant-swift-data-validation-runner --syncups-recording
+swift run instant-swift-data-validation-runner --parity-report
+swift run instant-swift-data-validation-runner --coverage
 swift run instant-swift-data-benchmarks --suite local-todos --iterations 1 --jsonl
 ```
 

@@ -38,6 +38,8 @@ struct InstantSwiftDataValidationRunner {
       "validation.platform.adapters"
     case ["--syncups-recording"]:
       "validation.syncups.recording"
+    case ["--parity-report"], ["--coverage"]:
+      "validation.parity.report"
     case [], ["--local-todos"]:
       "validation.local.todos"
     default:
@@ -66,12 +68,14 @@ struct InstantSwiftDataValidationRunner {
       || arguments == ["--typed-drafts"]
       || arguments == ["--platform-adapters"]
       || arguments == ["--syncups-recording"]
+      || arguments == ["--parity-report"]
+      || arguments == ["--coverage"]
     else {
       throw ValidationFailure(
         caseID: "validation.arguments",
         appID: "local-validation",
         message:
-          "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--typed-drafts|--platform-adapters|--syncups-recording]"
+          "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--typed-drafts|--platform-adapters|--syncups-recording|--parity-report|--coverage]"
       )
     }
 
@@ -99,6 +103,11 @@ struct InstantSwiftDataValidationRunner {
     } else if arguments == ["--syncups-recording"] {
       let run = try await InstantSwiftDataTestHarness.runSyncUpsRecordingValidation()
       for row in run.result.evidence {
+        try writeJSONLine(row)
+      }
+    } else if arguments == ["--parity-report"] || arguments == ["--coverage"] {
+      let run = try InstantSwiftDataTestHarness.runParityCoverageValidation()
+      for row in run.result.evidenceRows(appID: run.summary.appID ?? "local-validation") {
         try writeJSONLine(row)
       }
     } else {
