@@ -655,6 +655,7 @@ public enum CLIQueryArgumentError: Error, Equatable, Sendable {
 public enum CLIValidationInvocation: Equatable, Sendable {
   case localTodos
   case localIntegrations
+  case reminders
   case platformAdapters
   case parityReport
   case syncUpsRecording
@@ -663,9 +664,10 @@ public enum CLIValidationInvocation: Equatable, Sendable {
 
 public enum CLIValidationUsage {
   public static let validation = """
-    Usage: instant-swift-data validation <local-todos|local-integrations|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>
+    Usage: instant-swift-data validation <local-todos|local-integrations|reminders|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>
       instant-swift-data validation local-todos [--json|--jsonl]
       instant-swift-data validation local-integrations [--json|--jsonl]
+      instant-swift-data validation reminders [--json|--jsonl]
       instant-swift-data validation typed-drafts [--json|--jsonl]
       instant-swift-data validation platform-adapters [--json|--jsonl]
       instant-swift-data validation syncups-recording [--json|--jsonl]
@@ -2631,6 +2633,9 @@ public struct CLIValidationParser: Parser {
 
     case "local-integrations", "integrations":
       return .localIntegrations
+
+    case "reminders", "local-reminders":
+      return .reminders
 
     case "parity-report", "parity", "coverage":
       return .parityReport

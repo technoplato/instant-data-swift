@@ -427,6 +427,36 @@ public enum InstantSwiftDataParityCoverage {
       notes: "FetchAll, FetchOne, and Fetch expose projected SwiftUI bindings over Instant values."
     ),
     sqlite(
+      id: "sqlite.reminders.search-tags",
+      sourceFile: "upstream/sqlite-data/Examples/RemindersTests/SearchRemindersTests.swift",
+      sourceTestName: "basics / showCompleted / deleteCompleted",
+      swiftFile: "Tests/InstantSwiftDataTestingTests/LocalTodoValidationTests.swift",
+      swiftTestName: "remindersValidationProducesEvidenceAndPersistsLocalSurfaces",
+      surface: "examples-reminders",
+      status: .adapted,
+      notes: "The Instant Reminders validation emits local JSONL evidence for text search, tag filters, completed filtering, and durable reminder-tag links."
+    ),
+    sqlite(
+      id: "sqlite.reminders.detail-rich-fields",
+      sourceFile: "upstream/sqlite-data/Examples/RemindersTests/RemindersDetailsTests.swift",
+      sourceTestName: "basics / ordering / showCompleted",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/CLITests.swift",
+      swiftTestName: "cliValidationRemindersEmitsEvidence",
+      surface: "examples-reminders",
+      status: .adapted,
+      notes: "The Instant port proves notes, flagged state, due-date filters, priority filters, completion counts, and rich-field edits through terminal validation."
+    ),
+    sqlite(
+      id: "sqlite.reminders.lists-share-stats",
+      sourceFile: "upstream/sqlite-data/Examples/RemindersTests/RemindersListsTests.swift",
+      sourceTestName: "basics / share",
+      swiftFile: "Tests/InstantSwiftDataTestingTests/LocalTodoValidationTests.swift",
+      swiftTestName: "remindersValidationProducesEvidenceAndPersistsLocalSurfaces",
+      surface: "examples-reminders",
+      status: .adapted,
+      notes: "Local Instant validation proves list counts, smart-list stats, share role promotion/demotion, reader rejection, writer updates, and relaunch persistence."
+    ),
+    sqlite(
       id: "sqlite.syncups.form-new",
       sourceFile: "upstream/sqlite-data/Examples/SyncUpTests/SyncUpFormTests.swift",
       sourceTestName: "new sync-up draft save",

@@ -64,6 +64,19 @@ public struct InstantLocalIntegrationValidationRun: Sendable {
   }
 }
 
+public struct InstantRemindersValidationRun: Sendable {
+  public var result: RemindersValidationResult
+  public var summary: InstantValidationEvidenceSummary
+
+  public init(
+    result: RemindersValidationResult,
+    summary: InstantValidationEvidenceSummary
+  ) {
+    self.result = result
+    self.summary = summary
+  }
+}
+
 public struct InstantDraftValidationRun: Sendable {
   public var result: DraftValidationResult
   public var summary: InstantValidationEvidenceSummary
@@ -177,6 +190,26 @@ public enum InstantSwiftDataTestHarness {
       makeID: makeID
     )
     return InstantLocalIntegrationValidationRun(
+      result: result,
+      summary: try requireAllEvidenceOK(result.evidence)
+    )
+  }
+
+  public static func runRemindersValidation(
+    appID: String = "local-validation",
+    cacheURL: URL? = nil,
+    timestamp: @escaping @Sendable () -> InstantTimestamp = {
+      InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
+    },
+    makeID: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() }
+  ) async throws -> InstantRemindersValidationRun {
+    let result = try await InstantSwiftDataRemindersValidation.run(
+      appID: appID,
+      cacheURL: cacheURL,
+      timestamp: timestamp,
+      makeID: makeID
+    )
+    return InstantRemindersValidationRun(
       result: result,
       summary: try requireAllEvidenceOK(result.evidence)
     )

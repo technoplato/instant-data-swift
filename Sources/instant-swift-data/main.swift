@@ -223,6 +223,24 @@ struct InstantSwiftDataCLI {
         throw error
       }
 
+    case .reminders:
+      let appID = validationAppID()
+      do {
+        let result = try await InstantSwiftDataRemindersValidation.run(appID: appID)
+        try printRemindersValidation(result: result, output: output)
+      } catch {
+        if output == .jsonl {
+          try writeJSONLine(
+            validationFailureRow(
+              caseID: "validation.reminders",
+              appID: appID,
+              error: error
+            )
+          )
+        }
+        throw error
+      }
+
     case .parityReport:
       let appID = validationAppID()
       try printParityCoverageReport(
@@ -4394,10 +4412,12 @@ struct InstantSwiftDataCLI {
         sync mark-processed <tx-id> [--json|--jsonl]
         validation local-todos [--json|--jsonl]
         validation local-integrations [--json|--jsonl]
+        validation reminders [--json|--jsonl]
         validation typed-drafts [--json|--jsonl]
         validation platform-adapters [--json|--jsonl]
         validation syncups-recording [--json|--jsonl]
         validation parity-report [--json|--jsonl]
+        validation coverage [--json|--jsonl]
         benchmark [--suite local-todos] [--iterations n] [--app-id id] [--json|--jsonl]
 
       Environment:
@@ -4815,6 +4835,54 @@ struct InstantSwiftDataCLI {
       print("stream chunks: \(summary.streamChunkCount)")
       print("active shares: \(summary.activeShareCount)")
       print("revoked shares: \(summary.revokedShareCount)")
+      print("cache: \(summary.cachePath)")
+
+    case .json:
+      try writeJSON(summary)
+
+    case .jsonl:
+      for row in result.evidence {
+        try writeJSONLine(row)
+      }
+    }
+  }
+
+  private static func printRemindersValidation(
+    result: RemindersValidationResult,
+    output: OutputMode
+  ) throws {
+    let finalDetails = result.evidence.last?.details
+    let summary = RemindersValidationOutput(
+      appID: result.appID,
+      cachePath: result.cacheURL.path,
+      event: "reminders",
+      transport: "not-implemented-local-cache-only",
+      ok: result.evidence.allSatisfy { $0.ok },
+      evidenceCount: result.evidence.count,
+      events: result.evidence.map(\.event),
+      listCount: finalDetails?.listIDs.count ?? 0,
+      reminderCount: finalDetails?.reminderIDs.count ?? 0,
+      completedReminderCount: finalDetails?.completedReminderIDs.count ?? 0,
+      tagCount: finalDetails?.tagIDs.count ?? 0,
+      activeShareCount: finalDetails?.activeShareIDs.count ?? 0,
+      rejectedOperations: result.evidence.flatMap(\.details.rejectedOperations),
+      pendingMutationCount: finalDetails?.pendingMutationIDs.count ?? 0,
+      stats: finalDetails?.stats ?? RemindersStats()
+    )
+
+    switch output {
+    case .human:
+      print("validation: \(summary.ok ? "ok" : "failed")")
+      print("case: validation.reminders")
+      print("events: \(summary.events.joined(separator: ", "))")
+      print("evidence rows: \(summary.evidenceCount)")
+      print("lists: \(summary.listCount)")
+      print("reminders: \(summary.reminderCount)")
+      print("completed reminders: \(summary.completedReminderCount)")
+      print("tags: \(summary.tagCount)")
+      print("active shares: \(summary.activeShareCount)")
+      print("rejections: \(summary.rejectedOperations.joined(separator: ", "))")
+      print("pending mutations: \(summary.pendingMutationCount)")
       print("cache: \(summary.cachePath)")
 
     case .json:
@@ -6571,6 +6639,24 @@ private struct LocalIntegrationValidationOutput: Codable, Sendable {
   var streamChunkCount: Int
   var activeShareCount: Int
   var revokedShareCount: Int
+}
+
+private struct RemindersValidationOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var transport: String
+  var ok: Bool
+  var evidenceCount: Int
+  var events: [String]
+  var listCount: Int
+  var reminderCount: Int
+  var completedReminderCount: Int
+  var tagCount: Int
+  var activeShareCount: Int
+  var rejectedOperations: [String]
+  var pendingMutationCount: Int
+  var stats: RemindersStats
 }
 
 private struct DraftValidationOutput: Codable, Sendable {

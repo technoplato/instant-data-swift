@@ -288,6 +288,7 @@ Run the local Swift validation evidence runner:
 ```bash
 swift run instant-swift-data validation local-todos --jsonl
 swift run instant-swift-data validation local-integrations --jsonl
+swift run instant-swift-data validation reminders --jsonl
 swift run instant-swift-data validation typed-drafts --jsonl
 swift run instant-swift-data validation platform-adapters --jsonl
 swift run instant-swift-data validation syncups-recording --jsonl
@@ -295,6 +296,7 @@ swift run instant-swift-data validation parity-report --jsonl
 swift run instant-swift-data validation coverage --jsonl
 swift run instant-swift-data-validation-runner --local-todos
 swift run instant-swift-data-validation-runner --local-integrations
+swift run instant-swift-data-validation-runner --reminders
 swift run instant-swift-data-validation-runner --typed-drafts
 swift run instant-swift-data-validation-runner --platform-adapters
 swift run instant-swift-data-validation-runner --syncups-recording
@@ -309,7 +311,10 @@ validation/run-e2e.sh
 closed-connection offline write, offline relaunch restore, and reconnect flush.
 `validation local-integrations` emits evidence for local auth, room
 presence/topic messages, file upload/read, stream chunks, and share
-create/accept/revoke. `validation typed-drafts` emits terminal evidence for a
+create/accept/revoke. `validation reminders` emits terminal evidence for local
+Reminders search, tags, rich fields, smart-list stats, list sharing roles,
+permission rejections, writer updates, and relaunch persistence.
+`validation typed-drafts` emits terminal evidence for a
 macro-generated nil-id draft create, `Draft(existing)` edit, a writable relation
 draft with generated ref metadata, summarized pending mutation payload shape,
 and relaunch persistence through `InstantSwiftDataClient.save(_:)`.

@@ -32,6 +32,8 @@ struct InstantSwiftDataValidationRunner {
     switch Array(CommandLine.arguments.dropFirst()) {
     case ["--local-integrations"]:
       "validation.local.integrations"
+    case ["--reminders"], ["--local-reminders"]:
+      "validation.reminders"
     case ["--typed-drafts"]:
       "validation.typed.drafts"
     case ["--platform-adapters"]:
@@ -65,6 +67,8 @@ struct InstantSwiftDataValidationRunner {
     guard arguments.isEmpty
       || arguments == ["--local-todos"]
       || arguments == ["--local-integrations"]
+      || arguments == ["--reminders"]
+      || arguments == ["--local-reminders"]
       || arguments == ["--typed-drafts"]
       || arguments == ["--platform-adapters"]
       || arguments == ["--syncups-recording"]
@@ -75,7 +79,7 @@ struct InstantSwiftDataValidationRunner {
         caseID: "validation.arguments",
         appID: "local-validation",
         message:
-          "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--typed-drafts|--platform-adapters|--syncups-recording|--parity-report|--coverage]"
+          "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--reminders|--local-reminders|--typed-drafts|--platform-adapters|--syncups-recording|--parity-report|--coverage]"
       )
     }
 
@@ -87,6 +91,11 @@ struct InstantSwiftDataValidationRunner {
 
     if arguments == ["--local-integrations"] {
       let run = try await InstantSwiftDataTestHarness.runLocalIntegrationValidation()
+      for row in run.result.evidence {
+        try writeJSONLine(row)
+      }
+    } else if arguments == ["--reminders"] || arguments == ["--local-reminders"] {
+      let run = try await InstantSwiftDataTestHarness.runRemindersValidation()
       for row in run.result.evidence {
         try writeJSONLine(row)
       }

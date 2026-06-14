@@ -348,14 +348,17 @@ instant.schema.ts --json` and `instant-swift-data perms generate --example todos
 --to instant.perms.ts --jsonl`. Local validation can emit JSONL evidence for
 todos/offline behavior with `instant-swift-data validation local-todos --jsonl`
 and for auth, rooms, files, streams, and shares with
-`instant-swift-data validation local-integrations --jsonl`. Public adapter
-wrappers can be proven from the terminal with
+`instant-swift-data validation local-integrations --jsonl`. The local Reminders
+port now emits terminal JSONL evidence with
+`instant-swift-data validation reminders --jsonl`, covering search, tags, rich
+fields, smart-list stats, list sharing roles, permission rejections, writer
+updates, and relaunch persistence. Public adapter wrappers can be proven from the terminal with
 `instant-swift-data validation platform-adapters --jsonl`, and the SyncUps
 recording/dependency flow, including meeting restore after relaunch, can be proven with
 `instant-swift-data validation syncups-recording --jsonl`.
 `validation/run-e2e.sh` now records the Swift local todo, local integration,
-typed draft, platform adapter, SyncUps recording, and parity coverage evidence
-streams, then the Swift benchmark evidence and TypeScript fixture check. Real
+Reminders, typed draft, platform adapter, SyncUps recording, and parity coverage
+evidence streams, then the Swift benchmark evidence and TypeScript fixture check. Real
 remote push/pull remains future transport work.
 
 Current local progress: the CLI exposes non-captive local admin helpers:
@@ -761,6 +764,12 @@ Create `validation/` with:
   flagged/scheduled/today counts exclude completed reminders, matching the
   upstream Reminders list model. Upstream-exact integer priority rank ordering,
   status states, FTS/highlighting, and SwiftUI detail models remain future work.
+- Reminders: `validation reminders --jsonl` now records the local Reminders port
+  as acceptance evidence, including search/tag filtering, rich-field edits,
+  smart-list stats, local list-sharing reader rejection, writer updates,
+  demotion rejection, and relaunch persistence. This is still local Instant
+  proof; real Instant sharing entities, generated permissions, and
+  Swift/TypeScript boundary proof remain future work.
 - SyncUps: the first local SyncUps port slice exposes durable
   `examples sync-ups add`, `detail`, `edit`, `add-attendee`,
   `delete-attendee`, `record`, `record-demo`, `delete-meeting`, `list`, and

@@ -1743,6 +1743,8 @@ struct CLIArgumentParserTests {
     expectNoDifference(try parseValidation(["todos"]), .localTodos)
     expectNoDifference(try parseValidation(["local-integrations"]), .localIntegrations)
     expectNoDifference(try parseValidation(["integrations"]), .localIntegrations)
+    expectNoDifference(try parseValidation(["reminders"]), .reminders)
+    expectNoDifference(try parseValidation(["local-reminders"]), .reminders)
     expectNoDifference(try parseValidation(["typed-drafts"]), .typedDrafts)
     expectNoDifference(try parseValidation(["drafts"]), .typedDrafts)
     expectNoDifference(try parseValidation(["platform-adapters"]), .platformAdapters)
@@ -1760,6 +1762,7 @@ struct CLIArgumentParserTests {
   @Test
   func validationParserReportsMalformedArguments() throws {
     #expect(CLIValidationUsage.validation.contains("parity-report|coverage"))
+    #expect(CLIValidationUsage.validation.contains("validation reminders [--json|--jsonl]"))
     #expect(CLIValidationUsage.validation.contains("validation coverage [--json|--jsonl]"))
     try expectValidationParseError([], description: CLIValidationUsage.validation)
     try expectValidationParseError(["remote"], description: CLIValidationUsage.validation)

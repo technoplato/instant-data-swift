@@ -708,11 +708,11 @@ extension InstantStoreTests {
     )
     try expectMalformed(
       ["validation", "remote", "--json"],
-      contains: "validation <local-todos|local-integrations|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>"
+      contains: "validation <local-todos|local-integrations|reminders|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>"
     )
     try expectMalformed(
       ["validation", "todos", "extra", "--json"],
-      contains: "validation <local-todos|local-integrations|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>"
+      contains: "validation <local-todos|local-integrations|reminders|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>"
     )
 
     expectNoDifference(
@@ -4729,7 +4729,7 @@ extension InstantStoreTests {
     #expect(malformed.status == 64)
     #expect(
       malformed.error.contains(
-        "validation <local-todos|local-integrations|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>"
+        "validation <local-todos|local-integrations|reminders|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>"
       )
     )
   }
@@ -4808,6 +4808,85 @@ extension InstantStoreTests {
     #expect(humanOutput.contains("case: validation.local.integrations"))
     #expect(humanOutput.contains("evidence rows: 9"))
     #expect(humanOutput.contains("revoked shares: 1"))
+  }
+
+  @Test
+  func cliValidationRemindersEmitsEvidence() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let jsonOutput = try JSONDecoder().decode(
+      CLIRemindersValidationOutput.self,
+      from: Data(
+        try runCLI(["validation", "reminders", "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(jsonOutput.appID, "cli-cache-test")
+    expectNoDifference(jsonOutput.event, "reminders")
+    expectNoDifference(jsonOutput.transport, "not-implemented-local-cache-only")
+    expectNoDifference(jsonOutput.ok, true)
+    expectNoDifference(jsonOutput.evidenceCount, 9)
+    expectNoDifference(
+      jsonOutput.events,
+      [
+        "seed",
+        "search-tags",
+        "rich-filters",
+        "edit-rich-fields",
+        "complete",
+        "reader-rejection",
+        "writer-update",
+        "demoted-reader-rejection",
+        "relaunch",
+      ]
+    )
+    expectNoDifference(jsonOutput.listCount, 1)
+    expectNoDifference(jsonOutput.reminderCount, 1)
+    expectNoDifference(jsonOutput.completedReminderCount, 1)
+    expectNoDifference(jsonOutput.tagCount, 1)
+    expectNoDifference(jsonOutput.activeShareCount, 1)
+    expectNoDifference(jsonOutput.pendingMutationCount, 6)
+    expectNoDifference(
+      jsonOutput.rejectedOperations,
+      [
+        "reader-update:permissionRejected:remindersLists:validation-reminders-list",
+        "demoted-reader-add-tag:permissionRejected:remindersLists:validation-reminders-list",
+      ]
+    )
+    expectNoDifference(
+      jsonOutput.stats,
+      RemindersStats(allCount: 1, completedCount: 1, flaggedCount: 0, scheduledCount: 0, todayCount: 0)
+    )
+
+    let jsonlOutput = try runCLI(["validation", "local-reminders", "--jsonl"], homeURL: homeURL)
+    let lines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(lines.count, 9)
+    let searchEvidence = try JSONDecoder().decode(
+      CLIRemindersValidationEvidence.self,
+      from: Data(try #require(lines.first { $0.contains("\"event\":\"search-tags\"") }).utf8)
+    )
+    expectNoDifference(searchEvidence.caseID, "validation.reminders")
+    expectNoDifference(searchEvidence.appID, "cli-cache-test")
+    expectNoDifference(searchEvidence.event, "search-tags")
+    expectNoDifference(searchEvidence.ok, true)
+    expectNoDifference(searchEvidence.details.reminderIDs, ["validation-reminders-pack-lunch"])
+    expectNoDifference(searchEvidence.details.tagTitles, ["family"])
+
+    let readerEvidence = try JSONDecoder().decode(
+      CLIRemindersValidationEvidence.self,
+      from: Data(try #require(lines.first { $0.contains("\"event\":\"reader-rejection\"") }).utf8)
+    )
+    expectNoDifference(
+      readerEvidence.details.rejectedOperations,
+      ["reader-update:permissionRejected:remindersLists:validation-reminders-list"]
+    )
+
+    let humanOutput = try runCLI(["validation", "reminders"], homeURL: homeURL)
+    #expect(humanOutput.contains("case: validation.reminders"))
+    #expect(humanOutput.contains("events: seed, search-tags"))
+    #expect(humanOutput.contains("rejections: reader-update:permissionRejected"))
   }
 
   @Test
@@ -5254,9 +5333,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 41)
+    expectNoDifference(jsonOutput.recordCount, 44)
     expectNoDifference(jsonOutput.exactCount, 11)
-    expectNoDifference(jsonOutput.adaptedCount, 27)
+    expectNoDifference(jsonOutput.adaptedCount, 30)
     expectNoDifference(jsonOutput.blockedCount, 3)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -5268,6 +5347,11 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.records.contains {
         $0.id == "sqlite.fetch-subscription.explicit-cancel" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "sqlite.reminders.search-tags" && $0.status == "adapted"
       }
     )
     #expect(
@@ -5309,7 +5393,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 41"))
+    #expect(humanOutput.contains("records: 44"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 
@@ -6418,6 +6502,45 @@ private struct CLILocalIntegrationValidationDetails: Decodable {
   var activeShareIDs: [String]
   var revokedShareIDs: [String]
   var shareMemberUserIDs: [String]
+}
+
+private struct CLIRemindersValidationOutput: Decodable {
+  var appID: String
+  var event: String
+  var transport: String
+  var ok: Bool
+  var evidenceCount: Int
+  var events: [String]
+  var listCount: Int
+  var reminderCount: Int
+  var completedReminderCount: Int
+  var tagCount: Int
+  var activeShareCount: Int
+  var rejectedOperations: [String]
+  var pendingMutationCount: Int
+  var stats: RemindersStats
+}
+
+private struct CLIRemindersValidationEvidence: Decodable {
+  var caseID: String
+  var appID: String
+  var event: String
+  var ok: Bool
+  var details: CLIRemindersValidationDetails
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case appID
+    case event
+    case ok
+    case details
+  }
+}
+
+private struct CLIRemindersValidationDetails: Decodable {
+  var reminderIDs: [String]
+  var tagTitles: [String]
+  var rejectedOperations: [String]
 }
 
 private struct CLIDraftValidationOutput: Decodable {

@@ -22,12 +22,13 @@ prove this library.
 ## Local Swift Evidence
 
 The Swift runners currently emit local-only evidence for the durable todo
-workflow, local integration surfaces, generated typed drafts, public adapter
-wrappers, and parity coverage provenance. They prove the Swift core can seed,
-update, cache, reset, relaunch, authenticate, publish room presence/topics,
-upload/read file contents, append stream chunks, create/accept/revoke shares,
-create and edit generated drafts, bind public wrapper adapters, and report
-upstream Instant/SQLiteData parity records without SwiftUI.
+workflow, local integration surfaces, Reminders, generated typed drafts, public
+adapter wrappers, and parity coverage provenance. They prove the Swift core can
+seed, update, cache, reset, relaunch, authenticate, publish room
+presence/topics, upload/read file contents, append stream chunks,
+create/accept/revoke shares, validate Reminders search/tags/share roles, create
+and edit generated drafts, bind public wrapper adapters, and report upstream
+Instant/SQLiteData parity records without SwiftUI.
 The standalone runner goes through
 `InstantSwiftDataTesting.InstantSwiftDataTestHarness` where practical, so the
 same evidence helpers are available to package tests and terminal validation:
@@ -35,6 +36,7 @@ same evidence helpers are available to package tests and terminal validation:
 ```bash
 swift run instant-swift-data validation local-todos --jsonl
 swift run instant-swift-data validation local-integrations --jsonl
+swift run instant-swift-data validation reminders --jsonl
 swift run instant-swift-data validation typed-drafts --jsonl
 swift run instant-swift-data validation platform-adapters --jsonl
 swift run instant-swift-data validation syncups-recording --jsonl
@@ -42,6 +44,7 @@ swift run instant-swift-data validation parity-report --jsonl
 swift run instant-swift-data validation coverage --jsonl
 swift run instant-swift-data-validation-runner --local-todos
 swift run instant-swift-data-validation-runner --local-integrations
+swift run instant-swift-data-validation-runner --reminders
 swift run instant-swift-data-validation-runner --typed-drafts
 swift run instant-swift-data-validation-runner --platform-adapters
 swift run instant-swift-data-validation-runner --syncups-recording
@@ -58,8 +61,10 @@ validation/run-macro-tests.sh
 ```
 
 Validation commands that accept `--jsonl` emit the JSON Lines evidence format
-below. Real InstantDB and Swift/TypeScript boundary cases remain required for
-final acceptance.
+below. `validation reminders` covers local Reminders search, tags, rich fields,
+smart-list stats, list sharing roles, permission rejections, writer updates, and
+relaunch persistence. Real InstantDB and Swift/TypeScript boundary cases remain
+required for final acceptance.
 
 ## Local TypeScript Fixture Evidence
 
@@ -82,8 +87,9 @@ The fixture rows include exact expected/actual evidence for entities, fields,
 field modifiers, links, room presence/topic shapes, permission namespaces, and
 allowed operations. `validation/run-e2e.sh` records all Swift local validation
 streams (`swift-local.jsonl`, `swift-local-integrations.jsonl`,
-`swift-typed-drafts.jsonl`, `swift-platform-adapters.jsonl`,
-`swift-syncups-recording.jsonl`, and `swift-parity-report.jsonl`), records the
+`swift-reminders.jsonl`, `swift-typed-drafts.jsonl`,
+`swift-platform-adapters.jsonl`, `swift-syncups-recording.jsonl`, and
+`swift-parity-report.jsonl`), records the
 MacroTesting run as `swift-macro-tests.log`, records the local benchmark
 evidence, and then runs this fixture check when Node is available. Set
 `INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR` to direct artifacts to a specific

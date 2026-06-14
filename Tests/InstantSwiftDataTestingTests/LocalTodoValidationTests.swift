@@ -177,6 +177,98 @@ struct LocalTodoValidationTests {
   }
 
   @Test
+  func remindersValidationProducesEvidenceAndPersistsLocalSurfaces() async throws {
+    let cacheURL = temporaryCacheURL()
+
+    let run = try await InstantSwiftDataTestHarness.runRemindersValidation(
+      appID: "validation-reminders-test",
+      cacheURL: cacheURL,
+      timestamp: { InstantTimestamp(milliseconds: 1_700_000_000_000) }
+    )
+    let result = run.result
+
+    expectNoDifference(result.appID, "validation-reminders-test")
+    expectNoDifference(result.cacheURL, cacheURL)
+    expectNoDifference(run.summary.caseID, "validation.reminders")
+    expectNoDifference(run.summary.rowCount, 9)
+    expectNoDifference(run.summary.ok, true)
+    expectNoDifference(
+      run.summary.events,
+      [
+        "seed",
+        "search-tags",
+        "rich-filters",
+        "edit-rich-fields",
+        "complete",
+        "reader-rejection",
+        "writer-update",
+        "demoted-reader-rejection",
+        "relaunch",
+      ]
+    )
+    expectNoDifference(result.evidence.map(\.event), run.summary.events)
+    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 9))
+    expectNoDifference(
+      result.evidence.map(\.caseID),
+      Array(repeating: "validation.reminders", count: result.evidence.count)
+    )
+
+    let seed = result.evidence[0].details
+    expectNoDifference(seed.listTitles, ["Family"])
+    expectNoDifference(seed.reminderTitles, ["Pack lunch", "Read book"])
+    expectNoDifference(seed.flaggedReminderIDs, ["validation-reminders-pack-lunch"])
+    expectNoDifference(seed.tagTitles, ["family"])
+
+    let search = result.evidence[1].details
+    expectNoDifference(search.reminderIDs, ["validation-reminders-pack-lunch"])
+    expectNoDifference(search.reminderTagIDs, ["validation-reminders-pack-lunch#family"])
+
+    let richFilters = result.evidence[2].details
+    expectNoDifference(richFilters.scheduledReminderIDs, ["validation-reminders-pack-lunch"])
+    expectNoDifference(richFilters.todayReminderIDs, ["validation-reminders-pack-lunch"])
+    expectNoDifference(richFilters.priorityReminderIDs, ["validation-reminders-pack-lunch"])
+    expectNoDifference(
+      richFilters.stats,
+      RemindersStats(allCount: 2, completedCount: 0, flaggedCount: 1, scheduledCount: 1, todayCount: 1)
+    )
+
+    let readerRejection = result.evidence[5].details
+    expectNoDifference(
+      readerRejection.rejectedOperations,
+      ["reader-update:permissionRejected:remindersLists:validation-reminders-list"]
+    )
+    expectNoDifference(
+      readerRejection.shareRoleSummaries,
+      [
+        "remindersLists:validation-reminders-list:user-1:owner",
+        "remindersLists:validation-reminders-list:user-2:reader",
+      ]
+    )
+
+    let writerUpdate = result.evidence[6].details
+    expectNoDifference(writerUpdate.reminderTitles, ["Writer edit"])
+    expectNoDifference(
+      writerUpdate.shareRoleSummaries,
+      [
+        "remindersLists:validation-reminders-list:user-1:owner",
+        "remindersLists:validation-reminders-list:user-2:writer",
+      ]
+    )
+
+    let finalDetails = try #require(result.evidence.last?.details)
+    expectNoDifference(finalDetails.reminderTitles, ["Writer edit"])
+    expectNoDifference(finalDetails.completedReminderIDs, ["validation-reminders-read-book"])
+    expectNoDifference(finalDetails.flaggedReminderIDs, [])
+    expectNoDifference(finalDetails.scheduledReminderIDs, [])
+    expectNoDifference(finalDetails.priorityReminderIDs, [])
+    expectNoDifference(finalDetails.pendingMutationIDs.count, 6)
+    expectNoDifference(
+      finalDetails.stats,
+      RemindersStats(allCount: 1, completedCount: 1, flaggedCount: 0, scheduledCount: 0, todayCount: 0)
+    )
+  }
+
+  @Test
   func draftValidationHarnessSummarizesGeneratedDraftEvidence() async throws {
     let cacheURL = temporaryCacheURL()
     let idGenerator = ValidationIDGenerator([
@@ -378,6 +470,84 @@ struct LocalTodoValidationTests {
   }
 
   @Test
+  func validationRunnerRemindersCommandEmitsJSONL() throws {
+    let result = try runValidationRunner(arguments: ["--reminders"])
+
+    #expect(
+      result.status == 0,
+      """
+      instant-swift-data-validation-runner --reminders failed.
+      stdout:
+      \(result.stdout)
+      stderr:
+      \(result.stderr)
+      """
+    )
+
+    let rows = try parseJSONLines(result.stdout)
+    expectNoDifference(rows.count, 9)
+    expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
+      "validation.reminders"
+    ]))
+    expectNoDifference(Set(rows.map { $0["appID"] as? String ?? "" }), Set(["local-validation"]))
+    expectNoDifference(
+      rows.map { $0["event"] as? String ?? "" },
+      [
+        "seed",
+        "search-tags",
+        "rich-filters",
+        "edit-rich-fields",
+        "complete",
+        "reader-rejection",
+        "writer-update",
+        "demoted-reader-rejection",
+        "relaunch",
+      ]
+    )
+    expectNoDifference(rows.map { $0["ok"] as? Bool ?? false }, Array(repeating: true, count: 9))
+
+    let search = try #require(rows.first { $0["event"] as? String == "search-tags" })
+    let searchDetails = try #require(search["details"] as? [String: Any])
+    expectNoDifference(searchDetails["reminderIDs"] as? [String], ["validation-reminders-pack-lunch"])
+    expectNoDifference(searchDetails["tagTitles"] as? [String], ["family"])
+
+    let reader = try #require(rows.first { $0["event"] as? String == "reader-rejection" })
+    let readerDetails = try #require(reader["details"] as? [String: Any])
+    expectNoDifference(
+      readerDetails["rejectedOperations"] as? [String],
+      ["reader-update:permissionRejected:remindersLists:validation-reminders-list"]
+    )
+  }
+
+  @Test
+  func validationRunnerLocalRemindersAliasEmitsJSONL() throws {
+    let result = try runValidationRunner(arguments: ["--local-reminders"])
+
+    #expect(result.status == 0)
+    let rows = try parseJSONLines(result.stdout)
+    expectNoDifference(rows.count, 9)
+    expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set(["validation.reminders"]))
+  }
+
+  @Test
+  func validationRunnerRemindersFailureEmitsMappedJSONL() throws {
+    let result = try runValidationRunner(
+      arguments: ["--reminders"],
+      environment: [
+        "INSTANT_SWIFT_DATA_VALIDATION_RUNNER_FAIL_CASE": "validation.reminders"
+      ]
+    )
+
+    #expect(result.status == 1)
+    let rows = try parseJSONLines(result.stdout)
+    let row = try #require(rows.first)
+    expectNoDifference(row["case"] as? String, "validation.reminders")
+    expectNoDifference(row["appID"] as? String, "local-validation")
+    expectNoDifference(row["event"] as? String, "failed")
+    expectNoDifference(row["ok"] as? Bool, false)
+  }
+
+  @Test
   func syncUpsRecordingValidationHarnessSummarizesEvidence() async throws {
     let cacheURL = temporaryCacheURL()
 
@@ -475,20 +645,25 @@ struct LocalTodoValidationTests {
 
     expectNoDifference(run.result.event, "parity-report")
     expectNoDifference(run.result.coverageComplete, false)
-    expectNoDifference(run.result.recordCount, 41)
+    expectNoDifference(run.result.recordCount, 44)
     expectNoDifference(run.result.exactCount, 11)
-    expectNoDifference(run.result.adaptedCount, 27)
+    expectNoDifference(run.result.adaptedCount, 30)
     expectNoDifference(run.result.blockedCount, 3)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
     expectNoDifference(run.summary.appID, "validation-parity-test")
     expectNoDifference(run.summary.rowCount, run.result.recordCount)
     expectNoDifference(run.summary.ok, false)
-    expectNoDifference(run.summary.events, Array(repeating: "parity-record", count: 41))
+    expectNoDifference(run.summary.events, Array(repeating: "parity-record", count: 44))
     expectNoDifference(run.summary.failedEvents, Array(repeating: "parity-record", count: 3))
     #expect(
       run.result.sourceFiles.contains(
         "upstream/instant/client/packages/core/__tests__/src/store.test.ts"
       )
+    )
+    #expect(
+      run.result.records.contains {
+        $0.id == "sqlite.reminders.search-tags" && $0.status == .adapted
+      }
     )
     #expect(
       run.result.records.contains {
@@ -513,7 +688,7 @@ struct LocalTodoValidationTests {
     )
 
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 41)
+    expectNoDifference(rows.count, 44)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
@@ -544,7 +719,7 @@ struct LocalTodoValidationTests {
 
     #expect(result.status == 0)
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 41)
+    expectNoDifference(rows.count, 44)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
@@ -579,12 +754,14 @@ struct LocalTodoValidationTests {
     #expect(script.contains("INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS"))
     #expect(script.contains("swift run instant-swift-data-validation-runner --local-todos"))
     #expect(script.contains("swift run instant-swift-data-validation-runner --local-integrations"))
+    #expect(script.contains("swift run instant-swift-data validation reminders --jsonl"))
     #expect(script.contains("swift run instant-swift-data validation typed-drafts --jsonl"))
     #expect(script.contains("swift run instant-swift-data validation platform-adapters --jsonl"))
     #expect(script.contains("swift run instant-swift-data validation syncups-recording --jsonl"))
     #expect(script.contains("swift run instant-swift-data validation parity-report --jsonl"))
     #expect(script.contains("swift run instant-swift-data-benchmarks"))
     #expect(script.contains("swift-local-integrations.jsonl"))
+    #expect(script.contains("swift-reminders.jsonl"))
     #expect(script.contains("swift-typed-drafts.jsonl"))
     #expect(script.contains("swift-platform-adapters.jsonl"))
     #expect(script.contains("swift-syncups-recording.jsonl"))
@@ -609,6 +786,8 @@ struct LocalTodoValidationTests {
     #expect(runnerSource.contains("runDraftValidation()"))
     #expect(runnerSource.contains("--platform-adapters"))
     #expect(runnerSource.contains("runPlatformAdapterValidation()"))
+    #expect(runnerSource.contains("--reminders"))
+    #expect(runnerSource.contains("runRemindersValidation()"))
     #expect(runnerSource.contains("--syncups-recording"))
     #expect(runnerSource.contains("runSyncUpsRecordingValidation()"))
     #expect(runnerSource.contains("--parity-report"))
@@ -664,6 +843,21 @@ struct LocalTodoValidationTests {
           ;;
         instant-swift-data-validation-runner:--local-integrations:)
           echo '{"case":"validation.local.integrations","side":"swift","event":"stub-integrations","appID":"local-validation","timestampMs":2,"ok":true,"details":{}}'
+          ;;
+        instant-swift-data:validation:reminders)
+          expected="run instant-swift-data validation reminders --jsonl"
+          if [ "$*" != "$expected" ]; then
+            echo "unexpected reminders arguments: $*" >&2
+            exit 65
+          fi
+          if [ "${INSTANT_APP_ID:-}" != "local-validation" ]; then
+            echo "unexpected reminders app id: ${INSTANT_APP_ID:-}" >&2
+            exit 66
+          fi
+          if [ "${SWIFT_STUB_FAIL_REMINDERS:-}" = "1" ]; then
+            exit 46
+          fi
+          echo '{"case":"validation.reminders","side":"swift","event":"stub-reminders","appID":"local-validation","timestampMs":3,"ok":true,"details":{}}'
           ;;
         instant-swift-data:validation:typed-drafts)
           expected="run instant-swift-data validation typed-drafts --jsonl"
@@ -764,6 +958,8 @@ struct LocalTodoValidationTests {
       "swift-local-complete",
       "swift-local-integrations-start",
       "swift-local-integrations-complete",
+      "swift-reminders-start",
+      "swift-reminders-complete",
       "swift-typed-drafts-start",
       "swift-typed-drafts-complete",
       "swift-platform-adapters-start",
@@ -786,6 +982,11 @@ struct LocalTodoValidationTests {
     #expect(
       FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("swift-local-integrations.jsonl").path
+      )
+    )
+    #expect(
+      FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-reminders.jsonl").path
       )
     )
     #expect(
@@ -925,6 +1126,8 @@ struct LocalTodoValidationTests {
       "swift-local-complete",
       "swift-local-integrations-start",
       "swift-local-integrations-complete",
+      "swift-reminders-start",
+      "swift-reminders-complete",
       "swift-typed-drafts-start",
       "swift-typed-drafts-complete",
       "swift-platform-adapters-start",
@@ -949,6 +1152,11 @@ struct LocalTodoValidationTests {
 
     try "stale integrations\n".write(
       to: resultsURL.appendingPathComponent("swift-local-integrations.jsonl"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try "stale reminders\n".write(
+      to: resultsURL.appendingPathComponent("swift-reminders.jsonl"),
       atomically: true,
       encoding: .utf8
     )
@@ -1010,6 +1218,11 @@ struct LocalTodoValidationTests {
     )
     #expect(
       !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-reminders.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("swift-typed-drafts.jsonl").path
       )
     )
@@ -1057,6 +1270,8 @@ struct LocalTodoValidationTests {
       "swift-local-complete",
       "swift-local-integrations-start",
       "swift-local-integrations-complete",
+      "swift-reminders-start",
+      "swift-reminders-complete",
       "swift-typed-drafts-start",
       "swift-typed-drafts-failed",
       "complete",
@@ -1118,6 +1333,8 @@ struct LocalTodoValidationTests {
       "swift-local-complete",
       "swift-local-integrations-start",
       "swift-local-integrations-complete",
+      "swift-reminders-start",
+      "swift-reminders-complete",
       "swift-typed-drafts-start",
       "swift-typed-drafts-complete",
       "swift-platform-adapters-start",
@@ -1187,6 +1404,8 @@ struct LocalTodoValidationTests {
       "swift-local-complete",
       "swift-local-integrations-start",
       "swift-local-integrations-complete",
+      "swift-reminders-start",
+      "swift-reminders-complete",
       "swift-typed-drafts-start",
       "swift-typed-drafts-complete",
       "swift-platform-adapters-start",
