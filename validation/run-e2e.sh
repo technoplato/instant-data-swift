@@ -100,6 +100,31 @@ require_file() {
   fi
 }
 
+resolve_node() {
+  if [[ -n "${INSTANT_SWIFT_DATA_NODE:-}" ]]; then
+    if [[ -x "${INSTANT_SWIFT_DATA_NODE}" ]]; then
+      printf '%s\n' "${INSTANT_SWIFT_DATA_NODE}"
+      return 0
+    fi
+    return 2
+  fi
+
+  if command -v node >/dev/null 2>&1; then
+    command -v node
+    return 0
+  fi
+
+  if [[ -n "${HOME:-}" ]]; then
+    local bundled_node="${HOME}/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin/node"
+    if [[ -x "${bundled_node}" ]]; then
+      printf '%s\n' "${bundled_node}"
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
 log_json "start" true "$(json_object "resultsDir" "${RESULTS_DIR}")"
 
 missing_required_file=false
@@ -292,11 +317,12 @@ else
   exit "${status}"
 fi
 
-if command -v node >/dev/null 2>&1; then
-  log_json "typescript-fixtures-start" true
+NODE_EXECUTABLE=""
+if NODE_EXECUTABLE="$(resolve_node)"; then
+  log_json "typescript-fixtures-start" true "$(json_object "node" "${NODE_EXECUTABLE}")"
   if (
     cd "${ROOT}"
-    VALIDATION_APP_ID="${VALIDATION_APP_ID}" node validation/ts-runner/src/main.ts --fixtures --app-id "${VALIDATION_APP_ID}"
+    VALIDATION_APP_ID="${VALIDATION_APP_ID}" "${NODE_EXECUTABLE}" validation/ts-runner/src/main.ts --fixtures --app-id "${VALIDATION_APP_ID}"
   ) | tee "${RESULTS_DIR}/typescript-fixtures.jsonl"; then
     log_json "typescript-fixtures-complete" true "$(json_object "path" "${RESULTS_DIR}/typescript-fixtures.jsonl")"
   else
@@ -312,8 +338,16 @@ if command -v node >/dev/null 2>&1; then
     exit "${status}"
   fi
   log_json "typescript-boundary-pending" true "$(json_object "reason" "Real Instant app creation, schema push, and admin query/transact remain pending")"
+elif [[ -n "${INSTANT_SWIFT_DATA_NODE:-}" ]]; then
+  log_json "missing-node" false "$(json_object "path" "${INSTANT_SWIFT_DATA_NODE}")"
+  log_json \
+    "complete" \
+    false \
+    "$(printf '{"resultsDir":%s,"failed":"missing-node"}' "$(json_string "${RESULTS_DIR}")")"
+  echo "INSTANT_SWIFT_DATA_NODE must point to an executable Node.js binary." >&2
+  exit 1
 else
-  log_json "typescript-boundary-skipped" true "$(json_object "reason" "node is not available and Swift local validations and benchmark completed")"
+  log_json "typescript-boundary-skipped" true "$(json_object "reason" "node is not available; set INSTANT_SWIFT_DATA_NODE to run TypeScript fixture validation")"
 fi
 
 log_json "complete" true "$(json_object "resultsDir" "${RESULTS_DIR}")"

@@ -241,11 +241,13 @@ struct LocalTodoValidationTests {
     #expect(script.contains("swift-syncups-recording.jsonl"))
     #expect(script.contains("swift-parity-report.jsonl"))
     #expect(script.contains("swift-benchmark.jsonl"))
-    #expect(script.contains("node validation/ts-runner/src/main.ts --fixtures"))
+    #expect(script.contains("INSTANT_SWIFT_DATA_NODE"))
+    #expect(script.contains("validation/ts-runner/src/main.ts --fixtures"))
     #expect(script.contains("rm -f"))
     #expect(script.contains(": > \"${RESULTS_DIR}/orchestrator.jsonl\""))
     #expect(script.contains("\"failed\":\"missing-required-file\""))
     #expect(script.contains("\"failed\":\"missing-swift\""))
+    #expect(script.contains("\"failed\":\"missing-node\""))
     #expect(!script.contains("${3:-{}}"))
 
     let process = Process()
@@ -273,6 +275,22 @@ struct LocalTodoValidationTests {
     try writeExecutable(
       """
       #!/bin/sh
+      case "$1:$2" in
+        package:resolve)
+          exit 0
+          ;;
+        build:--scratch-path)
+          if echo "$*" | grep -q -- "--target InstantSwiftDataMacros"; then
+            exit 0
+          fi
+          ;;
+        test:--scratch-path)
+          if echo "$*" | grep -q -- "InstantSwiftDataMacrosTests.InstantEntityMacroTests"; then
+            echo "macro tests passed"
+            exit 0
+          fi
+          ;;
+      esac
       case "$2:$3:$4" in
         instant-swift-data-validation-runner:--local-todos:)
           if [ "${SWIFT_STUB_FAIL_LOCAL_TODOS:-}" = "1" ]; then
@@ -376,6 +394,8 @@ struct LocalTodoValidationTests {
     let successRows = try readJSONLines(resultsURL.appendingPathComponent("orchestrator.jsonl"))
     expectNoDifference(successRows.map { $0["event"] as? String ?? "" }, [
       "start",
+      "swift-macro-tests-start",
+      "swift-macro-tests-complete",
       "swift-local-start",
       "swift-local-complete",
       "swift-local-integrations-start",
@@ -435,6 +455,128 @@ struct LocalTodoValidationTests {
       )
     )
 
+    let overrideNodeURL = tempURL.appendingPathComponent("override-node")
+    try writeExecutable(
+      """
+      #!/bin/sh
+      if [ "$1" != "validation/ts-runner/src/main.ts" ]; then
+        echo "unexpected node script: $1" >&2
+        exit 67
+      fi
+      echo '{"case":"validation.typescript.fixtures","side":"typescript","event":"fixtures-override","appID":"local-validation","timestampMs":9,"ok":true,"details":{}}'
+      """,
+      to: overrideNodeURL
+    )
+    let overrideRun = try runValidationRunE2E(
+      scriptURL: scriptURL,
+      resultsURL: resultsURL,
+      binURL: binURL,
+      extraEnvironment: [
+        "INSTANT_SWIFT_DATA_NODE": overrideNodeURL.path
+      ]
+    )
+    #expect(overrideRun.status == 0, "run-e2e.sh with node override failed: \(overrideRun.stderr)")
+    let overrideTypeScriptRows = try readJSONLines(
+      resultsURL.appendingPathComponent("typescript-fixtures.jsonl")
+    )
+    expectNoDifference(
+      overrideTypeScriptRows.map { $0["event"] as? String ?? "" },
+      ["fixtures-override"]
+    )
+    let overrideRows = try readJSONLines(resultsURL.appendingPathComponent("orchestrator.jsonl"))
+    expectNoDifference(
+      overrideRows.first(where: { $0["event"] as? String == "typescript-fixtures-start" })?["ok"]
+        as? Bool,
+      true
+    )
+
+    let bundledHomeURL = tempURL.appendingPathComponent("home", isDirectory: true)
+    let bundledNodeURL = bundledHomeURL
+      .appendingPathComponent(
+        ".cache/codex-runtimes/codex-primary-runtime/dependencies/node/bin",
+        isDirectory: true
+      )
+      .appendingPathComponent("node")
+    try FileManager.default.createDirectory(
+      at: bundledNodeURL.deletingLastPathComponent(),
+      withIntermediateDirectories: true
+    )
+    try writeExecutable(
+      """
+      #!/bin/sh
+      if [ "$1" != "validation/ts-runner/src/main.ts" ]; then
+        echo "unexpected bundled node script: $1" >&2
+        exit 67
+      fi
+      echo '{"case":"validation.typescript.fixtures","side":"typescript","event":"fixtures-bundled","appID":"local-validation","timestampMs":10,"ok":true,"details":{}}'
+      """,
+      to: bundledNodeURL
+    )
+    let bundledRun = try runValidationRunE2E(
+      scriptURL: scriptURL,
+      resultsURL: resultsURL,
+      binURL: binURL,
+      extraEnvironment: [
+        "HOME": bundledHomeURL.path,
+        "PATH": "\(binURL.path):/usr/bin:/bin",
+      ]
+    )
+    #expect(bundledRun.status == 0, "run-e2e.sh with bundled node failed: \(bundledRun.stderr)")
+    let bundledTypeScriptRows = try readJSONLines(
+      resultsURL.appendingPathComponent("typescript-fixtures.jsonl")
+    )
+    expectNoDifference(
+      bundledTypeScriptRows.map { $0["event"] as? String ?? "" },
+      ["fixtures-bundled"]
+    )
+
+    let missingNodeRun = try runValidationRunE2E(
+      scriptURL: scriptURL,
+      resultsURL: resultsURL,
+      binURL: binURL,
+      extraEnvironment: [
+        "INSTANT_SWIFT_DATA_NODE": tempURL.appendingPathComponent("missing-node").path
+      ]
+    )
+    #expect(missingNodeRun.status == 1)
+    #expect(
+      missingNodeRun.stderr.contains(
+        "INSTANT_SWIFT_DATA_NODE must point to an executable Node.js binary."
+      )
+    )
+    let missingNodeRows = try readJSONLines(
+      resultsURL.appendingPathComponent("orchestrator.jsonl")
+    )
+    expectNoDifference(missingNodeRows.map { $0["event"] as? String ?? "" }, [
+      "start",
+      "swift-macro-tests-start",
+      "swift-macro-tests-complete",
+      "swift-local-start",
+      "swift-local-complete",
+      "swift-local-integrations-start",
+      "swift-local-integrations-complete",
+      "swift-typed-drafts-start",
+      "swift-typed-drafts-complete",
+      "swift-platform-adapters-start",
+      "swift-platform-adapters-complete",
+      "swift-syncups-recording-start",
+      "swift-syncups-recording-complete",
+      "swift-parity-report-start",
+      "swift-parity-report-complete",
+      "swift-benchmark-start",
+      "swift-benchmark-complete",
+      "missing-node",
+      "complete",
+    ])
+    expectNoDifference(missingNodeRows.last?["ok"] as? Bool, false)
+    let missingNodeDetails = try #require(missingNodeRows.last?["details"] as? [String: Any])
+    expectNoDifference(missingNodeDetails["failed"] as? String, "missing-node")
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-fixtures.jsonl").path
+      )
+    )
+
     try "stale integrations\n".write(
       to: resultsURL.appendingPathComponent("swift-local-integrations.jsonl"),
       atomically: true,
@@ -481,6 +623,8 @@ struct LocalTodoValidationTests {
     let failedRows = try readJSONLines(resultsURL.appendingPathComponent("orchestrator.jsonl"))
     expectNoDifference(failedRows.map { $0["event"] as? String ?? "" }, [
       "start",
+      "swift-macro-tests-start",
+      "swift-macro-tests-complete",
       "swift-local-start",
       "swift-local-failed",
       "complete",
@@ -537,6 +681,8 @@ struct LocalTodoValidationTests {
     )
     expectNoDifference(typedDraftFailedRows.map { $0["event"] as? String ?? "" }, [
       "start",
+      "swift-macro-tests-start",
+      "swift-macro-tests-complete",
       "swift-local-start",
       "swift-local-complete",
       "swift-local-integrations-start",
@@ -596,6 +742,8 @@ struct LocalTodoValidationTests {
     )
     expectNoDifference(syncUpsRecordingFailedRows.map { $0["event"] as? String ?? "" }, [
       "start",
+      "swift-macro-tests-start",
+      "swift-macro-tests-complete",
       "swift-local-start",
       "swift-local-complete",
       "swift-local-integrations-start",
@@ -663,6 +811,8 @@ struct LocalTodoValidationTests {
     )
     expectNoDifference(benchmarkFailedRows.map { $0["event"] as? String ?? "" }, [
       "start",
+      "swift-macro-tests-start",
+      "swift-macro-tests-complete",
       "swift-local-start",
       "swift-local-complete",
       "swift-local-integrations-start",

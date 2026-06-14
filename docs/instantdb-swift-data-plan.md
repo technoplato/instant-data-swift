@@ -383,6 +383,10 @@ stream append/read/watch, and share create/list/accept/role/revoke commands with
 tests. Real
 Instant admin tokens, schema push/pull, and remote ground-truth transport remain
 future work.
+The e2e harness resolves the TypeScript fixture runner through
+`INSTANT_SWIFT_DATA_NODE`, PATH, or the bundled Codex Node runtime, so launchd
+and other sparse environments can keep emitting TypeScript fixture evidence
+instead of silently skipping that side.
 
 ### Sharing
 

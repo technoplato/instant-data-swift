@@ -65,6 +65,13 @@ evidence without requiring an Instant app or admin token:
 node validation/ts-runner/src/main.ts --fixtures
 ```
 
+When running from launchd or another sparse shell environment, point the harness
+at a concrete Node binary:
+
+```bash
+INSTANT_SWIFT_DATA_NODE=/path/to/node validation/run-e2e.sh
+```
+
 The fixture rows include exact expected/actual evidence for entities, fields,
 field modifiers, links, room presence/topic shapes, permission namespaces, and
 allowed operations. `validation/run-e2e.sh` records all Swift local validation
