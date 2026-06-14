@@ -3134,6 +3134,90 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliMalformedRoomsFilesAndStreamsArgumentsDoNotBootstrapState() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    func expectMalformed(_ arguments: [String], contains expectedFragment: String) throws {
+      let result = try runCLIResult(arguments, homeURL: homeURL)
+      expectNoDifference(result.status, 64)
+      #expect(result.error.contains(expectedFragment))
+    }
+
+    try expectMalformed(
+      ["rooms", "--json"],
+      contains: "Usage: instant-swift-data rooms"
+    )
+    try expectMalformed(
+      ["rooms", "presence", "set", "chat", "lobby", "--json"],
+      contains: "Missing required option --value"
+    )
+    try expectMalformed(
+      ["rooms", "presence", "set", "chat", "lobby", "--user-id", "  ", "--json"],
+      contains: "Missing non-empty value for --user-id"
+    )
+    try expectMalformed(
+      ["rooms", "presence", "watch", "chat", "lobby", "--events", "2", "--json"],
+      contains: "rooms presence watch <room-type> <room-id> --events 1"
+    )
+    try expectMalformed(
+      ["rooms", "presence", "leave", "chat", "lobby", "--user-id", "  ", "--json"],
+      contains: "Missing non-empty value for --user-id"
+    )
+    try expectMalformed(
+      ["rooms", "topics", "publish", "chat", "lobby", "sendEmoji", "--json"],
+      contains: "Missing required option --value"
+    )
+    try expectMalformed(
+      ["rooms", "topics", "list", "chat", "lobby", "sendEmoji", "--limit", "-1", "--json"],
+      contains: "Invalid --limit value"
+    )
+    try expectMalformed(
+      ["rooms", "topics", "watch", "chat", "lobby", "sendEmoji", "--surprise", "--json"],
+      contains: "Unknown rooms topics watch option: --surprise"
+    )
+    try expectMalformed(
+      ["files", "upload", "--json"],
+      contains: "files upload <path>"
+    )
+    try expectMalformed(
+      ["files", "upload", "/tmp/demo.txt", "--content-type", "  ", "--json"],
+      contains: "Missing non-empty value for --content-type"
+    )
+    try expectMalformed(
+      ["files", "upload-progress", "--json"],
+      contains: "files upload-progress <path>"
+    )
+    try expectMalformed(
+      ["files", "watch", "--events", "2", "--json"],
+      contains: "instant-swift-data files watch --events 1"
+    )
+    try expectMalformed(
+      ["files", "read", "file-1", "extra", "--json"],
+      contains: "files read <file-id>"
+    )
+    try expectMalformed(
+      ["streams", "append", "chat/lobby", "--json"],
+      contains: "Missing required option --value"
+    )
+    try expectMalformed(
+      ["streams", "read", "chat/lobby", "--limit", "-1", "--json"],
+      contains: "Invalid --limit value"
+    )
+    try expectMalformed(
+      ["streams", "watch", "chat/lobby", "--events", "2", "--json"],
+      contains: "instant-swift-data streams watch <stream-id> --events 1"
+    )
+
+    expectNoDifference(
+      try FileManager.default.contentsOfDirectory(atPath: homeURL.path),
+      []
+    )
+  }
+
+  @Test
   func cliOutboxInspectAndConfirmEmitStructuredEvidence() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)

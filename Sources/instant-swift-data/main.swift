@@ -4763,34 +4763,6 @@ struct InstantSwiftDataCLI {
       + document.namespaces.reduce(0) { $0 + $1.allow.count }
   }
 
-  fileprivate static func parseFiniteWatchEventCount(
-    arguments: [String],
-    usageCommand: String,
-    domain: String
-  ) throws -> Int {
-    var arguments = arguments
-    var eventCount = 1
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--events":
-        guard let value = arguments.popFirstArgument(),
-          let parsed = Int(value),
-          parsed == 1
-        else {
-          throw CLIError("Usage: \(usageCommand) --events 1", exitCode: 64)
-        }
-        eventCount = parsed
-
-      default:
-        throw CLIError(
-          "Unknown \(domain) option: \(option). Usage: \(usageCommand) [--events 1] [--json|--jsonl]",
-          exitCode: 64
-        )
-      }
-    }
-    return eventCount
-  }
-
   private static func todoListQuery(invocation: CLITodosQueryInvocation) -> InstantQueryPlan {
     makeTodoListQuery(
       completed: invocation.completed,
