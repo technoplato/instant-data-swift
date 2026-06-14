@@ -274,6 +274,87 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func examplesTodosQueryOptionsParserConsumesListOptions() throws {
+    expectNoDifference(
+      try parseExamplesTodosQueryOptions([
+        "--completed", "false", "--completed", "1", "--search", " milk ",
+        "--offset", "2", "--limit", "3", "--last", "4", "--before-inclusive", " note-2 ",
+        "--order", "descending", "--order-by", "serverCreatedAt",
+      ]),
+      CLITodosQueryInvocation(
+        completed: true,
+        search: " milk ",
+        offset: 2,
+        limit: 3,
+        last: 4,
+        before: CLIQueryCursor(entityID: "note-2", inclusive: true),
+        direction: .descending,
+        orderField: .serverCreatedAt
+      )
+    )
+  }
+
+  @Test
+  func examplesTodosQueryOptionsParserReportsMalformedArguments() throws {
+    try expectExamplesTodosQueryOptionsParseError(
+      ["--completed", "maybe"],
+      description: "Usage: \(CLIExamplesTodosUsage.listCommand) --completed true|false"
+    )
+    try expectExamplesTodosQueryOptionsParseError(
+      ["--after"],
+      description: "Usage: \(CLIExamplesTodosUsage.listCommand) --after id"
+    )
+    try expectExamplesTodosQueryOptionsParseError(
+      ["--first", "1", "--last", "1"],
+      description: "Use either --first or --last, not both. Usage: \(CLIExamplesTodosUsage.list)"
+    )
+    try expectExamplesTodosQueryOptionsParseError(
+      ["--raw"],
+      description: "Unknown todo list option: --raw. Usage: \(CLIExamplesTodosUsage.list)"
+    )
+  }
+
+  @Test
+  func examplesTodosWatchOptionsParserConsumesWatchOptions() throws {
+    expectNoDifference(
+      try parseExamplesTodosWatchOptions([
+        "--events", "1", "--completed", "yes", "--search", " tea ",
+        "--first", "2", "--after", "todo-1", "--order", "asc", "--order-by", "none",
+      ]),
+      CLIExamplesTodosWatchInvocation(
+        query: CLITodosQueryInvocation(
+          completed: true,
+          search: " tea ",
+          first: 2,
+          after: CLIQueryCursor(entityID: "todo-1"),
+          orderField: .none
+        ),
+        eventCount: 1
+      )
+    )
+  }
+
+  @Test
+  func examplesTodosWatchOptionsParserReportsMalformedArguments() throws {
+    try expectExamplesTodosWatchOptionsParseError(
+      ["--events", "2"],
+      description: "Usage: \(CLIExamplesTodosUsage.watchCommand) --events 1"
+    )
+    try expectExamplesTodosWatchOptionsParseError(
+      ["--search", "  "],
+      description: "Usage: \(CLIExamplesTodosUsage.watchCommand) --search text"
+    )
+    try expectExamplesTodosWatchOptionsParseError(
+      ["--first", "1", "--last", "1"],
+      description: "Use either --first or --last, not both. Usage: \(CLIExamplesTodosUsage.watch)"
+    )
+    try expectExamplesTodosWatchOptionsParseError(
+      ["--raw"],
+      description: "Unknown todo watch option: --raw. Usage: \(CLIExamplesTodosUsage.watch)"
+    )
+  }
+
+  @Test
   func examplesTodoLinksLeafParserParsesCommands() throws {
     expectNoDifference(try parseExamplesTodoLinksLeaf(["seed"]), .seed)
     expectNoDifference(try parseExamplesTodoLinksLeaf(["list"]), .list)
@@ -2600,6 +2681,31 @@ private func parseExamplesTodosLeaf(
   return invocation
 }
 
+private func parseExamplesTodosQueryOptions(
+  _ arguments: [String]
+) throws -> CLITodosQueryInvocation {
+  var input = arguments[...]
+  let parser = CLIExamplesTodosQueryOptionsParser(
+    usageCommand: CLIExamplesTodosUsage.listCommand,
+    usage: CLIExamplesTodosUsage.list,
+    unknown: { option, usage in
+      CLIExamplesTodosArgumentError.unknownListOption(option, usage: usage)
+    }
+  )
+  let invocation = try parser.parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
+private func parseExamplesTodosWatchOptions(
+  _ arguments: [String]
+) throws -> CLIExamplesTodosWatchInvocation {
+  var input = arguments[...]
+  let invocation = try CLIExamplesTodosWatchOptionsParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseExamplesTodoLinksLeaf(
   _ arguments: [String]
 ) throws -> CLIExamplesTodoLinksLeafInvocation {
@@ -3027,6 +3133,32 @@ private func expectExamplesTodosLeafParseError(
   do {
     _ = try parseExamplesTodosLeaf(arguments)
     Issue.record("Expected examples todos parser to reject \(arguments).")
+  } catch let error as CLIExamplesTodosArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectExamplesTodosQueryOptionsParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseExamplesTodosQueryOptions(arguments)
+    Issue.record("Expected examples todos query options parser to reject \(arguments).")
+  } catch let error as CLIExamplesTodosArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectExamplesTodosWatchOptionsParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseExamplesTodosWatchOptions(arguments)
+    Issue.record("Expected examples todos watch options parser to reject \(arguments).")
   } catch let error as CLIExamplesTodosArgumentError {
     expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
