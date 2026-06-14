@@ -185,6 +185,60 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliMalformedToolingArgumentsDoNotCreateFiles() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    let scaffoldURL = homeURL.appendingPathComponent("TodoScaffold", isDirectory: true)
+    let schemaURL = homeURL.appendingPathComponent("Generated/instant.schema.ts")
+    let permissionsURL = homeURL.appendingPathComponent("Generated/instant.perms.ts")
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    func expectMalformed(_ arguments: [String], contains expectedFragment: String) throws {
+      let result = try runCLIResult(arguments, homeURL: homeURL)
+      expectNoDifference(result.status, 64)
+      #expect(result.error.contains(expectedFragment))
+    }
+
+    try expectMalformed(
+      ["init", "--to", scaffoldURL.path, "--json"],
+      contains: "instant-swift-data init --example todos --to <directory>"
+    )
+    try expectMalformed(
+      ["init", "--example", "todos", "--to", scaffoldURL.path, "--surprise", "--json"],
+      contains: "Unknown init option: --surprise"
+    )
+    try expectMalformed(
+      ["schema", "generate", "--to", schemaURL.path, "--json"],
+      contains: "schema generate --example todos"
+    )
+    try expectMalformed(
+      ["schema", "dance", "--to", schemaURL.path, "--json"],
+      contains: "schema generate --example todos"
+    )
+    try expectMalformed(
+      ["schema", "verify", "--example", "todos", "--unknown", "--json"],
+      contains: "Unknown schema verify option: --unknown"
+    )
+    try expectMalformed(
+      ["perms", "generate", "--example", "todos", "--unknown", "--json"],
+      contains: "Unknown generate option: --unknown"
+    )
+    try expectMalformed(
+      ["perms", "verify", "--example", "todos", "--from", "--json"],
+      contains: "perms verify --example todos --from instant.perms.ts"
+    )
+
+    expectNoDifference(
+      try FileManager.default.contentsOfDirectory(atPath: homeURL.path),
+      []
+    )
+    #expect(!FileManager.default.fileExists(atPath: scaffoldURL.path))
+    #expect(!FileManager.default.fileExists(atPath: schemaURL.path))
+    #expect(!FileManager.default.fileExists(atPath: permissionsURL.path))
+  }
+
+  @Test
   func cliQueryTodosPrintsDecodedLocalResults() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)

@@ -277,6 +277,22 @@ struct CLIArgumentParserTests {
       )
     )
     expectNoDifference(
+      try CLIArguments.parse(["init", "--example", "todos", "--to", "Out", "--json"]),
+      CLIInvocation(
+        output: .json,
+        command: .initScaffold,
+        arguments: ["--example", "todos", "--to", "Out"]
+      )
+    )
+    expectNoDifference(
+      try CLIArguments.parse(["perms", "--jsonl", "generate", "--example", "todos"]),
+      CLIInvocation(
+        output: .jsonl,
+        command: .permissions,
+        arguments: ["generate", "--example", "todos"]
+      )
+    )
+    expectNoDifference(
       try CLIArguments.parse(["cache", "attrs", "todos", "--json"]),
       CLIInvocation(
         output: .json,
@@ -578,6 +594,128 @@ struct CLIArgumentParserTests {
     try expectSyncParseError(
       ["dance"],
       contains: "Usage: instant-swift-data sync"
+    )
+  }
+
+  @Test
+  func initParserParsesOptions() throws {
+    expectNoDifference(
+      try parseInit(["--example", "todos", "--to", "Scaffold"]),
+      CLIScaffoldInvocation(example: "todos", outputDirectory: "Scaffold")
+    )
+    expectNoDifference(
+      try parseInit([
+        "--example", "rooms", "--example", "todos", "--to", "First", "--to", "Second",
+        "--force",
+      ]),
+      CLIScaffoldInvocation(example: "todos", outputDirectory: "Second", force: true)
+    )
+  }
+
+  @Test
+  func initParserReportsMalformedArguments() throws {
+    try expectInitParseError([], description: CLIInitUsage.initScaffold)
+    try expectInitParseError(
+      ["--example", "todos"],
+      description: CLIInitUsage.initScaffold
+    )
+    try expectInitParseError(
+      ["--example"],
+      description: CLIInitUsage.initScaffold
+    )
+    try expectInitParseError(
+      ["--example", "todos", "--to", "  "],
+      description: CLIInitUsage.initScaffold
+    )
+    try expectInitParseError(
+      ["--example", "todos", "--to", "Out", "--unknown"],
+      description: "Unknown init option: --unknown. \(CLIInitUsage.initScaffold)"
+    )
+  }
+
+  @Test
+  func schemaParserParsesGenerateAndVerifyOptions() throws {
+    expectNoDifference(
+      try parseSchema(["generate", "--example", "todos"]),
+      .generate(CLIGenerateArtifactInvocation(example: "todos"))
+    )
+    expectNoDifference(
+      try parseSchema([
+        "generate", "--example", "rooms", "--example", "todos", "--to", "old.ts",
+        "--to", "instant.schema.ts",
+      ]),
+      .generate(CLIGenerateArtifactInvocation(example: "todos", outputPath: "instant.schema.ts"))
+    )
+    expectNoDifference(
+      try parseSchema(["verify", "--example", "todos", "--from", "instant.schema.ts"]),
+      .verify(CLIVerifyArtifactInvocation(example: "todos", inputPath: "instant.schema.ts"))
+    )
+  }
+
+  @Test
+  func schemaParserReportsMalformedArguments() throws {
+    try expectSchemaParseError([], description: CLISchemaUsage.generate)
+    try expectSchemaParseError(["dance"], description: CLISchemaUsage.generate)
+    try expectSchemaParseError(["generate"], description: CLISchemaUsage.generate)
+    try expectSchemaParseError(
+      ["generate", "--example"],
+      description: CLISchemaUsage.generate
+    )
+    try expectSchemaParseError(
+      ["generate", "--unknown"],
+      description: "Unknown generate option: --unknown. \(CLISchemaUsage.generate)"
+    )
+    try expectSchemaParseError(["verify"], description: CLISchemaUsage.verify)
+    try expectSchemaParseError(
+      ["verify", "--example", "todos", "--from"],
+      description: CLISchemaUsage.verify
+    )
+    try expectSchemaParseError(
+      ["verify", "--unknown"],
+      description: "Unknown schema verify option: --unknown. \(CLISchemaUsage.verify)"
+    )
+  }
+
+  @Test
+  func permissionsParserParsesGenerateAndVerifyOptions() throws {
+    expectNoDifference(
+      try parsePermissions(["generate", "--example", "todos"]),
+      .generate(CLIGenerateArtifactInvocation(example: "todos"))
+    )
+    expectNoDifference(
+      try parsePermissions([
+        "generate", "--example", "rooms", "--example", "todos", "--to", "old.ts",
+        "--to", "instant.perms.ts",
+      ]),
+      .generate(CLIGenerateArtifactInvocation(example: "todos", outputPath: "instant.perms.ts"))
+    )
+    expectNoDifference(
+      try parsePermissions(["verify", "--example", "todos", "--from", "instant.perms.ts"]),
+      .verify(CLIVerifyArtifactInvocation(example: "todos", inputPath: "instant.perms.ts"))
+    )
+  }
+
+  @Test
+  func permissionsParserReportsMalformedArguments() throws {
+    try expectPermissionsParseError([], description: CLIPermissionsUsage.generate)
+    try expectPermissionsParseError(["dance"], description: CLIPermissionsUsage.generate)
+    try expectPermissionsParseError(["generate"], description: CLIPermissionsUsage.generate)
+    try expectPermissionsParseError(
+      ["generate", "--example"],
+      description: CLIPermissionsUsage.generate
+    )
+    try expectPermissionsParseError(
+      ["generate", "--unknown"],
+      description: "Unknown generate option: --unknown. \(CLIPermissionsUsage.generate)"
+    )
+    try expectPermissionsParseError(["verify"], description: CLIPermissionsUsage.verify)
+    try expectPermissionsParseError(
+      ["verify", "--example", "todos", "--from"],
+      description: CLIPermissionsUsage.verify
+    )
+    try expectPermissionsParseError(
+      ["verify", "--unknown"],
+      description: "Unknown permissions verify option: --unknown. \(CLIPermissionsUsage.verify)"
     )
   }
 
@@ -1564,6 +1702,27 @@ private func parseSync(_ arguments: [String]) throws -> CLISyncInvocation {
   return invocation
 }
 
+private func parseInit(_ arguments: [String]) throws -> CLIScaffoldInvocation {
+  var input = arguments[...]
+  let invocation = try CLIInitParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
+private func parseSchema(_ arguments: [String]) throws -> CLISchemaInvocation {
+  var input = arguments[...]
+  let invocation = try CLISchemaParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
+private func parsePermissions(_ arguments: [String]) throws -> CLIPermissionsInvocation {
+  var input = arguments[...]
+  let invocation = try CLIPermissionsParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseApp(_ arguments: [String]) throws -> CLIAppInvocation {
   var input = arguments[...]
   let invocation = try CLIAppParser().parse(&input)
@@ -1682,6 +1841,45 @@ private func expectSyncParseError(
     Issue.record("Expected sync parser to reject \(arguments).")
   } catch let error as CLISyncArgumentError {
     #expect(error.description.contains(expectedFragment))
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectInitParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseInit(arguments)
+    Issue.record("Expected init parser to reject \(arguments).")
+  } catch let error as CLIInitArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectSchemaParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseSchema(arguments)
+    Issue.record("Expected schema parser to reject \(arguments).")
+  } catch let error as CLISchemaArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectPermissionsParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parsePermissions(arguments)
+    Issue.record("Expected permissions parser to reject \(arguments).")
+  } catch let error as CLIPermissionsArgumentError {
+    expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }
 }

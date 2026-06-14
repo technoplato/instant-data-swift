@@ -81,6 +81,91 @@ public enum CLIExamplesTodosCommand: Equatable, Sendable {
   case unknown(String)
 }
 
+public struct CLIScaffoldInvocation: Equatable, Sendable {
+  public var example: String
+  public var outputDirectory: String
+  public var force: Bool
+
+  public init(example: String, outputDirectory: String, force: Bool = false) {
+    self.example = example
+    self.outputDirectory = outputDirectory
+    self.force = force
+  }
+}
+
+public enum CLIInitUsage {
+  public static let initScaffold = """
+    Usage: instant-swift-data init --example todos --to <directory> [--force] [--json|--jsonl]
+    """
+}
+
+public enum CLIInitArgumentError: Error, Equatable, Sendable {
+  case invalidArguments(usage: String)
+  case unknownOption(String, usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
+public enum CLISchemaInvocation: Equatable, Sendable {
+  case generate(CLIGenerateArtifactInvocation)
+  case verify(CLIVerifyArtifactInvocation)
+}
+
+public enum CLIPermissionsInvocation: Equatable, Sendable {
+  case generate(CLIGenerateArtifactInvocation)
+  case verify(CLIVerifyArtifactInvocation)
+}
+
+public struct CLIGenerateArtifactInvocation: Equatable, Sendable {
+  public var example: String
+  public var outputPath: String?
+
+  public init(example: String, outputPath: String? = nil) {
+    self.example = example
+    self.outputPath = outputPath
+  }
+}
+
+public struct CLIVerifyArtifactInvocation: Equatable, Sendable {
+  public var example: String
+  public var inputPath: String
+
+  public init(example: String, inputPath: String) {
+    self.example = example
+    self.inputPath = inputPath
+  }
+}
+
+public enum CLISchemaUsage {
+  public static let generate =
+    "Usage: instant-swift-data schema generate --example todos [--to instant.schema.ts] [--json|--jsonl]"
+  public static let verify =
+    "Usage: instant-swift-data schema verify --example todos --from instant.schema.ts"
+}
+
+public enum CLIPermissionsUsage {
+  public static let generate =
+    "Usage: instant-swift-data perms generate --example todos [--to instant.perms.ts] [--json|--jsonl]"
+  public static let verify =
+    "Usage: instant-swift-data perms verify --example todos --from instant.perms.ts"
+}
+
+public enum CLISchemaArgumentError: Error, Equatable, Sendable {
+  case invalidArguments(usage: String)
+  case unknownGenerateOption(String, usage: String)
+  case unknownVerifyOption(String, usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
+public enum CLIPermissionsArgumentError: Error, Equatable, Sendable {
+  case invalidArguments(usage: String)
+  case unknownGenerateOption(String, usage: String)
+  case unknownVerifyOption(String, usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
 public enum CLIQueryInvocation: Equatable, Sendable {
   case todos(CLITodosQueryInvocation)
 }
@@ -1094,6 +1179,151 @@ public struct CLIExamplesTodosCommandParser: Parser {
     }
     input.removeFirst()
     return CLIExamplesTodosCommand(command)
+  }
+}
+
+public struct CLIInitParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIScaffoldInvocation {
+    var example: String?
+    var outputDirectory: String?
+    var force = false
+
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--example":
+        guard let value = input.first else {
+          throw CLIInitArgumentError.invalidArguments(usage: CLIInitUsage.initScaffold)
+        }
+        input.removeFirst()
+        example = value
+
+      case "--to":
+        guard let value = input.first,
+          !trimmed(value).isEmpty
+        else {
+          throw CLIInitArgumentError.invalidArguments(usage: CLIInitUsage.initScaffold)
+        }
+        input.removeFirst()
+        outputDirectory = value
+
+      case "--force":
+        force = true
+
+      default:
+        throw CLIInitArgumentError.unknownOption(option, usage: CLIInitUsage.initScaffold)
+      }
+    }
+
+    guard let example, let outputDirectory else {
+      throw CLIInitArgumentError.invalidArguments(usage: CLIInitUsage.initScaffold)
+    }
+    return CLIScaffoldInvocation(example: example, outputDirectory: outputDirectory, force: force)
+  }
+}
+
+public struct CLISchemaParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLISchemaInvocation {
+    if input.first == "verify" {
+      return .verify(
+        try CLISchemaVerifyParser().parse(&input)
+      )
+    }
+    return .generate(
+      try CLISchemaGenerateParser().parse(&input)
+    )
+  }
+}
+
+public struct CLISchemaGenerateParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIGenerateArtifactInvocation {
+    try requireSchemaCommand("generate", from: &input, usage: CLISchemaUsage.generate)
+    let parsed = try parseGenerateArtifactOptions(
+      from: &input,
+      usage: CLISchemaUsage.generate,
+      unknown: { option, usage in
+        CLISchemaArgumentError.unknownGenerateOption(option, usage: usage)
+      },
+      invalid: { usage in
+        CLISchemaArgumentError.invalidArguments(usage: usage)
+      }
+    )
+    return parsed
+  }
+}
+
+public struct CLISchemaVerifyParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIVerifyArtifactInvocation {
+    try requireSchemaCommand("verify", from: &input, usage: CLISchemaUsage.verify)
+    return try parseVerifyArtifactOptions(
+      from: &input,
+      usage: CLISchemaUsage.verify,
+      unknown: { option, usage in
+        CLISchemaArgumentError.unknownVerifyOption(option, usage: usage)
+      },
+      invalid: { usage in
+        CLISchemaArgumentError.invalidArguments(usage: usage)
+      }
+    )
+  }
+}
+
+public struct CLIPermissionsParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIPermissionsInvocation {
+    if input.first == "verify" {
+      return .verify(
+        try CLIPermissionsVerifyParser().parse(&input)
+      )
+    }
+    return .generate(
+      try CLIPermissionsGenerateParser().parse(&input)
+    )
+  }
+}
+
+public struct CLIPermissionsGenerateParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIGenerateArtifactInvocation {
+    try requirePermissionsCommand("generate", from: &input, usage: CLIPermissionsUsage.generate)
+    return try parseGenerateArtifactOptions(
+      from: &input,
+      usage: CLIPermissionsUsage.generate,
+      unknown: { option, usage in
+        CLIPermissionsArgumentError.unknownGenerateOption(option, usage: usage)
+      },
+      invalid: { usage in
+        CLIPermissionsArgumentError.invalidArguments(usage: usage)
+      }
+    )
+  }
+}
+
+public struct CLIPermissionsVerifyParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIVerifyArtifactInvocation {
+    try requirePermissionsCommand("verify", from: &input, usage: CLIPermissionsUsage.verify)
+    return try parseVerifyArtifactOptions(
+      from: &input,
+      usage: CLIPermissionsUsage.verify,
+      unknown: { option, usage in
+        CLIPermissionsArgumentError.unknownVerifyOption(option, usage: usage)
+      },
+      invalid: { usage in
+        CLIPermissionsArgumentError.invalidArguments(usage: usage)
+      }
+    )
   }
 }
 
@@ -3035,6 +3265,102 @@ private func requireNoRemainingOutboxArguments(
   }
 }
 
+private func requireSchemaCommand(
+  _ command: String,
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  guard input.first == command else {
+    throw CLISchemaArgumentError.invalidArguments(usage: usage)
+  }
+  input.removeFirst()
+}
+
+private func requirePermissionsCommand(
+  _ command: String,
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  guard input.first == command else {
+    throw CLIPermissionsArgumentError.invalidArguments(usage: usage)
+  }
+  input.removeFirst()
+}
+
+private func parseGenerateArtifactOptions(
+  from input: inout ArraySlice<String>,
+  usage: String,
+  unknown: (String, String) -> any Error,
+  invalid: (String) -> any Error
+) throws -> CLIGenerateArtifactInvocation {
+  var example: String?
+  var outputPath: String?
+
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--example":
+      guard let value = input.first else {
+        throw invalid(usage)
+      }
+      input.removeFirst()
+      example = value
+
+    case "--to":
+      guard let value = input.first else {
+        throw invalid(usage)
+      }
+      input.removeFirst()
+      outputPath = value
+
+    default:
+      throw unknown(option, usage)
+    }
+  }
+
+  guard let example else {
+    throw invalid(usage)
+  }
+  return CLIGenerateArtifactInvocation(example: example, outputPath: outputPath)
+}
+
+private func parseVerifyArtifactOptions(
+  from input: inout ArraySlice<String>,
+  usage: String,
+  unknown: (String, String) -> any Error,
+  invalid: (String) -> any Error
+) throws -> CLIVerifyArtifactInvocation {
+  var example: String?
+  var inputPath: String?
+
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--example":
+      guard let value = input.first else {
+        throw invalid(usage)
+      }
+      input.removeFirst()
+      example = value
+
+    case "--from":
+      guard let value = input.first else {
+        throw invalid(usage)
+      }
+      input.removeFirst()
+      inputPath = value
+
+    default:
+      throw unknown(option, usage)
+    }
+  }
+
+  guard let example, let inputPath else {
+    throw invalid(usage)
+  }
+  return CLIVerifyArtifactInvocation(example: example, inputPath: inputPath)
+}
+
 private func parseCLIQueryBool(_ value: String) -> Bool? {
   switch value.lowercased() {
   case "true", "yes", "1":
@@ -3119,6 +3445,48 @@ private func parseCLITodoSelectedFields(_ value: String) throws -> [String] {
 
 private func trimmed(_ string: String) -> String {
   string.trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+extension CLIInitArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case let .invalidArguments(usage):
+      return usage
+
+    case let .unknownOption(option, usage):
+      return "Unknown init option: \(option). \(usage)"
+    }
+  }
+}
+
+extension CLISchemaArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case let .invalidArguments(usage):
+      return usage
+
+    case let .unknownGenerateOption(option, usage):
+      return "Unknown generate option: \(option). \(usage)"
+
+    case let .unknownVerifyOption(option, usage):
+      return "Unknown schema verify option: \(option). \(usage)"
+    }
+  }
+}
+
+extension CLIPermissionsArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case let .invalidArguments(usage):
+      return usage
+
+    case let .unknownGenerateOption(option, usage):
+      return "Unknown generate option: \(option). \(usage)"
+
+    case let .unknownVerifyOption(option, usage):
+      return "Unknown permissions verify option: \(option). \(usage)"
+    }
+  }
 }
 
 extension CLIQueryArgumentError: CustomStringConvertible {

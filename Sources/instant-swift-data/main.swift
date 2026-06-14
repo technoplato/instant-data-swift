@@ -100,61 +100,80 @@ struct InstantSwiftDataCLI {
   }
 
   private static func runInit(arguments: [String], output: OutputMode) throws {
-    let options = try ScaffoldOptions.parse(arguments: arguments)
+    let invocation: CLIScaffoldInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLIInitParser().parse(&input)
+    } catch let error as CLIInitArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
+    }
+    let options = ScaffoldOptions(invocation: invocation)
     try requireTodoExample(options.example)
     try scaffoldTodoExample(options: options, output: output)
   }
 
   private static func runSchema(arguments: [String], output: OutputMode) throws {
-    if arguments.first == "verify" {
-      let options = try SchemaVerifyOptions.parse(arguments: arguments)
-      try requireTodoExample(options.example)
-      try verifySchema(options: options, output: output)
-      return
+    let invocation: CLISchemaInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLISchemaParser().parse(&input)
+    } catch let error as CLISchemaArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
 
-    let options = try GenerateOptions.parse(
-      arguments: arguments,
-      usage: "Usage: instant-swift-data schema generate --example todos [--to instant.schema.ts] [--json|--jsonl]"
-    )
-    try requireTodoExample(options.example)
+    switch invocation {
+    case let .verify(verify):
+      let options = SchemaVerifyOptions(invocation: verify)
+      try requireTodoExample(options.example)
+      try verifySchema(options: options, output: output)
 
-    try printGeneratedArtifact(
-      try TypeScriptSchemaPrinter().printSchema(InstantSchemaExamples.todosDocument),
-      kind: "schema",
-      fileName: "instant.schema.ts",
-      example: options.example,
-      to: options.outputPath,
-      output: output,
-      caseID: "cli.schema.generate",
-      appID: "schema-tooling"
-    )
+    case let .generate(generate):
+      let options = GenerateOptions(invocation: generate)
+      try requireTodoExample(options.example)
+
+      try printGeneratedArtifact(
+        try TypeScriptSchemaPrinter().printSchema(InstantSchemaExamples.todosDocument),
+        kind: "schema",
+        fileName: "instant.schema.ts",
+        example: options.example,
+        to: options.outputPath,
+        output: output,
+        caseID: "cli.schema.generate",
+        appID: "schema-tooling"
+      )
+    }
   }
 
   private static func runPermissions(arguments: [String], output: OutputMode) throws {
-    if arguments.first == "verify" {
-      let options = try PermissionsVerifyOptions.parse(arguments: arguments)
-      try requireTodoExample(options.example)
-      try verifyPermissions(options: options, output: output)
-      return
+    let invocation: CLIPermissionsInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLIPermissionsParser().parse(&input)
+    } catch let error as CLIPermissionsArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
 
-    let options = try GenerateOptions.parse(
-      arguments: arguments,
-      usage: "Usage: instant-swift-data perms generate --example todos [--to instant.perms.ts] [--json|--jsonl]"
-    )
-    try requireTodoExample(options.example)
+    switch invocation {
+    case let .verify(verify):
+      let options = PermissionsVerifyOptions(invocation: verify)
+      try requireTodoExample(options.example)
+      try verifyPermissions(options: options, output: output)
 
-    try printGeneratedArtifact(
-      try TypeScriptPermissionsPrinter().printPermissions(InstantSchemaExamples.todoPermissions),
-      kind: "permissions",
-      fileName: "instant.perms.ts",
-      example: options.example,
-      to: options.outputPath,
-      output: output,
-      caseID: "cli.perms.generate",
-      appID: "permissions-tooling"
-    )
+    case let .generate(generate):
+      let options = GenerateOptions(invocation: generate)
+      try requireTodoExample(options.example)
+
+      try printGeneratedArtifact(
+        try TypeScriptPermissionsPrinter().printPermissions(InstantSchemaExamples.todoPermissions),
+        kind: "permissions",
+        fileName: "instant.perms.ts",
+        example: options.example,
+        to: options.outputPath,
+        output: output,
+        caseID: "cli.perms.generate",
+        appID: "permissions-tooling"
+      )
+    }
   }
 
   private static func runValidation(arguments: [String], output: OutputMode) async throws {
@@ -7133,46 +7152,10 @@ private struct ScaffoldOptions: Sendable {
   var outputDirectory: String
   var force: Bool
 
-  static func parse(arguments: [String]) throws -> Self {
-    var arguments = arguments
-    var example: String?
-    var outputDirectory: String?
-    var force = false
-
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--example":
-        guard let value = arguments.popFirstArgument() else {
-          throw CLIError(usage, exitCode: 64)
-        }
-        example = value
-
-      case "--to":
-        guard let value = arguments.popFirstArgument(),
-          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else {
-          throw CLIError(usage, exitCode: 64)
-        }
-        outputDirectory = value
-
-      case "--force":
-        force = true
-
-      default:
-        throw CLIError("Unknown init option: \(option). \(usage)", exitCode: 64)
-      }
-    }
-
-    guard let example, let outputDirectory else {
-      throw CLIError(usage, exitCode: 64)
-    }
-    return Self(example: example, outputDirectory: outputDirectory, force: force)
-  }
-
-  private static var usage: String {
-    """
-    Usage: instant-swift-data init --example todos --to <directory> [--force] [--json|--jsonl]
-    """
+  init(invocation: CLIScaffoldInvocation) {
+    self.example = invocation.example
+    self.outputDirectory = invocation.outputDirectory
+    self.force = invocation.force
   }
 }
 
@@ -7225,39 +7208,9 @@ private struct GenerateOptions: Sendable {
   var example: String
   var outputPath: String?
 
-  static func parse(arguments: [String], usage: String) throws -> Self {
-    var arguments = arguments
-    guard arguments.popFirstArgument() == "generate" else {
-      throw CLIError(usage, exitCode: 64)
-    }
-
-    var example: String?
-    var outputPath: String?
-
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--example":
-        guard let value = arguments.popFirstArgument() else {
-          throw CLIError(usage, exitCode: 64)
-        }
-        example = value
-
-      case "--to":
-        guard let value = arguments.popFirstArgument() else {
-          throw CLIError(usage, exitCode: 64)
-        }
-        outputPath = value
-
-      default:
-        throw CLIError("Unknown generate option: \(option). \(usage)", exitCode: 64)
-      }
-    }
-
-    guard let example else {
-      throw CLIError(usage, exitCode: 64)
-    }
-
-    return Self(example: example, outputPath: outputPath)
+  init(invocation: CLIGenerateArtifactInvocation) {
+    self.example = invocation.example
+    self.outputPath = invocation.outputPath
   }
 }
 
@@ -7265,40 +7218,9 @@ private struct SchemaVerifyOptions: Sendable {
   var example: String
   var inputPath: String
 
-  static func parse(arguments: [String]) throws -> Self {
-    let usage = "Usage: instant-swift-data schema verify --example todos --from instant.schema.ts"
-    var arguments = arguments
-    guard arguments.popFirstArgument() == "verify" else {
-      throw CLIError(usage, exitCode: 64)
-    }
-
-    var example: String?
-    var inputPath: String?
-
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--example":
-        guard let value = arguments.popFirstArgument() else {
-          throw CLIError(usage, exitCode: 64)
-        }
-        example = value
-
-      case "--from":
-        guard let value = arguments.popFirstArgument() else {
-          throw CLIError(usage, exitCode: 64)
-        }
-        inputPath = value
-
-      default:
-        throw CLIError("Unknown schema verify option: \(option). \(usage)", exitCode: 64)
-      }
-    }
-
-    guard let example, let inputPath else {
-      throw CLIError(usage, exitCode: 64)
-    }
-
-    return Self(example: example, inputPath: inputPath)
+  init(invocation: CLIVerifyArtifactInvocation) {
+    self.example = invocation.example
+    self.inputPath = invocation.inputPath
   }
 }
 
@@ -7306,40 +7228,9 @@ private struct PermissionsVerifyOptions: Sendable {
   var example: String
   var inputPath: String
 
-  static func parse(arguments: [String]) throws -> Self {
-    let usage = "Usage: instant-swift-data perms verify --example todos --from instant.perms.ts"
-    var arguments = arguments
-    guard arguments.popFirstArgument() == "verify" else {
-      throw CLIError(usage, exitCode: 64)
-    }
-
-    var example: String?
-    var inputPath: String?
-
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--example":
-        guard let value = arguments.popFirstArgument() else {
-          throw CLIError(usage, exitCode: 64)
-        }
-        example = value
-
-      case "--from":
-        guard let value = arguments.popFirstArgument() else {
-          throw CLIError(usage, exitCode: 64)
-        }
-        inputPath = value
-
-      default:
-        throw CLIError("Unknown permissions verify option: \(option). \(usage)", exitCode: 64)
-      }
-    }
-
-    guard let example, let inputPath else {
-      throw CLIError(usage, exitCode: 64)
-    }
-
-    return Self(example: example, inputPath: inputPath)
+  init(invocation: CLIVerifyArtifactInvocation) {
+    self.example = invocation.example
+    self.inputPath = invocation.inputPath
   }
 }
 
