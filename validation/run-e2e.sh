@@ -14,6 +14,7 @@ rm -f \
   "${RESULTS_DIR}/swift-platform-adapters.jsonl" \
   "${RESULTS_DIR}/swift-syncups-recording.jsonl" \
   "${RESULTS_DIR}/swift-parity-report.jsonl" \
+  "${RESULTS_DIR}/swift-macro-tests.log" \
   "${RESULTS_DIR}/swift-benchmark.jsonl" \
   "${RESULTS_DIR}/typescript-fixtures.jsonl"
 : > "${RESULTS_DIR}/orchestrator.jsonl"
@@ -107,6 +108,7 @@ for required_file in \
   "${ROOT}/validation/fixtures/instant.schema.ts" \
   "${ROOT}/validation/fixtures/instant.perms.ts" \
   "${ROOT}/validation/ts-runner/package.json" \
+  "${ROOT}/validation/run-macro-tests.sh" \
   "${ROOT}/Package.swift" \
   "${ROOT}/Sources/instant-swift-data/main.swift" \
   "${ROOT}/Sources/InstantSwiftDataValidationRunner/main.swift" \
@@ -132,6 +134,25 @@ if ! command -v swift >/dev/null 2>&1; then
     "$(printf '{"resultsDir":%s,"failed":"missing-swift"}' "$(json_string "${RESULTS_DIR}")")"
   echo "swift is required for the Swift runner." >&2
   exit 1
+fi
+
+log_json "swift-macro-tests-start" true
+if (
+  cd "${ROOT}"
+  validation/run-macro-tests.sh
+) 2>&1 | tee "${RESULTS_DIR}/swift-macro-tests.log"; then
+  log_json "swift-macro-tests-complete" true "$(json_object "path" "${RESULTS_DIR}/swift-macro-tests.log")"
+else
+  status=$?
+  log_json \
+    "swift-macro-tests-failed" \
+    false \
+    "$(json_failure_details "${RESULTS_DIR}/swift-macro-tests.log" "${status}")"
+  log_json \
+    "complete" \
+    false \
+    "$(printf '{"resultsDir":%s,"failed":"swift-macro-tests","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+  exit "${status}"
 fi
 
 log_json "swift-local-start" true

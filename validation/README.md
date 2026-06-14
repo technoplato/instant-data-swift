@@ -71,8 +71,8 @@ allowed operations. `validation/run-e2e.sh` records all Swift local validation
 streams (`swift-local.jsonl`, `swift-local-integrations.jsonl`,
 `swift-typed-drafts.jsonl`, `swift-platform-adapters.jsonl`,
 `swift-syncups-recording.jsonl`, and `swift-parity-report.jsonl`), records the
-local benchmark evidence, and then
-runs this fixture check when Node is available. Set
+MacroTesting run as `swift-macro-tests.log`, records the local benchmark
+evidence, and then runs this fixture check when Node is available. Set
 `INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR` to direct artifacts to a specific
 directory, and
 `INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS` to adjust the benchmark
