@@ -2581,7 +2581,7 @@ public struct CLIOutboxParser: Parser {
       return .transport(includeFailed: try CLIOutboxTransportOptionsParser().parse(&input))
 
     case "flush", "send":
-      return .flush(limit: try parseOutboxFlushLimit(from: &input))
+      return .flush(limit: try CLIOutboxFlushOptionsParser().parse(&input))
 
     case "confirm":
       let mutationID = try parseSingleOutboxArgument(from: &input, usage: CLIOutboxUsage.confirm)
@@ -2601,7 +2601,7 @@ public struct CLIOutboxParser: Parser {
       return .retry(mutationID: mutationID)
 
     case "drain":
-      return .drain(limit: try parseOutboxDrainLimit(from: &input))
+      return .drain(limit: try CLIOutboxDrainOptionsParser().parse(&input))
 
     default:
       throw CLIOutboxArgumentError.unknownCommand(command)
@@ -2627,6 +2627,69 @@ public struct CLIOutboxTransportOptionsParser: Parser {
     }
 
     return includeFailed
+  }
+}
+
+public struct CLIOutboxFlushOptionsParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> Int? {
+    var limit: Int?
+
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--limit":
+        guard let value = input.first,
+          let parsed = Int(value),
+          parsed >= 0
+        else {
+          throw CLIOutboxArgumentError.invalidArguments(usage: CLIOutboxUsage.flush)
+        }
+        input.removeFirst()
+        limit = parsed
+
+      default:
+        throw CLIOutboxArgumentError.unknownOption(option, usage: CLIOutboxUsage.flush)
+      }
+    }
+
+    return limit
+  }
+}
+
+public struct CLIOutboxDrainOptionsParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> Int? {
+    var sawLocalConfirm = false
+    var limit: Int?
+
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--local-confirm":
+        sawLocalConfirm = true
+
+      case "--limit":
+        guard let value = input.first,
+          let parsed = Int(value),
+          parsed >= 0
+        else {
+          throw CLIOutboxArgumentError.invalidArguments(usage: CLIOutboxUsage.drain)
+        }
+        input.removeFirst()
+        limit = parsed
+
+      default:
+        throw CLIOutboxArgumentError.unknownOption(option, usage: CLIOutboxUsage.drain)
+      }
+    }
+
+    guard sawLocalConfirm else {
+      throw CLIOutboxArgumentError.missingArguments(usage: CLIOutboxUsage.drain)
+    }
+    return limit
   }
 }
 
@@ -4039,65 +4102,6 @@ private func isValidCacheNamespace(_ value: String) -> Bool {
   !value.isEmpty
     && !value.contains("/")
     && !value.contains(where: { $0.isWhitespace })
-}
-
-private func parseOutboxFlushLimit(
-  from input: inout ArraySlice<String>
-) throws -> Int? {
-  var limit: Int?
-
-  while let option = input.first {
-    input.removeFirst()
-    switch option {
-    case "--limit":
-      guard let value = input.first,
-        let parsed = Int(value),
-        parsed >= 0
-      else {
-        throw CLIOutboxArgumentError.invalidArguments(usage: CLIOutboxUsage.flush)
-      }
-      input.removeFirst()
-      limit = parsed
-
-    default:
-      throw CLIOutboxArgumentError.unknownOption(option, usage: CLIOutboxUsage.flush)
-    }
-  }
-
-  return limit
-}
-
-private func parseOutboxDrainLimit(
-  from input: inout ArraySlice<String>
-) throws -> Int? {
-  var sawLocalConfirm = false
-  var limit: Int?
-
-  while let option = input.first {
-    input.removeFirst()
-    switch option {
-    case "--local-confirm":
-      sawLocalConfirm = true
-
-    case "--limit":
-      guard let value = input.first,
-        let parsed = Int(value),
-        parsed >= 0
-      else {
-        throw CLIOutboxArgumentError.invalidArguments(usage: CLIOutboxUsage.drain)
-      }
-      input.removeFirst()
-      limit = parsed
-
-    default:
-      throw CLIOutboxArgumentError.unknownOption(option, usage: CLIOutboxUsage.drain)
-    }
-  }
-
-  guard sawLocalConfirm else {
-    throw CLIOutboxArgumentError.missingArguments(usage: CLIOutboxUsage.drain)
-  }
-  return limit
 }
 
 private func parseSingleOutboxArgument(

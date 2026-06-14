@@ -1864,6 +1864,47 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func outboxFlushOptionsParserConsumesLimit() throws {
+    expectNoDifference(try parseOutboxFlushOptions([]), nil)
+    expectNoDifference(try parseOutboxFlushOptions(["--limit", "0"]), 0)
+    expectNoDifference(try parseOutboxFlushOptions(["--limit", "1", "--limit", "3"]), 3)
+  }
+
+  @Test
+  func outboxFlushOptionsParserReportsMalformedArguments() throws {
+    try expectOutboxFlushOptionsParseError(["--limit"], description: CLIOutboxUsage.flush)
+    try expectOutboxFlushOptionsParseError(["--limit", "-1"], description: CLIOutboxUsage.flush)
+    try expectOutboxFlushOptionsParseError(
+      ["--unknown"],
+      description: "Unknown outbox flush option: --unknown. \(CLIOutboxUsage.flush)"
+    )
+  }
+
+  @Test
+  func outboxDrainOptionsParserConsumesLocalConfirmAndLimit() throws {
+    expectNoDifference(try parseOutboxDrainOptions(["--local-confirm"]), nil)
+    expectNoDifference(try parseOutboxDrainOptions(["--local-confirm", "--limit", "0"]), 0)
+    expectNoDifference(
+      try parseOutboxDrainOptions(["--limit", "1", "--local-confirm", "--limit", "3"]),
+      3
+    )
+  }
+
+  @Test
+  func outboxDrainOptionsParserReportsMalformedArguments() throws {
+    try expectOutboxDrainOptionsParseError([], description: CLIOutboxUsage.drain)
+    try expectOutboxDrainOptionsParseError(["--limit", "1"], description: CLIOutboxUsage.drain)
+    try expectOutboxDrainOptionsParseError(
+      ["--local-confirm", "--limit", "oops"],
+      description: CLIOutboxUsage.drain
+    )
+    try expectOutboxDrainOptionsParseError(
+      ["--unknown"],
+      description: "Unknown outbox drain option: --unknown. \(CLIOutboxUsage.drain)"
+    )
+  }
+
+  @Test
   func examplesParserKeepsLegacyDispatchForOtherExamplesAndUnknowns() throws {
     expectNoDifference(
       try parseExamples(["syncups", "add", "Daily"]),
@@ -2570,6 +2611,20 @@ private func parseOutboxTransportOptions(_ arguments: [String]) throws -> Bool {
   return includeFailed
 }
 
+private func parseOutboxFlushOptions(_ arguments: [String]) throws -> Int? {
+  var input = arguments[...]
+  let limit = try CLIOutboxFlushOptionsParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return limit
+}
+
+private func parseOutboxDrainOptions(_ arguments: [String]) throws -> Int? {
+  var input = arguments[...]
+  let limit = try CLIOutboxDrainOptionsParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return limit
+}
+
 private func parseRooms(_ arguments: [String]) throws -> CLIRoomsInvocation {
   var input = arguments[...]
   let invocation = try CLIRoomsParser().parse(&input)
@@ -2852,6 +2907,32 @@ private func expectOutboxParseError(
   do {
     _ = try parseOutbox(arguments)
     Issue.record("Expected outbox parser to reject \(arguments).")
+  } catch let error as CLIOutboxArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectOutboxFlushOptionsParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseOutboxFlushOptions(arguments)
+    Issue.record("Expected outbox flush options parser to reject \(arguments).")
+  } catch let error as CLIOutboxArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectOutboxDrainOptionsParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseOutboxDrainOptions(arguments)
+    Issue.record("Expected outbox drain options parser to reject \(arguments).")
   } catch let error as CLIOutboxArgumentError {
     expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
