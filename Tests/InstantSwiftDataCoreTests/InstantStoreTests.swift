@@ -1193,6 +1193,64 @@ struct InstantStoreTests {
   }
 
   @Test
+  func transportMutationPreservesRuleParamsByLookup() throws {
+    let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let lookup = InstantLookupRef(
+      attributeID: "users/email",
+      value: .string("blob@example.com")
+    )
+    let params = JSONValue.object([
+      "role": .string("editor"),
+      "scopes": .array([.string("todos"), .string("projects")]),
+    ])
+    let transaction = InstantStoreTransaction(
+      id: "tx-rule-params-lookup-transport",
+      operations: [
+        .ruleParamsByLookup(
+          entity: lookup,
+          namespace: "users",
+          params: params
+        )
+      ]
+    )
+    let transportMutation = InstantTransportMutation(
+      PendingMutation(
+        id: "tx-rule-params-lookup-transport",
+        createdAt: txTime,
+        transaction: transaction
+      )
+    )
+
+    expectNoDifference(transportMutation.preconditions, [])
+    expectNoDifference(
+      transportMutation.txSteps,
+      [
+        .ruleParams(
+          entity: .lookup(lookup),
+          namespace: "users",
+          params: InstantTransportValue(params)
+        )
+      ]
+    )
+
+    let data = try JSONEncoder().encode(transportMutation)
+    let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let txSteps = try #require(object["txSteps"] as? [[Any]])
+    expectNoDifference(txSteps.count, 1)
+    expectNoDifference(txSteps[0].count, 4)
+    expectNoDifference(txSteps[0][0] as? String, "rule-params")
+    let lookupEntity = try #require(txSteps[0][1] as? [Any])
+    expectNoDifference(lookupEntity.count, 2)
+    expectNoDifference(lookupEntity[0] as? String, "users/email")
+    expectNoDifference(lookupEntity[1] as? String, "blob@example.com")
+    expectNoDifference(txSteps[0][2] as? String, "users")
+    let encodedParams = try #require(txSteps[0][3] as? [String: Any])
+    expectNoDifference(encodedParams.keys.sorted(), ["role", "scopes"])
+    expectNoDifference(encodedParams["role"] as? String, "editor")
+    expectNoDifference(encodedParams["scopes"] as? [String], ["todos", "projects"])
+  }
+
+  @Test
   func transportMutationPreservesTripleExistsPreconditions() throws {
     let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let transaction = InstantStoreTransaction(
