@@ -6418,10 +6418,3 @@ private struct CLIHelp: Error, CustomStringConvertible {
     self.description = description
   }
 }
-
-private extension Array {
-  mutating func popFirstArgument() -> Element? {
-    guard !isEmpty else { return nil }
-    return removeFirst()
-  }
-}
