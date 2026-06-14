@@ -1009,6 +1009,116 @@ public struct InstantReverseRelation<
     self.init(name, attributeID: attribute.attributeID)
   }
 
+  public init(validating attribute: InstantAttributePath<Target, InstantID<Entity>>) throws {
+    self = try Self.derived(attribute: attribute)
+  }
+
+  public init(attribute: InstantAttributePath<Target, InstantID<Entity>>) {
+    do {
+      self = try Self.derived(attribute: attribute)
+    } catch {
+      preconditionFailure("Invalid Instant reverse relation '\(attribute.name)': \(error)")
+    }
+  }
+
+  private static func derived(
+    attribute: InstantAttributePath<Target, InstantID<Entity>>
+  ) throws -> Self {
+    let attributeByID = Target.instantAttributes.first { $0.id == attribute.attributeID }
+    let attributeByName = Target.instantAttributes.first { $0.name == attribute.name }
+    guard
+      let linkAttribute = attributeByID ?? attributeByName
+    else {
+      throw derivationError(
+        path: attribute.name,
+        message:
+          "No attribute named '\(attribute.name)' is declared for '\(Target.instantNamespace)'.",
+        recovery:
+          "Declare '\(attribute.attributeID)' in \(Target.self).instantAttributes before deriving a reverse relation."
+      )
+    }
+
+    guard linkAttribute.id == attribute.attributeID else {
+      throw derivationError(
+        path: attribute.name,
+        message:
+          "Reverse relation path '\(attribute.name)' uses attribute id '\(attribute.attributeID)', but the schema declares '\(attribute.name)' as attribute id '\(linkAttribute.id)'.",
+        recovery: "Use the schema attribute id that belongs to the relation path."
+      )
+    }
+
+    guard linkAttribute.name == attribute.name else {
+      throw derivationError(
+        path: attribute.name,
+        message:
+          "Reverse relation path '\(attribute.name)' uses attribute id '\(attribute.attributeID)', but the schema declares that id as '\(linkAttribute.name)'.",
+        recovery: "Use the schema field name that belongs to the relation attribute id."
+      )
+    }
+
+    guard linkAttribute.valueType == .ref else {
+      throw derivationError(
+        path: attribute.name,
+        message: "Attribute '\(linkAttribute.id)' is not a ref attribute.",
+        recovery: "Derive reverse relations only from Instant ref attributes."
+      )
+    }
+
+    guard linkAttribute.linkNamespace == Entity.instantNamespace else {
+      throw derivationError(
+        path: attribute.name,
+        message:
+          "Attribute '\(linkAttribute.id)' links to '\(linkAttribute.linkNamespace ?? "")', not '\(Entity.instantNamespace)'.",
+        recovery: "Use an InstantAttributePath whose ID type matches the link namespace."
+      )
+    }
+
+    guard let reverseIdentity = linkAttribute.reverseIdentity else {
+      throw derivationError(
+        path: attribute.name,
+        message: "Attribute '\(linkAttribute.id)' has no reverse identity.",
+        recovery: "Declare reverseIdentity on the ref attribute before deriving a reverse relation."
+      )
+    }
+
+    let prefix = Entity.instantNamespace + "/"
+    guard reverseIdentity.hasPrefix(prefix) else {
+      throw derivationError(
+        path: attribute.name,
+        message: "Reverse identity '\(reverseIdentity)' does not start with '\(prefix)'.",
+        recovery:
+          "Declare the reverse identity as '\(Entity.instantNamespace)/<relation-name>'."
+      )
+    }
+
+    let relationName = String(reverseIdentity.dropFirst(prefix.count))
+    guard !relationName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      throw derivationError(
+        path: attribute.name,
+        message: "Reverse identity '\(reverseIdentity)' does not contain a relation name.",
+        recovery:
+          "Declare the reverse identity as '\(Entity.instantNamespace)/<relation-name>'."
+      )
+    }
+
+    return Self(relationName, attributeID: linkAttribute.id)
+  }
+
+  private static func derivationError(
+    path: String,
+    message: String,
+    recovery: String
+  ) -> InstantError {
+    InstantError(
+      code: .validationFailed,
+      operation: "derive reverse include",
+      namespace: Entity.instantNamespace,
+      path: path,
+      message: message,
+      recovery: recovery
+    )
+  }
+
   fileprivate func validateIncludeRelation() {
     do {
       _ = try reverseAttribute()

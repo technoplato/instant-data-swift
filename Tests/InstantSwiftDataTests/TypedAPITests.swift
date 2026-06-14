@@ -182,6 +182,8 @@ struct TypedAPITests {
           .select(TypedPost.title)
           .order(TypedPost.title)
       )
+    expectNoDifference(TypedUser.posts.name, "posts")
+    expectNoDifference(TypedUser.posts.attributeID, "posts/author")
     expectNoDifference(
       reverseIncludedQuery.plan.includes,
       [
@@ -199,6 +201,87 @@ struct TypedAPITests {
     )
     #expect(reverseIncludedQuery.plan.id != TypedUser.query.plan.id)
     #expect(reverseIncludedQuery.plan.cacheKey != TypedUser.query.plan.cacheKey)
+  }
+
+  @Test
+  func reverseRelationDerivesNameFromRefAttributeMetadata() throws {
+    let posts = try InstantReverseRelation<TypedUser, TypedPost>(validating: TypedPost.author)
+    expectNoDifference(posts, TypedUser.posts)
+
+    let editedPosts = try InstantReverseRelation<TypedUser, TypedPost>(validating: TypedPost.editor)
+    expectNoDifference(editedPosts, TypedUser.editedPosts)
+    expectNoDifference(editedPosts.name, "editedPosts")
+    expectNoDifference(editedPosts.attributeID, "posts/editor")
+
+    let editedPostsQuery = TypedUser.query.include(
+      editedPosts,
+      TypedPost.query.select(TypedPost.title)
+    )
+    expectNoDifference(
+      editedPostsQuery.plan.includes,
+      [
+        InstantQueryInclude(
+          "editedPosts",
+          direction: .reverse,
+          query: InstantQueryIncludePlan(
+            id: TypedPost.query.select(TypedPost.title).plan.id,
+            namespace: TypedPost.instantNamespace,
+            selectedFields: ["title"]
+          )
+        )
+      ]
+    )
+
+    do {
+      _ = try InstantReverseRelation<TypedUser, TypedPost>(
+        validating: InstantAttributePath<TypedPost, InstantID<TypedUser>>(
+          "author",
+          attributeID: "posts/editor"
+        )
+      )
+      Issue.record("Expected reverse relation derivation to reject an id/name mismatch.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "derive reverse include")
+      expectNoDifference(error.namespace, "users")
+      expectNoDifference(error.path, "author")
+      #expect(error.message.contains("schema declares that id as 'editor'"))
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+
+    do {
+      _ = try InstantReverseRelation<TypedUser, TypedPost>(
+        validating: InstantAttributePath<TypedPost, InstantID<TypedUser>>(
+          "author",
+          attributeID: "posts/missing"
+        )
+      )
+      Issue.record("Expected reverse relation derivation to reject a missing explicit id.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "derive reverse include")
+      expectNoDifference(error.namespace, "users")
+      expectNoDifference(error.path, "author")
+      #expect(error.message.contains("schema declares 'author' as attribute id 'posts/author'"))
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+
+    do {
+      _ = try InstantReverseRelation<TypedMalformedReverseUser, TypedMalformedReversePost>(
+        validating: TypedMalformedReversePost.author
+      )
+      Issue.record("Expected reverse relation derivation to reject an empty relation name.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "derive reverse include")
+      expectNoDifference(error.namespace, "malformedUsers")
+      expectNoDifference(error.path, "author")
+      #expect(error.message.contains("does not contain a relation name"))
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
   }
 
   @Test
@@ -4227,6 +4310,41 @@ private struct TypedWrongNamespaceLookupEntity: Hashable, Codable, InstantEntity
   }
 }
 
+private struct TypedMalformedReverseUser: Hashable, Codable, InstantEntityModel {
+  var id: InstantID<TypedMalformedReverseUser>
+
+  static let instantNamespace = "malformedUsers"
+  static let instantAttributes: [InstantAttribute] = []
+
+  init(snapshot: InstantEntitySnapshot) throws {
+    self.id = InstantID(rawValue: snapshot.id)
+  }
+}
+
+private struct TypedMalformedReversePost: Hashable, Codable, InstantEntityModel {
+  var id: InstantID<TypedMalformedReversePost>
+
+  static let instantNamespace = "malformedPosts"
+  static let author =
+    InstantAttributePath<TypedMalformedReversePost, InstantID<TypedMalformedReverseUser>>("author")
+  static let instantAttributes = [
+    InstantAttribute(
+      id: "malformedPosts/author",
+      namespace: instantNamespace,
+      name: "author",
+      valueType: .ref,
+      isIndexed: true,
+      forwardIdentity: "malformedPosts/author",
+      reverseIdentity: "malformedUsers/",
+      linkNamespace: TypedMalformedReverseUser.instantNamespace
+    )
+  ]
+
+  init(snapshot: InstantEntitySnapshot) throws {
+    self.id = InstantID(rawValue: snapshot.id)
+  }
+}
+
 private struct TypedUser: Hashable, Codable, InstantEntityModel {
   var id: InstantID<TypedUser>
   var name: String
@@ -4234,10 +4352,8 @@ private struct TypedUser: Hashable, Codable, InstantEntityModel {
   static let instantNamespace = "users"
   static let name = InstantAttributePath<TypedUser, String>("name")
   static let email = InstantAttributePath<TypedUser, String>("email")
-  static let posts = InstantReverseRelation<TypedUser, TypedPost>(
-    "posts",
-    attribute: TypedPost.author
-  )
+  static let posts = InstantReverseRelation<TypedUser, TypedPost>(attribute: TypedPost.author)
+  static let editedPosts = InstantReverseRelation<TypedUser, TypedPost>(attribute: TypedPost.editor)
 
   static let instantAttributes = [
     InstantAttribute(
@@ -4335,6 +4451,7 @@ private struct TypedPost: Hashable, Codable, InstantEntityModel {
   static let title = InstantAttributePath<TypedPost, String>("title")
   static let slug = InstantAttributePath<TypedPost, String>("slug")
   static let author = InstantAttributePath<TypedPost, InstantID<TypedUser>>("author")
+  static let editor = InstantAttributePath<TypedPost, InstantID<TypedUser>>("editor")
 
   static let instantAttributes = [
     InstantAttribute(
@@ -4360,6 +4477,16 @@ private struct TypedPost: Hashable, Codable, InstantEntityModel {
       isIndexed: true,
       forwardIdentity: "posts/author",
       reverseIdentity: "users/posts",
+      linkNamespace: TypedUser.instantNamespace
+    ),
+    InstantAttribute(
+      id: "posts/editor",
+      namespace: instantNamespace,
+      name: "editor",
+      valueType: .ref,
+      isIndexed: true,
+      forwardIdentity: "posts/editor",
+      reverseIdentity: "users/editedPosts",
       linkNamespace: TypedUser.instantNamespace
     ),
   ]
