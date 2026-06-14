@@ -1089,6 +1089,84 @@ struct InstantStoreParityTests {
     expectNoDifference(fakeUsers.first?.values["email"]?.first, .string("test@test.com"), source)
   }
 
+  @Test
+  func dateConversionMaterializesDateTypedSchemaValues() async throws {
+    let dateSource = storeParitySource(
+      "date conversion",
+      status: "exact: date inputs materialize as Date values for date attributes."
+    )
+    let numberSource = storeParitySource(
+      "date conversion",
+      status: "adapted: Swift always materializes date attributes as Date values, including number inputs."
+    )
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let dateInput = Date(timeIntervalSince1970: 1_700_000_000)
+    let numberMilliseconds = 99_999_999_999_999.0
+    let numberDate = Date(timeIntervalSince1970: numberMilliseconds / 1000)
+
+    let dateRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: dateConversionTodoAttributes()
+      )
+    )
+    try await dateRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-date-conversion-date",
+        operations: [
+          .insert(triple("todo-date", "todos/title", .string("todo"), txID: "tx-date-conversion-date", time: time)),
+          .insert(triple("todo-date", "todos/completed", .bool(false), txID: "tx-date-conversion-date", time: time)),
+          .insert(triple("todo-date", "todos/createdAt", .date(dateInput), txID: "tx-date-conversion-date", time: time)),
+        ]
+      ),
+      createdAt: time
+    )
+    let dateTodos = try await dateRuntime.query(InstantQueryPlan(id: "date-conversion.date", namespace: "todos"))
+    expectNoDifference(dateTodos.count, 1, dateSource)
+    expectNoDifference(
+      dateTodos.map { storeParityISOString(from: $0.values["createdAt"]?.first) },
+      [storeParityISOString(from: dateInput)],
+      dateSource
+    )
+
+    let numberRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: dateConversionTodoAttributes()
+      )
+    )
+    try await numberRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-date-conversion-number",
+        operations: [
+          .insert(triple("todo-number", "todos/title", .string("todo"), txID: "tx-date-conversion-number", time: time)),
+          .insert(triple("todo-number", "todos/completed", .bool(false), txID: "tx-date-conversion-number", time: time)),
+          .insert(
+            triple(
+              "todo-number",
+              "todos/createdAt",
+              .number(numberMilliseconds),
+              txID: "tx-date-conversion-number",
+              time: time
+            )
+          ),
+        ]
+      ),
+      createdAt: time
+    )
+    let numberTodos = try await numberRuntime.query(
+      InstantQueryPlan(id: "date-conversion.number", namespace: "todos")
+    )
+    expectNoDifference(numberTodos.count, 1, numberSource)
+    expectNoDifference(
+      numberTodos.map { storeParityISOString(from: $0.values["createdAt"]?.first) },
+      [storeParityISOString(from: numberDate)],
+      numberSource
+    )
+  }
+
   private func temporaryCacheURL() throws -> URL {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataStoreParityTests-\(UUID().uuidString)")
@@ -1249,6 +1327,46 @@ struct InstantStoreParityTests {
       namespace: "books",
       filters: [.equals(field: "description", value: .string("series"))]
     )
+  }
+
+  private func dateConversionTodoAttributes() -> [InstantAttribute] {
+    [
+      InstantAttribute(
+        id: "todos/title",
+        namespace: "todos",
+        name: "title",
+        valueType: .string,
+        isRequired: false
+      ),
+      InstantAttribute(
+        id: "todos/completed",
+        namespace: "todos",
+        name: "completed",
+        valueType: .boolean,
+        isRequired: false
+      ),
+      InstantAttribute(
+        id: "todos/createdAt",
+        namespace: "todos",
+        name: "createdAt",
+        valueType: .date,
+        isRequired: false
+      ),
+    ]
+  }
+
+  private func storeParityISOString(from value: InstantValue?) -> String? {
+    guard case let .date(date) = value else { return nil }
+    return storeParityISOString(from: date)
+  }
+
+  private func storeParityISOString(from date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone(secondsFromGMT: 0)
+    formatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
+    return formatter.string(from: date)
   }
 }
 
