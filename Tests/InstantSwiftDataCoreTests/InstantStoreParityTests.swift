@@ -84,6 +84,97 @@ struct InstantStoreParityTests {
   }
 
   @Test
+  func linkAndUnlinkPortsUpstreamUserBookshelfShape() async throws {
+    let source = storeParitySource(
+      "link/unlink",
+      status: "exact: user/bookshelf scalar writes and links materialize, unlink, and relink."
+    )
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: userBookshelfAttributes()
+      )
+    )
+    let query = usersWithBookshelvesQuery()
+
+    let initial = try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-link-unlink",
+        operations: [
+          .insert(triple("user-1", "users/handle", .string("bobby"), txID: "tx-link-unlink", time: time)),
+          .insert(triple("user-1", "users/bookshelves", .ref("bookshelf-1"), txID: "tx-link-unlink", time: time)),
+          .insert(triple("bookshelf-1", "bookshelves/name", .string("my books"), txID: "tx-link-unlink", time: time)),
+        ]
+      ),
+      createdAt: time
+    )
+
+    var users = try await runtime.query(query)
+    expectNoDifference(initial.changedEntityIDs, ["bookshelf-1", "user-1"], source)
+    expectNoDifference(initial.tripleCount, 3, source)
+    expectNoDifference(users.map { $0.values["handle"]?.first }, [.string("bobby")], source)
+    expectNoDifference(users.first?.values["bookshelves"]?.values, [.ref("bookshelf-1")], source)
+    expectNoDifference(users.first?.links?["bookshelves"]?.map(\.id), ["bookshelf-1"], source)
+    expectNoDifference(
+      users.first?.links?["bookshelves"]?.map { $0.values["name"]?.first },
+      [.string("my books")],
+      source
+    )
+
+    let relinked = try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-link-unlink-relink",
+        operations: [
+          .insert(
+            triple(
+              "bookshelf-2",
+              "bookshelves/name",
+              .string("my second books"),
+              txID: "tx-link-unlink-relink",
+              time: time
+            )
+          ),
+          .retract(
+            triple(
+              "user-1",
+              "users/bookshelves",
+              .ref("bookshelf-1"),
+              txID: "tx-link-unlink-relink",
+              time: time
+            )
+          ),
+          .insert(
+            triple(
+              "user-1",
+              "users/bookshelves",
+              .ref("bookshelf-2"),
+              txID: "tx-link-unlink-relink",
+              time: time
+            )
+          ),
+        ]
+      ),
+      createdAt: InstantTimestamp(milliseconds: time.milliseconds + 1)
+    )
+
+    users = try await runtime.query(query)
+    expectNoDifference(
+      relinked.changedEntityIDs,
+      ["bookshelf-1", "bookshelf-2", "user-1"],
+      source
+    )
+    expectNoDifference(users.first?.values["bookshelves"]?.values, [.ref("bookshelf-2")], source)
+    expectNoDifference(users.first?.links?["bookshelves"]?.map(\.id), ["bookshelf-2"], source)
+    expectNoDifference(
+      users.first?.links?["bookshelves"]?.map { $0.values["name"]?.first },
+      [.string("my second books")],
+      source
+    )
+  }
+
+  @Test
   func linkAndUnlinkWithoutScalarUpdatesMaintainForwardAndReverseIndexes() async throws {
     let source = storeParitySource(
       "link/unlink without update",
@@ -813,6 +904,54 @@ struct InstantStoreParityTests {
             id: "articles.included",
             namespace: "articles",
             order: InstantQueryOrder("title")
+          )
+        )
+      ]
+    )
+  }
+
+  private func userBookshelfAttributes() -> [InstantAttribute] {
+    [
+      InstantAttribute(
+        id: "users/handle",
+        namespace: "users",
+        name: "handle",
+        valueType: .string,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "users/bookshelves",
+        namespace: "users",
+        name: "bookshelves",
+        valueType: .ref,
+        cardinality: .many,
+        isIndexed: true,
+        forwardIdentity: "users/bookshelves",
+        reverseIdentity: "bookshelves/users",
+        linkNamespace: "bookshelves"
+      ),
+      InstantAttribute(
+        id: "bookshelves/name",
+        namespace: "bookshelves",
+        name: "name",
+        valueType: .string,
+        isIndexed: true
+      ),
+    ]
+  }
+
+  private func usersWithBookshelvesQuery() -> InstantQueryPlan {
+    InstantQueryPlan(
+      id: "users.with-bookshelves",
+      namespace: "users",
+      filters: [.equals(field: "handle", value: .string("bobby"))],
+      includes: [
+        InstantQueryInclude(
+          "bookshelves",
+          query: InstantQueryIncludePlan(
+            id: "bookshelves.included",
+            namespace: "bookshelves",
+            order: InstantQueryOrder("name")
           )
         )
       ]
