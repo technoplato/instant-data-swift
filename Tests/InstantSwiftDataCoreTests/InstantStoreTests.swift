@@ -970,6 +970,94 @@ struct InstantStoreTests {
   }
 
   @Test
+  func transportMutationPreservesLookupRefsInLinkValuesForInstamlParity() throws {
+    let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let postLookup = InstantLookupRef(
+      attributeID: "posts/slug",
+      value: .string("life-is-good")
+    )
+    let userPrefsLookup = InstantLookupRef(
+      attributeID: "user_prefs/users",
+      value: .ref("user-1")
+    )
+    let transaction = InstantStoreTransaction(
+      id: "tx-lookup-link-value-transport",
+      operations: [
+        .requireEntityExists(entityID: "user-1", namespace: "users"),
+        .insert(
+          InstantTriple(
+            entityID: "user-1",
+            attributeID: "users/posts",
+            value: .lookupRef(postLookup),
+            txID: "tx-lookup-link-value-transport",
+            txTime: txTime
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "user-1",
+            attributeID: "users/user_prefs",
+            value: .lookupRef(userPrefsLookup),
+            txID: "tx-lookup-link-value-transport",
+            txTime: txTime
+          )
+        ),
+      ]
+    )
+    let transportMutation = InstantTransportMutation(
+      PendingMutation(
+        id: "tx-lookup-link-value-transport",
+        createdAt: txTime,
+        transaction: transaction
+      )
+    )
+
+    let source =
+      "upstream instaml.test.ts: lookup link values stay two-element lookup refs in tx steps."
+    expectNoDifference(
+      transportMutation.preconditions,
+      [
+        InstantTransportPrecondition(
+          kind: .entityExists,
+          entity: .id("user-1"),
+          namespace: "users"
+        )
+      ],
+      source
+    )
+    expectNoDifference(
+      transportMutation.txSteps,
+      [
+        .addTriple(
+          entity: .id("user-1"),
+          attributeID: "users/posts",
+          value: .array([.string("posts/slug"), .string("life-is-good")]),
+          options: InstantTransportOptions(mode: .update)
+        ),
+        .addTriple(
+          entity: .id("user-1"),
+          attributeID: "users/user_prefs",
+          value: .array([.string("user_prefs/users"), .string("user-1")]),
+          options: InstantTransportOptions(mode: .update)
+        ),
+      ],
+      source
+    )
+
+    let data = try JSONEncoder().encode(transportMutation)
+    let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let txSteps = try #require(object["txSteps"] as? [[Any]])
+    let postLookupValue = try #require(txSteps[0][3] as? [Any])
+    expectNoDifference(postLookupValue.count, 2, source)
+    expectNoDifference(postLookupValue[0] as? String, "posts/slug", source)
+    expectNoDifference(postLookupValue[1] as? String, "life-is-good", source)
+    let userPrefsLookupValue = try #require(txSteps[1][3] as? [Any])
+    expectNoDifference(userPrefsLookupValue.count, 2, source)
+    expectNoDifference(userPrefsLookupValue[0] as? String, "user_prefs/users", source)
+    expectNoDifference(userPrefsLookupValue[1] as? String, "user-1", source)
+  }
+
+  @Test
   func transportMutationPreservesTripleExistsPreconditions() throws {
     let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let transaction = InstantStoreTransaction(
