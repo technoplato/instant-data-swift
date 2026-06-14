@@ -175,6 +175,82 @@ struct InstantStoreParityTests {
   }
 
   @Test
+  func deleteEntityRemovesEntityAndInboundReferences() async throws {
+    let source = storeParitySource(
+      "delete entity",
+      status: "exact: deleting an entity removes its triples and inbound references."
+    )
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: userBookshelfAttributes()
+      )
+    )
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-delete-entity-seed",
+        operations: [
+          .insert(triple("user-1", "users/handle", .string("bobby"), txID: "tx-delete-entity-seed", time: time)),
+          .insert(triple("user-1", "users/bookshelves", .ref("bookshelf-1"), txID: "tx-delete-entity-seed", time: time)),
+          .insert(
+            triple(
+              "bookshelf-1",
+              "bookshelves/name",
+              .string("my books"),
+              txID: "tx-delete-entity-seed",
+              time: time
+            )
+          ),
+        ]
+      ),
+      createdAt: time
+    )
+
+    var snapshot = await runtime.store.snapshot()
+    expectNoDifference(
+      snapshot.triples.filter { $0.entityID == "bookshelf-1" }.map(\.value),
+      [.string("my books")],
+      source
+    )
+    expectNoDifference(
+      snapshot.triples.filter { $0.value == .ref("bookshelf-1") }.map(\.entityID),
+      ["user-1"],
+      source
+    )
+
+    let deleted = try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-delete-entity",
+        operations: [.deleteEntity("bookshelf-1")]
+      ),
+      createdAt: InstantTimestamp(milliseconds: time.milliseconds + 1)
+    )
+    snapshot = await runtime.store.snapshot()
+    let users = try await runtime.query(usersWithBookshelvesQuery())
+    let bookshelves = try await runtime.query(InstantQueryPlan(id: "bookshelves", namespace: "bookshelves"))
+
+    expectNoDifference(deleted.changedEntityIDs, ["bookshelf-1", "user-1"], source)
+    expectNoDifference(deleted.tripleCount, 1, source)
+    expectNoDifference(
+      snapshot.triples.filter { $0.entityID == "bookshelf-1" }.map(\.value),
+      [],
+      source
+    )
+    expectNoDifference(
+      snapshot.triples.filter { $0.value == .ref("bookshelf-1") }.map(\.entityID),
+      [],
+      source
+    )
+    expectNoDifference(users.map(\.id), ["user-1"], source)
+    expectNoDifference(users.first?.values["bookshelves"]?.values, nil, source)
+    expectNoDifference(users.first?.links?["bookshelves"]?.map(\.id), [], source)
+    expectNoDifference(bookshelves.map(\.id), [], source)
+  }
+
+  @Test
   func linkAndUnlinkWithoutScalarUpdatesMaintainForwardAndReverseIndexes() async throws {
     let source = storeParitySource(
       "link/unlink without update",
