@@ -586,6 +586,54 @@ struct InstantQueryValidationParityTests {
   }
 
   @Test
+  func upstreamRelationsWithComplexObjects() async throws {
+    let runtime = try await queryValidationRuntime()
+    let source = queryValidationSource(
+      "relations with complex objects",
+      assertion: "lines 983-1029 relation null/not/equality validation",
+      status:
+        "adapted: Swift expresses relation operators with typed filters and uses ref values for relation ids."
+    )
+
+    let relationIsNull = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.users.posts-null",
+        namespace: "users",
+        filters: [.isNull(field: "posts")]
+      )
+    )
+    expectNoDifference(relationIsNull, [], source)
+
+    let relationNotEquals = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.users.posts-not-ref",
+        namespace: "users",
+        filters: [.notEquals(field: "posts", value: .ref("this"))]
+      )
+    )
+    expectNoDifference(relationNotEquals, [], source)
+
+    let relationNotEqualsInOr = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.users.posts-not-ref-or",
+        namespace: "users",
+        filters: [.or([.notEquals(field: "posts", value: .ref("this"))])]
+      )
+    )
+    expectNoDifference(relationNotEqualsInOr, [], source)
+
+    await expectQueryValidation(namespace: "users", path: "posts", source) {
+      _ = try await runtime.query(
+        InstantQueryPlan(
+          id: "query-validation-parity.users.posts-invalid-equality",
+          namespace: "users",
+          filters: [.equals(field: "posts", value: .string(" Invalid equality check"))]
+        )
+      )
+    }
+  }
+
+  @Test
   func swiftSchemaBackedFilterValueEdges() async throws {
     let runtime = try await queryValidationRuntime()
     let source =
