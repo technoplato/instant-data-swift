@@ -270,6 +270,24 @@ extension InstantStoreTests {
     )
     expectNoDifference(inclusivePage.todos.map(\.text), ["query open"])
 
+    let duplicateQueryOptions = try JSONDecoder().decode(
+      CLITodosOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "query", "todos", "--completed", "true", "--completed", "false",
+            "--limit", "1", "--limit", "2", "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(
+      duplicateQueryOptions.queryID,
+      "examples.todos.list.completed-false.limit-2"
+    )
+    expectNoDifference(duplicateQueryOptions.todos.map(\.text), ["query open", "query second open"])
+
     let invalidBidirectionalPage = try runCLIResult(
       ["query", "todos", "--first", "1", "--last", "1", "--json"],
       homeURL: homeURL
@@ -585,6 +603,62 @@ extension InstantStoreTests {
         "--json",
       ],
       contains: "Unknown admin transact option"
+    )
+
+    expectNoDifference(
+      try FileManager.default.contentsOfDirectory(atPath: homeURL.path),
+      []
+    )
+  }
+
+  @Test
+  func cliMalformedQueryAndValidationArgumentsDoNotBootstrapState() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    func expectMalformed(_ arguments: [String], contains expectedFragment: String) throws {
+      let result = try runCLIResult(arguments, homeURL: homeURL)
+      expectNoDifference(result.status, 64)
+      #expect(result.error.contains(expectedFragment))
+    }
+
+    try expectMalformed(
+      ["query", "--json"],
+      contains: "query <namespace>"
+    )
+    try expectMalformed(
+      ["query", "rooms", "--json"],
+      contains: "query <namespace>"
+    )
+    try expectMalformed(
+      ["query", "todos", "--completed", "--json"],
+      contains: "instant-swift-data query todos --completed true|false"
+    )
+    try expectMalformed(
+      ["query", "todos", "--search", "  ", "--json"],
+      contains: "instant-swift-data query todos --search text"
+    )
+    try expectMalformed(
+      ["query", "todos", "--after", "  ", "--json"],
+      contains: "instant-swift-data query todos --after id"
+    )
+    try expectMalformed(
+      ["query", "todos", "--first", "1", "--last", "1", "--json"],
+      contains: "Use either --first or --last"
+    )
+    try expectMalformed(
+      ["query", "todos", "--unknown", "--json"],
+      contains: "Unknown todo query option"
+    )
+    try expectMalformed(
+      ["validation", "remote", "--json"],
+      contains: "validation <local-todos|local-integrations>"
+    )
+    try expectMalformed(
+      ["validation", "todos", "extra", "--json"],
+      contains: "validation <local-todos|local-integrations>"
     )
 
     expectNoDifference(

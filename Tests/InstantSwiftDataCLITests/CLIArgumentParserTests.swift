@@ -261,6 +261,22 @@ struct CLIArgumentParserTests {
       )
     )
     expectNoDifference(
+      try CLIArguments.parse(["query", "todos", "--limit", "2", "--json"]),
+      CLIInvocation(
+        output: .json,
+        command: .query,
+        arguments: ["todos", "--limit", "2"]
+      )
+    )
+    expectNoDifference(
+      try CLIArguments.parse(["validation", "--jsonl", "todos"]),
+      CLIInvocation(
+        output: .jsonl,
+        command: .validation,
+        arguments: ["todos"]
+      )
+    )
+    expectNoDifference(
       try CLIArguments.parse(["cache", "attrs", "todos", "--json"]),
       CLIInvocation(
         output: .json,
@@ -623,6 +639,127 @@ struct CLIArgumentParserTests {
       ["dance"],
       contains: "Usage: instant-swift-data app"
     )
+  }
+
+  @Test
+  func queryParserParsesTodosOptions() throws {
+    expectNoDifference(
+      try parseQuery(["todos"]),
+      .todos(CLITodosQueryInvocation())
+    )
+    expectNoDifference(
+      try parseQuery([
+        "todos", "--completed", "false", "--completed", "1", "--search", " milk ",
+        "--offset", "2", "--limit", "1", "--limit", "3", "--first", "4",
+        "--after", "note-1", "--after-inclusive", " note-2 ", "--order", "descending",
+        "--order-by", "serverCreatedAt", "--raw", "--select", "title, done,title",
+      ]),
+      .todos(
+        CLITodosQueryInvocation(
+          completed: true,
+          search: " milk ",
+          offset: 2,
+          limit: 3,
+          first: 4,
+          after: CLIQueryCursor(entityID: "note-2", inclusive: true),
+          direction: .descending,
+          orderField: .serverCreatedAt,
+          selectedFields: ["done", "title"],
+          rawSnapshots: true
+        )
+      )
+    )
+    expectNoDifference(
+      try parseQuery([
+        "todos", "--last", "2", "--before", " note-9 ", "--order", "asc",
+        "--order-by", "none", "--snapshots",
+      ]),
+      .todos(
+        CLITodosQueryInvocation(
+          last: 2,
+          before: CLIQueryCursor(entityID: "note-9"),
+          orderField: .none,
+          rawSnapshots: true
+        )
+      )
+    )
+  }
+
+  @Test
+  func queryParserReportsMalformedTodosArguments() throws {
+    try expectQueryParseError([], description: CLIQueryUsage.query)
+    try expectQueryParseError(["rooms"], description: CLIQueryUsage.query)
+    try expectQueryParseError(
+      ["todos", "--completed"],
+      description: "Usage: \(CLIQueryUsage.todosCommand) --completed true|false"
+    )
+    try expectQueryParseError(
+      ["todos", "--completed", "maybe"],
+      description: "Usage: \(CLIQueryUsage.todosCommand) --completed true|false"
+    )
+    try expectQueryParseError(
+      ["todos", "--search", "  "],
+      description: "Usage: \(CLIQueryUsage.todosCommand) --search text"
+    )
+    try expectQueryParseError(
+      ["todos", "--offset", "-1"],
+      description: "Usage: \(CLIQueryUsage.todosCommand) --offset n"
+    )
+    try expectQueryParseError(
+      ["todos", "--limit", "nope"],
+      description: "Usage: \(CLIQueryUsage.todosCommand) --limit n"
+    )
+    try expectQueryParseError(
+      ["todos", "--first", "-1"],
+      description: "Usage: \(CLIQueryUsage.todosCommand) --first n"
+    )
+    try expectQueryParseError(
+      ["todos", "--after", "  "],
+      description: "Usage: \(CLIQueryUsage.todosCommand) --after id"
+    )
+    try expectQueryParseError(
+      ["todos", "--last", "-1"],
+      description: "Usage: \(CLIQueryUsage.todosCommand) --last n"
+    )
+    try expectQueryParseError(
+      ["todos", "--before-inclusive"],
+      description: "Usage: \(CLIQueryUsage.todosCommand) --before-inclusive id"
+    )
+    try expectQueryParseError(
+      ["todos", "--order", "sideways"],
+      description: "Usage: \(CLIQueryUsage.todosCommand) --order asc|desc"
+    )
+    try expectQueryParseError(
+      ["todos", "--order-by", "title"],
+      description: "Usage: \(CLIQueryUsage.todosCommand) --order-by none|createdAt|serverCreatedAt"
+    )
+    try expectQueryParseError(
+      ["todos", "--select", " , "],
+      description: "Usage: \(CLIQueryUsage.todosCommand) --select field[,field]"
+    )
+    try expectQueryParseError(
+      ["todos", "--first", "1", "--last", "1"],
+      description: "Use either --first or --last, not both. Usage: \(CLIQueryUsage.todos)"
+    )
+    try expectQueryParseError(
+      ["todos", "--unknown"],
+      description: "Unknown todo query option: --unknown. Usage: \(CLIQueryUsage.todos)"
+    )
+  }
+
+  @Test
+  func validationParserParsesCommandsAndAliases() throws {
+    expectNoDifference(try parseValidation(["local-todos"]), .localTodos)
+    expectNoDifference(try parseValidation(["todos"]), .localTodos)
+    expectNoDifference(try parseValidation(["local-integrations"]), .localIntegrations)
+    expectNoDifference(try parseValidation(["integrations"]), .localIntegrations)
+  }
+
+  @Test
+  func validationParserReportsMalformedArguments() throws {
+    try expectValidationParseError([], description: CLIValidationUsage.validation)
+    try expectValidationParseError(["remote"], description: CLIValidationUsage.validation)
+    try expectValidationParseError(["todos", "extra"], description: CLIValidationUsage.validation)
   }
 
   @Test
@@ -1434,6 +1571,20 @@ private func parseApp(_ arguments: [String]) throws -> CLIAppInvocation {
   return invocation
 }
 
+private func parseQuery(_ arguments: [String]) throws -> CLIQueryInvocation {
+  var input = arguments[...]
+  let invocation = try CLIQueryParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
+private func parseValidation(_ arguments: [String]) throws -> CLIValidationInvocation {
+  var input = arguments[...]
+  let invocation = try CLIValidationParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseAdmin(_ arguments: [String]) throws -> CLIAdminInvocation {
   var input = arguments[...]
   let invocation = try CLIAdminParser().parse(&input)
@@ -1544,6 +1695,32 @@ private func expectAppParseError(
     Issue.record("Expected app parser to reject \(arguments).")
   } catch let error as CLIAppArgumentError {
     #expect(error.description.contains(expectedFragment))
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectQueryParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseQuery(arguments)
+    Issue.record("Expected query parser to reject \(arguments).")
+  } catch let error as CLIQueryArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectValidationParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseValidation(arguments)
+    Issue.record("Expected validation parser to reject \(arguments).")
+  } catch let error as CLIValidationArgumentError {
+    expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }
 }

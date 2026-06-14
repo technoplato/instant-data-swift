@@ -158,13 +158,16 @@ struct InstantSwiftDataCLI {
   }
 
   private static func runValidation(arguments: [String], output: OutputMode) async throws {
-    var arguments = arguments
-    guard let command = arguments.popFirstArgument(), arguments.isEmpty else {
-      throw CLIError(validationUsage, exitCode: 64)
+    let invocation: CLIValidationInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLIValidationParser().parse(&input)
+    } catch let error as CLIValidationArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
 
-    switch command {
-    case "local-todos", "todos":
+    switch invocation {
+    case .localTodos:
       let appID = validationAppID()
       do {
         let result = try await InstantSwiftDataLocalTodoValidation.run(appID: appID)
@@ -182,7 +185,7 @@ struct InstantSwiftDataCLI {
         throw error
       }
 
-    case "local-integrations", "integrations":
+    case .localIntegrations:
       let appID = validationAppID()
       do {
         let result = try await InstantSwiftDataLocalIntegrationValidation.run(appID: appID)
@@ -199,9 +202,6 @@ struct InstantSwiftDataCLI {
         }
         throw error
       }
-
-    default:
-      throw CLIError(validationUsage, exitCode: 64)
     }
   }
 
@@ -215,17 +215,17 @@ struct InstantSwiftDataCLI {
   }
 
   private static func runQuery(arguments: [String], output: OutputMode) async throws {
-    var arguments = arguments
-    guard let namespace = arguments.popFirstArgument() else {
-      throw CLIError(queryUsage, exitCode: 64)
+    let invocation: CLIQueryInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLIQueryParser().parse(&input)
+    } catch let error as CLIQueryArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
 
-    switch namespace {
-    case "todos":
-      let options = try todoQueryOptions(
-        arguments: arguments,
-        usageCommand: "instant-swift-data query todos"
-      )
+    switch invocation {
+    case let .todos(todos):
+      let options = todoQueryOptions(invocation: todos)
       let context = try await CLIContext.bootstrap()
       if options.rawSnapshots {
         try await printSnapshots(
@@ -244,9 +244,6 @@ struct InstantSwiftDataCLI {
           caseID: "cli.query.todos"
         )
       }
-
-    default:
-      throw CLIError(queryUsage, exitCode: 64)
     }
   }
 
@@ -5191,153 +5188,51 @@ struct InstantSwiftDataCLI {
     )
   }
 
-  private static func todoQueryOptions(
-    arguments: [String],
-    usageCommand: String
-  ) throws -> TodoQueryOptions {
-    var arguments = arguments
-    let usage =
-      "\(usageCommand) [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt] [--raw] [--select field[,field]]"
-    var completed: Bool?
-    var search: String?
-    var offset: Int?
-    var limit: Int?
-    var first: Int?
-    var after: InstantQueryCursor?
-    var last: Int?
-    var before: InstantQueryCursor?
-    var direction = InstantQuerySortDirection.ascending
-    var orderField = "createdAt"
-    var selectedFields: [String]?
-    var rawSnapshots = false
-
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--completed":
-        guard let value = arguments.popFirstArgument(), let parsed = parseBool(value) else {
-          throw CLIError("Usage: \(usageCommand) --completed true|false", exitCode: 64)
-        }
-        completed = parsed
-
-      case "--search":
-        guard let value = arguments.popFirstArgument(),
-          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else {
-          throw CLIError("Usage: \(usageCommand) --search text", exitCode: 64)
-        }
-        search = value
-
-      case "--limit":
-        guard let value = arguments.popFirstArgument(),
-          let parsed = Int(value),
-          parsed >= 0
-        else {
-          throw CLIError("Usage: \(usageCommand) --limit n", exitCode: 64)
-        }
-        limit = parsed
-
-      case "--first":
-        guard let value = arguments.popFirstArgument(),
-          let parsed = Int(value),
-          parsed >= 0
-        else {
-          throw CLIError("Usage: \(usageCommand) --first n", exitCode: 64)
-        }
-        first = parsed
-
-      case "--after", "--after-inclusive":
-        guard let value = arguments.popFirstArgument() else {
-          throw CLIError("Usage: \(usageCommand) \(option) id", exitCode: 64)
-        }
-        after = try parseTodoCursor(
-          value,
-          inclusive: option == "--after-inclusive",
-          usageCommand: usageCommand,
-          option: option
-        )
-
-      case "--last":
-        guard let value = arguments.popFirstArgument(),
-          let parsed = Int(value),
-          parsed >= 0
-        else {
-          throw CLIError("Usage: \(usageCommand) --last n", exitCode: 64)
-        }
-        last = parsed
-
-      case "--before", "--before-inclusive":
-        guard let value = arguments.popFirstArgument() else {
-          throw CLIError("Usage: \(usageCommand) \(option) id", exitCode: 64)
-        }
-        before = try parseTodoCursor(
-          value,
-          inclusive: option == "--before-inclusive",
-          usageCommand: usageCommand,
-          option: option
-        )
-
-      case "--offset":
-        guard let value = arguments.popFirstArgument(),
-          let parsed = Int(value),
-          parsed >= 0
-        else {
-          throw CLIError("Usage: \(usageCommand) --offset n", exitCode: 64)
-        }
-        offset = parsed
-
-      case "--order":
-        guard let value = arguments.popFirstArgument(), let parsed = parseSortDirection(value) else {
-          throw CLIError("Usage: \(usageCommand) --order asc|desc", exitCode: 64)
-        }
-        direction = parsed
-
-      case "--order-by":
-        guard let value = arguments.popFirstArgument(), let parsed = parseTodoOrderField(value) else {
-          throw CLIError("Usage: \(usageCommand) --order-by none|createdAt|serverCreatedAt", exitCode: 64)
-        }
-        orderField = parsed
-
-      case "--raw", "--snapshots":
-        rawSnapshots = true
-
-      case "--select":
-        guard let value = arguments.popFirstArgument() else {
-          throw CLIError("Usage: \(usageCommand) --select field[,field]", exitCode: 64)
-        }
-        selectedFields = try parseTodoSelectedFields(value, usageCommand: usageCommand)
-        rawSnapshots = true
-
-      default:
-        throw CLIError(
-          "Unknown todo query option: \(option). Usage: \(usage)",
-          exitCode: 64
-        )
-      }
-    }
-
-    guard first == nil || last == nil else {
-      throw CLIError(
-        "Use either --first or --last, not both. Usage: \(usage)",
-        exitCode: 64
-      )
-    }
-
+  private static func todoQueryOptions(invocation: CLITodosQueryInvocation) -> TodoQueryOptions {
     return TodoQueryOptions(
       query: makeTodoListQuery(
-        completed: completed,
-        search: search,
-        offset: offset,
-        limit: limit,
-        first: first,
-        after: after,
-        last: last,
-        before: before,
-        direction: direction,
-        orderField: orderField,
-        selectedFields: selectedFields
+        completed: invocation.completed,
+        search: invocation.search,
+        offset: invocation.offset,
+        limit: invocation.limit,
+        first: invocation.first,
+        after: invocation.after.map(instantCursor),
+        last: invocation.last,
+        before: invocation.before.map(instantCursor),
+        direction: instantSortDirection(invocation.direction),
+        orderField: instantTodoOrderField(invocation.orderField),
+        selectedFields: invocation.selectedFields
       ),
-      rawSnapshots: rawSnapshots
+      rawSnapshots: invocation.rawSnapshots
     )
+  }
+
+  private static func instantCursor(_ cursor: CLIQueryCursor) -> InstantQueryCursor {
+    InstantQueryCursor(entityID: cursor.entityID, inclusive: cursor.inclusive)
+  }
+
+  private static func instantSortDirection(
+    _ direction: CLIQuerySortDirection
+  ) -> InstantQuerySortDirection {
+    switch direction {
+    case .ascending:
+      return .ascending
+    case .descending:
+      return .descending
+    }
+  }
+
+  private static func instantTodoOrderField(
+    _ orderField: CLITodosQueryOrderField
+  ) -> String {
+    switch orderField {
+    case .none:
+      return "none"
+    case .createdAt:
+      return "createdAt"
+    case .serverCreatedAt:
+      return InstantQueryOrder.serverCreatedAtField
+    }
   }
 
   private static func todoWatchOptions(arguments: [String]) throws -> TodoWatchOptions {
@@ -5982,18 +5877,11 @@ struct InstantSwiftDataCLI {
   }
 
   private static var validationUsage: String {
-    """
-    Usage: instant-swift-data validation <local-todos|local-integrations>
-      instant-swift-data validation local-todos [--json|--jsonl]
-      instant-swift-data validation local-integrations [--json|--jsonl]
-    """
+    CLIValidationUsage.validation
   }
 
   private static var queryUsage: String {
-    """
-    Usage: instant-swift-data query <namespace>
-      instant-swift-data query todos [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt] [--raw] [--select field[,field]] [--json|--jsonl]
-    """
+    CLIQueryUsage.query
   }
 
   private static var cacheUsage: String {

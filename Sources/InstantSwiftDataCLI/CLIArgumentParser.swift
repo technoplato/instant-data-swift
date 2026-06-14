@@ -81,6 +81,112 @@ public enum CLIExamplesTodosCommand: Equatable, Sendable {
   case unknown(String)
 }
 
+public enum CLIQueryInvocation: Equatable, Sendable {
+  case todos(CLITodosQueryInvocation)
+}
+
+public struct CLITodosQueryInvocation: Equatable, Sendable {
+  public var completed: Bool?
+  public var search: String?
+  public var offset: Int?
+  public var limit: Int?
+  public var first: Int?
+  public var after: CLIQueryCursor?
+  public var last: Int?
+  public var before: CLIQueryCursor?
+  public var direction: CLIQuerySortDirection
+  public var orderField: CLITodosQueryOrderField
+  public var selectedFields: [String]?
+  public var rawSnapshots: Bool
+
+  public init(
+    completed: Bool? = nil,
+    search: String? = nil,
+    offset: Int? = nil,
+    limit: Int? = nil,
+    first: Int? = nil,
+    after: CLIQueryCursor? = nil,
+    last: Int? = nil,
+    before: CLIQueryCursor? = nil,
+    direction: CLIQuerySortDirection = .ascending,
+    orderField: CLITodosQueryOrderField = .createdAt,
+    selectedFields: [String]? = nil,
+    rawSnapshots: Bool = false
+  ) {
+    self.completed = completed
+    self.search = search
+    self.offset = offset
+    self.limit = limit
+    self.first = first
+    self.after = after
+    self.last = last
+    self.before = before
+    self.direction = direction
+    self.orderField = orderField
+    self.selectedFields = selectedFields
+    self.rawSnapshots = rawSnapshots
+  }
+}
+
+public struct CLIQueryCursor: Equatable, Sendable {
+  public var entityID: String
+  public var inclusive: Bool
+
+  public init(entityID: String, inclusive: Bool = false) {
+    self.entityID = entityID
+    self.inclusive = inclusive
+  }
+}
+
+public enum CLIQuerySortDirection: Equatable, Sendable {
+  case ascending
+  case descending
+}
+
+public enum CLITodosQueryOrderField: Equatable, Sendable {
+  case none
+  case createdAt
+  case serverCreatedAt
+}
+
+public enum CLIQueryUsage {
+  public static let query = """
+    Usage: instant-swift-data query <namespace>
+      instant-swift-data query todos [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt] [--raw] [--select field[,field]] [--json|--jsonl]
+    """
+
+  public static let todosCommand = "instant-swift-data query todos"
+  public static let todos =
+    "\(todosCommand) [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt] [--raw] [--select field[,field]]"
+}
+
+public enum CLIQueryArgumentError: Error, Equatable, Sendable {
+  case invalidArguments(usage: String)
+  case unknownOption(String, usage: String)
+  case conflictingPagination(usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
+public enum CLIValidationInvocation: Equatable, Sendable {
+  case localTodos
+  case localIntegrations
+}
+
+public enum CLIValidationUsage {
+  public static let validation = """
+    Usage: instant-swift-data validation <local-todos|local-integrations>
+      instant-swift-data validation local-todos [--json|--jsonl]
+      instant-swift-data validation local-integrations [--json|--jsonl]
+    """
+}
+
+public enum CLIValidationArgumentError: Error, Equatable, Sendable {
+  case invalidArguments
+
+  public var exitCode: Int32 { 64 }
+}
+
 public enum CLIAdminInvocation: Equatable, Sendable {
   case query(CLIAdminQueryInvocation)
   case transact(CLIAdminTransactInvocation)
@@ -988,6 +1094,161 @@ public struct CLIExamplesTodosCommandParser: Parser {
     }
     input.removeFirst()
     return CLIExamplesTodosCommand(command)
+  }
+}
+
+public struct CLIQueryParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIQueryInvocation {
+    guard let namespace = input.first else {
+      throw CLIQueryArgumentError.invalidArguments(usage: CLIQueryUsage.query)
+    }
+    input.removeFirst()
+
+    switch namespace {
+    case "todos":
+      return .todos(try CLITodosQueryParser().parse(&input))
+
+    default:
+      throw CLIQueryArgumentError.invalidArguments(usage: CLIQueryUsage.query)
+    }
+  }
+}
+
+public struct CLITodosQueryParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLITodosQueryInvocation {
+    var invocation = CLITodosQueryInvocation()
+
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--completed":
+        guard let value = input.first, let completed = parseCLIQueryBool(value) else {
+          throw CLIQueryArgumentError.invalidArguments(
+            usage: "Usage: \(CLIQueryUsage.todosCommand) --completed true|false"
+          )
+        }
+        input.removeFirst()
+        invocation.completed = completed
+
+      case "--search":
+        guard let value = input.first,
+          !trimmed(value).isEmpty
+        else {
+          throw CLIQueryArgumentError.invalidArguments(
+            usage: "Usage: \(CLIQueryUsage.todosCommand) --search text"
+          )
+        }
+        input.removeFirst()
+        invocation.search = value
+
+      case "--offset":
+        invocation.offset = try parseCLIQueryNonNegativeInt(
+          from: &input,
+          usage: "Usage: \(CLIQueryUsage.todosCommand) --offset n"
+        )
+
+      case "--limit":
+        invocation.limit = try parseCLIQueryNonNegativeInt(
+          from: &input,
+          usage: "Usage: \(CLIQueryUsage.todosCommand) --limit n"
+        )
+
+      case "--first":
+        invocation.first = try parseCLIQueryNonNegativeInt(
+          from: &input,
+          usage: "Usage: \(CLIQueryUsage.todosCommand) --first n"
+        )
+
+      case "--after", "--after-inclusive":
+        invocation.after = try parseCLIQueryCursor(
+          from: &input,
+          option: option,
+          inclusive: option == "--after-inclusive"
+        )
+
+      case "--last":
+        invocation.last = try parseCLIQueryNonNegativeInt(
+          from: &input,
+          usage: "Usage: \(CLIQueryUsage.todosCommand) --last n"
+        )
+
+      case "--before", "--before-inclusive":
+        invocation.before = try parseCLIQueryCursor(
+          from: &input,
+          option: option,
+          inclusive: option == "--before-inclusive"
+        )
+
+      case "--order":
+        guard let value = input.first, let direction = parseCLIQuerySortDirection(value) else {
+          throw CLIQueryArgumentError.invalidArguments(
+            usage: "Usage: \(CLIQueryUsage.todosCommand) --order asc|desc"
+          )
+        }
+        input.removeFirst()
+        invocation.direction = direction
+
+      case "--order-by":
+        guard let value = input.first, let orderField = parseCLITodoOrderField(value) else {
+          throw CLIQueryArgumentError.invalidArguments(
+            usage: "Usage: \(CLIQueryUsage.todosCommand) --order-by none|createdAt|serverCreatedAt"
+          )
+        }
+        input.removeFirst()
+        invocation.orderField = orderField
+
+      case "--raw", "--snapshots":
+        invocation.rawSnapshots = true
+
+      case "--select":
+        guard let value = input.first else {
+          throw CLIQueryArgumentError.invalidArguments(
+            usage: "Usage: \(CLIQueryUsage.todosCommand) --select field[,field]"
+          )
+        }
+        input.removeFirst()
+        invocation.selectedFields = try parseCLITodoSelectedFields(value)
+        invocation.rawSnapshots = true
+
+      default:
+        throw CLIQueryArgumentError.unknownOption(option, usage: CLIQueryUsage.todos)
+      }
+    }
+
+    guard invocation.first == nil || invocation.last == nil else {
+      throw CLIQueryArgumentError.conflictingPagination(usage: CLIQueryUsage.todos)
+    }
+
+    return invocation
+  }
+}
+
+public struct CLIValidationParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIValidationInvocation {
+    guard let command = input.first else {
+      throw CLIValidationArgumentError.invalidArguments
+    }
+    input.removeFirst()
+    guard input.isEmpty else {
+      throw CLIValidationArgumentError.invalidArguments
+    }
+
+    switch command {
+    case "local-todos", "todos":
+      return .localTodos
+
+    case "local-integrations", "integrations":
+      return .localIntegrations
+
+    default:
+      throw CLIValidationArgumentError.invalidArguments
+    }
   }
 }
 
@@ -2774,8 +3035,111 @@ private func requireNoRemainingOutboxArguments(
   }
 }
 
+private func parseCLIQueryBool(_ value: String) -> Bool? {
+  switch value.lowercased() {
+  case "true", "yes", "1":
+    return true
+  case "false", "no", "0":
+    return false
+  default:
+    return nil
+  }
+}
+
+private func parseCLIQueryNonNegativeInt(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> Int {
+  guard let value = input.first,
+    let parsed = Int(value),
+    parsed >= 0
+  else {
+    throw CLIQueryArgumentError.invalidArguments(usage: usage)
+  }
+  input.removeFirst()
+  return parsed
+}
+
+private func parseCLIQueryCursor(
+  from input: inout ArraySlice<String>,
+  option: String,
+  inclusive: Bool
+) throws -> CLIQueryCursor {
+  guard let value = input.first else {
+    throw CLIQueryArgumentError.invalidArguments(
+      usage: "Usage: \(CLIQueryUsage.todosCommand) \(option) id"
+    )
+  }
+  input.removeFirst()
+  let entityID = trimmed(value)
+  guard !entityID.isEmpty else {
+    throw CLIQueryArgumentError.invalidArguments(
+      usage: "Usage: \(CLIQueryUsage.todosCommand) \(option) id"
+    )
+  }
+  return CLIQueryCursor(entityID: entityID, inclusive: inclusive)
+}
+
+private func parseCLIQuerySortDirection(_ value: String) -> CLIQuerySortDirection? {
+  switch value.lowercased() {
+  case "asc", "ascending":
+    return .ascending
+  case "desc", "descending":
+    return .descending
+  default:
+    return nil
+  }
+}
+
+private func parseCLITodoOrderField(_ value: String) -> CLITodosQueryOrderField? {
+  switch value {
+  case "none":
+    return CLITodosQueryOrderField.none
+  case "createdAt":
+    return .createdAt
+  case "serverCreatedAt":
+    return .serverCreatedAt
+  default:
+    return nil
+  }
+}
+
+private func parseCLITodoSelectedFields(_ value: String) throws -> [String] {
+  let fields = value
+    .split(separator: ",")
+    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    .filter { !$0.isEmpty }
+  guard !fields.isEmpty else {
+    throw CLIQueryArgumentError.invalidArguments(
+      usage: "Usage: \(CLIQueryUsage.todosCommand) --select field[,field]"
+    )
+  }
+  return Array(Set(fields)).sorted()
+}
+
 private func trimmed(_ string: String) -> String {
   string.trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+extension CLIQueryArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case let .invalidArguments(usage):
+      return usage
+
+    case let .unknownOption(option, usage):
+      return "Unknown todo query option: \(option). Usage: \(usage)"
+
+    case let .conflictingPagination(usage):
+      return "Use either --first or --last, not both. Usage: \(usage)"
+    }
+  }
+}
+
+extension CLIValidationArgumentError: CustomStringConvertible {
+  public var description: String {
+    CLIValidationUsage.validation
+  }
 }
 
 extension CLIAdminArgumentError: CustomStringConvertible {
