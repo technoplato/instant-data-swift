@@ -2483,7 +2483,7 @@ public struct CLIOutboxParser: Parser {
       return .inspect
 
     case "transport", "wire", "tx-steps":
-      return .transport(includeFailed: try parseOutboxTransportOptions(from: &input))
+      return .transport(includeFailed: try CLIOutboxTransportOptionsParser().parse(&input))
 
     case "flush", "send":
       return .flush(limit: try parseOutboxFlushLimit(from: &input))
@@ -2511,6 +2511,27 @@ public struct CLIOutboxParser: Parser {
     default:
       throw CLIOutboxArgumentError.unknownCommand(command)
     }
+  }
+}
+
+public struct CLIOutboxTransportOptionsParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> Bool {
+    var includeFailed = false
+
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--all":
+        includeFailed = true
+
+      default:
+        throw CLIOutboxArgumentError.invalidArguments(usage: CLIOutboxUsage.transport)
+      }
+    }
+
+    return includeFailed
   }
 }
 
@@ -3923,25 +3944,6 @@ private func isValidCacheNamespace(_ value: String) -> Bool {
   !value.isEmpty
     && !value.contains("/")
     && !value.contains(where: { $0.isWhitespace })
-}
-
-private func parseOutboxTransportOptions(
-  from input: inout ArraySlice<String>
-) throws -> Bool {
-  var includeFailed = false
-
-  while let option = input.first {
-    input.removeFirst()
-    switch option {
-    case "--all":
-      includeFailed = true
-
-    default:
-      throw CLIOutboxArgumentError.invalidArguments(usage: CLIOutboxUsage.transport)
-    }
-  }
-
-  return includeFailed
 }
 
 private func parseOutboxFlushLimit(

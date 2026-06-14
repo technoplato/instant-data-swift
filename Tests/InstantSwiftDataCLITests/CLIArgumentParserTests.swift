@@ -1805,6 +1805,27 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func outboxTransportOptionsParserConsumesAllFlag() throws {
+    expectNoDifference(try parseOutboxTransportOptions([]), false)
+    expectNoDifference(try parseOutboxTransportOptions(["--all"]), true)
+    expectNoDifference(try parseOutboxTransportOptions(["--all", "--all"]), true)
+  }
+
+  @Test
+  func outboxTransportOptionsParserReportsMalformedArguments() throws {
+    var input = ["--failed"][...]
+    do {
+      _ = try CLIOutboxTransportOptionsParser().parse(&input)
+      #expect(Bool(false), "Expected outbox transport option parsing to fail.")
+    } catch let error as CLIOutboxArgumentError {
+      expectNoDifference(error.description, CLIOutboxUsage.transport)
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+    expectNoDifference(Array(input), [])
+  }
+
+  @Test
   func examplesParserKeepsLegacyDispatchForOtherExamplesAndUnknowns() throws {
     expectNoDifference(
       try parseExamples(["syncups", "add", "Daily"]),
@@ -2466,6 +2487,13 @@ private func parseOutbox(_ arguments: [String]) throws -> CLIOutboxInvocation {
   let invocation = try CLIOutboxParser().parse(&input)
   expectNoDifference(Array(input), [])
   return invocation
+}
+
+private func parseOutboxTransportOptions(_ arguments: [String]) throws -> Bool {
+  var input = arguments[...]
+  let includeFailed = try CLIOutboxTransportOptionsParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return includeFailed
 }
 
 private func parseRooms(_ arguments: [String]) throws -> CLIRoomsInvocation {
