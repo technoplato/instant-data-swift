@@ -76,6 +76,61 @@
     }
 
     @Test
+    func generatedDraftRequiresInstantPrimaryKey() {
+      assertInstantEntityMacro {
+        """
+        @InstantEntity
+        struct Todo {
+          var id: String
+          var text: String
+        }
+
+        @InstantEntity
+        struct LegacyTodo {
+          typealias ID = String
+          var id: ID
+          var text: String
+        }
+        """
+      }
+    }
+
+    @Test
+    func generatedDraftAcceptsInstantPrimaryKeyAliases() {
+      assertInstantEntityMacro {
+        """
+        @InstantEntity
+        struct Todo {
+          typealias ID = InstantID<Todo>
+          var id: ID
+          var text: String
+        }
+
+        @InstantEntity
+        struct Project {
+          typealias ID = InstantID<Project>
+          var id: Project.ID
+          var title: String
+        }
+
+        @InstantEntity
+        struct Profile {
+          typealias ID = InstantID<Profile>
+          var id: Self.ID
+          var name: String
+        }
+
+        @InstantEntity
+        struct Contact {
+          typealias ID = InstantID<Self>
+          var id: ID
+          var email: String
+        }
+        """
+      }
+    }
+
+    @Test
     func generatedSchemaHelpers() {
       assertInstantEntityMacro {
         """

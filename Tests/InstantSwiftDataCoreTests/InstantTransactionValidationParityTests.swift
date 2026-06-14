@@ -505,7 +505,7 @@ struct InstantTransactionValidationParityTests {
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
         appID: "test-app",
-        persistenceURL: temporaryCacheURL(),
+        persistenceURL: temporaryParityCacheURL(),
         initialAttributes: []
       )
     )
@@ -550,7 +550,7 @@ struct InstantTransactionValidationParityTests {
     expectNoDifference(result.changedEntityIDs, ["not a valid uuid"], uuidSource)
     expectNoDifference(result.tripleCount, 3, withoutSchemaSource)
     expectNoDifference(
-      snapshot.triples.map(\.attributeID),
+      snapshot.triples.map { $0.attributeID },
       ["randomEntity/anyField", "randomEntity/anyLink", "randomEntity/anyNumber"],
       withoutSchemaSource
     )
