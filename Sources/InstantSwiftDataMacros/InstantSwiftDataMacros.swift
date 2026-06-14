@@ -56,6 +56,7 @@ public struct InstantEntityMacro: MemberMacro {
       """
     ]
     let explicitStaticMembers = staticMemberNames(in: declaration)
+    let typeAliases = typeAliases(in: declaration)
     let properties = storedProperties(in: declaration, context: context)
     let reservedProperties = properties.filter { property in
       isGeneratedSchemaHelper(property)
@@ -88,6 +89,7 @@ public struct InstantEntityMacro: MemberMacro {
     if let draft = draftDeclaration(
       properties: properties,
       typeName: typeName,
+      typeAliases: typeAliases,
       reservedPropertyNames: reservedPropertyNames
     ) {
       members.append(draft)
@@ -151,9 +153,14 @@ public struct InstantEntityMacro: MemberMacro {
   private static func draftDeclaration(
     properties: [StoredProperty],
     typeName: String,
+    typeAliases: [String: String],
     reservedPropertyNames: Set<String>
   ) -> DeclSyntax? {
-    guard properties.contains(where: { $0.name == "id" }) else {
+    guard
+      properties.contains(
+        where: { isPrimaryKeyProperty($0, typeName: typeName, typeAliases: typeAliases) }
+      )
+    else {
       return nil
     }
 
@@ -225,6 +232,25 @@ public struct InstantEntityMacro: MemberMacro {
     )
   }
 
+  private static func isPrimaryKeyProperty(
+    _ property: StoredProperty,
+    typeName: String,
+    typeAliases: [String: String]
+  ) -> Bool {
+    guard property.name == "id" else { return false }
+
+    let instantIDTypes = Set(["InstantID<\(typeName)>", "InstantID<Self>"])
+    switch property.type.removingWhitespace {
+    case let type where instantIDTypes.contains(type):
+      return true
+    case "\(typeName).ID", "Self.ID", "ID":
+      guard let idAlias = typeAliases["ID"]?.removingWhitespace else { return false }
+      return instantIDTypes.contains(idAlias)
+    default:
+      return false
+    }
+  }
+
   private static func storedProperties(
     in declaration: some DeclGroupSyntax,
     context: some MacroExpansionContext
@@ -292,6 +318,19 @@ public struct InstantEntityMacro: MemberMacro {
         return variable.bindings.compactMap { binding in
           binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text
         }
+      }
+    )
+  }
+
+  private static func typeAliases(in declaration: some DeclGroupSyntax) -> [String: String] {
+    Dictionary(
+      uniqueKeysWithValues: declaration.memberBlock.members.compactMap { member in
+        guard let declaration = member.decl.as(TypeAliasDeclSyntax.self) else { return nil }
+
+        return (
+          declaration.name.text,
+          declaration.initializer.value.description.trimmed
+        )
       }
     )
   }

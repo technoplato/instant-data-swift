@@ -135,6 +135,72 @@
     }
 
     @Test
+    func generatedDraftRequiresInstantPrimaryKey() {
+      let result = expand(
+        """
+        @InstantEntity
+        struct Todo {
+          var id: String
+          var text: String
+        }
+
+        @InstantEntity
+        struct LegacyTodo {
+          typealias ID = String
+          var id: ID
+          var text: String
+        }
+        """
+      )
+
+      #expect(!result.expanded.contains("public struct Draft"))
+      #expect(result.expanded.contains("public static let text"))
+      #expect(result.diagnostics.isEmpty)
+    }
+
+    @Test
+    func generatedDraftAcceptsInstantPrimaryKeyAliases() {
+      let result = expand(
+        """
+        @InstantEntity
+        struct Todo {
+          typealias ID = InstantID<Todo>
+          var id: ID
+          var text: String
+        }
+
+        @InstantEntity
+        struct Project {
+          typealias ID = InstantID<Project>
+          var id: Project.ID
+          var title: String
+        }
+
+        @InstantEntity
+        struct Profile {
+          typealias ID = InstantID<Profile>
+          var id: Self.ID
+          var name: String
+        }
+
+        @InstantEntity
+        struct Contact {
+          typealias ID = InstantID<Self>
+          var id: ID
+          var email: String
+        }
+        """
+      )
+
+      #expect(result.expanded.components(separatedBy: "public struct Draft").count - 1 == 4)
+      #expect(result.expanded.contains("public var id: Todo.ID? = nil"))
+      #expect(result.expanded.contains("public var id: Project.ID? = nil"))
+      #expect(result.expanded.contains("public var id: Profile.ID? = nil"))
+      #expect(result.expanded.contains("public var id: Contact.ID? = nil"))
+      #expect(result.diagnostics.isEmpty)
+    }
+
+    @Test
     func generatedSchemaHelpers() {
       let result = expand(
         """
