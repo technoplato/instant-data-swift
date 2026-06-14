@@ -310,6 +310,161 @@ struct InstantQueryExecutionParityTests {
   }
 
   @Test
+  func upstreamDatalogMovieFixtureQueries() async throws {
+    let fixture = try await UpstreamInstantFixture.movies()
+
+    func movies(
+      id: String,
+      filters: [InstantQueryFilter] = []
+    ) async -> [InstantEntitySnapshot] {
+      await fixture.query(InstantQueryPlan(id: id, namespace: "movie", filters: filters))
+    }
+
+    func people(
+      id: String,
+      filters: [InstantQueryFilter] = []
+    ) async -> [InstantEntitySnapshot] {
+      await fixture.query(InstantQueryPlan(id: id, namespace: "person", filters: filters))
+    }
+
+    func movie(title: String) async throws -> InstantEntitySnapshot {
+      try #require(
+        await movies(
+          id: "datalog.movie.\(title)",
+          filters: [.equals(field: "title", value: .string(title))]
+        ).first
+      )
+    }
+
+    func person(name: String) async throws -> InstantEntitySnapshot {
+      try #require(
+        await people(
+          id: "datalog.person.\(name)",
+          filters: [.equals(field: "name", value: .string(name))]
+        ).first
+      )
+    }
+
+    func personName(id: String) async throws -> String {
+      try #require(
+        await people(
+          id: "datalog.person.id.\(id)",
+          filters: [.equals(field: "id", value: .string(id))]
+        ).first?.string("name")
+      )
+    }
+
+    func linkedNames(_ snapshot: InstantEntitySnapshot, field: String) async throws -> [String] {
+      var names: [String] = []
+      for id in snapshot.values[field]?.values.compactMap(\.refValue) ?? [] {
+        names.append(try await personName(id: id))
+      }
+      return names
+    }
+
+    let movies1987 = await movies(
+      id: "datalog.movies.1987",
+      filters: [.equals(field: "year", value: .number(1987))]
+    )
+    expectParityEqual(
+      movies1987.compactMap { $0.string("title") }.sorted(),
+      ["Lethal Weapon", "Predator", "RoboCop"],
+      datalogSource("querySingle")
+    )
+
+    let terminator = try await movie(title: "The Terminator")
+    let jamesCameron = try await person(name: "James Cameron")
+    expectParityEqual(
+      terminator.values["director"]?.values.compactMap(\.refValue) ?? [],
+      [jamesCameron.id],
+      datalogSource("queryWhere")
+    )
+    expectParityEqual(
+      try await linkedNames(terminator, field: "director"),
+      ["James Cameron"],
+      datalogSource("queryWhere")
+    )
+
+    let aliens = try await movie(title: "Aliens")
+    let aliensByCameron = await movies(
+      id: "datalog.movies.aliens-by-cameron",
+      filters: [
+        .equals(field: "director", value: .ref(jamesCameron.id)),
+        .equals(field: "title", value: .string("Aliens")),
+      ]
+    )
+    expectParityEqual(
+      aliensByCameron.map(\.id),
+      [aliens.id],
+      datalogSource("query")
+    )
+
+    let allMovies = await movies(id: "datalog.movies.all")
+    let allPeople = await people(id: "datalog.people.all")
+    let materializedMovieFacts = allMovies.reduce(0) { $0 + $1.materializedFactCount }
+    let materializedPersonFacts = allPeople.reduce(0) { $0 + $1.materializedFactCount }
+    expectParityEqual(materializedMovieFacts + materializedPersonFacts, 301, datalogSource("play"))
+
+    let alien = try await movie(title: "Alien")
+    expectParityEqual(
+      alien.values["year"]?.first.map(datalogValueDescription),
+      "1979",
+      datalogSource("play")
+    )
+
+    let robocop = try await movie(title: "RoboCop")
+    expectParityEqual(
+      try await linkedNames(robocop, field: "director"),
+      ["Paul Verhoeven"],
+      datalogSource("play")
+    )
+
+    let terminatorValues = terminator.values.values
+      .flatMap(\.values)
+      .map(datalogValueDescription)
+      .sorted()
+    let expectedTerminatorValues = try await [
+      "The Terminator",
+      "1984",
+      person(name: "James Cameron").id,
+      person(name: "Arnold Schwarzenegger").id,
+      person(name: "Linda Hamilton").id,
+      person(name: "Michael Biehn").id,
+      movie(title: "The Terminator").id,
+      movie(title: "Terminator 2: Judgment Day").id,
+    ]
+    .sorted()
+    expectParityEqual(
+      terminatorValues,
+      expectedTerminatorValues,
+      "\(datalogSource("play")) adapted: Swift snapshots expose the same entity facts as values."
+    )
+
+    let arnold = try await person(name: "Arnold Schwarzenegger")
+    var arnoldDirectorMoviePairs: [String] = []
+    for movie in await movies(
+      id: "datalog.movies.arnold",
+      filters: [.equals(field: "cast", value: .ref(arnold.id))]
+    ) {
+      let title = try #require(movie.string("title"))
+      for directorName in try await linkedNames(movie, field: "director") {
+        arnoldDirectorMoviePairs.append("\(directorName)|\(title)")
+      }
+    }
+    expectParityEqual(
+      arnoldDirectorMoviePairs.sorted(),
+      [
+        "James Cameron|Terminator 2: Judgment Day",
+        "James Cameron|The Terminator",
+        "John McTiernan|Predator",
+        "Jonathan Mostow|Terminator 3: Rise of the Machines",
+        "Mark L. Lester|Commando",
+      ],
+      datalogSource("play")
+    )
+  }
+
+  @Test
   func upstreamInstaQLForwardAndReverseAssociations() async throws {
     let fixture = try await UpstreamInstantFixture.zeneca()
 
@@ -1178,8 +1333,15 @@ struct InstantQueryExecutionParityTests {
 private let upstreamInstaQLTestSource =
   "upstream/instant/client/packages/core/__tests__/src/instaql.test.ts"
 
+private let upstreamDatalogTestSource =
+  "upstream/instant/client/packages/core/__tests__/src/datalog.test.ts"
+
 private func instaQLSource(_ testName: String) -> String {
   "\(upstreamInstaQLTestSource) \(testName)"
+}
+
+private func datalogSource(_ testName: String) -> String {
+  "\(upstreamDatalogTestSource) \(testName)"
 }
 
 private func expectParityEqual<Value: Equatable>(
@@ -1197,6 +1359,25 @@ private func expectParityEqual<Value: Equatable>(
   )
 }
 
+private func datalogValueDescription(_ value: InstantValue) -> String {
+  switch value {
+  case .null:
+    return "null"
+  case let .bool(value):
+    return String(value)
+  case let .number(value):
+    return String(format: "%.0f", value)
+  case let .date(value):
+    return String(format: "%.0f", value.timeIntervalSince1970 * 1000)
+  case let .string(value), let .ref(value):
+    return value
+  case let .json(value):
+    return String(describing: value)
+  case let .lookupRef(value):
+    return String(describing: value)
+  }
+}
+
 private func bookshelfProjection(_ snapshot: InstantEntitySnapshot) -> [String] {
   [
     snapshot.id,
@@ -1212,6 +1393,10 @@ private struct UpstreamInstantFixture {
 
   static func zeneca() async throws -> Self {
     try await Self.loadFixture(named: "zeneca")
+  }
+
+  static func movies() async throws -> Self {
+    try await Self.loadFixture(named: "movies")
   }
 
   func query(_ plan: InstantQueryPlan) async -> [InstantEntitySnapshot] {
@@ -1500,6 +1685,10 @@ private func testTriple(
 private extension InstantEntitySnapshot {
   var materializedScalarKeysIncludingID: [String] {
     Array(values.filter { !$0.value.containsRef }.keys).appending("id").sorted()
+  }
+
+  var materializedFactCount: Int {
+    values.values.reduce(0) { $0 + $1.values.count }
   }
 
   func string(_ field: String) -> String? {
