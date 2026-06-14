@@ -2085,6 +2085,30 @@ struct BootstrapTests {
 
   #if canImport(SwiftUI)
     @Test
+    func authRoomAndLocalIDWrappersExposeSwiftUIBindings() {
+      let session = mockAuthSession(userID: "binding-user")
+      let room = InstantRoomHandle(type: "chat", id: "bindings")
+      let member = mockRoomPresenceMember(room: room, userID: "binding-member")
+      let message = mockRoomTopicMessage(room: room, topic: "sendEmoji")
+
+      let auth = AuthSession()
+      auth.binding.wrappedValue = session
+      expectNoDifference(auth.wrappedValue, session)
+
+      let presence = RoomPresence(room: room)
+      presence.binding.wrappedValue = [member]
+      expectNoDifference(presence.wrappedValue, [member])
+
+      let messages = RoomTopicMessages(room: room, topic: "sendEmoji")
+      messages.binding.wrappedValue = [message]
+      expectNoDifference(messages.wrappedValue, [message])
+
+      let localID = LocalID("device")
+      localID.binding.wrappedValue = "local-id-device"
+      expectNoDifference(localID.wrappedValue, "local-id-device")
+    }
+
+    @Test
     func storageStreamShareWrappersExposeSwiftUIBindings() {
       let file = mockStoredFile(id: "binding-file")
       let chunk = mockStreamChunk(streamID: "chat/bindings")
