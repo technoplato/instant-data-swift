@@ -744,6 +744,12 @@ public struct InstantSwiftDataClient: Sendable {
     try await observeAuthSessionOperation()
   }
 
+  public func subscribeAuthSession() async throws -> FetchSubscription<InstantAuthSession?> {
+    let sessions = try await observeAuthSession()
+    try Task.checkCancellation()
+    return fetchSubscription(from: sessions)
+  }
+
   public func signInAsGuest() async throws -> InstantAuthSession {
     try await signInAsGuestOperation()
   }
@@ -818,6 +824,14 @@ public struct InstantSwiftDataClient: Sendable {
     try await observeRoomPresenceOperation(room)
   }
 
+  public func subscribeRoomPresence(
+    room: InstantRoomHandle
+  ) async throws -> FetchSubscription<[InstantRoomPresenceMember]> {
+    let members = try await observeRoomPresence(room: room)
+    try Task.checkCancellation()
+    return fetchSubscription(from: members)
+  }
+
   @discardableResult
   public func leaveRoomPresence(
     room: InstantRoomHandle,
@@ -851,6 +865,25 @@ public struct InstantSwiftDataClient: Sendable {
     try await observeRoomTopicMessagesOperation(room, topic)
   }
 
+  public func subscribeRoomTopicMessages(
+    room: InstantRoomHandle,
+    topic: String,
+    limit: Int? = nil
+  ) async throws -> FetchSubscription<[InstantRoomTopicMessage]> {
+    try validateNonNegativeLimit(
+      limit,
+      operation: "subscribe room topic messages",
+      subject: "Room topic message"
+    )
+    let messages = try await observeRoomTopicMessages(room: room, topic: topic)
+    try Task.checkCancellation()
+    let subscription = fetchSubscription(from: messages)
+    if let limit {
+      return subscription.map { Array($0.prefix(limit)) }
+    }
+    return subscription
+  }
+
   @discardableResult
   public func uploadFile(
     from sourceURL: URL,
@@ -874,6 +907,12 @@ public struct InstantSwiftDataClient: Sendable {
 
   public func observeStoredFiles() async throws -> AsyncStream<[InstantStoredFile]> {
     try await observeStoredFilesOperation()
+  }
+
+  public func subscribeStoredFiles() async throws -> FetchSubscription<[InstantStoredFile]> {
+    let files = try await observeStoredFiles()
+    try Task.checkCancellation()
+    return fetchSubscription(from: files)
   }
 
   public func storedFileContents(id: String) async throws -> InstantStoredFileContents {
@@ -906,6 +945,24 @@ public struct InstantSwiftDataClient: Sendable {
     try await observeStreamChunksOperation(streamID)
   }
 
+  public func subscribeStreamChunks(
+    streamID: String,
+    limit: Int? = nil
+  ) async throws -> FetchSubscription<[InstantStreamChunk]> {
+    try validateNonNegativeLimit(
+      limit,
+      operation: "subscribe stream chunks",
+      subject: "Stream chunk"
+    )
+    let chunks = try await observeStreamChunks(streamID: streamID)
+    try Task.checkCancellation()
+    let subscription = fetchSubscription(from: chunks)
+    if let limit {
+      return subscription.map { Array($0.prefix(limit)) }
+    }
+    return subscription
+  }
+
   @discardableResult
   public func createShare(
     rootNamespace: String,
@@ -925,6 +982,12 @@ public struct InstantSwiftDataClient: Sendable {
 
   public func observeShares() async throws -> AsyncStream<[InstantShareSnapshot]> {
     try await observeSharesOperation()
+  }
+
+  public func subscribeShares() async throws -> FetchSubscription<[InstantShareSnapshot]> {
+    let shares = try await observeShares()
+    try Task.checkCancellation()
+    return fetchSubscription(from: shares)
   }
 
   @discardableResult
@@ -1074,6 +1137,20 @@ private func fetchSubscription<Element: Sendable>(
     task.cancel()
     stream.continuation.finish()
   }
+}
+
+private func validateNonNegativeLimit(
+  _ limit: Int?,
+  operation: String,
+  subject: String
+) throws {
+  guard let limit, limit < 0 else { return }
+  throw InstantError(
+    code: .validationFailed,
+    operation: operation,
+    message: "\(subject) limit must be greater than or equal to 0.",
+    recovery: "Pass a non-negative limit, or omit limit to observe every local value."
+  )
 }
 
 // SAFETY: all mutable fetch state is protected by `lock`.
@@ -2458,10 +2535,9 @@ public struct AuthSession: Sendable {
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<InstantAuthSession?> {
     do {
-      let sessions = try await client.observeAuthSession()
       try Task.checkCancellation()
       loadError = nil
-      return fetchSubscription(from: sessions)
+      return try await client.subscribeAuthSession()
     } catch let error as CancellationError {
       loadError = nil
       throw error
@@ -2702,10 +2778,9 @@ public struct RoomPresence: Sendable {
   ) async throws -> FetchSubscription<[InstantRoomPresenceMember]> {
     self.room = room
     do {
-      let members = try await client.observeRoomPresence(room: room)
       try Task.checkCancellation()
       loadError = nil
-      return fetchSubscription(from: members)
+      return try await client.subscribeRoomPresence(room: room)
     } catch let error as CancellationError {
       loadError = nil
       throw error
@@ -3039,14 +3114,13 @@ public struct RoomTopicMessages: Sendable {
     self.limit = limit
     do {
       try Self.validateLimit(limit, operation: "subscribe RoomTopicMessages")
-      let messages = try await client.observeRoomTopicMessages(room: room, topic: topic)
       try Task.checkCancellation()
       loadError = nil
-      let subscription = fetchSubscription(from: messages)
-      if let limit {
-        return subscription.map { Array($0.prefix(limit)) }
-      }
-      return subscription
+      return try await client.subscribeRoomTopicMessages(
+        room: room,
+        topic: topic,
+        limit: limit
+      )
     } catch let error as CancellationError {
       loadError = nil
       throw error
@@ -3246,10 +3320,9 @@ public struct StoredFiles: Sendable {
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<[InstantStoredFile]> {
     do {
-      let files = try await client.observeStoredFiles()
       try Task.checkCancellation()
       loadError = nil
-      return fetchSubscription(from: files)
+      return try await client.subscribeStoredFiles()
     } catch let error as CancellationError {
       loadError = nil
       throw error
@@ -3494,14 +3567,9 @@ public struct StreamChunks: Sendable {
     configuration.set(streamID: streamID, limit: limit)
     do {
       try Self.validateLimit(limit, operation: "subscribe StreamChunks")
-      let chunks = try await client.observeStreamChunks(streamID: streamID)
       try Task.checkCancellation()
       loadError = nil
-      let subscription = fetchSubscription(from: chunks)
-      if let limit {
-        return subscription.map { Array($0.prefix(limit)) }
-      }
-      return subscription
+      return try await client.subscribeStreamChunks(streamID: streamID, limit: limit)
     } catch let error as CancellationError {
       loadError = nil
       throw error
@@ -3671,10 +3739,9 @@ public struct Shares: Sendable {
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<[InstantShareSnapshot]> {
     do {
-      let shares = try await client.observeShares()
       try Task.checkCancellation()
       loadError = nil
-      return fetchSubscription(from: shares)
+      return try await client.subscribeShares()
     } catch let error as CancellationError {
       loadError = nil
       throw error

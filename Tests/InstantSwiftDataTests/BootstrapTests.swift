@@ -721,6 +721,11 @@ struct BootstrapTests {
       var mockAuthIterator = mockAuthStream.makeAsyncIterator()
       let mockObservedSession = try #require(await mockAuthIterator.next())
       expectNoDifference(mockObservedSession?.userID, "mock-observed-user")
+      let mockAuthSubscription = try await client.subscribeAuthSession()
+      var mockAuthSubscriptionIterator = mockAuthSubscription.makeAsyncIterator()
+      let mockSubscribedSession = try #require(try await mockAuthSubscriptionIterator.next())
+      expectNoDifference(mockSubscribedSession?.userID, "mock-observed-user")
+      mockAuthSubscription.cancel()
       let mockGuest = try await client.signInAsGuest()
       expectNoDifference(mockGuest.userID, "mock-guest")
       let mockChallenge = try await client.sendMagicCode(email: "mock@example.com")
@@ -1245,6 +1250,51 @@ struct BootstrapTests {
   }
 
   @Test
+  func roomTopicClientSubscriptionAdapterAppliesLimitAndValidatesInput() async throws {
+    let room = InstantRoomHandle(type: "chat", id: "lobby")
+    let first = mockRoomTopicMessage(room: room, topic: "sendEmoji")
+    let second = mockRoomTopicMessage(
+      room: room,
+      topic: "sendEmoji",
+      id: "message-2",
+      payload: .object(["emoji": .string("sparkles")])
+    )
+    let client = roomClient(
+      observeRoomTopicMessages: { room, topic in
+        expectNoDifference(room, InstantRoomHandle(type: "chat", id: "lobby"))
+        expectNoDifference(topic, "sendEmoji")
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield([first, second])
+          continuation.finish()
+        }
+      }
+    )
+
+    let subscription = try await client.subscribeRoomTopicMessages(
+      room: room,
+      topic: "sendEmoji",
+      limit: 1
+    )
+    var iterator = subscription.makeAsyncIterator()
+    let firstEmission = try await iterator.next()
+    expectNoDifference(firstEmission, [first])
+
+    do {
+      _ = try await client.subscribeRoomTopicMessages(
+        room: room,
+        topic: "sendEmoji",
+        limit: -1
+      )
+      Issue.record("Expected negative room topic subscription limit to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "subscribe room topic messages")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+  }
+
+  @Test
   func roomTopicMessagesPropertyWrapperSubscribeCancellationAfterObserveDoesNotSucceed()
     async throws
   {
@@ -1468,6 +1518,33 @@ struct BootstrapTests {
   }
 
   @Test
+  func storedFilesClientSubscriptionAdapterCancelsUnderlyingObservation() async throws {
+    let file = mockStoredFile(id: "file-1")
+    let termination = RoomObservationTermination()
+    let client = integrationClient(
+      observeStoredFiles: {
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield([file])
+          continuation.onTermination = { @Sendable _ in
+            Task {
+              await termination.record()
+            }
+          }
+        }
+      }
+    )
+
+    let subscription = try await client.subscribeStoredFiles()
+    var iterator = subscription.makeAsyncIterator()
+    let firstEmission = try await iterator.next()
+    expectNoDifference(firstEmission, [file])
+
+    subscription.cancel()
+    #expect(try await iterator.next() == nil)
+    await termination.wait()
+  }
+
+  @Test
   func streamChunksPropertyWrapperLoadsUsingDependencyClient() async throws {
     let chunk = mockStreamChunk(streamID: "chat/lobby")
     let client = integrationClient(
@@ -1573,6 +1650,39 @@ struct BootstrapTests {
     subscription.cancel()
     #expect(try await iterator.next() == nil)
     await termination.wait()
+  }
+
+  @Test
+  func streamClientSubscriptionAdapterAppliesLimitAndValidatesInput() async throws {
+    let first = mockStreamChunk(streamID: "chat/lobby")
+    let second = mockStreamChunk(id: "chunk-2", streamID: "chat/lobby", index: 1)
+    let client = integrationClient(
+      observeStreamChunks: { streamID in
+        expectNoDifference(streamID, "chat/lobby")
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield([first, second])
+          continuation.finish()
+        }
+      }
+    )
+
+    let subscription = try await client.subscribeStreamChunks(
+      streamID: "chat/lobby",
+      limit: 1
+    )
+    var iterator = subscription.makeAsyncIterator()
+    let firstEmission = try await iterator.next()
+    expectNoDifference(firstEmission, [first])
+
+    do {
+      _ = try await client.subscribeStreamChunks(streamID: "chat/lobby", limit: -1)
+      Issue.record("Expected negative stream chunk subscription limit to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "subscribe stream chunks")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
   }
 
   @Test
