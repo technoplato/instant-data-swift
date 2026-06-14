@@ -1130,6 +1130,29 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func authWatchOptionsParserConsumesEventCount() throws {
+    expectNoDifference(try parseAuthWatchOptions([]), 1)
+    expectNoDifference(try parseAuthWatchOptions(["--events", "1"]), 1)
+    expectNoDifference(try parseAuthWatchOptions(["--events", "1", "--events", "1"]), 1)
+  }
+
+  @Test
+  func authWatchOptionsParserReportsMalformedArguments() throws {
+    try expectAuthWatchOptionsParseError(
+      ["--events"],
+      description: "Missing value for --events. Usage: instant-swift-data auth watch --events 1"
+    )
+    try expectAuthWatchOptionsParseError(
+      ["--events", "2"],
+      description: "Usage: instant-swift-data auth watch --events 1"
+    )
+    try expectAuthWatchOptionsParseError(
+      ["--surprise"],
+      description: "Unknown auth watch option: --surprise. \(CLIAuthUsage.watch)"
+    )
+  }
+
+  @Test
   func connectionParserParsesCommandsAndAliases() throws {
     expectNoDifference(try parseConnection(["status"]), .status)
     expectNoDifference(try parseConnection(["show"]), .status)
@@ -2484,6 +2507,13 @@ private func parseAuth(_ arguments: [String]) throws -> CLIAuthInvocation {
   return invocation
 }
 
+private func parseAuthWatchOptions(_ arguments: [String]) throws -> Int {
+  var input = arguments[...]
+  let eventCount = try CLIAuthWatchOptionsParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return eventCount
+}
+
 private func parseConnection(_ arguments: [String]) throws -> CLIConnectionInvocation {
   var input = arguments[...]
   let invocation = try CLIConnectionParser().parse(&input)
@@ -2662,6 +2692,19 @@ private func expectAuthParseError(
     Issue.record("Expected auth parser to reject \(arguments).")
   } catch let error as CLIAuthArgumentError {
     #expect(error.description.contains(expectedFragment))
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectAuthWatchOptionsParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseAuthWatchOptions(arguments)
+    Issue.record("Expected auth watch options parser to reject \(arguments).")
+  } catch let error as CLIAuthArgumentError {
+    expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }
 }

@@ -3121,7 +3121,41 @@ public struct CLIAuthWatchParser: Parser {
   public init() {}
 
   public func parse(_ input: inout ArraySlice<String>) throws -> CLIAuthWatchInvocation {
-    CLIAuthWatchInvocation(eventCount: try parseAuthFiniteWatchEventCount(from: &input))
+    CLIAuthWatchInvocation(eventCount: try CLIAuthWatchOptionsParser().parse(&input))
+  }
+}
+
+public struct CLIAuthWatchOptionsParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> Int {
+    let usageCommand = "instant-swift-data auth watch"
+    var eventCount = 1
+
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--events":
+        let value = try parseAuthOptionValue(
+          from: &input,
+          option: option,
+          usage: "Usage: \(usageCommand) --events 1"
+        )
+        guard let parsed = Int(value), parsed == 1 else {
+          throw CLIAuthArgumentError.invalidEventCount(value, usageCommand: usageCommand)
+        }
+        eventCount = parsed
+
+      default:
+        throw CLIAuthArgumentError.unknownOption(
+          domain: "auth watch",
+          option: option,
+          usage: CLIAuthUsage.watch
+        )
+      }
+    }
+
+    return eventCount
   }
 }
 
@@ -3728,36 +3762,6 @@ private func parseNonEmptyAuthOptionValue(
     throw CLIAuthArgumentError.emptyValue(option: option, usage: usage)
   }
   return value
-}
-
-private func parseAuthFiniteWatchEventCount(
-  from input: inout ArraySlice<String>
-) throws -> Int {
-  let usageCommand = "instant-swift-data auth watch"
-  var eventCount = 1
-  while let option = input.first {
-    input.removeFirst()
-    switch option {
-    case "--events":
-      let value = try parseAuthOptionValue(
-        from: &input,
-        option: option,
-        usage: "Usage: \(usageCommand) --events 1"
-      )
-      guard let parsed = Int(value), parsed == 1 else {
-        throw CLIAuthArgumentError.invalidEventCount(value, usageCommand: usageCommand)
-      }
-      eventCount = parsed
-
-    default:
-      throw CLIAuthArgumentError.unknownOption(
-        domain: "auth watch",
-        option: option,
-        usage: CLIAuthUsage.watch
-      )
-    }
-  }
-  return eventCount
 }
 
 private func requireNoRemainingAuthArguments(
