@@ -488,6 +488,75 @@ struct InstantTransactionValidationParityTests {
   }
 
   @Test
+  func upstreamValidatesWithoutSchemaAndAdaptsLocalIDFormat() async throws {
+    let withoutSchemaSource = transactionValidationSource(
+      "validates without schema",
+      assertion: "lines 360-368 arbitrary entity, scalar, and link-shaped values without a schema",
+      status:
+        "exact: when no attributes are declared, Swift accepts arbitrary namespaces and values."
+    )
+    let uuidSource = transactionValidationSource(
+      "validates UUID format for entity IDs",
+      assertion: "lines 371-387 entity id validation",
+      status:
+        "adapted: Swift's local store accepts stable local IDs that are not UUIDs."
+    )
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_042)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: []
+      )
+    )
+
+    let result = try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-parity-without-schema",
+        operations: [
+          .insert(
+            triple(
+              "not a valid uuid",
+              "randomEntity/anyField",
+              .string("anyValue"),
+              txID: "tx-parity-without-schema",
+              time: time
+            )
+          ),
+          .insert(
+            triple(
+              "not a valid uuid",
+              "randomEntity/anyNumber",
+              .number(123),
+              txID: "tx-parity-without-schema",
+              time: time
+            )
+          ),
+          .insert(
+            triple(
+              "not a valid uuid",
+              "randomEntity/anyLink",
+              .ref("also-not-a-uuid"),
+              txID: "tx-parity-without-schema",
+              time: time
+            )
+          ),
+        ]
+      ),
+      createdAt: time
+    )
+
+    let snapshot = await runtime.store.snapshot()
+    expectNoDifference(result.changedEntityIDs, ["not a valid uuid"], uuidSource)
+    expectNoDifference(result.tripleCount, 3, withoutSchemaSource)
+    expectNoDifference(
+      snapshot.triples.map(\.attributeID),
+      ["randomEntity/anyField", "randomEntity/anyLink", "randomEntity/anyNumber"],
+      withoutSchemaSource
+    )
+  }
+
+  @Test
   func upstreamValidatesDateAndLookupValueTypes() async throws {
     let runtime = try await parityRuntime()
     let time = InstantTimestamp(milliseconds: 1_700_000_000_045)

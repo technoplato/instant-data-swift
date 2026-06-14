@@ -575,6 +575,9 @@ public actor InstantStore {
       }
 
       switch value {
+      case .ref where attributes.namespaces.isEmpty:
+        return
+
       case .ref, .lookupRef:
         throw InstantError(
           code: .validationFailed,
