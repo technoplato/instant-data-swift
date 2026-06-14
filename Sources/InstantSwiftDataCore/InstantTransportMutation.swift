@@ -399,9 +399,17 @@ extension InstantStoreTransaction {
         let entity = InstantTransportEntityRef.id(entityID)
         txSteps.append(.deleteEntity(entity: entity, namespace: namespaces[entity]))
 
+      case let .deleteEntityInNamespace(entityID, namespace):
+        txSteps.append(.deleteEntity(entity: .id(entityID), namespace: namespace))
+
       case let .deleteEntityByLookup(lookup):
         let entity = InstantTransportEntityRef.lookup(lookup)
-        txSteps.append(.deleteEntity(entity: entity, namespace: namespaces[entity]))
+        txSteps.append(
+          .deleteEntity(
+            entity: entity,
+            namespace: namespaces[entity] ?? Self.namespace(in: lookup.attributeID)
+          )
+        )
 
       case let .ruleParams(entityID, namespace, params):
         txSteps.append(
@@ -424,6 +432,12 @@ extension InstantStoreTransaction {
     }
 
     return (preconditions, txSteps)
+  }
+
+  private static func namespace(in attributeID: String) -> String? {
+    guard let separator = attributeID.firstIndex(of: "/"), separator != attributeID.startIndex
+    else { return nil }
+    return String(attributeID[..<separator])
   }
 }
 

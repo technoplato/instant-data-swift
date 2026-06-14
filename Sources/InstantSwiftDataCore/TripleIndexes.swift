@@ -73,6 +73,11 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     var serverCreatedAt: InstantValue?
   }
 
+  private struct DeleteVisit: Hashable, Sendable {
+    var entityID: String
+    var namespace: String?
+  }
+
   init(triples: [InstantTriple] = [], attributes: AttributeStore = AttributeStore()) {
     for triple in triples {
       self.insert(triple, attribute: attributes[triple.attributeID])
@@ -173,8 +178,17 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       return changed
 
     case let .deleteEntity(entityID):
-      var visited: Set<String> = []
-      return deleteEntity(entityID, attributes: attributes, visited: &visited)
+      var visited: Set<DeleteVisit> = []
+      return deleteEntity(entityID, namespace: nil, attributes: attributes, visited: &visited)
+
+    case let .deleteEntityInNamespace(entityID, namespace):
+      var visited: Set<DeleteVisit> = []
+      return deleteEntity(
+        entityID,
+        namespace: namespace,
+        attributes: attributes,
+        visited: &visited
+      )
     }
   }
 
@@ -678,14 +692,23 @@ struct TripleIndexes: Hashable, Codable, Sendable {
 
   private mutating func deleteEntity(
     _ entityID: String,
+    namespace: String?,
     attributes: AttributeStore,
-    visited: inout Set<String>
+    visited: inout Set<DeleteVisit>
   ) -> Set<String> {
-    guard visited.insert(entityID).inserted else { return [] }
+    guard visited.insert(DeleteVisit(entityID: entityID, namespace: namespace)).inserted else {
+      return []
+    }
 
     var changed: Set<String> = [entityID]
-    let outgoingTriples = triples(entityID: entityID)
-    let incomingTriples = reverseRefTriples(targetEntityID: entityID)
+    let outgoingTriples = triples(entityID: entityID).filter { triple in
+      guard let namespace else { return true }
+      return attributes[triple.attributeID]?.namespace == namespace
+    }
+    let incomingTriples = reverseRefTriples(targetEntityID: entityID).filter { triple in
+      guard let namespace else { return true }
+      return attributes[triple.attributeID]?.linkNamespace == namespace
+    }
 
     for triple in outgoingTriples {
       guard
@@ -696,7 +719,14 @@ struct TripleIndexes: Hashable, Codable, Sendable {
 
       changed.insert(targetID)
       if attribute.onDeleteReverse == .cascade {
-        changed.formUnion(deleteEntity(targetID, attributes: attributes, visited: &visited))
+        changed.formUnion(
+          deleteEntity(
+            targetID,
+            namespace: attribute.linkNamespace,
+            attributes: attributes,
+            visited: &visited
+          )
+        )
       }
     }
 
@@ -704,7 +734,14 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       let attribute = attributes[triple.attributeID]
       changed.insert(triple.entityID)
       if attribute?.onDelete == .cascade {
-        changed.formUnion(deleteEntity(triple.entityID, attributes: attributes, visited: &visited))
+        changed.formUnion(
+          deleteEntity(
+            triple.entityID,
+            namespace: attribute?.namespace,
+            attributes: attributes,
+            visited: &visited
+          )
+        )
       }
     }
 

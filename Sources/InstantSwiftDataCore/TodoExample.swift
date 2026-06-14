@@ -210,7 +210,7 @@ public enum TodoExample {
   public static func deleteOperations(id: String) -> [InstantTripleOperation] {
     [
       .requireEntityExists(entityID: id, namespace: namespace),
-      .deleteEntity(id),
+      .deleteEntityInNamespace(entityID: id, namespace: namespace),
     ]
   }
 

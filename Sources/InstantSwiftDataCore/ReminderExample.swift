@@ -854,7 +854,7 @@ public enum ReminderExample {
       .requireEntityExists(entityID: id, namespace: remindersNamespace),
       requireReminderInListOperation(reminderID: id, listID: listID),
       listRefOperation(reminderID: id, listID: listID, updatedAt: updatedAt, transactionID: transactionID),
-      .deleteEntity(id),
+      .deleteEntityInNamespace(entityID: id, namespace: remindersNamespace),
     ]
   }
 
@@ -878,7 +878,7 @@ public enum ReminderExample {
   ) -> [InstantTripleOperation] {
     [
       .requireEntityExists(entityID: id, namespace: listsNamespace),
-      .deleteEntity(id),
+      .deleteEntityInNamespace(entityID: id, namespace: listsNamespace),
     ]
   }
 

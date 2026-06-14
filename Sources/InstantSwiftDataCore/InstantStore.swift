@@ -175,7 +175,7 @@ public actor InstantStore {
         )
 
       case .merge, .mergeByLookup, .insert, .insertByLookup, .retract, .retractByLookup,
-        .deleteEntity, .deleteEntityByLookup:
+        .deleteEntity, .deleteEntityInNamespace, .deleteEntityByLookup:
         var resolvedLookups: [InstantLookupRef: String] = [:]
         let concreteOperations = try Self.concreteOperations(
           for: operation,
@@ -197,6 +197,9 @@ public actor InstantStore {
             changedEntityIDs.formUnion(indexes.apply(concreteOperation, attributes: attributes))
 
           case .deleteEntity:
+            changedEntityIDs.formUnion(indexes.apply(concreteOperation, attributes: attributes))
+
+          case .deleteEntityInNamespace:
             changedEntityIDs.formUnion(indexes.apply(concreteOperation, attributes: attributes))
 
           case .requireEntityMissing, .requireEntityMissingByLookup,
@@ -359,7 +362,7 @@ public actor InstantStore {
       triple.value = value
       return [.retract(triple)]
 
-    case .deleteEntity:
+    case .deleteEntity, .deleteEntityInNamespace:
       return [operation]
 
     case let .insertByLookup(entity, attributeID, value, txID, txTime):
@@ -462,16 +465,21 @@ public actor InstantStore {
       ]
 
     case let .deleteEntityByLookup(lookup):
+      let namespace = attributes[lookup.attributeID]?.namespace
       guard
         let entityID = try resolveEntityID(
           lookup,
-          expectedNamespace: nil,
+          expectedNamespace: namespace,
           indexes: indexes,
           attributes: attributes,
           resolvedLookups: &resolvedLookups
         )
       else { return [] }
-      return [.deleteEntity(entityID)]
+      if let namespace {
+        return [.deleteEntityInNamespace(entityID: entityID, namespace: namespace)]
+      } else {
+        return [.deleteEntity(entityID)]
+      }
 
     case .requireEntityMissing, .requireEntityMissingByLookup,
       .requireEntityExists, .requireEntityExistsByLookup,

@@ -589,6 +589,128 @@ struct InstantStoreParityTests {
     )
   }
 
+  @Test
+  func recursiveLinksWithSameRawIDDeleteOnlyRequestedNamespace() async throws {
+    let source = storeParitySource(
+      "recursive links w same id",
+      status: "adapted: Swift uses deleteEntityInNamespace for the schema-aware delete step."
+    )
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let sameID = "shared-raw-id"
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: [
+          InstantAttribute(
+            id: "todos/title",
+            namespace: "todos",
+            name: "title",
+            valueType: .string,
+            isRequired: false
+          ),
+          InstantAttribute(
+            id: "todos/completed",
+            namespace: "todos",
+            name: "completed",
+            valueType: .boolean,
+            isRequired: false
+          ),
+          InstantAttribute(
+            id: "todos/createdBy",
+            namespace: "todos",
+            name: "createdBy",
+            valueType: .ref,
+            isIndexed: true,
+            forwardIdentity: "todos/createdBy",
+            reverseIdentity: "fakeUsers/todos",
+            linkNamespace: "fakeUsers",
+            onDelete: .cascade
+          ),
+          InstantAttribute(
+            id: "fakeUsers/email",
+            namespace: "fakeUsers",
+            name: "email",
+            valueType: .string,
+            isRequired: false,
+            isIndexed: true,
+            isUnique: true
+          ),
+        ]
+      )
+    )
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-recursive-same-id-seed",
+        operations: [
+          .insert(
+            triple(
+              sameID,
+              "todos/title",
+              .string("todo"),
+              txID: "tx-recursive-same-id-seed",
+              time: time
+            )
+          ),
+          .insert(
+            triple(
+              sameID,
+              "todos/completed",
+              .bool(false),
+              txID: "tx-recursive-same-id-seed",
+              time: time
+            )
+          ),
+          .insert(
+            triple(
+              sameID,
+              "fakeUsers/email",
+              .string("test@test.com"),
+              txID: "tx-recursive-same-id-seed",
+              time: time
+            )
+          ),
+          .insert(
+            triple(
+              sameID,
+              "todos/createdBy",
+              .ref(sameID),
+              txID: "tx-recursive-same-id-seed",
+              time: time
+            )
+          ),
+        ]
+      ),
+      createdAt: time
+    )
+
+    var todos = try await runtime.query(InstantQueryPlan(id: "recursive.todos", namespace: "todos"))
+    var fakeUsers = try await runtime.query(
+      InstantQueryPlan(id: "recursive.fake-users", namespace: "fakeUsers")
+    )
+    expectNoDifference(todos.map(\.id), [sameID], source)
+    expectNoDifference(fakeUsers.map(\.id), [sameID], source)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-recursive-same-id-delete-todo",
+        operations: [
+          .deleteEntityInNamespace(entityID: sameID, namespace: "todos")
+        ]
+      ),
+      createdAt: InstantTimestamp(milliseconds: time.milliseconds + 1)
+    )
+
+    todos = try await runtime.query(InstantQueryPlan(id: "recursive.todos.after", namespace: "todos"))
+    fakeUsers = try await runtime.query(
+      InstantQueryPlan(id: "recursive.fake-users.after", namespace: "fakeUsers")
+    )
+    expectNoDifference(todos.map(\.id), [], source)
+    expectNoDifference(fakeUsers.map(\.id), [sameID], source)
+    expectNoDifference(fakeUsers.first?.values["email"]?.first, .string("test@test.com"), source)
+  }
+
   private func temporaryCacheURL() throws -> URL {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataStoreParityTests-\(UUID().uuidString)")

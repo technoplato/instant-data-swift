@@ -393,6 +393,7 @@ public enum InstantTripleOperation: Hashable, Codable, Sendable {
     txTime: InstantTimestamp
   )
   case deleteEntity(String)
+  case deleteEntityInNamespace(entityID: String, namespace: String)
   case deleteEntityByLookup(InstantLookupRef)
   case ruleParams(entityID: String, namespace: String, params: JSONValue)
   case ruleParamsByLookup(entity: InstantLookupRef, namespace: String, params: JSONValue)

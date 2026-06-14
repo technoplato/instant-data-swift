@@ -1493,6 +1493,56 @@ struct TypedAPITests {
   }
 
   @Test
+  func typedLookupDeleteScopesResolvedEntityToLookupNamespace() async throws {
+    let sharedID = "typed-lookup-shared-raw-id"
+
+    try await withDependencies {
+      try await $0.bootstrapInstantSwiftData(
+        appID: "typed-lookup-delete-scoped-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedProfile.instantAttributes + TypedUser.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      try await db.transact(id: "tx-lookup-delete-shared-seed") {
+        TypedProfile.create(
+          id: InstantID(rawValue: sharedID),
+          TypedProfile.handle.set("shared"),
+          TypedProfile.metadata.set(.object(["kind": .string("profile")]))
+        )
+        TypedUser.create(
+          id: InstantID(rawValue: sharedID),
+          TypedUser.name.set("Shared User"),
+          TypedUser.email.set("shared@example.com")
+        )
+      }
+
+      try await db.transact(id: "tx-lookup-delete-profile") {
+        TypedProfile.delete(lookup: TypedProfile.handle.lookup("shared"))
+      }
+
+      let profiles = try await db.query(TypedProfile.query)
+      let users = try await db.query(TypedUser.query)
+      expectNoDifference(profiles, [])
+      expectNoDifference(users.map(\.id.rawValue), [sharedID])
+      expectNoDifference(users.map(\.name), ["Shared User"])
+
+      let pending = await db.pendingMutations()
+      expectNoDifference(
+        pending.first { $0.id == "tx-lookup-delete-profile" }?.transaction.operations,
+        [
+          .requireEntityExistsByLookup(
+            TypedProfile.handle.lookup("shared").lookupRef,
+            namespace: TypedProfile.instantNamespace
+          ),
+          .deleteEntityByLookup(TypedProfile.handle.lookup("shared").lookupRef),
+        ]
+      )
+    }
+  }
+
+  @Test
   func typedLookupLinkOverloadsResolveSourceAndTargetIndependently() async throws {
     let userID = InstantID<TypedUser>(rawValue: "lookup-link-user")
     let secondUserID = InstantID<TypedUser>(rawValue: "lookup-link-user-2")

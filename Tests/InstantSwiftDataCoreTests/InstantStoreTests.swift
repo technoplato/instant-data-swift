@@ -937,6 +937,39 @@ struct InstantStoreTests {
   }
 
   @Test
+  func transportMutationInfersLookupDeleteNamespaceWithoutPrecondition() throws {
+    let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let lookup = InstantLookupRef(
+      attributeID: "users/email",
+      value: .string("blob@example.com")
+    )
+    let transaction = InstantStoreTransaction(
+      id: "tx-lookup-delete-transport",
+      operations: [
+        .deleteEntityByLookup(lookup)
+      ]
+    )
+    let mutation = PendingMutation(
+      id: "tx-lookup-delete-transport",
+      createdAt: txTime,
+      transaction: transaction
+    )
+    let transportMutation = InstantTransportMutation(mutation)
+
+    expectNoDifference(transportMutation.preconditions, [])
+    expectNoDifference(transportMutation.txSteps.count, 1)
+
+    let data = try JSONEncoder().encode(transportMutation)
+    let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let txSteps = try #require(object["txSteps"] as? [[Any]])
+    expectNoDifference(txSteps[0][0] as? String, "delete-entity")
+    let lookupEntity = try #require(txSteps[0][1] as? [Any])
+    expectNoDifference(lookupEntity[0] as? String, "users/email")
+    expectNoDifference(lookupEntity[1] as? String, "blob@example.com")
+    expectNoDifference(txSteps[0][2] as? String, "users")
+  }
+
+  @Test
   func transportMutationPreservesTripleExistsPreconditions() throws {
     let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let transaction = InstantStoreTransaction(

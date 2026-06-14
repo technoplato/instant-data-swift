@@ -345,7 +345,7 @@ extension InstantEntityModel {
     InstantMutation { _, _ in
       [
         .requireEntityExists(entityID: id.rawValue, namespace: Self.instantNamespace),
-        .deleteEntity(id.rawValue),
+        .deleteEntityInNamespace(entityID: id.rawValue, namespace: Self.instantNamespace),
       ]
     }
   }

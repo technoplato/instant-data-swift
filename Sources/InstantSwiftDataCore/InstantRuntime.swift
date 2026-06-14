@@ -1883,12 +1883,24 @@ public final class InstantRuntime: Sendable {
         targets.formUnion(
           cascadeDeleteWriteTargets(
             entityID: entityID,
+            namespace: nil,
+            snapshot: snapshot,
+            attributesByID: attributesByID
+          )
+        )
+
+      case let .deleteEntityInNamespace(entityID, namespace):
+        targets.formUnion(
+          cascadeDeleteWriteTargets(
+            entityID: entityID,
+            namespace: namespace,
             snapshot: snapshot,
             attributesByID: attributesByID
           )
         )
 
       case let .deleteEntityByLookup(lookup):
+        let lookupNamespace = attributesByID[lookup.attributeID]?.namespace
         let entityIDs = entityIDs(matching: lookup, snapshot: snapshot)
         if entityIDs.isEmpty, let target = primaryKeyLookupWriteTarget(
           lookup,
@@ -1897,6 +1909,7 @@ public final class InstantRuntime: Sendable {
           targets.formUnion(
             cascadeDeleteWriteTargets(
               entityID: target.id,
+              namespace: target.namespace,
               snapshot: snapshot,
               attributesByID: attributesByID
             )
@@ -1907,6 +1920,7 @@ public final class InstantRuntime: Sendable {
             targets.formUnion(
               cascadeDeleteWriteTargets(
                 entityID: entityID,
+                namespace: lookupNamespace,
                 snapshot: snapshot,
                 attributesByID: attributesByID
               )
@@ -1993,25 +2007,34 @@ public final class InstantRuntime: Sendable {
 
   private func cascadeDeleteWriteTargets(
     entityID: String,
+    namespace: String?,
     snapshot: InstantStoreSnapshot,
     attributesByID: [String: InstantAttribute],
-    visited: Set<String> = []
+    visited: Set<InstantSharedRootWriteTarget> = []
   ) -> Set<InstantSharedRootWriteTarget> {
-    guard !visited.contains(entityID) else { return [] }
+    let visit = InstantSharedRootWriteTarget(namespace: namespace, id: entityID)
+    guard !visited.contains(visit) else { return [] }
     var visited = visited
-    visited.insert(entityID)
+    visited.insert(visit)
     var targets: Set<InstantSharedRootWriteTarget> = [
-      InstantSharedRootWriteTarget(namespace: nil, id: entityID)
+      visit
     ]
 
-    let outgoingTriples = snapshot.triples.filter { $0.entityID == entityID }
+    let outgoingTriples = snapshot.triples.filter { triple in
+      guard triple.entityID == entityID else { return false }
+      guard let namespace else { return true }
+      return attributesByID[triple.attributeID]?.namespace == namespace
+    }
     let incomingTriples = snapshot.triples.filter { triple in
-      guard attributesByID[triple.attributeID]?.valueType == .ref,
+      guard let attribute = attributesByID[triple.attributeID],
+        attribute.valueType == .ref,
         case let .ref(targetID) = triple.value
       else {
         return false
       }
-      return targetID == entityID
+      guard targetID == entityID else { return false }
+      guard let namespace else { return true }
+      return attribute.linkNamespace == namespace
     }
 
     for triple in outgoingTriples {
@@ -2021,11 +2044,12 @@ public final class InstantRuntime: Sendable {
       else {
         continue
       }
-      targets.insert(InstantSharedRootWriteTarget(namespace: nil, id: targetID))
+      targets.insert(InstantSharedRootWriteTarget(namespace: attribute.linkNamespace, id: targetID))
       if attribute.onDeleteReverse == .cascade {
         targets.formUnion(
           cascadeDeleteWriteTargets(
             entityID: targetID,
+            namespace: attribute.linkNamespace,
             snapshot: snapshot,
             attributesByID: attributesByID,
             visited: visited
@@ -2036,11 +2060,14 @@ public final class InstantRuntime: Sendable {
 
     for triple in incomingTriples {
       let attribute = attributesByID[triple.attributeID]
-      targets.insert(InstantSharedRootWriteTarget(namespace: nil, id: triple.entityID))
+      targets.insert(
+        InstantSharedRootWriteTarget(namespace: attribute?.namespace, id: triple.entityID)
+      )
       if attribute?.onDelete == .cascade {
         targets.formUnion(
           cascadeDeleteWriteTargets(
             entityID: triple.entityID,
+            namespace: attribute?.namespace,
             snapshot: snapshot,
             attributesByID: attributesByID,
             visited: visited

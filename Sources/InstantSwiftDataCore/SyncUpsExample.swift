@@ -643,7 +643,7 @@ public enum SyncUpsExample {
     } + existingAttendeeIDs.flatMap { id in
       deleteAttendeeEntityPreconditions(id: id, syncUpID: syncUpID)
     } + existingAttendeeIDs.map { id in
-      .deleteEntity(id)
+      .deleteEntityInNamespace(entityID: id, namespace: attendeesNamespace)
     } + newAttendees.flatMap { attendee in
       [
         .requireEntityMissing(entityID: attendee.id, namespace: attendeesNamespace)
@@ -698,7 +698,7 @@ public enum SyncUpsExample {
   public static func deleteSyncUpOperations(id: String) -> [InstantTripleOperation] {
     [
       .requireEntityExists(entityID: id, namespace: syncUpsNamespace),
-      .deleteEntity(id),
+      .deleteEntityInNamespace(entityID: id, namespace: syncUpsNamespace),
     ]
   }
 
@@ -730,7 +730,7 @@ public enum SyncUpsExample {
         ),
       ]
     } + [
-      .deleteEntity(id),
+      .deleteEntityInNamespace(entityID: id, namespace: attendeesNamespace),
     ]
     if let replacementAttendeeID {
       operations += createAttendeeOperations(
@@ -747,7 +747,7 @@ public enum SyncUpsExample {
   public static func deleteMeetingOperations(id: String) -> [InstantTripleOperation] {
     [
       .requireEntityExists(entityID: id, namespace: meetingsNamespace),
-      .deleteEntity(id),
+      .deleteEntityInNamespace(entityID: id, namespace: meetingsNamespace),
     ]
   }
 
