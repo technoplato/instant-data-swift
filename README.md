@@ -181,8 +181,9 @@ swift run instant-swift-data auth id-token google-ios <id-token> --nonce <nonce>
 swift run instant-swift-data auth oauth <code> --code-verifier <verifier> --json
 swift run instant-swift-data auth oauth-url google-ios myapp://oauth/callback --json
 swift run instant-swift-data auth issuer --json
-swift run instant-swift-data auth magic-code send user@example.com --json
-swift run instant-swift-data auth magic-code verify user@example.com <local-verification-code> --json
+MAGIC_CODE_JSON="$(swift run instant-swift-data auth magic-code send user@example.com --json)"
+MAGIC_CODE="$(printf '%s' "$MAGIC_CODE_JSON" | jq -r '.localVerificationCode')"
+swift run instant-swift-data auth magic-code verify user@example.com "$MAGIC_CODE" --json
 swift run instant-swift-data auth watch --events 1 --jsonl
 swift run instant-swift-data auth sign-out --json
 swift run instant-swift-data auth sign-out --skip-token-invalidation --json
