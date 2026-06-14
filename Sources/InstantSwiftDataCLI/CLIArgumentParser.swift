@@ -227,6 +227,54 @@ public enum CLICacheArgumentError: Error, Equatable, Sendable {
   public var exitCode: Int32 { 64 }
 }
 
+public enum CLIOutboxInvocation: Equatable, Sendable {
+  case inspect
+  case transport(includeFailed: Bool)
+  case flush(limit: Int?)
+  case confirm(mutationID: String)
+  case fail(mutationID: String, message: String)
+  case retry(mutationID: String)
+  case drain(limit: Int?)
+}
+
+public enum CLIOutboxUsage {
+  public static let outbox = """
+    Usage: instant-swift-data outbox <inspect|transport|flush|confirm|fail|retry|drain>
+      instant-swift-data outbox inspect [--json|--jsonl]
+      instant-swift-data outbox transport [--all] [--json|--jsonl]
+      instant-swift-data outbox flush [--limit n] [--json|--jsonl]
+      instant-swift-data outbox confirm <mutation-id> [--json|--jsonl]
+      instant-swift-data outbox fail <mutation-id> "reason" [--json|--jsonl]
+      instant-swift-data outbox retry <mutation-id> [--json|--jsonl]
+      instant-swift-data outbox drain --local-confirm [--limit n] [--json|--jsonl]
+    """
+
+  public static let inspect = "Usage: instant-swift-data outbox inspect [--json|--jsonl]"
+  public static let transport =
+    "Usage: instant-swift-data outbox transport [--all] [--json|--jsonl]"
+  public static let flush =
+    "Usage: instant-swift-data outbox flush [--limit n] [--json|--jsonl]"
+  public static let confirm =
+    "Usage: instant-swift-data outbox confirm <mutation-id> [--json|--jsonl]"
+  public static let fail =
+    "Usage: instant-swift-data outbox fail <mutation-id> \"reason\" [--json|--jsonl]"
+  public static let retry =
+    "Usage: instant-swift-data outbox retry <mutation-id> [--json|--jsonl]"
+  public static let drain =
+    "Usage: instant-swift-data outbox drain --local-confirm [--limit n] [--json|--jsonl]"
+}
+
+public enum CLIOutboxArgumentError: Error, Equatable, Sendable {
+  case missingCommand
+  case unknownCommand(String)
+  case missingArguments(usage: String)
+  case invalidArguments(usage: String)
+  case unknownOption(String, usage: String)
+  case unexpectedArgument(String, usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
 public enum CLIRoomsInvocation: Equatable, Sendable {
   case presence(CLIRoomPresenceInvocation)
   case topics(CLIRoomTopicsInvocation)
@@ -1043,6 +1091,52 @@ public struct CLICacheParser: Parser {
 
     default:
       throw CLICacheArgumentError.unknownCommand(command)
+    }
+  }
+}
+
+public struct CLIOutboxParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIOutboxInvocation {
+    guard let command = input.first else {
+      throw CLIOutboxArgumentError.missingCommand
+    }
+    input.removeFirst()
+
+    switch command {
+    case "inspect":
+      try requireNoRemainingOutboxArguments(&input, usage: CLIOutboxUsage.inspect)
+      return .inspect
+
+    case "transport", "wire", "tx-steps":
+      return .transport(includeFailed: try parseOutboxTransportOptions(from: &input))
+
+    case "flush", "send":
+      return .flush(limit: try parseOutboxFlushLimit(from: &input))
+
+    case "confirm":
+      let mutationID = try parseSingleOutboxArgument(from: &input, usage: CLIOutboxUsage.confirm)
+      return .confirm(mutationID: mutationID)
+
+    case "fail":
+      let mutationID = try parseRequiredOutboxArgument(from: &input, usage: CLIOutboxUsage.fail)
+      let message = input.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+      input.removeAll()
+      guard !message.isEmpty else {
+        throw CLIOutboxArgumentError.missingArguments(usage: CLIOutboxUsage.fail)
+      }
+      return .fail(mutationID: mutationID, message: message)
+
+    case "retry":
+      let mutationID = try parseSingleOutboxArgument(from: &input, usage: CLIOutboxUsage.retry)
+      return .retry(mutationID: mutationID)
+
+    case "drain":
+      return .drain(limit: try parseOutboxDrainLimit(from: &input))
+
+    default:
+      throw CLIOutboxArgumentError.unknownCommand(command)
     }
   }
 }
@@ -2380,6 +2474,113 @@ private func isValidCacheNamespace(_ value: String) -> Bool {
     && !value.contains(where: { $0.isWhitespace })
 }
 
+private func parseOutboxTransportOptions(
+  from input: inout ArraySlice<String>
+) throws -> Bool {
+  var includeFailed = false
+
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--all":
+      includeFailed = true
+
+    default:
+      throw CLIOutboxArgumentError.invalidArguments(usage: CLIOutboxUsage.transport)
+    }
+  }
+
+  return includeFailed
+}
+
+private func parseOutboxFlushLimit(
+  from input: inout ArraySlice<String>
+) throws -> Int? {
+  var limit: Int?
+
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--limit":
+      guard let value = input.first,
+        let parsed = Int(value),
+        parsed >= 0
+      else {
+        throw CLIOutboxArgumentError.invalidArguments(usage: CLIOutboxUsage.flush)
+      }
+      input.removeFirst()
+      limit = parsed
+
+    default:
+      throw CLIOutboxArgumentError.unknownOption(option, usage: CLIOutboxUsage.flush)
+    }
+  }
+
+  return limit
+}
+
+private func parseOutboxDrainLimit(
+  from input: inout ArraySlice<String>
+) throws -> Int? {
+  var sawLocalConfirm = false
+  var limit: Int?
+
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--local-confirm":
+      sawLocalConfirm = true
+
+    case "--limit":
+      guard let value = input.first,
+        let parsed = Int(value),
+        parsed >= 0
+      else {
+        throw CLIOutboxArgumentError.invalidArguments(usage: CLIOutboxUsage.drain)
+      }
+      input.removeFirst()
+      limit = parsed
+
+    default:
+      throw CLIOutboxArgumentError.unknownOption(option, usage: CLIOutboxUsage.drain)
+    }
+  }
+
+  guard sawLocalConfirm else {
+    throw CLIOutboxArgumentError.missingArguments(usage: CLIOutboxUsage.drain)
+  }
+  return limit
+}
+
+private func parseSingleOutboxArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  let value = try parseRequiredOutboxArgument(from: &input, usage: usage)
+  try requireNoRemainingOutboxArguments(&input, usage: usage)
+  return value
+}
+
+private func parseRequiredOutboxArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIOutboxArgumentError.missingArguments(usage: usage)
+  }
+  input.removeFirst()
+  return value
+}
+
+private func requireNoRemainingOutboxArguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if let argument = input.first {
+    throw CLIOutboxArgumentError.unexpectedArgument(argument, usage: usage)
+  }
+}
+
 private func trimmed(_ string: String) -> String {
   string.trimmingCharacters(in: .whitespacesAndNewlines)
 }
@@ -2467,6 +2668,36 @@ extension CLICacheArgumentError: CustomStringConvertible {
 
     case let .invalidNamespace(_, usage):
       return "\(usage): namespace must not be empty or contain whitespace or '/'."
+
+    case let .unexpectedArgument(_, usage):
+      return usage
+    }
+  }
+}
+
+extension CLIOutboxArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case .missingCommand:
+      return CLIOutboxUsage.outbox
+
+    case .unknownCommand:
+      return CLIOutboxUsage.outbox
+
+    case let .missingArguments(usage):
+      return usage
+
+    case let .invalidArguments(usage):
+      return usage
+
+    case let .unknownOption(option, usage):
+      if usage == CLIOutboxUsage.flush {
+        return "Unknown outbox flush option: \(option). \(usage)"
+      } else if usage == CLIOutboxUsage.drain {
+        return "Unknown outbox drain option: \(option). \(usage)"
+      } else {
+        return usage
+      }
 
     case let .unexpectedArgument(_, usage):
       return usage

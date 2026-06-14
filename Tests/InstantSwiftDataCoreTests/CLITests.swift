@@ -2575,6 +2575,90 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliMalformedOutboxArgumentsDoNotBootstrapState() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let malformedInspect = try runCLIResult(
+      ["outbox", "inspect", "extra", "--json"],
+      homeURL: homeURL
+    )
+    #expect(malformedInspect.status == 64)
+    #expect(malformedInspect.error.contains("outbox inspect"))
+
+    let malformedFlush = try runCLIResult(
+      ["outbox", "flush", "--limit", "-1", "--json"],
+      homeURL: homeURL
+    )
+    #expect(malformedFlush.status == 64)
+    #expect(malformedFlush.error.contains("outbox flush"))
+
+    let malformedDrain = try runCLIResult(
+      ["outbox", "drain", "--limit", "1", "--json"],
+      homeURL: homeURL
+    )
+    #expect(malformedDrain.status == 64)
+    #expect(malformedDrain.error.contains("outbox drain"))
+
+    expectNoDifference(
+      try FileManager.default.contentsOfDirectory(atPath: homeURL.path),
+      []
+    )
+  }
+
+  @Test
+  func cliOutboxInspectAndConfirmEmitStructuredEvidence() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    _ = try runCLI(["examples", "todos", "add", "confirm json", "--json"], homeURL: homeURL)
+
+    let inspectJSONL = try runCLI(["outbox", "inspect", "--jsonl"], homeURL: homeURL)
+    let inspectLines = inspectJSONL.split(separator: "\n")
+    expectNoDifference(inspectLines.count, 2)
+    let inspectSummary = try #require(
+      JSONSerialization.jsonObject(with: Data(inspectLines[0].utf8)) as? [String: Any]
+    )
+    expectNoDifference(inspectSummary["case"] as? String, "cli.outbox.inspect")
+    expectNoDifference(inspectSummary["event"] as? String, "summary")
+
+    let pendingOutbox = try JSONDecoder().decode(
+      CLIOutboxInspectOutput.self,
+      from: Data(try runCLI(["outbox", "inspect", "--json"], homeURL: homeURL).utf8)
+    )
+    let confirmedMutationID = try #require(pendingOutbox.mutations.first?.id)
+    let confirmed = try JSONDecoder().decode(
+      CLIOutboxUpdateOutput.self,
+      from: Data(
+        try runCLI(["outbox", "confirm", confirmedMutationID, "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(confirmed.mutation.id, confirmedMutationID)
+    expectNoDifference(confirmed.mutation.status, "confirmed")
+
+    _ = try runCLI(["examples", "todos", "add", "confirm jsonl", "--json"], homeURL: homeURL)
+    let nextOutbox = try JSONDecoder().decode(
+      CLIOutboxInspectOutput.self,
+      from: Data(try runCLI(["outbox", "inspect", "--json"], homeURL: homeURL).utf8)
+    )
+    let jsonlMutationID = try #require(nextOutbox.mutations.first?.id)
+    let confirmJSONL = try runCLI(
+      ["outbox", "confirm", jsonlMutationID, "--jsonl"],
+      homeURL: homeURL
+    )
+    let confirmSummaryLine = try #require(confirmJSONL.split(separator: "\n").first)
+    let confirmSummary = try #require(
+      JSONSerialization.jsonObject(with: Data(confirmSummaryLine.utf8)) as? [String: Any]
+    )
+    expectNoDifference(confirmSummary["case"] as? String, "cli.outbox.update")
+    expectNoDifference(confirmSummary["event"] as? String, "confirm")
+  }
+
+  @Test
   func cliOutboxTransportLowersPendingMutations() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)

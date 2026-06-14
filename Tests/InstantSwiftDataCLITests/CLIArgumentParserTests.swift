@@ -261,6 +261,22 @@ struct CLIArgumentParserTests {
       )
     )
     expectNoDifference(
+      try CLIArguments.parse(["outbox", "transport", "--all", "--json"]),
+      CLIInvocation(
+        output: .json,
+        command: .outbox,
+        arguments: ["transport", "--all"]
+      )
+    )
+    expectNoDifference(
+      try CLIArguments.parse(["outbox", "--jsonl", "drain", "--local-confirm"]),
+      CLIInvocation(
+        output: .jsonl,
+        command: .outbox,
+        arguments: ["drain", "--local-confirm"]
+      )
+    )
+    expectNoDifference(
       try CLIArguments.parse([
         "streams", "append", "chat/lobby", "--value", "{}", "--jsonl",
       ]),
@@ -642,6 +658,96 @@ struct CLIArgumentParserTests {
     try expectCacheParseError(
       ["dance"],
       contains: "Usage: instant-swift-data cache"
+    )
+  }
+
+  @Test
+  func outboxParserParsesCommandsOptionsAndAliases() throws {
+    expectNoDifference(try parseOutbox(["inspect"]), .inspect)
+    expectNoDifference(
+      try parseOutbox(["transport"]),
+      .transport(includeFailed: false)
+    )
+    expectNoDifference(
+      try parseOutbox(["wire", "--all"]),
+      .transport(includeFailed: true)
+    )
+    expectNoDifference(
+      try parseOutbox(["tx-steps", "--all"]),
+      .transport(includeFailed: true)
+    )
+    expectNoDifference(
+      try parseOutbox(["flush"]),
+      .flush(limit: nil)
+    )
+    expectNoDifference(
+      try parseOutbox(["send", "--limit", "1", "--limit", "3"]),
+      .flush(limit: 3)
+    )
+    expectNoDifference(
+      try parseOutbox(["confirm", "mutation-1"]),
+      .confirm(mutationID: "mutation-1")
+    )
+    expectNoDifference(
+      try parseOutbox(["confirm", ""]),
+      .confirm(mutationID: "")
+    )
+    expectNoDifference(
+      try parseOutbox(["fail", "mutation-1", "server", "rejected"]),
+      .fail(mutationID: "mutation-1", message: "server rejected")
+    )
+    expectNoDifference(
+      try parseOutbox(["fail", "", "server", "rejected"]),
+      .fail(mutationID: "", message: "server rejected")
+    )
+    expectNoDifference(
+      try parseOutbox(["retry", "mutation-1"]),
+      .retry(mutationID: "mutation-1")
+    )
+    expectNoDifference(
+      try parseOutbox(["retry", ""]),
+      .retry(mutationID: "")
+    )
+    expectNoDifference(
+      try parseOutbox(["drain", "--local-confirm"]),
+      .drain(limit: nil)
+    )
+    expectNoDifference(
+      try parseOutbox(["drain", "--limit", "1", "--local-confirm", "--limit", "2"]),
+      .drain(limit: 2)
+    )
+  }
+
+  @Test
+  func outboxParserReportsMalformedArguments() throws {
+    try expectOutboxParseError([], description: CLIOutboxUsage.outbox)
+    try expectOutboxParseError(["dance"], description: CLIOutboxUsage.outbox)
+    try expectOutboxParseError(["inspect", "extra"], description: CLIOutboxUsage.inspect)
+    try expectOutboxParseError(
+      ["transport", "--unknown"],
+      description: CLIOutboxUsage.transport
+    )
+    try expectOutboxParseError(["flush", "--limit"], description: CLIOutboxUsage.flush)
+    try expectOutboxParseError(["flush", "--limit", "-1"], description: CLIOutboxUsage.flush)
+    try expectOutboxParseError(
+      ["flush", "--unknown"],
+      description: "Unknown outbox flush option: --unknown. \(CLIOutboxUsage.flush)"
+    )
+    try expectOutboxParseError(["confirm"], description: CLIOutboxUsage.confirm)
+    try expectOutboxParseError(["confirm", "mutation-1", "extra"], description: CLIOutboxUsage.confirm)
+    try expectOutboxParseError(["fail"], description: CLIOutboxUsage.fail)
+    try expectOutboxParseError(["fail", "mutation-1", "  "], description: CLIOutboxUsage.fail)
+    try expectOutboxParseError(["retry"], description: CLIOutboxUsage.retry)
+    try expectOutboxParseError(["retry", "mutation-1", "extra"], description: CLIOutboxUsage.retry)
+    try expectOutboxParseError(["drain"], description: CLIOutboxUsage.drain)
+    try expectOutboxParseError(["drain", "--limit", "1"], description: CLIOutboxUsage.drain)
+    try expectOutboxParseError(
+      ["drain", "--local-confirm", "--limit", "oops"],
+      description: CLIOutboxUsage.drain
+    )
+    try expectOutboxParseError(
+      ["drain", "--unknown"],
+      description: "Unknown outbox drain option: --unknown. \(CLIOutboxUsage.drain)"
     )
   }
 
@@ -1224,6 +1330,13 @@ private func parseCache(_ arguments: [String]) throws -> CLICacheInvocation {
   return invocation
 }
 
+private func parseOutbox(_ arguments: [String]) throws -> CLIOutboxInvocation {
+  var input = arguments[...]
+  let invocation = try CLIOutboxParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseRooms(_ arguments: [String]) throws -> CLIRoomsInvocation {
   var input = arguments[...]
   let invocation = try CLIRoomsParser().parse(&input)
@@ -1338,6 +1451,19 @@ private func expectCacheParseError(
     _ = try parseCache(arguments)
     Issue.record("Expected cache parser to reject \(arguments).")
   } catch let error as CLICacheArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectOutboxParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseOutbox(arguments)
+    Issue.record("Expected outbox parser to reject \(arguments).")
+  } catch let error as CLIOutboxArgumentError {
     expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }

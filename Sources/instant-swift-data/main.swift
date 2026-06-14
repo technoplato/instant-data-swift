@@ -1718,22 +1718,21 @@ struct InstantSwiftDataCLI {
   }
 
   private static func runOutbox(arguments: [String], output: OutputMode) async throws {
-    var arguments = arguments
-    guard let command = arguments.popFirstArgument() else {
-      throw CLIError(outboxUsage, exitCode: 64)
+    let invocation: CLIOutboxInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLIOutboxParser().parse(&input)
+    } catch let error as CLIOutboxArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
 
     let context = try await CLIContext.bootstrap()
 
-    switch command {
-    case "inspect":
-      guard arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data outbox inspect [--json|--jsonl]", exitCode: 64)
-      }
+    switch invocation {
+    case .inspect:
       try await printOutbox(context: context, output: output)
 
-    case "transport", "wire", "tx-steps":
-      let includeFailed = try parseOutboxTransportOptions(arguments: arguments)
+    case let .transport(includeFailed):
       let mutations = await context.runtime.outboxTransportMutations(includeFailed: includeFailed)
       try printOutboxTransport(
         context: context,
@@ -1742,15 +1741,11 @@ struct InstantSwiftDataCLI {
         mutations: mutations
       )
 
-    case "flush", "send":
-      let limit = try parseOutboxFlushLimit(arguments: arguments)
+    case let .flush(limit):
       let result = try await context.runtime.flushPendingMutations(limit: limit)
       try await printOutboxFlush(context: context, output: output, result: result)
 
-    case "confirm":
-      guard let mutationID = arguments.popFirstArgument(), arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data outbox confirm <mutation-id> [--json|--jsonl]", exitCode: 64)
-      }
+    case let .confirm(mutationID):
       let mutation = try await context.runtime.confirmMutation(id: mutationID)
       try await printOutboxUpdate(
         context: context,
@@ -1759,20 +1754,7 @@ struct InstantSwiftDataCLI {
         mutation: mutation
       )
 
-    case "fail":
-      guard let mutationID = arguments.popFirstArgument() else {
-        throw CLIError(
-          "Usage: instant-swift-data outbox fail <mutation-id> \"reason\" [--json|--jsonl]",
-          exitCode: 64
-        )
-      }
-      let message = arguments.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !message.isEmpty else {
-        throw CLIError(
-          "Usage: instant-swift-data outbox fail <mutation-id> \"reason\" [--json|--jsonl]",
-          exitCode: 64
-        )
-      }
+    case let .fail(mutationID, message):
       let mutation = try await context.runtime.failMutation(id: mutationID, message: message)
       try await printOutboxUpdate(
         context: context,
@@ -1781,10 +1763,7 @@ struct InstantSwiftDataCLI {
         mutation: mutation
       )
 
-    case "retry":
-      guard let mutationID = arguments.popFirstArgument(), arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data outbox retry <mutation-id> [--json|--jsonl]", exitCode: 64)
-      }
+    case let .retry(mutationID):
       let mutation = try await context.runtime.retryMutation(id: mutationID)
       try await printOutboxUpdate(
         context: context,
@@ -1793,8 +1772,7 @@ struct InstantSwiftDataCLI {
         mutation: mutation
       )
 
-    case "drain":
-      let limit = try parseOutboxDrainLimit(arguments: arguments)
+    case let .drain(limit):
       let mutations = try await context.runtime.drainPendingMutationsLocally(limit: limit)
       try await printOutboxDrain(
         context: context,
@@ -1802,9 +1780,6 @@ struct InstantSwiftDataCLI {
         event: "drain-local-confirm",
         mutations: mutations
       )
-
-    default:
-      throw CLIError(outboxUsage, exitCode: 64)
     }
   }
 
@@ -5960,104 +5935,7 @@ struct InstantSwiftDataCLI {
   }
 
   private static var outboxUsage: String {
-    """
-    Usage: instant-swift-data outbox <inspect|transport|flush|confirm|fail|retry|drain>
-      instant-swift-data outbox inspect [--json|--jsonl]
-      instant-swift-data outbox transport [--all] [--json|--jsonl]
-      instant-swift-data outbox flush [--limit n] [--json|--jsonl]
-      instant-swift-data outbox confirm <mutation-id> [--json|--jsonl]
-      instant-swift-data outbox fail <mutation-id> "reason" [--json|--jsonl]
-      instant-swift-data outbox retry <mutation-id> [--json|--jsonl]
-      instant-swift-data outbox drain --local-confirm [--limit n] [--json|--jsonl]
-    """
-  }
-
-  private static func parseOutboxTransportOptions(arguments: [String]) throws -> Bool {
-    var arguments = arguments
-    var includeFailed = false
-
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--all":
-        includeFailed = true
-
-      default:
-        throw CLIError(
-          "Usage: instant-swift-data outbox transport [--all] [--json|--jsonl]",
-          exitCode: 64
-        )
-      }
-    }
-
-    return includeFailed
-  }
-
-  private static func parseOutboxFlushLimit(arguments: [String]) throws -> Int? {
-    var arguments = arguments
-    var limit: Int?
-
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--limit":
-        guard let value = arguments.popFirstArgument(),
-          let parsed = Int(value),
-          parsed >= 0
-        else {
-          throw CLIError(
-            "Usage: instant-swift-data outbox flush [--limit n] [--json|--jsonl]",
-            exitCode: 64
-          )
-        }
-        limit = parsed
-
-      default:
-        throw CLIError(
-          "Unknown outbox flush option: \(option). Usage: instant-swift-data outbox flush [--limit n] [--json|--jsonl]",
-          exitCode: 64
-        )
-      }
-    }
-
-    return limit
-  }
-
-  private static func parseOutboxDrainLimit(arguments: [String]) throws -> Int? {
-    var arguments = arguments
-    var sawLocalConfirm = false
-    var limit: Int?
-
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--local-confirm":
-        sawLocalConfirm = true
-
-      case "--limit":
-        guard let value = arguments.popFirstArgument(),
-          let parsed = Int(value),
-          parsed >= 0
-        else {
-          throw CLIError(
-            "Usage: instant-swift-data outbox drain --local-confirm [--limit n] [--json|--jsonl]",
-            exitCode: 64
-          )
-        }
-        limit = parsed
-
-      default:
-        throw CLIError(
-          "Unknown outbox drain option: \(option). Usage: instant-swift-data outbox drain --local-confirm [--limit n] [--json|--jsonl]",
-          exitCode: 64
-        )
-      }
-    }
-
-    guard sawLocalConfirm else {
-      throw CLIError(
-        "Usage: instant-swift-data outbox drain --local-confirm [--limit n] [--json|--jsonl]",
-        exitCode: 64
-      )
-    }
-    return limit
+    CLIOutboxUsage.outbox
   }
 
   private static var authUsage: String {
