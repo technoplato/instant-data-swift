@@ -11,6 +11,7 @@ rm -f \
   "${RESULTS_DIR}/swift-local.jsonl" \
   "${RESULTS_DIR}/swift-local-integrations.jsonl" \
   "${RESULTS_DIR}/swift-typed-drafts.jsonl" \
+  "${RESULTS_DIR}/swift-platform-adapters.jsonl" \
   "${RESULTS_DIR}/swift-parity-report.jsonl" \
   "${RESULTS_DIR}/swift-benchmark.jsonl" \
   "${RESULTS_DIR}/typescript-fixtures.jsonl"
@@ -186,6 +187,25 @@ else
     "complete" \
     false \
     "$(printf '{"resultsDir":%s,"failed":"swift-typed-drafts","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+  exit "${status}"
+fi
+
+log_json "swift-platform-adapters-start" true
+if (
+  cd "${ROOT}"
+  INSTANT_APP_ID="${VALIDATION_APP_ID}" swift run instant-swift-data validation platform-adapters --jsonl
+) | tee "${RESULTS_DIR}/swift-platform-adapters.jsonl"; then
+  log_json "swift-platform-adapters-complete" true "$(json_object "path" "${RESULTS_DIR}/swift-platform-adapters.jsonl")"
+else
+  status=$?
+  log_json \
+    "swift-platform-adapters-failed" \
+    false \
+    "$(json_failure_details "${RESULTS_DIR}/swift-platform-adapters.jsonl" "${status}")"
+  log_json \
+    "complete" \
+    false \
+    "$(printf '{"resultsDir":%s,"failed":"swift-platform-adapters","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
   exit "${status}"
 fi
 

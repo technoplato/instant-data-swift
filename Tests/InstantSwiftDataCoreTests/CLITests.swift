@@ -708,11 +708,11 @@ extension InstantStoreTests {
     )
     try expectMalformed(
       ["validation", "remote", "--json"],
-      contains: "validation <local-todos|local-integrations|typed-drafts|parity-report>"
+      contains: "validation <local-todos|local-integrations|typed-drafts|platform-adapters|parity-report>"
     )
     try expectMalformed(
       ["validation", "todos", "extra", "--json"],
-      contains: "validation <local-todos|local-integrations|typed-drafts|parity-report>"
+      contains: "validation <local-todos|local-integrations|typed-drafts|platform-adapters|parity-report>"
     )
 
     expectNoDifference(
@@ -4660,7 +4660,9 @@ extension InstantStoreTests {
     let malformed = try runCLIResult(["validation", "remote", "--json"], homeURL: homeURL)
     #expect(malformed.status == 64)
     #expect(
-      malformed.error.contains("validation <local-todos|local-integrations|typed-drafts|parity-report>")
+      malformed.error.contains(
+        "validation <local-todos|local-integrations|typed-drafts|platform-adapters|parity-report>"
+      )
     )
   }
 
@@ -4813,6 +4815,88 @@ extension InstantStoreTests {
     #expect(humanOutput.contains("validation: ok"))
     #expect(humanOutput.contains("case: validation.typed.drafts"))
     #expect(humanOutput.contains("evidence rows: 3"))
+  }
+
+  @Test
+  func cliValidationPlatformAdaptersEmitsEvidence() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let jsonOutput = try JSONDecoder().decode(
+      CLIPlatformAdapterValidationOutput.self,
+      from: Data(
+        try runCLI(["validation", "platform-adapters", "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(jsonOutput.appID, "cli-cache-test")
+    expectNoDifference(jsonOutput.event, "platform-adapters")
+    expectNoDifference(jsonOutput.ok, true)
+    expectNoDifference(jsonOutput.evidenceCount, 10)
+    expectNoDifference(jsonOutput.events, [
+      "fetch-all",
+      "fetch-one",
+      "fetch",
+      "local-id",
+      "auth-session",
+      "room-presence",
+      "room-topic-messages",
+      "stored-files",
+      "stream-chunks",
+      "shares",
+    ])
+    expectNoDifference(jsonOutput.adapters, [
+      "@FetchAll",
+      "@FetchOne",
+      "@Fetch",
+      "@LocalID",
+      "@AuthSession",
+      "@RoomPresence",
+      "@RoomTopicMessages",
+      "@StoredFiles",
+      "@StreamChunks",
+      "@Shares",
+    ])
+    expectNoDifference(jsonOutput.todoCount, 1)
+    expectNoDifference(jsonOutput.authUserID, "adapter-user")
+    expectNoDifference(jsonOutput.roomMemberCount, 1)
+    expectNoDifference(jsonOutput.topicMessageCount, 1)
+    expectNoDifference(jsonOutput.fileCount, 1)
+    expectNoDifference(jsonOutput.streamChunkCount, 1)
+    expectNoDifference(jsonOutput.shareCount, 1)
+    #expect(jsonOutput.selectedTodoID != nil)
+    #expect(jsonOutput.localID != nil)
+
+    let jsonlOutput = try runCLI(["validation", "wrappers", "--jsonl"], homeURL: homeURL)
+    let lines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(lines.count, 10)
+    let fetchEvidence = try JSONDecoder().decode(
+      CLIPlatformAdapterValidationEvidence.self,
+      from: Data(try #require(lines.first).utf8)
+    )
+    expectNoDifference(fetchEvidence.caseID, "validation.platform.adapters")
+    expectNoDifference(fetchEvidence.appID, "cli-cache-test")
+    expectNoDifference(fetchEvidence.event, "fetch-all")
+    expectNoDifference(fetchEvidence.details.adapter, "@FetchAll")
+    expectNoDifference(fetchEvidence.details.todoTitles, ["Bind public adapter wrappers"])
+    expectNoDifference(fetchEvidence.details.todoCount, 1)
+
+    let shareEvidence = try JSONDecoder().decode(
+      CLIPlatformAdapterValidationEvidence.self,
+      from: Data(try #require(lines.last).utf8)
+    )
+    expectNoDifference(shareEvidence.event, "shares")
+    expectNoDifference(shareEvidence.details.adapter, "@Shares")
+    expectNoDifference(shareEvidence.details.authUserID, "adapter-user")
+    expectNoDifference(shareEvidence.details.shareIDs.count, 1)
+
+    let humanOutput = try runCLI(["validation", "adapters"], homeURL: homeURL)
+    #expect(humanOutput.contains("validation: ok"))
+    #expect(humanOutput.contains("case: validation.platform.adapters"))
+    #expect(humanOutput.contains("evidence rows: 10"))
+    #expect(humanOutput.contains("@FetchAll"))
+    #expect(humanOutput.contains("@Shares"))
   }
 
   @Test
@@ -6027,6 +6111,52 @@ private struct CLIDraftValidationDetails: Decodable {
   var pendingMutationIDs: [String]
   var createdID: String?
   var editedID: String?
+}
+
+private struct CLIPlatformAdapterValidationOutput: Decodable {
+  var appID: String
+  var event: String
+  var ok: Bool
+  var evidenceCount: Int
+  var events: [String]
+  var adapters: [String]
+  var todoCount: Int
+  var selectedTodoID: String?
+  var localID: String?
+  var authUserID: String?
+  var roomMemberCount: Int
+  var topicMessageCount: Int
+  var fileCount: Int
+  var streamChunkCount: Int
+  var shareCount: Int
+}
+
+private struct CLIPlatformAdapterValidationEvidence: Decodable {
+  var caseID: String
+  var appID: String
+  var event: String
+  var details: CLIPlatformAdapterValidationDetails
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case appID
+    case event
+    case details
+  }
+}
+
+private struct CLIPlatformAdapterValidationDetails: Decodable {
+  var adapter: String
+  var todoTitles: [String]
+  var todoCount: Int
+  var selectedTodoID: String?
+  var localID: String?
+  var authUserID: String?
+  var roomMemberIDs: [String]
+  var topicMessageIDs: [String]
+  var fileIDs: [String]
+  var streamChunkIDs: [String]
+  var shareIDs: [String]
 }
 
 private struct CLIParityCoverageOutput: Decodable {

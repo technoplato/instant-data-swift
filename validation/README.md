@@ -22,11 +22,12 @@ prove this library.
 ## Local Swift Evidence
 
 The Swift runners currently emit local-only evidence for the durable todo
-workflow, local integration surfaces, generated typed drafts, and parity
-coverage provenance. They prove the Swift core can seed, update, cache, reset,
-relaunch, authenticate, publish room presence/topics, upload/read file contents,
-append stream chunks, create/accept/revoke shares, create and edit generated
-drafts, and report upstream Instant/SQLiteData parity records without SwiftUI.
+workflow, local integration surfaces, generated typed drafts, public adapter
+wrappers, and parity coverage provenance. They prove the Swift core can seed,
+update, cache, reset, relaunch, authenticate, publish room presence/topics,
+upload/read file contents, append stream chunks, create/accept/revoke shares,
+create and edit generated drafts, bind public wrapper adapters, and report
+upstream Instant/SQLiteData parity records without SwiftUI.
 The standalone runner goes through
 `InstantSwiftDataTesting.InstantSwiftDataTestHarness` where practical, so the
 same evidence helpers are available to package tests and terminal validation:
@@ -35,6 +36,7 @@ same evidence helpers are available to package tests and terminal validation:
 swift run instant-swift-data validation local-todos --jsonl
 swift run instant-swift-data validation local-integrations --jsonl
 swift run instant-swift-data validation typed-drafts --jsonl
+swift run instant-swift-data validation platform-adapters --jsonl
 swift run instant-swift-data validation parity-report --jsonl
 swift run instant-swift-data-validation-runner --local-todos
 swift run instant-swift-data-validation-runner --local-integrations
@@ -58,8 +60,9 @@ The fixture rows include exact expected/actual evidence for entities, fields,
 field modifiers, links, room presence/topic shapes, permission namespaces, and
 allowed operations. `validation/run-e2e.sh` records all Swift local validation
 streams (`swift-local.jsonl`, `swift-local-integrations.jsonl`,
-`swift-typed-drafts.jsonl`, and `swift-parity-report.jsonl`), records the local
-benchmark evidence, and then runs this fixture check when Node is available. Set
+`swift-typed-drafts.jsonl`, `swift-platform-adapters.jsonl`, and
+`swift-parity-report.jsonl`), records the local benchmark evidence, and then
+runs this fixture check when Node is available. Set
 `INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR` to direct artifacts to a specific
 directory, and
 `INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS` to adjust the benchmark

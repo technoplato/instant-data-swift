@@ -231,6 +231,24 @@ struct InstantSwiftDataCLI {
         output: output
       )
 
+    case .platformAdapters:
+      let appID = validationAppID()
+      do {
+        let result = try await InstantSwiftDataPlatformAdapterValidation.run(appID: appID)
+        try printPlatformAdapterValidation(result: result, output: output)
+      } catch {
+        if output == .jsonl {
+          try writeJSONLine(
+            validationFailureRow(
+              caseID: "validation.platform.adapters",
+              appID: appID,
+              error: error
+            )
+          )
+        }
+        throw error
+      }
+
     case .typedDrafts:
       let appID = validationAppID()
       do {
@@ -4302,6 +4320,7 @@ struct InstantSwiftDataCLI {
         validation local-todos [--json|--jsonl]
         validation local-integrations [--json|--jsonl]
         validation typed-drafts [--json|--jsonl]
+        validation platform-adapters [--json|--jsonl]
         validation parity-report [--json|--jsonl]
         benchmark [--suite local-todos] [--iterations n] [--app-id id] [--json|--jsonl]
 
@@ -4764,6 +4783,56 @@ struct InstantSwiftDataCLI {
       print("draft attributes: \(summary.draftTodoAttributeIDs.joined(separator: ", "))")
       print("draft todo ids: \(summary.draftTodoIDs.joined(separator: ", "))")
       print("pending mutations: \(summary.pendingMutationCount)")
+      print("cache: \(summary.cachePath)")
+
+    case .json:
+      try writeJSON(summary)
+
+    case .jsonl:
+      for row in result.evidence {
+        try writeJSONLine(row)
+      }
+    }
+  }
+
+  private static func printPlatformAdapterValidation(
+    result: PlatformAdapterValidationResult,
+    output: OutputMode
+  ) throws {
+    let summary = PlatformAdapterValidationOutput(
+      appID: result.appID,
+      cachePath: result.cacheURL.path,
+      event: "platform-adapters",
+      transport: "not-implemented-local-cache-only",
+      ok: result.evidence.allSatisfy { $0.ok },
+      evidenceCount: result.evidence.count,
+      events: result.evidence.map(\.event),
+      adapters: result.evidence.map(\.details.adapter),
+      todoCount: result.evidence.map(\.details.todoCount).max() ?? 0,
+      selectedTodoID: result.evidence.compactMap(\.details.selectedTodoID).first,
+      localID: result.evidence.compactMap(\.details.localID).first,
+      authUserID: result.evidence.compactMap(\.details.authUserID).last,
+      roomMemberCount: Set(result.evidence.flatMap(\.details.roomMemberIDs)).count,
+      topicMessageCount: Set(result.evidence.flatMap(\.details.topicMessageIDs)).count,
+      fileCount: Set(result.evidence.flatMap(\.details.fileIDs)).count,
+      streamChunkCount: Set(result.evidence.flatMap(\.details.streamChunkIDs)).count,
+      shareCount: Set(result.evidence.flatMap(\.details.shareIDs)).count
+    )
+
+    switch output {
+    case .human:
+      print("validation: \(summary.ok ? "ok" : "failed")")
+      print("case: validation.platform.adapters")
+      print("events: \(summary.events.joined(separator: ", "))")
+      print("adapters: \(summary.adapters.joined(separator: ", "))")
+      print("evidence rows: \(summary.evidenceCount)")
+      print("todos: \(summary.todoCount)")
+      print("auth user: \(summary.authUserID ?? "none")")
+      print("room members: \(summary.roomMemberCount)")
+      print("topic messages: \(summary.topicMessageCount)")
+      print("files: \(summary.fileCount)")
+      print("stream chunks: \(summary.streamChunkCount)")
+      print("shares: \(summary.shareCount)")
       print("cache: \(summary.cachePath)")
 
     case .json:
@@ -6364,6 +6433,26 @@ private struct DraftValidationOutput: Codable, Sendable {
   var pendingMutationCount: Int
   var createdID: String?
   var editedID: String?
+}
+
+private struct PlatformAdapterValidationOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var transport: String
+  var ok: Bool
+  var evidenceCount: Int
+  var events: [String]
+  var adapters: [String]
+  var todoCount: Int
+  var selectedTodoID: String?
+  var localID: String?
+  var authUserID: String?
+  var roomMemberCount: Int
+  var topicMessageCount: Int
+  var fileCount: Int
+  var streamChunkCount: Int
+  var shareCount: Int
 }
 
 private struct ScaffoldOutput: Codable, Sendable {

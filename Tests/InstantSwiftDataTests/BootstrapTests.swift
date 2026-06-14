@@ -278,6 +278,81 @@ struct BootstrapTests {
   }
 
   @Test
+  func platformAdapterValidationProvesWrappersBindLocalRuntime() async throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "InstantSwiftDataPlatformAdapterValidation-\(UUID().uuidString)",
+        isDirectory: true
+      )
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let result = try await InstantSwiftDataPlatformAdapterValidation.run(
+      appID: "platform-adapter-validation-test",
+      cacheURL: directory.appendingPathComponent("state.sqlite"),
+      timestamp: { InstantTimestamp(milliseconds: 1_700_002_000_000) },
+      makeID: { "platform-adapter-validation-id" }
+    )
+
+    expectNoDifference(result.appID, "platform-adapter-validation-test")
+    expectNoDifference(result.evidence.map(\.event), [
+      "fetch-all",
+      "fetch-one",
+      "fetch",
+      "local-id",
+      "auth-session",
+      "room-presence",
+      "room-topic-messages",
+      "stored-files",
+      "stream-chunks",
+      "shares",
+    ])
+    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 10))
+    expectNoDifference(result.evidence.map(\.appID), Array(repeating: result.appID, count: 10))
+    expectNoDifference(result.evidence.map(\.details.adapter), [
+      "@FetchAll",
+      "@FetchOne",
+      "@Fetch",
+      "@LocalID",
+      "@AuthSession",
+      "@RoomPresence",
+      "@RoomTopicMessages",
+      "@StoredFiles",
+      "@StreamChunks",
+      "@Shares",
+    ])
+
+    let fetchAll = try #require(result.evidence.first?.details)
+    expectNoDifference(fetchAll.todoTitles, ["Bind public adapter wrappers"])
+    expectNoDifference(fetchAll.todoCount, 1)
+
+    let fetchOne = try #require(result.evidence.first { $0.event == "fetch-one" }?.details)
+    expectNoDifference(fetchOne.selectedTodoID, "platform-adapter-validation-id")
+    expectNoDifference(fetchOne.selectedTodoTitle, "Bind public adapter wrappers")
+
+    let localID = try #require(result.evidence.first { $0.event == "local-id" }?.details)
+    expectNoDifference(localID.localID, "platform-adapter-validation-id")
+
+    let authSession = try #require(result.evidence.first { $0.event == "auth-session" }?.details)
+    expectNoDifference(authSession.authUserID, "adapter-user")
+
+    let presence = try #require(result.evidence.first { $0.event == "room-presence" }?.details)
+    expectNoDifference(presence.roomMemberIDs, ["adapter-user"])
+
+    let topic = try #require(result.evidence.first { $0.event == "room-topic-messages" }?.details)
+    expectNoDifference(topic.topicMessageIDs, ["platform-adapter-validation-id"])
+
+    let file = try #require(result.evidence.first { $0.event == "stored-files" }?.details)
+    expectNoDifference(file.fileIDs, ["platform-adapter-validation-id"])
+
+    let stream = try #require(result.evidence.first { $0.event == "stream-chunks" }?.details)
+    expectNoDifference(stream.streamChunkIDs, ["platform-adapter-validation-id"])
+
+    let shares = try #require(result.evidence.first { $0.event == "shares" }?.details)
+    expectNoDifference(shares.shareIDs, ["platform-adapter-validation-id"])
+  }
+
+  @Test
   func bootstrapUsesMagicCodeExchangeDependency() async throws {
     let appID = "magic-code-dependency-\(UUID().uuidString)"
     let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)

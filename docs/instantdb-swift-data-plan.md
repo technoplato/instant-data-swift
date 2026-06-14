@@ -347,11 +347,13 @@ instant.schema.ts --json` and `instant-swift-data perms generate --example todos
 --to instant.perms.ts --jsonl`. Local validation can emit JSONL evidence for
 todos/offline behavior with `instant-swift-data validation local-todos --jsonl`
 and for auth, rooms, files, streams, and shares with
-`instant-swift-data validation local-integrations --jsonl`.
+`instant-swift-data validation local-integrations --jsonl`. Public adapter
+wrappers can be proven from the terminal with
+`instant-swift-data validation platform-adapters --jsonl`.
 `validation/run-e2e.sh` now records the Swift local todo, local integration,
-typed draft, and parity coverage evidence streams, then the Swift benchmark
-evidence and TypeScript fixture check. Real remote push/pull remains future
-transport work.
+typed draft, platform adapter, and parity coverage evidence streams, then the
+Swift benchmark evidence and TypeScript fixture check. Real remote push/pull
+remains future transport work.
 
 Current local progress: the CLI exposes non-captive local admin helpers:
 `instant-swift-data admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id]`
