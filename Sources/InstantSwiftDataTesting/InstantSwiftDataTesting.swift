@@ -210,7 +210,7 @@ public enum InstantSwiftDataTestHarness {
   }
 
   public static func runSyncUpsRecordingValidation(
-    appID: String = "local-validation",
+    appID: String = "syncups-recording-validation",
     cacheURL: URL? = nil,
     timestamp: @escaping @Sendable () -> InstantTimestamp = {
       InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))

@@ -393,15 +393,7 @@ struct LocalTodoValidationTests {
     expectNoDifference(run.summary.caseID, "validation.syncups.recording")
     expectNoDifference(run.summary.rowCount, 7)
     expectNoDifference(run.summary.ok, true)
-    expectNoDifference(run.summary.events, [
-      "seed",
-      "speech-task",
-      "speaker-advance",
-      "finish",
-      "meeting-save",
-      "settings-open",
-      "relaunch",
-    ])
+    expectNoDifference(run.summary.events, syncUpsRecordingValidationEvents)
     expectNoDifference(result.evidence.map(\.event), run.summary.events)
     expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 7))
 
@@ -419,6 +411,59 @@ struct LocalTodoValidationTests {
     let relaunch = result.evidence[6].details
     expectNoDifference(relaunch.meetingTranscripts, ["Reviewed launch risks. Final notes."])
     expectNoDifference(relaunch.recording?.meetingID, result.meetingID)
+  }
+
+  @Test
+  func validationRunnerSyncUpsRecordingCommandEmitsJSONL() throws {
+    let result = try runValidationRunner(arguments: ["--syncups-recording"])
+
+    #expect(
+      result.status == 0,
+      """
+      instant-swift-data-validation-runner --syncups-recording failed.
+      stdout:
+      \(result.stdout)
+      stderr:
+      \(result.stderr)
+      """
+    )
+
+    let rows = try parseJSONLines(result.stdout)
+    expectNoDifference(rows.map { $0["case"] as? String ?? "" }, Array(
+      repeating: "validation.syncups.recording",
+      count: 7
+    ))
+    expectNoDifference(rows.map { $0["appID"] as? String ?? "" }, Array(
+      repeating: "syncups-recording-validation",
+      count: 7
+    ))
+    expectNoDifference(rows.map { $0["event"] as? String ?? "" }, syncUpsRecordingValidationEvents)
+    expectNoDifference(rows.map { $0["ok"] as? Bool ?? false }, Array(repeating: true, count: 7))
+
+    let meetingSave = try #require(rows[4]["details"] as? [String: Any])
+    expectNoDifference(meetingSave["meetingTranscripts"] as? [String], [
+      "Reviewed launch risks. Final notes."
+    ])
+    let settings = try #require(rows[5]["details"] as? [String: Any])
+    expectNoDifference((settings["openSettingsCount"] as? NSNumber)?.intValue, 1)
+  }
+
+  @Test
+  func validationRunnerSyncUpsRecordingFailureEmitsMappedJSONL() throws {
+    let result = try runValidationRunner(
+      arguments: ["--syncups-recording"],
+      environment: [
+        "INSTANT_SWIFT_DATA_VALIDATION_RUNNER_FAIL_CASE": "validation.syncups.recording"
+      ]
+    )
+
+    #expect(result.status == 1)
+    let rows = try parseJSONLines(result.stdout)
+    let row = try #require(rows.first)
+    expectNoDifference(row["case"] as? String, "validation.syncups.recording")
+    expectNoDifference(row["appID"] as? String, "syncups-recording-validation")
+    expectNoDifference(row["event"] as? String, "failed")
+    expectNoDifference(row["ok"] as? Bool, false)
   }
 
   @Test
@@ -461,6 +506,8 @@ struct LocalTodoValidationTests {
     #expect(runnerSource.contains("runDraftValidation()"))
     #expect(runnerSource.contains("--platform-adapters"))
     #expect(runnerSource.contains("runPlatformAdapterValidation()"))
+    #expect(runnerSource.contains("--syncups-recording"))
+    #expect(runnerSource.contains("runSyncUpsRecordingValidation()"))
 
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/bin/bash")
@@ -1092,6 +1139,16 @@ private let platformAdapterValidationAdapters = [
   "@StoredFiles",
   "@StreamChunks",
   "@Shares",
+]
+
+private let syncUpsRecordingValidationEvents = [
+  "seed",
+  "speech-task",
+  "speaker-advance",
+  "finish",
+  "meeting-save",
+  "settings-open",
+  "relaunch",
 ]
 
 private func temporaryCacheURL() -> URL {

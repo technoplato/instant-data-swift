@@ -36,6 +36,8 @@ struct InstantSwiftDataValidationRunner {
       "validation.typed.drafts"
     case ["--platform-adapters"]:
       "validation.platform.adapters"
+    case ["--syncups-recording"]:
+      "validation.syncups.recording"
     case [], ["--local-todos"]:
       "validation.local.todos"
     default:
@@ -49,6 +51,8 @@ struct InstantSwiftDataValidationRunner {
       "draft-validation"
     case "validation.platform.adapters":
       "platform-adapter-validation"
+    case "validation.syncups.recording":
+      "syncups-recording-validation"
     default:
       "local-validation"
     }
@@ -61,12 +65,13 @@ struct InstantSwiftDataValidationRunner {
       || arguments == ["--local-integrations"]
       || arguments == ["--typed-drafts"]
       || arguments == ["--platform-adapters"]
+      || arguments == ["--syncups-recording"]
     else {
       throw ValidationFailure(
         caseID: "validation.arguments",
         appID: "local-validation",
         message:
-          "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--typed-drafts|--platform-adapters]"
+          "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--typed-drafts|--platform-adapters|--syncups-recording]"
       )
     }
 
@@ -88,6 +93,11 @@ struct InstantSwiftDataValidationRunner {
       }
     } else if arguments == ["--platform-adapters"] {
       let run = try await InstantSwiftDataTestHarness.runPlatformAdapterValidation()
+      for row in run.result.evidence {
+        try writeJSONLine(row)
+      }
+    } else if arguments == ["--syncups-recording"] {
+      let run = try await InstantSwiftDataTestHarness.runSyncUpsRecordingValidation()
       for row in run.result.evidence {
         try writeJSONLine(row)
       }
