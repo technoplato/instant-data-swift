@@ -299,8 +299,8 @@ create/accept/revoke. `validation typed-drafts` emits terminal evidence for a
 macro-generated nil-id draft create, `Draft(existing)` edit, and relaunch
 persistence through `InstantSwiftDataClient.save(_:)`. `validation parity-report`
 emits machine-readable upstream Instant/SQLiteData source provenance for exact,
-adapted, and blocked parity records. `validation/run-e2e.sh` also records a
-one-iteration
+adapted, and blocked parity records. `validation/run-e2e.sh` records those
+Swift validation streams and also writes a one-iteration
 `local-todos` benchmark JSONL artifact by default; set
 `INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS` to change that count.
 

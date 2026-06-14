@@ -348,9 +348,10 @@ instant.schema.ts --json` and `instant-swift-data perms generate --example todos
 todos/offline behavior with `instant-swift-data validation local-todos --jsonl`
 and for auth, rooms, files, streams, and shares with
 `instant-swift-data validation local-integrations --jsonl`.
-`validation/run-e2e.sh` now records both Swift local evidence streams, then the
-Swift benchmark evidence and TypeScript fixture check. Real remote push/pull
-remains future transport work.
+`validation/run-e2e.sh` now records the Swift local todo, local integration,
+typed draft, and parity coverage evidence streams, then the Swift benchmark
+evidence and TypeScript fixture check. Real remote push/pull remains future
+transport work.
 
 Current local progress: the CLI exposes non-captive local admin helpers:
 `instant-swift-data admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id]`
@@ -797,8 +798,8 @@ samples carry resident-memory high-water growth and budget fields, 1k/10k/50k
 triple workload samples carry explicit memory budgets, and local
 transact/query/cache/relaunch/outbox-flush samples carry actor-hop breakdowns.
 Swift/TypeScript comparison and live transport actor-hop counts remain future
-benchmark work. `validation/run-e2e.sh` records a one-iteration
-`local-todos` benchmark artifact by default, with
+benchmark work. `validation/run-e2e.sh` records the local Swift validation
+streams and a one-iteration `local-todos` benchmark artifact by default, with
 `INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS` available for longer local
 validation runs.
 

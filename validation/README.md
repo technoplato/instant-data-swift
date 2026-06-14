@@ -11,7 +11,9 @@ prove this library.
 - `fixtures/schema.swift`: Swift source-of-truth schema declaration.
 - `fixtures/instant.schema.ts`: expected generated TypeScript schema.
 - `fixtures/instant.perms.ts`: expected generated TypeScript permissions.
-- `instant-swift-data-validation-runner`: Swift executable built by the package.
+- `instant-swift-data`: Swift CLI validation commands built by the package.
+- `instant-swift-data-validation-runner`: legacy Swift validation executable
+  built by the package.
 - `ts-runner`: TypeScript executable using `@instantdb/core` and
   `@instantdb/admin`.
 - `run-e2e.sh`: orchestration entry point.
@@ -19,18 +21,20 @@ prove this library.
 
 ## Local Swift Evidence
 
-The Swift runner currently emits local-only evidence for the durable todo
-workflow and the local integration surfaces. It proves the Swift core can seed,
-update, cache, reset, relaunch, authenticate, publish room presence/topics,
-upload/read file contents, append stream chunks, and create/accept/revoke shares
-against the same SQLite state without SwiftUI. The standalone runner goes
-through `InstantSwiftDataTesting.InstantSwiftDataTestHarness` where practical,
-so the same evidence helpers are available to package tests and terminal
-validation:
+The Swift runners currently emit local-only evidence for the durable todo
+workflow, local integration surfaces, generated typed drafts, and parity
+coverage provenance. They prove the Swift core can seed, update, cache, reset,
+relaunch, authenticate, publish room presence/topics, upload/read file contents,
+append stream chunks, create/accept/revoke shares, create and edit generated
+drafts, and report upstream Instant/SQLiteData parity records without SwiftUI.
+The standalone runner goes through
+`InstantSwiftDataTesting.InstantSwiftDataTestHarness` where practical, so the
+same evidence helpers are available to package tests and terminal validation:
 
 ```bash
 swift run instant-swift-data validation local-todos --jsonl
 swift run instant-swift-data validation local-integrations --jsonl
+swift run instant-swift-data validation typed-drafts --jsonl
 swift run instant-swift-data validation parity-report --jsonl
 swift run instant-swift-data-validation-runner --local-todos
 swift run instant-swift-data-validation-runner --local-integrations
@@ -52,13 +56,18 @@ node validation/ts-runner/src/main.ts --fixtures
 
 The fixture rows include exact expected/actual evidence for entities, fields,
 field modifiers, links, room presence/topic shapes, permission namespaces, and
-allowed operations. `validation/run-e2e.sh` runs both Swift local validations,
-records the local benchmark evidence, and then runs this fixture check when Node
-is available. Set `INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR` to direct
-artifacts to a specific directory, and
+allowed operations. `validation/run-e2e.sh` records all Swift local validation
+streams (`swift-local.jsonl`, `swift-local-integrations.jsonl`,
+`swift-typed-drafts.jsonl`, and `swift-parity-report.jsonl`), records the local
+benchmark evidence, and then runs this fixture check when Node is available. Set
+`INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR` to direct artifacts to a specific
+directory, and
 `INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS` to adjust the benchmark
-iteration count. The harness records the real Instant boundary as pending until
-ephemeral app creation, schema push, and admin query/transact are implemented.
+iteration count. The parity report command can succeed while individual blocked
+provenance rows intentionally carry `ok: false`; the orchestrator records the
+artifact command result, not an all-rows-passed summary. The harness records the
+real Instant boundary as pending until ephemeral app creation, schema push, and
+admin query/transact are implemented.
 
 ## Required Cases
 

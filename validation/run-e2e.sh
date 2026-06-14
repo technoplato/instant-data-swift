@@ -10,6 +10,8 @@ mkdir -p "${RESULTS_DIR}"
 rm -f \
   "${RESULTS_DIR}/swift-local.jsonl" \
   "${RESULTS_DIR}/swift-local-integrations.jsonl" \
+  "${RESULTS_DIR}/swift-typed-drafts.jsonl" \
+  "${RESULTS_DIR}/swift-parity-report.jsonl" \
   "${RESULTS_DIR}/swift-benchmark.jsonl" \
   "${RESULTS_DIR}/typescript-fixtures.jsonl"
 : > "${RESULTS_DIR}/orchestrator.jsonl"
@@ -104,6 +106,7 @@ for required_file in \
   "${ROOT}/validation/fixtures/instant.perms.ts" \
   "${ROOT}/validation/ts-runner/package.json" \
   "${ROOT}/Package.swift" \
+  "${ROOT}/Sources/instant-swift-data/main.swift" \
   "${ROOT}/Sources/InstantSwiftDataValidationRunner/main.swift" \
   "${ROOT}/Sources/InstantSwiftDataBenchmarks/main.swift"
 do
@@ -164,6 +167,44 @@ else
     "complete" \
     false \
     "$(printf '{"resultsDir":%s,"failed":"swift-local-integrations","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+  exit "${status}"
+fi
+
+log_json "swift-typed-drafts-start" true
+if (
+  cd "${ROOT}"
+  INSTANT_APP_ID="${VALIDATION_APP_ID}" swift run instant-swift-data validation typed-drafts --jsonl
+) | tee "${RESULTS_DIR}/swift-typed-drafts.jsonl"; then
+  log_json "swift-typed-drafts-complete" true "$(json_object "path" "${RESULTS_DIR}/swift-typed-drafts.jsonl")"
+else
+  status=$?
+  log_json \
+    "swift-typed-drafts-failed" \
+    false \
+    "$(json_failure_details "${RESULTS_DIR}/swift-typed-drafts.jsonl" "${status}")"
+  log_json \
+    "complete" \
+    false \
+    "$(printf '{"resultsDir":%s,"failed":"swift-typed-drafts","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+  exit "${status}"
+fi
+
+log_json "swift-parity-report-start" true
+if (
+  cd "${ROOT}"
+  INSTANT_APP_ID="${VALIDATION_APP_ID}" swift run instant-swift-data validation parity-report --jsonl
+) | tee "${RESULTS_DIR}/swift-parity-report.jsonl"; then
+  log_json "swift-parity-report-complete" true "$(json_object "path" "${RESULTS_DIR}/swift-parity-report.jsonl")"
+else
+  status=$?
+  log_json \
+    "swift-parity-report-failed" \
+    false \
+    "$(json_failure_details "${RESULTS_DIR}/swift-parity-report.jsonl" "${status}")"
+  log_json \
+    "complete" \
+    false \
+    "$(printf '{"resultsDir":%s,"failed":"swift-parity-report","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
   exit "${status}"
 fi
 

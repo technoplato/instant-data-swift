@@ -186,8 +186,12 @@ struct LocalTodoValidationTests {
     #expect(script.contains("INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS"))
     #expect(script.contains("swift run instant-swift-data-validation-runner --local-todos"))
     #expect(script.contains("swift run instant-swift-data-validation-runner --local-integrations"))
+    #expect(script.contains("swift run instant-swift-data validation typed-drafts --jsonl"))
+    #expect(script.contains("swift run instant-swift-data validation parity-report --jsonl"))
     #expect(script.contains("swift run instant-swift-data-benchmarks"))
     #expect(script.contains("swift-local-integrations.jsonl"))
+    #expect(script.contains("swift-typed-drafts.jsonl"))
+    #expect(script.contains("swift-parity-report.jsonl"))
     #expect(script.contains("swift-benchmark.jsonl"))
     #expect(script.contains("node validation/ts-runner/src/main.ts --fixtures"))
     #expect(script.contains("rm -f"))
@@ -221,17 +225,44 @@ struct LocalTodoValidationTests {
     try writeExecutable(
       """
       #!/bin/sh
-      case "$2:$3" in
-        instant-swift-data-validation-runner:--local-todos)
+      case "$2:$3:$4" in
+        instant-swift-data-validation-runner:--local-todos:)
           if [ "${SWIFT_STUB_FAIL_LOCAL_TODOS:-}" = "1" ]; then
             exit 42
           fi
           echo '{"case":"validation.local.todos","side":"swift","event":"stub-todos","appID":"local-validation","timestampMs":1,"ok":true,"details":{}}'
           ;;
-        instant-swift-data-validation-runner:--local-integrations)
+        instant-swift-data-validation-runner:--local-integrations:)
           echo '{"case":"validation.local.integrations","side":"swift","event":"stub-integrations","appID":"local-validation","timestampMs":2,"ok":true,"details":{}}'
           ;;
-        instant-swift-data-benchmarks:--suite)
+        instant-swift-data:validation:typed-drafts)
+          expected="run instant-swift-data validation typed-drafts --jsonl"
+          if [ "$*" != "$expected" ]; then
+            echo "unexpected typed draft arguments: $*" >&2
+            exit 65
+          fi
+          if [ "${INSTANT_APP_ID:-}" != "local-validation" ]; then
+            echo "unexpected typed draft app id: ${INSTANT_APP_ID:-}" >&2
+            exit 66
+          fi
+          if [ "${SWIFT_STUB_FAIL_TYPED_DRAFTS:-}" = "1" ]; then
+            exit 44
+          fi
+          echo '{"case":"validation.typed.drafts","side":"swift","event":"stub-drafts","appID":"local-validation","timestampMs":3,"ok":true,"details":{}}'
+          ;;
+        instant-swift-data:validation:parity-report)
+          expected="run instant-swift-data validation parity-report --jsonl"
+          if [ "$*" != "$expected" ]; then
+            echo "unexpected parity report arguments: $*" >&2
+            exit 65
+          fi
+          if [ "${INSTANT_APP_ID:-}" != "local-validation" ]; then
+            echo "unexpected parity report app id: ${INSTANT_APP_ID:-}" >&2
+            exit 66
+          fi
+          echo '{"case":"validation.parity.report","side":"swift","event":"stub-parity","appID":"local-validation","timestampMs":4,"ok":true,"details":{}}'
+          ;;
+        instant-swift-data-benchmarks:--suite:local-todos)
           expected="run instant-swift-data-benchmarks --suite local-todos --iterations ${INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS:-1} --app-id local-validation --jsonl"
           if [ "$*" != "$expected" ]; then
             echo "unexpected benchmark arguments: $*" >&2
@@ -240,7 +271,7 @@ struct LocalTodoValidationTests {
           if [ "${SWIFT_STUB_FAIL_BENCHMARK:-}" = "1" ]; then
             exit 43
           fi
-          echo '{"case":"benchmark.local.todos","side":"swift","event":"summary","appID":"local-validation","timestampMs":3,"ok":true,"details":{"suite":"local-todos","iterations":7}}'
+          echo '{"case":"benchmark.local.todos","side":"swift","event":"summary","appID":"local-validation","timestampMs":5,"ok":true,"details":{"suite":"local-todos","iterations":7}}'
           ;;
         *)
           echo "unexpected swift arguments: $*" >&2
@@ -253,7 +284,7 @@ struct LocalTodoValidationTests {
     try writeExecutable(
       """
       #!/bin/sh
-      echo '{"case":"validation.typescript.fixtures","side":"typescript","event":"fixtures","appID":"local-validation","timestampMs":3,"ok":true,"details":{}}'
+      echo '{"case":"validation.typescript.fixtures","side":"typescript","event":"fixtures","appID":"local-validation","timestampMs":6,"ok":true,"details":{}}'
       """,
       to: binURL.appendingPathComponent("node")
     )
@@ -274,6 +305,10 @@ struct LocalTodoValidationTests {
       "swift-local-complete",
       "swift-local-integrations-start",
       "swift-local-integrations-complete",
+      "swift-typed-drafts-start",
+      "swift-typed-drafts-complete",
+      "swift-parity-report-start",
+      "swift-parity-report-complete",
       "swift-benchmark-start",
       "swift-benchmark-complete",
       "typescript-fixtures-start",
@@ -292,6 +327,16 @@ struct LocalTodoValidationTests {
     )
     #expect(
       FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-typed-drafts.jsonl").path
+      )
+    )
+    #expect(
+      FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-parity-report.jsonl").path
+      )
+    )
+    #expect(
+      FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("swift-benchmark.jsonl").path
       )
     )
@@ -303,6 +348,16 @@ struct LocalTodoValidationTests {
 
     try "stale integrations\n".write(
       to: resultsURL.appendingPathComponent("swift-local-integrations.jsonl"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try "stale typed drafts\n".write(
+      to: resultsURL.appendingPathComponent("swift-typed-drafts.jsonl"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try "stale parity report\n".write(
+      to: resultsURL.appendingPathComponent("swift-parity-report.jsonl"),
       atomically: true,
       encoding: .utf8
     )
@@ -338,6 +393,65 @@ struct LocalTodoValidationTests {
     #expect(
       !FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("swift-local-integrations.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-typed-drafts.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-parity-report.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-benchmark.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-fixtures.jsonl").path
+      )
+    )
+
+    let typedDraftFailedRun = try runValidationRunE2E(
+      scriptURL: scriptURL,
+      resultsURL: resultsURL,
+      binURL: binURL,
+      extraEnvironment: ["SWIFT_STUB_FAIL_TYPED_DRAFTS": "1"]
+    )
+    #expect(typedDraftFailedRun.status == 44)
+    let typedDraftFailedRows = try readJSONLines(
+      resultsURL.appendingPathComponent("orchestrator.jsonl")
+    )
+    expectNoDifference(typedDraftFailedRows.map { $0["event"] as? String ?? "" }, [
+      "start",
+      "swift-local-start",
+      "swift-local-complete",
+      "swift-local-integrations-start",
+      "swift-local-integrations-complete",
+      "swift-typed-drafts-start",
+      "swift-typed-drafts-failed",
+      "complete",
+    ])
+    expectNoDifference(typedDraftFailedRows.last?["ok"] as? Bool, false)
+    let typedDraftFailedDetails = try #require(
+      typedDraftFailedRows.last?["details"] as? [String: Any]
+    )
+    expectNoDifference(typedDraftFailedDetails["failed"] as? String, "swift-typed-drafts")
+    expectNoDifference((typedDraftFailedDetails["exitCode"] as? NSNumber)?.intValue, 44)
+    expectNoDifference(
+      try String(
+        contentsOf: resultsURL.appendingPathComponent("swift-typed-drafts.jsonl"),
+        encoding: .utf8
+      ),
+      ""
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-parity-report.jsonl").path
       )
     )
     #expect(
@@ -381,6 +495,10 @@ struct LocalTodoValidationTests {
       "swift-local-complete",
       "swift-local-integrations-start",
       "swift-local-integrations-complete",
+      "swift-typed-drafts-start",
+      "swift-typed-drafts-complete",
+      "swift-parity-report-start",
+      "swift-parity-report-complete",
       "swift-benchmark-start",
       "swift-benchmark-failed",
       "complete",
