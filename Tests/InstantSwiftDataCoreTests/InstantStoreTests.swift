@@ -1058,6 +1058,141 @@ struct InstantStoreTests {
   }
 
   @Test
+  func transportMutationPreservesLookupEntitiesForInstamlLinkAndUnlinkParity() throws {
+    let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let userLookup = InstantLookupRef(
+      attributeID: "users/handle",
+      value: .string("bobby_newuser")
+    )
+    let linkMutation = InstantTransportMutation(
+      PendingMutation(
+        id: "tx-lookup-link-transport",
+        createdAt: txTime,
+        transaction: InstantStoreTransaction(
+          id: "tx-lookup-link-transport",
+          operations: [
+            .insertByLookup(
+              entity: userLookup,
+              attributeID: "users/id",
+              value: .lookupRef(userLookup),
+              txID: "tx-lookup-link-transport",
+              txTime: txTime
+            ),
+            .insertByLookup(
+              entity: userLookup,
+              attributeID: "users/bookshelves",
+              value: .ref("bookshelf-1"),
+              txID: "tx-lookup-link-transport",
+              txTime: txTime
+            ),
+          ]
+        )
+      )
+    )
+    let unlinkMutation = InstantTransportMutation(
+      PendingMutation(
+        id: "tx-lookup-unlink-transport",
+        createdAt: txTime,
+        transaction: InstantStoreTransaction(
+          id: "tx-lookup-unlink-transport",
+          operations: [
+            .insertByLookup(
+              entity: userLookup,
+              attributeID: "users/id",
+              value: .lookupRef(userLookup),
+              txID: "tx-lookup-unlink-transport",
+              txTime: txTime
+            ),
+            .retractByLookup(
+              entity: userLookup,
+              attributeID: "users/bookshelves",
+              value: .ref("bookshelf-1"),
+              txID: "tx-lookup-unlink-transport",
+              txTime: txTime
+            ),
+          ]
+        )
+      )
+    )
+
+    let source =
+      "upstream instaml.test.ts: lookups create entities from links and unlinks."
+    expectNoDifference(linkMutation.preconditions, [], source)
+    expectNoDifference(
+      linkMutation.txSteps,
+      [
+        .addTriple(
+          entity: .lookup(userLookup),
+          attributeID: "users/id",
+          value: .array([.string("users/handle"), .string("bobby_newuser")])
+        ),
+        .addTriple(
+          entity: .lookup(userLookup),
+          attributeID: "users/bookshelves",
+          value: .string("bookshelf-1")
+        ),
+      ],
+      source
+    )
+    expectNoDifference(unlinkMutation.preconditions, [], source)
+    expectNoDifference(
+      unlinkMutation.txSteps,
+      [
+        .addTriple(
+          entity: .lookup(userLookup),
+          attributeID: "users/id",
+          value: .array([.string("users/handle"), .string("bobby_newuser")])
+        ),
+        .retractTriple(
+          entity: .lookup(userLookup),
+          attributeID: "users/bookshelves",
+          value: .string("bookshelf-1")
+        ),
+      ],
+      source
+    )
+
+    let linkData = try JSONEncoder().encode(linkMutation)
+    let linkObject = try #require(JSONSerialization.jsonObject(with: linkData) as? [String: Any])
+    let linkTxSteps = try #require(linkObject["txSteps"] as? [[Any]])
+    expectNoDifference(linkTxSteps.count, 2, source)
+    let linkIDEntity = try #require(linkTxSteps[0][1] as? [Any])
+    expectNoDifference(linkIDEntity.count, 2, source)
+    expectNoDifference(linkIDEntity[0] as? String, "users/handle", source)
+    expectNoDifference(linkIDEntity[1] as? String, "bobby_newuser", source)
+    let linkIDValue = try #require(linkTxSteps[0][3] as? [Any])
+    expectNoDifference(linkIDValue.count, 2, source)
+    expectNoDifference(linkIDValue[0] as? String, "users/handle", source)
+    expectNoDifference(linkIDValue[1] as? String, "bobby_newuser", source)
+    let linkEntity = try #require(linkTxSteps[1][1] as? [Any])
+    expectNoDifference(linkEntity.count, 2, source)
+    expectNoDifference(linkEntity[0] as? String, "users/handle", source)
+    expectNoDifference(linkEntity[1] as? String, "bobby_newuser", source)
+    expectNoDifference(linkTxSteps[1][3] as? String, "bookshelf-1", source)
+
+    let unlinkData = try JSONEncoder().encode(unlinkMutation)
+    let unlinkObject = try #require(
+      JSONSerialization.jsonObject(with: unlinkData) as? [String: Any]
+    )
+    let unlinkTxSteps = try #require(unlinkObject["txSteps"] as? [[Any]])
+    expectNoDifference(unlinkTxSteps.count, 2, source)
+    let unlinkIDEntity = try #require(unlinkTxSteps[0][1] as? [Any])
+    expectNoDifference(unlinkIDEntity.count, 2, source)
+    expectNoDifference(unlinkIDEntity[0] as? String, "users/handle", source)
+    expectNoDifference(unlinkIDEntity[1] as? String, "bobby_newuser", source)
+    let unlinkIDValue = try #require(unlinkTxSteps[0][3] as? [Any])
+    expectNoDifference(unlinkIDValue.count, 2, source)
+    expectNoDifference(unlinkIDValue[0] as? String, "users/handle", source)
+    expectNoDifference(unlinkIDValue[1] as? String, "bobby_newuser", source)
+    expectNoDifference(unlinkTxSteps[1][0] as? String, "retract-triple", source)
+    let unlinkEntity = try #require(unlinkTxSteps[1][1] as? [Any])
+    expectNoDifference(unlinkEntity.count, 2, source)
+    expectNoDifference(unlinkEntity[0] as? String, "users/handle", source)
+    expectNoDifference(unlinkEntity[1] as? String, "bobby_newuser", source)
+    expectNoDifference(unlinkTxSteps[1][3] as? String, "bookshelf-1", source)
+  }
+
+  @Test
   func transportMutationPreservesTripleExistsPreconditions() throws {
     let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let transaction = InstantStoreTransaction(
