@@ -4858,6 +4858,111 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.createdID, jsonOutput.editedID)
     expectNoDifference(jsonOutput.relationAuthorID, jsonOutput.draftAuthorIDs.first)
     expectNoDifference(jsonOutput.relationPostID, jsonOutput.draftPostIDs.first)
+    let createdID = try #require(jsonOutput.createdID)
+    let relationAuthorID = try #require(jsonOutput.relationAuthorID)
+    let relationPostID = try #require(jsonOutput.relationPostID)
+    let createMutation = try #require(
+      jsonOutput.draftMutationSummaries.first {
+        $0.mutationID == "validation.typed-drafts.create"
+      }
+    )
+    expectNoDifference(createMutation.status, "pending")
+    expectNoDifference(createMutation.transactionID, "validation.typed-drafts.create")
+    expectNoDifference(
+      createMutation.operationKinds,
+      ["requireEntityMissing", "insert", "insert", "insert", "insert", "insert"]
+    )
+    expectNoDifference(createMutation.txStepKinds, Array(repeating: "add-triple", count: 5))
+    expectNoDifference(createMutation.preconditionKinds, ["entity-missing"])
+    expectNoDifference(createMutation.preconditionNamespaces, ["draftValidationTodos"])
+    expectNoDifference(
+      createMutation.txStepAttributeIDs,
+      [
+        "draftValidationTodos/id",
+        "draftValidationTodos/title",
+        "draftValidationTodos/isCompleted",
+        "draftValidationTodos/createdAt",
+        "draftValidationTodos/notes",
+      ]
+    )
+    expectNoDifference(createMutation.txStepEntityIDs, Array(repeating: createdID, count: 5))
+    expectNoDifference(createMutation.txStepValueTypes, ["string", "string", "boolean", "string", "null"])
+    expectNoDifference(
+      createMutation.txStepValueSummaries[0...2].map(String.init),
+      ["string:\(createdID)", "string:Create from generated draft", "boolean:false"]
+    )
+    expectNoDifference(createMutation.txStepValueSummaries.last, "null")
+    expectNoDifference(createMutation.operationValueTypes, ["string", "string", "boolean", "date", "null"])
+    expectNoDifference(createMutation.txStepOptionModes, Array(repeating: "create", count: 5))
+    expectNoDifference(createMutation.primaryKeyStepCount, 1)
+    expectNoDifference(
+      createMutation.draftAssignmentAttributeIDs,
+      [
+        "draftValidationTodos/title",
+        "draftValidationTodos/isCompleted",
+        "draftValidationTodos/createdAt",
+        "draftValidationTodos/notes",
+      ]
+    )
+
+    let editMutation = try #require(
+      jsonOutput.draftMutationSummaries.first {
+        $0.mutationID == "validation.typed-drafts.edit"
+      }
+    )
+    expectNoDifference(editMutation.preconditionKinds, [])
+    expectNoDifference(editMutation.transactionID, "validation.typed-drafts.edit")
+    expectNoDifference(editMutation.txStepKinds, Array(repeating: "add-triple", count: 5))
+    expectNoDifference(editMutation.txStepEntityIDs, Array(repeating: createdID, count: 5))
+    expectNoDifference(editMutation.txStepOptionModes, Array(repeating: "none", count: 5))
+    expectNoDifference(
+      editMutation.txStepValueSummaries,
+      [
+        "string:\(createdID)",
+        "string:Edit from generated draft",
+        "boolean:true",
+        createMutation.txStepValueSummaries[3],
+        "string:Edited through Draft(existing)",
+      ]
+    )
+    expectNoDifference(
+      editMutation.operationValueSummaries,
+      [
+        "string:\(createdID)",
+        "string:Edit from generated draft",
+        "boolean:true",
+        createMutation.operationValueSummaries[3],
+        "string:Edited through Draft(existing)",
+      ]
+    )
+
+    let postMutation = try #require(
+      jsonOutput.draftMutationSummaries.first {
+        $0.mutationID == "validation.typed-drafts.post"
+      }
+    )
+    expectNoDifference(postMutation.transactionID, "validation.typed-drafts.post")
+    expectNoDifference(postMutation.txStepKinds, Array(repeating: "add-triple", count: 3))
+    expectNoDifference(postMutation.txStepEntityIDs, Array(repeating: relationPostID, count: 3))
+    expectNoDifference(
+      postMutation.txStepAttributeIDs,
+      [
+        "draftValidationPosts/id",
+        "draftValidationPosts/title",
+        "draftValidationPosts/author",
+      ]
+    )
+    expectNoDifference(postMutation.txStepValueTypes, ["string", "string", "string"])
+    expectNoDifference(postMutation.operationValueTypes, ["string", "string", "ref"])
+    expectNoDifference(
+      postMutation.operationValueSummaries,
+      [
+        "string:\(relationPostID)",
+        "string:Post from relation draft",
+        "ref:\(relationAuthorID)",
+      ]
+    )
+    expectNoDifference(postMutation.refAttributeIDs, ["draftValidationPosts/author"])
 
     let jsonlOutput = try runCLI(["validation", "typed-drafts", "--jsonl"], homeURL: homeURL)
     let lines = jsonlOutput.split(separator: "\n")
@@ -4915,6 +5020,15 @@ extension InstantStoreTests {
       relationEvidence.details.draftPostIDs.first
     )
     expectNoDifference(relationEvidence.entityID, relationEvidence.details.relationPostID)
+    expectNoDifference(
+      relationEvidence.details.draftMutationSummaries.map(\.mutationID),
+      [
+        "validation.typed-drafts.create",
+        "validation.typed-drafts.edit",
+        "validation.typed-drafts.author",
+        "validation.typed-drafts.post",
+      ]
+    )
 
     let relaunchEvidence = try JSONDecoder().decode(
       CLIDraftValidationEvidence.self,
@@ -4949,6 +5063,7 @@ extension InstantStoreTests {
     #expect(humanOutput.contains("evidence rows: 4"))
     #expect(humanOutput.contains("draft post ids:"))
     #expect(humanOutput.contains("draft post author relation: ref draftValidationAuthors"))
+    #expect(humanOutput.contains("draft create mutation: entity-missing"))
   }
 
   @Test
@@ -6325,6 +6440,7 @@ private struct CLIDraftValidationOutput: Decodable {
   var draftPostAuthorLinkNamespace: String?
   var draftPostAuthorForwardIdentity: String?
   var draftPostAuthorReverseIdentity: String?
+  var draftMutationSummaries: [CLIDraftValidationMutationSummary]
   var pendingMutationCount: Int
   var createdID: String?
   var editedID: String?
@@ -6363,11 +6479,32 @@ private struct CLIDraftValidationDetails: Decodable {
   var draftPostAuthorLinkNamespace: String?
   var draftPostAuthorForwardIdentity: String?
   var draftPostAuthorReverseIdentity: String?
+  var draftMutationSummaries: [CLIDraftValidationMutationSummary]
   var pendingMutationIDs: [String]
   var createdID: String?
   var editedID: String?
   var relationAuthorID: String?
   var relationPostID: String?
+}
+
+private struct CLIDraftValidationMutationSummary: Decodable, Equatable {
+  var mutationID: String
+  var transactionID: String
+  var status: String
+  var operationKinds: [String]
+  var preconditionKinds: [String]
+  var preconditionNamespaces: [String]
+  var txStepKinds: [String]
+  var txStepEntityIDs: [String]
+  var txStepAttributeIDs: [String]
+  var txStepValueTypes: [String]
+  var txStepValueSummaries: [String]
+  var txStepOptionModes: [String]
+  var operationValueTypes: [String]
+  var operationValueSummaries: [String]
+  var primaryKeyStepCount: Int
+  var draftAssignmentAttributeIDs: [String]
+  var refAttributeIDs: [String]
 }
 
 private struct CLIPlatformAdapterValidationOutput: Decodable {

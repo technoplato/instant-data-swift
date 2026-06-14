@@ -239,7 +239,8 @@ transport objects into feature code.
   to `Identifiable` by default. UI examples may add their own stable local
   editing identity when needed. Writable Instant ref fields must be included
   with their generated relation metadata so linked edit/create forms can save
-  relation drafts.
+  relation drafts. Terminal validation should prove the summarized pending
+  mutation shape for nil-id creates and `Draft(existing)` edits.
 
 ## Mutation Semantics
 

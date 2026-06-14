@@ -304,6 +304,108 @@ struct BootstrapTests {
         "validation.typed-drafts.post",
       ]
     )
+    expectNoDifference(
+      finalDetails.draftMutationSummaries.map(\.mutationID),
+      [
+        "validation.typed-drafts.create",
+        "validation.typed-drafts.edit",
+        "validation.typed-drafts.author",
+        "validation.typed-drafts.post",
+      ]
+    )
+    let createMutation = try #require(
+      finalDetails.draftMutationSummaries.first {
+        $0.mutationID == "validation.typed-drafts.create"
+      }
+    )
+    expectNoDifference(createMutation.status, "pending")
+    expectNoDifference(createMutation.transactionID, "validation.typed-drafts.create")
+    expectNoDifference(
+      createMutation.operationKinds,
+      ["requireEntityMissing", "insert", "insert", "insert", "insert", "insert"]
+    )
+    expectNoDifference(createMutation.preconditionKinds, ["entity-missing"])
+    expectNoDifference(createMutation.preconditionNamespaces, ["draftValidationTodos"])
+    expectNoDifference(createMutation.txStepKinds, Array(repeating: "add-triple", count: 5))
+    expectNoDifference(
+      createMutation.txStepAttributeIDs,
+      [
+        "draftValidationTodos/id",
+        "draftValidationTodos/title",
+        "draftValidationTodos/isCompleted",
+        "draftValidationTodos/createdAt",
+        "draftValidationTodos/notes",
+      ]
+    )
+    expectNoDifference(
+      createMutation.operationValueSummaries,
+      [
+        "string:draft-validation-created",
+        "string:Create from generated draft",
+        "boolean:false",
+        "date:1700001000000",
+        "null",
+      ]
+    )
+    expectNoDifference(createMutation.operationValueTypes, ["string", "string", "boolean", "date", "null"])
+    expectNoDifference(createMutation.txStepOptionModes, Array(repeating: "create", count: 5))
+    expectNoDifference(createMutation.primaryKeyStepCount, 1)
+    expectNoDifference(
+      createMutation.draftAssignmentAttributeIDs,
+      [
+        "draftValidationTodos/title",
+        "draftValidationTodos/isCompleted",
+        "draftValidationTodos/createdAt",
+        "draftValidationTodos/notes",
+      ]
+    )
+    let editMutation = try #require(
+      finalDetails.draftMutationSummaries.first {
+        $0.mutationID == "validation.typed-drafts.edit"
+      }
+    )
+    expectNoDifference(editMutation.preconditionKinds, [])
+    expectNoDifference(editMutation.transactionID, "validation.typed-drafts.edit")
+    expectNoDifference(editMutation.txStepKinds, Array(repeating: "add-triple", count: 5))
+    expectNoDifference(editMutation.txStepEntityIDs, Array(repeating: "draft-validation-created", count: 5))
+    expectNoDifference(editMutation.txStepOptionModes, Array(repeating: "none", count: 5))
+    expectNoDifference(
+      editMutation.operationValueSummaries,
+      [
+        "string:draft-validation-created",
+        "string:Edit from generated draft",
+        "boolean:true",
+        "date:1700001000000",
+        "string:Edited through Draft(existing)",
+      ]
+    )
+    let postMutation = try #require(
+      finalDetails.draftMutationSummaries.first {
+        $0.mutationID == "validation.typed-drafts.post"
+      }
+    )
+    expectNoDifference(postMutation.transactionID, "validation.typed-drafts.post")
+    expectNoDifference(postMutation.txStepKinds, Array(repeating: "add-triple", count: 3))
+    expectNoDifference(postMutation.txStepEntityIDs, Array(repeating: "draft-validation-post", count: 3))
+    expectNoDifference(
+      postMutation.txStepAttributeIDs,
+      [
+        "draftValidationPosts/id",
+        "draftValidationPosts/title",
+        "draftValidationPosts/author",
+      ]
+    )
+    expectNoDifference(postMutation.txStepValueTypes, ["string", "string", "string"])
+    expectNoDifference(postMutation.operationValueTypes, ["string", "string", "ref"])
+    expectNoDifference(
+      postMutation.operationValueSummaries,
+      [
+        "string:draft-validation-post",
+        "string:Post from relation draft",
+        "ref:draft-validation-author",
+      ]
+    )
+    expectNoDifference(postMutation.refAttributeIDs, ["draftValidationPosts/author"])
     expectNoDifference(finalDetails.createdID, "draft-validation-created")
     expectNoDifference(finalDetails.editedID, "draft-validation-created")
     expectNoDifference(finalDetails.relationAuthorID, "draft-validation-author")
@@ -345,6 +447,7 @@ struct BootstrapTests {
     expectNoDifference(details.draftPostAuthorIDs, [])
     expectNoDifference(details.draftPostAuthorAttributeValueType, nil)
     expectNoDifference(details.draftPostAuthorLinkNamespace, nil)
+    expectNoDifference(details.draftMutationSummaries, [])
     expectNoDifference(details.createdID, "draft-validation-created")
     expectNoDifference(details.editedID, "draft-validation-created")
   }

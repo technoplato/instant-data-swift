@@ -305,8 +305,8 @@ closed-connection offline write, offline relaunch restore, and reconnect flush.
 presence/topic messages, file upload/read, stream chunks, and share
 create/accept/revoke. `validation typed-drafts` emits terminal evidence for a
 macro-generated nil-id draft create, `Draft(existing)` edit, a writable relation
-draft with generated ref metadata, and relaunch persistence through
-`InstantSwiftDataClient.save(_:)`.
+draft with generated ref metadata, summarized pending mutation payload shape,
+and relaunch persistence through `InstantSwiftDataClient.save(_:)`.
 `validation platform-adapters` emits terminal evidence that public wrapper
 adapters bind local client values for fetches, local IDs, auth, rooms, files,
 streams, and shares. `validation syncups-recording` emits terminal evidence for

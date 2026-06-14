@@ -17,6 +17,7 @@ public struct DraftValidationDetails: Codable, Equatable, Sendable {
   public var draftPostAuthorLinkNamespace: String?
   public var draftPostAuthorForwardIdentity: String?
   public var draftPostAuthorReverseIdentity: String?
+  public var draftMutationSummaries: [DraftValidationMutationSummary]
   public var pendingMutationIDs: [String]
   public var createdID: String?
   public var editedID: String?
@@ -40,6 +41,7 @@ public struct DraftValidationDetails: Codable, Equatable, Sendable {
     draftPostAuthorLinkNamespace: String? = nil,
     draftPostAuthorForwardIdentity: String? = nil,
     draftPostAuthorReverseIdentity: String? = nil,
+    draftMutationSummaries: [DraftValidationMutationSummary] = [],
     pendingMutationIDs: [String],
     createdID: String? = nil,
     editedID: String? = nil,
@@ -62,6 +64,7 @@ public struct DraftValidationDetails: Codable, Equatable, Sendable {
     self.draftPostAuthorLinkNamespace = draftPostAuthorLinkNamespace
     self.draftPostAuthorForwardIdentity = draftPostAuthorForwardIdentity
     self.draftPostAuthorReverseIdentity = draftPostAuthorReverseIdentity
+    self.draftMutationSummaries = draftMutationSummaries
     self.pendingMutationIDs = pendingMutationIDs
     self.createdID = createdID
     self.editedID = editedID
@@ -86,6 +89,7 @@ public struct DraftValidationDetails: Codable, Equatable, Sendable {
     case draftPostAuthorLinkNamespace
     case draftPostAuthorForwardIdentity
     case draftPostAuthorReverseIdentity
+    case draftMutationSummaries
     case pendingMutationIDs
     case createdID
     case editedID
@@ -129,6 +133,9 @@ public struct DraftValidationDetails: Codable, Equatable, Sendable {
       draftPostAuthorReverseIdentity: try container.decodeIfPresent(
         String.self, forKey: .draftPostAuthorReverseIdentity
       ),
+      draftMutationSummaries: try container.decodeIfPresent(
+        [DraftValidationMutationSummary].self, forKey: .draftMutationSummaries
+      ) ?? [],
       pendingMutationIDs: try container.decodeIfPresent([String].self, forKey: .pendingMutationIDs)
         ?? [],
       createdID: try container.decodeIfPresent(String.self, forKey: .createdID),
@@ -136,6 +143,64 @@ public struct DraftValidationDetails: Codable, Equatable, Sendable {
       relationAuthorID: try container.decodeIfPresent(String.self, forKey: .relationAuthorID),
       relationPostID: try container.decodeIfPresent(String.self, forKey: .relationPostID)
     )
+  }
+}
+
+public struct DraftValidationMutationSummary: Codable, Equatable, Sendable {
+  public var mutationID: String
+  public var transactionID: String
+  public var status: String
+  public var operationKinds: [String]
+  public var preconditionKinds: [String]
+  public var preconditionNamespaces: [String]
+  public var txStepKinds: [String]
+  public var txStepEntityIDs: [String]
+  public var txStepAttributeIDs: [String]
+  public var txStepValueTypes: [String]
+  public var txStepValueSummaries: [String]
+  public var txStepOptionModes: [String]
+  public var operationValueTypes: [String]
+  public var operationValueSummaries: [String]
+  public var primaryKeyStepCount: Int
+  public var draftAssignmentAttributeIDs: [String]
+  public var refAttributeIDs: [String]
+
+  public init(
+    mutationID: String,
+    transactionID: String,
+    status: String,
+    operationKinds: [String],
+    preconditionKinds: [String],
+    preconditionNamespaces: [String],
+    txStepKinds: [String],
+    txStepEntityIDs: [String],
+    txStepAttributeIDs: [String],
+    txStepValueTypes: [String],
+    txStepValueSummaries: [String],
+    txStepOptionModes: [String],
+    operationValueTypes: [String],
+    operationValueSummaries: [String],
+    primaryKeyStepCount: Int,
+    draftAssignmentAttributeIDs: [String],
+    refAttributeIDs: [String]
+  ) {
+    self.mutationID = mutationID
+    self.transactionID = transactionID
+    self.status = status
+    self.operationKinds = operationKinds
+    self.preconditionKinds = preconditionKinds
+    self.preconditionNamespaces = preconditionNamespaces
+    self.txStepKinds = txStepKinds
+    self.txStepEntityIDs = txStepEntityIDs
+    self.txStepAttributeIDs = txStepAttributeIDs
+    self.txStepValueTypes = txStepValueTypes
+    self.txStepValueSummaries = txStepValueSummaries
+    self.txStepOptionModes = txStepOptionModes
+    self.operationValueTypes = operationValueTypes
+    self.operationValueSummaries = operationValueSummaries
+    self.primaryKeyStepCount = primaryKeyStepCount
+    self.draftAssignmentAttributeIDs = draftAssignmentAttributeIDs
+    self.refAttributeIDs = refAttributeIDs
   }
 }
 
@@ -297,6 +362,13 @@ public enum InstantSwiftDataDraftValidation {
         recovery: "Inspect generated Draft assignments for @InstantRelation ref attributes."
       )
     }
+    try await validateMutationShapes(
+      runtime: runtime,
+      createdID: createdID.rawValue,
+      createdAt: createTimestamp,
+      authorID: authorID.rawValue,
+      postID: postID.rawValue
+    )
     evidence.append(
       try await evidenceRow(
         event: "relation",
@@ -348,6 +420,7 @@ public enum InstantSwiftDataDraftValidation {
     let authors = try await client.query(DraftValidationAuthor.query.order(DraftValidationAuthor.name))
     let posts = try await client.query(DraftValidationPost.query.order(DraftValidationPost.title))
     let pending = await client.pendingMutations()
+    let summaries = mutationSummaries(pending)
     let postAuthorAttribute = draftPostAuthorAttribute
     return ValidationEvidenceRow(
       caseID: "validation.typed.drafts",
@@ -374,6 +447,7 @@ public enum InstantSwiftDataDraftValidation {
         draftPostAuthorLinkNamespace: postAuthorAttribute?.linkNamespace,
         draftPostAuthorForwardIdentity: postAuthorAttribute?.forwardIdentity,
         draftPostAuthorReverseIdentity: postAuthorAttribute?.reverseIdentity,
+        draftMutationSummaries: summaries,
         pendingMutationIDs: pending.map(\.id),
         createdID: createdID,
         editedID: editedID,
@@ -381,6 +455,369 @@ public enum InstantSwiftDataDraftValidation {
         relationPostID: relationPostID
       )
     )
+  }
+
+  private static func validateMutationShapes(
+    runtime: InstantRuntime,
+    createdID: String,
+    createdAt: InstantTimestamp,
+    authorID: String,
+    postID: String
+  ) async throws {
+    let summaries = mutationSummaries(await runtime.pendingMutations())
+    try requireMutationShape(
+      summaries,
+      mutationID: "validation.typed-drafts.create",
+      transactionID: "validation.typed-drafts.create",
+      entityID: createdID,
+      operationKinds: [
+        "requireEntityMissing",
+        "insert",
+        "insert",
+        "insert",
+        "insert",
+        "insert",
+      ],
+      preconditionKinds: ["entity-missing"],
+      preconditionNamespaces: [DraftValidationTodo.instantNamespace],
+      txStepAttributeIDs: [
+        "draftValidationTodos/id",
+        "draftValidationTodos/title",
+        "draftValidationTodos/isCompleted",
+        "draftValidationTodos/createdAt",
+        "draftValidationTodos/notes",
+      ],
+      txStepKinds: ["add-triple", "add-triple", "add-triple", "add-triple", "add-triple"],
+      txStepValueTypes: ["string", "string", "boolean", "string", "null"],
+      txStepValueSummaries: [
+        "string:\(createdID)",
+        "string:Create from generated draft",
+        "boolean:false",
+        transportDateSummary(from: createdAt),
+        "null",
+      ],
+      txStepOptionModes: ["create", "create", "create", "create", "create"],
+      operationValueTypes: ["string", "string", "boolean", "date", "null"],
+      operationValueSummaries: [
+        "string:\(createdID)",
+        "string:Create from generated draft",
+        "boolean:false",
+        "date:\(createdAt.milliseconds)",
+        "null",
+      ],
+      primaryKeyStepCount: 1,
+      draftAssignmentAttributeIDs: [
+        "draftValidationTodos/title",
+        "draftValidationTodos/isCompleted",
+        "draftValidationTodos/createdAt",
+        "draftValidationTodos/notes",
+      ],
+      refAttributeIDs: []
+    )
+    try requireMutationShape(
+      summaries,
+      mutationID: "validation.typed-drafts.edit",
+      transactionID: "validation.typed-drafts.edit",
+      entityID: createdID,
+      operationKinds: [
+        "insert",
+        "insert",
+        "insert",
+        "insert",
+        "insert",
+      ],
+      preconditionKinds: [],
+      preconditionNamespaces: [],
+      txStepAttributeIDs: [
+        "draftValidationTodos/id",
+        "draftValidationTodos/title",
+        "draftValidationTodos/isCompleted",
+        "draftValidationTodos/createdAt",
+        "draftValidationTodos/notes",
+      ],
+      txStepKinds: ["add-triple", "add-triple", "add-triple", "add-triple", "add-triple"],
+      txStepValueTypes: ["string", "string", "boolean", "string", "string"],
+      txStepValueSummaries: [
+        "string:\(createdID)",
+        "string:Edit from generated draft",
+        "boolean:true",
+        transportDateSummary(from: createdAt),
+        "string:Edited through Draft(existing)",
+      ],
+      txStepOptionModes: ["none", "none", "none", "none", "none"],
+      operationValueTypes: ["string", "string", "boolean", "date", "string"],
+      operationValueSummaries: [
+        "string:\(createdID)",
+        "string:Edit from generated draft",
+        "boolean:true",
+        "date:\(createdAt.milliseconds)",
+        "string:Edited through Draft(existing)",
+      ],
+      primaryKeyStepCount: 1,
+      draftAssignmentAttributeIDs: [
+        "draftValidationTodos/title",
+        "draftValidationTodos/isCompleted",
+        "draftValidationTodos/createdAt",
+        "draftValidationTodos/notes",
+      ],
+      refAttributeIDs: []
+    )
+    try requireMutationShape(
+      summaries,
+      mutationID: "validation.typed-drafts.author",
+      transactionID: "validation.typed-drafts.author",
+      entityID: authorID,
+      operationKinds: ["requireEntityMissing", "insert", "insert"],
+      preconditionKinds: ["entity-missing"],
+      preconditionNamespaces: [DraftValidationAuthor.instantNamespace],
+      txStepAttributeIDs: [
+        "draftValidationAuthors/id",
+        "draftValidationAuthors/name",
+      ],
+      txStepKinds: ["add-triple", "add-triple"],
+      txStepValueTypes: ["string", "string"],
+      txStepValueSummaries: [
+        "string:\(authorID)",
+        "string:Draft relation author",
+      ],
+      txStepOptionModes: ["create", "create"],
+      operationValueTypes: ["string", "string"],
+      operationValueSummaries: [
+        "string:\(authorID)",
+        "string:Draft relation author",
+      ],
+      primaryKeyStepCount: 1,
+      draftAssignmentAttributeIDs: ["draftValidationAuthors/name"],
+      refAttributeIDs: []
+    )
+    try requireMutationShape(
+      summaries,
+      mutationID: "validation.typed-drafts.post",
+      transactionID: "validation.typed-drafts.post",
+      entityID: postID,
+      operationKinds: ["requireEntityMissing", "insert", "insert", "insert"],
+      preconditionKinds: ["entity-missing"],
+      preconditionNamespaces: [DraftValidationPost.instantNamespace],
+      txStepAttributeIDs: [
+        "draftValidationPosts/id",
+        "draftValidationPosts/title",
+        "draftValidationPosts/author",
+      ],
+      txStepKinds: ["add-triple", "add-triple", "add-triple"],
+      txStepValueTypes: ["string", "string", "string"],
+      txStepValueSummaries: [
+        "string:\(postID)",
+        "string:Post from relation draft",
+        "string:\(authorID)",
+      ],
+      txStepOptionModes: ["create", "create", "create"],
+      operationValueTypes: ["string", "string", "ref"],
+      operationValueSummaries: [
+        "string:\(postID)",
+        "string:Post from relation draft",
+        "ref:\(authorID)",
+      ],
+      primaryKeyStepCount: 1,
+      draftAssignmentAttributeIDs: [
+        "draftValidationPosts/title",
+        "draftValidationPosts/author",
+      ],
+      refAttributeIDs: ["draftValidationPosts/author"]
+    )
+  }
+
+  private static func requireMutationShape(
+    _ summaries: [DraftValidationMutationSummary],
+    mutationID: String,
+    transactionID: String,
+    entityID: String,
+    operationKinds: [String],
+    preconditionKinds: [String],
+    preconditionNamespaces: [String],
+    txStepAttributeIDs: [String],
+    txStepKinds: [String],
+    txStepValueTypes: [String],
+    txStepValueSummaries: [String],
+    txStepOptionModes: [String],
+    operationValueTypes: [String],
+    operationValueSummaries: [String],
+    primaryKeyStepCount: Int,
+    draftAssignmentAttributeIDs: [String],
+    refAttributeIDs: [String]
+  ) throws {
+    guard let summary = summaries.first(where: { $0.mutationID == mutationID }) else {
+      throw draftMutationShapeError(
+        mutationID: mutationID,
+        message: "Expected pending mutation '\(mutationID)' to be recorded.",
+        recovery: "Inspect generated draft save transaction ids and outbox persistence."
+      )
+    }
+    guard summary.transactionID == transactionID else {
+      throw draftMutationShapeError(
+        mutationID: mutationID,
+        message: "Expected generated draft transaction id '\(transactionID)', got '\(summary.transactionID)'.",
+        recovery: "Inspect generated draft save transaction ids."
+      )
+    }
+    guard summary.status == InstantMutationStatus.pending.rawValue else {
+      throw draftMutationShapeError(
+        mutationID: mutationID,
+        message: "Expected generated draft mutation status 'pending', got '\(summary.status)'.",
+        recovery: "Inspect draft validation outbox status transitions."
+      )
+    }
+    guard summary.operationKinds == operationKinds else {
+      throw draftMutationShapeError(
+        mutationID: mutationID,
+        message: "Expected generated draft mutation operations \(operationKinds), got \(summary.operationKinds).",
+        recovery: "Inspect InstantSwiftDataClient.save(_:) create/update lowering."
+      )
+    }
+    guard summary.preconditionKinds == preconditionKinds else {
+      throw draftMutationShapeError(
+        mutationID: mutationID,
+        message: "Expected generated draft preconditions \(preconditionKinds), got \(summary.preconditionKinds).",
+        recovery: "Inspect strict nil-id draft create preconditions and edit upsert semantics."
+      )
+    }
+    guard summary.preconditionNamespaces == preconditionNamespaces else {
+      throw draftMutationShapeError(
+        mutationID: mutationID,
+        message: "Expected generated draft precondition namespaces \(preconditionNamespaces), got \(summary.preconditionNamespaces).",
+        recovery: "Inspect generated draft entity namespaces."
+      )
+    }
+    guard summary.txStepEntityIDs.allSatisfy({ $0 == entityID }) else {
+      throw draftMutationShapeError(
+        mutationID: mutationID,
+        message: "Expected generated draft step entities to all be '\(entityID)', got \(summary.txStepEntityIDs).",
+        recovery: "Inspect generated draft save entity id selection."
+      )
+    }
+    guard summary.txStepKinds == txStepKinds else {
+      throw draftMutationShapeError(
+        mutationID: mutationID,
+        message: "Expected generated draft transport steps \(txStepKinds), got \(summary.txStepKinds).",
+        recovery: "Inspect transport lowering for generated draft mutations."
+      )
+    }
+    guard summary.txStepAttributeIDs == txStepAttributeIDs else {
+      throw draftMutationShapeError(
+        mutationID: mutationID,
+        message: "Expected generated draft step attributes \(txStepAttributeIDs), got \(summary.txStepAttributeIDs).",
+        recovery: "Inspect generated Draft assignments and primary key write lowering."
+      )
+    }
+    guard summary.txStepValueTypes == txStepValueTypes else {
+      throw draftMutationShapeError(
+        mutationID: mutationID,
+        message: "Expected generated draft step value types \(txStepValueTypes), got \(summary.txStepValueTypes).",
+        recovery: "Inspect generated Draft assignment value conversion."
+      )
+    }
+    guard summary.txStepValueSummaries == txStepValueSummaries else {
+      throw draftMutationShapeError(
+        mutationID: mutationID,
+        message: "Expected generated draft step values \(txStepValueSummaries), got \(summary.txStepValueSummaries).",
+        recovery: "Inspect generated Draft assignment payloads."
+      )
+    }
+    guard summary.txStepOptionModes == txStepOptionModes else {
+      throw draftMutationShapeError(
+        mutationID: mutationID,
+        message: "Expected generated draft step option modes \(txStepOptionModes), got \(summary.txStepOptionModes).",
+        recovery: "Inspect transport lowering for create-mode nil-id drafts and edit upserts."
+      )
+    }
+    guard summary.operationValueTypes == operationValueTypes else {
+      throw draftMutationShapeError(
+        mutationID: mutationID,
+        message: "Expected generated draft operation value types \(operationValueTypes), got \(summary.operationValueTypes).",
+        recovery: "Inspect generated Draft assignment value conversion."
+      )
+    }
+    guard summary.operationValueSummaries == operationValueSummaries else {
+      throw draftMutationShapeError(
+        mutationID: mutationID,
+        message: "Expected generated draft operation values \(operationValueSummaries), got \(summary.operationValueSummaries).",
+        recovery: "Inspect generated Draft assignment payloads."
+      )
+    }
+    guard summary.primaryKeyStepCount == primaryKeyStepCount else {
+      throw draftMutationShapeError(
+        mutationID: mutationID,
+        message: "Expected \(primaryKeyStepCount) generated draft primary-key steps, got \(summary.primaryKeyStepCount).",
+        recovery: "Inspect managed Instant id handling in generated draft saves."
+      )
+    }
+    guard summary.draftAssignmentAttributeIDs == draftAssignmentAttributeIDs else {
+      throw draftMutationShapeError(
+        mutationID: mutationID,
+        message: "Expected generated draft assignment attributes \(draftAssignmentAttributeIDs), got \(summary.draftAssignmentAttributeIDs).",
+        recovery: "Inspect generated Draft writable fields."
+      )
+    }
+    guard summary.refAttributeIDs == refAttributeIDs else {
+      throw draftMutationShapeError(
+        mutationID: mutationID,
+        message: "Expected generated draft ref assignment attributes \(refAttributeIDs), got \(summary.refAttributeIDs).",
+        recovery: "Inspect generated Draft writable relation fields."
+      )
+    }
+  }
+
+  private static func draftMutationShapeError(
+    mutationID: String,
+    message: String,
+    recovery: String
+  ) -> InstantError {
+    InstantError(
+      code: .validationFailed,
+      operation: "validate typed draft mutation shape",
+      localID: mutationID,
+      message: message,
+      recovery: recovery
+    )
+  }
+
+  private static func mutationSummaries(
+    _ pending: [PendingMutation]
+  ) -> [DraftValidationMutationSummary] {
+    pending.map { mutation in
+      let transportMutation = InstantTransportMutation(mutation)
+      let stepAttributeIDs = transportMutation.txSteps.compactMap(\.draftValidationAttributeID)
+      let primaryKeyStepCount = stepAttributeIDs.filter {
+        $0.isDraftValidationPrimaryKeyID
+      }.count
+      let insertedTriples = mutation.transaction.operations.compactMap(\.draftValidationInsertedTriple)
+      return DraftValidationMutationSummary(
+        mutationID: mutation.id,
+        transactionID: mutation.transaction.id,
+        status: mutation.status.rawValue,
+        operationKinds: mutation.transaction.operations.map(\.draftValidationKind),
+        preconditionKinds: transportMutation.preconditions.map { $0.kind.rawValue },
+        preconditionNamespaces: transportMutation.preconditions.map { $0.namespace ?? "none" },
+        txStepKinds: transportMutation.txSteps.map(\.draftValidationKind),
+        txStepEntityIDs: transportMutation.txSteps.compactMap(\.draftValidationEntityID),
+        txStepAttributeIDs: stepAttributeIDs,
+        txStepValueTypes: transportMutation.txSteps.compactMap(\.draftValidationValueType),
+        txStepValueSummaries: transportMutation.txSteps.compactMap(\.draftValidationValueSummary),
+        txStepOptionModes: transportMutation.txSteps.map(\.draftValidationOptionMode),
+        operationValueTypes: insertedTriples.map { $0.value.draftValidationType },
+        operationValueSummaries: insertedTriples.map { $0.value.draftValidationSummary },
+        primaryKeyStepCount: primaryKeyStepCount,
+        draftAssignmentAttributeIDs: stepAttributeIDs.filter {
+          !$0.isDraftValidationPrimaryKeyID
+        },
+        refAttributeIDs: insertedTriples.compactMap { triple in
+          triple.value.draftValidationType == "ref" ? triple.attributeID : nil
+        }
+      )
+    }
+  }
+
+  private static func transportDateSummary(from timestamp: InstantTimestamp) -> String {
+    InstantTransportValue(InstantValue.date(date(from: timestamp))).draftValidationSummary
   }
 
   private static func date(from timestamp: InstantTimestamp) -> Date {
@@ -398,6 +835,238 @@ private let draftValidationAttributes =
   DraftValidationTodo.instantAttributes
   + DraftValidationAuthor.instantAttributes
   + DraftValidationPost.instantAttributes
+
+private extension InstantTripleOperation {
+  var draftValidationKind: String {
+    switch self {
+    case .requireEntityMissing:
+      "requireEntityMissing"
+    case .requireEntityMissingByLookup:
+      "requireEntityMissingByLookup"
+    case .requireEntityExists:
+      "requireEntityExists"
+    case .requireEntityExistsByLookup:
+      "requireEntityExistsByLookup"
+    case .requireTripleExists:
+      "requireTripleExists"
+    case .merge:
+      "merge"
+    case .mergeByLookup:
+      "mergeByLookup"
+    case .insert:
+      "insert"
+    case .insertByLookup:
+      "insertByLookup"
+    case .retract:
+      "retract"
+    case .retractByLookup:
+      "retractByLookup"
+    case .deleteEntity:
+      "deleteEntity"
+    case .deleteEntityInNamespace:
+      "deleteEntityInNamespace"
+    case .deleteEntityByLookup:
+      "deleteEntityByLookup"
+    case .ruleParams:
+      "ruleParams"
+    case .ruleParamsByLookup:
+      "ruleParamsByLookup"
+    }
+  }
+
+  var draftValidationAttributeID: String? {
+    switch self {
+    case let .insert(triple), let .merge(triple), let .retract(triple):
+      triple.attributeID
+    case let .insertByLookup(_, attributeID, _, _, _),
+      let .mergeByLookup(_, attributeID, _, _, _),
+      let .retractByLookup(_, attributeID, _, _, _),
+      let .requireTripleExists(_, attributeID, _):
+      attributeID
+    default:
+      nil
+    }
+  }
+
+  var draftValidationInsertedTriple: InstantTriple? {
+    switch self {
+    case let .insert(triple):
+      triple
+    default:
+      nil
+    }
+  }
+}
+
+private extension InstantTransportStep {
+  var draftValidationKind: String {
+    switch self {
+    case .addTriple:
+      "add-triple"
+    case .deepMergeTriple:
+      "deep-merge-triple"
+    case .retractTriple:
+      "retract-triple"
+    case .deleteEntity:
+      "delete-entity"
+    case .ruleParams:
+      "rule-params"
+    }
+  }
+
+  var draftValidationEntityID: String? {
+    switch self {
+    case let .addTriple(entity, _, _, _),
+      let .deepMergeTriple(entity, _, _, _),
+      let .retractTriple(entity, _, _),
+      let .deleteEntity(entity, _),
+      let .ruleParams(entity, _, _):
+      entity.draftValidationID
+    }
+  }
+
+  var draftValidationAttributeID: String? {
+    switch self {
+    case let .addTriple(_, attributeID, _, _),
+      let .deepMergeTriple(_, attributeID, _, _),
+      let .retractTriple(_, attributeID, _):
+      attributeID
+    case .deleteEntity, .ruleParams:
+      nil
+    }
+  }
+
+  var draftValidationValueType: String? {
+    switch self {
+    case let .addTriple(_, _, value, _),
+      let .deepMergeTriple(_, _, value, _),
+      let .retractTriple(_, _, value),
+      let .ruleParams(_, _, value):
+      value.draftValidationType
+    case .deleteEntity:
+      nil
+    }
+  }
+
+  var draftValidationValueSummary: String? {
+    switch self {
+    case let .addTriple(_, _, value, _),
+      let .deepMergeTriple(_, _, value, _),
+      let .retractTriple(_, _, value),
+      let .ruleParams(_, _, value):
+      value.draftValidationSummary
+    case .deleteEntity:
+      nil
+    }
+  }
+
+  var draftValidationOptionMode: String {
+    switch self {
+    case let .addTriple(_, _, _, options), let .deepMergeTriple(_, _, _, options):
+      options?.mode.rawValue ?? "none"
+    case .retractTriple, .deleteEntity, .ruleParams:
+      "none"
+    }
+  }
+}
+
+private extension InstantTransportEntityRef {
+  var draftValidationID: String {
+    switch self {
+    case let .id(id):
+      id
+    case let .lookup(lookup):
+      "lookup:\(lookup.attributeID)"
+    }
+  }
+}
+
+private extension InstantTransportValue {
+  var draftValidationType: String {
+    switch self {
+    case .null:
+      "null"
+    case .bool:
+      "boolean"
+    case .number:
+      "number"
+    case .string:
+      "string"
+    case .array:
+      "array"
+    case .object:
+      "object"
+    }
+  }
+
+  var draftValidationSummary: String {
+    switch self {
+    case .null:
+      "null"
+    case let .bool(value):
+      "boolean:\(value)"
+    case let .number(value):
+      "number:\(value)"
+    case let .string(value):
+      "string:\(value)"
+    case .array:
+      "array"
+    case .object:
+      "object"
+    }
+  }
+}
+
+private extension InstantValue {
+  var draftValidationType: String {
+    switch self {
+    case .null:
+      "null"
+    case .bool:
+      "boolean"
+    case .number:
+      "number"
+    case .string:
+      "string"
+    case .date:
+      "date"
+    case .json:
+      "json"
+    case .ref:
+      "ref"
+    case .lookupRef:
+      "lookup-ref"
+    }
+  }
+
+  var draftValidationSummary: String {
+    switch self {
+    case .null:
+      "null"
+    case let .bool(value):
+      "boolean:\(value)"
+    case let .number(value):
+      "number:\(value)"
+    case let .string(value):
+      "string:\(value)"
+    case let .date(value):
+      "date:\(Int64((value.timeIntervalSince1970 * 1000).rounded()))"
+    case .json:
+      "json"
+    case let .ref(value):
+      "ref:\(value)"
+    case let .lookupRef(lookup):
+      "lookup-ref:\(lookup.attributeID)"
+    }
+  }
+}
+
+private extension String {
+  var isDraftValidationPrimaryKeyID: Bool {
+    guard let separator = lastIndex(of: "/") else { return false }
+    return self[index(after: separator)...] == "id"
+  }
+}
 
 @InstantEntity
 private struct DraftValidationTodo: Hashable, Codable, InstantEntityModel {

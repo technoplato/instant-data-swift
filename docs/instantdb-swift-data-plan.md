@@ -489,7 +489,8 @@ primary-keyed entities. Draft ids are optional, new forms can omit the id,
 durable Instant id through the client/runtime rather than treating the id as a
 normal writable attribute. The `typed-drafts` validation now also saves a
 macro-generated draft with a writable `@InstantRelation` ref field and verifies
-the generated ref metadata so relation form flows have terminal JSONL evidence.
+the generated ref metadata and summarized pending mutation payload shape so
+relation form flows have terminal JSONL evidence.
 
 ## SQLiteData Audit Notes
 

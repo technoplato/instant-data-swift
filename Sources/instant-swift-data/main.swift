@@ -4855,6 +4855,7 @@ struct InstantSwiftDataCLI {
       draftPostAuthorLinkNamespace: finalDetails?.draftPostAuthorLinkNamespace,
       draftPostAuthorForwardIdentity: finalDetails?.draftPostAuthorForwardIdentity,
       draftPostAuthorReverseIdentity: finalDetails?.draftPostAuthorReverseIdentity,
+      draftMutationSummaries: finalDetails?.draftMutationSummaries ?? [],
       pendingMutationCount: finalDetails?.pendingMutationIDs.count ?? 0,
       createdID: result.evidence.compactMap(\.details.createdID).first,
       editedID: result.evidence.compactMap(\.details.editedID).last,
@@ -4872,6 +4873,8 @@ struct InstantSwiftDataCLI {
       print("draft todo ids: \(summary.draftTodoIDs.joined(separator: ", "))")
       print("draft post ids: \(summary.draftPostIDs.joined(separator: ", "))")
       print("draft post author relation: \(summary.draftPostAuthorRelationSummary)")
+      print("draft mutation ids: \(summary.draftMutationSummaries.map(\.mutationID).joined(separator: ", "))")
+      print("draft create mutation: \(summary.draftCreateMutationSummary)")
       print("pending mutations: \(summary.pendingMutationCount)")
       print("cache: \(summary.cachePath)")
 
@@ -6593,6 +6596,7 @@ private struct DraftValidationOutput: Codable, Sendable {
   var draftPostAuthorLinkNamespace: String?
   var draftPostAuthorForwardIdentity: String?
   var draftPostAuthorReverseIdentity: String?
+  var draftMutationSummaries: [DraftValidationMutationSummary]
   var pendingMutationCount: Int
   var createdID: String?
   var editedID: String?
@@ -6607,6 +6611,18 @@ private struct DraftValidationOutput: Codable, Sendable {
       draftPostAuthorReverseIdentity,
     ]
     .compactMap { $0 }
+    .joined(separator: " ")
+  }
+
+  var draftCreateMutationSummary: String {
+    guard let mutation = draftMutationSummaries.first(where: {
+      $0.mutationID == "validation.typed-drafts.create"
+    }) else { return "" }
+    return (
+      mutation.preconditionKinds
+        + mutation.txStepAttributeIDs
+        + mutation.txStepOptionModes
+    )
     .joined(separator: " ")
   }
 }
