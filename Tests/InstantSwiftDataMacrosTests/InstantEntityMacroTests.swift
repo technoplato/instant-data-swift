@@ -91,6 +91,8 @@
       )
 
       #expect(result.expanded.contains("public struct Draft: InstantEntityDraft"))
+      #expect(!result.expanded.contains("public struct Draft: Identifiable"))
+      #expect(!result.expanded.contains("public struct Draft: InstantEntityDraft, Identifiable"))
       #expect(result.expanded.contains("public typealias Entity = Todo"))
       #expect(result.expanded.contains("public var id: Todo.ID? = nil"))
       #expect(result.expanded.contains("public var text: String"))
@@ -117,6 +119,7 @@
       #expect(result.expanded.contains(#"?? Todo.instantNamespace + "/text""#))
       #expect(result.expanded.contains("value: self.text.instantValue"))
       #expect(!result.expanded.contains(#"name: "id""#))
+      #expect(!result.expanded.contains("value: self.id.instantValue"))
       #expect(!result.expanded.contains(#"public var localTags"#))
       #expect(!result.expanded.contains(#"name: "localTags""#))
       #expect(!result.expanded.contains(#"self.localTags"#))
