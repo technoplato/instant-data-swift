@@ -2114,6 +2114,31 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func roomWatchOptionsParserConsumesEventCount() throws {
+    expectNoDifference(try parseRoomWatchOptions([]), 1)
+    expectNoDifference(try parseRoomWatchOptions(["--events", "1"]), 1)
+    expectNoDifference(try parseRoomWatchOptions(["--events", "1", "--events", "1"]), 1)
+  }
+
+  @Test
+  func roomWatchOptionsParserReportsMalformedArguments() throws {
+    let usageCommand = "instant-swift-data rooms presence watch <room-type> <room-id>"
+    try expectRoomWatchOptionsParseError(
+      ["--events"],
+      description: "Missing value for --events. Usage: \(usageCommand) --events 1"
+    )
+    try expectRoomWatchOptionsParseError(
+      ["--events", "2"],
+      description: "Usage: \(usageCommand) --events 1"
+    )
+    try expectRoomWatchOptionsParseError(
+      ["--surprise"],
+      description:
+        "Unknown rooms presence watch option: --surprise. Usage: \(usageCommand) [--events 1] [--json|--jsonl]"
+    )
+  }
+
+  @Test
   func filesParserParsesCommandsAndAliases() throws {
     expectNoDifference(
       try parseFiles([
@@ -2227,6 +2252,29 @@ struct CLIArgumentParserTests {
     try expectFilesParseError(
       ["dance"],
       contains: "Usage: instant-swift-data files"
+    )
+  }
+
+  @Test
+  func filesWatchOptionsParserConsumesEventCount() throws {
+    expectNoDifference(try parseFilesWatchOptions([]), 1)
+    expectNoDifference(try parseFilesWatchOptions(["--events", "1"]), 1)
+    expectNoDifference(try parseFilesWatchOptions(["--events", "1", "--events", "1"]), 1)
+  }
+
+  @Test
+  func filesWatchOptionsParserReportsMalformedArguments() throws {
+    try expectFilesWatchOptionsParseError(
+      ["--events"],
+      description: "Missing value for --events. Usage: instant-swift-data files watch --events 1"
+    )
+    try expectFilesWatchOptionsParseError(
+      ["--events", "2"],
+      description: "Usage: instant-swift-data files watch --events 1"
+    )
+    try expectFilesWatchOptionsParseError(
+      ["--surprise"],
+      description: "Unknown files watch option: --surprise. \(CLIFilesUsage.watch)"
     )
   }
 
@@ -2370,6 +2418,30 @@ struct CLIArgumentParserTests {
     try expectStreamsParseError(
       ["dance"],
       contains: "Usage: instant-swift-data streams"
+    )
+  }
+
+  @Test
+  func streamWatchOptionsParserConsumesEventCount() throws {
+    expectNoDifference(try parseStreamWatchOptions([]), 1)
+    expectNoDifference(try parseStreamWatchOptions(["--events", "1"]), 1)
+    expectNoDifference(try parseStreamWatchOptions(["--events", "1", "--events", "1"]), 1)
+  }
+
+  @Test
+  func streamWatchOptionsParserReportsMalformedArguments() throws {
+    try expectStreamWatchOptionsParseError(
+      ["--events"],
+      description:
+        "Missing value for --events. Usage: instant-swift-data streams watch <stream-id> --events 1"
+    )
+    try expectStreamWatchOptionsParseError(
+      ["--events", "2"],
+      description: "Usage: instant-swift-data streams watch <stream-id> --events 1"
+    )
+    try expectStreamWatchOptionsParseError(
+      ["--surprise"],
+      description: "Unknown streams watch option: --surprise. \(CLIStreamsUsage.watch)"
     )
   }
 
@@ -2662,11 +2734,29 @@ private func parseRooms(_ arguments: [String]) throws -> CLIRoomsInvocation {
   return invocation
 }
 
+private func parseRoomWatchOptions(_ arguments: [String]) throws -> Int {
+  var input = arguments[...]
+  let parser = CLIRoomWatchOptionsParser(
+    usageCommand: "instant-swift-data rooms presence watch <room-type> <room-id>",
+    domain: "rooms presence watch"
+  )
+  let eventCount = try parser.parse(&input)
+  expectNoDifference(Array(input), [])
+  return eventCount
+}
+
 private func parseFiles(_ arguments: [String]) throws -> CLIFilesInvocation {
   var input = arguments[...]
   let invocation = try CLIFilesParser().parse(&input)
   expectNoDifference(Array(input), [])
   return invocation
+}
+
+private func parseFilesWatchOptions(_ arguments: [String]) throws -> Int {
+  var input = arguments[...]
+  let eventCount = try CLIFilesWatchOptionsParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return eventCount
 }
 
 private func parseShares(_ arguments: [String]) throws -> CLISharesInvocation {
@@ -2681,6 +2771,13 @@ private func parseStreams(_ arguments: [String]) throws -> CLIStreamsInvocation 
   let invocation = try CLIStreamsParser().parse(&input)
   expectNoDifference(Array(input), [])
   return invocation
+}
+
+private func parseStreamWatchOptions(_ arguments: [String]) throws -> Int {
+  var input = arguments[...]
+  let eventCount = try CLIStreamWatchOptionsParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return eventCount
 }
 
 private func expectAuthParseError(
@@ -2995,6 +3092,19 @@ private func expectRoomsParseError(
   }
 }
 
+private func expectRoomWatchOptionsParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseRoomWatchOptions(arguments)
+    Issue.record("Expected room watch options parser to reject \(arguments).")
+  } catch let error as CLIRoomsArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
 private func expectFilesParseError(
   _ arguments: [String],
   contains expectedFragment: String
@@ -3004,6 +3114,19 @@ private func expectFilesParseError(
     Issue.record("Expected files parser to reject \(arguments).")
   } catch let error as CLIFilesArgumentError {
     #expect(error.description.contains(expectedFragment))
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectFilesWatchOptionsParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseFilesWatchOptions(arguments)
+    Issue.record("Expected files watch options parser to reject \(arguments).")
+  } catch let error as CLIFilesArgumentError {
+    expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }
 }
@@ -3030,6 +3153,19 @@ private func expectStreamsParseError(
     Issue.record("Expected streams parser to reject \(arguments).")
   } catch let error as CLIStreamsArgumentError {
     #expect(error.description.contains(expectedFragment))
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectStreamWatchOptionsParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseStreamWatchOptions(arguments)
+    Issue.record("Expected stream watch options parser to reject \(arguments).")
+  } catch let error as CLIStreamsArgumentError {
+    expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }
 }

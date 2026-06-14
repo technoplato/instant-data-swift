@@ -2815,11 +2815,11 @@ public struct CLIRoomPresenceWatchParser: Parser {
 
   public func parse(_ input: inout ArraySlice<String>) throws -> CLIRoomPresenceWatchInvocation {
     let room = try CLIRoomIdentifierParser(usage: CLIRoomsUsage.presence).parse(&input)
-    let eventCount = try parseFiniteWatchEventCount(
-      from: &input,
+    let parser = CLIRoomWatchOptionsParser(
       usageCommand: "instant-swift-data rooms presence watch <room-type> <room-id>",
       domain: "rooms presence watch"
     )
+    let eventCount = try parser.parse(&input)
     return CLIRoomPresenceWatchInvocation(room: room, eventCount: eventCount)
   }
 }
@@ -2930,12 +2930,51 @@ public struct CLIRoomTopicWatchParser: Parser {
 
   public func parse(_ input: inout ArraySlice<String>) throws -> CLIRoomTopicWatchInvocation {
     let (room, topic) = try CLIRoomTopicHeadParser(usage: CLIRoomsUsage.topics).parse(&input)
-    let eventCount = try parseFiniteWatchEventCount(
-      from: &input,
+    let parser = CLIRoomWatchOptionsParser(
       usageCommand: "instant-swift-data rooms topics watch <room-type> <room-id> <topic>",
       domain: "rooms topics watch"
     )
+    let eventCount = try parser.parse(&input)
     return CLIRoomTopicWatchInvocation(room: room, topic: topic, eventCount: eventCount)
+  }
+}
+
+public struct CLIRoomWatchOptionsParser: Parser {
+  public var usageCommand: String
+  public var domain: String
+
+  public init(usageCommand: String, domain: String) {
+    self.usageCommand = usageCommand
+    self.domain = domain
+  }
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> Int {
+    var eventCount = 1
+
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--events":
+        let value = try parseOptionValue(
+          from: &input,
+          option: option,
+          usage: "Usage: \(usageCommand) --events 1"
+        )
+        guard let parsed = Int(value), parsed == 1 else {
+          throw CLIRoomsArgumentError.invalidEventCount(value, usageCommand: usageCommand)
+        }
+        eventCount = parsed
+
+      default:
+        throw CLIRoomsArgumentError.unknownOption(
+          domain: domain,
+          option: option,
+          usage: "Usage: \(usageCommand) [--events 1] [--json|--jsonl]"
+        )
+      }
+    }
+
+    return eventCount
   }
 }
 
@@ -3278,7 +3317,41 @@ public struct CLIFilesWatchParser: Parser {
   public init() {}
 
   public func parse(_ input: inout ArraySlice<String>) throws -> CLIFilesWatchInvocation {
-    CLIFilesWatchInvocation(eventCount: try parseFilesFiniteWatchEventCount(from: &input))
+    CLIFilesWatchInvocation(eventCount: try CLIFilesWatchOptionsParser().parse(&input))
+  }
+}
+
+public struct CLIFilesWatchOptionsParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> Int {
+    let usageCommand = "instant-swift-data files watch"
+    var eventCount = 1
+
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--events":
+        let value = try parseFileOptionValue(
+          from: &input,
+          option: option,
+          usage: "Usage: \(usageCommand) --events 1"
+        )
+        guard let parsed = Int(value), parsed == 1 else {
+          throw CLIFilesArgumentError.invalidEventCount(value, usageCommand: usageCommand)
+        }
+        eventCount = parsed
+
+      default:
+        throw CLIFilesArgumentError.unknownOption(
+          domain: "files watch",
+          option: option,
+          usage: CLIFilesUsage.watch
+        )
+      }
+    }
+
+    return eventCount
   }
 }
 
@@ -3376,8 +3449,42 @@ public struct CLIStreamWatchParser: Parser {
 
   public func parse(_ input: inout ArraySlice<String>) throws -> CLIStreamWatchInvocation {
     let streamID = try parseRequiredStreamArgument(from: &input, usage: CLIStreamsUsage.watch)
-    let eventCount = try parseStreamFiniteWatchEventCount(from: &input)
+    let eventCount = try CLIStreamWatchOptionsParser().parse(&input)
     return CLIStreamWatchInvocation(streamID: streamID, eventCount: eventCount)
+  }
+}
+
+public struct CLIStreamWatchOptionsParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> Int {
+    let usageCommand = "instant-swift-data streams watch <stream-id>"
+    var eventCount = 1
+
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--events":
+        let value = try parseStreamOptionValue(
+          from: &input,
+          option: option,
+          usage: "Usage: \(usageCommand) --events 1"
+        )
+        guard let parsed = Int(value), parsed == 1 else {
+          throw CLIStreamsArgumentError.invalidEventCount(value, usageCommand: usageCommand)
+        }
+        eventCount = parsed
+
+      default:
+        throw CLIStreamsArgumentError.unknownOption(
+          domain: "streams watch",
+          option: option,
+          usage: CLIStreamsUsage.watch
+        )
+      }
+    }
+
+    return eventCount
   }
 }
 
@@ -3689,37 +3796,6 @@ private func parseNonEmptyOptionValue(
   return trimmedValue
 }
 
-private func parseFiniteWatchEventCount(
-  from input: inout ArraySlice<String>,
-  usageCommand: String,
-  domain: String
-) throws -> Int {
-  var eventCount = 1
-  while let option = input.first {
-    input.removeFirst()
-    switch option {
-    case "--events":
-      let value = try parseOptionValue(
-        from: &input,
-        option: option,
-        usage: "Usage: \(usageCommand) --events 1"
-      )
-      guard let parsed = Int(value), parsed == 1 else {
-        throw CLIRoomsArgumentError.invalidEventCount(value, usageCommand: usageCommand)
-      }
-      eventCount = parsed
-
-    default:
-      throw CLIRoomsArgumentError.unknownOption(
-        domain: domain,
-        option: option,
-        usage: "Usage: \(usageCommand) [--events 1] [--json|--jsonl]"
-      )
-    }
-  }
-  return eventCount
-}
-
 private func requireNoRemainingArguments(
   _ input: inout ArraySlice<String>,
   usage: String
@@ -3836,36 +3912,6 @@ private func parseNonEmptyFileOptionValue(
   return parsed
 }
 
-private func parseFilesFiniteWatchEventCount(
-  from input: inout ArraySlice<String>
-) throws -> Int {
-  let usageCommand = "instant-swift-data files watch"
-  var eventCount = 1
-  while let option = input.first {
-    input.removeFirst()
-    switch option {
-    case "--events":
-      let value = try parseFileOptionValue(
-        from: &input,
-        option: option,
-        usage: "Usage: \(usageCommand) --events 1"
-      )
-      guard let parsed = Int(value), parsed == 1 else {
-        throw CLIFilesArgumentError.invalidEventCount(value, usageCommand: usageCommand)
-      }
-      eventCount = parsed
-
-    default:
-      throw CLIFilesArgumentError.unknownOption(
-        domain: "files watch",
-        option: option,
-        usage: CLIFilesUsage.watch
-      )
-    }
-  }
-  return eventCount
-}
-
 private func requireNoRemainingFileArguments(
   _ input: inout ArraySlice<String>,
   usage: String
@@ -3900,36 +3946,6 @@ private func parseStreamOptionValue(
   }
   input.removeFirst()
   return value
-}
-
-private func parseStreamFiniteWatchEventCount(
-  from input: inout ArraySlice<String>
-) throws -> Int {
-  let usageCommand = "instant-swift-data streams watch <stream-id>"
-  var eventCount = 1
-  while let option = input.first {
-    input.removeFirst()
-    switch option {
-    case "--events":
-      let value = try parseStreamOptionValue(
-        from: &input,
-        option: option,
-        usage: "Usage: \(usageCommand) --events 1"
-      )
-      guard let parsed = Int(value), parsed == 1 else {
-        throw CLIStreamsArgumentError.invalidEventCount(value, usageCommand: usageCommand)
-      }
-      eventCount = parsed
-
-    default:
-      throw CLIStreamsArgumentError.unknownOption(
-        domain: "streams watch",
-        option: option,
-        usage: CLIStreamsUsage.watch
-      )
-    }
-  }
-  return eventCount
 }
 
 private func parseSingleShareArgument(
