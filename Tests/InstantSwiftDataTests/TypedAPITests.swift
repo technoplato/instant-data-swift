@@ -3977,6 +3977,7 @@ private struct DraftBackedTodo: Hashable, Codable, InstantEntityModel {
   var isCompleted = false
   var createdAt: Date
   var notes: String? = nil
+  let localFormSource: String
 
   static let title = InstantAttributePath<DraftBackedTodo, String>(
     "title",
@@ -4023,13 +4024,15 @@ private struct DraftBackedTodo: Hashable, Codable, InstantEntityModel {
     title: String,
     isCompleted: Bool,
     createdAt: Date,
-    notes: String? = nil
+    notes: String? = nil,
+    localFormSource: String = "swiftui-form"
   ) {
     self.id = id
     self.title = title
     self.isCompleted = isCompleted
     self.createdAt = createdAt
     self.notes = notes
+    self.localFormSource = localFormSource
   }
 
   init(snapshot: InstantEntitySnapshot) throws {
@@ -4057,6 +4060,7 @@ private struct DraftBackedTodo: Hashable, Codable, InstantEntityModel {
     self.isCompleted = isCompleted
     self.createdAt = createdAt
     self.notes = notes
+    self.localFormSource = "swiftui-form"
   }
 
   private static func decodeError(

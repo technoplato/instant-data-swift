@@ -71,7 +71,7 @@ public struct InstantEntityMacro: MemberMacro {
       return nil
     }
 
-    let draftProperties = properties.filter { $0.name != "id" }
+    let draftProperties = properties.filter { $0.name != "id" && $0.isWritable }
     let declarations = draftProperties.map { property in
       "  public var \(property.name): \(property.type)"
     }.joined(separator: "\n")
@@ -93,9 +93,10 @@ public struct InstantEntityMacro: MemberMacro {
       ["    self.id = id"]
         + draftProperties.map { "    self.\($0.name) = \($0.name)" }
     ).joined(separator: "\n")
-    let entityAssignments = properties.map { property in
-      "    self.\(property.name) = entity.\(property.name)"
-    }.joined(separator: "\n")
+    let entityAssignments = (
+      ["    self.id = entity.id"]
+        + draftProperties.map { "    self.\($0.name) = entity.\($0.name)" }
+    ).joined(separator: "\n")
     let instantAssignments = draftProperties.map { property in
       """
           InstantAttributeAssignment<\(typeName)>(
@@ -145,7 +146,12 @@ public struct InstantEntityMacro: MemberMacro {
         })
       else { return nil }
 
+      let isWritable = variable.bindingSpecifier.tokenKind == .keyword(.var)
+
       guard variable.bindings.count == 1, let binding = variable.bindings.first else {
+        if !isWritable {
+          return nil
+        }
         context.diagnose(
           InstantEntityDiagnostic.requiresSingleDraftPropertyBinding
             .diagnose(at: Syntax(variable))
@@ -156,6 +162,10 @@ public struct InstantEntityMacro: MemberMacro {
       guard binding.accessorBlock == nil,
         let pattern = binding.pattern.as(IdentifierPatternSyntax.self)
       else { return nil }
+
+      guard isWritable || pattern.identifier.text == "id" else {
+        return nil
+      }
 
       let type = binding.typeAnnotation?.type.description.trimmed
         ?? inferredType(from: binding.initializer?.value)
@@ -170,6 +180,7 @@ public struct InstantEntityMacro: MemberMacro {
       return StoredProperty(
         name: pattern.identifier.text,
         type: type,
+        isWritable: isWritable,
         isOptional: binding.typeAnnotation?.type.isInstantOptionalType ?? false,
         defaultValue: binding.initializer?.value.description.trimmed
       )
@@ -238,6 +249,7 @@ private enum ExplicitNamespace {
 private struct StoredProperty {
   var name: String
   var type: String
+  var isWritable: Bool
   var isOptional: Bool
   var defaultValue: String?
 }

@@ -65,6 +65,9 @@
           var category: Optional<String>
           var owner: Swift.Optional<String>
           var createdAt: Date
+          let createdBy: String
+          let metadata = ["local"]
+          let ignoredA = 1, ignoredB = 2
 
           static let ignored = InstantAttributePath<Todo, String>("ignored")
 

@@ -76,6 +76,9 @@
           var category: Optional<String>
           var owner: Swift.Optional<String>
           var createdAt: Date
+          let createdBy: String
+          let metadata = ["local"]
+          let ignoredA = 1, ignoredB = 2
 
           static let ignored = InstantAttributePath<Todo, String>("ignored")
 
@@ -101,6 +104,9 @@
       #expect(result.expanded.contains("category: Optional<String> = nil"))
       #expect(result.expanded.contains("owner: Swift.Optional<String> = nil"))
       #expect(result.expanded.contains("public init(_ entity: Todo)"))
+      #expect(result.expanded.contains("self.id = entity.id"))
+      #expect(result.expanded.contains("self.text = entity.text"))
+      #expect(result.expanded.contains("self.createdAt = entity.createdAt"))
       #expect(result.expanded.contains(#"name: "text""#))
       #expect(result.expanded.contains(#"name: "notes""#))
       #expect(result.expanded.contains(#"name: "category""#))
@@ -108,6 +114,12 @@
       #expect(result.expanded.contains(#"attributeID: Todo.instantNamespace + "/text""#))
       #expect(result.expanded.contains("value: self.text.instantValue"))
       #expect(!result.expanded.contains(#"name: "id""#))
+      #expect(!result.expanded.contains(#"public var createdBy"#))
+      #expect(!result.expanded.contains(#"name: "createdBy""#))
+      #expect(!result.expanded.contains(#"self.createdBy"#))
+      #expect(!result.expanded.contains(#"public var metadata"#))
+      #expect(!result.expanded.contains(#"public var ignoredA"#))
+      #expect(!result.expanded.contains(#"public var ignoredB"#))
       #expect(!result.expanded.contains(#"name: "ignored""#))
       #expect(!result.expanded.contains(#"name: "computed""#))
       #expect(result.diagnostics.isEmpty)
