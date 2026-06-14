@@ -498,6 +498,13 @@ editDraft.text = "Ship generated draft edits"
 try await db.save(editDraft)
 ```
 
+Drafts do not conform to `Identifiable` automatically because multiple unsaved
+drafts can share `nil` ids. Opt in locally when a SwiftUI flow needs it:
+
+```swift
+extension Todo.Draft: Identifiable {}
+```
+
 Unique attributes can identify entities and link targets with lookup refs, just
 like Instant's `lookup(...)` transaction helper:
 
