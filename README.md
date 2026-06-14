@@ -283,6 +283,7 @@ Run the local Swift validation evidence runner:
 ```bash
 swift run instant-swift-data validation local-todos --jsonl
 swift run instant-swift-data validation local-integrations --jsonl
+swift run instant-swift-data validation typed-drafts --jsonl
 swift run instant-swift-data-validation-runner --local-todos
 swift run instant-swift-data-validation-runner --local-integrations
 node validation/ts-runner/src/main.ts --fixtures
@@ -293,7 +294,10 @@ validation/run-e2e.sh
 closed-connection offline write, offline relaunch restore, and reconnect flush.
 `validation local-integrations` emits evidence for local auth, room
 presence/topic messages, file upload/read, stream chunks, and share
-create/accept/revoke. `validation/run-e2e.sh` also records a one-iteration
+create/accept/revoke. `validation typed-drafts` emits terminal evidence for a
+macro-generated nil-id draft create, `Draft(existing)` edit, and relaunch
+persistence through `InstantSwiftDataClient.save(_:)`. `validation/run-e2e.sh`
+also records a one-iteration
 `local-todos` benchmark JSONL artifact by default; set
 `INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS` to change that count.
 

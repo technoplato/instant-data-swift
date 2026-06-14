@@ -1723,6 +1723,8 @@ struct CLIArgumentParserTests {
     expectNoDifference(try parseValidation(["todos"]), .localTodos)
     expectNoDifference(try parseValidation(["local-integrations"]), .localIntegrations)
     expectNoDifference(try parseValidation(["integrations"]), .localIntegrations)
+    expectNoDifference(try parseValidation(["typed-drafts"]), .typedDrafts)
+    expectNoDifference(try parseValidation(["drafts"]), .typedDrafts)
   }
 
   @Test

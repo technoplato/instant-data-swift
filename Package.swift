@@ -98,6 +98,7 @@ let package = Package(
       name: "instant-swift-data",
       dependencies: [
         "InstantSwiftDataCLIParsing",
+        "InstantSwiftData",
         "InstantSwiftDataCore",
         "InstantSwiftDataSchema",
       ],

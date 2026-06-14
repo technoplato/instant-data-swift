@@ -238,6 +238,46 @@ struct BootstrapTests {
   }
 
   @Test
+  func draftValidationProvesGeneratedCreateEditAndRelaunch() async throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataDraftValidation-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let result = try await InstantSwiftDataDraftValidation.run(
+      appID: "draft-validation-test",
+      cacheURL: directory.appendingPathComponent("state.sqlite"),
+      timestamp: { InstantTimestamp(milliseconds: 1_700_001_000_000) },
+      makeID: { "draft-validation-created" }
+    )
+
+    expectNoDifference(result.appID, "draft-validation-test")
+    expectNoDifference(result.evidence.map(\.event), ["create", "edit", "relaunch"])
+    expectNoDifference(result.evidence.map(\.ok), [true, true, true])
+    expectNoDifference(result.evidence.first?.details.createdID, "draft-validation-created")
+    let finalDetails = try #require(result.evidence.last?.details)
+    expectNoDifference(
+      finalDetails.draftTodoAttributeIDs,
+      [
+        "draftValidationTodos/title",
+        "draftValidationTodos/isCompleted",
+        "draftValidationTodos/createdAt",
+        "draftValidationTodos/notes",
+      ]
+    )
+    expectNoDifference(finalDetails.draftTodoIDs, ["draft-validation-created"])
+    expectNoDifference(finalDetails.draftTodoTitles, ["Edit from generated draft"])
+    expectNoDifference(finalDetails.draftTodoCompletionStates, [true])
+    expectNoDifference(finalDetails.draftTodoNotes, ["Edited through Draft(existing)"])
+    expectNoDifference(
+      finalDetails.pendingMutationIDs,
+      ["validation.typed-drafts.create", "validation.typed-drafts.edit"]
+    )
+    expectNoDifference(finalDetails.createdID, "draft-validation-created")
+    expectNoDifference(finalDetails.editedID, "draft-validation-created")
+  }
+
+  @Test
   func bootstrapUsesMagicCodeExchangeDependency() async throws {
     let appID = "magic-code-dependency-\(UUID().uuidString)"
     let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)

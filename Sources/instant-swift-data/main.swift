@@ -1,5 +1,6 @@
 import Foundation
 import InstantSwiftDataCLIParsing
+import InstantSwiftData
 import InstantSwiftDataCore
 import InstantSwiftDataSchema
 
@@ -214,6 +215,24 @@ struct InstantSwiftDataCLI {
           try writeJSONLine(
             validationFailureRow(
               caseID: "validation.local.integrations",
+              appID: appID,
+              error: error
+            )
+          )
+        }
+        throw error
+      }
+
+    case .typedDrafts:
+      let appID = validationAppID()
+      do {
+        let result = try await InstantSwiftDataDraftValidation.run(appID: appID)
+        try printDraftValidation(result: result, output: output)
+      } catch {
+        if output == .jsonl {
+          try writeJSONLine(
+            validationFailureRow(
+              caseID: "validation.typed.drafts",
               appID: appID,
               error: error
             )
@@ -4274,6 +4293,7 @@ struct InstantSwiftDataCLI {
         sync mark-processed <tx-id> [--json|--jsonl]
         validation local-todos [--json|--jsonl]
         validation local-integrations [--json|--jsonl]
+        validation typed-drafts [--json|--jsonl]
         benchmark [--suite local-todos] [--iterations n] [--app-id id] [--json|--jsonl]
 
       Environment:
@@ -4691,6 +4711,50 @@ struct InstantSwiftDataCLI {
       print("stream chunks: \(summary.streamChunkCount)")
       print("active shares: \(summary.activeShareCount)")
       print("revoked shares: \(summary.revokedShareCount)")
+      print("cache: \(summary.cachePath)")
+
+    case .json:
+      try writeJSON(summary)
+
+    case .jsonl:
+      for row in result.evidence {
+        try writeJSONLine(row)
+      }
+    }
+  }
+
+  private static func printDraftValidation(
+    result: DraftValidationResult,
+    output: OutputMode
+  ) throws {
+    let finalDetails = result.evidence.last?.details
+    let summary = DraftValidationOutput(
+      appID: result.appID,
+      cachePath: result.cacheURL.path,
+      event: "typed-drafts",
+      transport: "not-implemented-local-cache-only",
+      ok: result.evidence.allSatisfy { $0.ok },
+      evidenceCount: result.evidence.count,
+      events: result.evidence.map(\.event),
+      draftTodoAttributeIDs: finalDetails?.draftTodoAttributeIDs ?? [],
+      draftTodoIDs: finalDetails?.draftTodoIDs ?? [],
+      draftTodoTitles: finalDetails?.draftTodoTitles ?? [],
+      draftTodoCompletionStates: finalDetails?.draftTodoCompletionStates ?? [],
+      draftTodoNotes: finalDetails?.draftTodoNotes ?? [],
+      pendingMutationCount: finalDetails?.pendingMutationIDs.count ?? 0,
+      createdID: result.evidence.compactMap(\.details.createdID).first,
+      editedID: result.evidence.compactMap(\.details.editedID).last
+    )
+
+    switch output {
+    case .human:
+      print("validation: \(summary.ok ? "ok" : "failed")")
+      print("case: validation.typed.drafts")
+      print("events: \(summary.events.joined(separator: ", "))")
+      print("evidence rows: \(summary.evidenceCount)")
+      print("draft attributes: \(summary.draftTodoAttributeIDs.joined(separator: ", "))")
+      print("draft todo ids: \(summary.draftTodoIDs.joined(separator: ", "))")
+      print("pending mutations: \(summary.pendingMutationCount)")
       print("cache: \(summary.cachePath)")
 
     case .json:
@@ -6247,6 +6311,24 @@ private struct LocalIntegrationValidationOutput: Codable, Sendable {
   var streamChunkCount: Int
   var activeShareCount: Int
   var revokedShareCount: Int
+}
+
+private struct DraftValidationOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var transport: String
+  var ok: Bool
+  var evidenceCount: Int
+  var events: [String]
+  var draftTodoAttributeIDs: [String]
+  var draftTodoIDs: [String]
+  var draftTodoTitles: [String]
+  var draftTodoCompletionStates: [Bool]
+  var draftTodoNotes: [String?]
+  var pendingMutationCount: Int
+  var createdID: String?
+  var editedID: String?
 }
 
 private struct ScaffoldOutput: Codable, Sendable {

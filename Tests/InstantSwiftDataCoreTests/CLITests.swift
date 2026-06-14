@@ -708,11 +708,11 @@ extension InstantStoreTests {
     )
     try expectMalformed(
       ["validation", "remote", "--json"],
-      contains: "validation <local-todos|local-integrations>"
+      contains: "validation <local-todos|local-integrations|typed-drafts>"
     )
     try expectMalformed(
       ["validation", "todos", "extra", "--json"],
-      contains: "validation <local-todos|local-integrations>"
+      contains: "validation <local-todos|local-integrations|typed-drafts>"
     )
 
     expectNoDifference(
@@ -4659,7 +4659,7 @@ extension InstantStoreTests {
 
     let malformed = try runCLIResult(["validation", "remote", "--json"], homeURL: homeURL)
     #expect(malformed.status == 64)
-    #expect(malformed.error.contains("validation <local-todos|local-integrations>"))
+    #expect(malformed.error.contains("validation <local-todos|local-integrations|typed-drafts>"))
   }
 
   @Test
@@ -4736,6 +4736,81 @@ extension InstantStoreTests {
     #expect(humanOutput.contains("case: validation.local.integrations"))
     #expect(humanOutput.contains("evidence rows: 9"))
     #expect(humanOutput.contains("revoked shares: 1"))
+  }
+
+  @Test
+  func cliValidationTypedDraftsEmitsEvidence() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let jsonOutput = try JSONDecoder().decode(
+      CLIDraftValidationOutput.self,
+      from: Data(
+        try runCLI(["validation", "typed-drafts", "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(jsonOutput.appID, "cli-cache-test")
+    expectNoDifference(jsonOutput.event, "typed-drafts")
+    expectNoDifference(jsonOutput.ok, true)
+    expectNoDifference(jsonOutput.evidenceCount, 3)
+    expectNoDifference(jsonOutput.events, ["create", "edit", "relaunch"])
+    expectNoDifference(
+      jsonOutput.draftTodoAttributeIDs,
+      [
+        "draftValidationTodos/title",
+        "draftValidationTodos/isCompleted",
+        "draftValidationTodos/createdAt",
+        "draftValidationTodos/notes",
+      ]
+    )
+    expectNoDifference(jsonOutput.draftTodoTitles, ["Edit from generated draft"])
+    expectNoDifference(jsonOutput.draftTodoCompletionStates, [true])
+    expectNoDifference(jsonOutput.draftTodoNotes, ["Edited through Draft(existing)"])
+    expectNoDifference(jsonOutput.pendingMutationCount, 2)
+    expectNoDifference(jsonOutput.createdID, jsonOutput.editedID)
+
+    let jsonlOutput = try runCLI(["validation", "typed-drafts", "--jsonl"], homeURL: homeURL)
+    let lines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(lines.count, 3)
+    let createEvidence = try JSONDecoder().decode(
+      CLIDraftValidationEvidence.self,
+      from: Data(try #require(lines.first).utf8)
+    )
+    expectNoDifference(createEvidence.caseID, "validation.typed.drafts")
+    expectNoDifference(createEvidence.appID, "cli-cache-test")
+    expectNoDifference(createEvidence.event, "create")
+    expectNoDifference(
+      createEvidence.details.draftTodoAttributeIDs,
+      [
+        "draftValidationTodos/title",
+        "draftValidationTodos/isCompleted",
+        "draftValidationTodos/createdAt",
+        "draftValidationTodos/notes",
+      ]
+    )
+    expectNoDifference(createEvidence.details.draftTodoTitles, ["Create from generated draft"])
+    expectNoDifference(createEvidence.details.draftTodoCompletionStates, [false])
+    expectNoDifference(createEvidence.details.draftTodoNotes, [nil])
+
+    let relaunchEvidence = try JSONDecoder().decode(
+      CLIDraftValidationEvidence.self,
+      from: Data(lines[2].utf8)
+    )
+    expectNoDifference(relaunchEvidence.event, "relaunch")
+    expectNoDifference(relaunchEvidence.details.draftTodoTitles, ["Edit from generated draft"])
+    expectNoDifference(relaunchEvidence.details.draftTodoCompletionStates, [true])
+    expectNoDifference(
+      relaunchEvidence.details.pendingMutationIDs,
+      ["validation.typed-drafts.create", "validation.typed-drafts.edit"]
+    )
+    expectNoDifference(relaunchEvidence.details.createdID, relaunchEvidence.details.editedID)
+
+    let humanOutput = try runCLI(["validation", "typed-drafts"], homeURL: homeURL)
+    #expect(humanOutput.contains("validation: ok"))
+    #expect(humanOutput.contains("case: validation.typed.drafts"))
+    #expect(humanOutput.contains("evidence rows: 3"))
   }
 
   @Test
@@ -5842,6 +5917,45 @@ private struct CLILocalIntegrationValidationDetails: Decodable {
   var activeShareIDs: [String]
   var revokedShareIDs: [String]
   var shareMemberUserIDs: [String]
+}
+
+private struct CLIDraftValidationOutput: Decodable {
+  var appID: String
+  var event: String
+  var ok: Bool
+  var evidenceCount: Int
+  var events: [String]
+  var draftTodoAttributeIDs: [String]
+  var draftTodoTitles: [String]
+  var draftTodoCompletionStates: [Bool]
+  var draftTodoNotes: [String?]
+  var pendingMutationCount: Int
+  var createdID: String?
+  var editedID: String?
+}
+
+private struct CLIDraftValidationEvidence: Decodable {
+  var caseID: String
+  var appID: String
+  var event: String
+  var details: CLIDraftValidationDetails
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case appID
+    case event
+    case details
+  }
+}
+
+private struct CLIDraftValidationDetails: Decodable {
+  var draftTodoAttributeIDs: [String]
+  var draftTodoTitles: [String]
+  var draftTodoCompletionStates: [Bool]
+  var draftTodoNotes: [String?]
+  var pendingMutationIDs: [String]
+  var createdID: String?
+  var editedID: String?
 }
 
 private struct CLIBenchmarkOutput: Decodable {
