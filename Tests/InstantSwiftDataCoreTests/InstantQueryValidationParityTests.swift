@@ -6,6 +6,89 @@ import Testing
 @Suite(.serialized)
 struct InstantQueryValidationParityTests {
   @Test
+  func upstreamTypedQueryShapeAndDollarOptions() async throws {
+    let runtime = try await queryValidationRuntime()
+    let shapeSource = queryValidationSource(
+      "validates top level types",
+      assertion: "lines 99-104 top-level object validation",
+      status: "adapted: Swift's InstantQueryPlan type makes non-object top-level queries unrepresentable."
+    )
+    let dollarSource = queryValidationSource(
+      "dollar sign object",
+      assertion: "lines 157-238 valid dollar option keys",
+      status:
+        "adapted: Swift models the dollar object as typed plan fields for filters, order, pagination, and selected fields."
+    )
+    let unknownOperatorSource = queryValidationSource(
+      "where clause unknown operators",
+      assertion: "lines 506-516 operator key validation",
+      status: "adapted: Swift's InstantQueryFilter enum makes unknown operators unrepresentable."
+    )
+
+    let typedShapePlan = InstantQueryPlan(
+      id: "query-validation-parity.users.typed-shape",
+      namespace: "users",
+      filters: [.equals(field: "name", value: .string("John"))],
+      order: InstantQueryOrder("name"),
+      offset: 0,
+      limit: 10,
+      selectedFields: ["name", "email"]
+    )
+    let typedShape = try await runtime.queryOnce(typedShapePlan)
+    expectNoDifference(typedShape.values, [], shapeSource)
+    expectNoDifference(typedShapePlan.filters, [.equals(field: "name", value: .string("John"))], dollarSource)
+    expectNoDifference(typedShapePlan.order, .some(InstantQueryOrder("name")), dollarSource)
+    expectNoDifference(typedShapePlan.offset, .some(0), dollarSource)
+    expectNoDifference(typedShapePlan.limit, .some(10), dollarSource)
+    expectNoDifference(typedShapePlan.selectedFields, .some(["email", "name"]), dollarSource)
+
+    let cursor = InstantQueryCursor(entityID: "user-1", sortValue: .string("John"))
+    let cursorPlans = [
+      InstantQueryPlan(id: "query-validation-parity.users.first", namespace: "users", first: 2),
+      InstantQueryPlan(id: "query-validation-parity.users.after", namespace: "users", after: cursor),
+      InstantQueryPlan(id: "query-validation-parity.users.last", namespace: "users", last: 2),
+      InstantQueryPlan(id: "query-validation-parity.users.before", namespace: "users", before: cursor),
+    ]
+    for plan in cursorPlans {
+      let page = try await runtime.queryOnce(plan)
+      expectNoDifference(page.values, [], dollarSource)
+    }
+
+    let nestedDollarInclude = InstantQueryInclude(
+      "posts",
+      direction: .reverse,
+      query: InstantQueryIncludePlan(
+        id: "query-validation-parity.users.posts.dollar-options",
+        namespace: "posts",
+        filters: [.like(field: "title", pattern: "%Swift%")],
+        order: InstantQueryOrder("title"),
+        selectedFields: ["title"]
+      )
+    )
+    let nestedDollar = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.users.nested-dollar",
+        namespace: "users",
+        includes: [nestedDollarInclude]
+      )
+    )
+    expectNoDifference(nestedDollar, [], dollarSource)
+
+    let validLike = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.users.known-like-operator",
+        namespace: "users",
+        filters: [.like(field: "name", pattern: "%John%")]
+      )
+    )
+    expectNoDifference(
+      validLike,
+      [],
+      unknownOperatorSource
+    )
+  }
+
+  @Test
   func upstreamTopLevelEntityNames() async throws {
     let runtime = try await queryValidationRuntime()
     let source = queryValidationSource(
