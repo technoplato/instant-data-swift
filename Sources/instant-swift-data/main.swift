@@ -1618,19 +1618,19 @@ struct InstantSwiftDataCLI {
   }
 
   private static func runCache(arguments: [String], output: OutputMode) async throws {
-    var arguments = arguments
-    guard let command = arguments.popFirstArgument() else {
-      throw CLIError(cacheUsage, exitCode: 64)
+    let invocation: CLICacheInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLICacheParser().parse(&input)
+    } catch let error as CLICacheArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
 
     let context = try await CLIContext.bootstrap(initialAttributes: [])
     let snapshot = try await context.runtime.persistence.loadSnapshot()
 
-    switch command {
-    case "inspect":
-      guard arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data cache inspect [--json|--jsonl]", exitCode: 64)
-      }
+    switch invocation {
+    case .inspect:
       let queryCache = try await context.runtime.cachedQueries()
       let summary = CacheInspectOutput(
         appID: context.appID,
@@ -1699,11 +1699,7 @@ struct InstantSwiftDataCLI {
         }
       }
 
-    case "attributes", "attrs":
-      let namespace = try parseOptionalCacheNamespace(
-        arguments: arguments,
-        usage: "Usage: instant-swift-data cache attributes [namespace] [--json|--jsonl]"
-      )
+    case let .attributes(namespace):
       try printCacheAttributes(
         context: context,
         output: output,
@@ -1711,20 +1707,13 @@ struct InstantSwiftDataCLI {
         attributes: cacheAttributes(snapshot.store, namespace: namespace)
       )
 
-    case "triples", "facts":
-      let namespace = try parseOptionalCacheNamespace(
-        arguments: arguments,
-        usage: "Usage: instant-swift-data cache triples [namespace] [--json|--jsonl]"
-      )
+    case let .triples(namespace):
       try printCacheTriples(
         context: context,
         output: output,
         namespace: namespace,
         triples: cacheTriples(snapshot.store, namespace: namespace)
       )
-
-    default:
-      throw CLIError(cacheUsage, exitCode: 64)
     }
   }
 
@@ -6127,12 +6116,7 @@ struct InstantSwiftDataCLI {
   }
 
   private static var cacheUsage: String {
-    """
-    Usage: instant-swift-data cache <inspect|attributes|triples>
-      instant-swift-data cache inspect [--json|--jsonl]
-      instant-swift-data cache attributes [namespace] [--json|--jsonl]
-      instant-swift-data cache triples [namespace] [--json|--jsonl]
-    """
+    CLICacheUsage.cache
   }
 
   private static var localIDUsage: String {
@@ -6421,18 +6405,6 @@ struct InstantSwiftDataCLI {
     attributesByID[attributeID]?.namespace
       ?? attributeID.split(separator: "/", maxSplits: 1).first.map(String.init)
       ?? "unknown"
-  }
-
-  private static func parseOptionalCacheNamespace(
-    arguments: [String],
-    usage: String
-  ) throws -> String? {
-    var arguments = arguments
-    guard let namespace = arguments.popFirstArgument() else { return nil }
-    guard arguments.isEmpty else {
-      throw CLIError(usage, exitCode: 64)
-    }
-    return try parseAdminNamespace(namespace, usage: usage)
   }
 
   private static func queryCacheSummaries(

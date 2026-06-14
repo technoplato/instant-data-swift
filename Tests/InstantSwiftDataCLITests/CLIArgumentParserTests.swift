@@ -245,6 +245,22 @@ struct CLIArgumentParserTests {
       )
     )
     expectNoDifference(
+      try CLIArguments.parse(["cache", "attrs", "todos", "--json"]),
+      CLIInvocation(
+        output: .json,
+        command: .cache,
+        arguments: ["attrs", "todos"]
+      )
+    )
+    expectNoDifference(
+      try CLIArguments.parse(["cache", "--jsonl", "facts"]),
+      CLIInvocation(
+        output: .jsonl,
+        command: .cache,
+        arguments: ["facts"]
+      )
+    )
+    expectNoDifference(
       try CLIArguments.parse([
         "streams", "append", "chat/lobby", "--value", "{}", "--jsonl",
       ]),
@@ -574,6 +590,58 @@ struct CLIArgumentParserTests {
     try expectAppParseError(
       ["dance"],
       contains: "Usage: instant-swift-data app"
+    )
+  }
+
+  @Test
+  func cacheParserParsesCommandsAndAliases() throws {
+    expectNoDifference(try parseCache(["inspect"]), .inspect)
+    expectNoDifference(try parseCache(["attributes"]), .attributes(namespace: nil))
+    expectNoDifference(
+      try parseCache(["attributes", " todos "]),
+      .attributes(namespace: "todos")
+    )
+    expectNoDifference(
+      try parseCache(["attrs", "todos"]),
+      .attributes(namespace: "todos")
+    )
+    expectNoDifference(try parseCache(["triples"]), .triples(namespace: nil))
+    expectNoDifference(
+      try parseCache(["triples", "todos"]),
+      .triples(namespace: "todos")
+    )
+    expectNoDifference(
+      try parseCache(["facts", "todos"]),
+      .triples(namespace: "todos")
+    )
+  }
+
+  @Test
+  func cacheParserReportsMalformedArguments() throws {
+    try expectCacheParseError([], contains: "Usage: instant-swift-data cache")
+    try expectCacheParseError(
+      ["inspect", "extra"],
+      description: CLICacheUsage.inspect
+    )
+    try expectCacheParseError(
+      ["attributes", "todos", "extra"],
+      description: CLICacheUsage.attributes
+    )
+    try expectCacheParseError(
+      ["attributes", "  "],
+      contains: "namespace must not be empty"
+    )
+    try expectCacheParseError(
+      ["attributes", "todo list"],
+      contains: "namespace must not be empty or contain whitespace or '/'"
+    )
+    try expectCacheParseError(
+      ["triples", "todos/items"],
+      contains: "namespace must not be empty or contain whitespace or '/'"
+    )
+    try expectCacheParseError(
+      ["dance"],
+      contains: "Usage: instant-swift-data cache"
     )
   }
 
@@ -1149,6 +1217,13 @@ private func parseApp(_ arguments: [String]) throws -> CLIAppInvocation {
   return invocation
 }
 
+private func parseCache(_ arguments: [String]) throws -> CLICacheInvocation {
+  var input = arguments[...]
+  let invocation = try CLICacheParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseRooms(_ arguments: [String]) throws -> CLIRoomsInvocation {
   var input = arguments[...]
   let invocation = try CLIRoomsParser().parse(&input)
@@ -1238,6 +1313,32 @@ private func expectAppParseError(
     Issue.record("Expected app parser to reject \(arguments).")
   } catch let error as CLIAppArgumentError {
     #expect(error.description.contains(expectedFragment))
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectCacheParseError(
+  _ arguments: [String],
+  contains expectedFragment: String
+) throws {
+  do {
+    _ = try parseCache(arguments)
+    Issue.record("Expected cache parser to reject \(arguments).")
+  } catch let error as CLICacheArgumentError {
+    #expect(error.description.contains(expectedFragment))
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectCacheParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseCache(arguments)
+    Issue.record("Expected cache parser to reject \(arguments).")
+  } catch let error as CLICacheArgumentError {
+    expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }
 }

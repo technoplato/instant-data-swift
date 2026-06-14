@@ -197,6 +197,36 @@ public enum CLIAppArgumentError: Error, Equatable, Sendable {
   public var exitCode: Int32 { 64 }
 }
 
+public enum CLICacheInvocation: Equatable, Sendable {
+  case inspect
+  case attributes(namespace: String?)
+  case triples(namespace: String?)
+}
+
+public enum CLICacheUsage {
+  public static let cache = """
+    Usage: instant-swift-data cache <inspect|attributes|triples>
+      instant-swift-data cache inspect [--json|--jsonl]
+      instant-swift-data cache attributes [namespace] [--json|--jsonl]
+      instant-swift-data cache triples [namespace] [--json|--jsonl]
+    """
+
+  public static let inspect = "Usage: instant-swift-data cache inspect [--json|--jsonl]"
+  public static let attributes =
+    "Usage: instant-swift-data cache attributes [namespace] [--json|--jsonl]"
+  public static let triples =
+    "Usage: instant-swift-data cache triples [namespace] [--json|--jsonl]"
+}
+
+public enum CLICacheArgumentError: Error, Equatable, Sendable {
+  case missingCommand
+  case unknownCommand(String)
+  case invalidNamespace(String, usage: String)
+  case unexpectedArgument(String, usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
 public enum CLIRoomsInvocation: Equatable, Sendable {
   case presence(CLIRoomPresenceInvocation)
   case topics(CLIRoomTopicsInvocation)
@@ -984,6 +1014,36 @@ public struct CLIAppEphemeralParser: Parser {
       throw CLIAppArgumentError.missingArguments(usage: CLIAppUsage.ephemeral)
     }
     return CLIAppEphemeralInvocation(title: title)
+  }
+}
+
+public struct CLICacheParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLICacheInvocation {
+    guard let command = input.first else {
+      throw CLICacheArgumentError.missingCommand
+    }
+    input.removeFirst()
+
+    switch command {
+    case "inspect":
+      try requireNoRemainingCacheArguments(&input, usage: CLICacheUsage.inspect)
+      return .inspect
+
+    case "attributes", "attrs":
+      return .attributes(
+        namespace: try parseOptionalCacheNamespace(from: &input, usage: CLICacheUsage.attributes)
+      )
+
+    case "triples", "facts":
+      return .triples(
+        namespace: try parseOptionalCacheNamespace(from: &input, usage: CLICacheUsage.triples)
+      )
+
+    default:
+      throw CLICacheArgumentError.unknownCommand(command)
+    }
   }
 }
 
@@ -2291,6 +2351,35 @@ private func requireNoRemainingAppArguments(
   }
 }
 
+private func parseOptionalCacheNamespace(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String? {
+  guard let value = input.first else { return nil }
+  input.removeFirst()
+  try requireNoRemainingCacheArguments(&input, usage: usage)
+  let namespace = trimmed(value)
+  guard isValidCacheNamespace(namespace) else {
+    throw CLICacheArgumentError.invalidNamespace(namespace, usage: usage)
+  }
+  return namespace
+}
+
+private func requireNoRemainingCacheArguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if let argument = input.first {
+    throw CLICacheArgumentError.unexpectedArgument(argument, usage: usage)
+  }
+}
+
+private func isValidCacheNamespace(_ value: String) -> Bool {
+  !value.isEmpty
+    && !value.contains("/")
+    && !value.contains(where: { $0.isWhitespace })
+}
+
 private func trimmed(_ string: String) -> String {
   string.trimmingCharacters(in: .whitespacesAndNewlines)
 }
@@ -2363,6 +2452,24 @@ extension CLIAppArgumentError: CustomStringConvertible {
 
     case let .unexpectedArgument(argument, usage):
       return "Unexpected argument: \(argument). \(usage)"
+    }
+  }
+}
+
+extension CLICacheArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case .missingCommand:
+      return CLICacheUsage.cache
+
+    case .unknownCommand:
+      return CLICacheUsage.cache
+
+    case let .invalidNamespace(_, usage):
+      return "\(usage): namespace must not be empty or contain whitespace or '/'."
+
+    case let .unexpectedArgument(_, usage):
+      return usage
     }
   }
 }
