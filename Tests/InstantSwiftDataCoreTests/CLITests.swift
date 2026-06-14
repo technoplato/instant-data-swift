@@ -449,6 +449,20 @@ extension InstantStoreTests {
     )
     expectNoDifference(limited.snapshots.map(\.id), ["note-1"])
 
+    let duplicateLimitResult = try runCLIResult(
+      ["admin", "query", "notes", "--limit", "0", "--limit", "1", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(duplicateLimitResult.status, 0)
+    let duplicateLimitJSON = try #require(
+      JSONSerialization.jsonObject(with: Data(duplicateLimitResult.output.utf8)) as? [String: Any]
+    )
+    #expect(duplicateLimitJSON["queryID"] as? String == "admin.bm90ZXM.query.limit-1")
+    let duplicateLimitSnapshots = try #require(
+      duplicateLimitJSON["snapshots"] as? [[String: Any]]
+    )
+    #expect(duplicateLimitSnapshots.compactMap { $0["id"] as? String } == ["note-1"])
+
     let transactJSONL = try runCLI(
       ["admin", "transact", "notes", "note-2", "--merge", #"{"title":"JSONL note"}"#, "--jsonl"],
       homeURL: homeURL
@@ -501,6 +515,82 @@ extension InstantStoreTests {
     let badNamespace = try runCLIResult(["admin", "query", "bad/namespace", "--json"], homeURL: homeURL)
     #expect(badNamespace.status == 64)
     #expect(badNamespace.error.contains("namespace must not be empty"))
+  }
+
+  @Test
+  func cliMalformedAdminArgumentsDoNotBootstrapState() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    func expectMalformed(_ arguments: [String], contains expectedFragment: String) throws {
+      let result = try runCLIResult(arguments, homeURL: homeURL)
+      expectNoDifference(result.status, 64)
+      #expect(result.error.contains(expectedFragment))
+    }
+
+    try expectMalformed(
+      ["admin", "query", "bad/namespace", "--json"],
+      contains: "namespace must not be empty"
+    )
+    try expectMalformed(
+      ["admin", "query", "notes", "--limit", "-1", "--json"],
+      contains: "--limit must be a non-negative integer"
+    )
+    try expectMalformed(
+      ["admin", "query", "notes", "--unknown", "--json"],
+      contains: "Unknown admin query option"
+    )
+    try expectMalformed(
+      ["admin", "transact", "notes", "note-1", "--merge", "--json"],
+      contains: "admin transact"
+    )
+    try expectMalformed(
+      ["admin", "transact", "notes", "note-1", "--merge", "[", "--unknown", "--json"],
+      contains: "admin transact: Invalid JSON value"
+    )
+    try expectMalformed(
+      [
+        "admin", "transact", "notes", "note-1", "--merge", "[", "--transaction-id", "  ",
+        "--json",
+      ],
+      contains: "admin transact: Invalid JSON value"
+    )
+    try expectMalformed(
+      ["admin", "transact", "notes", "note-1", "--merge", "[]", "--json"],
+      contains: "--merge must be a JSON object"
+    )
+    try expectMalformed(
+      ["admin", "transact", "notes", "note-1", "--merge", "{}", "--json"],
+      contains: "--merge must include at least one field"
+    )
+    try expectMalformed(
+      [
+        "admin", "transact", "notes", "note-1", "--merge", #"{"title":"One"}"#, "--merge",
+        #"{"title":"Two"}"#, "--json",
+      ],
+      contains: "admin transact"
+    )
+    try expectMalformed(
+      [
+        "admin", "transact", "notes", "note-1", "--merge", #"{"title":"One"}"#,
+        "--transaction-id", "tx-1", "--transaction-id", "tx-2", "--json",
+      ],
+      contains: "admin transact"
+    )
+    try expectMalformed(
+      [
+        "admin", "tx", "notes", "note-1", "--merge", #"{"title":"One"}"#, "--unknown",
+        "--json",
+      ],
+      contains: "Unknown admin transact option"
+    )
+
+    expectNoDifference(
+      try FileManager.default.contentsOfDirectory(atPath: homeURL.path),
+      []
+    )
   }
 
   @Test

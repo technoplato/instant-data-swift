@@ -81,6 +81,65 @@ public enum CLIExamplesTodosCommand: Equatable, Sendable {
   case unknown(String)
 }
 
+public enum CLIAdminInvocation: Equatable, Sendable {
+  case query(CLIAdminQueryInvocation)
+  case transact(CLIAdminTransactInvocation)
+}
+
+public struct CLIAdminQueryInvocation: Equatable, Sendable {
+  public var namespace: String
+  public var limit: Int?
+
+  public init(namespace: String, limit: Int? = nil) {
+    self.namespace = namespace
+    self.limit = limit
+  }
+}
+
+public struct CLIAdminTransactInvocation: Equatable, Sendable {
+  public var namespace: String
+  public var entityID: String
+  public var mergeJSON: String
+  public var transactionID: String?
+
+  public init(
+    namespace: String,
+    entityID: String,
+    mergeJSON: String,
+    transactionID: String? = nil
+  ) {
+    self.namespace = namespace
+    self.entityID = entityID
+    self.mergeJSON = mergeJSON
+    self.transactionID = transactionID
+  }
+}
+
+public enum CLIAdminUsage {
+  public static let admin = """
+    Usage: instant-swift-data admin <query|transact>
+      instant-swift-data admin query <namespace> [--limit n] [--json|--jsonl]
+      instant-swift-data admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id] [--json|--jsonl]
+    """
+
+  public static let query = "Usage: instant-swift-data admin query <namespace> [--limit n]"
+  public static let transact =
+    "Usage: instant-swift-data admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id]"
+}
+
+public enum CLIAdminArgumentError: Error, Equatable, Sendable {
+  case missingCommand
+  case unknownCommand(String)
+  case missingArguments(usage: String)
+  case invalidNamespace(usage: String)
+  case invalidEntityID(usage: String)
+  case invalidLimit(usage: String)
+  case invalidTransactionID(usage: String)
+  case unknownOption(String, usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
 public enum CLIConnectionInvocation: Equatable, Sendable {
   case status
   case connect
@@ -929,6 +988,104 @@ public struct CLIExamplesTodosCommandParser: Parser {
     }
     input.removeFirst()
     return CLIExamplesTodosCommand(command)
+  }
+}
+
+public struct CLIAdminParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIAdminInvocation {
+    guard let command = input.first else {
+      throw CLIAdminArgumentError.missingCommand
+    }
+    input.removeFirst()
+
+    switch command {
+    case "query":
+      return .query(try CLIAdminQueryParser().parse(&input))
+
+    case "transact", "tx":
+      return .transact(try CLIAdminTransactParser().parse(&input))
+
+    default:
+      throw CLIAdminArgumentError.unknownCommand(command)
+    }
+  }
+}
+
+public struct CLIAdminQueryParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIAdminQueryInvocation {
+    let namespace = try parseRequiredAdminNamespace(from: &input, usage: CLIAdminUsage.query)
+    var limit: Int?
+
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--limit":
+        guard let value = input.first,
+          let parsed = Int(value),
+          parsed >= 0
+        else {
+          throw CLIAdminArgumentError.invalidLimit(usage: CLIAdminUsage.query)
+        }
+        input.removeFirst()
+        limit = parsed
+
+      default:
+        throw CLIAdminArgumentError.unknownOption(option, usage: CLIAdminUsage.query)
+      }
+    }
+
+    return CLIAdminQueryInvocation(namespace: namespace, limit: limit)
+  }
+}
+
+public struct CLIAdminTransactParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIAdminTransactInvocation {
+    let namespace = try parseRequiredAdminNamespace(from: &input, usage: CLIAdminUsage.transact)
+    let entityID = try parseRequiredAdminEntityID(from: &input, usage: CLIAdminUsage.transact)
+    var mergeJSON: String?
+    var transactionID: String?
+
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--merge":
+        guard mergeJSON == nil, let value = input.first else {
+          throw CLIAdminArgumentError.missingArguments(usage: CLIAdminUsage.transact)
+        }
+        input.removeFirst()
+        mergeJSON = value
+
+      case "--transaction-id":
+        guard transactionID == nil, let value = input.first else {
+          throw CLIAdminArgumentError.missingArguments(usage: CLIAdminUsage.transact)
+        }
+        input.removeFirst()
+        let trimmedValue = trimmed(value)
+        guard !trimmedValue.isEmpty else {
+          throw CLIAdminArgumentError.invalidTransactionID(usage: CLIAdminUsage.transact)
+        }
+        transactionID = trimmedValue
+
+      default:
+        throw CLIAdminArgumentError.unknownOption(option, usage: CLIAdminUsage.transact)
+      }
+    }
+
+    guard let mergeJSON else {
+      throw CLIAdminArgumentError.missingArguments(usage: CLIAdminUsage.transact)
+    }
+    return CLIAdminTransactInvocation(
+      namespace: namespace,
+      entityID: entityID,
+      mergeJSON: mergeJSON,
+      transactionID: transactionID
+    )
   }
 }
 
@@ -2358,6 +2515,42 @@ private func parseRequiredShareArgument(
   return parsed
 }
 
+private func parseRequiredAdminNamespace(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIAdminArgumentError.missingArguments(usage: usage)
+  }
+  input.removeFirst()
+  let namespace = trimmed(value)
+  guard isValidAdminPathComponent(namespace) else {
+    throw CLIAdminArgumentError.invalidNamespace(usage: usage)
+  }
+  return namespace
+}
+
+private func parseRequiredAdminEntityID(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIAdminArgumentError.missingArguments(usage: usage)
+  }
+  input.removeFirst()
+  let entityID = trimmed(value)
+  guard !entityID.isEmpty else {
+    throw CLIAdminArgumentError.invalidEntityID(usage: usage)
+  }
+  return entityID
+}
+
+private func isValidAdminPathComponent(_ value: String) -> Bool {
+  !value.isEmpty
+    && !value.contains("/")
+    && !value.contains(where: { $0.isWhitespace })
+}
+
 private func requireNoRemainingShareArguments(
   _ input: inout ArraySlice<String>,
   usage: String
@@ -2583,6 +2776,42 @@ private func requireNoRemainingOutboxArguments(
 
 private func trimmed(_ string: String) -> String {
   string.trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
+extension CLIAdminArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case .missingCommand:
+      return CLIAdminUsage.admin
+
+    case .unknownCommand:
+      return CLIAdminUsage.admin
+
+    case let .missingArguments(usage):
+      return usage
+
+    case let .invalidNamespace(usage):
+      return "\(usage): namespace must not be empty or contain whitespace or '/'."
+
+    case let .invalidEntityID(usage):
+      return "\(usage): entity id must not be empty."
+
+    case let .invalidLimit(usage):
+      return "\(usage): --limit must be a non-negative integer."
+
+    case let .invalidTransactionID(usage):
+      return "\(usage): transaction id must not be empty."
+
+    case let .unknownOption(option, usage):
+      if usage == CLIAdminUsage.query {
+        return "Unknown admin query option: \(option). \(usage)"
+      } else if usage == CLIAdminUsage.transact {
+        return "Unknown admin transact option: \(option). \(usage)"
+      } else {
+        return usage
+      }
+    }
+  }
 }
 
 extension CLIConnectionArgumentError: CustomStringConvertible {

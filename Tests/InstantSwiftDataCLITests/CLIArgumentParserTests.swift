@@ -245,6 +245,22 @@ struct CLIArgumentParserTests {
       )
     )
     expectNoDifference(
+      try CLIArguments.parse(["admin", "query", "notes", "--limit", "2", "--json"]),
+      CLIInvocation(
+        output: .json,
+        command: .admin,
+        arguments: ["query", "notes", "--limit", "2"]
+      )
+    )
+    expectNoDifference(
+      try CLIArguments.parse(["admin", "--jsonl", "tx", "notes", "note-1", "--merge", "{}"]),
+      CLIInvocation(
+        output: .jsonl,
+        command: .admin,
+        arguments: ["tx", "notes", "note-1", "--merge", "{}"]
+      )
+    )
+    expectNoDifference(
       try CLIArguments.parse(["cache", "attrs", "todos", "--json"]),
       CLIInvocation(
         output: .json,
@@ -606,6 +622,101 @@ struct CLIArgumentParserTests {
     try expectAppParseError(
       ["dance"],
       contains: "Usage: instant-swift-data app"
+    )
+  }
+
+  @Test
+  func adminParserParsesCommandsOptionsAndAliases() throws {
+    expectNoDifference(
+      try parseAdmin(["query", "notes"]),
+      .query(CLIAdminQueryInvocation(namespace: "notes"))
+    )
+    expectNoDifference(
+      try parseAdmin(["query", " notes ", "--limit", "1", "--limit", "3"]),
+      .query(CLIAdminQueryInvocation(namespace: "notes", limit: 3))
+    )
+    expectNoDifference(
+      try parseAdmin(["transact", "notes", "note-1", "--merge", #"{"title":"Hi"}"#]),
+      .transact(
+        CLIAdminTransactInvocation(
+          namespace: "notes",
+          entityID: "note-1",
+          mergeJSON: #"{"title":"Hi"}"#
+        )
+      )
+    )
+    expectNoDifference(
+      try parseAdmin([
+        "tx", " notes ", " note-1 ", "--merge", #"{"title":"Hi"}"#,
+        "--transaction-id", " tx-1 ",
+      ]),
+      .transact(
+        CLIAdminTransactInvocation(
+          namespace: "notes",
+          entityID: "note-1",
+          mergeJSON: #"{"title":"Hi"}"#,
+          transactionID: "tx-1"
+        )
+      )
+    )
+  }
+
+  @Test
+  func adminParserReportsMalformedArguments() throws {
+    try expectAdminParseError([], description: CLIAdminUsage.admin)
+    try expectAdminParseError(["dance"], description: CLIAdminUsage.admin)
+    try expectAdminParseError(["query"], description: CLIAdminUsage.query)
+    try expectAdminParseError(
+      ["query", "bad/namespace"],
+      description: "\(CLIAdminUsage.query): namespace must not be empty or contain whitespace or '/'."
+    )
+    try expectAdminParseError(
+      ["query", "notes", "--limit"],
+      description: "\(CLIAdminUsage.query): --limit must be a non-negative integer."
+    )
+    try expectAdminParseError(
+      ["query", "notes", "--limit", "-1"],
+      description: "\(CLIAdminUsage.query): --limit must be a non-negative integer."
+    )
+    try expectAdminParseError(
+      ["query", "notes", "--unknown"],
+      description: "Unknown admin query option: --unknown. \(CLIAdminUsage.query)"
+    )
+    try expectAdminParseError(["transact", "notes"], description: CLIAdminUsage.transact)
+    try expectAdminParseError(
+      ["transact", "bad namespace", "note-1", "--merge", "{}"],
+      description: "\(CLIAdminUsage.transact): namespace must not be empty or contain whitespace or '/'."
+    )
+    try expectAdminParseError(
+      ["transact", "notes", "  ", "--merge", "{}"],
+      description: "\(CLIAdminUsage.transact): entity id must not be empty."
+    )
+    try expectAdminParseError(
+      ["transact", "notes", "note-1"],
+      description: CLIAdminUsage.transact
+    )
+    try expectAdminParseError(
+      ["transact", "notes", "note-1", "--merge"],
+      description: CLIAdminUsage.transact
+    )
+    try expectAdminParseError(
+      ["transact", "notes", "note-1", "--merge", "{}", "--merge", "{}"],
+      description: CLIAdminUsage.transact
+    )
+    try expectAdminParseError(
+      ["transact", "notes", "note-1", "--merge", "{}", "--transaction-id", "  "],
+      description: "\(CLIAdminUsage.transact): transaction id must not be empty."
+    )
+    try expectAdminParseError(
+      [
+        "transact", "notes", "note-1", "--merge", "{}", "--transaction-id", "tx-1",
+        "--transaction-id", "tx-2",
+      ],
+      description: CLIAdminUsage.transact
+    )
+    try expectAdminParseError(
+      ["transact", "notes", "note-1", "--merge", "{}", "--unknown"],
+      description: "Unknown admin transact option: --unknown. \(CLIAdminUsage.transact)"
     )
   }
 
@@ -1323,6 +1434,13 @@ private func parseApp(_ arguments: [String]) throws -> CLIAppInvocation {
   return invocation
 }
 
+private func parseAdmin(_ arguments: [String]) throws -> CLIAdminInvocation {
+  var input = arguments[...]
+  let invocation = try CLIAdminParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseCache(_ arguments: [String]) throws -> CLICacheInvocation {
   var input = arguments[...]
   let invocation = try CLICacheParser().parse(&input)
@@ -1426,6 +1544,19 @@ private func expectAppParseError(
     Issue.record("Expected app parser to reject \(arguments).")
   } catch let error as CLIAppArgumentError {
     #expect(error.description.contains(expectedFragment))
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectAdminParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseAdmin(arguments)
+    Issue.record("Expected admin parser to reject \(arguments).")
+  } catch let error as CLIAdminArgumentError {
+    expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }
 }
