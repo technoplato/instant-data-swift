@@ -8,7 +8,8 @@ import SwiftSyntaxMacros
 @main
 struct InstantSwiftDataMacrosPlugin: CompilerPlugin {
   let providingMacros: [Macro.Type] = [
-    InstantEntityMacro.self
+    InstantEntityMacro.self,
+    InstantRelationMacro.self,
   ]
 }
 
@@ -58,6 +59,15 @@ public struct InstantEntityMacro: MemberMacro {
     let explicitStaticMembers = staticMemberNames(in: declaration)
     let typeAliases = typeAliases(in: declaration)
     let properties = storedProperties(in: declaration, context: context)
+    let invalidRelationProperties = properties.filter { property in
+      property.relation != nil && property.schemaValue?.refTargetType == nil
+    }
+    for property in invalidRelationProperties {
+      context.diagnose(
+        InstantEntityDiagnostic.instantRelationRequiresRef(property.name)
+          .diagnose(at: Syntax(declaration))
+      )
+    }
     let reservedProperties = properties.filter { property in
       isGeneratedSchemaHelper(property)
         && reservedGeneratedMemberNames.contains(property.name)
@@ -300,9 +310,42 @@ public struct InstantEntityMacro: MemberMacro {
         isWritable: isWritable,
         isOptional: binding.typeAnnotation?.type.isInstantOptionalType ?? false,
         defaultValue: binding.initializer?.value.description.trimmed,
-        schemaValue: InstantSchemaValue(type: type)
+        schemaValue: InstantSchemaValue(type: type),
+        relation: relationMetadata(from: variable.attributes, context: context)
       )
     }
+  }
+
+  private static func relationMetadata(
+    from attributes: AttributeListSyntax,
+    context: some MacroExpansionContext
+  ) -> InstantRelationMetadata? {
+    for element in attributes {
+      guard
+        case let .attribute(attribute) = element,
+        attribute.attributeName.description.trimmed == "InstantRelation"
+      else { continue }
+
+      guard
+        case let .argumentList(arguments) = attribute.arguments,
+        arguments.count == 1,
+        let argument = arguments.first,
+        argument.label?.text == "reverse",
+        let expression = argument.expression.as(StringLiteralExprSyntax.self),
+        let reverseName = expression.representedLiteralValue,
+        !reverseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      else {
+        context.diagnose(
+          InstantEntityDiagnostic.unsupportedInstantRelationArgument
+            .diagnose(at: Syntax(attribute))
+        )
+        return nil
+      }
+
+      return InstantRelationMetadata(reverseName: reverseName)
+    }
+
+    return nil
   }
 
   private static func staticMemberNames(in declaration: some DeclGroupSyntax) -> Set<String> {
@@ -402,6 +445,16 @@ public struct InstantEntityMacro: MemberMacro {
   ]
 }
 
+public struct InstantRelationMacro: PeerMacro {
+  public static func expansion(
+    of node: AttributeSyntax,
+    providingPeersOf declaration: some DeclSyntaxProtocol,
+    in context: some MacroExpansionContext
+  ) throws -> [DeclSyntax] {
+    []
+  }
+}
+
 private enum ExplicitNamespace {
   case none
   case namespace(String)
@@ -415,6 +468,7 @@ private struct StoredProperty {
   var isOptional: Bool
   var defaultValue: String?
   var schemaValue: InstantSchemaValue?
+  var relation: InstantRelationMetadata?
 
   func instantAttributeLiteral(typeName: String) -> String {
     guard let schemaValue else {
@@ -432,10 +486,20 @@ private struct StoredProperty {
     ]
     if let targetType = schemaValue.refTargetType {
       arguments[arguments.count - 1] += ","
+      let forwardIdentity: String
+      let reverseIdentity: String
+      if let relation {
+        forwardIdentity = "\(typeName).\(name).attributeID"
+        reverseIdentity =
+          "\(targetType).instantNamespace + \(String(reflecting: "/\(relation.reverseName)"))"
+      } else {
+        forwardIdentity = "nil"
+        reverseIdentity = "nil"
+      }
       arguments += [
         "        isUnique: false,",
-        "        forwardIdentity: nil,",
-        "        reverseIdentity: nil,",
+        "        forwardIdentity: \(forwardIdentity),",
+        "        reverseIdentity: \(reverseIdentity),",
         "        primaryKey: false,",
         "        linkNamespace: \(targetType).instantNamespace",
       ]
@@ -443,6 +507,10 @@ private struct StoredProperty {
     arguments.append("      )")
     return arguments.joined(separator: "\n")
   }
+}
+
+private struct InstantRelationMetadata {
+  var reverseName: String
 }
 
 private struct InstantSchemaValue {
@@ -547,11 +615,13 @@ private extension String {
 }
 
 private enum InstantEntityDiagnostic {
+  case instantRelationRequiresRef(String)
   case reservedGeneratedMemberName(String)
   case redundantNamespace(String)
   case requiresDraftTypeAnnotation(String)
   case requiresNominalType
   case requiresSingleDraftPropertyBinding
+  case unsupportedInstantRelationArgument
   case unsupportedNamespaceArgument
 
   func diagnose(at node: Syntax) -> Diagnostic {
@@ -562,6 +632,8 @@ private enum InstantEntityDiagnostic {
 extension InstantEntityDiagnostic: DiagnosticMessage {
   var message: String {
     switch self {
+    case let .instantRelationRequiresRef(name):
+      return "Stored property '\(name)' uses @InstantRelation, but it is not an Instant ref attribute."
     case let .reservedGeneratedMemberName(name):
       return "Stored property '\(name)' uses a name reserved by @InstantEntity generated helpers."
     case let .redundantNamespace(namespace):
@@ -572,6 +644,8 @@ extension InstantEntityDiagnostic: DiagnosticMessage {
       return "@InstantEntity can only be attached to a struct, class, or actor."
     case .requiresSingleDraftPropertyBinding:
       return "@InstantEntity draft generation requires one stored property per var declaration."
+    case .unsupportedInstantRelationArgument:
+      return #"@InstantRelation requires a non-empty string literal reverse name, for example @InstantRelation(reverse: "posts")."#
     case .unsupportedNamespaceArgument:
       return "@InstantEntity namespace overrides must be string literals."
     }
@@ -579,6 +653,8 @@ extension InstantEntityDiagnostic: DiagnosticMessage {
 
   var diagnosticID: MessageID {
     switch self {
+    case .instantRelationRequiresRef:
+      return MessageID(domain: "InstantSwiftDataMacros", id: "instantRelationRequiresRef")
     case .reservedGeneratedMemberName:
       return MessageID(domain: "InstantSwiftDataMacros", id: "reservedGeneratedMemberName")
     case .redundantNamespace:
@@ -589,6 +665,8 @@ extension InstantEntityDiagnostic: DiagnosticMessage {
       return MessageID(domain: "InstantSwiftDataMacros", id: "requiresNominalType")
     case .requiresSingleDraftPropertyBinding:
       return MessageID(domain: "InstantSwiftDataMacros", id: "requiresSingleDraftPropertyBinding")
+    case .unsupportedInstantRelationArgument:
+      return MessageID(domain: "InstantSwiftDataMacros", id: "unsupportedInstantRelationArgument")
     case .unsupportedNamespaceArgument:
       return MessageID(domain: "InstantSwiftDataMacros", id: "unsupportedNamespaceArgument")
     }
@@ -596,10 +674,12 @@ extension InstantEntityDiagnostic: DiagnosticMessage {
 
   var severity: DiagnosticSeverity {
     switch self {
-    case .reservedGeneratedMemberName,
+    case .instantRelationRequiresRef,
+      .reservedGeneratedMemberName,
       .requiresDraftTypeAnnotation,
       .requiresNominalType,
       .requiresSingleDraftPropertyBinding,
+      .unsupportedInstantRelationArgument,
       .unsupportedNamespaceArgument:
       return .error
     case .redundantNamespace:

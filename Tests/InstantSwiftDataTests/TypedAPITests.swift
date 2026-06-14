@@ -292,6 +292,57 @@ struct TypedAPITests {
   }
 
   @Test
+  func instantEntityMacroGeneratedRelationMetadataDrivesReverseIncludes() throws {
+    expectNoDifference(
+      MacroGeneratedPost.instantAttributes,
+      [
+        InstantAttribute(
+          id: "macroGeneratedPosts/title",
+          namespace: MacroGeneratedPost.instantNamespace,
+          name: "title",
+          valueType: .string,
+          isIndexed: true
+        ),
+        InstantAttribute(
+          id: "macroGeneratedPosts/author",
+          namespace: MacroGeneratedPost.instantNamespace,
+          name: "author",
+          valueType: .ref,
+          isIndexed: true,
+          forwardIdentity: "macroGeneratedPosts/author",
+          reverseIdentity: "macroGeneratedUsers/posts",
+          linkNamespace: MacroGeneratedUser.instantNamespace
+        ),
+      ]
+    )
+
+    let posts = try InstantReverseRelation<MacroGeneratedUser, MacroGeneratedPost>(
+      validating: MacroGeneratedPost.author
+    )
+    expectNoDifference(posts.name, "posts")
+    expectNoDifference(posts.attributeID, "macroGeneratedPosts/author")
+
+    let query = MacroGeneratedUser.query.include(
+      posts,
+      MacroGeneratedPost.query.select(MacroGeneratedPost.title)
+    )
+    expectNoDifference(
+      query.plan.includes,
+      [
+        InstantQueryInclude(
+          "posts",
+          direction: .reverse,
+          query: InstantQueryIncludePlan(
+            id: MacroGeneratedPost.query.select(MacroGeneratedPost.title).plan.id,
+            namespace: MacroGeneratedPost.instantNamespace,
+            selectedFields: ["title"]
+          )
+        )
+      ]
+    )
+  }
+
+  @Test
   func reverseRelationDerivesNameFromRefAttributeMetadata() throws {
     let posts = try InstantReverseRelation<TypedUser, TypedPost>(validating: TypedPost.author)
     expectNoDifference(posts, TypedUser.posts)
@@ -4292,6 +4343,44 @@ private struct MacroGeneratedTodo: Hashable, Codable, InstantEntityModel {
       message: "Expected \(expected) for macro generated todo field '\(field)'.",
       recovery: "Check the Instant entity schema and server values for the macro generated todo namespace."
     )
+  }
+}
+
+@InstantEntity
+private struct MacroGeneratedUser: Hashable, Codable, InstantEntityModel {
+  var id: InstantID<MacroGeneratedUser>
+  var name: String
+
+  init(snapshot: InstantEntitySnapshot) throws {
+    self.id = InstantID(rawValue: snapshot.id)
+    if case let .string(name) = snapshot.values["name"]?.first {
+      self.name = name
+    } else {
+      self.name = ""
+    }
+  }
+}
+
+@InstantEntity
+private struct MacroGeneratedPost: Hashable, Codable, InstantEntityModel {
+  var id: InstantID<MacroGeneratedPost>
+  var title: String
+
+  @InstantRelation(reverse: "posts")
+  var author: InstantID<MacroGeneratedUser>
+
+  init(snapshot: InstantEntitySnapshot) throws {
+    self.id = InstantID(rawValue: snapshot.id)
+    if case let .string(title) = snapshot.values["title"]?.first {
+      self.title = title
+    } else {
+      self.title = ""
+    }
+    if case let .ref(authorID) = snapshot.values["author"]?.first {
+      self.author = InstantID(rawValue: authorID)
+    } else {
+      self.author = InstantID(rawValue: "")
+    }
   }
 }
 

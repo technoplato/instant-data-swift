@@ -464,8 +464,25 @@ Queries without an explicit order follow Instant's implicit
 one-shot reads; use raw `queryOnce` when you need snapshots or emissions.
 Partial field selection returns raw snapshots unless your entity decoder can
 build a value from the selected fields.
-Forward includes use typed ref attributes such as `Post.author`, while reverse
-includes use generated relation tokens such as `User.posts`.
+Forward includes use typed ref attributes such as `Post.author`. Add
+`@InstantRelation(reverse: "posts")` to a ref property when the generated schema
+should carry reverse metadata, then declare the reverse token explicitly:
+
+```swift
+@InstantEntity
+struct Post {
+  var id: InstantID<Post>
+  @InstantRelation(reverse: "posts")
+  var author: InstantID<User>
+}
+
+extension User {
+  static let posts = InstantReverseRelation<User, Post>(attribute: Post.author)
+}
+```
+
+Reverse includes can then use that token, for example
+`.include(User.posts, Post.query.select(Post.title))`.
 Strict one-shot queries validate field, order, and include references before
 materializing or caching results.
 `@Shares` observes local share snapshots for the signed-in user and runtime at

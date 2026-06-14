@@ -150,6 +150,22 @@
     }
 
     @Test
+    func generatedRelationMetadata() {
+      assertInstantEntityMacro {
+        """
+        @InstantEntity
+        struct Post {
+          var id: InstantID<Post>
+          var title: String
+
+          @InstantRelation(reverse: "posts")
+          var author: InstantID<User>
+        }
+        """
+      }
+    }
+
+    @Test
     func inferredDraftPropertyDiagnostic() {
       assertInstantEntityMacro {
         """
@@ -207,7 +223,10 @@
     ) {
       withMacroTesting(
         record: .failed,
-        macros: ["InstantEntity": InstantEntityMacro.self]
+        macros: [
+          "InstantEntity": InstantEntityMacro.self,
+          "InstantRelation": InstantRelationMacro.self,
+        ]
       ) {
         assertMacro(
           of: originalSource,

@@ -262,6 +262,105 @@
     }
 
     @Test
+    func generatedSchemaHelpersUseInstantRelationMetadata() {
+      let result = expand(
+        """
+        @InstantEntity
+        struct Post {
+          var id: InstantID<Post>
+          var title: String
+
+          @InstantRelation(reverse: "posts")
+          var author: InstantID<User>
+        }
+        """
+      )
+
+      #expect(
+        result.expanded.contains(
+          #"public static let author = InstantAttributePath<Post, InstantID<User>>("author")"#
+        )
+      )
+      #expect(result.expanded.contains("id: Post.author.attributeID"))
+      #expect(result.expanded.contains("name: Post.author.name"))
+      #expect(result.expanded.contains("valueType: .ref"))
+      #expect(result.expanded.contains("forwardIdentity: Post.author.attributeID"))
+      #expect(result.expanded.contains(#"reverseIdentity: User.instantNamespace + "/posts""#))
+      #expect(result.expanded.contains("linkNamespace: User.instantNamespace"))
+      #expect(result.diagnostics.isEmpty)
+    }
+
+    @Test
+    func instantRelationRequiresRefAttributeDiagnostic() {
+      let result = expand(
+        """
+        @InstantEntity
+        struct Todo {
+          var id: InstantID<Todo>
+
+          @InstantRelation(reverse: "todos")
+          var title: String
+        }
+        """
+      )
+
+      #expect(
+        result.diagnostics.contains(
+          MacroDiagnostic(
+            message: "Stored property 'title' uses @InstantRelation, but it is not an Instant ref attribute.",
+            severity: .error
+          )
+        )
+      )
+      #expect(result.diagnostics.count == 1)
+    }
+
+    @Test
+    func instantRelationEscapesReverseNameLiteral() {
+      let result = expand(
+        """
+        @InstantEntity
+        struct Post {
+          var id: InstantID<Post>
+
+          @InstantRelation(reverse: "po\\"sts")
+          var author: InstantID<User>
+        }
+        """
+      )
+
+      #expect(
+        result.expanded.contains("reverseIdentity: User.instantNamespace + \"/po\\\"sts\"")
+      )
+      #expect(result.diagnostics.isEmpty)
+    }
+
+    @Test
+    func instantRelationRequiresReverseNameDiagnostic() {
+      let result = expand(
+        """
+        @InstantEntity
+        struct Post {
+          var id: InstantID<Post>
+
+          @InstantRelation(reverse: "")
+          var author: InstantID<User>
+        }
+        """
+      )
+
+      #expect(
+        result.diagnostics.contains(
+          MacroDiagnostic(
+            message: #"@InstantRelation requires a non-empty string literal reverse name, for example @InstantRelation(reverse: "posts")."#,
+            severity: .error
+          )
+        )
+      )
+      #expect(result.diagnostics.count == 1)
+    }
+
+    @Test
     func generatedSchemaHelpersUseManualAttributePaths() {
       let result = expand(
         """
@@ -429,7 +528,10 @@
         ]
       )
       let expanded = sourceFile.expand(
-        macros: ["InstantEntity": InstantEntityMacro.self],
+        macros: [
+          "InstantEntity": InstantEntityMacro.self,
+          "InstantRelation": InstantRelationMacro.self,
+        ],
         contextGenerator: { syntax in
           BasicMacroExpansionContext(
             sharingWith: context,
