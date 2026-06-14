@@ -1206,6 +1206,57 @@ private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
   }
 }
 
+private struct FetchOperations<Value: Sendable>: Sendable {
+  var load: (@Sendable (InstantSwiftDataClient) async throws -> Value)?
+  var subscribe: (@Sendable (InstantSwiftDataClient) async throws -> FetchSubscription<Value>)?
+}
+
+// SAFETY: all mutable operation configuration is protected by `lock`.
+private final class FetchOperationStorage<Value: Sendable>: @unchecked Sendable {
+  private let lock = NSLock()
+  private var operations: FetchOperations<Value>
+
+  init(_ operations: FetchOperations<Value> = FetchOperations()) {
+    self.operations = operations
+  }
+
+  var value: FetchOperations<Value> {
+    get {
+      lock.lock()
+      defer { lock.unlock() }
+      return operations
+    }
+    set {
+      lock.lock()
+      defer { lock.unlock() }
+      operations = newValue
+    }
+  }
+}
+
+// SAFETY: all mutable configuration is protected by `lock`.
+private final class LockedValueStorage<Value: Sendable>: @unchecked Sendable {
+  private let lock = NSLock()
+  private var _value: Value
+
+  init(_ value: Value) {
+    self._value = value
+  }
+
+  var value: Value {
+    get {
+      lock.lock()
+      defer { lock.unlock() }
+      return _value
+    }
+    set {
+      lock.lock()
+      defer { lock.unlock() }
+      _value = newValue
+    }
+  }
+}
+
 // SAFETY: the only mutable state is `isCancelled`, which is protected by `lock`.
 private final class FetchSubscriptionCancellation: @unchecked Sendable {
   private let lock = NSLock()
@@ -1516,23 +1567,21 @@ extension DependencyValues {
 @propertyWrapper
 public struct FetchAll<Element: Sendable>: Sendable {
   private let storage: FetchStorage<[Element]>
-  private var loadOperation: (@Sendable (InstantSwiftDataClient) async throws -> [Element])?
-  private var subscribeOperation:
-    (@Sendable (InstantSwiftDataClient) async -> FetchSubscription<[Element]>)?
+  private let operations: FetchOperationStorage<[Element]>
 
   public var wrappedValue: [Element] {
     get { storage.wrappedValue }
-    set { storage.wrappedValue = newValue }
+    nonmutating set { storage.wrappedValue = newValue }
   }
 
   public var loadError: InstantError? {
     get { storage.loadError }
-    set { storage.loadError = newValue }
+    nonmutating set { storage.loadError = newValue }
   }
 
   public var isLoading: Bool {
     get { storage.isLoading }
-    set { storage.isLoading = newValue }
+    nonmutating set { storage.isLoading = newValue }
   }
 
   public subscript<Member>(dynamicMember keyPath: KeyPath<[Element], Member>) -> Member {
@@ -1557,8 +1606,7 @@ public struct FetchAll<Element: Sendable>: Sendable {
   @_disfavoredOverload
   public init(wrappedValue: [Element] = []) {
     self.storage = FetchStorage(value: wrappedValue)
-    self.loadOperation = nil
-    self.subscribeOperation = nil
+    self.operations = FetchOperationStorage()
   }
 
   public init(wrappedValue: [Element] = []) where Element: InstantEntityModel {
@@ -1570,26 +1618,26 @@ public struct FetchAll<Element: Sendable>: Sendable {
     _ query: InstantEntityQuery<Element>
   ) where Element: InstantEntityModel {
     self.storage = FetchStorage(value: wrappedValue)
-    self.loadOperation = { client in
-      try await client.query(query)
-    }
-    self.subscribeOperation = { client in
-      await client.subscribe(query)
-    }
+    self.operations = FetchOperationStorage(Self.operations(for: query))
   }
 
   public var projectedValue: Self {
     get { self }
-    set { self = newValue }
+    nonmutating set {
+      wrappedValue = newValue.wrappedValue
+      loadError = newValue.loadError
+      isLoading = newValue.isLoading
+      operations.value = newValue.operations.value
+    }
   }
 
-  public mutating func load() async throws {
+  public func load() async throws {
     @Dependency(\.defaultInstantSwiftData) var client
     try await load(using: client)
   }
 
-  public mutating func load(using client: InstantSwiftDataClient) async throws {
-    guard let loadOperation else {
+  public func load(using client: InstantSwiftDataClient) async throws {
+    guard let loadOperation = operations.value.load else {
       let error = InstantError(
         code: .implementationFailed,
         operation: "load FetchAll",
@@ -1626,34 +1674,29 @@ public struct FetchAll<Element: Sendable>: Sendable {
     }
   }
 
-  public mutating func load(
+  public func load(
     _ query: InstantEntityQuery<Element>
   ) async throws where Element: InstantEntityModel {
     @Dependency(\.defaultInstantSwiftData) var client
     try await load(query, using: client)
   }
 
-  public mutating func load(
+  public func load(
     _ query: InstantEntityQuery<Element>,
     using client: InstantSwiftDataClient
   ) async throws where Element: InstantEntityModel {
-    self.loadOperation = { client in
-      try await client.query(query)
-    }
-    self.subscribeOperation = { client in
-      await client.subscribe(query)
-    }
+    operations.value = Self.operations(for: query)
     try await load(using: client)
   }
 
-  public mutating func load(
+  public func load(
     _ query: InstantEntityQuery<Element>?
   ) async throws where Element: InstantEntityModel {
     @Dependency(\.defaultInstantSwiftData) var client
     try await load(query, using: client)
   }
 
-  public mutating func load(
+  public func load(
     _ query: InstantEntityQuery<Element>?,
     using client: InstantSwiftDataClient
   ) async throws where Element: InstantEntityModel {
@@ -1664,15 +1707,15 @@ public struct FetchAll<Element: Sendable>: Sendable {
     try await load(query, using: client)
   }
 
-  public mutating func subscribe() async throws -> FetchSubscription<[Element]> {
+  public func subscribe() async throws -> FetchSubscription<[Element]> {
     @Dependency(\.defaultInstantSwiftData) var client
     return try await subscribe(using: client)
   }
 
-  public mutating func subscribe(
+  public func subscribe(
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<[Element]> {
-    guard let subscribeOperation else {
+    guard let subscribeOperation = operations.value.subscribe else {
       let error = InstantError(
         code: .implementationFailed,
         operation: "subscribe FetchAll",
@@ -1684,37 +1727,32 @@ public struct FetchAll<Element: Sendable>: Sendable {
     }
 
     loadError = nil
-    return await subscribeOperation(client)
+    return try await subscribeOperation(client)
   }
 
-  public mutating func subscribe(
+  public func subscribe(
     _ query: InstantEntityQuery<Element>
   ) async throws -> FetchSubscription<[Element]> where Element: InstantEntityModel {
     @Dependency(\.defaultInstantSwiftData) var client
     return try await subscribe(query, using: client)
   }
 
-  public mutating func subscribe(
+  public func subscribe(
     _ query: InstantEntityQuery<Element>,
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<[Element]> where Element: InstantEntityModel {
-    self.loadOperation = { client in
-      try await client.query(query)
-    }
-    self.subscribeOperation = { client in
-      await client.subscribe(query)
-    }
+    operations.value = Self.operations(for: query)
     return try await subscribe(using: client)
   }
 
-  public mutating func subscribe(
+  public func subscribe(
     _ query: InstantEntityQuery<Element>?
   ) async throws -> FetchSubscription<[Element]> where Element: InstantEntityModel {
     @Dependency(\.defaultInstantSwiftData) var client
     return try await subscribe(query, using: client)
   }
 
-  public mutating func subscribe(
+  public func subscribe(
     _ query: InstantEntityQuery<Element>?,
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<[Element]> where Element: InstantEntityModel {
@@ -1725,12 +1763,12 @@ public struct FetchAll<Element: Sendable>: Sendable {
     return try await subscribe(query, using: client)
   }
 
-  public mutating func task() async throws {
+  public func task() async throws {
     @Dependency(\.defaultInstantSwiftData) var client
     try await task(using: client)
   }
 
-  public mutating func task(using client: InstantSwiftDataClient) async throws {
+  public func task(using client: InstantSwiftDataClient) async throws {
     isLoading = true
     do {
       let subscription = try await subscribe(using: client)
@@ -1765,34 +1803,29 @@ public struct FetchAll<Element: Sendable>: Sendable {
     }
   }
 
-  public mutating func task(
+  public func task(
     _ query: InstantEntityQuery<Element>
   ) async throws where Element: InstantEntityModel {
     @Dependency(\.defaultInstantSwiftData) var client
     try await task(query, using: client)
   }
 
-  public mutating func task(
+  public func task(
     _ query: InstantEntityQuery<Element>,
     using client: InstantSwiftDataClient
   ) async throws where Element: InstantEntityModel {
-    self.loadOperation = { client in
-      try await client.query(query)
-    }
-    self.subscribeOperation = { client in
-      await client.subscribe(query)
-    }
+    operations.value = Self.operations(for: query)
     try await task(using: client)
   }
 
-  public mutating func task(
+  public func task(
     _ query: InstantEntityQuery<Element>?
   ) async throws where Element: InstantEntityModel {
     @Dependency(\.defaultInstantSwiftData) var client
     try await task(query, using: client)
   }
 
-  public mutating func task(
+  public func task(
     _ query: InstantEntityQuery<Element>?,
     using client: InstantSwiftDataClient
   ) async throws where Element: InstantEntityModel {
@@ -1803,12 +1836,24 @@ public struct FetchAll<Element: Sendable>: Sendable {
     try await task(query, using: client)
   }
 
-  private mutating func clearQuery() {
-    loadOperation = nil
-    subscribeOperation = nil
+  private func clearQuery() {
+    operations.value = FetchOperations()
     wrappedValue = []
     loadError = nil
     isLoading = false
+  }
+
+  private static func operations(
+    for query: InstantEntityQuery<Element>
+  ) -> FetchOperations<[Element]> where Element: InstantEntityModel {
+    FetchOperations(
+      load: { client in
+        try await client.query(query)
+      },
+      subscribe: { client in
+        await client.subscribe(query)
+      }
+    )
   }
 }
 
@@ -1816,23 +1861,21 @@ public struct FetchAll<Element: Sendable>: Sendable {
 @propertyWrapper
 public struct FetchOne<Value: Sendable>: Sendable {
   private let storage: FetchStorage<Value>
-  private var loadOperation: (@Sendable (InstantSwiftDataClient) async throws -> Value)?
-  private var subscribeOperation:
-    (@Sendable (InstantSwiftDataClient) async -> FetchSubscription<Value>)?
+  private let operations: FetchOperationStorage<Value>
 
   public var wrappedValue: Value {
     get { storage.wrappedValue }
-    set { storage.wrappedValue = newValue }
+    nonmutating set { storage.wrappedValue = newValue }
   }
 
   public var loadError: InstantError? {
     get { storage.loadError }
-    set { storage.loadError = newValue }
+    nonmutating set { storage.loadError = newValue }
   }
 
   public var isLoading: Bool {
     get { storage.isLoading }
-    set { storage.isLoading = newValue }
+    nonmutating set { storage.isLoading = newValue }
   }
 
   public subscript<Member>(dynamicMember keyPath: KeyPath<Value, Member>) -> Member {
@@ -1857,22 +1900,26 @@ public struct FetchOne<Value: Sendable>: Sendable {
   @_disfavoredOverload
   public init(wrappedValue: Value) {
     self.storage = FetchStorage(value: wrappedValue)
-    self.loadOperation = nil
-    self.subscribeOperation = nil
+    self.operations = FetchOperationStorage()
   }
 
   public var projectedValue: Self {
     get { self }
-    set { self = newValue }
+    nonmutating set {
+      wrappedValue = newValue.wrappedValue
+      loadError = newValue.loadError
+      isLoading = newValue.isLoading
+      operations.value = newValue.operations.value
+    }
   }
 
-  public mutating func load() async throws {
+  public func load() async throws {
     @Dependency(\.defaultInstantSwiftData) var client
     try await load(using: client)
   }
 
-  public mutating func load(using client: InstantSwiftDataClient) async throws {
-    guard let loadOperation else {
+  public func load(using client: InstantSwiftDataClient) async throws {
+    guard let loadOperation = operations.value.load else {
       let error = InstantError(
         code: .implementationFailed,
         operation: "load FetchOne",
@@ -1909,15 +1956,15 @@ public struct FetchOne<Value: Sendable>: Sendable {
     }
   }
 
-  public mutating func subscribe() async throws -> FetchSubscription<Value> {
+  public func subscribe() async throws -> FetchSubscription<Value> {
     @Dependency(\.defaultInstantSwiftData) var client
     return try await subscribe(using: client)
   }
 
-  public mutating func subscribe(
+  public func subscribe(
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<Value> {
-    guard let subscribeOperation else {
+    guard let subscribeOperation = operations.value.subscribe else {
       let error = InstantError(
         code: .implementationFailed,
         operation: "subscribe FetchOne",
@@ -1929,15 +1976,15 @@ public struct FetchOne<Value: Sendable>: Sendable {
     }
 
     loadError = nil
-    return await subscribeOperation(client)
+    return try await subscribeOperation(client)
   }
 
-  public mutating func task() async throws {
+  public func task() async throws {
     @Dependency(\.defaultInstantSwiftData) var client
     try await task(using: client)
   }
 
-  public mutating func task(using client: InstantSwiftDataClient) async throws {
+  public func task(using client: InstantSwiftDataClient) async throws {
     isLoading = true
     do {
       let subscription = try await subscribe(using: client)
@@ -2006,17 +2053,17 @@ extension FetchOne where Value: InstantEntityModel {
     _ query: InstantEntityQuery<Value>
   ) {
     self.storage = FetchStorage(value: wrappedValue)
-    self.configureRequiredQuery(query)
+    self.operations = FetchOperationStorage(Self.requiredOperations(for: query))
   }
 
-  public mutating func load(
+  public func load(
     _ query: InstantEntityQuery<Value>
   ) async throws {
     @Dependency(\.defaultInstantSwiftData) var client
     try await load(query, using: client)
   }
 
-  public mutating func load(
+  public func load(
     _ query: InstantEntityQuery<Value>,
     using client: InstantSwiftDataClient
   ) async throws {
@@ -2024,14 +2071,14 @@ extension FetchOne where Value: InstantEntityModel {
     try await load(using: client)
   }
 
-  public mutating func subscribe(
+  public func subscribe(
     _ query: InstantEntityQuery<Value>
   ) async throws -> FetchSubscription<Value> {
     @Dependency(\.defaultInstantSwiftData) var client
     return try await subscribe(query, using: client)
   }
 
-  public mutating func subscribe(
+  public func subscribe(
     _ query: InstantEntityQuery<Value>,
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<Value> {
@@ -2039,14 +2086,14 @@ extension FetchOne where Value: InstantEntityModel {
     return try await subscribe(using: client)
   }
 
-  public mutating func task(
+  public func task(
     _ query: InstantEntityQuery<Value>
   ) async throws {
     @Dependency(\.defaultInstantSwiftData) var client
     try await task(query, using: client)
   }
 
-  public mutating func task(
+  public func task(
     _ query: InstantEntityQuery<Value>,
     using client: InstantSwiftDataClient
   ) async throws {
@@ -2054,22 +2101,30 @@ extension FetchOne where Value: InstantEntityModel {
     try await task(using: client)
   }
 
-  private mutating func configureRequiredQuery(_ query: InstantEntityQuery<Value>) {
-    self.loadOperation = { client in
-      let values = try await client.query(Self.limitOne(query))
-      guard let value = values.first else {
-        throw Self.notFoundError(query, operation: "load FetchOne")
-      }
-      return value
-    }
-    self.subscribeOperation = { client in
-      await client.subscribe(Self.limitOne(query)).map { values in
+  private func configureRequiredQuery(_ query: InstantEntityQuery<Value>) {
+    operations.value = Self.requiredOperations(for: query)
+  }
+
+  private static func requiredOperations(
+    for query: InstantEntityQuery<Value>
+  ) -> FetchOperations<Value> {
+    FetchOperations(
+      load: { client in
+        let values = try await client.query(Self.limitOne(query))
         guard let value = values.first else {
-          throw Self.notFoundError(query, operation: "subscribe FetchOne")
+          throw Self.notFoundError(query, operation: "load FetchOne")
         }
         return value
+      },
+      subscribe: { client in
+        await client.subscribe(Self.limitOne(query)).map { values in
+          guard let value = values.first else {
+            throw Self.notFoundError(query, operation: "subscribe FetchOne")
+          }
+          return value
+        }
       }
-    }
+    )
   }
 }
 
@@ -2085,17 +2140,17 @@ extension FetchOne {
     _ query: InstantEntityQuery<Entity>
   ) where Value == Entity? {
     self.storage = FetchStorage(value: wrappedValue)
-    self.configureOptionalQuery(query)
+    self.operations = FetchOperationStorage(Self.optionalOperations(for: query))
   }
 
-  public mutating func load<Entity: InstantEntityModel>(
+  public func load<Entity: InstantEntityModel>(
     _ query: InstantEntityQuery<Entity>
   ) async throws where Value == Entity? {
     @Dependency(\.defaultInstantSwiftData) var client
     try await load(query, using: client)
   }
 
-  public mutating func load<Entity: InstantEntityModel>(
+  public func load<Entity: InstantEntityModel>(
     _ query: InstantEntityQuery<Entity>,
     using client: InstantSwiftDataClient
   ) async throws where Value == Entity? {
@@ -2103,14 +2158,14 @@ extension FetchOne {
     try await load(using: client)
   }
 
-  public mutating func load<Entity: InstantEntityModel>(
+  public func load<Entity: InstantEntityModel>(
     _ query: InstantEntityQuery<Entity>?
   ) async throws where Value == Entity? {
     @Dependency(\.defaultInstantSwiftData) var client
     try await load(query, using: client)
   }
 
-  public mutating func load<Entity: InstantEntityModel>(
+  public func load<Entity: InstantEntityModel>(
     _ query: InstantEntityQuery<Entity>?,
     using client: InstantSwiftDataClient
   ) async throws where Value == Entity? {
@@ -2121,14 +2176,14 @@ extension FetchOne {
     try await load(query, using: client)
   }
 
-  public mutating func subscribe<Entity: InstantEntityModel>(
+  public func subscribe<Entity: InstantEntityModel>(
     _ query: InstantEntityQuery<Entity>
   ) async throws -> FetchSubscription<Value> where Value == Entity? {
     @Dependency(\.defaultInstantSwiftData) var client
     return try await subscribe(query, using: client)
   }
 
-  public mutating func subscribe<Entity: InstantEntityModel>(
+  public func subscribe<Entity: InstantEntityModel>(
     _ query: InstantEntityQuery<Entity>,
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<Value> where Value == Entity? {
@@ -2136,14 +2191,14 @@ extension FetchOne {
     return try await subscribe(using: client)
   }
 
-  public mutating func subscribe<Entity: InstantEntityModel>(
+  public func subscribe<Entity: InstantEntityModel>(
     _ query: InstantEntityQuery<Entity>?
   ) async throws -> FetchSubscription<Value> where Value == Entity? {
     @Dependency(\.defaultInstantSwiftData) var client
     return try await subscribe(query, using: client)
   }
 
-  public mutating func subscribe<Entity: InstantEntityModel>(
+  public func subscribe<Entity: InstantEntityModel>(
     _ query: InstantEntityQuery<Entity>?,
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<Value> where Value == Entity? {
@@ -2154,14 +2209,14 @@ extension FetchOne {
     return try await subscribe(query, using: client)
   }
 
-  public mutating func task<Entity: InstantEntityModel>(
+  public func task<Entity: InstantEntityModel>(
     _ query: InstantEntityQuery<Entity>
   ) async throws where Value == Entity? {
     @Dependency(\.defaultInstantSwiftData) var client
     try await task(query, using: client)
   }
 
-  public mutating func task<Entity: InstantEntityModel>(
+  public func task<Entity: InstantEntityModel>(
     _ query: InstantEntityQuery<Entity>,
     using client: InstantSwiftDataClient
   ) async throws where Value == Entity? {
@@ -2169,14 +2224,14 @@ extension FetchOne {
     try await task(using: client)
   }
 
-  public mutating func task<Entity: InstantEntityModel>(
+  public func task<Entity: InstantEntityModel>(
     _ query: InstantEntityQuery<Entity>?
   ) async throws where Value == Entity? {
     @Dependency(\.defaultInstantSwiftData) var client
     try await task(query, using: client)
   }
 
-  public mutating func task<Entity: InstantEntityModel>(
+  public func task<Entity: InstantEntityModel>(
     _ query: InstantEntityQuery<Entity>?,
     using client: InstantSwiftDataClient
   ) async throws where Value == Entity? {
@@ -2187,23 +2242,30 @@ extension FetchOne {
     try await task(query, using: client)
   }
 
-  private mutating func configureOptionalQuery<Entity: InstantEntityModel>(
+  private func configureOptionalQuery<Entity: InstantEntityModel>(
     _ query: InstantEntityQuery<Entity>
   ) where Value == Entity? {
-    self.loadOperation = { client in
-      try await client.query(Self.limitOne(query)).first
-    }
-    self.subscribeOperation = { client in
-      await client.subscribe(Self.limitOne(query)).map(\.first)
-    }
+    operations.value = Self.optionalOperations(for: query)
   }
 
-  private mutating func clearOptionalQuery<Entity: InstantEntityModel>() where Value == Entity? {
-    loadOperation = nil
-    subscribeOperation = nil
+  private func clearOptionalQuery<Entity: InstantEntityModel>() where Value == Entity? {
+    operations.value = FetchOperations()
     wrappedValue = nil
     loadError = nil
     isLoading = false
+  }
+
+  private static func optionalOperations<Entity: InstantEntityModel>(
+    for query: InstantEntityQuery<Entity>
+  ) -> FetchOperations<Value> where Value == Entity? {
+    FetchOperations(
+      load: { client in
+        try await client.query(Self.limitOne(query)).first
+      },
+      subscribe: { client in
+        await client.subscribe(Self.limitOne(query)).map(\.first)
+      }
+    )
   }
 }
 
@@ -2211,23 +2273,21 @@ extension FetchOne {
 @propertyWrapper
 public struct Fetch<Value: Sendable>: Sendable {
   private let storage: FetchStorage<Value>
-  private var loadOperation: (@Sendable (InstantSwiftDataClient) async throws -> Value)?
-  private var subscribeOperation:
-    (@Sendable (InstantSwiftDataClient) async throws -> FetchSubscription<Value>)?
+  private let operations: FetchOperationStorage<Value>
 
   public var wrappedValue: Value {
     get { storage.wrappedValue }
-    set { storage.wrappedValue = newValue }
+    nonmutating set { storage.wrappedValue = newValue }
   }
 
   public var loadError: InstantError? {
     get { storage.loadError }
-    set { storage.loadError = newValue }
+    nonmutating set { storage.loadError = newValue }
   }
 
   public var isLoading: Bool {
     get { storage.isLoading }
-    set { storage.isLoading = newValue }
+    nonmutating set { storage.isLoading = newValue }
   }
 
   public subscript<Member>(dynamicMember keyPath: KeyPath<Value, Member>) -> Member {
@@ -2251,8 +2311,7 @@ public struct Fetch<Value: Sendable>: Sendable {
 
   public init(wrappedValue: Value) {
     self.storage = FetchStorage(value: wrappedValue)
-    self.loadOperation = nil
-    self.subscribeOperation = nil
+    self.operations = FetchOperationStorage()
   }
 
   public init(
@@ -2261,22 +2320,26 @@ public struct Fetch<Value: Sendable>: Sendable {
     subscribe: (@Sendable (InstantSwiftDataClient) async throws -> FetchSubscription<Value>)? = nil
   ) {
     self.storage = FetchStorage(value: wrappedValue)
-    self.loadOperation = load
-    self.subscribeOperation = subscribe
+    self.operations = FetchOperationStorage(FetchOperations(load: load, subscribe: subscribe))
   }
 
   public var projectedValue: Self {
     get { self }
-    set { self = newValue }
+    nonmutating set {
+      wrappedValue = newValue.wrappedValue
+      loadError = newValue.loadError
+      isLoading = newValue.isLoading
+      operations.value = newValue.operations.value
+    }
   }
 
-  public mutating func load() async throws {
+  public func load() async throws {
     @Dependency(\.defaultInstantSwiftData) var client
     try await load(using: client)
   }
 
-  public mutating func load(using client: InstantSwiftDataClient) async throws {
-    guard let loadOperation else {
+  public func load(using client: InstantSwiftDataClient) async throws {
+    guard let loadOperation = operations.value.load else {
       let error = InstantError(
         code: .implementationFailed,
         operation: "load Fetch",
@@ -2313,14 +2376,14 @@ public struct Fetch<Value: Sendable>: Sendable {
     }
   }
 
-  public mutating func load(
+  public func load(
     _ operation: @escaping @Sendable (InstantSwiftDataClient) async throws -> Value
   ) async throws {
     @Dependency(\.defaultInstantSwiftData) var client
     try await load(operation, using: client)
   }
 
-  public mutating func load(
+  public func load(
     _ operation: @escaping @Sendable (InstantSwiftDataClient) async throws -> Value,
     subscribe: (@Sendable (InstantSwiftDataClient) async throws -> FetchSubscription<Value>)? = nil
   ) async throws {
@@ -2328,25 +2391,24 @@ public struct Fetch<Value: Sendable>: Sendable {
     try await load(operation, subscribe: subscribe, using: client)
   }
 
-  public mutating func load(
+  public func load(
     _ operation: @escaping @Sendable (InstantSwiftDataClient) async throws -> Value,
     subscribe: (@Sendable (InstantSwiftDataClient) async throws -> FetchSubscription<Value>)? = nil,
     using client: InstantSwiftDataClient
   ) async throws {
-    self.loadOperation = operation
-    self.subscribeOperation = subscribe
+    operations.value = FetchOperations(load: operation, subscribe: subscribe)
     try await load(using: client)
   }
 
-  public mutating func subscribe() async throws -> FetchSubscription<Value> {
+  public func subscribe() async throws -> FetchSubscription<Value> {
     @Dependency(\.defaultInstantSwiftData) var client
     return try await subscribe(using: client)
   }
 
-  public mutating func subscribe(
+  public func subscribe(
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<Value> {
-    guard let subscribeOperation else {
+    guard let subscribeOperation = operations.value.subscribe else {
       let error = InstantError(
         code: .implementationFailed,
         operation: "subscribe Fetch",
@@ -2380,7 +2442,7 @@ public struct Fetch<Value: Sendable>: Sendable {
     }
   }
 
-  public mutating func subscribe(
+  public func subscribe(
     _ operation: @escaping @Sendable (InstantSwiftDataClient) async throws
       -> FetchSubscription<Value>
   ) async throws -> FetchSubscription<Value> {
@@ -2388,21 +2450,23 @@ public struct Fetch<Value: Sendable>: Sendable {
     return try await subscribe(operation, using: client)
   }
 
-  public mutating func subscribe(
+  public func subscribe(
     _ operation: @escaping @Sendable (InstantSwiftDataClient) async throws
       -> FetchSubscription<Value>,
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<Value> {
-    self.subscribeOperation = operation
+    var operations = operations.value
+    operations.subscribe = operation
+    self.operations.value = operations
     return try await subscribe(using: client)
   }
 
-  public mutating func task() async throws {
+  public func task() async throws {
     @Dependency(\.defaultInstantSwiftData) var client
     try await task(using: client)
   }
 
-  public mutating func task(using client: InstantSwiftDataClient) async throws {
+  public func task(using client: InstantSwiftDataClient) async throws {
     isLoading = true
     do {
       let subscription = try await subscribe(using: client)
@@ -2437,7 +2501,7 @@ public struct Fetch<Value: Sendable>: Sendable {
     }
   }
 
-  public mutating func task(
+  public func task(
     _ operation: @escaping @Sendable (InstantSwiftDataClient) async throws
       -> FetchSubscription<Value>
   ) async throws {
@@ -2445,12 +2509,14 @@ public struct Fetch<Value: Sendable>: Sendable {
     try await task(operation, using: client)
   }
 
-  public mutating func task(
+  public func task(
     _ operation: @escaping @Sendable (InstantSwiftDataClient) async throws
       -> FetchSubscription<Value>,
     using client: InstantSwiftDataClient
   ) async throws {
-    self.subscribeOperation = operation
+    var operations = operations.value
+    operations.subscribe = operation
+    self.operations.value = operations
     try await task(using: client)
   }
 }
@@ -2461,17 +2527,17 @@ public struct AuthSession: Sendable {
 
   public var wrappedValue: InstantAuthSession? {
     get { storage.wrappedValue }
-    set { storage.wrappedValue = newValue }
+    nonmutating set { storage.wrappedValue = newValue }
   }
 
   public var loadError: InstantError? {
     get { storage.loadError }
-    set { storage.loadError = newValue }
+    nonmutating set { storage.loadError = newValue }
   }
 
   public var isLoading: Bool {
     get { storage.isLoading }
-    set { storage.isLoading = newValue }
+    nonmutating set { storage.isLoading = newValue }
   }
 
   #if canImport(SwiftUI)
@@ -2489,15 +2555,19 @@ public struct AuthSession: Sendable {
 
   public var projectedValue: Self {
     get { self }
-    set { self = newValue }
+    nonmutating set {
+      wrappedValue = newValue.wrappedValue
+      loadError = newValue.loadError
+      isLoading = newValue.isLoading
+    }
   }
 
-  public mutating func load() async throws {
+  public func load() async throws {
     @Dependency(\.defaultInstantSwiftData) var client
     try await load(using: client)
   }
 
-  public mutating func load(using client: InstantSwiftDataClient) async throws {
+  public func load(using client: InstantSwiftDataClient) async throws {
     isLoading = true
     do {
       let session = try await client.authSession()
@@ -2526,12 +2596,12 @@ public struct AuthSession: Sendable {
     }
   }
 
-  public mutating func subscribe() async throws -> FetchSubscription<InstantAuthSession?> {
+  public func subscribe() async throws -> FetchSubscription<InstantAuthSession?> {
     @Dependency(\.defaultInstantSwiftData) var client
     return try await subscribe(using: client)
   }
 
-  public mutating func subscribe(
+  public func subscribe(
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<InstantAuthSession?> {
     do {
@@ -2556,12 +2626,12 @@ public struct AuthSession: Sendable {
     }
   }
 
-  public mutating func task() async throws {
+  public func task() async throws {
     @Dependency(\.defaultInstantSwiftData) var client
     try await task(using: client)
   }
 
-  public mutating func task(using client: InstantSwiftDataClient) async throws {
+  public func task(using client: InstantSwiftDataClient) async throws {
     isLoading = true
     do {
       let subscription = try await subscribe(using: client)
@@ -2600,21 +2670,21 @@ public struct AuthSession: Sendable {
 @propertyWrapper
 public struct RoomPresence: Sendable {
   private let storage: FetchStorage<[InstantRoomPresenceMember]>
-  private var room: InstantRoomHandle?
+  private let room: LockedValueStorage<InstantRoomHandle?>
 
   public var wrappedValue: [InstantRoomPresenceMember] {
     get { storage.wrappedValue }
-    set { storage.wrappedValue = newValue }
+    nonmutating set { storage.wrappedValue = newValue }
   }
 
   public var loadError: InstantError? {
     get { storage.loadError }
-    set { storage.loadError = newValue }
+    nonmutating set { storage.loadError = newValue }
   }
 
   public var isLoading: Bool {
     get { storage.isLoading }
-    set { storage.isLoading = newValue }
+    nonmutating set { storage.isLoading = newValue }
   }
 
   #if canImport(SwiftUI)
@@ -2628,41 +2698,46 @@ public struct RoomPresence: Sendable {
 
   public init(wrappedValue: [InstantRoomPresenceMember] = []) {
     self.storage = FetchStorage(value: wrappedValue)
-    self.room = nil
+    self.room = LockedValueStorage(nil)
   }
 
   public init(_ type: String, _ id: String) {
     self.storage = FetchStorage(value: [])
-    self.room = InstantRoomHandle(type: type, id: id)
+    self.room = LockedValueStorage(InstantRoomHandle(type: type, id: id))
   }
 
   public init(room: InstantRoomHandle) {
     self.storage = FetchStorage(value: [])
-    self.room = room
+    self.room = LockedValueStorage(room)
   }
 
   public init(wrappedValue: [InstantRoomPresenceMember], _ type: String, _ id: String) {
     self.storage = FetchStorage(value: wrappedValue)
-    self.room = InstantRoomHandle(type: type, id: id)
+    self.room = LockedValueStorage(InstantRoomHandle(type: type, id: id))
   }
 
   public init(wrappedValue: [InstantRoomPresenceMember], room: InstantRoomHandle) {
     self.storage = FetchStorage(value: wrappedValue)
-    self.room = room
+    self.room = LockedValueStorage(room)
   }
 
   public var projectedValue: Self {
     get { self }
-    set { self = newValue }
+    nonmutating set {
+      wrappedValue = newValue.wrappedValue
+      loadError = newValue.loadError
+      isLoading = newValue.isLoading
+      room.value = newValue.room.value
+    }
   }
 
-  public mutating func load() async throws {
+  public func load() async throws {
     @Dependency(\.defaultInstantSwiftData) var client
     try await load(using: client)
   }
 
-  public mutating func load(using client: InstantSwiftDataClient) async throws {
-    guard let room else {
+  public func load(using client: InstantSwiftDataClient) async throws {
+    guard let room = room.value else {
       let error = InstantError(
         code: .implementationFailed,
         operation: "load RoomPresence",
@@ -2675,12 +2750,12 @@ public struct RoomPresence: Sendable {
     try await load(room: room, using: client)
   }
 
-  public mutating func load(_ type: String, _ id: String) async throws {
+  public func load(_ type: String, _ id: String) async throws {
     @Dependency(\.defaultInstantSwiftData) var client
     try await load(type, id, using: client)
   }
 
-  public mutating func load(
+  public func load(
     _ type: String,
     _ id: String,
     using client: InstantSwiftDataClient
@@ -2688,16 +2763,16 @@ public struct RoomPresence: Sendable {
     try await load(room: InstantRoomHandle(type: type, id: id), using: client)
   }
 
-  public mutating func load(room: InstantRoomHandle) async throws {
+  public func load(room: InstantRoomHandle) async throws {
     @Dependency(\.defaultInstantSwiftData) var client
     try await load(room: room, using: client)
   }
 
-  public mutating func load(
+  public func load(
     room: InstantRoomHandle,
     using client: InstantSwiftDataClient
   ) async throws {
-    self.room = room
+    self.room.value = room
     isLoading = true
     do {
       let members = try await client.roomPresence(room: room)
@@ -2726,17 +2801,17 @@ public struct RoomPresence: Sendable {
     }
   }
 
-  public mutating func subscribe()
+  public func subscribe()
     async throws -> FetchSubscription<[InstantRoomPresenceMember]>
   {
     @Dependency(\.defaultInstantSwiftData) var client
     return try await subscribe(using: client)
   }
 
-  public mutating func subscribe(
+  public func subscribe(
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<[InstantRoomPresenceMember]> {
-    guard let room else {
+    guard let room = room.value else {
       let error = InstantError(
         code: .implementationFailed,
         operation: "subscribe RoomPresence",
@@ -2749,7 +2824,7 @@ public struct RoomPresence: Sendable {
     return try await subscribe(room: room, using: client)
   }
 
-  public mutating func subscribe(
+  public func subscribe(
     _ type: String,
     _ id: String
   ) async throws -> FetchSubscription<[InstantRoomPresenceMember]> {
@@ -2757,7 +2832,7 @@ public struct RoomPresence: Sendable {
     return try await subscribe(type, id, using: client)
   }
 
-  public mutating func subscribe(
+  public func subscribe(
     _ type: String,
     _ id: String,
     using client: InstantSwiftDataClient
@@ -2765,18 +2840,18 @@ public struct RoomPresence: Sendable {
     try await subscribe(room: InstantRoomHandle(type: type, id: id), using: client)
   }
 
-  public mutating func subscribe(
+  public func subscribe(
     room: InstantRoomHandle
   ) async throws -> FetchSubscription<[InstantRoomPresenceMember]> {
     @Dependency(\.defaultInstantSwiftData) var client
     return try await subscribe(room: room, using: client)
   }
 
-  public mutating func subscribe(
+  public func subscribe(
     room: InstantRoomHandle,
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<[InstantRoomPresenceMember]> {
-    self.room = room
+    self.room.value = room
     do {
       try Task.checkCancellation()
       loadError = nil
@@ -2799,39 +2874,39 @@ public struct RoomPresence: Sendable {
     }
   }
 
-  public mutating func task() async throws {
+  public func task() async throws {
     @Dependency(\.defaultInstantSwiftData) var client
     try await task(using: client)
   }
 
-  public mutating func task(_ type: String, _ id: String) async throws {
+  public func task(_ type: String, _ id: String) async throws {
     @Dependency(\.defaultInstantSwiftData) var client
     try await task(type, id, using: client)
   }
 
-  public mutating func task(
+  public func task(
     _ type: String,
     _ id: String,
     using client: InstantSwiftDataClient
   ) async throws {
-    self.room = InstantRoomHandle(type: type, id: id)
+    self.room.value = InstantRoomHandle(type: type, id: id)
     try await task(using: client)
   }
 
-  public mutating func task(room: InstantRoomHandle) async throws {
+  public func task(room: InstantRoomHandle) async throws {
     @Dependency(\.defaultInstantSwiftData) var client
     try await task(room: room, using: client)
   }
 
-  public mutating func task(
+  public func task(
     room: InstantRoomHandle,
     using client: InstantSwiftDataClient
   ) async throws {
-    self.room = room
+    self.room.value = room
     try await task(using: client)
   }
 
-  public mutating func task(using client: InstantSwiftDataClient) async throws {
+  public func task(using client: InstantSwiftDataClient) async throws {
     isLoading = true
     do {
       let subscription = try await subscribe(using: client)
@@ -2867,26 +2942,30 @@ public struct RoomPresence: Sendable {
   }
 }
 
+private struct RoomTopicMessagesConfiguration: Sendable {
+  var room: InstantRoomHandle?
+  var topic: String?
+  var limit: Int?
+}
+
 @propertyWrapper
 public struct RoomTopicMessages: Sendable {
   private let storage: FetchStorage<[InstantRoomTopicMessage]>
-  private var room: InstantRoomHandle?
-  private var topic: String?
-  private var limit: Int?
+  private let configuration: LockedValueStorage<RoomTopicMessagesConfiguration>
 
   public var wrappedValue: [InstantRoomTopicMessage] {
     get { storage.wrappedValue }
-    set { storage.wrappedValue = newValue }
+    nonmutating set { storage.wrappedValue = newValue }
   }
 
   public var loadError: InstantError? {
     get { storage.loadError }
-    set { storage.loadError = newValue }
+    nonmutating set { storage.loadError = newValue }
   }
 
   public var isLoading: Bool {
     get { storage.isLoading }
-    set { storage.isLoading = newValue }
+    nonmutating set { storage.isLoading = newValue }
   }
 
   #if canImport(SwiftUI)
@@ -2900,23 +2979,27 @@ public struct RoomTopicMessages: Sendable {
 
   public init(wrappedValue: [InstantRoomTopicMessage] = []) {
     self.storage = FetchStorage(value: wrappedValue)
-    self.room = nil
-    self.topic = nil
-    self.limit = nil
+    self.configuration = LockedValueStorage(
+      RoomTopicMessagesConfiguration(room: nil, topic: nil, limit: nil)
+    )
   }
 
   public init(_ type: String, _ id: String, _ topic: String, limit: Int? = nil) {
     self.storage = FetchStorage(value: [])
-    self.room = InstantRoomHandle(type: type, id: id)
-    self.topic = topic
-    self.limit = limit
+    self.configuration = LockedValueStorage(
+      RoomTopicMessagesConfiguration(
+        room: InstantRoomHandle(type: type, id: id),
+        topic: topic,
+        limit: limit
+      )
+    )
   }
 
   public init(room: InstantRoomHandle, topic: String, limit: Int? = nil) {
     self.storage = FetchStorage(value: [])
-    self.room = room
-    self.topic = topic
-    self.limit = limit
+    self.configuration = LockedValueStorage(
+      RoomTopicMessagesConfiguration(room: room, topic: topic, limit: limit)
+    )
   }
 
   public init(
@@ -2927,9 +3010,13 @@ public struct RoomTopicMessages: Sendable {
     limit: Int? = nil
   ) {
     self.storage = FetchStorage(value: wrappedValue)
-    self.room = InstantRoomHandle(type: type, id: id)
-    self.topic = topic
-    self.limit = limit
+    self.configuration = LockedValueStorage(
+      RoomTopicMessagesConfiguration(
+        room: InstantRoomHandle(type: type, id: id),
+        topic: topic,
+        limit: limit
+      )
+    )
   }
 
   public init(
@@ -2939,23 +3026,29 @@ public struct RoomTopicMessages: Sendable {
     limit: Int? = nil
   ) {
     self.storage = FetchStorage(value: wrappedValue)
-    self.room = room
-    self.topic = topic
-    self.limit = limit
+    self.configuration = LockedValueStorage(
+      RoomTopicMessagesConfiguration(room: room, topic: topic, limit: limit)
+    )
   }
 
   public var projectedValue: Self {
     get { self }
-    set { self = newValue }
+    nonmutating set {
+      wrappedValue = newValue.wrappedValue
+      loadError = newValue.loadError
+      isLoading = newValue.isLoading
+      configuration.value = newValue.configuration.value
+    }
   }
 
-  public mutating func load() async throws {
+  public func load() async throws {
     @Dependency(\.defaultInstantSwiftData) var client
     try await load(using: client)
   }
 
-  public mutating func load(using client: InstantSwiftDataClient) async throws {
-    guard let room, let topic else {
+  public func load(using client: InstantSwiftDataClient) async throws {
+    let configuration = configuration.value
+    guard let room = configuration.room, let topic = configuration.topic else {
       let error = InstantError(
         code: .implementationFailed,
         operation: "load RoomTopicMessages",
@@ -2966,10 +3059,10 @@ public struct RoomTopicMessages: Sendable {
       loadError = error
       throw error
     }
-    try await load(room: room, topic: topic, limit: limit, using: client)
+    try await load(room: room, topic: topic, limit: configuration.limit, using: client)
   }
 
-  public mutating func load(
+  public func load(
     _ type: String,
     _ id: String,
     _ topic: String,
@@ -2979,7 +3072,7 @@ public struct RoomTopicMessages: Sendable {
     try await load(type, id, topic, limit: limit, using: client)
   }
 
-  public mutating func load(
+  public func load(
     _ type: String,
     _ id: String,
     _ topic: String,
@@ -2994,7 +3087,7 @@ public struct RoomTopicMessages: Sendable {
     )
   }
 
-  public mutating func load(
+  public func load(
     room: InstantRoomHandle,
     topic: String,
     limit: Int? = nil
@@ -3003,15 +3096,17 @@ public struct RoomTopicMessages: Sendable {
     try await load(room: room, topic: topic, limit: limit, using: client)
   }
 
-  public mutating func load(
+  public func load(
     room: InstantRoomHandle,
     topic: String,
     limit: Int? = nil,
     using client: InstantSwiftDataClient
   ) async throws {
-    self.room = room
-    self.topic = topic
-    self.limit = limit
+    self.configuration.value = RoomTopicMessagesConfiguration(
+      room: room,
+      topic: topic,
+      limit: limit
+    )
     isLoading = true
     do {
       try Self.validateLimit(limit, operation: "load RoomTopicMessages")
@@ -3045,17 +3140,18 @@ public struct RoomTopicMessages: Sendable {
     }
   }
 
-  public mutating func subscribe()
+  public func subscribe()
     async throws -> FetchSubscription<[InstantRoomTopicMessage]>
   {
     @Dependency(\.defaultInstantSwiftData) var client
     return try await subscribe(using: client)
   }
 
-  public mutating func subscribe(
+  public func subscribe(
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<[InstantRoomTopicMessage]> {
-    guard let room, let topic else {
+    let configuration = configuration.value
+    guard let room = configuration.room, let topic = configuration.topic else {
       let error = InstantError(
         code: .implementationFailed,
         operation: "subscribe RoomTopicMessages",
@@ -3066,10 +3162,10 @@ public struct RoomTopicMessages: Sendable {
       loadError = error
       throw error
     }
-    return try await subscribe(room: room, topic: topic, limit: limit, using: client)
+    return try await subscribe(room: room, topic: topic, limit: configuration.limit, using: client)
   }
 
-  public mutating func subscribe(
+  public func subscribe(
     _ type: String,
     _ id: String,
     _ topic: String,
@@ -3079,7 +3175,7 @@ public struct RoomTopicMessages: Sendable {
     return try await subscribe(type, id, topic, limit: limit, using: client)
   }
 
-  public mutating func subscribe(
+  public func subscribe(
     _ type: String,
     _ id: String,
     _ topic: String,
@@ -3094,7 +3190,7 @@ public struct RoomTopicMessages: Sendable {
     )
   }
 
-  public mutating func subscribe(
+  public func subscribe(
     room: InstantRoomHandle,
     topic: String,
     limit: Int? = nil
@@ -3103,15 +3199,17 @@ public struct RoomTopicMessages: Sendable {
     return try await subscribe(room: room, topic: topic, limit: limit, using: client)
   }
 
-  public mutating func subscribe(
+  public func subscribe(
     room: InstantRoomHandle,
     topic: String,
     limit: Int? = nil,
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<[InstantRoomTopicMessage]> {
-    self.room = room
-    self.topic = topic
-    self.limit = limit
+    self.configuration.value = RoomTopicMessagesConfiguration(
+      room: room,
+      topic: topic,
+      limit: limit
+    )
     do {
       try Self.validateLimit(limit, operation: "subscribe RoomTopicMessages")
       try Task.checkCancellation()
@@ -3139,12 +3237,12 @@ public struct RoomTopicMessages: Sendable {
     }
   }
 
-  public mutating func task() async throws {
+  public func task() async throws {
     @Dependency(\.defaultInstantSwiftData) var client
     try await task(using: client)
   }
 
-  public mutating func task(
+  public func task(
     _ type: String,
     _ id: String,
     _ topic: String,
@@ -3154,20 +3252,22 @@ public struct RoomTopicMessages: Sendable {
     try await task(type, id, topic, limit: limit, using: client)
   }
 
-  public mutating func task(
+  public func task(
     _ type: String,
     _ id: String,
     _ topic: String,
     limit: Int? = nil,
     using client: InstantSwiftDataClient
   ) async throws {
-    self.room = InstantRoomHandle(type: type, id: id)
-    self.topic = topic
-    self.limit = limit
+    self.configuration.value = RoomTopicMessagesConfiguration(
+      room: InstantRoomHandle(type: type, id: id),
+      topic: topic,
+      limit: limit
+    )
     try await task(using: client)
   }
 
-  public mutating func task(
+  public func task(
     room: InstantRoomHandle,
     topic: String,
     limit: Int? = nil
@@ -3176,19 +3276,21 @@ public struct RoomTopicMessages: Sendable {
     try await task(room: room, topic: topic, limit: limit, using: client)
   }
 
-  public mutating func task(
+  public func task(
     room: InstantRoomHandle,
     topic: String,
     limit: Int? = nil,
     using client: InstantSwiftDataClient
   ) async throws {
-    self.room = room
-    self.topic = topic
-    self.limit = limit
+    self.configuration.value = RoomTopicMessagesConfiguration(
+      room: room,
+      topic: topic,
+      limit: limit
+    )
     try await task(using: client)
   }
 
-  public mutating func task(using client: InstantSwiftDataClient) async throws {
+  public func task(using client: InstantSwiftDataClient) async throws {
     isLoading = true
     do {
       let subscription = try await subscribe(using: client)
@@ -3804,21 +3906,21 @@ public struct Shares: Sendable {
 @propertyWrapper
 public struct LocalID: Sendable {
   private let storage: FetchStorage<String?>
-  private var name: String?
+  private let name: LockedValueStorage<String?>
 
   public var wrappedValue: String? {
     get { storage.wrappedValue }
-    set { storage.wrappedValue = newValue }
+    nonmutating set { storage.wrappedValue = newValue }
   }
 
   public var loadError: InstantError? {
     get { storage.loadError }
-    set { storage.loadError = newValue }
+    nonmutating set { storage.loadError = newValue }
   }
 
   public var isLoading: Bool {
     get { storage.isLoading }
-    set { storage.isLoading = newValue }
+    nonmutating set { storage.isLoading = newValue }
   }
 
   #if canImport(SwiftUI)
@@ -3832,36 +3934,41 @@ public struct LocalID: Sendable {
 
   public init(wrappedValue: String? = nil) {
     self.storage = FetchStorage(value: wrappedValue)
-    self.name = nil
+    self.name = LockedValueStorage(nil)
   }
 
   public init(_ name: String) {
     self.storage = FetchStorage(value: nil)
-    self.name = name
+    self.name = LockedValueStorage(name)
   }
 
   public init(wrappedValue: String?, _ name: String) {
     self.storage = FetchStorage(value: wrappedValue)
-    self.name = name
+    self.name = LockedValueStorage(name)
   }
 
   public init(wrappedValue: String? = nil, name: String) {
     self.storage = FetchStorage(value: wrappedValue)
-    self.name = name
+    self.name = LockedValueStorage(name)
   }
 
   public var projectedValue: Self {
     get { self }
-    set { self = newValue }
+    nonmutating set {
+      wrappedValue = newValue.wrappedValue
+      loadError = newValue.loadError
+      isLoading = newValue.isLoading
+      name.value = newValue.name.value
+    }
   }
 
-  public mutating func load() async throws {
+  public func load() async throws {
     @Dependency(\.defaultInstantSwiftData) var client
     try await load(using: client)
   }
 
-  public mutating func load(using client: InstantSwiftDataClient) async throws {
-    guard let name else {
+  public func load(using client: InstantSwiftDataClient) async throws {
+    guard let name = name.value else {
       let error = InstantError(
         code: .implementationFailed,
         operation: "load LocalID",
@@ -3874,13 +3981,13 @@ public struct LocalID: Sendable {
     try await load(name, using: client)
   }
 
-  public mutating func load(_ name: String) async throws {
+  public func load(_ name: String) async throws {
     @Dependency(\.defaultInstantSwiftData) var client
     try await load(name, using: client)
   }
 
-  public mutating func load(_ name: String, using client: InstantSwiftDataClient) async throws {
-    self.name = name
+  public func load(_ name: String, using client: InstantSwiftDataClient) async throws {
+    self.name.value = name
     isLoading = true
     do {
       let value = try await client.localID(named: name)
@@ -3910,19 +4017,19 @@ public struct LocalID: Sendable {
     }
   }
 
-  public mutating func task() async throws {
+  public func task() async throws {
     try await load()
   }
 
-  public mutating func task(using client: InstantSwiftDataClient) async throws {
+  public func task(using client: InstantSwiftDataClient) async throws {
     try await load(using: client)
   }
 
-  public mutating func task(_ name: String) async throws {
+  public func task(_ name: String) async throws {
     try await load(name)
   }
 
-  public mutating func task(_ name: String, using client: InstantSwiftDataClient) async throws {
+  public func task(_ name: String, using client: InstantSwiftDataClient) async throws {
     try await load(name, using: client)
   }
 }

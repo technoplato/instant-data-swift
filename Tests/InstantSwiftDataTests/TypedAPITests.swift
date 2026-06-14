@@ -2165,7 +2165,7 @@ struct TypedAPITests {
         )
       }
 
-      var fetch = FetchAll<TypedTodo>(
+      let fetch = FetchAll<TypedTodo>(
         TypedTodo.query
           .where(TypedTodo.isCompleted == false)
           .order(TypedTodo.createdAt)
@@ -2248,7 +2248,7 @@ struct TypedAPITests {
     } operation: {
       @Dependency(\.defaultInstantSwiftData) var db
 
-      var fetch = FetchAll<TypedTodo>(
+      let fetch = FetchAll<TypedTodo>(
         TypedTodo.query
           .where(TypedTodo.isCompleted == false)
           .order(TypedTodo.createdAt)
@@ -2291,7 +2291,7 @@ struct TypedAPITests {
     } operation: {
       @Dependency(\.defaultInstantSwiftData) var db
 
-      var fetch = FetchAll<TypedTodo>()
+      let fetch = FetchAll<TypedTodo>()
       let subscription = try await fetch.subscribe()
       var iterator = subscription.makeAsyncIterator()
 
@@ -2345,7 +2345,7 @@ struct TypedAPITests {
         )
       }
 
-      var fetch = FetchOne<TypedTodo?>(TypedTodo.query.order(TypedTodo.createdAt))
+      let fetch = FetchOne<TypedTodo?>(TypedTodo.query.order(TypedTodo.createdAt))
       try await fetch.load()
 
       expectNoDifference(fetch.wrappedValue?.text, "First")
@@ -2442,7 +2442,7 @@ struct TypedAPITests {
         )
       }
 
-      var fetch = FetchOne(wrappedValue: defaultTodo, TypedTodo.query.order(TypedTodo.createdAt))
+      let fetch = FetchOne(wrappedValue: defaultTodo, TypedTodo.query.order(TypedTodo.createdAt))
       try await fetch.load()
       expectNoDifference(fetch.wrappedValue.text, "First required")
       expectNoDifference(fetch.loadError, nil)
@@ -2502,7 +2502,7 @@ struct TypedAPITests {
       localID: { name in "mock-\(name)" }
     )
     let baseDate = Date(timeIntervalSince1970: 1_700_000_157)
-    var fetch = FetchOne(
+    let fetch = FetchOne(
       wrappedValue: TypedTodo(
         id: InstantID(rawValue: "todo-live-required-default"),
         text: "Default",
@@ -2571,7 +2571,7 @@ struct TypedAPITests {
     } operation: {
       @Dependency(\.defaultInstantSwiftData) var db
 
-      var fetch = FetchOne<TypedTodo?>(TypedTodo.query.order(TypedTodo.createdAt))
+      let fetch = FetchOne<TypedTodo?>(TypedTodo.query.order(TypedTodo.createdAt))
       let subscription = try await fetch.subscribe()
       var iterator = subscription.makeAsyncIterator()
 
@@ -2609,7 +2609,7 @@ struct TypedAPITests {
     let termination = ObservationTermination()
     let mock = mockClient(recording: termination)
 
-    var fetch = FetchAll<TypedTodo>(TypedTodo.query)
+    let fetch = FetchAll<TypedTodo>(TypedTodo.query)
     let subscription = try await fetch.subscribe(using: mock)
     var iterator = subscription.makeAsyncIterator()
 
@@ -2628,7 +2628,7 @@ struct TypedAPITests {
     let termination = ObservationTermination()
     let mock = mockClient(recording: termination)
 
-    var fetch = FetchAll<TypedTodo>(TypedTodo.query)
+    let fetch = FetchAll<TypedTodo>(TypedTodo.query)
     let subscription = try await fetch.subscribe(using: mock)
     subscription.cancel()
 
@@ -2645,7 +2645,7 @@ struct TypedAPITests {
     let termination = ObservationTermination()
     let mock = mockClient(recording: termination)
 
-    var fetch = FetchOne<TypedTodo?>(TypedTodo.query)
+    let fetch = FetchOne<TypedTodo?>(TypedTodo.query)
     let subscription = try await fetch.subscribe(using: mock)
     subscription.cancel()
 
@@ -2697,7 +2697,7 @@ struct TypedAPITests {
         )
       }
 
-      var fetch = Fetch<Int>(wrappedValue: 0) { client in
+      let fetch = Fetch<Int>(wrappedValue: 0) { client in
         try await client.query(TypedTodo.query).count
       }
       try await fetch.load()
@@ -2732,7 +2732,7 @@ struct TypedAPITests {
     } operation: {
       @Dependency(\.defaultInstantSwiftData) var db
 
-      var fetch = Fetch<Int>(
+      let fetch = Fetch<Int>(
         wrappedValue: -1,
         load: { client in
           try await client.query(TypedTodo.query).count
@@ -2784,7 +2784,7 @@ struct TypedAPITests {
       ],
     ])
 
-    var fetch = Fetch<Int>(
+    let fetch = Fetch<Int>(
       wrappedValue: 0,
       load: { client in
         try await client.query(TypedTodo.query).count
@@ -2802,7 +2802,7 @@ struct TypedAPITests {
 
   @Test
   func fetchTaskPreservesLastValueAndRecordsDerivedError() async throws {
-    var fetch = Fetch<Int>(
+    let fetch = Fetch<Int>(
       wrappedValue: 0,
       load: { _ in 0 },
       subscribe: { _ in
@@ -2846,7 +2846,7 @@ struct TypedAPITests {
       }
     )
     let task = Task {
-      var fetch = fetch
+      let fetch = fetch
       try await fetch.task(using: mock)
     }
 
@@ -2866,7 +2866,7 @@ struct TypedAPITests {
 
   @Test
   func fetchSubscribeWithoutOperationRecordsError() async throws {
-    var fetch = Fetch<Int>(wrappedValue: 0)
+    let fetch = Fetch<Int>(wrappedValue: 0)
 
     do {
       _ = try await fetch.subscribe(using: mockClient(recording: ObservationTermination()))
@@ -2879,6 +2879,32 @@ struct TypedAPITests {
     } catch {
       Issue.record("Unexpected error: \(error).")
     }
+  }
+
+  @Test
+  func projectedFetchLifecycleAPIsWorkFromImmutableModels() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_178)
+    let client = finiteObservationClient([
+      [],
+      [
+        typedTodoSnapshot(
+          id: "todo-immutable-wrapper",
+          text: "Immutable wrapper",
+          isCompleted: false,
+          createdAt: baseDate
+        )
+      ],
+    ])
+    let model = ImmutableProjectedFetchLifecycleModel()
+
+    try await model.exercise(using: client)
+
+    expectNoDifference(model.todos.map(\.text), ["Immutable wrapper"])
+    expectNoDifference(model.todo?.text, "Immutable wrapper")
+    expectNoDifference(model.count, 1)
+    expectNoDifference(model.$todos.loadError, nil)
+    expectNoDifference(model.$todo.loadError, nil)
+    expectNoDifference(model.$count.loadError, nil)
   }
 
   @Test
@@ -3259,7 +3285,7 @@ struct TypedAPITests {
       ],
     ])
 
-    var fetch = FetchAll<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt))
+    let fetch = FetchAll<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt))
     try await fetch.task(using: client)
 
     expectNoDifference(fetch.wrappedValue.map(\.text), ["Bound through task"])
@@ -3288,7 +3314,7 @@ struct TypedAPITests {
       ],
     ])
 
-    var fetch = FetchOne<TypedTodo?>(TypedTodo.query.order(TypedTodo.createdAt))
+    let fetch = FetchOne<TypedTodo?>(TypedTodo.query.order(TypedTodo.createdAt))
     try await fetch.task(using: client)
 
     expectNoDifference(fetch.wrappedValue?.text, "First bound")
@@ -3301,7 +3327,7 @@ struct TypedAPITests {
     let termination = ObservationTermination()
     let mock = mockClient(recording: termination)
 
-    var fetch = FetchAll<TypedTodo>(TypedTodo.query)
+    let fetch = FetchAll<TypedTodo>(TypedTodo.query)
     let subscription = try await fetch.subscribe(using: mock)
     let task = Task {
       try await subscription.task
@@ -3323,7 +3349,7 @@ struct TypedAPITests {
     let termination = ObservationTermination()
     let mock = mockClient(recording: termination)
 
-    var fetch = FetchAll<TypedTodo>(TypedTodo.query)
+    let fetch = FetchAll<TypedTodo>(TypedTodo.query)
     let subscription = try await fetch.subscribe(using: mock)
     let task = Task {
       do {
@@ -3348,7 +3374,7 @@ struct TypedAPITests {
     let secondTermination = ObservationTermination()
     let secondCompletion = CompletionFlag()
 
-    var firstFetch = FetchAll<TypedTodo>(TypedTodo.query)
+    let firstFetch = FetchAll<TypedTodo>(TypedTodo.query)
     let firstSubscription = try await firstFetch.subscribe(
       using: mockClient(recording: firstTermination)
     )
@@ -3361,7 +3387,7 @@ struct TypedAPITests {
       }
     }
 
-    var secondFetch = FetchAll<TypedTodo>(TypedTodo.query)
+    let secondFetch = FetchAll<TypedTodo>(TypedTodo.query)
     let secondSubscription = try await secondFetch.subscribe(
       using: mockClient(recording: secondTermination)
     )
@@ -3423,7 +3449,7 @@ struct TypedAPITests {
     let mock = mockClient(recording: termination)
     let fetch = FetchAll<TypedTodo>(TypedTodo.query)
     let task = Task {
-      var fetch = fetch
+      let fetch = fetch
       try await fetch.task(using: mock)
     }
 
@@ -3458,7 +3484,7 @@ struct TypedAPITests {
       ],
     ])
 
-    var fetch = FetchAll<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt))
+    let fetch = FetchAll<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt))
     do {
       try await fetch.task(using: client)
       Issue.record("Expected malformed subscription emission to fail decoding.")
@@ -3480,7 +3506,7 @@ struct TypedAPITests {
       createdAt: Date(timeIntervalSince1970: 1_700_000_366)
     )
     let recorder = ClientCallRecorder()
-    var fetch = FetchAll<TypedTodo>(wrappedValue: [todo], TypedTodo.query)
+    let fetch = FetchAll<TypedTodo>(wrappedValue: [todo], TypedTodo.query)
     fetch.loadError = InstantError(
       code: .implementationFailed,
       operation: "previous load",
@@ -3508,7 +3534,7 @@ struct TypedAPITests {
       createdAt: Date(timeIntervalSince1970: 1_700_000_367)
     )
     let recorder = ClientCallRecorder()
-    var fetch = FetchOne<TypedTodo?>(wrappedValue: todo, TypedTodo.query)
+    let fetch = FetchOne<TypedTodo?>(wrappedValue: todo, TypedTodo.query)
     fetch.loadError = InstantError(
       code: .implementationFailed,
       operation: "previous optional load",
@@ -3536,7 +3562,7 @@ struct TypedAPITests {
       createdAt: Date(timeIntervalSince1970: 1_700_000_367.5)
     )
     let recorder = ClientCallRecorder()
-    var fetch = FetchOne<TypedTodo?>(wrappedValue: todo, TypedTodo.query)
+    let fetch = FetchOne<TypedTodo?>(wrappedValue: todo, TypedTodo.query)
 
     let subscription = try await fetch.subscribe(
       nil as InstantEntityQuery<TypedTodo>?,
@@ -3564,7 +3590,7 @@ struct TypedAPITests {
       createdAt: Date(timeIntervalSince1970: 1_700_000_368)
     )
     let recorder = ClientCallRecorder()
-    var fetch = FetchAll<TypedTodo>(wrappedValue: [todo], TypedTodo.query)
+    let fetch = FetchAll<TypedTodo>(wrappedValue: [todo], TypedTodo.query)
     fetch.isLoading = true
 
     try await fetch.task(nil as InstantEntityQuery<TypedTodo>?, using: recordingClient(recorder))
@@ -3586,7 +3612,7 @@ struct TypedAPITests {
       createdAt: Date(timeIntervalSince1970: 1_700_000_368.25)
     )
     let recorder = ClientCallRecorder()
-    var fetch = FetchOne<TypedTodo?>(wrappedValue: todo, TypedTodo.query)
+    let fetch = FetchOne<TypedTodo?>(wrappedValue: todo, TypedTodo.query)
     fetch.isLoading = true
 
     try await fetch.task(nil as InstantEntityQuery<TypedTodo>?, using: recordingClient(recorder))
@@ -3608,7 +3634,7 @@ struct TypedAPITests {
       createdAt: Date(timeIntervalSince1970: 1_700_000_368.5)
     )
     let recorder = ClientCallRecorder()
-    var fetch = FetchAll<TypedTodo>(wrappedValue: [todo], TypedTodo.query)
+    let fetch = FetchAll<TypedTodo>(wrappedValue: [todo], TypedTodo.query)
 
     let subscription = try await fetch.subscribe(
       nil as InstantEntityQuery<TypedTodo>?,
@@ -3645,7 +3671,7 @@ struct TypedAPITests {
       )
     )
     let client = recordingClient(recorder)
-    var fetch = FetchAll<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt))
+    let fetch = FetchAll<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt))
 
     try await fetch.load(TypedTodo.query.order(TypedTodo.createdAt), using: client)
     expectNoDifference(fetch.wrappedValue.map(\.text), ["Cached dynamic result"])
@@ -3860,6 +3886,49 @@ private actor ClientCallRecorder {
   }
 }
 
+private struct ImmutableProjectedFetchLifecycleModel {
+  @FetchAll var todos: [TypedTodo]
+  @FetchOne var todo: TypedTodo?
+  @Fetch var count = 0
+
+  func exercise(using client: InstantSwiftDataClient) async throws {
+    let query = TypedTodo.query.order(TypedTodo.createdAt)
+
+    try await $todos.load(query, using: client)
+    let todosSubscription = try await $todos.subscribe(query, using: client)
+    todosSubscription.cancel()
+    try await $todos.task(query, using: client)
+
+    try await $todo.load(query, using: client)
+    let todoSubscription = try await $todo.subscribe(query, using: client)
+    todoSubscription.cancel()
+    try await $todo.task(query, using: client)
+
+    try await $count.load(
+      { client in
+        try await client.query(query).count
+      },
+      subscribe: { client in
+        await client.subscribe(query).map(\.count)
+      },
+      using: client
+    )
+    let countSubscription = try await $count.subscribe(
+      { client in
+        await client.subscribe(query).map(\.count)
+      },
+      using: client
+    )
+    countSubscription.cancel()
+    try await $count.task(
+      { client in
+        await client.subscribe(query).map(\.count)
+      },
+      using: client
+    )
+  }
+}
+
 private actor LocalIDRecorder {
   private var names: [String] = []
 
@@ -4009,7 +4078,7 @@ private func stagedObservationClient(
 }
 
 private func makeUnusedFetchSubscription(using client: InstantSwiftDataClient) async throws {
-  var fetch = FetchAll<TypedTodo>(TypedTodo.query)
+  let fetch = FetchAll<TypedTodo>(TypedTodo.query)
   let subscription = try await fetch.subscribe(using: client)
   withExtendedLifetime(subscription) {}
 }

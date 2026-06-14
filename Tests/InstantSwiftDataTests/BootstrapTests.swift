@@ -810,7 +810,7 @@ struct BootstrapTests {
     let auth = AuthSession(wrappedValue: cached)
 
     let task = Task {
-      var auth = auth
+      let auth = auth
       try await auth.load(using: client)
     }
 
@@ -871,7 +871,7 @@ struct BootstrapTests {
       }
     )
 
-    var auth = AuthSession()
+    let auth = AuthSession()
     let subscription = try await auth.subscribe(using: client)
     var iterator = subscription.makeAsyncIterator()
     let initial = try await iterator.next()
@@ -1067,7 +1067,7 @@ struct BootstrapTests {
       }
     )
 
-    var presence = RoomPresence("chat", "lobby")
+    let presence = RoomPresence("chat", "lobby")
     let subscription = try await presence.subscribe(using: client)
     var iterator = subscription.makeAsyncIterator()
     let initialMembers = try await iterator.next()
@@ -1080,7 +1080,7 @@ struct BootstrapTests {
 
   @Test
   func roomPresencePropertyWrapperRecordsMissingRoomError() async throws {
-    var presence = RoomPresence()
+    let presence = RoomPresence()
 
     do {
       _ = try await presence.subscribe(using: roomClient())
@@ -1109,7 +1109,7 @@ struct BootstrapTests {
     let presence = RoomPresence("chat", "lobby")
 
     let task = Task {
-      var presence = presence
+      let presence = presence
       _ = try await presence.subscribe(using: client)
     }
 
@@ -1155,7 +1155,7 @@ struct BootstrapTests {
 
   @Test
   func roomTopicMessagesPropertyWrapperRecordsNegativeLimitErrors() async throws {
-    var messages = RoomTopicMessages("chat", "lobby", "sendEmoji", limit: -1)
+    let messages = RoomTopicMessages("chat", "lobby", "sendEmoji", limit: -1)
 
     do {
       try await messages.load(using: roomClient())
@@ -1238,7 +1238,7 @@ struct BootstrapTests {
       }
     )
 
-    var messages = RoomTopicMessages("chat", "lobby", "sendEmoji")
+    let messages = RoomTopicMessages("chat", "lobby", "sendEmoji")
     let subscription = try await messages.subscribe(using: client)
     var iterator = subscription.makeAsyncIterator()
     let initialMessages = try await iterator.next()
@@ -1309,7 +1309,7 @@ struct BootstrapTests {
     let messages = RoomTopicMessages("chat", "lobby", "sendEmoji")
 
     let task = Task {
-      var messages = messages
+      let messages = messages
       _ = try await messages.subscribe(using: client)
     }
 
@@ -1324,6 +1324,77 @@ struct BootstrapTests {
     } catch {
       Issue.record("Expected CancellationError, got \(error).")
     }
+  }
+
+  @Test
+  func projectedAdapterLifecycleAPIsWorkFromImmutableModels() async throws {
+    let session = mockAuthSession(userID: "immutable-user")
+    let room = InstantRoomHandle(type: "chat", id: "lobby")
+    let member = mockRoomPresenceMember(room: room, userID: "user-1")
+    let firstMessage = mockRoomTopicMessage(room: room, topic: "sendEmoji")
+    let laterMessage = mockRoomTopicMessage(
+      room: room,
+      topic: "sendEmoji",
+      id: "message-2",
+      payload: .object(["emoji": .string("sparkles")])
+    )
+    let authClient = authSessionClient(
+      load: { session },
+      observe: {
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield(nil)
+          continuation.yield(session)
+          continuation.finish()
+        }
+      }
+    )
+    let roomsClient = roomClient(
+      roomPresence: { room in
+        expectNoDifference(room, InstantRoomHandle(type: "chat", id: "lobby"))
+        return [member]
+      },
+      observeRoomPresence: { room in
+        expectNoDifference(room, InstantRoomHandle(type: "chat", id: "lobby"))
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield([])
+          continuation.yield([member])
+          continuation.finish()
+        }
+      },
+      roomTopicMessages: { room, topic, limit in
+        expectNoDifference(room, InstantRoomHandle(type: "chat", id: "lobby"))
+        expectNoDifference(topic, "sendEmoji")
+        expectNoDifference(limit, 1)
+        return [firstMessage, laterMessage]
+      },
+      observeRoomTopicMessages: { room, topic in
+        expectNoDifference(room, InstantRoomHandle(type: "chat", id: "lobby"))
+        expectNoDifference(topic, "sendEmoji")
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield([])
+          continuation.yield([firstMessage, laterMessage])
+          continuation.finish()
+        }
+      }
+    )
+    let localIDRecorder = LocalIDRecorder()
+    let localIDClient = localIDClient(localIDRecorder)
+    let model = ImmutableProjectedAdapterLifecycleModel()
+
+    try await model.exerciseAuth(using: authClient)
+    try await model.exerciseRoom(room: room, topic: "sendEmoji", using: roomsClient)
+    try await model.exerciseLocalID(using: localIDClient)
+
+    expectNoDifference(model.session, session)
+    expectNoDifference(model.members, [member])
+    expectNoDifference(model.messages, [firstMessage])
+    expectNoDifference(model.localID, "local-id-session")
+    expectNoDifference(model.$session.loadError, nil)
+    expectNoDifference(model.$members.loadError, nil)
+    expectNoDifference(model.$messages.loadError, nil)
+    expectNoDifference(model.$localID.loadError, nil)
+    let resolvedNames = await localIDRecorder.recordedNames()
+    expectNoDifference(resolvedNames, ["device", "session"])
   }
 
   @Test
@@ -2137,6 +2208,59 @@ private actor RoomObservationTermination {
   }
 }
 
+private actor LocalIDRecorder {
+  private var names: [String] = []
+
+  func resolve(_ name: String) -> String {
+    names.append(name)
+    return "local-id-\(name)"
+  }
+
+  func recordedNames() -> [String] {
+    names
+  }
+}
+
+private struct ImmutableProjectedAdapterLifecycleModel {
+  @AuthSession var session: InstantAuthSession?
+  @RoomPresence var members: [InstantRoomPresenceMember]
+  @RoomTopicMessages var messages: [InstantRoomTopicMessage]
+  @LocalID var localID: String?
+
+  func exerciseAuth(using client: InstantSwiftDataClient) async throws {
+    try await $session.load(using: client)
+    let subscription = try await $session.subscribe(using: client)
+    subscription.cancel()
+    try await $session.task(using: client)
+  }
+
+  func exerciseRoom(
+    room: InstantRoomHandle,
+    topic: String,
+    using client: InstantSwiftDataClient
+  ) async throws {
+    try await $members.load(room: room, using: client)
+    let membersSubscription = try await $members.subscribe(room: room, using: client)
+    membersSubscription.cancel()
+    try await $members.task(room: room, using: client)
+
+    try await $messages.load(room: room, topic: topic, limit: 1, using: client)
+    let messagesSubscription = try await $messages.subscribe(
+      room: room,
+      topic: topic,
+      limit: 1,
+      using: client
+    )
+    messagesSubscription.cancel()
+    try await $messages.task(room: room, topic: topic, limit: 1, using: client)
+  }
+
+  func exerciseLocalID(using client: InstantSwiftDataClient) async throws {
+    try await $localID.load("device", using: client)
+    try await $localID.task("session", using: client)
+  }
+}
+
 private func mockAuthSession(userID: String, isGuest: Bool = false) -> InstantAuthSession {
   InstantAuthSession(
     appID: "mock-app",
@@ -2282,6 +2406,25 @@ private func authSessionClient(
     localID: { name in "mock-\(name)" },
     authSession: load,
     observeAuthSession: observe
+  )
+}
+
+private func localIDClient(_ recorder: LocalIDRecorder) -> InstantSwiftDataClient {
+  InstantSwiftDataClient(
+    transact: { transaction in
+      InstantStoreMutationResult(
+        transactionID: transaction.id,
+        changedEntityIDs: [],
+        tripleCount: transaction.operations.count,
+        emissions: []
+      )
+    },
+    query: { _ in [] },
+    observe: { _ in AsyncStream { continuation in continuation.finish() } },
+    pendingMutations: { [] },
+    localID: { name in
+      await recorder.resolve(name)
+    }
   )
 }
 
