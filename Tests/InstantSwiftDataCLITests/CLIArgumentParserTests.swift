@@ -310,6 +310,202 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func examplesSyncUpsLeafParserParsesCommandsAndOptions() throws {
+    expectNoDifference(try parseExamplesSyncUpsLeaf(["seed"]), .seed)
+    expectNoDifference(
+      try parseExamplesSyncUpsLeaf(["list"]),
+      .list(CLIExamplesSyncUpsListInvocation())
+    )
+    expectNoDifference(
+      try parseExamplesSyncUpsLeaf(["list", "--refresh", "--sync-up-id", "sync-1"]),
+      .list(CLIExamplesSyncUpsListInvocation(event: "refresh", syncUpID: "sync-1"))
+    )
+    expectNoDifference(
+      try parseExamplesSyncUpsLeaf(["refresh", "--sync-up-id", "sync-2"]),
+      .list(CLIExamplesSyncUpsListInvocation(event: "refresh", syncUpID: "sync-2"))
+    )
+    expectNoDifference(
+      try parseExamplesSyncUpsLeaf(["detail", "sync-1"]),
+      .detail(syncUpID: "sync-1")
+    )
+    expectNoDifference(
+      try parseExamplesSyncUpsLeaf([
+        "add", "Design", "--seconds", "900", "--theme", "periwinkle", "--attendee",
+        "Blob", "--attendee", "  ", "--attendee", "Blob Jr",
+      ]),
+      .add(
+        CLIExamplesSyncUpsAddInvocation(
+          title: "Design",
+          seconds: 900,
+          theme: "periwinkle",
+          attendeeNames: ["Blob", "Blob Jr"]
+        )
+      )
+    )
+    expectNoDifference(
+      try parseExamplesSyncUpsLeaf([
+        "edit", "sync-1", "--title", "Design Review", "--seconds", "1200",
+        "--theme", "appOrange", "--attendee", "Blob",
+      ]),
+      .update(
+        CLIExamplesSyncUpsUpdateInvocation(
+          event: "edit",
+          syncUpID: "sync-1",
+          title: "Design Review",
+          seconds: 1200,
+          theme: "appOrange",
+          replacementAttendeeNames: ["Blob"]
+        )
+      )
+    )
+    expectNoDifference(
+      try parseExamplesSyncUpsLeaf(["update", "sync-1", "--title", "Planning"]),
+      .update(
+        CLIExamplesSyncUpsUpdateInvocation(
+          event: "update",
+          syncUpID: "sync-1",
+          title: "Planning"
+        )
+      )
+    )
+    expectNoDifference(
+      try parseExamplesSyncUpsLeaf(["add-attendee", "sync-1", "Blob", "Jr"]),
+      .addAttendee(syncUpID: "sync-1", name: "Blob Jr")
+    )
+    expectNoDifference(
+      try parseExamplesSyncUpsLeaf([
+        "record-meeting", "sync-1", "--transcript", "Reviewed", "risks",
+      ]),
+      .record(syncUpID: "sync-1", transcript: "Reviewed risks")
+    )
+    expectNoDifference(
+      try parseExamplesSyncUpsLeaf(["delete", "sync-1"]),
+      .delete(syncUpID: "sync-1")
+    )
+    expectNoDifference(
+      try parseExamplesSyncUpsLeaf(["delete-attendee", "attendee-1"]),
+      .deleteAttendee(attendeeID: "attendee-1")
+    )
+    expectNoDifference(
+      try parseExamplesSyncUpsLeaf(["delete-meeting", "meeting-1"]),
+      .deleteMeeting(meetingID: "meeting-1")
+    )
+    expectNoDifference(
+      try parseExamplesSyncUpsLeaf(["dance", "--fast"]),
+      .unknown("dance")
+    )
+  }
+
+  @Test
+  func examplesSyncUpsLeafParserReportsMalformedArguments() throws {
+    try expectExamplesSyncUpsLeafParseError([], description: CLIExamplesSyncUpsUsage.syncUps)
+    try expectExamplesSyncUpsLeafParseError(
+      ["seed", "unexpected"],
+      description: CLIExamplesSyncUpsUsage.seed
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["list", "--unknown"],
+      description: CLIExamplesSyncUpsUsage.list
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["list", "--sync-up-id", ""],
+      description: CLIExamplesSyncUpsUsage.list
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["detail"],
+      description: CLIExamplesSyncUpsUsage.detail
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["detail", "sync-1", "unexpected"],
+      description: CLIExamplesSyncUpsUsage.detail
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["add"],
+      description: CLIExamplesSyncUpsUsage.add
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["add", "  "],
+      description: CLIExamplesSyncUpsUsage.add
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["add", "Design", "--seconds", "0", "--attendee", "Blob"],
+      description: "Sync-up seconds must be a positive integer."
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["add", "Design", "--theme"],
+      description: "Unknown SyncUps theme."
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["add", "Design", "--attendee"],
+      description: #"Usage: instant-swift-data examples sync-ups add "title" --attendee name"#
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["add", "Design"],
+      description: "Sync-ups require at least one --attendee name."
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["add", "Design", "--unknown"],
+      description: "Unknown sync-ups add option: --unknown. \(CLIExamplesSyncUpsUsage.syncUps)"
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["edit"],
+      description: CLIExamplesSyncUpsUsage.edit
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["edit", "sync-1"],
+      description: CLIExamplesSyncUpsUsage.edit
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["edit", "sync-1", "--title", "  "],
+      description: "Sync-up title must not be empty."
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["edit", "sync-1", "--seconds", "-1"],
+      description: "Sync-up seconds must be a positive integer."
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["edit", "sync-1", "--theme", "--attendee", "Blob"],
+      description: "Unknown SyncUps theme."
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["edit", "sync-1", "--attendee"],
+      description: "Usage: instant-swift-data examples sync-ups edit <sync-up-id> --attendee name"
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["edit", "sync-1", "--attendee", "  "],
+      description: "Sync-up attendee replacement requires at least one non-empty --attendee."
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["edit", "sync-1", "--unknown"],
+      description: "Unknown sync-ups update option: --unknown. \(CLIExamplesSyncUpsUsage.syncUps)"
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["add-attendee", "sync-1", "  "],
+      description: CLIExamplesSyncUpsUsage.addAttendee
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["record", "sync-1"],
+      description: CLIExamplesSyncUpsUsage.record
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["record", "sync-1", "--transcript"],
+      description: CLIExamplesSyncUpsUsage.recordTranscript
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["delete", "sync-1", "unexpected"],
+      description: CLIExamplesSyncUpsUsage.delete
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["delete-attendee"],
+      description: CLIExamplesSyncUpsUsage.deleteAttendee
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["delete-meeting", "meeting-1", "unexpected"],
+      description: CLIExamplesSyncUpsUsage.deleteMeeting
+    )
+  }
+
+  @Test
   func topLevelOutputModeNormalizesAroundExamplesCommand() throws {
     expectNoDifference(
       try CLIArguments.parse(["examples", "todos", "observe", "--events", "1", "--jsonl"]),
@@ -1871,6 +2067,15 @@ private func parseExamplesTodoLinksLeaf(
   return invocation
 }
 
+private func parseExamplesSyncUpsLeaf(
+  _ arguments: [String]
+) throws -> CLIExamplesSyncUpsLeafInvocation {
+  var input = arguments[...]
+  let invocation = try CLIExamplesSyncUpsLeafParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseAuth(_ arguments: [String]) throws -> CLIAuthInvocation {
   var input = arguments[...]
   let invocation = try CLIAuthParser().parse(&input)
@@ -2115,6 +2320,19 @@ private func expectExamplesTodoLinksLeafParseError(
     _ = try parseExamplesTodoLinksLeaf(arguments)
     Issue.record("Expected examples todo-links parser to reject \(arguments).")
   } catch let error as CLIExamplesTodoLinksArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectExamplesSyncUpsLeafParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseExamplesSyncUpsLeaf(arguments)
+    Issue.record("Expected examples sync-ups parser to reject \(arguments).")
+  } catch let error as CLIExamplesSyncUpsArgumentError {
     expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }

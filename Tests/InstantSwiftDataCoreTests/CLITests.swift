@@ -830,6 +830,93 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliMalformedSyncUpsArgumentsDoNotBootstrapState() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    func expectMalformed(_ arguments: [String], contains expectedFragment: String) throws {
+      let result = try runCLIResult(arguments, homeURL: homeURL)
+      expectNoDifference(result.status, 64)
+      #expect(result.error.contains(expectedFragment))
+    }
+
+    try expectMalformed(
+      ["examples", "sync-ups", "--json"],
+      contains: "examples sync-ups <seed|list|detail|add|edit|add-attendee|record|delete|delete-attendee|delete-meeting>"
+    )
+    try expectMalformed(
+      ["examples", "sync-ups", "seed", "unexpected", "--json"],
+      contains: "examples sync-ups seed"
+    )
+    try expectMalformed(
+      ["examples", "sync-ups", "list", "--unknown", "--json"],
+      contains: "examples sync-ups list"
+    )
+    try expectMalformed(
+      ["examples", "sync-ups", "detail", "--json"],
+      contains: "examples sync-ups detail <sync-up-id>"
+    )
+    try expectMalformed(
+      ["examples", "sync-ups", "add", "Design", "--seconds", "0", "--attendee", "Blob", "--json"],
+      contains: "Sync-up seconds must be a positive integer"
+    )
+    try expectMalformed(
+      [
+        "examples", "sync-ups", "add", "Design", "--theme", "chartreuse", "--attendee",
+        "Blob", "--json",
+      ],
+      contains: "Unknown SyncUps theme. Use one of:"
+    )
+    try expectMalformed(
+      ["examples", "sync-ups", "add", "Design", "--theme", "--json"],
+      contains: "Unknown SyncUps theme. Use one of:"
+    )
+    try expectMalformed(
+      ["examples", "sync-ups", "add", "Design", "--attendee", "--json"],
+      contains: #"examples sync-ups add "title" --attendee name"#
+    )
+    try expectMalformed(
+      ["examples", "sync-ups", "edit", "sync-1", "--json"],
+      contains: "examples sync-ups edit <sync-up-id>"
+    )
+    try expectMalformed(
+      ["examples", "sync-ups", "edit", "sync-1", "--theme", "chartreuse", "--json"],
+      contains: "Unknown SyncUps theme. Use one of:"
+    )
+    try expectMalformed(
+      ["examples", "sync-ups", "edit", "sync-1", "--theme", "--json"],
+      contains: "Unknown SyncUps theme. Use one of:"
+    )
+    try expectMalformed(
+      ["examples", "sync-ups", "edit", "sync-1", "--attendee", "  ", "--json"],
+      contains: "Sync-up attendee replacement requires at least one non-empty --attendee"
+    )
+    try expectMalformed(
+      ["examples", "sync-ups", "add-attendee", "sync-1", "  ", "--json"],
+      contains: "examples sync-ups add-attendee <sync-up-id>"
+    )
+    try expectMalformed(
+      ["examples", "sync-ups", "record", "sync-1", "--transcript", "--json"],
+      contains: #"examples sync-ups record <sync-up-id> --transcript "text""#
+    )
+    try expectMalformed(
+      ["examples", "sync-ups", "delete", "sync-1", "extra", "--json"],
+      contains: "examples sync-ups delete <sync-up-id>"
+    )
+    try expectMalformed(
+      ["examples", "sync-ups", "dance", "--json"],
+      contains: "Unknown sync-ups command: dance"
+    )
+
+    expectNoDifference(
+      try FileManager.default.contentsOfDirectory(atPath: homeURL.path),
+      []
+    )
+  }
+
+  @Test
   func cliQueryTodosSupportsServerCreatedAtOrder() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)

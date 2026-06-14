@@ -551,17 +551,25 @@ struct InstantSwiftDataCLI {
   }
 
   private static func runSyncUps(arguments: [String], output: OutputMode) async throws {
-    var arguments = arguments
-    guard let command = arguments.popFirstArgument() else {
-      throw CLIError(syncUpsUsage, exitCode: 64)
+    let invocation: CLIExamplesSyncUpsLeafInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLIExamplesSyncUpsLeafParser().parse(&input)
+    } catch CLIExamplesSyncUpsArgumentError.invalidTheme {
+      throw CLIError("Unknown SyncUps theme. Use one of: \(syncUpThemeList).", exitCode: 64)
+    } catch let error as CLIExamplesSyncUpsArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
+
+    if case let .unknown(command) = invocation {
+      throw CLIError("Unknown sync-ups command: \(command). \(syncUpsUsage)", exitCode: 64)
+    }
+    try validateSyncUpsThemeValues(in: invocation)
+
     let context = try await CLIContext.bootstrap(initialAttributes: SyncUpsExample.attributes)
 
-    switch command {
-    case "seed":
-      guard arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data examples sync-ups seed [--json|--jsonl]", exitCode: 64)
-      }
+    switch invocation {
+    case .seed:
       let transactionID = context.runtime.configuration.makeID()
       let now = context.runtime.configuration.now()
       var syncUpIDs: [String: String] = [:]
@@ -609,101 +617,30 @@ struct InstantSwiftDataCLI {
       )
       try await printSyncUps(context: context, output: output, event: "seed")
 
-    case "list", "refresh", "detail":
-      var event = command == "refresh" ? "refresh" : "list"
-      var syncUpID: String?
-      if command == "detail" {
-        guard let value = arguments.popFirstArgument(), arguments.isEmpty else {
-          throw CLIError(
-            "Usage: instant-swift-data examples sync-ups detail <sync-up-id> [--json|--jsonl]",
-            exitCode: 64
-          )
-        }
-        syncUpID = value
-        event = "detail"
-      } else {
-        while let option = arguments.popFirstArgument() {
-          switch option {
-          case "--refresh":
-            event = "refresh"
-          case "--sync-up-id":
-            guard let value = arguments.popFirstArgument(), !value.isEmpty else {
-              throw CLIError(
-                "Usage: instant-swift-data examples sync-ups list [--refresh] [--sync-up-id id] [--json|--jsonl]",
-                exitCode: 64
-              )
-            }
-            syncUpID = value
-          default:
-            throw CLIError(
-              "Usage: instant-swift-data examples sync-ups list [--refresh] [--sync-up-id id] [--json|--jsonl]",
-              exitCode: 64
-            )
-          }
-        }
-      }
-      try await printSyncUps(context: context, output: output, event: event, syncUpID: syncUpID)
+    case let .list(list):
+      try await printSyncUps(
+        context: context,
+        output: output,
+        event: list.event,
+        syncUpID: list.syncUpID
+      )
 
-    case "add":
-      guard let rawTitle = arguments.popFirstArgument() else {
-        throw CLIError(
-          "Usage: instant-swift-data examples sync-ups add \"title\" [--seconds n] [--theme theme] [--attendee name ...]",
-          exitCode: 64
-        )
-      }
-      let title = rawTitle.trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !title.isEmpty else {
-        throw CLIError(
-          "Usage: instant-swift-data examples sync-ups add \"title\" [--seconds n] [--theme theme] [--attendee name ...]",
-          exitCode: 64
-        )
-      }
-      var seconds = 60 * 5
-      var theme = SyncUpTheme.bubblegum
-      var attendeeNames: [String] = []
-      while let option = arguments.popFirstArgument() {
-        switch option {
-        case "--seconds":
-          guard let value = arguments.popFirstArgument(),
-            let parsed = Int(value),
-            parsed > 0
-          else {
-            throw CLIError("Sync-up seconds must be a positive integer.", exitCode: 64)
-          }
-          seconds = parsed
-        case "--theme":
-          guard let value = arguments.popFirstArgument(), let parsed = SyncUpTheme(rawValue: value)
-          else {
-            throw CLIError("Unknown SyncUps theme. Use one of: \(syncUpThemeList).", exitCode: 64)
-          }
-          theme = parsed
-        case "--attendee":
-          guard let value = arguments.popFirstArgument() else {
-            throw CLIError("Usage: instant-swift-data examples sync-ups add \"title\" --attendee name", exitCode: 64)
-          }
-          let name = value.trimmingCharacters(in: .whitespacesAndNewlines)
-          if !name.isEmpty {
-            attendeeNames.append(name)
-          }
-        default:
-          throw CLIError("Unknown sync-ups add option: \(option). \(syncUpsUsage)", exitCode: 64)
-        }
-      }
-      guard !attendeeNames.isEmpty else {
-        throw CLIError("Sync-ups require at least one --attendee name.", exitCode: 64)
-      }
+    case let .detail(syncUpID):
+      try await printSyncUps(context: context, output: output, event: "detail", syncUpID: syncUpID)
+
+    case let .add(add):
       let transactionID = context.runtime.configuration.makeID()
       let syncUpID = context.runtime.configuration.makeID()
       let now = context.runtime.configuration.now()
       var operations = SyncUpsExample.createSyncUpOperations(
         id: syncUpID,
-        title: title,
-        seconds: seconds,
-        theme: theme,
+        title: add.title,
+        seconds: add.seconds,
+        theme: syncUpTheme(add.theme),
         updatedAt: now,
         transactionID: transactionID
       )
-      for name in attendeeNames {
+      for name in add.attendeeNames {
         operations += SyncUpsExample.createAttendeeOperations(
           id: context.runtime.configuration.makeID(),
           syncUpID: syncUpID,
@@ -725,96 +662,29 @@ struct InstantSwiftDataCLI {
         syncUpID: syncUpID
       )
 
-    case "update", "edit":
-      guard let syncUpID = arguments.popFirstArgument() else {
-        throw CLIError(
-          "Usage: instant-swift-data examples sync-ups edit <sync-up-id> [--title title] [--seconds n] [--theme theme] [--attendee name ...]",
-          exitCode: 64
-        )
-      }
+    case let .update(update):
       let currentSyncUps = try SyncUpsExample.decodeSyncUps(
         (try await context.runtime.queryOnce(SyncUpsExample.syncUpsQuery)).values
       )
-      guard let current = currentSyncUps.first(where: { $0.id == syncUpID }) else {
-        throw CLIError("Sync-up not found: \(syncUpID)", exitCode: 66)
-      }
-      var title = current.title
-      var seconds = current.seconds
-      var theme = current.theme
-      var didChange = false
-      var replacementAttendeeNames: [String]?
-      while let option = arguments.popFirstArgument() {
-        switch option {
-        case "--title":
-          guard let rawValue = arguments.popFirstArgument() else {
-            throw CLIError("Sync-up title must not be empty.", exitCode: 64)
-          }
-          let value = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
-          guard !value.isEmpty else {
-            throw CLIError("Sync-up title must not be empty.", exitCode: 64)
-          }
-          title = value
-          didChange = true
-        case "--seconds":
-          guard let value = arguments.popFirstArgument(),
-            let parsed = Int(value),
-            parsed > 0
-          else {
-            throw CLIError("Sync-up seconds must be a positive integer.", exitCode: 64)
-          }
-          seconds = parsed
-          didChange = true
-        case "--theme":
-          guard let value = arguments.popFirstArgument(), let parsed = SyncUpTheme(rawValue: value)
-          else {
-            throw CLIError("Unknown SyncUps theme. Use one of: \(syncUpThemeList).", exitCode: 64)
-          }
-          theme = parsed
-          didChange = true
-        case "--attendee":
-          guard let value = arguments.popFirstArgument() else {
-            throw CLIError(
-              "Usage: instant-swift-data examples sync-ups edit <sync-up-id> --attendee name",
-              exitCode: 64
-            )
-          }
-          let name = value.trimmingCharacters(in: .whitespacesAndNewlines)
-          if replacementAttendeeNames == nil {
-            replacementAttendeeNames = []
-          }
-          if !name.isEmpty {
-            replacementAttendeeNames?.append(name)
-          }
-          didChange = true
-        default:
-          throw CLIError("Unknown sync-ups update option: \(option). \(syncUpsUsage)", exitCode: 64)
-        }
-      }
-      guard didChange else {
-        throw CLIError(
-          "Usage: instant-swift-data examples sync-ups edit <sync-up-id> [--title title] [--seconds n] [--theme theme] [--attendee name ...]",
-          exitCode: 64
-        )
-      }
-      if let replacementAttendeeNames, replacementAttendeeNames.isEmpty {
-        throw CLIError("Sync-up attendee replacement requires at least one non-empty --attendee.", exitCode: 64)
+      guard let current = currentSyncUps.first(where: { $0.id == update.syncUpID }) else {
+        throw CLIError("Sync-up not found: \(update.syncUpID)", exitCode: 66)
       }
       let transactionID = context.runtime.configuration.makeID()
       let now = context.runtime.configuration.now()
       var operations = SyncUpsExample.updateSyncUpOperations(
-        id: syncUpID,
-        title: title,
-        seconds: seconds,
-        theme: theme,
+        id: update.syncUpID,
+        title: update.title ?? current.title,
+        seconds: update.seconds ?? current.seconds,
+        theme: update.theme.map(syncUpTheme) ?? current.theme,
         updatedAt: now,
         transactionID: transactionID
       )
-      if let replacementAttendeeNames {
+      if let replacementAttendeeNames = update.replacementAttendeeNames {
         let existingAttendees = try SyncUpsExample.decodeAttendees(
-          (try await context.runtime.queryOnce(SyncUpsExample.attendeesForSyncUpQuery(syncUpID))).values
+          (try await context.runtime.queryOnce(SyncUpsExample.attendeesForSyncUpQuery(update.syncUpID))).values
         )
         operations += SyncUpsExample.replaceAttendeesOperations(
-          syncUpID: syncUpID,
+          syncUpID: update.syncUpID,
           existingAttendeeIDs: existingAttendees.map(\.id),
           newAttendees: replacementAttendeeNames.map { name in
             SyncUpAttendeeDraft(id: context.runtime.configuration.makeID(), name: name)
@@ -834,25 +704,12 @@ struct InstantSwiftDataCLI {
       try await printSyncUps(
         context: context,
         output: output,
-        event: command == "edit" ? "edit" : "update",
-        changedID: syncUpID,
-        syncUpID: syncUpID
+        event: update.event,
+        changedID: update.syncUpID,
+        syncUpID: update.syncUpID
       )
 
-    case "add-attendee":
-      guard let syncUpID = arguments.popFirstArgument() else {
-        throw CLIError(
-          "Usage: instant-swift-data examples sync-ups add-attendee <sync-up-id> \"name\"",
-          exitCode: 64
-        )
-      }
-      let name = arguments.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !name.isEmpty else {
-        throw CLIError(
-          "Usage: instant-swift-data examples sync-ups add-attendee <sync-up-id> \"name\"",
-          exitCode: 64
-        )
-      }
+    case let .addAttendee(syncUpID, name):
       let attendeeID = context.runtime.configuration.makeID()
       let transactionID = context.runtime.configuration.makeID()
       let now = context.runtime.configuration.now()
@@ -878,34 +735,7 @@ struct InstantSwiftDataCLI {
         syncUpID: syncUpID
       )
 
-    case "record", "record-meeting":
-      guard let syncUpID = arguments.popFirstArgument() else {
-        throw CLIError(
-          "Usage: instant-swift-data examples sync-ups record <sync-up-id> [--transcript] \"transcript\"",
-          exitCode: 64
-        )
-      }
-      var transcriptParts: [String] = []
-      while let value = arguments.popFirstArgument() {
-        if value == "--transcript" {
-          guard let transcript = arguments.popFirstArgument() else {
-            throw CLIError(
-              "Usage: instant-swift-data examples sync-ups record <sync-up-id> --transcript \"text\"",
-              exitCode: 64
-            )
-          }
-          transcriptParts.append(transcript)
-        } else {
-          transcriptParts.append(value)
-        }
-      }
-      let transcript = transcriptParts.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !transcript.isEmpty else {
-        throw CLIError(
-          "Usage: instant-swift-data examples sync-ups record <sync-up-id> [--transcript] \"transcript\"",
-          exitCode: 64
-        )
-      }
+    case let .record(syncUpID, transcript):
       let currentAttendees = try SyncUpsExample.decodeAttendees(
         (try await context.runtime.queryOnce(SyncUpsExample.attendeesForSyncUpQuery(syncUpID))).values
       )
@@ -940,10 +770,7 @@ struct InstantSwiftDataCLI {
         syncUpID: syncUpID
       )
 
-    case "delete":
-      guard let syncUpID = arguments.popFirstArgument(), arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data examples sync-ups delete <sync-up-id>", exitCode: 64)
-      }
+    case let .delete(syncUpID):
       let transactionID = context.runtime.configuration.makeID()
       let now = context.runtime.configuration.now()
       try await context.runtime.transact(
@@ -956,13 +783,7 @@ struct InstantSwiftDataCLI {
       )
       try await printSyncUps(context: context, output: output, event: "delete", changedID: syncUpID)
 
-    case "delete-attendee":
-      guard let attendeeID = arguments.popFirstArgument(), arguments.isEmpty else {
-        throw CLIError(
-          "Usage: instant-swift-data examples sync-ups delete-attendee <attendee-id>",
-          exitCode: 64
-        )
-      }
+    case let .deleteAttendee(attendeeID):
       let allAttendees = try SyncUpsExample.decodeAttendees(
         (try await context.runtime.queryOnce(SyncUpsExample.attendeesQuery)).values
       )
@@ -994,13 +815,7 @@ struct InstantSwiftDataCLI {
       )
       try await printSyncUps(context: context, output: output, event: "delete-attendee", changedID: attendeeID)
 
-    case "delete-meeting":
-      guard let meetingID = arguments.popFirstArgument(), arguments.isEmpty else {
-        throw CLIError(
-          "Usage: instant-swift-data examples sync-ups delete-meeting <meeting-id>",
-          exitCode: 64
-        )
-      }
+    case let .deleteMeeting(meetingID):
       let transactionID = context.runtime.configuration.makeID()
       let now = context.runtime.configuration.now()
       try await context.runtime.transact(
@@ -1013,8 +828,8 @@ struct InstantSwiftDataCLI {
       )
       try await printSyncUps(context: context, output: output, event: "delete-meeting", changedID: meetingID)
 
-    default:
-      throw CLIError("Unknown sync-ups command: \(command). \(syncUpsUsage)", exitCode: 64)
+    case .unknown:
+      preconditionFailure("Unknown sync-ups commands are handled before bootstrapping.")
     }
   }
 
@@ -5742,6 +5557,37 @@ struct InstantSwiftDataCLI {
       instant-swift-data examples sync-ups delete-attendee <attendee-id> [--json|--jsonl]
       instant-swift-data examples sync-ups delete-meeting <meeting-id> [--json|--jsonl]
     """
+  }
+
+  private static func validateSyncUpsThemeValues(
+    in invocation: CLIExamplesSyncUpsLeafInvocation
+  ) throws {
+    switch invocation {
+    case let .add(add):
+      try validateSyncUpTheme(add.theme)
+
+    case let .update(update):
+      if let theme = update.theme {
+        try validateSyncUpTheme(theme)
+      }
+
+    case .seed, .list, .detail, .addAttendee, .record, .delete, .deleteAttendee,
+      .deleteMeeting, .unknown:
+      return
+    }
+  }
+
+  private static func validateSyncUpTheme(_ rawValue: String) throws {
+    guard SyncUpTheme(rawValue: rawValue) != nil else {
+      throw CLIError("Unknown SyncUps theme. Use one of: \(syncUpThemeList).", exitCode: 64)
+    }
+  }
+
+  private static func syncUpTheme(_ rawValue: String) -> SyncUpTheme {
+    guard let theme = SyncUpTheme(rawValue: rawValue) else {
+      preconditionFailure("CLI theme validation accepted an unknown SyncUps theme.")
+    }
+    return theme
   }
 
   private static var syncUpThemeList: String {

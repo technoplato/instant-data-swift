@@ -364,8 +364,8 @@ agents can inspect persisted schema attributes and triple facts directly. Durabl
 local IDs are inspectable with `instant-swift-data local-id get <name>` and
 `instant-swift-data local-id list`. The `swift-parsing` CLI grammar now covers
 top-level command/output normalization, init scaffolding, schema/perms
-generate/verify, the todos and todo-links example leaf arguments with malformed
-no-bootstrap coverage, auth show/guest/token/id-token/OAuth/OAuth
+generate/verify, the todos, todo-links, and sync-ups example leaf arguments
+with malformed no-bootstrap coverage, auth show/guest/token/id-token/OAuth/OAuth
 URL/issuer/magic-code/watch/sign-out, admin query/transact, app show/select/ephemeral,
 cache inspect/attributes/triples, connection status/connect/close, local-id get/list,
 outbox inspect/transport/flush/confirm/fail/retry/drain, query todos,

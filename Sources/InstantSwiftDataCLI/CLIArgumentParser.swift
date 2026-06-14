@@ -167,6 +167,119 @@ public enum CLIExamplesTodoLinksArgumentError: Error, Equatable, Sendable {
   public var exitCode: Int32 { 64 }
 }
 
+public enum CLIExamplesSyncUpsLeafInvocation: Equatable, Sendable {
+  case seed
+  case list(CLIExamplesSyncUpsListInvocation)
+  case detail(syncUpID: String)
+  case add(CLIExamplesSyncUpsAddInvocation)
+  case update(CLIExamplesSyncUpsUpdateInvocation)
+  case addAttendee(syncUpID: String, name: String)
+  case record(syncUpID: String, transcript: String)
+  case delete(syncUpID: String)
+  case deleteAttendee(attendeeID: String)
+  case deleteMeeting(meetingID: String)
+  case unknown(String)
+}
+
+public struct CLIExamplesSyncUpsListInvocation: Equatable, Sendable {
+  public var event: String
+  public var syncUpID: String?
+
+  public init(event: String = "list", syncUpID: String? = nil) {
+    self.event = event
+    self.syncUpID = syncUpID
+  }
+}
+
+public struct CLIExamplesSyncUpsAddInvocation: Equatable, Sendable {
+  public var title: String
+  public var seconds: Int
+  public var theme: String
+  public var attendeeNames: [String]
+
+  public init(
+    title: String,
+    seconds: Int = 60 * 5,
+    theme: String = "bubblegum",
+    attendeeNames: [String]
+  ) {
+    self.title = title
+    self.seconds = seconds
+    self.theme = theme
+    self.attendeeNames = attendeeNames
+  }
+}
+
+public struct CLIExamplesSyncUpsUpdateInvocation: Equatable, Sendable {
+  public var event: String
+  public var syncUpID: String
+  public var title: String?
+  public var seconds: Int?
+  public var theme: String?
+  public var replacementAttendeeNames: [String]?
+
+  public init(
+    event: String,
+    syncUpID: String,
+    title: String? = nil,
+    seconds: Int? = nil,
+    theme: String? = nil,
+    replacementAttendeeNames: [String]? = nil
+  ) {
+    self.event = event
+    self.syncUpID = syncUpID
+    self.title = title
+    self.seconds = seconds
+    self.theme = theme
+    self.replacementAttendeeNames = replacementAttendeeNames
+  }
+}
+
+public enum CLIExamplesSyncUpsUsage {
+  public static let syncUps = """
+    Usage: instant-swift-data examples sync-ups <seed|list|detail|add|edit|add-attendee|record|delete|delete-attendee|delete-meeting>
+      instant-swift-data examples sync-ups seed [--json|--jsonl]
+      instant-swift-data examples sync-ups list [--refresh] [--sync-up-id id] [--json|--jsonl]
+      instant-swift-data examples sync-ups detail <sync-up-id> [--json|--jsonl]
+      instant-swift-data examples sync-ups add "title" --attendee "name" [--seconds n] [--theme theme] [--json|--jsonl]
+      instant-swift-data examples sync-ups edit <sync-up-id> [--title title] [--seconds n] [--theme theme] [--attendee name ...] [--json|--jsonl]
+      instant-swift-data examples sync-ups add-attendee <sync-up-id> "name" [--json|--jsonl]
+      instant-swift-data examples sync-ups record <sync-up-id> [--transcript] "transcript" [--json|--jsonl]
+      instant-swift-data examples sync-ups delete <sync-up-id> [--json|--jsonl]
+      instant-swift-data examples sync-ups delete-attendee <attendee-id> [--json|--jsonl]
+      instant-swift-data examples sync-ups delete-meeting <meeting-id> [--json|--jsonl]
+    """
+  public static let seed =
+    "Usage: instant-swift-data examples sync-ups seed [--json|--jsonl]"
+  public static let list =
+    "Usage: instant-swift-data examples sync-ups list [--refresh] [--sync-up-id id] [--json|--jsonl]"
+  public static let detail =
+    "Usage: instant-swift-data examples sync-ups detail <sync-up-id> [--json|--jsonl]"
+  public static let add =
+    #"Usage: instant-swift-data examples sync-ups add "title" [--seconds n] [--theme theme] [--attendee name ...]"#
+  public static let addAttendee =
+    #"Usage: instant-swift-data examples sync-ups add-attendee <sync-up-id> "name""#
+  public static let edit =
+    #"Usage: instant-swift-data examples sync-ups edit <sync-up-id> [--title title] [--seconds n] [--theme theme] [--attendee name ...]"#
+  public static let record =
+    #"Usage: instant-swift-data examples sync-ups record <sync-up-id> [--transcript] "transcript""#
+  public static let recordTranscript =
+    #"Usage: instant-swift-data examples sync-ups record <sync-up-id> --transcript "text""#
+  public static let delete =
+    "Usage: instant-swift-data examples sync-ups delete <sync-up-id>"
+  public static let deleteAttendee =
+    "Usage: instant-swift-data examples sync-ups delete-attendee <attendee-id>"
+  public static let deleteMeeting =
+    "Usage: instant-swift-data examples sync-ups delete-meeting <meeting-id>"
+}
+
+public enum CLIExamplesSyncUpsArgumentError: Error, Equatable, Sendable {
+  case invalidArguments(String)
+  case invalidTheme
+
+  public var exitCode: Int32 { 64 }
+}
+
 public struct CLIScaffoldInvocation: Equatable, Sendable {
   public var example: String
   public var outputDirectory: String
@@ -1394,6 +1507,86 @@ public struct CLIExamplesTodoLinksLeafParser: Parser {
         usage: CLIExamplesTodoLinksUsage.unlink
       )
       return .unlink
+
+    default:
+      input.removeAll()
+      return .unknown(command)
+    }
+  }
+}
+
+public struct CLIExamplesSyncUpsLeafParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIExamplesSyncUpsLeafInvocation {
+    guard let command = input.first else {
+      throw CLIExamplesSyncUpsArgumentError.invalidArguments(CLIExamplesSyncUpsUsage.syncUps)
+    }
+    input.removeFirst()
+
+    switch command {
+    case "seed":
+      try requireNoRemainingExamplesSyncUpsArguments(&input, usage: CLIExamplesSyncUpsUsage.seed)
+      return .seed
+
+    case "list", "refresh":
+      return .list(try parseExamplesSyncUpsListOptions(from: &input, command: command))
+
+    case "detail":
+      return .detail(
+        syncUpID: try parseSingleExamplesSyncUpsArgument(
+          from: &input,
+          usage: CLIExamplesSyncUpsUsage.detail
+        )
+      )
+
+    case "add":
+      return .add(try parseExamplesSyncUpsAddOptions(from: &input))
+
+    case "update", "edit":
+      return .update(try parseExamplesSyncUpsUpdateOptions(from: &input, command: command))
+
+    case "add-attendee":
+      let syncUpID = try parseRequiredExamplesSyncUpsArgument(
+        from: &input,
+        usage: CLIExamplesSyncUpsUsage.addAttendee
+      )
+      let name = joinedTrimmed(input)
+      input.removeAll()
+      guard !name.isEmpty else {
+        throw CLIExamplesSyncUpsArgumentError.invalidArguments(
+          CLIExamplesSyncUpsUsage.addAttendee
+        )
+      }
+      return .addAttendee(syncUpID: syncUpID, name: name)
+
+    case "record", "record-meeting":
+      let record = try parseExamplesSyncUpsRecordOptions(from: &input)
+      return .record(syncUpID: record.syncUpID, transcript: record.transcript)
+
+    case "delete":
+      return .delete(
+        syncUpID: try parseSingleExamplesSyncUpsArgument(
+          from: &input,
+          usage: CLIExamplesSyncUpsUsage.delete
+        )
+      )
+
+    case "delete-attendee":
+      return .deleteAttendee(
+        attendeeID: try parseSingleExamplesSyncUpsArgument(
+          from: &input,
+          usage: CLIExamplesSyncUpsUsage.deleteAttendee
+        )
+      )
+
+    case "delete-meeting":
+      return .deleteMeeting(
+        meetingID: try parseSingleExamplesSyncUpsArgument(
+          from: &input,
+          usage: CLIExamplesSyncUpsUsage.deleteMeeting
+        )
+      )
 
     default:
       input.removeAll()
@@ -3871,6 +4064,255 @@ private func requireNoRemainingExamplesTodoLinksArguments(
   }
 }
 
+private func parseExamplesSyncUpsListOptions(
+  from input: inout ArraySlice<String>,
+  command: String
+) throws -> CLIExamplesSyncUpsListInvocation {
+  var invocation = CLIExamplesSyncUpsListInvocation(
+    event: command == "refresh" ? "refresh" : "list"
+  )
+
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--refresh":
+      invocation.event = "refresh"
+
+    case "--sync-up-id":
+      guard let value = input.first, !value.isEmpty else {
+        throw CLIExamplesSyncUpsArgumentError.invalidArguments(CLIExamplesSyncUpsUsage.list)
+      }
+      input.removeFirst()
+      invocation.syncUpID = value
+
+    default:
+      throw CLIExamplesSyncUpsArgumentError.invalidArguments(CLIExamplesSyncUpsUsage.list)
+    }
+  }
+
+  return invocation
+}
+
+private func parseExamplesSyncUpsAddOptions(
+  from input: inout ArraySlice<String>
+) throws -> CLIExamplesSyncUpsAddInvocation {
+  guard let rawTitle = input.first else {
+    throw CLIExamplesSyncUpsArgumentError.invalidArguments(CLIExamplesSyncUpsUsage.add)
+  }
+  input.removeFirst()
+  let title = trimmed(rawTitle)
+  guard !title.isEmpty else {
+    throw CLIExamplesSyncUpsArgumentError.invalidArguments(CLIExamplesSyncUpsUsage.add)
+  }
+
+  var seconds = 60 * 5
+  var theme = "bubblegum"
+  var attendeeNames: [String] = []
+
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--seconds":
+      seconds = try parseExamplesSyncUpsPositiveInt(from: &input)
+
+    case "--theme":
+      theme = try parseExamplesSyncUpsThemeRawValue(from: &input)
+
+    case "--attendee":
+      guard let value = input.first else {
+        throw CLIExamplesSyncUpsArgumentError.invalidArguments(
+          #"Usage: instant-swift-data examples sync-ups add "title" --attendee name"#
+        )
+      }
+      input.removeFirst()
+      let name = trimmed(value)
+      if !name.isEmpty {
+        attendeeNames.append(name)
+      }
+
+    default:
+      throw CLIExamplesSyncUpsArgumentError.invalidArguments(
+        "Unknown sync-ups add option: \(option). \(CLIExamplesSyncUpsUsage.syncUps)"
+      )
+    }
+  }
+
+  guard !attendeeNames.isEmpty else {
+    throw CLIExamplesSyncUpsArgumentError.invalidArguments(
+      "Sync-ups require at least one --attendee name."
+    )
+  }
+
+  return CLIExamplesSyncUpsAddInvocation(
+    title: title,
+    seconds: seconds,
+    theme: theme,
+    attendeeNames: attendeeNames
+  )
+}
+
+private func parseExamplesSyncUpsUpdateOptions(
+  from input: inout ArraySlice<String>,
+  command: String
+) throws -> CLIExamplesSyncUpsUpdateInvocation {
+  let syncUpID = try parseRequiredExamplesSyncUpsArgument(
+    from: &input,
+    usage: CLIExamplesSyncUpsUsage.edit
+  )
+
+  var invocation = CLIExamplesSyncUpsUpdateInvocation(
+    event: command == "edit" ? "edit" : "update",
+    syncUpID: syncUpID
+  )
+  var didChange = false
+
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--title":
+      guard let rawValue = input.first else {
+        throw CLIExamplesSyncUpsArgumentError.invalidArguments("Sync-up title must not be empty.")
+      }
+      input.removeFirst()
+      let value = trimmed(rawValue)
+      guard !value.isEmpty else {
+        throw CLIExamplesSyncUpsArgumentError.invalidArguments("Sync-up title must not be empty.")
+      }
+      invocation.title = value
+      didChange = true
+
+    case "--seconds":
+      invocation.seconds = try parseExamplesSyncUpsPositiveInt(from: &input)
+      didChange = true
+
+    case "--theme":
+      invocation.theme = try parseExamplesSyncUpsThemeRawValue(from: &input)
+      didChange = true
+
+    case "--attendee":
+      guard let value = input.first else {
+        throw CLIExamplesSyncUpsArgumentError.invalidArguments(
+          "Usage: instant-swift-data examples sync-ups edit <sync-up-id> --attendee name"
+        )
+      }
+      input.removeFirst()
+      let name = trimmed(value)
+      if invocation.replacementAttendeeNames == nil {
+        invocation.replacementAttendeeNames = []
+      }
+      if !name.isEmpty {
+        invocation.replacementAttendeeNames?.append(name)
+      }
+      didChange = true
+
+    default:
+      throw CLIExamplesSyncUpsArgumentError.invalidArguments(
+        "Unknown sync-ups update option: \(option). \(CLIExamplesSyncUpsUsage.syncUps)"
+      )
+    }
+  }
+
+  guard didChange else {
+    throw CLIExamplesSyncUpsArgumentError.invalidArguments(CLIExamplesSyncUpsUsage.edit)
+  }
+  if let replacementAttendeeNames = invocation.replacementAttendeeNames,
+    replacementAttendeeNames.isEmpty
+  {
+    throw CLIExamplesSyncUpsArgumentError.invalidArguments(
+      "Sync-up attendee replacement requires at least one non-empty --attendee."
+    )
+  }
+
+  return invocation
+}
+
+private func parseExamplesSyncUpsRecordOptions(
+  from input: inout ArraySlice<String>
+) throws -> (syncUpID: String, transcript: String) {
+  let syncUpID = try parseRequiredExamplesSyncUpsArgument(
+    from: &input,
+    usage: CLIExamplesSyncUpsUsage.record
+  )
+  var transcriptParts: [String] = []
+
+  while let value = input.first {
+    input.removeFirst()
+    if value == "--transcript" {
+      guard let transcript = input.first else {
+        throw CLIExamplesSyncUpsArgumentError.invalidArguments(
+          CLIExamplesSyncUpsUsage.recordTranscript
+        )
+      }
+      input.removeFirst()
+      transcriptParts.append(transcript)
+    } else {
+      transcriptParts.append(value)
+    }
+  }
+
+  let transcript = transcriptParts.joined(separator: " ").trimmingCharacters(
+    in: .whitespacesAndNewlines
+  )
+  guard !transcript.isEmpty else {
+    throw CLIExamplesSyncUpsArgumentError.invalidArguments(CLIExamplesSyncUpsUsage.record)
+  }
+  return (syncUpID, transcript)
+}
+
+private func parseSingleExamplesSyncUpsArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  let value = try parseRequiredExamplesSyncUpsArgument(from: &input, usage: usage)
+  try requireNoRemainingExamplesSyncUpsArguments(&input, usage: usage)
+  return value
+}
+
+private func parseRequiredExamplesSyncUpsArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIExamplesSyncUpsArgumentError.invalidArguments(usage)
+  }
+  input.removeFirst()
+  return value
+}
+
+private func parseExamplesSyncUpsPositiveInt(
+  from input: inout ArraySlice<String>
+) throws -> Int {
+  guard let value = input.first,
+    let parsed = Int(value),
+    parsed > 0
+  else {
+    throw CLIExamplesSyncUpsArgumentError.invalidArguments(
+      "Sync-up seconds must be a positive integer."
+    )
+  }
+  input.removeFirst()
+  return parsed
+}
+
+private func parseExamplesSyncUpsThemeRawValue(
+  from input: inout ArraySlice<String>
+) throws -> String {
+  guard let value = input.first, !value.hasPrefix("--") else {
+    throw CLIExamplesSyncUpsArgumentError.invalidTheme
+  }
+  input.removeFirst()
+  return value
+}
+
+private func requireNoRemainingExamplesSyncUpsArguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if !input.isEmpty {
+    throw CLIExamplesSyncUpsArgumentError.invalidArguments(usage)
+  }
+}
+
 private func joinedTrimmed(_ input: ArraySlice<String>) -> String {
   input.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
 }
@@ -4037,6 +4479,18 @@ extension CLIExamplesTodoLinksArgumentError: CustomStringConvertible {
     switch self {
     case let .invalidArguments(usage):
       return usage
+    }
+  }
+}
+
+extension CLIExamplesSyncUpsArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case let .invalidArguments(message):
+      return message
+
+    case .invalidTheme:
+      return "Unknown SyncUps theme."
     }
   }
 }
