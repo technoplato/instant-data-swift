@@ -1178,4 +1178,34 @@ public struct InstantStoreSnapshot: Hashable, Codable, Sendable {
     self.attributes = attributes
     self.triples = triples
   }
+
+  private enum CodingKeys: String, CodingKey {
+    case attributes
+    case attrs
+    case triples
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    if let attributes = try container.decodeIfPresent([InstantAttribute].self, forKey: .attributes) {
+      self.attributes = attributes
+    } else if let attrs = try container.decodeIfPresent([InstantAttribute].self, forKey: .attrs) {
+      self.attributes = attrs
+    } else {
+      throw DecodingError.keyNotFound(
+        CodingKeys.attributes,
+        DecodingError.Context(
+          codingPath: decoder.codingPath,
+          debugDescription: "Expected current 'attributes' or legacy 'attrs' store snapshot attributes."
+        )
+      )
+    }
+    self.triples = try container.decode([InstantTriple].self, forKey: .triples)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(attributes, forKey: .attributes)
+    try container.encode(triples, forKey: .triples)
+  }
 }

@@ -1167,6 +1167,45 @@ struct InstantStoreParityTests {
     )
   }
 
+  @Test
+  func v0StoreSnapshotRestoresFromLegacyAttrsPayload() async throws {
+    let source = storeParitySource(
+      "v0 store restores",
+      status: "adapted: Swift accepts legacy attrs/triples snapshot payloads and rematerializes indexes."
+    )
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: userBookshelfAttributes()
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-v0-restore-seed",
+        operations: [
+          .insert(triple("user-1", "users/handle", .string("bobby"), txID: "tx-v0-restore-seed", time: time)),
+          .insert(triple("user-1", "users/bookshelves", .ref("bookshelf-1"), txID: "tx-v0-restore-seed", time: time)),
+          .insert(triple("bookshelf-1", "bookshelves/name", .string("my books"), txID: "tx-v0-restore-seed", time: time)),
+        ]
+      ),
+      createdAt: time
+    )
+
+    let snapshot = await runtime.store.snapshot()
+    let legacyData = try JSONEncoder().encode(
+      LegacyStoreSnapshotPayload(attrs: snapshot.attributes, triples: snapshot.triples)
+    )
+    let decoded = try JSONDecoder().decode(InstantStoreSnapshot.self, from: legacyData)
+    expectNoDifference(decoded, snapshot, source)
+
+    let restoredStore = InstantStore(snapshot: decoded)
+    let restoredUsers = await restoredStore.materialize(usersWithBookshelvesQuery())
+    let liveUsers = try await runtime.query(usersWithBookshelvesQuery())
+    expectNoDifference(restoredUsers, liveUsers, source)
+  }
+
   private func temporaryCacheURL() throws -> URL {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataStoreParityTests-\(UUID().uuidString)")
@@ -1375,4 +1414,22 @@ private let upstreamStoreTestSource =
 
 private func storeParitySource(_ testName: String, status: String) -> String {
   "\(upstreamStoreTestSource) \(testName) [\(status)]"
+}
+
+private struct LegacyStoreSnapshotPayload: Encodable {
+  var attrs: [InstantAttribute]
+  var triples: [InstantTriple]
+  var cardinalityInference: [String: String] = [:]
+  var linkIndex: [String: String] = [:]
+  var useDateObjects = true
+  var type = "store"
+
+  private enum CodingKeys: String, CodingKey {
+    case attrs
+    case triples
+    case cardinalityInference
+    case linkIndex
+    case useDateObjects
+    case type = "__type"
+  }
 }
