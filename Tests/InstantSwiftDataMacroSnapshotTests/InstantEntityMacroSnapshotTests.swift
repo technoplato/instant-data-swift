@@ -60,6 +60,7 @@
           var category: Optional<String>
           var owner: Swift.Optional<String>
           var createdAt: Date
+          var localTags: [String]
           let createdBy: String
           let metadata = ["local"]
           let ignoredA = 1, ignoredB = 2

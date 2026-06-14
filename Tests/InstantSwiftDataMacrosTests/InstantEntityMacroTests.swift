@@ -76,6 +76,7 @@
           var category: Optional<String>
           var owner: Swift.Optional<String>
           var createdAt: Date
+          var localTags: [String]
           let createdBy: String
           let metadata = ["local"]
           let ignoredA = 1, ignoredB = 2
@@ -116,6 +117,9 @@
       #expect(result.expanded.contains(#"?? Todo.instantNamespace + "/text""#))
       #expect(result.expanded.contains("value: self.text.instantValue"))
       #expect(!result.expanded.contains(#"name: "id""#))
+      #expect(!result.expanded.contains(#"public var localTags"#))
+      #expect(!result.expanded.contains(#"name: "localTags""#))
+      #expect(!result.expanded.contains(#"self.localTags"#))
       #expect(!result.expanded.contains(#"public var createdBy"#))
       #expect(!result.expanded.contains(#"name: "createdBy""#))
       #expect(!result.expanded.contains(#"self.createdBy"#))

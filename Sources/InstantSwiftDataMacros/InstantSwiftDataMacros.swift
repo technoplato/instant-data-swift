@@ -85,7 +85,11 @@ public struct InstantEntityMacro: MemberMacro {
         )
       )
     }
-    if let draft = draftDeclaration(properties: properties, typeName: typeName) {
+    if let draft = draftDeclaration(
+      properties: properties,
+      typeName: typeName,
+      reservedPropertyNames: reservedPropertyNames
+    ) {
       members.append(draft)
     }
     return members
@@ -146,13 +150,17 @@ public struct InstantEntityMacro: MemberMacro {
 
   private static func draftDeclaration(
     properties: [StoredProperty],
-    typeName: String
+    typeName: String,
+    reservedPropertyNames: Set<String>
   ) -> DeclSyntax? {
     guard properties.contains(where: { $0.name == "id" }) else {
       return nil
     }
 
-    let draftProperties = properties.filter { $0.name != "id" && $0.isWritable }
+    let draftProperties = properties.filter { property in
+      isGeneratedSchemaHelper(property)
+        && !reservedPropertyNames.contains(property.name)
+    }
     let declarations = draftProperties.map { property in
       "  public var \(property.name): \(property.type)"
     }.joined(separator: "\n")
