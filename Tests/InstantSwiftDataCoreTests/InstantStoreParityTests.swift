@@ -656,6 +656,57 @@ struct InstantStoreParityTests {
   }
 
   @Test
+  func ruleParamsNoOpsAndFollowingUpdateMaterializes() async throws {
+    let source = storeParitySource(
+      "ruleParams no-ops",
+      status: "exact: rule params do not change the local store, while following writes still apply."
+    )
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: [
+          InstantAttribute(
+            id: "users/handle",
+            namespace: "users",
+            name: "handle",
+            valueType: .string
+          )
+        ]
+      )
+    )
+
+    let result = try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-rule-params-no-op",
+        operations: [
+          .ruleParams(
+            entityID: "user-rule-params",
+            namespace: "users",
+            params: .object(["guestId": .string("bobby")])
+          ),
+          .insert(
+            triple(
+              "user-rule-params",
+              "users/handle",
+              .string("bobby"),
+              txID: "tx-rule-params-no-op",
+              time: time
+            )
+          ),
+        ]
+      ),
+      createdAt: time
+    )
+
+    let users = try await runtime.query(InstantQueryPlan(id: "rule-params.users", namespace: "users"))
+    expectNoDifference(result.changedEntityIDs, ["user-rule-params"], source)
+    expectNoDifference(result.tripleCount, 1, source)
+    expectNoDifference(users.map { $0.values["handle"]?.first }, [.string("bobby")], source)
+  }
+
+  @Test
   func addingAndRenamingAttributesReindexesExistingTriples() async throws {
     let newAttrSource = storeParitySource(
       "new attrs",
