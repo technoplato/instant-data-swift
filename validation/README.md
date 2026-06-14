@@ -37,6 +37,7 @@ swift run instant-swift-data validation local-todos --jsonl
 swift run instant-swift-data validation local-integrations --jsonl
 swift run instant-swift-data validation typed-drafts --jsonl
 swift run instant-swift-data validation platform-adapters --jsonl
+swift run instant-swift-data validation syncups-recording --jsonl
 swift run instant-swift-data validation parity-report --jsonl
 swift run instant-swift-data-validation-runner --local-todos
 swift run instant-swift-data-validation-runner --local-integrations
@@ -60,8 +61,9 @@ The fixture rows include exact expected/actual evidence for entities, fields,
 field modifiers, links, room presence/topic shapes, permission namespaces, and
 allowed operations. `validation/run-e2e.sh` records all Swift local validation
 streams (`swift-local.jsonl`, `swift-local-integrations.jsonl`,
-`swift-typed-drafts.jsonl`, `swift-platform-adapters.jsonl`, and
-`swift-parity-report.jsonl`), records the local benchmark evidence, and then
+`swift-typed-drafts.jsonl`, `swift-platform-adapters.jsonl`,
+`swift-syncups-recording.jsonl`, and `swift-parity-report.jsonl`), records the
+local benchmark evidence, and then
 runs this fixture check when Node is available. Set
 `INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR` to direct artifacts to a specific
 directory, and

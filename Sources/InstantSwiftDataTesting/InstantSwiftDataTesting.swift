@@ -63,6 +63,19 @@ public struct InstantLocalIntegrationValidationRun: Sendable {
   }
 }
 
+public struct InstantSyncUpsRecordingValidationRun: Sendable {
+  public var result: SyncUpsRecordingValidationResult
+  public var summary: InstantValidationEvidenceSummary
+
+  public init(
+    result: SyncUpsRecordingValidationResult,
+    summary: InstantValidationEvidenceSummary
+  ) {
+    self.result = result
+    self.summary = summary
+  }
+}
+
 public enum InstantSwiftDataTestHarness {
   public static func summarize<Details>(
     _ rows: [ValidationEvidenceRow<Details>]
@@ -124,6 +137,26 @@ public enum InstantSwiftDataTestHarness {
       makeID: makeID
     )
     return InstantLocalIntegrationValidationRun(
+      result: result,
+      summary: try requireAllEvidenceOK(result.evidence)
+    )
+  }
+
+  public static func runSyncUpsRecordingValidation(
+    appID: String = "local-validation",
+    cacheURL: URL? = nil,
+    timestamp: @escaping @Sendable () -> InstantTimestamp = {
+      InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
+    },
+    makeID: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() }
+  ) async throws -> InstantSyncUpsRecordingValidationRun {
+    let result = try await InstantSwiftDataSyncUpsRecordingValidation.run(
+      appID: appID,
+      cacheURL: cacheURL,
+      timestamp: timestamp,
+      makeID: makeID
+    )
+    return InstantSyncUpsRecordingValidationRun(
       result: result,
       summary: try requireAllEvidenceOK(result.evidence)
     )

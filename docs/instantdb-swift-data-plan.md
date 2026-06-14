@@ -349,11 +349,13 @@ todos/offline behavior with `instant-swift-data validation local-todos --jsonl`
 and for auth, rooms, files, streams, and shares with
 `instant-swift-data validation local-integrations --jsonl`. Public adapter
 wrappers can be proven from the terminal with
-`instant-swift-data validation platform-adapters --jsonl`.
+`instant-swift-data validation platform-adapters --jsonl`, and the SyncUps
+recording/dependency flow can be proven with
+`instant-swift-data validation syncups-recording --jsonl`.
 `validation/run-e2e.sh` now records the Swift local todo, local integration,
-typed draft, platform adapter, and parity coverage evidence streams, then the
-Swift benchmark evidence and TypeScript fixture check. Real remote push/pull
-remains future transport work.
+typed draft, platform adapter, SyncUps recording, and parity coverage evidence
+streams, then the Swift benchmark evidence and TypeScript fixture check. Real
+remote push/pull remains future transport work.
 
 Current local progress: the CLI exposes non-captive local admin helpers:
 `instant-swift-data admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id]`

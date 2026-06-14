@@ -708,11 +708,11 @@ extension InstantStoreTests {
     )
     try expectMalformed(
       ["validation", "remote", "--json"],
-      contains: "validation <local-todos|local-integrations|typed-drafts|platform-adapters|parity-report>"
+      contains: "validation <local-todos|local-integrations|typed-drafts|platform-adapters|syncups-recording|parity-report>"
     )
     try expectMalformed(
       ["validation", "todos", "extra", "--json"],
-      contains: "validation <local-todos|local-integrations|typed-drafts|platform-adapters|parity-report>"
+      contains: "validation <local-todos|local-integrations|typed-drafts|platform-adapters|syncups-recording|parity-report>"
     )
 
     expectNoDifference(
@@ -4729,7 +4729,7 @@ extension InstantStoreTests {
     #expect(malformed.status == 64)
     #expect(
       malformed.error.contains(
-        "validation <local-todos|local-integrations|typed-drafts|platform-adapters|parity-report>"
+        "validation <local-todos|local-integrations|typed-drafts|platform-adapters|syncups-recording|parity-report>"
       )
     )
   }
@@ -4965,6 +4965,88 @@ extension InstantStoreTests {
     #expect(humanOutput.contains("evidence rows: 10"))
     #expect(humanOutput.contains("@FetchAll"))
     #expect(humanOutput.contains("@Shares"))
+  }
+
+  @Test
+  func cliValidationSyncUpsRecordingEmitsEvidence() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let jsonOutput = try JSONDecoder().decode(
+      CLISyncUpsRecordingValidationOutput.self,
+      from: Data(
+        try runCLI(["validation", "syncups-recording", "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(jsonOutput.appID, "cli-cache-test")
+    expectNoDifference(jsonOutput.event, "syncups-recording")
+    expectNoDifference(jsonOutput.ok, true)
+    expectNoDifference(jsonOutput.evidenceCount, 6)
+    expectNoDifference(jsonOutput.events, [
+      "seed",
+      "speech-task",
+      "speaker-advance",
+      "finish",
+      "meeting-save",
+      "settings-open",
+    ])
+    expectNoDifference(jsonOutput.meetingTranscripts, ["Reviewed launch risks. Final notes."])
+    expectNoDifference(jsonOutput.transcript, "Reviewed launch risks. Final notes.")
+    expectNoDifference(jsonOutput.authorizationStatus, .authorized)
+    expectNoDifference(jsonOutput.requestedAuthorization, false)
+    expectNoDifference(jsonOutput.loadedSoundEffectFileName, "ding.wav")
+    expectNoDifference(jsonOutput.speechResultCount, 2)
+    expectNoDifference(jsonOutput.soundEffectPlayCount, 1)
+    expectNoDifference(jsonOutput.secondsElapsed, 2)
+    expectNoDifference(jsonOutput.speakerIndex, 1)
+    expectNoDifference(jsonOutput.currentSpeakerName, "Blob Jr")
+    expectNoDifference(jsonOutput.openSettingsCount, 1)
+    expectNoDifference(jsonOutput.finalAlert, .speechRecognitionDenied)
+    expectNoDifference(jsonOutput.isDismissed, true)
+
+    let jsonlOutput = try runCLI(["validation", "recording", "--jsonl"], homeURL: homeURL)
+    let lines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(lines.count, 6)
+    let seedEvidence = try JSONDecoder().decode(
+      CLISyncUpsRecordingValidationEvidence.self,
+      from: Data(try #require(lines.first).utf8)
+    )
+    expectNoDifference(seedEvidence.caseID, "validation.syncups.recording")
+    expectNoDifference(seedEvidence.appID, "cli-cache-test")
+    expectNoDifference(seedEvidence.event, "seed")
+    expectNoDifference(seedEvidence.details.syncUpTitles, ["Tiny validation standup"])
+    expectNoDifference(seedEvidence.details.attendeeNames, ["Blob", "Blob Jr"])
+    expectNoDifference(seedEvidence.details.meetingTranscripts, [])
+
+    let advanceEvidence = try JSONDecoder().decode(
+      CLISyncUpsRecordingValidationEvidence.self,
+      from: Data(lines[2].utf8)
+    )
+    expectNoDifference(advanceEvidence.event, "speaker-advance")
+    expectNoDifference(advanceEvidence.details.tickEvent, "advancedSpeaker")
+    expectNoDifference(advanceEvidence.details.recording?.secondsElapsed, 1)
+    expectNoDifference(advanceEvidence.details.recording?.currentSpeakerName, "Blob Jr")
+    expectNoDifference(advanceEvidence.details.recording?.soundEffectPlayCount, 1)
+
+    let settingsEvidence = try JSONDecoder().decode(
+      CLISyncUpsRecordingValidationEvidence.self,
+      from: Data(try #require(lines.last).utf8)
+    )
+    expectNoDifference(settingsEvidence.event, "settings-open")
+    expectNoDifference(settingsEvidence.details.meetingTranscripts, ["Reviewed launch risks. Final notes."])
+    expectNoDifference(settingsEvidence.details.recording?.authorizationStatus, .denied)
+    expectNoDifference(settingsEvidence.details.recording?.alert, .speechRecognitionDenied)
+    expectNoDifference(settingsEvidence.details.alertOutcome, .settingsOpened)
+    expectNoDifference(settingsEvidence.details.openSettingsCount, 1)
+
+    let humanOutput = try runCLI(["validation", "syncups"], homeURL: homeURL)
+    #expect(humanOutput.contains("validation: ok"))
+    #expect(humanOutput.contains("case: validation.syncups.recording"))
+    #expect(humanOutput.contains("evidence rows: 6"))
+    #expect(humanOutput.contains("Reviewed launch risks. Final notes."))
+    #expect(humanOutput.contains("open settings: 1"))
   }
 
   @Test
@@ -6231,6 +6313,51 @@ private struct CLIPlatformAdapterValidationDetails: Decodable {
   var fileIDs: [String]
   var streamChunkIDs: [String]
   var shareIDs: [String]
+}
+
+private struct CLISyncUpsRecordingValidationOutput: Decodable {
+  var appID: String
+  var event: String
+  var ok: Bool
+  var evidenceCount: Int
+  var events: [String]
+  var meetingTranscripts: [String]
+  var transcript: String
+  var authorizationStatus: SyncUpSpeechAuthorizationStatus?
+  var requestedAuthorization: Bool
+  var loadedSoundEffectFileName: String?
+  var speechResultCount: Int
+  var soundEffectPlayCount: Int
+  var secondsElapsed: Int
+  var speakerIndex: Int
+  var currentSpeakerName: String?
+  var openSettingsCount: Int
+  var finalAlert: SyncUpRecordingAlert?
+  var isDismissed: Bool
+}
+
+private struct CLISyncUpsRecordingValidationEvidence: Decodable {
+  var caseID: String
+  var appID: String
+  var event: String
+  var details: CLISyncUpsRecordingValidationDetails
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case appID
+    case event
+    case details
+  }
+}
+
+private struct CLISyncUpsRecordingValidationDetails: Decodable {
+  var syncUpTitles: [String]
+  var attendeeNames: [String]
+  var meetingTranscripts: [String]
+  var recording: SyncUpRecordingSummary?
+  var tickEvent: String?
+  var alertOutcome: SyncUpRecordingAlertOutcome?
+  var openSettingsCount: Int
 }
 
 private struct CLIParityCoverageOutput: Decodable {

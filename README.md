@@ -290,6 +290,7 @@ swift run instant-swift-data validation local-todos --jsonl
 swift run instant-swift-data validation local-integrations --jsonl
 swift run instant-swift-data validation typed-drafts --jsonl
 swift run instant-swift-data validation platform-adapters --jsonl
+swift run instant-swift-data validation syncups-recording --jsonl
 swift run instant-swift-data validation parity-report --jsonl
 swift run instant-swift-data-validation-runner --local-todos
 swift run instant-swift-data-validation-runner --local-integrations
@@ -306,7 +307,10 @@ macro-generated nil-id draft create, `Draft(existing)` edit, and relaunch
 persistence through `InstantSwiftDataClient.save(_:)`.
 `validation platform-adapters` emits terminal evidence that public wrapper
 adapters bind local client values for fetches, local IDs, auth, rooms, files,
-streams, and shares. `validation parity-report`
+streams, and shares. `validation syncups-recording` emits terminal evidence for
+the SyncUps scripted speech recording flow, meeting persistence, sound effect
+advancement, and denied speech open-settings dependency seam.
+`validation parity-report`
 emits machine-readable upstream Instant/SQLiteData source provenance for exact,
 adapted, and blocked parity records. `validation/run-e2e.sh` records those
 Swift validation streams and also writes a one-iteration

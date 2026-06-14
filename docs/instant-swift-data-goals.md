@@ -529,7 +529,11 @@ Agent-oriented output modes are required:
 - reset examples.
 - run local Swift validation evidence, including
   `instant-swift-data validation local-todos --jsonl` and
-  `instant-swift-data validation local-integrations --jsonl`.
+  `instant-swift-data validation local-integrations --jsonl`, plus typed
+  draft, platform adapter, and SyncUps recording evidence via
+  `instant-swift-data validation typed-drafts --jsonl`,
+  `instant-swift-data validation platform-adapters --jsonl`, and
+  `instant-swift-data validation syncups-recording --jsonl`.
 - run Swift/TypeScript parity suites.
 - run benchmarks.
 - inspect local SQLite cache, including namespace summaries, attributes, and

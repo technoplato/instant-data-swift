@@ -177,6 +177,45 @@ struct LocalTodoValidationTests {
   }
 
   @Test
+  func syncUpsRecordingValidationHarnessSummarizesEvidence() async throws {
+    let cacheURL = temporaryCacheURL()
+
+    let run = try await InstantSwiftDataTestHarness.runSyncUpsRecordingValidation(
+      appID: "validation-syncups-test",
+      cacheURL: cacheURL,
+      timestamp: { InstantTimestamp(milliseconds: 1_700_000_000_000) }
+    )
+    let result = run.result
+
+    expectNoDifference(result.appID, "validation-syncups-test")
+    expectNoDifference(result.cacheURL, cacheURL)
+    expectNoDifference(run.summary.caseID, "validation.syncups.recording")
+    expectNoDifference(run.summary.rowCount, 6)
+    expectNoDifference(run.summary.ok, true)
+    expectNoDifference(run.summary.events, [
+      "seed",
+      "speech-task",
+      "speaker-advance",
+      "finish",
+      "meeting-save",
+      "settings-open",
+    ])
+    expectNoDifference(result.evidence.map(\.event), run.summary.events)
+    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 6))
+
+    let meetingSave = result.evidence[4].details
+    expectNoDifference(meetingSave.meetingTranscripts, ["Reviewed launch risks. Final notes."])
+    expectNoDifference(meetingSave.recording?.meetingID, result.meetingID)
+    expectNoDifference(meetingSave.recording?.soundEffectPlayCount, 1)
+
+    let openSettings = result.evidence[5].details
+    expectNoDifference(openSettings.recording?.authorizationStatus, .denied)
+    expectNoDifference(openSettings.recording?.alert, .speechRecognitionDenied)
+    expectNoDifference(openSettings.alertOutcome, .settingsOpened)
+    expectNoDifference(openSettings.openSettingsCount, 1)
+  }
+
+  @Test
   func validationRunE2EScriptOrchestratesLocalIntegrationEvidence() throws {
     let packageURL = packageRootURL()
     let scriptURL = packageURL.appendingPathComponent("validation/run-e2e.sh")
@@ -188,11 +227,13 @@ struct LocalTodoValidationTests {
     #expect(script.contains("swift run instant-swift-data-validation-runner --local-integrations"))
     #expect(script.contains("swift run instant-swift-data validation typed-drafts --jsonl"))
     #expect(script.contains("swift run instant-swift-data validation platform-adapters --jsonl"))
+    #expect(script.contains("swift run instant-swift-data validation syncups-recording --jsonl"))
     #expect(script.contains("swift run instant-swift-data validation parity-report --jsonl"))
     #expect(script.contains("swift run instant-swift-data-benchmarks"))
     #expect(script.contains("swift-local-integrations.jsonl"))
     #expect(script.contains("swift-typed-drafts.jsonl"))
     #expect(script.contains("swift-platform-adapters.jsonl"))
+    #expect(script.contains("swift-syncups-recording.jsonl"))
     #expect(script.contains("swift-parity-report.jsonl"))
     #expect(script.contains("swift-benchmark.jsonl"))
     #expect(script.contains("node validation/ts-runner/src/main.ts --fixtures"))
@@ -264,6 +305,21 @@ struct LocalTodoValidationTests {
           fi
           echo '{"case":"validation.platform.adapters","side":"swift","event":"stub-adapters","appID":"local-validation","timestampMs":4,"ok":true,"details":{}}'
           ;;
+        instant-swift-data:validation:syncups-recording)
+          expected="run instant-swift-data validation syncups-recording --jsonl"
+          if [ "$*" != "$expected" ]; then
+            echo "unexpected syncups recording arguments: $*" >&2
+            exit 65
+          fi
+          if [ "${INSTANT_APP_ID:-}" != "local-validation" ]; then
+            echo "unexpected syncups recording app id: ${INSTANT_APP_ID:-}" >&2
+            exit 66
+          fi
+          if [ "${SWIFT_STUB_FAIL_SYNCUPS_RECORDING:-}" = "1" ]; then
+            exit 45
+          fi
+          echo '{"case":"validation.syncups.recording","side":"swift","event":"stub-syncups-recording","appID":"local-validation","timestampMs":5,"ok":true,"details":{}}'
+          ;;
         instant-swift-data:validation:parity-report)
           expected="run instant-swift-data validation parity-report --jsonl"
           if [ "$*" != "$expected" ]; then
@@ -274,7 +330,7 @@ struct LocalTodoValidationTests {
             echo "unexpected parity report app id: ${INSTANT_APP_ID:-}" >&2
             exit 66
           fi
-          echo '{"case":"validation.parity.report","side":"swift","event":"stub-parity","appID":"local-validation","timestampMs":5,"ok":true,"details":{}}'
+          echo '{"case":"validation.parity.report","side":"swift","event":"stub-parity","appID":"local-validation","timestampMs":6,"ok":true,"details":{}}'
           ;;
         instant-swift-data-benchmarks:--suite:local-todos)
           expected="run instant-swift-data-benchmarks --suite local-todos --iterations ${INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS:-1} --app-id local-validation --jsonl"
@@ -285,7 +341,7 @@ struct LocalTodoValidationTests {
           if [ "${SWIFT_STUB_FAIL_BENCHMARK:-}" = "1" ]; then
             exit 43
           fi
-          echo '{"case":"benchmark.local.todos","side":"swift","event":"summary","appID":"local-validation","timestampMs":6,"ok":true,"details":{"suite":"local-todos","iterations":7}}'
+          echo '{"case":"benchmark.local.todos","side":"swift","event":"summary","appID":"local-validation","timestampMs":7,"ok":true,"details":{"suite":"local-todos","iterations":7}}'
           ;;
         *)
           echo "unexpected swift arguments: $*" >&2
@@ -298,7 +354,7 @@ struct LocalTodoValidationTests {
     try writeExecutable(
       """
       #!/bin/sh
-      echo '{"case":"validation.typescript.fixtures","side":"typescript","event":"fixtures","appID":"local-validation","timestampMs":7,"ok":true,"details":{}}'
+      echo '{"case":"validation.typescript.fixtures","side":"typescript","event":"fixtures","appID":"local-validation","timestampMs":8,"ok":true,"details":{}}'
       """,
       to: binURL.appendingPathComponent("node")
     )
@@ -323,6 +379,8 @@ struct LocalTodoValidationTests {
       "swift-typed-drafts-complete",
       "swift-platform-adapters-start",
       "swift-platform-adapters-complete",
+      "swift-syncups-recording-start",
+      "swift-syncups-recording-complete",
       "swift-parity-report-start",
       "swift-parity-report-complete",
       "swift-benchmark-start",
@@ -349,6 +407,11 @@ struct LocalTodoValidationTests {
     #expect(
       FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("swift-platform-adapters.jsonl").path
+      )
+    )
+    #expect(
+      FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-syncups-recording.jsonl").path
       )
     )
     #expect(
@@ -384,6 +447,11 @@ struct LocalTodoValidationTests {
     )
     try "stale platform adapters\n".write(
       to: resultsURL.appendingPathComponent("swift-platform-adapters.jsonl"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try "stale syncups recording\n".write(
+      to: resultsURL.appendingPathComponent("swift-syncups-recording.jsonl"),
       atomically: true,
       encoding: .utf8
     )
@@ -438,6 +506,11 @@ struct LocalTodoValidationTests {
     )
     #expect(
       !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-syncups-recording.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("swift-benchmark.jsonl").path
       )
     )
@@ -484,6 +557,64 @@ struct LocalTodoValidationTests {
       !FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("swift-platform-adapters.jsonl").path
       )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-syncups-recording.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-parity-report.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-benchmark.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-fixtures.jsonl").path
+      )
+    )
+
+    let syncUpsRecordingFailedRun = try runValidationRunE2E(
+      scriptURL: scriptURL,
+      resultsURL: resultsURL,
+      binURL: binURL,
+      extraEnvironment: ["SWIFT_STUB_FAIL_SYNCUPS_RECORDING": "1"]
+    )
+    #expect(syncUpsRecordingFailedRun.status == 45)
+    let syncUpsRecordingFailedRows = try readJSONLines(
+      resultsURL.appendingPathComponent("orchestrator.jsonl")
+    )
+    expectNoDifference(syncUpsRecordingFailedRows.map { $0["event"] as? String ?? "" }, [
+      "start",
+      "swift-local-start",
+      "swift-local-complete",
+      "swift-local-integrations-start",
+      "swift-local-integrations-complete",
+      "swift-typed-drafts-start",
+      "swift-typed-drafts-complete",
+      "swift-platform-adapters-start",
+      "swift-platform-adapters-complete",
+      "swift-syncups-recording-start",
+      "swift-syncups-recording-failed",
+      "complete",
+    ])
+    expectNoDifference(syncUpsRecordingFailedRows.last?["ok"] as? Bool, false)
+    let syncUpsRecordingFailedDetails = try #require(
+      syncUpsRecordingFailedRows.last?["details"] as? [String: Any]
+    )
+    expectNoDifference(syncUpsRecordingFailedDetails["failed"] as? String, "swift-syncups-recording")
+    expectNoDifference((syncUpsRecordingFailedDetails["exitCode"] as? NSNumber)?.intValue, 45)
+    expectNoDifference(
+      try String(
+        contentsOf: resultsURL.appendingPathComponent("swift-syncups-recording.jsonl"),
+        encoding: .utf8
+      ),
+      ""
     )
     #expect(
       !FileManager.default.fileExists(
@@ -535,6 +666,8 @@ struct LocalTodoValidationTests {
       "swift-typed-drafts-complete",
       "swift-platform-adapters-start",
       "swift-platform-adapters-complete",
+      "swift-syncups-recording-start",
+      "swift-syncups-recording-complete",
       "swift-parity-report-start",
       "swift-parity-report-complete",
       "swift-benchmark-start",

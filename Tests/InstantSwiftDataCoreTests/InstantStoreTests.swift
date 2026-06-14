@@ -5348,6 +5348,84 @@ struct InstantStoreTests {
   }
 
   @Test
+  func syncUpsRecordingValidationProducesTerminalEvidence() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let ids = LockIsolated([
+      "syncup-validation",
+      "attendee-blob",
+      "attendee-blob-jr",
+      "tx-seed",
+      "meeting-validation",
+      "tx-meeting",
+    ])
+
+    let result = try await InstantSwiftDataSyncUpsRecordingValidation.run(
+      appID: "app-a",
+      cacheURL: cacheURL,
+      timestamp: { InstantTimestamp(milliseconds: 1_700_000_000_000) },
+      makeID: {
+        ids.withValue { ids in
+          ids.isEmpty ? UUID().uuidString.lowercased() : ids.removeFirst()
+        }
+      }
+    )
+
+    expectNoDifference(result.appID, "app-a")
+    expectNoDifference(result.cacheURL, cacheURL)
+    expectNoDifference(result.syncUpID, "syncup-validation")
+    expectNoDifference(result.attendeeIDs, ["attendee-blob", "attendee-blob-jr"])
+    expectNoDifference(result.meetingID, "meeting-validation")
+    expectNoDifference(result.evidence.map(\.caseID), Array(repeating: "validation.syncups.recording", count: 6))
+    expectNoDifference(result.evidence.map(\.event), [
+      "seed",
+      "speech-task",
+      "speaker-advance",
+      "finish",
+      "meeting-save",
+      "settings-open",
+    ])
+    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 6))
+
+    let seed = result.evidence[0].details
+    expectNoDifference(seed.syncUpIDs, ["syncup-validation"])
+    expectNoDifference(seed.syncUpTitles, ["Tiny validation standup"])
+    expectNoDifference(seed.attendeeIDs, ["attendee-blob", "attendee-blob-jr"])
+    expectNoDifference(seed.attendeeNames, ["Blob", "Blob Jr"])
+    expectNoDifference(seed.meetingIDs, [])
+
+    let speech = try #require(result.evidence[1].details.recording)
+    expectNoDifference(speech.authorizationStatus, .authorized)
+    expectNoDifference(speech.loadedSoundEffectFileName, "ding.wav")
+    expectNoDifference(speech.speechResultCount, 2)
+    expectNoDifference(speech.transcript, "Reviewed launch risks. Final notes.")
+    expectNoDifference(speech.soundEffectPlayCount, 0)
+
+    let advance = try #require(result.evidence[2].details.recording)
+    expectNoDifference(result.evidence[2].details.tickEvent, "advancedSpeaker")
+    expectNoDifference(advance.secondsElapsed, 1)
+    expectNoDifference(advance.speakerIndex, 1)
+    expectNoDifference(advance.currentSpeakerName, "Blob Jr")
+    expectNoDifference(advance.soundEffectPlayCount, 1)
+
+    let finish = try #require(result.evidence[3].details.recording)
+    expectNoDifference(result.evidence[3].details.tickEvent, "finished")
+    expectNoDifference(finish.meetingID, "meeting-validation")
+    expectNoDifference(finish.secondsElapsed, 2)
+    expectNoDifference(finish.isDismissed, true)
+
+    let saved = result.evidence[4].details
+    expectNoDifference(saved.meetingIDs, ["meeting-validation"])
+    expectNoDifference(saved.meetingTranscripts, ["Reviewed launch risks. Final notes."])
+
+    let settings = result.evidence[5].details
+    let deniedRecording = try #require(settings.recording)
+    expectNoDifference(deniedRecording.authorizationStatus, .denied)
+    expectNoDifference(deniedRecording.alert, .speechRecognitionDenied)
+    expectNoDifference(settings.alertOutcome, .settingsOpened)
+    expectNoDifference(settings.openSettingsCount, 1)
+  }
+
+  @Test
   func syncUpsExampleSharedRootRolesProtectChildren() async throws {
     let cacheURL = try temporaryCacheURL()
     let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)

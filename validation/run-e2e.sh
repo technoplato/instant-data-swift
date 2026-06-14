@@ -12,6 +12,7 @@ rm -f \
   "${RESULTS_DIR}/swift-local-integrations.jsonl" \
   "${RESULTS_DIR}/swift-typed-drafts.jsonl" \
   "${RESULTS_DIR}/swift-platform-adapters.jsonl" \
+  "${RESULTS_DIR}/swift-syncups-recording.jsonl" \
   "${RESULTS_DIR}/swift-parity-report.jsonl" \
   "${RESULTS_DIR}/swift-benchmark.jsonl" \
   "${RESULTS_DIR}/typescript-fixtures.jsonl"
@@ -206,6 +207,25 @@ else
     "complete" \
     false \
     "$(printf '{"resultsDir":%s,"failed":"swift-platform-adapters","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+  exit "${status}"
+fi
+
+log_json "swift-syncups-recording-start" true
+if (
+  cd "${ROOT}"
+  INSTANT_APP_ID="${VALIDATION_APP_ID}" swift run instant-swift-data validation syncups-recording --jsonl
+) | tee "${RESULTS_DIR}/swift-syncups-recording.jsonl"; then
+  log_json "swift-syncups-recording-complete" true "$(json_object "path" "${RESULTS_DIR}/swift-syncups-recording.jsonl")"
+else
+  status=$?
+  log_json \
+    "swift-syncups-recording-failed" \
+    false \
+    "$(json_failure_details "${RESULTS_DIR}/swift-syncups-recording.jsonl" "${status}")"
+  log_json \
+    "complete" \
+    false \
+    "$(printf '{"resultsDir":%s,"failed":"swift-syncups-recording","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
   exit "${status}"
 fi
 

@@ -249,6 +249,24 @@ struct InstantSwiftDataCLI {
         throw error
       }
 
+    case .syncUpsRecording:
+      let appID = validationAppID()
+      do {
+        let result = try await InstantSwiftDataSyncUpsRecordingValidation.run(appID: appID)
+        try printSyncUpsRecordingValidation(result: result, output: output)
+      } catch {
+        if output == .jsonl {
+          try writeJSONLine(
+            validationFailureRow(
+              caseID: "validation.syncups.recording",
+              appID: appID,
+              error: error
+            )
+          )
+        }
+        throw error
+      }
+
     case .typedDrafts:
       let appID = validationAppID()
       do {
@@ -4373,6 +4391,7 @@ struct InstantSwiftDataCLI {
         validation local-integrations [--json|--jsonl]
         validation typed-drafts [--json|--jsonl]
         validation platform-adapters [--json|--jsonl]
+        validation syncups-recording [--json|--jsonl]
         validation parity-report [--json|--jsonl]
         benchmark [--suite local-todos] [--iterations n] [--app-id id] [--json|--jsonl]
 
@@ -4885,6 +4904,67 @@ struct InstantSwiftDataCLI {
       print("files: \(summary.fileCount)")
       print("stream chunks: \(summary.streamChunkCount)")
       print("shares: \(summary.shareCount)")
+      print("cache: \(summary.cachePath)")
+
+    case .json:
+      try writeJSON(summary)
+
+    case .jsonl:
+      for row in result.evidence {
+        try writeJSONLine(row)
+      }
+    }
+  }
+
+  private static func printSyncUpsRecordingValidation(
+    result: SyncUpsRecordingValidationResult,
+    output: OutputMode
+  ) throws {
+    let savedRecording =
+      result.evidence.first { $0.event == "meeting-save" }?.details.recording
+      ?? result.evidence.first { $0.event == "finish" }?.details.recording
+    let deniedRecording = result.evidence.first { $0.event == "settings-open" }?.details.recording
+    let meetingTranscripts = result.evidence.last?.details.meetingTranscripts ?? []
+    let summary = SyncUpsRecordingValidationOutput(
+      appID: result.appID,
+      cachePath: result.cacheURL.path,
+      event: "syncups-recording",
+      transport: "not-implemented-local-cache-only",
+      ok: result.evidence.allSatisfy { $0.ok },
+      evidenceCount: result.evidence.count,
+      events: result.evidence.map(\.event),
+      syncUpID: result.syncUpID,
+      attendeeIDs: result.attendeeIDs,
+      meetingID: result.meetingID,
+      meetingTranscripts: meetingTranscripts,
+      transcript: savedRecording?.transcript ?? "",
+      authorizationStatus: savedRecording?.authorizationStatus,
+      requestedAuthorization: savedRecording?.requestedAuthorization ?? false,
+      loadedSoundEffectFileName: savedRecording?.loadedSoundEffectFileName,
+      speechResultCount: result.evidence.map { $0.details.recording?.speechResultCount ?? 0 }.max() ?? 0,
+      soundEffectPlayCount: result.evidence.map { $0.details.recording?.soundEffectPlayCount ?? 0 }.max()
+        ?? 0,
+      secondsElapsed: result.evidence.map { $0.details.recording?.secondsElapsed ?? 0 }.max() ?? 0,
+      speakerIndex: result.evidence.map { $0.details.recording?.speakerIndex ?? 0 }.max() ?? 0,
+      currentSpeakerName: savedRecording?.currentSpeakerName,
+      openSettingsCount: result.evidence.map(\.details.openSettingsCount).max() ?? 0,
+      finalAlert: deniedRecording?.alert,
+      isDismissed: savedRecording?.isDismissed ?? false
+    )
+
+    switch output {
+    case .human:
+      print("validation: \(summary.ok ? "ok" : "failed")")
+      print("case: validation.syncups.recording")
+      print("events: \(summary.events.joined(separator: ", "))")
+      print("evidence rows: \(summary.evidenceCount)")
+      print("sync-up: \(summary.syncUpID)")
+      print("attendees: \(summary.attendeeIDs.joined(separator: ", "))")
+      print("meeting: \(summary.meetingID)")
+      print("transcript: \(summary.transcript)")
+      print("speech results: \(summary.speechResultCount)")
+      print("sound effects: \(summary.soundEffectPlayCount)")
+      print("open settings: \(summary.openSettingsCount)")
       print("cache: \(summary.cachePath)")
 
     case .json:
@@ -6507,6 +6587,32 @@ private struct PlatformAdapterValidationOutput: Codable, Sendable {
   var fileCount: Int
   var streamChunkCount: Int
   var shareCount: Int
+}
+
+private struct SyncUpsRecordingValidationOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var transport: String
+  var ok: Bool
+  var evidenceCount: Int
+  var events: [String]
+  var syncUpID: String
+  var attendeeIDs: [String]
+  var meetingID: String
+  var meetingTranscripts: [String]
+  var transcript: String
+  var authorizationStatus: SyncUpSpeechAuthorizationStatus?
+  var requestedAuthorization: Bool
+  var loadedSoundEffectFileName: String?
+  var speechResultCount: Int
+  var soundEffectPlayCount: Int
+  var secondsElapsed: Int
+  var speakerIndex: Int
+  var currentSpeakerName: String?
+  var openSettingsCount: Int
+  var finalAlert: SyncUpRecordingAlert?
+  var isDismissed: Bool
 }
 
 private struct ScaffoldOutput: Codable, Sendable {
