@@ -4845,9 +4845,21 @@ struct InstantSwiftDataCLI {
       draftTodoTitles: finalDetails?.draftTodoTitles ?? [],
       draftTodoCompletionStates: finalDetails?.draftTodoCompletionStates ?? [],
       draftTodoNotes: finalDetails?.draftTodoNotes ?? [],
+      draftAuthorIDs: finalDetails?.draftAuthorIDs ?? [],
+      draftAuthorNames: finalDetails?.draftAuthorNames ?? [],
+      draftPostAttributeIDs: finalDetails?.draftPostAttributeIDs ?? [],
+      draftPostIDs: finalDetails?.draftPostIDs ?? [],
+      draftPostTitles: finalDetails?.draftPostTitles ?? [],
+      draftPostAuthorIDs: finalDetails?.draftPostAuthorIDs ?? [],
+      draftPostAuthorAttributeValueType: finalDetails?.draftPostAuthorAttributeValueType,
+      draftPostAuthorLinkNamespace: finalDetails?.draftPostAuthorLinkNamespace,
+      draftPostAuthorForwardIdentity: finalDetails?.draftPostAuthorForwardIdentity,
+      draftPostAuthorReverseIdentity: finalDetails?.draftPostAuthorReverseIdentity,
       pendingMutationCount: finalDetails?.pendingMutationIDs.count ?? 0,
       createdID: result.evidence.compactMap(\.details.createdID).first,
-      editedID: result.evidence.compactMap(\.details.editedID).last
+      editedID: result.evidence.compactMap(\.details.editedID).last,
+      relationAuthorID: result.evidence.compactMap(\.details.relationAuthorID).last,
+      relationPostID: result.evidence.compactMap(\.details.relationPostID).last
     )
 
     switch output {
@@ -4858,6 +4870,8 @@ struct InstantSwiftDataCLI {
       print("evidence rows: \(summary.evidenceCount)")
       print("draft attributes: \(summary.draftTodoAttributeIDs.joined(separator: ", "))")
       print("draft todo ids: \(summary.draftTodoIDs.joined(separator: ", "))")
+      print("draft post ids: \(summary.draftPostIDs.joined(separator: ", "))")
+      print("draft post author relation: \(summary.draftPostAuthorRelationSummary)")
       print("pending mutations: \(summary.pendingMutationCount)")
       print("cache: \(summary.cachePath)")
 
@@ -6569,9 +6583,32 @@ private struct DraftValidationOutput: Codable, Sendable {
   var draftTodoTitles: [String]
   var draftTodoCompletionStates: [Bool]
   var draftTodoNotes: [String?]
+  var draftAuthorIDs: [String]
+  var draftAuthorNames: [String]
+  var draftPostAttributeIDs: [String]
+  var draftPostIDs: [String]
+  var draftPostTitles: [String]
+  var draftPostAuthorIDs: [String]
+  var draftPostAuthorAttributeValueType: String?
+  var draftPostAuthorLinkNamespace: String?
+  var draftPostAuthorForwardIdentity: String?
+  var draftPostAuthorReverseIdentity: String?
   var pendingMutationCount: Int
   var createdID: String?
   var editedID: String?
+  var relationAuthorID: String?
+  var relationPostID: String?
+
+  var draftPostAuthorRelationSummary: String {
+    [
+      draftPostAuthorAttributeValueType,
+      draftPostAuthorLinkNamespace,
+      draftPostAuthorForwardIdentity,
+      draftPostAuthorReverseIdentity,
+    ]
+    .compactMap { $0 }
+    .joined(separator: " ")
+  }
 }
 
 private struct PlatformAdapterValidationOutput: Codable, Sendable {

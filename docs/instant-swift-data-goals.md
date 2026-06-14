@@ -237,7 +237,9 @@ transport objects into feature code.
 - Generated drafts should include only writable stored fields, should not emit
   the managed Instant id as a normal attribute assignment, and should not conform
   to `Identifiable` by default. UI examples may add their own stable local
-  editing identity when needed.
+  editing identity when needed. Writable Instant ref fields must be included
+  with their generated relation metadata so linked edit/create forms can save
+  relation drafts.
 
 ## Mutation Semantics
 

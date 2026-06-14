@@ -243,18 +243,41 @@ struct BootstrapTests {
       .appendingPathComponent("InstantSwiftDataDraftValidation-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: directory) }
+    let idGenerator = DraftValidationIDGenerator([
+      "draft-validation-created",
+      "draft-validation-author",
+      "draft-validation-post",
+    ])
 
     let result = try await InstantSwiftDataDraftValidation.run(
       appID: "draft-validation-test",
       cacheURL: directory.appendingPathComponent("state.sqlite"),
       timestamp: { InstantTimestamp(milliseconds: 1_700_001_000_000) },
-      makeID: { "draft-validation-created" }
+      makeID: { idGenerator.next() }
     )
 
     expectNoDifference(result.appID, "draft-validation-test")
-    expectNoDifference(result.evidence.map(\.event), ["create", "edit", "relaunch"])
-    expectNoDifference(result.evidence.map(\.ok), [true, true, true])
+    expectNoDifference(result.evidence.map(\.event), ["create", "edit", "relation", "relaunch"])
+    expectNoDifference(result.evidence.map(\.ok), [true, true, true, true])
     expectNoDifference(result.evidence.first?.details.createdID, "draft-validation-created")
+    let relationDetails = try #require(result.evidence.first { $0.event == "relation" }?.details)
+    expectNoDifference(relationDetails.draftAuthorIDs, ["draft-validation-author"])
+    expectNoDifference(relationDetails.draftAuthorNames, ["Draft relation author"])
+    expectNoDifference(relationDetails.draftPostIDs, ["draft-validation-post"])
+    expectNoDifference(relationDetails.draftPostTitles, ["Post from relation draft"])
+    expectNoDifference(relationDetails.draftPostAuthorIDs, ["draft-validation-author"])
+    expectNoDifference(relationDetails.draftPostAuthorAttributeValueType, "ref")
+    expectNoDifference(relationDetails.draftPostAuthorLinkNamespace, "draftValidationAuthors")
+    expectNoDifference(
+      relationDetails.draftPostAuthorForwardIdentity,
+      "draftValidationPosts/author"
+    )
+    expectNoDifference(
+      relationDetails.draftPostAuthorReverseIdentity,
+      "draftValidationAuthors/posts"
+    )
+    expectNoDifference(relationDetails.relationAuthorID, "draft-validation-author")
+    expectNoDifference(relationDetails.relationPostID, "draft-validation-post")
     let finalDetails = try #require(result.evidence.last?.details)
     expectNoDifference(
       finalDetails.draftTodoAttributeIDs,
@@ -269,12 +292,61 @@ struct BootstrapTests {
     expectNoDifference(finalDetails.draftTodoTitles, ["Edit from generated draft"])
     expectNoDifference(finalDetails.draftTodoCompletionStates, [true])
     expectNoDifference(finalDetails.draftTodoNotes, ["Edited through Draft(existing)"])
+    expectNoDifference(finalDetails.draftAuthorIDs, ["draft-validation-author"])
+    expectNoDifference(finalDetails.draftPostIDs, ["draft-validation-post"])
+    expectNoDifference(finalDetails.draftPostAuthorIDs, ["draft-validation-author"])
     expectNoDifference(
       finalDetails.pendingMutationIDs,
-      ["validation.typed-drafts.create", "validation.typed-drafts.edit"]
+      [
+        "validation.typed-drafts.create",
+        "validation.typed-drafts.edit",
+        "validation.typed-drafts.author",
+        "validation.typed-drafts.post",
+      ]
     )
     expectNoDifference(finalDetails.createdID, "draft-validation-created")
     expectNoDifference(finalDetails.editedID, "draft-validation-created")
+    expectNoDifference(finalDetails.relationAuthorID, "draft-validation-author")
+    expectNoDifference(finalDetails.relationPostID, "draft-validation-post")
+  }
+
+  @Test
+  func draftValidationDetailsDecodesLegacyEvidence() throws {
+    let details = try JSONDecoder().decode(
+      DraftValidationDetails.self,
+      from: Data(
+        """
+        {
+          "cachePath": "/tmp/state.sqlite",
+          "draftTodoAttributeIDs": [
+            "draftValidationTodos/title",
+            "draftValidationTodos/isCompleted",
+            "draftValidationTodos/createdAt",
+            "draftValidationTodos/notes"
+          ],
+          "draftTodoIDs": ["draft-validation-created"],
+          "draftTodoTitles": ["Edit from generated draft"],
+          "draftTodoCompletionStates": [true],
+          "draftTodoNotes": ["Edited through Draft(existing)"],
+          "pendingMutationIDs": [
+            "validation.typed-drafts.create",
+            "validation.typed-drafts.edit"
+          ],
+          "createdID": "draft-validation-created",
+          "editedID": "draft-validation-created"
+        }
+        """.utf8
+      )
+    )
+
+    expectNoDifference(details.draftAuthorIDs, [])
+    expectNoDifference(details.draftAuthorNames, [])
+    expectNoDifference(details.draftPostIDs, [])
+    expectNoDifference(details.draftPostAuthorIDs, [])
+    expectNoDifference(details.draftPostAuthorAttributeValueType, nil)
+    expectNoDifference(details.draftPostAuthorLinkNamespace, nil)
+    expectNoDifference(details.createdID, "draft-validation-created")
+    expectNoDifference(details.editedID, "draft-validation-created")
   }
 
   @Test
@@ -3008,5 +3080,20 @@ private actor BootstrapSyncUpOpenSettingsRecorder {
 
   func openCount() -> Int {
     count
+  }
+}
+
+private final class DraftValidationIDGenerator: @unchecked Sendable {
+  private let lock = NSLock()
+  private var ids: [String]
+
+  init(_ ids: [String]) {
+    self.ids = ids
+  }
+
+  func next() -> String {
+    lock.lock()
+    defer { lock.unlock() }
+    return ids.isEmpty ? UUID().uuidString.lowercased() : ids.removeFirst()
   }
 }

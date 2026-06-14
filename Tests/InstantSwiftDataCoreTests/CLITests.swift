@@ -4826,8 +4826,8 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.appID, "cli-cache-test")
     expectNoDifference(jsonOutput.event, "typed-drafts")
     expectNoDifference(jsonOutput.ok, true)
-    expectNoDifference(jsonOutput.evidenceCount, 3)
-    expectNoDifference(jsonOutput.events, ["create", "edit", "relaunch"])
+    expectNoDifference(jsonOutput.evidenceCount, 4)
+    expectNoDifference(jsonOutput.events, ["create", "edit", "relation", "relaunch"])
     expectNoDifference(
       jsonOutput.draftTodoAttributeIDs,
       [
@@ -4840,12 +4840,28 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.draftTodoTitles, ["Edit from generated draft"])
     expectNoDifference(jsonOutput.draftTodoCompletionStates, [true])
     expectNoDifference(jsonOutput.draftTodoNotes, ["Edited through Draft(existing)"])
-    expectNoDifference(jsonOutput.pendingMutationCount, 2)
+    expectNoDifference(jsonOutput.draftAuthorNames, ["Draft relation author"])
+    expectNoDifference(
+      jsonOutput.draftPostAttributeIDs,
+      [
+        "draftValidationPosts/title",
+        "draftValidationPosts/author",
+      ]
+    )
+    expectNoDifference(jsonOutput.draftPostTitles, ["Post from relation draft"])
+    expectNoDifference(jsonOutput.draftPostAuthorIDs, jsonOutput.draftAuthorIDs)
+    expectNoDifference(jsonOutput.draftPostAuthorAttributeValueType, "ref")
+    expectNoDifference(jsonOutput.draftPostAuthorLinkNamespace, "draftValidationAuthors")
+    expectNoDifference(jsonOutput.draftPostAuthorForwardIdentity, "draftValidationPosts/author")
+    expectNoDifference(jsonOutput.draftPostAuthorReverseIdentity, "draftValidationAuthors/posts")
+    expectNoDifference(jsonOutput.pendingMutationCount, 4)
     expectNoDifference(jsonOutput.createdID, jsonOutput.editedID)
+    expectNoDifference(jsonOutput.relationAuthorID, jsonOutput.draftAuthorIDs.first)
+    expectNoDifference(jsonOutput.relationPostID, jsonOutput.draftPostIDs.first)
 
     let jsonlOutput = try runCLI(["validation", "typed-drafts", "--jsonl"], homeURL: homeURL)
     let lines = jsonlOutput.split(separator: "\n")
-    expectNoDifference(lines.count, 3)
+    expectNoDifference(lines.count, 4)
     let createEvidence = try JSONDecoder().decode(
       CLIDraftValidationEvidence.self,
       from: Data(try #require(lines.first).utf8)
@@ -4866,23 +4882,73 @@ extension InstantStoreTests {
     expectNoDifference(createEvidence.details.draftTodoCompletionStates, [false])
     expectNoDifference(createEvidence.details.draftTodoNotes, [nil])
 
-    let relaunchEvidence = try JSONDecoder().decode(
+    let relationEvidence = try JSONDecoder().decode(
       CLIDraftValidationEvidence.self,
       from: Data(lines[2].utf8)
+    )
+    expectNoDifference(relationEvidence.event, "relation")
+    expectNoDifference(relationEvidence.details.draftAuthorNames, ["Draft relation author"])
+    expectNoDifference(relationEvidence.details.draftPostTitles, ["Post from relation draft"])
+    expectNoDifference(
+      relationEvidence.details.draftPostAuthorIDs,
+      relationEvidence.details.draftAuthorIDs
+    )
+    expectNoDifference(relationEvidence.details.draftPostAuthorAttributeValueType, "ref")
+    expectNoDifference(
+      relationEvidence.details.draftPostAuthorLinkNamespace,
+      "draftValidationAuthors"
+    )
+    expectNoDifference(
+      relationEvidence.details.draftPostAuthorForwardIdentity,
+      "draftValidationPosts/author"
+    )
+    expectNoDifference(
+      relationEvidence.details.draftPostAuthorReverseIdentity,
+      "draftValidationAuthors/posts"
+    )
+    expectNoDifference(
+      relationEvidence.details.relationAuthorID,
+      relationEvidence.details.draftAuthorIDs.first
+    )
+    expectNoDifference(
+      relationEvidence.details.relationPostID,
+      relationEvidence.details.draftPostIDs.first
+    )
+    expectNoDifference(relationEvidence.entityID, relationEvidence.details.relationPostID)
+
+    let relaunchEvidence = try JSONDecoder().decode(
+      CLIDraftValidationEvidence.self,
+      from: Data(lines[3].utf8)
     )
     expectNoDifference(relaunchEvidence.event, "relaunch")
     expectNoDifference(relaunchEvidence.details.draftTodoTitles, ["Edit from generated draft"])
     expectNoDifference(relaunchEvidence.details.draftTodoCompletionStates, [true])
+    expectNoDifference(relaunchEvidence.details.draftPostTitles, ["Post from relation draft"])
     expectNoDifference(
       relaunchEvidence.details.pendingMutationIDs,
-      ["validation.typed-drafts.create", "validation.typed-drafts.edit"]
+      [
+        "validation.typed-drafts.create",
+        "validation.typed-drafts.edit",
+        "validation.typed-drafts.author",
+        "validation.typed-drafts.post",
+      ]
     )
     expectNoDifference(relaunchEvidence.details.createdID, relaunchEvidence.details.editedID)
+    expectNoDifference(
+      relaunchEvidence.details.relationAuthorID,
+      relaunchEvidence.details.draftAuthorIDs.first
+    )
+    expectNoDifference(
+      relaunchEvidence.details.relationPostID,
+      relaunchEvidence.details.draftPostIDs.first
+    )
 
     let humanOutput = try runCLI(["validation", "typed-drafts"], homeURL: homeURL)
     #expect(humanOutput.contains("validation: ok"))
     #expect(humanOutput.contains("case: validation.typed.drafts"))
-    #expect(humanOutput.contains("evidence rows: 3"))
+    #expect(humanOutput.contains("evidence rows: 4"))
+    #expect(humanOutput.contains("draft post ids:"))
+    #expect(humanOutput.contains("draft post author relation: ref draftValidationAuthors"))
   }
 
   @Test
@@ -6249,21 +6315,35 @@ private struct CLIDraftValidationOutput: Decodable {
   var draftTodoTitles: [String]
   var draftTodoCompletionStates: [Bool]
   var draftTodoNotes: [String?]
+  var draftAuthorIDs: [String]
+  var draftAuthorNames: [String]
+  var draftPostAttributeIDs: [String]
+  var draftPostIDs: [String]
+  var draftPostTitles: [String]
+  var draftPostAuthorIDs: [String]
+  var draftPostAuthorAttributeValueType: String?
+  var draftPostAuthorLinkNamespace: String?
+  var draftPostAuthorForwardIdentity: String?
+  var draftPostAuthorReverseIdentity: String?
   var pendingMutationCount: Int
   var createdID: String?
   var editedID: String?
+  var relationAuthorID: String?
+  var relationPostID: String?
 }
 
 private struct CLIDraftValidationEvidence: Decodable {
   var caseID: String
   var appID: String
   var event: String
+  var entityID: String?
   var details: CLIDraftValidationDetails
 
   enum CodingKeys: String, CodingKey {
     case caseID = "case"
     case appID
     case event
+    case entityID
     case details
   }
 }
@@ -6273,9 +6353,21 @@ private struct CLIDraftValidationDetails: Decodable {
   var draftTodoTitles: [String]
   var draftTodoCompletionStates: [Bool]
   var draftTodoNotes: [String?]
+  var draftAuthorIDs: [String]
+  var draftAuthorNames: [String]
+  var draftPostAttributeIDs: [String]
+  var draftPostIDs: [String]
+  var draftPostTitles: [String]
+  var draftPostAuthorIDs: [String]
+  var draftPostAuthorAttributeValueType: String?
+  var draftPostAuthorLinkNamespace: String?
+  var draftPostAuthorForwardIdentity: String?
+  var draftPostAuthorReverseIdentity: String?
   var pendingMutationIDs: [String]
   var createdID: String?
   var editedID: String?
+  var relationAuthorID: String?
+  var relationPostID: String?
 }
 
 private struct CLIPlatformAdapterValidationOutput: Decodable {

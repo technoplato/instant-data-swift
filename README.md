@@ -304,8 +304,9 @@ closed-connection offline write, offline relaunch restore, and reconnect flush.
 `validation local-integrations` emits evidence for local auth, room
 presence/topic messages, file upload/read, stream chunks, and share
 create/accept/revoke. `validation typed-drafts` emits terminal evidence for a
-macro-generated nil-id draft create, `Draft(existing)` edit, and relaunch
-persistence through `InstantSwiftDataClient.save(_:)`.
+macro-generated nil-id draft create, `Draft(existing)` edit, a writable relation
+draft with generated ref metadata, and relaunch persistence through
+`InstantSwiftDataClient.save(_:)`.
 `validation platform-adapters` emits terminal evidence that public wrapper
 adapters bind local client values for fetches, local IDs, auth, rooms, files,
 streams, and shares. `validation syncups-recording` emits terminal evidence for
@@ -518,8 +519,9 @@ Primary-keyed `@InstantEntity` models also derive SQLiteData-style drafts for
 form flows. New drafts may omit `id`; saving allocates the Instant id and
 returns it. Optional writable fields default to `nil` even when the entity
 property does not spell out `= nil`, while non-optional fields keep their Swift
-defaults or remain required. Edit drafts copy an existing entity and save back
-through the same typed mutation surface:
+defaults or remain required. Writable Instant ref fields are included with their
+relation metadata so linked entity forms can save relation drafts. Edit drafts
+copy an existing entity and save back through the same typed mutation surface:
 
 ```swift
 var draft = Todo.Draft(
