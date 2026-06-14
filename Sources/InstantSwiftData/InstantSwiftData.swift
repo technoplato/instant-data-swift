@@ -7,7 +7,7 @@ import IssueReporting
   public import SwiftUI
 #endif
 
-@attached(member, names: named(instantNamespace), named(Draft))
+@attached(member, names: named(instantNamespace), named(instantAttributes), named(Draft), arbitrary)
 public macro InstantEntity(_ namespace: String? = nil) =
   #externalMacro(module: "InstantSwiftDataMacros", type: "InstantEntityMacro")
 

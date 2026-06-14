@@ -204,6 +204,94 @@ struct TypedAPITests {
   }
 
   @Test
+  func instantEntityMacroGeneratedSchemaHelpersDriveTypedAPI() async throws {
+    let dueAt = Date(timeIntervalSince1970: 1_700_000_123)
+    let todoID = InstantID<MacroGeneratedTodo>(rawValue: "macro-generated-todo")
+
+    expectNoDifference(
+      MacroGeneratedTodo.instantAttributes,
+      [
+        InstantAttribute(
+          id: "macroGeneratedTodos/title",
+          namespace: MacroGeneratedTodo.instantNamespace,
+          name: "title",
+          valueType: .string,
+          isIndexed: true
+        ),
+        InstantAttribute(
+          id: "macroGeneratedTodos/score",
+          namespace: MacroGeneratedTodo.instantNamespace,
+          name: "score",
+          valueType: .number,
+          isIndexed: true
+        ),
+        InstantAttribute(
+          id: "macroGeneratedTodos/dueAt",
+          namespace: MacroGeneratedTodo.instantNamespace,
+          name: "dueAt",
+          valueType: .date,
+          isRequired: false,
+          isIndexed: true
+        ),
+        InstantAttribute(
+          id: "macroGeneratedTodos/metadata",
+          namespace: MacroGeneratedTodo.instantNamespace,
+          name: "metadata",
+          valueType: .json,
+          isIndexed: true
+        ),
+        InstantAttribute(
+          id: "macroGeneratedTodos/isCompleted",
+          namespace: MacroGeneratedTodo.instantNamespace,
+          name: "isCompleted",
+          valueType: .boolean,
+          isIndexed: true
+        ),
+      ]
+    )
+
+    try await withDependencies {
+      try await $0.bootstrapInstantSwiftData(
+        appID: "macro-generated-helpers-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: MacroGeneratedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      try await db.transact(id: "tx-macro-generated-todo") {
+        MacroGeneratedTodo.create(
+          id: todoID,
+          MacroGeneratedTodo.title.set("Generated helpers"),
+          MacroGeneratedTodo.score.set(42),
+          MacroGeneratedTodo.dueAt.set(dueAt),
+          MacroGeneratedTodo.metadata.set(.object(["source": .string("macro")])),
+          MacroGeneratedTodo.isCompleted.set(false)
+        )
+      }
+
+      let todos = try await db.query(
+        MacroGeneratedTodo.query
+          .where(MacroGeneratedTodo.isCompleted == false)
+          .order(MacroGeneratedTodo.score)
+      )
+      expectNoDifference(
+        todos,
+        [
+          MacroGeneratedTodo(
+            id: todoID,
+            title: "Generated helpers",
+            score: 42,
+            dueAt: dueAt,
+            metadata: .object(["source": .string("macro")]),
+            isCompleted: false
+          )
+        ]
+      )
+    }
+  }
+
+  @Test
   func reverseRelationDerivesNameFromRefAttributeMetadata() throws {
     let posts = try InstantReverseRelation<TypedUser, TypedPost>(validating: TypedPost.author)
     expectNoDifference(posts, TypedUser.posts)
@@ -4060,6 +4148,81 @@ private struct RequiredTypedTodoFetchOneModel {
 
   mutating func load() async throws {
     try await $todo.load()
+  }
+}
+
+@InstantEntity
+private struct MacroGeneratedTodo: Hashable, Codable, InstantEntityModel {
+  var id: InstantID<MacroGeneratedTodo>
+  var title: String
+  var score: Int
+  var dueAt: Date?
+  var metadata: JSONValue
+  var isCompleted = false
+
+  init(
+    id: InstantID<MacroGeneratedTodo>,
+    title: String,
+    score: Int,
+    dueAt: Date?,
+    metadata: JSONValue,
+    isCompleted: Bool = false
+  ) {
+    self.id = id
+    self.title = title
+    self.score = score
+    self.dueAt = dueAt
+    self.metadata = metadata
+    self.isCompleted = isCompleted
+  }
+
+  init(snapshot: InstantEntitySnapshot) throws {
+    guard case let .string(title) = snapshot.values["title"]?.first else {
+      throw Self.decodeError(snapshot: snapshot, field: "title", expected: "string")
+    }
+    guard case let .number(score) = snapshot.values["score"]?.first else {
+      throw Self.decodeError(snapshot: snapshot, field: "score", expected: "number")
+    }
+    let dueAt: Date?
+    switch snapshot.values["dueAt"]?.first {
+    case .none, .some(.null):
+      dueAt = nil
+    case let .some(.date(value)):
+      dueAt = value
+    default:
+      throw Self.decodeError(snapshot: snapshot, field: "dueAt", expected: "date or null")
+    }
+    guard case let .json(metadata) = snapshot.values["metadata"]?.first else {
+      throw Self.decodeError(snapshot: snapshot, field: "metadata", expected: "json")
+    }
+    guard case let .bool(isCompleted) = snapshot.values["isCompleted"]?.first else {
+      throw Self.decodeError(snapshot: snapshot, field: "isCompleted", expected: "boolean")
+    }
+
+    self.init(
+      id: InstantID(rawValue: snapshot.id),
+      title: title,
+      score: Int(score),
+      dueAt: dueAt,
+      metadata: metadata,
+      isCompleted: isCompleted
+    )
+  }
+
+  private static func decodeError(
+    snapshot: InstantEntitySnapshot,
+    field: String,
+    expected: String
+  ) -> InstantError {
+    InstantError(
+      code: .decodeFailed,
+      operation: "decode macro generated todo",
+      namespace: instantNamespace,
+      path: field,
+      localID: snapshot.id,
+      message: "Expected \(expected) for macro generated todo field '\(field)'.",
+      recovery: "Check the Instant entity schema and server values for the macro generated todo namespace."
+    )
   }
 }
 

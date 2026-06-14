@@ -55,18 +55,99 @@ public struct InstantEntityMacro: MemberMacro {
       }
       """
     ]
-    if let draft = draftDeclaration(in: declaration, typeName: typeName, context: context) {
+    let explicitStaticMembers = staticMemberNames(in: declaration)
+    let properties = storedProperties(in: declaration, context: context)
+    let reservedProperties = properties.filter { property in
+      isGeneratedSchemaHelper(property)
+        && reservedGeneratedMemberNames.contains(property.name)
+    }
+    for property in reservedProperties {
+      context.diagnose(
+        InstantEntityDiagnostic.reservedGeneratedMemberName(property.name)
+          .diagnose(at: Syntax(declaration))
+      )
+    }
+    let reservedPropertyNames = Set(reservedProperties.map(\.name))
+    members.append(
+      contentsOf: attributePathDeclarations(
+        properties: properties,
+        typeName: typeName,
+        explicitStaticMembers: explicitStaticMembers,
+        reservedPropertyNames: reservedPropertyNames
+      )
+    )
+    if !explicitStaticMembers.contains("instantAttributes") {
+      members.append(
+        instantAttributesDeclaration(
+          properties: properties,
+          typeName: typeName,
+          reservedPropertyNames: reservedPropertyNames
+        )
+      )
+    }
+    if let draft = draftDeclaration(properties: properties, typeName: typeName) {
       members.append(draft)
     }
     return members
   }
 
-  private static func draftDeclaration(
-    in declaration: some DeclGroupSyntax,
+  private static func attributePathDeclarations(
+    properties: [StoredProperty],
     typeName: String,
-    context: some MacroExpansionContext
+    explicitStaticMembers: Set<String>,
+    reservedPropertyNames: Set<String>
+  ) -> [DeclSyntax] {
+    properties
+      .filter { property in
+        isGeneratedSchemaHelper(property)
+          && !explicitStaticMembers.contains(property.name)
+          && !reservedPropertyNames.contains(property.name)
+      }
+      .map { property in
+        DeclSyntax(
+          stringLiteral: """
+          public static let \(property.name) = InstantAttributePath<\(typeName), \(property.type)>("\(property.name)")
+          """
+        )
+      }
+  }
+
+  private static func instantAttributesDeclaration(
+    properties: [StoredProperty],
+    typeName: String,
+    reservedPropertyNames: Set<String>
+  ) -> DeclSyntax {
+    let attributes = properties
+      .filter { property in
+        isGeneratedSchemaHelper(property)
+          && !reservedPropertyNames.contains(property.name)
+      }
+      .map { property in
+        property.instantAttributeLiteral(typeName: typeName)
+      }
+      .joined(separator: ",\n")
+
+    return DeclSyntax(
+      stringLiteral: """
+      public static var instantAttributes: [InstantAttribute] {
+        [
+      \(attributes)
+        ]
+      }
+      """
+    )
+  }
+
+  private static func isGeneratedSchemaHelper(_ property: StoredProperty) -> Bool {
+    property.name != "id"
+      && property.isWritable
+      && property.schemaValue != nil
+  }
+
+  private static func draftDeclaration(
+    properties: [StoredProperty],
+    typeName: String
   ) -> DeclSyntax? {
-    let properties = storedProperties(in: declaration, context: context)
     guard properties.contains(where: { $0.name == "id" }) else {
       return nil
     }
@@ -184,9 +265,27 @@ public struct InstantEntityMacro: MemberMacro {
         type: type,
         isWritable: isWritable,
         isOptional: binding.typeAnnotation?.type.isInstantOptionalType ?? false,
-        defaultValue: binding.initializer?.value.description.trimmed
+        defaultValue: binding.initializer?.value.description.trimmed,
+        schemaValue: InstantSchemaValue(type: type)
       )
     }
+  }
+
+  private static func staticMemberNames(in declaration: some DeclGroupSyntax) -> Set<String> {
+    Set(
+      declaration.memberBlock.members.flatMap { member -> [String] in
+        guard let variable = member.decl.as(VariableDeclSyntax.self),
+          variable.modifiers.contains(where: { modifier in
+            modifier.name.tokenKind == .keyword(.static)
+              || modifier.name.tokenKind == .keyword(.class)
+          })
+        else { return [] }
+
+        return variable.bindings.compactMap { binding in
+          binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text
+        }
+      }
+    )
   }
 
   private static func inferredType(from expression: ExprSyntax?) -> String? {
@@ -240,6 +339,20 @@ public struct InstantEntityMacro: MemberMacro {
 
     return leadingLowercased + "s"
   }
+
+  private static let reservedGeneratedMemberNames: Set<String> = [
+    "Draft",
+    "create",
+    "decode",
+    "delete",
+    "instantAttributes",
+    "instantNamespace",
+    "merge",
+    "query",
+    "ruleParams",
+    "update",
+    "updateExisting",
+  ]
 }
 
 private enum ExplicitNamespace {
@@ -254,6 +367,67 @@ private struct StoredProperty {
   var isWritable: Bool
   var isOptional: Bool
   var defaultValue: String?
+  var schemaValue: InstantSchemaValue?
+
+  func instantAttributeLiteral(typeName: String) -> String {
+    guard let schemaValue else {
+      preconditionFailure("Cannot generate an InstantAttribute for an unsupported schema value.")
+    }
+
+    var arguments = [
+      "      InstantAttribute(",
+      "        id: \(typeName).\(name).attributeID,",
+      "        namespace: \(typeName).instantNamespace,",
+      "        name: \(typeName).\(name).name,",
+      "        valueType: \(schemaValue.valueTypeLiteral),",
+      "        isRequired: \(schemaValue.isOptional ? "false" : "true"),",
+      "        isIndexed: true",
+    ]
+    if let targetType = schemaValue.refTargetType {
+      arguments[arguments.count - 1] += ","
+      arguments += [
+        "        isUnique: false,",
+        "        forwardIdentity: nil,",
+        "        reverseIdentity: nil,",
+        "        primaryKey: false,",
+        "        linkNamespace: \(targetType).instantNamespace",
+      ]
+    }
+    arguments.append("      )")
+    return arguments.joined(separator: "\n")
+  }
+}
+
+private struct InstantSchemaValue {
+  var valueTypeLiteral: String
+  var refTargetType: String?
+  var isOptional: Bool
+
+  init?(type rawType: String) {
+    let normalizedType = rawType.removingWhitespace
+    let (type, isOptional) = normalizedType.unwrappedOptionalType()
+    self.isOptional = isOptional
+    self.refTargetType = nil
+
+    switch type {
+    case "String":
+      self.valueTypeLiteral = ".string"
+    case "Bool":
+      self.valueTypeLiteral = ".boolean"
+    case "Date", "InstantTimestamp":
+      self.valueTypeLiteral = ".date"
+    case "Double", "Float", "Int", "Int64":
+      self.valueTypeLiteral = ".number"
+    case "JSONValue":
+      self.valueTypeLiteral = ".json"
+    case "AnyInstantID":
+      self.valueTypeLiteral = ".ref"
+    default:
+      guard let target = type.instantIDTargetType else { return nil }
+      self.valueTypeLiteral = ".ref"
+      self.refTargetType = target
+    }
+  }
 }
 
 private extension DeclGroupSyntax {
@@ -296,9 +470,37 @@ private extension String {
   var trimmed: String {
     trimmingCharacters(in: .whitespacesAndNewlines)
   }
+
+  var removingWhitespace: String {
+    filter { !$0.isWhitespace }
+  }
+
+  var instantIDTargetType: String? {
+    guard hasPrefix("InstantID<"), hasSuffix(">") else { return nil }
+    let target = dropFirst("InstantID<".count).dropLast()
+    guard !target.isEmpty else { return nil }
+    return String(target)
+  }
+
+  func unwrappedOptionalType() -> (type: String, isOptional: Bool) {
+    if hasSuffix("?") {
+      return (String(dropLast()), true)
+    }
+
+    if hasPrefix("Optional<"), hasSuffix(">") {
+      return (String(dropFirst("Optional<".count).dropLast()), true)
+    }
+
+    if hasPrefix("Swift.Optional<"), hasSuffix(">") {
+      return (String(dropFirst("Swift.Optional<".count).dropLast()), true)
+    }
+
+    return (self, false)
+  }
 }
 
 private enum InstantEntityDiagnostic {
+  case reservedGeneratedMemberName(String)
   case redundantNamespace(String)
   case requiresDraftTypeAnnotation(String)
   case requiresNominalType
@@ -313,6 +515,8 @@ private enum InstantEntityDiagnostic {
 extension InstantEntityDiagnostic: DiagnosticMessage {
   var message: String {
     switch self {
+    case let .reservedGeneratedMemberName(name):
+      return "Stored property '\(name)' uses a name reserved by @InstantEntity generated helpers."
     case let .redundantNamespace(namespace):
       return #"@InstantEntity("\#(namespace)") is redundant; omit the argument to use the default namespace."#
     case let .requiresDraftTypeAnnotation(name):
@@ -328,6 +532,8 @@ extension InstantEntityDiagnostic: DiagnosticMessage {
 
   var diagnosticID: MessageID {
     switch self {
+    case .reservedGeneratedMemberName:
+      return MessageID(domain: "InstantSwiftDataMacros", id: "reservedGeneratedMemberName")
     case .redundantNamespace:
       return MessageID(domain: "InstantSwiftDataMacros", id: "redundantNamespace")
     case .requiresDraftTypeAnnotation:
@@ -343,13 +549,14 @@ extension InstantEntityDiagnostic: DiagnosticMessage {
 
   var severity: DiagnosticSeverity {
     switch self {
-    case .redundantNamespace:
-      return .warning
-    case .requiresDraftTypeAnnotation,
+    case .reservedGeneratedMemberName,
+      .requiresDraftTypeAnnotation,
       .requiresNominalType,
       .requiresSingleDraftPropertyBinding,
       .unsupportedNamespaceArgument:
       return .error
+    case .redundantNamespace:
+      return .warning
     }
   }
 }

@@ -80,6 +80,25 @@
     }
 
     @Test
+    func generatedSchemaHelpers() {
+      assertMacro {
+        """
+        @InstantEntity
+        struct Todo {
+          var id: InstantID<Todo>
+          var text: String
+          var isCompleted = false
+          var count: Int
+          var dueAt: Date?
+          var metadata: JSONValue
+          var owner: InstantID<User>
+          var unsupported: [String]
+        }
+        """
+      }
+    }
+
+    @Test
     func inferredDraftPropertyDiagnostic() {
       assertMacro {
         """

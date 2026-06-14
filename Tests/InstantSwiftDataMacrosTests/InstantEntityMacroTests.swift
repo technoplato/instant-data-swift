@@ -128,6 +128,139 @@
     }
 
     @Test
+    func generatedSchemaHelpers() {
+      let result = expand(
+        """
+        @InstantEntity
+        struct Todo {
+          var id: InstantID<Todo>
+          var text: String
+          var isCompleted = false
+          var count: Int
+          var dueAt: Date?
+          var metadata: JSONValue
+          var owner: InstantID<User>
+          var unsupported: [String]
+
+          static let manuallyDeclared = InstantAttributePath<Todo, String>("manuallyDeclared")
+        }
+        """
+      )
+
+      #expect(result.expanded.contains(#"public static let text = InstantAttributePath<Todo, String>("text")"#))
+      #expect(
+        result.expanded.contains(
+          #"public static let isCompleted = InstantAttributePath<Todo, Bool>("isCompleted")"#
+        )
+      )
+      #expect(result.expanded.contains(#"public static let count = InstantAttributePath<Todo, Int>("count")"#))
+      #expect(result.expanded.contains(#"public static let dueAt = InstantAttributePath<Todo, Date?>("dueAt")"#))
+      #expect(
+        result.expanded.contains(
+          #"public static let metadata = InstantAttributePath<Todo, JSONValue>("metadata")"#
+        )
+      )
+      #expect(
+        result.expanded.contains(
+          #"public static let owner = InstantAttributePath<Todo, InstantID<User>>("owner")"#
+        )
+      )
+      #expect(!result.expanded.contains("InstantAttributePath<Todo, [String]>"))
+
+      let schemaHelpers = result.expanded.components(separatedBy: "public struct Draft").first ?? ""
+      #expect(result.expanded.contains("public static var instantAttributes: [InstantAttribute]"))
+      #expect(schemaHelpers.contains("id: Todo.text.attributeID"))
+      #expect(schemaHelpers.contains("name: Todo.text.name"))
+      #expect(schemaHelpers.contains("valueType: .string"))
+      #expect(schemaHelpers.contains("id: Todo.isCompleted.attributeID"))
+      #expect(schemaHelpers.contains("valueType: .boolean"))
+      #expect(schemaHelpers.contains("id: Todo.count.attributeID"))
+      #expect(schemaHelpers.contains("valueType: .number"))
+      #expect(schemaHelpers.contains("id: Todo.dueAt.attributeID"))
+      #expect(schemaHelpers.contains("valueType: .date"))
+      #expect(schemaHelpers.contains("isRequired: false"))
+      #expect(schemaHelpers.contains("id: Todo.metadata.attributeID"))
+      #expect(schemaHelpers.contains("valueType: .json"))
+      #expect(schemaHelpers.contains("id: Todo.owner.attributeID"))
+      #expect(schemaHelpers.contains("valueType: .ref"))
+      #expect(schemaHelpers.contains("linkNamespace: User.instantNamespace"))
+      #expect(!schemaHelpers.contains(#"name: "unsupported""#))
+      #expect(result.diagnostics.isEmpty)
+    }
+
+    @Test
+    func generatedSchemaHelpersUseManualAttributePaths() {
+      let result = expand(
+        """
+        @InstantEntity
+        struct Todo {
+          var id: InstantID<Todo>
+          var title: String
+
+          static let title = InstantAttributePath<Todo, String>(
+            "title",
+            attributeID: "todos/body"
+          )
+        }
+        """
+      )
+
+      #expect(result.expanded.components(separatedBy: "static let title =").count - 1 == 1)
+      #expect(result.expanded.contains("id: Todo.title.attributeID"))
+      #expect(result.expanded.contains("name: Todo.title.name"))
+      #expect(result.diagnostics.isEmpty)
+    }
+
+    @Test
+    func generatedSchemaHelpersRespectManualDeclarations() {
+      let result = expand(
+        """
+        @InstantEntity
+        struct Todo {
+          var id: InstantID<Todo>
+          var text: String
+
+          static let text = InstantAttributePath<Todo, String>(
+            "text",
+            attributeID: "todos/body"
+          )
+
+          static let instantAttributes: [InstantAttribute] = []
+        }
+        """
+      )
+
+      #expect(result.expanded.components(separatedBy: "static let text =").count - 1 == 1)
+      #expect(result.expanded.components(separatedBy: "static let instantAttributes").count == 2)
+      #expect(!result.expanded.contains("public static var instantAttributes"))
+      #expect(result.diagnostics.isEmpty)
+    }
+
+    @Test
+    func reservedGeneratedSchemaHelperNameDiagnostic() {
+      let result = expand(
+        """
+        @InstantEntity
+        struct Todo {
+          var id: InstantID<Todo>
+          var query: String
+        }
+        """
+      )
+
+      #expect(!result.expanded.contains("public static let query"))
+      #expect(
+        result.diagnostics.contains(
+          MacroDiagnostic(
+            message: "Stored property 'query' uses a name reserved by @InstantEntity generated helpers.",
+            severity: .error
+          )
+        )
+      )
+      #expect(result.diagnostics.count == 1)
+    }
+
+    @Test
     func inferredDraftPropertyDiagnostic() {
       let result = expand(
         """
@@ -147,6 +280,7 @@
           )
         )
       )
+      #expect(result.diagnostics.count == 1)
     }
 
     @Test
@@ -169,6 +303,7 @@
           )
         )
       )
+      #expect(result.diagnostics.count == 1)
     }
 
     @Test
