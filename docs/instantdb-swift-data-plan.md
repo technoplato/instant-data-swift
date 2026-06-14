@@ -436,8 +436,8 @@ One repository, multiple targets:
 - `instant-swift-data`: agent-interactable CLI executable for schema generation,
   validation, auth, example commands, cache/outbox inspection, fixture app
   creation, parity scripts, and benchmarks.
-- `InstantSwiftDataTesting`: ephemeral app helpers and end-to-end assertion
-  tools.
+- `InstantSwiftDataTesting`: ephemeral app helpers, generated draft validation
+  helpers, and end-to-end assertion tools.
 - `InstantSwiftDataBenchmarks`: benchmark executable for Swift/TypeScript
   parity measurements.
 

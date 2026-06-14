@@ -177,6 +177,113 @@ struct LocalTodoValidationTests {
   }
 
   @Test
+  func draftValidationHarnessSummarizesGeneratedDraftEvidence() async throws {
+    let cacheURL = temporaryCacheURL()
+    let idGenerator = ValidationIDGenerator([
+      "draft-validation-created",
+      "draft-validation-author",
+      "draft-validation-post",
+    ])
+
+    let run = try await InstantSwiftDataTestHarness.runDraftValidation(
+      appID: "validation-drafts-test",
+      cacheURL: cacheURL,
+      timestamp: { InstantTimestamp(milliseconds: 1_700_001_000_000) },
+      makeID: { idGenerator.next() }
+    )
+    let result = run.result
+
+    expectNoDifference(result.appID, "validation-drafts-test")
+    expectNoDifference(result.cacheURL, cacheURL)
+    expectNoDifference(run.summary.caseID, "validation.typed.drafts")
+    expectNoDifference(run.summary.rowCount, 4)
+    expectNoDifference(run.summary.ok, true)
+    expectNoDifference(run.summary.events, ["create", "edit", "relation", "relaunch"])
+    expectNoDifference(result.evidence.map(\.event), run.summary.events)
+    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 4))
+
+    let finalDetails = try #require(result.evidence.last?.details)
+    expectNoDifference(finalDetails.draftTodoIDs, ["draft-validation-created"])
+    expectNoDifference(finalDetails.draftTodoTitles, ["Edit from generated draft"])
+    expectNoDifference(finalDetails.draftPostIDs, ["draft-validation-post"])
+    expectNoDifference(finalDetails.draftPostAuthorIDs, ["draft-validation-author"])
+    expectNoDifference(finalDetails.draftPostAuthorAttributeValueType, "ref")
+    expectNoDifference(finalDetails.draftPostAuthorReverseIdentity, "draftValidationAuthors/posts")
+    expectNoDifference(
+      finalDetails.pendingMutationIDs.sorted(),
+      [
+        "validation.typed-drafts.author",
+        "validation.typed-drafts.create",
+        "validation.typed-drafts.edit",
+        "validation.typed-drafts.post",
+      ]
+    )
+
+    let createMutation = try #require(
+      finalDetails.draftMutationSummaries.first {
+        $0.mutationID == "validation.typed-drafts.create"
+      }
+    )
+    expectNoDifference(createMutation.transactionID, "validation.typed-drafts.create")
+    expectNoDifference(createMutation.preconditionKinds, ["entity-missing"])
+    expectNoDifference(createMutation.txStepKinds, Array(repeating: "add-triple", count: 5))
+    expectNoDifference(createMutation.txStepOptionModes, Array(repeating: "create", count: 5))
+
+    let editMutation = try #require(
+      finalDetails.draftMutationSummaries.first {
+        $0.mutationID == "validation.typed-drafts.edit"
+      }
+    )
+    expectNoDifference(editMutation.preconditionKinds, [])
+    expectNoDifference(editMutation.txStepOptionModes, Array(repeating: "none", count: 5))
+
+    let postMutation = try #require(
+      finalDetails.draftMutationSummaries.first {
+        $0.mutationID == "validation.typed-drafts.post"
+      }
+    )
+    expectNoDifference(postMutation.operationValueTypes, ["string", "string", "ref"])
+    expectNoDifference(postMutation.refAttributeIDs, ["draftValidationPosts/author"])
+  }
+
+  @Test
+  func validationRunnerTypedDraftsCommandEmitsJSONL() throws {
+    let result = try runValidationRunner(arguments: ["--typed-drafts"])
+
+    #expect(
+      result.status == 0,
+      """
+      instant-swift-data-validation-runner --typed-drafts failed.
+      stdout:
+      \(result.stdout)
+      stderr:
+      \(result.stderr)
+      """
+    )
+
+    let rows = try parseJSONLines(result.stdout)
+    expectNoDifference(rows.map { $0["case"] as? String ?? "" }, [
+      "validation.typed.drafts",
+      "validation.typed.drafts",
+      "validation.typed.drafts",
+      "validation.typed.drafts",
+    ])
+    expectNoDifference(rows.map { $0["appID"] as? String ?? "" }, [
+      "draft-validation",
+      "draft-validation",
+      "draft-validation",
+      "draft-validation",
+    ])
+    expectNoDifference(rows.map { $0["event"] as? String ?? "" }, [
+      "create",
+      "edit",
+      "relation",
+      "relaunch",
+    ])
+    expectNoDifference(rows.map { $0["ok"] as? Bool ?? false }, Array(repeating: true, count: 4))
+  }
+
+  @Test
   func syncUpsRecordingValidationHarnessSummarizesEvidence() async throws {
     let cacheURL = temporaryCacheURL()
 
@@ -249,6 +356,15 @@ struct LocalTodoValidationTests {
     #expect(script.contains("\"failed\":\"missing-swift\""))
     #expect(script.contains("\"failed\":\"missing-node\""))
     #expect(!script.contains("${3:-{}}"))
+
+    let runnerSource = try String(
+      contentsOf: packageURL.appendingPathComponent(
+        "Sources/InstantSwiftDataValidationRunner/main.swift"
+      ),
+      encoding: .utf8
+    )
+    #expect(runnerSource.contains("--typed-drafts"))
+    #expect(runnerSource.contains("runDraftValidation()"))
 
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/bin/bash")
@@ -512,13 +628,19 @@ struct LocalTodoValidationTests {
       """,
       to: bundledNodeURL
     )
+    let bundledBinURL = tempURL.appendingPathComponent("bundled-bin", isDirectory: true)
+    try FileManager.default.createDirectory(at: bundledBinURL, withIntermediateDirectories: true)
+    try FileManager.default.copyItem(
+      at: binURL.appendingPathComponent("swift"),
+      to: bundledBinURL.appendingPathComponent("swift")
+    )
     let bundledRun = try runValidationRunE2E(
       scriptURL: scriptURL,
       resultsURL: resultsURL,
       binURL: binURL,
       extraEnvironment: [
         "HOME": bundledHomeURL.path,
-        "PATH": "\(binURL.path):/usr/bin:/bin",
+        "PATH": "\(bundledBinURL.path):/usr/bin:/bin",
       ]
     )
     #expect(bundledRun.status == 0, "run-e2e.sh with bundled node failed: \(bundledRun.stderr)")
@@ -864,6 +986,44 @@ private func packageRootURL(filePath: String = #filePath) -> URL {
 }
 
 @discardableResult
+private func runValidationRunner(
+  arguments: [String]
+) throws -> (status: Int32, stdout: String, stderr: String) {
+  let packageURL = packageRootURL()
+  let executableURL = packageURL.appendingPathComponent(
+    ".build/debug/instant-swift-data-validation-runner"
+  )
+
+  let process = Process()
+  if FileManager.default.isExecutableFile(atPath: executableURL.path) {
+    process.executableURL = executableURL
+    process.arguments = arguments
+  } else {
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+    process.arguments = ["swift", "run", "instant-swift-data-validation-runner"] + arguments
+  }
+  process.currentDirectoryURL = packageURL
+  process.environment = ProcessInfo.processInfo.environment
+
+  let outputPipe = Pipe()
+  let errorPipe = Pipe()
+  process.standardOutput = outputPipe
+  process.standardError = errorPipe
+  try process.run()
+  process.waitUntilExit()
+
+  let output = String(
+    decoding: outputPipe.fileHandleForReading.readDataToEndOfFile(),
+    as: UTF8.self
+  )
+  let error = String(
+    decoding: errorPipe.fileHandleForReading.readDataToEndOfFile(),
+    as: UTF8.self
+  )
+  return (process.terminationStatus, output, error)
+}
+
+@discardableResult
 private func runValidationRunE2E(
   scriptURL: URL,
   resultsURL: URL,
@@ -906,7 +1066,11 @@ private func writeExecutable(_ contents: String, to url: URL) throws {
 }
 
 private func readJSONLines(_ url: URL) throws -> [[String: Any]] {
-  try String(contentsOf: url, encoding: .utf8)
+  try parseJSONLines(String(contentsOf: url, encoding: .utf8))
+}
+
+private func parseJSONLines(_ output: String) throws -> [[String: Any]] {
+  try output
     .split(separator: "\n")
     .map { line in
       let data = Data(line.utf8)
@@ -920,6 +1084,21 @@ private func readJSONLines(_ url: URL) throws -> [[String: Any]] {
 
 private enum ValidationScriptTestError: Error {
   case invalidJSONLine(String)
+}
+
+private final class ValidationIDGenerator: @unchecked Sendable {
+  private let lock = NSLock()
+  private var ids: [String]
+
+  init(_ ids: [String]) {
+    self.ids = ids
+  }
+
+  func next() -> String {
+    lock.lock()
+    defer { lock.unlock() }
+    return ids.isEmpty ? UUID().uuidString.lowercased() : ids.removeFirst()
+  }
 }
 
 private func evidenceRow(

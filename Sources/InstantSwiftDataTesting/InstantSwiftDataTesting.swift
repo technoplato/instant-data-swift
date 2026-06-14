@@ -1,3 +1,4 @@
+@_exported import InstantSwiftData
 @_exported import InstantSwiftDataCore
 import Foundation
 
@@ -56,6 +57,19 @@ public struct InstantLocalIntegrationValidationRun: Sendable {
 
   public init(
     result: LocalIntegrationValidationResult,
+    summary: InstantValidationEvidenceSummary
+  ) {
+    self.result = result
+    self.summary = summary
+  }
+}
+
+public struct InstantDraftValidationRun: Sendable {
+  public var result: DraftValidationResult
+  public var summary: InstantValidationEvidenceSummary
+
+  public init(
+    result: DraftValidationResult,
     summary: InstantValidationEvidenceSummary
   ) {
     self.result = result
@@ -137,6 +151,26 @@ public enum InstantSwiftDataTestHarness {
       makeID: makeID
     )
     return InstantLocalIntegrationValidationRun(
+      result: result,
+      summary: try requireAllEvidenceOK(result.evidence)
+    )
+  }
+
+  public static func runDraftValidation(
+    appID: String = "draft-validation",
+    cacheURL: URL? = nil,
+    timestamp: @escaping @Sendable () -> InstantTimestamp = {
+      InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
+    },
+    makeID: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() }
+  ) async throws -> InstantDraftValidationRun {
+    let result = try await InstantSwiftDataDraftValidation.run(
+      appID: appID,
+      cacheURL: cacheURL,
+      timestamp: timestamp,
+      makeID: makeID
+    )
+    return InstantDraftValidationRun(
       result: result,
       summary: try requireAllEvidenceOK(result.evidence)
     )

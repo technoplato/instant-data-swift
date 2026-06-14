@@ -16,11 +16,12 @@ struct InstantSwiftDataValidationRunner {
       )
       exit(1)
     } catch {
+      let caseID = requestedCaseID()
       emit(
-        caseID: requestedCaseID(),
+        caseID: caseID,
         event: "failed",
         ok: false,
-        appID: "local-validation",
+        appID: requestedAppID(caseID: caseID),
         details: ["message": String(describing: error)]
       )
       exit(1)
@@ -31,6 +32,8 @@ struct InstantSwiftDataValidationRunner {
     switch Array(CommandLine.arguments.dropFirst()) {
     case ["--local-integrations"]:
       "validation.local.integrations"
+    case ["--typed-drafts"]:
+      "validation.typed.drafts"
     case [], ["--local-todos"]:
       "validation.local.todos"
     default:
@@ -38,20 +41,38 @@ struct InstantSwiftDataValidationRunner {
     }
   }
 
+  private static func requestedAppID(caseID: String) -> String {
+    switch caseID {
+    case "validation.typed.drafts":
+      "draft-validation"
+    default:
+      "local-validation"
+    }
+  }
+
   private static func run() async throws {
     let arguments = Array(CommandLine.arguments.dropFirst())
-    guard arguments.isEmpty || arguments == ["--local-todos"] || arguments == ["--local-integrations"]
+    guard arguments.isEmpty
+      || arguments == ["--local-todos"]
+      || arguments == ["--local-integrations"]
+      || arguments == ["--typed-drafts"]
     else {
       throw ValidationFailure(
         caseID: "validation.arguments",
         appID: "local-validation",
-        message: "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations]"
+        message:
+          "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--typed-drafts]"
       )
     }
 
     if arguments == ["--local-integrations"] {
-      let result = try await InstantSwiftDataLocalIntegrationValidation.run()
-      for row in result.evidence {
+      let run = try await InstantSwiftDataTestHarness.runLocalIntegrationValidation()
+      for row in run.result.evidence {
+        try writeJSONLine(row)
+      }
+    } else if arguments == ["--typed-drafts"] {
+      let run = try await InstantSwiftDataTestHarness.runDraftValidation()
+      for row in run.result.evidence {
         try writeJSONLine(row)
       }
     } else {

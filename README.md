@@ -294,6 +294,7 @@ swift run instant-swift-data validation syncups-recording --jsonl
 swift run instant-swift-data validation parity-report --jsonl
 swift run instant-swift-data-validation-runner --local-todos
 swift run instant-swift-data-validation-runner --local-integrations
+swift run instant-swift-data-validation-runner --typed-drafts
 node validation/ts-runner/src/main.ts --fixtures
 INSTANT_SWIFT_DATA_NODE=/path/to/node validation/run-e2e.sh
 validation/run-e2e.sh

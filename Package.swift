@@ -77,6 +77,7 @@ let package = Package(
     .target(
       name: "InstantSwiftDataTesting",
       dependencies: [
+        "InstantSwiftData",
         "InstantSwiftDataCore",
       ],
       swiftSettings: strictConcurrencySettings
