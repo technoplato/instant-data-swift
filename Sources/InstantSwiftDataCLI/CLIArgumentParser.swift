@@ -1969,8 +1969,7 @@ public struct CLISchemaGenerateParser: Parser {
 
   public func parse(_ input: inout ArraySlice<String>) throws -> CLIGenerateArtifactInvocation {
     try requireSchemaCommand("generate", from: &input, usage: CLISchemaUsage.generate)
-    let parsed = try parseGenerateArtifactOptions(
-      from: &input,
+    let parser = CLIGenerateArtifactOptionsParser(
       usage: CLISchemaUsage.generate,
       unknown: { option, usage in
         CLISchemaArgumentError.unknownGenerateOption(option, usage: usage)
@@ -1979,7 +1978,7 @@ public struct CLISchemaGenerateParser: Parser {
         CLISchemaArgumentError.invalidArguments(usage: usage)
       }
     )
-    return parsed
+    return try parser.parse(&input)
   }
 }
 
@@ -1988,8 +1987,7 @@ public struct CLISchemaVerifyParser: Parser {
 
   public func parse(_ input: inout ArraySlice<String>) throws -> CLIVerifyArtifactInvocation {
     try requireSchemaCommand("verify", from: &input, usage: CLISchemaUsage.verify)
-    return try parseVerifyArtifactOptions(
-      from: &input,
+    let parser = CLIVerifyArtifactOptionsParser(
       usage: CLISchemaUsage.verify,
       unknown: { option, usage in
         CLISchemaArgumentError.unknownVerifyOption(option, usage: usage)
@@ -1998,6 +1996,7 @@ public struct CLISchemaVerifyParser: Parser {
         CLISchemaArgumentError.invalidArguments(usage: usage)
       }
     )
+    return try parser.parse(&input)
   }
 }
 
@@ -2021,8 +2020,7 @@ public struct CLIPermissionsGenerateParser: Parser {
 
   public func parse(_ input: inout ArraySlice<String>) throws -> CLIGenerateArtifactInvocation {
     try requirePermissionsCommand("generate", from: &input, usage: CLIPermissionsUsage.generate)
-    return try parseGenerateArtifactOptions(
-      from: &input,
+    let parser = CLIGenerateArtifactOptionsParser(
       usage: CLIPermissionsUsage.generate,
       unknown: { option, usage in
         CLIPermissionsArgumentError.unknownGenerateOption(option, usage: usage)
@@ -2031,6 +2029,7 @@ public struct CLIPermissionsGenerateParser: Parser {
         CLIPermissionsArgumentError.invalidArguments(usage: usage)
       }
     )
+    return try parser.parse(&input)
   }
 }
 
@@ -2039,8 +2038,7 @@ public struct CLIPermissionsVerifyParser: Parser {
 
   public func parse(_ input: inout ArraySlice<String>) throws -> CLIVerifyArtifactInvocation {
     try requirePermissionsCommand("verify", from: &input, usage: CLIPermissionsUsage.verify)
-    return try parseVerifyArtifactOptions(
-      from: &input,
+    let parser = CLIVerifyArtifactOptionsParser(
       usage: CLIPermissionsUsage.verify,
       unknown: { option, usage in
         CLIPermissionsArgumentError.unknownVerifyOption(option, usage: usage)
@@ -2049,6 +2047,103 @@ public struct CLIPermissionsVerifyParser: Parser {
         CLIPermissionsArgumentError.invalidArguments(usage: usage)
       }
     )
+    return try parser.parse(&input)
+  }
+}
+
+public struct CLIGenerateArtifactOptionsParser: Parser {
+  private let usage: String
+  private let unknown: @Sendable (String, String) -> any Error
+  private let invalid: @Sendable (String) -> any Error
+
+  public init(
+    usage: String,
+    unknown: @escaping @Sendable (String, String) -> any Error,
+    invalid: @escaping @Sendable (String) -> any Error
+  ) {
+    self.usage = usage
+    self.unknown = unknown
+    self.invalid = invalid
+  }
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIGenerateArtifactInvocation {
+    var example: String?
+    var outputPath: String?
+
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--example":
+        guard let value = input.first else {
+          throw invalid(usage)
+        }
+        input.removeFirst()
+        example = value
+
+      case "--to":
+        guard let value = input.first else {
+          throw invalid(usage)
+        }
+        input.removeFirst()
+        outputPath = value
+
+      default:
+        throw unknown(option, usage)
+      }
+    }
+
+    guard let example else {
+      throw invalid(usage)
+    }
+    return CLIGenerateArtifactInvocation(example: example, outputPath: outputPath)
+  }
+}
+
+public struct CLIVerifyArtifactOptionsParser: Parser {
+  private let usage: String
+  private let unknown: @Sendable (String, String) -> any Error
+  private let invalid: @Sendable (String) -> any Error
+
+  public init(
+    usage: String,
+    unknown: @escaping @Sendable (String, String) -> any Error,
+    invalid: @escaping @Sendable (String) -> any Error
+  ) {
+    self.usage = usage
+    self.unknown = unknown
+    self.invalid = invalid
+  }
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIVerifyArtifactInvocation {
+    var example: String?
+    var inputPath: String?
+
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--example":
+        guard let value = input.first else {
+          throw invalid(usage)
+        }
+        input.removeFirst()
+        example = value
+
+      case "--from":
+        guard let value = input.first else {
+          throw invalid(usage)
+        }
+        input.removeFirst()
+        inputPath = value
+
+      default:
+        throw unknown(option, usage)
+      }
+    }
+
+    guard let example, let inputPath else {
+      throw invalid(usage)
+    }
+    return CLIVerifyArtifactInvocation(example: example, inputPath: inputPath)
   }
 }
 
@@ -4054,80 +4149,6 @@ private func requirePermissionsCommand(
     throw CLIPermissionsArgumentError.invalidArguments(usage: usage)
   }
   input.removeFirst()
-}
-
-private func parseGenerateArtifactOptions(
-  from input: inout ArraySlice<String>,
-  usage: String,
-  unknown: (String, String) -> any Error,
-  invalid: (String) -> any Error
-) throws -> CLIGenerateArtifactInvocation {
-  var example: String?
-  var outputPath: String?
-
-  while let option = input.first {
-    input.removeFirst()
-    switch option {
-    case "--example":
-      guard let value = input.first else {
-        throw invalid(usage)
-      }
-      input.removeFirst()
-      example = value
-
-    case "--to":
-      guard let value = input.first else {
-        throw invalid(usage)
-      }
-      input.removeFirst()
-      outputPath = value
-
-    default:
-      throw unknown(option, usage)
-    }
-  }
-
-  guard let example else {
-    throw invalid(usage)
-  }
-  return CLIGenerateArtifactInvocation(example: example, outputPath: outputPath)
-}
-
-private func parseVerifyArtifactOptions(
-  from input: inout ArraySlice<String>,
-  usage: String,
-  unknown: (String, String) -> any Error,
-  invalid: (String) -> any Error
-) throws -> CLIVerifyArtifactInvocation {
-  var example: String?
-  var inputPath: String?
-
-  while let option = input.first {
-    input.removeFirst()
-    switch option {
-    case "--example":
-      guard let value = input.first else {
-        throw invalid(usage)
-      }
-      input.removeFirst()
-      example = value
-
-    case "--from":
-      guard let value = input.first else {
-        throw invalid(usage)
-      }
-      input.removeFirst()
-      inputPath = value
-
-    default:
-      throw unknown(option, usage)
-    }
-  }
-
-  guard let example, let inputPath else {
-    throw invalid(usage)
-  }
-  return CLIVerifyArtifactInvocation(example: example, inputPath: inputPath)
 }
 
 private func parseExamplesTodosQueryOptions(

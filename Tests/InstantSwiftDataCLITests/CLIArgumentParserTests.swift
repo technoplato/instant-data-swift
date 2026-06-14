@@ -1355,6 +1355,44 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func artifactOptionsParsersConsumeDuplicateOptionsWithLastValueWinning() throws {
+    expectNoDifference(
+      try parseGenerateArtifactOptions([
+        "--example", "rooms", "--example", "todos", "--to", "old.ts",
+        "--to", "instant.schema.ts",
+      ]),
+      CLIGenerateArtifactInvocation(example: "todos", outputPath: "instant.schema.ts")
+    )
+    expectNoDifference(
+      try parseVerifyArtifactOptions([
+        "--example", "rooms", "--example", "todos", "--from", "old.ts",
+        "--from", "instant.schema.ts",
+      ]),
+      CLIVerifyArtifactInvocation(example: "todos", inputPath: "instant.schema.ts")
+    )
+  }
+
+  @Test
+  func artifactOptionsParsersReportMalformedArguments() throws {
+    try expectGenerateArtifactOptionsParseError(
+      ["--to", "instant.schema.ts"],
+      description: CLISchemaUsage.generate
+    )
+    try expectGenerateArtifactOptionsParseError(
+      ["--example", "todos", "--unknown"],
+      description: "Unknown generate option: --unknown. \(CLISchemaUsage.generate)"
+    )
+    try expectVerifyArtifactOptionsParseError(
+      ["--example", "todos"],
+      description: CLISchemaUsage.verify
+    )
+    try expectVerifyArtifactOptionsParseError(
+      ["--example", "todos", "--unknown"],
+      description: "Unknown schema verify option: --unknown. \(CLISchemaUsage.verify)"
+    )
+  }
+
+  @Test
   func appParserParsesCommandsAndAliases() throws {
     expectNoDifference(try parseApp(["show"]), .show)
     expectNoDifference(try parseApp(["status"]), .show)
@@ -2447,6 +2485,42 @@ private func parsePermissions(_ arguments: [String]) throws -> CLIPermissionsInv
   return invocation
 }
 
+private func parseGenerateArtifactOptions(
+  _ arguments: [String]
+) throws -> CLIGenerateArtifactInvocation {
+  var input = arguments[...]
+  let parser = CLIGenerateArtifactOptionsParser(
+    usage: CLISchemaUsage.generate,
+    unknown: { option, usage in
+      CLISchemaArgumentError.unknownGenerateOption(option, usage: usage)
+    },
+    invalid: { usage in
+      CLISchemaArgumentError.invalidArguments(usage: usage)
+    }
+  )
+  let invocation = try parser.parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
+private func parseVerifyArtifactOptions(
+  _ arguments: [String]
+) throws -> CLIVerifyArtifactInvocation {
+  var input = arguments[...]
+  let parser = CLIVerifyArtifactOptionsParser(
+    usage: CLISchemaUsage.verify,
+    unknown: { option, usage in
+      CLISchemaArgumentError.unknownVerifyOption(option, usage: usage)
+    },
+    invalid: { usage in
+      CLISchemaArgumentError.invalidArguments(usage: usage)
+    }
+  )
+  let invocation = try parser.parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseApp(_ arguments: [String]) throws -> CLIAppInvocation {
   var input = arguments[...]
   let invocation = try CLIAppParser().parse(&input)
@@ -2610,6 +2684,32 @@ private func expectPermissionsParseError(
     _ = try parsePermissions(arguments)
     Issue.record("Expected permissions parser to reject \(arguments).")
   } catch let error as CLIPermissionsArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectGenerateArtifactOptionsParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseGenerateArtifactOptions(arguments)
+    Issue.record("Expected generate artifact options parser to reject \(arguments).")
+  } catch let error as CLISchemaArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectVerifyArtifactOptionsParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseVerifyArtifactOptions(arguments)
+    Issue.record("Expected verify artifact options parser to reject \(arguments).")
+  } catch let error as CLISchemaArgumentError {
     expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }
