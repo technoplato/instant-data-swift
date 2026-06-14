@@ -722,6 +722,70 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliMalformedExamplesTodosArgumentsDoNotBootstrapState() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    func expectMalformed(_ arguments: [String], contains expectedFragment: String) throws {
+      let result = try runCLIResult(arguments, homeURL: homeURL)
+      expectNoDifference(result.status, 64)
+      #expect(result.error.contains(expectedFragment))
+    }
+
+    try expectMalformed(
+      ["examples", "todos", "seed", "unexpected", "--json"],
+      contains: "examples todos seed"
+    )
+    try expectMalformed(
+      ["examples", "todos", "add", "  ", "--json"],
+      contains: #"examples todos add "todo text""#
+    )
+    try expectMalformed(
+      ["examples", "todos", "list", "--unknown", "--json"],
+      contains: "Unknown todo list option: --unknown"
+    )
+    try expectMalformed(
+      ["examples", "todos", "watch", "--events", "2", "--jsonl"],
+      contains: "examples todos watch --events 1"
+    )
+    try expectMalformed(
+      ["examples", "todos", "watch", "--completed", "maybe", "--jsonl"],
+      contains: "examples todos watch --completed true|false"
+    )
+    try expectMalformed(
+      ["examples", "todos", "complete", "--json"],
+      contains: "examples todos complete <todo-id>"
+    )
+    try expectMalformed(
+      ["examples", "todos", "update", "todo-1", "--json"],
+      contains: "examples todos update <todo-id>"
+    )
+    try expectMalformed(
+      ["examples", "todos", "delete", "todo-1", "extra", "--json"],
+      contains: "examples todos delete <todo-id>"
+    )
+    try expectMalformed(
+      ["examples", "todos", "reset", "extra", "--json"],
+      contains: "examples todos reset"
+    )
+    try expectMalformed(
+      ["examples", "todos", "refresh", "--completed", "maybe", "--json"],
+      contains: "examples todos list --completed true|false"
+    )
+    try expectMalformed(
+      ["examples", "todos", "dance", "--json"],
+      contains: "Unknown todos command: dance"
+    )
+
+    expectNoDifference(
+      try FileManager.default.contentsOfDirectory(atPath: homeURL.path),
+      []
+    )
+  }
+
+  @Test
   func cliQueryTodosSupportsServerCreatedAtOrder() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)

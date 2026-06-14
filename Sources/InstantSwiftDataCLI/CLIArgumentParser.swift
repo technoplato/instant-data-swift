@@ -81,6 +81,60 @@ public enum CLIExamplesTodosCommand: Equatable, Sendable {
   case unknown(String)
 }
 
+public enum CLIExamplesTodosLeafInvocation: Equatable, Sendable {
+  case seed
+  case add(text: String)
+  case list(CLITodosQueryInvocation)
+  case watch(CLIExamplesTodosWatchInvocation)
+  case complete(todoID: String)
+  case update(todoID: String, text: String)
+  case delete(todoID: String)
+  case reset
+  case refresh(CLITodosQueryInvocation)
+  case unknown(String)
+}
+
+public struct CLIExamplesTodosWatchInvocation: Equatable, Sendable {
+  public var query: CLITodosQueryInvocation
+  public var eventCount: Int
+
+  public init(query: CLITodosQueryInvocation = CLITodosQueryInvocation(), eventCount: Int = 1) {
+    self.query = query
+    self.eventCount = eventCount
+  }
+}
+
+public enum CLIExamplesTodosUsage {
+  public static let todos =
+    "Usage: instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>"
+  public static let seed =
+    "Usage: instant-swift-data examples todos seed [--json|--jsonl]"
+  public static let add =
+    #"Usage: instant-swift-data examples todos add "todo text""#
+  public static let listCommand = "instant-swift-data examples todos list"
+  public static let list =
+    "\(listCommand) [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt]"
+  public static let watchCommand = "instant-swift-data examples todos watch"
+  public static let watch =
+    "\(watchCommand) [--events 1] [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt]"
+  public static let complete =
+    "Usage: instant-swift-data examples todos complete <todo-id>"
+  public static let update =
+    #"Usage: instant-swift-data examples todos update <todo-id> "new text""#
+  public static let delete =
+    "Usage: instant-swift-data examples todos delete <todo-id>"
+  public static let reset =
+    "Usage: instant-swift-data examples todos reset [--json|--jsonl]"
+}
+
+public enum CLIExamplesTodosArgumentError: Error, Equatable, Sendable {
+  case invalidArguments(usage: String)
+  case unknownListOption(String, usage: String)
+  case unknownWatchOption(String, usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
 public struct CLIScaffoldInvocation: Equatable, Sendable {
   public var example: String
   public var outputDirectory: String
@@ -1179,6 +1233,93 @@ public struct CLIExamplesTodosCommandParser: Parser {
     }
     input.removeFirst()
     return CLIExamplesTodosCommand(command)
+  }
+}
+
+public struct CLIExamplesTodosLeafParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIExamplesTodosLeafInvocation {
+    guard !input.isEmpty else {
+      throw CLIExamplesTodosArgumentError.invalidArguments(usage: CLIExamplesTodosUsage.todos)
+    }
+    let command = try CLIExamplesTodosCommandParser().parse(&input)
+    switch command {
+    case .seed:
+      try requireNoRemainingExamplesTodosArguments(&input, usage: CLIExamplesTodosUsage.seed)
+      return .seed
+
+    case .add:
+      let text = joinedTrimmed(input)
+      input.removeAll()
+      guard !text.isEmpty else {
+        throw CLIExamplesTodosArgumentError.invalidArguments(usage: CLIExamplesTodosUsage.add)
+      }
+      return .add(text: text)
+
+    case .list:
+      return .list(
+        try parseExamplesTodosQueryOptions(
+          from: &input,
+          usageCommand: CLIExamplesTodosUsage.listCommand,
+          usage: CLIExamplesTodosUsage.list,
+          unknown: { option, usage in
+            CLIExamplesTodosArgumentError.unknownListOption(option, usage: usage)
+          }
+        )
+      )
+
+    case .watch:
+      return .watch(try parseExamplesTodosWatchOptions(from: &input))
+
+    case .complete:
+      return .complete(
+        todoID: try parseSingleExamplesTodosArgument(
+          from: &input,
+          usage: CLIExamplesTodosUsage.complete
+        )
+      )
+
+    case .update:
+      let todoID = try parseRequiredExamplesTodosArgument(
+        from: &input,
+        usage: CLIExamplesTodosUsage.update
+      )
+      let text = joinedTrimmed(input)
+      input.removeAll()
+      guard !text.isEmpty else {
+        throw CLIExamplesTodosArgumentError.invalidArguments(usage: CLIExamplesTodosUsage.update)
+      }
+      return .update(todoID: todoID, text: text)
+
+    case .delete:
+      return .delete(
+        todoID: try parseSingleExamplesTodosArgument(
+          from: &input,
+          usage: CLIExamplesTodosUsage.delete
+        )
+      )
+
+    case .reset:
+      try requireNoRemainingExamplesTodosArguments(&input, usage: CLIExamplesTodosUsage.reset)
+      return .reset
+
+    case .refresh:
+      return .refresh(
+        try parseExamplesTodosQueryOptions(
+          from: &input,
+          usageCommand: CLIExamplesTodosUsage.listCommand,
+          usage: CLIExamplesTodosUsage.list,
+          unknown: { option, usage in
+            CLIExamplesTodosArgumentError.unknownListOption(option, usage: usage)
+          }
+        )
+      )
+
+    case let .unknown(command):
+      input.removeAll()
+      return .unknown(command)
+    }
   }
 }
 
@@ -3361,6 +3502,291 @@ private func parseVerifyArtifactOptions(
   return CLIVerifyArtifactInvocation(example: example, inputPath: inputPath)
 }
 
+private func parseExamplesTodosQueryOptions(
+  from input: inout ArraySlice<String>,
+  usageCommand: String,
+  usage: String,
+  unknown: (String, String) -> any Error
+) throws -> CLITodosQueryInvocation {
+  var invocation = CLITodosQueryInvocation()
+
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--completed":
+      guard let value = input.first, let completed = parseCLIQueryBool(value) else {
+        throw CLIExamplesTodosArgumentError.invalidArguments(
+          usage: "Usage: \(usageCommand) --completed true|false"
+        )
+      }
+      input.removeFirst()
+      invocation.completed = completed
+
+    case "--search":
+      guard let value = input.first,
+        !trimmed(value).isEmpty
+      else {
+        throw CLIExamplesTodosArgumentError.invalidArguments(
+          usage: "Usage: \(usageCommand) --search text"
+        )
+      }
+      input.removeFirst()
+      invocation.search = value
+
+    case "--offset":
+      invocation.offset = try parseExamplesTodosNonNegativeInt(
+        from: &input,
+        usage: "Usage: \(usageCommand) --offset n"
+      )
+
+    case "--limit":
+      invocation.limit = try parseExamplesTodosNonNegativeInt(
+        from: &input,
+        usage: "Usage: \(usageCommand) --limit n"
+      )
+
+    case "--first":
+      invocation.first = try parseExamplesTodosNonNegativeInt(
+        from: &input,
+        usage: "Usage: \(usageCommand) --first n"
+      )
+
+    case "--after", "--after-inclusive":
+      invocation.after = try parseExamplesTodosCursor(
+        from: &input,
+        option: option,
+        inclusive: option == "--after-inclusive",
+        usageCommand: usageCommand
+      )
+
+    case "--last":
+      invocation.last = try parseExamplesTodosNonNegativeInt(
+        from: &input,
+        usage: "Usage: \(usageCommand) --last n"
+      )
+
+    case "--before", "--before-inclusive":
+      invocation.before = try parseExamplesTodosCursor(
+        from: &input,
+        option: option,
+        inclusive: option == "--before-inclusive",
+        usageCommand: usageCommand
+      )
+
+    case "--order":
+      guard let value = input.first, let direction = parseCLIQuerySortDirection(value) else {
+        throw CLIExamplesTodosArgumentError.invalidArguments(
+          usage: "Usage: \(usageCommand) --order asc|desc"
+        )
+      }
+      input.removeFirst()
+      invocation.direction = direction
+
+    case "--order-by":
+      guard let value = input.first, let orderField = parseCLITodoOrderField(value) else {
+        throw CLIExamplesTodosArgumentError.invalidArguments(
+          usage: "Usage: \(usageCommand) --order-by none|createdAt|serverCreatedAt"
+        )
+      }
+      input.removeFirst()
+      invocation.orderField = orderField
+
+    default:
+      throw unknown(option, usage)
+    }
+  }
+
+  guard invocation.first == nil || invocation.last == nil else {
+    throw CLIExamplesTodosArgumentError.invalidArguments(
+      usage: "Use either --first or --last, not both. Usage: \(usage)"
+    )
+  }
+
+  return invocation
+}
+
+private func parseExamplesTodosWatchOptions(
+  from input: inout ArraySlice<String>
+) throws -> CLIExamplesTodosWatchInvocation {
+  var invocation = CLIExamplesTodosWatchInvocation()
+  let usageCommand = CLIExamplesTodosUsage.watchCommand
+  let usage = CLIExamplesTodosUsage.watch
+
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--completed":
+      guard let value = input.first, let completed = parseCLIQueryBool(value) else {
+        throw CLIExamplesTodosArgumentError.invalidArguments(
+          usage: "Usage: \(usageCommand) --completed true|false"
+        )
+      }
+      input.removeFirst()
+      invocation.query.completed = completed
+
+    case "--search":
+      guard let value = input.first,
+        !trimmed(value).isEmpty
+      else {
+        throw CLIExamplesTodosArgumentError.invalidArguments(
+          usage: "Usage: \(usageCommand) --search text"
+        )
+      }
+      input.removeFirst()
+      invocation.query.search = value
+
+    case "--offset":
+      invocation.query.offset = try parseExamplesTodosNonNegativeInt(
+        from: &input,
+        usage: "Usage: \(usageCommand) --offset n"
+      )
+
+    case "--limit":
+      invocation.query.limit = try parseExamplesTodosNonNegativeInt(
+        from: &input,
+        usage: "Usage: \(usageCommand) --limit n"
+      )
+
+    case "--first":
+      invocation.query.first = try parseExamplesTodosNonNegativeInt(
+        from: &input,
+        usage: "Usage: \(usageCommand) --first n"
+      )
+
+    case "--after", "--after-inclusive":
+      invocation.query.after = try parseExamplesTodosCursor(
+        from: &input,
+        option: option,
+        inclusive: option == "--after-inclusive",
+        usageCommand: usageCommand
+      )
+
+    case "--last":
+      invocation.query.last = try parseExamplesTodosNonNegativeInt(
+        from: &input,
+        usage: "Usage: \(usageCommand) --last n"
+      )
+
+    case "--before", "--before-inclusive":
+      invocation.query.before = try parseExamplesTodosCursor(
+        from: &input,
+        option: option,
+        inclusive: option == "--before-inclusive",
+        usageCommand: usageCommand
+      )
+
+    case "--order":
+      guard let value = input.first, let direction = parseCLIQuerySortDirection(value) else {
+        throw CLIExamplesTodosArgumentError.invalidArguments(
+          usage: "Usage: \(usageCommand) --order asc|desc"
+        )
+      }
+      input.removeFirst()
+      invocation.query.direction = direction
+
+    case "--order-by":
+      guard let value = input.first, let orderField = parseCLITodoOrderField(value) else {
+        throw CLIExamplesTodosArgumentError.invalidArguments(
+          usage: "Usage: \(usageCommand) --order-by none|createdAt|serverCreatedAt"
+        )
+      }
+      input.removeFirst()
+      invocation.query.orderField = orderField
+
+    case "--events":
+      guard let value = input.first,
+        let parsed = Int(value),
+        parsed == 1
+      else {
+        throw CLIExamplesTodosArgumentError.invalidArguments(
+          usage: "Usage: \(usageCommand) --events 1"
+        )
+      }
+      input.removeFirst()
+      invocation.eventCount = parsed
+
+    default:
+      throw CLIExamplesTodosArgumentError.unknownWatchOption(option, usage: usage)
+    }
+  }
+
+  guard invocation.query.first == nil || invocation.query.last == nil else {
+    throw CLIExamplesTodosArgumentError.invalidArguments(
+      usage: "Use either --first or --last, not both. Usage: \(usage)"
+    )
+  }
+
+  return invocation
+}
+
+private func parseSingleExamplesTodosArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  let value = try parseRequiredExamplesTodosArgument(from: &input, usage: usage)
+  try requireNoRemainingExamplesTodosArguments(&input, usage: usage)
+  return value
+}
+
+private func parseRequiredExamplesTodosArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIExamplesTodosArgumentError.invalidArguments(usage: usage)
+  }
+  input.removeFirst()
+  return value
+}
+
+private func parseExamplesTodosNonNegativeInt(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> Int {
+  guard let value = input.first,
+    let parsed = Int(value),
+    parsed >= 0
+  else {
+    throw CLIExamplesTodosArgumentError.invalidArguments(usage: usage)
+  }
+  input.removeFirst()
+  return parsed
+}
+
+private func parseExamplesTodosCursor(
+  from input: inout ArraySlice<String>,
+  option: String,
+  inclusive: Bool,
+  usageCommand: String
+) throws -> CLIQueryCursor {
+  guard let value = input.first else {
+    throw CLIExamplesTodosArgumentError.invalidArguments(
+      usage: "Usage: \(usageCommand) \(option) id"
+    )
+  }
+  input.removeFirst()
+  let entityID = trimmed(value)
+  guard !entityID.isEmpty else {
+    throw CLIExamplesTodosArgumentError.invalidArguments(
+      usage: "Usage: \(usageCommand) \(option) id"
+    )
+  }
+  return CLIQueryCursor(entityID: entityID, inclusive: inclusive)
+}
+
+private func requireNoRemainingExamplesTodosArguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if !input.isEmpty {
+    throw CLIExamplesTodosArgumentError.invalidArguments(usage: usage)
+  }
+}
+
+private func joinedTrimmed(_ input: ArraySlice<String>) -> String {
+  input.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+}
+
 private func parseCLIQueryBool(_ value: String) -> Bool? {
   switch value.lowercased() {
   case "true", "yes", "1":
@@ -3391,16 +3817,30 @@ private func parseCLIQueryCursor(
   option: String,
   inclusive: Bool
 ) throws -> CLIQueryCursor {
+  try parseCLIQueryCursor(
+    from: &input,
+    option: option,
+    inclusive: inclusive,
+    usageCommand: CLIQueryUsage.todosCommand
+  )
+}
+
+private func parseCLIQueryCursor(
+  from input: inout ArraySlice<String>,
+  option: String,
+  inclusive: Bool,
+  usageCommand: String
+) throws -> CLIQueryCursor {
   guard let value = input.first else {
     throw CLIQueryArgumentError.invalidArguments(
-      usage: "Usage: \(CLIQueryUsage.todosCommand) \(option) id"
+      usage: "Usage: \(usageCommand) \(option) id"
     )
   }
   input.removeFirst()
   let entityID = trimmed(value)
   guard !entityID.isEmpty else {
     throw CLIQueryArgumentError.invalidArguments(
-      usage: "Usage: \(CLIQueryUsage.todosCommand) \(option) id"
+      usage: "Usage: \(usageCommand) \(option) id"
     )
   }
   return CLIQueryCursor(entityID: entityID, inclusive: inclusive)
@@ -3485,6 +3925,21 @@ extension CLIPermissionsArgumentError: CustomStringConvertible {
 
     case let .unknownVerifyOption(option, usage):
       return "Unknown permissions verify option: \(option). \(usage)"
+    }
+  }
+}
+
+extension CLIExamplesTodosArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case let .invalidArguments(usage):
+      return usage
+
+    case let .unknownListOption(option, usage):
+      return "Unknown todo list option: \(option). Usage: \(usage)"
+
+    case let .unknownWatchOption(option, usage):
+      return "Unknown todo watch option: \(option). Usage: \(usage)"
     }
   }
 }

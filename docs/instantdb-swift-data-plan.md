@@ -364,7 +364,8 @@ agents can inspect persisted schema attributes and triple facts directly. Durabl
 local IDs are inspectable with `instant-swift-data local-id get <name>` and
 `instant-swift-data local-id list`. The `swift-parsing` CLI grammar now covers
 top-level command/output normalization, init scaffolding, schema/perms
-generate/verify, the todos example leaf, auth show/guest/token/id-token/OAuth/OAuth
+generate/verify, the todos example leaf arguments with malformed no-bootstrap
+coverage, auth show/guest/token/id-token/OAuth/OAuth
 URL/issuer/magic-code/watch/sign-out, admin query/transact, app show/select/ephemeral,
 cache inspect/attributes/triples, connection status/connect/close, local-id get/list,
 outbox inspect/transport/flush/confirm/fail/retry/drain, query todos,
@@ -905,6 +906,8 @@ must emit the same metrics on day one so regressions become visible.
 - WHEN CLI commands are parsed, THE grammar SHALL be expressed through
   `swift-parsing` parser-printers with tests proving top-level aliases, required
   values, unknown-command failures, and global `--json`/`--jsonl` compatibility.
+- WHEN malformed CLI command leaves are rejected, THE CLI SHALL report status 64
+  before bootstrapping local state or creating persistent files.
 - WHEN an `@InstantEntity` has a primary key, THE macro SHALL generate a draft
   type that supports new nil-id drafts, `Draft(existing)` edit flows, writable
   assignments only, and client-side id allocation on save.

@@ -323,7 +323,6 @@ struct InstantSwiftDataCLI {
     }
     var input = arguments[...]
     let invocation = try CLIExamplesParser().parse(&input)
-    let todos: CLIExamplesTodosInvocation
     switch invocation {
     case let .syncUps(arguments):
       try await runSyncUps(arguments: arguments, output: output)
@@ -337,24 +336,28 @@ struct InstantSwiftDataCLI {
       try await runTodoLinks(arguments: arguments, output: output)
       return
 
-    case let .todos(parsedTodos):
-      todos = parsedTodos
+    case .todos:
+      break
 
     case .unknown:
       throw CLIError(examplesUsage, exitCode: 64)
     }
-    guard let command = todos.command else {
-      throw CLIError("Usage: instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>", exitCode: 64)
+    let leaf: CLIExamplesTodosLeafInvocation
+    do {
+      var input = Array(arguments.dropFirst())[...]
+      leaf = try CLIExamplesTodosLeafParser().parse(&input)
+    } catch let error as CLIExamplesTodosArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
-    let arguments = todos.arguments
+
+    if case let .unknown(command) = leaf {
+      throw CLIError("Unknown todos command: \(command)", exitCode: 64)
+    }
 
     let context = try await CLIContext.bootstrap()
 
-    switch command {
+    switch leaf {
     case .seed:
-      guard arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data examples todos seed [--json|--jsonl]", exitCode: 64)
-      }
       let transactionID = context.runtime.configuration.makeID()
       let now = context.runtime.configuration.now()
       var seedRecords: [(id: String, seed: TodoSeedRecord)] = []
@@ -381,11 +384,7 @@ struct InstantSwiftDataCLI {
         allowOfflineLocalEmission: true
       )
 
-    case .add:
-      let text = arguments.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !text.isEmpty else {
-        throw CLIError("Usage: instant-swift-data examples todos add \"todo text\"", exitCode: 64)
-      }
+    case let .add(text):
       let transactionID = context.runtime.configuration.makeID()
       let todoID = context.runtime.configuration.makeID()
       let now = context.runtime.configuration.now()
@@ -407,19 +406,15 @@ struct InstantSwiftDataCLI {
         allowOfflineLocalEmission: true
       )
 
-    case .list:
-      let query = try todoListQuery(arguments: arguments)
+    case let .list(list):
+      let query = todoListQuery(invocation: list)
       try await printTodos(context: context, output: output, event: "list", query: query)
 
-    case .watch:
-      let options = try todoWatchOptions(arguments: arguments)
+    case let .watch(watch):
+      let options = todoWatchOptions(invocation: watch)
       try await watchTodos(context: context, output: output, options: options)
 
-    case .complete:
-      var arguments = arguments
-      guard let todoID = arguments.popFirstArgument(), arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data examples todos complete <todo-id>", exitCode: 64)
-      }
+    case let .complete(todoID):
       let currentTodos = try await TodoExample.decode(
         todoEmission(
           context: context,
@@ -453,15 +448,7 @@ struct InstantSwiftDataCLI {
         allowOfflineLocalEmission: true
       )
 
-    case .update:
-      var arguments = arguments
-      guard let todoID = arguments.popFirstArgument() else {
-        throw CLIError("Usage: instant-swift-data examples todos update <todo-id> \"new text\"", exitCode: 64)
-      }
-      let text = arguments.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !text.isEmpty else {
-        throw CLIError("Usage: instant-swift-data examples todos update <todo-id> \"new text\"", exitCode: 64)
-      }
+    case let .update(todoID, text):
       let currentTodos = try await TodoExample.decode(
         todoEmission(
           context: context,
@@ -496,11 +483,7 @@ struct InstantSwiftDataCLI {
         allowOfflineLocalEmission: true
       )
 
-    case .delete:
-      var arguments = arguments
-      guard let todoID = arguments.popFirstArgument(), arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data examples todos delete <todo-id>", exitCode: 64)
-      }
+    case let .delete(todoID):
       let currentTodos = try await TodoExample.decode(
         todoEmission(
           context: context,
@@ -531,9 +514,6 @@ struct InstantSwiftDataCLI {
       )
 
     case .reset:
-      guard arguments.isEmpty else {
-        throw CLIError("Usage: instant-swift-data examples todos reset [--json|--jsonl]", exitCode: 64)
-      }
       let currentTodos = try await TodoExample.decode(
         todoEmission(
           context: context,
@@ -561,12 +541,12 @@ struct InstantSwiftDataCLI {
         allowOfflineLocalEmission: true
       )
 
-    case .refresh:
-      let query = try todoListQuery(arguments: arguments)
+    case let .refresh(refresh):
+      let query = todoListQuery(invocation: refresh)
       try await printTodos(context: context, output: output, event: "refresh", query: query)
 
-    case let .unknown(command):
-      throw CLIError("Unknown todos command: \(command)", exitCode: 64)
+    case .unknown:
+      preconditionFailure("Unknown todos commands are handled before bootstrapping.")
     }
   }
 
@@ -5075,135 +5055,18 @@ struct InstantSwiftDataCLI {
     return eventCount
   }
 
-  private static func todoListQuery(
-    arguments: [String],
-    usageCommand: String = "instant-swift-data examples todos list"
-  ) throws -> InstantQueryPlan {
-    var arguments = arguments
-    let usage = "\(usageCommand) [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt]"
-    var completed: Bool?
-    var search: String?
-    var offset: Int?
-    var limit: Int?
-    var first: Int?
-    var after: InstantQueryCursor?
-    var last: Int?
-    var before: InstantQueryCursor?
-    var direction = InstantQuerySortDirection.ascending
-    var orderField = "createdAt"
-
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--completed":
-        guard let value = arguments.popFirstArgument(), let parsed = parseBool(value) else {
-          throw CLIError("Usage: \(usageCommand) --completed true|false", exitCode: 64)
-        }
-        completed = parsed
-
-      case "--search":
-        guard let value = arguments.popFirstArgument(),
-          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else {
-          throw CLIError("Usage: \(usageCommand) --search text", exitCode: 64)
-        }
-        search = value
-
-      case "--limit":
-        guard let value = arguments.popFirstArgument(),
-          let parsed = Int(value),
-          parsed >= 0
-        else {
-          throw CLIError("Usage: \(usageCommand) --limit n", exitCode: 64)
-        }
-        limit = parsed
-
-      case "--first":
-        guard let value = arguments.popFirstArgument(),
-          let parsed = Int(value),
-          parsed >= 0
-        else {
-          throw CLIError("Usage: \(usageCommand) --first n", exitCode: 64)
-        }
-        first = parsed
-
-      case "--after", "--after-inclusive":
-        guard let value = arguments.popFirstArgument() else {
-          throw CLIError("Usage: \(usageCommand) \(option) id", exitCode: 64)
-        }
-        after = try parseTodoCursor(
-          value,
-          inclusive: option == "--after-inclusive",
-          usageCommand: usageCommand,
-          option: option
-        )
-
-      case "--last":
-        guard let value = arguments.popFirstArgument(),
-          let parsed = Int(value),
-          parsed >= 0
-        else {
-          throw CLIError("Usage: \(usageCommand) --last n", exitCode: 64)
-        }
-        last = parsed
-
-      case "--before", "--before-inclusive":
-        guard let value = arguments.popFirstArgument() else {
-          throw CLIError("Usage: \(usageCommand) \(option) id", exitCode: 64)
-        }
-        before = try parseTodoCursor(
-          value,
-          inclusive: option == "--before-inclusive",
-          usageCommand: usageCommand,
-          option: option
-        )
-
-      case "--offset":
-        guard let value = arguments.popFirstArgument(),
-          let parsed = Int(value),
-          parsed >= 0
-        else {
-          throw CLIError("Usage: \(usageCommand) --offset n", exitCode: 64)
-        }
-        offset = parsed
-
-      case "--order":
-        guard let value = arguments.popFirstArgument(), let parsed = parseSortDirection(value) else {
-          throw CLIError("Usage: \(usageCommand) --order asc|desc", exitCode: 64)
-        }
-        direction = parsed
-
-      case "--order-by":
-        guard let value = arguments.popFirstArgument(), let parsed = parseTodoOrderField(value) else {
-          throw CLIError("Usage: \(usageCommand) --order-by none|createdAt|serverCreatedAt", exitCode: 64)
-        }
-        orderField = parsed
-
-      default:
-        throw CLIError(
-          "Unknown todo list option: \(option). Usage: \(usage)",
-          exitCode: 64
-        )
-      }
-    }
-
-    guard first == nil || last == nil else {
-      throw CLIError(
-        "Use either --first or --last, not both. Usage: \(usage)",
-        exitCode: 64
-      )
-    }
-
-    return makeTodoListQuery(
-      completed: completed,
-      search: search,
-      offset: offset,
-      limit: limit,
-      first: first,
-      after: after,
-      last: last,
-      before: before,
-      direction: direction,
-      orderField: orderField
+  private static func todoListQuery(invocation: CLITodosQueryInvocation) -> InstantQueryPlan {
+    makeTodoListQuery(
+      completed: invocation.completed,
+      search: invocation.search,
+      offset: invocation.offset,
+      limit: invocation.limit,
+      first: invocation.first,
+      after: invocation.after.map(instantCursor),
+      last: invocation.last,
+      before: invocation.before.map(instantCursor),
+      direction: instantSortDirection(invocation.direction),
+      orderField: instantTodoOrderField(invocation.orderField)
     )
   }
 
@@ -5254,144 +5117,12 @@ struct InstantSwiftDataCLI {
     }
   }
 
-  private static func todoWatchOptions(arguments: [String]) throws -> TodoWatchOptions {
-    var arguments = arguments
-    var completed: Bool?
-    var search: String?
-    var offset: Int?
-    var limit: Int?
-    var first: Int?
-    var after: InstantQueryCursor?
-    var last: Int?
-    var before: InstantQueryCursor?
-    var direction = InstantQuerySortDirection.ascending
-    var orderField = "createdAt"
-    var eventCount = 1
-
-    while let option = arguments.popFirstArgument() {
-      switch option {
-      case "--completed":
-        guard let value = arguments.popFirstArgument(), let parsed = parseBool(value) else {
-          throw CLIError("Usage: instant-swift-data examples todos watch --completed true|false", exitCode: 64)
-        }
-        completed = parsed
-
-      case "--search":
-        guard let value = arguments.popFirstArgument(),
-          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        else {
-          throw CLIError("Usage: instant-swift-data examples todos watch --search text", exitCode: 64)
-        }
-        search = value
-
-      case "--limit":
-        guard let value = arguments.popFirstArgument(),
-          let parsed = Int(value),
-          parsed >= 0
-        else {
-          throw CLIError("Usage: instant-swift-data examples todos watch --limit n", exitCode: 64)
-        }
-        limit = parsed
-
-      case "--first":
-        guard let value = arguments.popFirstArgument(),
-          let parsed = Int(value),
-          parsed >= 0
-        else {
-          throw CLIError("Usage: instant-swift-data examples todos watch --first n", exitCode: 64)
-        }
-        first = parsed
-
-      case "--after", "--after-inclusive":
-        guard let value = arguments.popFirstArgument() else {
-          throw CLIError("Usage: instant-swift-data examples todos watch \(option) id", exitCode: 64)
-        }
-        after = try parseTodoCursor(
-          value,
-          inclusive: option == "--after-inclusive",
-          usageCommand: "instant-swift-data examples todos watch",
-          option: option
-        )
-
-      case "--last":
-        guard let value = arguments.popFirstArgument(),
-          let parsed = Int(value),
-          parsed >= 0
-        else {
-          throw CLIError("Usage: instant-swift-data examples todos watch --last n", exitCode: 64)
-        }
-        last = parsed
-
-      case "--before", "--before-inclusive":
-        guard let value = arguments.popFirstArgument() else {
-          throw CLIError("Usage: instant-swift-data examples todos watch \(option) id", exitCode: 64)
-        }
-        before = try parseTodoCursor(
-          value,
-          inclusive: option == "--before-inclusive",
-          usageCommand: "instant-swift-data examples todos watch",
-          option: option
-        )
-
-      case "--offset":
-        guard let value = arguments.popFirstArgument(),
-          let parsed = Int(value),
-          parsed >= 0
-        else {
-          throw CLIError("Usage: instant-swift-data examples todos watch --offset n", exitCode: 64)
-        }
-        offset = parsed
-
-      case "--order":
-        guard let value = arguments.popFirstArgument(), let parsed = parseSortDirection(value) else {
-          throw CLIError("Usage: instant-swift-data examples todos watch --order asc|desc", exitCode: 64)
-        }
-        direction = parsed
-
-      case "--order-by":
-        guard let value = arguments.popFirstArgument(), let parsed = parseTodoOrderField(value) else {
-          throw CLIError("Usage: instant-swift-data examples todos watch --order-by none|createdAt|serverCreatedAt", exitCode: 64)
-        }
-        orderField = parsed
-
-      case "--events":
-        guard let value = arguments.popFirstArgument(),
-          let parsed = Int(value),
-          parsed == 1
-        else {
-          throw CLIError("Usage: instant-swift-data examples todos watch --events 1", exitCode: 64)
-        }
-        eventCount = parsed
-
-      default:
-        throw CLIError(
-          "Unknown todo watch option: \(option). Usage: instant-swift-data examples todos watch [--events 1] [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt]",
-          exitCode: 64
-        )
-      }
-    }
-
-    guard first == nil || last == nil else {
-      throw CLIError(
-        "Use either --first or --last, not both. Usage: instant-swift-data examples todos watch [--events 1] [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt]",
-        exitCode: 64
-      )
-    }
-
-    return TodoWatchOptions(
-      query: makeTodoListQuery(
-        completed: completed,
-        search: search,
-        offset: offset,
-        limit: limit,
-        first: first,
-        after: after,
-        last: last,
-        before: before,
-        direction: direction,
-        orderField: orderField
-      ),
-      eventCount: eventCount
+  private static func todoWatchOptions(
+    invocation: CLIExamplesTodosWatchInvocation
+  ) -> TodoWatchOptions {
+    TodoWatchOptions(
+      query: todoListQuery(invocation: invocation.query),
+      eventCount: invocation.eventCount
     )
   }
 
@@ -5779,36 +5510,6 @@ struct InstantSwiftDataCLI {
       .replacingOccurrences(of: "\"", with: "\\\"")
   }
 
-  private static func parseTodoCursor(
-    _ value: String,
-    inclusive: Bool,
-    usageCommand: String,
-    option: String
-  ) throws -> InstantQueryCursor {
-    let entityID = value.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !entityID.isEmpty else {
-      throw CLIError("Usage: \(usageCommand) \(option) id", exitCode: 64)
-    }
-    return InstantQueryCursor(entityID: entityID, inclusive: inclusive)
-  }
-
-  private static func parseTodoSelectedFields(
-    _ value: String,
-    usageCommand: String
-  ) throws -> [String] {
-    let fields = value
-      .split(separator: ",")
-      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-      .filter { !$0.isEmpty }
-    guard !fields.isEmpty else {
-      throw CLIError(
-        "Usage: \(usageCommand) --select field[,field]",
-        exitCode: 64
-      )
-    }
-    return Array(Set(fields)).sorted()
-  }
-
   private static func queryIDFragment(_ value: String) -> String {
     Data(value.utf8).base64EncodedString()
       .replacingOccurrences(of: "+", with: "-")
@@ -5822,30 +5523,6 @@ struct InstantSwiftDataCLI {
       return true
     case "false", "no", "0":
       return false
-    default:
-      return nil
-    }
-  }
-
-  private static func parseSortDirection(_ value: String) -> InstantQuerySortDirection? {
-    switch value.lowercased() {
-    case "asc", "ascending":
-      return .ascending
-    case "desc", "descending":
-      return .descending
-    default:
-      return nil
-    }
-  }
-
-  private static func parseTodoOrderField(_ value: String) -> String? {
-    switch value {
-    case "none":
-      return "none"
-    case "createdAt":
-      return "createdAt"
-    case InstantQueryOrder.serverCreatedAtField:
-      return InstantQueryOrder.serverCreatedAtField
     default:
       return nil
     }

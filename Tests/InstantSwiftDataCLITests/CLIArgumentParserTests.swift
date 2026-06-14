@@ -131,6 +131,149 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func examplesTodosLeafParserParsesCommandsAndOptions() throws {
+    expectNoDifference(try parseExamplesTodosLeaf(["seed"]), .seed)
+    expectNoDifference(
+      try parseExamplesTodosLeaf(["add", "do", "the", "dishes"]),
+      .add(text: "do the dishes")
+    )
+    expectNoDifference(
+      try parseExamplesTodosLeaf([
+        "list", "--completed", "false", "--completed", "yes", "--search", " milk ",
+        "--offset", "2", "--limit", "1", "--limit", "3", "--first", "4",
+        "--after", "note-1", "--after-inclusive", " note-2 ", "--order", "descending",
+        "--order-by", "serverCreatedAt",
+      ]),
+      .list(
+        CLITodosQueryInvocation(
+          completed: true,
+          search: " milk ",
+          offset: 2,
+          limit: 3,
+          first: 4,
+          after: CLIQueryCursor(entityID: "note-2", inclusive: true),
+          direction: .descending,
+          orderField: .serverCreatedAt
+        )
+      )
+    )
+    expectNoDifference(
+      try parseExamplesTodosLeaf([
+        "observe", "--events", "1", "--last", "2", "--before", " note-9 ",
+        "--order-by", "none",
+      ]),
+      .watch(
+        CLIExamplesTodosWatchInvocation(
+          query: CLITodosQueryInvocation(
+            last: 2,
+            before: CLIQueryCursor(entityID: "note-9"),
+            orderField: .none
+          ),
+          eventCount: 1
+        )
+      )
+    )
+    expectNoDifference(
+      try parseExamplesTodosLeaf(["complete", "todo-1"]),
+      .complete(todoID: "todo-1")
+    )
+    expectNoDifference(
+      try parseExamplesTodosLeaf(["edit", "todo-1", "new", "text"]),
+      .update(todoID: "todo-1", text: "new text")
+    )
+    expectNoDifference(
+      try parseExamplesTodosLeaf(["remove", "todo-1"]),
+      .delete(todoID: "todo-1")
+    )
+    expectNoDifference(try parseExamplesTodosLeaf(["reset"]), .reset)
+    expectNoDifference(
+      try parseExamplesTodosLeaf(["refresh", "--completed", "no", "--limit", "2"]),
+      .refresh(CLITodosQueryInvocation(completed: false, limit: 2))
+    )
+    expectNoDifference(
+      try parseExamplesTodosLeaf(["dance", "--fast"]),
+      .unknown("dance")
+    )
+  }
+
+  @Test
+  func examplesTodosLeafParserReportsMalformedArguments() throws {
+    try expectExamplesTodosLeafParseError([], description: CLIExamplesTodosUsage.todos)
+    try expectExamplesTodosLeafParseError(
+      ["seed", "unexpected"],
+      description: CLIExamplesTodosUsage.seed
+    )
+    try expectExamplesTodosLeafParseError(
+      ["add", "  "],
+      description: CLIExamplesTodosUsage.add
+    )
+    try expectExamplesTodosLeafParseError(
+      ["list", "--completed", "maybe"],
+      description: "Usage: \(CLIExamplesTodosUsage.listCommand) --completed true|false"
+    )
+    try expectExamplesTodosLeafParseError(
+      ["list", "--after", "  "],
+      description: "Usage: \(CLIExamplesTodosUsage.listCommand) --after id"
+    )
+    try expectExamplesTodosLeafParseError(
+      ["list", "--first", "1", "--last", "1"],
+      description: "Use either --first or --last, not both. Usage: \(CLIExamplesTodosUsage.list)"
+    )
+    try expectExamplesTodosLeafParseError(
+      ["list", "--unknown"],
+      description: "Unknown todo list option: --unknown. Usage: \(CLIExamplesTodosUsage.list)"
+    )
+    try expectExamplesTodosLeafParseError(
+      ["watch", "--events", "2"],
+      description: "Usage: \(CLIExamplesTodosUsage.watchCommand) --events 1"
+    )
+    try expectExamplesTodosLeafParseError(
+      ["watch", "--completed", "maybe"],
+      description: "Usage: \(CLIExamplesTodosUsage.watchCommand) --completed true|false"
+    )
+    try expectExamplesTodosLeafParseError(
+      ["watch", "--after-inclusive", "  "],
+      description: "Usage: \(CLIExamplesTodosUsage.watchCommand) --after-inclusive id"
+    )
+    try expectExamplesTodosLeafParseError(
+      ["watch", "--order-by", "title"],
+      description: "Usage: \(CLIExamplesTodosUsage.watchCommand) --order-by none|createdAt|serverCreatedAt"
+    )
+    try expectExamplesTodosLeafParseError(
+      ["watch", "--first", "1", "--last", "1"],
+      description: "Use either --first or --last, not both. Usage: \(CLIExamplesTodosUsage.watch)"
+    )
+    try expectExamplesTodosLeafParseError(
+      ["watch", "--unknown"],
+      description: "Unknown todo watch option: --unknown. Usage: \(CLIExamplesTodosUsage.watch)"
+    )
+    try expectExamplesTodosLeafParseError(
+      ["complete"],
+      description: CLIExamplesTodosUsage.complete
+    )
+    try expectExamplesTodosLeafParseError(
+      ["complete", "todo-1", "unexpected"],
+      description: CLIExamplesTodosUsage.complete
+    )
+    try expectExamplesTodosLeafParseError(
+      ["update", "todo-1"],
+      description: CLIExamplesTodosUsage.update
+    )
+    try expectExamplesTodosLeafParseError(
+      ["delete", "todo-1", "unexpected"],
+      description: CLIExamplesTodosUsage.delete
+    )
+    try expectExamplesTodosLeafParseError(
+      ["reset", "unexpected"],
+      description: CLIExamplesTodosUsage.reset
+    )
+    try expectExamplesTodosLeafParseError(
+      ["refresh", "--completed", "maybe"],
+      description: "Usage: \(CLIExamplesTodosUsage.listCommand) --completed true|false"
+    )
+  }
+
+  @Test
   func topLevelOutputModeNormalizesAroundExamplesCommand() throws {
     expectNoDifference(
       try CLIArguments.parse(["examples", "todos", "observe", "--events", "1", "--jsonl"]),
@@ -1674,6 +1817,15 @@ private func parseExamples(_ arguments: [String]) throws -> CLIExamplesInvocatio
   return invocation
 }
 
+private func parseExamplesTodosLeaf(
+  _ arguments: [String]
+) throws -> CLIExamplesTodosLeafInvocation {
+  var input = arguments[...]
+  let invocation = try CLIExamplesTodosLeafParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseAuth(_ arguments: [String]) throws -> CLIAuthInvocation {
   var input = arguments[...]
   let invocation = try CLIAuthParser().parse(&input)
@@ -1893,6 +2045,19 @@ private func expectAppParseError(
     Issue.record("Expected app parser to reject \(arguments).")
   } catch let error as CLIAppArgumentError {
     #expect(error.description.contains(expectedFragment))
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectExamplesTodosLeafParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseExamplesTodosLeaf(arguments)
+    Issue.record("Expected examples todos parser to reject \(arguments).")
+  } catch let error as CLIExamplesTodosArgumentError {
+    expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }
 }
