@@ -82,6 +82,130 @@ struct TypeScriptPrinterTests {
     ]
   )
 
+  private static let upstreamCoreSchemaDocument = InstantSchemaDocument(
+    entities: [
+      InstantEntitySchema(
+        typeName: "Birthday",
+        namespace: "birthdays",
+        attributes: [
+          InstantAttribute(id: "birthdays/date", namespace: "birthdays", name: "date", valueType: .date),
+          InstantAttribute(id: "birthdays/message", namespace: "birthdays", name: "message", valueType: .string),
+          InstantAttribute(id: "birthdays/prizes", namespace: "birthdays", name: "prizes", valueType: .json),
+        ]
+      ),
+      InstantEntitySchema(
+        typeName: "Comment",
+        namespace: "comments",
+        attributes: [
+          InstantAttribute(
+            id: "comments/body",
+            namespace: "comments",
+            name: "body",
+            valueType: .string,
+            isIndexed: true
+          ),
+          InstantAttribute(id: "comments/likes", namespace: "comments", name: "likes", valueType: .number),
+        ]
+      ),
+      InstantEntitySchema(
+        typeName: "Post",
+        namespace: "posts",
+        attributes: [
+          InstantAttribute(
+            id: "posts/title",
+            namespace: "posts",
+            name: "title",
+            valueType: .string,
+            isRequired: false
+          ),
+          InstantAttribute(id: "posts/body", namespace: "posts", name: "body", valueType: .string),
+        ]
+      ),
+      InstantEntitySchema(
+        typeName: "User",
+        namespace: "users",
+        attributes: [
+          InstantAttribute(id: "users/name", namespace: "users", name: "name", valueType: .string),
+          InstantAttribute(
+            id: "users/email",
+            namespace: "users",
+            name: "email",
+            valueType: .string,
+            isIndexed: true,
+            isUnique: true
+          ),
+          InstantAttribute(
+            id: "users/bio",
+            namespace: "users",
+            name: "bio",
+            valueType: .string,
+            isRequired: false
+          ),
+          InstantAttribute(id: "users/stuff", namespace: "users", name: "stuff", valueType: .json),
+          InstantAttribute(id: "users/junk", namespace: "users", name: "junk", valueType: .ref),
+        ]
+      ),
+    ],
+    links: [
+      InstantLinkSchema(
+        name: "friendships",
+        forward: InstantLinkEndpoint(namespace: "users", cardinality: .many, label: "friends"),
+        reverse: InstantLinkEndpoint(namespace: "users", cardinality: .many, label: "_friends")
+      ),
+      InstantLinkSchema(
+        name: "postsComments",
+        forward: InstantLinkEndpoint(namespace: "posts", cardinality: .many, label: "comments"),
+        reverse: InstantLinkEndpoint(namespace: "comments", cardinality: .one, label: "post")
+      ),
+      InstantLinkSchema(
+        name: "referrals",
+        forward: InstantLinkEndpoint(namespace: "users", cardinality: .many, label: "referred"),
+        reverse: InstantLinkEndpoint(namespace: "users", cardinality: .one, label: "referrer")
+      ),
+      InstantLinkSchema(
+        name: "usersPosts",
+        forward: InstantLinkEndpoint(namespace: "users", cardinality: .many, label: "posts"),
+        reverse: InstantLinkEndpoint(namespace: "posts", cardinality: .one, label: "author")
+      ),
+    ],
+    rooms: [
+      InstantRoomSchema(
+        name: "chat",
+        presence: InstantRoomPayloadSchema(
+          attributes: [
+            InstantAttribute(
+              id: "rooms/chat/presence/name",
+              namespace: "rooms/chat/presence",
+              name: "name",
+              valueType: .string
+            ),
+            InstantAttribute(
+              id: "rooms/chat/presence/status",
+              namespace: "rooms/chat/presence",
+              name: "status",
+              valueType: .string
+            ),
+          ]
+        ),
+        topics: [
+          InstantRoomTopicSchema(
+            name: "sendEmoji",
+            payload: InstantRoomPayloadSchema(
+              attributes: [
+                InstantAttribute(
+                  id: "rooms/chat/topics/sendEmoji/emoji",
+                  namespace: "rooms/chat/topics/sendEmoji",
+                  name: "emoji",
+                  valueType: .string
+                )
+              ]
+            )
+          )
+        ]
+      )
+    ]
+  )
+
   @Test
   func schemaPrinterEmitsTodoExample() throws {
     expectNoDifference(
@@ -248,6 +372,33 @@ struct TypeScriptPrinterTests {
       parsed,
       ParsedInstantSchemaDocument(Self.roomDocument)
     )
+  }
+
+  @Test
+  func schemaParserRoundTripsUpstreamCoreSchemaShape() throws {
+    let source =
+      "upstream/instant/client/packages/core/__tests__/src/schema.test.ts runs without exception "
+      + "and serializeSchema.test.ts ability to parse stringified schema into real schema object "
+      + "[adapted: Swift IR maps upstream i.any() to i.any()/.ref for the users.junk field.]"
+    let printed = try TypeScriptSchemaPrinter().printSchema(Self.upstreamCoreSchemaDocument)
+    let parsed = try TypeScriptSchemaParser().parseDocument(printed)
+
+    expectNoDifference(
+      parsed,
+      ParsedInstantSchemaDocument(Self.upstreamCoreSchemaDocument),
+      source
+    )
+    expectNoDifference(
+      parsed.entities.map(\.namespace),
+      ["birthdays", "comments", "posts", "users"],
+      source
+    )
+    expectNoDifference(
+      parsed.links.map(\.name),
+      ["friendships", "postsComments", "referrals", "usersPosts"],
+      source
+    )
+    expectNoDifference(parsed.rooms.map(\.name), ["chat"], source)
   }
 
   @Test
