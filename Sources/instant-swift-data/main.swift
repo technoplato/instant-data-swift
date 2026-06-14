@@ -385,7 +385,12 @@ struct InstantSwiftDataCLI {
       throw CLIError(examplesUsage, exitCode: 64)
     }
     var input = arguments[...]
-    let invocation = try CLIExamplesParser().parse(&input)
+    let invocation: CLIExamplesInvocation
+    do {
+      invocation = try CLIExamplesParser().parse(&input)
+    } catch let error as CLIExamplesTodosArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
+    }
     switch invocation {
     case let .syncUps(arguments):
       try await runSyncUps(arguments: arguments, output: output)
@@ -399,20 +404,20 @@ struct InstantSwiftDataCLI {
       try await runTodoLinks(arguments: arguments, output: output)
       return
 
-    case .todos:
-      break
+    case let .todos(todosInvocation):
+      guard let leaf = todosInvocation.leaf else {
+        throw CLIError(CLIExamplesTodosUsage.todos, exitCode: 64)
+      }
+
+      try await runTodos(leaf: leaf, output: output)
+      return
 
     case .unknown:
       throw CLIError(examplesUsage, exitCode: 64)
     }
-    let leaf: CLIExamplesTodosLeafInvocation
-    do {
-      var input = Array(arguments.dropFirst())[...]
-      leaf = try CLIExamplesTodosLeafParser().parse(&input)
-    } catch let error as CLIExamplesTodosArgumentError {
-      throw CLIError(error.description, exitCode: error.exitCode)
-    }
+  }
 
+  private static func runTodos(leaf: CLIExamplesTodosLeafInvocation, output: OutputMode) async throws {
     if case let .unknown(command) = leaf {
       throw CLIError("Unknown todos command: \(command)", exitCode: 64)
     }

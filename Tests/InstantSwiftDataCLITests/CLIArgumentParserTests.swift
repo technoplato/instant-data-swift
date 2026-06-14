@@ -97,7 +97,8 @@ struct CLIArgumentParserTests {
       .todos(
         CLIExamplesTodosInvocation(
           command: .add,
-          arguments: ["do", "the", "dishes"]
+          arguments: ["do", "the", "dishes"],
+          leaf: .add(text: "do the dishes")
         )
       )
     )
@@ -106,7 +107,8 @@ struct CLIArgumentParserTests {
       .todos(
         CLIExamplesTodosInvocation(
           command: .watch,
-          arguments: ["--events", "1"]
+          arguments: ["--events", "1"],
+          leaf: .watch(CLIExamplesTodosWatchInvocation(eventCount: 1))
         )
       )
     )
@@ -115,7 +117,8 @@ struct CLIArgumentParserTests {
       .todos(
         CLIExamplesTodosInvocation(
           command: .update,
-          arguments: ["todo-1", "new", "text"]
+          arguments: ["todo-1", "new", "text"],
+          leaf: .update(todoID: "todo-1", text: "new text")
         )
       )
     )
@@ -124,7 +127,8 @@ struct CLIArgumentParserTests {
       .todos(
         CLIExamplesTodosInvocation(
           command: .delete,
-          arguments: ["todo-1"]
+          arguments: ["todo-1"],
+          leaf: .delete(todoID: "todo-1")
         )
       )
     )
@@ -2122,7 +2126,8 @@ struct CLIArgumentParserTests {
       .todos(
         CLIExamplesTodosInvocation(
           command: .unknown("dance"),
-          arguments: ["--fast"]
+          arguments: ["--fast"],
+          leaf: .unknown("dance")
         )
       )
     )

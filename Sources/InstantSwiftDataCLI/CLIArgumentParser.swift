@@ -58,13 +58,16 @@ public enum CLIExamplesInvocation: Equatable, Sendable {
 public struct CLIExamplesTodosInvocation: Equatable, Sendable {
   public var command: CLIExamplesTodosCommand?
   public var arguments: [String]
+  public var leaf: CLIExamplesTodosLeafInvocation?
 
   public init(
     command: CLIExamplesTodosCommand?,
-    arguments: [String]
+    arguments: [String],
+    leaf: CLIExamplesTodosLeafInvocation? = nil
   ) {
     self.command = command
     self.arguments = arguments
+    self.leaf = leaf
   }
 }
 
@@ -1480,21 +1483,41 @@ public enum CLIBenchmarkArgumentError: Error, Equatable, Sendable {
   }
 }
 
+private struct CLILiteralTokenParser<Output>: Parser {
+  var token: String
+  var output: Output
+
+  init(_ token: String, output: Output) {
+    self.token = token
+    self.output = output
+  }
+
+  func parse(_ input: inout ArraySlice<String>) throws -> Output {
+    try Backtracking {
+      First<ArraySlice<String>>()
+        .compactMap { token in
+          token == self.token ? self.output : nil
+        }
+    }
+    .parse(&input)
+  }
+}
+
 public struct CLIOutputFlagParser: Parser {
   public init() {}
 
   public func parse(_ input: inout ArraySlice<String>) throws -> CLIOutputMode {
-    guard let flag = input.first else {
+    guard !input.isEmpty else {
       throw CLIArgumentParseError.missingOutputFlag
     }
-    switch flag {
-    case "--jsonl":
-      input.removeFirst()
-      return .jsonl
-    case "--json":
-      input.removeFirst()
-      return .json
-    default:
+
+    do {
+      return try OneOf(input: ArraySlice<String>.self, output: CLIOutputMode.self) {
+        CLILiteralTokenParser("--jsonl", output: CLIOutputMode.jsonl)
+        CLILiteralTokenParser("--json", output: CLIOutputMode.json)
+      }
+      .parse(&input)
+    } catch {
       throw CLIArgumentParseError.missingOutputFlag
     }
   }
@@ -1504,11 +1527,46 @@ public struct CLITopLevelCommandParser: Parser {
   public init() {}
 
   public func parse(_ input: inout ArraySlice<String>) throws -> CLITopLevelCommand {
-    guard let command = input.first else {
+    guard !input.isEmpty else {
       throw CLIArgumentParseError.missingCommand
     }
-    input.removeFirst()
-    return CLITopLevelCommand(command)
+
+    return try OneOf(input: ArraySlice<String>.self, output: CLITopLevelCommand.self) {
+      CLILiteralTokenParser("admin", output: CLITopLevelCommand.admin)
+      CLILiteralTokenParser("app", output: CLITopLevelCommand.app)
+      CLILiteralTokenParser("auth", output: CLITopLevelCommand.auth)
+      CLILiteralTokenParser("benchmark", output: CLITopLevelCommand.benchmark)
+      CLILiteralTokenParser("benchmarks", output: CLITopLevelCommand.benchmark)
+      CLILiteralTokenParser("cache", output: CLITopLevelCommand.cache)
+      CLILiteralTokenParser("connection", output: CLITopLevelCommand.connection)
+      CLILiteralTokenParser("connect", output: CLITopLevelCommand.connection)
+      CLILiteralTokenParser("examples", output: CLITopLevelCommand.examples)
+      CLILiteralTokenParser("files", output: CLITopLevelCommand.files)
+      CLILiteralTokenParser("storage", output: CLITopLevelCommand.files)
+      CLILiteralTokenParser("help", output: CLITopLevelCommand.help)
+      CLILiteralTokenParser("--help", output: CLITopLevelCommand.help)
+      CLILiteralTokenParser("-h", output: CLITopLevelCommand.help)
+      CLILiteralTokenParser("init", output: CLITopLevelCommand.initScaffold)
+      CLILiteralTokenParser("local-id", output: CLITopLevelCommand.localID)
+      CLILiteralTokenParser("localid", output: CLITopLevelCommand.localID)
+      CLILiteralTokenParser("outbox", output: CLITopLevelCommand.outbox)
+      CLILiteralTokenParser("perms", output: CLITopLevelCommand.permissions)
+      CLILiteralTokenParser("permissions", output: CLITopLevelCommand.permissions)
+      CLILiteralTokenParser("query", output: CLITopLevelCommand.query)
+      CLILiteralTokenParser("rooms", output: CLITopLevelCommand.rooms)
+      CLILiteralTokenParser("room", output: CLITopLevelCommand.rooms)
+      CLILiteralTokenParser("schema", output: CLITopLevelCommand.schema)
+      CLILiteralTokenParser("shares", output: CLITopLevelCommand.shares)
+      CLILiteralTokenParser("share", output: CLITopLevelCommand.shares)
+      CLILiteralTokenParser("sharing", output: CLITopLevelCommand.shares)
+      CLILiteralTokenParser("streams", output: CLITopLevelCommand.streams)
+      CLILiteralTokenParser("stream", output: CLITopLevelCommand.streams)
+      CLILiteralTokenParser("sync", output: CLITopLevelCommand.sync)
+      CLILiteralTokenParser("validate", output: CLITopLevelCommand.validation)
+      CLILiteralTokenParser("validation", output: CLITopLevelCommand.validation)
+      First<ArraySlice<String>>().map(CLITopLevelCommand.unknown)
+    }
+    .parse(&input)
   }
 }
 
@@ -1567,10 +1625,14 @@ public struct CLIExamplesTodosParser: Parser {
   public init() {}
 
   public func parse(_ input: inout ArraySlice<String>) throws -> CLIExamplesTodosInvocation {
-    let command = input.isEmpty ? nil : try CLIExamplesTodosCommandParser().parse(&input)
-    let arguments = Array(input)
-    input.removeAll()
-    return CLIExamplesTodosInvocation(command: command, arguments: arguments)
+    guard let rawCommand = input.first else {
+      return CLIExamplesTodosInvocation(command: nil, arguments: [])
+    }
+
+    let rawArguments = Array(input.dropFirst())
+    let command = CLIExamplesTodosCommand(rawCommand)
+    let leaf = try CLIExamplesTodosLeafParser().parse(&input)
+    return CLIExamplesTodosInvocation(command: command, arguments: rawArguments, leaf: leaf)
   }
 }
 
@@ -1578,11 +1640,26 @@ public struct CLIExamplesTodosCommandParser: Parser {
   public init() {}
 
   public func parse(_ input: inout ArraySlice<String>) throws -> CLIExamplesTodosCommand {
-    guard let command = input.first else {
+    guard !input.isEmpty else {
       throw CLIArgumentParseError.missingCommand
     }
-    input.removeFirst()
-    return CLIExamplesTodosCommand(command)
+
+    return try OneOf(input: ArraySlice<String>.self, output: CLIExamplesTodosCommand.self) {
+      CLILiteralTokenParser("seed", output: CLIExamplesTodosCommand.seed)
+      CLILiteralTokenParser("add", output: CLIExamplesTodosCommand.add)
+      CLILiteralTokenParser("list", output: CLIExamplesTodosCommand.list)
+      CLILiteralTokenParser("watch", output: CLIExamplesTodosCommand.watch)
+      CLILiteralTokenParser("observe", output: CLIExamplesTodosCommand.watch)
+      CLILiteralTokenParser("complete", output: CLIExamplesTodosCommand.complete)
+      CLILiteralTokenParser("update", output: CLIExamplesTodosCommand.update)
+      CLILiteralTokenParser("edit", output: CLIExamplesTodosCommand.update)
+      CLILiteralTokenParser("delete", output: CLIExamplesTodosCommand.delete)
+      CLILiteralTokenParser("remove", output: CLIExamplesTodosCommand.delete)
+      CLILiteralTokenParser("reset", output: CLIExamplesTodosCommand.reset)
+      CLILiteralTokenParser("refresh", output: CLIExamplesTodosCommand.refresh)
+      First<ArraySlice<String>>().map(CLIExamplesTodosCommand.unknown)
+    }
+    .parse(&input)
   }
 }
 
