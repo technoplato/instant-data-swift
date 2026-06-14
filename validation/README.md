@@ -44,8 +44,16 @@ swift run instant-swift-data-validation-runner --local-integrations
 swift run instant-swift-data-benchmarks --suite local-todos --iterations 1 --jsonl
 ```
 
-The output is JSON Lines using the evidence format below. Real InstantDB and
-Swift/TypeScript boundary cases remain required for final acceptance.
+Macro snapshot tests use Point-Free's MacroTesting library in the package's
+dedicated macro test target:
+
+```bash
+validation/run-macro-tests.sh
+```
+
+Validation commands that accept `--jsonl` emit the JSON Lines evidence format
+below. Real InstantDB and Swift/TypeScript boundary cases remain required for
+final acceptance.
 
 ## Local TypeScript Fixture Evidence
 

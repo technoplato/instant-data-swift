@@ -1,7 +1,6 @@
 // swift-tools-version: 6.0
 
 import CompilerPluginSupport
-import Foundation
 import PackageDescription
 
 let strictConcurrencySettings: [SwiftSetting] = [
@@ -9,9 +8,6 @@ let strictConcurrencySettings: [SwiftSetting] = [
   .enableUpcomingFeature("NonisolatedNonsendingByDefault"),
   .enableUpcomingFeature("InferIsolatedConformances"),
 ]
-
-let enableMacroTestingSnapshots =
-  ProcessInfo.processInfo.environment["INSTANT_SWIFT_DATA_ENABLE_MACRO_TESTING"] == "1"
 
 let package = Package(
   name: "instant-swift-data",
@@ -42,13 +38,13 @@ let package = Package(
     .package(url: "https://github.com/pointfreeco/swift-case-paths", exact: "1.0.0"),
     .package(url: "https://github.com/pointfreeco/swift-custom-dump", from: "1.0.0"),
     .package(url: "https://github.com/pointfreeco/swift-dependencies", from: "1.0.0"),
+    .package(url: "https://github.com/pointfreeco/swift-macro-testing", from: "0.1.0"),
+    // Keep MacroTesting on the SnapshotTesting line compatible with the Xcode Swift Testing framework.
+    .package(url: "https://github.com/pointfreeco/swift-snapshot-testing", exact: "1.18.9"),
     .package(url: "https://github.com/pointfreeco/swift-parsing", from: "0.14.1"),
     .package(url: "https://github.com/pointfreeco/xctest-dynamic-overlay", from: "1.0.0"),
     .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "602.0.0"),
-    .package(url: "https://github.com/swiftlang/swift-testing.git", exact: "6.2.3"),
-  ] + (enableMacroTestingSnapshots
-    ? [.package(url: "https://github.com/pointfreeco/swift-macro-testing", from: "0.1.0")]
-    : []),
+  ],
   targets: [
     .target(
       name: "InstantSwiftData",
@@ -122,7 +118,6 @@ let package = Package(
       dependencies: [
         "InstantSwiftDataCore",
         .product(name: "CustomDump", package: "swift-custom-dump"),
-        .product(name: "Testing", package: "swift-testing"),
       ],
       swiftSettings: strictConcurrencySettings
     ),
@@ -131,7 +126,6 @@ let package = Package(
       dependencies: [
         "InstantSwiftData",
         .product(name: "CustomDump", package: "swift-custom-dump"),
-        .product(name: "Testing", package: "swift-testing"),
       ],
       swiftSettings: strictConcurrencySettings
     ),
@@ -140,7 +134,6 @@ let package = Package(
       dependencies: [
         "InstantSwiftDataSchema",
         .product(name: "CustomDump", package: "swift-custom-dump"),
-        .product(name: "Testing", package: "swift-testing"),
       ],
       swiftSettings: strictConcurrencySettings
     ),
@@ -149,7 +142,6 @@ let package = Package(
       dependencies: [
         "InstantSwiftDataTesting",
         .product(name: "CustomDump", package: "swift-custom-dump"),
-        .product(name: "Testing", package: "swift-testing"),
       ],
       swiftSettings: strictConcurrencySettings
     ),
@@ -158,7 +150,6 @@ let package = Package(
       dependencies: [
         "InstantSwiftDataCLIParsing",
         .product(name: "CustomDump", package: "swift-custom-dump"),
-        .product(name: "Testing", package: "swift-testing"),
       ],
       path: "Tests/InstantSwiftDataCLITests",
       swiftSettings: strictConcurrencySettings
@@ -167,27 +158,18 @@ let package = Package(
       name: "InstantSwiftDataMacrosTests",
       dependencies: [
         "InstantSwiftDataMacros",
-        .product(name: "SwiftParser", package: "swift-syntax"),
+        .product(name: "MacroTesting", package: "swift-macro-testing"),
+        // Keep the root SnapshotTesting pin visible to SwiftPM.
+        .product(name: "SnapshotTesting", package: "swift-snapshot-testing"),
+        // Importing the macro module in tests requires its plugin dependencies to be visible.
+        .product(name: "SwiftCompilerPlugin", package: "swift-syntax"),
+        .product(name: "SwiftDiagnostics", package: "swift-syntax"),
         .product(name: "SwiftSyntax", package: "swift-syntax"),
-        .product(name: "SwiftSyntaxMacroExpansion", package: "swift-syntax"),
+        .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
         .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
-        .product(name: "Testing", package: "swift-testing"),
       ],
       swiftSettings: strictConcurrencySettings
     ),
-  ] + (enableMacroTestingSnapshots
-    ? [
-      .testTarget(
-        name: "InstantSwiftDataMacroSnapshotTests",
-        dependencies: [
-          "InstantSwiftDataMacros",
-          .product(name: "MacroTesting", package: "swift-macro-testing"),
-          .product(name: "Testing", package: "swift-testing"),
-        ],
-        path: "Tests/InstantSwiftDataMacroSnapshotTests",
-        swiftSettings: strictConcurrencySettings
-      )
-    ]
-    : []),
+  ],
   swiftLanguageModes: [.v6]
 )

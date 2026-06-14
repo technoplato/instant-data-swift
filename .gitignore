@@ -1,5 +1,6 @@
 .DS_Store
 .build/
+.build-macrotesting*/
 .swiftpm/
 validation/ts-runner/node_modules/
 validation/ts-runner/package-lock.json

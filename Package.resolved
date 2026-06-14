@@ -1,5 +1,5 @@
 {
-  "originHash" : "407df7387dd805dbe8b8d4c17043c21134ecd31755390be6b7d7a19fb6928c9d",
+  "originHash" : "a725dd3b3c2814da2e14f004260d6cff59b8f667414b7194d1934614701b8ba3",
   "pins" : [
     {
       "identity" : "combine-schedulers",
@@ -78,8 +78,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/pointfreeco/swift-snapshot-testing",
       "state" : {
-        "revision" : "ad5e3190cc63dc288f28546f9c6827efc1e9d495",
-        "version" : "1.19.2"
+        "revision" : "bf8d8c27f0f0c6d5e77bff0db76ab68f2050d15d",
+        "version" : "1.18.9"
       }
     },
     {
@@ -89,15 +89,6 @@
       "state" : {
         "revision" : "4799286537280063c85a32f09884cfbca301b1a1",
         "version" : "602.0.0"
-      }
-    },
-    {
-      "identity" : "swift-testing",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/swiftlang/swift-testing.git",
-      "state" : {
-        "revision" : "48a471ab313e858258ab0b9b0bf2cea55a50cefb",
-        "version" : "6.2.3"
       }
     },
     {

@@ -1,32 +1,48 @@
 #if os(macOS)
   import InstantSwiftDataMacros
-  import SwiftDiagnostics
-  import SwiftParser
-  import SwiftSyntax
-  import SwiftSyntaxMacroExpansion
-  import SwiftSyntaxMacros
-  import Testing
+  import MacroTesting
+  import XCTest
 
-  @Suite(.serialized)
-  struct InstantEntityMacroTests {
-    @Test
-    func defaultNamespace() {
-      let result = expand(
+  final class InstantEntityMacroTests: XCTestCase {
+    override func invokeTest() {
+      withMacroTesting(
+        record: .failed,
+        macros: [
+          "InstantEntity": InstantEntityMacro.self,
+          "InstantRelation": InstantRelationMacro.self,
+        ]
+      ) {
+        super.invokeTest()
+      }
+    }
+
+    func testDefaultNamespace() {
+      assertMacro {
         """
         @InstantEntity
         struct Todo {
         }
         """
-      )
+      } expansion: {
+        """
+        struct Todo {
 
-      #expect(result.expanded.contains(#"public static var instantNamespace: String"#))
-      #expect(result.expanded.contains(#""todos""#))
-      #expect(result.diagnostics.isEmpty)
+            public static var instantNamespace: String {
+              "todos"
+            }
+
+            public static var instantAttributes: [InstantAttribute] {
+              [
+
+              ]
+            }
+        }
+        """
+      }
     }
 
-    @Test
-    func defaultPluralization() {
-      let result = expand(
+    func testDefaultPluralization() {
+      assertMacro {
         """
         @InstantEntity
         struct Category {
@@ -40,31 +56,75 @@
         struct Brush {
         }
         """
-      )
+      } expansion: {
+        """
+        struct Category {
 
-      #expect(result.expanded.contains(#""categories""#))
-      #expect(result.expanded.contains(#""boxes""#))
-      #expect(result.expanded.contains(#""brushes""#))
-      #expect(result.diagnostics.isEmpty)
+            public static var instantNamespace: String {
+              "categories"
+            }
+
+            public static var instantAttributes: [InstantAttribute] {
+              [
+
+              ]
+            }
+        }
+        struct Box {
+
+            public static var instantNamespace: String {
+              "boxes"
+            }
+
+            public static var instantAttributes: [InstantAttribute] {
+              [
+
+              ]
+            }
+        }
+        struct Brush {
+
+            public static var instantNamespace: String {
+              "brushes"
+            }
+
+            public static var instantAttributes: [InstantAttribute] {
+              [
+
+              ]
+            }
+        }
+        """
+      }
     }
 
-    @Test
-    func manualNamespace() {
-      let result = expand(
+    func testManualNamespace() {
+      assertMacro {
         """
         @InstantEntity("people")
         struct Person {
         }
         """
-      )
+      } expansion: {
+        """
+        struct Person {
 
-      #expect(result.expanded.contains(#""people""#))
-      #expect(result.diagnostics.isEmpty)
+            public static var instantNamespace: String {
+              "people"
+            }
+
+            public static var instantAttributes: [InstantAttribute] {
+              [
+
+              ]
+            }
+        }
+        """
+      }
     }
 
-    @Test
-    func generatedDraft() {
-      let result = expand(
+    func testGeneratedDraft() {
+      assertMacro {
         """
         @InstantEntity
         struct Todo {
@@ -88,55 +148,225 @@
           }
         }
         """
-      )
+      } expansion: {
+        """
+        struct Todo {
+          var id: InstantID<Todo>
+          var text: String
+          var isCompleted: Bool = false
+          var isFlagged = false
+          var notes: String?
+          var category: Optional<String>
+          var owner: Swift.Optional<String>
+          var createdAt: Date
+          var localTags: [String]
+          let createdBy: String
+          let metadata = ["local"]
+          let ignoredA = 1, ignoredB = 2
 
-      #expect(result.expanded.contains("public struct Draft: InstantEntityDraft"))
-      #expect(!result.expanded.contains("public struct Draft: Identifiable"))
-      #expect(!result.expanded.contains("public struct Draft: InstantEntityDraft, Identifiable"))
-      #expect(result.expanded.contains("public typealias Entity = Todo"))
-      #expect(result.expanded.contains("public var id: Todo.ID? = nil"))
-      #expect(result.expanded.contains("public var text: String"))
-      #expect(result.expanded.contains("public var isCompleted: Bool"))
-      #expect(result.expanded.contains("public var isFlagged: Bool"))
-      #expect(result.expanded.contains("public var notes: String?"))
-      #expect(result.expanded.contains("public var category: Optional<String>"))
-      #expect(result.expanded.contains("public var owner: Swift.Optional<String>"))
-      #expect(result.expanded.contains("isCompleted: Bool = false"))
-      #expect(result.expanded.contains("isFlagged: Bool = false"))
-      #expect(result.expanded.contains("notes: String? = nil"))
-      #expect(result.expanded.contains("category: Optional<String> = nil"))
-      #expect(result.expanded.contains("owner: Swift.Optional<String> = nil"))
-      #expect(result.expanded.contains("public init(_ entity: Todo)"))
-      #expect(result.expanded.contains("self.id = entity.id"))
-      #expect(result.expanded.contains("self.text = entity.text"))
-      #expect(result.expanded.contains("self.createdAt = entity.createdAt"))
-      #expect(result.expanded.contains(#"name: "text""#))
-      #expect(result.expanded.contains(#"name: "notes""#))
-      #expect(result.expanded.contains(#"name: "category""#))
-      #expect(result.expanded.contains(#"name: "owner""#))
-      #expect(result.expanded.contains("attributeID: Todo.instantAttributes"))
-      #expect(result.expanded.contains(#"$0.name == "text""#))
-      #expect(result.expanded.contains(#"?? Todo.instantNamespace + "/text""#))
-      #expect(result.expanded.contains("value: self.text.instantValue"))
-      #expect(!result.expanded.contains(#"name: "id""#))
-      #expect(!result.expanded.contains("value: self.id.instantValue"))
-      #expect(!result.expanded.contains(#"public var localTags"#))
-      #expect(!result.expanded.contains(#"name: "localTags""#))
-      #expect(!result.expanded.contains(#"self.localTags"#))
-      #expect(!result.expanded.contains(#"public var createdBy"#))
-      #expect(!result.expanded.contains(#"name: "createdBy""#))
-      #expect(!result.expanded.contains(#"self.createdBy"#))
-      #expect(!result.expanded.contains(#"public var metadata"#))
-      #expect(!result.expanded.contains(#"public var ignoredA"#))
-      #expect(!result.expanded.contains(#"public var ignoredB"#))
-      #expect(!result.expanded.contains(#"name: "ignored""#))
-      #expect(!result.expanded.contains(#"name: "computed""#))
-      #expect(result.diagnostics.isEmpty)
+          static let ignored = InstantAttributePath<Todo, String>("ignored")
+
+          var computed: String {
+            text
+          }
+
+          public static var instantNamespace: String {
+            "todos"
+          }
+
+          public static let text = InstantAttributePath<Todo, String>("text")
+
+          public static let isCompleted = InstantAttributePath<Todo, Bool>("isCompleted")
+
+          public static let isFlagged = InstantAttributePath<Todo, Bool>("isFlagged")
+
+          public static let notes = InstantAttributePath<Todo, String?>("notes")
+
+          public static let category = InstantAttributePath<Todo, Optional<String>>("category")
+
+          public static let owner = InstantAttributePath<Todo, Swift.Optional<String>>("owner")
+
+          public static let createdAt = InstantAttributePath<Todo, Date>("createdAt")
+
+          public static var instantAttributes: [InstantAttribute] {
+            [
+                InstantAttribute(
+                  id: Todo.text.attributeID,
+                  namespace: Todo.instantNamespace,
+                  name: Todo.text.name,
+                  valueType: .string,
+                  isRequired: true,
+                  isIndexed: true
+                ),
+                InstantAttribute(
+                  id: Todo.isCompleted.attributeID,
+                  namespace: Todo.instantNamespace,
+                  name: Todo.isCompleted.name,
+                  valueType: .boolean,
+                  isRequired: true,
+                  isIndexed: true
+                ),
+                InstantAttribute(
+                  id: Todo.isFlagged.attributeID,
+                  namespace: Todo.instantNamespace,
+                  name: Todo.isFlagged.name,
+                  valueType: .boolean,
+                  isRequired: true,
+                  isIndexed: true
+                ),
+                InstantAttribute(
+                  id: Todo.notes.attributeID,
+                  namespace: Todo.instantNamespace,
+                  name: Todo.notes.name,
+                  valueType: .string,
+                  isRequired: false,
+                  isIndexed: true
+                ),
+                InstantAttribute(
+                  id: Todo.category.attributeID,
+                  namespace: Todo.instantNamespace,
+                  name: Todo.category.name,
+                  valueType: .string,
+                  isRequired: false,
+                  isIndexed: true
+                ),
+                InstantAttribute(
+                  id: Todo.owner.attributeID,
+                  namespace: Todo.instantNamespace,
+                  name: Todo.owner.name,
+                  valueType: .string,
+                  isRequired: false,
+                  isIndexed: true
+                ),
+                InstantAttribute(
+                  id: Todo.createdAt.attributeID,
+                  namespace: Todo.instantNamespace,
+                  name: Todo.createdAt.name,
+                  valueType: .date,
+                  isRequired: true,
+                  isIndexed: true
+                )
+            ]
+          }
+
+          public struct Draft: InstantEntityDraft {
+            public typealias Entity = Todo
+            public var id: Todo.ID? = nil
+
+            public var text: String
+            public var isCompleted: Bool
+            public var isFlagged: Bool
+            public var notes: String?
+            public var category: Optional<String>
+            public var owner: Swift.Optional<String>
+            public var createdAt: Date
+
+            public init(
+              id: Todo.ID? = nil,
+              text: String,
+              isCompleted: Bool = false,
+              isFlagged: Bool = false,
+              notes: String? = nil,
+              category: Optional<String> = nil,
+              owner: Swift.Optional<String> = nil,
+              createdAt: Date
+            ) {
+              self.id = id
+              self.text = text
+              self.isCompleted = isCompleted
+              self.isFlagged = isFlagged
+              self.notes = notes
+              self.category = category
+              self.owner = owner
+              self.createdAt = createdAt
+            }
+
+            public init(_ entity: Todo) {
+              self.id = entity.id
+              self.text = entity.text
+              self.isCompleted = entity.isCompleted
+              self.isFlagged = entity.isFlagged
+              self.notes = entity.notes
+              self.category = entity.category
+              self.owner = entity.owner
+              self.createdAt = entity.createdAt
+            }
+
+            public var instantAssignments: [InstantAttributeAssignment<Todo>] {
+              [
+              InstantAttributeAssignment<Todo>(
+                name: "text",
+                attributeID: Todo.instantAttributes
+                  .first(where: {
+                    $0.name == "text"
+                  })?.id
+                  ?? Todo.instantNamespace + "/text",
+                value: self.text.instantValue
+              ),
+              InstantAttributeAssignment<Todo>(
+                name: "isCompleted",
+                attributeID: Todo.instantAttributes
+                  .first(where: {
+                    $0.name == "isCompleted"
+                  })?.id
+                  ?? Todo.instantNamespace + "/isCompleted",
+                value: self.isCompleted.instantValue
+              ),
+              InstantAttributeAssignment<Todo>(
+                name: "isFlagged",
+                attributeID: Todo.instantAttributes
+                  .first(where: {
+                    $0.name == "isFlagged"
+                  })?.id
+                  ?? Todo.instantNamespace + "/isFlagged",
+                value: self.isFlagged.instantValue
+              ),
+              InstantAttributeAssignment<Todo>(
+                name: "notes",
+                attributeID: Todo.instantAttributes
+                  .first(where: {
+                    $0.name == "notes"
+                  })?.id
+                  ?? Todo.instantNamespace + "/notes",
+                value: self.notes.instantValue
+              ),
+              InstantAttributeAssignment<Todo>(
+                name: "category",
+                attributeID: Todo.instantAttributes
+                  .first(where: {
+                    $0.name == "category"
+                  })?.id
+                  ?? Todo.instantNamespace + "/category",
+                value: self.category.instantValue
+              ),
+              InstantAttributeAssignment<Todo>(
+                name: "owner",
+                attributeID: Todo.instantAttributes
+                  .first(where: {
+                    $0.name == "owner"
+                  })?.id
+                  ?? Todo.instantNamespace + "/owner",
+                value: self.owner.instantValue
+              ),
+              InstantAttributeAssignment<Todo>(
+                name: "createdAt",
+                attributeID: Todo.instantAttributes
+                  .first(where: {
+                    $0.name == "createdAt"
+                  })?.id
+                  ?? Todo.instantNamespace + "/createdAt",
+                value: self.createdAt.instantValue
+              )
+              ]
+            }
+          }
+        }
+        """
+      }
     }
 
-    @Test
-    func generatedDraftRequiresInstantPrimaryKey() {
-      let result = expand(
+    func testGeneratedDraftRequiresInstantPrimaryKey() {
+      assertMacro {
         """
         @InstantEntity
         struct Todo {
@@ -151,16 +381,61 @@
           var text: String
         }
         """
-      )
+      } expansion: {
+        """
+        struct Todo {
+          var id: String
+          var text: String
 
-      #expect(!result.expanded.contains("public struct Draft"))
-      #expect(result.expanded.contains("public static let text"))
-      #expect(result.diagnostics.isEmpty)
+          public static var instantNamespace: String {
+            "todos"
+          }
+
+          public static let text = InstantAttributePath<Todo, String>("text")
+
+          public static var instantAttributes: [InstantAttribute] {
+            [
+                InstantAttribute(
+                  id: Todo.text.attributeID,
+                  namespace: Todo.instantNamespace,
+                  name: Todo.text.name,
+                  valueType: .string,
+                  isRequired: true,
+                  isIndexed: true
+                )
+            ]
+          }
+        }
+        struct LegacyTodo {
+          typealias ID = String
+          var id: ID
+          var text: String
+
+          public static var instantNamespace: String {
+            "legacyTodos"
+          }
+
+          public static let text = InstantAttributePath<LegacyTodo, String>("text")
+
+          public static var instantAttributes: [InstantAttribute] {
+            [
+                InstantAttribute(
+                  id: LegacyTodo.text.attributeID,
+                  namespace: LegacyTodo.instantNamespace,
+                  name: LegacyTodo.text.name,
+                  valueType: .string,
+                  isRequired: true,
+                  isIndexed: true
+                )
+            ]
+          }
+        }
+        """
+      }
     }
 
-    @Test
-    func generatedDraftAcceptsInstantPrimaryKeyAliases() {
-      let result = expand(
+    func testGeneratedDraftAcceptsInstantPrimaryKeyAliases() {
+      assertMacro {
         """
         @InstantEntity
         struct Todo {
@@ -190,19 +465,246 @@
           var email: String
         }
         """
-      )
+      } expansion: {
+        """
+        struct Todo {
+          typealias ID = InstantID<Todo>
+          var id: ID
+          var text: String
 
-      #expect(result.expanded.components(separatedBy: "public struct Draft").count - 1 == 4)
-      #expect(result.expanded.contains("public var id: Todo.ID? = nil"))
-      #expect(result.expanded.contains("public var id: Project.ID? = nil"))
-      #expect(result.expanded.contains("public var id: Profile.ID? = nil"))
-      #expect(result.expanded.contains("public var id: Contact.ID? = nil"))
-      #expect(result.diagnostics.isEmpty)
+          public static var instantNamespace: String {
+            "todos"
+          }
+
+          public static let text = InstantAttributePath<Todo, String>("text")
+
+          public static var instantAttributes: [InstantAttribute] {
+            [
+                InstantAttribute(
+                  id: Todo.text.attributeID,
+                  namespace: Todo.instantNamespace,
+                  name: Todo.text.name,
+                  valueType: .string,
+                  isRequired: true,
+                  isIndexed: true
+                )
+            ]
+          }
+
+          public struct Draft: InstantEntityDraft {
+            public typealias Entity = Todo
+            public var id: Todo.ID? = nil
+
+            public var text: String
+
+            public init(
+              id: Todo.ID? = nil,
+              text: String
+            ) {
+              self.id = id
+              self.text = text
+            }
+
+            public init(_ entity: Todo) {
+              self.id = entity.id
+              self.text = entity.text
+            }
+
+            public var instantAssignments: [InstantAttributeAssignment<Todo>] {
+              [
+              InstantAttributeAssignment<Todo>(
+                name: "text",
+                attributeID: Todo.instantAttributes
+                  .first(where: {
+                    $0.name == "text"
+                  })?.id
+                  ?? Todo.instantNamespace + "/text",
+                value: self.text.instantValue
+              )
+              ]
+            }
+          }
+        }
+        struct Project {
+          typealias ID = InstantID<Project>
+          var id: Project.ID
+          var title: String
+
+          public static var instantNamespace: String {
+            "projects"
+          }
+
+          public static let title = InstantAttributePath<Project, String>("title")
+
+          public static var instantAttributes: [InstantAttribute] {
+            [
+                InstantAttribute(
+                  id: Project.title.attributeID,
+                  namespace: Project.instantNamespace,
+                  name: Project.title.name,
+                  valueType: .string,
+                  isRequired: true,
+                  isIndexed: true
+                )
+            ]
+          }
+
+          public struct Draft: InstantEntityDraft {
+            public typealias Entity = Project
+            public var id: Project.ID? = nil
+
+            public var title: String
+
+            public init(
+              id: Project.ID? = nil,
+              title: String
+            ) {
+              self.id = id
+              self.title = title
+            }
+
+            public init(_ entity: Project) {
+              self.id = entity.id
+              self.title = entity.title
+            }
+
+            public var instantAssignments: [InstantAttributeAssignment<Project>] {
+              [
+              InstantAttributeAssignment<Project>(
+                name: "title",
+                attributeID: Project.instantAttributes
+                  .first(where: {
+                    $0.name == "title"
+                  })?.id
+                  ?? Project.instantNamespace + "/title",
+                value: self.title.instantValue
+              )
+              ]
+            }
+          }
+        }
+        struct Profile {
+          typealias ID = InstantID<Profile>
+          var id: Self.ID
+          var name: String
+
+          public static var instantNamespace: String {
+            "profiles"
+          }
+
+          public static let name = InstantAttributePath<Profile, String>("name")
+
+          public static var instantAttributes: [InstantAttribute] {
+            [
+                InstantAttribute(
+                  id: Profile.name.attributeID,
+                  namespace: Profile.instantNamespace,
+                  name: Profile.name.name,
+                  valueType: .string,
+                  isRequired: true,
+                  isIndexed: true
+                )
+            ]
+          }
+
+          public struct Draft: InstantEntityDraft {
+            public typealias Entity = Profile
+            public var id: Profile.ID? = nil
+
+            public var name: String
+
+            public init(
+              id: Profile.ID? = nil,
+              name: String
+            ) {
+              self.id = id
+              self.name = name
+            }
+
+            public init(_ entity: Profile) {
+              self.id = entity.id
+              self.name = entity.name
+            }
+
+            public var instantAssignments: [InstantAttributeAssignment<Profile>] {
+              [
+              InstantAttributeAssignment<Profile>(
+                name: "name",
+                attributeID: Profile.instantAttributes
+                  .first(where: {
+                    $0.name == "name"
+                  })?.id
+                  ?? Profile.instantNamespace + "/name",
+                value: self.name.instantValue
+              )
+              ]
+            }
+          }
+        }
+        struct Contact {
+          typealias ID = InstantID<Self>
+          var id: ID
+          var email: String
+
+          public static var instantNamespace: String {
+            "contacts"
+          }
+
+          public static let email = InstantAttributePath<Contact, String>("email")
+
+          public static var instantAttributes: [InstantAttribute] {
+            [
+                InstantAttribute(
+                  id: Contact.email.attributeID,
+                  namespace: Contact.instantNamespace,
+                  name: Contact.email.name,
+                  valueType: .string,
+                  isRequired: true,
+                  isIndexed: true
+                )
+            ]
+          }
+
+          public struct Draft: InstantEntityDraft {
+            public typealias Entity = Contact
+            public var id: Contact.ID? = nil
+
+            public var email: String
+
+            public init(
+              id: Contact.ID? = nil,
+              email: String
+            ) {
+              self.id = id
+              self.email = email
+            }
+
+            public init(_ entity: Contact) {
+              self.id = entity.id
+              self.email = entity.email
+            }
+
+            public var instantAssignments: [InstantAttributeAssignment<Contact>] {
+              [
+              InstantAttributeAssignment<Contact>(
+                name: "email",
+                attributeID: Contact.instantAttributes
+                  .first(where: {
+                    $0.name == "email"
+                  })?.id
+                  ?? Contact.instantNamespace + "/email",
+                value: self.email.instantValue
+              )
+              ]
+            }
+          }
+        }
+        """
+      }
     }
 
-    @Test
-    func generatedSchemaHelpers() {
-      let result = expand(
+    func testGeneratedSchemaHelpers() {
+      assertMacro {
         """
         @InstantEntity
         struct Todo {
@@ -218,52 +720,199 @@
           static let manuallyDeclared = InstantAttributePath<Todo, String>("manuallyDeclared")
         }
         """
-      )
+      } expansion: {
+        """
+        struct Todo {
+          var id: InstantID<Todo>
+          var text: String
+          var isCompleted = false
+          var count: Int
+          var dueAt: Date?
+          var metadata: JSONValue
+          var owner: InstantID<User>
+          var unsupported: [String]
 
-      #expect(result.expanded.contains(#"public static let text = InstantAttributePath<Todo, String>("text")"#))
-      #expect(
-        result.expanded.contains(
-          #"public static let isCompleted = InstantAttributePath<Todo, Bool>("isCompleted")"#
-        )
-      )
-      #expect(result.expanded.contains(#"public static let count = InstantAttributePath<Todo, Int>("count")"#))
-      #expect(result.expanded.contains(#"public static let dueAt = InstantAttributePath<Todo, Date?>("dueAt")"#))
-      #expect(
-        result.expanded.contains(
-          #"public static let metadata = InstantAttributePath<Todo, JSONValue>("metadata")"#
-        )
-      )
-      #expect(
-        result.expanded.contains(
-          #"public static let owner = InstantAttributePath<Todo, InstantID<User>>("owner")"#
-        )
-      )
-      #expect(!result.expanded.contains("InstantAttributePath<Todo, [String]>"))
+          static let manuallyDeclared = InstantAttributePath<Todo, String>("manuallyDeclared")
 
-      let schemaHelpers = result.expanded.components(separatedBy: "public struct Draft").first ?? ""
-      #expect(result.expanded.contains("public static var instantAttributes: [InstantAttribute]"))
-      #expect(schemaHelpers.contains("id: Todo.text.attributeID"))
-      #expect(schemaHelpers.contains("name: Todo.text.name"))
-      #expect(schemaHelpers.contains("valueType: .string"))
-      #expect(schemaHelpers.contains("id: Todo.isCompleted.attributeID"))
-      #expect(schemaHelpers.contains("valueType: .boolean"))
-      #expect(schemaHelpers.contains("id: Todo.count.attributeID"))
-      #expect(schemaHelpers.contains("valueType: .number"))
-      #expect(schemaHelpers.contains("id: Todo.dueAt.attributeID"))
-      #expect(schemaHelpers.contains("valueType: .date"))
-      #expect(schemaHelpers.contains("isRequired: false"))
-      #expect(schemaHelpers.contains("id: Todo.metadata.attributeID"))
-      #expect(schemaHelpers.contains("valueType: .json"))
-      #expect(schemaHelpers.contains("id: Todo.owner.attributeID"))
-      #expect(schemaHelpers.contains("valueType: .ref"))
-      #expect(schemaHelpers.contains("linkNamespace: User.instantNamespace"))
-      #expect(!schemaHelpers.contains(#"name: "unsupported""#))
-      #expect(result.diagnostics.isEmpty)
+          public static var instantNamespace: String {
+            "todos"
+          }
+
+          public static let text = InstantAttributePath<Todo, String>("text")
+
+          public static let isCompleted = InstantAttributePath<Todo, Bool>("isCompleted")
+
+          public static let count = InstantAttributePath<Todo, Int>("count")
+
+          public static let dueAt = InstantAttributePath<Todo, Date?>("dueAt")
+
+          public static let metadata = InstantAttributePath<Todo, JSONValue>("metadata")
+
+          public static let owner = InstantAttributePath<Todo, InstantID<User>>("owner")
+
+          public static var instantAttributes: [InstantAttribute] {
+            [
+                InstantAttribute(
+                  id: Todo.text.attributeID,
+                  namespace: Todo.instantNamespace,
+                  name: Todo.text.name,
+                  valueType: .string,
+                  isRequired: true,
+                  isIndexed: true
+                ),
+                InstantAttribute(
+                  id: Todo.isCompleted.attributeID,
+                  namespace: Todo.instantNamespace,
+                  name: Todo.isCompleted.name,
+                  valueType: .boolean,
+                  isRequired: true,
+                  isIndexed: true
+                ),
+                InstantAttribute(
+                  id: Todo.count.attributeID,
+                  namespace: Todo.instantNamespace,
+                  name: Todo.count.name,
+                  valueType: .number,
+                  isRequired: true,
+                  isIndexed: true
+                ),
+                InstantAttribute(
+                  id: Todo.dueAt.attributeID,
+                  namespace: Todo.instantNamespace,
+                  name: Todo.dueAt.name,
+                  valueType: .date,
+                  isRequired: false,
+                  isIndexed: true
+                ),
+                InstantAttribute(
+                  id: Todo.metadata.attributeID,
+                  namespace: Todo.instantNamespace,
+                  name: Todo.metadata.name,
+                  valueType: .json,
+                  isRequired: true,
+                  isIndexed: true
+                ),
+                InstantAttribute(
+                  id: Todo.owner.attributeID,
+                  namespace: Todo.instantNamespace,
+                  name: Todo.owner.name,
+                  valueType: .ref,
+                  isRequired: true,
+                  isIndexed: true,
+                  isUnique: false,
+                  forwardIdentity: nil,
+                  reverseIdentity: nil,
+                  primaryKey: false,
+                  linkNamespace: User.instantNamespace
+                )
+            ]
+          }
+
+          public struct Draft: InstantEntityDraft {
+            public typealias Entity = Todo
+            public var id: Todo.ID? = nil
+
+            public var text: String
+            public var isCompleted: Bool
+            public var count: Int
+            public var dueAt: Date?
+            public var metadata: JSONValue
+            public var owner: InstantID<User>
+
+            public init(
+              id: Todo.ID? = nil,
+              text: String,
+              isCompleted: Bool = false,
+              count: Int,
+              dueAt: Date? = nil,
+              metadata: JSONValue,
+              owner: InstantID<User>
+            ) {
+              self.id = id
+              self.text = text
+              self.isCompleted = isCompleted
+              self.count = count
+              self.dueAt = dueAt
+              self.metadata = metadata
+              self.owner = owner
+            }
+
+            public init(_ entity: Todo) {
+              self.id = entity.id
+              self.text = entity.text
+              self.isCompleted = entity.isCompleted
+              self.count = entity.count
+              self.dueAt = entity.dueAt
+              self.metadata = entity.metadata
+              self.owner = entity.owner
+            }
+
+            public var instantAssignments: [InstantAttributeAssignment<Todo>] {
+              [
+              InstantAttributeAssignment<Todo>(
+                name: "text",
+                attributeID: Todo.instantAttributes
+                  .first(where: {
+                    $0.name == "text"
+                  })?.id
+                  ?? Todo.instantNamespace + "/text",
+                value: self.text.instantValue
+              ),
+              InstantAttributeAssignment<Todo>(
+                name: "isCompleted",
+                attributeID: Todo.instantAttributes
+                  .first(where: {
+                    $0.name == "isCompleted"
+                  })?.id
+                  ?? Todo.instantNamespace + "/isCompleted",
+                value: self.isCompleted.instantValue
+              ),
+              InstantAttributeAssignment<Todo>(
+                name: "count",
+                attributeID: Todo.instantAttributes
+                  .first(where: {
+                    $0.name == "count"
+                  })?.id
+                  ?? Todo.instantNamespace + "/count",
+                value: self.count.instantValue
+              ),
+              InstantAttributeAssignment<Todo>(
+                name: "dueAt",
+                attributeID: Todo.instantAttributes
+                  .first(where: {
+                    $0.name == "dueAt"
+                  })?.id
+                  ?? Todo.instantNamespace + "/dueAt",
+                value: self.dueAt.instantValue
+              ),
+              InstantAttributeAssignment<Todo>(
+                name: "metadata",
+                attributeID: Todo.instantAttributes
+                  .first(where: {
+                    $0.name == "metadata"
+                  })?.id
+                  ?? Todo.instantNamespace + "/metadata",
+                value: self.metadata.instantValue
+              ),
+              InstantAttributeAssignment<Todo>(
+                name: "owner",
+                attributeID: Todo.instantAttributes
+                  .first(where: {
+                    $0.name == "owner"
+                  })?.id
+                  ?? Todo.instantNamespace + "/owner",
+                value: self.owner.instantValue
+              )
+              ]
+            }
+          }
+        }
+        """
+      }
     }
 
-    @Test
-    func generatedSchemaHelpersUseInstantRelationMetadata() {
-      let result = expand(
+    func testGeneratedSchemaHelpersUseInstantRelationMetadata() {
+      assertMacro {
         """
         @InstantEntity
         struct Post {
@@ -274,25 +923,100 @@
           var author: InstantID<User>
         }
         """
-      )
+      } expansion: {
+        """
+        struct Post {
+          var id: InstantID<Post>
+          var title: String
+          var author: InstantID<User>
 
-      #expect(
-        result.expanded.contains(
-          #"public static let author = InstantAttributePath<Post, InstantID<User>>("author")"#
-        )
-      )
-      #expect(result.expanded.contains("id: Post.author.attributeID"))
-      #expect(result.expanded.contains("name: Post.author.name"))
-      #expect(result.expanded.contains("valueType: .ref"))
-      #expect(result.expanded.contains("forwardIdentity: Post.author.attributeID"))
-      #expect(result.expanded.contains(#"reverseIdentity: User.instantNamespace + "/posts""#))
-      #expect(result.expanded.contains("linkNamespace: User.instantNamespace"))
-      #expect(result.diagnostics.isEmpty)
+          public static var instantNamespace: String {
+            "posts"
+          }
+
+          public static let title = InstantAttributePath<Post, String>("title")
+
+          public static let author = InstantAttributePath<Post, InstantID<User>>("author")
+
+          public static var instantAttributes: [InstantAttribute] {
+            [
+                InstantAttribute(
+                  id: Post.title.attributeID,
+                  namespace: Post.instantNamespace,
+                  name: Post.title.name,
+                  valueType: .string,
+                  isRequired: true,
+                  isIndexed: true
+                ),
+                InstantAttribute(
+                  id: Post.author.attributeID,
+                  namespace: Post.instantNamespace,
+                  name: Post.author.name,
+                  valueType: .ref,
+                  isRequired: true,
+                  isIndexed: true,
+                  isUnique: false,
+                  forwardIdentity: Post.author.attributeID,
+                  reverseIdentity: User.instantNamespace + "/posts",
+                  primaryKey: false,
+                  linkNamespace: User.instantNamespace
+                )
+            ]
+          }
+
+          public struct Draft: InstantEntityDraft {
+            public typealias Entity = Post
+            public var id: Post.ID? = nil
+
+            public var title: String
+            public var author: InstantID<User>
+
+            public init(
+              id: Post.ID? = nil,
+              title: String,
+              author: InstantID<User>
+            ) {
+              self.id = id
+              self.title = title
+              self.author = author
+            }
+
+            public init(_ entity: Post) {
+              self.id = entity.id
+              self.title = entity.title
+              self.author = entity.author
+            }
+
+            public var instantAssignments: [InstantAttributeAssignment<Post>] {
+              [
+              InstantAttributeAssignment<Post>(
+                name: "title",
+                attributeID: Post.instantAttributes
+                  .first(where: {
+                    $0.name == "title"
+                  })?.id
+                  ?? Post.instantNamespace + "/title",
+                value: self.title.instantValue
+              ),
+              InstantAttributeAssignment<Post>(
+                name: "author",
+                attributeID: Post.instantAttributes
+                  .first(where: {
+                    $0.name == "author"
+                  })?.id
+                  ?? Post.instantNamespace + "/author",
+                value: self.author.instantValue
+              )
+              ]
+            }
+          }
+        }
+        """
+      }
     }
 
-    @Test
-    func instantRelationRequiresRefAttributeDiagnostic() {
-      let result = expand(
+    func testInstantRelationRequiresRefAttributeDiagnostic() {
+      assertMacro {
         """
         @InstantEntity
         struct Todo {
@@ -302,42 +1026,101 @@
           var title: String
         }
         """
-      )
+      } diagnostics: {
+        """
+        @InstantEntity
+        ╰─ 🛑 Stored property 'title' uses @InstantRelation, but it is not an Instant ref attribute.
+        struct Todo {
+          var id: InstantID<Todo>
 
-      #expect(
-        result.diagnostics.contains(
-          MacroDiagnostic(
-            message: "Stored property 'title' uses @InstantRelation, but it is not an Instant ref attribute.",
-            severity: .error
-          )
-        )
-      )
-      #expect(result.diagnostics.count == 1)
+          @InstantRelation(reverse: "todos")
+          var title: String
+        }
+        """
+      }
     }
 
-    @Test
-    func instantRelationEscapesReverseNameLiteral() {
-      let result = expand(
-        """
+    func testInstantRelationEscapesReverseNameLiteral() {
+      assertMacro {
+        #"""
         @InstantEntity
         struct Post {
           var id: InstantID<Post>
 
-          @InstantRelation(reverse: "po\\"sts")
+          @InstantRelation(reverse: "po\"sts")
           var author: InstantID<User>
         }
-        """
-      )
+        """#
+      } expansion: {
+        #"""
+        struct Post {
+          var id: InstantID<Post>
+          var author: InstantID<User>
 
-      #expect(
-        result.expanded.contains("reverseIdentity: User.instantNamespace + \"/po\\\"sts\"")
-      )
-      #expect(result.diagnostics.isEmpty)
+          public static var instantNamespace: String {
+            "posts"
+          }
+
+          public static let author = InstantAttributePath<Post, InstantID<User>>("author")
+
+          public static var instantAttributes: [InstantAttribute] {
+            [
+                InstantAttribute(
+                  id: Post.author.attributeID,
+                  namespace: Post.instantNamespace,
+                  name: Post.author.name,
+                  valueType: .ref,
+                  isRequired: true,
+                  isIndexed: true,
+                  isUnique: false,
+                  forwardIdentity: Post.author.attributeID,
+                  reverseIdentity: User.instantNamespace + "/po\"sts",
+                  primaryKey: false,
+                  linkNamespace: User.instantNamespace
+                )
+            ]
+          }
+
+          public struct Draft: InstantEntityDraft {
+            public typealias Entity = Post
+            public var id: Post.ID? = nil
+
+            public var author: InstantID<User>
+
+            public init(
+              id: Post.ID? = nil,
+              author: InstantID<User>
+            ) {
+              self.id = id
+              self.author = author
+            }
+
+            public init(_ entity: Post) {
+              self.id = entity.id
+              self.author = entity.author
+            }
+
+            public var instantAssignments: [InstantAttributeAssignment<Post>] {
+              [
+              InstantAttributeAssignment<Post>(
+                name: "author",
+                attributeID: Post.instantAttributes
+                  .first(where: {
+                    $0.name == "author"
+                  })?.id
+                  ?? Post.instantNamespace + "/author",
+                value: self.author.instantValue
+              )
+              ]
+            }
+          }
+        }
+        """#
+      }
     }
 
-    @Test
-    func instantRelationRequiresReverseNameDiagnostic() {
-      let result = expand(
+    func testInstantRelationRequiresReverseNameDiagnostic() {
+      assertMacro {
         """
         @InstantEntity
         struct Post {
@@ -347,22 +1130,23 @@
           var author: InstantID<User>
         }
         """
-      )
+      } diagnostics: {
+        """
+        @InstantEntity
+        struct Post {
+          var id: InstantID<Post>
 
-      #expect(
-        result.diagnostics.contains(
-          MacroDiagnostic(
-            message: #"@InstantRelation requires a non-empty string literal reverse name, for example @InstantRelation(reverse: "posts")."#,
-            severity: .error
-          )
-        )
-      )
-      #expect(result.diagnostics.count == 1)
+          @InstantRelation(reverse: "")
+          ┬────────────────────────────
+          ╰─ 🛑 @InstantRelation requires a non-empty string literal reverse name, for example @InstantRelation(reverse: "posts").
+          var author: InstantID<User>
+        }
+        """
+      }
     }
 
-    @Test
-    func generatedSchemaHelpersUseManualAttributePaths() {
-      let result = expand(
+    func testGeneratedSchemaHelpersUseManualAttributePaths() {
+      assertMacro {
         """
         @InstantEntity
         struct Todo {
@@ -375,17 +1159,74 @@
           )
         }
         """
-      )
+      } expansion: {
+        """
+        struct Todo {
+          var id: InstantID<Todo>
+          var title: String
 
-      #expect(result.expanded.components(separatedBy: "static let title =").count - 1 == 1)
-      #expect(result.expanded.contains("id: Todo.title.attributeID"))
-      #expect(result.expanded.contains("name: Todo.title.name"))
-      #expect(result.diagnostics.isEmpty)
+          static let title = InstantAttributePath<Todo, String>(
+            "title",
+            attributeID: "todos/body"
+          )
+
+          public static var instantNamespace: String {
+            "todos"
+          }
+
+          public static var instantAttributes: [InstantAttribute] {
+            [
+                InstantAttribute(
+                  id: Todo.title.attributeID,
+                  namespace: Todo.instantNamespace,
+                  name: Todo.title.name,
+                  valueType: .string,
+                  isRequired: true,
+                  isIndexed: true
+                )
+            ]
+          }
+
+          public struct Draft: InstantEntityDraft {
+            public typealias Entity = Todo
+            public var id: Todo.ID? = nil
+
+            public var title: String
+
+            public init(
+              id: Todo.ID? = nil,
+              title: String
+            ) {
+              self.id = id
+              self.title = title
+            }
+
+            public init(_ entity: Todo) {
+              self.id = entity.id
+              self.title = entity.title
+            }
+
+            public var instantAssignments: [InstantAttributeAssignment<Todo>] {
+              [
+              InstantAttributeAssignment<Todo>(
+                name: "title",
+                attributeID: Todo.instantAttributes
+                  .first(where: {
+                    $0.name == "title"
+                  })?.id
+                  ?? Todo.instantNamespace + "/title",
+                value: self.title.instantValue
+              )
+              ]
+            }
+          }
+        }
+        """
+      }
     }
 
-    @Test
-    func generatedSchemaHelpersRespectManualDeclarations() {
-      let result = expand(
+    func testGeneratedSchemaHelpersRespectManualDeclarations() {
+      assertMacro {
         """
         @InstantEntity
         struct Todo {
@@ -400,17 +1241,63 @@
           static let instantAttributes: [InstantAttribute] = []
         }
         """
-      )
+      } expansion: {
+        """
+        struct Todo {
+          var id: InstantID<Todo>
+          var text: String
 
-      #expect(result.expanded.components(separatedBy: "static let text =").count - 1 == 1)
-      #expect(result.expanded.components(separatedBy: "static let instantAttributes").count == 2)
-      #expect(!result.expanded.contains("public static var instantAttributes"))
-      #expect(result.diagnostics.isEmpty)
+          static let text = InstantAttributePath<Todo, String>(
+            "text",
+            attributeID: "todos/body"
+          )
+
+          static let instantAttributes: [InstantAttribute] = []
+
+          public static var instantNamespace: String {
+            "todos"
+          }
+
+          public struct Draft: InstantEntityDraft {
+            public typealias Entity = Todo
+            public var id: Todo.ID? = nil
+
+            public var text: String
+
+            public init(
+              id: Todo.ID? = nil,
+              text: String
+            ) {
+              self.id = id
+              self.text = text
+            }
+
+            public init(_ entity: Todo) {
+              self.id = entity.id
+              self.text = entity.text
+            }
+
+            public var instantAssignments: [InstantAttributeAssignment<Todo>] {
+              [
+              InstantAttributeAssignment<Todo>(
+                name: "text",
+                attributeID: Todo.instantAttributes
+                  .first(where: {
+                    $0.name == "text"
+                  })?.id
+                  ?? Todo.instantNamespace + "/text",
+                value: self.text.instantValue
+              )
+              ]
+            }
+          }
+        }
+        """
+      }
     }
 
-    @Test
-    func reservedGeneratedSchemaHelperNameDiagnostic() {
-      let result = expand(
+    func testReservedGeneratedSchemaHelperNameDiagnostic() {
+      assertMacro {
         """
         @InstantEntity
         struct Todo {
@@ -418,23 +1305,24 @@
           var query: String
         }
         """
-      )
+      } diagnostics: {
+        """
+        @InstantEntity
+        ╰─ 🛑 Stored property 'query' uses a name reserved by @InstantEntity generated helpers.
+        struct Todo {
+          var id: InstantID<Todo>
+          var query: String
+        }
+        """
+      } expansion: {
+        """
 
-      #expect(!result.expanded.contains("public static let query"))
-      #expect(
-        result.diagnostics.contains(
-          MacroDiagnostic(
-            message: "Stored property 'query' uses a name reserved by @InstantEntity generated helpers.",
-            severity: .error
-          )
-        )
-      )
-      #expect(result.diagnostics.count == 1)
+        """
+      }
     }
 
-    @Test
-    func inferredDraftPropertyDiagnostic() {
-      let result = expand(
+    func testInferredDraftPropertyDiagnostic() {
+      assertMacro {
         """
         @InstantEntity
         struct Todo {
@@ -442,22 +1330,21 @@
           var tags = ["swift"]
         }
         """
-      )
-
-      #expect(
-        result.diagnostics.contains(
-          MacroDiagnostic(
-            message: "Stored property 'tags' needs an explicit type annotation for @InstantEntity draft generation.",
-            severity: .error
-          )
-        )
-      )
-      #expect(result.diagnostics.count == 1)
+      } diagnostics: {
+        """
+        @InstantEntity
+        struct Todo {
+          var id: InstantID<Todo>
+          var tags = ["swift"]
+              ┬───
+              ╰─ 🛑 Stored property 'tags' needs an explicit type annotation for @InstantEntity draft generation.
+        }
+        """
+      }
     }
 
-    @Test
-    func multiBindingDraftPropertyDiagnostic() {
-      let result = expand(
+    func testMultiBindingDraftPropertyDiagnostic() {
+      assertMacro {
         """
         @InstantEntity
         struct Todo {
@@ -465,103 +1352,72 @@
           var count = 0, title = "Untitled"
         }
         """
-      )
-
-      #expect(
-        result.diagnostics.contains(
-          MacroDiagnostic(
-            message: "@InstantEntity draft generation requires one stored property per var declaration.",
-            severity: .error
-          )
-        )
-      )
-      #expect(result.diagnostics.count == 1)
+      } diagnostics: {
+        """
+        @InstantEntity
+        struct Todo {
+          var id: InstantID<Todo>
+          var count = 0, title = "Untitled"
+          ┬────────────────────────────────
+          ╰─ 🛑 @InstantEntity draft generation requires one stored property per var declaration.
+        }
+        """
+      }
     }
 
-    @Test
-    func redundantNamespaceDiagnostic() {
-      let result = expand(
+    func testRedundantNamespaceDiagnostic() {
+      assertMacro {
         """
         @InstantEntity("todos")
         struct Todo {
         }
         """
-      )
+      } diagnostics: {
+        """
+        @InstantEntity("todos")
+        ┬──────────────────────
+        ╰─ ⚠️ @InstantEntity("todos") is redundant; omit the argument to use the default namespace.
+        struct Todo {
+        }
+        """
+      } expansion: {
+        """
+        struct Todo {
 
-      #expect(result.expanded.contains(#""todos""#))
-      #expect(
-        result.diagnostics.contains(
-          MacroDiagnostic(
-            message: #"@InstantEntity("todos") is redundant; omit the argument to use the default namespace."#,
-            severity: .warning
-          )
-        )
-      )
+            public static var instantNamespace: String {
+              "todos"
+            }
+
+            public static var instantAttributes: [InstantAttribute] {
+              [
+
+              ]
+            }
+        }
+        """
+      }
     }
 
-    @Test
-    func unsupportedNamespaceArgumentDiagnostic() {
-      let result = expand(
+    func testUnsupportedNamespaceArgumentDiagnostic() {
+      assertMacro {
         """
         @InstantEntity(namespace)
         struct Todo {
         }
         """
-      )
+      } diagnostics: {
+        """
+        @InstantEntity(namespace)
+        ┬────────────────────────
+        ╰─ 🛑 @InstantEntity namespace overrides must be string literals.
+        struct Todo {
+        }
+        """
+      } expansion: {
+        """
 
-      #expect(!result.expanded.contains(#"public static var instantNamespace: String"#))
-      #expect(
-        result.diagnostics.contains(
-          MacroDiagnostic(
-            message: "@InstantEntity namespace overrides must be string literals.",
-            severity: .error
-          )
-        )
-      )
-    }
-
-    private func expand(_ source: String) -> (expanded: String, diagnostics: [MacroDiagnostic]) {
-      let sourceFile = Parser.parse(source: source)
-      let context = BasicMacroExpansionContext(
-        sourceFiles: [
-          sourceFile: .init(moduleName: "InstantSwiftDataMacrosTests", fullFilePath: "test.swift")
-        ]
-      )
-      let expanded = sourceFile.expand(
-        macros: [
-          "InstantEntity": InstantEntityMacro.self,
-          "InstantRelation": InstantRelationMacro.self,
-        ],
-        contextGenerator: { syntax in
-          BasicMacroExpansionContext(
-            sharingWith: context,
-            lexicalContext: syntax.allMacroLexicalContexts()
-          )
-        },
-        indentationWidth: .spaces(2)
-      )
-
-      return (
-        expanded.description,
-        context.diagnostics.map(MacroDiagnostic.init)
-      )
-    }
-  }
-
-  private struct MacroDiagnostic: Hashable {
-    var message: String
-    var severity: DiagnosticSeverity
-
-    init(message: String, severity: DiagnosticSeverity) {
-      self.message = message
-      self.severity = severity
-    }
-
-    init(_ diagnostic: Diagnostic) {
-      self.init(
-        message: diagnostic.message,
-        severity: diagnostic.diagMessage.severity
-      )
+        """
+      }
     }
   }
 #endif
