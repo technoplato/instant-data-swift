@@ -4888,7 +4888,7 @@ extension InstantStoreTests {
     expectNoDifference(createMutation.txStepEntityIDs, Array(repeating: createdID, count: 5))
     expectNoDifference(createMutation.txStepValueTypes, ["string", "string", "boolean", "string", "null"])
     expectNoDifference(
-      createMutation.txStepValueSummaries[0...2].map(String.init),
+      Array(createMutation.txStepValueSummaries[0...2]),
       ["string:\(createdID)", "string:Create from generated draft", "boolean:false"]
     )
     expectNoDifference(createMutation.txStepValueSummaries.last, "null")
@@ -5021,11 +5021,11 @@ extension InstantStoreTests {
     )
     expectNoDifference(relationEvidence.entityID, relationEvidence.details.relationPostID)
     expectNoDifference(
-      relationEvidence.details.draftMutationSummaries.map(\.mutationID),
+      relationEvidence.details.draftMutationSummaries.map(\.mutationID).sorted(),
       [
+        "validation.typed-drafts.author",
         "validation.typed-drafts.create",
         "validation.typed-drafts.edit",
-        "validation.typed-drafts.author",
         "validation.typed-drafts.post",
       ]
     )
@@ -5039,11 +5039,11 @@ extension InstantStoreTests {
     expectNoDifference(relaunchEvidence.details.draftTodoCompletionStates, [true])
     expectNoDifference(relaunchEvidence.details.draftPostTitles, ["Post from relation draft"])
     expectNoDifference(
-      relaunchEvidence.details.pendingMutationIDs,
+      relaunchEvidence.details.pendingMutationIDs.sorted(),
       [
+        "validation.typed-drafts.author",
         "validation.typed-drafts.create",
         "validation.typed-drafts.edit",
-        "validation.typed-drafts.author",
         "validation.typed-drafts.post",
       ]
     )

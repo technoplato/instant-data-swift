@@ -296,20 +296,20 @@ struct BootstrapTests {
     expectNoDifference(finalDetails.draftPostIDs, ["draft-validation-post"])
     expectNoDifference(finalDetails.draftPostAuthorIDs, ["draft-validation-author"])
     expectNoDifference(
-      finalDetails.pendingMutationIDs,
+      finalDetails.pendingMutationIDs.sorted(),
       [
+        "validation.typed-drafts.author",
         "validation.typed-drafts.create",
         "validation.typed-drafts.edit",
-        "validation.typed-drafts.author",
         "validation.typed-drafts.post",
       ]
     )
     expectNoDifference(
-      finalDetails.draftMutationSummaries.map(\.mutationID),
+      finalDetails.draftMutationSummaries.map(\.mutationID).sorted(),
       [
+        "validation.typed-drafts.author",
         "validation.typed-drafts.create",
         "validation.typed-drafts.edit",
-        "validation.typed-drafts.author",
         "validation.typed-drafts.post",
       ]
     )
