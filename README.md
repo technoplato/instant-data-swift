@@ -117,9 +117,14 @@ MEETING_JSON="$(swift run instant-swift-data examples sync-ups record "$SYNCUP_I
 MEETING_ID="$(printf '%s' "$MEETING_JSON" | jq -r '.changedID')"
 swift run instant-swift-data examples sync-ups delete-meeting "$MEETING_ID" --json
 swift run instant-swift-data examples sync-ups record "$SYNCUP_ID" --transcript "Final launch notes." --json
+swift run instant-swift-data examples sync-ups record-demo "$SYNCUP_ID" --json
 swift run instant-swift-data examples sync-ups list --jsonl
 swift run instant-swift-data examples sync-ups delete "$SYNCUP_ID" --json
 ```
+
+`record-demo` fast-forwards the local SyncUps recording model through the
+deterministic `.local` speech and sound clients, saves the transcript as a
+meeting, and prints recording diagnostics alongside the normal SyncUps snapshot.
 
 Inspect the durable cache and optimistic outbox:
 

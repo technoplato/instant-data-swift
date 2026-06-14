@@ -5210,6 +5210,144 @@ struct InstantStoreTests {
   }
 
   @Test
+  func syncUpRecordingModelUsesSpeechSoundAndSavesTranscript() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let syncUp = SyncUpRecord(
+      id: "syncup-recording",
+      title: "Recording",
+      seconds: 2,
+      theme: .appOrange
+    )
+    let attendees = [
+      SyncUpAttendeeRecord(id: "attendee-blob", name: "Blob", syncUpID: syncUp.id),
+      SyncUpAttendeeRecord(id: "attendee-blob-jr", name: "Blob Jr", syncUpID: syncUp.id),
+    ]
+    let soundEffects = SyncUpSoundEffectRecorder()
+    var model = SyncUpRecordingModel(
+      syncUp: syncUp,
+      attendees: attendees,
+      speechClient: .scripted(
+        authorizationStatus: .notDetermined,
+        requestedAuthorization: .authorized,
+        results: [
+          SyncUpSpeechRecognitionResult(formattedString: "Blob opened"),
+          SyncUpSpeechRecognitionResult(formattedString: "Blob Jr closed", isFinal: true),
+        ]
+      ),
+      soundEffectClient: SyncUpSoundEffectClient(
+        load: { await soundEffects.load($0) },
+        play: { await soundEffects.play() }
+      )
+    )
+
+    await model.task()
+    expectNoDifference(model.requestedAuthorization, true)
+    expectNoDifference(model.authorizationStatus, .authorized)
+    expectNoDifference(model.loadedSoundEffectFileName, "ding.wav")
+    expectNoDifference(model.transcript, "Blob Jr closed")
+    expectNoDifference(model.speechResultCount, 2)
+    let loadedFileNames = await soundEffects.loadedFileNames()
+    expectNoDifference(loadedFileNames, ["ding.wav"])
+
+    let firstTick = await model.tick()
+    expectNoDifference(firstTick, .advancedSpeaker(attendeeID: "attendee-blob-jr"))
+    expectNoDifference(model.speakerIndex, 1)
+    expectNoDifference(model.secondsElapsed, 1)
+    expectNoDifference(model.currentSpeaker?.name, "Blob Jr")
+    let playCount = await soundEffects.playCount()
+    expectNoDifference(playCount, 1)
+
+    let finalTick = await model.tick()
+    expectNoDifference(finalTick, .finished)
+    let save = model.finishMeeting(
+      meetingID: "meeting-recording",
+      date: timestamp,
+      transactionID: "tx-syncup-recording"
+    )
+    expectNoDifference(model.isDismissed, true)
+
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: SyncUpsExample.attributes,
+        now: { timestamp }
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-syncup-create-recording",
+        operations: SyncUpsExample.createSyncUpOperations(
+          id: syncUp.id,
+          title: syncUp.title,
+          seconds: syncUp.seconds,
+          theme: syncUp.theme,
+          updatedAt: timestamp,
+          transactionID: "tx-syncup-create-recording"
+        )
+        + attendees.flatMap { attendee in
+          SyncUpsExample.createAttendeeOperations(
+            id: attendee.id,
+            syncUpID: attendee.syncUpID,
+            name: attendee.name,
+            updatedAt: timestamp,
+            transactionID: "tx-syncup-create-recording"
+          )
+        }
+      ),
+      createdAt: timestamp
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(id: "tx-syncup-recording", operations: save.operations),
+      createdAt: timestamp
+    )
+
+    let meetings = try SyncUpsExample.decodeMeetings(
+      (try await runtime.queryOnce(SyncUpsExample.meetingsForSyncUpQuery(syncUp.id))).values
+    )
+    expectNoDifference(meetings, [
+      SyncUpMeetingRecord(
+        id: "meeting-recording",
+        date: timestamp,
+        syncUpID: syncUp.id,
+        transcript: "Blob Jr closed"
+      )
+    ])
+  }
+
+  @Test
+  func syncUpRecordingModelDeniedSpeechOpensSettings() async {
+    let settings = SyncUpOpenSettingsRecorder()
+    var model = SyncUpRecordingModel(
+      syncUp: SyncUpRecord(
+        id: "syncup-denied",
+        title: "Denied",
+        seconds: 60,
+        theme: .bubblegum
+      ),
+      attendees: [
+        SyncUpAttendeeRecord(id: "attendee-denied", name: "Blob", syncUpID: "syncup-denied")
+      ],
+      speechClient: .denied,
+      openSettingsClient: SyncUpOpenSettingsClient {
+        await settings.open()
+      }
+    )
+
+    await model.task()
+    expectNoDifference(model.authorizationStatus, .denied)
+    expectNoDifference(model.alert, .speechRecognitionDenied)
+    expectNoDifference(model.transcript, "")
+
+    let outcome = await model.alertButtonTapped(.openSettings)
+    expectNoDifference(outcome, .settingsOpened)
+    let openCount = await settings.openCount()
+    expectNoDifference(openCount, 1)
+    expectNoDifference(model.alert, .speechRecognitionDenied)
+  }
+
+  @Test
   func syncUpsExampleSharedRootRolesProtectChildren() async throws {
     let cacheURL = try temporaryCacheURL()
     let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
@@ -9899,6 +10037,39 @@ private actor SuspendedMutationTransport {
         }
       )
     )
+  }
+}
+
+private actor SyncUpSoundEffectRecorder {
+  private var loaded: [String] = []
+  private var plays = 0
+
+  func load(_ fileName: String) {
+    loaded.append(fileName)
+  }
+
+  func play() {
+    plays += 1
+  }
+
+  func loadedFileNames() -> [String] {
+    loaded
+  }
+
+  func playCount() -> Int {
+    plays
+  }
+}
+
+private actor SyncUpOpenSettingsRecorder {
+  private var count = 0
+
+  func open() {
+    count += 1
+  }
+
+  func openCount() -> Int {
+    count
   }
 }
 

@@ -844,7 +844,7 @@ extension InstantStoreTests {
 
     try expectMalformed(
       ["examples", "sync-ups", "--json"],
-      contains: "examples sync-ups <seed|list|detail|add|edit|add-attendee|record|delete|delete-attendee|delete-meeting>"
+      contains: "examples sync-ups <seed|list|detail|add|edit|add-attendee|record|record-demo|delete|delete-attendee|delete-meeting>"
     )
     try expectMalformed(
       ["examples", "sync-ups", "seed", "unexpected", "--json"],
@@ -900,6 +900,14 @@ extension InstantStoreTests {
     try expectMalformed(
       ["examples", "sync-ups", "record", "sync-1", "--transcript", "--json"],
       contains: #"examples sync-ups record <sync-up-id> --transcript "text""#
+    )
+    try expectMalformed(
+      ["examples", "sync-ups", "record-demo", "--json"],
+      contains: "examples sync-ups record-demo <sync-up-id>"
+    )
+    try expectMalformed(
+      ["examples", "sync-ups", "record-demo", "sync-1", "extra", "--json"],
+      contains: "examples sync-ups record-demo <sync-up-id>"
     )
     try expectMalformed(
       ["examples", "sync-ups", "delete", "sync-1", "extra", "--json"],
@@ -1994,6 +2002,66 @@ extension InstantStoreTests {
     )
     expectNoDifference(rejectedRecord.status, 66)
     #expect(rejectedRecord.error.contains("without at least one attendee"))
+  }
+
+  @Test
+  func cliSyncUpsRecordDemoUsesLocalSpeechAndSoundDependencies() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let added = try JSONDecoder().decode(
+      CLISyncUpsOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "examples", "sync-ups", "add", "Tiny Standup",
+            "--seconds", "2",
+            "--theme", "appOrange",
+            "--attendee", "Blob",
+            "--attendee", "Blob Jr",
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    let syncUpID = try #require(added.changedID)
+
+    let recorded = try JSONDecoder().decode(
+      CLISyncUpsOutput.self,
+      from: Data(
+        try runCLI(["examples", "sync-ups", "record-demo", syncUpID, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+
+    let recording = try #require(recorded.recording)
+    expectNoDifference(recorded.event, "record-demo")
+    expectNoDifference(recorded.changedID, recording.meetingID)
+    expectNoDifference(recorded.syncUps.map(\.meetingCount), [1])
+    expectNoDifference(recorded.meetings.map(\.transcript), ["Reviewed launch risks. Final notes."])
+    expectNoDifference(recording.authorizationStatus, .authorized)
+    expectNoDifference(recording.loadedSoundEffectFileName, "ding.wav")
+    expectNoDifference(recording.speechResultCount, 2)
+    expectNoDifference(recording.soundEffectPlayCount, 1)
+    expectNoDifference(recording.secondsElapsed, 2)
+    expectNoDifference(recording.speakerIndex, 1)
+    expectNoDifference(recording.currentSpeakerName, "Blob Jr")
+    expectNoDifference(recording.isDismissed, true)
+
+    let jsonlOutput = try runCLI(["examples", "sync-ups", "record-demo", syncUpID, "--jsonl"], homeURL: homeURL)
+    let rows = jsonlOutput.split(separator: "\n")
+    let evidence = try JSONDecoder().decode(
+      CLISyncUpsEvidence.self,
+      from: Data(try #require(rows.first).utf8)
+    )
+    expectNoDifference(evidence.caseID, "cli.examples.sync-ups")
+    expectNoDifference(evidence.event, "record-demo")
+    expectNoDifference(evidence.details.recording?.speechResultCount, 2)
+    expectNoDifference(evidence.details.recording?.soundEffectPlayCount, 1)
+    expectNoDifference(evidence.details.syncUps.map(\.meetingCount), [2])
   }
 
   @Test
@@ -4914,9 +4982,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 38)
+    expectNoDifference(jsonOutput.recordCount, 41)
     expectNoDifference(jsonOutput.exactCount, 11)
-    expectNoDifference(jsonOutput.adaptedCount, 24)
+    expectNoDifference(jsonOutput.adaptedCount, 27)
     expectNoDifference(jsonOutput.blockedCount, 3)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -4928,6 +4996,11 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.records.contains {
         $0.id == "sqlite.fetch-subscription.explicit-cancel" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "sqlite.syncups.record-meeting" && $0.status == "adapted"
       }
     )
     #expect(
@@ -4964,7 +5037,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 38"))
+    #expect(humanOutput.contains("records: 41"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 
@@ -5448,6 +5521,7 @@ private struct CLISyncUpsOutput: Decodable {
   var syncUps: [SyncUpSummary]
   var attendees: [SyncUpAttendeeRecord]
   var meetings: [SyncUpMeetingRecord]
+  var recording: SyncUpRecordingSummary?
 }
 
 private struct CLISyncUpsEvidence: Decodable {

@@ -446,6 +446,36 @@ public enum InstantSwiftDataParityCoverage {
       status: .adapted,
       notes: "Existing SyncUps drafts preserve identity and update attendees through Instant mutations."
     ),
+    sqlite(
+      id: "sqlite.syncups.record-meeting",
+      sourceFile: "upstream/sqlite-data/Examples/SyncUps/RecordMeeting.swift",
+      sourceTestName: "RecordMeetingModel task, timer, speaker advancement, and transcript save",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "syncUpRecordingModelUsesSpeechSoundAndSavesTranscript",
+      surface: "examples-syncups",
+      status: .adapted,
+      notes: "The Instant port keeps the recording model deterministic for CLI proof while preserving speech, sound, speaker advancement, and meeting-save behavior."
+    ),
+    sqlite(
+      id: "sqlite.syncups.record-settings",
+      sourceFile: "upstream/sqlite-data/Examples/SyncUps/SyncUpDetail.swift",
+      sourceTestName: "speech denied alert opens settings",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "syncUpRecordingModelDeniedSpeechOpensSettings",
+      surface: "examples-syncups",
+      status: .adapted,
+      notes: "The Instant port exposes the denied-speech/settings branch through a Sendable open-settings dependency client."
+    ),
+    sqlite(
+      id: "sqlite.syncups.record-dependencies",
+      sourceFile: "upstream/sqlite-data/Examples/SyncUps/Dependencies",
+      sourceTestName: "SpeechClient, SoundEffectClient, and OpenSettings dependencies",
+      swiftFile: "Tests/InstantSwiftDataTests/BootstrapTests.swift",
+      swiftTestName: "syncUpRecordingDependenciesCanBeOverridden",
+      surface: "dependencies",
+      status: .adapted,
+      notes: "The SyncUps speech, sound, and settings seams are Sendable value clients with local static instances and DependencyValues overrides."
+    ),
     instant(
       id: "instant.live-transport.swift-to-typescript",
       sourceFile: "upstream/instant/client/packages/core/__tests__",

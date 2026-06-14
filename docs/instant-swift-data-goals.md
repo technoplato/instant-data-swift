@@ -625,10 +625,14 @@ Agent-oriented output modes are required:
   `instant-swift-data examples sync-ups delete-attendee <attendee-id>`,
   `instant-swift-data examples sync-ups add-attendee <sync-up-id> "Blob Jr"`,
   `instant-swift-data examples sync-ups record <sync-up-id> --transcript "Reviewed launch risks."`,
+  `instant-swift-data examples sync-ups record-demo <sync-up-id>`,
   and `instant-swift-data examples sync-ups delete-meeting <meeting-id>`;
   sync-up attendee and meeting records are linked children with cascade delete
   and shared-root role checks; deleting the final attendee creates a blank
-  replacement attendee, matching the upstream form model.
+  replacement attendee, matching the upstream form model. The local
+  `record-demo` path must use Sendable speech, sound, and open-settings
+  dependency clients with reusable `.local` instances so the terminal demo
+  proves the same effect seams that the eventual SwiftUI recording flow uses.
 - run local admin write/query helpers such as
   `instant-swift-data admin transact notes note-1 --merge '{"title":"admin note"}' --transaction-id tx-admin-note-1`
   and `instant-swift-data admin query notes --json` for durable terminal

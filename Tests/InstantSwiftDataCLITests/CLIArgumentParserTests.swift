@@ -460,6 +460,14 @@ struct CLIArgumentParserTests {
       .record(syncUpID: "sync-1", transcript: "Reviewed risks")
     )
     expectNoDifference(
+      try parseExamplesSyncUpsLeaf(["record-demo", "sync-1"]),
+      .recordDemo(syncUpID: "sync-1")
+    )
+    expectNoDifference(
+      try parseExamplesSyncUpsLeaf(["recording-demo", "sync-2"]),
+      .recordDemo(syncUpID: "sync-2")
+    )
+    expectNoDifference(
       try parseExamplesSyncUpsLeaf(["delete", "sync-1"]),
       .delete(syncUpID: "sync-1")
     )
@@ -571,6 +579,14 @@ struct CLIArgumentParserTests {
     try expectExamplesSyncUpsLeafParseError(
       ["record", "sync-1", "--transcript"],
       description: CLIExamplesSyncUpsUsage.recordTranscript
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["record-demo"],
+      description: CLIExamplesSyncUpsUsage.recordDemo
+    )
+    try expectExamplesSyncUpsLeafParseError(
+      ["record-demo", "sync-1", "unexpected"],
+      description: CLIExamplesSyncUpsUsage.recordDemo
     )
     try expectExamplesSyncUpsLeafParseError(
       ["delete", "sync-1", "unexpected"],

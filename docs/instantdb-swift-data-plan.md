@@ -751,12 +751,17 @@ Create `validation/` with:
   status states, FTS/highlighting, and SwiftUI detail models remain future work.
 - SyncUps: the first local SyncUps port slice exposes durable
   `examples sync-ups add`, `detail`, `edit`, `add-attendee`,
-  `delete-attendee`, `record`, `delete-meeting`, `list`, and `delete` commands over
-  `syncUps`/`attendees`/`meetings` namespaces; attendee and meeting children
-  cascade with their parent sync-up, deleting the final attendee creates a blank
-  replacement attendee to match the upstream form model, and shared-root role
-  checks cover child writes before cache/outbox persistence. Speech, sound,
-  settings, live meeting timers, and UI navigation remain app-facing future
+  `delete-attendee`, `record`, `record-demo`, `delete-meeting`, `list`, and
+  `delete` commands over `syncUps`/`attendees`/`meetings` namespaces; attendee
+  and meeting children cascade with their parent sync-up, deleting the final
+  attendee creates a blank replacement attendee to match the upstream form
+  model, and shared-root role checks cover child writes before cache/outbox
+  persistence. `SyncUpSpeechClient`, `SyncUpSoundEffectClient`, and
+  `SyncUpOpenSettingsClient` are Sendable value clients with `.local`
+  instances and public `DependencyValues` keys; `record-demo` fast-forwards the
+  recording model through the local speech/sound path and saves the generated
+  transcript from the terminal. Full SwiftUI navigation, platform live speech,
+  actual audio playback, and wall-clock meeting timers remain app-facing future
   work.
 - CLI: `instant-swift-data examples todos add "do the dishes"` persists auth,
   local IDs, cache, and outbox state for a later CLI invocation.

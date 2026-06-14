@@ -175,6 +175,7 @@ public enum CLIExamplesSyncUpsLeafInvocation: Equatable, Sendable {
   case update(CLIExamplesSyncUpsUpdateInvocation)
   case addAttendee(syncUpID: String, name: String)
   case record(syncUpID: String, transcript: String)
+  case recordDemo(syncUpID: String)
   case delete(syncUpID: String)
   case deleteAttendee(attendeeID: String)
   case deleteMeeting(meetingID: String)
@@ -237,7 +238,7 @@ public struct CLIExamplesSyncUpsUpdateInvocation: Equatable, Sendable {
 
 public enum CLIExamplesSyncUpsUsage {
   public static let syncUps = """
-    Usage: instant-swift-data examples sync-ups <seed|list|detail|add|edit|add-attendee|record|delete|delete-attendee|delete-meeting>
+    Usage: instant-swift-data examples sync-ups <seed|list|detail|add|edit|add-attendee|record|record-demo|delete|delete-attendee|delete-meeting>
       instant-swift-data examples sync-ups seed [--json|--jsonl]
       instant-swift-data examples sync-ups list [--refresh] [--sync-up-id id] [--json|--jsonl]
       instant-swift-data examples sync-ups detail <sync-up-id> [--json|--jsonl]
@@ -245,6 +246,7 @@ public enum CLIExamplesSyncUpsUsage {
       instant-swift-data examples sync-ups edit <sync-up-id> [--title title] [--seconds n] [--theme theme] [--attendee name ...] [--json|--jsonl]
       instant-swift-data examples sync-ups add-attendee <sync-up-id> "name" [--json|--jsonl]
       instant-swift-data examples sync-ups record <sync-up-id> [--transcript] "transcript" [--json|--jsonl]
+      instant-swift-data examples sync-ups record-demo <sync-up-id> [--json|--jsonl]
       instant-swift-data examples sync-ups delete <sync-up-id> [--json|--jsonl]
       instant-swift-data examples sync-ups delete-attendee <attendee-id> [--json|--jsonl]
       instant-swift-data examples sync-ups delete-meeting <meeting-id> [--json|--jsonl]
@@ -263,6 +265,8 @@ public enum CLIExamplesSyncUpsUsage {
     #"Usage: instant-swift-data examples sync-ups edit <sync-up-id> [--title title] [--seconds n] [--theme theme] [--attendee name ...]"#
   public static let record =
     #"Usage: instant-swift-data examples sync-ups record <sync-up-id> [--transcript] "transcript""#
+  public static let recordDemo =
+    "Usage: instant-swift-data examples sync-ups record-demo <sync-up-id>"
   public static let recordTranscript =
     #"Usage: instant-swift-data examples sync-ups record <sync-up-id> --transcript "text""#
   public static let delete =
@@ -1992,6 +1996,14 @@ public struct CLIExamplesSyncUpsLeafParser: Parser {
     case "record", "record-meeting":
       let record = try parseExamplesSyncUpsRecordOptions(from: &input)
       return .record(syncUpID: record.syncUpID, transcript: record.transcript)
+
+    case "record-demo", "recording-demo":
+      return .recordDemo(
+        syncUpID: try parseSingleExamplesSyncUpsArgument(
+          from: &input,
+          usage: CLIExamplesSyncUpsUsage.recordDemo
+        )
+      )
 
     case "delete":
       return .delete(

@@ -11,9 +11,9 @@ struct InstantStoreParityTests {
 
     expectNoDifference(report.event, "parity-report")
     expectNoDifference(report.coverageComplete, false)
-    expectNoDifference(report.recordCount, 38)
+    expectNoDifference(report.recordCount, 41)
     expectNoDifference(report.exactCount, 11)
-    expectNoDifference(report.adaptedCount, 24)
+    expectNoDifference(report.adaptedCount, 27)
     expectNoDifference(report.blockedCount, 3)
     expectNoDifference(report.notApplicableCount, 0)
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/store.test.ts"))
@@ -21,6 +21,7 @@ struct InstantStoreParityTests {
     #expect(report.swiftFiles.contains("Tests/InstantSwiftDataTests/TypedAPITests.swift"))
     #expect(report.records.contains { $0.id == "instant.store.simple-add" && $0.status == .exact })
     #expect(report.records.contains { $0.id == "sqlite.fetch-subscription.explicit-cancel" && $0.status == .adapted })
+    #expect(report.records.contains { $0.id == "sqlite.syncups.record-meeting" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.live-transport.swift-to-typescript" && $0.status == .blocked })
 
     let evidenceRows = report.evidenceRows(appID: "parity-test")

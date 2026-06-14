@@ -815,6 +815,48 @@ struct InstantSwiftDataCLI {
         syncUpID: syncUpID
       )
 
+    case let .recordDemo(syncUpID):
+      let currentSyncUps = try SyncUpsExample.decodeSyncUps(
+        (try await context.runtime.queryOnce(SyncUpsExample.syncUpsQuery)).values
+      )
+      guard let syncUp = currentSyncUps.first(where: { $0.id == syncUpID }) else {
+        throw CLIError("Sync-up not found: \(syncUpID)", exitCode: 66)
+      }
+      let currentAttendees = try SyncUpsExample.decodeAttendees(
+        (try await context.runtime.queryOnce(SyncUpsExample.attendeesForSyncUpQuery(syncUpID))).values
+      )
+      guard !currentAttendees.isEmpty else {
+        throw CLIError(
+          "Cannot record a sync-up meeting without at least one attendee.",
+          exitCode: 66
+        )
+      }
+      var model = SyncUpRecordingModel(syncUp: syncUp, attendees: currentAttendees)
+      let meetingID = context.runtime.configuration.makeID()
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      let save = try await model.runDemo(
+        meetingID: meetingID,
+        date: now,
+        transactionID: transactionID
+      )
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: save.operations
+        ),
+        createdAt: now,
+        source: "cli.examples.sync-ups.record-demo"
+      )
+      try await printSyncUps(
+        context: context,
+        output: output,
+        event: "record-demo",
+        changedID: meetingID,
+        syncUpID: syncUpID,
+        recording: SyncUpRecordingSummary(model: model, save: save)
+      )
+
     case let .delete(syncUpID):
       let transactionID = context.runtime.configuration.makeID()
       let now = context.runtime.configuration.now()
@@ -3761,7 +3803,8 @@ struct InstantSwiftDataCLI {
     output: OutputMode,
     event: String,
     changedID: String? = nil,
-    syncUpID: String? = nil
+    syncUpID: String? = nil,
+    recording: SyncUpRecordingSummary? = nil
   ) async throws {
     let syncUpsEmission = try await context.runtime.queryOnce(SyncUpsExample.syncUpsQuery)
     let attendeeQuery = syncUpID.map(SyncUpsExample.attendeesForSyncUpQuery)
@@ -3810,7 +3853,8 @@ struct InstantSwiftDataCLI {
       pendingMutationCount: pending.count,
       syncUps: summaries,
       attendees: attendees,
-      meetings: meetings
+      meetings: meetings,
+      recording: recording
     )
 
     switch output {
@@ -3842,6 +3886,14 @@ struct InstantSwiftDataCLI {
               + "date=\(meeting.date.milliseconds) transcript=\(meeting.transcript)"
           )
         }
+      }
+      if let recording {
+        print(
+          "recording: auth=\(recording.authorizationStatus?.rawValue ?? "unknown") "
+            + "speechResults=\(recording.speechResultCount) "
+            + "sounds=\(recording.soundEffectPlayCount) "
+            + "seconds=\(recording.secondsElapsed) transcript=\(recording.transcript)"
+        )
       }
       print("transport: \(payload.transport)")
       print("pending mutations: \(pending.count)")
@@ -5278,13 +5330,13 @@ struct InstantSwiftDataCLI {
       instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>
       instant-swift-data examples todo-links <seed|list|nested|unlink> [--json|--jsonl]
       instant-swift-data examples reminders <seed|list|stats|tags|list-tags|search|add-list|rename-list|delete-list|add|update|complete|delete|delete-completed|add-tag|remove-tag> [--json|--jsonl]
-      instant-swift-data examples sync-ups <seed|list|detail|add|edit|add-attendee|record|delete|delete-attendee|delete-meeting> [--json|--jsonl]
+      instant-swift-data examples sync-ups <seed|list|detail|add|edit|add-attendee|record|record-demo|delete|delete-attendee|delete-meeting> [--json|--jsonl]
     """
   }
 
   private static var syncUpsUsage: String {
     """
-    Usage: instant-swift-data examples sync-ups <seed|list|detail|add|edit|add-attendee|record|delete|delete-attendee|delete-meeting>
+    Usage: instant-swift-data examples sync-ups <seed|list|detail|add|edit|add-attendee|record|record-demo|delete|delete-attendee|delete-meeting>
       instant-swift-data examples sync-ups seed [--json|--jsonl]
       instant-swift-data examples sync-ups list [--refresh] [--sync-up-id id] [--json|--jsonl]
       instant-swift-data examples sync-ups detail <sync-up-id> [--json|--jsonl]
@@ -5292,6 +5344,7 @@ struct InstantSwiftDataCLI {
       instant-swift-data examples sync-ups edit <sync-up-id> [--title title] [--seconds n] [--theme theme] [--attendee name ...] [--json|--jsonl]
       instant-swift-data examples sync-ups add-attendee <sync-up-id> "name" [--json|--jsonl]
       instant-swift-data examples sync-ups record <sync-up-id> [--transcript] "transcript" [--json|--jsonl]
+      instant-swift-data examples sync-ups record-demo <sync-up-id> [--json|--jsonl]
       instant-swift-data examples sync-ups delete <sync-up-id> [--json|--jsonl]
       instant-swift-data examples sync-ups delete-attendee <attendee-id> [--json|--jsonl]
       instant-swift-data examples sync-ups delete-meeting <meeting-id> [--json|--jsonl]
@@ -5310,7 +5363,7 @@ struct InstantSwiftDataCLI {
         try validateSyncUpTheme(theme)
       }
 
-    case .seed, .list, .detail, .addAttendee, .record, .delete, .deleteAttendee,
+    case .seed, .list, .detail, .addAttendee, .record, .recordDemo, .delete, .deleteAttendee,
       .deleteMeeting, .unknown:
       return
     }
@@ -5923,6 +5976,7 @@ private struct SyncUpsOutput: Codable, Sendable {
   var syncUps: [SyncUpSummary]
   var attendees: [SyncUpAttendeeRecord]
   var meetings: [SyncUpMeetingRecord]
+  var recording: SyncUpRecordingSummary?
 }
 
 private struct TodoLinkSnapshotsOutput: Codable, Sendable {

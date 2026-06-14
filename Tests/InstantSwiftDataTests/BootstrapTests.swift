@@ -690,6 +690,54 @@ struct BootstrapTests {
   }
 
   @Test
+  func syncUpRecordingDependenciesCanBeOverridden() async throws {
+    let soundEffects = BootstrapSyncUpSoundEffectRecorder()
+    let settings = BootstrapSyncUpOpenSettingsRecorder()
+
+    try await withDependencies {
+      $0.syncUpSpeechClient = .scripted(
+        authorizationStatus: .notDetermined,
+        requestedAuthorization: .authorized,
+        results: [
+          SyncUpSpeechRecognitionResult(formattedString: "Dependency transcript", isFinal: true)
+        ]
+      )
+      $0.syncUpSoundEffectClient = SyncUpSoundEffectClient(
+        load: { await soundEffects.load($0) },
+        play: { await soundEffects.play() }
+      )
+      $0.syncUpOpenSettingsClient = SyncUpOpenSettingsClient {
+        await settings.open()
+      }
+    } operation: {
+      @Dependency(\.syncUpSpeechClient) var speechClient
+      @Dependency(\.syncUpSoundEffectClient) var soundEffectClient
+      @Dependency(\.syncUpOpenSettingsClient) var openSettingsClient
+
+      let status = speechClient.authorizationStatus()
+      let requestedStatus = await speechClient.requestAuthorization()
+      let stream = await speechClient.startTask()
+      var transcripts: [String] = []
+      for try await result in stream {
+        transcripts.append(result.formattedString)
+      }
+      await soundEffectClient.load("ding.wav")
+      await soundEffectClient.play()
+      await openSettingsClient.open()
+      let loadedFileNames = await soundEffects.loadedFileNames()
+      let playCount = await soundEffects.playCount()
+      let openCount = await settings.openCount()
+
+      expectNoDifference(status, .notDetermined)
+      expectNoDifference(requestedStatus, .authorized)
+      expectNoDifference(transcripts, ["Dependency transcript"])
+      expectNoDifference(loadedFileNames, ["ding.wav"])
+      expectNoDifference(playCount, 1)
+      expectNoDifference(openCount, 1)
+    }
+  }
+
+  @Test
   func dependencyOverrideCanInstallMockClient() async throws {
     let signOutOptions = SignOutOptionsRecorder()
     let mock = InstantSwiftDataClient(
@@ -2928,4 +2976,37 @@ private func integrationClient(
     updateShareMembershipRole: updateShareMembershipRole,
     revokeShare: revokeShare
   )
+}
+
+private actor BootstrapSyncUpSoundEffectRecorder {
+  private var loaded: [String] = []
+  private var plays = 0
+
+  func load(_ fileName: String) {
+    loaded.append(fileName)
+  }
+
+  func play() {
+    plays += 1
+  }
+
+  func loadedFileNames() -> [String] {
+    loaded
+  }
+
+  func playCount() -> Int {
+    plays
+  }
+}
+
+private actor BootstrapSyncUpOpenSettingsRecorder {
+  private var count = 0
+
+  func open() {
+    count += 1
+  }
+
+  func openCount() -> Int {
+    count
+  }
 }

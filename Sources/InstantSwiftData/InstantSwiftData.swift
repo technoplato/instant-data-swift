@@ -1419,6 +1419,54 @@ extension InstantMutationTransportKey: DependencyKey {
   }
 }
 
+private enum SyncUpSpeechClientKey: TestDependencyKey {
+  static var testValue: SyncUpSpeechClient {
+    .local
+  }
+
+  static var previewValue: SyncUpSpeechClient {
+    .local
+  }
+}
+
+extension SyncUpSpeechClientKey: DependencyKey {
+  static var liveValue: SyncUpSpeechClient {
+    .local
+  }
+}
+
+private enum SyncUpSoundEffectClientKey: TestDependencyKey {
+  static var testValue: SyncUpSoundEffectClient {
+    .local
+  }
+
+  static var previewValue: SyncUpSoundEffectClient {
+    .local
+  }
+}
+
+extension SyncUpSoundEffectClientKey: DependencyKey {
+  static var liveValue: SyncUpSoundEffectClient {
+    .local
+  }
+}
+
+private enum SyncUpOpenSettingsClientKey: TestDependencyKey {
+  static var testValue: SyncUpOpenSettingsClient {
+    .local
+  }
+
+  static var previewValue: SyncUpOpenSettingsClient {
+    .local
+  }
+}
+
+extension SyncUpOpenSettingsClientKey: DependencyKey {
+  static var liveValue: SyncUpOpenSettingsClient {
+    .local
+  }
+}
+
 extension DependencyValues {
   public var defaultInstantSwiftData: InstantSwiftDataClient {
     get { self[DefaultInstantSwiftDataKey.self] }
@@ -1453,6 +1501,21 @@ extension DependencyValues {
   public var instantMutationTransport: InstantMutationTransportClient {
     get { self[InstantMutationTransportKey.self] }
     set { self[InstantMutationTransportKey.self] = newValue }
+  }
+
+  public var syncUpSpeechClient: SyncUpSpeechClient {
+    get { self[SyncUpSpeechClientKey.self] }
+    set { self[SyncUpSpeechClientKey.self] = newValue }
+  }
+
+  public var syncUpSoundEffectClient: SyncUpSoundEffectClient {
+    get { self[SyncUpSoundEffectClientKey.self] }
+    set { self[SyncUpSoundEffectClientKey.self] = newValue }
+  }
+
+  public var syncUpOpenSettingsClient: SyncUpOpenSettingsClient {
+    get { self[SyncUpOpenSettingsClientKey.self] }
+    set { self[SyncUpOpenSettingsClientKey.self] = newValue }
   }
 
   public mutating func bootstrapInstantSwiftData(
