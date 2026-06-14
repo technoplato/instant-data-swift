@@ -435,7 +435,7 @@ let selectedSnapshots = try await db.query(
 
 let usersWithPosts = try await db.query(
   User.query
-    .include(User.posts, Post.query.select(Post.title))
+    .include(Post.posts, Post.query.select(Post.title))
     .plan
 )
 
@@ -486,7 +486,7 @@ Partial field selection returns raw snapshots unless your entity decoder can
 build a value from the selected fields.
 Forward includes use typed ref attributes such as `Post.author`. Add
 `@InstantRelation(reverse: "posts")` to a ref property when the generated schema
-should carry reverse metadata, then declare the reverse token explicitly:
+should carry reverse metadata and a typed reverse include token:
 
 ```swift
 @InstantEntity
@@ -495,14 +495,12 @@ struct Post {
   @InstantRelation(reverse: "posts")
   var author: InstantID<User>
 }
-
-extension User {
-  static let posts = InstantReverseRelation<User, Post>(attribute: Post.author)
-}
 ```
 
-Reverse includes can then use that token, for example
-`.include(User.posts, Post.query.select(Post.title))`.
+The generated token is hosted on the relation-bearing type, so reverse includes
+can use `.include(Post.posts, Post.query.select(Post.title))`. If you need a
+custom token implementation, declare a static member with the same reverse name;
+the macro will leave that manual declaration in place.
 Strict one-shot queries validate field, order, and include references before
 materializing or caching results.
 `@Shares` observes local share snapshots for the signed-in user and runtime at

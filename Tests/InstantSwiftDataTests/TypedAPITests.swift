@@ -316,8 +316,12 @@ struct TypedAPITests {
       ]
     )
 
-    let posts = try InstantReverseRelation<MacroGeneratedUser, MacroGeneratedPost>(
-      validating: MacroGeneratedPost.author
+    let posts = MacroGeneratedPost.posts
+    expectNoDifference(
+      posts,
+      try InstantReverseRelation<MacroGeneratedUser, MacroGeneratedPost>(
+        validating: MacroGeneratedPost.author
+      )
     )
     expectNoDifference(posts.name, "posts")
     expectNoDifference(posts.attributeID, "macroGeneratedPosts/author")
@@ -335,6 +339,34 @@ struct TypedAPITests {
           query: InstantQueryIncludePlan(
             id: MacroGeneratedPost.query.select(MacroGeneratedPost.title).plan.id,
             namespace: MacroGeneratedPost.instantNamespace,
+            selectedFields: ["title"]
+          )
+        )
+      ]
+    )
+  }
+
+  @Test
+  func instantEntityMacroGeneratedReverseRelationTokensSupportOptionalRefs() {
+    expectNoDifference(MacroGeneratedOptionalPost.posts.name, "posts")
+    expectNoDifference(
+      MacroGeneratedOptionalPost.posts.attributeID,
+      "macroGeneratedOptionalPosts/author"
+    )
+
+    let query = MacroGeneratedOptionalUser.query.include(
+      MacroGeneratedOptionalPost.posts,
+      MacroGeneratedOptionalPost.query.select(MacroGeneratedOptionalPost.title)
+    )
+    expectNoDifference(
+      query.plan.includes,
+      [
+        InstantQueryInclude(
+          "posts",
+          direction: .reverse,
+          query: InstantQueryIncludePlan(
+            id: MacroGeneratedOptionalPost.query.select(MacroGeneratedOptionalPost.title).plan.id,
+            namespace: MacroGeneratedOptionalPost.instantNamespace,
             selectedFields: ["title"]
           )
         )
@@ -4698,6 +4730,44 @@ private struct MacroGeneratedPost: Hashable, Codable, InstantEntityModel {
       self.author = InstantID(rawValue: authorID)
     } else {
       self.author = InstantID(rawValue: "")
+    }
+  }
+}
+
+@InstantEntity
+private struct MacroGeneratedOptionalUser: Hashable, Codable, InstantEntityModel {
+  var id: InstantID<MacroGeneratedOptionalUser>
+  var name: String
+
+  init(snapshot: InstantEntitySnapshot) throws {
+    self.id = InstantID(rawValue: snapshot.id)
+    if case let .string(name) = snapshot.values["name"]?.first {
+      self.name = name
+    } else {
+      self.name = ""
+    }
+  }
+}
+
+@InstantEntity
+private struct MacroGeneratedOptionalPost: Hashable, Codable, InstantEntityModel {
+  var id: InstantID<MacroGeneratedOptionalPost>
+  var title: String
+
+  @InstantRelation(reverse: "posts")
+  var author: InstantID<MacroGeneratedOptionalUser>?
+
+  init(snapshot: InstantEntitySnapshot) throws {
+    self.id = InstantID(rawValue: snapshot.id)
+    if case let .string(title) = snapshot.values["title"]?.first {
+      self.title = title
+    } else {
+      self.title = ""
+    }
+    if case let .ref(authorID) = snapshot.values["author"]?.first {
+      self.author = InstantID(rawValue: authorID)
+    } else {
+      self.author = nil
     }
   }
 }

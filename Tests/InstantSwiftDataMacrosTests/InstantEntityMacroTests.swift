@@ -938,6 +938,8 @@
 
           public static let author = InstantAttributePath<Post, InstantID<User>>("author")
 
+          public static let `posts` = InstantReverseRelation<User, Post>(attribute: Post.author)
+
           public static var instantAttributes: [InstantAttribute] {
             [
                 InstantAttribute(
@@ -1040,7 +1042,7 @@
       }
     }
 
-    func testInstantRelationEscapesReverseNameLiteral() {
+    func testInstantRelationRequiresSwiftIdentifierReverseNameDiagnostic() {
       assertMacro {
         #"""
         @InstantEntity
@@ -1051,71 +1053,100 @@
           var author: InstantID<User>
         }
         """#
-      } expansion: {
+      } diagnostics: {
         #"""
+        @InstantEntity
+        ╰─ 🛑 Reverse relation name 'po"sts' is not a valid Swift member name for @InstantRelation.
         struct Post {
           var id: InstantID<Post>
+
+          @InstantRelation(reverse: "po\"sts")
           var author: InstantID<User>
-
-          public static var instantNamespace: String {
-            "posts"
-          }
-
-          public static let author = InstantAttributePath<Post, InstantID<User>>("author")
-
-          public static var instantAttributes: [InstantAttribute] {
-            [
-                InstantAttribute(
-                  id: Post.author.attributeID,
-                  namespace: Post.instantNamespace,
-                  name: Post.author.name,
-                  valueType: .ref,
-                  isRequired: true,
-                  isIndexed: true,
-                  isUnique: false,
-                  forwardIdentity: Post.author.attributeID,
-                  reverseIdentity: User.instantNamespace + "/po\"sts",
-                  primaryKey: false,
-                  linkNamespace: User.instantNamespace
-                )
-            ]
-          }
-
-          public struct Draft: InstantEntityDraft {
-            public typealias Entity = Post
-            public var id: Post.ID? = nil
-
-            public var author: InstantID<User>
-
-            public init(
-              id: Post.ID? = nil,
-              author: InstantID<User>
-            ) {
-              self.id = id
-              self.author = author
-            }
-
-            public init(_ entity: Post) {
-              self.id = entity.id
-              self.author = entity.author
-            }
-
-            public var instantAssignments: [InstantAttributeAssignment<Post>] {
-              [
-              InstantAttributeAssignment<Post>(
-                name: "author",
-                attributeID: Post.instantAttributes
-                  .first(where: {
-                    $0.name == "author"
-                  })?.id
-                  ?? Post.instantNamespace + "/author",
-                value: self.author.instantValue
-              )
-              ]
-            }
-          }
         }
         """#
+      }
+    }
+
+    func testInstantRelationRequiresUniqueReverseRelationNames() {
+      assertMacro {
+        """
+        @InstantEntity
+        struct Post {
+          var id: InstantID<Post>
+
+          @InstantRelation(reverse: "posts")
+          var author: InstantID<User>
+
+          @InstantRelation(reverse: "posts")
+          var editor: InstantID<User>
+        }
+        """
+      } diagnostics: {
+        """
+        @InstantEntity
+        ╰─ 🛑 Reverse relation name 'posts' is used by more than one @InstantRelation on this entity.
+        struct Post {
+          var id: InstantID<Post>
+
+          @InstantRelation(reverse: "posts")
+          var author: InstantID<User>
+
+          @InstantRelation(reverse: "posts")
+          var editor: InstantID<User>
+        }
+        """
+      }
+    }
+
+    func testInstantRelationRejectsGeneratedMemberCollision() {
+      assertMacro {
+        """
+        @InstantEntity
+        struct Post {
+          var id: InstantID<Post>
+          var posts: String
+
+          @InstantRelation(reverse: "posts")
+          var author: InstantID<User>
+        }
+        """
+      } diagnostics: {
+        """
+        @InstantEntity
+        ╰─ 🛑 Reverse relation name 'posts' collides with a generated @InstantEntity member.
+        struct Post {
+          var id: InstantID<Post>
+          var posts: String
+
+          @InstantRelation(reverse: "posts")
+          var author: InstantID<User>
+        }
+        """
+      }
+    }
+
+    func testInstantRelationRejectsReservedReverseRelationName() {
+      assertMacro {
+        """
+        @InstantEntity
+        struct Post {
+          var id: InstantID<Post>
+
+          @InstantRelation(reverse: "query")
+          var author: InstantID<User>
+        }
+        """
+      } diagnostics: {
+        """
+        @InstantEntity
+        ╰─ 🛑 Reverse relation name 'query' is reserved by @InstantEntity generated helpers.
+        struct Post {
+          var id: InstantID<Post>
+
+          @InstantRelation(reverse: "query")
+          var author: InstantID<User>
+        }
+        """
       }
     }
 
@@ -1216,6 +1247,89 @@
                   })?.id
                   ?? Todo.instantNamespace + "/title",
                 value: self.title.instantValue
+              )
+              ]
+            }
+          }
+        }
+        """
+      }
+    }
+
+    func testGeneratedSchemaHelpersRespectManualReverseRelationTokens() {
+      assertMacro {
+        """
+        @InstantEntity
+        struct Post {
+          var id: InstantID<Post>
+
+          @InstantRelation(reverse: "posts")
+          var author: InstantID<User>
+
+          static let posts = InstantReverseRelation<User, Post>("posts")
+        }
+        """
+      } expansion: {
+        """
+        struct Post {
+          var id: InstantID<Post>
+          var author: InstantID<User>
+
+          static let posts = InstantReverseRelation<User, Post>("posts")
+
+          public static var instantNamespace: String {
+            "posts"
+          }
+
+          public static let author = InstantAttributePath<Post, InstantID<User>>("author")
+
+          public static var instantAttributes: [InstantAttribute] {
+            [
+                InstantAttribute(
+                  id: Post.author.attributeID,
+                  namespace: Post.instantNamespace,
+                  name: Post.author.name,
+                  valueType: .ref,
+                  isRequired: true,
+                  isIndexed: true,
+                  isUnique: false,
+                  forwardIdentity: Post.author.attributeID,
+                  reverseIdentity: User.instantNamespace + "/posts",
+                  primaryKey: false,
+                  linkNamespace: User.instantNamespace
+                )
+            ]
+          }
+
+          public struct Draft: InstantEntityDraft {
+            public typealias Entity = Post
+            public var id: Post.ID? = nil
+
+            public var author: InstantID<User>
+
+            public init(
+              id: Post.ID? = nil,
+              author: InstantID<User>
+            ) {
+              self.id = id
+              self.author = author
+            }
+
+            public init(_ entity: Post) {
+              self.id = entity.id
+              self.author = entity.author
+            }
+
+            public var instantAssignments: [InstantAttributeAssignment<Post>] {
+              [
+              InstantAttributeAssignment<Post>(
+                name: "author",
+                attributeID: Post.instantAttributes
+                  .first(where: {
+                    $0.name == "author"
+                  })?.id
+                  ?? Post.instantNamespace + "/author",
+                value: self.author.instantValue
               )
               ]
             }

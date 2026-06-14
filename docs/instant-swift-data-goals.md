@@ -170,7 +170,10 @@ Typed field selection should use declared attribute paths, for example
 snapshots unless a model's decoder explicitly supports the reduced shape.
 Typed forward includes should use declared ref attributes, for example
 `.include(Post.author, User.query.select(User.name))`; reverse includes should
-be generated relation tokens rather than raw string names.
+be generated relation tokens rather than raw string names. A relation declared on
+the source type may host the reverse token there, for example `Post.posts` for
+`@InstantRelation(reverse: "posts") var author: InstantID<User>`, while the token
+type still encodes the target/source relation for `User.query.include(...)`.
 One-shot typed queries should use `queryOnceDecoded` when callers need decoded
 values plus pagination `pageInfo`, and raw `queryOnce` when they need snapshots
 or the full query emission.

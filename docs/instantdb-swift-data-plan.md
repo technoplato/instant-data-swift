@@ -111,9 +111,10 @@ transitions remain future WebSocket transport work.
 - Explicit linked-entity inclusion, including typed forward includes like
   `.include(Post.author, User.query.select(User.name))`. Raw core materialization
   also supports multi-linked entities and reverse links. The typed query surface
-  now accepts reverse relation tokens like
-  `.include(User.posts, Post.query.select(Post.title))`; macro-generated reverse
-  tokens remain the next ergonomics step.
+  now accepts generated reverse relation tokens. Because Swift macros cannot add
+  members to the target entity from a property declared on the source entity,
+  `@InstantRelation(reverse: "posts") var author: InstantID<User>` generates a
+  source-hosted token used as `.include(Post.posts, Post.query.select(Post.title))`.
 - Field selection, including typed `.select(Todo.text, Todo.isCompleted)`.
   Partial selections should be read as raw snapshots unless the selected fields
   satisfy the entity decoder.

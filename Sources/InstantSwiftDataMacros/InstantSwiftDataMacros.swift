@@ -79,12 +79,67 @@ public struct InstantEntityMacro: MemberMacro {
       )
     }
     let reservedPropertyNames = Set(reservedProperties.map(\.name))
+    let generatedAttributeNames = Set(
+      properties
+        .filter { property in
+          isGeneratedSchemaHelper(property)
+            && !explicitStaticMembers.contains(property.name)
+            && !reservedPropertyNames.contains(property.name)
+        }
+        .map(\.name)
+    )
+    let relationProperties = properties.filter { property in
+      property.relation != nil && property.schemaValue?.refTargetType != nil
+    }
+    let duplicateReverseNames = Set(
+      Dictionary(grouping: relationProperties, by: { $0.relation?.reverseName ?? "" })
+        .filter { !$0.key.isEmpty && $0.value.count > 1 }
+        .keys
+    )
+    for name in duplicateReverseNames.sorted() {
+      context.diagnose(
+        InstantEntityDiagnostic.duplicateReverseRelationName(name)
+          .diagnose(at: Syntax(declaration))
+      )
+    }
+    for property in relationProperties {
+      guard let relation = property.relation else { continue }
+      if !relation.reverseName.isSwiftIdentifier {
+        context.diagnose(
+          InstantEntityDiagnostic.invalidReverseRelationName(relation.reverseName)
+            .diagnose(at: Syntax(declaration))
+        )
+      }
+      if reservedGeneratedMemberNames.contains(relation.reverseName) {
+        context.diagnose(
+          InstantEntityDiagnostic.reservedReverseRelationName(relation.reverseName)
+            .diagnose(at: Syntax(declaration))
+        )
+      }
+      if generatedAttributeNames.contains(relation.reverseName) {
+        context.diagnose(
+          InstantEntityDiagnostic.reverseRelationNameCollidesWithGeneratedMember(
+            relation.reverseName
+          )
+          .diagnose(at: Syntax(declaration))
+        )
+      }
+    }
     members.append(
       contentsOf: attributePathDeclarations(
         properties: properties,
         typeName: typeName,
         explicitStaticMembers: explicitStaticMembers,
         reservedPropertyNames: reservedPropertyNames
+      )
+    )
+    members.append(
+      contentsOf: reverseRelationDeclarations(
+        properties: properties,
+        typeName: typeName,
+        explicitStaticMembers: explicitStaticMembers,
+        generatedAttributeNames: generatedAttributeNames,
+        duplicateReverseNames: duplicateReverseNames
       )
     )
     if !explicitStaticMembers.contains("instantAttributes") {
@@ -126,6 +181,34 @@ public struct InstantEntityMacro: MemberMacro {
           """
         )
       }
+  }
+
+  private static func reverseRelationDeclarations(
+    properties: [StoredProperty],
+    typeName: String,
+    explicitStaticMembers: Set<String>,
+    generatedAttributeNames: Set<String>,
+    duplicateReverseNames: Set<String>
+  ) -> [DeclSyntax] {
+    properties.compactMap { property in
+      guard
+        let relation = property.relation,
+        let targetType = property.schemaValue?.refTargetType,
+        relation.reverseName.isSwiftIdentifier,
+        !explicitStaticMembers.contains(relation.reverseName),
+        !reservedGeneratedMemberNames.contains(relation.reverseName),
+        !generatedAttributeNames.contains(relation.reverseName),
+        !duplicateReverseNames.contains(relation.reverseName)
+      else {
+        return nil
+      }
+
+      return DeclSyntax(
+        stringLiteral: """
+        public static let `\(relation.reverseName)` = InstantReverseRelation<\(targetType), \(typeName)>(attribute: \(typeName).\(property.name))
+        """
+      )
+    }
   }
 
   private static func instantAttributesDeclaration(
@@ -597,6 +680,14 @@ private extension String {
     return String(target)
   }
 
+  var isSwiftIdentifier: Bool {
+    guard let first = unicodeScalars.first else { return false }
+    guard first == "_" || CharacterSet.asciiLetters.contains(first) else { return false }
+    return unicodeScalars.dropFirst().allSatisfy {
+      $0 == "_" || CharacterSet.asciiLetters.contains($0) || CharacterSet.decimalDigits.contains($0)
+    }
+  }
+
   func unwrappedOptionalType() -> (type: String, isOptional: Bool) {
     if hasSuffix("?") {
       return (String(dropLast()), true)
@@ -614,13 +705,22 @@ private extension String {
   }
 }
 
+private extension CharacterSet {
+  static let asciiLetters =
+    CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
+}
+
 private enum InstantEntityDiagnostic {
+  case duplicateReverseRelationName(String)
+  case invalidReverseRelationName(String)
   case instantRelationRequiresRef(String)
   case reservedGeneratedMemberName(String)
+  case reservedReverseRelationName(String)
   case redundantNamespace(String)
   case requiresDraftTypeAnnotation(String)
   case requiresNominalType
   case requiresSingleDraftPropertyBinding
+  case reverseRelationNameCollidesWithGeneratedMember(String)
   case unsupportedInstantRelationArgument
   case unsupportedNamespaceArgument
 
@@ -632,10 +732,16 @@ private enum InstantEntityDiagnostic {
 extension InstantEntityDiagnostic: DiagnosticMessage {
   var message: String {
     switch self {
+    case let .duplicateReverseRelationName(name):
+      return "Reverse relation name '\(name)' is used by more than one @InstantRelation on this entity."
+    case let .invalidReverseRelationName(name):
+      return "Reverse relation name '\(name)' is not a valid Swift member name for @InstantRelation."
     case let .instantRelationRequiresRef(name):
       return "Stored property '\(name)' uses @InstantRelation, but it is not an Instant ref attribute."
     case let .reservedGeneratedMemberName(name):
       return "Stored property '\(name)' uses a name reserved by @InstantEntity generated helpers."
+    case let .reservedReverseRelationName(name):
+      return "Reverse relation name '\(name)' is reserved by @InstantEntity generated helpers."
     case let .redundantNamespace(namespace):
       return #"@InstantEntity("\#(namespace)") is redundant; omit the argument to use the default namespace."#
     case let .requiresDraftTypeAnnotation(name):
@@ -644,6 +750,8 @@ extension InstantEntityDiagnostic: DiagnosticMessage {
       return "@InstantEntity can only be attached to a struct, class, or actor."
     case .requiresSingleDraftPropertyBinding:
       return "@InstantEntity draft generation requires one stored property per var declaration."
+    case let .reverseRelationNameCollidesWithGeneratedMember(name):
+      return "Reverse relation name '\(name)' collides with a generated @InstantEntity member."
     case .unsupportedInstantRelationArgument:
       return #"@InstantRelation requires a non-empty string literal reverse name, for example @InstantRelation(reverse: "posts")."#
     case .unsupportedNamespaceArgument:
@@ -653,10 +761,16 @@ extension InstantEntityDiagnostic: DiagnosticMessage {
 
   var diagnosticID: MessageID {
     switch self {
+    case .duplicateReverseRelationName:
+      return MessageID(domain: "InstantSwiftDataMacros", id: "duplicateReverseRelationName")
+    case .invalidReverseRelationName:
+      return MessageID(domain: "InstantSwiftDataMacros", id: "invalidReverseRelationName")
     case .instantRelationRequiresRef:
       return MessageID(domain: "InstantSwiftDataMacros", id: "instantRelationRequiresRef")
     case .reservedGeneratedMemberName:
       return MessageID(domain: "InstantSwiftDataMacros", id: "reservedGeneratedMemberName")
+    case .reservedReverseRelationName:
+      return MessageID(domain: "InstantSwiftDataMacros", id: "reservedReverseRelationName")
     case .redundantNamespace:
       return MessageID(domain: "InstantSwiftDataMacros", id: "redundantNamespace")
     case .requiresDraftTypeAnnotation:
@@ -665,6 +779,11 @@ extension InstantEntityDiagnostic: DiagnosticMessage {
       return MessageID(domain: "InstantSwiftDataMacros", id: "requiresNominalType")
     case .requiresSingleDraftPropertyBinding:
       return MessageID(domain: "InstantSwiftDataMacros", id: "requiresSingleDraftPropertyBinding")
+    case .reverseRelationNameCollidesWithGeneratedMember:
+      return MessageID(
+        domain: "InstantSwiftDataMacros",
+        id: "reverseRelationNameCollidesWithGeneratedMember"
+      )
     case .unsupportedInstantRelationArgument:
       return MessageID(domain: "InstantSwiftDataMacros", id: "unsupportedInstantRelationArgument")
     case .unsupportedNamespaceArgument:
@@ -674,11 +793,15 @@ extension InstantEntityDiagnostic: DiagnosticMessage {
 
   var severity: DiagnosticSeverity {
     switch self {
-    case .instantRelationRequiresRef,
+    case .duplicateReverseRelationName,
+      .invalidReverseRelationName,
+      .instantRelationRequiresRef,
       .reservedGeneratedMemberName,
+      .reservedReverseRelationName,
       .requiresDraftTypeAnnotation,
       .requiresNominalType,
       .requiresSingleDraftPropertyBinding,
+      .reverseRelationNameCollidesWithGeneratedMember,
       .unsupportedInstantRelationArgument,
       .unsupportedNamespaceArgument:
       return .error
