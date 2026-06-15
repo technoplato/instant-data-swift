@@ -417,6 +417,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift uses declared attributes rather than JavaScript add-attr generation; schema metadata preserves scalar uniqueness/indexing and forward/reverse link identity while transport lowering emits the same three add-triple intents."
     ),
     instant(
+      id: "instant.instaml.schema-no-duplicate-ref-attrs",
+      sourceFile: instamlSource,
+      sourceTestName: "Schema: doesn't create duplicate ref attrs",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "schemaReciprocalLinksUseSingleRefAttributeForInstamlDuplicateRefAttrParity",
+      surface: "instaml",
+      status: .adapted,
+      notes: "Swift uses declared attributes and normalized physical triples rather than JavaScript add-attr generation; the reverse-side schema link intent is represented as a second write to the same forward ref attr, dedupes locally, and preserves both transport add-triple intents."
+    ),
+    instant(
       id: "instant.weak-hash",
       sourceFile: weakHashSource,
       sourceTestName: "selected fields / object key order / date / known query",

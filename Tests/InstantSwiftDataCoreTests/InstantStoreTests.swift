@@ -1745,6 +1745,147 @@ struct InstantStoreTests {
   }
 
   @Test
+  func schemaReciprocalLinksUseSingleRefAttributeForInstamlDuplicateRefAttrParity() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let source =
+      "upstream/instant/client/packages/core/__tests__/src/instaml.test.ts "
+      + "Schema: doesn't create duplicate ref attrs "
+      + "[adapted: Swift core stores normalized physical ref triples; the reverse-side link intent is represented as a second comments/book write.]"
+    let attributes = [
+      InstantAttribute(
+        id: "comments/book",
+        namespace: "comments",
+        name: "book",
+        valueType: .ref,
+        isRequired: false,
+        cardinality: .one,
+        forwardIdentity: "comments/book",
+        reverseIdentity: "books/comments",
+        linkNamespace: "books"
+      ),
+      InstantAttribute(
+        id: "books/title",
+        namespace: "books",
+        name: "title",
+        valueType: .string,
+        isRequired: false
+      ),
+    ]
+    let transaction = InstantStoreTransaction(
+      id: "tx-instaml-schema-no-duplicate-ref-attrs",
+      operations: [
+        .insert(
+          InstantTriple(
+            entityID: "comment-1",
+            attributeID: "comments/id",
+            value: .string("comment-1"),
+            txID: "tx-instaml-schema-no-duplicate-ref-attrs",
+            txTime: time
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "comment-1",
+            attributeID: "comments/book",
+            value: .ref("book-1"),
+            txID: "tx-instaml-schema-no-duplicate-ref-attrs",
+            txTime: time
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "book-1",
+            attributeID: "books/id",
+            value: .string("book-1"),
+            txID: "tx-instaml-schema-no-duplicate-ref-attrs",
+            txTime: time
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "comment-1",
+            attributeID: "comments/book",
+            value: .ref("book-1"),
+            txID: "tx-instaml-schema-no-duplicate-ref-attrs",
+            txTime: time
+          )
+        ),
+      ]
+    )
+
+    let store = InstantStore(snapshot: InstantStoreSnapshot(attributes: attributes))
+    _ = try await store.prepare(transaction)
+    let snapshot = await store.snapshot()
+    let refAttributes = snapshot.attributes.filter { $0.valueType == .ref }
+    let bookAttribute = try #require(refAttributes.first)
+    expectNoDifference(refAttributes.map(\.id), ["comments/book"], source)
+    expectNoDifference(bookAttribute.cardinality, .one, source)
+    expectNoDifference(bookAttribute.forwardIdentity, "comments/book", source)
+    expectNoDifference(bookAttribute.reverseIdentity, "books/comments", source)
+    expectNoDifference(bookAttribute.linkNamespace, "books", source)
+    expectNoDifference(
+      snapshot.triples.filter { $0.attributeID == "comments/book" },
+      [
+        InstantTriple(
+          entityID: "comment-1",
+          attributeID: "comments/book",
+          value: .ref("book-1"),
+          txID: "tx-instaml-schema-no-duplicate-ref-attrs",
+          txTime: time
+        )
+      ],
+      source
+    )
+    expectNoDifference(snapshot.triples.count, 3, source)
+
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: attributes
+      )
+    )
+    let result = try await runtime.transact(transaction, createdAt: time)
+    let comments = try await runtime.query(
+      InstantQueryPlan(
+        id: "schema-no-duplicate-ref-attrs.comments",
+        namespace: "comments",
+        includes: [InstantQueryInclude("book")]
+      )
+    )
+    let books = try await runtime.query(
+      InstantQueryPlan(
+        id: "schema-no-duplicate-ref-attrs.books",
+        namespace: "books",
+        includes: [InstantQueryInclude("comments", direction: .reverse)]
+      )
+    )
+
+    expectNoDifference(result.changedEntityIDs, Set(["book-1", "comment-1"]), source)
+    expectNoDifference(result.tripleCount, 3, source)
+    expectNoDifference(comments.map(\.id), ["comment-1"], source)
+    expectNoDifference(comments.first?.values["book"]?.values, [.ref("book-1")], source)
+    expectNoDifference(comments.first?.links?["book"]?.map(\.id), ["book-1"], source)
+    expectNoDifference(books.map(\.id), ["book-1"], source)
+    expectNoDifference(books.first?.links?["comments"]?.map(\.id), ["comment-1"], source)
+
+    let transportMutations = await runtime.outboxTransportMutations()
+    expectNoDifference(transportMutations.map(\.transactionID), ["tx-instaml-schema-no-duplicate-ref-attrs"], source)
+    let transportMutation = try #require(transportMutations.first)
+    expectNoDifference(
+      transportMutation.txSteps,
+      [
+        .addTriple(entity: .id("comment-1"), attributeID: "comments/id", value: .string("comment-1")),
+        .addTriple(entity: .id("comment-1"), attributeID: "comments/book", value: .string("book-1")),
+        .addTriple(entity: .id("book-1"), attributeID: "books/id", value: .string("book-1")),
+        .addTriple(entity: .id("comment-1"), attributeID: "comments/book", value: .string("book-1")),
+      ],
+      source
+    )
+  }
+
+  @Test
   func transportMutationPreservesLookupEntitiesForInstamlLinkAndUnlinkParity() throws {
     let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let userLookup = InstantLookupRef(
