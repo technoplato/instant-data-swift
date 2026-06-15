@@ -317,6 +317,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift rejects unsupported bool, JSON object, and null inputs by returning nil from optional coercion rather than throwing JavaScript exceptions."
     ),
     instant(
+      id: "instant.simple-e2e.can-make-query",
+      sourceFile: simpleE2ESource,
+      sourceTestName: "can make a query",
+      swiftFile: simpleE2ESwiftFile,
+      swiftTestName: "upstreamSimpleE2ECanMakeAQuery",
+      surface: "query",
+      status: .adapted,
+      notes: "Swift proves the same empty todos query through local InstantRuntime.queryOnce; the browser document mutation is outside the core runtime surface."
+    ),
+    instant(
       id: "instant.query.simple-where",
       sourceFile: instaQLSource,
       sourceTestName: "Simple Where",
@@ -2142,6 +2152,8 @@ public enum InstantSwiftDataParityCoverage {
     "upstream/instant/client/packages/core/__tests__/src/store.test.ts"
   private static let instaQLSource =
     "upstream/instant/client/packages/core/__tests__/src/instaql.test.ts"
+  private static let simpleE2ESource =
+    "upstream/instant/client/packages/core/__tests__/src/simple.e2e.test.ts"
   private static let instamlSource =
     "upstream/instant/client/packages/core/__tests__/src/instaml.test.ts"
   private static let datalogSource =
@@ -2164,6 +2176,8 @@ public enum InstantSwiftDataParityCoverage {
     "upstream/instant/client/packages/core/__tests__/src/utils/object.test.ts"
   private static let storeParitySwiftFile =
     "Tests/InstantSwiftDataCoreTests/InstantStoreParityTests.swift"
+  private static let simpleE2ESwiftFile =
+    "Tests/InstantSwiftDataCoreTests/InstantSimpleE2EParityTests.swift"
   private static let queryExecutionSwiftFile =
     "Tests/InstantSwiftDataCoreTests/InstantQueryExecutionParityTests.swift"
   private static let queryValidationSwiftFile =

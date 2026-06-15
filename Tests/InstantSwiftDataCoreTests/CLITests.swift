@@ -8316,9 +8316,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 199)
+    expectNoDifference(jsonOutput.recordCount, 200)
     expectNoDifference(jsonOutput.exactCount, 28)
-    expectNoDifference(jsonOutput.adaptedCount, 165)
+    expectNoDifference(jsonOutput.adaptedCount, 166)
     expectNoDifference(jsonOutput.blockedCount, 5)
     expectNoDifference(jsonOutput.notApplicableCount, 1)
     #expect(
@@ -8363,6 +8363,11 @@ extension InstantStoreTests {
     )
     #expect(
       jsonOutput.sourceFiles.contains(
+        "upstream/instant/client/packages/core/__tests__/src/simple.e2e.test.ts"
+      )
+    )
+    #expect(
+      jsonOutput.sourceFiles.contains(
         "upstream/instant/client/www/_examples/app-builder.md + Galaxies-dev/app-builder@e67200cc70e01d88bd9a5382cf0380f4882fb8c7"
       )
     )
@@ -8373,6 +8378,7 @@ extension InstantStoreTests {
     )
     #expect(jsonOutput.sourceFiles.contains("upstream/instant/client/packages/react-common/src"))
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantDateCoercionTests.swift"))
+    #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantSimpleE2EParityTests.swift"))
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/CLITests.swift"))
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataTests/TypedAPITests.swift"))
     #expect(jsonOutput.records.contains { $0.id == "instant.store.simple-add" && $0.status == "exact" })
@@ -8494,6 +8500,11 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.records.contains {
         $0.id == "instant.query.simple-without-where" && $0.status == "exact"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.simple-e2e.can-make-query" && $0.status == "adapted"
       }
     )
     #expect(
@@ -9055,9 +9066,9 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 199"))
+    #expect(humanOutput.contains("records: 200"))
     #expect(humanOutput.contains("exact: 28"))
-    #expect(humanOutput.contains("adapted: 165"))
+    #expect(humanOutput.contains("adapted: 166"))
     #expect(humanOutput.contains("blocked: 5"))
     #expect(humanOutput.contains("not applicable: 1"))
   }
