@@ -2879,6 +2879,10 @@ struct CLIArgumentParserTests {
       .generate(CLIGenerateArtifactInvocation(example: "todos"))
     )
     expectNoDifference(
+      try parseSchema(["generate", "--example", "validation", "--to", "validation.schema.ts"]),
+      .generate(CLIGenerateArtifactInvocation(example: "validation", outputPath: "validation.schema.ts"))
+    )
+    expectNoDifference(
       try parseSchema([
         "generate", "--example", "rooms", "--example", "todos", "--to", "old.ts",
         "--to", "instant.schema.ts",
@@ -2888,6 +2892,10 @@ struct CLIArgumentParserTests {
     expectNoDifference(
       try parseSchema(["verify", "--example", "todos", "--from", "instant.schema.ts"]),
       .verify(CLIVerifyArtifactInvocation(example: "todos", inputPath: "instant.schema.ts"))
+    )
+    expectNoDifference(
+      try parseSchema(["verify", "--example", "validation", "--from", "validation.schema.ts"]),
+      .verify(CLIVerifyArtifactInvocation(example: "validation", inputPath: "validation.schema.ts"))
     )
   }
 
@@ -2922,6 +2930,10 @@ struct CLIArgumentParserTests {
       .generate(CLIGenerateArtifactInvocation(example: "todos"))
     )
     expectNoDifference(
+      try parsePermissions(["generate", "--example", "validation", "--to", "validation.perms.ts"]),
+      .generate(CLIGenerateArtifactInvocation(example: "validation", outputPath: "validation.perms.ts"))
+    )
+    expectNoDifference(
       try parsePermissions([
         "generate", "--example", "rooms", "--example", "todos", "--to", "old.ts",
         "--to", "instant.perms.ts",
@@ -2931,6 +2943,10 @@ struct CLIArgumentParserTests {
     expectNoDifference(
       try parsePermissions(["verify", "--example", "todos", "--from", "instant.perms.ts"]),
       .verify(CLIVerifyArtifactInvocation(example: "todos", inputPath: "instant.perms.ts"))
+    )
+    expectNoDifference(
+      try parsePermissions(["verify", "--example", "validation", "--from", "validation.perms.ts"]),
+      .verify(CLIVerifyArtifactInvocation(example: "validation", inputPath: "validation.perms.ts"))
     )
   }
 

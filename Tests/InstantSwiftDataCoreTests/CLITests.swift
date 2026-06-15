@@ -185,6 +185,162 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliSchemaPermissionsValidationExampleGenerateAndVerify() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    let generatedDirectoryURL = homeURL.appendingPathComponent("Generated", isDirectory: true)
+    let generatedSchemaURL = generatedDirectoryURL.appendingPathComponent("validation.schema.ts")
+    let generatedPermissionsURL = generatedDirectoryURL.appendingPathComponent("validation.perms.ts")
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let schemaStdout = try JSONDecoder().decode(
+      CLIGeneratedArtifactOutput.self,
+      from: Data(
+        try runCLI(["schema", "generate", "--example", "validation", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(schemaStdout.example, "validation")
+    expectNoDifference(schemaStdout.kind, "schema")
+    expectNoDifference(schemaStdout.fileName, "instant.schema.ts")
+    expectNoDifference(schemaStdout.path, nil)
+    #expect(try #require(schemaStdout.contents).contains("postAuthor"))
+    #expect(try #require(schemaStdout.contents).contains("rooms"))
+
+    let generatedSchema = try JSONDecoder().decode(
+      CLIGeneratedArtifactOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "schema", "generate", "--example", "validation",
+            "--to", generatedSchemaURL.path,
+            "--json",
+          ],
+          homeURL: homeURL
+        )
+        .utf8
+      )
+    )
+    expectNoDifference(generatedSchema.example, "validation")
+    expectNoDifference(generatedSchema.path, generatedSchemaURL.path)
+    expectNoDifference(generatedSchema.contents, nil)
+    #expect(generatedSchema.byteCount > 0)
+
+    let schemaVerify = try JSONDecoder().decode(
+      CLISchemaVerifyOutput.self,
+      from: Data(
+        try runCLI(
+          ["schema", "verify", "--example", "validation", "--from", generatedSchemaURL.path, "--json"],
+          homeURL: homeURL
+        )
+        .utf8
+      )
+    )
+    expectNoDifference(schemaVerify.example, "validation")
+    expectNoDifference(schemaVerify.entityCount, 2)
+    expectNoDifference(schemaVerify.attributeCount, 7)
+    expectNoDifference(schemaVerify.linkCount, 1)
+
+    let permissionsOutput = try JSONDecoder().decode(
+      CLIGeneratedArtifactOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "perms", "generate", "--example", "validation",
+            "--to", generatedPermissionsURL.path,
+            "--json",
+          ],
+          homeURL: homeURL
+        )
+        .utf8
+      )
+    )
+    expectNoDifference(permissionsOutput.example, "validation")
+    expectNoDifference(permissionsOutput.kind, "permissions")
+    expectNoDifference(permissionsOutput.path, generatedPermissionsURL.path)
+    expectNoDifference(permissionsOutput.contents, nil)
+
+    let permissionsVerify = try JSONDecoder().decode(
+      CLIPermissionsVerifyOutput.self,
+      from: Data(
+        try runCLI(
+          ["perms", "verify", "--example", "validation", "--from", generatedPermissionsURL.path, "--json"],
+          homeURL: homeURL
+        )
+        .utf8
+      )
+    )
+    expectNoDifference(permissionsVerify.example, "validation")
+    expectNoDifference(permissionsVerify.namespaceCount, 3)
+    expectNoDifference(permissionsVerify.allowRuleCount, 12)
+    expectNoDifference(permissionsVerify.rateLimitCount, 0)
+
+    let fixtureURL = packageRootURL()
+      .appendingPathComponent("validation/fixtures", isDirectory: true)
+    let fixtureSchemaVerify = try JSONDecoder().decode(
+      CLISchemaVerifyOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "schema", "verify", "--example", "validation",
+            "--from", fixtureURL.appendingPathComponent("instant.schema.ts").path,
+            "--json",
+          ],
+          homeURL: homeURL
+        )
+        .utf8
+      )
+    )
+    expectNoDifference(fixtureSchemaVerify.example, "validation")
+    expectNoDifference(fixtureSchemaVerify.entityCount, 2)
+    expectNoDifference(fixtureSchemaVerify.attributeCount, 7)
+    expectNoDifference(fixtureSchemaVerify.linkCount, 1)
+
+    let fixturePermissionsVerify = try JSONDecoder().decode(
+      CLIPermissionsVerifyOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "perms", "verify", "--example", "validation",
+            "--from", fixtureURL.appendingPathComponent("instant.perms.ts").path,
+            "--json",
+          ],
+          homeURL: homeURL
+        )
+        .utf8
+      )
+    )
+    expectNoDifference(fixturePermissionsVerify.example, "validation")
+    expectNoDifference(fixturePermissionsVerify.namespaceCount, 3)
+    expectNoDifference(fixturePermissionsVerify.allowRuleCount, 12)
+
+    let unsupported = try runCLIResult(
+      ["schema", "generate", "--example", "rooms", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(unsupported.status, 64)
+    #expect(unsupported.error.contains("Available examples: todos, validation"))
+  }
+
+  @Test
+  func cliTopLevelHelpListsValidationSchemaExample() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let help = try runCLIResult(["--help"], homeURL: homeURL)
+
+    expectNoDifference(help.status, 0)
+    expectNoDifference(help.error, "")
+    #expect(help.output.contains("schema generate --example todos|validation"))
+    #expect(help.output.contains("schema verify --example todos|validation"))
+    #expect(help.output.contains("perms generate --example todos|validation"))
+    #expect(help.output.contains("perms verify --example todos|validation"))
+  }
+
+  @Test
   func cliMalformedToolingArgumentsDoNotCreateFiles() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -210,11 +366,11 @@ extension InstantStoreTests {
     )
     try expectMalformed(
       ["schema", "generate", "--to", schemaURL.path, "--json"],
-      contains: "schema generate --example todos"
+      contains: "schema generate --example todos|validation"
     )
     try expectMalformed(
       ["schema", "dance", "--to", schemaURL.path, "--json"],
-      contains: "schema generate --example todos"
+      contains: "schema generate --example todos|validation"
     )
     try expectMalformed(
       ["schema", "verify", "--example", "todos", "--unknown", "--json"],
@@ -226,7 +382,7 @@ extension InstantStoreTests {
     )
     try expectMalformed(
       ["perms", "verify", "--example", "todos", "--from", "--json"],
-      contains: "perms verify --example todos --from instant.perms.ts"
+      contains: "perms verify --example todos|validation --from instant.perms.ts"
     )
 
     expectNoDifference(
@@ -9009,11 +9165,28 @@ private struct CLIInitEvidence: Decodable {
 }
 
 private struct CLIGeneratedArtifactOutput: Decodable {
+  var example: String
   var kind: String
   var fileName: String
   var path: String?
   var byteCount: Int
   var contents: String?
+}
+
+private struct CLISchemaVerifyOutput: Decodable {
+  var example: String
+  var path: String
+  var entityCount: Int
+  var attributeCount: Int
+  var linkCount: Int
+}
+
+private struct CLIPermissionsVerifyOutput: Decodable {
+  var example: String
+  var path: String
+  var namespaceCount: Int
+  var allowRuleCount: Int
+  var rateLimitCount: Int
 }
 
 private struct CLIGeneratedArtifactEvidence: Decodable {

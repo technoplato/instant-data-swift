@@ -1,10 +1,26 @@
 import CustomDump
+import Foundation
 import InstantSwiftDataCore
 import InstantSwiftDataSchema
 import Testing
 
 @Suite(.serialized)
 struct TypeScriptPrinterTests {
+  private static func packageRootURL(filePath: String = #filePath) -> URL {
+    URL(fileURLWithPath: filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+  }
+
+  private static func validationFixture(named fileName: String) throws -> String {
+    try String(
+      contentsOf: packageRootURL()
+        .appendingPathComponent("validation/fixtures/\(fileName)"),
+      encoding: .utf8
+    )
+  }
+
   private static let linkedTodoDocument = InstantSchemaDocument(
     entities: [
       InstantEntitySchema(
@@ -228,6 +244,60 @@ struct TypeScriptPrinterTests {
   }
 
   @Test
+  func schemaPrinterEmitsValidationExample() throws {
+    expectNoDifference(
+      try TypeScriptSchemaPrinter().printSchema(InstantSchemaExamples.validationDocument),
+      """
+      import { i } from '@instantdb/core';
+
+      export default i.schema({
+        entities: {
+          posts: i.entity({
+            content: i.string(),
+            createdAt: i.date().indexed(),
+          }),
+          profiles: i.entity({
+            createdAt: i.date().indexed(),
+            displayName: i.string(),
+            handle: i.string().indexed().unique(),
+          }),
+        },
+        links: {
+          postAuthor: {
+            forward: {
+              on: "posts",
+              has: "one",
+              label: "author",
+            },
+            reverse: {
+              on: "profiles",
+              has: "many",
+              label: "posts",
+            },
+          },
+        },
+        rooms: {
+          validation: {
+            presence: i.entity({
+              cursorX: i.number().optional(),
+              cursorY: i.number().optional(),
+              name: i.string(),
+            }),
+            topics: {
+              ping: i.entity({
+                message: i.string(),
+                sentAt: i.date(),
+              }),
+            },
+          },
+        },
+      });
+
+      """
+    )
+  }
+
+  @Test
   func schemaPrinterEmitsLinks() throws {
     expectNoDifference(
       try TypeScriptSchemaPrinter().printSchema(Self.linkedTodoDocument),
@@ -349,6 +419,29 @@ struct TypeScriptPrinterTests {
       [
         ParsedInstantEntitySchema(InstantSchemaExamples.todos)
       ]
+    )
+  }
+
+  @Test
+  func schemaParserRoundTripsGeneratedValidationExample() throws {
+    let printed = try TypeScriptSchemaPrinter()
+      .printSchema(InstantSchemaExamples.validationDocument)
+    let parsed = try TypeScriptSchemaParser().parseDocument(printed)
+
+    expectNoDifference(
+      parsed,
+      ParsedInstantSchemaDocument(InstantSchemaExamples.validationDocument)
+    )
+  }
+
+  @Test
+  func schemaParserParsesValidationFixture() throws {
+    let parsed = try TypeScriptSchemaParser()
+      .parseDocument(Self.validationFixture(named: "instant.schema.ts"))
+
+    expectNoDifference(
+      parsed,
+      ParsedInstantSchemaDocument(InstantSchemaExamples.validationDocument)
     )
   }
 
@@ -1298,12 +1391,72 @@ struct TypeScriptPrinterTests {
   }
 
   @Test
+  func permissionsPrinterEmitsValidationExample() throws {
+    expectNoDifference(
+      try TypeScriptPermissionsPrinter()
+        .printPermissions(InstantSchemaExamples.validationPermissions),
+      """
+      // Docs: https://www.instantdb.com/docs/permissions
+
+      import type { InstantRules } from "@instantdb/core";
+
+      const rules = {
+        "$files": {
+          allow: {
+            view: "true",
+            create: "true",
+            update: "true",
+            delete: "true",
+          },
+        },
+        posts: {
+          allow: {
+            view: "true",
+            create: "true",
+            update: "true",
+            delete: "true",
+          },
+        },
+        profiles: {
+          allow: {
+            view: "true",
+            create: "true",
+            update: "true",
+            delete: "true",
+          },
+        },
+      } satisfies InstantRules;
+
+      export default rules;
+
+      """
+    )
+  }
+
+  @Test
   func permissionsParserRoundTripsTodoExample() throws {
     let printed = try TypeScriptPermissionsPrinter()
       .printPermissions(InstantSchemaExamples.todoPermissions)
     let parsed = try TypeScriptPermissionsParser().parse(printed)
 
     expectNoDifference(parsed, InstantSchemaExamples.todoPermissions)
+  }
+
+  @Test
+  func permissionsParserRoundTripsValidationExample() throws {
+    let printed = try TypeScriptPermissionsPrinter()
+      .printPermissions(InstantSchemaExamples.validationPermissions)
+    let parsed = try TypeScriptPermissionsParser().parse(printed)
+
+    expectNoDifference(parsed, InstantSchemaExamples.validationPermissions)
+  }
+
+  @Test
+  func permissionsParserParsesValidationFixture() throws {
+    let parsed = try TypeScriptPermissionsParser()
+      .parse(Self.validationFixture(named: "instant.perms.ts"))
+
+    expectNoDifference(parsed, InstantSchemaExamples.validationPermissions)
   }
 
   @Test

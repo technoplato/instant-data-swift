@@ -125,18 +125,18 @@ struct InstantSwiftDataCLI {
     switch invocation {
     case let .verify(verify):
       let options = SchemaVerifyOptions(invocation: verify)
-      try requireTodoExample(options.example)
-      try verifySchema(options: options, output: output)
+      let example = try schemaExample(named: options.example)
+      try verifySchema(options: options, example: example, output: output)
 
     case let .generate(generate):
       let options = GenerateOptions(invocation: generate)
-      try requireTodoExample(options.example)
+      let example = try schemaExample(named: options.example)
 
       try printGeneratedArtifact(
-        try TypeScriptSchemaPrinter().printSchema(InstantSchemaExamples.todosDocument),
+        try TypeScriptSchemaPrinter().printSchema(example.schema),
         kind: "schema",
         fileName: "instant.schema.ts",
-        example: options.example,
+        example: example.name,
         to: options.outputPath,
         output: output,
         caseID: "cli.schema.generate",
@@ -157,18 +157,18 @@ struct InstantSwiftDataCLI {
     switch invocation {
     case let .verify(verify):
       let options = PermissionsVerifyOptions(invocation: verify)
-      try requireTodoExample(options.example)
-      try verifyPermissions(options: options, output: output)
+      let example = try schemaExample(named: options.example)
+      try verifyPermissions(options: options, example: example, output: output)
 
     case let .generate(generate):
       let options = GenerateOptions(invocation: generate)
-      try requireTodoExample(options.example)
+      let example = try schemaExample(named: options.example)
 
       try printGeneratedArtifact(
-        try TypeScriptPermissionsPrinter().printPermissions(InstantSchemaExamples.todoPermissions),
+        try TypeScriptPermissionsPrinter().printPermissions(example.permissions),
         kind: "permissions",
         fileName: "instant.perms.ts",
-        example: options.example,
+        example: example.name,
         to: options.outputPath,
         output: output,
         caseID: "cli.perms.generate",
@@ -8464,10 +8464,10 @@ struct InstantSwiftDataCLI {
 
       Commands:
         init --example todos --to <directory> [--force] [--json|--jsonl]
-        schema generate --example todos [--to instant.schema.ts] [--json|--jsonl]
-        schema verify --example todos --from instant.schema.ts [--json|--jsonl]
-        perms generate --example todos [--to instant.perms.ts] [--json|--jsonl]
-        perms verify --example todos --from instant.perms.ts [--json|--jsonl]
+        schema generate --example todos|validation [--to instant.schema.ts] [--json|--jsonl]
+        schema verify --example todos|validation --from instant.schema.ts [--json|--jsonl]
+        perms generate --example todos|validation [--to instant.perms.ts] [--json|--jsonl]
+        perms verify --example todos|validation --from instant.perms.ts [--json|--jsonl]
         query todos [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt] [--raw] [--select field[,field]] [--json|--jsonl]
         admin query <namespace> [--limit n] [--json|--jsonl]
         admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id] [--json|--jsonl]
@@ -8566,6 +8566,30 @@ struct InstantSwiftDataCLI {
   private static func requireTodoExample(_ example: String) throws {
     guard example == "todos" else {
       throw CLIError("Only '--example todos' is implemented in this core slice.", exitCode: 64)
+    }
+  }
+
+  private static func schemaExample(named rawName: String) throws -> CLISchemaExample {
+    switch rawName {
+    case "todos":
+      return CLISchemaExample(
+        name: "todos",
+        schema: InstantSchemaExamples.todosDocument,
+        permissions: InstantSchemaExamples.todoPermissions
+      )
+
+    case "validation":
+      return CLISchemaExample(
+        name: "validation",
+        schema: InstantSchemaExamples.validationDocument,
+        permissions: InstantSchemaExamples.validationPermissions
+      )
+
+    default:
+      throw CLIError(
+        "Unsupported --example '\(rawName)'. Available examples: todos, validation.",
+        exitCode: 64
+      )
     }
   }
 
@@ -8794,7 +8818,11 @@ struct InstantSwiftDataCLI {
     """
   }
 
-  private static func verifySchema(options: SchemaVerifyOptions, output: OutputMode) throws {
+  private static func verifySchema(
+    options: SchemaVerifyOptions,
+    example: CLISchemaExample,
+    output: OutputMode
+  ) throws {
     let currentDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
     let url = URL(fileURLWithPath: options.inputPath, relativeTo: currentDirectory)
       .standardizedFileURL
@@ -8806,13 +8834,13 @@ struct InstantSwiftDataCLI {
       throw CLIError("Schema parse failed: \(error.description)", exitCode: 66)
     }
 
-    let expected = ParsedInstantSchemaDocument(InstantSchemaExamples.todosDocument)
+    let expected = ParsedInstantSchemaDocument(example.schema)
     guard parsed == expected else {
-      throw CLIError("Schema does not match --example todos.", exitCode: 66)
+      throw CLIError("Schema does not match --example \(example.name).", exitCode: 66)
     }
 
     let summary = SchemaVerifyOutput(
-      example: options.example,
+      example: example.name,
       path: url.path,
       entityCount: parsed.entities.count,
       attributeCount: parsed.entities.reduce(0) { $0 + $1.attributes.count },
@@ -8847,6 +8875,7 @@ struct InstantSwiftDataCLI {
 
   private static func verifyPermissions(
     options: PermissionsVerifyOptions,
+    example: CLISchemaExample,
     output: OutputMode
   ) throws {
     let currentDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
@@ -8862,13 +8891,13 @@ struct InstantSwiftDataCLI {
       throw CLIError("Permissions parse failed: \(error.description)", exitCode: 66)
     }
 
-    let expected = InstantSchemaExamples.todoPermissions
+    let expected = example.permissions
     guard parsed == expected else {
-      throw CLIError("Permissions do not match --example todos.", exitCode: 66)
+      throw CLIError("Permissions do not match --example \(example.name).", exitCode: 66)
     }
 
     let summary = PermissionsVerifyOutput(
-      example: options.example,
+      example: example.name,
       path: url.path,
       namespaceCount: parsed.namespaces.count,
       allowRuleCount: allowRuleCount(in: parsed),
@@ -11322,6 +11351,12 @@ private struct ScaffoldFileSpec: Sendable {
   var contents: String
   var fileName: String
   var kind: String
+}
+
+private struct CLISchemaExample: Sendable {
+  var name: String
+  var schema: InstantSchemaDocument
+  var permissions: InstantPermissionsDocument
 }
 
 private extension CLIRoomIdentifier {

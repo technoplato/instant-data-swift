@@ -368,6 +368,134 @@ public enum InstantSchemaExamples {
       .allowAll(namespace: TodoExample.namespace)
     ]
   )
+
+  public static let validationProfiles = InstantEntitySchema(
+    typeName: "Profile",
+    namespace: "profiles",
+    attributes: [
+      InstantAttribute(
+        id: "profiles/handle",
+        namespace: "profiles",
+        name: "handle",
+        valueType: .string,
+        isIndexed: true,
+        isUnique: true
+      ),
+      InstantAttribute(
+        id: "profiles/displayName",
+        namespace: "profiles",
+        name: "displayName",
+        valueType: .string
+      ),
+      InstantAttribute(
+        id: "profiles/createdAt",
+        namespace: "profiles",
+        name: "createdAt",
+        valueType: .date,
+        isIndexed: true
+      ),
+    ]
+  )
+
+  public static let validationPosts = InstantEntitySchema(
+    typeName: "Post",
+    namespace: "posts",
+    attributes: [
+      InstantAttribute(
+        id: "posts/content",
+        namespace: "posts",
+        name: "content",
+        valueType: .string
+      ),
+      InstantAttribute(
+        id: "posts/createdAt",
+        namespace: "posts",
+        name: "createdAt",
+        valueType: .date,
+        isIndexed: true
+      ),
+    ]
+  )
+
+  public static let validationDocument = InstantSchemaDocument(
+    entities: [
+      validationProfiles,
+      validationPosts,
+    ],
+    links: [
+      InstantLinkSchema(
+        name: "postAuthor",
+        forward: InstantLinkEndpoint(
+          namespace: "posts",
+          cardinality: .one,
+          label: "author"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "profiles",
+          cardinality: .many,
+          label: "posts"
+        )
+      )
+    ],
+    rooms: [
+      InstantRoomSchema(
+        name: "validation",
+        presence: InstantRoomPayloadSchema(
+          attributes: [
+            InstantAttribute(
+              id: "rooms/validation/presence/name",
+              namespace: "rooms/validation/presence",
+              name: "name",
+              valueType: .string
+            ),
+            InstantAttribute(
+              id: "rooms/validation/presence/cursorX",
+              namespace: "rooms/validation/presence",
+              name: "cursorX",
+              valueType: .number,
+              isRequired: false
+            ),
+            InstantAttribute(
+              id: "rooms/validation/presence/cursorY",
+              namespace: "rooms/validation/presence",
+              name: "cursorY",
+              valueType: .number,
+              isRequired: false
+            ),
+          ]
+        ),
+        topics: [
+          InstantRoomTopicSchema(
+            name: "ping",
+            payload: InstantRoomPayloadSchema(
+              attributes: [
+                InstantAttribute(
+                  id: "rooms/validation/topics/ping/message",
+                  namespace: "rooms/validation/topics/ping",
+                  name: "message",
+                  valueType: .string
+                ),
+                InstantAttribute(
+                  id: "rooms/validation/topics/ping/sentAt",
+                  namespace: "rooms/validation/topics/ping",
+                  name: "sentAt",
+                  valueType: .date
+                ),
+              ]
+            )
+          )
+        ]
+      )
+    ]
+  )
+
+  public static let validationPermissions = InstantPermissionsDocument(
+    namespaces: [
+      .allowAll(namespace: "$files"),
+      .allowAll(namespace: "posts"),
+      .allowAll(namespace: "profiles"),
+    ]
+  )
 }
 
 public struct TypeScriptSchemaPrinter: Sendable {
