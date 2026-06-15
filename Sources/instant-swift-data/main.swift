@@ -460,8 +460,8 @@ struct InstantSwiftDataCLI {
       try await runReactions(leaf: leaf, output: output)
       return
 
-    case let .typingIndicator(arguments):
-      try await runTypingIndicator(arguments: arguments, output: output)
+    case let .typingIndicator(leaf):
+      try await runTypingIndicator(leaf: leaf, output: output)
       return
 
     case let .avatarStack(arguments):
@@ -6068,16 +6068,11 @@ struct InstantSwiftDataCLI {
     }
   }
 
-  private static func runTypingIndicator(arguments: [String], output: OutputMode) async throws {
-    let invocation: CLIExamplesTypingIndicatorLeafInvocation
-    do {
-      var input = arguments[...]
-      invocation = try CLIExamplesTypingIndicatorLeafParser().parse(&input)
-    } catch let error as CLIExamplesTypingIndicatorArgumentError {
-      throw CLIError(error.description, exitCode: error.exitCode)
-    }
-
-    if case let .unknown(command) = invocation {
+  private static func runTypingIndicator(
+    leaf: CLIExamplesTypingIndicatorLeafInvocation,
+    output: OutputMode
+  ) async throws {
+    if case let .unknown(command) = leaf {
       throw CLIError(
         "Unknown typing indicator command: \(command). \(typingIndicatorUsage)",
         exitCode: 64
@@ -6085,7 +6080,7 @@ struct InstantSwiftDataCLI {
     }
 
     let context = try await CLIContext.bootstrap(initialAttributes: [])
-    switch invocation {
+    switch leaf {
     case let .join(userID):
       _ = try await context.runtime.setPresence(
         room: TypingIndicatorRecipeExample.room,

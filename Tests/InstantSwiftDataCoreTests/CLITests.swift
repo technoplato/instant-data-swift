@@ -1042,6 +1042,54 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliMalformedTypingIndicatorArgumentsDoNotBootstrapState() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    func expectMalformed(_ arguments: [String], contains expectedFragment: String) throws {
+      let result = try runCLIResult(arguments, homeURL: homeURL)
+      expectNoDifference(result.status, 64)
+      #expect(result.error.contains(expectedFragment))
+    }
+
+    try expectMalformed(
+      ["examples", "typing-indicator", "--json"],
+      contains: "examples typing-indicator <join|type|stop|list|watch|leave>"
+    )
+    try expectMalformed(
+      ["examples", "typing", "join", "--json"],
+      contains: "examples typing-indicator <join|type|stop|leave>"
+    )
+    try expectMalformed(
+      ["examples", "typing-indicator", "type", "  ", "--json"],
+      contains: "examples typing-indicator <join|type|stop|leave>"
+    )
+    try expectMalformed(
+      ["examples", "typing-indicator", "list", "unexpected", "--json"],
+      contains: "examples typing-indicator list"
+    )
+    try expectMalformed(
+      ["examples", "typing-indicators", "watch", "--events", "2", "--jsonl"],
+      contains: "examples typing-indicator watch"
+    )
+    try expectMalformed(
+      ["examples", "typing-indicator", "leave", "--json"],
+      contains: "examples typing-indicator <join|type|stop|leave>"
+    )
+    try expectMalformed(
+      ["examples", "typing-indicator", "dance", "--json"],
+      contains: "Unknown typing indicator command: dance"
+    )
+
+    expectNoDifference(
+      try FileManager.default.contentsOfDirectory(atPath: homeURL.path),
+      []
+    )
+  }
+
+  @Test
   func cliMalformedSyncUpsArgumentsDoNotBootstrapState() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)

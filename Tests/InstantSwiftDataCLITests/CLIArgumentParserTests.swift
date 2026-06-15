@@ -1294,15 +1294,15 @@ struct CLIArgumentParserTests {
   func examplesTypingIndicatorLeafParserParsesCommandsAndOptions() throws {
     expectNoDifference(
       try parseExamples(["typing-indicator", "join", "user-1"]),
-      .typingIndicator(arguments: ["join", "user-1"])
+      .typingIndicator(.join(userID: "user-1"))
     )
     expectNoDifference(
       try parseExamples(["typing", "type", "user-1"]),
-      .typingIndicator(arguments: ["type", "user-1"])
+      .typingIndicator(.type(userID: "user-1"))
     )
     expectNoDifference(
       try parseExamples(["typing-indicators", "watch"]),
-      .typingIndicator(arguments: ["watch"])
+      .typingIndicator(.watch(CLIExamplesTypingIndicatorWatchInvocation()))
     )
     expectNoDifference(
       try parseExamplesTypingIndicatorLeaf(["join", "user-1"]),
