@@ -1902,6 +1902,256 @@ struct InstantStoreTests {
   }
 
   @Test
+  func transportMutationPortsInstamlLookupSelfLinksDoNotOverrideAttrs() async throws {
+    let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let source =
+      "upstream/instant/client/packages/core/__tests__/src/instaml.test.ts "
+      + "lookup doesn't override attrs for lookups in self links "
+      + "[adapted: Swift writes concrete attr ids, so reverse child links write the declared forward attr from child to parent.]"
+    let declaredAttributes = [
+      InstantAttribute(
+        id: "posts/slug",
+        namespace: "posts",
+        name: "slug",
+        valueType: .string,
+        isRequired: false,
+        isIndexed: true,
+        isUnique: true
+      ),
+      InstantAttribute(
+        id: "posts/parent",
+        namespace: "posts",
+        name: "parent",
+        valueType: .ref,
+        isRequired: false,
+        cardinality: .one,
+        isIndexed: true,
+        isUnique: true,
+        forwardIdentity: "posts/parent",
+        reverseIdentity: "posts/child",
+        linkNamespace: "posts"
+      ),
+    ]
+    let seedTriples = [
+      InstantTriple(
+        entityID: "post-self-link",
+        attributeID: "posts/slug",
+        value: .string("life-is-good"),
+        txID: "seed-instaml-self-link",
+        txTime: txTime
+      ),
+      InstantTriple(
+        entityID: "post-child-link",
+        attributeID: "posts/slug",
+        value: .string("check-this-out"),
+        txID: "seed-instaml-self-link",
+        txTime: txTime
+      ),
+    ]
+    let postLookup = InstantLookupRef(
+      attributeID: "posts/slug",
+      value: .string("life-is-good")
+    )
+    let childLookup = InstantLookupRef(
+      attributeID: "posts/slug",
+      value: .string("check-this-out")
+    )
+    let parentTransaction = InstantStoreTransaction(
+      id: "tx-instaml-self-parent-link",
+      operations: InstantInstamlTransform.updateOperations(
+        namespace: "posts",
+        entityLookup: postLookup,
+        fields: [:],
+        txID: "tx-instaml-self-parent-link",
+        txTime: txTime
+      )
+      + [
+        .insertByLookup(
+          entity: postLookup,
+          attributeID: "posts/parent",
+          value: .lookupRef(postLookup),
+          txID: "tx-instaml-self-parent-link",
+          txTime: txTime
+        )
+      ]
+    )
+    let parentMutation = InstantTransportMutation(
+      PendingMutation(id: parentTransaction.id, createdAt: txTime, transaction: parentTransaction)
+    )
+    expectNoDifference(parentMutation.preconditions, [], source)
+    expectNoDifference(
+      parentMutation.txSteps,
+      [
+        .addTriple(
+          entity: .lookup(postLookup),
+          attributeID: "posts/id",
+          value: .array([.string("posts/slug"), .string("life-is-good")])
+        ),
+        .addTriple(
+          entity: .lookup(postLookup),
+          attributeID: "posts/parent",
+          value: .array([.string("posts/slug"), .string("life-is-good")])
+        ),
+      ],
+      source
+    )
+
+    let parentData = try JSONEncoder().encode(parentMutation)
+    let parentObject = try #require(JSONSerialization.jsonObject(with: parentData) as? [String: Any])
+    let parentTxSteps = try #require(parentObject["txSteps"] as? [[Any]])
+    expectNoDifference(parentTxSteps.map { $0.first as? String }, ["add-triple", "add-triple"], source)
+
+    let parentStore = InstantStore(
+      snapshot: InstantStoreSnapshot(attributes: declaredAttributes, triples: seedTriples)
+    )
+    let preparedParent = try await parentStore.prepare(parentTransaction)
+    expectNoDifference(
+      preparedParent.snapshot.attributes.map(\.id),
+      ["posts/id", "posts/parent", "posts/slug"],
+      source
+    )
+    expectNoDifference(
+      preparedParent.snapshot.attributes.first { $0.id == "posts/parent" },
+      declaredAttributes[1],
+      source
+    )
+    expectNoDifference(preparedParent.result.changedEntityIDs, ["post-self-link"], source)
+    expectNoDifference(
+      preparedParent.snapshot.triples,
+      [
+        InstantTriple(
+          entityID: "post-child-link",
+          attributeID: "posts/slug",
+          value: .string("check-this-out"),
+          txID: "seed-instaml-self-link",
+          txTime: txTime
+        ),
+        InstantTriple(
+          entityID: "post-self-link",
+          attributeID: "posts/id",
+          value: .string("post-self-link"),
+          txID: "tx-instaml-self-parent-link",
+          txTime: txTime
+        ),
+        InstantTriple(
+          entityID: "post-self-link",
+          attributeID: "posts/parent",
+          value: .ref("post-self-link"),
+          txID: "tx-instaml-self-parent-link",
+          txTime: txTime
+        ),
+        InstantTriple(
+          entityID: "post-self-link",
+          attributeID: "posts/slug",
+          value: .string("life-is-good"),
+          txID: "seed-instaml-self-link",
+          txTime: txTime
+        ),
+      ],
+      source
+    )
+
+    let childTransaction = InstantStoreTransaction(
+      id: "tx-instaml-self-child-link",
+      operations: InstantInstamlTransform.updateOperations(
+        namespace: "posts",
+        entityLookup: postLookup,
+        fields: [:],
+        txID: "tx-instaml-self-child-link",
+        txTime: txTime
+      )
+      + [
+        .insertByLookup(
+          entity: childLookup,
+          attributeID: "posts/parent",
+          value: .lookupRef(postLookup),
+          txID: "tx-instaml-self-child-link",
+          txTime: txTime
+        )
+      ]
+    )
+    let childMutation = InstantTransportMutation(
+      PendingMutation(id: childTransaction.id, createdAt: txTime, transaction: childTransaction)
+    )
+    expectNoDifference(childMutation.preconditions, [], source)
+    expectNoDifference(
+      childMutation.txSteps,
+      [
+        .addTriple(
+          entity: .lookup(postLookup),
+          attributeID: "posts/id",
+          value: .array([.string("posts/slug"), .string("life-is-good")])
+        ),
+        .addTriple(
+          entity: .lookup(childLookup),
+          attributeID: "posts/parent",
+          value: .array([.string("posts/slug"), .string("life-is-good")])
+        ),
+      ],
+      source
+    )
+
+    let childData = try JSONEncoder().encode(childMutation)
+    let childObject = try #require(JSONSerialization.jsonObject(with: childData) as? [String: Any])
+    let childTxSteps = try #require(childObject["txSteps"] as? [[Any]])
+    expectNoDifference(childTxSteps.map { $0.first as? String }, ["add-triple", "add-triple"], source)
+
+    let childStore = InstantStore(
+      snapshot: InstantStoreSnapshot(attributes: declaredAttributes, triples: seedTriples)
+    )
+    let preparedChild = try await childStore.prepare(childTransaction)
+    expectNoDifference(
+      preparedChild.snapshot.attributes.map(\.id),
+      ["posts/id", "posts/parent", "posts/slug"],
+      source
+    )
+    expectNoDifference(
+      preparedChild.snapshot.attributes.first { $0.id == "posts/parent" },
+      declaredAttributes[1],
+      source
+    )
+    expectNoDifference(
+      preparedChild.result.changedEntityIDs,
+      ["post-child-link", "post-self-link"],
+      source
+    )
+    expectNoDifference(
+      preparedChild.snapshot.triples,
+      [
+        InstantTriple(
+          entityID: "post-child-link",
+          attributeID: "posts/parent",
+          value: .ref("post-self-link"),
+          txID: "tx-instaml-self-child-link",
+          txTime: txTime
+        ),
+        InstantTriple(
+          entityID: "post-child-link",
+          attributeID: "posts/slug",
+          value: .string("check-this-out"),
+          txID: "seed-instaml-self-link",
+          txTime: txTime
+        ),
+        InstantTriple(
+          entityID: "post-self-link",
+          attributeID: "posts/id",
+          value: .string("post-self-link"),
+          txID: "tx-instaml-self-child-link",
+          txTime: txTime
+        ),
+        InstantTriple(
+          entityID: "post-self-link",
+          attributeID: "posts/slug",
+          value: .string("life-is-good"),
+          txID: "seed-instaml-self-link",
+          txTime: txTime
+        ),
+      ],
+      source
+    )
+  }
+
+  @Test
   func transportMutationInfersLookupDeleteNamespaceWithoutPrecondition() throws {
     let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let lookup = InstantLookupRef(

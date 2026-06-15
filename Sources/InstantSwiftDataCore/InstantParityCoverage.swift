@@ -657,6 +657,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift writes declared attr ids directly and has no add-attr txStep; transport lowering preserves the primary-key attr, link attr, and lookup value attr ids while local prepare keeps the declared schema unchanged."
     ),
     instant(
+      id: "instant.instaml.lookup-self-links",
+      sourceFile: instamlSource,
+      sourceTestName: "lookup doesn't override attrs for lookups in self links",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "transportMutationPortsInstamlLookupSelfLinksDoNotOverrideAttrs",
+      surface: "instaml",
+      status: .adapted,
+      notes: "Swift has no add-attr txStep in transport; self-link writes use the declared forward ref attr, and the reverse child-side write is modeled by writing that same attr from the child lookup back to the source lookup."
+    ),
+    instant(
       id: "instant.instaml.mode-update",
       sourceFile: instamlSource,
       sourceTestName: "mode: update",
