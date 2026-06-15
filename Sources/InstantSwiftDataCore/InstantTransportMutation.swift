@@ -44,6 +44,44 @@ extension InstantTransportMutation {
   }
 }
 
+enum InstantInstamlTransform {
+  static func updateOperations(
+    namespace: String,
+    entityID: String,
+    fields: [String: InstantValue?],
+    txID: String,
+    txTime: InstantTimestamp
+  ) -> [InstantTripleOperation] {
+    var operations: [InstantTripleOperation] = []
+    for field in fields.keys.sorted() where field != "id" {
+      guard let value = fields[field] ?? nil else { continue }
+      operations.append(
+        .insert(
+          InstantTriple(
+            entityID: entityID,
+            attributeID: "\(namespace)/\(field)",
+            value: value,
+            txID: txID,
+            txTime: txTime
+          )
+        )
+      )
+    }
+    operations.append(
+      .insert(
+        InstantTriple(
+          entityID: entityID,
+          attributeID: InstantAttribute.primaryKeyID(namespace: namespace),
+          value: .string(entityID),
+          txID: txID,
+          txTime: txTime
+        )
+      )
+    )
+    return operations
+  }
+}
+
 public struct InstantTransportPrecondition: Hashable, Encodable, Sendable {
   public enum Kind: String, Encodable, Sendable {
     case entityMissing = "entity-missing"

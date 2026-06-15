@@ -577,6 +577,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Lookup refs and rule params are preserved for transport lowering while local optimistic effects stay deterministic."
     ),
     instant(
+      id: "instant.instaml.basic-update-transform",
+      sourceFile: instamlSource,
+      sourceTestName: "simple update transform / undefined is ignored in update / ignores id attrs",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "transportMutationPortsInstamlBasicUpdateTransform",
+      surface: "instaml",
+      status: .adapted,
+      notes: "Swift ports the basic update transform through InstantInstamlTransform: encoded txSteps contain add-triple entries for scalar and primary-key writes, nil payload fields produce no txStep, and payload id fields are ignored in favor of the entity id."
+    ),
+    instant(
       id: "instant.instaml.mode-update",
       sourceFile: instamlSource,
       sourceTestName: "mode: update",

@@ -1157,6 +1157,118 @@ struct InstantStoreTests {
   }
 
   @Test
+  func transportMutationPortsInstamlBasicUpdateTransform() throws {
+    let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let source =
+      "upstream/instant/client/packages/core/__tests__/src/instaml.test.ts "
+      + "simple update transform / undefined is ignored in update / ignores id attrs "
+      + "[adapted: InstantInstamlTransform omits absent fields and derives primary-key triples from the entity id.]"
+
+    func txSteps(for transaction: InstantStoreTransaction) throws -> [[Any]] {
+      let mutation = InstantTransportMutation(
+        PendingMutation(id: transaction.id, createdAt: txTime, transaction: transaction)
+      )
+      let data = try JSONEncoder().encode(mutation)
+      let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+      return try #require(object["txSteps"] as? [[Any]])
+    }
+
+    func stepSummary(_ steps: [[Any]]) -> [[String]] {
+      steps.map { step in
+        [
+          step[safe: 0] as? String ?? "",
+          step[safe: 1] as? String ?? "",
+          step[safe: 2] as? String ?? "",
+          step[safe: 3] as? String ?? "",
+          (step[safe: 4] as? [String: Any])?["mode"] as? String ?? "",
+        ]
+      }
+    }
+
+    let simpleUpdate = try txSteps(
+      for: InstantStoreTransaction(
+        id: "tx-instaml-simple-update",
+        operations: InstantInstamlTransform.updateOperations(
+          namespace: "books",
+          entityID: "book-1",
+          fields: ["title": .some(.string("New Title"))],
+          txID: "tx-instaml-simple-update",
+          txTime: txTime
+        )
+      )
+    )
+    expectNoDifference(simpleUpdate.map(\.count), [4, 4], source)
+    expectNoDifference(
+      stepSummary(simpleUpdate).sorted { $0.joined(separator: "|") < $1.joined(separator: "|") },
+      [
+        ["add-triple", "book-1", "books/id", "book-1", ""],
+        ["add-triple", "book-1", "books/title", "New Title", ""],
+      ],
+      source
+    )
+
+    let omittedFieldsUpdate = try txSteps(
+      for: InstantStoreTransaction(
+        id: "tx-instaml-omitted-fields",
+        operations: InstantInstamlTransform.updateOperations(
+          namespace: "users",
+          entityID: "user-1",
+          fields: [
+            "fullName": nil,
+            "handle": .some(.string("bobby")),
+          ],
+          txID: "tx-instaml-omitted-fields",
+          txTime: txTime
+        )
+      )
+    )
+    expectNoDifference(omittedFieldsUpdate.map(\.count), [4, 4], source)
+    expectNoDifference(
+      stepSummary(omittedFieldsUpdate).sorted { $0.joined(separator: "|") < $1.joined(separator: "|") },
+      [
+        ["add-triple", "user-1", "users/handle", "bobby", ""],
+        ["add-triple", "user-1", "users/id", "user-1", ""],
+      ],
+      source
+    )
+    expectNoDifference(
+      omittedFieldsUpdate.compactMap { $0[safe: 2] as? String }.contains("users/fullName"),
+      false,
+      source
+    )
+
+    let ignoredPayloadID = try txSteps(
+      for: InstantStoreTransaction(
+        id: "tx-instaml-ignored-id-attr",
+        operations: InstantInstamlTransform.updateOperations(
+          namespace: "books",
+          entityID: "book-1",
+          fields: [
+            "id": .some(.string("ploop")),
+            "title": .some(.string("New Title")),
+          ],
+          txID: "tx-instaml-ignored-id-attr",
+          txTime: txTime
+        )
+      )
+    )
+    expectNoDifference(ignoredPayloadID.map(\.count), [4, 4], source)
+    expectNoDifference(
+      stepSummary(ignoredPayloadID).sorted { $0.joined(separator: "|") < $1.joined(separator: "|") },
+      [
+        ["add-triple", "book-1", "books/id", "book-1", ""],
+        ["add-triple", "book-1", "books/title", "New Title", ""],
+      ],
+      source
+    )
+    expectNoDifference(
+      stepSummary(ignoredPayloadID).flatMap { $0 }.contains("ploop"),
+      false,
+      source
+    )
+  }
+
+  @Test
   func transportMutationInfersLookupDeleteNamespaceWithoutPrecondition() throws {
     let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let lookup = InstantLookupRef(
