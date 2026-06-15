@@ -3,6 +3,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RESULTS_DIR="${INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR:-${ROOT}/validation/results/$(date -u +%Y%m%dT%H%M%SZ)}"
+if [[ "${RESULTS_DIR}" != /* ]]; then
+  RESULTS_DIR="${PWD}/${RESULTS_DIR}"
+fi
 VALIDATION_APP_ID="local-validation"
 BENCHMARK_ITERATIONS="${INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS:-1}"
 
@@ -15,9 +18,17 @@ rm -f \
   "${RESULTS_DIR}/swift-platform-adapters.jsonl" \
   "${RESULTS_DIR}/swift-syncups-recording.jsonl" \
   "${RESULTS_DIR}/swift-parity-report.jsonl" \
+  "${RESULTS_DIR}/swift-schema-generate.json" \
+  "${RESULTS_DIR}/swift-perms-generate.json" \
+  "${RESULTS_DIR}/swift-schema-verify.json" \
+  "${RESULTS_DIR}/swift-perms-verify.json" \
+  "${RESULTS_DIR}/swift-generated-schema-verify.json" \
+  "${RESULTS_DIR}/swift-generated-perms-verify.json" \
   "${RESULTS_DIR}/swift-macro-tests.log" \
   "${RESULTS_DIR}/swift-benchmark.jsonl" \
-  "${RESULTS_DIR}/typescript-fixtures.jsonl"
+  "${RESULTS_DIR}/typescript-fixtures.jsonl" \
+  "${RESULTS_DIR}/generated.instant.schema.ts" \
+  "${RESULTS_DIR}/generated.instant.perms.ts"
 : > "${RESULTS_DIR}/orchestrator.jsonl"
 
 timestamp_ms() {
@@ -161,6 +172,134 @@ if ! command -v swift >/dev/null 2>&1; then
   echo "swift is required for the Swift runner." >&2
   exit 1
 fi
+
+log_json "swift-schema-fixtures-start" true
+if (
+  cd "${ROOT}"
+  swift run instant-swift-data schema generate \
+    --example validation \
+    --to "${RESULTS_DIR}/generated.instant.schema.ts" \
+    --json
+) | tee "${RESULTS_DIR}/swift-schema-generate.json"; then
+  log_json "swift-schema-generate-complete" true "$(json_object "path" "${RESULTS_DIR}/swift-schema-generate.json")"
+else
+  status=$?
+  log_json \
+    "swift-schema-generate-failed" \
+    false \
+    "$(json_failure_details "${RESULTS_DIR}/swift-schema-generate.json" "${status}")"
+  log_json \
+    "complete" \
+    false \
+    "$(printf '{"resultsDir":%s,"failed":"swift-schema-generate","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+  exit "${status}"
+fi
+
+if (
+  cd "${ROOT}"
+  swift run instant-swift-data perms generate \
+    --example validation \
+    --to "${RESULTS_DIR}/generated.instant.perms.ts" \
+    --json
+) | tee "${RESULTS_DIR}/swift-perms-generate.json"; then
+  log_json "swift-perms-generate-complete" true "$(json_object "path" "${RESULTS_DIR}/swift-perms-generate.json")"
+else
+  status=$?
+  log_json \
+    "swift-perms-generate-failed" \
+    false \
+    "$(json_failure_details "${RESULTS_DIR}/swift-perms-generate.json" "${status}")"
+  log_json \
+    "complete" \
+    false \
+    "$(printf '{"resultsDir":%s,"failed":"swift-perms-generate","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+  exit "${status}"
+fi
+
+if (
+  cd "${ROOT}"
+  swift run instant-swift-data schema verify \
+    --example validation \
+    --from validation/fixtures/instant.schema.ts \
+    --json
+) | tee "${RESULTS_DIR}/swift-schema-verify.json"; then
+  log_json "swift-schema-verify-complete" true "$(json_object "path" "${RESULTS_DIR}/swift-schema-verify.json")"
+else
+  status=$?
+  log_json \
+    "swift-schema-verify-failed" \
+    false \
+    "$(json_failure_details "${RESULTS_DIR}/swift-schema-verify.json" "${status}")"
+  log_json \
+    "complete" \
+    false \
+    "$(printf '{"resultsDir":%s,"failed":"swift-schema-verify","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+  exit "${status}"
+fi
+
+if (
+  cd "${ROOT}"
+  swift run instant-swift-data perms verify \
+    --example validation \
+    --from validation/fixtures/instant.perms.ts \
+    --json
+) | tee "${RESULTS_DIR}/swift-perms-verify.json"; then
+  log_json "swift-perms-verify-complete" true "$(json_object "path" "${RESULTS_DIR}/swift-perms-verify.json")"
+else
+  status=$?
+  log_json \
+    "swift-perms-verify-failed" \
+    false \
+    "$(json_failure_details "${RESULTS_DIR}/swift-perms-verify.json" "${status}")"
+  log_json \
+    "complete" \
+    false \
+    "$(printf '{"resultsDir":%s,"failed":"swift-perms-verify","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+  exit "${status}"
+fi
+
+if (
+  cd "${ROOT}"
+  swift run instant-swift-data schema verify \
+    --example validation \
+    --from "${RESULTS_DIR}/generated.instant.schema.ts" \
+    --json
+) | tee "${RESULTS_DIR}/swift-generated-schema-verify.json"; then
+  log_json "swift-generated-schema-verify-complete" true "$(json_object "path" "${RESULTS_DIR}/swift-generated-schema-verify.json")"
+else
+  status=$?
+  log_json \
+    "swift-generated-schema-verify-failed" \
+    false \
+    "$(json_failure_details "${RESULTS_DIR}/swift-generated-schema-verify.json" "${status}")"
+  log_json \
+    "complete" \
+    false \
+    "$(printf '{"resultsDir":%s,"failed":"swift-generated-schema-verify","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+  exit "${status}"
+fi
+
+if (
+  cd "${ROOT}"
+  swift run instant-swift-data perms verify \
+    --example validation \
+    --from "${RESULTS_DIR}/generated.instant.perms.ts" \
+    --json
+) | tee "${RESULTS_DIR}/swift-generated-perms-verify.json"; then
+  log_json "swift-generated-perms-verify-complete" true "$(json_object "path" "${RESULTS_DIR}/swift-generated-perms-verify.json")"
+else
+  status=$?
+  log_json \
+    "swift-generated-perms-verify-failed" \
+    false \
+    "$(json_failure_details "${RESULTS_DIR}/swift-generated-perms-verify.json" "${status}")"
+  log_json \
+    "complete" \
+    false \
+    "$(printf '{"resultsDir":%s,"failed":"swift-generated-perms-verify","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+  exit "${status}"
+fi
+log_json "swift-schema-fixtures-complete" true "$(json_object "resultsDir" "${RESULTS_DIR}")"
 
 log_json "swift-macro-tests-start" true
 if (

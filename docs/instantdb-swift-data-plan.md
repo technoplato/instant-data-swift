@@ -353,7 +353,11 @@ subscriptions, and Swift/TypeScript boundary proof remain future work.
 Current local progress: schema and permissions generation can emit structured
 local evidence with `instant-swift-data schema generate --example todos --to
 instant.schema.ts --json` and `instant-swift-data perms generate --example todos
---to instant.perms.ts --jsonl`. Local validation can emit JSONL evidence for
+--to instant.perms.ts --jsonl`. The `validation` example now uses the Swift-owned
+`InstantSchemaExamples.validationDocument` and
+`InstantSchemaExamples.validationPermissions` fixtures to generate and verify
+`validation/fixtures/instant.schema.ts` and `validation/fixtures/instant.perms.ts`
+from the CLI. Local validation can emit JSONL evidence for
 todos/offline behavior with `instant-swift-data validation local-todos --jsonl`
 and for auth, rooms, files, streams, and shares with
 `instant-swift-data validation local-integrations --jsonl`. The local Reminders
@@ -371,7 +375,8 @@ including meeting restore after relaunch, can be proven with
 `instant-swift-data validation syncups-recording --jsonl`.
 `validation/run-e2e.sh` now records the Swift local todo, local integration,
 Reminders, typed draft, platform adapter, SyncUps recording, and parity coverage
-evidence streams, then the Swift benchmark evidence and TypeScript fixture check. Real
+evidence streams, Swift schema/perms fixture generation and verification
+artifacts, then the Swift benchmark evidence and TypeScript fixture check. Real
 remote push/pull remains future transport work.
 
 Current local progress: the CLI exposes non-captive local admin helpers:

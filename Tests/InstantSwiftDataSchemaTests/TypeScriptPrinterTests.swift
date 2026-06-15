@@ -446,6 +446,24 @@ struct TypeScriptPrinterTests {
   }
 
   @Test
+  func swiftValidationFixtureNamesCanonicalExamples() throws {
+    let source = try Self.validationFixture(named: "schema.swift")
+    let canonicalExampleLines = source
+      .components(separatedBy: .newlines)
+      .map { $0.trimmingCharacters(in: .whitespaces) }
+      .filter { $0.contains("InstantSchemaExamples.") }
+
+    #expect(source.contains("import InstantSwiftDataSchema"))
+    expectNoDifference(
+      canonicalExampleLines,
+      [
+        "public static let schema = InstantSchemaExamples.validationDocument",
+        "public static let permissions = InstantSchemaExamples.validationPermissions",
+      ]
+    )
+  }
+
+  @Test
   func schemaParserRoundTripsGeneratedLinks() throws {
     let printed = try TypeScriptSchemaPrinter().printSchema(Self.linkedTodoDocument)
     let parsed = try TypeScriptSchemaParser().parseDocument(printed)

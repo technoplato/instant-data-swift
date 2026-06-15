@@ -66,6 +66,27 @@ smart-list stats, list sharing roles, permission rejections, writer updates, and
 relaunch persistence. Real InstantDB and Swift/TypeScript boundary cases remain
 required for final acceptance.
 
+## Local Swift Fixture Evidence
+
+The Swift fixture source names the canonical
+`InstantSchemaExamples.validationDocument` and
+`InstantSchemaExamples.validationPermissions` values:
+
+```bash
+sed -n '1,80p' validation/fixtures/schema.swift
+```
+
+`validation/run-e2e.sh` generates schema/perms artifacts from that Swift-owned
+example and verifies both the generated files and the committed TypeScript
+fixtures:
+
+```bash
+swift run instant-swift-data schema generate --example validation --to validation.generated.schema.ts --json
+swift run instant-swift-data perms generate --example validation --to validation.generated.perms.ts --json
+swift run instant-swift-data schema verify --example validation --from validation/fixtures/instant.schema.ts --json
+swift run instant-swift-data perms verify --example validation --from validation/fixtures/instant.perms.ts --json
+```
+
 ## Local TypeScript Fixture Evidence
 
 The TypeScript runner parses and compares the committed `instant.schema.ts` and
@@ -92,9 +113,13 @@ plus filtered active-row reloads through `@FetchAll` and `@Fetch`.
 streams (`swift-local.jsonl`, `swift-local-integrations.jsonl`,
 `swift-reminders.jsonl`, `swift-typed-drafts.jsonl`,
 `swift-platform-adapters.jsonl`, `swift-syncups-recording.jsonl`, and
-`swift-parity-report.jsonl`), records the
-MacroTesting run as `swift-macro-tests.log`, records the local benchmark
-evidence, and then runs this fixture check when Node is available. Set
+`swift-parity-report.jsonl`), records Swift schema/perms generation and
+verification artifacts (`swift-schema-generate.json`,
+`swift-perms-generate.json`, `swift-schema-verify.json`,
+`swift-perms-verify.json`, `swift-generated-schema-verify.json`, and
+`swift-generated-perms-verify.json`), records the MacroTesting run as
+`swift-macro-tests.log`, records the local benchmark evidence, and then runs
+this fixture check when Node is available. Set
 `INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR` to direct artifacts to a specific
 directory, and
 `INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS` to adjust the benchmark
