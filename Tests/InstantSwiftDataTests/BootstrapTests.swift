@@ -484,13 +484,16 @@ struct BootstrapTests {
       "fetch-all-filtered-reload",
       "fetch-all-dynamic-query",
       "fetch-one-dynamic-query",
+      "fetch-request-dynamic-query",
       "fetch-all-nil-query",
       "fetch-one-nil-query",
+      "fetch-request-nil-request",
       "fetch-all-cached-prior-error",
       "fetch-all-cancellation",
+      "fetch-request-cancellation",
     ])
-    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 17))
-    expectNoDifference(result.evidence.map(\.appID), Array(repeating: result.appID, count: 17))
+    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 20))
+    expectNoDifference(result.evidence.map(\.appID), Array(repeating: result.appID, count: 20))
     expectNoDifference(result.evidence.map(\.details.adapter), [
       "@FetchAll",
       "@FetchOne",
@@ -505,10 +508,13 @@ struct BootstrapTests {
       "@FetchAll/@Fetch(filtered)",
       "@FetchAll(dynamic)",
       "@FetchOne(dynamic)",
+      "@Fetch(request dynamic)",
       "@FetchAll(nil)",
       "@FetchOne(nil)",
+      "@Fetch(request nil)",
       "@FetchAll(error)",
       "@FetchAll(cancellation)",
+      "@Fetch(request cancellation)",
     ])
 
     let fetchAll = try #require(result.evidence.first?.details)
@@ -562,6 +568,15 @@ struct BootstrapTests {
     expectNoDifference(fetchOneDynamic.selectedTodoTitle, "Done single")
     expectNoDifference(fetchOneDynamic.queryCount, 2)
 
+    let fetchRequestDynamic = try #require(
+      result.evidence.first { $0.event == "fetch-request-dynamic-query" }?.details
+    )
+    expectNoDifference(fetchRequestDynamic.previousTodoTitles, ["Open request"])
+    expectNoDifference(fetchRequestDynamic.todoTitles, ["Done request"])
+    expectNoDifference(fetchRequestDynamic.todoCount, 2)
+    expectNoDifference(fetchRequestDynamic.queryCount, 4)
+    expectNoDifference(fetchRequestDynamic.observationCount, 0)
+
     let nilQuery = try #require(
       result.evidence.first { $0.event == "fetch-all-nil-query" }?.details
     )
@@ -579,6 +594,16 @@ struct BootstrapTests {
     expectNoDifference(fetchOneNilQuery.queryCount, 0)
     expectNoDifference(fetchOneNilQuery.nilQueryCleared, true)
 
+    let fetchRequestNil = try #require(
+      result.evidence.first { $0.event == "fetch-request-nil-request" }?.details
+    )
+    expectNoDifference(fetchRequestNil.previousTodoTitles, ["Cached request nil"])
+    expectNoDifference(fetchRequestNil.todoTitles, [])
+    expectNoDifference(fetchRequestNil.todoCount, 0)
+    expectNoDifference(fetchRequestNil.queryCount, 0)
+    expectNoDifference(fetchRequestNil.nilQueryCleared, nil)
+    expectNoDifference(fetchRequestNil.nilRequestCleared, true)
+
     let cachedPrior = try #require(
       result.evidence.first { $0.event == "fetch-all-cached-prior-error" }?.details
     )
@@ -590,6 +615,13 @@ struct BootstrapTests {
     )
     expectNoDifference(cancellation.observationCount, 1)
     expectNoDifference(cancellation.cancellationTerminated, true)
+
+    let requestCancellation = try #require(
+      result.evidence.first { $0.event == "fetch-request-cancellation" }?.details
+    )
+    expectNoDifference(requestCancellation.queryCount, 0)
+    expectNoDifference(requestCancellation.observationCount, 1)
+    expectNoDifference(requestCancellation.cancellationTerminated, true)
 
     let stream = try #require(result.evidence.first { $0.event == "stream-chunks" }?.details)
     expectNoDifference(stream.streamChunkIDs, ["platform-adapter-validation-id"])

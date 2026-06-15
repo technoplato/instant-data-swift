@@ -9181,7 +9181,9 @@ struct InstantSwiftDataCLI {
       evidenceCount: result.evidence.count,
       events: result.evidence.map(\.event),
       adapters: result.evidence.map(\.details.adapter),
-      todoCount: result.evidence.map(\.details.todoCount).max() ?? 0,
+      todoCount: result.evidence.first { $0.event == "fetch-all" }?.details.todoCount
+        ?? result.evidence.map(\.details.todoCount).max()
+        ?? 0,
       selectedTodoID: result.evidence.compactMap(\.details.selectedTodoID).first,
       localID: result.evidence.compactMap(\.details.localID).first,
       authUserID: result.evidence.compactMap(\.details.authUserID).last,
@@ -9191,7 +9193,9 @@ struct InstantSwiftDataCLI {
       streamChunkCount: Set(result.evidence.flatMap(\.details.streamChunkIDs)).count,
       shareCount: Set(result.evidence.flatMap(\.details.shareIDs)).count,
       lifecycleEventCount: result.evidence.filter {
-        $0.event.hasPrefix("fetch-all-") || $0.event.hasPrefix("fetch-one-")
+        $0.event.hasPrefix("fetch-all-")
+          || $0.event.hasPrefix("fetch-one-")
+          || $0.event.hasPrefix("fetch-request-")
       }.count,
       queryProbeCount: result.evidence.compactMap(\.details.queryCount).reduce(0, +),
       observationProbeCount: result.evidence.compactMap(\.details.observationCount).reduce(0, +),

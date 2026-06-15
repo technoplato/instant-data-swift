@@ -1160,14 +1160,29 @@ private func validateNonNegativeLimit(
 // SAFETY: all mutable fetch state is protected by `lock`.
 private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
   private let lock = NSLock()
+  private var _initialValue: Value
   private var _wrappedValue: Value
   private var _loadError: InstantError?
   private var _isLoading: Bool
+  private var _activeSubscriptionID = 0
+  private var _activeSubscription: (id: Int, subscription: FetchSubscription<Value>)?
 
   init(value: Value) {
+    self._initialValue = value
     self._wrappedValue = value
     self._loadError = nil
     self._isLoading = false
+  }
+
+  var initialValue: Value {
+    get {
+      withLock { _initialValue }
+    }
+    set {
+      withLock {
+        _initialValue = newValue
+      }
+    }
   }
 
   var wrappedValue: Value {
@@ -1199,6 +1214,49 @@ private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
     set {
       withLock {
         _isLoading = newValue
+      }
+    }
+  }
+
+  func resetToInitialValue() {
+    withLock {
+      _wrappedValue = _initialValue
+    }
+  }
+
+  func cancelActiveSubscription() {
+    let subscription = withLock {
+      _activeSubscriptionID += 1
+      let subscription = _activeSubscription?.subscription
+      _activeSubscription = nil
+      return subscription
+    }
+    subscription?.cancel()
+  }
+
+  func beginActiveSubscription(_ subscription: FetchSubscription<Value>) -> Int {
+    var id = 0
+    let previousSubscription = withLock {
+      _activeSubscriptionID += 1
+      id = _activeSubscriptionID
+      let previousSubscription = _activeSubscription?.subscription
+      _activeSubscription = (id, subscription)
+      return previousSubscription
+    }
+    previousSubscription?.cancel()
+    return id
+  }
+
+  func isActiveSubscription(_ id: Int) -> Bool {
+    withLock {
+      _activeSubscription?.id == id
+    }
+  }
+
+  func endActiveSubscription(_ id: Int) {
+    withLock {
+      if _activeSubscription?.id == id {
+        _activeSubscription = nil
       }
     }
   }
@@ -1765,6 +1823,7 @@ public struct FetchAll<Element: Sendable>: Sendable {
     get { self }
     nonmutating set {
       wrappedValue = newValue.wrappedValue
+      storage.initialValue = newValue.storage.initialValue
       loadError = newValue.loadError
       isLoading = newValue.isLoading
       operations.value = newValue.operations.value
@@ -2503,6 +2562,7 @@ public struct FetchOne<Value: Sendable>: Sendable {
     get { self }
     nonmutating set {
       wrappedValue = newValue.wrappedValue
+      storage.initialValue = newValue.storage.initialValue
       loadError = newValue.loadError
       isLoading = newValue.isLoading
       operations.value = newValue.operations.value
@@ -3508,6 +3568,7 @@ public struct Fetch<Value: Sendable>: Sendable {
     get { self }
     nonmutating set {
       wrappedValue = newValue.wrappedValue
+      storage.initialValue = newValue.storage.initialValue
       loadError = newValue.loadError
       isLoading = newValue.isLoading
       operations.value = newValue.operations.value
@@ -3648,26 +3709,47 @@ public struct Fetch<Value: Sendable>: Sendable {
   }
 
   public func task(using client: InstantSwiftDataClient) async throws {
+    storage.cancelActiveSubscription()
     isLoading = true
+    var activeSubscriptionID: Int?
     do {
       let subscription = try await subscribe(using: client)
+      let subscriptionID = storage.beginActiveSubscription(subscription)
+      activeSubscriptionID = subscriptionID
       defer { subscription.cancel() }
       for try await value in subscription {
         try Task.checkCancellation()
+        guard storage.isActiveSubscription(subscriptionID) else {
+          throw CancellationError()
+        }
         wrappedValue = value
         loadError = nil
         isLoading = false
       }
       try Task.checkCancellation()
+      guard storage.isActiveSubscription(subscriptionID) else {
+        throw CancellationError()
+      }
       loadError = nil
       isLoading = false
+      storage.endActiveSubscription(subscriptionID)
     } catch let error as CancellationError {
-      loadError = nil
-      isLoading = false
+      if activeSubscriptionID.map(storage.isActiveSubscription) ?? true {
+        loadError = nil
+        isLoading = false
+      }
+      if let activeSubscriptionID {
+        storage.endActiveSubscription(activeSubscriptionID)
+      }
       throw error
     } catch let error as InstantError {
-      loadError = error
-      isLoading = false
+      if activeSubscriptionID.map(storage.isActiveSubscription) ?? true {
+        loadError = error
+        isLoading = false
+      }
+      if let activeSubscriptionID {
+        storage.endActiveSubscription(activeSubscriptionID)
+      }
       throw error
     } catch {
       let error = InstantError(
@@ -3676,8 +3758,13 @@ public struct Fetch<Value: Sendable>: Sendable {
         message: String(describing: error),
         recovery: "Inspect the configured InstantSwiftDataClient and fetch subscription operation."
       )
-      loadError = error
-      isLoading = false
+      if activeSubscriptionID.map(storage.isActiveSubscription) ?? true {
+        loadError = error
+        isLoading = false
+      }
+      if let activeSubscriptionID {
+        storage.endActiveSubscription(activeSubscriptionID)
+      }
       throw error
     }
   }
@@ -3732,8 +3819,27 @@ extension Fetch {
     _ request: Request,
     using client: InstantSwiftDataClient
   ) async throws where Request.Value == Value {
+    storage.cancelActiveSubscription()
     operations.value = Self.operations(for: request)
     try await load(using: client)
+  }
+
+  public func load<Request: InstantFetchKeyRequest>(
+    _ request: Request?
+  ) async throws where Request.Value == Value {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(request, using: client)
+  }
+
+  public func load<Request: InstantFetchKeyRequest>(
+    _ request: Request?,
+    using client: InstantSwiftDataClient
+  ) async throws where Request.Value == Value {
+    guard let request else {
+      clearRequest()
+      return
+    }
+    try await load(request, using: client)
   }
 
   public func subscribe<Request: InstantFetchKeyRequest>(
@@ -3747,8 +3853,27 @@ extension Fetch {
     _ request: Request,
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<Value> where Request.Value == Value {
+    storage.cancelActiveSubscription()
     operations.value = Self.operations(for: request)
     return try await subscribe(using: client)
+  }
+
+  public func subscribe<Request: InstantFetchKeyRequest>(
+    _ request: Request?
+  ) async throws -> FetchSubscription<Value> where Request.Value == Value {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(request, using: client)
+  }
+
+  public func subscribe<Request: InstantFetchKeyRequest>(
+    _ request: Request?,
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<Value> where Request.Value == Value {
+    guard let request else {
+      clearRequest()
+      return .finished()
+    }
+    return try await subscribe(request, using: client)
   }
 
   public func task<Request: InstantFetchKeyRequest>(
@@ -3764,6 +3889,32 @@ extension Fetch {
   ) async throws where Request.Value == Value {
     operations.value = Self.operations(for: request)
     try await task(using: client)
+  }
+
+  public func task<Request: InstantFetchKeyRequest>(
+    _ request: Request?
+  ) async throws where Request.Value == Value {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(request, using: client)
+  }
+
+  public func task<Request: InstantFetchKeyRequest>(
+    _ request: Request?,
+    using client: InstantSwiftDataClient
+  ) async throws where Request.Value == Value {
+    guard let request else {
+      clearRequest()
+      return
+    }
+    try await task(request, using: client)
+  }
+
+  private func clearRequest() {
+    storage.cancelActiveSubscription()
+    operations.value = FetchOperations()
+    storage.resetToInitialValue()
+    loadError = nil
+    isLoading = false
   }
 
   private static func operations<Request: InstantFetchKeyRequest>(

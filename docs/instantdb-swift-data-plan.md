@@ -364,7 +364,8 @@ updates, and relaunch persistence. Public adapter wrappers can be proven from
 the terminal with `instant-swift-data validation platform-adapters --jsonl`,
 including `@FetchAll` dynamic reload, nil-query, cached-prior-error, and
 cancellation cleanup evidence, optional `@FetchOne` dynamic and nil-query
-reload evidence, plus `@FetchAll`/`@Fetch` filtered active-row reloads. The
+reload evidence, `@Fetch` request dynamic reload, nil request reset, and
+cancellation cleanup evidence, plus `@FetchAll`/`@Fetch` filtered active-row reloads. The
 SyncUps recording/dependency flow,
 including meeting restore after relaunch, can be proven with
 `instant-swift-data validation syncups-recording --jsonl`.

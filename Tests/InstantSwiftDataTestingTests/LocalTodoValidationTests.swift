@@ -472,6 +472,15 @@ struct LocalTodoValidationTests {
     expectNoDifference(fetchOneDynamic.queryCount, 2)
     expectNoDifference(fetchOneDynamic.observationCount, 0)
 
+    let fetchRequestDynamic = try #require(
+      result.evidence.first { $0.event == "fetch-request-dynamic-query" }?.details
+    )
+    expectNoDifference(fetchRequestDynamic.previousTodoTitles, ["Open request"])
+    expectNoDifference(fetchRequestDynamic.todoTitles, ["Done request"])
+    expectNoDifference(fetchRequestDynamic.todoCount, 2)
+    expectNoDifference(fetchRequestDynamic.queryCount, 4)
+    expectNoDifference(fetchRequestDynamic.observationCount, 0)
+
     let nilQuery = try #require(
       result.evidence.first { $0.event == "fetch-all-nil-query" }?.details
     )
@@ -491,6 +500,17 @@ struct LocalTodoValidationTests {
     expectNoDifference(fetchOneNilQuery.observationCount, 0)
     expectNoDifference(fetchOneNilQuery.nilQueryCleared, true)
 
+    let fetchRequestNil = try #require(
+      result.evidence.first { $0.event == "fetch-request-nil-request" }?.details
+    )
+    expectNoDifference(fetchRequestNil.previousTodoTitles, ["Cached request nil"])
+    expectNoDifference(fetchRequestNil.todoTitles, [])
+    expectNoDifference(fetchRequestNil.todoCount, 0)
+    expectNoDifference(fetchRequestNil.queryCount, 0)
+    expectNoDifference(fetchRequestNil.observationCount, 0)
+    expectNoDifference(fetchRequestNil.nilQueryCleared, nil)
+    expectNoDifference(fetchRequestNil.nilRequestCleared, true)
+
     let cachedPrior = try #require(
       result.evidence.first { $0.event == "fetch-all-cached-prior-error" }?.details
     )
@@ -506,6 +526,14 @@ struct LocalTodoValidationTests {
     expectNoDifference(cancellation.observationCount, 1)
     expectNoDifference(cancellation.cancellationTerminated, true)
     expectNoDifference(cancellation.isLoading, false)
+
+    let requestCancellation = try #require(
+      result.evidence.first { $0.event == "fetch-request-cancellation" }?.details
+    )
+    expectNoDifference(requestCancellation.queryCount, 0)
+    expectNoDifference(requestCancellation.observationCount, 1)
+    expectNoDifference(requestCancellation.cancellationTerminated, true)
+    expectNoDifference(requestCancellation.isLoading, false)
   }
 
   @Test
@@ -552,7 +580,16 @@ struct LocalTodoValidationTests {
       rows.first { $0["event"] as? String == "fetch-all-cancellation" }?["details"]
         as? [String: Any]
     )
-    expectNoDifference(cancellation["cancellationTerminated"] as? Bool, true)
+    expectNoDifference((cancellation["cancellationTerminated"] as? NSNumber)?.boolValue, true)
+
+    let requestCancellation = try #require(
+      rows.first { $0["event"] as? String == "fetch-request-cancellation" }?["details"]
+        as? [String: Any]
+    )
+    expectNoDifference(
+      (requestCancellation["cancellationTerminated"] as? NSNumber)?.boolValue,
+      true
+    )
   }
 
   @Test
@@ -749,15 +786,15 @@ struct LocalTodoValidationTests {
 
     expectNoDifference(run.result.event, "parity-report")
     expectNoDifference(run.result.coverageComplete, false)
-    expectNoDifference(run.result.recordCount, 112)
+    expectNoDifference(run.result.recordCount, 115)
     expectNoDifference(run.result.exactCount, 19)
-    expectNoDifference(run.result.adaptedCount, 90)
+    expectNoDifference(run.result.adaptedCount, 93)
     expectNoDifference(run.result.blockedCount, 3)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
     expectNoDifference(run.summary.appID, "validation-parity-test")
     expectNoDifference(run.summary.rowCount, run.result.recordCount)
     expectNoDifference(run.summary.ok, false)
-    expectNoDifference(run.summary.events, Array(repeating: "parity-record", count: 112))
+    expectNoDifference(run.summary.events, Array(repeating: "parity-record", count: 115))
     expectNoDifference(run.summary.failedEvents, Array(repeating: "parity-record", count: 3))
     #expect(
       run.result.sourceFiles.contains(
@@ -862,7 +899,7 @@ struct LocalTodoValidationTests {
     )
 
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 112)
+    expectNoDifference(rows.count, 115)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
@@ -893,7 +930,7 @@ struct LocalTodoValidationTests {
 
     #expect(result.status == 0)
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 112)
+    expectNoDifference(rows.count, 115)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
@@ -961,7 +998,7 @@ struct LocalTodoValidationTests {
     #expect(runnerSource.contains("--typed-drafts"))
     #expect(runnerSource.contains("runDraftValidation()"))
     #expect(runnerSource.contains("--platform-adapters"))
-    #expect(runnerSource.contains("runPlatformAdapterValidation()"))
+    #expect(runnerSource.contains("InstantSwiftDataPlatformAdapterValidation.run"))
     #expect(runnerSource.contains("--reminders"))
     #expect(runnerSource.contains("runRemindersValidation()"))
     #expect(runnerSource.contains("--syncups-recording"))
@@ -1629,10 +1666,13 @@ private let platformAdapterValidationEvents = [
   "fetch-all-filtered-reload",
   "fetch-all-dynamic-query",
   "fetch-one-dynamic-query",
+  "fetch-request-dynamic-query",
   "fetch-all-nil-query",
   "fetch-one-nil-query",
+  "fetch-request-nil-request",
   "fetch-all-cached-prior-error",
   "fetch-all-cancellation",
+  "fetch-request-cancellation",
 ]
 
 private let platformAdapterValidationAdapters = [
@@ -1649,10 +1689,13 @@ private let platformAdapterValidationAdapters = [
   "@FetchAll/@Fetch(filtered)",
   "@FetchAll(dynamic)",
   "@FetchOne(dynamic)",
+  "@Fetch(request dynamic)",
   "@FetchAll(nil)",
   "@FetchOne(nil)",
+  "@Fetch(request nil)",
   "@FetchAll(error)",
   "@FetchAll(cancellation)",
+  "@Fetch(request cancellation)",
 ]
 
 private let syncUpsRecordingValidationEvents = [

@@ -877,6 +877,38 @@ public enum InstantSwiftDataParityCoverage {
       notes: "InstantFetchKeyRequest gives @Fetch a reusable request object for composite values; the load path performs separate rows/count reads and the live task maps row emissions into the same value shape."
     ),
     sqlite(
+      id: "sqlite.fetch.request-dynamic-query",
+      sourceFile: "upstream/sqlite-data/Examples/CaseStudies/DynamicQuery.swift",
+      sourceTestName: "@Fetch projected load dynamic FetchKeyRequest",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "fetchKeyRequestLoadsDynamicRequestsAndRecordsPlans",
+      surface: "adapter-fetch",
+      status: .adapted,
+      notes: "Dynamic InstantFetchKeyRequest values replace the configured @Fetch request, reload composite row/count state, and preserve the expected typed query plans."
+    ),
+    sqlite(
+      id: "sqlite.fetch.request-nil-reset",
+      sourceFile: "upstream/sqlite-data/Sources/SQLiteData/Fetch.swift",
+      sourceTestName: "@Fetch default wrapped value before projected dynamic request",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName:
+        "fetchKeyRequestLoadNilRequestResetsDefaultValueWithoutCallingClient / fetchKeyRequestSubscribeNilRequestReturnsFinishedSubscriptionWithoutCallingClient / fetchKeyRequestTaskNilRequestDoesNotStartObservationAndClearsLoading",
+      surface: "adapter-fetch",
+      status: .adapted,
+      notes: "A nil InstantFetchKeyRequest disables the dynamic @Fetch request, resets to the wrapper's initial value, clears error/loading state, and does not touch the client."
+    ),
+    sqlite(
+      id: "sqlite.fetch.request-dynamic-cancellation",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchSubscriptionTests.swift",
+      sourceTestName: "stopSubscriptionWhenTaskCancelled / cancellingOneFetchDoesNotCancelAnother",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName:
+        "fetchKeyRequestDynamicTaskCancellationStopsStaleEmissions / fetchKeyRequestNilResetCancelsLiveTaskAndIgnoresStaleEmissions",
+      surface: "adapter-fetch",
+      status: .adapted,
+      notes: "Cancelling or nil-resetting a dynamic @Fetch request task terminates its Instant observation; a replacement request receives new values while stale emissions from the cancelled request no longer mutate wrapper state."
+    ),
+    sqlite(
       id: "sqlite.case-studies.animation-initializers",
       sourceFile: "upstream/sqlite-data/Examples/CaseStudies/Animations.swift",
       sourceTestName: "@FetchAll/@FetchOne/@Fetch animation initializers",

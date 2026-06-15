@@ -105,8 +105,10 @@ struct InstantSwiftDataValidationRunner {
         try writeJSONLine(row)
       }
     } else if arguments == ["--platform-adapters"] {
-      let run = try await InstantSwiftDataTestHarness.runPlatformAdapterValidation()
-      for row in run.result.evidence {
+      let result = try await InstantSwiftDataPlatformAdapterValidation.run(
+        appID: requestedAppID(caseID: "validation.platform.adapters")
+      )
+      for row in result.evidence {
         try writeJSONLine(row)
       }
     } else if arguments == ["--syncups-recording"] {

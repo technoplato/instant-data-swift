@@ -563,7 +563,8 @@ Agent-oriented output modes are required:
   `instant-swift-data validation syncups-recording --jsonl`; the platform
   adapter stream covers binding plus `@FetchAll` dynamic reload, nil-query,
   cached-prior-error, cancellation-cleanup, optional `@FetchOne` dynamic and
-  nil-query reloads, and `@FetchAll`/`@Fetch` filtered reload behavior.
+  nil-query reloads, `@Fetch` request dynamic reload, nil request reset,
+  cancellation cleanup, and `@FetchAll`/`@Fetch` filtered reload behavior.
 - run Swift/TypeScript parity suites.
 - run benchmarks.
 - inspect local SQLite cache, including namespace summaries, attributes, and
