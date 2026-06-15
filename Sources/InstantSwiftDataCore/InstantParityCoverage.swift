@@ -157,24 +157,44 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Entity deletion removes local triples and inbound refs."
     ),
     instant(
-      id: "instant.store.schema-lifecycle",
+      id: "instant.store.new-attrs",
       sourceFile: storeSource,
-      sourceTestName: "schema attrs add/update/delete",
+      sourceTestName: "new attrs",
       swiftFile: storeParitySwiftFile,
       swiftTestName: "addingAndRenamingAttributesReindexesExistingTriples",
       surface: "schema",
       status: .adapted,
-      notes: "Swift replaces declared attributes directly instead of applying the TypeScript schema patch representation."
+      notes: "Swift merges newly declared scalar and ref attributes, then reindexes existing triples so forward and reverse includes materialize."
     ),
     instant(
-      id: "instant.store.merge-json",
+      id: "instant.store.update-attr",
       sourceFile: storeSource,
-      sourceTestName: "merge",
+      sourceTestName: "update attr",
+      swiftFile: storeParitySwiftFile,
+      swiftTestName: "addingAndRenamingAttributesReindexesExistingTriples",
+      surface: "schema",
+      status: .adapted,
+      notes: "Swift updates an attribute name by replacing the declared attribute with the same id and rematerializing existing triples under the new field name."
+    ),
+    instant(
+      id: "instant.store.delete-attr",
+      sourceFile: storeSource,
+      sourceTestName: "delete attr",
+      swiftFile: storeParitySwiftFile,
+      swiftTestName: "addingAndRenamingAttributesReindexesExistingTriples",
+      surface: "schema",
+      status: .adapted,
+      notes: "Swift replaces the declared attribute set and hides triples for removed attrs while keeping still-declared link attributes materialized."
+    ),
+    instant(
+      id: "instant.store.deep-merge",
+      sourceFile: storeSource,
+      sourceTestName: "deepMerge",
       swiftFile: storeParitySwiftFile,
       swiftTestName: "storeDeepMergePortsUpstreamObjectArrayAndNullSemantics",
       surface: "mutations",
       status: .adapted,
-      notes: "Swift covers JSON merge semantics and rejects relationship attributes before local materialization."
+      notes: "Swift covers JSON object merge, null deletion, array overwrite, and missing-entity no-op semantics."
     ),
     instant(
       id: "instant.store.cascade-delete",

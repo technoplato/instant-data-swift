@@ -811,9 +811,9 @@ struct LocalTodoValidationTests {
 
     expectNoDifference(run.result.event, "parity-report")
     expectNoDifference(run.result.coverageComplete, false)
-    expectNoDifference(run.result.recordCount, 141)
+    expectNoDifference(run.result.recordCount, 143)
     expectNoDifference(run.result.exactCount, 20)
-    expectNoDifference(run.result.adaptedCount, 118)
+    expectNoDifference(run.result.adaptedCount, 120)
     expectNoDifference(run.result.blockedCount, 3)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
     expectNoDifference(run.summary.appID, "validation-parity-test")
@@ -872,6 +872,26 @@ struct LocalTodoValidationTests {
     #expect(
       run.result.records.contains {
         $0.id == "sqlite.cloudkit-demo.local-counter-share" && $0.status == .adapted
+      }
+    )
+    #expect(
+      run.result.records.contains {
+        $0.id == "instant.store.new-attrs" && $0.status == .adapted
+      }
+    )
+    #expect(
+      run.result.records.contains {
+        $0.id == "instant.store.update-attr" && $0.status == .adapted
+      }
+    )
+    #expect(
+      run.result.records.contains {
+        $0.id == "instant.store.delete-attr" && $0.status == .adapted
+      }
+    )
+    #expect(
+      run.result.records.contains {
+        $0.id == "instant.store.deep-merge" && $0.status == .adapted
       }
     )
     #expect(
@@ -970,7 +990,7 @@ struct LocalTodoValidationTests {
     )
 
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 141)
+    expectNoDifference(rows.count, 143)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
@@ -1032,7 +1052,7 @@ struct LocalTodoValidationTests {
 
     #expect(result.status == 0)
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 141)
+    expectNoDifference(rows.count, 143)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
