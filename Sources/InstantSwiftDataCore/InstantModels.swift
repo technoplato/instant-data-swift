@@ -56,6 +56,216 @@ public indirect enum JSONValue: Hashable, Codable, Sendable {
   case object([String: JSONValue])
 }
 
+public enum JSONValuePathComponent:
+  Hashable, Codable, Sendable, ExpressibleByStringLiteral, ExpressibleByIntegerLiteral
+{
+  case key(String)
+  case index(Int)
+
+  public init(stringLiteral value: String) {
+    self = .key(value)
+  }
+
+  public init(integerLiteral value: Int) {
+    self = .index(value)
+  }
+}
+
+public extension JSONValue {
+  mutating func assocIn(
+    _ path: [JSONValuePathComponent],
+    _ value: JSONValue
+  ) {
+    guard let component = path.first else { return }
+
+    let rest = Array(path.dropFirst())
+    switch component {
+    case let .key(key):
+      var object: [String: JSONValue]
+      if case let .object(existing) = self {
+        object = existing
+      } else {
+        object = [:]
+      }
+
+      if rest.isEmpty {
+        object[key] = value
+      } else {
+        var child = object[key] ?? JSONValue.container(for: rest.first)
+        child.assocIn(rest, value)
+        object[key] = child
+      }
+      self = .object(object)
+
+    case let .index(index):
+      guard index >= 0 else { return }
+
+      if case var .object(object) = self {
+        let key = String(index)
+        if rest.isEmpty {
+          object[key] = value
+        } else {
+          var child = object[key] ?? JSONValue.container(for: rest.first)
+          child.assocIn(rest, value)
+          object[key] = child
+        }
+        self = .object(object)
+        return
+      }
+
+      var array = self.arrayValue ?? []
+      while array.count <= index {
+        array.append(.null)
+      }
+
+      if rest.isEmpty {
+        array[index] = value
+      } else {
+        var child = array[index]
+        child.assocIn(rest, value)
+        array[index] = child
+      }
+      self = .array(array)
+    }
+  }
+
+  mutating func insertIn(
+    _ path: [JSONValuePathComponent],
+    _ value: JSONValue
+  ) {
+    guard let component = path.first else { return }
+
+    let rest = Array(path.dropFirst())
+    switch component {
+    case let .key(key):
+      var object: [String: JSONValue]
+      if case let .object(existing) = self {
+        object = existing
+      } else {
+        object = [:]
+      }
+
+      if rest.isEmpty {
+        object[key] = value
+      } else {
+        var child = object[key] ?? JSONValue.container(for: rest.first)
+        child.insertIn(rest, value)
+        object[key] = child
+      }
+      self = .object(object)
+
+    case let .index(index):
+      guard index >= 0 else { return }
+      if case var .object(object) = self {
+        let key = String(index)
+        if rest.isEmpty {
+          object[key] = value
+        } else {
+          var child = object[key] ?? JSONValue.container(for: rest.first)
+          child.insertIn(rest, value)
+          object[key] = child
+        }
+        self = .object(object)
+        return
+      }
+
+      var array = self.arrayValue ?? []
+      if rest.isEmpty {
+        array.insert(value, at: min(index, array.count))
+      } else {
+        while array.count <= index {
+          array.append(.null)
+        }
+        var child = array[index]
+        child.insertIn(rest, value)
+        array[index] = child
+      }
+      self = .array(array)
+    }
+  }
+
+  mutating func dissocIn(_ path: [JSONValuePathComponent]) {
+    guard let component = path.first else { return }
+
+    let rest = Array(path.dropFirst())
+    switch component {
+    case let .key(key):
+      guard case var .object(object) = self else { return }
+
+      if rest.isEmpty {
+        object.removeValue(forKey: key)
+      } else if var child = object[key] {
+        child.dissocIn(rest)
+        if child.isEmptyContainer {
+          object.removeValue(forKey: key)
+        } else {
+          object[key] = child
+        }
+      }
+      self = .object(object)
+
+    case let .index(index):
+      guard index >= 0 else { return }
+
+      if case var .object(object) = self {
+        let key = String(index)
+        if rest.isEmpty {
+          object.removeValue(forKey: key)
+        } else if var child = object[key] {
+          child.dissocIn(rest)
+          if child.isEmptyContainer {
+            object.removeValue(forKey: key)
+          } else {
+            object[key] = child
+          }
+        }
+        self = .object(object)
+        return
+      }
+
+      guard case var .array(array) = self, index < array.count else { return }
+
+      if rest.isEmpty {
+        array.remove(at: index)
+      } else {
+        var child = array[index]
+        child.dissocIn(rest)
+        if child.isEmptyContainer {
+          array.remove(at: index)
+        } else {
+          array[index] = child
+        }
+      }
+      self = .array(array)
+    }
+  }
+
+  private static func container(for component: JSONValuePathComponent?) -> JSONValue {
+    switch component {
+    case .index:
+      .array([])
+    case .key, nil:
+      .object([:])
+    }
+  }
+
+  private var arrayValue: [JSONValue]? {
+    guard case let .array(value) = self else { return nil }
+    return value
+  }
+
+  private var isEmptyContainer: Bool {
+    switch self {
+    case let .array(value):
+      value.isEmpty
+    case let .object(value):
+      value.isEmpty
+    default:
+      false
+    }
+  }
+}
+
 public enum InstantValue: Hashable, Codable, Sendable {
   case null
   case string(String)

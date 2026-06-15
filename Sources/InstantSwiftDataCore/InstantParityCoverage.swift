@@ -736,6 +736,16 @@ public enum InstantSwiftDataParityCoverage {
       status: .adapted,
       notes: "Swift mirrors Instant's stringify/parseSchemaFromJSON proof with Swift-native Codable schema values: the same entity, link, and room payload shape JSON-encodes, decodes, and compares equal. TypeScript asType helper assertions are out of scope for this adapted record."
     ),
+    instant(
+      id: "instant.utils.object-path-mutation",
+      sourceFile: objectUtilsSource,
+      sourceTestName: "assocInMutative / insertInMutative / dissocInMutative",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/JSONValuePathMutationParityTests.swift",
+      swiftTestName: "JSONValuePathMutationParityTests",
+      surface: "json-utils",
+      status: .adapted,
+      notes: "Swift ports Instant's mutative object path helpers onto JSONValue's value semantics, preserving shallow/nested object writes, array insertions, object leaf replacement, and object/array deletion."
+    ),
     sqlite(
       id: "sqlite.fetch-subscription.task-cancel",
       sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchSubscriptionTests.swift",
@@ -1344,6 +1354,8 @@ public enum InstantSwiftDataParityCoverage {
     "upstream/instant/client/packages/core/__tests__/src/schema.test.ts"
   private static let serializeSchemaSource =
     "upstream/instant/client/packages/core/__tests__/src/serializeSchema.test.ts"
+  private static let objectUtilsSource =
+    "upstream/instant/client/packages/core/__tests__/src/utils/object.test.ts"
   private static let storeParitySwiftFile =
     "Tests/InstantSwiftDataCoreTests/InstantStoreParityTests.swift"
   private static let queryExecutionSwiftFile =
