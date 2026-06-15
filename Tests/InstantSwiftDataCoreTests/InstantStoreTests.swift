@@ -1397,6 +1397,57 @@ struct InstantStoreTests {
   }
 
   @Test
+  func transportMutationPortsInstamlCustomLookupUpdateTransform() throws {
+    let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let source =
+      "upstream/instant/client/packages/core/__tests__/src/instaml.test.ts "
+      + "lookup creates unique attrs for custom lookups "
+      + "[adapted: Swift preserves explicit lookup attr ids instead of emitting add-attr txSteps.]"
+    let lookup = InstantLookupRef(
+      attributeID: "users/newAttr",
+      value: .string("newAttrValue")
+    )
+    let transaction = InstantStoreTransaction(
+      id: "tx-instaml-custom-lookup",
+      operations: InstantInstamlTransform.updateOperations(
+        namespace: "users",
+        entityLookup: lookup,
+        fields: ["handle": .some(.string("stopa"))],
+        txID: "tx-instaml-custom-lookup",
+        txTime: txTime
+      )
+    )
+    let mutation = InstantTransportMutation(
+      PendingMutation(id: transaction.id, createdAt: txTime, transaction: transaction)
+    )
+    expectNoDifference(mutation.preconditions, [], source)
+    expectNoDifference(mutation.txSteps.count, 2, source)
+
+    let data = try JSONEncoder().encode(mutation)
+    let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let txSteps = try #require(object["txSteps"] as? [[Any]])
+    expectNoDifference(txSteps.map(\.count), [4, 4], source)
+    expectNoDifference(txSteps.map { $0.first as? String }, ["add-triple", "add-triple"], source)
+
+    let handleStep = try #require(txSteps.first { $0[safe: 2] as? String == "users/handle" })
+    let handleEntity = try #require(handleStep[safe: 1] as? [Any])
+    expectNoDifference(handleEntity.count, 2, source)
+    expectNoDifference(handleEntity[0] as? String, "users/newAttr", source)
+    expectNoDifference(handleEntity[1] as? String, "newAttrValue", source)
+    expectNoDifference(handleStep[safe: 3] as? String, "stopa", source)
+
+    let idStep = try #require(txSteps.first { $0[safe: 2] as? String == "users/id" })
+    let idEntity = try #require(idStep[safe: 1] as? [Any])
+    expectNoDifference(idEntity.count, 2, source)
+    expectNoDifference(idEntity[0] as? String, "users/newAttr", source)
+    expectNoDifference(idEntity[1] as? String, "newAttrValue", source)
+    let idValue = try #require(idStep[safe: 3] as? [Any])
+    expectNoDifference(idValue.count, 2, source)
+    expectNoDifference(idValue[0] as? String, "users/newAttr", source)
+    expectNoDifference(idValue[1] as? String, "newAttrValue", source)
+  }
+
+  @Test
   func transportMutationInfersLookupDeleteNamespaceWithoutPrecondition() throws {
     let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let lookup = InstantLookupRef(
