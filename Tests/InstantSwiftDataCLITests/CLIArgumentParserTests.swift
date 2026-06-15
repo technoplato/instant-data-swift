@@ -1666,15 +1666,19 @@ struct CLIArgumentParserTests {
   func examplesMergeTileGameLeafParserParsesCommandsAndOptions() throws {
     expectNoDifference(
       try parseExamples(["merge-tile-game", "board"]),
-      .mergeTileGame(arguments: ["board"])
+      .mergeTileGame(.board(CLIExamplesMergeTileGameBoardInvocation()))
     )
     expectNoDifference(
       try parseExamples(["tile-game", "tap", "user-1", "0", "1"]),
-      .mergeTileGame(arguments: ["tap", "user-1", "0", "1"])
+      .mergeTileGame(.tap(CLIExamplesMergeTileGameTapInvocation(
+        userID: "user-1",
+        row: 0,
+        column: 1
+      )))
     )
     expectNoDifference(
       try parseExamples(["merge-game", "watch"]),
-      .mergeTileGame(arguments: ["watch"])
+      .mergeTileGame(.watch(CLIExamplesMergeTileGameWatchInvocation()))
     )
     expectNoDifference(
       try parseExamplesMergeTileGameLeaf(["join", "user-1", "--color", "#e76f51"]),

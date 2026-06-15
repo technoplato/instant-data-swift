@@ -1256,6 +1256,62 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliMalformedMergeTileGameArgumentsDoNotBootstrapState() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    func expectMalformed(_ arguments: [String], contains expectedFragment: String) throws {
+      let result = try runCLIResult(arguments, homeURL: homeURL)
+      expectNoDifference(result.status, 64)
+      #expect(result.error.contains(expectedFragment))
+    }
+
+    try expectMalformed(
+      ["examples", "merge-tile-game", "--json"],
+      contains: "examples merge-tile-game <join|tap|board|watch|reset|leave>"
+    )
+    try expectMalformed(
+      ["examples", "tile-game", "join", "--json"],
+      contains: "examples merge-tile-game join <user-id>"
+    )
+    try expectMalformed(
+      ["examples", "merge-game", "tap", "user-1", "0", "--json"],
+      contains: "examples merge-tile-game tap <user-id>"
+    )
+    try expectMalformed(
+      ["examples", "merge-tile-game", "tap", "user-1", "4", "0", "--json"],
+      contains: "examples merge-tile-game tap <user-id>"
+    )
+    try expectMalformed(
+      ["examples", "merge-tile-game", "board", "--viewer-user-id", "  ", "--json"],
+      contains: "examples merge-tile-game board"
+    )
+    try expectMalformed(
+      ["examples", "merge-tile-game", "watch", "--events", "2", "--jsonl"],
+      contains: "examples merge-tile-game watch"
+    )
+    try expectMalformed(
+      ["examples", "merge-tile-game", "reset", "again", "--json"],
+      contains: "examples merge-tile-game reset"
+    )
+    try expectMalformed(
+      ["examples", "merge-tile-game", "leave", "--json"],
+      contains: "examples merge-tile-game leave <user-id>"
+    )
+    try expectMalformed(
+      ["examples", "merge-tile-game", "dance", "--json"],
+      contains: "Unknown merge tile game command: dance"
+    )
+
+    expectNoDifference(
+      try FileManager.default.contentsOfDirectory(atPath: homeURL.path),
+      []
+    )
+  }
+
+  @Test
   func cliMalformedSyncUpsArgumentsDoNotBootstrapState() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)

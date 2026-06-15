@@ -480,8 +480,8 @@ struct InstantSwiftDataCLI {
       try await runCustomCursors(leaf: leaf, output: output)
       return
 
-    case let .mergeTileGame(arguments):
-      try await runMergeTileGame(arguments: arguments, output: output)
+    case let .mergeTileGame(leaf):
+      try await runMergeTileGame(leaf: leaf, output: output)
       return
 
     case let .stroopwafel(arguments):
@@ -6716,15 +6716,10 @@ struct InstantSwiftDataCLI {
     }
   }
 
-  private static func runMergeTileGame(arguments: [String], output: OutputMode) async throws {
-    let invocation: CLIExamplesMergeTileGameLeafInvocation
-    do {
-      var input = arguments[...]
-      invocation = try CLIExamplesMergeTileGameLeafParser().parse(&input)
-    } catch let error as CLIExamplesMergeTileGameArgumentError {
-      throw CLIError(error.description, exitCode: error.exitCode)
-    }
-
+  private static func runMergeTileGame(
+    leaf invocation: CLIExamplesMergeTileGameLeafInvocation,
+    output: OutputMode
+  ) async throws {
     if case let .unknown(command) = invocation {
       throw CLIError(
         "Unknown merge tile game command: \(command). \(mergeTileGameUsage)",
