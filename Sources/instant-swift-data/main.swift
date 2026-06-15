@@ -450,8 +450,8 @@ struct InstantSwiftDataCLI {
       try await runAppBuilder(leaf: leaf, output: output)
       return
 
-    case let .chat(arguments):
-      try await runChat(arguments: arguments, output: output)
+    case let .chat(leaf):
+      try await runChat(leaf: leaf, output: output)
       return
 
     case let .counters(leaf):
@@ -1963,15 +1963,10 @@ struct InstantSwiftDataCLI {
     }
   }
 
-  private static func runChat(arguments: [String], output: OutputMode) async throws {
-    let invocation: CLIExamplesChatLeafInvocation
-    do {
-      var input = arguments[...]
-      invocation = try CLIExamplesChatLeafParser().parse(&input)
-    } catch let error as CLIExamplesChatArgumentError {
-      throw CLIError(error.description, exitCode: error.exitCode)
-    }
-
+  private static func runChat(
+    leaf invocation: CLIExamplesChatLeafInvocation,
+    output: OutputMode
+  ) async throws {
     if case let .unknown(command) = invocation {
       throw CLIError("Unknown chat command: \(command). \(chatUsage)", exitCode: 64)
     }

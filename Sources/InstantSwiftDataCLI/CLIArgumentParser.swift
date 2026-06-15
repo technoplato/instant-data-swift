@@ -51,7 +51,7 @@ public enum CLIExamplesInvocation: Equatable, Sendable {
   case todos(CLIExamplesTodosInvocation)
   case auth(CLIExamplesAuthLeafInvocation)
   case appBuilder(CLIExamplesAppBuilderLeafInvocation)
-  case chat(arguments: [String])
+  case chat(CLIExamplesChatLeafInvocation)
   case counters(CLIExamplesCountersLeafInvocation)
   case microblog(arguments: [String])
   case mobileChat(arguments: [String])
@@ -2414,9 +2414,7 @@ public struct CLIExamplesParser: Parser {
       return .appBuilder(try CLIExamplesAppBuilderLeafParser().parse(&input))
 
     case "chat":
-      let arguments = Array(input)
-      input.removeAll()
-      return .chat(arguments: arguments)
+      return .chat(try CLIExamplesChatLeafParser().parse(&input))
 
     case "counters", "cloudkit-demo":
       return .counters(try CLIExamplesCountersLeafParser().parse(&input))

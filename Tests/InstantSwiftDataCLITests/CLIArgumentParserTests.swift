@@ -690,11 +690,16 @@ struct CLIArgumentParserTests {
   @Test
   func examplesChatLeafParserParsesCommandsAndOptions() throws {
     expectNoDifference(try parseExamplesChatLeaf(["seed"]), .seed)
+    expectNoDifference(try parseExamples(["chat", "seed"]), .chat(.seed))
     expectNoDifference(try parseExamplesChatLeaf(["channels"]), .channels)
     expectNoDifference(try parseExamplesChatLeaf(["messages"]), .messages(channelID: nil))
     expectNoDifference(
       try parseExamplesChatLeaf(["messages", "channel-1"]),
       .messages(channelID: "channel-1")
+    )
+    expectNoDifference(
+      try parseExamples(["chat", "messages", "channel-1"]),
+      .chat(.messages(channelID: "channel-1"))
     )
     expectNoDifference(
       try parseExamplesChatLeaf(["post", "channel-1", "Hello", "there"]),
@@ -717,6 +722,18 @@ struct CLIArgumentParserTests {
           channelID: "channel-1",
           text: "Hello",
           authorName: "Blob Jr"
+        )
+      )
+    )
+    expectNoDifference(
+      try parseExamples(["chat", "post", "channel-1", "Hello", "--author", "Blob Jr"]),
+      .chat(
+        .post(
+          CLIExamplesChatPostInvocation(
+            channelID: "channel-1",
+            text: "Hello",
+            authorName: "Blob Jr"
+          )
         )
       )
     )
@@ -3519,10 +3536,6 @@ struct CLIArgumentParserTests {
     expectNoDifference(
       try parseExamples(["cloudkit-demo", "list"]),
       .counters(.list)
-    )
-    expectNoDifference(
-      try parseExamples(["chat", "seed"]),
-      .chat(arguments: ["seed"])
     )
     expectNoDifference(
       try parseExamples(["microblog", "seed"]),

@@ -459,7 +459,7 @@ combinators for the typed grammar. Preserve today's global `--json`/`--jsonl`
 semantics while migrating command leaves gradually behind parser-level tests;
 manual `popFirstArgument` parsing is allowed only as a temporary legacy bridge.
 Current progress: top-level command/output token parsing and `examples todos`,
-auth recipe, app-builder, todo-links, CloudKitDemo/counters, reactions,
+auth recipe, app-builder, chat, todo-links, CloudKitDemo/counters, reactions,
 typing-indicator, avatar-stack, cursors, custom-cursors, merge-tile-game,
 Stroopwafel, SyncUps, and Reminders dispatch are combinator-backed, and the
 executable consumes those typed leaves produced by the parser instead of
