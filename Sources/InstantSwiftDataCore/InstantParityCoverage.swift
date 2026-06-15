@@ -367,6 +367,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift uses explicit update preconditions instead of JavaScript store-aware inference; encoded txSteps preserve absent options for upserts and exact update-mode payloads."
     ),
     instant(
+      id: "instant.instaml.dotted-lookup-attribute",
+      sourceFile: instamlSource,
+      sourceTestName: "it doesn't throw if you have a period in your attr",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "lookupAttributeWithPeriodPortsInstamlDottedAttr",
+      surface: "instaml",
+      status: .adapted,
+      notes: "Swift lookup refs use full attribute ids rather than JavaScript lookup labels; transport lowering preserves dotted lookup arrays and local optimistic resolution accepts seeded dotted unique attributes."
+    ),
+    instant(
       id: "instant.weak-hash",
       sourceFile: weakHashSource,
       sourceTestName: "selected fields / object key order / date / known query",

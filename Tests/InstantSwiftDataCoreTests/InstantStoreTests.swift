@@ -1105,6 +1105,148 @@ struct InstantStoreTests {
   }
 
   @Test
+  func lookupAttributeWithPeriodPortsInstamlDottedAttr() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let source =
+      "upstream/instant/client/packages/core/__tests__/src/instaml.test.ts "
+      + "it doesn't throw if you have a period in your attr "
+      + "[adapted: Swift lookup refs use full attribute ids rather than JavaScript lookup labels.]"
+    let attributes = [
+      InstantAttribute(
+        id: "users/attr.with.dot",
+        namespace: "users",
+        name: "attr.with.dot",
+        valueType: .string,
+        isIndexed: true,
+        isUnique: true
+      ),
+      InstantAttribute(
+        id: "users/a",
+        namespace: "users",
+        name: "a",
+        valueType: .number
+      ),
+    ]
+    let lookup = InstantLookupRef(
+      attributeID: "users/attr.with.dot",
+      value: .string("value")
+    )
+    let unresolvedTransaction = InstantStoreTransaction(
+      id: "tx-instaml-dotted-lookup-transport",
+      operations: [
+        .insertByLookup(
+          entity: lookup,
+          attributeID: "users/id",
+          value: .lookupRef(lookup),
+          txID: "tx-instaml-dotted-lookup-transport",
+          txTime: time
+        ),
+        .insertByLookup(
+          entity: lookup,
+          attributeID: "users/a",
+          value: .number(1),
+          txID: "tx-instaml-dotted-lookup-transport",
+          txTime: time
+        ),
+      ]
+    )
+
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: attributes
+      )
+    )
+    let unresolvedResult = try await runtime.transact(unresolvedTransaction, createdAt: time)
+    let emptyUsers = try await runtime.query(InstantQueryPlan(id: "dotted-lookup.empty", namespace: "users"))
+    expectNoDifference(unresolvedResult.changedEntityIDs, [], source)
+    expectNoDifference(unresolvedResult.tripleCount, 0, source)
+    expectNoDifference(emptyUsers, [], source)
+
+    let transportMutation = InstantTransportMutation(
+      PendingMutation(
+        id: unresolvedTransaction.id,
+        createdAt: time,
+        transaction: unresolvedTransaction
+      )
+    )
+    let data = try JSONEncoder().encode(transportMutation)
+    let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let txSteps = try #require(object["txSteps"] as? [[Any]])
+    expectNoDifference(txSteps.count, 2, source)
+    expectNoDifference(txSteps.map { $0.first as? String }, ["add-triple", "add-triple"], source)
+    let lookupEntity = try #require(txSteps[0][1] as? [Any])
+    expectNoDifference(lookupEntity.count, 2, source)
+    expectNoDifference(lookupEntity[0] as? String, "users/attr.with.dot", source)
+    expectNoDifference(lookupEntity[1] as? String, "value", source)
+    expectNoDifference(txSteps[0][2] as? String, "users/id", source)
+    let lookupValue = try #require(txSteps[0][3] as? [Any])
+    expectNoDifference(lookupValue.count, 2, source)
+    expectNoDifference(lookupValue[0] as? String, "users/attr.with.dot", source)
+    expectNoDifference(lookupValue[1] as? String, "value", source)
+    let secondLookupEntity = try #require(txSteps[1][1] as? [Any])
+    expectNoDifference(secondLookupEntity.count, 2, source)
+    expectNoDifference(secondLookupEntity[0] as? String, "users/attr.with.dot", source)
+    expectNoDifference(secondLookupEntity[1] as? String, "value", source)
+    expectNoDifference(txSteps[1][2] as? String, "users/a", source)
+    expectNoDifference((txSteps[1][3] as? NSNumber)?.doubleValue, 1.0, source)
+    expectNoDifference(txSteps.map(\.count), [4, 4], source)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-instaml-dotted-lookup-seed",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: "user-1",
+              attributeID: "users/id",
+              value: .string("user-1"),
+              txID: "tx-instaml-dotted-lookup-seed",
+              txTime: InstantTimestamp(milliseconds: time.milliseconds + 1)
+            )
+          ),
+          .insert(
+            InstantTriple(
+              entityID: "user-1",
+              attributeID: "users/attr.with.dot",
+              value: .string("local-value"),
+              txID: "tx-instaml-dotted-lookup-seed",
+              txTime: InstantTimestamp(milliseconds: time.milliseconds + 1)
+            )
+          ),
+        ]
+      ),
+      createdAt: InstantTimestamp(milliseconds: time.milliseconds + 1)
+    )
+    let localLookup = InstantLookupRef(
+      attributeID: "users/attr.with.dot",
+      value: .string("local-value")
+    )
+    let localResult = try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-instaml-dotted-lookup-local",
+        operations: [
+          .insertByLookup(
+            entity: localLookup,
+            attributeID: "users/a",
+            value: .number(2),
+            txID: "tx-instaml-dotted-lookup-local",
+            txTime: InstantTimestamp(milliseconds: time.milliseconds + 2)
+          )
+        ]
+      ),
+      createdAt: InstantTimestamp(milliseconds: time.milliseconds + 2)
+    )
+    let users = try await runtime.query(InstantQueryPlan(id: "dotted-lookup.users", namespace: "users"))
+    expectNoDifference(localResult.changedEntityIDs, ["user-1"], source)
+    expectNoDifference(users.map(\.id), ["user-1"], source)
+    expectNoDifference(users.first?.values["attr.with.dot"]?.first, .string("local-value"), source)
+    expectNoDifference(users.first?.values["a"]?.first, .number(2), source)
+  }
+
+  @Test
   func transportMutationPreservesLookupRefsInLinkValuesForInstamlParity() throws {
     let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let postLookup = InstantLookupRef(
