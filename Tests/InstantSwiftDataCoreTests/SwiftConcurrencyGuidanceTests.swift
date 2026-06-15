@@ -1,4 +1,5 @@
 import Foundation
+import CustomDump
 import Testing
 
 @Suite
@@ -17,6 +18,52 @@ struct SwiftConcurrencyGuidanceTests {
       SAFETY: comment naming the actor, lock, or executor that protects it.
       Missing comments:
       \(failures.joined(separator: "\n"))
+      """
+    )
+  }
+
+  @Test
+  func coreSchemaAndCLIDoNotDependOnMainActorIsolation() throws {
+    let packageRoot = packageRootURL()
+    let targetPaths = [
+      "Sources/InstantSwiftDataCore",
+      "Sources/InstantSwiftDataSchema",
+      "Sources/InstantSwiftDataCLI",
+      "Sources/instant-swift-data",
+    ]
+    let failures = try targetPaths.flatMap { targetPath in
+      try forbiddenSourceReferences(
+        to: ["@MainActor", "MainActor"],
+        under: packageRoot.appendingPathComponent(targetPath, isDirectory: true),
+        relativeTo: packageRoot
+      )
+    }
+
+    expectNoDifference(
+      failures,
+      [],
+      """
+      Instant core, schema, and CLI targets must not require main-actor isolation.
+      Main-actor adaptation belongs in UI adapters and examples.
+      """
+    )
+  }
+
+  @Test
+  func productionSourcesDoNotUsePreconcurrencyEscapes() throws {
+    let packageRoot = packageRootURL()
+    let failures = try forbiddenSourceReferences(
+      to: ["@preconcurrency"],
+      under: packageRoot.appendingPathComponent("Sources", isDirectory: true),
+      relativeTo: packageRoot
+    )
+
+    expectNoDifference(
+      failures,
+      [],
+      """
+      Production sources should not add @preconcurrency to hide concurrency
+      diagnostics. Model the Sendable/isolation boundary instead.
       """
     )
   }
@@ -76,6 +123,24 @@ private func swiftFiles(under root: URL) throws -> [URL] {
     files.append(fileURL)
   }
   return files.sorted { $0.path < $1.path }
+}
+
+private func forbiddenSourceReferences(
+  to forbiddenReferences: [String],
+  under root: URL,
+  relativeTo packageRoot: URL
+) throws -> [String] {
+  try swiftFiles(under: root).flatMap { fileURL in
+    let contents = try String(contentsOf: fileURL, encoding: .utf8)
+    return contents
+      .split(separator: "\n", omittingEmptySubsequences: false)
+      .enumerated()
+      .compactMap { index, line -> String? in
+        guard let forbiddenReference = forbiddenReferences.first(where: line.contains)
+        else { return nil }
+        return "\(relativePath(fileURL, relativeTo: packageRoot)):\(index + 1): \(forbiddenReference)"
+      }
+  }
 }
 
 private func relativePath(_ fileURL: URL, relativeTo directoryURL: URL) -> String {
