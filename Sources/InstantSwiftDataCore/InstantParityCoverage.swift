@@ -327,6 +327,26 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift proves the same empty todos query through local InstantRuntime.queryOnce; the browser document mutation is outside the core runtime surface."
     ),
     instant(
+      id: "instant.cookie-sync.startup-old",
+      sourceFile: cookieSyncSource,
+      sourceTestName: "syncs user cookie on startup when last sync is at least a day old",
+      swiftFile: cookieSyncParitySwiftFile,
+      swiftTestName: "upstreamCookieSyncSyncsUserCookieOnStartupWhenLastSyncIsAtLeastADayOld",
+      surface: "auth-cookie-sync",
+      status: .adapted,
+      notes: "Swift uses a live/injectable user-cookie sync client and app-scoped SQLite metadata to prove startup syncs again exactly one day after the last recorded user-cookie sync attempt."
+    ),
+    instant(
+      id: "instant.cookie-sync.startup-recent",
+      sourceFile: cookieSyncSource,
+      sourceTestName: "does not sync user cookie on startup when last sync is recent",
+      swiftFile: cookieSyncParitySwiftFile,
+      swiftTestName: "upstreamCookieSyncDoesNotSyncUserCookieOnStartupWhenLastSyncIsRecent",
+      surface: "auth-cookie-sync",
+      status: .adapted,
+      notes: "Swift uses a live/injectable user-cookie sync client and app-scoped SQLite metadata to prove startup does not sync again one millisecond before the one-day threshold."
+    ),
+    instant(
       id: "instant.reactor.query-subs-round-trips",
       sourceFile: reactorSource,
       sourceTestName: "querySubs round-trips",
@@ -2236,6 +2256,8 @@ public enum InstantSwiftDataParityCoverage {
     "upstream/instant/client/packages/core/__tests__/src/instaqlInference.test.ts"
   private static let simpleE2ESource =
     "upstream/instant/client/packages/core/__tests__/src/simple.e2e.test.ts"
+  private static let cookieSyncSource =
+    "upstream/instant/client/packages/core/__tests__/src/cookieSync.e2e.test.ts + upstream/instant/client/packages/core/src/Reactor.js + upstream/instant/client/packages/core/src/routeHandlerProtocol.ts + upstream/instant/client/packages/core/src/createRouteHandler.ts"
   private static let reactorSource =
     "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts"
   private static let instamlSource =
@@ -2262,6 +2284,8 @@ public enum InstantSwiftDataParityCoverage {
     "Tests/InstantSwiftDataCoreTests/InstantStoreParityTests.swift"
   private static let simpleE2ESwiftFile =
     "Tests/InstantSwiftDataCoreTests/InstantSimpleE2EParityTests.swift"
+  private static let cookieSyncParitySwiftFile =
+    "Tests/InstantSwiftDataCoreTests/InstantCookieSyncParityTests.swift"
   private static let reactorParitySwiftFile =
     "Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift"
   private static let instaQLInferenceParitySwiftFile =

@@ -811,9 +811,9 @@ struct LocalTodoValidationTests {
 
     expectNoDifference(run.result.event, "parity-report")
     expectNoDifference(run.result.coverageComplete, false)
-    expectNoDifference(run.result.recordCount, 208)
+    expectNoDifference(run.result.recordCount, 210)
     expectNoDifference(run.result.exactCount, 28)
-    expectNoDifference(run.result.adaptedCount, 174)
+    expectNoDifference(run.result.adaptedCount, 176)
     expectNoDifference(run.result.blockedCount, 5)
     expectNoDifference(run.result.notApplicableCount, 1)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
@@ -853,6 +853,11 @@ struct LocalTodoValidationTests {
     #expect(
       run.result.sourceFiles.contains(
         "upstream/instant/client/packages/core/__tests__/src/simple.e2e.test.ts"
+      )
+    )
+    #expect(
+      run.result.sourceFiles.contains(
+        "upstream/instant/client/packages/core/__tests__/src/cookieSync.e2e.test.ts + upstream/instant/client/packages/core/src/Reactor.js + upstream/instant/client/packages/core/src/routeHandlerProtocol.ts + upstream/instant/client/packages/core/src/createRouteHandler.ts"
       )
     )
     #expect(
@@ -913,6 +918,16 @@ struct LocalTodoValidationTests {
     #expect(
       run.result.records.contains {
         $0.id == "instant.simple-e2e.can-make-query" && $0.status == .adapted
+      }
+    )
+    #expect(
+      run.result.records.contains {
+        $0.id == "instant.cookie-sync.startup-old" && $0.status == .adapted
+      }
+    )
+    #expect(
+      run.result.records.contains {
+        $0.id == "instant.cookie-sync.startup-recent" && $0.status == .adapted
       }
     )
     #expect(
@@ -1175,7 +1190,7 @@ struct LocalTodoValidationTests {
     )
 
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 208)
+    expectNoDifference(rows.count, 210)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
@@ -1237,7 +1252,7 @@ struct LocalTodoValidationTests {
 
     #expect(result.status == 0)
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 208)
+    expectNoDifference(rows.count, 210)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))

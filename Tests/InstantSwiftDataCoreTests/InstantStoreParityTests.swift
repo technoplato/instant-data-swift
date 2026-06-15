@@ -11,9 +11,9 @@ struct InstantStoreParityTests {
 
     expectNoDifference(report.event, "parity-report")
     expectNoDifference(report.coverageComplete, false)
-    expectNoDifference(report.recordCount, 208)
+    expectNoDifference(report.recordCount, 210)
     expectNoDifference(report.exactCount, 28)
-    expectNoDifference(report.adaptedCount, 174)
+    expectNoDifference(report.adaptedCount, 176)
     expectNoDifference(report.blockedCount, 5)
     expectNoDifference(report.notApplicableCount, 1)
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/schema.test.ts"))
@@ -26,6 +26,7 @@ struct InstantStoreParityTests {
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/react-common/src"))
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/utils/dates.test.ts"))
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/simple.e2e.test.ts"))
+    #expect(report.sourceFiles.contains(cookieSyncParitySource))
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts"))
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/instaqlInference.test.ts"))
     #expect(report.sourceFiles.contains("upstream/instant/client/www/_examples/app-builder.md + Galaxies-dev/app-builder@e67200cc70e01d88bd9a5382cf0380f4882fb8c7"))
@@ -35,6 +36,7 @@ struct InstantStoreParityTests {
     #expect(report.sourceFiles.contains("upstream/sqlite-data/Tests/SQLiteDataTests/FetchSubscriptionTests.swift"))
     #expect(report.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantDateCoercionTests.swift"))
     #expect(report.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantSimpleE2EParityTests.swift"))
+    #expect(report.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantCookieSyncParityTests.swift"))
     #expect(report.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift"))
     #expect(report.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantInstaQLInferenceParityTests.swift"))
     #expect(report.swiftFiles.contains("Tests/InstantSwiftDataMacrosTests/InstantEntityMacroTests.swift"))
@@ -62,6 +64,8 @@ struct InstantStoreParityTests {
     #expect(report.records.contains { $0.id == "instant.store.recursive-links-same-id" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.store.v0-store-restore" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.simple-e2e.can-make-query" && $0.status == .adapted })
+    #expect(report.records.contains { $0.id == "instant.cookie-sync.startup-old" && $0.status == .adapted })
+    #expect(report.records.contains { $0.id == "instant.cookie-sync.startup-recent" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.reactor.query-subs-round-trips" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.reactor.optimistic-refresh-preserves-local" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.reactor.get-local-id-stability" && $0.status == .adapted })
@@ -2123,6 +2127,9 @@ struct InstantStoreParityTests {
     return formatter.string(from: date)
   }
 }
+
+private let cookieSyncParitySource =
+  "upstream/instant/client/packages/core/__tests__/src/cookieSync.e2e.test.ts + upstream/instant/client/packages/core/src/Reactor.js + upstream/instant/client/packages/core/src/routeHandlerProtocol.ts + upstream/instant/client/packages/core/src/createRouteHandler.ts"
 
 private let upstreamStoreTestSource =
   "upstream/instant/client/packages/core/__tests__/src/store.test.ts"

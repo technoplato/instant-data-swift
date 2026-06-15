@@ -9,6 +9,7 @@ public struct InstantRuntimeConfiguration: Sendable {
   public var appID: String
   public var apiURI: URL
   public var websocketURI: URL
+  public var firstPartyURL: URL?
   public var persistenceURL: URL
   public var initialAttributes: [InstantAttribute]
   public var now: @Sendable () -> InstantTimestamp
@@ -19,6 +20,7 @@ public struct InstantRuntimeConfiguration: Sendable {
   public var oauthExchange: InstantOAuthExchange
   public var authTokenInvalidator: InstantAuthTokenInvalidator
   public var mutationTransport: InstantMutationTransportClient
+  public var userCookieSyncClient: InstantUserCookieSyncClient
   public var platformAppClient: InstantPlatformAppClient
   public var appBuilderCodeGenerator: AppBuilderCodeGeneratorClient
   var actorHopRecorder: InstantActorHopRecorder?
@@ -62,6 +64,7 @@ public struct InstantRuntimeConfiguration: Sendable {
     appID: String,
     apiURI: URL = Self.defaultAPIURI,
     websocketURI: URL = Self.defaultWebSocketURI,
+    firstPartyURL: URL? = nil,
     persistenceURL: URL,
     initialAttributes: [InstantAttribute] = [],
     now: @escaping @Sendable () -> InstantTimestamp = {
@@ -74,12 +77,14 @@ public struct InstantRuntimeConfiguration: Sendable {
     oauthExchange: InstantOAuthExchange = .local,
     authTokenInvalidator: InstantAuthTokenInvalidator = .local,
     mutationTransport: InstantMutationTransportClient = .local,
+    userCookieSyncClient: InstantUserCookieSyncClient = .live,
     platformAppClient: InstantPlatformAppClient = .local,
     appBuilderCodeGenerator: AppBuilderCodeGeneratorClient = .local
   ) {
     self.appID = appID
     self.apiURI = apiURI
     self.websocketURI = websocketURI
+    self.firstPartyURL = firstPartyURL
     self.persistenceURL = persistenceURL
     self.initialAttributes = initialAttributes
     self.now = now
@@ -90,6 +95,7 @@ public struct InstantRuntimeConfiguration: Sendable {
     self.oauthExchange = oauthExchange
     self.authTokenInvalidator = authTokenInvalidator
     self.mutationTransport = mutationTransport
+    self.userCookieSyncClient = userCookieSyncClient
     self.platformAppClient = platformAppClient
     self.appBuilderCodeGenerator = appBuilderCodeGenerator
     self.actorHopRecorder = nil
@@ -169,6 +175,8 @@ private struct InstantSharedRootWriteTarget: Hashable, Sendable {
 
 public final class InstantRuntime: Sendable {
   public static let selectedAppIDMetadataKey = "cli.selected_app_id"
+  public static let cookieSyncLastUpdatedMetadataKey = "lastSyncedUserCookie"
+  public static let cookieSyncIntervalMilliseconds: Int64 = 24 * 60 * 60 * 1000
 
   public let configuration: InstantRuntimeConfiguration
   public let store: InstantStore
@@ -225,6 +233,8 @@ public final class InstantRuntime: Sendable {
       try await persistence.saveStoreSnapshot(storeSnapshot)
     }
 
+    await runtime.syncUserCookieOnStartup()
+
     return runtime
   }
 
@@ -259,6 +269,14 @@ public final class InstantRuntime: Sendable {
         requirement: "an absolute ws or wss URL with a host and no query or fragment"
       )
     }
+    if let firstPartyURL = configuration.firstPartyURL {
+      guard InstantRuntimeConfiguration.isValidAPIURI(firstPartyURL) else {
+        throw endpointValidationFailed(
+          name: "firstPartyURL",
+          requirement: "an absolute http or https URL with a host and no query or fragment"
+        )
+      }
+    }
   }
 
   private static func endpointValidationFailed(name: String, requirement: String) -> InstantError {
@@ -269,6 +287,31 @@ public final class InstantRuntime: Sendable {
       message: "\(name) must be \(requirement).",
       recovery: "Check the Instant runtime endpoint configuration before bootstrapping."
     )
+  }
+
+  private static func cookieSyncISOString(from timestamp: InstantTimestamp) -> String {
+    let date = Date(timeIntervalSince1970: Double(timestamp.milliseconds) / 1000)
+    return cookieSyncDateFormatter().string(from: date)
+  }
+
+  private static func cookieSyncMilliseconds(from value: String) -> Int64? {
+    for formatter in cookieSyncDateFormatters() {
+      guard let date = formatter.date(from: value) else { continue }
+      return Int64((date.timeIntervalSince1970 * 1000).rounded())
+    }
+    return nil
+  }
+
+  private static func cookieSyncDateFormatter() -> ISO8601DateFormatter {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter
+  }
+
+  private static func cookieSyncDateFormatters() -> [ISO8601DateFormatter] {
+    let internetDateTimeFormatter = ISO8601DateFormatter()
+    internetDateTimeFormatter.formatOptions = [.withInternetDateTime]
+    return [cookieSyncDateFormatter(), internetDateTimeFormatter]
   }
 
   @discardableResult
@@ -674,6 +717,58 @@ public final class InstantRuntime: Sendable {
     try await persistence.loadAuthSession(key: authSessionKey)
   }
 
+  @discardableResult
+  public func syncUserCookieToEndpoint(
+    _ session: InstantAuthSession?
+  ) async throws -> InstantUserCookieSyncRequest? {
+    guard let firstPartyURL = configuration.firstPartyURL else { return nil }
+
+    let syncedAt = configuration.now()
+    let request = InstantUserCookieSyncRequest(
+      appID: configuration.appID,
+      firstPartyURL: firstPartyURL,
+      user: session.map(InstantUserCookieSyncUser.init),
+      syncedAt: syncedAt
+    )
+    do {
+      try await configuration.userCookieSyncClient.sync(request)
+    } catch {
+      // Match Instant's Reactor: endpoint failures are logged there, but the
+      // local last-sync marker is still advanced to avoid retry loops.
+    }
+    recordActorHop(.persistence)
+    try await persistence.saveMetadataValue(
+      Self.cookieSyncISOString(from: syncedAt),
+      key: appScopedCookieSyncLastUpdatedMetadataKey,
+      updatedAt: syncedAt
+    )
+    return request
+  }
+
+  private func syncUserCookieOnStartup() async {
+    guard configuration.firstPartyURL != nil else { return }
+
+    do {
+      recordActorHop(.persistence)
+      let lastSynced = try await persistence.loadMetadataValue(
+        key: appScopedCookieSyncLastUpdatedMetadataKey
+      )
+      let lastSyncedMilliseconds = lastSynced.flatMap(Self.cookieSyncMilliseconds(from:)) ?? 0
+      let now = configuration.now()
+      let shouldSync =
+        lastSyncedMilliseconds == 0
+        || now.milliseconds - lastSyncedMilliseconds >= Self.cookieSyncIntervalMilliseconds
+      guard shouldSync else { return }
+
+      recordActorHop(.persistence)
+      let session = try await persistence.loadAuthSession(key: authSessionKey)
+      _ = try await syncUserCookieToEndpoint(session)
+    } catch {
+      // Match Instant's Reactor startup behavior: cookie sync failures are
+      // intentionally non-fatal to runtime bootstrap.
+    }
+  }
+
   public func observeAuthSession() async throws -> AsyncStream<InstantAuthSession?> {
     await operationGate.enter()
     do {
@@ -769,6 +864,7 @@ public final class InstantRuntime: Sendable {
       try await persistence.deleteMagicCodeChallenge(key: key)
       await authSessionObservers.yield(session)
       await operationGate.leave()
+      _ = try? await syncUserCookieToEndpoint(session)
       return session
     } catch {
       await operationGate.leave()
@@ -968,6 +1064,8 @@ public final class InstantRuntime: Sendable {
       await operationGate.leave()
       throw error
     }
+
+    _ = try? await syncUserCookieToEndpoint(nil)
 
     if let invalidationRequest {
       do {
@@ -2533,6 +2631,7 @@ public final class InstantRuntime: Sendable {
       await operationGate.leave()
       throw error
     }
+    _ = try? await syncUserCookieToEndpoint(session)
   }
 
   private func outboxMutationNotFound(id: String) -> InstantError {
@@ -2871,6 +2970,10 @@ public final class InstantRuntime: Sendable {
 
   private var connectionLastErrorMetadataKey: String {
     "connection.last_error:\(configuration.appID)"
+  }
+
+  private var appScopedCookieSyncLastUpdatedMetadataKey: String {
+    "\(Self.cookieSyncLastUpdatedMetadataKey):\(configuration.appID)"
   }
 
   private func roomPresenceObservationKey(_ room: InstantRoomHandle) -> InstantRoomPresenceObservationKey {

@@ -1477,6 +1477,22 @@ extension InstantMutationTransportKey: DependencyKey {
   }
 }
 
+private enum InstantUserCookieSyncClientKey: TestDependencyKey {
+  static var testValue: InstantUserCookieSyncClient {
+    .local
+  }
+
+  static var previewValue: InstantUserCookieSyncClient {
+    .local
+  }
+}
+
+extension InstantUserCookieSyncClientKey: DependencyKey {
+  static var liveValue: InstantUserCookieSyncClient {
+    .live
+  }
+}
+
 private enum SyncUpSpeechClientKey: TestDependencyKey {
   static var testValue: SyncUpSpeechClient {
     .local
@@ -1593,6 +1609,11 @@ extension DependencyValues {
     set { self[InstantMutationTransportKey.self] = newValue }
   }
 
+  public var instantUserCookieSyncClient: InstantUserCookieSyncClient {
+    get { self[InstantUserCookieSyncClientKey.self] }
+    set { self[InstantUserCookieSyncClientKey.self] = newValue }
+  }
+
   public var instantPlatformAppClient: InstantPlatformAppClient {
     get { self[InstantPlatformAppClientKey.self] }
     set { self[InstantPlatformAppClientKey.self] = newValue }
@@ -1621,6 +1642,7 @@ extension DependencyValues {
   public mutating func bootstrapInstantSwiftData(
     appID: String,
     persistenceURL: URL? = nil,
+    firstPartyURL: URL? = nil,
     context: InstantSwiftDataBootstrapContext = .live,
     initialAttributes: [InstantAttribute] = []
   ) async throws {
@@ -1629,6 +1651,7 @@ extension DependencyValues {
       apiURI: InstantRuntimeConfiguration.defaultAPIURI,
       websocketURI: InstantRuntimeConfiguration.defaultWebSocketURI,
       persistenceURL: persistenceURL,
+      firstPartyURL: firstPartyURL,
       context: context,
       initialAttributes: initialAttributes
     )
@@ -1639,6 +1662,7 @@ extension DependencyValues {
     apiURI: URL = InstantRuntimeConfiguration.defaultAPIURI,
     websocketURI: URL = InstantRuntimeConfiguration.defaultWebSocketURI,
     persistenceURL: URL? = nil,
+    firstPartyURL: URL? = nil,
     context: InstantSwiftDataBootstrapContext = .live,
     initialAttributes: [InstantAttribute] = []
   ) async throws {
@@ -1650,6 +1674,7 @@ extension DependencyValues {
     let oauthExchange = self.instantOAuthExchange
     let authTokenInvalidator = self.instantAuthTokenInvalidator
     let mutationTransport = self.instantMutationTransport
+    let userCookieSyncClient = self.instantUserCookieSyncClient
     let platformAppClient = self.instantPlatformAppClient
     let appBuilderCodeGenerator = self.appBuilderCodeGenerator
     let url =
@@ -1665,6 +1690,7 @@ extension DependencyValues {
         appID: appID,
         apiURI: apiURI,
         websocketURI: websocketURI,
+        firstPartyURL: firstPartyURL,
         persistenceURL: url,
         initialAttributes: initialAttributes,
         now: {
@@ -1679,6 +1705,7 @@ extension DependencyValues {
         oauthExchange: oauthExchange,
         authTokenInvalidator: authTokenInvalidator,
         mutationTransport: mutationTransport,
+        userCookieSyncClient: userCookieSyncClient,
         platformAppClient: platformAppClient,
         appBuilderCodeGenerator: appBuilderCodeGenerator
       )

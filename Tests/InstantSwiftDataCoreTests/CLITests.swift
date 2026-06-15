@@ -8316,9 +8316,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 208)
+    expectNoDifference(jsonOutput.recordCount, 210)
     expectNoDifference(jsonOutput.exactCount, 28)
-    expectNoDifference(jsonOutput.adaptedCount, 174)
+    expectNoDifference(jsonOutput.adaptedCount, 176)
     expectNoDifference(jsonOutput.blockedCount, 5)
     expectNoDifference(jsonOutput.notApplicableCount, 1)
     #expect(
@@ -8368,6 +8368,11 @@ extension InstantStoreTests {
     )
     #expect(
       jsonOutput.sourceFiles.contains(
+        "upstream/instant/client/packages/core/__tests__/src/cookieSync.e2e.test.ts + upstream/instant/client/packages/core/src/Reactor.js + upstream/instant/client/packages/core/src/routeHandlerProtocol.ts + upstream/instant/client/packages/core/src/createRouteHandler.ts"
+      )
+    )
+    #expect(
+      jsonOutput.sourceFiles.contains(
         "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts"
       )
     )
@@ -8389,6 +8394,7 @@ extension InstantStoreTests {
     #expect(jsonOutput.sourceFiles.contains("upstream/instant/client/packages/react-common/src"))
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantDateCoercionTests.swift"))
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantSimpleE2EParityTests.swift"))
+    #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantCookieSyncParityTests.swift"))
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift"))
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantInstaQLInferenceParityTests.swift"))
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/CLITests.swift"))
@@ -8517,6 +8523,16 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.records.contains {
         $0.id == "instant.simple-e2e.can-make-query" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.cookie-sync.startup-old" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.cookie-sync.startup-recent" && $0.status == "adapted"
       }
     )
     #expect(
@@ -9119,9 +9135,9 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 208"))
+    #expect(humanOutput.contains("records: 210"))
     #expect(humanOutput.contains("exact: 28"))
-    #expect(humanOutput.contains("adapted: 174"))
+    #expect(humanOutput.contains("adapted: 176"))
     #expect(humanOutput.contains("blocked: 5"))
     #expect(humanOutput.contains("not applicable: 1"))
   }
