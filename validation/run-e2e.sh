@@ -7,7 +7,9 @@ if [[ "${RESULTS_DIR}" != /* ]]; then
   RESULTS_DIR="${PWD}/${RESULTS_DIR}"
 fi
 VALIDATION_APP_ID="local-validation"
+REMOTE_VALIDATION_APP_ID="${INSTANT_SWIFT_DATA_REMOTE_APP_ID:-${INSTANT_APP_ID:-local-validation}}"
 BENCHMARK_ITERATIONS="${INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS:-1}"
+REQUIRE_REMOTE_PREFLIGHT="${INSTANT_SWIFT_DATA_REQUIRE_REMOTE_PREFLIGHT:-0}"
 
 mkdir -p "${RESULTS_DIR}"
 rm -f \
@@ -28,6 +30,7 @@ rm -f \
   "${RESULTS_DIR}/swift-macro-tests.log" \
   "${RESULTS_DIR}/swift-benchmark.jsonl" \
   "${RESULTS_DIR}/typescript-fixtures.jsonl" \
+  "${RESULTS_DIR}/typescript-boundary.jsonl" \
   "${RESULTS_DIR}/generated.instant.schema.ts" \
   "${RESULTS_DIR}/generated.instant.perms.ts"
 : > "${RESULTS_DIR}/orchestrator.jsonl"
@@ -516,7 +519,36 @@ if NODE_EXECUTABLE="$(resolve_node)"; then
       "$(printf '{"resultsDir":%s,"failed":"typescript-fixtures","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
     exit "${status}"
   fi
-  log_json "typescript-boundary-pending" true "$(json_object "reason" "Real Instant app creation, schema push, and admin query/transact remain pending")"
+
+  boundary_args=(--boundary-preflight --app-id "${REMOTE_VALIDATION_APP_ID}")
+  if [[ "${REQUIRE_REMOTE_PREFLIGHT}" == "1" ]]; then
+    boundary_args+=(--require-boundary)
+  fi
+  required_remote_preflight_json=false
+  if [[ "${REQUIRE_REMOTE_PREFLIGHT}" == "1" ]]; then
+    required_remote_preflight_json=true
+  fi
+  log_json \
+    "typescript-boundary-preflight-start" \
+    true \
+    "$(printf '{"remoteAppID":%s,"required":%s}' "$(json_string "${REMOTE_VALIDATION_APP_ID}")" "${required_remote_preflight_json}")"
+  if (
+    cd "${ROOT}"
+    INSTANT_APP_ID="${REMOTE_VALIDATION_APP_ID}" "${NODE_EXECUTABLE}" validation/ts-runner/src/main.ts "${boundary_args[@]}"
+  ) | tee "${RESULTS_DIR}/typescript-boundary.jsonl"; then
+    log_json "typescript-boundary-preflight-complete" true "$(json_object "path" "${RESULTS_DIR}/typescript-boundary.jsonl")"
+  else
+    status=$?
+    log_json \
+      "typescript-boundary-preflight-failed" \
+      false \
+      "$(json_failure_details "${RESULTS_DIR}/typescript-boundary.jsonl" "${status}")"
+    log_json \
+      "complete" \
+      false \
+      "$(printf '{"resultsDir":%s,"failed":"typescript-boundary-preflight","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+    exit "${status}"
+  fi
 elif [[ -n "${INSTANT_SWIFT_DATA_NODE:-}" ]]; then
   log_json "missing-node" false "$(json_object "path" "${INSTANT_SWIFT_DATA_NODE}")"
   log_json \

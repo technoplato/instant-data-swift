@@ -1369,6 +1369,9 @@ struct LocalTodoValidationTests {
     #expect(script.contains("swift-benchmark.jsonl"))
     #expect(script.contains("INSTANT_SWIFT_DATA_NODE"))
     #expect(script.contains("validation/ts-runner/src/main.ts --fixtures"))
+    #expect(script.contains("--boundary-preflight"))
+    #expect(script.contains("INSTANT_SWIFT_DATA_REMOTE_APP_ID"))
+    #expect(script.contains("INSTANT_SWIFT_DATA_REQUIRE_REMOTE_PREFLIGHT"))
     #expect(script.contains("rm -f"))
     #expect(script.contains(": > \"${RESULTS_DIR}/orchestrator.jsonl\""))
     #expect(script.contains("\"failed\":\"missing-required-file\""))
@@ -1596,7 +1599,43 @@ struct LocalTodoValidationTests {
     try writeExecutable(
       """
       #!/bin/sh
-      echo '{"case":"validation.typescript.fixtures","side":"typescript","event":"fixtures","appID":"local-validation","timestampMs":8,"ok":true,"details":{}}'
+      if [ "$1" != "validation/ts-runner/src/main.ts" ]; then
+        echo "unexpected node script: $1" >&2
+        exit 67
+      fi
+      case "$2" in
+        --fixtures)
+          if [ "$3:$4" != "--app-id:local-validation" ]; then
+            echo "unexpected fixture arguments: $*" >&2
+            exit 68
+          fi
+          echo '{"case":"validation.typescript.fixtures","side":"typescript","event":"fixtures","appID":"local-validation","timestampMs":8,"ok":true,"details":{}}'
+          ;;
+        --boundary-preflight)
+          if [ "$3:$4" != "--app-id:local-validation" ]; then
+            echo "unexpected boundary arguments: $*" >&2
+            exit 69
+          fi
+          if [ "${EXPECT_TS_REQUIRE_BOUNDARY:-}" = "1" ]; then
+            if [ "${5:-}" != "--require-boundary" ]; then
+              echo "missing required boundary flag: $*" >&2
+              exit 71
+            fi
+          elif [ -n "${5:-}" ]; then
+            echo "unexpected optional boundary flag: $*" >&2
+            exit 72
+          fi
+          if [ "${TS_STUB_FAIL_BOUNDARY:-}" = "1" ]; then
+            echo '{"case":"validation.typescript.boundary","side":"typescript","event":"preflight-skipped","appID":"local-validation","timestampMs":9,"ok":false,"details":{"missing":["INSTANT_SWIFT_DATA_REMOTE_APP_ID or INSTANT_APP_ID"]}}'
+            exit 47
+          fi
+          echo '{"case":"validation.typescript.boundary","side":"typescript","event":"preflight-skipped","appID":"local-validation","timestampMs":9,"ok":false,"details":{"missing":["INSTANT_SWIFT_DATA_REMOTE_APP_ID or INSTANT_APP_ID"]}}'
+          ;;
+        *)
+          echo "unexpected node arguments: $*" >&2
+          exit 70
+          ;;
+      esac
       """,
       to: binURL.appendingPathComponent("node")
     )
@@ -1646,7 +1685,8 @@ struct LocalTodoValidationTests {
       "swift-benchmark-complete",
       "typescript-fixtures-start",
       "typescript-fixtures-complete",
-      "typescript-boundary-pending",
+      "typescript-boundary-preflight-start",
+      "typescript-boundary-preflight-complete",
       "complete",
     ])
     expectNoDifference(successRows.last?["ok"] as? Bool, true)
@@ -1698,6 +1738,16 @@ struct LocalTodoValidationTests {
         atPath: resultsURL.appendingPathComponent("typescript-fixtures.jsonl").path
       )
     )
+    #expect(
+      FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-boundary.jsonl").path
+      )
+    )
+    let boundaryRows = try readJSONLines(
+      resultsURL.appendingPathComponent("typescript-boundary.jsonl")
+    )
+    expectNoDifference(boundaryRows.map { $0["event"] as? String ?? "" }, ["preflight-skipped"])
+    expectNoDifference(boundaryRows.first?["ok"] as? Bool, false)
 
     let overrideNodeURL = tempURL.appendingPathComponent("override-node")
     try writeExecutable(
@@ -1707,7 +1757,18 @@ struct LocalTodoValidationTests {
         echo "unexpected node script: $1" >&2
         exit 67
       fi
-      echo '{"case":"validation.typescript.fixtures","side":"typescript","event":"fixtures-override","appID":"local-validation","timestampMs":9,"ok":true,"details":{}}'
+      case "$2" in
+        --fixtures)
+          echo '{"case":"validation.typescript.fixtures","side":"typescript","event":"fixtures-override","appID":"local-validation","timestampMs":9,"ok":true,"details":{}}'
+          ;;
+        --boundary-preflight)
+          echo '{"case":"validation.typescript.boundary","side":"typescript","event":"boundary-override","appID":"local-validation","timestampMs":10,"ok":false,"details":{}}'
+          ;;
+        *)
+          echo "unexpected node arguments: $*" >&2
+          exit 68
+          ;;
+      esac
       """,
       to: overrideNodeURL
     )
@@ -1726,6 +1787,13 @@ struct LocalTodoValidationTests {
     expectNoDifference(
       overrideTypeScriptRows.map { $0["event"] as? String ?? "" },
       ["fixtures-override"]
+    )
+    let overrideBoundaryRows = try readJSONLines(
+      resultsURL.appendingPathComponent("typescript-boundary.jsonl")
+    )
+    expectNoDifference(
+      overrideBoundaryRows.map { $0["event"] as? String ?? "" },
+      ["boundary-override"]
     )
     let overrideRows = try readJSONLines(resultsURL.appendingPathComponent("orchestrator.jsonl"))
     expectNoDifference(
@@ -1752,7 +1820,18 @@ struct LocalTodoValidationTests {
         echo "unexpected bundled node script: $1" >&2
         exit 67
       fi
-      echo '{"case":"validation.typescript.fixtures","side":"typescript","event":"fixtures-bundled","appID":"local-validation","timestampMs":10,"ok":true,"details":{}}'
+      case "$2" in
+        --fixtures)
+          echo '{"case":"validation.typescript.fixtures","side":"typescript","event":"fixtures-bundled","appID":"local-validation","timestampMs":10,"ok":true,"details":{}}'
+          ;;
+        --boundary-preflight)
+          echo '{"case":"validation.typescript.boundary","side":"typescript","event":"boundary-bundled","appID":"local-validation","timestampMs":11,"ok":false,"details":{}}'
+          ;;
+        *)
+          echo "unexpected bundled node arguments: $*" >&2
+          exit 68
+          ;;
+      esac
       """,
       to: bundledNodeURL
     )
@@ -1778,6 +1857,13 @@ struct LocalTodoValidationTests {
     expectNoDifference(
       bundledTypeScriptRows.map { $0["event"] as? String ?? "" },
       ["fixtures-bundled"]
+    )
+    let bundledBoundaryRows = try readJSONLines(
+      resultsURL.appendingPathComponent("typescript-boundary.jsonl")
+    )
+    expectNoDifference(
+      bundledBoundaryRows.map { $0["event"] as? String ?? "" },
+      ["boundary-bundled"]
     )
 
     let missingNodeRun = try runValidationRunE2E(
@@ -1829,6 +1915,11 @@ struct LocalTodoValidationTests {
     #expect(
       !FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("typescript-fixtures.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-boundary.jsonl").path
       )
     )
 
@@ -2143,6 +2234,84 @@ struct LocalTodoValidationTests {
       !FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("typescript-fixtures.jsonl").path
       )
+    )
+
+    try "stale typescript\n".write(
+      to: resultsURL.appendingPathComponent("typescript-fixtures.jsonl"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try "stale boundary\n".write(
+      to: resultsURL.appendingPathComponent("typescript-boundary.jsonl"),
+      atomically: true,
+      encoding: .utf8
+    )
+
+    let boundaryFailedRun = try runValidationRunE2E(
+      scriptURL: scriptURL,
+      resultsURL: resultsURL,
+      binURL: binURL,
+      extraEnvironment: [
+        "EXPECT_TS_REQUIRE_BOUNDARY": "1",
+        "INSTANT_SWIFT_DATA_REQUIRE_REMOTE_PREFLIGHT": "1",
+        "INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS": benchmarkIterations,
+        "TS_STUB_FAIL_BOUNDARY": "1",
+      ]
+    )
+    #expect(boundaryFailedRun.status == 47)
+    let boundaryFailedRows = try readJSONLines(
+      resultsURL.appendingPathComponent("orchestrator.jsonl")
+    )
+    expectNoDifference(boundaryFailedRows.map { $0["event"] as? String ?? "" }, [
+      "start",
+    ] + schemaFixtureEvents + [
+      "swift-macro-tests-start",
+      "swift-macro-tests-complete",
+      "swift-local-start",
+      "swift-local-complete",
+      "swift-local-integrations-start",
+      "swift-local-integrations-complete",
+      "swift-reminders-start",
+      "swift-reminders-complete",
+      "swift-typed-drafts-start",
+      "swift-typed-drafts-complete",
+      "swift-platform-adapters-start",
+      "swift-platform-adapters-complete",
+      "swift-syncups-recording-start",
+      "swift-syncups-recording-complete",
+      "swift-parity-report-start",
+      "swift-parity-report-complete",
+      "swift-coverage-start",
+      "swift-coverage-complete",
+      "swift-benchmark-start",
+      "swift-benchmark-complete",
+      "typescript-fixtures-start",
+      "typescript-fixtures-complete",
+      "typescript-boundary-preflight-start",
+      "typescript-boundary-preflight-failed",
+      "complete",
+    ])
+    expectNoDifference(boundaryFailedRows.last?["ok"] as? Bool, false)
+    let boundaryStartRow = try #require(
+      boundaryFailedRows.first {
+        $0["event"] as? String == "typescript-boundary-preflight-start"
+      }
+    )
+    let boundaryStartDetails = try #require(
+      boundaryStartRow["details"] as? [String: Any]
+    )
+    expectNoDifference(boundaryStartDetails["required"] as? Bool, true)
+    let boundaryFailedDetails = try #require(
+      boundaryFailedRows.last?["details"] as? [String: Any]
+    )
+    expectNoDifference(boundaryFailedDetails["failed"] as? String, "typescript-boundary-preflight")
+    expectNoDifference((boundaryFailedDetails["exitCode"] as? NSNumber)?.intValue, 47)
+    let boundaryFailureRows = try readJSONLines(
+      resultsURL.appendingPathComponent("typescript-boundary.jsonl")
+    )
+    expectNoDifference(
+      boundaryFailureRows.map { $0["event"] as? String ?? "" },
+      ["preflight-skipped"]
     )
   }
 }

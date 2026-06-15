@@ -544,7 +544,10 @@ swift run instant-swift-data-validation-runner --syncups-recording
 swift run instant-swift-data-validation-runner --parity-report
 swift run instant-swift-data-validation-runner --coverage
 node validation/ts-runner/src/main.ts --fixtures
+node validation/ts-runner/src/main.ts --boundary-preflight
+INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token node validation/ts-runner/src/main.ts --boundary-preflight --require-boundary
 INSTANT_SWIFT_DATA_NODE=/path/to/node validation/run-e2e.sh
+INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_REQUIRE_REMOTE_PREFLIGHT=1 validation/run-e2e.sh
 validation/run-e2e.sh
 ```
 
@@ -580,7 +583,12 @@ coverage gate as a compact summary with blocked record ids.
 `validation/run-e2e.sh` records those Swift validation streams, the Swift
 schema/perms fixture generation and verification artifacts, the MacroTesting
 log, and a one-iteration `local-todos` benchmark JSONL artifact by default; set
-`INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS` to change that count.
+`INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS` to change that count. When
+Node is available it also writes `typescript-fixtures.jsonl` and
+`typescript-boundary.jsonl`; the boundary preflight checks for a non-local app
+id value, a non-empty admin token, and syntactically valid API/WebSocket
+endpoints without contacting Instant or running the still blocked live transport
+round trip.
 
 Run local core benchmarks:
 

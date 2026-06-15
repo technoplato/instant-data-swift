@@ -95,6 +95,8 @@ evidence without requiring an Instant app or admin token:
 
 ```bash
 node validation/ts-runner/src/main.ts --fixtures
+node validation/ts-runner/src/main.ts --boundary-preflight
+INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token node validation/ts-runner/src/main.ts --boundary-preflight --require-boundary
 ```
 
 When running from launchd or another sparse shell environment, point the harness
@@ -120,7 +122,13 @@ artifacts (`swift-schema-generate.json`,
 `swift-perms-verify.json`, `swift-generated-schema-verify.json`, and
 `swift-generated-perms-verify.json`), records the MacroTesting run as
 `swift-macro-tests.log`, records the local benchmark evidence, and then runs
-this fixture check when Node is available. Set
+this fixture check and the remote boundary preflight when Node is available. The
+preflight writes `typescript-boundary.jsonl`; set
+`INSTANT_SWIFT_DATA_REMOTE_APP_ID` or `INSTANT_APP_ID`, plus
+`INSTANT_ADMIN_TOKEN` or `INSTANTDB_ADMIN_TOKEN`, and add
+`INSTANT_SWIFT_DATA_REQUIRE_REMOTE_PREFLIGHT=1` to make missing credentials fail
+the orchestration run. This preflight checks credential-shaped inputs and
+endpoint syntax only; it does not contact Instant. Set
 `INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR` to direct artifacts to a specific
 directory, and
 `INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS` to adjust the benchmark
@@ -128,8 +136,9 @@ iteration count. The parity report command can succeed while individual blocked
 provenance rows intentionally carry `ok: false`; the orchestrator records the
 artifact command result, not an all-rows-passed summary. The coverage stream is
 the one-row gate to use when a caller needs blocked IDs and aggregate parity
-counts. The harness records the real Instant boundary as pending until ephemeral
-app creation, schema push, and admin query/transact are implemented.
+counts. The harness still records the real Instant boundary as blocked until
+ephemeral app creation, schema push, admin query/transact, and cross-client
+subscriptions are implemented.
 
 ## Required Cases
 

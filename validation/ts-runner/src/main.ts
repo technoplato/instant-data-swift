@@ -5,7 +5,9 @@ import { fileURLToPath } from "node:url";
 const runnerDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(runnerDirectory, "../../..");
 const usage =
-  "Usage: node validation/ts-runner/src/main.ts [--fixtures] [--app-id id] [--fixtures-dir path]";
+  "Usage: node validation/ts-runner/src/main.ts [--fixtures|--boundary-preflight] [--require-boundary] [--app-id id] [--fixtures-dir path]";
+const defaultAPIURI = "https://api.instantdb.com";
+const defaultWebSocketURI = "wss://api.instantdb.com/runtime/session";
 
 function timestampMs() {
   return Date.now();
@@ -23,12 +25,34 @@ function emit(row) {
   );
 }
 
+function resolvedAdminToken() {
+  const candidates = [
+    ["INSTANT_ADMIN_TOKEN", process.env.INSTANT_ADMIN_TOKEN],
+    ["INSTANTDB_ADMIN_TOKEN", process.env.INSTANTDB_ADMIN_TOKEN],
+  ];
+  for (const [source, value] of candidates) {
+    const trimmed = value?.trim();
+    if (trimmed) {
+      return { source, value: trimmed };
+    }
+  }
+  return { source: null, value: "" };
+}
+
 function parseArguments(argv) {
+  const adminToken = resolvedAdminToken();
+  let appIDExplicit = false;
   const options = {
+    mode: "fixtures",
     appID: process.env.VALIDATION_APP_ID ?? "local-validation",
     fixturesDirectory:
       process.env.INSTANT_SWIFT_DATA_VALIDATION_FIXTURES
       ?? resolve(repositoryRoot, "validation/fixtures"),
+    requireBoundary: false,
+    apiURI: process.env.INSTANT_API_URI ?? defaultAPIURI,
+    websocketURI: process.env.INSTANT_WEBSOCKET_URI ?? defaultWebSocketURI,
+    adminToken: adminToken.value,
+    adminTokenSource: adminToken.source,
   };
 
   const args = [...argv];
@@ -36,6 +60,15 @@ function parseArguments(argv) {
     const option = args.shift();
     switch (option) {
       case "--fixtures":
+        options.mode = "fixtures";
+        break;
+
+      case "--boundary-preflight":
+        options.mode = "boundary-preflight";
+        break;
+
+      case "--require-boundary":
+        options.requireBoundary = true;
         break;
 
       case "--app-id": {
@@ -43,7 +76,8 @@ function parseArguments(argv) {
         if (!value) {
           throw new UsageError(usage);
         }
-        options.appID = value;
+        options.appID = value.trim();
+        appIDExplicit = true;
         break;
       }
 
@@ -63,6 +97,13 @@ function parseArguments(argv) {
       default:
         throw new UsageError(`Unknown option: ${option}. ${usage}`);
     }
+  }
+
+  if (options.mode === "boundary-preflight" && !appIDExplicit) {
+    options.appID =
+      (process.env.INSTANT_SWIFT_DATA_REMOTE_APP_ID
+        ?? process.env.INSTANT_APP_ID
+        ?? options.appID).trim();
   }
 
   return options;
@@ -678,6 +719,106 @@ function validationDetails(actual, expected) {
   };
 }
 
+function endpointIssue(value, allowedProtocols) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return "must be an absolute URL";
+  }
+
+  if (!allowedProtocols.includes(url.protocol)) {
+    return `scheme must be one of ${allowedProtocols.map((protocol) => protocol.slice(0, -1)).join(", ")}`;
+  }
+  if (url.username || url.password) {
+    return "must not include credentials";
+  }
+  if (!url.hostname) {
+    return "must include a host";
+  }
+  if (url.search || url.hash) {
+    return "must not include a query or fragment";
+  }
+  return null;
+}
+
+function redactedEndpoint(value) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    return "<invalid-url>";
+  }
+
+  const host = url.host || "<missing-host>";
+  const path = url.pathname && url.pathname !== "/" ? "/..." : "";
+  return `${url.protocol}//${host}${path}`;
+}
+
+function verifyBoundaryPreflight(options) {
+  const requiredEnvironment = [
+    "INSTANT_SWIFT_DATA_REMOTE_APP_ID or INSTANT_APP_ID",
+    "INSTANT_ADMIN_TOKEN or INSTANTDB_ADMIN_TOKEN",
+  ];
+  const optionalEnvironment = [
+    "INSTANT_API_URI",
+    "INSTANT_WEBSOCKET_URI",
+  ];
+  const missing = [];
+  const invalid = [];
+
+  if (!options.appID || options.appID === "local-validation") {
+    missing.push("INSTANT_SWIFT_DATA_REMOTE_APP_ID or INSTANT_APP_ID");
+  }
+  if (!options.adminToken) {
+    missing.push("INSTANT_ADMIN_TOKEN or INSTANTDB_ADMIN_TOKEN");
+  }
+
+  const apiIssue = endpointIssue(options.apiURI, ["http:", "https:"]);
+  if (apiIssue) {
+    invalid.push({
+      name: "INSTANT_API_URI",
+      value: redactedEndpoint(options.apiURI),
+      issue: apiIssue,
+    });
+  }
+  const websocketIssue = endpointIssue(options.websocketURI, ["ws:", "wss:"]);
+  if (websocketIssue) {
+    invalid.push({
+      name: "INSTANT_WEBSOCKET_URI",
+      value: redactedEndpoint(options.websocketURI),
+      issue: websocketIssue,
+    });
+  }
+
+  const ok = missing.length === 0 && invalid.length === 0;
+  emit({
+    case: "validation.typescript.boundary",
+    event: ok ? "preflight-ready" : "preflight-skipped",
+    appID: options.appID,
+    ok,
+    details: {
+      required: options.requireBoundary,
+      requiredEnvironment,
+      optionalEnvironment,
+      missing,
+      invalid,
+      apiURI: redactedEndpoint(options.apiURI),
+      websocketURI: redactedEndpoint(options.websocketURI),
+      adminTokenPresent: Boolean(options.adminToken),
+      adminTokenSource: options.adminTokenSource,
+      implementation:
+        "Real Swift/TypeScript observe/write round trips remain blocked until live transport lands.",
+      next:
+        "Use these credentials for ephemeral app setup, schema push, admin transact/query, and cross-client subscriptions.",
+    },
+  });
+
+  if (!ok && options.requireBoundary) {
+    process.exitCode = 1;
+  }
+}
+
 function verifyFixtures(options) {
   const schemaPath = resolve(options.fixturesDirectory, "instant.schema.ts");
   const permsPath = resolve(options.fixturesDirectory, "instant.perms.ts");
@@ -730,17 +871,6 @@ function verifyFixtures(options) {
     process.exitCode = 1;
     return;
   }
-
-  emit({
-    case: "validation.typescript.boundary",
-    event: "real-instant-pending",
-    appID: options.appID,
-    ok: true,
-    details: {
-      reason:
-        "Fixture parity is local-only until ephemeral app creation, schema push, and admin query/transact land.",
-    },
-  });
 }
 
 class UsageError extends Error {
@@ -751,7 +881,16 @@ class UsageError extends Error {
 }
 
 try {
-  verifyFixtures(parseArguments(process.argv.slice(2)));
+  const options = parseArguments(process.argv.slice(2));
+  switch (options.mode) {
+    case "boundary-preflight":
+      verifyBoundaryPreflight(options);
+      break;
+
+    default:
+      verifyFixtures(options);
+      break;
+  }
 } catch (error) {
   if (error instanceof UsageError) {
     if (error.exitCode === 0) {
