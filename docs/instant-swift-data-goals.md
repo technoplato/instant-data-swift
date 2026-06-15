@@ -91,7 +91,9 @@ Port the recipes from `client/www/pages/recipes`:
   join`, `type`, `stop`, `list`, `watch`, and `leave`.
 - avatar stack via presence: `instant-swift-data examples avatar-stack join`,
   `list`, `watch`, and `leave`.
-- merge tile game using `merge` and multiplayer presence.
+- merge tile game using `merge` and multiplayer presence:
+  `instant-swift-data examples merge-tile-game join`, `tap`, `board`, `watch`,
+  `reset`, and `leave`.
 
 ### SQLiteData Examples
 
@@ -751,6 +753,19 @@ Agent-oriented output modes are required:
   default `<Cursors>` space key, `{x, y, xPercent, yPercent, color}` cursor
   payloads, and the custom cursor `name` presence field while exposing the
   upstream peer-only cursor view when a viewer id is supplied.
+- run the local Instant merge tile game recipe port with
+  `instant-swift-data examples merge-tile-game board`,
+  `instant-swift-data examples merge-tile-game join <user-id> [--color <color>]`,
+  `instant-swift-data examples merge-tile-game tap <user-id> <row> <column>`,
+  `instant-swift-data examples merge-tile-game watch --events 1 --jsonl [--viewer-user-id <user-id>]`,
+  `instant-swift-data examples merge-tile-game reset`, and
+  `instant-swift-data examples merge-tile-game leave <user-id>`; the port uses
+  the upstream fixed board id `83c059e2-ed47-42e5-bdd9-6de88d26c521`, a 4x4
+  JSON `state` object, the `tile-game-example/_defaultRoomId` presence room,
+  and the six-color palette, while `tap` deep-merges a single cell and `reset`
+  replaces the full board state. Omitting `--color` deterministically chooses
+  the first available palette color for terminal evidence instead of the
+  browser recipe's random available-color choice.
 - run local admin write/query helpers such as
   `instant-swift-data admin transact notes note-1 --merge '{"title":"admin note"}' --transaction-id tx-admin-note-1`
   and `instant-swift-data admin query notes --json` for durable terminal

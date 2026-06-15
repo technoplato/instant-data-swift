@@ -58,6 +58,7 @@ public enum CLIExamplesInvocation: Equatable, Sendable {
   case avatarStack(arguments: [String])
   case cursors(arguments: [String])
   case customCursors(arguments: [String])
+  case mergeTileGame(arguments: [String])
   case stroopwafel(arguments: [String])
   case syncUps(arguments: [String])
   case reminders(arguments: [String])
@@ -760,6 +761,88 @@ public enum CLIExamplesCustomCursorsUsage {
 }
 
 public enum CLIExamplesCursorsArgumentError: Error, Equatable, Sendable {
+  case invalidArguments(usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
+public enum CLIExamplesMergeTileGameLeafInvocation: Equatable, Sendable {
+  case join(CLIExamplesMergeTileGameJoinInvocation)
+  case tap(CLIExamplesMergeTileGameTapInvocation)
+  case board(CLIExamplesMergeTileGameBoardInvocation)
+  case watch(CLIExamplesMergeTileGameWatchInvocation)
+  case reset
+  case leave(userID: String)
+  case unknown(String)
+}
+
+public struct CLIExamplesMergeTileGameJoinInvocation: Equatable, Sendable {
+  public var userID: String
+  public var color: String?
+
+  public init(userID: String, color: String? = nil) {
+    self.userID = userID
+    self.color = color
+  }
+}
+
+public struct CLIExamplesMergeTileGameTapInvocation: Equatable, Sendable {
+  public var userID: String
+  public var row: Int
+  public var column: Int
+  public var color: String?
+
+  public init(userID: String, row: Int, column: Int, color: String? = nil) {
+    self.userID = userID
+    self.row = row
+    self.column = column
+    self.color = color
+  }
+}
+
+public struct CLIExamplesMergeTileGameBoardInvocation: Equatable, Sendable {
+  public var viewerUserID: String?
+
+  public init(viewerUserID: String? = nil) {
+    self.viewerUserID = viewerUserID
+  }
+}
+
+public struct CLIExamplesMergeTileGameWatchInvocation: Equatable, Sendable {
+  public var eventCount: Int
+  public var viewerUserID: String?
+
+  public init(eventCount: Int = 1, viewerUserID: String? = nil) {
+    self.eventCount = eventCount
+    self.viewerUserID = viewerUserID
+  }
+}
+
+public enum CLIExamplesMergeTileGameUsage {
+  public static let mergeTileGame = """
+    Usage: instant-swift-data examples merge-tile-game <join|tap|board|watch|reset|leave>
+      instant-swift-data examples merge-tile-game join <user-id> [--color color] [--json|--jsonl]
+      instant-swift-data examples merge-tile-game tap <user-id> <row> <column> [--color color] [--json|--jsonl]
+      instant-swift-data examples merge-tile-game board [--viewer-user-id id] [--json|--jsonl]
+      instant-swift-data examples merge-tile-game watch [--events 1] [--viewer-user-id id] [--json|--jsonl]
+      instant-swift-data examples merge-tile-game reset [--json|--jsonl]
+      instant-swift-data examples merge-tile-game leave <user-id> [--json|--jsonl]
+    """
+  public static let join =
+    "Usage: instant-swift-data examples merge-tile-game join <user-id> [--color color] [--json|--jsonl]"
+  public static let tap =
+    "Usage: instant-swift-data examples merge-tile-game tap <user-id> <row> <column> [--color color] [--json|--jsonl]"
+  public static let board =
+    "Usage: instant-swift-data examples merge-tile-game board [--viewer-user-id id] [--json|--jsonl]"
+  public static let watch =
+    "Usage: instant-swift-data examples merge-tile-game watch [--events 1] [--viewer-user-id id] [--json|--jsonl]"
+  public static let reset =
+    "Usage: instant-swift-data examples merge-tile-game reset [--json|--jsonl]"
+  public static let leave =
+    "Usage: instant-swift-data examples merge-tile-game leave <user-id> [--json|--jsonl]"
+}
+
+public enum CLIExamplesMergeTileGameArgumentError: Error, Equatable, Sendable {
   case invalidArguments(usage: String)
 
   public var exitCode: Int32 { 64 }
@@ -2241,6 +2324,11 @@ public struct CLIExamplesParser: Parser {
       input.removeAll()
       return .customCursors(arguments: arguments)
 
+    case "merge-tile-game", "tile-game", "merge-game":
+      let arguments = Array(input)
+      input.removeAll()
+      return .mergeTileGame(arguments: arguments)
+
     case "stroopwafel":
       let arguments = Array(input)
       input.removeAll()
@@ -3368,6 +3456,54 @@ public struct CLIExamplesCustomCursorsLeafParser: Parser {
       userUsage: CLIExamplesCustomCursorsUsage.user,
       allowsName: true
     )
+  }
+}
+
+public struct CLIExamplesMergeTileGameLeafParser: Parser {
+  public init() {}
+
+  public func parse(
+    _ input: inout ArraySlice<String>
+  ) throws -> CLIExamplesMergeTileGameLeafInvocation {
+    guard let command = input.first else {
+      throw CLIExamplesMergeTileGameArgumentError.invalidArguments(
+        usage: CLIExamplesMergeTileGameUsage.mergeTileGame
+      )
+    }
+    input.removeFirst()
+
+    switch command {
+    case "join", "enter":
+      return .join(try parseExamplesMergeTileGameJoinOptions(from: &input))
+
+    case "tap", "paint", "color":
+      return .tap(try parseExamplesMergeTileGameTapOptions(from: &input))
+
+    case "board", "list", "state":
+      return .board(try parseExamplesMergeTileGameBoardOptions(from: &input))
+
+    case "watch", "observe":
+      return .watch(try parseExamplesMergeTileGameWatchOptions(from: &input))
+
+    case "reset":
+      try requireNoRemainingExamplesMergeTileGameArguments(
+        &input,
+        usage: CLIExamplesMergeTileGameUsage.reset
+      )
+      return .reset
+
+    case "leave":
+      return .leave(
+        userID: try parseSingleExamplesMergeTileGameUserID(
+          from: &input,
+          usage: CLIExamplesMergeTileGameUsage.leave
+        )
+      )
+
+    default:
+      input.removeAll()
+      return .unknown(command)
+    }
   }
 }
 
@@ -6342,6 +6478,173 @@ private func parseRequiredExamplesCursorsDouble(
   return parsed
 }
 
+private func parseExamplesMergeTileGameJoinOptions(
+  from input: inout ArraySlice<String>
+) throws -> CLIExamplesMergeTileGameJoinInvocation {
+  let userID = try parseRequiredExamplesMergeTileGameArgument(
+    from: &input,
+    usage: CLIExamplesMergeTileGameUsage.join
+  )
+  var color: String?
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--color":
+      color = try parseRequiredExamplesMergeTileGameArgument(
+        from: &input,
+        usage: CLIExamplesMergeTileGameUsage.join
+      )
+
+    default:
+      throw CLIExamplesMergeTileGameArgumentError.invalidArguments(
+        usage: CLIExamplesMergeTileGameUsage.join
+      )
+    }
+  }
+  return CLIExamplesMergeTileGameJoinInvocation(userID: userID, color: color)
+}
+
+private func parseExamplesMergeTileGameTapOptions(
+  from input: inout ArraySlice<String>
+) throws -> CLIExamplesMergeTileGameTapInvocation {
+  let userID = try parseRequiredExamplesMergeTileGameArgument(
+    from: &input,
+    usage: CLIExamplesMergeTileGameUsage.tap
+  )
+  let row = try parseRequiredExamplesMergeTileGameCellIndex(
+    from: &input,
+    usage: CLIExamplesMergeTileGameUsage.tap
+  )
+  let column = try parseRequiredExamplesMergeTileGameCellIndex(
+    from: &input,
+    usage: CLIExamplesMergeTileGameUsage.tap
+  )
+  var color: String?
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--color":
+      color = try parseRequiredExamplesMergeTileGameArgument(
+        from: &input,
+        usage: CLIExamplesMergeTileGameUsage.tap
+      )
+
+    default:
+      throw CLIExamplesMergeTileGameArgumentError.invalidArguments(
+        usage: CLIExamplesMergeTileGameUsage.tap
+      )
+    }
+  }
+  return CLIExamplesMergeTileGameTapInvocation(
+    userID: userID,
+    row: row,
+    column: column,
+    color: color
+  )
+}
+
+private func parseExamplesMergeTileGameBoardOptions(
+  from input: inout ArraySlice<String>
+) throws -> CLIExamplesMergeTileGameBoardInvocation {
+  var invocation = CLIExamplesMergeTileGameBoardInvocation()
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--viewer-user-id":
+      invocation.viewerUserID = try parseRequiredExamplesMergeTileGameArgument(
+        from: &input,
+        usage: CLIExamplesMergeTileGameUsage.board
+      )
+
+    default:
+      throw CLIExamplesMergeTileGameArgumentError.invalidArguments(
+        usage: CLIExamplesMergeTileGameUsage.board
+      )
+    }
+  }
+  return invocation
+}
+
+private func parseExamplesMergeTileGameWatchOptions(
+  from input: inout ArraySlice<String>
+) throws -> CLIExamplesMergeTileGameWatchInvocation {
+  var invocation = CLIExamplesMergeTileGameWatchInvocation()
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--events":
+      guard let value = input.first,
+        let parsed = Int(value),
+        parsed == 1
+      else {
+        throw CLIExamplesMergeTileGameArgumentError.invalidArguments(
+          usage: CLIExamplesMergeTileGameUsage.watch
+        )
+      }
+      input.removeFirst()
+      invocation.eventCount = parsed
+
+    case "--viewer-user-id":
+      invocation.viewerUserID = try parseRequiredExamplesMergeTileGameArgument(
+        from: &input,
+        usage: CLIExamplesMergeTileGameUsage.watch
+      )
+
+    default:
+      throw CLIExamplesMergeTileGameArgumentError.invalidArguments(
+        usage: CLIExamplesMergeTileGameUsage.watch
+      )
+    }
+  }
+  return invocation
+}
+
+private func parseSingleExamplesMergeTileGameUserID(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  let userID = try parseRequiredExamplesMergeTileGameArgument(from: &input, usage: usage)
+  if !input.isEmpty {
+    throw CLIExamplesMergeTileGameArgumentError.invalidArguments(usage: usage)
+  }
+  return userID
+}
+
+private func parseRequiredExamplesMergeTileGameArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIExamplesMergeTileGameArgumentError.invalidArguments(usage: usage)
+  }
+  input.removeFirst()
+  let trimmedValue = trimmed(value)
+  guard !trimmedValue.isEmpty else {
+    throw CLIExamplesMergeTileGameArgumentError.invalidArguments(usage: usage)
+  }
+  return trimmedValue
+}
+
+private func parseRequiredExamplesMergeTileGameCellIndex(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> Int {
+  let value = try parseRequiredExamplesMergeTileGameArgument(from: &input, usage: usage)
+  guard let parsed = Int(value), (0..<4).contains(parsed) else {
+    throw CLIExamplesMergeTileGameArgumentError.invalidArguments(usage: usage)
+  }
+  return parsed
+}
+
+private func requireNoRemainingExamplesMergeTileGameArguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if !input.isEmpty {
+    throw CLIExamplesMergeTileGameArgumentError.invalidArguments(usage: usage)
+  }
+}
+
 private func parseExamplesTypingIndicatorListOptions(
   from input: inout ArraySlice<String>
 ) throws -> CLIExamplesTypingIndicatorListInvocation {
@@ -7681,6 +7984,15 @@ extension CLIExamplesAvatarStackArgumentError: CustomStringConvertible {
 }
 
 extension CLIExamplesCursorsArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case let .invalidArguments(usage):
+      return usage
+    }
+  }
+}
+
+extension CLIExamplesMergeTileGameArgumentError: CustomStringConvertible {
   public var description: String {
     switch self {
     case let .invalidArguments(usage):

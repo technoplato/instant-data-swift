@@ -2919,7 +2919,7 @@ extension InstantStoreTests {
     expectNoDifference(result.status, 64)
     #expect(
       result.error.contains(
-        "Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|cursors|custom-cursors|stroopwafel|reminders|sync-ups>"
+        "Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|sync-ups>"
       )
     )
   }
@@ -4644,6 +4644,173 @@ extension InstantStoreTests {
     )
     expectNoDifference(invalidWatch.status, 64)
     #expect(invalidWatch.error.contains("custom-cursors watch"))
+  }
+
+  @Test
+  func cliMergeTileGameUsesMergeAndPresenceAcrossLaunches() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let initialBoard = try JSONDecoder().decode(
+      CLIMergeTileGameRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "merge-tile-game", "board", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(initialBoard.event, "board")
+    expectNoDifference(initialBoard.transport, "not-implemented-local-cache-only")
+    expectNoDifference(initialBoard.room, MergeTileGameRecipeExample.room)
+    expectNoDifference(initialBoard.boardID, MergeTileGameRecipeExample.boardID)
+    expectNoDifference(initialBoard.boardSize, 4)
+    expectNoDifference(initialBoard.emptyColor, MergeTileGameRecipeExample.emptyColor)
+    expectNoDifference(initialBoard.playerCount, 0)
+    expectNoDifference(initialBoard.filledCount, 0)
+    expectNoDifference(initialBoard.board?.state.count, 16)
+    expectNoDifference(initialBoard.paintedCells, [])
+
+    let alpha = try JSONDecoder().decode(
+      CLIMergeTileGameRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "merge-tile-game", "join", "user-alpha", "--color", "#e76f51", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(alpha.event, "join")
+    expectNoDifference(alpha.userID, "user-alpha")
+    expectNoDifference(alpha.currentPlayer?.color, "#e76f51")
+    expectNoDifference(alpha.availableColors, ["#2a9d8f", "#e9c46a", "#264653", "#f4a261", "#d4a0d0"])
+
+    let beta = try JSONDecoder().decode(
+      CLIMergeTileGameRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "tile-game", "join", "user-beta", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(beta.event, "join")
+    expectNoDifference(beta.currentPlayer?.userID, "user-beta")
+    expectNoDifference(beta.currentPlayer?.color, "#2a9d8f")
+    expectNoDifference(beta.players.map(\.userID), ["user-alpha", "user-beta"])
+    expectNoDifference(beta.peers.map(\.userID), ["user-alpha"])
+
+    let alphaTapped = try JSONDecoder().decode(
+      CLIMergeTileGameRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "merge-game", "tap", "user-alpha", "0", "0", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(alphaTapped.event, "tap")
+    expectNoDifference(alphaTapped.board?.state["0-0"], "#e76f51")
+    expectNoDifference(alphaTapped.filledCount, 1)
+
+    let betaTapped = try JSONDecoder().decode(
+      CLIMergeTileGameRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "merge-tile-game", "tap", "user-beta", "0", "1", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(betaTapped.board?.state["0-0"], "#e76f51")
+    expectNoDifference(betaTapped.board?.state["0-1"], "#2a9d8f")
+    expectNoDifference(betaTapped.board?.state["1-0"], MergeTileGameRecipeExample.emptyColor)
+    expectNoDifference(betaTapped.filledCount, 2)
+    expectNoDifference(betaTapped.paintedCells.map(\.key), ["0-0", "0-1"])
+
+    let listed = try JSONDecoder().decode(
+      CLIMergeTileGameRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "merge-tile-game", "state", "--viewer-user-id", "user-alpha", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(listed.event, "board")
+    expectNoDifference(listed.currentPlayer?.userID, "user-alpha")
+    expectNoDifference(listed.peers.map(\.userID), ["user-beta"])
+    expectNoDifference(listed.paintedCells.map(\.color), ["#e76f51", "#2a9d8f"])
+
+    let watchJSONL = try runCLI(
+      [
+        "examples", "merge-tile-game", "watch",
+        "--events", "1",
+        "--viewer-user-id", "user-alpha",
+        "--jsonl",
+      ],
+      homeURL: homeURL
+    )
+    let watchLines = watchJSONL.split(separator: "\n")
+    expectNoDifference(watchLines.count, 5)
+    let watch = try JSONDecoder().decode(
+      CLIMergeTileGameRecipeEvidence.self,
+      from: Data(try #require(watchLines.first).utf8)
+    )
+    expectNoDifference(watch.caseID, "cli.examples.merge-tile-game")
+    expectNoDifference(watch.event, "watch")
+    expectNoDifference(watch.details.filledCount, 2)
+    expectNoDifference(watch.details.currentPlayer?.userID, "user-alpha")
+    let evidenceRows = try watchLines.dropFirst().map {
+      try JSONDecoder().decode(CLIMergeTileGameRecipeDetailEvidence.self, from: Data($0.utf8))
+    }
+    expectNoDifference(
+      evidenceRows.map(\.event),
+      ["current-player", "player", "painted-cell", "painted-cell"]
+    )
+
+    let reset = try JSONDecoder().decode(
+      CLIMergeTileGameRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "merge-tile-game", "reset", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(reset.event, "reset")
+    expectNoDifference(reset.filledCount, 0)
+    expectNoDifference(reset.paintedCells, [])
+    expectNoDifference(reset.board?.state["0-0"], MergeTileGameRecipeExample.emptyColor)
+
+    let left = try JSONDecoder().decode(
+      CLIMergeTileGameRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "merge-tile-game", "leave", "user-beta", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(left.event, "leave")
+    expectNoDifference(left.userID, "user-beta")
+    expectNoDifference(left.players.map(\.userID), ["user-alpha"])
+
+    let invalidColor = try runCLIResult(
+      ["examples", "merge-tile-game", "join", "user-gamma", "--color", "#000000", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(invalidColor.status, 64)
+    #expect(invalidColor.error.contains("Invalid merge tile game color: #000000."))
+
+    let invalidCell = try runCLIResult(
+      ["examples", "merge-tile-game", "tap", "user-alpha", "4", "0", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(invalidCell.status, 64)
+    #expect(invalidCell.error.contains("merge-tile-game tap"))
   }
 
   @Test
@@ -7189,9 +7356,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 108)
+    expectNoDifference(jsonOutput.recordCount, 109)
     expectNoDifference(jsonOutput.exactCount, 19)
-    expectNoDifference(jsonOutput.adaptedCount, 86)
+    expectNoDifference(jsonOutput.adaptedCount, 87)
     expectNoDifference(jsonOutput.blockedCount, 3)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -7290,6 +7457,11 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.records.contains {
         $0.id == "instant.recipe.custom-cursors.local-cli" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.recipe.merge-tile-game.local-cli" && $0.status == "adapted"
       }
     )
     #expect(
@@ -7516,7 +7688,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 108"))
+    #expect(humanOutput.contains("records: 109"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 
@@ -8799,6 +8971,51 @@ private struct CLICursorsRecipeEvidence: Decodable {
 private struct CLICursorsRecipeCursorEvidence: Decodable {
   var event: String
   var details: CursorsRecipeCursor
+}
+
+private struct CLIMergeTileGameRecipeOutput: Decodable, Equatable {
+  var event: String
+  var userID: String?
+  var viewerUserID: String?
+  var transport: String
+  var room: InstantRoomHandle
+  var boardID: String
+  var boardSize: Int
+  var emptyColor: String
+  var colors: [String]
+  var colorKey: String
+  var playerCount: Int
+  var filledCount: Int
+  var currentPlayer: MergeTileGamePlayer?
+  var peers: [MergeTileGamePlayer]
+  var players: [MergeTileGamePlayer]
+  var availableColors: [String]
+  var board: MergeTileGameBoard?
+  var paintedCells: [CLIMergeTileGameCellOutput]
+}
+
+private struct CLIMergeTileGameCellOutput: Decodable, Equatable {
+  var boardID: String
+  var key: String
+  var row: Int
+  var column: Int
+  var color: String
+}
+
+private struct CLIMergeTileGameRecipeEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLIMergeTileGameRecipeOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
+}
+
+private struct CLIMergeTileGameRecipeDetailEvidence: Decodable {
+  var event: String
 }
 
 private struct CLIFilesOutput: Decodable, Equatable {

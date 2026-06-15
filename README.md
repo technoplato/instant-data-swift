@@ -243,6 +243,30 @@ payloads store `{x, y, xPercent, yPercent, color}`, and custom cursors also
 store the `name` presence field used by the avatar renderer. Pass
 `--viewer-user-id` to `list` or `watch` for the upstream peer-only cursor view.
 
+Run the local Instant merge tile game recipe port:
+
+```bash
+export INSTANT_SWIFT_DATA_HOME="$(mktemp -d)"
+swift run instant-swift-data examples merge-tile-game board --json
+swift run instant-swift-data examples merge-tile-game join user-alpha --color '#e76f51' --json
+swift run instant-swift-data examples merge-tile-game join user-beta --json
+swift run instant-swift-data examples merge-tile-game tap user-alpha 0 0 --json
+swift run instant-swift-data examples merge-tile-game tap user-beta 0 1 --json
+swift run instant-swift-data examples merge-tile-game board --viewer-user-id user-alpha --json
+swift run instant-swift-data examples merge-tile-game watch --events 1 --viewer-user-id user-alpha --jsonl
+swift run instant-swift-data examples merge-tile-game reset --json
+swift run instant-swift-data examples merge-tile-game leave user-beta --json
+```
+
+The merge tile game uses the upstream fixed board
+`83c059e2-ed47-42e5-bdd9-6de88d26c521`, a 4x4 `{state}` JSON object, the
+`tile-game-example/_defaultRoomId` presence room, and the six-color palette from
+the React recipe. `board` lazily creates the empty board, `reset` replaces the
+full board state, and `tap` deep-merges only the selected `row-column` cell so
+separate players' colors survive across invocations. Omit `--color` to choose
+the first available palette color for deterministic terminal evidence; the
+browser recipe randomizes among available colors.
+
 Run the local Instant Stroopwafel multiplayer demo:
 
 ```bash

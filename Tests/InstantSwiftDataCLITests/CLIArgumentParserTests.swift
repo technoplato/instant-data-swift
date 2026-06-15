@@ -1439,6 +1439,105 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func examplesMergeTileGameLeafParserParsesCommandsAndOptions() throws {
+    expectNoDifference(
+      try parseExamples(["merge-tile-game", "board"]),
+      .mergeTileGame(arguments: ["board"])
+    )
+    expectNoDifference(
+      try parseExamples(["tile-game", "tap", "user-1", "0", "1"]),
+      .mergeTileGame(arguments: ["tap", "user-1", "0", "1"])
+    )
+    expectNoDifference(
+      try parseExamples(["merge-game", "watch"]),
+      .mergeTileGame(arguments: ["watch"])
+    )
+    expectNoDifference(
+      try parseExamplesMergeTileGameLeaf(["join", "user-1", "--color", "#e76f51"]),
+      .join(CLIExamplesMergeTileGameJoinInvocation(userID: "user-1", color: "#e76f51"))
+    )
+    expectNoDifference(
+      try parseExamplesMergeTileGameLeaf(["tap", "user-1", "0", "3", "--color", "#2a9d8f"]),
+      .tap(
+        CLIExamplesMergeTileGameTapInvocation(
+          userID: "user-1",
+          row: 0,
+          column: 3,
+          color: "#2a9d8f"
+        )
+      )
+    )
+    expectNoDifference(
+      try parseExamplesMergeTileGameLeaf(["paint", "user-2", "3", "0"]),
+      .tap(CLIExamplesMergeTileGameTapInvocation(userID: "user-2", row: 3, column: 0))
+    )
+    expectNoDifference(
+      try parseExamplesMergeTileGameLeaf(["state", "--viewer-user-id", "user-1"]),
+      .board(CLIExamplesMergeTileGameBoardInvocation(viewerUserID: "user-1"))
+    )
+    expectNoDifference(
+      try parseExamplesMergeTileGameLeaf(["observe", "--events", "1", "--viewer-user-id", "user-2"]),
+      .watch(CLIExamplesMergeTileGameWatchInvocation(eventCount: 1, viewerUserID: "user-2"))
+    )
+    expectNoDifference(
+      try parseExamplesMergeTileGameLeaf(["reset"]),
+      .reset
+    )
+    expectNoDifference(
+      try parseExamplesMergeTileGameLeaf(["leave", "user-1"]),
+      .leave(userID: "user-1")
+    )
+    expectNoDifference(
+      try parseExamplesMergeTileGameLeaf(["dance", "--fast"]),
+      .unknown("dance")
+    )
+  }
+
+  @Test
+  func examplesMergeTileGameLeafParserReportsMalformedArguments() throws {
+    try expectExamplesMergeTileGameLeafParseError(
+      [],
+      description: CLIExamplesMergeTileGameUsage.mergeTileGame
+    )
+    try expectExamplesMergeTileGameLeafParseError(
+      ["join"],
+      description: CLIExamplesMergeTileGameUsage.join
+    )
+    try expectExamplesMergeTileGameLeafParseError(
+      ["join", "user-1", "--color"],
+      description: CLIExamplesMergeTileGameUsage.join
+    )
+    try expectExamplesMergeTileGameLeafParseError(
+      ["tap", "user-1", "0"],
+      description: CLIExamplesMergeTileGameUsage.tap
+    )
+    try expectExamplesMergeTileGameLeafParseError(
+      ["tap", "user-1", "4", "0"],
+      description: CLIExamplesMergeTileGameUsage.tap
+    )
+    try expectExamplesMergeTileGameLeafParseError(
+      ["tap", "user-1", "0", "-1"],
+      description: CLIExamplesMergeTileGameUsage.tap
+    )
+    try expectExamplesMergeTileGameLeafParseError(
+      ["board", "--viewer-user-id", "  "],
+      description: CLIExamplesMergeTileGameUsage.board
+    )
+    try expectExamplesMergeTileGameLeafParseError(
+      ["watch", "--events", "2"],
+      description: CLIExamplesMergeTileGameUsage.watch
+    )
+    try expectExamplesMergeTileGameLeafParseError(
+      ["reset", "again"],
+      description: CLIExamplesMergeTileGameUsage.reset
+    )
+    try expectExamplesMergeTileGameLeafParseError(
+      ["leave", "user-1", "extra"],
+      description: CLIExamplesMergeTileGameUsage.leave
+    )
+  }
+
+  @Test
   func examplesSyncUpsLeafParserParsesCommandsAndOptions() throws {
     expectNoDifference(try parseExamplesSyncUpsLeaf(["seed"]), .seed)
     expectNoDifference(
@@ -3907,6 +4006,15 @@ private func parseExamplesCustomCursorsLeaf(
   return invocation
 }
 
+private func parseExamplesMergeTileGameLeaf(
+  _ arguments: [String]
+) throws -> CLIExamplesMergeTileGameLeafInvocation {
+  var input = arguments[...]
+  let invocation = try CLIExamplesMergeTileGameLeafParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseExamplesSyncUpsLeaf(
   _ arguments: [String]
 ) throws -> CLIExamplesSyncUpsLeafInvocation {
@@ -4495,6 +4603,19 @@ private func expectExamplesCustomCursorsLeafParseError(
     _ = try parseExamplesCustomCursorsLeaf(arguments)
     Issue.record("Expected examples custom cursors parser to reject \(arguments).")
   } catch let error as CLIExamplesCursorsArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectExamplesMergeTileGameLeafParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseExamplesMergeTileGameLeaf(arguments)
+    Issue.record("Expected examples merge tile game parser to reject \(arguments).")
+  } catch let error as CLIExamplesMergeTileGameArgumentError {
     expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }

@@ -6650,6 +6650,155 @@ struct InstantStoreTests {
   }
 
   @Test
+  func mergeTileGameRecipeUsesMergeForIndependentTileTaps() async throws {
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "merge-tile-game-test",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: MergeTileGameRecipeExample.attributes,
+        now: { timestamp }
+      )
+    )
+
+    expectNoDifference(MergeTileGameRecipeExample.namespace, "boards")
+    expectNoDifference(
+      MergeTileGameRecipeExample.boardID,
+      "83c059e2-ed47-42e5-bdd9-6de88d26c521"
+    )
+    expectNoDifference(
+      MergeTileGameRecipeExample.room,
+      InstantRoomHandle(type: "tile-game-example", id: "_defaultRoomId")
+    )
+    expectNoDifference(MergeTileGameRecipeExample.boardSize, 4)
+    expectNoDifference(MergeTileGameRecipeExample.emptyColor, "#f5f3f0")
+    expectNoDifference(
+      MergeTileGameRecipeExample.colors,
+      ["#e76f51", "#2a9d8f", "#e9c46a", "#264653", "#f4a261", "#d4a0d0"]
+    )
+    expectNoDifference(MergeTileGameRecipeExample.cellKey(row: 3, column: 2), "3-2")
+    expectNoDifference(MergeTileGameRecipeExample.isValidCell(row: 3, column: 3), true)
+    expectNoDifference(MergeTileGameRecipeExample.isValidCell(row: 4, column: 0), false)
+    let emptyState = MergeTileGameRecipeExample.makeEmptyBoardState()
+    expectNoDifference(emptyState.count, 16)
+    expectNoDifference(emptyState["0-0"], MergeTileGameRecipeExample.emptyColor)
+    expectNoDifference(emptyState["3-3"], MergeTileGameRecipeExample.emptyColor)
+
+    let createTransactionID = "tx-create-board"
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: createTransactionID,
+        operations: MergeTileGameRecipeExample.createBoardOperations(
+          transactionID: createTransactionID,
+          createdAt: timestamp
+        )
+      ),
+      createdAt: timestamp,
+      source: "test.merge-tile-game.create"
+    )
+    var boards = try MergeTileGameRecipeExample.decodeBoards(
+      (try await runtime.queryOnce(MergeTileGameRecipeExample.boardQuery)).values
+    )
+    expectNoDifference(boards.map(\.id), [MergeTileGameRecipeExample.boardID])
+    expectNoDifference(boards.first?.filledCount, 0)
+
+    let firstTap = MergeTileGameRecipeExample.tapOperations(
+      row: 0,
+      column: 0,
+      color: "#e76f51",
+      transactionID: "tx-tap-0-0",
+      updatedAt: timestamp
+    )
+    guard case let .merge(firstMerge) = firstTap[2] else {
+      Issue.record("Expected tile taps to deep-merge a single state cell.")
+      return
+    }
+    expectNoDifference(firstMerge.attributeID, "boards/state")
+    expectNoDifference(firstMerge.value, .json(.object(["0-0": .string("#e76f51")])))
+    try await runtime.transact(
+      InstantStoreTransaction(id: "tx-tap-0-0", operations: firstTap),
+      createdAt: timestamp,
+      source: "test.merge-tile-game.tap"
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-tap-3-3",
+        operations: MergeTileGameRecipeExample.tapOperations(
+          row: 3,
+          column: 3,
+          color: "#2a9d8f",
+          transactionID: "tx-tap-3-3",
+          updatedAt: timestamp
+        )
+      ),
+      createdAt: timestamp,
+      source: "test.merge-tile-game.tap"
+    )
+    boards = try MergeTileGameRecipeExample.decodeBoards(
+      (try await runtime.queryOnce(MergeTileGameRecipeExample.boardQuery)).values
+    )
+    let tappedBoard = try #require(boards.first)
+    expectNoDifference(tappedBoard.state["0-0"], "#e76f51")
+    expectNoDifference(tappedBoard.state["3-3"], "#2a9d8f")
+    expectNoDifference(tappedBoard.state["0-1"], MergeTileGameRecipeExample.emptyColor)
+    expectNoDifference(tappedBoard.filledCount, 2)
+
+    let resetOperations = MergeTileGameRecipeExample.resetBoardOperations(
+      transactionID: "tx-reset-board",
+      updatedAt: timestamp
+    )
+    guard case let .insert(resetState) = resetOperations[1] else {
+      Issue.record("Expected reset to replace the full board state.")
+      return
+    }
+    guard case let .json(.object(resetJSON)) = resetState.value else {
+      Issue.record("Expected reset state to be a JSON object.")
+      return
+    }
+    expectNoDifference(resetJSON.count, 16)
+    try await runtime.transact(
+      InstantStoreTransaction(id: "tx-reset-board", operations: resetOperations),
+      createdAt: timestamp,
+      source: "test.merge-tile-game.reset"
+    )
+    boards = try MergeTileGameRecipeExample.decodeBoards(
+      (try await runtime.queryOnce(MergeTileGameRecipeExample.boardQuery)).values
+    )
+    let resetBoard = try #require(boards.first)
+    expectNoDifference(resetBoard.filledCount, 0)
+    expectNoDifference(resetBoard.state["0-0"], MergeTileGameRecipeExample.emptyColor)
+    expectNoDifference(resetBoard.state["3-3"], MergeTileGameRecipeExample.emptyColor)
+
+    _ = try await runtime.setPresence(
+      room: MergeTileGameRecipeExample.room,
+      userID: "user-a",
+      values: MergeTileGameRecipeExample.presenceValues(color: "#e76f51")
+    )
+    _ = try await runtime.setPresence(
+      room: MergeTileGameRecipeExample.room,
+      userID: "user-b",
+      values: MergeTileGameRecipeExample.presenceValues(color: "#2a9d8f")
+    )
+    _ = try await runtime.setPresence(
+      room: InstantRoomHandle(type: "tile-game-example", id: "other"),
+      userID: "user-c",
+      values: MergeTileGameRecipeExample.presenceValues(color: "#e9c46a")
+    )
+    let snapshot = MergeTileGameRecipeExample.snapshot(
+      board: resetBoard,
+      presence: try await runtime.roomPresence(room: MergeTileGameRecipeExample.room),
+      viewerUserID: "user-a"
+    )
+    expectNoDifference(snapshot.currentPlayer?.userID, "user-a")
+    expectNoDifference(snapshot.peers.map(\.userID), ["user-b"])
+    expectNoDifference(snapshot.availableColors, ["#e9c46a", "#264653", "#f4a261", "#d4a0d0"])
+    expectNoDifference(
+      MergeTileGameRecipeExample.selectedColor(requestedColor: nil, players: snapshot.players),
+      "#e9c46a"
+    )
+  }
+
+  @Test
   func storedFilesPersistByAppIDAcrossLaunchesAndDeleteContent() async throws {
     let cacheURL = try temporaryCacheURL()
     let sourceURL = cacheURL.deletingLastPathComponent().appendingPathComponent("source.txt")

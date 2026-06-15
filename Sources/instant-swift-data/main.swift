@@ -422,6 +422,8 @@ struct InstantSwiftDataCLI {
       throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesStroopwafelArgumentError {
       throw CLIError(error.description, exitCode: error.exitCode)
+    } catch let error as CLIExamplesMergeTileGameArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
     switch invocation {
     case let .chat(arguments):
@@ -458,6 +460,10 @@ struct InstantSwiftDataCLI {
 
     case let .customCursors(arguments):
       try await runCustomCursors(arguments: arguments, output: output)
+      return
+
+    case let .mergeTileGame(arguments):
+      try await runMergeTileGame(arguments: arguments, output: output)
       return
 
     case let .stroopwafel(arguments):
@@ -6095,6 +6101,344 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func runMergeTileGame(arguments: [String], output: OutputMode) async throws {
+    let invocation: CLIExamplesMergeTileGameLeafInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLIExamplesMergeTileGameLeafParser().parse(&input)
+    } catch let error as CLIExamplesMergeTileGameArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
+    }
+
+    if case let .unknown(command) = invocation {
+      throw CLIError(
+        "Unknown merge tile game command: \(command). \(mergeTileGameUsage)",
+        exitCode: 64
+      )
+    }
+
+    let context = try await CLIContext.bootstrap(
+      initialAttributes: MergeTileGameRecipeExample.attributes
+    )
+    switch invocation {
+    case let .join(options):
+      _ = try await ensureMergeTileGameBoard(context: context)
+      let members = try await context.runtime.roomPresence(room: MergeTileGameRecipeExample.room)
+      let players = MergeTileGameRecipeExample.players(from: members)
+      let existingColor = players.first { $0.userID == options.userID }?.color
+      let color = try mergeTileGameColor(
+        requestedColor: options.color,
+        fallbackColor: existingColor,
+        players: players,
+        usage: CLIExamplesMergeTileGameUsage.join
+      )
+      _ = try await context.runtime.setPresence(
+        room: MergeTileGameRecipeExample.room,
+        userID: options.userID,
+        values: MergeTileGameRecipeExample.presenceValues(color: color)
+      )
+      try await printMergeTileGame(
+        context: context,
+        output: output,
+        event: "join",
+        userID: options.userID,
+        viewerUserID: options.userID
+      )
+
+    case let .tap(options):
+      guard MergeTileGameRecipeExample.isValidCell(row: options.row, column: options.column) else {
+        throw CLIError("\(CLIExamplesMergeTileGameUsage.tap): row and column must be 0...3.", exitCode: 64)
+      }
+      _ = try await ensureMergeTileGameBoard(context: context)
+      let members = try await context.runtime.roomPresence(room: MergeTileGameRecipeExample.room)
+      let players = MergeTileGameRecipeExample.players(from: members)
+      let existingColor = players.first { $0.userID == options.userID }?.color
+      let color = try mergeTileGameColor(
+        requestedColor: options.color,
+        fallbackColor: existingColor,
+        players: players,
+        usage: CLIExamplesMergeTileGameUsage.tap
+      )
+      _ = try await context.runtime.setPresence(
+        room: MergeTileGameRecipeExample.room,
+        userID: options.userID,
+        values: MergeTileGameRecipeExample.presenceValues(color: color)
+      )
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: MergeTileGameRecipeExample.tapOperations(
+            row: options.row,
+            column: options.column,
+            color: color,
+            transactionID: transactionID,
+            updatedAt: now
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.merge-tile-game.tap"
+      )
+      try await printMergeTileGame(
+        context: context,
+        output: output,
+        event: "tap",
+        userID: options.userID,
+        viewerUserID: options.userID
+      )
+
+    case let .board(options):
+      _ = try await ensureMergeTileGameBoard(context: context)
+      try await printMergeTileGame(
+        context: context,
+        output: output,
+        event: "board",
+        userID: nil,
+        viewerUserID: options.viewerUserID
+      )
+
+    case let .watch(options):
+      _ = try await ensureMergeTileGameBoard(context: context)
+      _ = try await firstWatchSnapshot(
+        from: context.runtime.observeRoomPresence(room: MergeTileGameRecipeExample.room),
+        operation: "merge tile game watch",
+        eventCount: options.eventCount
+      )
+      try await printMergeTileGame(
+        context: context,
+        output: output,
+        event: "watch",
+        userID: nil,
+        viewerUserID: options.viewerUserID
+      )
+
+    case .reset:
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: MergeTileGameRecipeExample.resetBoardOperations(
+            transactionID: transactionID,
+            updatedAt: now
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.merge-tile-game.reset"
+      )
+      try await printMergeTileGame(
+        context: context,
+        output: output,
+        event: "reset",
+        userID: nil,
+        viewerUserID: nil
+      )
+
+    case let .leave(userID):
+      let leftUserID = try await context.runtime.leavePresence(
+        room: MergeTileGameRecipeExample.room,
+        userID: userID
+      )
+      _ = try await ensureMergeTileGameBoard(context: context)
+      try await printMergeTileGame(
+        context: context,
+        output: output,
+        event: "leave",
+        userID: leftUserID,
+        viewerUserID: leftUserID
+      )
+
+    case .unknown:
+      preconditionFailure("Unknown merge tile game commands are handled before bootstrapping.")
+    }
+  }
+
+  private static func ensureMergeTileGameBoard(context: CLIContext) async throws
+    -> MergeTileGameBoard
+  {
+    if let board = try await currentMergeTileGameBoard(context: context) {
+      return board
+    }
+    let transactionID = context.runtime.configuration.makeID()
+    let now = context.runtime.configuration.now()
+    try await context.runtime.transact(
+      InstantStoreTransaction(
+        id: transactionID,
+        operations: MergeTileGameRecipeExample.createBoardOperations(
+          transactionID: transactionID,
+          createdAt: now
+        )
+      ),
+      createdAt: now,
+      source: "cli.examples.merge-tile-game.create-board"
+    )
+    guard let board = try await currentMergeTileGameBoard(context: context) else {
+      throw CLIError("Merge tile game board was not created.", exitCode: 70)
+    }
+    return board
+  }
+
+  private static func currentMergeTileGameBoard(context: CLIContext) async throws
+    -> MergeTileGameBoard?
+  {
+    try MergeTileGameRecipeExample.decodeBoards(
+      (try await context.runtime.queryOnce(MergeTileGameRecipeExample.boardQuery)).values
+    ).first
+  }
+
+  private static func mergeTileGameColor(
+    requestedColor: String?,
+    fallbackColor: String?,
+    players: [MergeTileGamePlayer],
+    usage: String
+  ) throws -> String {
+    if let requestedColor {
+      guard MergeTileGameRecipeExample.colors.contains(requestedColor) else {
+        throw CLIError("Invalid merge tile game color: \(requestedColor). \(usage)", exitCode: 64)
+      }
+      return requestedColor
+    }
+    if let fallbackColor {
+      return fallbackColor
+    }
+    return MergeTileGameRecipeExample.selectedColor(requestedColor: nil, players: players)
+  }
+
+  private static func printMergeTileGame(
+    context: CLIContext,
+    output: OutputMode,
+    event: String,
+    userID: String?,
+    viewerUserID: String?
+  ) async throws {
+    let board = try await currentMergeTileGameBoard(context: context)
+    let presence = try await context.runtime.roomPresence(room: MergeTileGameRecipeExample.room)
+    let snapshot = MergeTileGameRecipeExample.snapshot(
+      board: board,
+      presence: presence,
+      viewerUserID: viewerUserID
+    )
+    let cells = mergeTileGamePaintedCells(board: board)
+    let payload = MergeTileGameRecipeOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      userID: userID,
+      viewerUserID: viewerUserID,
+      transport: "not-implemented-local-cache-only",
+      room: MergeTileGameRecipeExample.room,
+      boardID: MergeTileGameRecipeExample.boardID,
+      boardSize: MergeTileGameRecipeExample.boardSize,
+      emptyColor: MergeTileGameRecipeExample.emptyColor,
+      colors: MergeTileGameRecipeExample.colors,
+      colorKey: MergeTileGameRecipeExample.colorKey,
+      playerCount: snapshot.playerCount,
+      filledCount: board?.filledCount ?? 0,
+      currentPlayer: snapshot.currentPlayer,
+      peers: snapshot.peers,
+      players: snapshot.players,
+      availableColors: snapshot.availableColors,
+      board: board,
+      paintedCells: cells
+    )
+
+    switch output {
+    case .human:
+      print("room: \(payload.room.type)/\(payload.room.id)")
+      print("board: \(payload.boardID)")
+      if let userID {
+        print("user: \(userID)")
+      }
+      if let viewerUserID {
+        print("viewer: \(viewerUserID)")
+      }
+      print("players: \(payload.playerCount)")
+      if let currentPlayer = payload.currentPlayer {
+        print("current: \(currentPlayer.userID) \(currentPlayer.color)")
+      }
+      for peer in payload.peers {
+        print("- \(peer.userID) \(peer.color)")
+      }
+      if let board = payload.board {
+        for row in 0..<payload.boardSize {
+          let colors = (0..<payload.boardSize).map { column in
+            board.state[MergeTileGameRecipeExample.cellKey(row: row, column: column)]
+              ?? payload.emptyColor
+          }
+          print(colors.joined(separator: " "))
+        }
+      }
+      print("filled: \(payload.filledCount)")
+      print("transport: \(payload.transport)")
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.examples.merge-tile-game",
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          entityID: userID ?? payload.boardID,
+          ok: true,
+          details: payload
+        )
+      )
+      for player in snapshot.players {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.merge-tile-game",
+            side: "swift",
+            event: player.isViewer ? "current-player" : "player",
+            appID: context.appID,
+            entityID: player.userID,
+            ok: true,
+            details: player
+          )
+        )
+      }
+      for cell in cells {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.merge-tile-game",
+            side: "swift",
+            event: "painted-cell",
+            appID: context.appID,
+            entityID: cell.key,
+            ok: true,
+            details: cell
+          )
+        )
+      }
+    }
+  }
+
+  private static func mergeTileGamePaintedCells(board: MergeTileGameBoard?)
+    -> [MergeTileGameCellOutput]
+  {
+    guard let board else { return [] }
+    return (0..<MergeTileGameRecipeExample.boardSize).flatMap { row in
+      (0..<MergeTileGameRecipeExample.boardSize).compactMap { column in
+        let key = MergeTileGameRecipeExample.cellKey(row: row, column: column)
+        let color = board.state[key] ?? MergeTileGameRecipeExample.emptyColor
+        guard color != MergeTileGameRecipeExample.emptyColor else {
+          return nil
+        }
+        return MergeTileGameCellOutput(
+          boardID: board.id,
+          key: key,
+          row: row,
+          column: column,
+          color: color
+        )
+      }
+    }
+  }
+
   private static func runStroopwafel(arguments: [String], output: OutputMode) async throws {
     let invocation: CLIExamplesStroopwafelLeafInvocation
     do {
@@ -8715,7 +9059,7 @@ struct InstantSwiftDataCLI {
 
   private static var examplesUsage: String {
     """
-    Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|cursors|custom-cursors|stroopwafel|reminders|sync-ups>
+    Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|sync-ups>
       instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>
       instant-swift-data examples todo-links <seed|list|nested|unlink> [--json|--jsonl]
       instant-swift-data examples counters <seed|add|list|increment|decrement|delete> [--json|--jsonl]
@@ -8727,6 +9071,7 @@ struct InstantSwiftDataCLI {
       instant-swift-data examples avatar-stack <join|list|watch|leave> [--json|--jsonl]
       instant-swift-data examples cursors <move|list|watch|clear|leave> [--json|--jsonl]
       instant-swift-data examples custom-cursors <move|list|watch|clear|leave> [--json|--jsonl]
+      instant-swift-data examples merge-tile-game <join|tap|board|watch|reset|leave> [--json|--jsonl]
       instant-swift-data examples stroopwafel <setup-profile|profile|score|create-room|rooms|room|join|ready|unready|kick|start|games|game|tap|leave|reset> [--json|--jsonl]
       instant-swift-data examples reminders <seed|list|stats|tags|list-tags|search|add-list|rename-list|delete-list|add|update|complete|delete|delete-completed|add-tag|remove-tag> [--json|--jsonl]
       instant-swift-data examples sync-ups <seed|list|detail|add|edit|add-attendee|record|record-demo|delete|delete-attendee|delete-meeting> [--json|--jsonl]
@@ -8767,6 +9112,10 @@ struct InstantSwiftDataCLI {
 
   private static var customCursorsUsage: String {
     CLIExamplesCustomCursorsUsage.customCursors
+  }
+
+  private static var mergeTileGameUsage: String {
+    CLIExamplesMergeTileGameUsage.mergeTileGame
   }
 
   private static var stroopwafelUsage: String {
@@ -10002,6 +10351,37 @@ private struct CursorsRecipeOutput: Codable, Sendable {
   var cursorCount: Int
   var visibleCursors: [CursorsRecipeCursor]
   var members: [CursorsRecipeCursor]
+}
+
+private struct MergeTileGameRecipeOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var userID: String?
+  var viewerUserID: String?
+  var transport: String
+  var room: InstantRoomHandle
+  var boardID: String
+  var boardSize: Int
+  var emptyColor: String
+  var colors: [String]
+  var colorKey: String
+  var playerCount: Int
+  var filledCount: Int
+  var currentPlayer: MergeTileGamePlayer?
+  var peers: [MergeTileGamePlayer]
+  var players: [MergeTileGamePlayer]
+  var availableColors: [String]
+  var board: MergeTileGameBoard?
+  var paintedCells: [MergeTileGameCellOutput]
+}
+
+private struct MergeTileGameCellOutput: Codable, Sendable {
+  var boardID: String
+  var key: String
+  var row: Int
+  var column: Int
+  var color: String
 }
 
 private struct FilesOutput: Codable, Sendable {

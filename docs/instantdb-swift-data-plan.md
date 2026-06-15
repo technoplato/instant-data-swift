@@ -867,6 +867,15 @@ Create `validation/` with:
   cursor-space keys, `{x, y, xPercent, yPercent, color}` cursor payloads, and
   custom cursor `name` presence while adapting peer-only cursor rendering into
   durable terminal evidence.
+- Merge tile game recipe: the local Instant recipe port exposes durable
+  `examples merge-tile-game board`, `join <user-id> [--color color]`,
+  `tap <user-id> <row> <column>`, `watch --events 1 [--viewer-user-id id]`,
+  `reset`, and `leave <user-id>` commands. It preserves the upstream fixed board
+  id, 4x4 empty state, `tile-game-example/_defaultRoomId` presence room, and
+  six-color palette; taps use a single-cell deep merge while reset replaces the
+  full board state. For deterministic terminal evidence, omitted colors use the
+  first available palette color rather than the browser recipe's random
+  available-color selection.
 - CLI: `instant-swift-data examples todos add "do the dishes"` persists auth,
   local IDs, cache, and outbox state for a later CLI invocation.
 - Permissions: generated permissions reject an unauthorized write in both

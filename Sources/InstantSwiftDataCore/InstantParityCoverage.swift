@@ -1156,6 +1156,16 @@ public enum InstantSwiftDataParityCoverage {
       status: .adapted,
       notes: "The Instant CLI ports the Custom Cursors recipe onto the local room-presence runtime with the same cursors-example/124 room, default cursor-space key, cursor payload, and name presence field used by the custom avatar renderer. Local move/list/watch/clear/leave commands preserve the peer-only cursor view while keeping terminal evidence durable."
     ),
+    instant(
+      id: "instant.recipe.merge-tile-game.local-cli",
+      sourceFile: "upstream/instant/client/www/lib/recipes/merge-tile-game.tsx",
+      sourceTestName: "boards/83c059e2-ed47-42e5-bdd9-6de88d26c521 merge tile game",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/CLITests.swift + Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "cliMergeTileGameUsesMergeAndPresenceAcrossLaunches + mergeTileGameRecipeUsesMergeForIndependentTileTaps",
+      surface: "recipes-merge-tile-game",
+      status: .adapted,
+      notes: "The Instant CLI ports the Merge Tile Game recipe with the upstream fixed board id, 4x4 empty board, color palette, tile-game-example/_defaultRoomId presence room, and color presence field. Local board/reset commands replace the full state like update({state: makeEmptyBoard()}), while tap uses a single-cell deep merge so independent tile colors survive across terminal invocations. Omitted colors choose the first available palette color for deterministic terminal evidence instead of the browser recipe's random available-color selection."
+    ),
     sqlite(
       id: "sqlite.cloudkit-demo.local-counter-share",
       sourceFile: "upstream/sqlite-data/Examples/CloudKitDemo/CountersListFeature.swift",
