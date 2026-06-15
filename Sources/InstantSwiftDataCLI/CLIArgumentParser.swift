@@ -62,7 +62,7 @@ public enum CLIExamplesInvocation: Equatable, Sendable {
   case customCursors(CLIExamplesCursorsLeafInvocation)
   case mergeTileGame(CLIExamplesMergeTileGameLeafInvocation)
   case stroopwafel(CLIExamplesStroopwafelLeafInvocation)
-  case syncUps(arguments: [String])
+  case syncUps(CLIExamplesSyncUpsLeafInvocation)
   case reminders(arguments: [String])
   case todoLinks(CLIExamplesTodoLinksLeafInvocation)
   case unknown(String, arguments: [String])
@@ -2453,9 +2453,7 @@ public struct CLIExamplesParser: Parser {
       return .stroopwafel(try CLIExamplesStroopwafelLeafParser().parse(&input))
 
     case "sync-ups", "syncups":
-      let arguments = Array(input)
-      input.removeAll()
-      return .syncUps(arguments: arguments)
+      return .syncUps(try CLIExamplesSyncUpsLeafParser().parse(&input))
 
     case "reminders":
       let arguments = Array(input)

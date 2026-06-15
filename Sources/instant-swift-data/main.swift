@@ -434,6 +434,10 @@ struct InstantSwiftDataCLI {
       throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesMergeTileGameArgumentError {
       throw CLIError(error.description, exitCode: error.exitCode)
+    } catch CLIExamplesSyncUpsArgumentError.invalidTheme {
+      throw CLIError("Unknown SyncUps theme. Use one of: \(syncUpThemeList).", exitCode: 64)
+    } catch let error as CLIExamplesSyncUpsArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
     switch invocation {
     case let .auth(leaf):
@@ -488,8 +492,8 @@ struct InstantSwiftDataCLI {
       try await runStroopwafel(leaf: leaf, output: output)
       return
 
-    case let .syncUps(arguments):
-      try await runSyncUps(arguments: arguments, output: output)
+    case let .syncUps(leaf):
+      try await runSyncUps(leaf: leaf, output: output)
       return
 
     case let .reminders(arguments):
@@ -1011,17 +1015,10 @@ struct InstantSwiftDataCLI {
     }
   }
 
-  private static func runSyncUps(arguments: [String], output: OutputMode) async throws {
-    let invocation: CLIExamplesSyncUpsLeafInvocation
-    do {
-      var input = arguments[...]
-      invocation = try CLIExamplesSyncUpsLeafParser().parse(&input)
-    } catch CLIExamplesSyncUpsArgumentError.invalidTheme {
-      throw CLIError("Unknown SyncUps theme. Use one of: \(syncUpThemeList).", exitCode: 64)
-    } catch let error as CLIExamplesSyncUpsArgumentError {
-      throw CLIError(error.description, exitCode: error.exitCode)
-    }
-
+  private static func runSyncUps(
+    leaf invocation: CLIExamplesSyncUpsLeafInvocation,
+    output: OutputMode
+  ) async throws {
     if case let .unknown(command) = invocation {
       throw CLIError("Unknown sync-ups command: \(command). \(syncUpsUsage)", exitCode: 64)
     }

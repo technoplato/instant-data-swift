@@ -1771,6 +1771,19 @@ struct CLIArgumentParserTests {
 
   @Test
   func examplesSyncUpsLeafParserParsesCommandsAndOptions() throws {
+    expectNoDifference(
+      try parseExamples(["syncups", "add", "Daily", "--attendee", "Blob"]),
+      .syncUps(
+        .add(CLIExamplesSyncUpsAddInvocation(
+          title: "Daily",
+          attendeeNames: ["Blob"]
+        ))
+      )
+    )
+    expectNoDifference(
+      try parseExamples(["sync-ups", "list"]),
+      .syncUps(.list(CLIExamplesSyncUpsListInvocation()))
+    )
     expectNoDifference(try parseExamplesSyncUpsLeaf(["seed"]), .seed)
     expectNoDifference(
       try parseExamplesSyncUpsLeaf(["list"]),
@@ -3477,14 +3490,6 @@ struct CLIArgumentParserTests {
 
   @Test
   func examplesParserKeepsLegacyDispatchForOtherExamplesAndUnknowns() throws {
-    expectNoDifference(
-      try parseExamples(["syncups", "add", "Daily"]),
-      .syncUps(arguments: ["add", "Daily"])
-    )
-    expectNoDifference(
-      try parseExamples(["sync-ups", "list"]),
-      .syncUps(arguments: ["list"])
-    )
     expectNoDifference(
       try parseExamples(["reminders", "list", "--today"]),
       .reminders(arguments: ["list", "--today"])
