@@ -936,6 +936,84 @@ struct BootstrapTests {
   }
 
   @Test
+  func bootstrapUsesAppBuilderPlatformAndGeneratorDependencies() async throws {
+    let appID = "app-builder-dependency-\(UUID().uuidString)"
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataAppBuilder-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let platform = InstantPlatformAppClient { request in
+      InstantPlatformApp(
+        id: "override-platform-\(request.makeID())",
+        title: request.title,
+        orgID: request.orgID,
+        createdAt: request.createdAt
+      )
+    }
+    let generator = AppBuilderCodeGeneratorClient { request in
+      AsyncThrowingStream { continuation in
+        continuation.yield(
+          AppBuilderGenerationChunk(
+            kind: .reasoning,
+            text: "Override reasoning for \(request.prompt)."
+          )
+        )
+        continuation.yield(
+          AppBuilderGenerationChunk(
+            kind: .code,
+            text: "override code for \(request.instantAppID)"
+          )
+        )
+        continuation.finish()
+      }
+    }
+
+    try await withDependencies {
+      $0.instantPlatformAppClient = platform
+      $0.appBuilderCodeGenerator = generator
+      try await $0.bootstrapInstantSwiftData(
+        appID: appID,
+        persistenceURL: directory.appendingPathComponent("cache.sqlite"),
+        context: .test,
+        initialAttributes: AppBuilderExample.attributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var client
+      let runtime = try #require(client.runtime)
+      let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+
+      let platformApp = try await runtime.configuration.platformAppClient.createApp(
+        InstantPlatformAppCreateRequest(
+          title: "Dependency app",
+          orgID: "org-dependency",
+          createdAt: createdAt,
+          makeID: { "build-dependency" }
+        )
+      )
+      expectNoDifference(platformApp.id, "override-platform-build-dependency")
+      expectNoDifference(platformApp.orgID, "org-dependency")
+
+      let stream = try await runtime.configuration.appBuilderCodeGenerator.generate(
+        AppBuilderGenerationRequest(
+          prompt: "Build a dependency demo",
+          buildID: "build-dependency",
+          instantAppID: platformApp.id
+        )
+      )
+      var iterator = stream.makeAsyncIterator()
+      let reasoning = try #require(try await iterator.next())
+      let code = try #require(try await iterator.next())
+      let finished = try await iterator.next()
+      expectNoDifference(reasoning.kind, .reasoning)
+      expectNoDifference(reasoning.text, "Override reasoning for Build a dependency demo.")
+      expectNoDifference(code.kind, .code)
+      expectNoDifference(code.text, "override code for override-platform-build-dependency")
+      expectNoDifference(finished, nil)
+    }
+  }
+
+  @Test
   func syncUpRecordingDependenciesCanBeOverridden() async throws {
     let soundEffects = BootstrapSyncUpSoundEffectRecorder()
     let settings = BootstrapSyncUpOpenSettingsRecorder()

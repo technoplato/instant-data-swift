@@ -679,6 +679,19 @@ Agent-oriented output modes are required:
   local `InstantAuthSession` stores a user id rather than a `user.email` field.
   The terminal `send-code` output represents the transient code-entry step that
   the React recipe keeps in component state.
+- run the local app-builder port with
+  `instant-swift-data examples app-builder generate "Build a Tic Tac Toe game"`,
+  `instant-swift-data examples app-builder list`,
+  `instant-swift-data examples app-builder show <build-id>`,
+  `instant-swift-data examples app-builder append <build-id> --code <text> --reasoning <text>`,
+  `instant-swift-data examples app-builder finish <build-id>`, and
+  `instant-swift-data examples app-builder reset`; generation requires the
+  email-backed magic-code auth session from `examples auth`, creates a local
+  platform app through the reusable `InstantPlatformAppClient.local` Swift
+  Dependencies seam, streams local reasoning/code through
+  `AppBuilderCodeGeneratorClient.local`, preserves the upstream owner-linked
+  `builds` schema plus schema-visible `$files`, keeps list queries
+  owner-filtered, and keeps `show` as an id-only route query.
 - run the local Instant website-style chat port with
   `instant-swift-data examples chat seed`,
   `instant-swift-data examples chat channels`,

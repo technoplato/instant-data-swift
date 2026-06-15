@@ -410,6 +410,8 @@ struct InstantSwiftDataCLI {
       throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesAuthArgumentError {
       throw CLIError(error.description, exitCode: error.exitCode)
+    } catch let error as CLIExamplesAppBuilderArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesCountersArgumentError {
       throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesChatArgumentError {
@@ -430,6 +432,10 @@ struct InstantSwiftDataCLI {
     switch invocation {
     case let .auth(arguments):
       try await runAuthRecipe(arguments: arguments, output: output)
+      return
+
+    case let .appBuilder(arguments):
+      try await runAppBuilder(arguments: arguments, output: output)
       return
 
     case let .chat(arguments):
@@ -568,6 +574,249 @@ struct InstantSwiftDataCLI {
         """,
         exitCode: 65
       )
+    }
+  }
+
+  private static func runAppBuilder(arguments: [String], output: OutputMode) async throws {
+    let invocation: CLIExamplesAppBuilderLeafInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLIExamplesAppBuilderLeafParser().parse(&input)
+    } catch let error as CLIExamplesAppBuilderArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
+    }
+
+    if case let .unknown(command) = invocation {
+      throw CLIError("Unknown app-builder command: \(command). \(appBuilderUsage)", exitCode: 64)
+    }
+
+    let context = try await CLIContext.bootstrap(initialAttributes: AppBuilderExample.attributes)
+
+    switch invocation {
+    case let .generate(options):
+      let (session, email) = try await requireAppBuilderEmailSession(context: context)
+      let buildID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      let title = AppBuilderExample.friendlyTitle(for: options.prompt)
+      let platformApp = try await context.runtime.configuration.platformAppClient.createApp(
+        InstantPlatformAppCreateRequest(
+          title: title,
+          orgID: options.orgID,
+          createdAt: now,
+          makeID: { buildID }
+        )
+      )
+
+      let createTransactionID = context.runtime.configuration.makeID()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: createTransactionID,
+          operations: AppBuilderExample.createBuildOperations(
+            id: buildID,
+            ownerID: session.userID,
+            ownerEmail: email,
+            instantAppID: platformApp.id,
+            title: title,
+            createdAt: now,
+            transactionID: createTransactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.app-builder.create"
+      )
+
+      var generationEvents = [
+        AppBuilderGenerationEventOutput(
+          event: "create",
+          kind: nil,
+          text: nil,
+          codeLength: 0,
+          reasoningLength: 0,
+          isPreviewable: false
+        )
+      ]
+      var code = ""
+      var reasoning = ""
+      let stream = try await context.runtime.configuration.appBuilderCodeGenerator.generate(
+        AppBuilderGenerationRequest(
+          prompt: options.prompt,
+          buildID: buildID,
+          instantAppID: platformApp.id
+        )
+      )
+      for try await chunk in stream {
+        switch chunk.kind {
+        case .code:
+          code += chunk.text
+        case .reasoning:
+          reasoning += chunk.text
+        }
+        let transactionID = context.runtime.configuration.makeID()
+        let updatedAt = context.runtime.configuration.now()
+        try await context.runtime.transact(
+          InstantStoreTransaction(
+            id: transactionID,
+            operations: AppBuilderExample.updateBuildOperations(
+              id: buildID,
+              code: code,
+              reasoning: reasoning,
+              isPreviewable: false,
+              updatedAt: updatedAt,
+              transactionID: transactionID
+            )
+          ),
+          createdAt: updatedAt,
+          source: "cli.examples.app-builder.generate"
+        )
+        generationEvents.append(
+          AppBuilderGenerationEventOutput(
+            event: "chunk",
+            kind: chunk.kind.rawValue,
+            text: chunk.text,
+            codeLength: code.count,
+            reasoningLength: reasoning.count,
+            isPreviewable: false
+          )
+        )
+      }
+
+      let finishTransactionID = context.runtime.configuration.makeID()
+      let finishedAt = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: finishTransactionID,
+          operations: AppBuilderExample.updateBuildOperations(
+            id: buildID,
+            code: code,
+            reasoning: reasoning,
+            isPreviewable: true,
+            updatedAt: finishedAt,
+            transactionID: finishTransactionID
+          )
+        ),
+        createdAt: finishedAt,
+        source: "cli.examples.app-builder.finish"
+      )
+      generationEvents.append(
+        AppBuilderGenerationEventOutput(
+          event: "finish",
+          kind: nil,
+          text: nil,
+          codeLength: code.count,
+          reasoningLength: reasoning.count,
+          isPreviewable: true
+        )
+      )
+
+      try await printAppBuilder(
+        context: context,
+        output: output,
+        event: "generate",
+        changedID: buildID,
+        selectedBuildID: buildID,
+        platformApp: platformApp,
+        generationEvents: generationEvents
+      )
+
+    case .list:
+      let (session, _) = try await requireAppBuilderEmailSession(context: context)
+      try await printAppBuilder(
+        context: context,
+        output: output,
+        event: "list",
+        ownerID: session.userID
+      )
+
+    case let .show(buildID):
+      _ = try await requireAppBuilderEmailSession(context: context)
+      _ = try await requireAppBuilderBuild(context: context, id: buildID)
+      try await printAppBuilder(
+        context: context,
+        output: output,
+        event: "show",
+        selectedBuildID: buildID
+      )
+
+    case let .append(options):
+      _ = try await requireAppBuilderEmailSession(context: context)
+      let build = try await requireAppBuilderBuild(context: context, id: options.buildID)
+      let code = options.code.map { build.code + $0 }
+      let reasoning = options.reasoning.map { (build.reasoning ?? "") + $0 }
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: AppBuilderExample.updateBuildOperations(
+            id: build.id,
+            code: code,
+            reasoning: reasoning,
+            isPreviewable: options.isPreviewable,
+            updatedAt: now,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.app-builder.append"
+      )
+      try await printAppBuilder(
+        context: context,
+        output: output,
+        event: "append",
+        changedID: build.id,
+        selectedBuildID: build.id
+      )
+
+    case let .finish(buildID):
+      _ = try await requireAppBuilderEmailSession(context: context)
+      _ = try await requireAppBuilderBuild(context: context, id: buildID)
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: AppBuilderExample.updateBuildOperations(
+            id: buildID,
+            isPreviewable: true,
+            updatedAt: now,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.app-builder.finish"
+      )
+      try await printAppBuilder(
+        context: context,
+        output: output,
+        event: "finish",
+        changedID: buildID,
+        selectedBuildID: buildID
+      )
+
+    case .reset:
+      let (session, _) = try await requireAppBuilderEmailSession(context: context)
+      let builds = try await currentAppBuilderBuilds(context: context, ownerID: session.userID)
+      if !builds.isEmpty {
+        let transactionID = context.runtime.configuration.makeID()
+        let now = context.runtime.configuration.now()
+        try await context.runtime.transact(
+          InstantStoreTransaction(
+            id: transactionID,
+            operations: builds.flatMap { AppBuilderExample.deleteBuildOperations(id: $0.id) }
+          ),
+          createdAt: now,
+          source: "cli.examples.app-builder.reset"
+        )
+      }
+      try await printAppBuilder(
+        context: context,
+        output: output,
+        event: "reset",
+        ownerID: session.userID
+      )
+
+    case .unknown:
+      preconditionFailure("Unknown app-builder commands are handled before bootstrapping.")
     }
   }
 
@@ -4874,6 +5123,183 @@ struct InstantSwiftDataCLI {
       return session
     }
     return try await context.runtime.signInAsGuest()
+  }
+
+  private static func printAppBuilder(
+    context: CLIContext,
+    output: OutputMode,
+    event: String,
+    changedID: String? = nil,
+    selectedBuildID: String? = nil,
+    ownerID explicitOwnerID: String? = nil,
+    platformApp: InstantPlatformApp? = nil,
+    generationEvents: [AppBuilderGenerationEventOutput] = []
+  ) async throws {
+    let session = try await context.runtime.authSession()
+    let ownerID = explicitOwnerID ?? session?.userID
+    let builds = try await currentAppBuilderBuilds(context: context, ownerID: ownerID)
+    let selectedBuild: AppBuilderBuildRecord?
+    if let selectedBuildID {
+      selectedBuild = try await currentAppBuilderBuild(context: context, id: selectedBuildID)
+    } else {
+      selectedBuild = nil
+    }
+    let pending = await context.runtime.pendingMutations()
+    let ownerQuery = ownerID.map(AppBuilderExample.buildsForOwnerQuery)
+    let payload = AppBuilderOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      changedID: changedID,
+      selectedBuildID: selectedBuildID,
+      authUserID: session?.userID,
+      authUserEmail: AuthRecipeExample.userEmail(from: session),
+      transport: "not-implemented-local-cache-only",
+      platformApp: platformApp,
+      queryID: AppBuilderExample.buildsQuery.id,
+      cacheKey: AppBuilderExample.buildsQuery.cacheKey,
+      ownerQueryID: ownerQuery?.id,
+      ownerCacheKey: ownerQuery?.cacheKey,
+      pendingMutationCount: pending.count,
+      buildCount: builds.count,
+      previewableBuildCount: builds.filter { $0.isPreviewable == true }.count,
+      builds: builds,
+      selectedBuild: selectedBuild,
+      generationEvents: generationEvents
+    )
+
+    switch output {
+    case .human:
+      if let selectedBuild {
+        print("build: \(selectedBuild.id)")
+        print("title: \(selectedBuild.title ?? "")")
+        print("instant app: \(selectedBuild.instantAppID)")
+        print("previewable: \(selectedBuild.isPreviewable == true)")
+        if let reasoning = selectedBuild.reasoning, !reasoning.isEmpty {
+          print("reasoning: \(reasoning)")
+        }
+        if selectedBuild.code.isEmpty {
+          print("code: <empty>")
+        } else {
+          print(selectedBuild.code)
+        }
+      } else if builds.isEmpty {
+        print("No app-builder builds.")
+      } else {
+        for build in builds {
+          let status = build.isPreviewable == true ? "Previewable" : "Not Previewable"
+          print("\(build.id) \(status) \(build.title ?? "")")
+        }
+      }
+      if let platformApp {
+        print("created Instant app: \(platformApp.id)")
+      }
+      if let authUserID = payload.authUserID {
+        print("auth: \(authUserID)")
+      } else {
+        print("auth: signed out")
+      }
+      print("transport: \(payload.transport)")
+      print("pending mutations: \(pending.count)")
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.examples.app-builder",
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          entityID: changedID ?? selectedBuildID,
+          ok: true,
+          details: payload
+        )
+      )
+      for generationEvent in generationEvents {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.app-builder",
+            side: "swift",
+            event: generationEvent.event,
+            appID: context.appID,
+            entityID: changedID ?? selectedBuildID,
+            ok: true,
+            details: generationEvent
+          )
+        )
+      }
+      for build in builds {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.app-builder",
+            side: "swift",
+            event: "build",
+            appID: context.appID,
+            entityID: build.id,
+            ok: true,
+            details: build
+          )
+        )
+      }
+    }
+  }
+
+  private static func currentAppBuilderBuilds(
+    context: CLIContext,
+    ownerID: String? = nil
+  ) async throws -> [AppBuilderBuildRecord] {
+    let query = ownerID.map(AppBuilderExample.buildsForOwnerQuery) ?? AppBuilderExample.buildsQuery
+    return try AppBuilderExample.decodeBuilds(
+      (try await context.runtime.queryOnce(query)).values
+    )
+  }
+
+  private static func currentAppBuilderBuild(
+    context: CLIContext,
+    id: String
+  ) async throws -> AppBuilderBuildRecord? {
+    try AppBuilderExample.decodeBuilds(
+      (try await context.runtime.queryOnce(AppBuilderExample.buildQuery(id))).values
+    )
+    .first
+  }
+
+  private static func requireAppBuilderBuild(
+    context: CLIContext,
+    id: String
+  ) async throws -> AppBuilderBuildRecord {
+    guard let build = try await currentAppBuilderBuild(context: context, id: id) else {
+      throw CLIError("App-builder build not found: \(id)", exitCode: 66)
+    }
+    return build
+  }
+
+  private static func requireAppBuilderEmailSession(
+    context: CLIContext
+  ) async throws -> (InstantAuthSession, String) {
+    guard let session = try await context.runtime.authSession() else {
+      throw CLIError(
+        """
+        App-builder requires a signed-in email user. Run \
+        'instant-swift-data examples auth send-code user@example.com' and \
+        'instant-swift-data examples auth verify-code user@example.com <code>' first.
+        """,
+        exitCode: 65
+      )
+    }
+    guard let email = AuthRecipeExample.userEmail(from: session) else {
+      throw CLIError(
+        """
+        App-builder requires an email-backed auth session because the upstream API writes \
+        builds as adminDB.asUser({ email }). Sign in with the magic-code auth recipe first.
+        """,
+        exitCode: 65
+      )
+    }
+    return (session, email)
   }
 
   private static func printMicroblog(
@@ -9296,9 +9722,10 @@ struct InstantSwiftDataCLI {
 
   private static var examplesUsage: String {
     """
-    Usage: instant-swift-data examples <todos|auth|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|sync-ups>
+    Usage: instant-swift-data examples <todos|auth|app-builder|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|sync-ups>
       instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>
       instant-swift-data examples auth <send-code|verify-code|status|watch|sign-out> [--json|--jsonl]
+      instant-swift-data examples app-builder <generate|list|show|append|finish|reset> [--json|--jsonl]
       instant-swift-data examples todo-links <seed|list|nested|unlink> [--json|--jsonl]
       instant-swift-data examples counters <seed|add|list|increment|decrement|delete> [--json|--jsonl]
       instant-swift-data examples chat <seed|channels|messages|post|reset> [--json|--jsonl]
@@ -9322,6 +9749,10 @@ struct InstantSwiftDataCLI {
 
   private static var chatUsage: String {
     CLIExamplesChatUsage.chat
+  }
+
+  private static var appBuilderUsage: String {
+    CLIExamplesAppBuilderUsage.appBuilder
   }
 
   private static var microblogUsage: String {
@@ -9998,6 +10429,37 @@ private struct ChatOutput: Codable, Sendable {
   var messageCount: Int
   var channels: [ChatChannelRecord]
   var messages: [ChatMessageRecord]
+}
+
+private struct AppBuilderGenerationEventOutput: Codable, Sendable {
+  var event: String
+  var kind: String?
+  var text: String?
+  var codeLength: Int
+  var reasoningLength: Int
+  var isPreviewable: Bool
+}
+
+private struct AppBuilderOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var changedID: String?
+  var selectedBuildID: String?
+  var authUserID: String?
+  var authUserEmail: String?
+  var transport: String
+  var platformApp: InstantPlatformApp?
+  var queryID: String
+  var cacheKey: String
+  var ownerQueryID: String?
+  var ownerCacheKey: String?
+  var pendingMutationCount: Int
+  var buildCount: Int
+  var previewableBuildCount: Int
+  var builds: [AppBuilderBuildRecord]
+  var selectedBuild: AppBuilderBuildRecord?
+  var generationEvents: [AppBuilderGenerationEventOutput]
 }
 
 private struct MicroblogOutput: Codable, Sendable {

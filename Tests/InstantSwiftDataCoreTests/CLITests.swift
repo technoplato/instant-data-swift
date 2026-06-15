@@ -2529,6 +2529,141 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliAppBuilderGeneratesListsUpdatesAndResetsBuildsAcrossLaunches() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let missingAuth = try runCLIResult(
+      ["examples", "app-builder", "generate", "Build a Tic Tac Toe game", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(missingAuth.status, 65)
+    #expect(missingAuth.error.contains("App-builder requires a signed-in email user."))
+
+    let challenge = try JSONDecoder().decode(
+      CLIAuthRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "auth", "send-code", "builder@example.com", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    let code = try #require(challenge.localVerificationCode)
+    _ = try runCLI(
+      ["examples", "auth", "verify-code", "builder@example.com", code, "--json"],
+      homeURL: homeURL
+    )
+
+    let generated = try JSONDecoder().decode(
+      CLIAppBuilderOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "examples", "app-builder", "generate", "Build a Tic Tac Toe game",
+            "--org-id", "org-terminal", "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(generated.event, "generate")
+    expectNoDifference(generated.authUserID, "email:builder@example.com")
+    expectNoDifference(generated.authUserEmail, "builder@example.com")
+    expectNoDifference(generated.buildCount, 1)
+    expectNoDifference(generated.previewableBuildCount, 1)
+    expectNoDifference(generated.generationEvents.map(\.event), ["create", "chunk", "chunk", "finish"])
+    let build = try #require(generated.selectedBuild)
+    expectNoDifference(build.title, "Build a Tic Tac Toe game")
+    expectNoDifference(build.ownerID, "email:builder@example.com")
+    expectNoDifference(build.isPreviewable, true)
+    #expect(build.instantAppID.hasPrefix("local-platform-"))
+    #expect(build.code.contains(build.instantAppID))
+    #expect(build.reasoning?.contains("Create a compact Swift-friendly preview") == true)
+
+    let listed = try JSONDecoder().decode(
+      CLIAppBuilderOutput.self,
+      from: Data(
+        try runCLI(["examples", "app-builder", "list", "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(listed.event, "list")
+    expectNoDifference(listed.builds.map(\.id), [build.id])
+    expectNoDifference(listed.selectedBuild, nil)
+
+    let appended = try JSONDecoder().decode(
+      CLIAppBuilderOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "examples", "app-builder", "append", build.id, "--code", "\n// patched",
+            "--reasoning", "\nPolished after preview.", "--previewable", "false", "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    let appendedBuild = try #require(appended.selectedBuild)
+    #expect(appendedBuild.code.contains("// patched"))
+    #expect(appendedBuild.reasoning?.contains("Polished after preview.") == true)
+    expectNoDifference(appendedBuild.isPreviewable, false)
+
+    let finished = try JSONDecoder().decode(
+      CLIAppBuilderOutput.self,
+      from: Data(
+        try runCLI(["examples", "app-builder", "finish", build.id, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(finished.selectedBuild?.isPreviewable, true)
+
+    let shown = try JSONDecoder().decode(
+      CLIAppBuilderOutput.self,
+      from: Data(
+        try runCLI(["examples", "app-builder", "show", build.id, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(shown.event, "show")
+    expectNoDifference(shown.selectedBuild?.id, build.id)
+    expectNoDifference(shown.selectedBuild?.isPreviewable, true)
+
+    let jsonl = try runCLI(
+      ["examples", "app-builder", "generate", "Build a notes app", "--jsonl"],
+      homeURL: homeURL
+    )
+    let lines = jsonl.split(separator: "\n")
+    #expect(lines.count >= 5)
+    let evidence = try JSONDecoder().decode(
+      CLIAppBuilderEvidence.self,
+      from: Data(try #require(lines.first).utf8)
+    )
+    expectNoDifference(evidence.caseID, "cli.examples.app-builder")
+    expectNoDifference(evidence.event, "generate")
+    expectNoDifference(evidence.ok, true)
+    expectNoDifference(evidence.details.generationEvents.map(\.event), ["create", "chunk", "chunk", "finish"])
+
+    let reset = try JSONDecoder().decode(
+      CLIAppBuilderOutput.self,
+      from: Data(
+        try runCLI(["examples", "app-builder", "reset", "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(reset.event, "reset")
+    expectNoDifference(reset.builds, [])
+    expectNoDifference(reset.buildCount, 0)
+
+    let malformedAppend = try runCLIResult(
+      ["examples", "app-builder", "append", "build-1", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(malformedAppend.status, 64)
+    #expect(malformedAppend.error.contains("examples app-builder append"))
+  }
+
+  @Test
   func cliAuthSignOutSupportsTokenInvalidationOption() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -3035,7 +3170,7 @@ extension InstantStoreTests {
     expectNoDifference(result.status, 64)
     #expect(
       result.error.contains(
-        "Usage: instant-swift-data examples <todos|auth|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|sync-ups>"
+        "Usage: instant-swift-data examples <todos|auth|app-builder|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|sync-ups>"
       )
     )
   }
@@ -7472,9 +7607,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 110)
+    expectNoDifference(jsonOutput.recordCount, 111)
     expectNoDifference(jsonOutput.exactCount, 19)
-    expectNoDifference(jsonOutput.adaptedCount, 88)
+    expectNoDifference(jsonOutput.adaptedCount, 89)
     expectNoDifference(jsonOutput.blockedCount, 3)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -7489,6 +7624,11 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.sourceFiles.contains(
         "upstream/instant/client/packages/core/__tests__/src/utils/dates.test.ts"
+      )
+    )
+    #expect(
+      jsonOutput.sourceFiles.contains(
+        "upstream/instant/client/www/_examples/app-builder.md + Galaxies-dev/app-builder@e67200cc70e01d88bd9a5382cf0380f4882fb8c7"
       )
     )
     #expect(
@@ -7533,6 +7673,11 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.records.contains {
         $0.id == "sqlite.cloudkit-demo.local-counter-share" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.website.app-builder.local-cli" && $0.status == "adapted"
       }
     )
     #expect(
@@ -7814,7 +7959,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 110"))
+    #expect(humanOutput.contains("records: 111"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 
@@ -8326,6 +8471,53 @@ private struct CLIChatEvidence: Decodable {
 
 private struct CLIChatEventEnvelope: Decodable {
   var event: String
+}
+
+private struct CLIAppBuilderGenerationEventOutput: Decodable, Equatable {
+  var event: String
+  var kind: String?
+  var text: String?
+  var codeLength: Int
+  var reasoningLength: Int
+  var isPreviewable: Bool
+}
+
+private struct CLIAppBuilderOutput: Decodable, Equatable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var changedID: String?
+  var selectedBuildID: String?
+  var authUserID: String?
+  var authUserEmail: String?
+  var transport: String
+  var platformApp: InstantPlatformApp?
+  var queryID: String
+  var cacheKey: String
+  var ownerQueryID: String?
+  var ownerCacheKey: String?
+  var pendingMutationCount: Int
+  var buildCount: Int
+  var previewableBuildCount: Int
+  var builds: [AppBuilderBuildRecord]
+  var selectedBuild: AppBuilderBuildRecord?
+  var generationEvents: [CLIAppBuilderGenerationEventOutput]
+}
+
+private struct CLIAppBuilderEvidence: Decodable {
+  var caseID: String
+  var side: String
+  var event: String
+  var ok: Bool
+  var details: CLIAppBuilderOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case side
+    case event
+    case ok
+    case details
+  }
 }
 
 private struct CLIChatMessageEvidence: Decodable {

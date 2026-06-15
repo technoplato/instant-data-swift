@@ -19,6 +19,8 @@ public struct InstantRuntimeConfiguration: Sendable {
   public var oauthExchange: InstantOAuthExchange
   public var authTokenInvalidator: InstantAuthTokenInvalidator
   public var mutationTransport: InstantMutationTransportClient
+  public var platformAppClient: InstantPlatformAppClient
+  public var appBuilderCodeGenerator: AppBuilderCodeGeneratorClient
   var actorHopRecorder: InstantActorHopRecorder?
 
   public init(
@@ -33,7 +35,9 @@ public struct InstantRuntimeConfiguration: Sendable {
     magicCodeExchange: InstantMagicCodeExchange = .local,
     idTokenExchange: InstantIDTokenExchange = .local,
     oauthExchange: InstantOAuthExchange = .local,
-    authTokenInvalidator: InstantAuthTokenInvalidator = .local
+    authTokenInvalidator: InstantAuthTokenInvalidator = .local,
+    platformAppClient: InstantPlatformAppClient = .local,
+    appBuilderCodeGenerator: AppBuilderCodeGeneratorClient = .local
   ) {
     self.init(
       appID: appID,
@@ -48,7 +52,9 @@ public struct InstantRuntimeConfiguration: Sendable {
       idTokenExchange: idTokenExchange,
       oauthExchange: oauthExchange,
       authTokenInvalidator: authTokenInvalidator,
-      mutationTransport: .local
+      mutationTransport: .local,
+      platformAppClient: platformAppClient,
+      appBuilderCodeGenerator: appBuilderCodeGenerator
     )
   }
 
@@ -67,7 +73,9 @@ public struct InstantRuntimeConfiguration: Sendable {
     idTokenExchange: InstantIDTokenExchange = .local,
     oauthExchange: InstantOAuthExchange = .local,
     authTokenInvalidator: InstantAuthTokenInvalidator = .local,
-    mutationTransport: InstantMutationTransportClient = .local
+    mutationTransport: InstantMutationTransportClient = .local,
+    platformAppClient: InstantPlatformAppClient = .local,
+    appBuilderCodeGenerator: AppBuilderCodeGeneratorClient = .local
   ) {
     self.appID = appID
     self.apiURI = apiURI
@@ -82,6 +90,8 @@ public struct InstantRuntimeConfiguration: Sendable {
     self.oauthExchange = oauthExchange
     self.authTokenInvalidator = authTokenInvalidator
     self.mutationTransport = mutationTransport
+    self.platformAppClient = platformAppClient
+    self.appBuilderCodeGenerator = appBuilderCodeGenerator
     self.actorHopRecorder = nil
   }
 

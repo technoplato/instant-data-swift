@@ -50,6 +50,7 @@ public struct CLIInvocation: Equatable, Sendable {
 public enum CLIExamplesInvocation: Equatable, Sendable {
   case todos(CLIExamplesTodosInvocation)
   case auth(arguments: [String])
+  case appBuilder(arguments: [String])
   case chat(arguments: [String])
   case counters(arguments: [String])
   case microblog(arguments: [String])
@@ -201,6 +202,77 @@ public enum CLIExamplesAuthArgumentError: Error, Equatable, Sendable {
   case invalidEventCount(String, usageCommand: String)
   case missingValue(option: String, usage: String)
   case unknownOption(domain: String, option: String, usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
+public enum CLIExamplesAppBuilderLeafInvocation: Equatable, Sendable {
+  case generate(CLIExamplesAppBuilderGenerateInvocation)
+  case list
+  case show(buildID: String)
+  case append(CLIExamplesAppBuilderAppendInvocation)
+  case finish(buildID: String)
+  case reset
+  case unknown(String)
+}
+
+public struct CLIExamplesAppBuilderGenerateInvocation: Equatable, Sendable {
+  public var prompt: String
+  public var orgID: String
+
+  public init(prompt: String, orgID: String) {
+    self.prompt = prompt
+    self.orgID = orgID
+  }
+}
+
+public struct CLIExamplesAppBuilderAppendInvocation: Equatable, Sendable {
+  public var buildID: String
+  public var code: String?
+  public var reasoning: String?
+  public var isPreviewable: Bool?
+
+  public init(
+    buildID: String,
+    code: String? = nil,
+    reasoning: String? = nil,
+    isPreviewable: Bool? = nil
+  ) {
+    self.buildID = buildID
+    self.code = code
+    self.reasoning = reasoning
+    self.isPreviewable = isPreviewable
+  }
+}
+
+public enum CLIExamplesAppBuilderUsage {
+  public static let appBuilder = """
+    Usage: instant-swift-data examples app-builder <generate|list|show|append|finish|reset>
+      instant-swift-data examples app-builder generate "prompt" [--org-id org] [--json|--jsonl]
+      instant-swift-data examples app-builder list [--json|--jsonl]
+      instant-swift-data examples app-builder show <build-id> [--json|--jsonl]
+      instant-swift-data examples app-builder append <build-id> [--code text] [--reasoning text] [--previewable true|false] [--json|--jsonl]
+      instant-swift-data examples app-builder finish <build-id> [--json|--jsonl]
+      instant-swift-data examples app-builder reset [--json|--jsonl]
+    """
+  public static let generate =
+    #"Usage: instant-swift-data examples app-builder generate "prompt" [--org-id org] [--json|--jsonl]"#
+  public static let list =
+    "Usage: instant-swift-data examples app-builder list [--json|--jsonl]"
+  public static let show =
+    "Usage: instant-swift-data examples app-builder show <build-id> [--json|--jsonl]"
+  public static let append =
+    "Usage: instant-swift-data examples app-builder append <build-id> [--code text] [--reasoning text] [--previewable true|false] [--json|--jsonl]"
+  public static let finish =
+    "Usage: instant-swift-data examples app-builder finish <build-id> [--json|--jsonl]"
+  public static let reset =
+    "Usage: instant-swift-data examples app-builder reset [--json|--jsonl]"
+}
+
+public enum CLIExamplesAppBuilderArgumentError: Error, Equatable, Sendable {
+  case invalidArguments(usage: String)
+  case missingValue(option: String, usage: String)
+  case unknownOption(option: String, usage: String)
 
   public var exitCode: Int32 { 64 }
 }
@@ -2340,6 +2412,11 @@ public struct CLIExamplesParser: Parser {
       input.removeAll()
       return .auth(arguments: arguments)
 
+    case "app-builder", "appbuilder", "builder":
+      let arguments = Array(input)
+      input.removeAll()
+      return .appBuilder(arguments: arguments)
+
     case "chat":
       let arguments = Array(input)
       input.removeAll()
@@ -2647,6 +2724,176 @@ public struct CLIExamplesAuthSignOutParser: Parser {
     }
 
     return CLIExamplesAuthSignOutInvocation(invalidateToken: invalidateToken)
+  }
+}
+
+public struct CLIExamplesAppBuilderLeafParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws
+    -> CLIExamplesAppBuilderLeafInvocation
+  {
+    guard let command = input.first else {
+      throw CLIExamplesAppBuilderArgumentError.invalidArguments(
+        usage: CLIExamplesAppBuilderUsage.appBuilder
+      )
+    }
+    input.removeFirst()
+
+    switch command {
+    case "generate", "create", "build":
+      return .generate(try CLIExamplesAppBuilderGenerateParser().parse(&input))
+
+    case "list", "builds":
+      try requireNoRemainingExamplesAppBuilderArguments(
+        &input,
+        usage: CLIExamplesAppBuilderUsage.list
+      )
+      return .list
+
+    case "show", "detail":
+      let buildID = try parseRequiredAppBuilderArgument(
+        from: &input,
+        usage: CLIExamplesAppBuilderUsage.show
+      )
+      try requireNoRemainingExamplesAppBuilderArguments(
+        &input,
+        usage: CLIExamplesAppBuilderUsage.show
+      )
+      return .show(buildID: buildID)
+
+    case "append", "update":
+      return .append(try CLIExamplesAppBuilderAppendParser().parse(&input))
+
+    case "finish", "previewable":
+      let buildID = try parseRequiredAppBuilderArgument(
+        from: &input,
+        usage: CLIExamplesAppBuilderUsage.finish
+      )
+      try requireNoRemainingExamplesAppBuilderArguments(
+        &input,
+        usage: CLIExamplesAppBuilderUsage.finish
+      )
+      return .finish(buildID: buildID)
+
+    case "reset":
+      try requireNoRemainingExamplesAppBuilderArguments(
+        &input,
+        usage: CLIExamplesAppBuilderUsage.reset
+      )
+      return .reset
+
+    default:
+      input.removeAll()
+      return .unknown(command)
+    }
+  }
+}
+
+public struct CLIExamplesAppBuilderGenerateParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws
+    -> CLIExamplesAppBuilderGenerateInvocation
+  {
+    var orgID = "local-instant-swift-data"
+    var promptParts: [String] = []
+
+    while let token = input.first {
+      input.removeFirst()
+      switch token {
+      case "--org-id":
+        orgID = try parseAppBuilderOptionValue(
+          from: &input,
+          option: token,
+          usage: CLIExamplesAppBuilderUsage.generate
+        )
+
+      default:
+        if token.hasPrefix("--") {
+          throw CLIExamplesAppBuilderArgumentError.unknownOption(
+            option: token,
+            usage: CLIExamplesAppBuilderUsage.generate
+          )
+        }
+        promptParts.append(token)
+      }
+    }
+
+    let prompt = joinedTrimmed(promptParts[...])
+    guard !prompt.isEmpty else {
+      throw CLIExamplesAppBuilderArgumentError.invalidArguments(
+        usage: CLIExamplesAppBuilderUsage.generate
+      )
+    }
+    return CLIExamplesAppBuilderGenerateInvocation(prompt: prompt, orgID: orgID)
+  }
+}
+
+public struct CLIExamplesAppBuilderAppendParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws
+    -> CLIExamplesAppBuilderAppendInvocation
+  {
+    let buildID = try parseRequiredAppBuilderArgument(
+      from: &input,
+      usage: CLIExamplesAppBuilderUsage.append
+    )
+    var code: String?
+    var reasoning: String?
+    var isPreviewable: Bool?
+
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--code":
+        code = try parseAppBuilderOptionValue(
+          from: &input,
+          option: option,
+          usage: CLIExamplesAppBuilderUsage.append
+        )
+
+      case "--reasoning":
+        reasoning = try parseAppBuilderOptionValue(
+          from: &input,
+          option: option,
+          usage: CLIExamplesAppBuilderUsage.append
+        )
+
+      case "--previewable":
+        let value = try parseAppBuilderOptionValue(
+          from: &input,
+          option: option,
+          usage: CLIExamplesAppBuilderUsage.append
+        )
+        guard let parsed = parseCLIQueryBool(value) else {
+          throw CLIExamplesAppBuilderArgumentError.invalidArguments(
+            usage: CLIExamplesAppBuilderUsage.append
+          )
+        }
+        isPreviewable = parsed
+
+      default:
+        throw CLIExamplesAppBuilderArgumentError.unknownOption(
+          option: option,
+          usage: CLIExamplesAppBuilderUsage.append
+        )
+      }
+    }
+
+    guard code != nil || reasoning != nil || isPreviewable != nil else {
+      throw CLIExamplesAppBuilderArgumentError.invalidArguments(
+        usage: CLIExamplesAppBuilderUsage.append
+      )
+    }
+
+    return CLIExamplesAppBuilderAppendInvocation(
+      buildID: buildID,
+      code: code,
+      reasoning: reasoning,
+      isPreviewable: isPreviewable
+    )
   }
 }
 
@@ -5894,6 +6141,46 @@ private func requireNoRemainingExamplesAuthArguments(
   }
 }
 
+private func parseRequiredAppBuilderArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIExamplesAppBuilderArgumentError.invalidArguments(usage: usage)
+  }
+  input.removeFirst()
+  let parsed = trimmed(value)
+  guard !parsed.isEmpty else {
+    throw CLIExamplesAppBuilderArgumentError.invalidArguments(usage: usage)
+  }
+  return parsed
+}
+
+private func parseAppBuilderOptionValue(
+  from input: inout ArraySlice<String>,
+  option: String,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIExamplesAppBuilderArgumentError.missingValue(option: option, usage: usage)
+  }
+  input.removeFirst()
+  let parsed = trimmed(value)
+  guard !parsed.isEmpty else {
+    throw CLIExamplesAppBuilderArgumentError.missingValue(option: option, usage: usage)
+  }
+  return parsed
+}
+
+private func requireNoRemainingExamplesAppBuilderArguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if let argument = input.first {
+    throw CLIExamplesAppBuilderArgumentError.unknownOption(option: argument, usage: usage)
+  }
+}
+
 private func parseSingleFileArgument(
   from input: inout ArraySlice<String>,
   usage: String
@@ -8099,6 +8386,21 @@ extension CLIExamplesAuthArgumentError: CustomStringConvertible {
 
     case let .unknownOption(domain, option, usage):
       return "Unknown \(domain) option: \(option). \(usage)"
+    }
+  }
+}
+
+extension CLIExamplesAppBuilderArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case let .invalidArguments(usage):
+      return usage
+
+    case let .missingValue(option, usage):
+      return "Missing value for \(option). \(usage)"
+
+    case let .unknownOption(option, usage):
+      return "Unknown examples app-builder option: \(option). \(usage)"
     }
   }
 }

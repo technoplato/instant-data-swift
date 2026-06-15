@@ -151,6 +151,22 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func examplesParserNormalizesAppBuilderAliasesAndPreservesArguments() throws {
+    expectNoDifference(
+      try parseExamples(["app-builder", "generate", "Build", "a", "game"]),
+      .appBuilder(arguments: ["generate", "Build", "a", "game"])
+    )
+    expectNoDifference(
+      try parseExamples(["appbuilder", "list"]),
+      .appBuilder(arguments: ["list"])
+    )
+    expectNoDifference(
+      try parseExamples(["builder", "show", "build-1"]),
+      .appBuilder(arguments: ["show", "build-1"])
+    )
+  }
+
+  @Test
   func examplesTodosLeafParserParsesCommandsAndOptions() throws {
     expectNoDifference(try parseExamplesTodosLeaf(["seed"]), .seed)
     expectNoDifference(
@@ -287,6 +303,91 @@ struct CLIArgumentParserTests {
       ["sign-out", "--unknown"],
       description:
         "Unknown examples auth sign-out option: --unknown. \(CLIExamplesAuthUsage.signOut)"
+    )
+  }
+
+  @Test
+  func examplesAppBuilderLeafParserParsesCommandsAndOptions() throws {
+    expectNoDifference(
+      try parseExamplesAppBuilderLeaf(["generate", "Build", "a", "timer", "--org-id", "org-1"]),
+      .generate(
+        CLIExamplesAppBuilderGenerateInvocation(
+          prompt: "Build a timer",
+          orgID: "org-1"
+        )
+      )
+    )
+    expectNoDifference(
+      try parseExamplesAppBuilderLeaf(["create", "--org-id", "org-2", "Build", "notes"]),
+      .generate(
+        CLIExamplesAppBuilderGenerateInvocation(
+          prompt: "Build notes",
+          orgID: "org-2"
+        )
+      )
+    )
+    expectNoDifference(try parseExamplesAppBuilderLeaf(["list"]), .list)
+    expectNoDifference(try parseExamplesAppBuilderLeaf(["builds"]), .list)
+    expectNoDifference(
+      try parseExamplesAppBuilderLeaf(["detail", " build-1 "]),
+      .show(buildID: "build-1")
+    )
+    expectNoDifference(
+      try parseExamplesAppBuilderLeaf([
+        "append", "build-1", "--code", "let x = 1", "--reasoning", "Looks good",
+        "--previewable", "yes",
+      ]),
+      .append(
+        CLIExamplesAppBuilderAppendInvocation(
+          buildID: "build-1",
+          code: "let x = 1",
+          reasoning: "Looks good",
+          isPreviewable: true
+        )
+      )
+    )
+    expectNoDifference(try parseExamplesAppBuilderLeaf(["finish", "build-1"]), .finish(buildID: "build-1"))
+    expectNoDifference(try parseExamplesAppBuilderLeaf(["reset"]), .reset)
+    expectNoDifference(try parseExamplesAppBuilderLeaf(["dance", "--fast"]), .unknown("dance"))
+  }
+
+  @Test
+  func examplesAppBuilderLeafParserReportsMalformedArguments() throws {
+    try expectExamplesAppBuilderLeafParseError([], description: CLIExamplesAppBuilderUsage.appBuilder)
+    try expectExamplesAppBuilderLeafParseError(
+      ["generate"],
+      description: CLIExamplesAppBuilderUsage.generate
+    )
+    try expectExamplesAppBuilderLeafParseError(
+      ["generate", "--unknown", "Build"],
+      description:
+        "Unknown examples app-builder option: --unknown. \(CLIExamplesAppBuilderUsage.generate)"
+    )
+    try expectExamplesAppBuilderLeafParseError(
+      ["generate", "Build", "--org-id"],
+      description: "Missing value for --org-id. \(CLIExamplesAppBuilderUsage.generate)"
+    )
+    try expectExamplesAppBuilderLeafParseError(
+      ["show"],
+      description: CLIExamplesAppBuilderUsage.show
+    )
+    try expectExamplesAppBuilderLeafParseError(
+      ["append", "build-1"],
+      description: CLIExamplesAppBuilderUsage.append
+    )
+    try expectExamplesAppBuilderLeafParseError(
+      ["append", "build-1", "--previewable", "maybe"],
+      description: CLIExamplesAppBuilderUsage.append
+    )
+    try expectExamplesAppBuilderLeafParseError(
+      ["append", "build-1", "--unknown", "value"],
+      description:
+        "Unknown examples app-builder option: --unknown. \(CLIExamplesAppBuilderUsage.append)"
+    )
+    try expectExamplesAppBuilderLeafParseError(
+      ["reset", "extra"],
+      description:
+        "Unknown examples app-builder option: extra. \(CLIExamplesAppBuilderUsage.reset)"
     )
   }
 
@@ -3981,6 +4082,15 @@ private func parseExamplesAuthLeaf(
   return invocation
 }
 
+private func parseExamplesAppBuilderLeaf(
+  _ arguments: [String]
+) throws -> CLIExamplesAppBuilderLeafInvocation {
+  var input = arguments[...]
+  let invocation = try CLIExamplesAppBuilderLeafParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseExamplesTodosQueryOptions(
   _ arguments: [String]
 ) throws -> CLITodosQueryInvocation {
@@ -4572,6 +4682,19 @@ private func expectExamplesAuthLeafParseError(
     _ = try parseExamplesAuthLeaf(arguments)
     Issue.record("Expected examples auth parser to reject \(arguments).")
   } catch let error as CLIExamplesAuthArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectExamplesAppBuilderLeafParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseExamplesAppBuilderLeaf(arguments)
+    Issue.record("Expected examples app-builder parser to reject \(arguments).")
+  } catch let error as CLIExamplesAppBuilderArgumentError {
     expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }

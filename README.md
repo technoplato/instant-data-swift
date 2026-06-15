@@ -86,6 +86,30 @@ Because the React recipe keeps the pending code-entry step in component state,
 the terminal port exposes that step on the `send-code` result rather than making
 plain `status` guess which pending email to show.
 
+Run the local app-builder port:
+
+```bash
+export INSTANT_SWIFT_DATA_HOME="$(mktemp -d)"
+
+MAGIC_CODE_JSON="$(swift run instant-swift-data examples auth send-code builder@example.com --json)"
+MAGIC_CODE="$(printf '%s' "$MAGIC_CODE_JSON" | jq -r '.localVerificationCode')"
+swift run instant-swift-data examples auth verify-code builder@example.com "$MAGIC_CODE" --json
+BUILD_JSON="$(swift run instant-swift-data examples app-builder generate "Build a Tic Tac Toe game" --org-id local-org --json)"
+BUILD_ID="$(printf '%s' "$BUILD_JSON" | jq -r '.selectedBuild.id')"
+swift run instant-swift-data examples app-builder list --json
+swift run instant-swift-data examples app-builder append "$BUILD_ID" --code $'\n// local edit' --reasoning $'\nPolished after preview.' --previewable false --json
+swift run instant-swift-data examples app-builder finish "$BUILD_ID" --json
+swift run instant-swift-data examples app-builder show "$BUILD_ID" --json
+swift run instant-swift-data examples app-builder generate "Build a notes app" --jsonl
+swift run instant-swift-data examples app-builder reset --json
+```
+
+The app-builder port mirrors the upstream magic-code-protected generation flow:
+it creates a local platform app through `InstantPlatformAppClient.local`, writes
+a linked owner/build row, streams reasoning and code through
+`AppBuilderCodeGeneratorClient.local`, lists only the signed-in user's builds,
+and keeps `show` as an id-only detail lookup like the website route.
+
 Create a local Reminders list, add reminders, and prove two-user list sharing:
 
 ```bash

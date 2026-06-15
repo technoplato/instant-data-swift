@@ -853,6 +853,17 @@ Create `validation/` with:
   deriving the display email from `email:<address>` user ids created by
   `InstantMagicCodeExchange.local`. `send-code` carries the pending code-entry
   state; plain `status` reports persisted auth/dashboard state.
+- App-builder: the local Instant website-style port exposes durable
+  `examples app-builder generate <prompt> [--org-id org]`, `list`,
+  `show <build-id>`, `append <build-id>`, `finish <build-id>`, and `reset`
+  commands. It preserves the app-builder schema shape from
+  `Galaxies-dev/app-builder@e67200cc70e01d88bd9a5382cf0380f4882fb8c7`
+  (`$files`, `$users.email`, `builds.instantAppId/code/reasoning/slug/error/isPreviewable/title`,
+  and required `builds.owner`), requires an email magic-code session like the
+  upstream `RefreshToken`-verified generator route, creates local platform apps
+  through `InstantPlatformAppClient.local`, streams deterministic reasoning/code
+  through `AppBuilderCodeGeneratorClient.local`, lists only the signed-in
+  owner's builds, and keeps detail lookup id-only like `/build/:buildId`.
 - Reactions recipe: the local Instant recipe port exposes durable
   `examples reactions tap <fire|wave|confetti|heart>`, `list [--limit n]`, and
   `watch --events 1` commands over the existing room-topic runtime. It preserves

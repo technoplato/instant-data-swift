@@ -1077,6 +1077,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "The Instant CLI ports the Auth recipe into a durable magic-code terminal flow with send-code, verify-code, status/dashboard, watch, and sign-out commands. send-code output represents the upstream code-entry form state; status reports persisted auth state. Local magic-code sessions derive the dashboard email from email-prefixed user ids because InstantAuthSession stores userID rather than a user.email field."
     ),
     instant(
+      id: "instant.website.app-builder.local-cli",
+      sourceFile: "upstream/instant/client/www/_examples/app-builder.md + Galaxies-dev/app-builder@e67200cc70e01d88bd9a5382cf0380f4882fb8c7",
+      sourceTestName: "magic-code protected app generation, platform app creation, owner-linked builds, stream updates, list/detail",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/CLITests.swift + Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "cliAppBuilderGeneratesListsUpdatesAndResetsBuildsAcrossLaunches + appBuilderExampleCreatesUpdatesAndQueriesOwnerBuilds",
+      surface: "examples-app-builder",
+      status: .adapted,
+      notes: "The Instant CLI ports the app-builder source into local $users/$files/builds namespaces, email-backed magic-code auth, injectable local platform-app and code-generator clients, owner-filtered build lists, id-only build detail lookup, stream-like code/reasoning updates, previewable finish state, append/edit ergonomics, and reset. The current local port records $files schema and platform metadata but does not upload generated files."
+    ),
+    instant(
       id: "instant.website.chat.local-cli",
       sourceFile: "upstream/instant/client/www/_examples/chat.md",
       sourceTestName: "IRC-style chat guest login, channels, messages, seed/reset tooling",

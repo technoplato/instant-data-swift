@@ -127,7 +127,7 @@ struct InstantStoreTests {
   }
 
   @Test
-  func runtimeConfigurationInitializerReferenceKeepsLegacyShape() throws {
+  func runtimeConfigurationInitializerReferenceKeepsLegacyShape() async throws {
     let make:
       (
         String,
@@ -139,7 +139,9 @@ struct InstantStoreTests {
         InstantMagicCodeExchange,
         InstantIDTokenExchange,
         InstantOAuthExchange,
-        InstantAuthTokenInvalidator
+        InstantAuthTokenInvalidator,
+        InstantPlatformAppClient,
+        AppBuilderCodeGeneratorClient
       ) -> InstantRuntimeConfiguration = InstantRuntimeConfiguration.init
 
     let configuration = make(
@@ -148,6 +150,8 @@ struct InstantStoreTests {
       TodoExample.attributes,
       { InstantTimestamp(milliseconds: 1_700_000_000_000) },
       { "fixed-id" },
+      .local,
+      .local,
       .local,
       .local,
       .local,
@@ -161,6 +165,23 @@ struct InstantStoreTests {
     expectNoDifference(configuration.initialAttributes, TodoExample.attributes)
     expectNoDifference(configuration.now(), InstantTimestamp(milliseconds: 1_700_000_000_000))
     expectNoDifference(configuration.makeID(), "fixed-id")
+    let platformApp = try await configuration.platformAppClient.createApp(
+      InstantPlatformAppCreateRequest(
+        title: "Pinned initializer",
+        orgID: "local-org",
+        createdAt: configuration.now(),
+        makeID: configuration.makeID
+      )
+    )
+    expectNoDifference(
+      platformApp,
+      InstantPlatformApp(
+        id: "local-platform-fixed-id",
+        title: "Pinned initializer",
+        orgID: "local-org",
+        createdAt: InstantTimestamp(milliseconds: 1_700_000_000_000)
+      )
+    )
   }
 
   @Test
@@ -9878,6 +9899,119 @@ struct InstantStoreTests {
       ),
       true
     )
+  }
+
+  @Test
+  func appBuilderExampleCreatesUpdatesAndQueriesOwnerBuilds() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let now = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-builder-test",
+        persistenceURL: cacheURL,
+        initialAttributes: AppBuilderExample.attributes,
+        now: { now }
+      )
+    )
+
+    let platformApp = try await InstantPlatformAppClient.local.createApp(
+      InstantPlatformAppCreateRequest(
+        title: "Build a workout tracker",
+        orgID: "org-1",
+        createdAt: now,
+        makeID: { "build-1" }
+      )
+    )
+    expectNoDifference(
+      platformApp,
+      InstantPlatformApp(
+        id: "local-platform-build-1",
+        title: "Build a workout tracker",
+        orgID: "org-1",
+        createdAt: now
+      )
+    )
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-create",
+        operations: AppBuilderExample.createBuildOperations(
+          id: "build-1",
+          ownerID: "email:user@example.com",
+          ownerEmail: "user@example.com",
+          instantAppID: platformApp.id,
+          title: AppBuilderExample.friendlyTitle(for: "Build a workout tracker"),
+          createdAt: now,
+          transactionID: "tx-create"
+        )
+      ),
+      createdAt: now,
+      source: "test.app-builder.create"
+    )
+
+    let stream = try await AppBuilderCodeGeneratorClient.local.generate(
+      AppBuilderGenerationRequest(
+        prompt: "Build a workout tracker",
+        buildID: "build-1",
+        instantAppID: platformApp.id
+      )
+    )
+    var iterator = stream.makeAsyncIterator()
+    var code = ""
+    var reasoning = ""
+    while let chunk = try await iterator.next() {
+      switch chunk.kind {
+      case .code:
+        code += chunk.text
+      case .reasoning:
+        reasoning += chunk.text
+      }
+    }
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-update",
+        operations: AppBuilderExample.updateBuildOperations(
+          id: "build-1",
+          code: code,
+          reasoning: reasoning,
+          isPreviewable: true,
+          updatedAt: now,
+          transactionID: "tx-update"
+        )
+      ),
+      createdAt: now,
+      source: "test.app-builder.update"
+    )
+
+    let ownerBuilds = try AppBuilderExample.decodeBuilds(
+      (
+        try await runtime.queryOnce(
+          AppBuilderExample.buildsForOwnerQuery("email:user@example.com")
+        )
+      )
+      .values
+    )
+    expectNoDifference(ownerBuilds.count, 1)
+    let build = try #require(ownerBuilds.first)
+    expectNoDifference(build.id, "build-1")
+    expectNoDifference(build.instantAppID, "local-platform-build-1")
+    expectNoDifference(build.ownerID, "email:user@example.com")
+    expectNoDifference(build.title, "Build a workout tracker")
+    expectNoDifference(build.isPreviewable, true)
+    #expect(build.reasoning?.contains("Create a compact Swift-friendly preview") == true)
+    #expect(build.code.contains("local-platform-build-1"))
+
+    let detailBuilds = try AppBuilderExample.decodeBuilds(
+      (try await runtime.queryOnce(AppBuilderExample.buildQuery("build-1"))).values
+    )
+    expectNoDifference(detailBuilds, ownerBuilds)
+
+    let otherOwnerBuilds = try AppBuilderExample.decodeBuilds(
+      (try await runtime.queryOnce(AppBuilderExample.buildsForOwnerQuery("email:other@example.com")))
+        .values
+    )
+    expectNoDifference(otherOwnerBuilds, [])
   }
 
   @Test

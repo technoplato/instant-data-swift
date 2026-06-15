@@ -1435,6 +1435,38 @@ extension SyncUpSpeechClientKey: DependencyKey {
   }
 }
 
+private enum InstantPlatformAppClientKey: TestDependencyKey {
+  static var testValue: InstantPlatformAppClient {
+    .local
+  }
+
+  static var previewValue: InstantPlatformAppClient {
+    .local
+  }
+}
+
+extension InstantPlatformAppClientKey: DependencyKey {
+  static var liveValue: InstantPlatformAppClient {
+    .local
+  }
+}
+
+private enum AppBuilderCodeGeneratorClientKey: TestDependencyKey {
+  static var testValue: AppBuilderCodeGeneratorClient {
+    .local
+  }
+
+  static var previewValue: AppBuilderCodeGeneratorClient {
+    .local
+  }
+}
+
+extension AppBuilderCodeGeneratorClientKey: DependencyKey {
+  static var liveValue: AppBuilderCodeGeneratorClient {
+    .local
+  }
+}
+
 private enum SyncUpSoundEffectClientKey: TestDependencyKey {
   static var testValue: SyncUpSoundEffectClient {
     .local
@@ -1503,6 +1535,16 @@ extension DependencyValues {
     set { self[InstantMutationTransportKey.self] = newValue }
   }
 
+  public var instantPlatformAppClient: InstantPlatformAppClient {
+    get { self[InstantPlatformAppClientKey.self] }
+    set { self[InstantPlatformAppClientKey.self] = newValue }
+  }
+
+  public var appBuilderCodeGenerator: AppBuilderCodeGeneratorClient {
+    get { self[AppBuilderCodeGeneratorClientKey.self] }
+    set { self[AppBuilderCodeGeneratorClientKey.self] = newValue }
+  }
+
   public var syncUpSpeechClient: SyncUpSpeechClient {
     get { self[SyncUpSpeechClientKey.self] }
     set { self[SyncUpSpeechClientKey.self] = newValue }
@@ -1550,6 +1592,8 @@ extension DependencyValues {
     let oauthExchange = self.instantOAuthExchange
     let authTokenInvalidator = self.instantAuthTokenInvalidator
     let mutationTransport = self.instantMutationTransport
+    let platformAppClient = self.instantPlatformAppClient
+    let appBuilderCodeGenerator = self.appBuilderCodeGenerator
     let url =
       persistenceURL
       ?? Self.defaultInstantSwiftDataPersistenceURL(
@@ -1576,7 +1620,9 @@ extension DependencyValues {
         idTokenExchange: idTokenExchange,
         oauthExchange: oauthExchange,
         authTokenInvalidator: authTokenInvalidator,
-        mutationTransport: mutationTransport
+        mutationTransport: mutationTransport,
+        platformAppClient: platformAppClient,
+        appBuilderCodeGenerator: appBuilderCodeGenerator
       )
     )
   }
