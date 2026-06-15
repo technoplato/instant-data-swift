@@ -1448,6 +1448,62 @@ struct InstantStoreTests {
   }
 
   @Test
+  func transportMutationPortsInstamlLookupLinkValueTransform() throws {
+    let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let source =
+      "upstream/instant/client/packages/core/__tests__/src/instaml.test.ts "
+      + "lookup creates unique attrs for lookups in link values "
+      + "[adapted: Swift preserves lookup link values with declared attr ids instead of emitting add-attr txSteps.]"
+    let postLookup = InstantLookupRef(
+      attributeID: "posts/slug",
+      value: .string("life-is-good")
+    )
+    let transaction = InstantStoreTransaction(
+      id: "tx-instaml-lookup-link-value",
+      operations: InstantInstamlTransform.updateOperations(
+        namespace: "users",
+        entityID: "user-lookup-link",
+        fields: [:],
+        txID: "tx-instaml-lookup-link-value",
+        txTime: txTime
+      )
+      + [
+        .insert(
+          InstantTriple(
+            entityID: "user-lookup-link",
+            attributeID: "users/posts",
+            value: .lookupRef(postLookup),
+            txID: "tx-instaml-lookup-link-value",
+            txTime: txTime
+          )
+        )
+      ]
+    )
+    let mutation = InstantTransportMutation(
+      PendingMutation(id: transaction.id, createdAt: txTime, transaction: transaction)
+    )
+    expectNoDifference(mutation.preconditions, [], source)
+    expectNoDifference(mutation.txSteps.count, 2, source)
+
+    let data = try JSONEncoder().encode(mutation)
+    let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let txSteps = try #require(object["txSteps"] as? [[Any]])
+    expectNoDifference(txSteps.map(\.count), [4, 4], source)
+    expectNoDifference(txSteps.map { $0.first as? String }, ["add-triple", "add-triple"], source)
+
+    let idStep = try #require(txSteps.first { $0[safe: 2] as? String == "users/id" })
+    expectNoDifference(idStep[safe: 1] as? String, "user-lookup-link", source)
+    expectNoDifference(idStep[safe: 3] as? String, "user-lookup-link", source)
+
+    let linkStep = try #require(txSteps.first { $0[safe: 2] as? String == "users/posts" })
+    expectNoDifference(linkStep[safe: 1] as? String, "user-lookup-link", source)
+    let linkValue = try #require(linkStep[safe: 3] as? [Any])
+    expectNoDifference(linkValue.count, 2, source)
+    expectNoDifference(linkValue[0] as? String, "posts/slug", source)
+    expectNoDifference(linkValue[1] as? String, "life-is-good", source)
+  }
+
+  @Test
   func transportMutationInfersLookupDeleteNamespaceWithoutPrecondition() throws {
     let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let lookup = InstantLookupRef(

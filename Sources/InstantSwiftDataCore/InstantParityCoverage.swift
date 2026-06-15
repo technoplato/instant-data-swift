@@ -617,6 +617,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift does not emit JavaScript add-attr txSteps for custom lookup attrs; lookup-backed updates preserve the explicit lookup attr id in both the entity slot and primary-key value."
     ),
     instant(
+      id: "instant.instaml.lookup-link-value",
+      sourceFile: instamlSource,
+      sourceTestName: "lookup creates unique attrs for lookups in link values",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "transportMutationPortsInstamlLookupLinkValueTransform",
+      surface: "instaml",
+      status: .adapted,
+      notes: "Swift does not emit JavaScript add-attr txSteps for link or lookup attrs; update plus link lowering preserves the primary-key add-triple and the two-element lookup ref link value."
+    ),
+    instant(
       id: "instant.instaml.mode-update",
       sourceFile: instamlSource,
       sourceTestName: "mode: update",
