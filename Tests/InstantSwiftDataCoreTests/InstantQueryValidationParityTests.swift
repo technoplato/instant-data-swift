@@ -25,6 +25,14 @@ struct InstantQueryValidationParityTests {
       status: "adapted: Swift's InstantQueryFilter enum makes unknown operators unrepresentable."
     )
 
+    let emptyPlan = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.users.empty-plan",
+        namespace: "users"
+      )
+    )
+    expectNoDifference(emptyPlan, [], shapeSource)
+
     let typedShapePlan = InstantQueryPlan(
       id: "query-validation-parity.users.typed-shape",
       namespace: "users",
@@ -147,6 +155,18 @@ struct InstantQueryValidationParityTests {
     )
     expectNoDifference(postsWithComments, [], source)
 
+    let schemalessRuntime = try await queryValidationRuntime(initialAttributes: [])
+    let schemalessPostsWithComments = try await schemalessRuntime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.schemaless.posts.comments",
+        namespace: "posts",
+        includes: [
+          InstantQueryInclude("comments")
+        ]
+      )
+    )
+    expectNoDifference(schemalessPostsWithComments, [], source)
+
     await expectQueryValidation(
       namespace: "posts",
       path: "doesNotExist",
@@ -188,6 +208,11 @@ struct InstantQueryValidationParityTests {
       assertion: "lines 241-291 string field value types and valid any filters",
       status: "adapted: Swift validates schema-backed string fields and accepts non-link any values."
     )
+    let unknownAttributeSource = queryValidationSource(
+      "where clause unknown attributes",
+      assertion: "lines 518-528 undeclared field validation",
+      status: "adapted: Swift rejects undeclared fields through typed filter values."
+    )
 
     let valid = try await runtime.query(
       InstantQueryPlan(
@@ -219,6 +244,27 @@ struct InstantQueryValidationParityTests {
     )
     expectNoDifference(validAnyNumber, [], source)
 
+    let validAnyObject = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.users.valid-any-object-filter",
+        namespace: "users",
+        filters: [
+          .equals(field: "junk", value: .json(.object(["complex": .string("object")])))
+        ]
+      )
+    )
+    expectNoDifference(validAnyObject, [], source)
+
+    let schemalessRuntime = try await queryValidationRuntime(initialAttributes: [])
+    let schemalessValid = try await schemalessRuntime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.schemaless.users.valid-string-filter",
+        namespace: "users",
+        filters: [.equals(field: "name", value: .string("John"))]
+      )
+    )
+    expectNoDifference(schemalessValid, [], source)
+
     await expectQueryValidation(
       namespace: "users",
       path: "name",
@@ -246,6 +292,20 @@ struct InstantQueryValidationParityTests {
         )
       )
     }
+
+    await expectQueryValidation(
+      namespace: "users",
+      path: "unknownAttribute",
+      unknownAttributeSource
+    ) {
+      _ = try await runtime.query(
+        InstantQueryPlan(
+          id: "query-validation-parity.users.unknown-attribute",
+          namespace: "users",
+          filters: [.equals(field: "unknownAttribute", value: .string("value"))]
+        )
+      )
+    }
   }
 
   @Test
@@ -255,7 +315,7 @@ struct InstantQueryValidationParityTests {
       "where clause operators",
       assertion: "lines 307-371 $in element types; lines 409-504 string/pattern/null operators",
       status:
-        "adapted: Swift's enum makes unknown operators, non-array 'in' values, and non-string pattern payloads unrepresentable."
+        "adapted: Swift's enum makes non-array 'in' values, non-string pattern payloads, and invalid null payloads unrepresentable."
     )
 
     let validIn = try await runtime.query(
@@ -266,6 +326,15 @@ struct InstantQueryValidationParityTests {
       )
     )
     expectNoDifference(validIn, [], source)
+
+    let validInAlias = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.users.valid-in-alias",
+        namespace: "users",
+        filters: [.in(field: "name", values: [.string("John"), .string("Jane")])]
+      )
+    )
+    expectNoDifference(validInAlias, [], source)
 
     await expectQueryValidation(
       namespace: "users",
@@ -290,6 +359,51 @@ struct InstantQueryValidationParityTests {
     )
     expectNoDifference(validComparison, [], source)
 
+    let validNot = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.posts.valid-not",
+        namespace: "posts",
+        filters: [.notEquals(field: "title", value: .string("Draft"))]
+      )
+    )
+    expectNoDifference(validNot, [], source)
+
+    let validNotEqualsAlias = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.posts.valid-ne-alias",
+        namespace: "posts",
+        filters: [.notEquals(field: "title", value: .string("Draft"))]
+      )
+    )
+    expectNoDifference(validNotEqualsAlias, [], source)
+
+    let validLessThan = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.posts.valid-less-than",
+        namespace: "posts",
+        filters: [.lessThan(field: "title", value: .string("Z"))]
+      )
+    )
+    expectNoDifference(validLessThan, [], source)
+
+    let validGreaterThanOrEqual = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.posts.valid-greater-than-or-equal",
+        namespace: "posts",
+        filters: [.greaterThanOrEqual(field: "title", value: .string("A"))]
+      )
+    )
+    expectNoDifference(validGreaterThanOrEqual, [], source)
+
+    let validLessThanOrEqual = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.posts.valid-less-than-or-equal",
+        namespace: "posts",
+        filters: [.lessThanOrEqual(field: "title", value: .string("Z"))]
+      )
+    )
+    expectNoDifference(validLessThanOrEqual, [], source)
+
     await expectQueryValidation(
       namespace: "posts",
       path: "title",
@@ -313,6 +427,24 @@ struct InstantQueryValidationParityTests {
     )
     expectNoDifference(validLike, [], source)
 
+    let validIsNull = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.users.valid-is-null",
+        namespace: "users",
+        filters: [.isNull(field: "bio")]
+      )
+    )
+    expectNoDifference(validIsNull, [], source)
+
+    let validIsNotNull = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.users.valid-is-not-null",
+        namespace: "users",
+        filters: [.isNotNull(field: "bio")]
+      )
+    )
+    expectNoDifference(validIsNotNull, [], source)
+
     await expectQueryValidation(namespace: "users", path: "name", source) {
       _ = try await runtime.query(
         InstantQueryPlan(
@@ -331,6 +463,16 @@ struct InstantQueryValidationParityTests {
       )
     )
     expectNoDifference(validILike, [], source)
+
+    let schemalessRuntime = try await queryValidationRuntime(initialAttributes: [])
+    let schemalessMixedIn = try await schemalessRuntime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.schemaless.users.mixed-in",
+        namespace: "users",
+        filters: [.in(field: "name", values: [.string("John"), .number(123)])]
+      )
+    )
+    expectNoDifference(schemalessMixedIn, [], source)
   }
 
   @Test
@@ -381,7 +523,7 @@ struct InstantQueryValidationParityTests {
     let source = queryValidationSource(
       "where clause logical operators",
       assertion: "lines 565-598 logical and/or validation",
-      status: "ported: Swift's enum expresses logical clauses as recursive filter arrays."
+      status: "adapted: Swift's enum expresses logical clauses as recursive filter arrays."
     )
 
     let validOr = try await runtime.query(
@@ -502,6 +644,16 @@ struct InstantQueryValidationParityTests {
       expectNoDifference(result, [], source)
     }
 
+    let schemalessRuntime = try await queryValidationRuntime(initialAttributes: [])
+    let schemalessDotNotation = try await schemalessRuntime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.schemaless.users.posts-title",
+        namespace: "users",
+        filters: [.equals(field: "posts.title", value: .string("Some Title"))]
+      )
+    )
+    expectNoDifference(schemalessDotNotation, [], source)
+
     let invalidDotNotationCases: [(String, String, String, String, [InstantQueryFilter])] = [
       (
         "invalid-link",
@@ -574,7 +726,7 @@ struct InstantQueryValidationParityTests {
       "pagination parameters can only be used at top-level namespaces",
       assertion: "lines 795-981 nested pagination validation",
       status:
-        "adapted: Swift allows pagination only on top-level InstantQueryPlan values; converting a paginated plan into an include rejects it before dropping pagination fields."
+        "adapted: Swift allows pagination only on top-level InstantQueryPlan values; converting a paginated direct or deep plan into an include rejects it before dropping pagination fields."
     )
 
     let validTopLevelPagination = try await runtime.queryOnce(
@@ -587,6 +739,15 @@ struct InstantQueryValidationParityTests {
       )
     )
     expectNoDifference(validTopLevelPagination.values.map(\.id), [], source)
+
+    let validTopLevelLast = try await runtime.queryOnce(
+      InstantQueryPlan(
+        id: "query-validation-parity.posts.top-level-last",
+        namespace: "posts",
+        last: 5
+      )
+    )
+    expectNoDifference(validTopLevelLast.values.map(\.id), [], source)
 
     let validTopLevelBeforeInclusive = try await runtime.queryOnce(
       InstantQueryPlan(
@@ -613,6 +774,24 @@ struct InstantQueryValidationParityTests {
       )
     )
     expectNoDifference(validTopLevelAfterInclusive.values.map(\.id), [], source)
+
+    let validOtherTopLevelEntityPagination = try await runtime.queryOnce(
+      InstantQueryPlan(
+        id: "query-validation-parity.users.top-level-pagination",
+        namespace: "users",
+        first: 20,
+        after: InstantQueryCursor(
+          entityID: "user-1",
+          sortValue: .string("cursor")
+        ),
+        before: InstantQueryCursor(
+          entityID: "user-2",
+          sortValue: .string("cursor"),
+          inclusive: false
+        )
+      )
+    )
+    expectNoDifference(validOtherTopLevelEntityPagination.values.map(\.id), [], source)
 
     let validFilteredInclude = InstantQueryInclude(
       "posts",
@@ -673,6 +852,44 @@ struct InstantQueryValidationParityTests {
     #expect(
       InstantQueryInclude("posts", direction: .reverse, query: limitPlan) == nil,
       "\(swiftOnlySource) rejected include plan \(limitPlan.id)"
+    )
+
+    let beforeInclusivePlan = InstantQueryPlan(
+      id: "query-validation-parity.users.posts.before-inclusive",
+      namespace: "posts",
+      before: InstantQueryCursor(
+        entityID: "post-1",
+        sortValue: .string("cursor"),
+        inclusive: true
+      )
+    )
+    #expect(
+      InstantQueryInclude("posts", direction: .reverse, query: beforeInclusivePlan) == nil,
+      "\(source) rejected include plan \(beforeInclusivePlan.id)"
+    )
+
+    let afterInclusivePlan = InstantQueryPlan(
+      id: "query-validation-parity.users.posts.after-inclusive",
+      namespace: "posts",
+      after: InstantQueryCursor(
+        entityID: "post-1",
+        sortValue: .string("cursor"),
+        inclusive: true
+      )
+    )
+    #expect(
+      InstantQueryInclude("posts", direction: .reverse, query: afterInclusivePlan) == nil,
+      "\(source) rejected include plan \(afterInclusivePlan.id)"
+    )
+
+    let deepNestedPaginatedPlan = InstantQueryPlan(
+      id: "query-validation-parity.users.posts.comments.limit",
+      namespace: "comments",
+      limit: 5
+    )
+    #expect(
+      InstantQueryInclude("comments", query: deepNestedPaginatedPlan) == nil,
+      "\(source) rejected deep include plan \(deepNestedPaginatedPlan.id)"
     )
 
     let nestedIncludePlan = InstantQueryPlan(

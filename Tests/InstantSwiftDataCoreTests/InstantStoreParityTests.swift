@@ -11,9 +11,9 @@ struct InstantStoreParityTests {
 
     expectNoDifference(report.event, "parity-report")
     expectNoDifference(report.coverageComplete, false)
-    expectNoDifference(report.recordCount, 153)
-    expectNoDifference(report.exactCount, 20)
-    expectNoDifference(report.adaptedCount, 130)
+    expectNoDifference(report.recordCount, 163)
+    expectNoDifference(report.exactCount, 18)
+    expectNoDifference(report.adaptedCount, 142)
     expectNoDifference(report.blockedCount, 3)
     expectNoDifference(report.notApplicableCount, 0)
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/schema.test.ts"))
@@ -64,6 +64,101 @@ struct InstantStoreParityTests {
     #expect(report.records.contains { $0.id == "instant.query.create-update-triples" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.query.object-values" && $0.status == .exact })
     #expect(report.records.contains { $0.id == "instant.datalog.pattern-query" && $0.status == .adapted })
+    let queryValidationMappings: [(
+      id: String, sourceTestName: String, swiftTestName: String, notes: String
+    )] = [
+      (
+        "instant.query-validation.top-level-types",
+        "validates top level types",
+        "upstreamTypedQueryShapeAndDollarOptions",
+        "Swift query plans are typed, so malformed JavaScript top-level query values are unrepresentable while a typed plan with an empty query body executes."
+      ),
+      (
+        "instant.query-validation.top-level-entity-names",
+        "top level entitiy names",
+        "upstreamTopLevelEntityNames",
+        "Swift validates one typed query plan namespace at a time, rejects undeclared namespaces with schema, and accepts arbitrary namespaces without schema."
+      ),
+      (
+        "instant.query-validation.links",
+        "links",
+        "upstreamLinks",
+        "Swift expresses nested query objects as InstantQueryInclude values, rejects undeclared or unrelated relation includes with schema, and accepts representative includes without schema."
+      ),
+      (
+        "instant.query-validation.dollar-object",
+        "dollar sign object",
+        "upstreamTypedQueryShapeAndDollarOptions",
+        "Swift models the dollar object as typed plan fields, making raw $where and unknown dollar keys unrepresentable."
+      ),
+      (
+        "instant.query-validation.dollar-keys",
+        "all valid dollar sign keys",
+        "upstreamTypedQueryShapeAndDollarOptions",
+        "Swift covers typed filters, ordering, pagination cursors, selected fields, and nested include options while invalid keys remain unrepresentable."
+      ),
+      (
+        "instant.query-validation.where-types",
+        "where clause type validation",
+        "upstreamWhereClauseTypeValidation",
+        "Swift validates declared string field types, accepts any-typed string, number, and JSON object filters, and skips field validation without schema."
+      ),
+      (
+        "instant.query-validation.where-operators",
+        "where clause operators",
+        "upstreamWhereClauseOperatorValueTypes",
+        "Swift validates typed in, not/notEquals, range, like, iLike, and null predicates while non-array, non-string pattern, and invalid null payload shapes are unrepresentable."
+      ),
+      (
+        "instant.query-validation.where-unknown-operators",
+        "where clause unknown operators",
+        "upstreamTypedQueryShapeAndDollarOptions",
+        "Swift's InstantQueryFilter enum makes unknown operator keys unrepresentable and still exercises a valid typed pattern operator."
+      ),
+      (
+        "instant.query-validation.where-unknown-attributes",
+        "where clause unknown attributes",
+        "upstreamWhereClauseTypeValidation",
+        "Swift rejects filters that reference undeclared schema attributes with the same namespace and path provenance."
+      ),
+      (
+        "instant.query-validation.where-id",
+        "where clause id validation",
+        "upstreamWhereClauseIDValidation",
+        "Swift validates the synthetic primary key as a string field and accepts typed in filters over ids."
+      ),
+      (
+        "instant.query-validation.where-logical",
+        "where clause logical operators",
+        "upstreamWhereClauseLogicalOperators",
+        "Swift expresses logical clauses as recursive filter arrays and validates nested filter payloads."
+      ),
+      (
+        "instant.query-validation.where-dot-notation",
+        "where clause dot notation validation",
+        "upstreamWhereClauseDotNotationValidation",
+        "Swift validates relation-path filters, nested ids, direct relation refs, in filters, invalid nested relation or value cases, and representative schemaless dot notation."
+      ),
+      (
+        "instant.query-validation.pagination-top-level",
+        "pagination parameters can only be used at top-level namespaces",
+        "upstreamNestedIncludePaginationRestriction",
+        "Swift accepts top-level pagination per typed plan and rejects direct, inclusive cursor, limit, and deep nested include pagination during include-plan conversion."
+      ),
+      (
+        "instant.query-validation.relations-complex-objects",
+        "relations with complex objects",
+        "upstreamRelationsWithComplexObjects",
+        "Swift expresses relation null, not, and or predicates with typed filters and requires ref values for relation equality."
+      ),
+    ]
+    for expected in queryValidationMappings {
+      let record = try #require(report.records.first { $0.id == expected.id })
+      expectNoDifference(record.sourceTestName, expected.sourceTestName)
+      expectNoDifference(record.swiftTestName, expected.swiftTestName)
+      expectNoDifference(record.status, .adapted)
+      expectNoDifference(record.notes, expected.notes)
+    }
     #expect(report.records.contains { $0.id == "instant.transaction-validation.chunk-arrays" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.transaction-validation.create-operations" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.transaction-validation.update-operations" && $0.status == .adapted })

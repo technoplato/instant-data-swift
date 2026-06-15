@@ -517,44 +517,144 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift ports datalog's raw triple pattern binding, conflict semantics, and find-result arity over InstantStoreSnapshot. Entity and attribute terms are typed as strings, and string/ref values bind as raw ids to preserve repeated-variable joins."
     ),
     instant(
-      id: "instant.query-validation.shape",
+      id: "instant.query-validation.top-level-types",
       sourceFile: queryValidationSource,
-      sourceTestName: "top-level object validation",
+      sourceTestName: "validates top level types",
       swiftFile: queryValidationSwiftFile,
       swiftTestName: "upstreamTypedQueryShapeAndDollarOptions",
       surface: "query-validation",
       status: .adapted,
-      notes: "Swift query plans are typed, so malformed JavaScript object shapes map to explicit invalid plan cases."
+      notes: "Swift query plans are typed, so malformed JavaScript top-level query values are unrepresentable while a typed plan with an empty query body executes."
     ),
     instant(
-      id: "instant.query-validation.namespace-relation",
+      id: "instant.query-validation.top-level-entity-names",
       sourceFile: queryValidationSource,
-      sourceTestName: "namespace validation / relation validation",
+      sourceTestName: "top level entitiy names",
       swiftFile: queryValidationSwiftFile,
       swiftTestName: "upstreamTopLevelEntityNames",
       surface: "query-validation",
-      status: .exact,
-      notes: "Unknown namespaces and invalid relation includes fail before cache writes."
+      status: .adapted,
+      notes: "Swift validates one typed query plan namespace at a time, rejects undeclared namespaces with schema, and accepts arbitrary namespaces without schema."
     ),
     instant(
-      id: "instant.query-validation.where",
+      id: "instant.query-validation.links",
       sourceFile: queryValidationSource,
-      sourceTestName: "where clause type/id/dot-notation validation",
+      sourceTestName: "links",
+      swiftFile: queryValidationSwiftFile,
+      swiftTestName: "upstreamLinks",
+      surface: "query-validation",
+      status: .adapted,
+      notes: "Swift expresses nested query objects as InstantQueryInclude values, rejects undeclared or unrelated relation includes with schema, and accepts representative includes without schema."
+    ),
+    instant(
+      id: "instant.query-validation.dollar-object",
+      sourceFile: queryValidationSource,
+      sourceTestName: "dollar sign object",
+      swiftFile: queryValidationSwiftFile,
+      swiftTestName: "upstreamTypedQueryShapeAndDollarOptions",
+      surface: "query-validation",
+      status: .adapted,
+      notes: "Swift models the dollar object as typed plan fields, making raw $where and unknown dollar keys unrepresentable."
+    ),
+    instant(
+      id: "instant.query-validation.dollar-keys",
+      sourceFile: queryValidationSource,
+      sourceTestName: "all valid dollar sign keys",
+      swiftFile: queryValidationSwiftFile,
+      swiftTestName: "upstreamTypedQueryShapeAndDollarOptions",
+      surface: "query-validation",
+      status: .adapted,
+      notes: "Swift covers typed filters, ordering, pagination cursors, selected fields, and nested include options while invalid keys remain unrepresentable."
+    ),
+    instant(
+      id: "instant.query-validation.where-types",
+      sourceFile: queryValidationSource,
+      sourceTestName: "where clause type validation",
       swiftFile: queryValidationSwiftFile,
       swiftTestName: "upstreamWhereClauseTypeValidation",
       surface: "query-validation",
       status: .adapted,
-      notes: "Swift validates field paths and typed filter values through declared attributes."
+      notes: "Swift validates declared string field types, accepts any-typed string, number, and JSON object filters, and skips field validation without schema."
     ),
     instant(
-      id: "instant.query-validation.pagination",
+      id: "instant.query-validation.where-operators",
       sourceFile: queryValidationSource,
-      sourceTestName: "nested pagination validation",
+      sourceTestName: "where clause operators",
+      swiftFile: queryValidationSwiftFile,
+      swiftTestName: "upstreamWhereClauseOperatorValueTypes",
+      surface: "query-validation",
+      status: .adapted,
+      notes: "Swift validates typed in, not/notEquals, range, like, iLike, and null predicates while non-array, non-string pattern, and invalid null payload shapes are unrepresentable."
+    ),
+    instant(
+      id: "instant.query-validation.where-unknown-operators",
+      sourceFile: queryValidationSource,
+      sourceTestName: "where clause unknown operators",
+      swiftFile: queryValidationSwiftFile,
+      swiftTestName: "upstreamTypedQueryShapeAndDollarOptions",
+      surface: "query-validation",
+      status: .adapted,
+      notes: "Swift's InstantQueryFilter enum makes unknown operator keys unrepresentable and still exercises a valid typed pattern operator."
+    ),
+    instant(
+      id: "instant.query-validation.where-unknown-attributes",
+      sourceFile: queryValidationSource,
+      sourceTestName: "where clause unknown attributes",
+      swiftFile: queryValidationSwiftFile,
+      swiftTestName: "upstreamWhereClauseTypeValidation",
+      surface: "query-validation",
+      status: .adapted,
+      notes: "Swift rejects filters that reference undeclared schema attributes with the same namespace and path provenance."
+    ),
+    instant(
+      id: "instant.query-validation.where-id",
+      sourceFile: queryValidationSource,
+      sourceTestName: "where clause id validation",
+      swiftFile: queryValidationSwiftFile,
+      swiftTestName: "upstreamWhereClauseIDValidation",
+      surface: "query-validation",
+      status: .adapted,
+      notes: "Swift validates the synthetic primary key as a string field and accepts typed in filters over ids."
+    ),
+    instant(
+      id: "instant.query-validation.where-logical",
+      sourceFile: queryValidationSource,
+      sourceTestName: "where clause logical operators",
+      swiftFile: queryValidationSwiftFile,
+      swiftTestName: "upstreamWhereClauseLogicalOperators",
+      surface: "query-validation",
+      status: .adapted,
+      notes: "Swift expresses logical clauses as recursive filter arrays and validates nested filter payloads."
+    ),
+    instant(
+      id: "instant.query-validation.where-dot-notation",
+      sourceFile: queryValidationSource,
+      sourceTestName: "where clause dot notation validation",
+      swiftFile: queryValidationSwiftFile,
+      swiftTestName: "upstreamWhereClauseDotNotationValidation",
+      surface: "query-validation",
+      status: .adapted,
+      notes: "Swift validates relation-path filters, nested ids, direct relation refs, in filters, invalid nested relation or value cases, and representative schemaless dot notation."
+    ),
+    instant(
+      id: "instant.query-validation.pagination-top-level",
+      sourceFile: queryValidationSource,
+      sourceTestName: "pagination parameters can only be used at top-level namespaces",
       swiftFile: queryValidationSwiftFile,
       swiftTestName: "upstreamNestedIncludePaginationRestriction",
       surface: "query-validation",
-      status: .exact,
-      notes: "Nested pagination is rejected while top-level pagination remains valid."
+      status: .adapted,
+      notes: "Swift accepts top-level pagination per typed plan and rejects direct, inclusive cursor, limit, and deep nested include pagination during include-plan conversion."
+    ),
+    instant(
+      id: "instant.query-validation.relations-complex-objects",
+      sourceFile: queryValidationSource,
+      sourceTestName: "relations with complex objects",
+      swiftFile: queryValidationSwiftFile,
+      swiftTestName: "upstreamRelationsWithComplexObjects",
+      surface: "query-validation",
+      status: .adapted,
+      notes: "Swift expresses relation null, not, and or predicates with typed filters and requires ref values for relation equality."
     ),
     instant(
       id: "instant.transaction-validation.basic",

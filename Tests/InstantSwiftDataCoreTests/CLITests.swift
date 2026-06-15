@@ -8316,9 +8316,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 153)
-    expectNoDifference(jsonOutput.exactCount, 20)
-    expectNoDifference(jsonOutput.adaptedCount, 130)
+    expectNoDifference(jsonOutput.recordCount, 163)
+    expectNoDifference(jsonOutput.exactCount, 18)
+    expectNoDifference(jsonOutput.adaptedCount, 142)
     expectNoDifference(jsonOutput.blockedCount, 3)
     expectNoDifference(jsonOutput.notApplicableCount, 0)
     #expect(
@@ -8530,6 +8530,36 @@ extension InstantStoreTests {
       jsonOutput.records.contains {
         $0.id == "instant.query.object-values" && $0.status == "exact"
       }
+    )
+    for id in [
+      "instant.query-validation.top-level-types",
+      "instant.query-validation.top-level-entity-names",
+      "instant.query-validation.links",
+      "instant.query-validation.dollar-object",
+      "instant.query-validation.dollar-keys",
+      "instant.query-validation.where-types",
+      "instant.query-validation.where-operators",
+      "instant.query-validation.where-unknown-operators",
+      "instant.query-validation.where-unknown-attributes",
+      "instant.query-validation.where-id",
+      "instant.query-validation.where-logical",
+      "instant.query-validation.where-dot-notation",
+      "instant.query-validation.pagination-top-level",
+      "instant.query-validation.relations-complex-objects",
+    ] {
+      #expect(
+        jsonOutput.records.contains { $0.id == id && $0.status == "adapted" },
+        "Expected adapted query-validation parity record \(id)"
+      )
+    }
+    let unknownAttributeRecord = try #require(
+      jsonOutput.records.first { $0.id == "instant.query-validation.where-unknown-attributes" }
+    )
+    expectNoDifference(unknownAttributeRecord.sourceTestName, "where clause unknown attributes")
+    expectNoDifference(unknownAttributeRecord.swiftTestName, "upstreamWhereClauseTypeValidation")
+    expectNoDifference(
+      unknownAttributeRecord.notes,
+      "Swift rejects filters that reference undeclared schema attributes with the same namespace and path provenance."
     )
     #expect(
       jsonOutput.records.contains {
@@ -8944,7 +8974,9 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 153"))
+    #expect(humanOutput.contains("records: 163"))
+    #expect(humanOutput.contains("exact: 18"))
+    #expect(humanOutput.contains("adapted: 142"))
     #expect(humanOutput.contains("blocked: 3"))
     #expect(humanOutput.contains("not applicable: 0"))
   }

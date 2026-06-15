@@ -344,6 +344,8 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       )
     }
 
+    guard !namespaces.isEmpty else { return nil }
+
     if let issue = validate(filters: plan.filters, namespace: plan.namespace, attributes: attributes) {
       return issue
     }
