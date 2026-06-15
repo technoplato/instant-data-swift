@@ -154,6 +154,26 @@ swift run instant-swift-data examples microblog delete-post "$POST_ID" --json
 swift run instant-swift-data examples microblog reset --json
 ```
 
+Run the local Instant mobile chat demo:
+
+```bash
+export INSTANT_SWIFT_DATA_HOME="$(mktemp -d)"
+swift run instant-swift-data examples mobile-chat seed --json
+CHANNEL_ID="$(swift run instant-swift-data examples mobile-chat channels --json | jq -r '.channels[] | select(.name == "general") | .id')"
+swift run instant-swift-data auth guest --json
+swift run instant-swift-data examples mobile-chat setup-profile "Guest CLI" --json
+swift run instant-swift-data examples mobile-chat join "$CHANNEL_ID" --json
+swift run instant-swift-data examples mobile-chat send "$CHANNEL_ID" "Hello from mobile chat" --json
+swift run instant-swift-data examples mobile-chat messages "$CHANNEL_ID" --jsonl
+swift run instant-swift-data examples mobile-chat presence "$CHANNEL_ID" --json
+swift run instant-swift-data examples mobile-chat leave "$CHANNEL_ID" --json
+swift run instant-swift-data examples mobile-chat reset --json
+```
+
+`mobile-chat reset` clears the local mobile chat channels, profiles, messages,
+and presence. It leaves shared auth and `$users` system state alone so other
+examples and the selected app session are not wiped unexpectedly.
+
 Inspect the durable cache and optimistic outbox:
 
 ```bash

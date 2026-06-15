@@ -677,11 +677,27 @@ Agent-oriented output modes are required:
   likes are linked with the upstream cascade shape, and profile/post/like
   mutations require an auth session from
   `instant-swift-data auth token <refresh-token> --user-id <user-id>`.
+- run the local Instant mobile chat port with
+  `instant-swift-data examples mobile-chat seed`,
+  `instant-swift-data examples mobile-chat channels`,
+  `instant-swift-data examples mobile-chat setup-profile "Display Name"`,
+  `instant-swift-data examples mobile-chat send <channel-id> "hello"`,
+  `instant-swift-data examples mobile-chat messages <channel-id> --jsonl`,
+  `instant-swift-data examples mobile-chat join <channel-id>`,
+  `instant-swift-data examples mobile-chat presence <channel-id>`,
+  `instant-swift-data examples mobile-chat leave <channel-id>`, and
+  `instant-swift-data examples mobile-chat reset`; `$users`, `$files`,
+  profile-linked messages, channel-filtered message queries with nested
+  author/user includes, optional author links, and `chat` room presence preserve
+  the React Native example shape, while seed/profile/reset are explicit local
+  terminal conveniences because upstream ships no app-data bootstrap. Reset
+  clears mobile chat channels, profiles, messages, and presence while preserving
+  shared auth and `$users` system state.
 - run local admin write/query helpers such as
   `instant-swift-data admin transact notes note-1 --merge '{"title":"admin note"}' --transaction-id tx-admin-note-1`
   and `instant-swift-data admin query notes --json` for durable terminal
   ground-truth checks until real Instant admin transport is available.
-- run example business commands directly, such as todo/reminder/sync-up/chat/microblog
+- run example business commands directly, such as todo/reminder/sync-up/chat/mobile-chat/microblog
   create, list, update, delete, share, accept, upload, and stream operations.
 
 Example command shapes:

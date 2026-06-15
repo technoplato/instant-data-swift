@@ -1086,6 +1086,16 @@ public enum InstantSwiftDataParityCoverage {
       status: .adapted,
       notes: "The Instant CLI ports the website microblog into local $users/profile/post/like refs, deterministic seed/reset tooling, auth-gated profile setup, post/like/unlike flows, and cascade delete proof."
     ),
+    instant(
+      id: "instant.website.mobile-chat.local-cli",
+      sourceFile: "upstream/instant/client/www/_examples/mobile-chat.md",
+      sourceTestName: "React Native auth, channels, profile-linked messages, and chat presence",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/CLITests.swift",
+      swiftTestName: "cliMobileChatExampleSeedsAuthPresenceAndResetsAcrossLaunches",
+      surface: "examples-mobile-chat",
+      status: .adapted,
+      notes: "The Instant CLI ports betomoedano/instant-realtime-chat at a844b48eacd2669316667cab5ffb8f5548948cf6 into isolated local channel/profile/message namespaces, preserving $users auth, channel.id-filtered message queries with nested author.user includes, optional profile authors, room presence, and explicit local seed/reset tooling."
+    ),
     sqlite(
       id: "sqlite.cloudkit-demo.local-counter-share",
       sourceFile: "upstream/sqlite-data/Examples/CloudKitDemo/CountersListFeature.swift",

@@ -414,6 +414,8 @@ struct InstantSwiftDataCLI {
       throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesMicroblogArgumentError {
       throw CLIError(error.description, exitCode: error.exitCode)
+    } catch let error as CLIExamplesMobileChatArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
     switch invocation {
     case let .chat(arguments):
@@ -426,6 +428,10 @@ struct InstantSwiftDataCLI {
 
     case let .microblog(arguments):
       try await runMicroblog(arguments: arguments, output: output)
+      return
+
+    case let .mobileChat(arguments):
+      try await runMobileChat(arguments: arguments, output: output)
       return
 
     case let .syncUps(arguments):
@@ -1971,6 +1977,213 @@ struct InstantSwiftDataCLI {
 
     case .unknown:
       preconditionFailure("Unknown microblog commands are handled before bootstrapping.")
+    }
+  }
+
+  private static func runMobileChat(arguments: [String], output: OutputMode) async throws {
+    let invocation: CLIExamplesMobileChatLeafInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLIExamplesMobileChatLeafParser().parse(&input)
+    } catch let error as CLIExamplesMobileChatArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
+    }
+
+    if case let .unknown(command) = invocation {
+      throw CLIError("Unknown mobile chat command: \(command). \(mobileChatUsage)", exitCode: 64)
+    }
+
+    let context = try await CLIContext.bootstrap(initialAttributes: MobileChatExample.attributes)
+
+    switch invocation {
+    case .seed:
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: MobileChatExample.seedOperations(
+            ids: try await mobileChatSeedIDs(context: context),
+            baseTimestamp: now,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.mobile-chat.seed"
+      )
+      try await printMobileChat(context: context, output: output, event: "seed")
+
+    case .channels:
+      try await printMobileChat(context: context, output: output, event: "channels")
+
+    case let .messages(channelID):
+      if let channelID {
+        _ = try await requireMobileChatChannel(context: context, id: channelID)
+      }
+      try await printMobileChat(
+        context: context,
+        output: output,
+        event: "messages",
+        selectedChannelID: channelID
+      )
+
+    case .profiles:
+      try await printMobileChat(context: context, output: output, event: "profiles")
+
+    case let .profile(userID):
+      let selectedUserID = try await selectedMobileChatUserID(
+        context: context,
+        explicitUserID: userID
+      )
+      let selectedProfile = try await requireMobileChatProfile(
+        context: context,
+        userID: selectedUserID
+      )
+      try await printMobileChat(
+        context: context,
+        output: output,
+        event: "profile",
+        selectedUserID: selectedUserID,
+        selectedProfile: selectedProfile
+      )
+
+    case let .setupProfile(displayName):
+      let session = try await requireMobileChatAuthSession(
+        context: context,
+        operation: "set up a profile"
+      )
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: MobileChatExample.createProfileOperations(
+            userID: session.userID,
+            displayName: displayName,
+            email: mobileChatEmail(for: session),
+            transactionID: transactionID,
+            updatedAt: now
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.mobile-chat.setup-profile"
+      )
+      let profile = try await requireMobileChatProfile(
+        context: context,
+        userID: session.userID
+      )
+      try await printMobileChat(
+        context: context,
+        output: output,
+        event: "setup-profile",
+        changedID: profile.id,
+        selectedUserID: session.userID,
+        selectedProfile: profile
+      )
+
+    case let .send(send):
+      _ = try await requireMobileChatChannel(context: context, id: send.channelID)
+      let session = try await requireMobileChatAuthSession(
+        context: context,
+        operation: "send a message"
+      )
+      let profile = try await mobileChatProfile(context: context, userID: session.userID)
+      let messageID = context.runtime.configuration.makeID()
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: MobileChatExample.createMessageOperations(
+            id: messageID,
+            channelID: send.channelID,
+            authorProfileID: profile?.id,
+            content: send.content,
+            timestamp: now,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.mobile-chat.send"
+      )
+      try await printMobileChat(
+        context: context,
+        output: output,
+        event: "send",
+        changedID: messageID,
+        selectedUserID: session.userID,
+        selectedProfile: profile,
+        selectedChannelID: send.channelID
+      )
+
+    case let .join(channelID):
+      _ = try await requireMobileChatChannel(context: context, id: channelID)
+      let profile = try await requireCurrentMobileChatProfile(context: context)
+      let room = MobileChatExample.room(forChannelID: channelID)
+      let member = try await context.runtime.setPresence(
+        room: room,
+        userID: profile.userID,
+        values: MobileChatExample.presenceValues(profile: profile)
+      )
+      try await printMobileChat(
+        context: context,
+        output: output,
+        event: "join",
+        changedID: member.userID,
+        selectedUserID: profile.userID,
+        selectedProfile: profile,
+        selectedChannelID: channelID
+      )
+
+    case let .presence(channelID):
+      _ = try await requireMobileChatChannel(context: context, id: channelID)
+      try await printMobileChat(
+        context: context,
+        output: output,
+        event: "presence",
+        selectedChannelID: channelID
+      )
+
+    case let .leave(channelID):
+      _ = try await requireMobileChatChannel(context: context, id: channelID)
+      let session = try await requireMobileChatAuthSession(
+        context: context,
+        operation: "leave a room"
+      )
+      let room = MobileChatExample.room(forChannelID: channelID)
+      let userID = try await context.runtime.leavePresence(room: room, userID: session.userID)
+      try await printMobileChat(
+        context: context,
+        output: output,
+        event: "leave",
+        changedID: userID,
+        selectedUserID: session.userID,
+        selectedProfile: try await mobileChatProfile(context: context, userID: session.userID),
+        selectedChannelID: channelID
+      )
+
+    case .reset:
+      let channels = try await currentMobileChatChannels(context: context)
+      try await clearMobileChatPresence(context: context, channels: channels)
+      let messages = try await currentMobileChatMessages(context: context)
+      let profiles = try await currentMobileChatProfiles(context: context)
+      let operations =
+        messages.flatMap { MobileChatExample.deleteMessageOperations(id: $0.id) }
+        + profiles.flatMap { MobileChatExample.deleteProfileOperations(id: $0.id) }
+        + channels.flatMap { MobileChatExample.deleteChannelOperations(id: $0.id) }
+      if !operations.isEmpty {
+        let transactionID = context.runtime.configuration.makeID()
+        let now = context.runtime.configuration.now()
+        try await context.runtime.transact(
+          InstantStoreTransaction(id: transactionID, operations: operations),
+          createdAt: now,
+          source: "cli.examples.mobile-chat.reset"
+        )
+      }
+      try await printMobileChat(context: context, output: output, event: "reset")
+
+    case .unknown:
+      preconditionFailure("Unknown mobile chat commands are handled before bootstrapping.")
     }
   }
 
@@ -4697,6 +4910,343 @@ struct InstantSwiftDataCLI {
     return handle.lowercased()
   }
 
+  private static func printMobileChat(
+    context: CLIContext,
+    output: OutputMode,
+    event: String,
+    changedID: String? = nil,
+    selectedUserID: String? = nil,
+    selectedProfile: MobileChatProfileRecord? = nil,
+    selectedChannelID: String? = nil
+  ) async throws {
+    let profiles = try await currentMobileChatProfiles(context: context)
+    let users = try await currentMobileChatUsers(context: context, profiles: profiles)
+    let channels = try await currentMobileChatChannels(context: context)
+    let messageQuery = selectedChannelID.map(MobileChatExample.messagesForChannelQuery)
+      ?? MobileChatExample.messagesQuery
+    let messages = try await currentMobileChatMessages(context: context, query: messageQuery)
+    let pending = await context.runtime.pendingMutations()
+    let session = try await context.runtime.authSession()
+    let presenceRoom = selectedChannelID.map(MobileChatExample.room(forChannelID:))
+    let presenceMembers: [InstantRoomPresenceMember]
+    if let presenceRoom {
+      presenceMembers = try await context.runtime.roomPresence(room: presenceRoom)
+    } else {
+      presenceMembers = []
+    }
+    let payload = MobileChatOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      changedID: changedID,
+      selectedUserID: selectedUserID,
+      selectedProfile: selectedProfile,
+      selectedChannelID: selectedChannelID,
+      authUserID: session?.userID,
+      authIsGuest: session?.isGuest,
+      transport: "not-implemented-local-cache-only",
+      userQueryID: MobileChatExample.usersQuery.id,
+      profileQueryID: MobileChatExample.profilesQuery.id,
+      channelQueryID: MobileChatExample.channelsQuery.id,
+      messageQueryID: messageQuery.id,
+      userCacheKey: MobileChatExample.usersQuery.cacheKey,
+      profileCacheKey: MobileChatExample.profilesQuery.cacheKey,
+      channelCacheKey: MobileChatExample.channelsQuery.cacheKey,
+      messageCacheKey: messageQuery.cacheKey,
+      pendingMutationCount: pending.count,
+      userCount: users.count,
+      profileCount: profiles.count,
+      channelCount: channels.count,
+      messageCount: messages.count,
+      presenceRoom: presenceRoom,
+      presenceMemberCount: presenceMembers.count,
+      users: users,
+      profiles: profiles,
+      channels: channels,
+      messages: messages,
+      presenceMembers: presenceMembers
+    )
+
+    switch output {
+    case .human:
+      if let selectedProfile {
+        print("profile: \(selectedProfile.displayName) user=\(selectedProfile.userID)")
+      }
+      if channels.isEmpty {
+        print("No mobile chat channels.")
+      } else {
+        for channel in channels {
+          print("channel \(channel.id) #\(channel.name)")
+        }
+      }
+      if messages.isEmpty {
+        print("No mobile chat messages.")
+      } else {
+        for message in messages {
+          let author =
+            message.authorUser?.email
+            ?? message.author?.displayName
+            ?? "Guest"
+          print(
+            "\(message.id) channel=\(message.channelID) \(author): \(message.content)"
+          )
+        }
+      }
+      if !presenceMembers.isEmpty {
+        let members = presenceMembers.map { $0.userID }.joined(separator: " ")
+        print("presence: \(members)")
+      }
+      if let authUserID = payload.authUserID {
+        print("auth: \(payload.authIsGuest == true ? "guest" : "user") \(authUserID)")
+      } else {
+        print("auth: signed out")
+      }
+      print("transport: \(payload.transport)")
+      print("pending mutations: \(pending.count)")
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.examples.mobile-chat",
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          entityID: changedID,
+          ok: true,
+          details: payload
+        )
+      )
+      for user in users {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.mobile-chat",
+            side: "swift",
+            event: "user",
+            appID: context.appID,
+            entityID: user.id,
+            ok: true,
+            details: user
+          )
+        )
+      }
+      for profile in profiles {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.mobile-chat",
+            side: "swift",
+            event: "profile",
+            appID: context.appID,
+            entityID: profile.id,
+            ok: true,
+            details: profile
+          )
+        )
+      }
+      for channel in channels {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.mobile-chat",
+            side: "swift",
+            event: "channel",
+            appID: context.appID,
+            entityID: channel.id,
+            ok: true,
+            details: channel
+          )
+        )
+      }
+      for message in messages {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.mobile-chat",
+            side: "swift",
+            event: "message",
+            appID: context.appID,
+            entityID: message.id,
+            ok: true,
+            details: message
+          )
+        )
+      }
+      for member in presenceMembers {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.mobile-chat",
+            side: "swift",
+            event: "presence",
+            appID: context.appID,
+            entityID: member.userID,
+            ok: true,
+            details: member
+          )
+        )
+      }
+    }
+  }
+
+  private static func mobileChatSeedIDs(context: CLIContext) async throws
+    -> MobileChatExample.SeedIDs
+  {
+    MobileChatExample.SeedIDs(
+      generalChannelID: try await context.runtime.localID(
+        named: MobileChatExample.generalChannelIDName
+      ),
+      randomChannelID: try await context.runtime.localID(
+        named: MobileChatExample.randomChannelIDName
+      ),
+      seedUserID: try await context.runtime.localID(
+        named: MobileChatExample.seedUserIDName
+      ),
+      welcomeMessageID: try await context.runtime.localID(
+        named: MobileChatExample.welcomeMessageIDName
+      ),
+      randomMessageID: try await context.runtime.localID(
+        named: MobileChatExample.randomMessageIDName
+      )
+    )
+  }
+
+  private static func currentMobileChatUsers(
+    context: CLIContext,
+    profiles: [MobileChatProfileRecord]
+  ) async throws -> [MobileChatUserRecord] {
+    let userIDs = Set(profiles.map(\.userID))
+    return try MobileChatExample.decodeUsers(
+      (try await context.runtime.queryOnce(MobileChatExample.usersQuery)).values
+    )
+    .filter { userIDs.contains($0.id) }
+  }
+
+  private static func currentMobileChatProfiles(context: CLIContext) async throws
+    -> [MobileChatProfileRecord]
+  {
+    try MobileChatExample.decodeProfiles(
+      (try await context.runtime.queryOnce(MobileChatExample.profilesQuery)).values
+    )
+  }
+
+  private static func currentMobileChatChannels(context: CLIContext) async throws
+    -> [MobileChatChannelRecord]
+  {
+    try MobileChatExample.decodeChannels(
+      (try await context.runtime.queryOnce(MobileChatExample.channelsQuery)).values
+    )
+  }
+
+  private static func currentMobileChatMessages(
+    context: CLIContext,
+    query: InstantQueryPlan = MobileChatExample.messagesQuery
+  ) async throws -> [MobileChatMessageRecord] {
+    try MobileChatExample.decodeMessages((try await context.runtime.queryOnce(query)).values)
+  }
+
+  private static func selectedMobileChatUserID(
+    context: CLIContext,
+    explicitUserID: String?
+  ) async throws -> String {
+    if let explicitUserID {
+      return explicitUserID
+    }
+    let session = try await requireMobileChatAuthSession(
+      context: context,
+      operation: "view a profile"
+    )
+    return session.userID
+  }
+
+  private static func requireMobileChatAuthSession(
+    context: CLIContext,
+    operation: String
+  ) async throws -> InstantAuthSession {
+    guard let session = try await context.runtime.authSession() else {
+      throw CLIError(
+        """
+        Mobile chat \(operation) requires a signed-in user. Run \
+        'instant-swift-data auth guest' or \
+        'instant-swift-data auth token <refresh-token> --user-id <user-id>' first.
+        """,
+        exitCode: 65
+      )
+    }
+    return session
+  }
+
+  private static func mobileChatProfile(
+    context: CLIContext,
+    userID: String
+  ) async throws -> MobileChatProfileRecord? {
+    try MobileChatExample.decodeProfiles(
+      (try await context.runtime.queryOnce(MobileChatExample.profileForUserQuery(userID))).values
+    )
+    .first
+  }
+
+  private static func requireMobileChatProfile(
+    context: CLIContext,
+    userID: String
+  ) async throws -> MobileChatProfileRecord {
+    guard let profile = try await mobileChatProfile(context: context, userID: userID) else {
+      throw CLIError(
+        "Mobile chat profile not found for user: \(userID).",
+        exitCode: 66
+      )
+    }
+    return profile
+  }
+
+  private static func requireCurrentMobileChatProfile(
+    context: CLIContext
+  ) async throws -> MobileChatProfileRecord {
+    let session = try await requireMobileChatAuthSession(context: context, operation: "join a room")
+    do {
+      return try await requireMobileChatProfile(context: context, userID: session.userID)
+    } catch let error as CLIError where error.exitCode == 66 {
+      throw CLIError(
+        """
+        Mobile chat profile not found for user: \(session.userID). Run \
+        'instant-swift-data examples mobile-chat setup-profile "Display Name"' first.
+        """,
+        exitCode: 66
+      )
+    }
+  }
+
+  private static func requireMobileChatChannel(
+    context: CLIContext,
+    id: String
+  ) async throws -> MobileChatChannelRecord {
+    let channels = try await currentMobileChatChannels(context: context)
+    guard let channel = channels.first(where: { $0.id == id }) else {
+      throw CLIError("Mobile chat channel not found: \(id)", exitCode: 66)
+    }
+    return channel
+  }
+
+  private static func mobileChatEmail(for session: InstantAuthSession) -> String? {
+    let prefix = "email:"
+    guard session.userID.hasPrefix(prefix) else { return nil }
+    let email = String(session.userID.dropFirst(prefix.count))
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return email.contains("@") ? email : nil
+  }
+
+  private static func clearMobileChatPresence(
+    context: CLIContext,
+    channels: [MobileChatChannelRecord]
+  ) async throws {
+    for channel in channels {
+      let room = MobileChatExample.room(forChannelID: channel.id)
+      let members = try await context.runtime.roomPresence(room: room)
+      for member in members {
+        _ = try await context.runtime.leavePresence(room: room, userID: member.userID)
+      }
+    }
+  }
+
   private static func printReminders(
     context: CLIContext,
     output: OutputMode,
@@ -6537,11 +7087,12 @@ struct InstantSwiftDataCLI {
 
   private static var examplesUsage: String {
     """
-    Usage: instant-swift-data examples <todos|todo-links|counters|chat|microblog|reminders|sync-ups>
+    Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|reminders|sync-ups>
       instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>
       instant-swift-data examples todo-links <seed|list|nested|unlink> [--json|--jsonl]
       instant-swift-data examples counters <seed|add|list|increment|decrement|delete> [--json|--jsonl]
       instant-swift-data examples chat <seed|channels|messages|post|reset> [--json|--jsonl]
+      instant-swift-data examples mobile-chat <seed|channels|messages|profiles|profile|setup-profile|send|join|presence|leave|reset> [--json|--jsonl]
       instant-swift-data examples microblog <seed|feed|profiles|profile|setup-profile|post|like|unlike|delete-post|reset> [--json|--jsonl]
       instant-swift-data examples reminders <seed|list|stats|tags|list-tags|search|add-list|rename-list|delete-list|add|update|complete|delete|delete-completed|add-tag|remove-tag> [--json|--jsonl]
       instant-swift-data examples sync-ups <seed|list|detail|add|edit|add-attendee|record|record-demo|delete|delete-attendee|delete-meeting> [--json|--jsonl]
@@ -6558,6 +7109,10 @@ struct InstantSwiftDataCLI {
 
   private static var microblogUsage: String {
     CLIExamplesMicroblogUsage.microblog
+  }
+
+  private static var mobileChatUsage: String {
+    CLIExamplesMobileChatUsage.mobileChat
   }
 
   private static var syncUpsUsage: String {
@@ -7230,6 +7785,39 @@ private struct MicroblogOutput: Codable, Sendable {
   var posts: [MicroblogPostRecord]
   var likes: [MicroblogLikeRecord]
   var feed: [MicroblogFeedPostRecord]
+}
+
+private struct MobileChatOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var changedID: String?
+  var selectedUserID: String?
+  var selectedProfile: MobileChatProfileRecord?
+  var selectedChannelID: String?
+  var authUserID: String?
+  var authIsGuest: Bool?
+  var transport: String
+  var userQueryID: String
+  var profileQueryID: String
+  var channelQueryID: String
+  var messageQueryID: String
+  var userCacheKey: String
+  var profileCacheKey: String
+  var channelCacheKey: String
+  var messageCacheKey: String
+  var pendingMutationCount: Int
+  var userCount: Int
+  var profileCount: Int
+  var channelCount: Int
+  var messageCount: Int
+  var presenceRoom: InstantRoomHandle?
+  var presenceMemberCount: Int
+  var users: [MobileChatUserRecord]
+  var profiles: [MobileChatProfileRecord]
+  var channels: [MobileChatChannelRecord]
+  var messages: [MobileChatMessageRecord]
+  var presenceMembers: [InstantRoomPresenceMember]
 }
 
 private struct RemindersOutput: Codable, Sendable {

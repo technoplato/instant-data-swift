@@ -4114,6 +4114,163 @@ struct InstantStoreTests {
   }
 
   @Test
+  func mobileChatMessagesIncludeNestedAuthorUsersAndCascadeDeletes() async throws {
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: MobileChatExample.attributes
+      )
+    )
+    let attributesByID = Dictionary(
+      uniqueKeysWithValues: MobileChatExample.attributes.map { ($0.id, $0) }
+    )
+    expectNoDifference(attributesByID["$files/path"]?.isIndexed, true)
+    expectNoDifference(attributesByID["$files/path"]?.isUnique, true)
+    expectNoDifference(attributesByID["$users/linkedPrimaryUser"]?.linkNamespace, "$users")
+    expectNoDifference(attributesByID["$users/linkedPrimaryUser"]?.onDelete, .cascade)
+    expectNoDifference(attributesByID["mobileMessages/author"]?.isRequired, false)
+    expectNoDifference(attributesByID["mobileMessages/author"]?.onDelete, .cascade)
+    expectNoDifference(attributesByID["mobileMessages/channel"]?.reverseIdentity, "mobileChannels/messages")
+
+    let seededAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let seedIDs = MobileChatExample.SeedIDs(
+      generalChannelID: "channel-general",
+      randomChannelID: "channel-random",
+      seedUserID: "user-instant",
+      welcomeMessageID: "message-welcome",
+      randomMessageID: "message-random"
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-mobile-chat-seed",
+        operations: MobileChatExample.seedOperations(
+          ids: seedIDs,
+          baseTimestamp: seededAt,
+          transactionID: "tx-mobile-chat-seed"
+        )
+      ),
+      createdAt: seededAt
+    )
+
+    let channels = try await MobileChatExample.decodeChannels(
+      runtime.query(MobileChatExample.channelsQuery)
+    )
+    expectNoDifference(channels.map(\.name), ["general", "random"])
+
+    let generalMessages = try await MobileChatExample.decodeMessages(
+      runtime.query(MobileChatExample.messagesForChannelQuery(seedIDs.generalChannelID))
+    )
+    expectNoDifference(generalMessages.map(\.content), ["Welcome to Instant mobile chat."])
+    expectNoDifference(generalMessages.first?.author?.displayName, "Instant")
+    expectNoDifference(generalMessages.first?.authorUser?.email, "instant@example.com")
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-mobile-chat-no-profile-send",
+        operations: MobileChatExample.createMessageOperations(
+          id: "message-no-profile",
+          channelID: seedIDs.generalChannelID,
+          authorProfileID: nil,
+          content: "Signed-in user has not created a profile yet.",
+          timestamp: InstantTimestamp(milliseconds: seededAt.milliseconds + 10),
+          transactionID: "tx-mobile-chat-no-profile-send"
+        )
+      ),
+      createdAt: InstantTimestamp(milliseconds: seededAt.milliseconds + 10)
+    )
+
+    let profileTimestamp = InstantTimestamp(milliseconds: seededAt.milliseconds + 20)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-mobile-chat-profile",
+        operations: MobileChatExample.createProfileOperations(
+          userID: "user-cli",
+          displayName: "CLI User",
+          transactionID: "tx-mobile-chat-profile",
+          updatedAt: profileTimestamp
+        )
+      ),
+      createdAt: profileTimestamp
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-mobile-chat-profile-send",
+        operations: MobileChatExample.createMessageOperations(
+          id: "message-profile",
+          channelID: seedIDs.generalChannelID,
+          authorProfileID: "user-cli",
+          content: "Hello from a profiled user.",
+          timestamp: InstantTimestamp(milliseconds: seededAt.milliseconds + 21),
+          transactionID: "tx-mobile-chat-profile-send"
+        )
+      ),
+      createdAt: InstantTimestamp(milliseconds: seededAt.milliseconds + 21)
+    )
+
+    let updatedGeneralMessages = try await MobileChatExample.decodeMessages(
+      runtime.query(MobileChatExample.messagesForChannelQuery(seedIDs.generalChannelID))
+    )
+    expectNoDifference(
+      updatedGeneralMessages.map { message in
+        "\(message.id)|\(message.author?.displayName ?? "missing")|\(message.authorUser?.id ?? "missing")"
+      },
+      [
+        "message-welcome|Instant|user-instant",
+        "message-no-profile|missing|missing",
+        "message-profile|CLI User|user-cli",
+      ]
+    )
+
+    let cliProfile = try #require(
+      try await MobileChatExample.decodeProfiles(
+        runtime.query(MobileChatExample.profileForUserQuery("user-cli"))
+      )
+      .first
+    )
+    let room = MobileChatExample.room(forChannelID: seedIDs.generalChannelID)
+    let member = try await runtime.setPresence(
+      room: room,
+      userID: cliProfile.userID,
+      values: MobileChatExample.presenceValues(profile: cliProfile)
+    )
+    expectNoDifference(member.values["profileId"], .string("user-cli"))
+    expectNoDifference(member.values["displayName"], .string("CLI User"))
+    let presenceUserIDs = try await runtime.roomPresence(room: room).map(\.userID)
+    expectNoDifference(presenceUserIDs, ["user-cli"])
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-mobile-chat-delete-channel",
+        operations: MobileChatExample.deleteChannelOperations(id: seedIDs.generalChannelID)
+      ),
+      createdAt: InstantTimestamp(milliseconds: seededAt.milliseconds + 30)
+    )
+    let afterChannelDelete = try await MobileChatExample.decodeMessages(
+      runtime.query(MobileChatExample.messagesQuery)
+    )
+    expectNoDifference(afterChannelDelete.map(\.id), ["message-random"])
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-mobile-chat-delete-user",
+        operations: MobileChatExample.deleteUserOperations(id: seedIDs.seedUserID)
+      ),
+      createdAt: InstantTimestamp(milliseconds: seededAt.milliseconds + 31)
+    )
+    let users = try await MobileChatExample.decodeUsers(runtime.query(MobileChatExample.usersQuery))
+    let profiles = try await MobileChatExample.decodeProfiles(
+      runtime.query(MobileChatExample.profilesQuery)
+    )
+    let messages = try await MobileChatExample.decodeMessages(
+      runtime.query(MobileChatExample.messagesQuery)
+    )
+    expectNoDifference(users.map(\.id), ["user-cli"])
+    expectNoDifference(profiles.map(\.displayName), ["CLI User"])
+    expectNoDifference(messages, [])
+  }
+
+  @Test
   func queryCacheStoresSameQueryIDDifferentPlansSeparately() async throws {
     let cacheURL = try temporaryCacheURL()
     let runtime = try await InstantRuntime.bootstrap(

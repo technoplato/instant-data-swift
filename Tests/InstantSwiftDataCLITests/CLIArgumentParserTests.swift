@@ -716,6 +716,132 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func examplesMobileChatLeafParserParsesCommandsAndOptions() throws {
+    expectNoDifference(try parseExamplesMobileChatLeaf(["seed"]), .seed)
+    expectNoDifference(try parseExamplesMobileChatLeaf(["channels"]), .channels)
+    expectNoDifference(try parseExamplesMobileChatLeaf(["messages"]), .messages(channelID: nil))
+    expectNoDifference(
+      try parseExamplesMobileChatLeaf(["messages", "channel-1"]),
+      .messages(channelID: "channel-1")
+    )
+    expectNoDifference(try parseExamplesMobileChatLeaf(["profiles"]), .profiles)
+    expectNoDifference(try parseExamplesMobileChatLeaf(["profile"]), .profile(userID: nil))
+    expectNoDifference(
+      try parseExamplesMobileChatLeaf(["profile", "user-1"]),
+      .profile(userID: "user-1")
+    )
+    expectNoDifference(
+      try parseExamplesMobileChatLeaf(["setup-profile", "Blob"]),
+      .setupProfile(displayName: "Blob")
+    )
+    expectNoDifference(
+      try parseExamplesMobileChatLeaf(["ensure-profile", "Blob Jr"]),
+      .setupProfile(displayName: "Blob Jr")
+    )
+    expectNoDifference(
+      try parseExamplesMobileChatLeaf(["send", "channel-1", "Hello", "there"]),
+      .send(CLIExamplesMobileChatSendInvocation(channelID: "channel-1", content: "Hello there"))
+    )
+    expectNoDifference(
+      try parseExamplesMobileChatLeaf(["post", "channel-1", "Hello"]),
+      .send(CLIExamplesMobileChatSendInvocation(channelID: "channel-1", content: "Hello"))
+    )
+    expectNoDifference(
+      try parseExamplesMobileChatLeaf(["join", "channel-1"]),
+      .join(channelID: "channel-1")
+    )
+    expectNoDifference(
+      try parseExamplesMobileChatLeaf(["presence", "channel-1"]),
+      .presence(channelID: "channel-1")
+    )
+    expectNoDifference(
+      try parseExamplesMobileChatLeaf(["leave", "channel-1"]),
+      .leave(channelID: "channel-1")
+    )
+    expectNoDifference(try parseExamplesMobileChatLeaf(["reset"]), .reset)
+    expectNoDifference(
+      try parseExamplesMobileChatLeaf(["dance", "--fast"]),
+      .unknown("dance")
+    )
+  }
+
+  @Test
+  func examplesMobileChatLeafParserReportsMalformedArguments() throws {
+    try expectExamplesMobileChatLeafParseError(
+      [],
+      description: CLIExamplesMobileChatUsage.mobileChat
+    )
+    try expectExamplesMobileChatLeafParseError(
+      ["seed", "unexpected"],
+      description: CLIExamplesMobileChatUsage.seed
+    )
+    try expectExamplesMobileChatLeafParseError(
+      ["channels", "unexpected"],
+      description: CLIExamplesMobileChatUsage.channels
+    )
+    try expectExamplesMobileChatLeafParseError(
+      ["messages", "channel-1", "unexpected"],
+      description: CLIExamplesMobileChatUsage.messages
+    )
+    try expectExamplesMobileChatLeafParseError(
+      ["messages", "  "],
+      description: CLIExamplesMobileChatUsage.messages
+    )
+    try expectExamplesMobileChatLeafParseError(
+      ["profiles", "unexpected"],
+      description: CLIExamplesMobileChatUsage.profiles
+    )
+    try expectExamplesMobileChatLeafParseError(
+      ["profile", "  "],
+      description: CLIExamplesMobileChatUsage.profile
+    )
+    try expectExamplesMobileChatLeafParseError(
+      ["profile", "user-1", "unexpected"],
+      description: CLIExamplesMobileChatUsage.profile
+    )
+    try expectExamplesMobileChatLeafParseError(
+      ["setup-profile"],
+      description: CLIExamplesMobileChatUsage.setupProfile
+    )
+    try expectExamplesMobileChatLeafParseError(
+      ["setup-profile", "  "],
+      description: CLIExamplesMobileChatUsage.setupProfile
+    )
+    try expectExamplesMobileChatLeafParseError(
+      ["setup-profile", "Blob", "unexpected"],
+      description: CLIExamplesMobileChatUsage.setupProfile
+    )
+    try expectExamplesMobileChatLeafParseError(
+      ["send"],
+      description: CLIExamplesMobileChatUsage.send
+    )
+    try expectExamplesMobileChatLeafParseError(
+      ["send", "channel-1"],
+      description: CLIExamplesMobileChatUsage.send
+    )
+    try expectExamplesMobileChatLeafParseError(
+      ["send", "channel-1", "--surprise", "Hello"],
+      description: "Unknown mobile chat send option: --surprise. \(CLIExamplesMobileChatUsage.send)"
+    )
+    try expectExamplesMobileChatLeafParseError(
+      ["join"],
+      description: CLIExamplesMobileChatUsage.join
+    )
+    try expectExamplesMobileChatLeafParseError(
+      ["presence"],
+      description: CLIExamplesMobileChatUsage.presence
+    )
+    try expectExamplesMobileChatLeafParseError(
+      ["leave"],
+      description: CLIExamplesMobileChatUsage.leave
+    )
+    try expectExamplesMobileChatLeafParseError(
+      ["reset", "unexpected"],
+      description: CLIExamplesMobileChatUsage.reset
+    )
+  }
+
+  @Test
   func examplesSyncUpsLeafParserParsesCommandsAndOptions() throws {
     expectNoDifference(try parseExamplesSyncUpsLeaf(["seed"]), .seed)
     expectNoDifference(
@@ -2456,6 +2582,14 @@ struct CLIArgumentParserTests {
       .microblog(arguments: ["seed"])
     )
     expectNoDifference(
+      try parseExamples(["mobile-chat", "seed"]),
+      .mobileChat(arguments: ["seed"])
+    )
+    expectNoDifference(
+      try parseExamples(["mobilechat", "seed"]),
+      .mobileChat(arguments: ["seed"])
+    )
+    expectNoDifference(
       try parseExamples(["todos"]),
       .todos(CLIExamplesTodosInvocation(command: nil, arguments: []))
     )
@@ -3113,6 +3247,15 @@ private func parseExamplesMicroblogLeaf(
   return invocation
 }
 
+private func parseExamplesMobileChatLeaf(
+  _ arguments: [String]
+) throws -> CLIExamplesMobileChatLeafInvocation {
+  var input = arguments[...]
+  let invocation = try CLIExamplesMobileChatLeafParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseExamplesSyncUpsLeaf(
   _ arguments: [String]
 ) throws -> CLIExamplesSyncUpsLeafInvocation {
@@ -3610,6 +3753,19 @@ private func expectExamplesMicroblogLeafParseError(
     _ = try parseExamplesMicroblogLeaf(arguments)
     Issue.record("Expected examples microblog parser to reject \(arguments).")
   } catch let error as CLIExamplesMicroblogArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectExamplesMobileChatLeafParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseExamplesMobileChatLeaf(arguments)
+    Issue.record("Expected examples mobile chat parser to reject \(arguments).")
+  } catch let error as CLIExamplesMobileChatArgumentError {
     expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }

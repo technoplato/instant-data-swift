@@ -811,6 +811,18 @@ Create `validation/` with:
   Feed queries include author profiles and reverse likes, auth-gated mutations
   preserve the current user profile across launches, and deleting users/posts
   proves the upstream cascade shape.
+- Mobile chat: the local Instant mobile chat port exposes durable
+  `examples mobile-chat seed`, `channels`, `profiles`, `profile [user-id]`,
+  `setup-profile "Display Name"`, `send <channel-id> "message"`,
+  `messages [channel-id]`, `join <channel-id>`, `presence <channel-id>`,
+  `leave <channel-id>`, and `reset` commands. It preserves upstream `$users`,
+  `$files`, profile/channel/message links, channel-filtered ascending message
+  queries with nested `author.user`, optional author links for users without a
+  profile, and `chat` room presence values while isolating local non-system
+  namespaces so examples do not contaminate each other. Seed/profile/reset are
+  explicit terminal conveniences because the React Native upstream app does not
+  ship bootstrap data or profile-creation UI; reset clears mobile chat domains
+  and presence while preserving shared auth and `$users` system state.
 - CLI: `instant-swift-data examples todos add "do the dishes"` persists auth,
   local IDs, cache, and outbox state for a later CLI invocation.
 - Permissions: generated permissions reject an unauthorized write in both

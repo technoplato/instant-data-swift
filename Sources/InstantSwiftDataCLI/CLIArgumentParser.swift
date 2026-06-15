@@ -52,6 +52,7 @@ public enum CLIExamplesInvocation: Equatable, Sendable {
   case chat(arguments: [String])
   case counters(arguments: [String])
   case microblog(arguments: [String])
+  case mobileChat(arguments: [String])
   case syncUps(arguments: [String])
   case reminders(arguments: [String])
   case todoLinks(arguments: [String])
@@ -325,6 +326,77 @@ public enum CLIExamplesMicroblogUsage {
 public enum CLIExamplesMicroblogArgumentError: Error, Equatable, Sendable {
   case invalidArguments(usage: String)
   case unknownPostOption(String, usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
+public enum CLIExamplesMobileChatLeafInvocation: Equatable, Sendable {
+  case seed
+  case channels
+  case messages(channelID: String?)
+  case profiles
+  case profile(userID: String?)
+  case setupProfile(displayName: String)
+  case send(CLIExamplesMobileChatSendInvocation)
+  case join(channelID: String)
+  case presence(channelID: String)
+  case leave(channelID: String)
+  case reset
+  case unknown(String)
+}
+
+public struct CLIExamplesMobileChatSendInvocation: Equatable, Sendable {
+  public var channelID: String
+  public var content: String
+
+  public init(channelID: String, content: String) {
+    self.channelID = channelID
+    self.content = content
+  }
+}
+
+public enum CLIExamplesMobileChatUsage {
+  public static let mobileChat = """
+    Usage: instant-swift-data examples mobile-chat <seed|channels|messages|profiles|profile|setup-profile|send|join|presence|leave|reset>
+      instant-swift-data examples mobile-chat seed [--json|--jsonl]
+      instant-swift-data examples mobile-chat channels [--json|--jsonl]
+      instant-swift-data examples mobile-chat messages [channel-id] [--json|--jsonl]
+      instant-swift-data examples mobile-chat profiles [--json|--jsonl]
+      instant-swift-data examples mobile-chat profile [user-id] [--json|--jsonl]
+      instant-swift-data examples mobile-chat setup-profile "Display Name" [--json|--jsonl]
+      instant-swift-data examples mobile-chat send <channel-id> "message text" [--json|--jsonl]
+      instant-swift-data examples mobile-chat join <channel-id> [--json|--jsonl]
+      instant-swift-data examples mobile-chat presence <channel-id> [--json|--jsonl]
+      instant-swift-data examples mobile-chat leave <channel-id> [--json|--jsonl]
+      instant-swift-data examples mobile-chat reset [--json|--jsonl]
+    """
+  public static let seed =
+    "Usage: instant-swift-data examples mobile-chat seed [--json|--jsonl]"
+  public static let channels =
+    "Usage: instant-swift-data examples mobile-chat channels [--json|--jsonl]"
+  public static let messages =
+    "Usage: instant-swift-data examples mobile-chat messages [channel-id] [--json|--jsonl]"
+  public static let profiles =
+    "Usage: instant-swift-data examples mobile-chat profiles [--json|--jsonl]"
+  public static let profile =
+    "Usage: instant-swift-data examples mobile-chat profile [user-id] [--json|--jsonl]"
+  public static let setupProfile =
+    #"Usage: instant-swift-data examples mobile-chat setup-profile "Display Name" [--json|--jsonl]"#
+  public static let send =
+    #"Usage: instant-swift-data examples mobile-chat send <channel-id> "message text" [--json|--jsonl]"#
+  public static let join =
+    "Usage: instant-swift-data examples mobile-chat join <channel-id> [--json|--jsonl]"
+  public static let presence =
+    "Usage: instant-swift-data examples mobile-chat presence <channel-id> [--json|--jsonl]"
+  public static let leave =
+    "Usage: instant-swift-data examples mobile-chat leave <channel-id> [--json|--jsonl]"
+  public static let reset =
+    "Usage: instant-swift-data examples mobile-chat reset [--json|--jsonl]"
+}
+
+public enum CLIExamplesMobileChatArgumentError: Error, Equatable, Sendable {
+  case invalidArguments(usage: String)
+  case unknownSendOption(String, usage: String)
 
   public var exitCode: Int32 { 64 }
 }
@@ -1775,6 +1847,11 @@ public struct CLIExamplesParser: Parser {
       input.removeAll()
       return .microblog(arguments: arguments)
 
+    case "mobile-chat", "mobilechat":
+      let arguments = Array(input)
+      input.removeAll()
+      return .mobileChat(arguments: arguments)
+
     case "sync-ups", "syncups":
       let arguments = Array(input)
       input.removeAll()
@@ -2439,6 +2516,121 @@ public struct CLIExamplesMicroblogLeafParser: Parser {
       try requireNoRemainingExamplesMicroblogArguments(
         &input,
         usage: CLIExamplesMicroblogUsage.reset
+      )
+      return .reset
+
+    default:
+      input.removeAll()
+      return .unknown(command)
+    }
+  }
+}
+
+public struct CLIExamplesMobileChatLeafParser: Parser {
+  public init() {}
+
+  public func parse(
+    _ input: inout ArraySlice<String>
+  ) throws -> CLIExamplesMobileChatLeafInvocation {
+    guard let command = input.first else {
+      throw CLIExamplesMobileChatArgumentError.invalidArguments(
+        usage: CLIExamplesMobileChatUsage.mobileChat
+      )
+    }
+    input.removeFirst()
+
+    switch command {
+    case "seed":
+      try requireNoRemainingExamplesMobileChatArguments(
+        &input,
+        usage: CLIExamplesMobileChatUsage.seed
+      )
+      return .seed
+
+    case "channels":
+      try requireNoRemainingExamplesMobileChatArguments(
+        &input,
+        usage: CLIExamplesMobileChatUsage.channels
+      )
+      return .channels
+
+    case "messages":
+      if input.isEmpty {
+        return .messages(channelID: nil)
+      }
+      let channelID = try parseRequiredExamplesMobileChatArgument(
+        from: &input,
+        usage: CLIExamplesMobileChatUsage.messages
+      )
+      try requireNoRemainingExamplesMobileChatArguments(
+        &input,
+        usage: CLIExamplesMobileChatUsage.messages
+      )
+      return .messages(channelID: channelID)
+
+    case "profiles":
+      try requireNoRemainingExamplesMobileChatArguments(
+        &input,
+        usage: CLIExamplesMobileChatUsage.profiles
+      )
+      return .profiles
+
+    case "profile":
+      if input.isEmpty {
+        return .profile(userID: nil)
+      }
+      let userID = try parseRequiredExamplesMobileChatArgument(
+        from: &input,
+        usage: CLIExamplesMobileChatUsage.profile
+      )
+      try requireNoRemainingExamplesMobileChatArguments(
+        &input,
+        usage: CLIExamplesMobileChatUsage.profile
+      )
+      return .profile(userID: userID)
+
+    case "setup-profile", "create-profile", "ensure-profile":
+      let displayName = try parseRequiredExamplesMobileChatArgument(
+        from: &input,
+        usage: CLIExamplesMobileChatUsage.setupProfile
+      )
+      try requireNoRemainingExamplesMobileChatArguments(
+        &input,
+        usage: CLIExamplesMobileChatUsage.setupProfile
+      )
+      return .setupProfile(displayName: displayName)
+
+    case "send", "post":
+      return .send(try parseExamplesMobileChatSendOptions(from: &input))
+
+    case "join":
+      return .join(
+        channelID: try parseSingleExamplesMobileChatArgument(
+          from: &input,
+          usage: CLIExamplesMobileChatUsage.join
+        )
+      )
+
+    case "presence":
+      return .presence(
+        channelID: try parseSingleExamplesMobileChatArgument(
+          from: &input,
+          usage: CLIExamplesMobileChatUsage.presence
+        )
+      )
+
+    case "leave":
+      return .leave(
+        channelID: try parseSingleExamplesMobileChatArgument(
+          from: &input,
+          usage: CLIExamplesMobileChatUsage.leave
+        )
+      )
+
+    case "reset":
+      try requireNoRemainingExamplesMobileChatArguments(
+        &input,
+        usage: CLIExamplesMobileChatUsage.reset
       )
       return .reset
 
@@ -5055,6 +5247,15 @@ private func requireNoRemainingExamplesMicroblogArguments(
   }
 }
 
+private func requireNoRemainingExamplesMobileChatArguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if !input.isEmpty {
+    throw CLIExamplesMobileChatArgumentError.invalidArguments(usage: usage)
+  }
+}
+
 private func parseExamplesCountersAddOptions(
   _ input: inout ArraySlice<String>
 ) throws -> Int {
@@ -5217,6 +5418,60 @@ private func parseExamplesMicroblogPostOptions(
   }
 
   return CLIExamplesMicroblogPostInvocation(content: content, color: color)
+}
+
+private func parseRequiredExamplesMobileChatArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIExamplesMobileChatArgumentError.invalidArguments(usage: usage)
+  }
+  input.removeFirst()
+  let trimmedValue = trimmed(value)
+  guard !trimmedValue.isEmpty else {
+    throw CLIExamplesMobileChatArgumentError.invalidArguments(usage: usage)
+  }
+  return trimmedValue
+}
+
+private func parseSingleExamplesMobileChatArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  let value = try parseRequiredExamplesMobileChatArgument(from: &input, usage: usage)
+  try requireNoRemainingExamplesMobileChatArguments(&input, usage: usage)
+  return value
+}
+
+private func parseExamplesMobileChatSendOptions(
+  from input: inout ArraySlice<String>
+) throws -> CLIExamplesMobileChatSendInvocation {
+  let channelID = try parseRequiredExamplesMobileChatArgument(
+    from: &input,
+    usage: CLIExamplesMobileChatUsage.send
+  )
+  var contentParts: [String] = []
+
+  while let value = input.first {
+    input.removeFirst()
+    if value.hasPrefix("--") {
+      throw CLIExamplesMobileChatArgumentError.unknownSendOption(
+        value,
+        usage: CLIExamplesMobileChatUsage.send
+      )
+    }
+    contentParts.append(value)
+  }
+
+  let content = contentParts.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+  guard !content.isEmpty else {
+    throw CLIExamplesMobileChatArgumentError.invalidArguments(
+      usage: CLIExamplesMobileChatUsage.send
+    )
+  }
+
+  return CLIExamplesMobileChatSendInvocation(channelID: channelID, content: content)
 }
 
 private func parseExamplesSyncUpsListOptions(
@@ -6041,6 +6296,18 @@ extension CLIExamplesMicroblogArgumentError: CustomStringConvertible {
 
     case let .unknownPostOption(option, usage):
       return "Unknown microblog post option: \(option). \(usage)"
+    }
+  }
+}
+
+extension CLIExamplesMobileChatArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case let .invalidArguments(usage):
+      return usage
+
+    case let .unknownSendOption(option, usage):
+      return "Unknown mobile chat send option: \(option). \(usage)"
     }
   }
 }
