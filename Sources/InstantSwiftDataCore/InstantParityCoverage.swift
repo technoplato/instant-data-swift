@@ -377,6 +377,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift lookup refs use full attribute ids rather than JavaScript lookup labels; transport lowering preserves dotted lookup arrays and local optimistic resolution accepts seeded dotted unique attributes."
     ),
     instant(
+      id: "instant.instaml.lookup-link-value-arrays",
+      sourceFile: instamlSource,
+      sourceTestName: "lookup creates unique attrs for lookups in link values with arrays",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "transportMutationPortsInstamlLookupRefArraysInLinkValues",
+      surface: "instaml",
+      status: .adapted,
+      notes: "Swift uses declared attr ids and repeated ref inserts instead of JavaScript link arrays/add-attr generation; transport lowering preserves each lookup ref value on the same link attr."
+    ),
+    instant(
       id: "instant.weak-hash",
       sourceFile: weakHashSource,
       sourceTestName: "selected fields / object key order / date / known query",

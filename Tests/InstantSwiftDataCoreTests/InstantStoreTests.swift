@@ -1335,6 +1335,109 @@ struct InstantStoreTests {
   }
 
   @Test
+  func transportMutationPortsInstamlLookupRefArraysInLinkValues() throws {
+    let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let firstPostLookup = InstantLookupRef(
+      attributeID: "posts/slug",
+      value: .string("life-is-good")
+    )
+    let secondPostLookup = InstantLookupRef(
+      attributeID: "posts/slug",
+      value: .string("check-this-out")
+    )
+    let transaction = InstantStoreTransaction(
+      id: "tx-instaml-lookup-link-array-transport",
+      operations: [
+        .insert(
+          InstantTriple(
+            entityID: "user-1",
+            attributeID: "users/id",
+            value: .string("user-1"),
+            txID: "tx-instaml-lookup-link-array-transport",
+            txTime: txTime
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "user-1",
+            attributeID: "users/posts",
+            value: .lookupRef(firstPostLookup),
+            txID: "tx-instaml-lookup-link-array-transport",
+            txTime: txTime
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "user-1",
+            attributeID: "users/posts",
+            value: .lookupRef(secondPostLookup),
+            txID: "tx-instaml-lookup-link-array-transport",
+            txTime: txTime
+          )
+        ),
+      ]
+    )
+    let transportMutation = InstantTransportMutation(
+      PendingMutation(
+        id: "tx-instaml-lookup-link-array-transport",
+        createdAt: txTime,
+        transaction: transaction
+      )
+    )
+
+    let source =
+      "upstream/instant/client/packages/core/__tests__/src/instaml.test.ts "
+      + "lookup creates unique attrs for lookups in link values with arrays "
+      + "[adapted: Swift represents link arrays as repeated ref inserts over declared attr ids.]"
+    expectNoDifference(transportMutation.preconditions, [], source)
+    expectNoDifference(
+      transportMutation.txSteps,
+      [
+        .addTriple(
+          entity: .id("user-1"),
+          attributeID: "users/id",
+          value: .string("user-1")
+        ),
+        .addTriple(
+          entity: .id("user-1"),
+          attributeID: "users/posts",
+          value: .array([.string("posts/slug"), .string("life-is-good")])
+        ),
+        .addTriple(
+          entity: .id("user-1"),
+          attributeID: "users/posts",
+          value: .array([.string("posts/slug"), .string("check-this-out")])
+        ),
+      ],
+      source
+    )
+
+    let data = try JSONEncoder().encode(transportMutation)
+    let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let txSteps = try #require(object["txSteps"] as? [[Any]])
+    expectNoDifference(txSteps.count, 3, source)
+    expectNoDifference(txSteps.map { $0.first as? String }, ["add-triple", "add-triple", "add-triple"], source)
+    expectNoDifference(txSteps.map(\.count), [4, 4, 4], source)
+    expectNoDifference(txSteps[0][1] as? String, "user-1", source)
+    expectNoDifference(txSteps[0][2] as? String, "users/id", source)
+    expectNoDifference(txSteps[0][3] as? String, "user-1", source)
+
+    let firstLookupValue = try #require(txSteps[1][3] as? [Any])
+    expectNoDifference(txSteps[1][1] as? String, "user-1", source)
+    expectNoDifference(txSteps[1][2] as? String, "users/posts", source)
+    expectNoDifference(firstLookupValue.count, 2, source)
+    expectNoDifference(firstLookupValue[0] as? String, "posts/slug", source)
+    expectNoDifference(firstLookupValue[1] as? String, "life-is-good", source)
+
+    let secondLookupValue = try #require(txSteps[2][3] as? [Any])
+    expectNoDifference(txSteps[2][1] as? String, "user-1", source)
+    expectNoDifference(txSteps[2][2] as? String, "users/posts", source)
+    expectNoDifference(secondLookupValue.count, 2, source)
+    expectNoDifference(secondLookupValue[0] as? String, "posts/slug", source)
+    expectNoDifference(secondLookupValue[1] as? String, "check-this-out", source)
+  }
+
+  @Test
   func transportMutationPreservesLookupEntitiesForInstamlLinkAndUnlinkParity() throws {
     let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let userLookup = InstantLookupRef(
