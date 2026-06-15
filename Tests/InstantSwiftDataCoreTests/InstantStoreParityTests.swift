@@ -11,9 +11,9 @@ struct InstantStoreParityTests {
 
     expectNoDifference(report.event, "parity-report")
     expectNoDifference(report.coverageComplete, false)
-    expectNoDifference(report.recordCount, 178)
-    expectNoDifference(report.exactCount, 26)
-    expectNoDifference(report.adaptedCount, 148)
+    expectNoDifference(report.recordCount, 182)
+    expectNoDifference(report.exactCount, 28)
+    expectNoDifference(report.adaptedCount, 150)
     expectNoDifference(report.blockedCount, 4)
     expectNoDifference(report.notApplicableCount, 0)
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/schema.test.ts"))
@@ -427,7 +427,53 @@ struct InstantStoreParityTests {
     #expect(report.records.contains { $0.id == "instant.instaml.closed-mutation-surface" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.store.date-conversion" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.store.json-serialization" && $0.status == .adapted })
-    #expect(report.records.contains { $0.id == "instant.utils.date-coercion" && $0.status == .adapted })
+    let dateCoercionMappings: [(
+      id: String, sourceTestName: String, swiftTestName: String, status: InstantParityCoverageStatus,
+      notes: String
+    )] = [
+      (
+        "instant.utils.date-coercion.valid-strings",
+        "should parse ${dateString} to ${expected}",
+        "upstreamCoerceToDateParsesValidDateStrings",
+        .exact,
+        "Swift parses the upstream date string matrix through InstantValue.string and produces the same ISO instants, including quoted strings, timezone abbreviations, fractional seconds, epoch, and expanded years."
+      ),
+      (
+        "instant.utils.date-coercion.invalid-strings",
+        "throws for invalid date string: ${dateString}",
+        "upstreamCoerceToDateRejectsInvalidDateStrings",
+        .adapted,
+        "Swift rejects the same invalid date strings by returning nil from optional coercion rather than throwing JavaScript exceptions."
+      ),
+      (
+        "instant.utils.date-coercion.date-instances",
+        "should handle Date instances",
+        "upstreamCoerceToDateHandlesDateAndNumberInputs",
+        .adapted,
+        "Swift Date values are value types, so the proof preserves the same instant rather than JavaScript object identity."
+      ),
+      (
+        "instant.utils.date-coercion.number-timestamps",
+        "should handle number timestamps",
+        "upstreamCoerceToDateHandlesDateAndNumberInputs",
+        .exact,
+        "Swift coerces millisecond timestamps to Date values that round-trip to the same millisecond value."
+      ),
+      (
+        "instant.utils.date-coercion.unsupported-types",
+        "should throw for unsupported types",
+        "upstreamCoerceToDateRejectsUnsupportedTypes",
+        .adapted,
+        "Swift rejects unsupported bool, JSON object, and null inputs by returning nil from optional coercion rather than throwing JavaScript exceptions."
+      ),
+    ]
+    for expected in dateCoercionMappings {
+      let record = try #require(report.records.first { $0.id == expected.id })
+      expectNoDifference(record.sourceTestName, expected.sourceTestName)
+      expectNoDifference(record.swiftTestName, expected.swiftTestName)
+      expectNoDifference(record.status, expected.status)
+      expectNoDifference(record.notes, expected.notes)
+    }
     #expect(report.records.contains { $0.id == "instant.schema.builder-shape" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.schema.json-serialization-round-trip" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.utils.object-path-mutation" && $0.status == .adapted })

@@ -84,7 +84,7 @@ private func validDateCase(_ input: String, _ expectedISOString: String) -> Date
     input: input,
     expectedISOString: expectedISOString,
     sourceFile: upstreamDateTestSource,
-    sourceTestName: "coerceToDate parse-date-value-works-for-valid-dates"
+    sourceTestName: "should parse \(input) to \(expectedISOString)"
   )
 }
 
@@ -129,7 +129,7 @@ private let upstreamCoerceToDateInvalidStringCases: [InvalidDateParityCase] = [
   InvalidDateParityCase(
     input: $0,
     sourceFile: upstreamDateTestSource,
-    sourceTestName: "coerceToDate parse-date-value-throws-for-invalid-dates"
+    sourceTestName: "throws for invalid date string: \($0)"
   )
 }
 

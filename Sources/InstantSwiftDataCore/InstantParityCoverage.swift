@@ -267,14 +267,54 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift accepts legacy attrs/triples snapshot payloads, decodes them into the modern snapshot, and rematerializes links."
     ),
     instant(
-      id: "instant.utils.date-coercion",
+      id: "instant.utils.date-coercion.valid-strings",
       sourceFile: "upstream/instant/client/packages/core/__tests__/src/utils/dates.test.ts",
-      sourceTestName: "coerceToDate valid strings, invalid strings, and edge cases",
+      sourceTestName: "should parse ${dateString} to ${expected}",
       swiftFile: "Tests/InstantSwiftDataCoreTests/InstantDateCoercionTests.swift",
-      swiftTestName: "InstantDateCoercionTests",
+      swiftTestName: "upstreamCoerceToDateParsesValidDateStrings",
+      surface: "dates",
+      status: .exact,
+      notes: "Swift parses the upstream date string matrix through InstantValue.string and produces the same ISO instants, including quoted strings, timezone abbreviations, fractional seconds, epoch, and expanded years."
+    ),
+    instant(
+      id: "instant.utils.date-coercion.invalid-strings",
+      sourceFile: "upstream/instant/client/packages/core/__tests__/src/utils/dates.test.ts",
+      sourceTestName: "throws for invalid date string: ${dateString}",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantDateCoercionTests.swift",
+      swiftTestName: "upstreamCoerceToDateRejectsInvalidDateStrings",
       surface: "dates",
       status: .adapted,
-      notes: "Swift ports Instant's date string, Date, number, and unsupported-type coercion matrix through InstantValue; invalid Swift inputs return nil instead of throwing JavaScript exceptions."
+      notes: "Swift rejects the same invalid date strings by returning nil from optional coercion rather than throwing JavaScript exceptions."
+    ),
+    instant(
+      id: "instant.utils.date-coercion.date-instances",
+      sourceFile: "upstream/instant/client/packages/core/__tests__/src/utils/dates.test.ts",
+      sourceTestName: "should handle Date instances",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantDateCoercionTests.swift",
+      swiftTestName: "upstreamCoerceToDateHandlesDateAndNumberInputs",
+      surface: "dates",
+      status: .adapted,
+      notes: "Swift Date values are value types, so the proof preserves the same instant rather than JavaScript object identity."
+    ),
+    instant(
+      id: "instant.utils.date-coercion.number-timestamps",
+      sourceFile: "upstream/instant/client/packages/core/__tests__/src/utils/dates.test.ts",
+      sourceTestName: "should handle number timestamps",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantDateCoercionTests.swift",
+      swiftTestName: "upstreamCoerceToDateHandlesDateAndNumberInputs",
+      surface: "dates",
+      status: .exact,
+      notes: "Swift coerces millisecond timestamps to Date values that round-trip to the same millisecond value."
+    ),
+    instant(
+      id: "instant.utils.date-coercion.unsupported-types",
+      sourceFile: "upstream/instant/client/packages/core/__tests__/src/utils/dates.test.ts",
+      sourceTestName: "should throw for unsupported types",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantDateCoercionTests.swift",
+      swiftTestName: "upstreamCoerceToDateRejectsUnsupportedTypes",
+      surface: "dates",
+      status: .adapted,
+      notes: "Swift rejects unsupported bool, JSON object, and null inputs by returning nil from optional coercion rather than throwing JavaScript exceptions."
     ),
     instant(
       id: "instant.query.simple-where",

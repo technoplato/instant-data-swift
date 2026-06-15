@@ -8316,9 +8316,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 178)
-    expectNoDifference(jsonOutput.exactCount, 26)
-    expectNoDifference(jsonOutput.adaptedCount, 148)
+    expectNoDifference(jsonOutput.recordCount, 182)
+    expectNoDifference(jsonOutput.exactCount, 28)
+    expectNoDifference(jsonOutput.adaptedCount, 150)
     expectNoDifference(jsonOutput.blockedCount, 4)
     expectNoDifference(jsonOutput.notApplicableCount, 0)
     #expect(
@@ -8819,11 +8819,18 @@ extension InstantStoreTests {
         $0.id == "instant.instaml.closed-mutation-surface" && $0.status == "adapted"
       }
     )
-    #expect(
-      jsonOutput.records.contains {
-        $0.id == "instant.utils.date-coercion" && $0.status == "adapted"
-      }
-    )
+    for expected in [
+      ("instant.utils.date-coercion.valid-strings", "exact"),
+      ("instant.utils.date-coercion.invalid-strings", "adapted"),
+      ("instant.utils.date-coercion.date-instances", "adapted"),
+      ("instant.utils.date-coercion.number-timestamps", "exact"),
+      ("instant.utils.date-coercion.unsupported-types", "adapted"),
+    ] {
+      #expect(
+        jsonOutput.records.contains { $0.id == expected.0 && $0.status == expected.1 },
+        "Expected \(expected.1) date coercion parity record \(expected.0)"
+      )
+    }
     #expect(
       jsonOutput.records.contains {
         $0.id == "instant.store.json-serialization" && $0.status == "adapted"
@@ -9007,9 +9014,9 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 178"))
-    #expect(humanOutput.contains("exact: 26"))
-    #expect(humanOutput.contains("adapted: 148"))
+    #expect(humanOutput.contains("records: 182"))
+    #expect(humanOutput.contains("exact: 28"))
+    #expect(humanOutput.contains("adapted: 150"))
     #expect(humanOutput.contains("blocked: 4"))
     #expect(humanOutput.contains("not applicable: 0"))
   }
