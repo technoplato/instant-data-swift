@@ -59,7 +59,7 @@ public enum CLIExamplesInvocation: Equatable, Sendable {
   case typingIndicator(CLIExamplesTypingIndicatorLeafInvocation)
   case avatarStack(CLIExamplesAvatarStackLeafInvocation)
   case cursors(CLIExamplesCursorsLeafInvocation)
-  case customCursors(arguments: [String])
+  case customCursors(CLIExamplesCursorsLeafInvocation)
   case mergeTileGame(arguments: [String])
   case stroopwafel(arguments: [String])
   case syncUps(arguments: [String])
@@ -2444,9 +2444,7 @@ public struct CLIExamplesParser: Parser {
       return .cursors(try CLIExamplesCursorsLeafParser().parse(&input))
 
     case "custom-cursors", "custom-cursor":
-      let arguments = Array(input)
-      input.removeAll()
-      return .customCursors(arguments: arguments)
+      return .customCursors(try CLIExamplesCustomCursorsLeafParser().parse(&input))
 
     case "merge-tile-game", "tile-game", "merge-game":
       let arguments = Array(input)

@@ -476,8 +476,8 @@ struct InstantSwiftDataCLI {
       try await runCursors(leaf: leaf, output: output)
       return
 
-    case let .customCursors(arguments):
-      try await runCustomCursors(arguments: arguments, output: output)
+    case let .customCursors(leaf):
+      try await runCustomCursors(leaf: leaf, output: output)
       return
 
     case let .mergeTileGame(arguments):
@@ -6490,15 +6490,11 @@ struct InstantSwiftDataCLI {
     try await runCursorsRecipe(kind: .plain, leaf: leaf, output: output)
   }
 
-  private static func runCustomCursors(arguments: [String], output: OutputMode) async throws {
-    let invocation: CLIExamplesCursorsLeafInvocation
-    do {
-      var input = arguments[...]
-      invocation = try CLIExamplesCustomCursorsLeafParser().parse(&input)
-    } catch let error as CLIExamplesCursorsArgumentError {
-      throw CLIError(error.description, exitCode: error.exitCode)
-    }
-    try await runCursorsRecipe(kind: .custom, leaf: invocation, output: output)
+  private static func runCustomCursors(
+    leaf: CLIExamplesCursorsLeafInvocation,
+    output: OutputMode
+  ) async throws {
+    try await runCursorsRecipe(kind: .custom, leaf: leaf, output: output)
   }
 
   private static func runCursorsRecipe(

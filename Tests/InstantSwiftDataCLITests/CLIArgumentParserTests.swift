@@ -1517,12 +1517,26 @@ struct CLIArgumentParserTests {
       .cursors(.list(CLIExamplesCursorsListInvocation()))
     )
     expectNoDifference(
-      try parseExamples(["custom-cursors", "move", "user-1"]),
-      .customCursors(arguments: ["move", "user-1"])
+      try parseExamples([
+        "custom-cursors", "move", "user-1",
+        "--x", "1",
+        "--y", "2",
+        "--x-percent", "3",
+        "--y-percent", "4",
+        "--name", "Ada",
+      ]),
+      .customCursors(.move(CLIExamplesCursorsMoveInvocation(
+        userID: "user-1",
+        x: 1,
+        y: 2,
+        xPercent: 3,
+        yPercent: 4,
+        name: "Ada"
+      )))
     )
     expectNoDifference(
       try parseExamples(["custom-cursor", "watch"]),
-      .customCursors(arguments: ["watch"])
+      .customCursors(.watch(CLIExamplesCursorsWatchInvocation()))
     )
     expectNoDifference(
       try parseExamplesCursorsLeaf([

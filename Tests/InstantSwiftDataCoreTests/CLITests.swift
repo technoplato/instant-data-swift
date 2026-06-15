@@ -1194,6 +1194,68 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliMalformedCustomCursorsArgumentsDoNotBootstrapState() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    func expectMalformed(_ arguments: [String], contains expectedFragment: String) throws {
+      let result = try runCLIResult(arguments, homeURL: homeURL)
+      expectNoDifference(result.status, 64)
+      #expect(result.error.contains(expectedFragment))
+    }
+
+    try expectMalformed(
+      ["examples", "custom-cursors", "--json"],
+      contains: "examples custom-cursors <move|list|watch|clear|leave>"
+    )
+    try expectMalformed(
+      [
+        "examples", "custom-cursor", "move", "user-1",
+        "--x", "1",
+        "--y", "2",
+        "--x-percent", "3",
+        "--json",
+      ],
+      contains: "examples custom-cursors move <user-id>"
+    )
+    try expectMalformed(
+      [
+        "examples", "custom-cursors", "move", "user-1",
+        "--x", "1",
+        "--y", "2",
+        "--x-percent", "3",
+        "--y-percent", "4",
+        "--name", "  ",
+        "--json",
+      ],
+      contains: "examples custom-cursors move <user-id>"
+    )
+    try expectMalformed(
+      ["examples", "custom-cursors", "list", "--viewer-user-id", "  ", "--json"],
+      contains: "examples custom-cursors list"
+    )
+    try expectMalformed(
+      ["examples", "custom-cursors", "watch", "--events", "2", "--jsonl"],
+      contains: "examples custom-cursors watch"
+    )
+    try expectMalformed(
+      ["examples", "custom-cursors", "leave", "--json"],
+      contains: "examples custom-cursors <clear|leave> <user-id>"
+    )
+    try expectMalformed(
+      ["examples", "custom-cursors", "dance", "--json"],
+      contains: "Unknown custom cursors command: dance"
+    )
+
+    expectNoDifference(
+      try FileManager.default.contentsOfDirectory(atPath: homeURL.path),
+      []
+    )
+  }
+
+  @Test
   func cliMalformedSyncUpsArgumentsDoNotBootstrapState() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
