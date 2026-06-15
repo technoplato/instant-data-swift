@@ -564,11 +564,15 @@ Agent-oriented output modes are required:
   `instant-swift-data validation reminders --jsonl`,
   `instant-swift-data validation typed-drafts --jsonl`,
   `instant-swift-data validation platform-adapters --jsonl`, and
-  `instant-swift-data validation syncups-recording --jsonl`; the platform
-  adapter stream covers binding plus `@FetchAll` dynamic reload, nil-query,
-  cached-prior-error, cancellation-cleanup, optional `@FetchOne` dynamic and
-  nil-query reloads, `@Fetch` request dynamic reload, nil request reset,
-  cancellation cleanup, and `@FetchAll`/`@Fetch` filtered reload behavior.
+  `instant-swift-data validation syncups-recording --jsonl`; detailed parity
+  provenance is available through
+  `instant-swift-data validation parity-report --jsonl`, while
+  `instant-swift-data validation coverage --jsonl` emits a compact summary gate.
+  The platform adapter stream covers binding plus `@FetchAll` dynamic reload,
+  nil-query, cached-prior-error, cancellation-cleanup, optional `@FetchOne`
+  dynamic and nil-query reloads, `@Fetch` request dynamic reload, nil request
+  reset, cancellation cleanup, and `@FetchAll`/`@Fetch` filtered reload
+  behavior.
 - run Swift/TypeScript parity suites.
 - run benchmarks.
 - inspect local SQLite cache, including namespace summaries, attributes, and

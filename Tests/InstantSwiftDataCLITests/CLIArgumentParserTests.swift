@@ -3223,7 +3223,7 @@ struct CLIArgumentParserTests {
     expectNoDifference(try parseValidation(["syncups"]), .syncUpsRecording)
     expectNoDifference(try parseValidation(["parity-report"]), .parityReport)
     expectNoDifference(try parseValidation(["parity"]), .parityReport)
-    expectNoDifference(try parseValidation(["coverage"]), .parityReport)
+    expectNoDifference(try parseValidation(["coverage"]), .coverage)
   }
 
   @Test

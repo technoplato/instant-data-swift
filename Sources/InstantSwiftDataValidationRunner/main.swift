@@ -40,8 +40,10 @@ struct InstantSwiftDataValidationRunner {
       "validation.platform.adapters"
     case ["--syncups-recording"]:
       "validation.syncups.recording"
-    case ["--parity-report"], ["--coverage"]:
+    case ["--parity-report"]:
       "validation.parity.report"
+    case ["--coverage"]:
+      "validation.coverage"
     case [], ["--local-todos"]:
       "validation.local.todos"
     default:
@@ -116,11 +118,25 @@ struct InstantSwiftDataValidationRunner {
       for row in run.result.evidence {
         try writeJSONLine(row)
       }
-    } else if arguments == ["--parity-report"] || arguments == ["--coverage"] {
+    } else if arguments == ["--parity-report"] {
       let run = try InstantSwiftDataTestHarness.runParityCoverageValidation()
       for row in run.result.evidenceRows(appID: run.summary.appID ?? "local-validation") {
         try writeJSONLine(row)
       }
+    } else if arguments == ["--coverage"] {
+      let run = try InstantSwiftDataTestHarness.runParityCoverageValidation()
+      let summary = InstantParityCoverageSummary(run.result)
+      try writeJSONLine(
+        ValidationEvidenceRow(
+          caseID: "validation.coverage",
+          side: "swift",
+          event: "coverage-summary",
+          appID: run.summary.appID ?? "local-validation",
+          timestampMs: 0,
+          ok: summary.ok,
+          details: summary
+        )
+      )
     } else {
       let run = try await InstantSwiftDataTestHarness.runLocalTodoValidation()
       for row in run.result.evidence {

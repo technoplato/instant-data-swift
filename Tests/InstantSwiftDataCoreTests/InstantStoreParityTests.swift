@@ -43,6 +43,8 @@ struct InstantStoreParityTests {
     #expect(report.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantInstaQLInferenceParityTests.swift"))
     #expect(report.swiftFiles.contains("Tests/InstantSwiftDataMacrosTests/InstantEntityMacroTests.swift"))
     #expect(report.swiftFiles.contains("Tests/InstantSwiftDataTests/TypedAPITests.swift"))
+    #expect(!report.swiftFiles.contains("blocked"))
+    #expect(!report.swiftFiles.contains("not-applicable"))
     let fetchWrapperBindings = try #require(
       report.records.first { $0.id == "sqlite.bindings.fetch-wrappers" }
     )
@@ -726,7 +728,7 @@ struct InstantStoreParityTests {
     expectNoDifference(platformAdapterBinding.status, .adapted)
     expectNoDifference(
       platformAdapterBinding.notes,
-      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares."
+      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares."
     )
     #expect(report.records.contains { $0.id == "instant.live-transport.swift-to-typescript" && $0.status == .blocked })
 

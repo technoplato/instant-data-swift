@@ -8407,6 +8407,8 @@ extension InstantStoreTests {
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantInstaQLInferenceParityTests.swift"))
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/CLITests.swift"))
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataTests/TypedAPITests.swift"))
+    #expect(!jsonOutput.swiftFiles.contains("blocked"))
+    #expect(!jsonOutput.swiftFiles.contains("not-applicable"))
     #expect(jsonOutput.records.contains { $0.id == "instant.store.simple-add" && $0.status == "exact" })
     #expect(
       jsonOutput.records.contains {
@@ -9076,7 +9078,7 @@ extension InstantStoreTests {
     expectNoDifference(platformAdapterBinding.status, "adapted")
     expectNoDifference(
       platformAdapterBinding.notes,
-      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares."
+      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares."
     )
     #expect(
       jsonOutput.records.contains {
@@ -9104,7 +9106,7 @@ extension InstantStoreTests {
       }
     )
 
-    let jsonlOutput = try runCLI(["validation", "coverage", "--jsonl"], homeURL: homeURL)
+    let jsonlOutput = try runCLI(["validation", "parity-report", "--jsonl"], homeURL: homeURL)
     let lines = jsonlOutput.split(separator: "\n")
     expectNoDifference(lines.count, jsonOutput.recordCount)
     let evidenceRows = try lines.map { line in
@@ -9152,7 +9154,7 @@ extension InstantStoreTests {
     expectNoDifference(platformAdapterBindingEvidence.details.status, "adapted")
     expectNoDifference(
       platformAdapterBindingEvidence.details.notes,
-      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares."
+      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares."
     )
     let blockedEvidence = try JSONDecoder().decode(
       CLIParityCoverageEvidence.self,
@@ -9168,6 +9170,59 @@ extension InstantStoreTests {
     #expect(humanOutput.contains("adapted: 189"))
     #expect(humanOutput.contains("blocked: 5"))
     #expect(humanOutput.contains("not applicable: 1"))
+  }
+
+  @Test
+  func cliValidationCoverageEmitsSummary() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let jsonOutput = try JSONDecoder().decode(
+      CLIValidationCoverageOutput.self,
+      from: Data(
+        try runCLI(["validation", "coverage", "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(jsonOutput.event, "coverage")
+    expectNoDifference(jsonOutput.ok, false)
+    expectNoDifference(jsonOutput.coverageComplete, false)
+    expectNoDifference(jsonOutput.recordCount, 223)
+    expectNoDifference(jsonOutput.exactCount, 28)
+    expectNoDifference(jsonOutput.adaptedCount, 189)
+    expectNoDifference(jsonOutput.blockedCount, 5)
+    expectNoDifference(jsonOutput.notApplicableCount, 1)
+    #expect(jsonOutput.sourceFileCount > 0)
+    expectNoDifference(jsonOutput.swiftFileCount, 22)
+    expectNoDifference(
+      jsonOutput.blockedIDs,
+      [
+        "instant.query.pagination-offset-page-info",
+        "instant.persisted-object.indexeddb-connection-recovery",
+        "instant.live-transport.swift-to-typescript",
+        "instant.live-transport.typescript-to-swift",
+        "sqlite.cloudkit-demo.remote-share",
+      ]
+    )
+
+    let jsonlOutput = try runCLI(["validation", "coverage", "--jsonl"], homeURL: homeURL)
+    let lines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(lines.count, 1)
+    let evidence = try JSONDecoder().decode(
+      CLIValidationCoverageEvidence.self,
+      from: Data(try #require(lines.first).utf8)
+    )
+    expectNoDifference(evidence.caseID, "validation.coverage")
+    expectNoDifference(evidence.side, "swift")
+    expectNoDifference(evidence.event, "coverage-summary")
+    expectNoDifference(evidence.ok, false)
+    expectNoDifference(evidence.details, jsonOutput)
+
+    let humanOutput = try runCLI(["validation", "coverage"], homeURL: homeURL)
+    #expect(humanOutput.contains("validation coverage: incomplete"))
+    #expect(humanOutput.contains("records: 223"))
+    #expect(humanOutput.contains("blocked: 5"))
   }
 
   @Test
@@ -11109,6 +11164,38 @@ private struct CLIParityCoverageEvidence: Decodable {
     case event
     case appID
     case entityID
+    case ok
+    case details
+  }
+}
+
+private struct CLIValidationCoverageOutput: Decodable, Equatable {
+  var event: String
+  var ok: Bool
+  var coverageComplete: Bool
+  var recordCount: Int
+  var exactCount: Int
+  var adaptedCount: Int
+  var blockedCount: Int
+  var notApplicableCount: Int
+  var sourceFileCount: Int
+  var swiftFileCount: Int
+  var blockedIDs: [String]
+}
+
+private struct CLIValidationCoverageEvidence: Decodable {
+  var caseID: String
+  var side: String
+  var event: String
+  var appID: String
+  var ok: Bool
+  var details: CLIValidationCoverageOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case side
+    case event
+    case appID
     case ok
     case details
   }

@@ -67,7 +67,7 @@ public struct InstantParityCoverageReport: Codable, Equatable, Sendable {
     self.blockedCount = records.filter { $0.status == .blocked }.count
     self.notApplicableCount = records.filter { $0.status == .notApplicable }.count
     self.sourceFiles = records.map(\.sourceFile).uniquedSorted()
-    self.swiftFiles = records.map(\.swiftFile).uniquedSorted()
+    self.swiftFiles = records.map(\.swiftFile).filter(\.isCoverageFileReference).uniquedSorted()
     self.records = records
   }
 
@@ -87,6 +87,36 @@ public struct InstantParityCoverageReport: Codable, Equatable, Sendable {
         details: record
       )
     }
+  }
+}
+
+public struct InstantParityCoverageSummary: Codable, Equatable, Sendable {
+  public var event: String
+  public var ok: Bool
+  public var coverageComplete: Bool
+  public var recordCount: Int
+  public var exactCount: Int
+  public var adaptedCount: Int
+  public var blockedCount: Int
+  public var notApplicableCount: Int
+  public var sourceFileCount: Int
+  public var swiftFileCount: Int
+  public var blockedIDs: [String]
+
+  public init(_ report: InstantParityCoverageReport) {
+    self.event = "coverage"
+    self.ok = report.coverageComplete
+    self.coverageComplete = report.coverageComplete
+    self.recordCount = report.recordCount
+    self.exactCount = report.exactCount
+    self.adaptedCount = report.adaptedCount
+    self.blockedCount = report.blockedCount
+    self.notApplicableCount = report.notApplicableCount
+    self.sourceFileCount = report.sourceFiles.count
+    self.swiftFileCount = report.swiftFiles.count
+    self.blockedIDs = report.records
+      .filter { $0.status == .blocked }
+      .map(\.id)
   }
 }
 
@@ -2040,7 +2070,7 @@ public enum InstantSwiftDataParityCoverage {
       swiftTestName: "platformAdapterValidationProvesWrappersBindLocalRuntime",
       surface: "adapter-bindings",
       status: .adapted,
-      notes: "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares."
+      notes: "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares."
     ),
     sqlite(
       id: "sqlite.draft.macro-generation",
@@ -2445,5 +2475,11 @@ public enum InstantSwiftDataParityCoverage {
 extension Sequence where Element: Comparable & Hashable {
   fileprivate func uniquedSorted() -> [Element] {
     Array(Set(self)).sorted()
+  }
+}
+
+extension String {
+  fileprivate var isCoverageFileReference: Bool {
+    self.contains(".") || self.contains("/")
   }
 }

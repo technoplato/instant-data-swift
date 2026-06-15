@@ -249,6 +249,14 @@ struct InstantSwiftDataCLI {
         output: output
       )
 
+    case .coverage:
+      let appID = validationAppID()
+      try printValidationCoverageSummary(
+        result: InstantSwiftDataParityCoverage.current,
+        appID: appID,
+        output: output
+      )
+
     case .platformAdapters:
       let appID = validationAppID()
       do {
@@ -9280,6 +9288,42 @@ struct InstantSwiftDataCLI {
       for row in result.evidenceRows(appID: appID) {
         try writeJSONLine(row)
       }
+    }
+  }
+
+  private static func printValidationCoverageSummary(
+    result: InstantParityCoverageReport,
+    appID: String,
+    output: OutputMode
+  ) throws {
+    let summary = InstantParityCoverageSummary(result)
+
+    switch output {
+    case .human:
+      print("validation coverage: \(summary.coverageComplete ? "complete" : "incomplete")")
+      print("records: \(summary.recordCount)")
+      print("exact: \(summary.exactCount)")
+      print("adapted: \(summary.adaptedCount)")
+      print("blocked: \(summary.blockedCount)")
+      print("not applicable: \(summary.notApplicableCount)")
+      print("source files: \(summary.sourceFileCount)")
+      print("swift files: \(summary.swiftFileCount)")
+
+    case .json:
+      try writeJSON(summary)
+
+    case .jsonl:
+      try writeJSONLine(
+        ValidationEvidenceRow(
+          caseID: "validation.coverage",
+          side: "swift",
+          event: "coverage-summary",
+          appID: appID,
+          timestampMs: 0,
+          ok: summary.ok,
+          details: summary
+        )
+      )
     }
   }
 

@@ -1190,7 +1190,7 @@ struct LocalTodoValidationTests {
     expectNoDifference(platformAdapterBinding.status, .adapted)
     expectNoDifference(
       platformAdapterBinding.notes,
-      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares."
+      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares."
     )
     #expect(
       run.result.records.contains {
@@ -1251,7 +1251,7 @@ struct LocalTodoValidationTests {
     expectNoDifference(platformAdapterBindingDetails["status"] as? String, "adapted")
     expectNoDifference(
       platformAdapterBindingDetails["notes"] as? String,
-      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares."
+      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares."
     )
 
     let first = try #require(rows.first)
@@ -1272,48 +1272,37 @@ struct LocalTodoValidationTests {
   }
 
   @Test
-  func validationRunnerCoverageAliasEmitsParityJSONL() throws {
+  func validationRunnerCoverageCommandEmitsSummaryJSONL() throws {
     let result = try runValidationRunner(arguments: ["--coverage"])
 
     #expect(result.status == 0)
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 223)
-    expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
-      "validation.parity.report"
-    ]))
+    expectNoDifference(rows.count, 1)
+    expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set(["validation.coverage"]))
     expectNoDifference(Set(rows.map { $0["appID"] as? String ?? "" }), Set(["local-validation"]))
-    expectNoDifference(Set(rows.map { $0["event"] as? String ?? "" }), Set(["parity-record"]))
-    expectNoDifference(rows.filter { ($0["ok"] as? Bool) == false }.count, 5)
-    let platformAdapterBinding = try #require(rows.first { row in
-      row["entityID"] as? String == "instant.react-common.platform-adapter-bindings"
-    })
-    expectNoDifference(platformAdapterBinding["side"] as? String, "instant-typescript")
-    expectNoDifference(platformAdapterBinding["ok"] as? Bool, true)
-    let platformAdapterBindingDetails = try #require(
-      platformAdapterBinding["details"] as? [String: Any]
-    )
-    expectNoDifference(platformAdapterBindingDetails["sourceKind"] as? String, "instant-typescript")
+    let row = try #require(rows.first)
+    expectNoDifference(row["side"] as? String, "swift")
+    expectNoDifference(row["event"] as? String, "coverage-summary")
+    expectNoDifference(row["ok"] as? Bool, false)
+    let details = try #require(row["details"] as? [String: Any])
+    expectNoDifference(details["event"] as? String, "coverage")
+    expectNoDifference(details["ok"] as? Bool, false)
+    expectNoDifference(details["coverageComplete"] as? Bool, false)
+    expectNoDifference((details["recordCount"] as? NSNumber)?.intValue, 223)
+    expectNoDifference((details["exactCount"] as? NSNumber)?.intValue, 28)
+    expectNoDifference((details["adaptedCount"] as? NSNumber)?.intValue, 189)
+    expectNoDifference((details["blockedCount"] as? NSNumber)?.intValue, 5)
+    expectNoDifference((details["notApplicableCount"] as? NSNumber)?.intValue, 1)
+    expectNoDifference((details["swiftFileCount"] as? NSNumber)?.intValue, 22)
     expectNoDifference(
-      platformAdapterBindingDetails["sourceFile"] as? String,
-      "upstream/instant/client/packages/react-common/src"
-    )
-    expectNoDifference(
-      platformAdapterBindingDetails["sourceTestName"] as? String,
-      "useQuery, useAuth, useId, room, storage, streams, and shares hooks"
-    )
-    expectNoDifference(
-      platformAdapterBindingDetails["swiftFile"] as? String,
-      "Tests/InstantSwiftDataTests/BootstrapTests.swift"
-    )
-    expectNoDifference(
-      platformAdapterBindingDetails["swiftTestName"] as? String,
-      "platformAdapterValidationProvesWrappersBindLocalRuntime"
-    )
-    expectNoDifference(platformAdapterBindingDetails["surface"] as? String, "adapter-bindings")
-    expectNoDifference(platformAdapterBindingDetails["status"] as? String, "adapted")
-    expectNoDifference(
-      platformAdapterBindingDetails["notes"] as? String,
-      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares."
+      details["blockedIDs"] as? [String],
+      [
+        "instant.query.pagination-offset-page-info",
+        "instant.persisted-object.indexeddb-connection-recovery",
+        "instant.live-transport.swift-to-typescript",
+        "instant.live-transport.typescript-to-swift",
+        "sqlite.cloudkit-demo.remote-share",
+      ]
     )
   }
 
@@ -1350,6 +1339,7 @@ struct LocalTodoValidationTests {
     #expect(script.contains("swift run instant-swift-data validation platform-adapters --jsonl"))
     #expect(script.contains("swift run instant-swift-data validation syncups-recording --jsonl"))
     #expect(script.contains("swift run instant-swift-data validation parity-report --jsonl"))
+    #expect(script.contains("swift run instant-swift-data validation coverage --jsonl"))
     #expect(script.contains("swift run instant-swift-data-benchmarks"))
     #expect(script.contains("swift-local-integrations.jsonl"))
     #expect(script.contains("swift-reminders.jsonl"))
@@ -1357,6 +1347,7 @@ struct LocalTodoValidationTests {
     #expect(script.contains("swift-platform-adapters.jsonl"))
     #expect(script.contains("swift-syncups-recording.jsonl"))
     #expect(script.contains("swift-parity-report.jsonl"))
+    #expect(script.contains("swift-coverage.jsonl"))
     #expect(script.contains("swift-benchmark.jsonl"))
     #expect(script.contains("INSTANT_SWIFT_DATA_NODE"))
     #expect(script.contains("validation/ts-runner/src/main.ts --fixtures"))
@@ -1426,6 +1417,44 @@ struct LocalTodoValidationTests {
           ;;
       esac
       case "$2:$3:$4" in
+        instant-swift-data:schema:generate)
+          output=""
+          while [ "$#" -gt 0 ]; do
+            if [ "$1" = "--to" ]; then
+              shift
+              output="$1"
+              break
+            fi
+            shift
+          done
+          if [ -n "$output" ]; then
+            mkdir -p "$(dirname "$output")"
+            echo "// generated schema" > "$output"
+          fi
+          echo '{"example":"validation","kind":"schema","fileName":"instant.schema.ts","byteCount":19,"transport":"not-implemented-local-cache-only"}'
+          ;;
+        instant-swift-data:perms:generate)
+          output=""
+          while [ "$#" -gt 0 ]; do
+            if [ "$1" = "--to" ]; then
+              shift
+              output="$1"
+              break
+            fi
+            shift
+          done
+          if [ -n "$output" ]; then
+            mkdir -p "$(dirname "$output")"
+            echo "// generated perms" > "$output"
+          fi
+          echo '{"example":"validation","kind":"permissions","fileName":"instant.perms.ts","byteCount":18,"transport":"not-implemented-local-cache-only"}'
+          ;;
+        instant-swift-data:schema:verify)
+          echo '{"example":"validation","kind":"schema","ok":true,"path":"validation/fixtures/instant.schema.ts"}'
+          ;;
+        instant-swift-data:perms:verify)
+          echo '{"example":"validation","kind":"permissions","ok":true,"path":"validation/fixtures/instant.perms.ts"}'
+          ;;
         instant-swift-data-validation-runner:--local-todos:)
           if [ "${SWIFT_STUB_FAIL_LOCAL_TODOS:-}" = "1" ]; then
             exit 42
@@ -1504,6 +1533,18 @@ struct LocalTodoValidationTests {
           fi
           echo '{"case":"validation.parity.report","side":"swift","event":"stub-parity","appID":"local-validation","timestampMs":6,"ok":true,"details":{}}'
           ;;
+        instant-swift-data:validation:coverage)
+          expected="run instant-swift-data validation coverage --jsonl"
+          if [ "$*" != "$expected" ]; then
+            echo "unexpected coverage arguments: $*" >&2
+            exit 65
+          fi
+          if [ "${INSTANT_APP_ID:-}" != "local-validation" ]; then
+            echo "unexpected coverage app id: ${INSTANT_APP_ID:-}" >&2
+            exit 66
+          fi
+          echo '{"case":"validation.coverage","side":"swift","event":"stub-coverage","appID":"local-validation","timestampMs":6,"ok":true,"details":{}}'
+          ;;
         instant-swift-data-benchmarks:--suite:local-todos)
           expected="run instant-swift-data-benchmarks --suite local-todos --iterations ${INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS:-1} --app-id local-validation --jsonl"
           if [ "$*" != "$expected" ]; then
@@ -1530,6 +1571,16 @@ struct LocalTodoValidationTests {
       """,
       to: binURL.appendingPathComponent("node")
     )
+    let schemaFixtureEvents = [
+      "swift-schema-fixtures-start",
+      "swift-schema-generate-complete",
+      "swift-perms-generate-complete",
+      "swift-schema-verify-complete",
+      "swift-perms-verify-complete",
+      "swift-generated-schema-verify-complete",
+      "swift-generated-perms-verify-complete",
+      "swift-schema-fixtures-complete",
+    ]
 
     let firstRun = try runValidationRunE2E(
       scriptURL: scriptURL,
@@ -1543,6 +1594,7 @@ struct LocalTodoValidationTests {
     let successRows = try readJSONLines(resultsURL.appendingPathComponent("orchestrator.jsonl"))
     expectNoDifference(successRows.map { $0["event"] as? String ?? "" }, [
       "start",
+    ] + schemaFixtureEvents + [
       "swift-macro-tests-start",
       "swift-macro-tests-complete",
       "swift-local-start",
@@ -1559,6 +1611,8 @@ struct LocalTodoValidationTests {
       "swift-syncups-recording-complete",
       "swift-parity-report-start",
       "swift-parity-report-complete",
+      "swift-coverage-start",
+      "swift-coverage-complete",
       "swift-benchmark-start",
       "swift-benchmark-complete",
       "typescript-fixtures-start",
@@ -1598,6 +1652,11 @@ struct LocalTodoValidationTests {
     #expect(
       FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("swift-parity-report.jsonl").path
+      )
+    )
+    #expect(
+      FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-coverage.jsonl").path
       )
     )
     #expect(
@@ -1711,6 +1770,7 @@ struct LocalTodoValidationTests {
     )
     expectNoDifference(missingNodeRows.map { $0["event"] as? String ?? "" }, [
       "start",
+    ] + schemaFixtureEvents + [
       "swift-macro-tests-start",
       "swift-macro-tests-complete",
       "swift-local-start",
@@ -1727,6 +1787,8 @@ struct LocalTodoValidationTests {
       "swift-syncups-recording-complete",
       "swift-parity-report-start",
       "swift-parity-report-complete",
+      "swift-coverage-start",
+      "swift-coverage-complete",
       "swift-benchmark-start",
       "swift-benchmark-complete",
       "missing-node",
@@ -1761,6 +1823,11 @@ struct LocalTodoValidationTests {
       atomically: true,
       encoding: .utf8
     )
+    try "stale coverage\n".write(
+      to: resultsURL.appendingPathComponent("swift-coverage.jsonl"),
+      atomically: true,
+      encoding: .utf8
+    )
     try "stale platform adapters\n".write(
       to: resultsURL.appendingPathComponent("swift-platform-adapters.jsonl"),
       atomically: true,
@@ -1792,6 +1859,7 @@ struct LocalTodoValidationTests {
     let failedRows = try readJSONLines(resultsURL.appendingPathComponent("orchestrator.jsonl"))
     expectNoDifference(failedRows.map { $0["event"] as? String ?? "" }, [
       "start",
+    ] + schemaFixtureEvents + [
       "swift-macro-tests-start",
       "swift-macro-tests-complete",
       "swift-local-start",
@@ -1820,6 +1888,11 @@ struct LocalTodoValidationTests {
     #expect(
       !FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("swift-parity-report.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-coverage.jsonl").path
       )
     )
     #expect(
@@ -1855,6 +1928,7 @@ struct LocalTodoValidationTests {
     )
     expectNoDifference(typedDraftFailedRows.map { $0["event"] as? String ?? "" }, [
       "start",
+    ] + schemaFixtureEvents + [
       "swift-macro-tests-start",
       "swift-macro-tests-complete",
       "swift-local-start",
@@ -1897,6 +1971,11 @@ struct LocalTodoValidationTests {
     )
     #expect(
       !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-coverage.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("swift-benchmark.jsonl").path
       )
     )
@@ -1918,6 +1997,7 @@ struct LocalTodoValidationTests {
     )
     expectNoDifference(syncUpsRecordingFailedRows.map { $0["event"] as? String ?? "" }, [
       "start",
+    ] + schemaFixtureEvents + [
       "swift-macro-tests-start",
       "swift-macro-tests-complete",
       "swift-local-start",
@@ -1950,6 +2030,11 @@ struct LocalTodoValidationTests {
     #expect(
       !FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("swift-parity-report.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-coverage.jsonl").path
       )
     )
     #expect(
@@ -1989,6 +2074,7 @@ struct LocalTodoValidationTests {
     )
     expectNoDifference(benchmarkFailedRows.map { $0["event"] as? String ?? "" }, [
       "start",
+    ] + schemaFixtureEvents + [
       "swift-macro-tests-start",
       "swift-macro-tests-complete",
       "swift-local-start",
@@ -2005,6 +2091,8 @@ struct LocalTodoValidationTests {
       "swift-syncups-recording-complete",
       "swift-parity-report-start",
       "swift-parity-report-complete",
+      "swift-coverage-start",
+      "swift-coverage-complete",
       "swift-benchmark-start",
       "swift-benchmark-failed",
       "complete",

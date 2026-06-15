@@ -18,6 +18,7 @@ rm -f \
   "${RESULTS_DIR}/swift-platform-adapters.jsonl" \
   "${RESULTS_DIR}/swift-syncups-recording.jsonl" \
   "${RESULTS_DIR}/swift-parity-report.jsonl" \
+  "${RESULTS_DIR}/swift-coverage.jsonl" \
   "${RESULTS_DIR}/swift-schema-generate.json" \
   "${RESULTS_DIR}/swift-perms-generate.json" \
   "${RESULTS_DIR}/swift-schema-verify.json" \
@@ -450,6 +451,25 @@ else
     "complete" \
     false \
     "$(printf '{"resultsDir":%s,"failed":"swift-parity-report","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+  exit "${status}"
+fi
+
+log_json "swift-coverage-start" true
+if (
+  cd "${ROOT}"
+  INSTANT_APP_ID="${VALIDATION_APP_ID}" swift run instant-swift-data validation coverage --jsonl
+) | tee "${RESULTS_DIR}/swift-coverage.jsonl"; then
+  log_json "swift-coverage-complete" true "$(json_object "path" "${RESULTS_DIR}/swift-coverage.jsonl")"
+else
+  status=$?
+  log_json \
+    "swift-coverage-failed" \
+    false \
+    "$(json_failure_details "${RESULTS_DIR}/swift-coverage.jsonl" "${status}")"
+  log_json \
+    "complete" \
+    false \
+    "$(printf '{"resultsDir":%s,"failed":"swift-coverage","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
   exit "${status}"
 fi
 

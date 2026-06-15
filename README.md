@@ -575,10 +575,11 @@ speech recording flow, meeting persistence across relaunch, sound effect
 advancement, and denied speech open-settings dependency seam.
 `validation parity-report`
 emits machine-readable upstream Instant/SQLiteData source provenance for exact,
-adapted, and blocked parity records. `validation/run-e2e.sh` records those
-Swift validation streams, the Swift schema/perms fixture generation and
-verification artifacts, the MacroTesting log, and a one-iteration
-`local-todos` benchmark JSONL artifact by default; set
+adapted, and blocked parity records. `validation coverage` emits the same
+coverage gate as a compact summary with blocked record ids.
+`validation/run-e2e.sh` records those Swift validation streams, the Swift
+schema/perms fixture generation and verification artifacts, the MacroTesting
+log, and a one-iteration `local-todos` benchmark JSONL artifact by default; set
 `INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS` to change that count.
 
 Run local core benchmarks:

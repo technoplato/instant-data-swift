@@ -374,10 +374,11 @@ SyncUps recording/dependency flow,
 including meeting restore after relaunch, can be proven with
 `instant-swift-data validation syncups-recording --jsonl`.
 `validation/run-e2e.sh` now records the Swift local todo, local integration,
-Reminders, typed draft, platform adapter, SyncUps recording, and parity coverage
-evidence streams, Swift schema/perms fixture generation and verification
-artifacts, then the Swift benchmark evidence and TypeScript fixture check. Real
-remote push/pull remains future transport work.
+Reminders, typed draft, platform adapter, SyncUps recording, detailed parity
+report, and compact coverage summary evidence streams, Swift schema/perms
+fixture generation and verification artifacts, then the Swift benchmark evidence
+and TypeScript fixture check. Real remote push/pull remains future transport
+work.
 
 Current local progress: the CLI exposes non-captive local admin helpers:
 `instant-swift-data admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id]`

@@ -113,8 +113,9 @@ plus filtered active-row reloads through `@FetchAll` and `@Fetch`.
 streams (`swift-local.jsonl`, `swift-local-integrations.jsonl`,
 `swift-reminders.jsonl`, `swift-typed-drafts.jsonl`,
 `swift-platform-adapters.jsonl`, `swift-syncups-recording.jsonl`, and
-`swift-parity-report.jsonl`), records Swift schema/perms generation and
-verification artifacts (`swift-schema-generate.json`,
+`swift-parity-report.jsonl`), records the compact coverage gate as
+`swift-coverage.jsonl`, records Swift schema/perms generation and verification
+artifacts (`swift-schema-generate.json`,
 `swift-perms-generate.json`, `swift-schema-verify.json`,
 `swift-perms-verify.json`, `swift-generated-schema-verify.json`, and
 `swift-generated-perms-verify.json`), records the MacroTesting run as
@@ -125,9 +126,10 @@ directory, and
 `INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS` to adjust the benchmark
 iteration count. The parity report command can succeed while individual blocked
 provenance rows intentionally carry `ok: false`; the orchestrator records the
-artifact command result, not an all-rows-passed summary. The harness records the
-real Instant boundary as pending until ephemeral app creation, schema push, and
-admin query/transact are implemented.
+artifact command result, not an all-rows-passed summary. The coverage stream is
+the one-row gate to use when a caller needs blocked IDs and aggregate parity
+counts. The harness records the real Instant boundary as pending until ephemeral
+app creation, schema push, and admin query/transact are implemented.
 
 ## Required Cases
 

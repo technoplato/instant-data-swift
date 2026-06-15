@@ -1464,6 +1464,7 @@ public enum CLIValidationInvocation: Equatable, Sendable {
   case reminders
   case platformAdapters
   case parityReport
+  case coverage
   case syncUpsRecording
   case typedDrafts
 }
@@ -4493,8 +4494,11 @@ public struct CLIValidationParser: Parser {
     case "reminders", "local-reminders":
       return .reminders
 
-    case "parity-report", "parity", "coverage":
+    case "parity-report", "parity":
       return .parityReport
+
+    case "coverage":
+      return .coverage
 
     case "typed-drafts", "drafts":
       return .typedDrafts
