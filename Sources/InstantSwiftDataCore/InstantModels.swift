@@ -1506,3 +1506,119 @@ public struct InstantStoreSnapshot: Hashable, Codable, Sendable {
     try container.encode(triples, forKey: .triples)
   }
 }
+
+enum InstantDatalogBindingValue: Hashable, Sendable {
+  case string(String)
+  case value(InstantValue)
+}
+
+enum InstantDatalogTerm: Hashable, Sendable {
+  case variable(String)
+  case string(String)
+  case value(InstantValue)
+}
+
+struct InstantDatalogPattern: Hashable, Sendable {
+  var entity: InstantDatalogTerm
+  var attribute: InstantDatalogTerm
+  var value: InstantDatalogTerm
+
+  init(_ entity: InstantDatalogTerm, _ attribute: InstantDatalogTerm, _ value: InstantDatalogTerm) {
+    self.entity = entity
+    self.attribute = attribute
+    self.value = value
+  }
+}
+
+extension InstantStoreSnapshot {
+  typealias InstantDatalogBindings = [String: InstantDatalogBindingValue]
+
+  func matchPattern(
+    _ pattern: InstantDatalogPattern,
+    triple: InstantTriple,
+    bindings: InstantDatalogBindings = [:]
+  ) -> InstantDatalogBindings? {
+    var bindings = bindings
+    guard
+      match(pattern.entity, against: .string(triple.entityID), bindings: &bindings),
+      match(pattern.attribute, against: .string(triple.attributeID), bindings: &bindings),
+      match(pattern.value, against: Self.datalogBindingValue(for: triple.value), bindings: &bindings)
+    else {
+      return nil
+    }
+    return bindings
+  }
+
+  func querySingle(
+    _ pattern: InstantDatalogPattern,
+    bindings: InstantDatalogBindings = [:]
+  ) -> [InstantDatalogBindings] {
+    triples.compactMap { matchPattern(pattern, triple: $0, bindings: bindings) }
+  }
+
+  func queryWhere(_ patterns: [InstantDatalogPattern]) -> [InstantDatalogBindings] {
+    patterns.reduce([InstantDatalogBindings()]) { bindingsList, pattern in
+      bindingsList.flatMap { bindings in
+        querySingle(pattern, bindings: bindings)
+      }
+    }
+  }
+
+  func queryDatalog(
+    find variables: [String],
+    where patterns: [InstantDatalogPattern]
+  ) -> [[InstantDatalogBindingValue?]] {
+    queryDatalog(find: variables.map(InstantDatalogTerm.variable), where: patterns)
+  }
+
+  func queryDatalog(
+    find terms: [InstantDatalogTerm],
+    where patterns: [InstantDatalogPattern]
+  ) -> [[InstantDatalogBindingValue?]] {
+    queryWhere(patterns).map { bindings in
+      terms.map { Self.datalogBindingValue(for: $0, bindings: bindings) }
+    }
+  }
+
+  private func match(
+    _ term: InstantDatalogTerm,
+    against value: InstantDatalogBindingValue,
+    bindings: inout InstantDatalogBindings
+  ) -> Bool {
+    switch term {
+    case let .variable(name):
+      if let existingValue = bindings[name] {
+        return existingValue == value
+      }
+      bindings[name] = value
+      return true
+    case let .string(expected):
+      return value == .string(expected)
+    case let .value(expected):
+      return value == Self.datalogBindingValue(for: expected)
+    }
+  }
+
+  private static func datalogBindingValue(for value: InstantValue) -> InstantDatalogBindingValue {
+    switch value {
+    case let .ref(entityID), let .string(entityID):
+      return .string(entityID)
+    default:
+      return .value(value)
+    }
+  }
+
+  private static func datalogBindingValue(
+    for term: InstantDatalogTerm,
+    bindings: InstantDatalogBindings
+  ) -> InstantDatalogBindingValue? {
+    switch term {
+    case let .variable(name):
+      return bindings[name]
+    case let .string(value):
+      return .string(value)
+    case let .value(value):
+      return datalogBindingValue(for: value)
+    }
+  }
+}

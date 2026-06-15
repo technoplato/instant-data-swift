@@ -487,6 +487,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift materializes the same movie/person facts through Instant snapshots."
     ),
     instant(
+      id: "instant.datalog.pattern-query",
+      sourceFile: datalogSource,
+      sourceTestName: "matchPattern / query",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamDatalogPatternMatchingAndBindingQueries",
+      surface: "query",
+      status: .adapted,
+      notes: "Swift ports datalog's raw triple pattern binding, conflict semantics, and find-result arity over InstantStoreSnapshot. Entity and attribute terms are typed as strings, and string/ref values bind as raw ids to preserve repeated-variable joins."
+    ),
+    instant(
       id: "instant.query-validation.shape",
       sourceFile: queryValidationSource,
       sourceTestName: "top-level object validation",

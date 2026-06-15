@@ -1,3 +1,4 @@
+import CustomDump
 import Foundation
 @testable import InstantSwiftDataCore
 import Testing
@@ -307,6 +308,186 @@ struct InstantQueryExecutionParityTests {
       )
       expectParityEqual(users.compactMap { $0.string("handle") }.sorted(), testCase.2, "\(source) \(testCase.0)")
     }
+  }
+
+  @Test
+  func upstreamDatalogPatternMatchingAndBindingQueries() async throws {
+    let fixture = try await UpstreamInstantFixture.movies()
+    let snapshot = await fixture.store.snapshot()
+
+    func aid(_ friendlyName: String) throws -> String {
+      let parts = friendlyName.split(separator: "/", maxSplits: 1).map(String.init)
+      let namespace = try #require(parts.first)
+      let name = try #require(parts[safe: 1])
+      return try #require(fixture.attribute(namespace: namespace, name: name)?.id)
+    }
+
+    func entityID(namespace: String, attribute: String, value: InstantValue) throws -> String {
+      let attributeID = try aid("\(namespace)/\(attribute)")
+      let binding = try #require(
+        snapshot.querySingle(
+          InstantDatalogPattern(
+            .variable("?eid"),
+            .string(attributeID),
+            .value(value)
+          )
+        )
+        .first?["?eid"]
+      )
+      return try #require(binding.stringValue)
+    }
+
+    let titleAttr = try aid("movie/title")
+    let directorAttr = try aid("movie/director")
+    let yearAttr = try aid("movie/year")
+    let personNameAttr = try aid("person/name")
+    let terminatorID = try entityID(namespace: "movie", attribute: "title", value: .string("The Terminator"))
+    let aliensID = try entityID(namespace: "movie", attribute: "title", value: .string("Aliens"))
+    let jamesCameronID = try entityID(
+      namespace: "person",
+      attribute: "name",
+      value: .string("James Cameron")
+    )
+
+    let terminatorDirectorTriple = try #require(
+      snapshot.triples.first {
+        $0.entityID == terminatorID
+          && $0.attributeID == directorAttr
+          && $0.value == .ref(jamesCameronID)
+      }
+    )
+    let directorPattern = InstantDatalogPattern(
+      .variable("?movieId"),
+      .string(directorAttr),
+      .variable("?directorId")
+    )
+    expectNoDifference(
+      snapshot.matchPattern(
+        directorPattern,
+        triple: terminatorDirectorTriple,
+        bindings: ["?movieId": .string(terminatorID)]
+      ),
+      [
+        "?directorId": .string(jamesCameronID),
+        "?movieId": .string(terminatorID),
+      ],
+      datalogSource("matchPattern")
+    )
+    expectNoDifference(
+      snapshot.matchPattern(
+        directorPattern,
+        triple: terminatorDirectorTriple,
+        bindings: ["?movieId": .string(aliensID)]
+      ),
+      nil,
+      datalogSource("matchPattern")
+    )
+    let syntheticSelfIDSnapshot = InstantStoreSnapshot(
+      triples: [
+        InstantTriple(
+          entityID: "entity-1",
+          attributeID: "entities/id",
+          value: .string("entity-1"),
+          txID: "tx-datalog-self-id",
+          txTime: InstantTimestamp(milliseconds: 1)
+        )
+      ]
+    )
+    expectNoDifference(
+      syntheticSelfIDSnapshot.matchPattern(
+        InstantDatalogPattern(
+          .variable("?entityId"),
+          .string("entities/id"),
+          .variable("?entityId")
+        ),
+        triple: try #require(syntheticSelfIDSnapshot.triples.first)
+      ),
+      ["?entityId": .string("entity-1")],
+      "\(datalogSource("matchPattern")) repeated variable joins string values with entity ids"
+    )
+
+    let movies1987 = snapshot.querySingle(
+      InstantDatalogPattern(
+        .variable("?movieId"),
+        .string(yearAttr),
+        .value(.number(1987))
+      )
+    )
+    .compactMap { $0["?movieId"]?.stringValue }
+    .sorted()
+    expectNoDifference(
+      movies1987,
+      try [
+        entityID(namespace: "movie", attribute: "title", value: .string("Predator")),
+        entityID(namespace: "movie", attribute: "title", value: .string("RoboCop")),
+        entityID(namespace: "movie", attribute: "title", value: .string("Lethal Weapon")),
+      ]
+      .sorted(),
+      datalogSource("querySingle")
+    )
+
+    let terminatorDirectorBindings = snapshot.queryWhere([
+      InstantDatalogPattern(.variable("?movieId"), .string(titleAttr), .value(.string("The Terminator"))),
+      InstantDatalogPattern(.variable("?movieId"), .string(directorAttr), .variable("?directorId")),
+      InstantDatalogPattern(.variable("?directorId"), .string(personNameAttr), .variable("?directorName")),
+    ])
+    expectNoDifference(
+      terminatorDirectorBindings,
+      [
+        [
+          "?directorId": .string(jamesCameronID),
+          "?directorName": .string("James Cameron"),
+          "?movieId": .string(terminatorID),
+        ]
+      ],
+      datalogSource("queryWhere")
+    )
+
+    expectNoDifference(
+      snapshot.queryDatalog(
+        find: ["?directorName"],
+        where: [
+          InstantDatalogPattern(.variable("?movieId"), .string(titleAttr), .value(.string("The Terminator"))),
+          InstantDatalogPattern(.variable("?movieId"), .string(directorAttr), .variable("?directorId")),
+          InstantDatalogPattern(.variable("?directorId"), .string(personNameAttr), .variable("?directorName")),
+        ]
+      ),
+      [[.string("James Cameron")]],
+      datalogSource("query")
+    )
+
+    expectNoDifference(
+      snapshot.queryDatalog(
+        find: ["?movieId"],
+        where: [
+          InstantDatalogPattern(.variable("?movieId"), .string(directorAttr), .variable("?directorId")),
+          InstantDatalogPattern(.variable("?directorId"), .string(personNameAttr), .value(.string("James Cameron"))),
+          InstantDatalogPattern(.variable("?movieId"), .string(titleAttr), .value(.string("Aliens"))),
+        ]
+      ),
+      [[.string(aliensID)]],
+      datalogSource("query")
+    )
+    expectNoDifference(
+      snapshot.queryDatalog(
+        find: ["?movieId", "?missing"],
+        where: [
+          InstantDatalogPattern(.variable("?movieId"), .string(titleAttr), .value(.string("Aliens"))),
+        ]
+      ),
+      [[.some(.string(aliensID)), nil]],
+      "\(datalogSource("query")) preserves find arity for unbound variables"
+    )
+    expectNoDifference(
+      snapshot.queryDatalog(
+        find: [.variable("?movieId"), .value(.string("literal"))],
+        where: [
+          InstantDatalogPattern(.variable("?movieId"), .string(titleAttr), .value(.string("Aliens"))),
+        ]
+      ),
+      [[.some(.string(aliensID)), .some(.string("literal"))]],
+      "\(datalogSource("query")) preserves literal find terms"
+    )
   }
 
   @Test
@@ -1467,6 +1648,13 @@ private func datalogValueDescription(_ value: InstantValue) -> String {
     return String(describing: value)
   case let .lookupRef(value):
     return String(describing: value)
+  }
+}
+
+private extension InstantDatalogBindingValue {
+  var stringValue: String? {
+    guard case let .string(value) = self else { return nil }
+    return value
   }
 }
 
