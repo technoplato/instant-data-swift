@@ -811,10 +811,10 @@ struct LocalTodoValidationTests {
 
     expectNoDifference(run.result.event, "parity-report")
     expectNoDifference(run.result.coverageComplete, false)
-    expectNoDifference(run.result.recordCount, 163)
-    expectNoDifference(run.result.exactCount, 18)
-    expectNoDifference(run.result.adaptedCount, 142)
-    expectNoDifference(run.result.blockedCount, 3)
+    expectNoDifference(run.result.recordCount, 176)
+    expectNoDifference(run.result.exactCount, 26)
+    expectNoDifference(run.result.adaptedCount, 146)
+    expectNoDifference(run.result.blockedCount, 4)
     expectNoDifference(run.result.notApplicableCount, 0)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
     expectNoDifference(run.summary.appID, "validation-parity-test")
@@ -824,7 +824,7 @@ struct LocalTodoValidationTests {
       run.summary.events,
       Array(repeating: "parity-record", count: run.result.recordCount)
     )
-    expectNoDifference(run.summary.failedEvents, Array(repeating: "parity-record", count: 3))
+    expectNoDifference(run.summary.failedEvents, Array(repeating: "parity-record", count: 4))
     #expect(
       run.result.sourceFiles.contains(
         "upstream/instant/client/packages/core/__tests__/src/store.test.ts"
@@ -1051,13 +1051,13 @@ struct LocalTodoValidationTests {
     )
 
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 163)
+    expectNoDifference(rows.count, 176)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
     expectNoDifference(Set(rows.map { $0["appID"] as? String ?? "" }), Set(["local-validation"]))
     expectNoDifference(Set(rows.map { $0["event"] as? String ?? "" }), Set(["parity-record"]))
-    expectNoDifference(rows.filter { ($0["ok"] as? Bool) == false }.count, 3)
+    expectNoDifference(rows.filter { ($0["ok"] as? Bool) == false }.count, 4)
     let platformAdapterBinding = try #require(rows.first { row in
       row["entityID"] as? String == "instant.react-common.platform-adapter-bindings"
     })
@@ -1113,13 +1113,13 @@ struct LocalTodoValidationTests {
 
     #expect(result.status == 0)
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 163)
+    expectNoDifference(rows.count, 176)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
     expectNoDifference(Set(rows.map { $0["appID"] as? String ?? "" }), Set(["local-validation"]))
     expectNoDifference(Set(rows.map { $0["event"] as? String ?? "" }), Set(["parity-record"]))
-    expectNoDifference(rows.filter { ($0["ok"] as? Bool) == false }.count, 3)
+    expectNoDifference(rows.filter { ($0["ok"] as? Bool) == false }.count, 4)
     let platformAdapterBinding = try #require(rows.first { row in
       row["entityID"] as? String == "instant.react-common.platform-adapter-bindings"
     })

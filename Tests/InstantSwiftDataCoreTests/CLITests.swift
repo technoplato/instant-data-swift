@@ -8316,10 +8316,10 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 163)
-    expectNoDifference(jsonOutput.exactCount, 18)
-    expectNoDifference(jsonOutput.adaptedCount, 142)
-    expectNoDifference(jsonOutput.blockedCount, 3)
+    expectNoDifference(jsonOutput.recordCount, 176)
+    expectNoDifference(jsonOutput.exactCount, 26)
+    expectNoDifference(jsonOutput.adaptedCount, 146)
+    expectNoDifference(jsonOutput.blockedCount, 4)
     expectNoDifference(jsonOutput.notApplicableCount, 0)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -8531,6 +8531,29 @@ extension InstantStoreTests {
         $0.id == "instant.query.object-values" && $0.status == "exact"
       }
     )
+    for expected in [
+      ("instant.query.pagination-limit", "exact"),
+      ("instant.query.nested-limit-warning", "adapted"),
+      ("instant.query.pagination-offset-page-info", "blocked"),
+      ("instant.query.pagination-last", "exact"),
+      ("instant.query.pagination-first", "exact"),
+      ("instant.query.leading-ignores-start-cursor", "adapted"),
+      ("instant.query.leading-ignores-end-cursor", "adapted"),
+      ("instant.query.arbitrary-ordering", "exact"),
+      ("instant.query.arbitrary-ordering-dates", "adapted"),
+      ("instant.query.arbitrary-ordering-strings", "exact"),
+      ("instant.query.fields", "adapted"),
+      ("instant.query.is-null", "exact"),
+      ("instant.query.is-null-relations", "exact"),
+      ("instant.query.is-null-reverse-relations", "exact"),
+      ("instant.query.not-and-ne", "adapted"),
+      ("instant.query.comparators", "exact"),
+    ] {
+      #expect(
+        jsonOutput.records.contains { $0.id == expected.0 && $0.status == expected.1 },
+        "Expected \(expected.1) InstaQL parity record \(expected.0)"
+      )
+    }
     for id in [
       "instant.query-validation.top-level-types",
       "instant.query-validation.top-level-entity-names",
@@ -8974,10 +8997,10 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 163"))
-    #expect(humanOutput.contains("exact: 18"))
-    #expect(humanOutput.contains("adapted: 142"))
-    #expect(humanOutput.contains("blocked: 3"))
+    #expect(humanOutput.contains("records: 176"))
+    #expect(humanOutput.contains("exact: 26"))
+    #expect(humanOutput.contains("adapted: 146"))
+    #expect(humanOutput.contains("blocked: 4"))
     #expect(humanOutput.contains("not applicable: 0"))
   }
 

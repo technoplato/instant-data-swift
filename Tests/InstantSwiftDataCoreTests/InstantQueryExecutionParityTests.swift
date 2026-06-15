@@ -1127,6 +1127,19 @@ struct InstantQueryExecutionParityTests {
     )
     expectParityEqual(books.count, 10, source)
 
+    source = instaQLSource("nested limit works but warns")
+    #expect(
+      InstantQueryInclude(
+        "books",
+        query: InstantQueryPlan(
+          id: "bookshelves.books.nested-limit",
+          namespace: "books",
+          limit: 4
+        )
+      ) == nil,
+      "\(source) adapted: Swift rejects paginated nested includes at construction time instead of allowing them with a runtime warning."
+    )
+
     source = instaQLSource("pagination last")
     books = await fixture.query(
       InstantQueryPlan(id: "books.last", namespace: "books", last: 10)
@@ -1162,6 +1175,85 @@ struct InstantQueryExecutionParityTests {
         "A Hero Of Our Time",
         "A History of Private Life: From pagan Rome to Byzantium",
       ],
+      source
+    )
+
+    source = instaQLSource("Leading queries should ignore the start cursor")
+    let createdAt = try #require(fixture.attribute(namespace: "users", name: "createdAt"))
+    let fullName = try #require(fixture.attribute(namespace: "users", name: "fullName"))
+    let email = try #require(fixture.attribute(namespace: "users", name: "email"))
+    let handle = try #require(fixture.attribute(namespace: "users", name: "handle"))
+    let leadingDescendingPlan = InstantQueryPlan(
+      id: "users.leading-created-at-desc",
+      namespace: "users",
+      order: InstantQueryOrder("createdAt", .descending),
+      limit: 2
+    )
+    expectParityEqual(
+      await fixture.query(leadingDescendingPlan).compactMap { $0.string("handle") },
+      ["nicolegf", "alex"],
+      source
+    )
+    let updatedNicoleFixture = try await fixture.transacting(
+      operations: [
+        .merge(
+          InstantTriple(
+            entityID: "0f3d67fc-8b37-4b03-ac47-29fec4edc4f7",
+            attributeID: createdAt.id,
+            value: .string("2025-09-05 18:53:07.993689"),
+            txID: "upstream-fixture-leading-start",
+            txTime: InstantTimestamp(milliseconds: 9_000_000_000_250)
+          )
+        )
+      ]
+    )
+    expectParityEqual(
+      await updatedNicoleFixture.query(leadingDescendingPlan).compactMap { $0.string("handle") },
+      ["nicolegf", "alex"],
+      "\(source) updated existing row"
+    )
+    let bobFixture = try await fixture.transacting(
+      operations: [
+        testTriple("fixture-user-bob", fullName, .string("bob"), 251),
+        testTriple("fixture-user-bob", email, .string("bob@instantdb.com"), 251),
+        testTriple("fixture-user-bob", handle, .string("bob"), 251),
+        testTriple(
+          "fixture-user-bob",
+          createdAt,
+          .string("2025-09-05 18:53:07.993689"),
+          251
+        ),
+      ].map(InstantTripleOperation.insert)
+    )
+    expectParityEqual(
+      await bobFixture.query(leadingDescendingPlan).compactMap { $0.string("handle") },
+      ["bob", "nicolegf"],
+      "\(source) local optimistic add"
+    )
+
+    source = instaQLSource("Leading queries should ignore the end cursor for optimistic adds")
+    let newUserFixture = try await fixture.transacting(
+      operations: [
+        testTriple("fixture-user-newuser", fullName, .string("New User"), 252),
+        testTriple("fixture-user-newuser", email, .string("new@instantdb.com"), 252),
+        testTriple("fixture-user-newuser", handle, .string("newuser"), 252),
+        testTriple(
+          "fixture-user-newuser",
+          createdAt,
+          .string("2025-09-05 18:53:07.993689"),
+          252
+        ),
+      ].map(InstantTripleOperation.insert)
+    )
+    expectParityEqual(
+      await newUserFixture.query(
+        InstantQueryPlan(
+          id: "users.leading-created-at-asc",
+          namespace: "users",
+          order: InstantQueryOrder("createdAt", .ascending)
+        )
+      ).compactMap { $0.string("handle") },
+      ["stopa", "joe", "alex", "nicolegf", "newuser"],
       source
     )
 
@@ -1312,6 +1404,24 @@ struct InstantQueryExecutionParityTests {
         ["0f3d67fc-8b37-4b03-ac47-29fec4edc4f7", "nicolegf", "handle"],
       ],
       "\(source) top-level selected fields"
+    )
+
+    let idOnlyUsers = await fixture.query(
+      InstantQueryPlan(
+        id: "users.fields.empty",
+        namespace: "users",
+        selectedFields: []
+      )
+    )
+    expectParityEqual(
+      idOnlyUsers.map { [$0.id, $0.values.keys.sorted().joined(separator: ",")] },
+      [
+        ["ce942051-2d74-404a-9c7d-4aa3f2d54ae4", ""],
+        ["ad45e100-777a-4de8-8978-aa13200a4824", ""],
+        ["a55a5231-5c4d-4033-b859-7790c45c22d5", ""],
+        ["0f3d67fc-8b37-4b03-ac47-29fec4edc4f7", ""],
+      ],
+      "\(source) empty selected fields keep ids outside values"
     )
 
     let alex = await fixture.query(

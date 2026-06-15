@@ -467,14 +467,104 @@ public enum InstantSwiftDataParityCoverage {
       notes: "JSON object attributes materialize through InstantValue.json with the upstream object payload."
     ),
     instant(
-      id: "instant.query.pagination-ordering",
+      id: "instant.query.pagination-limit",
       sourceFile: instaQLSource,
-      sourceTestName: "pagination and arbitrary ordering",
+      sourceTestName: "pagination limit",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLPaginationOrderingAndFields",
+      surface: "query",
+      status: .exact,
+      notes: "Swift limit pagination returns the same number of Zeneca books as upstream."
+    ),
+    instant(
+      id: "instant.query.nested-limit-warning",
+      sourceFile: instaQLSource,
+      sourceTestName: "nested limit works but warns",
       swiftFile: queryExecutionSwiftFile,
       swiftTestName: "upstreamInstaQLPaginationOrderingAndFields",
       surface: "query",
       status: .adapted,
-      notes: "Swift exercises local pagination/order fields with typed query plans."
+      notes: "Swift rejects paginated nested includes at construction time instead of allowing the raw query and emitting a runtime warning."
+    ),
+    instant(
+      id: "instant.query.pagination-offset-page-info",
+      sourceFile: instaQLSource,
+      sourceTestName: "pagination offset waits for pageInfo",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "blocked",
+      surface: "query",
+      status: .blocked,
+      notes: "Swift supports local offset pagination, but upstream's wait-for-remote-pageInfo behavior and pageInfo-supplied window bounds have no local store input yet."
+    ),
+    instant(
+      id: "instant.query.pagination-last",
+      sourceFile: instaQLSource,
+      sourceTestName: "pagination last",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLPaginationOrderingAndFields",
+      surface: "query",
+      status: .exact,
+      notes: "Swift last pagination returns the same number of Zeneca books as upstream."
+    ),
+    instant(
+      id: "instant.query.pagination-first",
+      sourceFile: instaQLSource,
+      sourceTestName: "pagination first",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLPaginationOrderingAndFields",
+      surface: "query",
+      status: .exact,
+      notes: "Swift first pagination returns the same number of Zeneca books as upstream."
+    ),
+    instant(
+      id: "instant.query.leading-ignores-start-cursor",
+      sourceFile: instaQLSource,
+      sourceTestName: "Leading queries should ignore the start cursor",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLPaginationOrderingAndFields",
+      surface: "query",
+      status: .adapted,
+      notes: "Swift has no ambient remote cursor bounds for leading local queries and verifies reordered local writes and optimistic adds stay visible."
+    ),
+    instant(
+      id: "instant.query.leading-ignores-end-cursor",
+      sourceFile: instaQLSource,
+      sourceTestName: "Leading queries should ignore the end cursor for optimistic adds",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLPaginationOrderingAndFields",
+      surface: "query",
+      status: .adapted,
+      notes: "Swift has no ambient remote cursor bounds for leading local queries and verifies an optimistic append remains visible in ascending order."
+    ),
+    instant(
+      id: "instant.query.arbitrary-ordering",
+      sourceFile: instaQLSource,
+      sourceTestName: "arbitrary ordering",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLPaginationOrderingAndFields",
+      surface: "query",
+      status: .exact,
+      notes: "Swift title ordering returns the same first ten Zeneca book titles as upstream."
+    ),
+    instant(
+      id: "instant.query.arbitrary-ordering-dates",
+      sourceFile: instaQLSource,
+      sourceTestName: "arbitrary ordering with dates",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLPaginationOrderingAndFields",
+      surface: "query",
+      status: .adapted,
+      notes: "Swift ports date and number ordering, including null and missing value placement, through typed InstantValue comparisons."
+    ),
+    instant(
+      id: "instant.query.arbitrary-ordering-strings",
+      sourceFile: instaQLSource,
+      sourceTestName: "arbitrary ordering with strings",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLPaginationOrderingAndFields",
+      surface: "query",
+      status: .exact,
+      notes: "Swift string ordering matches upstream ascending and descending order, with additional case-only ordering coverage."
     ),
     instant(
       id: "instant.query.fields",
@@ -484,17 +574,57 @@ public enum InstantSwiftDataParityCoverage {
       swiftTestName: "upstreamInstaQLPaginationOrderingAndFields",
       surface: "query",
       status: .adapted,
-      notes: "Swift treats partial selections as snapshots rather than decoded full entities."
+      notes: "Swift treats partial and empty field selections as snapshots with ids outside the values dictionary rather than decoded full entities."
     ),
     instant(
-      id: "instant.query.null-not-comparators",
+      id: "instant.query.is-null",
       sourceFile: instaQLSource,
-      sourceTestName: "$isNull / $not and $ne / comparators",
+      sourceTestName: "$isNull",
       swiftFile: queryExecutionSwiftFile,
       swiftTestName: "upstreamInstaQLNullNotEqualsAndComparators",
       surface: "query",
       status: .exact,
-      notes: "Null, negation, not-equals, and comparison filters are matched against the upstream fixture."
+      notes: "Swift isNull filters return explicit null and missing scalar values against the upstream fixture."
+    ),
+    instant(
+      id: "instant.query.is-null-relations",
+      sourceFile: instaQLSource,
+      sourceTestName: "$isNull with relations",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLNullNotEqualsAndComparators",
+      surface: "query",
+      status: .exact,
+      notes: "Swift relation isNull filters match users without shelves and users linked to books whose nested title becomes null."
+    ),
+    instant(
+      id: "instant.query.is-null-reverse-relations",
+      sourceFile: instaQLSource,
+      sourceTestName: "$isNull with reverse relations",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLNullNotEqualsAndComparators",
+      surface: "query",
+      status: .exact,
+      notes: "Swift reverse relation isNull filters return shelves without linked users."
+    ),
+    instant(
+      id: "instant.query.not-and-ne",
+      sourceFile: instaQLSource,
+      sourceTestName: "$not and $ne",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLNullNotEqualsAndComparators",
+      surface: "query",
+      status: .adapted,
+      notes: "Swift represents both upstream $not and $ne with InstantQueryFilter.notEquals while preserving null and missing-field results."
+    ),
+    instant(
+      id: "instant.query.comparators",
+      sourceFile: instaQLSource,
+      sourceTestName: "comparators",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLNullNotEqualsAndComparators",
+      surface: "query",
+      status: .exact,
+      notes: "Swift comparator filters match upstream string, number, date, boolean, and string-date comparison behavior."
     ),
     instant(
       id: "instant.datalog.movie-fixture",

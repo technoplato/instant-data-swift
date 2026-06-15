@@ -11,10 +11,10 @@ struct InstantStoreParityTests {
 
     expectNoDifference(report.event, "parity-report")
     expectNoDifference(report.coverageComplete, false)
-    expectNoDifference(report.recordCount, 163)
-    expectNoDifference(report.exactCount, 18)
-    expectNoDifference(report.adaptedCount, 142)
-    expectNoDifference(report.blockedCount, 3)
+    expectNoDifference(report.recordCount, 176)
+    expectNoDifference(report.exactCount, 26)
+    expectNoDifference(report.adaptedCount, 146)
+    expectNoDifference(report.blockedCount, 4)
     expectNoDifference(report.notApplicableCount, 0)
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/schema.test.ts"))
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/serializeSchema.test.ts"))
@@ -63,6 +63,130 @@ struct InstantStoreParityTests {
     #expect(report.records.contains { $0.id == "instant.query.relation-filter-refs" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.query.create-update-triples" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.query.object-values" && $0.status == .exact })
+    let instaQLSplitMappings: [(
+      id: String, sourceTestName: String, swiftTestName: String, status: InstantParityCoverageStatus,
+      notes: String
+    )] = [
+      (
+        "instant.query.pagination-limit",
+        "pagination limit",
+        "upstreamInstaQLPaginationOrderingAndFields",
+        .exact,
+        "Swift limit pagination returns the same number of Zeneca books as upstream."
+      ),
+      (
+        "instant.query.nested-limit-warning",
+        "nested limit works but warns",
+        "upstreamInstaQLPaginationOrderingAndFields",
+        .adapted,
+        "Swift rejects paginated nested includes at construction time instead of allowing the raw query and emitting a runtime warning."
+      ),
+      (
+        "instant.query.pagination-offset-page-info",
+        "pagination offset waits for pageInfo",
+        "blocked",
+        .blocked,
+        "Swift supports local offset pagination, but upstream's wait-for-remote-pageInfo behavior and pageInfo-supplied window bounds have no local store input yet."
+      ),
+      (
+        "instant.query.pagination-last",
+        "pagination last",
+        "upstreamInstaQLPaginationOrderingAndFields",
+        .exact,
+        "Swift last pagination returns the same number of Zeneca books as upstream."
+      ),
+      (
+        "instant.query.pagination-first",
+        "pagination first",
+        "upstreamInstaQLPaginationOrderingAndFields",
+        .exact,
+        "Swift first pagination returns the same number of Zeneca books as upstream."
+      ),
+      (
+        "instant.query.leading-ignores-start-cursor",
+        "Leading queries should ignore the start cursor",
+        "upstreamInstaQLPaginationOrderingAndFields",
+        .adapted,
+        "Swift has no ambient remote cursor bounds for leading local queries and verifies reordered local writes and optimistic adds stay visible."
+      ),
+      (
+        "instant.query.leading-ignores-end-cursor",
+        "Leading queries should ignore the end cursor for optimistic adds",
+        "upstreamInstaQLPaginationOrderingAndFields",
+        .adapted,
+        "Swift has no ambient remote cursor bounds for leading local queries and verifies an optimistic append remains visible in ascending order."
+      ),
+      (
+        "instant.query.arbitrary-ordering",
+        "arbitrary ordering",
+        "upstreamInstaQLPaginationOrderingAndFields",
+        .exact,
+        "Swift title ordering returns the same first ten Zeneca book titles as upstream."
+      ),
+      (
+        "instant.query.arbitrary-ordering-dates",
+        "arbitrary ordering with dates",
+        "upstreamInstaQLPaginationOrderingAndFields",
+        .adapted,
+        "Swift ports date and number ordering, including null and missing value placement, through typed InstantValue comparisons."
+      ),
+      (
+        "instant.query.arbitrary-ordering-strings",
+        "arbitrary ordering with strings",
+        "upstreamInstaQLPaginationOrderingAndFields",
+        .exact,
+        "Swift string ordering matches upstream ascending and descending order, with additional case-only ordering coverage."
+      ),
+      (
+        "instant.query.fields",
+        "fields",
+        "upstreamInstaQLPaginationOrderingAndFields",
+        .adapted,
+        "Swift treats partial and empty field selections as snapshots with ids outside the values dictionary rather than decoded full entities."
+      ),
+      (
+        "instant.query.is-null",
+        "$isNull",
+        "upstreamInstaQLNullNotEqualsAndComparators",
+        .exact,
+        "Swift isNull filters return explicit null and missing scalar values against the upstream fixture."
+      ),
+      (
+        "instant.query.is-null-relations",
+        "$isNull with relations",
+        "upstreamInstaQLNullNotEqualsAndComparators",
+        .exact,
+        "Swift relation isNull filters match users without shelves and users linked to books whose nested title becomes null."
+      ),
+      (
+        "instant.query.is-null-reverse-relations",
+        "$isNull with reverse relations",
+        "upstreamInstaQLNullNotEqualsAndComparators",
+        .exact,
+        "Swift reverse relation isNull filters return shelves without linked users."
+      ),
+      (
+        "instant.query.not-and-ne",
+        "$not and $ne",
+        "upstreamInstaQLNullNotEqualsAndComparators",
+        .adapted,
+        "Swift represents both upstream $not and $ne with InstantQueryFilter.notEquals while preserving null and missing-field results."
+      ),
+      (
+        "instant.query.comparators",
+        "comparators",
+        "upstreamInstaQLNullNotEqualsAndComparators",
+        .exact,
+        "Swift comparator filters match upstream string, number, date, boolean, and string-date comparison behavior."
+      ),
+    ]
+    for expected in instaQLSplitMappings {
+      let record = try #require(report.records.first { $0.id == expected.id })
+      expectNoDifference(record.sourceTestName, expected.sourceTestName)
+      expectNoDifference(record.swiftTestName, expected.swiftTestName)
+      expectNoDifference(record.status, expected.status)
+      expectNoDifference(record.notes, expected.notes)
+    }
     #expect(report.records.contains { $0.id == "instant.datalog.pattern-query" && $0.status == .adapted })
     let queryValidationMappings: [(
       id: String, sourceTestName: String, swiftTestName: String, notes: String
