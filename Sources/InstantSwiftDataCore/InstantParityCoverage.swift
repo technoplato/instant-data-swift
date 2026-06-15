@@ -437,6 +437,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "FetchOne preserves value-only defaults, optional entity defaults, and delayed required wrapper assignment before explicit async loads."
     ),
     sqlite(
+      id: "sqlite.fetch-wrappers.basic-matrix",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchTests.swift",
+      sourceTestName: "bareFetchAll / fetchAllWithQuery / fetchOneCountWithQuery / fetchOneOptional / fetchOneWithDefault / fetchOneOptional_SQL",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "fetchWrappersLoadBasicSQLiteDataMatrix",
+      surface: "adapter-fetch",
+      status: .adapted,
+      notes: "The Instant wrappers cover SQLiteData's basic fetch matrix with typed queries, derived count loading, and explicit async reloads."
+    ),
+    sqlite(
       id: "sqlite.fetch-all.dynamic-query",
       sourceFile: "upstream/sqlite-data/Examples/CaseStudies/DynamicQuery.swift",
       sourceTestName: "@Fetch projected load dynamic query",

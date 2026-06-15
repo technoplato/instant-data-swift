@@ -3030,6 +3030,130 @@ struct TypedAPITests {
   }
 
   @Test
+  func fetchWrappersLoadBasicSQLiteDataMatrix() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_175.75)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000683")!
+    let recordIDs = [
+      InstantID<TypedTodo>(rawValue: "todo-fetch-matrix-1"),
+      InstantID<TypedTodo>(rawValue: "todo-fetch-matrix-2"),
+      InstantID<TypedTodo>(rawValue: "todo-fetch-matrix-3"),
+    ]
+    let defaultTodo = TypedTodo(
+      id: InstantID(rawValue: "todo-fetch-matrix-default"),
+      text: "Default",
+      isCompleted: false,
+      createdAt: baseDate.addingTimeInterval(-1)
+    )
+
+    try await withDependencies {
+      $0.date.now = baseDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "fetch-basic-matrix-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+      let orderedQuery = TypedTodo.query.order(TypedTodo.createdAt)
+      let openQuery = TypedTodo.query
+        .where(TypedTodo.isCompleted == false)
+        .order(TypedTodo.createdAt)
+
+      try await db.transact(id: "tx-fetch-basic-matrix-seed") {
+        TypedTodo.create(
+          id: recordIDs[0],
+          TypedTodo.text.set("Record 1"),
+          TypedTodo.isCompleted.set(true),
+          TypedTodo.createdAt.set(baseDate)
+        )
+        TypedTodo.create(
+          id: recordIDs[1],
+          TypedTodo.text.set("Record 2"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate.addingTimeInterval(1))
+        )
+        TypedTodo.create(
+          id: recordIDs[2],
+          TypedTodo.text.set("Record 3"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate.addingTimeInterval(2))
+        )
+      }
+
+      @FetchAll var allTodos: [TypedTodo]
+      @FetchAll(openQuery) var openTodos: [TypedTodo]
+      @FetchOne var optionalTodo: TypedTodo?
+      @FetchOne var requiredTodo = defaultTodo
+      @FetchOne(orderedQuery) var typedQueryTodo: TypedTodo?
+      @Fetch(
+        wrappedValue: 0,
+        load: { client in
+          try await client.query(openQuery).count
+        }
+      ) var openCount
+
+      expectNoDifference(allTodos, [])
+      expectNoDifference(openTodos, [])
+      expectNoDifference(optionalTodo, nil)
+      expectNoDifference(requiredTodo.text, "Default")
+      expectNoDifference(typedQueryTodo, nil)
+      expectNoDifference(openCount, 0)
+
+      try await $allTodos.load()
+      try await $openTodos.load()
+      try await $optionalTodo.load()
+      try await $requiredTodo.load()
+      try await $typedQueryTodo.load()
+      try await $openCount.load()
+
+      expectNoDifference(allTodos.map(\.text).sorted(), ["Record 1", "Record 2", "Record 3"])
+      expectNoDifference(openTodos.map(\.text), ["Record 2", "Record 3"])
+      #expect(["Record 1", "Record 2", "Record 3"].contains(optionalTodo?.text))
+      #expect(["Record 1", "Record 2", "Record 3"].contains(requiredTodo.text))
+      expectNoDifference(typedQueryTodo?.text, "Record 1")
+      expectNoDifference(openCount, 2)
+      expectNoDifference($allTodos.loadError, nil)
+      expectNoDifference($openTodos.loadError, nil)
+      expectNoDifference($optionalTodo.loadError, nil)
+      expectNoDifference($requiredTodo.loadError, nil)
+      expectNoDifference($typedQueryTodo.loadError, nil)
+      expectNoDifference($openCount.loadError, nil)
+
+      let loadedRequiredText = requiredTodo.text
+      try await db.transact(id: "tx-fetch-basic-matrix-delete") {
+        for id in recordIDs {
+          TypedTodo.delete(id: id)
+        }
+      }
+
+      try await $allTodos.load()
+      try await $openTodos.load()
+      try await $optionalTodo.load()
+      try await $typedQueryTodo.load()
+      try await $openCount.load()
+      do {
+        try await $requiredTodo.load()
+        #expect(Bool(false), "Expected required FetchOne to throw after deleting all records.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .implementationFailed)
+        expectNoDifference(error.operation, "load FetchOne")
+        expectNoDifference(error.namespace, "todos")
+      } catch {
+        #expect(Bool(false), "Unexpected error: \(error)")
+      }
+
+      expectNoDifference(allTodos, [])
+      expectNoDifference(openTodos, [])
+      expectNoDifference(optionalTodo, nil)
+      expectNoDifference(typedQueryTodo, nil)
+      expectNoDifference(openCount, 0)
+      expectNoDifference(requiredTodo.text, loadedRequiredText)
+      expectNoDifference($requiredTodo.loadError?.operation, "load FetchOne")
+    }
+  }
+
+  @Test
   func fetchSubscribesToCustomDerivedValues() async throws {
     let baseDate = Date(timeIntervalSince1970: 1_700_000_176)
     let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000677")!
