@@ -467,6 +467,36 @@ public enum InstantSwiftDataParityCoverage {
       notes: "FetchAll, FetchOne, and Fetch expose projected SwiftUI bindings over Instant values."
     ),
     sqlite(
+      id: "sqlite.draft.macro-generation",
+      sourceFile: "upstream/sqlite-data/Sources/SQLiteData/Documentation.docc/Articles/AddingToGRDB.md",
+      sourceTestName: "@Table generated Draft type",
+      swiftFile: "Tests/InstantSwiftDataMacrosTests/InstantEntityMacroTests.swift",
+      swiftTestName: "testGeneratedDraft",
+      surface: "drafts",
+      status: .adapted,
+      notes: "@InstantEntity generates an InstantEntityDraft with optional id, defaulted memberwise init, init(_ entity), and writable assignments; unlike SQLiteData TableDrafts, Instant drafts are write values rather than query tables."
+    ),
+    sqlite(
+      id: "sqlite.draft.nil-id-create",
+      sourceFile: "upstream/sqlite-data/Sources/SQLiteData/Documentation.docc/Articles/CloudKitSync.md",
+      sourceTestName: "Reminder.Draft(title:) omits id for database default",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "generatedDraftSaveCreatesAndEditsEntities",
+      surface: "drafts",
+      status: .adapted,
+      notes: "Nil-id generated drafts create Instant entities with dependency/runtime-generated local ids and return the created typed id."
+    ),
+    sqlite(
+      id: "sqlite.draft.existing-edit",
+      sourceFile: "upstream/sqlite-data/Examples/SyncUpTests/SyncUpFormTests.swift",
+      sourceTestName: "updateExisting",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "generatedDraftSaveCreatesAndEditsEntities",
+      surface: "drafts",
+      status: .adapted,
+      notes: "Draft(existing) preserves identity and save emits update assignments for edit flows."
+    ),
+    sqlite(
       id: "sqlite.reminders.search-tags",
       sourceFile: "upstream/sqlite-data/Examples/RemindersTests/SearchRemindersTests.swift",
       sourceTestName: "basics / showCompleted / deleteCompleted",
