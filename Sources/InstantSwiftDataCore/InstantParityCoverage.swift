@@ -507,6 +507,36 @@ public enum InstantSwiftDataParityCoverage {
       notes: "SwiftUI-only animation initializer overloads preserve SQLiteData case-study call-site ergonomics while reusing the normal Instant load/request paths."
     ),
     sqlite(
+      id: "sqlite.case-studies.swiftui-direct-wrappers",
+      sourceFile: "upstream/sqlite-data/Examples/CaseStudies/SwiftUIDemo.swift",
+      sourceTestName: "@FetchAll/@FetchOne direct view facts list and count",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "fetchWrappersDriveCaseStudiesListCountAndImperativeSnapshots",
+      surface: "adapter-swiftui",
+      status: .adapted,
+      notes: "Direct Instant fetch wrappers load an ordered facts-style list, derived count, and delete/reload state through the same wrapper surface used by SwiftUI views."
+    ),
+    sqlite(
+      id: "sqlite.case-studies.observable-model",
+      sourceFile: "upstream/sqlite-data/Examples/CaseStudies/ObservableModelDemo.swift",
+      sourceTestName: "@Observable model fetch list/count, write, and delete flow",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "observableModelCaseStudyWritesCountsAndDeletesThroughWrappers",
+      surface: "adapter-observation",
+      status: .adapted,
+      notes: "An Observation-backed model owns Instant fetch wrapper state, writes facts through the injected client, reloads an ordered list plus derived count, and deletes selected rows without raw callbacks."
+    ),
+    sqlite(
+      id: "sqlite.case-studies.uikit-controller",
+      sourceFile: "upstream/sqlite-data/Examples/CaseStudies/UIKitDemo.swift",
+      sourceTestName: "UIKit controller observes @FetchAll and applies snapshots",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "fetchWrappersDriveCaseStudiesListCountAndImperativeSnapshots",
+      surface: "adapter-uikit",
+      status: .adapted,
+      notes: "Instant fetch wrappers can drive imperative snapshot application for UIKit-style controllers while preserving ordered list and delete/reload behavior."
+    ),
+    sqlite(
       id: "sqlite.bindings.fetch-wrappers",
       sourceFile: "upstream/sqlite-data/Sources/SQLiteData/FetchAll.swift",
       sourceTestName: "projectedValue binding",

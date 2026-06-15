@@ -3687,6 +3687,115 @@ struct TypedAPITests {
   }
 
   @Test
+  func fetchWrappersDriveCaseStudiesListCountAndImperativeSnapshots() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_175.875)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000684")!
+
+    try await withDependencies {
+      $0.date.now = baseDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "fetch-case-studies-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+      @FetchAll(TypedTodo.query.order(TypedTodo.createdAt, .descending))
+      var facts: [TypedTodo]
+      @Fetch(
+        wrappedValue: 0,
+        load: { client in
+          try await client.query(TypedTodo.query).count
+        }
+      )
+      var factsCount
+
+      try await db.transact(id: "tx-case-studies-facts-seed") {
+        TypedTodo.create(
+          id: InstantID(rawValue: "fact-1"),
+          TypedTodo.text.set("Fact 1"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate)
+        )
+        TypedTodo.create(
+          id: InstantID(rawValue: "fact-2"),
+          TypedTodo.text.set("Fact 2"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate.addingTimeInterval(1))
+        )
+        TypedTodo.create(
+          id: InstantID(rawValue: "fact-3"),
+          TypedTodo.text.set("Fact 3"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate.addingTimeInterval(2))
+        )
+      }
+
+      var reloadedSnapshots: [[String]] = []
+      try await $facts.load()
+      try await $factsCount.load()
+      reloadedSnapshots.append(facts.map(\.text))
+
+      expectNoDifference(facts.map(\.text), ["Fact 3", "Fact 2", "Fact 1"])
+      expectNoDifference(factsCount, 3)
+      expectNoDifference($facts.loadError, nil)
+      expectNoDifference($factsCount.loadError, nil)
+      expectNoDifference($facts.isLoading, false)
+      expectNoDifference($factsCount.isLoading, false)
+
+      let deletedID = try #require(facts.dropFirst().first?.id)
+      try await db.transact(id: "tx-case-studies-facts-delete") {
+        TypedTodo.delete(id: deletedID)
+      }
+      try await $facts.load()
+      try await $factsCount.load()
+      reloadedSnapshots.append(facts.map(\.text))
+
+      expectNoDifference(facts.map(\.text), ["Fact 3", "Fact 1"])
+      expectNoDifference(factsCount, 2)
+      expectNoDifference(reloadedSnapshots, [
+        ["Fact 3", "Fact 2", "Fact 1"],
+        ["Fact 3", "Fact 1"],
+      ])
+
+      let liveFacts = FetchAll<TypedTodo>(
+        TypedTodo.query.order(TypedTodo.createdAt, .descending)
+      )
+      let subscription = try await liveFacts.subscribe()
+      var iterator = subscription.makeAsyncIterator()
+      var appliedSnapshots: [[String]] = []
+
+      let initialLiveFacts = try #require(try await iterator.next())
+      appliedSnapshots.append(initialLiveFacts.map(\.text))
+
+      try await db.transact(id: "tx-case-studies-facts-live-insert") {
+        TypedTodo.create(
+          id: InstantID(rawValue: "fact-4"),
+          TypedTodo.text.set("Fact 4"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate.addingTimeInterval(3))
+        )
+      }
+      let insertedLiveFacts = try #require(try await iterator.next())
+      appliedSnapshots.append(insertedLiveFacts.map(\.text))
+
+      try await db.transact(id: "tx-case-studies-facts-live-delete") {
+        TypedTodo.delete(id: InstantID(rawValue: "fact-4"))
+      }
+      let deletedLiveFacts = try #require(try await iterator.next())
+      appliedSnapshots.append(deletedLiveFacts.map(\.text))
+      subscription.cancel()
+
+      expectNoDifference(appliedSnapshots, [
+        ["Fact 3", "Fact 1"],
+        ["Fact 4", "Fact 3", "Fact 1"],
+        ["Fact 3", "Fact 1"],
+      ])
+    }
+  }
+
+  @Test
   func fetchSubscribesToCustomDerivedValues() async throws {
     let baseDate = Date(timeIntervalSince1970: 1_700_000_176)
     let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000677")!
@@ -4781,6 +4890,59 @@ struct TypedAPITests {
 
   #if canImport(Observation)
     @Test
+    func observableModelCaseStudyWritesCountsAndDeletesThroughWrappers() async throws {
+      let baseDate = Date(timeIntervalSince1970: 1_700_000_369.125)
+      let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000705")!
+
+      try await withDependencies {
+        $0.date.now = baseDate
+        $0.uuid = .constant(fixedUUID)
+        try await $0.bootstrapInstantSwiftData(
+          appID: "observable-case-studies-\(UUID().uuidString)",
+          context: .test,
+          initialAttributes: TypedTodo.instantAttributes
+        )
+      } operation: {
+        let model = TypedTodoObservableFactsModel()
+        let titleChange = ObservationChangeFlag()
+        let initialTitles = withObservationTracking {
+          model.visibleTitles
+        } onChange: {
+          titleChange.record()
+        }
+        expectNoDifference(initialTitles, [])
+
+        try await model.increment(body: "Observable fact 1", createdAt: baseDate)
+        try await model.increment(
+          body: "Observable fact 2",
+          createdAt: baseDate.addingTimeInterval(1)
+        )
+
+        expectNoDifference(model.number, 2)
+        expectNoDifference(model.facts.map(\.text), [
+          "Observable fact 2",
+          "Observable fact 1",
+        ])
+        expectNoDifference(model.visibleTitles, [
+          "Observable fact 2",
+          "Observable fact 1",
+        ])
+        expectNoDifference(model.factsCount, 2)
+        expectNoDifference(model.$facts.loadError, nil)
+        expectNoDifference(model.$factsCount.loadError, nil)
+        #expect(titleChange.value)
+
+        try await model.deleteFact(indices: IndexSet(integer: 0))
+
+        expectNoDifference(model.facts.map(\.text), ["Observable fact 1"])
+        expectNoDifference(model.visibleTitles, ["Observable fact 1"])
+        expectNoDifference(model.factsCount, 1)
+        expectNoDifference(model.$facts.isLoading, false)
+        expectNoDifference(model.$factsCount.isLoading, false)
+      }
+    }
+
+    @Test
     func observableModelLoadsDynamicFetchQueriesThroughWrapperState() async throws {
       let open = typedTodoSnapshot(
         id: "todo-observable-open",
@@ -5651,6 +5813,61 @@ private struct TypedTodoFetchOneModel {
 }
 
 #if canImport(Observation)
+  @Observable
+  private final class TypedTodoObservableFactsModel {
+    var number = 0
+    var visibleTitles: [String] = []
+
+    @ObservationIgnored
+    @FetchAll(TypedTodo.query.order(TypedTodo.createdAt, .descending))
+    var facts: [TypedTodo] = []
+
+    @ObservationIgnored
+    @Fetch(
+      wrappedValue: 0,
+      load: { client in
+        try await client.query(TypedTodo.query).count
+      }
+    )
+    var factsCount
+
+    @ObservationIgnored
+    @Dependency(\.defaultInstantSwiftData) var database
+
+    func increment(body: String, createdAt: Date) async throws {
+      let nextNumber = number + 1
+      number = nextNumber
+      let id = InstantID<TypedTodo>(rawValue: "observable-fact-\(nextNumber)")
+      try await database.transact(id: "tx-observable-facts-increment-\(nextNumber)") {
+        TypedTodo.create(
+          id: id,
+          TypedTodo.text.set(body),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(createdAt)
+        )
+      }
+      try await reload()
+    }
+
+    func deleteFact(indices: IndexSet) async throws {
+      let ids = indices.compactMap { index in
+        facts.indices.contains(index) ? facts[index].id : nil
+      }
+      try await database.transact(id: "tx-observable-facts-delete") {
+        for id in ids {
+          TypedTodo.delete(id: id)
+        }
+      }
+      try await reload()
+    }
+
+    private func reload() async throws {
+      try await $facts.load()
+      try await $factsCount.load()
+      visibleTitles = facts.map(\.text)
+    }
+  }
+
   @Observable
   private final class TypedTodoObservableSearchModel {
     var searchText = ""

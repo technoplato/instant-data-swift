@@ -5373,9 +5373,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 57)
+    expectNoDifference(jsonOutput.recordCount, 60)
     expectNoDifference(jsonOutput.exactCount, 11)
-    expectNoDifference(jsonOutput.adaptedCount, 43)
+    expectNoDifference(jsonOutput.adaptedCount, 46)
     expectNoDifference(jsonOutput.blockedCount, 3)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -5412,6 +5412,21 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.records.contains {
         $0.id == "sqlite.case-studies.animation-initializers" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "sqlite.case-studies.swiftui-direct-wrappers" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "sqlite.case-studies.observable-model" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "sqlite.case-studies.uikit-controller" && $0.status == "adapted"
       }
     )
     #expect(
@@ -5463,7 +5478,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 57"))
+    #expect(humanOutput.contains("records: 60"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 
