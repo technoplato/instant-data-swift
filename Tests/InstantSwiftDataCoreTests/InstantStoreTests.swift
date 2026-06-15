@@ -1269,6 +1269,84 @@ struct InstantStoreTests {
   }
 
   @Test
+  func transportMutationPortsInstamlOptimisticUnknownAttrTransform() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let source =
+      "upstream/instant/client/packages/core/__tests__/src/instaml.test.ts "
+      + "optimistically adds attrs if they don't exist "
+      + "[adapted: Swift keeps namespace-prefixed unknown attrs as triples instead of emitting add-attr txSteps.]"
+    let transaction = InstantStoreTransaction(
+      id: "tx-instaml-optimistic-unknown-attr",
+      operations: InstantInstamlTransform.updateOperations(
+        namespace: "books",
+        entityID: "book-unknown-attr",
+        fields: ["newAttr": .some(.string("New Title"))],
+        txID: "tx-instaml-optimistic-unknown-attr",
+        txTime: txTime
+      )
+    )
+    let mutation = InstantTransportMutation(
+      PendingMutation(id: transaction.id, createdAt: txTime, transaction: transaction)
+    )
+    expectNoDifference(mutation.preconditions, [], source)
+    expectNoDifference(mutation.txSteps.count, 2, source)
+
+    let data = try JSONEncoder().encode(mutation)
+    let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let txSteps = try #require(object["txSteps"] as? [[Any]])
+    expectNoDifference(txSteps.map(\.count), [4, 4], source)
+    expectNoDifference(
+      txSteps.sorted { ($0[safe: 2] as? String ?? "") < ($1[safe: 2] as? String ?? "") }
+        .map {
+          [
+            $0[safe: 0] as? String ?? "",
+            $0[safe: 1] as? String ?? "",
+            $0[safe: 2] as? String ?? "",
+            $0[safe: 3] as? String ?? "",
+          ]
+        },
+      [
+        ["add-triple", "book-unknown-attr", "books/id", "book-unknown-attr"],
+        ["add-triple", "book-unknown-attr", "books/newAttr", "New Title"],
+      ],
+      source
+    )
+
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: []
+      )
+    )
+    let result = try await runtime.transact(transaction, createdAt: txTime)
+    let snapshot = await runtime.store.snapshot()
+    expectNoDifference(result.changedEntityIDs, ["book-unknown-attr"], source)
+    expectNoDifference(result.tripleCount, 2, source)
+    expectNoDifference(
+      snapshot.triples,
+      [
+        InstantTriple(
+          entityID: "book-unknown-attr",
+          attributeID: "books/id",
+          value: .string("book-unknown-attr"),
+          txID: "tx-instaml-optimistic-unknown-attr",
+          txTime: txTime
+        ),
+        InstantTriple(
+          entityID: "book-unknown-attr",
+          attributeID: "books/newAttr",
+          value: .string("New Title"),
+          txID: "tx-instaml-optimistic-unknown-attr",
+          txTime: txTime
+        ),
+      ],
+      source
+    )
+  }
+
+  @Test
   func transportMutationPortsInstamlLookupResolvedUpdateTransform() throws {
     let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let source =

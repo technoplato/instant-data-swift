@@ -587,6 +587,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift ports the basic update transform through InstantInstamlTransform: encoded txSteps contain add-triple entries for scalar and primary-key writes, nil payload fields produce no txStep, and payload id fields are ignored in favor of the entity id."
     ),
     instant(
+      id: "instant.instaml.optimistic-unknown-attr",
+      sourceFile: instamlSource,
+      sourceTestName: "optimistically adds attrs if they don't exist",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "transportMutationPortsInstamlOptimisticUnknownAttrTransform",
+      surface: "instaml",
+      status: .adapted,
+      notes: "Swift does not emit JavaScript add-attr txSteps; schemaless writes preserve unknown namespace-prefixed attributes as add-triple txSteps and local triples."
+    ),
+    instant(
       id: "instant.instaml.lookup-resolves-attr-ids",
       sourceFile: instamlSource,
       sourceTestName: "lookup resolves attr ids",
