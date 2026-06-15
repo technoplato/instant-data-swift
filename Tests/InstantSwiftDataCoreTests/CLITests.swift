@@ -7243,7 +7243,7 @@ extension InstantStoreTests {
   }
 
   @Test
-  func cliStroopwafelExampleReportsMalformedArguments() throws {
+  func cliMalformedStroopwafelArgumentsDoNotBootstrapState() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
     try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)

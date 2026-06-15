@@ -484,8 +484,8 @@ struct InstantSwiftDataCLI {
       try await runMergeTileGame(leaf: leaf, output: output)
       return
 
-    case let .stroopwafel(arguments):
-      try await runStroopwafel(arguments: arguments, output: output)
+    case let .stroopwafel(leaf):
+      try await runStroopwafel(leaf: leaf, output: output)
       return
 
     case let .syncUps(arguments):
@@ -7049,15 +7049,10 @@ struct InstantSwiftDataCLI {
     }
   }
 
-  private static func runStroopwafel(arguments: [String], output: OutputMode) async throws {
-    let invocation: CLIExamplesStroopwafelLeafInvocation
-    do {
-      var input = arguments[...]
-      invocation = try CLIExamplesStroopwafelLeafParser().parse(&input)
-    } catch let error as CLIExamplesStroopwafelArgumentError {
-      throw CLIError(error.description, exitCode: error.exitCode)
-    }
-
+  private static func runStroopwafel(
+    leaf invocation: CLIExamplesStroopwafelLeafInvocation,
+    output: OutputMode
+  ) async throws {
     if case let .unknown(command) = invocation {
       throw CLIError("Unknown Stroopwafel command: \(command). \(stroopwafelUsage)", exitCode: 64)
     }

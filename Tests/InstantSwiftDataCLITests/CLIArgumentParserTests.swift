@@ -1043,7 +1043,11 @@ struct CLIArgumentParserTests {
   func examplesStroopwafelLeafParserParsesCommandsAndOptions() throws {
     expectNoDifference(
       try parseExamples(["stroopwafel", "rooms"]),
-      .stroopwafel(arguments: ["rooms"])
+      .stroopwafel(.rooms)
+    )
+    expectNoDifference(
+      try parseExamples(["stroopwafel", "tap", "game-1", "Blue"]),
+      .stroopwafel(.tap(gameID: "game-1", color: "blue"))
     )
     expectNoDifference(
       try parseExamplesStroopwafelLeaf(["setup-profile", "Ada123"]),
