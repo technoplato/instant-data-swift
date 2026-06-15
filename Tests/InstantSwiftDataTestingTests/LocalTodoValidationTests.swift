@@ -811,9 +811,9 @@ struct LocalTodoValidationTests {
 
     expectNoDifference(run.result.event, "parity-report")
     expectNoDifference(run.result.coverageComplete, false)
-    expectNoDifference(run.result.recordCount, 116)
+    expectNoDifference(run.result.recordCount, 118)
     expectNoDifference(run.result.exactCount, 19)
-    expectNoDifference(run.result.adaptedCount, 94)
+    expectNoDifference(run.result.adaptedCount, 96)
     expectNoDifference(run.result.blockedCount, 3)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
     expectNoDifference(run.summary.appID, "validation-parity-test")
@@ -827,6 +827,11 @@ struct LocalTodoValidationTests {
     #expect(
       run.result.sourceFiles.contains(
         "upstream/instant/client/packages/core/__tests__/src/store.test.ts"
+      )
+    )
+    #expect(
+      run.result.sourceFiles.contains(
+        "upstream/instant/client/packages/core/__tests__/src/serializeSchema.test.ts"
       )
     )
     #expect(

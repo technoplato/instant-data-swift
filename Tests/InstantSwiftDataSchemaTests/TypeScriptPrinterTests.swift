@@ -512,6 +512,56 @@ struct TypeScriptPrinterTests {
   }
 
   @Test
+  func schemaParserRoundTripsUpstreamSchemaBuilderEntityLinkShape() throws {
+    let source =
+      "upstream/instant/client/packages/core/__tests__/src/schema.test.ts runs without exception."
+    let document = InstantSchemaDocument(
+      entities: Self.upstreamCoreSchemaDocument.entities,
+      links: Self.upstreamCoreSchemaDocument.links
+    )
+    let printed = try TypeScriptSchemaPrinter().printSchema(document)
+    let parsed = try TypeScriptSchemaParser().parseDocument(printed)
+
+    expectNoDifference(parsed, ParsedInstantSchemaDocument(document), source)
+    expectNoDifference(
+      parsed.entities.map(\.namespace),
+      ["birthdays", "comments", "posts", "users"],
+      source
+    )
+    expectNoDifference(
+      parsed.links.map(\.name),
+      ["friendships", "postsComments", "referrals", "usersPosts"],
+      source
+    )
+    expectNoDifference(parsed.rooms.map(\.name), [], source)
+  }
+
+  @Test
+  func schemaDocumentJSONRoundTripsUpstreamCoreSchemaShape() throws {
+    let source =
+      "upstream/instant/client/packages/core/__tests__/src/serializeSchema.test.ts "
+      + "ability to parse stringified schema into real schema object."
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+
+    let data = try encoder.encode(Self.upstreamCoreSchemaDocument)
+    let decoded = try JSONDecoder().decode(InstantSchemaDocument.self, from: data)
+
+    expectNoDifference(decoded, Self.upstreamCoreSchemaDocument, source)
+    expectNoDifference(
+      decoded.entities.map(\.namespace),
+      ["birthdays", "comments", "posts", "users"],
+      source
+    )
+    expectNoDifference(
+      decoded.links.map(\.name),
+      ["friendships", "postsComments", "referrals", "usersPosts"],
+      source
+    )
+    expectNoDifference(decoded.rooms.map(\.name), ["chat"], source)
+  }
+
+  @Test
   func schemaParserRoundTripsUnsortedRooms() throws {
     let document = InstantSchemaDocument(
       entities: [InstantSchemaExamples.todos],

@@ -716,6 +716,26 @@ public enum InstantSwiftDataParityCoverage {
       status: .adapted,
       notes: "Swift pins stable cache keys for equivalent query plans and canonical JSON/date values."
     ),
+    instant(
+      id: "instant.schema.builder-shape",
+      sourceFile: schemaSource,
+      sourceTestName: "runs without exception",
+      swiftFile: schemaPrinterSwiftFile,
+      swiftTestName: "schemaParserRoundTripsUpstreamSchemaBuilderEntityLinkShape",
+      surface: "schema",
+      status: .adapted,
+      notes: "Swift builds the same upstream users/posts/comments/birthdays entity and link shape, prints it to TypeScript schema syntax, and parses it back. TypeScript-only query inference and asType helper assertions are out of scope for this adapted record."
+    ),
+    instant(
+      id: "instant.schema.json-serialization-round-trip",
+      sourceFile: serializeSchemaSource,
+      sourceTestName: "ability to parse stringified schema into real schema object",
+      swiftFile: schemaPrinterSwiftFile,
+      swiftTestName: "schemaDocumentJSONRoundTripsUpstreamCoreSchemaShape",
+      surface: "schema-serialization",
+      status: .adapted,
+      notes: "Swift mirrors Instant's stringify/parseSchemaFromJSON proof with Swift-native Codable schema values: the same entity, link, and room payload shape JSON-encodes, decodes, and compares equal. TypeScript asType helper assertions are out of scope for this adapted record."
+    ),
     sqlite(
       id: "sqlite.fetch-subscription.task-cancel",
       sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchSubscriptionTests.swift",
@@ -1320,6 +1340,10 @@ public enum InstantSwiftDataParityCoverage {
     "upstream/instant/client/packages/core/__tests__/src/transactionValidation.test.ts"
   private static let weakHashSource =
     "upstream/instant/client/packages/core/__tests__/src/utils/weakHash.test.ts"
+  private static let schemaSource =
+    "upstream/instant/client/packages/core/__tests__/src/schema.test.ts"
+  private static let serializeSchemaSource =
+    "upstream/instant/client/packages/core/__tests__/src/serializeSchema.test.ts"
   private static let storeParitySwiftFile =
     "Tests/InstantSwiftDataCoreTests/InstantStoreParityTests.swift"
   private static let queryExecutionSwiftFile =
@@ -1328,6 +1352,8 @@ public enum InstantSwiftDataParityCoverage {
     "Tests/InstantSwiftDataCoreTests/InstantQueryValidationParityTests.swift"
   private static let transactionValidationSwiftFile =
     "Tests/InstantSwiftDataCoreTests/InstantTransactionValidationParityTests.swift"
+  private static let schemaPrinterSwiftFile =
+    "Tests/InstantSwiftDataSchemaTests/TypeScriptPrinterTests.swift"
   private static let typedAPISwiftFile =
     "Tests/InstantSwiftDataTests/TypedAPITests.swift"
   private static let platformAdapterValidationSwiftFile =
