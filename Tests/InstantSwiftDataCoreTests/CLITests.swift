@@ -8316,9 +8316,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 176)
+    expectNoDifference(jsonOutput.recordCount, 178)
     expectNoDifference(jsonOutput.exactCount, 26)
-    expectNoDifference(jsonOutput.adaptedCount, 146)
+    expectNoDifference(jsonOutput.adaptedCount, 148)
     expectNoDifference(jsonOutput.blockedCount, 4)
     expectNoDifference(jsonOutput.notApplicableCount, 0)
     #expect(
@@ -8587,6 +8587,16 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.records.contains {
         $0.id == "instant.transaction-validation.chunk-arrays" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.transaction-validation.chunk-structure" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.transaction-validation.operation-structure" && $0.status == "adapted"
       }
     )
     #expect(
@@ -8997,9 +9007,9 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 176"))
+    #expect(humanOutput.contains("records: 178"))
     #expect(humanOutput.contains("exact: 26"))
-    #expect(humanOutput.contains("adapted: 146"))
+    #expect(humanOutput.contains("adapted: 148"))
     #expect(humanOutput.contains("blocked: 4"))
     #expect(humanOutput.contains("not applicable: 0"))
   }

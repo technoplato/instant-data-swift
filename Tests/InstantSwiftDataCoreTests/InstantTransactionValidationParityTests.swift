@@ -64,6 +64,63 @@ struct InstantTransactionValidationParityTests {
   }
 
   @Test
+  func upstreamValidatesTypedTransactionAndOperationStructure() async throws {
+    let runtime = try await parityRuntime()
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_005)
+    let chunkSource = transactionValidationSource(
+      "validates transaction chunk structure",
+      assertion: "lines 282-295 non-object chunks, missing __ops, non-array __ops, and non-array operations",
+      status:
+        "adapted: Swift's InstantStoreTransaction requires an id and typed operations array."
+    )
+    let operationSource = transactionValidationSource(
+      "validates operation structure",
+      assertion: "lines 298-302 malformed operation tuple entity names",
+      status:
+        "adapted: Swift's InstantTripleOperation enum and namespace-qualified attribute ids make malformed op tuples unrepresentable."
+    )
+
+    _ = try await runtime.transact(
+      InstantStoreTransaction(id: "tx-parity-empty-typed-envelope", operations: []),
+      createdAt: time
+    )
+    let emptySnapshot = await runtime.store.snapshot()
+    expectNoDifference(emptySnapshot.triples, [], chunkSource)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-parity-typed-operation",
+        operations: [
+          .insert(
+            triple(
+              "user-typed-op",
+              "users/name",
+              .string("Typed"),
+              txID: "tx-parity-typed-operation",
+              time: time
+            )
+          ),
+          .insert(
+            triple(
+              "user-typed-op",
+              "users/email",
+              .string("typed@example.com"),
+              txID: "tx-parity-typed-operation",
+              time: time
+            )
+          ),
+        ]
+      ),
+      createdAt: time
+    )
+    let users = try await runtime.query(
+      InstantQueryPlan(id: "parity.typed-operation.users", namespace: "users")
+    )
+    expectNoDifference(users.map(\.id), ["user-typed-op"], operationSource)
+    expectNoDifference(users.map { $0.values["name"]?.first }, [.string("Typed")], operationSource)
+  }
+
+  @Test
   func upstreamValidatesCreateAndUpdateOperations() async throws {
     let runtime = try await parityRuntime()
     let time = InstantTimestamp(milliseconds: 1_700_000_000_010)

@@ -11,9 +11,9 @@ struct InstantStoreParityTests {
 
     expectNoDifference(report.event, "parity-report")
     expectNoDifference(report.coverageComplete, false)
-    expectNoDifference(report.recordCount, 176)
+    expectNoDifference(report.recordCount, 178)
     expectNoDifference(report.exactCount, 26)
-    expectNoDifference(report.adaptedCount, 146)
+    expectNoDifference(report.adaptedCount, 148)
     expectNoDifference(report.blockedCount, 4)
     expectNoDifference(report.notApplicableCount, 0)
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/schema.test.ts"))
@@ -284,6 +284,8 @@ struct InstantStoreParityTests {
       expectNoDifference(record.notes, expected.notes)
     }
     #expect(report.records.contains { $0.id == "instant.transaction-validation.chunk-arrays" && $0.status == .adapted })
+    #expect(report.records.contains { $0.id == "instant.transaction-validation.chunk-structure" && $0.status == .adapted })
+    #expect(report.records.contains { $0.id == "instant.transaction-validation.operation-structure" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.transaction-validation.create-operations" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.transaction-validation.update-operations" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.transaction-validation.merge-operations" && $0.status == .adapted })
@@ -303,6 +305,18 @@ struct InstantStoreParityTests {
         "validates transaction chunk arrays",
         "upstreamValidatesBasicTransactionChunks",
         "Swift represents chunk arrays as one structured transaction containing the concrete operations for each entity namespace."
+      ),
+      (
+        "instant.transaction-validation.chunk-structure",
+        "validates transaction chunk structure",
+        "upstreamValidatesTypedTransactionAndOperationStructure",
+        "Swift uses InstantStoreTransaction, making non-object chunks, missing __ops, non-array __ops, and non-array operation entries unrepresentable while valid typed envelopes still prepare."
+      ),
+      (
+        "instant.transaction-validation.operation-structure",
+        "validates operation structure",
+        "upstreamValidatesTypedTransactionAndOperationStructure",
+        "Swift uses the closed InstantTripleOperation enum and namespace-qualified attribute ids, making malformed JavaScript op tuple members such as non-string entity names unrepresentable."
       ),
       (
         "instant.transaction-validation.create-operations",

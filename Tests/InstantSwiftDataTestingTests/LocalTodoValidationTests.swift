@@ -811,9 +811,9 @@ struct LocalTodoValidationTests {
 
     expectNoDifference(run.result.event, "parity-report")
     expectNoDifference(run.result.coverageComplete, false)
-    expectNoDifference(run.result.recordCount, 176)
+    expectNoDifference(run.result.recordCount, 178)
     expectNoDifference(run.result.exactCount, 26)
-    expectNoDifference(run.result.adaptedCount, 146)
+    expectNoDifference(run.result.adaptedCount, 148)
     expectNoDifference(run.result.blockedCount, 4)
     expectNoDifference(run.result.notApplicableCount, 0)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
@@ -898,6 +898,16 @@ struct LocalTodoValidationTests {
     #expect(
       run.result.records.contains {
         $0.id == "instant.transaction-validation.chunk-arrays" && $0.status == .adapted
+      }
+    )
+    #expect(
+      run.result.records.contains {
+        $0.id == "instant.transaction-validation.chunk-structure" && $0.status == .adapted
+      }
+    )
+    #expect(
+      run.result.records.contains {
+        $0.id == "instant.transaction-validation.operation-structure" && $0.status == .adapted
       }
     )
     #expect(
@@ -1051,7 +1061,7 @@ struct LocalTodoValidationTests {
     )
 
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 176)
+    expectNoDifference(rows.count, 178)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
@@ -1113,7 +1123,7 @@ struct LocalTodoValidationTests {
 
     #expect(result.status == 0)
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 176)
+    expectNoDifference(rows.count, 178)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))

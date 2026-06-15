@@ -807,6 +807,26 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift represents chunk arrays as one structured transaction containing the concrete operations for each entity namespace."
     ),
     instant(
+      id: "instant.transaction-validation.chunk-structure",
+      sourceFile: transactionValidationSource,
+      sourceTestName: "validates transaction chunk structure",
+      swiftFile: transactionValidationSwiftFile,
+      swiftTestName: "upstreamValidatesTypedTransactionAndOperationStructure",
+      surface: "transaction-validation",
+      status: .adapted,
+      notes: "Swift uses InstantStoreTransaction, making non-object chunks, missing __ops, non-array __ops, and non-array operation entries unrepresentable while valid typed envelopes still prepare."
+    ),
+    instant(
+      id: "instant.transaction-validation.operation-structure",
+      sourceFile: transactionValidationSource,
+      sourceTestName: "validates operation structure",
+      swiftFile: transactionValidationSwiftFile,
+      swiftTestName: "upstreamValidatesTypedTransactionAndOperationStructure",
+      surface: "transaction-validation",
+      status: .adapted,
+      notes: "Swift uses the closed InstantTripleOperation enum and namespace-qualified attribute ids, making malformed JavaScript op tuple members such as non-string entity names unrepresentable."
+    ),
+    instant(
       id: "instant.transaction-validation.create-operations",
       sourceFile: transactionValidationSource,
       sourceTestName: "validates create operations",
