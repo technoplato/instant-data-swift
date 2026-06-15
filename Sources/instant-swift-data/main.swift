@@ -456,8 +456,8 @@ struct InstantSwiftDataCLI {
       try await runMobileChat(arguments: arguments, output: output)
       return
 
-    case let .reactions(arguments):
-      try await runReactions(arguments: arguments, output: output)
+    case let .reactions(leaf):
+      try await runReactions(leaf: leaf, output: output)
       return
 
     case let .typingIndicator(arguments):
@@ -5916,21 +5916,16 @@ struct InstantSwiftDataCLI {
     }
   }
 
-  private static func runReactions(arguments: [String], output: OutputMode) async throws {
-    let invocation: CLIExamplesReactionsLeafInvocation
-    do {
-      var input = arguments[...]
-      invocation = try CLIExamplesReactionsLeafParser().parse(&input)
-    } catch let error as CLIExamplesReactionsArgumentError {
-      throw CLIError(error.description, exitCode: error.exitCode)
-    }
-
-    if case let .unknown(command) = invocation {
+  private static func runReactions(
+    leaf: CLIExamplesReactionsLeafInvocation,
+    output: OutputMode
+  ) async throws {
+    if case let .unknown(command) = leaf {
       throw CLIError("Unknown reactions command: \(command). \(reactionsUsage)", exitCode: 64)
     }
 
     let context = try await CLIContext.bootstrap(initialAttributes: [])
-    switch invocation {
+    switch leaf {
     case let .tap(options):
       let message = try await context.runtime.publishTopicMessage(
         room: ReactionsRecipeExample.room,

@@ -458,9 +458,10 @@ CLI argument parsing must use Point-Free `swift-parsing`/parser-printer
 combinators for the typed grammar. Preserve today's global `--json`/`--jsonl`
 semantics while migrating command leaves gradually behind parser-level tests;
 manual `popFirstArgument` parsing is allowed only as a temporary legacy bridge.
-Current progress: top-level command/output token parsing and `examples todos`
-dispatch are combinator-backed, and the executable consumes the typed todos
-leaf produced by the parser instead of reparsing that branch.
+Current progress: top-level command/output token parsing and `examples todos`,
+auth recipe, app-builder, todo-links, CloudKitDemo/counters, and reactions
+dispatch are combinator-backed, and the executable consumes those typed leaves
+produced by the parser instead of reparsing those branches.
 
 The CLI must maintain durable state across sessions using the same persistence
 work as the core library:

@@ -998,6 +998,50 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliMalformedReactionsArgumentsDoNotBootstrapState() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    func expectMalformed(_ arguments: [String], contains expectedFragment: String) throws {
+      let result = try runCLIResult(arguments, homeURL: homeURL)
+      expectNoDifference(result.status, 64)
+      #expect(result.error.contains(expectedFragment))
+    }
+
+    try expectMalformed(
+      ["examples", "reactions", "--json"],
+      contains: "examples reactions <tap|list|watch>"
+    )
+    try expectMalformed(
+      ["examples", "reaction", "tap", "sparkle", "--json"],
+      contains: "Invalid reactions name: sparkle."
+    )
+    try expectMalformed(
+      ["examples", "reactions", "tap", "wave", "--direction", "360", "--json"],
+      contains: "Invalid reactions angle: 360."
+    )
+    try expectMalformed(
+      ["examples", "reactions", "list", "--limit", "-1", "--json"],
+      contains: "examples reactions list"
+    )
+    try expectMalformed(
+      ["examples", "topics-reactions", "watch", "--events", "2", "--jsonl"],
+      contains: "examples reactions watch"
+    )
+    try expectMalformed(
+      ["examples", "reactions", "dance", "--json"],
+      contains: "Unknown reactions command: dance"
+    )
+
+    expectNoDifference(
+      try FileManager.default.contentsOfDirectory(atPath: homeURL.path),
+      []
+    )
+  }
+
+  @Test
   func cliMalformedSyncUpsArgumentsDoNotBootstrapState() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)

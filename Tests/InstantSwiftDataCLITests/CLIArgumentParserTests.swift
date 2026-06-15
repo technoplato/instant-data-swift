@@ -1184,15 +1184,15 @@ struct CLIArgumentParserTests {
   func examplesReactionsLeafParserParsesCommandsAndOptions() throws {
     expectNoDifference(
       try parseExamples(["reactions", "tap", "fire"]),
-      .reactions(arguments: ["tap", "fire"])
+      .reactions(.tap(CLIExamplesReactionsTapInvocation(name: "fire")))
     )
     expectNoDifference(
       try parseExamples(["reaction", "list"]),
-      .reactions(arguments: ["list"])
+      .reactions(.list(CLIExamplesReactionsListInvocation()))
     )
     expectNoDifference(
       try parseExamples(["topics-reactions", "watch"]),
-      .reactions(arguments: ["watch"])
+      .reactions(.watch(CLIExamplesReactionsWatchInvocation()))
     )
     expectNoDifference(
       try parseExamplesReactionsLeaf(
