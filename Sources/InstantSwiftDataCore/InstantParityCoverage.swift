@@ -447,6 +447,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift uses declared attributes rather than JavaScript add-attr generation and preserves the declared many relation cardinality; lookup link values stay lookup-shaped for transport and resolve locally once the unique target row exists."
     ),
     instant(
+      id: "instant.instaml.schema-lookup-link-value-arrays",
+      sourceFile: instamlSource,
+      sourceTestName: "Schema: lookup creates unique attrs for lookups in link values with arrays",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "schemaLookupRefArraysInLinkValuesUseDeclaredAttrsForInstamlParity",
+      surface: "instaml",
+      status: .adapted,
+      notes: "Swift uses declared attributes rather than JavaScript add-attr generation and preserves the declared many relation cardinality; lookup link array values lower to repeated lookup-shaped transport writes and resolve locally once each unique target row exists."
+    ),
+    instant(
       id: "instant.weak-hash",
       sourceFile: weakHashSource,
       sourceTestName: "selected fields / object key order / date / known query",
