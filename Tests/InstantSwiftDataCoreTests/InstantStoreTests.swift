@@ -2057,6 +2057,215 @@ struct InstantStoreTests {
   }
 
   @Test
+  func schemaLookupRefsInLinkValuesUseDeclaredAttrsForInstamlParity() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let source =
+      "upstream/instant/client/packages/core/__tests__/src/instaml.test.ts "
+      + "Schema: lookup creates unique attrs for lookups in link values "
+      + "[adapted: Swift preserves declared many relation cardinality; lookup link values stay lookup-shaped for transport.]"
+    let attributes = [
+      InstantAttribute(
+        id: "users/authoredPosts",
+        namespace: "users",
+        name: "authoredPosts",
+        valueType: .ref,
+        isRequired: false,
+        cardinality: .many,
+        isIndexed: true,
+        forwardIdentity: "users/authoredPosts",
+        reverseIdentity: "posts/author",
+        linkNamespace: "posts"
+      ),
+      InstantAttribute(
+        id: "posts/slug",
+        namespace: "posts",
+        name: "slug",
+        valueType: .string,
+        isRequired: false,
+        isIndexed: true,
+        isUnique: true
+      ),
+    ]
+    let postLookup = InstantLookupRef(
+      attributeID: "posts/slug",
+      value: .string("life-is-good")
+    )
+    let transaction = InstantStoreTransaction(
+      id: "tx-instaml-schema-lookup-link-value",
+      operations: [
+        .insert(
+          InstantTriple(
+            entityID: "user-1",
+            attributeID: "users/id",
+            value: .string("user-1"),
+            txID: "tx-instaml-schema-lookup-link-value",
+            txTime: time
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "user-1",
+            attributeID: "users/authoredPosts",
+            value: .lookupRef(postLookup),
+            txID: "tx-instaml-schema-lookup-link-value",
+            txTime: time
+          )
+        ),
+      ]
+    )
+
+    let store = InstantStore(snapshot: InstantStoreSnapshot(attributes: attributes))
+    _ = try await store.prepare(transaction)
+    let snapshot = await store.snapshot()
+    let attributesByID = Dictionary(uniqueKeysWithValues: snapshot.attributes.map { ($0.id, $0) })
+    let authoredPostsAttribute = try #require(attributesByID["users/authoredPosts"])
+    let slugAttribute = try #require(attributesByID["posts/slug"])
+    expectNoDifference(authoredPostsAttribute.valueType, .ref, source)
+    expectNoDifference(authoredPostsAttribute.cardinality, .many, source)
+    expectNoDifference(authoredPostsAttribute.isIndexed, true, source)
+    expectNoDifference(authoredPostsAttribute.isUnique, false, source)
+    expectNoDifference(authoredPostsAttribute.forwardIdentity, "users/authoredPosts", source)
+    expectNoDifference(authoredPostsAttribute.reverseIdentity, "posts/author", source)
+    expectNoDifference(authoredPostsAttribute.linkNamespace, "posts", source)
+    expectNoDifference(slugAttribute.valueType, .string, source)
+    expectNoDifference(slugAttribute.cardinality, .one, source)
+    expectNoDifference(slugAttribute.isUnique, true, source)
+    expectNoDifference(slugAttribute.isIndexed, true, source)
+    expectNoDifference(
+      snapshot.triples,
+      [
+        InstantTriple(
+          entityID: "user-1",
+          attributeID: "users/id",
+          value: .string("user-1"),
+          txID: "tx-instaml-schema-lookup-link-value",
+          txTime: time
+        )
+      ],
+      source
+    )
+
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: attributes
+      )
+    )
+    let unresolvedResult = try await runtime.transact(transaction, createdAt: time)
+    let unresolvedUsers = try await runtime.query(
+      InstantQueryPlan(
+        id: "schema-lookup-link-value.unresolved-users",
+        namespace: "users",
+        includes: [InstantQueryInclude("authoredPosts")]
+      )
+    )
+    expectNoDifference(unresolvedResult.changedEntityIDs, ["user-1"], source)
+    expectNoDifference(unresolvedResult.tripleCount, 1, source)
+    expectNoDifference(unresolvedUsers.map(\.id), ["user-1"], source)
+    expectNoDifference(unresolvedUsers.first?.values["authoredPosts"], nil, source)
+    expectNoDifference(unresolvedUsers.first?.links?["authoredPosts"], [], source)
+
+    let transportMutations = await runtime.outboxTransportMutations()
+    expectNoDifference(transportMutations.map(\.transactionID), ["tx-instaml-schema-lookup-link-value"], source)
+    let transportMutation = try #require(transportMutations.first)
+    expectNoDifference(
+      transportMutation.txSteps,
+      [
+        .addTriple(entity: .id("user-1"), attributeID: "users/id", value: .string("user-1")),
+        .addTriple(
+          entity: .id("user-1"),
+          attributeID: "users/authoredPosts",
+          value: .array([.string("posts/slug"), .string("life-is-good")])
+        ),
+      ],
+      source
+    )
+
+    let data = try JSONEncoder().encode(transportMutation)
+    let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let txSteps = try #require(object["txSteps"] as? [[Any]])
+    expectNoDifference(txSteps.count, 2, source)
+    expectNoDifference(txSteps.map { $0.first as? String }, ["add-triple", "add-triple"], source)
+    expectNoDifference(txSteps.map(\.count), [4, 4], source)
+    expectNoDifference(txSteps[0][1] as? String, "user-1", source)
+    expectNoDifference(txSteps[0][2] as? String, "users/id", source)
+    expectNoDifference(txSteps[0][3] as? String, "user-1", source)
+    expectNoDifference(txSteps[1][1] as? String, "user-1", source)
+    expectNoDifference(txSteps[1][2] as? String, "users/authoredPosts", source)
+    let lookupValue = try #require(txSteps[1][3] as? [Any])
+    expectNoDifference(lookupValue.count, 2, source)
+    expectNoDifference(lookupValue[0] as? String, "posts/slug", source)
+    expectNoDifference(lookupValue[1] as? String, "life-is-good", source)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-instaml-schema-lookup-link-value-seed",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: "post-1",
+              attributeID: "posts/id",
+              value: .string("post-1"),
+              txID: "tx-instaml-schema-lookup-link-value-seed",
+              txTime: InstantTimestamp(milliseconds: time.milliseconds + 1)
+            )
+          ),
+          .insert(
+            InstantTriple(
+              entityID: "post-1",
+              attributeID: "posts/slug",
+              value: .string("life-is-good"),
+              txID: "tx-instaml-schema-lookup-link-value-seed",
+              txTime: InstantTimestamp(milliseconds: time.milliseconds + 1)
+            )
+          ),
+        ]
+      ),
+      createdAt: InstantTimestamp(milliseconds: time.milliseconds + 1)
+    )
+    let localResult = try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-instaml-schema-lookup-link-value-local",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: "user-1",
+              attributeID: "users/authoredPosts",
+              value: .lookupRef(postLookup),
+              txID: "tx-instaml-schema-lookup-link-value-local",
+              txTime: InstantTimestamp(milliseconds: time.milliseconds + 2)
+            )
+          )
+        ]
+      ),
+      createdAt: InstantTimestamp(milliseconds: time.milliseconds + 2)
+    )
+    let linkedUsers = try await runtime.query(
+      InstantQueryPlan(
+        id: "schema-lookup-link-value.users",
+        namespace: "users",
+        includes: [InstantQueryInclude("authoredPosts")]
+      )
+    )
+    let linkedPosts = try await runtime.query(
+      InstantQueryPlan(
+        id: "schema-lookup-link-value.posts",
+        namespace: "posts",
+        includes: [InstantQueryInclude("author", direction: .reverse)]
+      )
+    )
+    expectNoDifference(localResult.changedEntityIDs, Set(["post-1", "user-1"]), source)
+    expectNoDifference(localResult.tripleCount, 4, source)
+    expectNoDifference(linkedUsers.map(\.id), ["user-1"], source)
+    expectNoDifference(linkedUsers.first?.values["authoredPosts"]?.values, [.ref("post-1")], source)
+    expectNoDifference(linkedUsers.first?.links?["authoredPosts"]?.map(\.id), ["post-1"], source)
+    expectNoDifference(linkedPosts.map(\.id), ["post-1"], source)
+    expectNoDifference(linkedPosts.first?.links?["author"]?.map(\.id), ["user-1"], source)
+  }
+
+  @Test
   func transportMutationPreservesLookupEntitiesForInstamlLinkAndUnlinkParity() throws {
     let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let userLookup = InstantLookupRef(
