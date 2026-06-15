@@ -7202,6 +7202,18 @@ extension InstantStoreTests {
     )
     expectNoDifference(missingLikeID.status, 64)
     #expect(missingLikeID.error.contains("examples microblog like <post-id>"))
+
+    let unknown = try runCLIResult(
+      ["examples", "microblog", "dance", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(unknown.status, 64)
+    #expect(unknown.error.contains("Unknown microblog command: dance"))
+
+    expectNoDifference(
+      try FileManager.default.contentsOfDirectory(atPath: homeURL.path),
+      []
+    )
   }
 
   @Test

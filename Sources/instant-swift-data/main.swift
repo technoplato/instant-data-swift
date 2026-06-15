@@ -458,8 +458,8 @@ struct InstantSwiftDataCLI {
       try await runCounters(leaf: leaf, output: output)
       return
 
-    case let .microblog(arguments):
-      try await runMicroblog(arguments: arguments, output: output)
+    case let .microblog(leaf):
+      try await runMicroblog(leaf: leaf, output: output)
       return
 
     case let .mobileChat(arguments):
@@ -2072,15 +2072,10 @@ struct InstantSwiftDataCLI {
     }
   }
 
-  private static func runMicroblog(arguments: [String], output: OutputMode) async throws {
-    let invocation: CLIExamplesMicroblogLeafInvocation
-    do {
-      var input = arguments[...]
-      invocation = try CLIExamplesMicroblogLeafParser().parse(&input)
-    } catch let error as CLIExamplesMicroblogArgumentError {
-      throw CLIError(error.description, exitCode: error.exitCode)
-    }
-
+  private static func runMicroblog(
+    leaf invocation: CLIExamplesMicroblogLeafInvocation,
+    output: OutputMode
+  ) async throws {
     if case let .unknown(command) = invocation {
       throw CLIError("Unknown microblog command: \(command). \(microblogUsage)", exitCode: 64)
     }

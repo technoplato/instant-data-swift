@@ -799,6 +799,7 @@ struct CLIArgumentParserTests {
   @Test
   func examplesMicroblogLeafParserParsesCommandsAndOptions() throws {
     expectNoDifference(try parseExamplesMicroblogLeaf(["seed"]), .seed)
+    expectNoDifference(try parseExamples(["microblog", "seed"]), .microblog(.seed))
     expectNoDifference(try parseExamplesMicroblogLeaf(["feed"]), .feed)
     expectNoDifference(try parseExamplesMicroblogLeaf(["posts"]), .feed)
     expectNoDifference(try parseExamplesMicroblogLeaf(["profiles"]), .profiles)
@@ -806,6 +807,10 @@ struct CLIArgumentParserTests {
     expectNoDifference(
       try parseExamplesMicroblogLeaf(["profile", "user-1"]),
       .profile(userID: "user-1")
+    )
+    expectNoDifference(
+      try parseExamples(["microblog", "profile", "user-1"]),
+      .microblog(.profile(userID: "user-1"))
     )
     expectNoDifference(
       try parseExamplesMicroblogLeaf(["setup-profile", "Blob", " @blob "]),
@@ -822,6 +827,12 @@ struct CLIArgumentParserTests {
     expectNoDifference(
       try parseExamplesMicroblogLeaf(["post", "--color", "bg-green-100", "Hello"]),
       .post(CLIExamplesMicroblogPostInvocation(content: "Hello", color: "bg-green-100"))
+    )
+    expectNoDifference(
+      try parseExamples(["microblog", "post", "--color", "bg-green-100", "Hello"]),
+      .microblog(
+        .post(CLIExamplesMicroblogPostInvocation(content: "Hello", color: "bg-green-100"))
+      )
     )
     expectNoDifference(
       try parseExamplesMicroblogLeaf(["like", "post-1"]),
@@ -3536,10 +3547,6 @@ struct CLIArgumentParserTests {
     expectNoDifference(
       try parseExamples(["cloudkit-demo", "list"]),
       .counters(.list)
-    )
-    expectNoDifference(
-      try parseExamples(["microblog", "seed"]),
-      .microblog(arguments: ["seed"])
     )
     expectNoDifference(
       try parseExamples(["mobile-chat", "seed"]),
