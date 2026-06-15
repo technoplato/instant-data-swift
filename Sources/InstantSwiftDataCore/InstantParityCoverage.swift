@@ -1389,14 +1389,74 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift ports the pre-v1.0.39 weakHashLegacy algorithm for representable JSONValue query shapes, including JS Number, UTF-16, array, object, and parseInt coercion behavior, and pins the upstream migration smoke-test key; IndexedDB querySubs/syncSubs migration behavior is not exercised."
     ),
     instant(
-      id: "instant.persisted-object.query-cache-gc",
+      id: "instant.persisted-object.saves-values",
       sourceFile: persistedObjectSource,
-      sourceTestName: "save / replace-adapted / garbage collect by entries, size, and age",
+      sourceTestName: "PersistedObject saves values to storage",
       swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
-      swiftTestName: "queryCacheRowsSaveReplaceAndReloadForPersistedObjectParity / queryCachePruningPreservesLiveKeysAndDropsOldestUnpreservedRowsForPersistedObjectParity / queryCachePruningUsesEncodedRowBytesForPersistedObjectSizeParity / queryCachePruningUsesUpdatedAtForPersistedObjectAgeParity / queryCachePruningKeepsRowsAtPersistedObjectAgeCutoff",
+      swiftTestName: "queryCacheRowsSaveReplaceAndReloadForPersistedObjectParity",
       surface: "query-cache-persistence",
       status: .adapted,
-      notes: "Swift ports PersistedObject's durable keyed cache lifecycle to SQLite query cache rows: cache-key replacement covers saved/reloaded storage but not PersistedObject's custom storage-memory merge callback, preservingCacheKeys protects live rows, and max-entry, encoded-JSON-byte, and strict updated-at age policies prune only unloaded rows. Browser IndexedDB connection recovery and onKeyLoaded callbacks are not claimed."
+      notes: "Swift ports PersistedObject's durable keyed storage to SQLite query cache rows and proves saved values reload from disk."
+    ),
+    instant(
+      id: "instant.persisted-object.merges-existing-values",
+      sourceFile: persistedObjectSource,
+      sourceTestName: "PersistedObject merges existing values",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "queryCacheRowsSaveReplaceAndReloadForPersistedObjectParity",
+      surface: "query-cache-persistence",
+      status: .adapted,
+      notes: "Swift query cache rows replace existing keyed storage instead of exposing PersistedObject's custom storage-memory merge callback."
+    ),
+    instant(
+      id: "instant.persisted-object.load-notification",
+      sourceFile: persistedObjectSource,
+      sourceTestName: "PersistedObject notifies you when it loads a key from storage",
+      swiftFile: "not-applicable",
+      swiftTestName: "not-applicable",
+      surface: "query-cache-persistence",
+      status: .notApplicable,
+      notes: "The upstream test only constructs PersistedObject and contains no storage setup, callback assertion, or observable expectation to port."
+    ),
+    instant(
+      id: "instant.persisted-object.gc-max-items",
+      sourceFile: persistedObjectSource,
+      sourceTestName: "PersistedObject garbage collects when we exceed max items",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "queryCachePruningPreservesLiveKeysAndDropsOldestUnpreservedRowsForPersistedObjectParity",
+      surface: "query-cache-persistence",
+      status: .adapted,
+      notes: "Swift models PersistedObject live in-memory keys with preservingCacheKeys and prunes the oldest unloaded SQLite cache rows when maxEntries is exceeded."
+    ),
+    instant(
+      id: "instant.persisted-object.gc-max-size",
+      sourceFile: persistedObjectSource,
+      sourceTestName: "PersistedObject garbage collects when we exceed max size",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "queryCachePruningUsesEncodedRowBytesForPersistedObjectSizeParity",
+      surface: "query-cache-persistence",
+      status: .adapted,
+      notes: "Swift uses encoded JSON row byte counts instead of PersistedObject's JavaScript objectSize callback and prunes only unloaded rows until the size budget is met."
+    ),
+    instant(
+      id: "instant.persisted-object.gc-max-age",
+      sourceFile: persistedObjectSource,
+      sourceTestName: "PersistedObject garbage collects when we exceed max age",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "queryCachePruningUsesUpdatedAtForPersistedObjectAgeParity / queryCachePruningKeepsRowsAtPersistedObjectAgeCutoff",
+      surface: "query-cache-persistence",
+      status: .adapted,
+      notes: "Swift uses instant_query_cache.updated_at_ms as the persisted age clock, preserves live rows, and pins the strict cutoff boundary."
+    ),
+    instant(
+      id: "instant.persisted-object.indexeddb-connection-recovery",
+      sourceFile: persistedObjectSource,
+      sourceTestName: "IndexedDBStorage recovers when the database connection closes",
+      swiftFile: "blocked",
+      swiftTestName: "blocked",
+      surface: "query-cache-persistence",
+      status: .blocked,
+      notes: "Swift local persistence uses SQLite, and there is no browser IndexedDB connection-close retry harness or IndexedDB-backed adapter in this package yet."
     ),
     instant(
       id: "instant.schema.builder-shape",

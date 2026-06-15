@@ -8316,11 +8316,11 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 193)
+    expectNoDifference(jsonOutput.recordCount, 199)
     expectNoDifference(jsonOutput.exactCount, 28)
-    expectNoDifference(jsonOutput.adaptedCount, 161)
-    expectNoDifference(jsonOutput.blockedCount, 4)
-    expectNoDifference(jsonOutput.notApplicableCount, 0)
+    expectNoDifference(jsonOutput.adaptedCount, 165)
+    expectNoDifference(jsonOutput.blockedCount, 5)
+    expectNoDifference(jsonOutput.notApplicableCount, 1)
     #expect(
       jsonOutput.sourceFiles.contains(
         "upstream/instant/client/packages/core/__tests__/src/schema.test.ts"
@@ -8863,6 +8863,20 @@ extension InstantStoreTests {
         "Expected adapted weak hash parity record \(id)"
       )
     }
+    for expected in [
+      ("instant.persisted-object.saves-values", "adapted"),
+      ("instant.persisted-object.merges-existing-values", "adapted"),
+      ("instant.persisted-object.load-notification", "not-applicable"),
+      ("instant.persisted-object.gc-max-items", "adapted"),
+      ("instant.persisted-object.gc-max-size", "adapted"),
+      ("instant.persisted-object.gc-max-age", "adapted"),
+      ("instant.persisted-object.indexeddb-connection-recovery", "blocked"),
+    ] {
+      #expect(
+        jsonOutput.records.contains { $0.id == expected.0 && $0.status == expected.1 },
+        "Expected \(expected.1) PersistedObject parity record \(expected.0)"
+      )
+    }
     #expect(
       jsonOutput.records.contains {
         $0.id == "sqlite.fetch-subscription.explicit-cancel" && $0.status == "adapted"
@@ -9041,11 +9055,11 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 193"))
+    #expect(humanOutput.contains("records: 199"))
     #expect(humanOutput.contains("exact: 28"))
-    #expect(humanOutput.contains("adapted: 161"))
-    #expect(humanOutput.contains("blocked: 4"))
-    #expect(humanOutput.contains("not applicable: 0"))
+    #expect(humanOutput.contains("adapted: 165"))
+    #expect(humanOutput.contains("blocked: 5"))
+    #expect(humanOutput.contains("not applicable: 1"))
   }
 
   @Test

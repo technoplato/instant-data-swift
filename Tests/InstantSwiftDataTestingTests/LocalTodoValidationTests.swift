@@ -811,11 +811,11 @@ struct LocalTodoValidationTests {
 
     expectNoDifference(run.result.event, "parity-report")
     expectNoDifference(run.result.coverageComplete, false)
-    expectNoDifference(run.result.recordCount, 193)
+    expectNoDifference(run.result.recordCount, 199)
     expectNoDifference(run.result.exactCount, 28)
-    expectNoDifference(run.result.adaptedCount, 161)
-    expectNoDifference(run.result.blockedCount, 4)
-    expectNoDifference(run.result.notApplicableCount, 0)
+    expectNoDifference(run.result.adaptedCount, 165)
+    expectNoDifference(run.result.blockedCount, 5)
+    expectNoDifference(run.result.notApplicableCount, 1)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
     expectNoDifference(run.summary.appID, "validation-parity-test")
     expectNoDifference(run.summary.rowCount, run.result.recordCount)
@@ -824,7 +824,7 @@ struct LocalTodoValidationTests {
       run.summary.events,
       Array(repeating: "parity-record", count: run.result.recordCount)
     )
-    expectNoDifference(run.summary.failedEvents, Array(repeating: "parity-record", count: 4))
+    expectNoDifference(run.summary.failedEvents, Array(repeating: "parity-record", count: 5))
     #expect(
       run.result.sourceFiles.contains(
         "upstream/instant/client/packages/core/__tests__/src/store.test.ts"
@@ -932,6 +932,20 @@ struct LocalTodoValidationTests {
       #expect(
         run.result.records.contains { $0.id == id && $0.status == .adapted },
         "Expected adapted weak hash parity record \(id)"
+      )
+    }
+    for expected in [
+      ("instant.persisted-object.saves-values", InstantParityCoverageStatus.adapted),
+      ("instant.persisted-object.merges-existing-values", InstantParityCoverageStatus.adapted),
+      ("instant.persisted-object.load-notification", InstantParityCoverageStatus.notApplicable),
+      ("instant.persisted-object.gc-max-items", InstantParityCoverageStatus.adapted),
+      ("instant.persisted-object.gc-max-size", InstantParityCoverageStatus.adapted),
+      ("instant.persisted-object.gc-max-age", InstantParityCoverageStatus.adapted),
+      ("instant.persisted-object.indexeddb-connection-recovery", InstantParityCoverageStatus.blocked),
+    ] {
+      #expect(
+        run.result.records.contains { $0.id == expected.0 && $0.status == expected.1 },
+        "Expected \(expected.1.rawValue) PersistedObject parity record \(expected.0)"
       )
     }
     #expect(
@@ -1100,13 +1114,13 @@ struct LocalTodoValidationTests {
     )
 
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 193)
+    expectNoDifference(rows.count, 199)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
     expectNoDifference(Set(rows.map { $0["appID"] as? String ?? "" }), Set(["local-validation"]))
     expectNoDifference(Set(rows.map { $0["event"] as? String ?? "" }), Set(["parity-record"]))
-    expectNoDifference(rows.filter { ($0["ok"] as? Bool) == false }.count, 4)
+    expectNoDifference(rows.filter { ($0["ok"] as? Bool) == false }.count, 5)
     let platformAdapterBinding = try #require(rows.first { row in
       row["entityID"] as? String == "instant.react-common.platform-adapter-bindings"
     })
@@ -1162,13 +1176,13 @@ struct LocalTodoValidationTests {
 
     #expect(result.status == 0)
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 193)
+    expectNoDifference(rows.count, 199)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
     expectNoDifference(Set(rows.map { $0["appID"] as? String ?? "" }), Set(["local-validation"]))
     expectNoDifference(Set(rows.map { $0["event"] as? String ?? "" }), Set(["parity-record"]))
-    expectNoDifference(rows.filter { ($0["ok"] as? Bool) == false }.count, 4)
+    expectNoDifference(rows.filter { ($0["ok"] as? Bool) == false }.count, 5)
     let platformAdapterBinding = try #require(rows.first { row in
       row["entityID"] as? String == "instant.react-common.platform-adapter-bindings"
     })

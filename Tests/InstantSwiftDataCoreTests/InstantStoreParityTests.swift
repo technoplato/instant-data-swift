@@ -11,11 +11,11 @@ struct InstantStoreParityTests {
 
     expectNoDifference(report.event, "parity-report")
     expectNoDifference(report.coverageComplete, false)
-    expectNoDifference(report.recordCount, 193)
+    expectNoDifference(report.recordCount, 199)
     expectNoDifference(report.exactCount, 28)
-    expectNoDifference(report.adaptedCount, 161)
-    expectNoDifference(report.blockedCount, 4)
-    expectNoDifference(report.notApplicableCount, 0)
+    expectNoDifference(report.adaptedCount, 165)
+    expectNoDifference(report.blockedCount, 5)
+    expectNoDifference(report.notApplicableCount, 1)
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/schema.test.ts"))
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/serializeSchema.test.ts"))
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/utils/object.test.ts"))
@@ -570,6 +570,67 @@ struct InstantStoreParityTests {
       expectNoDifference(record.sourceTestName, expected.sourceTestName)
       expectNoDifference(record.swiftTestName, expected.swiftTestName)
       expectNoDifference(record.status, .adapted)
+      expectNoDifference(record.notes, expected.notes)
+    }
+    let persistedObjectMappings: [(
+      id: String, sourceTestName: String, swiftTestName: String, status: InstantParityCoverageStatus,
+      notes: String
+    )] = [
+      (
+        "instant.persisted-object.saves-values",
+        "PersistedObject saves values to storage",
+        "queryCacheRowsSaveReplaceAndReloadForPersistedObjectParity",
+        .adapted,
+        "Swift ports PersistedObject's durable keyed storage to SQLite query cache rows and proves saved values reload from disk."
+      ),
+      (
+        "instant.persisted-object.merges-existing-values",
+        "PersistedObject merges existing values",
+        "queryCacheRowsSaveReplaceAndReloadForPersistedObjectParity",
+        .adapted,
+        "Swift query cache rows replace existing keyed storage instead of exposing PersistedObject's custom storage-memory merge callback."
+      ),
+      (
+        "instant.persisted-object.load-notification",
+        "PersistedObject notifies you when it loads a key from storage",
+        "not-applicable",
+        .notApplicable,
+        "The upstream test only constructs PersistedObject and contains no storage setup, callback assertion, or observable expectation to port."
+      ),
+      (
+        "instant.persisted-object.gc-max-items",
+        "PersistedObject garbage collects when we exceed max items",
+        "queryCachePruningPreservesLiveKeysAndDropsOldestUnpreservedRowsForPersistedObjectParity",
+        .adapted,
+        "Swift models PersistedObject live in-memory keys with preservingCacheKeys and prunes the oldest unloaded SQLite cache rows when maxEntries is exceeded."
+      ),
+      (
+        "instant.persisted-object.gc-max-size",
+        "PersistedObject garbage collects when we exceed max size",
+        "queryCachePruningUsesEncodedRowBytesForPersistedObjectSizeParity",
+        .adapted,
+        "Swift uses encoded JSON row byte counts instead of PersistedObject's JavaScript objectSize callback and prunes only unloaded rows until the size budget is met."
+      ),
+      (
+        "instant.persisted-object.gc-max-age",
+        "PersistedObject garbage collects when we exceed max age",
+        "queryCachePruningUsesUpdatedAtForPersistedObjectAgeParity / queryCachePruningKeepsRowsAtPersistedObjectAgeCutoff",
+        .adapted,
+        "Swift uses instant_query_cache.updated_at_ms as the persisted age clock, preserves live rows, and pins the strict cutoff boundary."
+      ),
+      (
+        "instant.persisted-object.indexeddb-connection-recovery",
+        "IndexedDBStorage recovers when the database connection closes",
+        "blocked",
+        .blocked,
+        "Swift local persistence uses SQLite, and there is no browser IndexedDB connection-close retry harness or IndexedDB-backed adapter in this package yet."
+      ),
+    ]
+    for expected in persistedObjectMappings {
+      let record = try #require(report.records.first { $0.id == expected.id })
+      expectNoDifference(record.sourceTestName, expected.sourceTestName)
+      expectNoDifference(record.swiftTestName, expected.swiftTestName)
+      expectNoDifference(record.status, expected.status)
       expectNoDifference(record.notes, expected.notes)
     }
     #expect(report.records.contains { $0.id == "sqlite.fetch-subscription.explicit-cancel" && $0.status == .adapted })
