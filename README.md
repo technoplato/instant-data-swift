@@ -554,7 +554,8 @@ metadata, summarized pending mutation payload shape, and relaunch persistence
 through `InstantSwiftDataClient.save(_:)`.
 `validation platform-adapters` emits terminal evidence that public wrapper
 adapters bind local client values for fetches, local IDs, auth, rooms, files,
-streams, and shares, that `@FetchAll` handles dynamic reloads, nil queries,
+streams, and shares, that SwiftUI projected bindings cover those same wrapper
+adapters when available, that `@FetchAll` handles dynamic reloads, nil queries,
 cached prior values on errors, and cancellation cleanup, that optional
 `@FetchOne` handles dynamic and nil-query reloads, that `@Fetch` request
 adapters handle dynamic request reloads, nil request resets, and cancellation

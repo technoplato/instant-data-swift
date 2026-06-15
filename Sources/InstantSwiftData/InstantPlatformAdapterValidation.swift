@@ -1,8 +1,13 @@
 import Foundation
 
+#if canImport(SwiftUI)
+  import SwiftUI
+#endif
+
 public struct PlatformAdapterValidationDetails: Codable, Equatable, Sendable {
   public var cachePath: String
   public var adapter: String
+  public var bindingAdapters: [String]
   public var todoIDs: [String]
   public var todoTitles: [String]
   public var previousTodoTitles: [String]
@@ -29,6 +34,7 @@ public struct PlatformAdapterValidationDetails: Codable, Equatable, Sendable {
   public init(
     cachePath: String,
     adapter: String,
+    bindingAdapters: [String] = [],
     todoIDs: [String] = [],
     todoTitles: [String] = [],
     previousTodoTitles: [String] = [],
@@ -54,6 +60,7 @@ public struct PlatformAdapterValidationDetails: Codable, Equatable, Sendable {
   ) {
     self.cachePath = cachePath
     self.adapter = adapter
+    self.bindingAdapters = bindingAdapters
     self.todoIDs = todoIDs
     self.todoTitles = todoTitles
     self.previousTodoTitles = previousTodoTitles
@@ -77,6 +84,68 @@ public struct PlatformAdapterValidationDetails: Codable, Equatable, Sendable {
     self.nilRequestCleared = nilRequestCleared
     self.cancellationTerminated = cancellationTerminated
   }
+
+  private enum CodingKeys: String, CodingKey {
+    case cachePath
+    case adapter
+    case bindingAdapters
+    case todoIDs
+    case todoTitles
+    case previousTodoTitles
+    case fetchAllTitleBatches
+    case fetchTitleBatches
+    case todoCount
+    case selectedTodoID
+    case selectedTodoTitle
+    case localID
+    case authUserID
+    case roomMemberIDs
+    case topicMessageIDs
+    case fileIDs
+    case streamChunkIDs
+    case shareIDs
+    case queryCount
+    case observationCount
+    case loadErrorOperation
+    case isLoading
+    case nilQueryCleared
+    case nilRequestCleared
+    case cancellationTerminated
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    try self.init(
+      cachePath: container.decode(String.self, forKey: .cachePath),
+      adapter: container.decode(String.self, forKey: .adapter),
+      bindingAdapters: container.decodeIfPresent([String].self, forKey: .bindingAdapters) ?? [],
+      todoIDs: container.decodeIfPresent([String].self, forKey: .todoIDs) ?? [],
+      todoTitles: container.decodeIfPresent([String].self, forKey: .todoTitles) ?? [],
+      previousTodoTitles: container.decodeIfPresent([String].self, forKey: .previousTodoTitles)
+        ?? [],
+      fetchAllTitleBatches: container
+        .decodeIfPresent([[String]].self, forKey: .fetchAllTitleBatches) ?? [],
+      fetchTitleBatches: container.decodeIfPresent([[String]].self, forKey: .fetchTitleBatches)
+        ?? [],
+      todoCount: container.decodeIfPresent(Int.self, forKey: .todoCount) ?? 0,
+      selectedTodoID: container.decodeIfPresent(String.self, forKey: .selectedTodoID),
+      selectedTodoTitle: container.decodeIfPresent(String.self, forKey: .selectedTodoTitle),
+      localID: container.decodeIfPresent(String.self, forKey: .localID),
+      authUserID: container.decodeIfPresent(String.self, forKey: .authUserID),
+      roomMemberIDs: container.decodeIfPresent([String].self, forKey: .roomMemberIDs) ?? [],
+      topicMessageIDs: container.decodeIfPresent([String].self, forKey: .topicMessageIDs) ?? [],
+      fileIDs: container.decodeIfPresent([String].self, forKey: .fileIDs) ?? [],
+      streamChunkIDs: container.decodeIfPresent([String].self, forKey: .streamChunkIDs) ?? [],
+      shareIDs: container.decodeIfPresent([String].self, forKey: .shareIDs) ?? [],
+      queryCount: container.decodeIfPresent(Int.self, forKey: .queryCount),
+      observationCount: container.decodeIfPresent(Int.self, forKey: .observationCount),
+      loadErrorOperation: container.decodeIfPresent(String.self, forKey: .loadErrorOperation),
+      isLoading: container.decodeIfPresent(Bool.self, forKey: .isLoading),
+      nilQueryCleared: container.decodeIfPresent(Bool.self, forKey: .nilQueryCleared),
+      nilRequestCleared: container.decodeIfPresent(Bool.self, forKey: .nilRequestCleared),
+      cancellationTerminated: container.decodeIfPresent(Bool.self, forKey: .cancellationTerminated)
+    )
+  }
 }
 
 public struct PlatformAdapterValidationResult: Sendable {
@@ -96,6 +165,19 @@ public struct PlatformAdapterValidationResult: Sendable {
 }
 
 public enum InstantSwiftDataPlatformAdapterValidation {
+  private static let projectedBindingAdapters = [
+    "@FetchAll",
+    "@FetchOne",
+    "@Fetch",
+    "@LocalID",
+    "@AuthSession",
+    "@RoomPresence",
+    "@RoomTopicMessages",
+    "@StoredFiles",
+    "@StreamChunks",
+    "@Shares",
+  ]
+
   public static func run(
     appID: String = "platform-adapter-validation",
     cacheURL: URL? = nil,
@@ -405,6 +487,27 @@ public enum InstantSwiftDataPlatformAdapterValidation {
         )
       )
     )
+    evidence.append(
+      try validateProjectedBindings(
+        appID: appID,
+        cacheURL: cacheURL,
+        timestamp: timestamp,
+        todo: PlatformAdapterTodo(
+          id: todoID,
+          title: "Bind public adapter wrappers",
+          isCompleted: false,
+          createdAt: createdAt
+        ),
+        localID: localID.wrappedValue,
+        authSession: authSession.wrappedValue,
+        room: room,
+        member: member,
+        topicMessage: topicMessage,
+        storedFile: storedFile,
+        chunk: chunk,
+        share: share
+      )
+    )
 
     evidence.append(
       try await validateFilteredReload(
@@ -479,6 +582,105 @@ public enum InstantSwiftDataPlatformAdapterValidation {
     )
 
     return PlatformAdapterValidationResult(appID: appID, cacheURL: cacheURL, evidence: evidence)
+  }
+
+  private static func validateProjectedBindings(
+    appID: String,
+    cacheURL: URL,
+    timestamp: @escaping @Sendable () -> InstantTimestamp,
+    todo: PlatformAdapterTodo,
+    localID: String?,
+    authSession: InstantAuthSession?,
+    room: InstantRoomHandle,
+    member: InstantRoomPresenceMember,
+    topicMessage: InstantRoomTopicMessage,
+    storedFile: InstantStoredFile,
+    chunk: InstantStreamChunk,
+    share: InstantShareSnapshot
+  ) throws -> ValidationEvidenceRow<PlatformAdapterValidationDetails> {
+    #if canImport(SwiftUI)
+      @FetchAll var all: [PlatformAdapterTodo] = []
+      $all.binding.wrappedValue = [todo]
+
+      @FetchOne var one: PlatformAdapterTodo? = nil
+      $one.binding.wrappedValue = todo
+
+      @Fetch var count = 0
+      $count.binding.wrappedValue = 1
+
+      @LocalID var local: String?
+      $local.binding.wrappedValue = localID
+
+      @AuthSession var auth: InstantAuthSession?
+      $auth.binding.wrappedValue = authSession
+
+      @RoomPresence(room: room) var presence: [InstantRoomPresenceMember]
+      $presence.binding.wrappedValue = [member]
+
+      @RoomTopicMessages(room: room, topic: topicMessage.topic, limit: 1)
+      var topicMessages: [InstantRoomTopicMessage]
+      $topicMessages.binding.wrappedValue = [topicMessage]
+
+      @StoredFiles var files: [InstantStoredFile]
+      $files.binding.wrappedValue = [storedFile]
+
+      @StreamChunks(chunk.streamID, limit: 1) var chunks: [InstantStreamChunk]
+      $chunks.binding.wrappedValue = [chunk]
+
+      @Shares var shares: [InstantShareSnapshot]
+      $shares.binding.wrappedValue = [share]
+
+      guard
+        all.map(\.id.rawValue) == [todo.id.rawValue],
+        one?.id == todo.id,
+        count == 1,
+        local == localID,
+        auth?.userID == authSession?.userID,
+        presence.map(\.id) == [member.id],
+        topicMessages.map(\.id) == [topicMessage.id],
+        files.map(\.id) == [storedFile.id],
+        chunks.map(\.id) == [chunk.id],
+        shares.map(\.share.id) == [share.share.id]
+      else {
+        throw validationFailure(
+          operation: "validate platform adapter projected bindings",
+          message: "Expected every public platform adapter wrapper to expose a mutable binding."
+        )
+      }
+
+      return evidenceRow(
+        event: "projected-bindings",
+        appID: appID,
+        timestamp: timestamp,
+        details: PlatformAdapterValidationDetails(
+          cachePath: cacheURL.path,
+          adapter: "Projected bindings",
+          bindingAdapters: projectedBindingAdapters,
+          todoIDs: all.map(\.id.rawValue),
+          todoTitles: all.map(\.title),
+          todoCount: count,
+          selectedTodoID: one?.id.rawValue,
+          selectedTodoTitle: one?.title,
+          localID: local,
+          authUserID: auth?.userID,
+          roomMemberIDs: presence.map(\.userID),
+          topicMessageIDs: topicMessages.map(\.id),
+          fileIDs: files.map(\.id),
+          streamChunkIDs: chunks.map(\.id),
+          shareIDs: shares.map(\.share.id)
+        )
+      )
+    #else
+      return evidenceRow(
+        event: "projected-bindings",
+        appID: appID,
+        timestamp: timestamp,
+        details: PlatformAdapterValidationDetails(
+          cachePath: cacheURL.path,
+          adapter: "Projected bindings(unavailable)"
+        )
+      )
+    #endif
   }
 
   private static func validateFilteredReload(

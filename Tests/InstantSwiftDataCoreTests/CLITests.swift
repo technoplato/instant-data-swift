@@ -7848,7 +7848,7 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.appID, "cli-cache-test")
     expectNoDifference(jsonOutput.event, "platform-adapters")
     expectNoDifference(jsonOutput.ok, true)
-    expectNoDifference(jsonOutput.evidenceCount, 20)
+    expectNoDifference(jsonOutput.evidenceCount, 21)
     expectNoDifference(jsonOutput.events, [
       "fetch-all",
       "fetch-one",
@@ -7860,6 +7860,7 @@ extension InstantStoreTests {
       "stored-files",
       "stream-chunks",
       "shares",
+      "projected-bindings",
       "fetch-all-filtered-reload",
       "fetch-all-dynamic-query",
       "fetch-one-dynamic-query",
@@ -7882,6 +7883,7 @@ extension InstantStoreTests {
       "@StoredFiles",
       "@StreamChunks",
       "@Shares",
+      "Projected bindings",
       "@FetchAll/@Fetch(filtered)",
       "@FetchAll(dynamic)",
       "@FetchOne(dynamic)",
@@ -7892,6 +7894,19 @@ extension InstantStoreTests {
       "@FetchAll(error)",
       "@FetchAll(cancellation)",
       "@Fetch(request cancellation)",
+    ])
+    expectNoDifference(jsonOutput.bindingAdapterCount, 10)
+    expectNoDifference(jsonOutput.bindingAdapters, [
+      "@FetchAll",
+      "@FetchOne",
+      "@Fetch",
+      "@LocalID",
+      "@AuthSession",
+      "@RoomPresence",
+      "@RoomTopicMessages",
+      "@StoredFiles",
+      "@StreamChunks",
+      "@Shares",
     ])
     expectNoDifference(jsonOutput.todoCount, 1)
     expectNoDifference(jsonOutput.authUserID, "adapter-user")
@@ -7910,7 +7925,7 @@ extension InstantStoreTests {
 
     let jsonlOutput = try runCLI(["validation", "wrappers", "--jsonl"], homeURL: homeURL)
     let lines = jsonlOutput.split(separator: "\n")
-    expectNoDifference(lines.count, 20)
+    expectNoDifference(lines.count, 21)
     let fetchEvidence = try JSONDecoder().decode(
       CLIPlatformAdapterValidationEvidence.self,
       from: Data(try #require(lines.first).utf8)
@@ -7933,6 +7948,33 @@ extension InstantStoreTests {
     expectNoDifference(shareEvidence.details.adapter, "@Shares")
     expectNoDifference(shareEvidence.details.authUserID, "adapter-user")
     expectNoDifference(shareEvidence.details.shareIDs.count, 1)
+
+    let projectedBindingsEvidence = try #require(
+      evidenceRows.first { $0.event == "projected-bindings" }
+    )
+    expectNoDifference(projectedBindingsEvidence.details.adapter, "Projected bindings")
+    expectNoDifference(projectedBindingsEvidence.details.bindingAdapters, [
+      "@FetchAll",
+      "@FetchOne",
+      "@Fetch",
+      "@LocalID",
+      "@AuthSession",
+      "@RoomPresence",
+      "@RoomTopicMessages",
+      "@StoredFiles",
+      "@StreamChunks",
+      "@Shares",
+    ])
+    expectNoDifference(projectedBindingsEvidence.details.todoTitles, [
+      "Bind public adapter wrappers"
+    ])
+    expectNoDifference(projectedBindingsEvidence.details.todoCount, 1)
+    expectNoDifference(projectedBindingsEvidence.details.authUserID, "adapter-user")
+    expectNoDifference(projectedBindingsEvidence.details.roomMemberIDs, ["adapter-user"])
+    expectNoDifference(projectedBindingsEvidence.details.topicMessageIDs.count, 1)
+    expectNoDifference(projectedBindingsEvidence.details.fileIDs.count, 1)
+    expectNoDifference(projectedBindingsEvidence.details.streamChunkIDs.count, 1)
+    expectNoDifference(projectedBindingsEvidence.details.shareIDs.count, 1)
 
     let filteredReloadEvidence = try #require(
       evidenceRows.first { $0.event == "fetch-all-filtered-reload" }
@@ -8003,7 +8045,8 @@ extension InstantStoreTests {
     let humanOutput = try runCLI(["validation", "adapters"], homeURL: homeURL)
     #expect(humanOutput.contains("validation: ok"))
     #expect(humanOutput.contains("case: validation.platform.adapters"))
-    #expect(humanOutput.contains("evidence rows: 20"))
+    #expect(humanOutput.contains("evidence rows: 21"))
+    #expect(humanOutput.contains("binding adapters: @FetchAll, @FetchOne, @Fetch"))
     #expect(humanOutput.contains("lifecycle probes: 10"))
     #expect(humanOutput.contains("cancellation terminated: true"))
     #expect(humanOutput.contains("@FetchAll"))
@@ -10234,6 +10277,8 @@ private struct CLIPlatformAdapterValidationOutput: Decodable {
   var evidenceCount: Int
   var events: [String]
   var adapters: [String]
+  var bindingAdapterCount: Int
+  var bindingAdapters: [String]
   var todoCount: Int
   var selectedTodoID: String?
   var localID: String?
@@ -10266,6 +10311,7 @@ private struct CLIPlatformAdapterValidationEvidence: Decodable {
 
 private struct CLIPlatformAdapterValidationDetails: Decodable {
   var adapter: String
+  var bindingAdapters: [String]
   var todoTitles: [String]
   var previousTodoTitles: [String]
   var todoCount: Int

@@ -9099,6 +9099,7 @@ struct InstantSwiftDataCLI {
     result: PlatformAdapterValidationResult,
     output: OutputMode
   ) throws {
+    let bindingAdapters = result.evidence.flatMap(\.details.bindingAdapters)
     let summary = PlatformAdapterValidationOutput(
       appID: result.appID,
       cachePath: result.cacheURL.path,
@@ -9108,6 +9109,8 @@ struct InstantSwiftDataCLI {
       evidenceCount: result.evidence.count,
       events: result.evidence.map(\.event),
       adapters: result.evidence.map(\.details.adapter),
+      bindingAdapterCount: bindingAdapters.count,
+      bindingAdapters: bindingAdapters,
       todoCount: result.evidence.first { $0.event == "fetch-all" }?.details.todoCount
         ?? result.evidence.map(\.details.todoCount).max()
         ?? 0,
@@ -9138,6 +9141,7 @@ struct InstantSwiftDataCLI {
       print("case: validation.platform.adapters")
       print("events: \(summary.events.joined(separator: ", "))")
       print("adapters: \(summary.adapters.joined(separator: ", "))")
+      print("binding adapters: \(summary.bindingAdapters.joined(separator: ", "))")
       print("evidence rows: \(summary.evidenceCount)")
       print("todos: \(summary.todoCount)")
       print("auth user: \(summary.authUserID ?? "none")")
@@ -11258,6 +11262,8 @@ private struct PlatformAdapterValidationOutput: Codable, Sendable {
   var evidenceCount: Int
   var events: [String]
   var adapters: [String]
+  var bindingAdapterCount: Int
+  var bindingAdapters: [String]
   var todoCount: Int
   var selectedTodoID: String?
   var localID: String?

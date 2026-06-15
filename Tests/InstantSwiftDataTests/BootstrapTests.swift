@@ -535,6 +535,31 @@ struct BootstrapTests {
   }
 
   @Test
+  func platformAdapterValidationDetailsDecodeOlderEvidenceWithoutBindingAdapters() throws {
+    let details = try JSONDecoder().decode(
+      PlatformAdapterValidationDetails.self,
+      from: Data(
+        """
+        {
+          "adapter": "@FetchAll",
+          "cachePath": "/tmp/state.sqlite",
+          "todoCount": 1,
+          "todoIDs": ["todo-1"],
+          "todoTitles": ["Older evidence"]
+        }
+        """.utf8
+      )
+    )
+
+    expectNoDifference(details.adapter, "@FetchAll")
+    expectNoDifference(details.bindingAdapters, [])
+    expectNoDifference(details.todoIDs, ["todo-1"])
+    expectNoDifference(details.todoTitles, ["Older evidence"])
+    expectNoDifference(details.previousTodoTitles, [])
+    expectNoDifference(details.roomMemberIDs, [])
+  }
+
+  @Test
   func platformAdapterValidationProvesWrappersBindLocalRuntime() async throws {
     let directory = FileManager.default.temporaryDirectory
       .appendingPathComponent(
@@ -563,6 +588,7 @@ struct BootstrapTests {
       "stored-files",
       "stream-chunks",
       "shares",
+      "projected-bindings",
       "fetch-all-filtered-reload",
       "fetch-all-dynamic-query",
       "fetch-one-dynamic-query",
@@ -574,8 +600,8 @@ struct BootstrapTests {
       "fetch-all-cancellation",
       "fetch-request-cancellation",
     ])
-    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 20))
-    expectNoDifference(result.evidence.map(\.appID), Array(repeating: result.appID, count: 20))
+    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 21))
+    expectNoDifference(result.evidence.map(\.appID), Array(repeating: result.appID, count: 21))
     expectNoDifference(result.evidence.map(\.details.adapter), [
       "@FetchAll",
       "@FetchOne",
@@ -587,6 +613,7 @@ struct BootstrapTests {
       "@StoredFiles",
       "@StreamChunks",
       "@Shares",
+      "Projected bindings",
       "@FetchAll/@Fetch(filtered)",
       "@FetchAll(dynamic)",
       "@FetchOne(dynamic)",
@@ -710,6 +737,33 @@ struct BootstrapTests {
 
     let shares = try #require(result.evidence.first { $0.event == "shares" }?.details)
     expectNoDifference(shares.shareIDs, ["platform-adapter-validation-id"])
+
+    let projectedBindings = try #require(
+      result.evidence.first { $0.event == "projected-bindings" }?.details
+    )
+    expectNoDifference(projectedBindings.adapter, "Projected bindings")
+    expectNoDifference(projectedBindings.bindingAdapters, [
+      "@FetchAll",
+      "@FetchOne",
+      "@Fetch",
+      "@LocalID",
+      "@AuthSession",
+      "@RoomPresence",
+      "@RoomTopicMessages",
+      "@StoredFiles",
+      "@StreamChunks",
+      "@Shares",
+    ])
+    expectNoDifference(projectedBindings.todoTitles, ["Bind public adapter wrappers"])
+    expectNoDifference(projectedBindings.todoCount, 1)
+    expectNoDifference(projectedBindings.selectedTodoID, "platform-adapter-validation-id")
+    expectNoDifference(projectedBindings.localID, "platform-adapter-validation-id")
+    expectNoDifference(projectedBindings.authUserID, "adapter-user")
+    expectNoDifference(projectedBindings.roomMemberIDs, ["adapter-user"])
+    expectNoDifference(projectedBindings.topicMessageIDs, ["platform-adapter-validation-id"])
+    expectNoDifference(projectedBindings.fileIDs, ["platform-adapter-validation-id"])
+    expectNoDifference(projectedBindings.streamChunkIDs, ["platform-adapter-validation-id"])
+    expectNoDifference(projectedBindings.shareIDs, ["platform-adapter-validation-id"])
   }
 
   @Test
