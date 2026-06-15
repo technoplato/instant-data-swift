@@ -327,6 +327,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift proves the same empty todos query through local InstantRuntime.queryOnce; the browser document mutation is outside the core runtime surface."
     ),
     instant(
+      id: "instant.reactor.query-subs-round-trips",
+      sourceFile: reactorSource,
+      sourceTestName: "querySubs round-trips",
+      swiftFile: reactorParitySwiftFile,
+      swiftTestName: "upstreamReactorQuerySubsRoundTripsCachedResultsAcrossRelaunch",
+      surface: "query-cache",
+      status: .adapted,
+      notes: "Swift persists queryOnce emissions to SQLite query cache rows and proves a relaunched runtime can read the cached result and surface it on closed queryOnce errors, adapting Reactor's IndexedDB querySubs callback round-trip."
+    ),
+    instant(
       id: "instant.reactor.get-local-id-stability",
       sourceFile: reactorSource,
       sourceTestName: "getLocalId always returns the same id",

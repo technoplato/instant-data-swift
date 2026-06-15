@@ -6,6 +6,83 @@ import Testing
 @Suite(.serialized)
 struct InstantReactorParityTests {
   @Test
+  func upstreamReactorQuerySubsRoundTripsCachedResultsAcrossRelaunch() async throws {
+    let cacheURL = try temporaryReactorParityCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_030_000)
+    let cachedAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 10)
+    let plan = InstantQueryPlan(
+      id: "reactor.query-subs.todos",
+      namespace: TodoExample.namespace,
+      order: InstantQueryOrder("createdAt", .ascending)
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reactor-query-subs-parity",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        now: { cachedAt }
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-reactor-query-subs-seed",
+        operations: TodoExample.createOperations(
+          id: "todo-reactor-query-subs",
+          text: "restore cached querySub",
+          createdAt: createdAt,
+          transactionID: "tx-reactor-query-subs-seed"
+        )
+      ),
+      createdAt: createdAt
+    )
+
+    let emission = try await runtime.queryOnce(plan)
+    let cachedQuery = try #require(try await runtime.cachedQuery(plan))
+    expectNoDifference(emission.queryID, "reactor.query-subs.todos", reactorQuerySubsSource)
+    expectNoDifference(cachedQuery.queryID, plan.id, reactorQuerySubsSource)
+    expectNoDifference(cachedQuery.cacheKey, plan.cacheKey, reactorQuerySubsSource)
+    expectNoDifference(cachedQuery.plan, plan, reactorQuerySubsSource)
+    expectNoDifference(cachedQuery.emission.values, emission.values, reactorQuerySubsSource)
+    expectNoDifference(cachedQuery.updatedAt, cachedAt, reactorQuerySubsSource)
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reactor-query-subs-parity",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let relaunchedCache = try #require(try await relaunchedRuntime.cachedQuery(plan))
+    let relaunchedTodos = try TodoExample.decode(relaunchedCache.emission.values)
+    expectNoDifference(
+      relaunchedTodos,
+      [
+        TodoRecord(
+          id: "todo-reactor-query-subs",
+          text: "restore cached querySub",
+          isCompleted: false,
+          createdAt: createdAt
+        )
+      ],
+      reactorQuerySubsSource
+    )
+    let relaunchedCacheKeys = try await relaunchedRuntime.cachedQueries().map(\.cacheKey)
+    expectNoDifference(relaunchedCacheKeys, [plan.cacheKey], reactorQuerySubsSource)
+
+    try await relaunchedRuntime.closeConnection()
+    do {
+      _ = try await relaunchedRuntime.queryOnce(plan)
+      Issue.record("Expected closed queryOnce to fail with a cached querySub-equivalent result.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .networkFailed, reactorQuerySubsSource)
+      expectNoDifference(error.operation, "queryOnce", reactorQuerySubsSource)
+      expectNoDifference(error.cachedQuery?.queryID, plan.id, reactorQuerySubsSource)
+      expectNoDifference(error.cachedQuery?.cacheKey, plan.cacheKey, reactorQuerySubsSource)
+      expectNoDifference(error.cachedQuery?.emission.values, emission.values, reactorQuerySubsSource)
+    }
+  }
+
+  @Test
   func upstreamReactorRewriteMutationsKeepsPendingTransportStable() async throws {
     let cacheURL = try temporaryReactorParityCacheURL()
     let seedTime = InstantTimestamp(milliseconds: 1_700_000_010_000)
@@ -125,6 +202,9 @@ struct InstantReactorParityTests {
 
 private let reactorGetLocalIDSource =
   "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts getLocalId always returns the same id [adapted: Swift uses InstantRuntime.localID over the local SQLite cache instead of the IndexedDB-backed Reactor harness.]"
+
+private let reactorQuerySubsSource =
+  "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts querySubs round-trips [adapted: Swift writes queryOnce results to the SQLite query cache and relaunches cachedQuery/queryOnce fallback instead of IndexedDB querySubs callbacks.]"
 
 private let reactorRewriteSource =
   "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts rewrite mutations [adapted: Swift pending mutations store typed transactions and lower them to stable transport steps over declared server attributes instead of rewriting cached JavaScript tx-steps.]"
