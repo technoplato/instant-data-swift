@@ -2919,7 +2919,7 @@ extension InstantStoreTests {
     expectNoDifference(result.status, 64)
     #expect(
       result.error.contains(
-        "Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|reactions|stroopwafel|reminders|sync-ups>"
+        "Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|stroopwafel|reminders|sync-ups>"
       )
     )
   }
@@ -4207,6 +4207,146 @@ extension InstantStoreTests {
     )
     expectNoDifference(invalidAngle.status, 64)
     #expect(invalidAngle.error.contains("Invalid reactions angle: 360."))
+  }
+
+  @Test
+  func cliTypingIndicatorRecipePersistsActivePresenceAcrossLaunches() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let joined = try JSONDecoder().decode(
+      CLITypingIndicatorRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "typing-indicator", "join", "user-a", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(joined.event, "join")
+    expectNoDifference(joined.transport, "not-implemented-local-cache-only")
+    expectNoDifference(joined.room, TypingIndicatorRecipeExample.room)
+    expectNoDifference(joined.inputName, TypingIndicatorRecipeExample.inputName)
+    expectNoDifference(joined.userID, "user-a")
+    expectNoDifference(joined.viewerUserID, "user-a")
+    expectNoDifference(joined.memberCount, 1)
+    expectNoDifference(joined.activeCount, 0)
+    expectNoDifference(joined.typingInfo, nil)
+    expectNoDifference(joined.members.compactMap(\.presenceID), ["user-a"])
+    expectNoDifference(joined.members.map(\.isTyping), [false])
+
+    let userATyping = try JSONDecoder().decode(
+      CLITypingIndicatorRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "typing", "type", "user-a", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(userATyping.event, "type")
+    expectNoDifference(userATyping.viewerUserID, "user-a")
+    expectNoDifference(userATyping.activeCount, 0)
+    expectNoDifference(userATyping.typingInfo, nil)
+    expectNoDifference(userATyping.activeMembers.map(\.userID), [])
+
+    let twoTyping = try JSONDecoder().decode(
+      CLITypingIndicatorRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "typing-indicator", "type", "user-b", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(twoTyping.viewerUserID, "user-b")
+    expectNoDifference(twoTyping.activeCount, 1)
+    expectNoDifference(twoTyping.typingInfo, "1 person is typing...")
+    expectNoDifference(twoTyping.activeMembers.map(\.userID), ["user-a"])
+    expectNoDifference(twoTyping.members.map(\.userID), ["user-a", "user-b"])
+    expectNoDifference(twoTyping.members.map(\.isTyping), [true, true])
+
+    let listed = try JSONDecoder().decode(
+      CLITypingIndicatorRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "typing-indicator", "list", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(listed.event, "list")
+    expectNoDifference(listed.viewerUserID, nil)
+    expectNoDifference(listed.activeMembers.map(\.userID), ["user-a", "user-b"])
+
+    let listedForUserA = try JSONDecoder().decode(
+      CLITypingIndicatorRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "typing-indicator", "list", "--viewer-user-id", "user-a", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(listedForUserA.viewerUserID, "user-a")
+    expectNoDifference(listedForUserA.activeMembers.map(\.userID), ["user-b"])
+
+    let watchJSONL = try runCLI(
+      ["examples", "typing-indicator", "watch", "--events", "1", "--jsonl"],
+      homeURL: homeURL
+    )
+    let watchLines = watchJSONL.split(separator: "\n")
+    expectNoDifference(watchLines.count, 3)
+    let watch = try JSONDecoder().decode(
+      CLITypingIndicatorRecipeEvidence.self,
+      from: Data(try #require(watchLines.first).utf8)
+    )
+    expectNoDifference(watch.caseID, "cli.examples.typing-indicator")
+    expectNoDifference(watch.event, "watch")
+    expectNoDifference(watch.details.activeCount, 2)
+    expectNoDifference(watch.details.activeMembers.compactMap(\.presenceID), ["user-a", "user-b"])
+    let memberRows = try watchLines.dropFirst().map {
+      try JSONDecoder().decode(CLITypingIndicatorRecipeMemberEvidence.self, from: Data($0.utf8))
+    }
+    expectNoDifference(memberRows.map(\.event), ["typing-member", "typing-member"])
+    expectNoDifference(memberRows.map(\.details.userID), ["user-a", "user-b"])
+
+    let stopped = try JSONDecoder().decode(
+      CLITypingIndicatorRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "typing-indicator", "stop", "user-a", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(stopped.viewerUserID, "user-a")
+    expectNoDifference(stopped.activeMembers.map(\.userID), ["user-b"])
+
+    let left = try JSONDecoder().decode(
+      CLITypingIndicatorRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "typing-indicator", "leave", "user-b", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(left.event, "leave")
+    expectNoDifference(left.userID, "user-b")
+    expectNoDifference(left.viewerUserID, "user-b")
+    expectNoDifference(left.members.map(\.userID), ["user-a"])
+    expectNoDifference(left.activeCount, 0)
+    expectNoDifference(left.activeMembers.map(\.userID), [])
+
+    let invalidWatch = try runCLIResult(
+      ["examples", "typing-indicator", "watch", "--events", "2", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(invalidWatch.status, 64)
+    #expect(invalidWatch.error.contains("typing-indicator watch"))
   }
 
   @Test
@@ -6752,9 +6892,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 104)
+    expectNoDifference(jsonOutput.recordCount, 105)
     expectNoDifference(jsonOutput.exactCount, 19)
-    expectNoDifference(jsonOutput.adaptedCount, 82)
+    expectNoDifference(jsonOutput.adaptedCount, 83)
     expectNoDifference(jsonOutput.blockedCount, 3)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -6833,6 +6973,11 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.records.contains {
         $0.id == "instant.recipe.reactions.local-cli" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.recipe.typing-indicator.local-cli" && $0.status == "adapted"
       }
     )
     #expect(
@@ -7059,7 +7204,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 104"))
+    #expect(humanOutput.contains("records: 105"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 
@@ -8248,6 +8393,37 @@ private struct CLIReactionsRecipeEvidence: Decodable {
 private struct CLIReactionsRecipeReactionEvidence: Decodable {
   var event: String
   var details: ReactionsRecipeReaction
+}
+
+private struct CLITypingIndicatorRecipeOutput: Decodable, Equatable {
+  var event: String
+  var userID: String?
+  var viewerUserID: String?
+  var transport: String
+  var room: InstantRoomHandle
+  var inputName: String
+  var memberCount: Int
+  var activeCount: Int
+  var typingInfo: String?
+  var members: [TypingIndicatorRecipeMember]
+  var activeMembers: [TypingIndicatorRecipeMember]
+}
+
+private struct CLITypingIndicatorRecipeEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLITypingIndicatorRecipeOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
+}
+
+private struct CLITypingIndicatorRecipeMemberEvidence: Decodable {
+  var event: String
+  var details: TypingIndicatorRecipeMember
 }
 
 private struct CLIFilesOutput: Decodable, Equatable {

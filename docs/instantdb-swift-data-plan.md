@@ -842,6 +842,15 @@ Create `validation/` with:
   the upstream `topics-example/123` room, `emoji` topic, four reaction names, and
   `{name, directionAngle, rotationAngle}` payload shape while adapting live peer
   broadcasts into local persistent topic evidence for non-captive terminal use.
+- Typing indicator recipe: the local Instant recipe port exposes durable
+  `examples typing-indicator join <user-id>`, `type <user-id>`,
+  `stop <user-id>`, `list [--viewer-user-id id]`,
+  `watch --events 1 [--viewer-user-id id]`, and `leave <user-id>` commands over
+  the existing room-presence runtime. It preserves the upstream
+  `typing-indicator-example/1234` room, optional `id` presence value, and
+  `chat-input` activity key while deriving active typers from presence values
+  where `chat-input` is `true`; supplying a viewer id gives the upstream hook's
+  peer-only view.
 - CLI: `instant-swift-data examples todos add "do the dishes"` persists auth,
   local IDs, cache, and outbox state for a later CLI invocation.
 - Permissions: generated permissions reject an unauthorized write in both

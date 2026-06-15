@@ -54,6 +54,7 @@ public enum CLIExamplesInvocation: Equatable, Sendable {
   case microblog(arguments: [String])
   case mobileChat(arguments: [String])
   case reactions(arguments: [String])
+  case typingIndicator(arguments: [String])
   case stroopwafel(arguments: [String])
   case syncUps(arguments: [String])
   case reminders(arguments: [String])
@@ -546,6 +547,58 @@ public enum CLIExamplesReactionsArgumentError: Error, Equatable, Sendable {
   case invalidReactionName(String, usage: String)
   case invalidAngle(String, usage: String)
   case unknownTapOption(String, usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
+public enum CLIExamplesTypingIndicatorLeafInvocation: Equatable, Sendable {
+  case join(userID: String)
+  case type(userID: String)
+  case stop(userID: String)
+  case list(CLIExamplesTypingIndicatorListInvocation)
+  case watch(CLIExamplesTypingIndicatorWatchInvocation)
+  case leave(userID: String)
+  case unknown(String)
+}
+
+public struct CLIExamplesTypingIndicatorListInvocation: Equatable, Sendable {
+  public var viewerUserID: String?
+
+  public init(viewerUserID: String? = nil) {
+    self.viewerUserID = viewerUserID
+  }
+}
+
+public struct CLIExamplesTypingIndicatorWatchInvocation: Equatable, Sendable {
+  public var eventCount: Int
+  public var viewerUserID: String?
+
+  public init(eventCount: Int = 1, viewerUserID: String? = nil) {
+    self.eventCount = eventCount
+    self.viewerUserID = viewerUserID
+  }
+}
+
+public enum CLIExamplesTypingIndicatorUsage {
+  public static let typingIndicator = """
+    Usage: instant-swift-data examples typing-indicator <join|type|stop|list|watch|leave>
+      instant-swift-data examples typing-indicator join <user-id> [--json|--jsonl]
+      instant-swift-data examples typing-indicator type <user-id> [--json|--jsonl]
+      instant-swift-data examples typing-indicator stop <user-id> [--json|--jsonl]
+      instant-swift-data examples typing-indicator list [--viewer-user-id id] [--json|--jsonl]
+      instant-swift-data examples typing-indicator watch [--events 1] [--viewer-user-id id] [--json|--jsonl]
+      instant-swift-data examples typing-indicator leave <user-id> [--json|--jsonl]
+    """
+  public static let user =
+    "Usage: instant-swift-data examples typing-indicator <join|type|stop|leave> <user-id> [--json|--jsonl]"
+  public static let list =
+    "Usage: instant-swift-data examples typing-indicator list [--viewer-user-id id] [--json|--jsonl]"
+  public static let watch =
+    "Usage: instant-swift-data examples typing-indicator watch [--events 1] [--viewer-user-id id] [--json|--jsonl]"
+}
+
+public enum CLIExamplesTypingIndicatorArgumentError: Error, Equatable, Sendable {
+  case invalidArguments(usage: String)
 
   public var exitCode: Int32 { 64 }
 }
@@ -2006,6 +2059,11 @@ public struct CLIExamplesParser: Parser {
       input.removeAll()
       return .reactions(arguments: arguments)
 
+    case "typing-indicator", "typing", "typing-indicators":
+      let arguments = Array(input)
+      input.removeAll()
+      return .typingIndicator(arguments: arguments)
+
     case "stroopwafel":
       let arguments = Array(input)
       input.removeAll()
@@ -3007,6 +3065,53 @@ public struct CLIExamplesReactionsLeafParser: Parser {
 
     case "watch", "observe":
       return .watch(try parseExamplesReactionsWatchOptions(from: &input))
+
+    default:
+      input.removeAll()
+      return .unknown(command)
+    }
+  }
+}
+
+public struct CLIExamplesTypingIndicatorLeafParser: Parser {
+  public init() {}
+
+  public func parse(
+    _ input: inout ArraySlice<String>
+  ) throws -> CLIExamplesTypingIndicatorLeafInvocation {
+    guard let command = input.first else {
+      throw CLIExamplesTypingIndicatorArgumentError.invalidArguments(
+        usage: CLIExamplesTypingIndicatorUsage.typingIndicator
+      )
+    }
+    input.removeFirst()
+
+    switch command {
+    case "join", "enter":
+      return .join(
+        userID: try parseSingleExamplesTypingIndicatorUserID(from: &input)
+      )
+
+    case "type", "typing", "start":
+      return .type(
+        userID: try parseSingleExamplesTypingIndicatorUserID(from: &input)
+      )
+
+    case "stop", "blur":
+      return .stop(
+        userID: try parseSingleExamplesTypingIndicatorUserID(from: &input)
+      )
+
+    case "list", "presence":
+      return .list(try parseExamplesTypingIndicatorListOptions(from: &input))
+
+    case "watch", "observe":
+      return .watch(try parseExamplesTypingIndicatorWatchOptions(from: &input))
+
+    case "leave":
+      return .leave(
+        userID: try parseSingleExamplesTypingIndicatorUserID(from: &input)
+      )
 
     default:
       input.removeAll()
@@ -5639,6 +5744,100 @@ private func requireNoRemainingExamplesStroopwafelArguments(
   }
 }
 
+private func requireNoRemainingExamplesTypingIndicatorArguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if !input.isEmpty {
+    throw CLIExamplesTypingIndicatorArgumentError.invalidArguments(usage: usage)
+  }
+}
+
+private func parseSingleExamplesTypingIndicatorUserID(
+  from input: inout ArraySlice<String>
+) throws -> String {
+  let userID = try parseRequiredExamplesTypingIndicatorArgument(
+    from: &input,
+    usage: CLIExamplesTypingIndicatorUsage.user
+  )
+  try requireNoRemainingExamplesTypingIndicatorArguments(
+    &input,
+    usage: CLIExamplesTypingIndicatorUsage.user
+  )
+  return userID
+}
+
+private func parseRequiredExamplesTypingIndicatorArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIExamplesTypingIndicatorArgumentError.invalidArguments(usage: usage)
+  }
+  input.removeFirst()
+  let trimmedValue = trimmed(value)
+  guard !trimmedValue.isEmpty else {
+    throw CLIExamplesTypingIndicatorArgumentError.invalidArguments(usage: usage)
+  }
+  return trimmedValue
+}
+
+private func parseExamplesTypingIndicatorListOptions(
+  from input: inout ArraySlice<String>
+) throws -> CLIExamplesTypingIndicatorListInvocation {
+  var invocation = CLIExamplesTypingIndicatorListInvocation()
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--viewer-user-id":
+      invocation.viewerUserID = try parseRequiredExamplesTypingIndicatorArgument(
+        from: &input,
+        usage: CLIExamplesTypingIndicatorUsage.list
+      )
+
+    default:
+      throw CLIExamplesTypingIndicatorArgumentError.invalidArguments(
+        usage: CLIExamplesTypingIndicatorUsage.list
+      )
+    }
+  }
+  return invocation
+}
+
+private func parseExamplesTypingIndicatorWatchOptions(
+  from input: inout ArraySlice<String>
+) throws -> CLIExamplesTypingIndicatorWatchInvocation {
+  var invocation = CLIExamplesTypingIndicatorWatchInvocation()
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--events":
+      guard let value = input.first,
+        let parsed = Int(value),
+        parsed == 1
+      else {
+        throw CLIExamplesTypingIndicatorArgumentError.invalidArguments(
+          usage: CLIExamplesTypingIndicatorUsage.watch
+        )
+      }
+      input.removeFirst()
+      invocation.eventCount = parsed
+
+    case "--viewer-user-id":
+      invocation.viewerUserID = try parseRequiredExamplesTypingIndicatorArgument(
+        from: &input,
+        usage: CLIExamplesTypingIndicatorUsage.watch
+      )
+
+    default:
+      throw CLIExamplesTypingIndicatorArgumentError.invalidArguments(
+        usage: CLIExamplesTypingIndicatorUsage.watch
+      )
+    }
+  }
+  return invocation
+}
+
 private func parseExamplesReactionsTapOptions(
   from input: inout ArraySlice<String>
 ) throws -> CLIExamplesReactionsTapInvocation {
@@ -6899,6 +7098,15 @@ extension CLIExamplesReactionsArgumentError: CustomStringConvertible {
 
     case let .unknownTapOption(option, usage):
       return "Unknown reactions tap option: \(option). \(usage)"
+    }
+  }
+}
+
+extension CLIExamplesTypingIndicatorArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case let .invalidArguments(usage):
+      return usage
     }
   }
 }

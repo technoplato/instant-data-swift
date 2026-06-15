@@ -1116,6 +1116,16 @@ public enum InstantSwiftDataParityCoverage {
       status: .adapted,
       notes: "The Instant CLI ports the Reactions recipe onto the local room-topic runtime with the same topics-example/123 room, emoji topic, four reaction names, and {name, directionAngle, rotationAngle} payload. Local topic history is durable and listable for terminal evidence, while unknown recipe payload names are ignored during decoding like the upstream topic effect."
     ),
+    instant(
+      id: "instant.recipe.typing-indicator.local-cli",
+      sourceFile: "upstream/instant/client/www/lib/recipes/typing-indicator.tsx + upstream/instant/client/packages/react-common/src/InstantReactRoom.ts",
+      sourceTestName: "typing-indicator-example/1234 presence id and chat-input active peers",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/CLITests.swift + Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "cliTypingIndicatorRecipePersistsActivePresenceAcrossLaunches + typingIndicatorRecipeDerivesActivePresenceMembers",
+      surface: "recipes-typing-indicator",
+      status: .adapted,
+      notes: "The Instant CLI ports the Typing Indicator recipe onto the local room-presence runtime with the same typing-indicator-example/1234 room, optional id presence field, chat-input activity field, and active-peer derivation. Local presence is durable and watchable for terminal evidence, and --viewer-user-id exposes the upstream hook's peer-only view while false, null, and unrelated-room values stay idle or ignored."
+    ),
     sqlite(
       id: "sqlite.cloudkit-demo.local-counter-share",
       sourceFile: "upstream/sqlite-data/Examples/CloudKitDemo/CountersListFeature.swift",

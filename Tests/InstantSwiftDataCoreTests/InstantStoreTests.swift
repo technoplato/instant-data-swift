@@ -6266,6 +6266,130 @@ struct InstantStoreTests {
   }
 
   @Test
+  func typingIndicatorRecipeDerivesActivePresenceMembers() async throws {
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "typing-indicator-test",
+        persistenceURL: temporaryCacheURL(),
+        now: { timestamp }
+      )
+    )
+
+    _ = try await runtime.setPresence(
+      room: TypingIndicatorRecipeExample.room,
+      userID: "user-1",
+      values: TypingIndicatorRecipeExample.presenceValues(
+        presenceID: "peer-1",
+        isTyping: true
+      )
+    )
+    _ = try await runtime.setPresence(
+      room: TypingIndicatorRecipeExample.room,
+      userID: "user-2",
+      values: TypingIndicatorRecipeExample.presenceValues(
+        presenceID: "peer-2",
+        isTyping: false
+      )
+    )
+    _ = try await runtime.setPresence(
+      room: TypingIndicatorRecipeExample.room,
+      userID: "user-3",
+      values: [
+        TypingIndicatorRecipeExample.idKey: .string("peer-3"),
+        TypingIndicatorRecipeExample.inputName: .null,
+      ]
+    )
+    _ = try await runtime.setPresence(
+      room: TypingIndicatorRecipeExample.room,
+      userID: "user-4",
+      values: [TypingIndicatorRecipeExample.idKey: .string("peer-4")]
+    )
+    _ = try await runtime.setPresence(
+      room: TypingIndicatorRecipeExample.room,
+      userID: "user-5",
+      values: [
+        TypingIndicatorRecipeExample.inputName: .bool(true)
+      ]
+    )
+    _ = try await runtime.setPresence(
+      room: InstantRoomHandle(type: "chat", id: "lobby"),
+      userID: "user-6",
+      values: TypingIndicatorRecipeExample.presenceValues(
+        presenceID: "peer-6",
+        isTyping: true
+      )
+    )
+
+    let presence = try await runtime.roomPresence(room: TypingIndicatorRecipeExample.room)
+    expectNoDifference(
+      TypingIndicatorRecipeExample.members(from: presence),
+      [
+        TypingIndicatorRecipeMember(
+          userID: "user-1",
+          presenceID: "peer-1",
+          isTyping: true,
+          updatedAt: timestamp
+        ),
+        TypingIndicatorRecipeMember(
+          userID: "user-2",
+          presenceID: "peer-2",
+          isTyping: false,
+          updatedAt: timestamp
+        ),
+        TypingIndicatorRecipeMember(
+          userID: "user-3",
+          presenceID: "peer-3",
+          isTyping: false,
+          updatedAt: timestamp
+        ),
+        TypingIndicatorRecipeMember(
+          userID: "user-4",
+          presenceID: "peer-4",
+          isTyping: false,
+          updatedAt: timestamp
+        ),
+        TypingIndicatorRecipeMember(
+          userID: "user-5",
+          presenceID: nil,
+          isTyping: true,
+          updatedAt: timestamp
+        ),
+      ]
+    )
+    expectNoDifference(
+      TypingIndicatorRecipeExample.activeMembers(from: presence).map(\.userID),
+      ["user-1", "user-5"]
+    )
+    expectNoDifference(
+      TypingIndicatorRecipeExample.activeMembers(
+        from: presence,
+        excludingUserID: "user-1"
+      )
+      .map(\.userID),
+      ["user-5"]
+    )
+    expectNoDifference(TypingIndicatorRecipeExample.typingInfo(activeCount: 0), nil)
+    expectNoDifference(TypingIndicatorRecipeExample.typingInfo(activeCount: 1), "1 person is typing...")
+    expectNoDifference(TypingIndicatorRecipeExample.typingInfo(activeCount: 2), "2 people are typing...")
+    expectNoDifference(
+      TypingIndicatorRecipeExample.member(
+        from: InstantRoomPresenceMember(
+          appID: "typing-indicator-test",
+          room: InstantRoomHandle(type: "chat", id: "lobby"),
+          userID: "user-7",
+          values: TypingIndicatorRecipeExample.presenceValues(
+            presenceID: "peer-7",
+            isTyping: true
+          ),
+          updatedAt: timestamp
+        )
+      ),
+      nil
+    )
+  }
+
+  @Test
   func storedFilesPersistByAppIDAcrossLaunchesAndDeleteContent() async throws {
     let cacheURL = try temporaryCacheURL()
     let sourceURL = cacheURL.deletingLastPathComponent().appendingPathComponent("source.txt")

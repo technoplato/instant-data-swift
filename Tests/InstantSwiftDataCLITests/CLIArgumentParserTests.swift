@@ -1093,6 +1093,110 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func examplesTypingIndicatorLeafParserParsesCommandsAndOptions() throws {
+    expectNoDifference(
+      try parseExamples(["typing-indicator", "join", "user-1"]),
+      .typingIndicator(arguments: ["join", "user-1"])
+    )
+    expectNoDifference(
+      try parseExamples(["typing", "type", "user-1"]),
+      .typingIndicator(arguments: ["type", "user-1"])
+    )
+    expectNoDifference(
+      try parseExamples(["typing-indicators", "watch"]),
+      .typingIndicator(arguments: ["watch"])
+    )
+    expectNoDifference(
+      try parseExamplesTypingIndicatorLeaf(["join", "user-1"]),
+      .join(userID: "user-1")
+    )
+    expectNoDifference(
+      try parseExamplesTypingIndicatorLeaf(["enter", "user-2"]),
+      .join(userID: "user-2")
+    )
+    expectNoDifference(
+      try parseExamplesTypingIndicatorLeaf(["typing", "user-1"]),
+      .type(userID: "user-1")
+    )
+    expectNoDifference(
+      try parseExamplesTypingIndicatorLeaf(["start", "user-2"]),
+      .type(userID: "user-2")
+    )
+    expectNoDifference(
+      try parseExamplesTypingIndicatorLeaf(["blur", "user-1"]),
+      .stop(userID: "user-1")
+    )
+    expectNoDifference(
+      try parseExamplesTypingIndicatorLeaf(["list"]),
+      .list(CLIExamplesTypingIndicatorListInvocation())
+    )
+    expectNoDifference(
+      try parseExamplesTypingIndicatorLeaf(["presence", "--viewer-user-id", "user-1"]),
+      .list(CLIExamplesTypingIndicatorListInvocation(viewerUserID: "user-1"))
+    )
+    expectNoDifference(
+      try parseExamplesTypingIndicatorLeaf(["watch", "--events", "1"]),
+      .watch(CLIExamplesTypingIndicatorWatchInvocation(eventCount: 1))
+    )
+    expectNoDifference(
+      try parseExamplesTypingIndicatorLeaf(["observe", "--viewer-user-id", "user-2"]),
+      .watch(CLIExamplesTypingIndicatorWatchInvocation(viewerUserID: "user-2"))
+    )
+    expectNoDifference(
+      try parseExamplesTypingIndicatorLeaf(["leave", "user-1"]),
+      .leave(userID: "user-1")
+    )
+    expectNoDifference(
+      try parseExamplesTypingIndicatorLeaf(["dance", "--fast"]),
+      .unknown("dance")
+    )
+  }
+
+  @Test
+  func examplesTypingIndicatorLeafParserReportsMalformedArguments() throws {
+    try expectExamplesTypingIndicatorLeafParseError(
+      [],
+      description: CLIExamplesTypingIndicatorUsage.typingIndicator
+    )
+    try expectExamplesTypingIndicatorLeafParseError(
+      ["join"],
+      description: CLIExamplesTypingIndicatorUsage.user
+    )
+    try expectExamplesTypingIndicatorLeafParseError(
+      ["type", "  "],
+      description: CLIExamplesTypingIndicatorUsage.user
+    )
+    try expectExamplesTypingIndicatorLeafParseError(
+      ["stop", "user-1", "extra"],
+      description: CLIExamplesTypingIndicatorUsage.user
+    )
+    try expectExamplesTypingIndicatorLeafParseError(
+      ["list", "unexpected"],
+      description: CLIExamplesTypingIndicatorUsage.list
+    )
+    try expectExamplesTypingIndicatorLeafParseError(
+      ["list", "--viewer-user-id", "  "],
+      description: CLIExamplesTypingIndicatorUsage.list
+    )
+    try expectExamplesTypingIndicatorLeafParseError(
+      ["watch", "--events", "2"],
+      description: CLIExamplesTypingIndicatorUsage.watch
+    )
+    try expectExamplesTypingIndicatorLeafParseError(
+      ["watch", "--viewer-user-id", "  "],
+      description: CLIExamplesTypingIndicatorUsage.watch
+    )
+    try expectExamplesTypingIndicatorLeafParseError(
+      ["watch", "--surprise"],
+      description: CLIExamplesTypingIndicatorUsage.watch
+    )
+    try expectExamplesTypingIndicatorLeafParseError(
+      ["leave"],
+      description: CLIExamplesTypingIndicatorUsage.user
+    )
+  }
+
+  @Test
   func examplesSyncUpsLeafParserParsesCommandsAndOptions() throws {
     expectNoDifference(try parseExamplesSyncUpsLeaf(["seed"]), .seed)
     expectNoDifference(
@@ -3525,6 +3629,15 @@ private func parseExamplesReactionsLeaf(
   return invocation
 }
 
+private func parseExamplesTypingIndicatorLeaf(
+  _ arguments: [String]
+) throws -> CLIExamplesTypingIndicatorLeafInvocation {
+  var input = arguments[...]
+  let invocation = try CLIExamplesTypingIndicatorLeafParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseExamplesSyncUpsLeaf(
   _ arguments: [String]
 ) throws -> CLIExamplesSyncUpsLeafInvocation {
@@ -4061,6 +4174,19 @@ private func expectExamplesReactionsLeafParseError(
     _ = try parseExamplesReactionsLeaf(arguments)
     Issue.record("Expected examples reactions parser to reject \(arguments).")
   } catch let error as CLIExamplesReactionsArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectExamplesTypingIndicatorLeafParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseExamplesTypingIndicatorLeaf(arguments)
+    Issue.record("Expected examples typing indicator parser to reject \(arguments).")
+  } catch let error as CLIExamplesTypingIndicatorArgumentError {
     expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }

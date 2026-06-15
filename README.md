@@ -190,6 +190,24 @@ The reactions recipe uses the upstream `topics-example/123` room, `emoji` topic,
 and `{name, directionAngle, rotationAngle}` payload. Use a fresh
 `INSTANT_SWIFT_DATA_HOME` for an empty local topic history.
 
+Run the local Instant typing indicator recipe port:
+
+```bash
+export INSTANT_SWIFT_DATA_HOME="$(mktemp -d)"
+swift run instant-swift-data examples typing-indicator join user-a --json
+swift run instant-swift-data examples typing-indicator type user-a --json
+swift run instant-swift-data examples typing-indicator type user-b --json
+swift run instant-swift-data examples typing-indicator list --json
+swift run instant-swift-data examples typing-indicator list --viewer-user-id user-a --json
+swift run instant-swift-data examples typing-indicator watch --events 1 --jsonl
+swift run instant-swift-data examples typing-indicator stop user-a --json
+swift run instant-swift-data examples typing-indicator leave user-b --json
+```
+
+The typing indicator recipe uses the upstream `typing-indicator-example/1234`
+room and derives active typers from the `chat-input` presence field. Pass
+`--viewer-user-id` to `list` or `watch` for the upstream hook's peer-only view.
+
 Run the local Instant Stroopwafel multiplayer demo:
 
 ```bash

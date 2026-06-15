@@ -418,6 +418,8 @@ struct InstantSwiftDataCLI {
       throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesReactionsArgumentError {
       throw CLIError(error.description, exitCode: error.exitCode)
+    } catch let error as CLIExamplesTypingIndicatorArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesStroopwafelArgumentError {
       throw CLIError(error.description, exitCode: error.exitCode)
     }
@@ -440,6 +442,10 @@ struct InstantSwiftDataCLI {
 
     case let .reactions(arguments):
       try await runReactions(arguments: arguments, output: output)
+      return
+
+    case let .typingIndicator(arguments):
+      try await runTypingIndicator(arguments: arguments, output: output)
       return
 
     case let .stroopwafel(arguments):
@@ -5416,6 +5422,219 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func runTypingIndicator(arguments: [String], output: OutputMode) async throws {
+    let invocation: CLIExamplesTypingIndicatorLeafInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLIExamplesTypingIndicatorLeafParser().parse(&input)
+    } catch let error as CLIExamplesTypingIndicatorArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
+    }
+
+    if case let .unknown(command) = invocation {
+      throw CLIError(
+        "Unknown typing indicator command: \(command). \(typingIndicatorUsage)",
+        exitCode: 64
+      )
+    }
+
+    let context = try await CLIContext.bootstrap(initialAttributes: [])
+    switch invocation {
+    case let .join(userID):
+      _ = try await context.runtime.setPresence(
+        room: TypingIndicatorRecipeExample.room,
+        userID: userID,
+        values: TypingIndicatorRecipeExample.presenceValues(
+          presenceID: userID,
+          isTyping: false
+        )
+      )
+      let members = try await context.runtime.roomPresence(
+        room: TypingIndicatorRecipeExample.room
+      )
+      try printTypingIndicator(
+        context: context,
+        output: output,
+        event: "join",
+        userID: userID,
+        viewerUserID: userID,
+        presence: members
+      )
+
+    case let .type(userID):
+      _ = try await context.runtime.setPresence(
+        room: TypingIndicatorRecipeExample.room,
+        userID: userID,
+        values: TypingIndicatorRecipeExample.presenceValues(
+          presenceID: userID,
+          isTyping: true
+        )
+      )
+      let members = try await context.runtime.roomPresence(
+        room: TypingIndicatorRecipeExample.room
+      )
+      try printTypingIndicator(
+        context: context,
+        output: output,
+        event: "type",
+        userID: userID,
+        viewerUserID: userID,
+        presence: members
+      )
+
+    case let .stop(userID):
+      _ = try await context.runtime.setPresence(
+        room: TypingIndicatorRecipeExample.room,
+        userID: userID,
+        values: TypingIndicatorRecipeExample.presenceValues(
+          presenceID: userID,
+          isTyping: false
+        )
+      )
+      let members = try await context.runtime.roomPresence(
+        room: TypingIndicatorRecipeExample.room
+      )
+      try printTypingIndicator(
+        context: context,
+        output: output,
+        event: "stop",
+        userID: userID,
+        viewerUserID: userID,
+        presence: members
+      )
+
+    case let .list(options):
+      let members = try await context.runtime.roomPresence(
+        room: TypingIndicatorRecipeExample.room
+      )
+      try printTypingIndicator(
+        context: context,
+        output: output,
+        event: "list",
+        userID: nil,
+        viewerUserID: options.viewerUserID,
+        presence: members
+      )
+
+    case let .watch(options):
+      let members = try await firstWatchSnapshot(
+        from: context.runtime.observeRoomPresence(room: TypingIndicatorRecipeExample.room),
+        operation: "typing indicator watch",
+        eventCount: options.eventCount
+      )
+      try printTypingIndicator(
+        context: context,
+        output: output,
+        event: "watch",
+        userID: nil,
+        viewerUserID: options.viewerUserID,
+        presence: members
+      )
+
+    case let .leave(userID):
+      let leftUserID = try await context.runtime.leavePresence(
+        room: TypingIndicatorRecipeExample.room,
+        userID: userID
+      )
+      let members = try await context.runtime.roomPresence(
+        room: TypingIndicatorRecipeExample.room
+      )
+      try printTypingIndicator(
+        context: context,
+        output: output,
+        event: "leave",
+        userID: leftUserID,
+        viewerUserID: leftUserID,
+        presence: members
+      )
+
+    case .unknown:
+      preconditionFailure("Unknown typing indicator commands are handled before bootstrapping.")
+    }
+  }
+
+  private static func printTypingIndicator(
+    context: CLIContext,
+    output: OutputMode,
+    event: String,
+    userID: String?,
+    viewerUserID: String?,
+    presence: [InstantRoomPresenceMember]
+  ) throws {
+    let members = TypingIndicatorRecipeExample.members(from: presence)
+    let activeMembers = TypingIndicatorRecipeExample.activeMembers(
+      from: presence,
+      excludingUserID: viewerUserID
+    )
+    let payload = TypingIndicatorRecipeOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      userID: userID,
+      viewerUserID: viewerUserID,
+      transport: "not-implemented-local-cache-only",
+      room: TypingIndicatorRecipeExample.room,
+      inputName: TypingIndicatorRecipeExample.inputName,
+      memberCount: members.count,
+      activeCount: activeMembers.count,
+      typingInfo: TypingIndicatorRecipeExample.typingInfo(activeCount: activeMembers.count),
+      members: members,
+      activeMembers: activeMembers
+    )
+
+    switch output {
+    case .human:
+      print("room: \(payload.room.type)/\(payload.room.id)")
+      print("input: \(payload.inputName)")
+      if let userID {
+        print("user: \(userID)")
+      }
+      if let viewerUserID {
+        print("viewer: \(viewerUserID)")
+      }
+      print("members: \(payload.memberCount)")
+      print("active: \(payload.activeCount)")
+      if let typingInfo = payload.typingInfo {
+        print(typingInfo)
+      }
+      for member in members {
+        let state = member.isTyping ? "typing" : "idle"
+        print("- \(member.userID) id=\(member.presenceID ?? "missing") \(state)")
+      }
+      print("transport: \(payload.transport)")
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.examples.typing-indicator",
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          entityID: userID,
+          ok: true,
+          details: payload
+        )
+      )
+      for member in members {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.typing-indicator",
+            side: "swift",
+            event: member.isTyping ? "typing-member" : "idle-member",
+            appID: context.appID,
+            entityID: member.userID,
+            ok: true,
+            details: member
+          )
+        )
+      }
+    }
+  }
+
   private static func runStroopwafel(arguments: [String], output: OutputMode) async throws {
     let invocation: CLIExamplesStroopwafelLeafInvocation
     do {
@@ -8033,7 +8252,7 @@ struct InstantSwiftDataCLI {
 
   private static var examplesUsage: String {
     """
-    Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|reactions|stroopwafel|reminders|sync-ups>
+    Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|stroopwafel|reminders|sync-ups>
       instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>
       instant-swift-data examples todo-links <seed|list|nested|unlink> [--json|--jsonl]
       instant-swift-data examples counters <seed|add|list|increment|decrement|delete> [--json|--jsonl]
@@ -8041,6 +8260,7 @@ struct InstantSwiftDataCLI {
       instant-swift-data examples mobile-chat <seed|channels|messages|profiles|profile|setup-profile|send|join|presence|leave|reset> [--json|--jsonl]
       instant-swift-data examples microblog <seed|feed|profiles|profile|setup-profile|post|like|unlike|delete-post|reset> [--json|--jsonl]
       instant-swift-data examples reactions <tap|list|watch> [--json|--jsonl]
+      instant-swift-data examples typing-indicator <join|type|stop|list|watch|leave> [--json|--jsonl]
       instant-swift-data examples stroopwafel <setup-profile|profile|score|create-room|rooms|room|join|ready|unready|kick|start|games|game|tap|leave|reset> [--json|--jsonl]
       instant-swift-data examples reminders <seed|list|stats|tags|list-tags|search|add-list|rename-list|delete-list|add|update|complete|delete|delete-completed|add-tag|remove-tag> [--json|--jsonl]
       instant-swift-data examples sync-ups <seed|list|detail|add|edit|add-attendee|record|record-demo|delete|delete-attendee|delete-meeting> [--json|--jsonl]
@@ -8065,6 +8285,10 @@ struct InstantSwiftDataCLI {
 
   private static var reactionsUsage: String {
     CLIExamplesReactionsUsage.reactions
+  }
+
+  private static var typingIndicatorUsage: String {
+    CLIExamplesTypingIndicatorUsage.typingIndicator
   }
 
   private static var stroopwafelUsage: String {
@@ -9251,6 +9475,22 @@ private struct ReactionsRecipeMessageOutput: Codable, Sendable {
     self.payload = payload
     self.createdAt = message.createdAt
   }
+}
+
+private struct TypingIndicatorRecipeOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var userID: String?
+  var viewerUserID: String?
+  var transport: String
+  var room: InstantRoomHandle
+  var inputName: String
+  var memberCount: Int
+  var activeCount: Int
+  var typingInfo: String?
+  var members: [TypingIndicatorRecipeMember]
+  var activeMembers: [TypingIndicatorRecipeMember]
 }
 
 private struct FilesOutput: Codable, Sendable {
