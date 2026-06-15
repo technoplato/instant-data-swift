@@ -6,6 +6,60 @@ import Testing
 @Suite
 struct InstantQueryCacheKeyParityTests {
   @Test
+  func upstreamWeakHashIntegerVaryingQueriesAvoidCollisions() {
+    let source = weakHashSource(
+      "no collisions across many integer-varying queries "
+        + "[adapted: upstream skips the 50,000-case stress in CI; Swift cache keys are canonical plan payloads.]"
+    )
+    let taggedID = "b14fae2f-ce9b-4677-b6a9-6dddd81914d0"
+    let shapes: [(label: String, makePlan: (Int) -> InstantQueryPlan)] = [
+      (
+        "users by id",
+        { i in
+          InstantQueryPlan(
+            id: "users.by-id",
+            namespace: "users",
+            filters: [.equals(field: "id", value: .number(Double(i)))]
+          )
+        }
+      ),
+      (
+        "posts by author",
+        { i in
+          InstantQueryPlan(
+            id: "posts.by-author",
+            namespace: "posts",
+            filters: [.equals(field: "authorId", value: .number(Double(i)))],
+            includes: [InstantQueryInclude("author")]
+          )
+        }
+      ),
+      (
+        "items by tag and n",
+        { i in
+          InstantQueryPlan(
+            id: "items.by-tag-and-n",
+            namespace: "items",
+            filters: [
+              .equals(field: "tag", value: .string(taggedID)),
+              .equals(field: "n", value: .number(Double(i))),
+            ]
+          )
+        }
+      ),
+    ]
+
+    for shape in shapes {
+      var cacheKeys: Set<String> = []
+      for i in 0..<512 {
+        let cacheKey = shape.makePlan(i).cacheKey
+        #expect(cacheKeys.insert(cacheKey).inserted, "\(source) \(shape.label) collision at i=\(i)")
+      }
+      expectNoDifference(cacheKeys.count, 512, "\(source) \(shape.label)")
+    }
+  }
+
+  @Test
   func upstreamWeakHashCanonicalQueryShapeInvariants() {
     let selectedFieldsSource = weakHashSource(
       "is stable across object key order and undefined values "
@@ -130,6 +184,33 @@ struct InstantQueryCacheKeyParityTests {
       "plan:aWQ6ZFhObGNuTXVZbmt0YVdRPXxuYW1lc3BhY2U6ZFhObGNuTT18ZmlsdGVyczpbZXF1YWxzKGFXUT0sbnVtYmVyOjQ2MzExMDc3OTE4MjA0MjMxNjgpXXxvcmRlcjpuaWx8b2Zmc2V0Om5pbHxsaW1pdDpuaWx8Zmlyc3Q6bmlsfGFmdGVyOm5pbHxsYXN0Om5pbHxiZWZvcmU6bmlsfHNlbGVjdGVkRmllbGRzOm5pbHxpbmNsdWRlczpbXQ==",
       weakHashSource("produces a stable hash for a known query [adapted: Swift pins the plan cache key.]")
     )
+  }
+
+  @Test
+  func upstreamWeakHashBigIntValuesAreUnrepresentableButClosed() {
+    let source = weakHashSource(
+      "handles bigint values without throwing "
+        + "[adapted: Swift has no BigInt InstantValue case and keeps representable numeric/string cases distinct.]"
+    )
+    let numberPlan = InstantQueryPlan(
+      id: "items.bigint",
+      namespace: "items",
+      filters: [.equals(field: "id", value: .number(123))]
+    )
+    let stringPlan = InstantQueryPlan(
+      id: "items.bigint",
+      namespace: "items",
+      filters: [.equals(field: "id", value: .string("123"))]
+    )
+    let stringNPlan = InstantQueryPlan(
+      id: "items.bigint",
+      namespace: "items",
+      filters: [.equals(field: "id", value: .string("123n"))]
+    )
+
+    expectNoDifference(numberPlan.cacheKey != stringPlan.cacheKey, true, source)
+    expectNoDifference(numberPlan.cacheKey != stringNPlan.cacheKey, true, source)
+    expectNoDifference(stringPlan.cacheKey != stringNPlan.cacheKey, true, source)
   }
 
   @Test

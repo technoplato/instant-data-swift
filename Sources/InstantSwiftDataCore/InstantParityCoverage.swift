@@ -1319,14 +1319,64 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift has no dynamic unknown operation member to access after update; the adapted proof records a supported typed update lowering to the closed InstantTripleOperation enum."
     ),
     instant(
-      id: "instant.weak-hash",
+      id: "instant.weak-hash.integer-collision-stress",
       sourceFile: weakHashSource,
-      sourceTestName: "selected fields / object key order / date / known query",
+      sourceTestName: "no collisions across many integer-varying queries",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantQueryCacheKeyParityTests.swift",
+      swiftTestName: "upstreamWeakHashIntegerVaryingQueriesAvoidCollisions",
+      surface: "query-cache",
+      status: .adapted,
+      notes: "Upstream skips the 50,000-case weak-hash collision stress in CI; Swift uses canonical serialized plan payloads and verifies representative integer-varying shapes have unique cache keys."
+    ),
+    instant(
+      id: "instant.weak-hash.object-order-undefined",
+      sourceFile: weakHashSource,
+      sourceTestName: "is stable across object key order and undefined values",
       swiftFile: "Tests/InstantSwiftDataCoreTests/InstantQueryCacheKeyParityTests.swift",
       swiftTestName: "upstreamWeakHashCanonicalQueryShapeInvariants",
       surface: "query-cache",
       status: .adapted,
-      notes: "Swift pins stable cache keys for equivalent query plans and canonical JSON/date values."
+      notes: "Swift has no undefined query value; the adapted proof pins selected-field normalization and canonical JSON object key ordering."
+    ),
+    instant(
+      id: "instant.weak-hash.undefined-explicitness",
+      sourceFile: weakHashSource,
+      sourceTestName: "keeps array and top-level undefined explicit",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantQueryCacheKeyParityTests.swift",
+      swiftTestName: "upstreamWeakHashCanonicalQueryShapeInvariants",
+      surface: "query-cache",
+      status: .adapted,
+      notes: "Swift has typed null and JSON null rather than undefined, and preserves distinct cache keys for array null, empty array, JSON null, and scalar null."
+    ),
+    instant(
+      id: "instant.weak-hash.to-json-output",
+      sourceFile: weakHashSource,
+      sourceTestName: "distinguishes objects by their toJSON output",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantQueryCacheKeyParityTests.swift",
+      swiftTestName: "upstreamWeakHashDateAndKnownQueryPins",
+      surface: "query-cache",
+      status: .adapted,
+      notes: "Swift Date query values produce stable cache keys for equal instants and distinct keys for different instants while preserving the typed date/string boundary."
+    ),
+    instant(
+      id: "instant.weak-hash.bigint-values",
+      sourceFile: weakHashSource,
+      sourceTestName: "handles bigint values without throwing",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantQueryCacheKeyParityTests.swift",
+      swiftTestName: "upstreamWeakHashBigIntValuesAreUnrepresentableButClosed",
+      surface: "query-cache",
+      status: .adapted,
+      notes: "Swift has no BigInt InstantValue case; the adapted proof records the closed cache-key value surface and keeps numeric and string representations distinct."
+    ),
+    instant(
+      id: "instant.weak-hash.known-query",
+      sourceFile: weakHashSource,
+      sourceTestName: "produces a stable hash for a known query",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantQueryCacheKeyParityTests.swift",
+      swiftTestName: "upstreamWeakHashDateAndKnownQueryPins",
+      surface: "query-cache",
+      status: .adapted,
+      notes: "Swift pins the stable canonical cache key for the corresponding known users-by-id query instead of Instant's JavaScript weak-hash string."
     ),
     instant(
       id: "instant.weak-hash-legacy-known-query",

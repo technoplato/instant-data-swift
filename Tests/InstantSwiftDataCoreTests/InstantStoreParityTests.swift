@@ -11,9 +11,9 @@ struct InstantStoreParityTests {
 
     expectNoDifference(report.event, "parity-report")
     expectNoDifference(report.coverageComplete, false)
-    expectNoDifference(report.recordCount, 188)
+    expectNoDifference(report.recordCount, 193)
     expectNoDifference(report.exactCount, 28)
-    expectNoDifference(report.adaptedCount, 156)
+    expectNoDifference(report.adaptedCount, 161)
     expectNoDifference(report.blockedCount, 4)
     expectNoDifference(report.notApplicableCount, 0)
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/schema.test.ts"))
@@ -521,6 +521,51 @@ struct InstantStoreParityTests {
       ),
     ]
     for expected in objectPathMappings {
+      let record = try #require(report.records.first { $0.id == expected.id })
+      expectNoDifference(record.sourceTestName, expected.sourceTestName)
+      expectNoDifference(record.swiftTestName, expected.swiftTestName)
+      expectNoDifference(record.status, .adapted)
+      expectNoDifference(record.notes, expected.notes)
+    }
+    let weakHashMappings: [(id: String, sourceTestName: String, swiftTestName: String, notes: String)] = [
+      (
+        "instant.weak-hash.integer-collision-stress",
+        "no collisions across many integer-varying queries",
+        "upstreamWeakHashIntegerVaryingQueriesAvoidCollisions",
+        "Upstream skips the 50,000-case weak-hash collision stress in CI; Swift uses canonical serialized plan payloads and verifies representative integer-varying shapes have unique cache keys."
+      ),
+      (
+        "instant.weak-hash.object-order-undefined",
+        "is stable across object key order and undefined values",
+        "upstreamWeakHashCanonicalQueryShapeInvariants",
+        "Swift has no undefined query value; the adapted proof pins selected-field normalization and canonical JSON object key ordering."
+      ),
+      (
+        "instant.weak-hash.undefined-explicitness",
+        "keeps array and top-level undefined explicit",
+        "upstreamWeakHashCanonicalQueryShapeInvariants",
+        "Swift has typed null and JSON null rather than undefined, and preserves distinct cache keys for array null, empty array, JSON null, and scalar null."
+      ),
+      (
+        "instant.weak-hash.to-json-output",
+        "distinguishes objects by their toJSON output",
+        "upstreamWeakHashDateAndKnownQueryPins",
+        "Swift Date query values produce stable cache keys for equal instants and distinct keys for different instants while preserving the typed date/string boundary."
+      ),
+      (
+        "instant.weak-hash.bigint-values",
+        "handles bigint values without throwing",
+        "upstreamWeakHashBigIntValuesAreUnrepresentableButClosed",
+        "Swift has no BigInt InstantValue case; the adapted proof records the closed cache-key value surface and keeps numeric and string representations distinct."
+      ),
+      (
+        "instant.weak-hash.known-query",
+        "produces a stable hash for a known query",
+        "upstreamWeakHashDateAndKnownQueryPins",
+        "Swift pins the stable canonical cache key for the corresponding known users-by-id query instead of Instant's JavaScript weak-hash string."
+      ),
+    ]
+    for expected in weakHashMappings {
       let record = try #require(report.records.first { $0.id == expected.id })
       expectNoDifference(record.sourceTestName, expected.sourceTestName)
       expectNoDifference(record.swiftTestName, expected.swiftTestName)
