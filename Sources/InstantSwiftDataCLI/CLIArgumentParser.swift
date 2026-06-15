@@ -56,6 +56,8 @@ public enum CLIExamplesInvocation: Equatable, Sendable {
   case reactions(arguments: [String])
   case typingIndicator(arguments: [String])
   case avatarStack(arguments: [String])
+  case cursors(arguments: [String])
+  case customCursors(arguments: [String])
   case stroopwafel(arguments: [String])
   case syncUps(arguments: [String])
   case reminders(arguments: [String])
@@ -659,6 +661,105 @@ public enum CLIExamplesAvatarStackUsage {
 }
 
 public enum CLIExamplesAvatarStackArgumentError: Error, Equatable, Sendable {
+  case invalidArguments(usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
+public enum CLIExamplesCursorsLeafInvocation: Equatable, Sendable {
+  case move(CLIExamplesCursorsMoveInvocation)
+  case list(CLIExamplesCursorsListInvocation)
+  case watch(CLIExamplesCursorsWatchInvocation)
+  case clear(userID: String)
+  case leave(userID: String)
+  case unknown(String)
+}
+
+public struct CLIExamplesCursorsMoveInvocation: Equatable, Sendable {
+  public var userID: String
+  public var x: Double
+  public var y: Double
+  public var xPercent: Double
+  public var yPercent: Double
+  public var color: String?
+  public var name: String?
+
+  public init(
+    userID: String,
+    x: Double,
+    y: Double,
+    xPercent: Double,
+    yPercent: Double,
+    color: String? = nil,
+    name: String? = nil
+  ) {
+    self.userID = userID
+    self.x = x
+    self.y = y
+    self.xPercent = xPercent
+    self.yPercent = yPercent
+    self.color = color
+    self.name = name
+  }
+}
+
+public struct CLIExamplesCursorsListInvocation: Equatable, Sendable {
+  public var viewerUserID: String?
+
+  public init(viewerUserID: String? = nil) {
+    self.viewerUserID = viewerUserID
+  }
+}
+
+public struct CLIExamplesCursorsWatchInvocation: Equatable, Sendable {
+  public var eventCount: Int
+  public var viewerUserID: String?
+
+  public init(eventCount: Int = 1, viewerUserID: String? = nil) {
+    self.eventCount = eventCount
+    self.viewerUserID = viewerUserID
+  }
+}
+
+public enum CLIExamplesCursorsUsage {
+  public static let cursors = """
+    Usage: instant-swift-data examples cursors <move|list|watch|clear|leave>
+      instant-swift-data examples cursors move <user-id> --x n --y n --x-percent n --y-percent n [--color color] [--json|--jsonl]
+      instant-swift-data examples cursors list [--viewer-user-id id] [--json|--jsonl]
+      instant-swift-data examples cursors watch [--events 1] [--viewer-user-id id] [--json|--jsonl]
+      instant-swift-data examples cursors clear <user-id> [--json|--jsonl]
+      instant-swift-data examples cursors leave <user-id> [--json|--jsonl]
+    """
+  public static let move =
+    "Usage: instant-swift-data examples cursors move <user-id> --x n --y n --x-percent n --y-percent n [--color color] [--json|--jsonl]"
+  public static let list =
+    "Usage: instant-swift-data examples cursors list [--viewer-user-id id] [--json|--jsonl]"
+  public static let watch =
+    "Usage: instant-swift-data examples cursors watch [--events 1] [--viewer-user-id id] [--json|--jsonl]"
+  public static let user =
+    "Usage: instant-swift-data examples cursors <clear|leave> <user-id> [--json|--jsonl]"
+}
+
+public enum CLIExamplesCustomCursorsUsage {
+  public static let customCursors = """
+    Usage: instant-swift-data examples custom-cursors <move|list|watch|clear|leave>
+      instant-swift-data examples custom-cursors move <user-id> --x n --y n --x-percent n --y-percent n [--color color] [--name name] [--json|--jsonl]
+      instant-swift-data examples custom-cursors list [--viewer-user-id id] [--json|--jsonl]
+      instant-swift-data examples custom-cursors watch [--events 1] [--viewer-user-id id] [--json|--jsonl]
+      instant-swift-data examples custom-cursors clear <user-id> [--json|--jsonl]
+      instant-swift-data examples custom-cursors leave <user-id> [--json|--jsonl]
+    """
+  public static let move =
+    "Usage: instant-swift-data examples custom-cursors move <user-id> --x n --y n --x-percent n --y-percent n [--color color] [--name name] [--json|--jsonl]"
+  public static let list =
+    "Usage: instant-swift-data examples custom-cursors list [--viewer-user-id id] [--json|--jsonl]"
+  public static let watch =
+    "Usage: instant-swift-data examples custom-cursors watch [--events 1] [--viewer-user-id id] [--json|--jsonl]"
+  public static let user =
+    "Usage: instant-swift-data examples custom-cursors <clear|leave> <user-id> [--json|--jsonl]"
+}
+
+public enum CLIExamplesCursorsArgumentError: Error, Equatable, Sendable {
   case invalidArguments(usage: String)
 
   public var exitCode: Int32 { 64 }
@@ -2130,6 +2231,16 @@ public struct CLIExamplesParser: Parser {
       input.removeAll()
       return .avatarStack(arguments: arguments)
 
+    case "cursors", "cursor":
+      let arguments = Array(input)
+      input.removeAll()
+      return .cursors(arguments: arguments)
+
+    case "custom-cursors", "custom-cursor":
+      let arguments = Array(input)
+      input.removeAll()
+      return .customCursors(arguments: arguments)
+
     case "stroopwafel":
       let arguments = Array(input)
       input.removeAll()
@@ -3221,6 +3332,42 @@ public struct CLIExamplesAvatarStackLeafParser: Parser {
       input.removeAll()
       return .unknown(command)
     }
+  }
+}
+
+public struct CLIExamplesCursorsLeafParser: Parser {
+  public init() {}
+
+  public func parse(
+    _ input: inout ArraySlice<String>
+  ) throws -> CLIExamplesCursorsLeafInvocation {
+    try parseExamplesCursorsLeaf(
+      from: &input,
+      rootUsage: CLIExamplesCursorsUsage.cursors,
+      moveUsage: CLIExamplesCursorsUsage.move,
+      listUsage: CLIExamplesCursorsUsage.list,
+      watchUsage: CLIExamplesCursorsUsage.watch,
+      userUsage: CLIExamplesCursorsUsage.user,
+      allowsName: false
+    )
+  }
+}
+
+public struct CLIExamplesCustomCursorsLeafParser: Parser {
+  public init() {}
+
+  public func parse(
+    _ input: inout ArraySlice<String>
+  ) throws -> CLIExamplesCursorsLeafInvocation {
+    try parseExamplesCursorsLeaf(
+      from: &input,
+      rootUsage: CLIExamplesCustomCursorsUsage.customCursors,
+      moveUsage: CLIExamplesCustomCursorsUsage.move,
+      listUsage: CLIExamplesCustomCursorsUsage.list,
+      watchUsage: CLIExamplesCustomCursorsUsage.watch,
+      userUsage: CLIExamplesCustomCursorsUsage.user,
+      allowsName: true
+    )
   }
 }
 
@@ -6007,6 +6154,194 @@ private func parseExamplesAvatarStackWatchOptions(
   return invocation
 }
 
+private func parseExamplesCursorsLeaf(
+  from input: inout ArraySlice<String>,
+  rootUsage: String,
+  moveUsage: String,
+  listUsage: String,
+  watchUsage: String,
+  userUsage: String,
+  allowsName: Bool
+) throws -> CLIExamplesCursorsLeafInvocation {
+  guard let command = input.first else {
+    throw CLIExamplesCursorsArgumentError.invalidArguments(usage: rootUsage)
+  }
+  input.removeFirst()
+
+  switch command {
+  case "move", "set":
+    return .move(
+      try parseExamplesCursorsMoveOptions(
+        from: &input,
+        usage: moveUsage,
+        allowsName: allowsName
+      )
+    )
+
+  case "list", "presence":
+    return .list(try parseExamplesCursorsListOptions(from: &input, usage: listUsage))
+
+  case "watch", "observe":
+    return .watch(try parseExamplesCursorsWatchOptions(from: &input, usage: watchUsage))
+
+  case "clear", "hide":
+    return .clear(
+      userID: try parseSingleExamplesCursorsUserID(from: &input, usage: userUsage)
+    )
+
+  case "leave":
+    return .leave(
+      userID: try parseSingleExamplesCursorsUserID(from: &input, usage: userUsage)
+    )
+
+  default:
+    input.removeAll()
+    return .unknown(command)
+  }
+}
+
+private func parseExamplesCursorsMoveOptions(
+  from input: inout ArraySlice<String>,
+  usage: String,
+  allowsName: Bool
+) throws -> CLIExamplesCursorsMoveInvocation {
+  let userID = try parseRequiredExamplesCursorsArgument(from: &input, usage: usage)
+  var x: Double?
+  var y: Double?
+  var xPercent: Double?
+  var yPercent: Double?
+  var color: String?
+  var name: String?
+
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--x":
+      x = try parseRequiredExamplesCursorsDouble(from: &input, usage: usage)
+
+    case "--y":
+      y = try parseRequiredExamplesCursorsDouble(from: &input, usage: usage)
+
+    case "--x-percent":
+      xPercent = try parseRequiredExamplesCursorsDouble(from: &input, usage: usage)
+
+    case "--y-percent":
+      yPercent = try parseRequiredExamplesCursorsDouble(from: &input, usage: usage)
+
+    case "--color":
+      color = try parseRequiredExamplesCursorsArgument(from: &input, usage: usage)
+
+    case "--name" where allowsName:
+      name = try parseRequiredExamplesCursorsArgument(from: &input, usage: usage)
+
+    default:
+      throw CLIExamplesCursorsArgumentError.invalidArguments(usage: usage)
+    }
+  }
+
+  guard let x, let y, let xPercent, let yPercent else {
+    throw CLIExamplesCursorsArgumentError.invalidArguments(usage: usage)
+  }
+  return CLIExamplesCursorsMoveInvocation(
+    userID: userID,
+    x: x,
+    y: y,
+    xPercent: xPercent,
+    yPercent: yPercent,
+    color: color,
+    name: name
+  )
+}
+
+private func parseExamplesCursorsListOptions(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> CLIExamplesCursorsListInvocation {
+  var invocation = CLIExamplesCursorsListInvocation()
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--viewer-user-id":
+      invocation.viewerUserID = try parseRequiredExamplesCursorsArgument(
+        from: &input,
+        usage: usage
+      )
+
+    default:
+      throw CLIExamplesCursorsArgumentError.invalidArguments(usage: usage)
+    }
+  }
+  return invocation
+}
+
+private func parseExamplesCursorsWatchOptions(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> CLIExamplesCursorsWatchInvocation {
+  var invocation = CLIExamplesCursorsWatchInvocation()
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--events":
+      guard let value = input.first,
+        let parsed = Int(value),
+        parsed == 1
+      else {
+        throw CLIExamplesCursorsArgumentError.invalidArguments(usage: usage)
+      }
+      input.removeFirst()
+      invocation.eventCount = parsed
+
+    case "--viewer-user-id":
+      invocation.viewerUserID = try parseRequiredExamplesCursorsArgument(
+        from: &input,
+        usage: usage
+      )
+
+    default:
+      throw CLIExamplesCursorsArgumentError.invalidArguments(usage: usage)
+    }
+  }
+  return invocation
+}
+
+private func parseSingleExamplesCursorsUserID(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  let userID = try parseRequiredExamplesCursorsArgument(from: &input, usage: usage)
+  if !input.isEmpty {
+    throw CLIExamplesCursorsArgumentError.invalidArguments(usage: usage)
+  }
+  return userID
+}
+
+private func parseRequiredExamplesCursorsArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIExamplesCursorsArgumentError.invalidArguments(usage: usage)
+  }
+  input.removeFirst()
+  let trimmedValue = trimmed(value)
+  guard !trimmedValue.isEmpty else {
+    throw CLIExamplesCursorsArgumentError.invalidArguments(usage: usage)
+  }
+  return trimmedValue
+}
+
+private func parseRequiredExamplesCursorsDouble(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> Double {
+  let value = try parseRequiredExamplesCursorsArgument(from: &input, usage: usage)
+  guard let parsed = Double(value), parsed.isFinite else {
+    throw CLIExamplesCursorsArgumentError.invalidArguments(usage: usage)
+  }
+  return parsed
+}
+
 private func parseExamplesTypingIndicatorListOptions(
   from input: inout ArraySlice<String>
 ) throws -> CLIExamplesTypingIndicatorListInvocation {
@@ -7337,6 +7672,15 @@ extension CLIExamplesTypingIndicatorArgumentError: CustomStringConvertible {
 }
 
 extension CLIExamplesAvatarStackArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case let .invalidArguments(usage):
+      return usage
+    }
+  }
+}
+
+extension CLIExamplesCursorsArgumentError: CustomStringConvertible {
   public var description: String {
     switch self {
     case let .invalidArguments(usage):

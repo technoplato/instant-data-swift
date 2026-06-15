@@ -6491,6 +6491,165 @@ struct InstantStoreTests {
   }
 
   @Test
+  func cursorsRecipeBuildsPeerVisibleSnapshots() async throws {
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "cursors-test",
+        persistenceURL: temporaryCacheURL(),
+        now: { timestamp }
+      )
+    )
+
+    expectNoDifference(
+      CursorsRecipeExample.spaceID,
+      "cursors-space-default--cursors-example-123"
+    )
+    expectNoDifference(
+      CursorsRecipeExample.spaceID(for: CursorsRecipeExample.customRoom),
+      "cursors-space-default--cursors-example-124"
+    )
+    expectNoDifference(
+      CursorsRecipeExample.cursorValues(
+        x: 20,
+        y: 40,
+        width: 200,
+        height: 80,
+        color: "#123456"
+      ),
+      [
+        CursorsRecipeExample.spaceID: .object([
+          "color": .string("#123456"),
+          "x": .number(20),
+          "xPercent": .number(10),
+          "y": .number(40),
+          "yPercent": .number(50),
+        ])
+      ]
+    )
+
+    _ = try await runtime.setPresence(
+      room: CursorsRecipeExample.room,
+      userID: "user-alpha",
+      values: CursorsRecipeExample.cursorValues(
+        x: 10,
+        y: 20,
+        xPercent: 25,
+        yPercent: 50,
+        color: "#123456"
+      )
+    )
+    _ = try await runtime.setPresence(
+      room: CursorsRecipeExample.room,
+      userID: "user-beta",
+      values: CursorsRecipeExample.cursorValues(
+        x: 30,
+        y: 40,
+        xPercent: 75,
+        yPercent: 80
+      )
+    )
+    _ = try await runtime.setPresence(
+      room: CursorsRecipeExample.room,
+      userID: "user-missing",
+      values: [:]
+    )
+    _ = try await runtime.setPresence(
+      room: CursorsRecipeExample.room,
+      userID: "user-invalid",
+      values: [CursorsRecipeExample.spaceID: .object(["x": .string("10")])]
+    )
+    _ = try await runtime.setPresence(
+      room: CursorsRecipeExample.customRoom,
+      userID: "user-custom",
+      values: CursorsRecipeExample.customCursorValues(
+        x: 1,
+        y: 2,
+        xPercent: 3,
+        yPercent: 4,
+        color: "#abcdef",
+        name: "Ada"
+      )
+    )
+
+    let presence = try await runtime.roomPresence(room: CursorsRecipeExample.room)
+    let snapshot = CursorsRecipeExample.snapshot(
+      from: presence,
+      viewerUserID: "user-alpha"
+    )
+    expectNoDifference(
+      snapshot,
+      CursorsRecipeSnapshot(
+        viewerUserID: "user-alpha",
+        cursorCount: 1,
+        visibleCursors: [
+          CursorsRecipeCursor(
+            userID: "user-beta",
+            x: 30,
+            y: 40,
+            xPercent: 75,
+            yPercent: 80,
+            color: nil,
+            name: nil,
+            isViewer: false,
+            updatedAt: timestamp
+          )
+        ],
+        members: [
+          CursorsRecipeCursor(
+            userID: "user-alpha",
+            x: 10,
+            y: 20,
+            xPercent: 25,
+            yPercent: 50,
+            color: "#123456",
+            name: nil,
+            isViewer: true,
+            updatedAt: timestamp
+          ),
+          CursorsRecipeCursor(
+            userID: "user-beta",
+            x: 30,
+            y: 40,
+            xPercent: 75,
+            yPercent: 80,
+            color: nil,
+            name: nil,
+            isViewer: false,
+            updatedAt: timestamp
+          ),
+        ]
+      )
+    )
+
+    let terminalSnapshot = CursorsRecipeExample.snapshot(from: presence)
+    expectNoDifference(terminalSnapshot.cursorCount, 2)
+    expectNoDifference(terminalSnapshot.visibleCursors.map(\.userID), ["user-alpha", "user-beta"])
+    let customPresence = try await runtime.roomPresence(room: CursorsRecipeExample.customRoom)
+    expectNoDifference(
+      CursorsRecipeExample.snapshot(
+        from: customPresence,
+        room: CursorsRecipeExample.customRoom,
+        viewerUserID: "viewer"
+      )
+      .visibleCursors,
+      [
+        CursorsRecipeCursor(
+          userID: "user-custom",
+          x: 1,
+          y: 2,
+          xPercent: 3,
+          yPercent: 4,
+          color: "#abcdef",
+          name: "Ada",
+          isViewer: false,
+          updatedAt: timestamp
+        )
+      ]
+    )
+  }
+
+  @Test
   func storedFilesPersistByAppIDAcrossLaunchesAndDeleteContent() async throws {
     let cacheURL = try temporaryCacheURL()
     let sourceURL = cacheURL.deletingLastPathComponent().appendingPathComponent("source.txt")

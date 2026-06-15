@@ -1297,6 +1297,148 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func examplesCursorsLeafParserParsesCommandsAndOptions() throws {
+    expectNoDifference(
+      try parseExamples(["cursors", "move", "user-1"]),
+      .cursors(arguments: ["move", "user-1"])
+    )
+    expectNoDifference(
+      try parseExamples(["cursor", "list"]),
+      .cursors(arguments: ["list"])
+    )
+    expectNoDifference(
+      try parseExamples(["custom-cursors", "move", "user-1"]),
+      .customCursors(arguments: ["move", "user-1"])
+    )
+    expectNoDifference(
+      try parseExamples(["custom-cursor", "watch"]),
+      .customCursors(arguments: ["watch"])
+    )
+    expectNoDifference(
+      try parseExamplesCursorsLeaf([
+        "move", "user-1",
+        "--x", "10",
+        "--y", "20",
+        "--x-percent", "25",
+        "--y-percent", "50",
+        "--color", "#123456",
+      ]),
+      .move(
+        CLIExamplesCursorsMoveInvocation(
+          userID: "user-1",
+          x: 10,
+          y: 20,
+          xPercent: 25,
+          yPercent: 50,
+          color: "#123456"
+        )
+      )
+    )
+    expectNoDifference(
+      try parseExamplesCursorsLeaf([
+        "set", "user-2",
+        "--y-percent", "40",
+        "--x-percent", "30",
+        "--y", "20",
+        "--x", "10",
+      ]),
+      .move(
+        CLIExamplesCursorsMoveInvocation(
+          userID: "user-2",
+          x: 10,
+          y: 20,
+          xPercent: 30,
+          yPercent: 40
+        )
+      )
+    )
+    expectNoDifference(
+      try parseExamplesCustomCursorsLeaf([
+        "move", "user-3",
+        "--x", "1",
+        "--y", "2",
+        "--x-percent", "3",
+        "--y-percent", "4",
+        "--name", "Ada",
+      ]),
+      .move(
+        CLIExamplesCursorsMoveInvocation(
+          userID: "user-3",
+          x: 1,
+          y: 2,
+          xPercent: 3,
+          yPercent: 4,
+          name: "Ada"
+        )
+      )
+    )
+    expectNoDifference(
+      try parseExamplesCursorsLeaf(["presence", "--viewer-user-id", "user-1"]),
+      .list(CLIExamplesCursorsListInvocation(viewerUserID: "user-1"))
+    )
+    expectNoDifference(
+      try parseExamplesCustomCursorsLeaf(["observe", "--events", "1", "--viewer-user-id", "user-2"]),
+      .watch(CLIExamplesCursorsWatchInvocation(eventCount: 1, viewerUserID: "user-2"))
+    )
+    expectNoDifference(
+      try parseExamplesCursorsLeaf(["hide", "user-1"]),
+      .clear(userID: "user-1")
+    )
+    expectNoDifference(
+      try parseExamplesCustomCursorsLeaf(["leave", "user-2"]),
+      .leave(userID: "user-2")
+    )
+    expectNoDifference(
+      try parseExamplesCursorsLeaf(["dance", "--fast"]),
+      .unknown("dance")
+    )
+  }
+
+  @Test
+  func examplesCursorsLeafParserReportsMalformedArguments() throws {
+    try expectExamplesCursorsLeafParseError(
+      [],
+      description: CLIExamplesCursorsUsage.cursors
+    )
+    try expectExamplesCursorsLeafParseError(
+      ["move", "user-1", "--x", "1", "--y", "2", "--x-percent", "3"],
+      description: CLIExamplesCursorsUsage.move
+    )
+    try expectExamplesCursorsLeafParseError(
+      ["move", "user-1", "--x", "NaN", "--y", "2", "--x-percent", "3", "--y-percent", "4"],
+      description: CLIExamplesCursorsUsage.move
+    )
+    try expectExamplesCursorsLeafParseError(
+      ["move", "user-1", "--x", "1", "--y", "2", "--x-percent", "3", "--y-percent", "4", "--name", "Ada"],
+      description: CLIExamplesCursorsUsage.move
+    )
+    try expectExamplesCustomCursorsLeafParseError(
+      ["move", "user-1", "--x", "1", "--y", "2", "--x-percent", "3", "--y-percent", "4", "--name", "  "],
+      description: CLIExamplesCustomCursorsUsage.move
+    )
+    try expectExamplesCursorsLeafParseError(
+      ["list", "--viewer-user-id", "  "],
+      description: CLIExamplesCursorsUsage.list
+    )
+    try expectExamplesCursorsLeafParseError(
+      ["watch", "--events", "2"],
+      description: CLIExamplesCursorsUsage.watch
+    )
+    try expectExamplesCustomCursorsLeafParseError(
+      ["watch", "--surprise"],
+      description: CLIExamplesCustomCursorsUsage.watch
+    )
+    try expectExamplesCursorsLeafParseError(
+      ["clear"],
+      description: CLIExamplesCursorsUsage.user
+    )
+    try expectExamplesCustomCursorsLeafParseError(
+      ["leave", "user-1", "extra"],
+      description: CLIExamplesCustomCursorsUsage.user
+    )
+  }
+
+  @Test
   func examplesSyncUpsLeafParserParsesCommandsAndOptions() throws {
     expectNoDifference(try parseExamplesSyncUpsLeaf(["seed"]), .seed)
     expectNoDifference(
@@ -3747,6 +3889,24 @@ private func parseExamplesAvatarStackLeaf(
   return invocation
 }
 
+private func parseExamplesCursorsLeaf(
+  _ arguments: [String]
+) throws -> CLIExamplesCursorsLeafInvocation {
+  var input = arguments[...]
+  let invocation = try CLIExamplesCursorsLeafParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
+private func parseExamplesCustomCursorsLeaf(
+  _ arguments: [String]
+) throws -> CLIExamplesCursorsLeafInvocation {
+  var input = arguments[...]
+  let invocation = try CLIExamplesCustomCursorsLeafParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseExamplesSyncUpsLeaf(
   _ arguments: [String]
 ) throws -> CLIExamplesSyncUpsLeafInvocation {
@@ -4309,6 +4469,32 @@ private func expectExamplesAvatarStackLeafParseError(
     _ = try parseExamplesAvatarStackLeaf(arguments)
     Issue.record("Expected examples avatar stack parser to reject \(arguments).")
   } catch let error as CLIExamplesAvatarStackArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectExamplesCursorsLeafParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseExamplesCursorsLeaf(arguments)
+    Issue.record("Expected examples cursors parser to reject \(arguments).")
+  } catch let error as CLIExamplesCursorsArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectExamplesCustomCursorsLeafParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseExamplesCustomCursorsLeaf(arguments)
+    Issue.record("Expected examples custom cursors parser to reject \(arguments).")
+  } catch let error as CLIExamplesCursorsArgumentError {
     expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }

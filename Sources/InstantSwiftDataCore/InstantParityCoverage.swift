@@ -1136,6 +1136,26 @@ public enum InstantSwiftDataParityCoverage {
       status: .adapted,
       notes: "The Instant CLI ports the Avatar Stack recipe onto the local room-presence runtime with the same avatars-example/avatars-example-1234 room and name presence field. Local presence is durable and watchable for terminal evidence, default names use the upstream user-id prefix behavior, and --viewer-user-id exposes the upstream hook's current-user plus peers view."
     ),
+    instant(
+      id: "instant.recipe.cursors.local-cli",
+      sourceFile: "upstream/instant/client/www/lib/recipes/cursors.tsx + upstream/instant/client/packages/react/src/Cursors.tsx",
+      sourceTestName: "cursors-example/123 cursor-space peer cursors",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/CLITests.swift + Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "cliCursorsRecipesPersistPresenceAcrossLaunches + cursorsRecipeBuildsPeerVisibleSnapshots",
+      surface: "recipes-cursors",
+      status: .adapted,
+      notes: "The Instant CLI ports the Cursors recipe onto the local room-presence runtime with the same cursors-example/123 room, default cursor-space key, and {x, y, xPercent, yPercent, color} cursor payload. Local presence is durable and watchable for terminal evidence, clear removes the cursor payload like the upstream mouse/touch end handlers, and --viewer-user-id exposes the upstream peer-only rendering."
+    ),
+    instant(
+      id: "instant.recipe.custom-cursors.local-cli",
+      sourceFile: "upstream/instant/client/www/lib/recipes/custom-cursors.tsx + upstream/instant/client/packages/react/src/Cursors.tsx",
+      sourceTestName: "cursors-example/124 custom cursor name presence",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/CLITests.swift + Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "cliCursorsRecipesPersistPresenceAcrossLaunches + cursorsRecipeBuildsPeerVisibleSnapshots",
+      surface: "recipes-custom-cursors",
+      status: .adapted,
+      notes: "The Instant CLI ports the Custom Cursors recipe onto the local room-presence runtime with the same cursors-example/124 room, default cursor-space key, cursor payload, and name presence field used by the custom avatar renderer. Local move/list/watch/clear/leave commands preserve the peer-only cursor view while keeping terminal evidence durable."
+    ),
     sqlite(
       id: "sqlite.cloudkit-demo.local-counter-share",
       sourceFile: "upstream/sqlite-data/Examples/CloudKitDemo/CountersListFeature.swift",

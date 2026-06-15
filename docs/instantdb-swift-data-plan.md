@@ -858,6 +858,15 @@ Create `validation/` with:
   preserves the upstream `avatars-example/avatars-example-1234` room and `name`
   presence payload, derives omitted names from the first six user-id characters,
   and splits current user from peers when a viewer id is supplied.
+- Cursors recipes: the local Instant recipe ports expose durable
+  `examples cursors move <user-id> --x n --y n --x-percent n --y-percent n`,
+  `list [--viewer-user-id id]`, `watch --events 1 [--viewer-user-id id]`,
+  `clear <user-id>`, and `leave <user-id>` commands, plus the same
+  `examples custom-cursors` surface with optional `--name name`. They preserve
+  the upstream `cursors-example/123` and `cursors-example/124` rooms, default
+  cursor-space keys, `{x, y, xPercent, yPercent, color}` cursor payloads, and
+  custom cursor `name` presence while adapting peer-only cursor rendering into
+  durable terminal evidence.
 - CLI: `instant-swift-data examples todos add "do the dishes"` persists auth,
   local IDs, cache, and outbox state for a later CLI invocation.
 - Permissions: generated permissions reject an unauthorized write in both

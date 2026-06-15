@@ -81,8 +81,10 @@ Port the recipes from `client/www/pages/recipes`:
 
 - todos.
 - auth.
-- cursors.
-- custom cursors.
+- cursors via presence: `instant-swift-data examples cursors move`, `list`,
+  `watch`, `clear`, and `leave`.
+- custom cursors via presence: `instant-swift-data examples custom-cursors
+  move`, `list`, `watch`, `clear`, and `leave`.
 - reactions via topics: `instant-swift-data examples reactions tap`, `list`,
   and `watch`.
 - typing indicator via presence: `instant-swift-data examples typing-indicator
@@ -738,6 +740,17 @@ Agent-oriented output modes are required:
   upstream `avatars-example/avatars-example-1234` room and `name` presence field,
   derives omitted names from the first six user-id characters, and exposes the
   upstream current-user plus peers view when a viewer id is supplied.
+- run the local Instant cursors recipe ports with
+  `instant-swift-data examples cursors move <user-id> --x <n> --y <n> --x-percent <n> --y-percent <n> [--color <color>]`,
+  `instant-swift-data examples cursors list [--viewer-user-id <user-id>]`,
+  `instant-swift-data examples cursors watch --events 1 --jsonl [--viewer-user-id <user-id>]`,
+  `instant-swift-data examples cursors clear <user-id>`,
+  `instant-swift-data examples cursors leave <user-id>`, and the same
+  `custom-cursors` commands with optional `--name <name>` on `move`; the ports
+  use the upstream `cursors-example/123` and `cursors-example/124` rooms, the
+  default `<Cursors>` space key, `{x, y, xPercent, yPercent, color}` cursor
+  payloads, and the custom cursor `name` presence field while exposing the
+  upstream peer-only cursor view when a viewer id is supplied.
 - run local admin write/query helpers such as
   `instant-swift-data admin transact notes note-1 --merge '{"title":"admin note"}' --transaction-id tx-admin-note-1`
   and `instant-swift-data admin query notes --json` for durable terminal

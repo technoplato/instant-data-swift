@@ -2919,7 +2919,7 @@ extension InstantStoreTests {
     expectNoDifference(result.status, 64)
     #expect(
       result.error.contains(
-        "Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|stroopwafel|reminders|sync-ups>"
+        "Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|cursors|custom-cursors|stroopwafel|reminders|sync-ups>"
       )
     )
   }
@@ -4473,6 +4473,177 @@ extension InstantStoreTests {
     )
     expectNoDifference(invalidWatch.status, 64)
     #expect(invalidWatch.error.contains("avatar-stack watch"))
+  }
+
+  @Test
+  func cliCursorsRecipesPersistPresenceAcrossLaunches() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let alphaMoved = try JSONDecoder().decode(
+      CLICursorsRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "examples", "cursors", "move", "user-alpha",
+            "--x", "10",
+            "--y", "20",
+            "--x-percent", "25",
+            "--y-percent", "50",
+            "--color", "#123456",
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(alphaMoved.event, "move")
+    expectNoDifference(alphaMoved.transport, "not-implemented-local-cache-only")
+    expectNoDifference(alphaMoved.room, CursorsRecipeExample.room)
+    expectNoDifference(alphaMoved.spaceID, CursorsRecipeExample.spaceID)
+    expectNoDifference(alphaMoved.nameKey, nil)
+    expectNoDifference(alphaMoved.userID, "user-alpha")
+    expectNoDifference(alphaMoved.viewerUserID, "user-alpha")
+    expectNoDifference(alphaMoved.memberCount, 1)
+    expectNoDifference(alphaMoved.cursorCount, 0)
+    expectNoDifference(alphaMoved.visibleCursors, [])
+    expectNoDifference(alphaMoved.members.map(\.color), ["#123456"])
+    expectNoDifference(alphaMoved.members.map(\.isViewer), [true])
+
+    let betaMoved = try JSONDecoder().decode(
+      CLICursorsRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "examples", "cursor", "move", "user-beta",
+            "--x", "30",
+            "--y", "40",
+            "--x-percent", "75",
+            "--y-percent", "80",
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(betaMoved.viewerUserID, "user-beta")
+    expectNoDifference(betaMoved.members.map(\.userID), ["user-alpha", "user-beta"])
+    expectNoDifference(betaMoved.visibleCursors.map(\.userID), ["user-alpha"])
+    expectNoDifference(betaMoved.members.map(\.color), ["#123456", CursorsRecipeExample.defaultColor])
+
+    let listed = try JSONDecoder().decode(
+      CLICursorsRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "cursors", "list", "--viewer-user-id", "user-alpha", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(listed.event, "list")
+    expectNoDifference(listed.viewerUserID, "user-alpha")
+    expectNoDifference(listed.cursorCount, 1)
+    expectNoDifference(listed.visibleCursors.map(\.userID), ["user-beta"])
+    expectNoDifference(listed.visibleCursors.map(\.xPercent), [75])
+    expectNoDifference(listed.visibleCursors.map(\.yPercent), [80])
+
+    let watchJSONL = try runCLI(
+      [
+        "examples", "cursors", "watch",
+        "--events", "1",
+        "--viewer-user-id", "user-alpha",
+        "--jsonl",
+      ],
+      homeURL: homeURL
+    )
+    let watchLines = watchJSONL.split(separator: "\n")
+    expectNoDifference(watchLines.count, 2)
+    let watch = try JSONDecoder().decode(
+      CLICursorsRecipeEvidence.self,
+      from: Data(try #require(watchLines.first).utf8)
+    )
+    expectNoDifference(watch.caseID, "cli.examples.cursors")
+    expectNoDifference(watch.event, "watch")
+    expectNoDifference(watch.details.visibleCursors.map(\.userID), ["user-beta"])
+    let cursorRows = try watchLines.dropFirst().map {
+      try JSONDecoder().decode(CLICursorsRecipeCursorEvidence.self, from: Data($0.utf8))
+    }
+    expectNoDifference(cursorRows.map(\.event), ["cursor-member"])
+    expectNoDifference(cursorRows.map(\.details.userID), ["user-beta"])
+
+    let cleared = try JSONDecoder().decode(
+      CLICursorsRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "cursors", "clear", "user-beta", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(cleared.event, "clear")
+    expectNoDifference(cleared.userID, "user-beta")
+    expectNoDifference(cleared.viewerUserID, "user-beta")
+    expectNoDifference(cleared.members.map(\.userID), ["user-alpha"])
+    expectNoDifference(cleared.visibleCursors.map(\.userID), ["user-alpha"])
+
+    let left = try JSONDecoder().decode(
+      CLICursorsRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "cursors", "leave", "user-alpha", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(left.event, "leave")
+    expectNoDifference(left.userID, "user-alpha")
+    expectNoDifference(left.members, [])
+    expectNoDifference(left.cursorCount, 0)
+
+    let customMoved = try JSONDecoder().decode(
+      CLICursorsRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "examples", "custom-cursors", "move", "user-custom",
+            "--x", "1",
+            "--y", "2",
+            "--x-percent", "3",
+            "--y-percent", "4",
+            "--name", "Ada",
+            "--color", "#abcdef",
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(customMoved.room, CursorsRecipeExample.customRoom)
+    expectNoDifference(customMoved.spaceID, CursorsRecipeExample.spaceID(for: CursorsRecipeExample.customRoom))
+    expectNoDifference(customMoved.nameKey, CursorsRecipeExample.nameKey)
+    expectNoDifference(customMoved.members.map(\.name), ["Ada"])
+    expectNoDifference(customMoved.members.map(\.color), ["#abcdef"])
+
+    let customListed = try JSONDecoder().decode(
+      CLICursorsRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "custom-cursors", "list", "--viewer-user-id", "viewer", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(customListed.cursorCount, 1)
+    expectNoDifference(customListed.visibleCursors.map(\.name), ["Ada"])
+
+    let invalidWatch = try runCLIResult(
+      ["examples", "custom-cursors", "watch", "--events", "2", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(invalidWatch.status, 64)
+    #expect(invalidWatch.error.contains("custom-cursors watch"))
   }
 
   @Test
@@ -7018,9 +7189,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 106)
+    expectNoDifference(jsonOutput.recordCount, 108)
     expectNoDifference(jsonOutput.exactCount, 19)
-    expectNoDifference(jsonOutput.adaptedCount, 84)
+    expectNoDifference(jsonOutput.adaptedCount, 86)
     expectNoDifference(jsonOutput.blockedCount, 3)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -7109,6 +7280,16 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.records.contains {
         $0.id == "instant.recipe.avatar-stack.local-cli" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.recipe.cursors.local-cli" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.recipe.custom-cursors.local-cli" && $0.status == "adapted"
       }
     )
     #expect(
@@ -7335,7 +7516,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 106"))
+    #expect(humanOutput.contains("records: 108"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 
@@ -8587,6 +8768,37 @@ private struct CLIAvatarStackRecipeEvidence: Decodable {
 private struct CLIAvatarStackRecipeMemberEvidence: Decodable {
   var event: String
   var details: AvatarStackRecipeMember
+}
+
+private struct CLICursorsRecipeOutput: Decodable, Equatable {
+  var event: String
+  var userID: String?
+  var viewerUserID: String?
+  var transport: String
+  var room: InstantRoomHandle
+  var spaceID: String
+  var nameKey: String?
+  var memberCount: Int
+  var cursorCount: Int
+  var visibleCursors: [CursorsRecipeCursor]
+  var members: [CursorsRecipeCursor]
+}
+
+private struct CLICursorsRecipeEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLICursorsRecipeOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
+}
+
+private struct CLICursorsRecipeCursorEvidence: Decodable {
+  var event: String
+  var details: CursorsRecipeCursor
 }
 
 private struct CLIFilesOutput: Decodable, Equatable {

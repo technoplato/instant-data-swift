@@ -224,6 +224,25 @@ room and `{name}` presence payload. Omit `--name` on `join` to derive the
 upstream-style name from the first six characters of the user id, and pass
 `--viewer-user-id` to `list` or `watch` to split the current user from peers.
 
+Run the local Instant cursors recipe ports:
+
+```bash
+export INSTANT_SWIFT_DATA_HOME="$(mktemp -d)"
+swift run instant-swift-data examples cursors move user-alpha --x 10 --y 20 --x-percent 25 --y-percent 50 --color '#123456' --json
+swift run instant-swift-data examples cursors move user-beta --x 30 --y 40 --x-percent 75 --y-percent 80 --json
+swift run instant-swift-data examples cursors list --viewer-user-id user-alpha --json
+swift run instant-swift-data examples cursors watch --events 1 --viewer-user-id user-alpha --jsonl
+swift run instant-swift-data examples cursors clear user-beta --json
+swift run instant-swift-data examples custom-cursors move user-custom --x 1 --y 2 --x-percent 3 --y-percent 4 --name Ada --color '#abcdef' --json
+swift run instant-swift-data examples custom-cursors list --viewer-user-id viewer --json
+```
+
+The cursors recipes use the upstream `cursors-example/123` and
+`cursors-example/124` rooms and the default `<Cursors>` space key. Cursor
+payloads store `{x, y, xPercent, yPercent, color}`, and custom cursors also
+store the `name` presence field used by the avatar renderer. Pass
+`--viewer-user-id` to `list` or `watch` for the upstream peer-only cursor view.
+
 Run the local Instant Stroopwafel multiplayer demo:
 
 ```bash

@@ -452,6 +452,14 @@ struct InstantSwiftDataCLI {
       try await runAvatarStack(arguments: arguments, output: output)
       return
 
+    case let .cursors(arguments):
+      try await runCursors(arguments: arguments, output: output)
+      return
+
+    case let .customCursors(arguments):
+      try await runCustomCursors(arguments: arguments, output: output)
+      return
+
     case let .stroopwafel(arguments):
       try await runStroopwafel(arguments: arguments, output: output)
       return
@@ -5797,6 +5805,296 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private enum CursorsRecipeKind {
+    case plain
+    case custom
+
+    var room: InstantRoomHandle {
+      switch self {
+      case .plain:
+        return CursorsRecipeExample.room
+      case .custom:
+        return CursorsRecipeExample.customRoom
+      }
+    }
+
+    var caseID: String {
+      switch self {
+      case .plain:
+        return "cli.examples.cursors"
+      case .custom:
+        return "cli.examples.custom-cursors"
+      }
+    }
+
+    var commandName: String {
+      switch self {
+      case .plain:
+        return "cursors"
+      case .custom:
+        return "custom cursors"
+      }
+    }
+
+    var usage: String {
+      switch self {
+      case .plain:
+        return InstantSwiftDataCLI.cursorsUsage
+      case .custom:
+        return InstantSwiftDataCLI.customCursorsUsage
+      }
+    }
+
+    var nameKey: String? {
+      switch self {
+      case .plain:
+        return nil
+      case .custom:
+        return CursorsRecipeExample.nameKey
+      }
+    }
+  }
+
+  private static func runCursors(arguments: [String], output: OutputMode) async throws {
+    try await runCursorsRecipe(kind: .plain, arguments: arguments, output: output)
+  }
+
+  private static func runCustomCursors(arguments: [String], output: OutputMode) async throws {
+    try await runCursorsRecipe(kind: .custom, arguments: arguments, output: output)
+  }
+
+  private static func runCursorsRecipe(
+    kind: CursorsRecipeKind,
+    arguments: [String],
+    output: OutputMode
+  ) async throws {
+    let invocation: CLIExamplesCursorsLeafInvocation
+    do {
+      var input = arguments[...]
+      switch kind {
+      case .plain:
+        invocation = try CLIExamplesCursorsLeafParser().parse(&input)
+      case .custom:
+        invocation = try CLIExamplesCustomCursorsLeafParser().parse(&input)
+      }
+    } catch let error as CLIExamplesCursorsArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
+    }
+
+    if case let .unknown(command) = invocation {
+      throw CLIError("Unknown \(kind.commandName) command: \(command). \(kind.usage)", exitCode: 64)
+    }
+
+    let context = try await CLIContext.bootstrap(initialAttributes: [])
+    switch invocation {
+    case let .move(options):
+      var values = CursorsRecipeExample.cursorValues(
+        room: kind.room,
+        x: options.x,
+        y: options.y,
+        xPercent: options.xPercent,
+        yPercent: options.yPercent,
+        color: options.color ?? CursorsRecipeExample.defaultColor
+      )
+      if kind.nameKey != nil {
+        values[CursorsRecipeExample.nameKey] = .string(options.name ?? options.userID)
+      }
+      _ = try await context.runtime.setPresence(
+        room: kind.room,
+        userID: options.userID,
+        values: values
+      )
+      let members = try await context.runtime.roomPresence(room: kind.room)
+      try printCursors(
+        context: context,
+        kind: kind,
+        output: output,
+        event: "move",
+        userID: options.userID,
+        viewerUserID: options.userID,
+        presence: members
+      )
+
+    case let .list(options):
+      let members = try await context.runtime.roomPresence(room: kind.room)
+      try printCursors(
+        context: context,
+        kind: kind,
+        output: output,
+        event: "list",
+        userID: nil,
+        viewerUserID: options.viewerUserID,
+        presence: members
+      )
+
+    case let .watch(options):
+      let members = try await firstWatchSnapshot(
+        from: context.runtime.observeRoomPresence(room: kind.room),
+        operation: "\(kind.commandName) watch",
+        eventCount: options.eventCount
+      )
+      try printCursors(
+        context: context,
+        kind: kind,
+        output: output,
+        event: "watch",
+        userID: nil,
+        viewerUserID: options.viewerUserID,
+        presence: members
+      )
+
+    case let .clear(userID):
+      let values = try await clearedCursorsPresenceValues(
+        context: context,
+        kind: kind,
+        userID: userID
+      )
+      _ = try await context.runtime.setPresence(
+        room: kind.room,
+        userID: userID,
+        values: values
+      )
+      let members = try await context.runtime.roomPresence(room: kind.room)
+      try printCursors(
+        context: context,
+        kind: kind,
+        output: output,
+        event: "clear",
+        userID: userID,
+        viewerUserID: userID,
+        presence: members
+      )
+
+    case let .leave(userID):
+      let leftUserID = try await context.runtime.leavePresence(
+        room: kind.room,
+        userID: userID
+      )
+      let members = try await context.runtime.roomPresence(room: kind.room)
+      try printCursors(
+        context: context,
+        kind: kind,
+        output: output,
+        event: "leave",
+        userID: leftUserID,
+        viewerUserID: leftUserID,
+        presence: members
+      )
+
+    case .unknown:
+      preconditionFailure("Unknown cursor commands are handled before bootstrapping.")
+    }
+  }
+
+  private static func clearedCursorsPresenceValues(
+    context: CLIContext,
+    kind: CursorsRecipeKind,
+    userID: String
+  ) async throws -> [String: JSONValue] {
+    guard kind.nameKey != nil else {
+      return [:]
+    }
+
+    let members = try await context.runtime.roomPresence(room: kind.room)
+    let existingName = members.first { $0.userID == userID }
+      .flatMap { member -> String? in
+        guard case let .string(name)? = member.values[CursorsRecipeExample.nameKey] else {
+          return nil
+        }
+        return name
+      }
+    return [CursorsRecipeExample.nameKey: .string(existingName ?? userID)]
+  }
+
+  private static func printCursors(
+    context: CLIContext,
+    kind: CursorsRecipeKind,
+    output: OutputMode,
+    event: String,
+    userID: String?,
+    viewerUserID: String?,
+    presence: [InstantRoomPresenceMember]
+  ) throws {
+    let snapshot = CursorsRecipeExample.snapshot(
+      from: presence,
+      room: kind.room,
+      viewerUserID: viewerUserID
+    )
+    let payload = CursorsRecipeOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      userID: userID,
+      viewerUserID: viewerUserID,
+      transport: "not-implemented-local-cache-only",
+      room: kind.room,
+      spaceID: CursorsRecipeExample.spaceID(for: kind.room),
+      nameKey: kind.nameKey,
+      memberCount: snapshot.members.count,
+      cursorCount: snapshot.cursorCount,
+      visibleCursors: snapshot.visibleCursors,
+      members: snapshot.members
+    )
+
+    switch output {
+    case .human:
+      print("room: \(payload.room.type)/\(payload.room.id)")
+      print("space: \(payload.spaceID)")
+      if let nameKey = payload.nameKey {
+        print("name key: \(nameKey)")
+      }
+      if let userID {
+        print("user: \(userID)")
+      }
+      if let viewerUserID {
+        print("viewer: \(viewerUserID)")
+      }
+      print("members: \(payload.memberCount)")
+      print("visible cursors: \(payload.cursorCount)")
+      for cursor in payload.visibleCursors {
+        var suffix = "(\(cursor.xPercent)%, \(cursor.yPercent)%)"
+        if let color = cursor.color {
+          suffix += " \(color)"
+        }
+        if let name = cursor.name {
+          suffix += " \(name)"
+        }
+        print("- \(cursor.userID) \(suffix)")
+      }
+      print("transport: \(payload.transport)")
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: kind.caseID,
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          entityID: userID,
+          ok: true,
+          details: payload
+        )
+      )
+      for cursor in snapshot.visibleCursors {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: kind.caseID,
+            side: "swift",
+            event: cursor.isViewer ? "current-cursor" : "cursor-member",
+            appID: context.appID,
+            entityID: cursor.userID,
+            ok: true,
+            details: cursor
+          )
+        )
+      }
+    }
+  }
+
   private static func runStroopwafel(arguments: [String], output: OutputMode) async throws {
     let invocation: CLIExamplesStroopwafelLeafInvocation
     do {
@@ -7260,6 +7558,8 @@ struct InstantSwiftDataCLI {
         examples todo-links nested [--json|--jsonl]
         examples todo-links unlink [--json|--jsonl]
         examples avatar-stack <join|list|watch|leave> [--json|--jsonl]
+        examples cursors <move|list|watch|clear|leave> [--json|--jsonl]
+        examples custom-cursors <move|list|watch|clear|leave> [--json|--jsonl]
         examples counters seed [--json|--jsonl]
         examples counters add [--count n] [--json|--jsonl]
         examples counters list [--json|--jsonl]
@@ -8415,7 +8715,7 @@ struct InstantSwiftDataCLI {
 
   private static var examplesUsage: String {
     """
-    Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|stroopwafel|reminders|sync-ups>
+    Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|cursors|custom-cursors|stroopwafel|reminders|sync-ups>
       instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>
       instant-swift-data examples todo-links <seed|list|nested|unlink> [--json|--jsonl]
       instant-swift-data examples counters <seed|add|list|increment|decrement|delete> [--json|--jsonl]
@@ -8425,6 +8725,8 @@ struct InstantSwiftDataCLI {
       instant-swift-data examples reactions <tap|list|watch> [--json|--jsonl]
       instant-swift-data examples typing-indicator <join|type|stop|list|watch|leave> [--json|--jsonl]
       instant-swift-data examples avatar-stack <join|list|watch|leave> [--json|--jsonl]
+      instant-swift-data examples cursors <move|list|watch|clear|leave> [--json|--jsonl]
+      instant-swift-data examples custom-cursors <move|list|watch|clear|leave> [--json|--jsonl]
       instant-swift-data examples stroopwafel <setup-profile|profile|score|create-room|rooms|room|join|ready|unready|kick|start|games|game|tap|leave|reset> [--json|--jsonl]
       instant-swift-data examples reminders <seed|list|stats|tags|list-tags|search|add-list|rename-list|delete-list|add|update|complete|delete|delete-completed|add-tag|remove-tag> [--json|--jsonl]
       instant-swift-data examples sync-ups <seed|list|detail|add|edit|add-attendee|record|record-demo|delete|delete-attendee|delete-meeting> [--json|--jsonl]
@@ -8457,6 +8759,14 @@ struct InstantSwiftDataCLI {
 
   private static var avatarStackUsage: String {
     CLIExamplesAvatarStackUsage.avatarStack
+  }
+
+  private static var cursorsUsage: String {
+    CLIExamplesCursorsUsage.cursors
+  }
+
+  private static var customCursorsUsage: String {
+    CLIExamplesCustomCursorsUsage.customCursors
   }
 
   private static var stroopwafelUsage: String {
@@ -9676,6 +9986,22 @@ private struct AvatarStackRecipeOutput: Codable, Sendable {
   var currentUser: AvatarStackRecipeMember?
   var peers: [AvatarStackRecipeMember]
   var members: [AvatarStackRecipeMember]
+}
+
+private struct CursorsRecipeOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var userID: String?
+  var viewerUserID: String?
+  var transport: String
+  var room: InstantRoomHandle
+  var spaceID: String
+  var nameKey: String?
+  var memberCount: Int
+  var cursorCount: Int
+  var visibleCursors: [CursorsRecipeCursor]
+  var members: [CursorsRecipeCursor]
 }
 
 private struct FilesOutput: Codable, Sendable {
