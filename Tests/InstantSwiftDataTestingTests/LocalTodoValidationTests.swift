@@ -376,6 +376,24 @@ struct LocalTodoValidationTests {
   }
 
   @Test
+  func validationRunnerTypedDraftsFailureEmitsMappedJSONL() throws {
+    let result = try runValidationRunner(
+      arguments: ["--typed-drafts"],
+      environment: [
+        "INSTANT_SWIFT_DATA_VALIDATION_RUNNER_FAIL_CASE": "validation.typed.drafts"
+      ]
+    )
+
+    #expect(result.status == 1)
+    let rows = try parseJSONLines(result.stdout)
+    let row = try #require(rows.first)
+    expectNoDifference(row["case"] as? String, "validation.typed.drafts")
+    expectNoDifference(row["appID"] as? String, "draft-validation")
+    expectNoDifference(row["event"] as? String, "failed")
+    expectNoDifference(row["ok"] as? Bool, false)
+  }
+
+  @Test
   func platformAdapterValidationHarnessSummarizesWrapperEvidence() async throws {
     let cacheURL = temporaryCacheURL()
 
@@ -749,7 +767,7 @@ struct LocalTodoValidationTests {
     )
 
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 53)
+    expectNoDifference(rows.count, 57)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
@@ -780,10 +798,12 @@ struct LocalTodoValidationTests {
 
     #expect(result.status == 0)
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 53)
+    expectNoDifference(rows.count, 57)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
+    expectNoDifference(Set(rows.map { $0["appID"] as? String ?? "" }), Set(["local-validation"]))
+    expectNoDifference(Set(rows.map { $0["event"] as? String ?? "" }), Set(["parity-record"]))
     expectNoDifference(rows.filter { ($0["ok"] as? Bool) == false }.count, 3)
   }
 
