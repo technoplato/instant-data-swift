@@ -2554,6 +2554,96 @@ struct TypedAPITests {
   }
 
   @Test
+  func fetchOneInitializersPreserveDefaultsAndDelayedAssignment() async throws {
+    @FetchOne var scalar = 42
+    expectNoDifference(scalar, 42)
+    expectNoDifference($scalar.loadError, nil)
+    expectNoDifference($scalar.isLoading, false)
+
+    let recorder = ClientCallRecorder()
+    do {
+      try await $scalar.load(using: recordingClient(recorder))
+      #expect(Bool(false), "Expected a value-only FetchOne to require a configured query.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .implementationFailed)
+      expectNoDifference(error.operation, "load FetchOne")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+    expectNoDifference(scalar, 42)
+    expectNoDifference($scalar.loadError?.operation, "load FetchOne")
+    let counts = await recorder.counts()
+    expectNoDifference(counts.queryCount, 0)
+    expectNoDifference(counts.observationCount, 0)
+
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_155.5)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000682")!
+    let defaultTodo = TypedTodo(
+      id: InstantID(rawValue: "todo-default-optional"),
+      text: "Default optional",
+      isCompleted: false,
+      createdAt: baseDate.addingTimeInterval(-1)
+    )
+    let delayedDefaultTodo = TypedTodo(
+      id: InstantID(rawValue: "todo-delayed-default"),
+      text: "Delayed default",
+      isCompleted: false,
+      createdAt: baseDate.addingTimeInterval(-2)
+    )
+
+    try await withDependencies {
+      $0.date.now = baseDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "fetch-one-initializers-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      let firstID = InstantID<TypedTodo>(rawValue: "todo-fetch-one-initializer-first")
+      try await db.transact {
+        TypedTodo.create(
+          id: firstID,
+          TypedTodo.text.set("Loaded optional"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate)
+        )
+      }
+
+      @FetchOne var optionalTodo: TypedTodo? = defaultTodo
+      expectNoDifference(optionalTodo?.text, "Default optional")
+      try await $optionalTodo.load()
+      expectNoDifference(optionalTodo?.text, "Loaded optional")
+      expectNoDifference($optionalTodo.loadError, nil)
+
+      try await db.transact(id: "tx-fetch-one-initializers-delete") {
+        TypedTodo.delete(id: firstID)
+      }
+      try await $optionalTodo.load()
+      expectNoDifference(optionalTodo, nil)
+      expectNoDifference($optionalTodo.loadError, nil)
+
+      var delayed = RequiredTypedTodoFetchOneModel(defaultTodo: delayedDefaultTodo)
+      expectNoDifference(delayed.todo.text, "Delayed default")
+
+      let secondID = InstantID<TypedTodo>(rawValue: "todo-fetch-one-initializer-second")
+      try await db.transact(id: "tx-fetch-one-initializers-recreate") {
+        TypedTodo.create(
+          id: secondID,
+          TypedTodo.text.set("Loaded delayed"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate.addingTimeInterval(1))
+        )
+      }
+      try await delayed.load()
+      expectNoDifference(delayed.todo.text, "Loaded delayed")
+      expectNoDifference(delayed.$todo.loadError, nil)
+    }
+  }
+
+  @Test
   func nonOptionalFetchOnePreservesLastValueWhenQueryIsEmpty() async throws {
     let baseDate = Date(timeIntervalSince1970: 1_700_000_156)
     let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000679")!

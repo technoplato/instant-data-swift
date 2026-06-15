@@ -5373,9 +5373,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 46)
+    expectNoDifference(jsonOutput.recordCount, 47)
     expectNoDifference(jsonOutput.exactCount, 11)
-    expectNoDifference(jsonOutput.adaptedCount, 32)
+    expectNoDifference(jsonOutput.adaptedCount, 33)
     expectNoDifference(jsonOutput.blockedCount, 3)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -5433,7 +5433,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 46"))
+    #expect(humanOutput.contains("records: 47"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 

@@ -427,6 +427,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Optional FetchOne defaults to the entity query and clears to nil for empty result sets."
     ),
     sqlite(
+      id: "sqlite.fetch-one.initializer-defaults",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchOneTests.swift",
+      sourceTestName: "nonTableInit / optionalTableInit_WithDefault / fetchOneDelayedAssignment",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "fetchOneInitializersPreserveDefaultsAndDelayedAssignment",
+      surface: "adapter-fetch",
+      status: .adapted,
+      notes: "FetchOne preserves value-only defaults, optional entity defaults, and delayed required wrapper assignment before explicit async loads."
+    ),
+    sqlite(
       id: "sqlite.fetch-all.dynamic-query",
       sourceFile: "upstream/sqlite-data/Examples/CaseStudies/DynamicQuery.swift",
       sourceTestName: "@Fetch projected load dynamic query",
