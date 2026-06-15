@@ -6,34 +6,212 @@ public protocol InstantValueRepresentable: Sendable {
   var instantValue: InstantValue { get }
 }
 
+public protocol InstantValueDecodable: Sendable {
+  static var acceptsMissingInstantValue: Bool { get }
+
+  static func decodeInstantValue(
+    _ value: InstantValue?,
+    namespace: String,
+    path: String,
+    localID: String?,
+    operation: String
+  ) throws -> Self
+}
+
+public extension InstantValueDecodable {
+  static var acceptsMissingInstantValue: Bool { false }
+}
+
 public protocol InstantComparableValue: InstantValueRepresentable {}
 
 extension String: InstantComparableValue {
   public var instantValue: InstantValue { .string(self) }
 }
 
+extension String: InstantValueDecodable {
+  public static func decodeInstantValue(
+    _ value: InstantValue?,
+    namespace: String,
+    path: String,
+    localID: String?,
+    operation: String
+  ) throws -> Self {
+    guard case let .string(value) = value else {
+      throw instantValueDecodeError(
+        value,
+        expectedType: "string",
+        namespace: namespace,
+        path: path,
+        localID: localID,
+        operation: operation
+      )
+    }
+    return value
+  }
+}
+
 extension Bool: InstantValueRepresentable {
   public var instantValue: InstantValue { .bool(self) }
+}
+
+extension Bool: InstantValueDecodable {
+  public static func decodeInstantValue(
+    _ value: InstantValue?,
+    namespace: String,
+    path: String,
+    localID: String?,
+    operation: String
+  ) throws -> Self {
+    guard case let .bool(value) = value else {
+      throw instantValueDecodeError(
+        value,
+        expectedType: "boolean",
+        namespace: namespace,
+        path: path,
+        localID: localID,
+        operation: operation
+      )
+    }
+    return value
+  }
 }
 
 extension Date: InstantComparableValue {
   public var instantValue: InstantValue { .date(self) }
 }
 
+extension Date: InstantValueDecodable {
+  public static func decodeInstantValue(
+    _ value: InstantValue?,
+    namespace: String,
+    path: String,
+    localID: String?,
+    operation: String
+  ) throws -> Self {
+    guard case let .date(value) = value else {
+      throw instantValueDecodeError(
+        value,
+        expectedType: "date",
+        namespace: namespace,
+        path: path,
+        localID: localID,
+        operation: operation
+      )
+    }
+    return value
+  }
+}
+
 extension Double: InstantComparableValue {
   public var instantValue: InstantValue { .number(self) }
+}
+
+extension Double: InstantValueDecodable {
+  public static func decodeInstantValue(
+    _ value: InstantValue?,
+    namespace: String,
+    path: String,
+    localID: String?,
+    operation: String
+  ) throws -> Self {
+    guard case let .number(value) = value else {
+      throw instantValueDecodeError(
+        value,
+        expectedType: "number",
+        namespace: namespace,
+        path: path,
+        localID: localID,
+        operation: operation
+      )
+    }
+    return value
+  }
 }
 
 extension Float: InstantComparableValue {
   public var instantValue: InstantValue { .number(Double(self)) }
 }
 
+extension Float: InstantValueDecodable {
+  public static func decodeInstantValue(
+    _ value: InstantValue?,
+    namespace: String,
+    path: String,
+    localID: String?,
+    operation: String
+  ) throws -> Self {
+    guard case let .number(value) = value,
+      value.isFinite,
+      value >= Double(-Float.greatestFiniteMagnitude),
+      value <= Double(Float.greatestFiniteMagnitude)
+    else {
+      throw instantValueDecodeError(
+        value,
+        expectedType: "number",
+        namespace: namespace,
+        path: path,
+        localID: localID,
+        operation: operation
+      )
+    }
+    return Float(value)
+  }
+}
+
 extension Int: InstantComparableValue {
   public var instantValue: InstantValue { .number(Double(self)) }
 }
 
+extension Int: InstantValueDecodable {
+  public static func decodeInstantValue(
+    _ value: InstantValue?,
+    namespace: String,
+    path: String,
+    localID: String?,
+    operation: String
+  ) throws -> Self {
+    guard case let .number(value) = value,
+      let integer = Int(exactly: value)
+    else {
+      throw instantValueDecodeError(
+        value,
+        expectedType: "integer",
+        namespace: namespace,
+        path: path,
+        localID: localID,
+        operation: operation
+      )
+    }
+    return integer
+  }
+}
+
 extension Int64: InstantComparableValue {
   public var instantValue: InstantValue { .number(Double(self)) }
+}
+
+extension Int64: InstantValueDecodable {
+  public static func decodeInstantValue(
+    _ value: InstantValue?,
+    namespace: String,
+    path: String,
+    localID: String?,
+    operation: String
+  ) throws -> Self {
+    guard case let .number(value) = value,
+      let integer = Int64(exactly: value)
+    else {
+      throw instantValueDecodeError(
+        value,
+        expectedType: "integer",
+        namespace: namespace,
+        path: path,
+        localID: localID,
+        operation: operation
+      )
+    }
+    return integer
+  }
 }
 
 extension InstantTimestamp: InstantComparableValue {
@@ -42,12 +220,75 @@ extension InstantTimestamp: InstantComparableValue {
   }
 }
 
+extension InstantTimestamp: InstantValueDecodable {
+  public static func decodeInstantValue(
+    _ value: InstantValue?,
+    namespace: String,
+    path: String,
+    localID: String?,
+    operation: String
+  ) throws -> Self {
+    let date = try Date.decodeInstantValue(
+      value,
+      namespace: namespace,
+      path: path,
+      localID: localID,
+      operation: operation
+    )
+    return InstantTimestamp(milliseconds: Int64((date.timeIntervalSince1970 * 1000).rounded()))
+  }
+}
+
 extension InstantID: InstantValueRepresentable {
   public var instantValue: InstantValue { .ref(rawValue) }
 }
 
+extension InstantID: InstantValueDecodable {
+  public static func decodeInstantValue(
+    _ value: InstantValue?,
+    namespace: String,
+    path: String,
+    localID: String?,
+    operation: String
+  ) throws -> Self {
+    guard case let .ref(value) = value else {
+      throw instantValueDecodeError(
+        value,
+        expectedType: "ref",
+        namespace: namespace,
+        path: path,
+        localID: localID,
+        operation: operation
+      )
+    }
+    return Self(rawValue: value)
+  }
+}
+
 extension AnyInstantID: InstantValueRepresentable {
   public var instantValue: InstantValue { .ref(rawValue) }
+}
+
+extension AnyInstantID: InstantValueDecodable {
+  public static func decodeInstantValue(
+    _ value: InstantValue?,
+    namespace: String,
+    path: String,
+    localID: String?,
+    operation: String
+  ) throws -> Self {
+    guard case let .ref(value) = value else {
+      throw instantValueDecodeError(
+        value,
+        expectedType: "ref",
+        namespace: namespace,
+        path: path,
+        localID: localID,
+        operation: operation
+      )
+    }
+    return Self(value)
+  }
 }
 
 extension Optional: InstantValueRepresentable where Wrapped: InstantValueRepresentable {
@@ -61,8 +302,70 @@ extension Optional: InstantValueRepresentable where Wrapped: InstantValueReprese
   }
 }
 
+extension Optional: InstantValueDecodable where Wrapped: InstantValueDecodable {
+  public static var acceptsMissingInstantValue: Bool { true }
+
+  public static func decodeInstantValue(
+    _ value: InstantValue?,
+    namespace: String,
+    path: String,
+    localID: String?,
+    operation: String
+  ) throws -> Self {
+    guard let value, value != .null else { return nil }
+    return try Wrapped.decodeInstantValue(
+      value,
+      namespace: namespace,
+      path: path,
+      localID: localID,
+      operation: operation
+    )
+  }
+}
+
 extension JSONValue: InstantValueRepresentable {
   public var instantValue: InstantValue { .json(self) }
+}
+
+extension JSONValue: InstantValueDecodable {
+  public static func decodeInstantValue(
+    _ value: InstantValue?,
+    namespace: String,
+    path: String,
+    localID: String?,
+    operation: String
+  ) throws -> Self {
+    guard case let .json(value) = value else {
+      throw instantValueDecodeError(
+        value,
+        expectedType: "json",
+        namespace: namespace,
+        path: path,
+        localID: localID,
+        operation: operation
+      )
+    }
+    return value
+  }
+}
+
+private func instantValueDecodeError(
+  _ value: InstantValue?,
+  expectedType: String,
+  namespace: String,
+  path: String,
+  localID: String?,
+  operation: String
+) -> InstantError {
+  InstantError(
+    code: .decodeFailed,
+    operation: operation,
+    namespace: namespace,
+    path: path,
+    localID: localID,
+    message: "Expected \(expectedType) for selected Instant field '\(path)'.",
+    recovery: "Check the Instant entity schema and server value for '\(namespace).\(path)'."
+  )
 }
 
 public protocol InstantEntityModel: Identifiable, Sendable where ID == InstantID<Self> {

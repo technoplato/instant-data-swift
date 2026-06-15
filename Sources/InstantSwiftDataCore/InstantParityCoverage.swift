@@ -437,6 +437,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "FetchOne preserves value-only defaults, optional entity defaults, and delayed required wrapper assignment before explicit async loads."
     ),
     sqlite(
+      id: "sqlite.fetch-one.scalar-selection",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchOneTests.swift",
+      sourceTestName: "statementInit / statementInit_Representable / statementInit_OptionalRepresentable / statementInit_DoubleOptionalRepresentable",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "fetchOneScalarSelectionsPreserveSQLiteDataStatementSemantics",
+      surface: "adapter-fetch",
+      status: .adapted,
+      notes: "FetchOne can load and dynamically replace single selected Instant fields while preserving required not-found and optional nil semantics."
+    ),
+    sqlite(
       id: "sqlite.fetch-wrappers.basic-matrix",
       sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchTests.swift",
       sourceTestName: "bareFetchAll / fetchAllWithQuery / fetchOneCountWithQuery / fetchOneOptional / fetchOneWithDefault / fetchOneOptional_SQL",
