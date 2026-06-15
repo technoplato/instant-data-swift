@@ -51,6 +51,7 @@ public enum CLIExamplesInvocation: Equatable, Sendable {
   case todos(CLIExamplesTodosInvocation)
   case chat(arguments: [String])
   case counters(arguments: [String])
+  case microblog(arguments: [String])
   case syncUps(arguments: [String])
   case reminders(arguments: [String])
   case todoLinks(arguments: [String])
@@ -255,6 +256,73 @@ public enum CLIExamplesChatUsage {
 }
 
 public enum CLIExamplesChatArgumentError: Error, Equatable, Sendable {
+  case invalidArguments(usage: String)
+  case unknownPostOption(String, usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
+public enum CLIExamplesMicroblogLeafInvocation: Equatable, Sendable {
+  case seed
+  case feed
+  case profiles
+  case profile(userID: String?)
+  case setupProfile(displayName: String, handle: String)
+  case post(CLIExamplesMicroblogPostInvocation)
+  case like(postID: String)
+  case unlike(postID: String)
+  case deletePost(postID: String)
+  case reset
+  case unknown(String)
+}
+
+public struct CLIExamplesMicroblogPostInvocation: Equatable, Sendable {
+  public var content: String
+  public var color: String
+
+  public init(content: String, color: String = "bg-blue-100") {
+    self.content = content
+    self.color = color
+  }
+}
+
+public enum CLIExamplesMicroblogUsage {
+  public static let microblog = """
+    Usage: instant-swift-data examples microblog <seed|feed|profiles|profile|setup-profile|post|like|unlike|delete-post|reset>
+      instant-swift-data examples microblog seed [--json|--jsonl]
+      instant-swift-data examples microblog feed [--json|--jsonl]
+      instant-swift-data examples microblog profiles [--json|--jsonl]
+      instant-swift-data examples microblog profile [user-id] [--json|--jsonl]
+      instant-swift-data examples microblog setup-profile "Display Name" <handle> [--json|--jsonl]
+      instant-swift-data examples microblog post "content" [--color color] [--json|--jsonl]
+      instant-swift-data examples microblog like <post-id> [--json|--jsonl]
+      instant-swift-data examples microblog unlike <post-id> [--json|--jsonl]
+      instant-swift-data examples microblog delete-post <post-id> [--json|--jsonl]
+      instant-swift-data examples microblog reset [--json|--jsonl]
+    """
+  public static let seed =
+    "Usage: instant-swift-data examples microblog seed [--json|--jsonl]"
+  public static let feed =
+    "Usage: instant-swift-data examples microblog feed [--json|--jsonl]"
+  public static let profiles =
+    "Usage: instant-swift-data examples microblog profiles [--json|--jsonl]"
+  public static let profile =
+    "Usage: instant-swift-data examples microblog profile [user-id] [--json|--jsonl]"
+  public static let setupProfile =
+    #"Usage: instant-swift-data examples microblog setup-profile "Display Name" <handle> [--json|--jsonl]"#
+  public static let post =
+    #"Usage: instant-swift-data examples microblog post "content" [--color color] [--json|--jsonl]"#
+  public static let like =
+    "Usage: instant-swift-data examples microblog like <post-id> [--json|--jsonl]"
+  public static let unlike =
+    "Usage: instant-swift-data examples microblog unlike <post-id> [--json|--jsonl]"
+  public static let deletePost =
+    "Usage: instant-swift-data examples microblog delete-post <post-id> [--json|--jsonl]"
+  public static let reset =
+    "Usage: instant-swift-data examples microblog reset [--json|--jsonl]"
+}
+
+public enum CLIExamplesMicroblogArgumentError: Error, Equatable, Sendable {
   case invalidArguments(usage: String)
   case unknownPostOption(String, usage: String)
 
@@ -1702,6 +1770,11 @@ public struct CLIExamplesParser: Parser {
       input.removeAll()
       return .counters(arguments: arguments)
 
+    case "microblog":
+      let arguments = Array(input)
+      input.removeAll()
+      return .microblog(arguments: arguments)
+
     case "sync-ups", "syncups":
       let arguments = Array(input)
       input.removeAll()
@@ -2261,6 +2334,111 @@ public struct CLIExamplesChatLeafParser: Parser {
       try requireNoRemainingExamplesChatArguments(
         &input,
         usage: CLIExamplesChatUsage.reset
+      )
+      return .reset
+
+    default:
+      input.removeAll()
+      return .unknown(command)
+    }
+  }
+}
+
+public struct CLIExamplesMicroblogLeafParser: Parser {
+  public init() {}
+
+  public func parse(
+    _ input: inout ArraySlice<String>
+  ) throws -> CLIExamplesMicroblogLeafInvocation {
+    guard let command = input.first else {
+      throw CLIExamplesMicroblogArgumentError.invalidArguments(
+        usage: CLIExamplesMicroblogUsage.microblog
+      )
+    }
+    input.removeFirst()
+
+    switch command {
+    case "seed":
+      try requireNoRemainingExamplesMicroblogArguments(
+        &input,
+        usage: CLIExamplesMicroblogUsage.seed
+      )
+      return .seed
+
+    case "feed", "posts":
+      try requireNoRemainingExamplesMicroblogArguments(
+        &input,
+        usage: CLIExamplesMicroblogUsage.feed
+      )
+      return .feed
+
+    case "profiles":
+      try requireNoRemainingExamplesMicroblogArguments(
+        &input,
+        usage: CLIExamplesMicroblogUsage.profiles
+      )
+      return .profiles
+
+    case "profile":
+      if input.isEmpty {
+        return .profile(userID: nil)
+      }
+      let userID = try parseRequiredExamplesMicroblogArgument(
+        from: &input,
+        usage: CLIExamplesMicroblogUsage.profile
+      )
+      try requireNoRemainingExamplesMicroblogArguments(
+        &input,
+        usage: CLIExamplesMicroblogUsage.profile
+      )
+      return .profile(userID: userID)
+
+    case "setup-profile", "create-profile":
+      let displayName = try parseRequiredExamplesMicroblogArgument(
+        from: &input,
+        usage: CLIExamplesMicroblogUsage.setupProfile
+      )
+      let handle = try parseRequiredExamplesMicroblogArgument(
+        from: &input,
+        usage: CLIExamplesMicroblogUsage.setupProfile
+      )
+      try requireNoRemainingExamplesMicroblogArguments(
+        &input,
+        usage: CLIExamplesMicroblogUsage.setupProfile
+      )
+      return .setupProfile(displayName: displayName, handle: handle)
+
+    case "post":
+      return .post(try parseExamplesMicroblogPostOptions(from: &input))
+
+    case "like":
+      return .like(
+        postID: try parseSingleExamplesMicroblogArgument(
+          from: &input,
+          usage: CLIExamplesMicroblogUsage.like
+        )
+      )
+
+    case "unlike":
+      return .unlike(
+        postID: try parseSingleExamplesMicroblogArgument(
+          from: &input,
+          usage: CLIExamplesMicroblogUsage.unlike
+        )
+      )
+
+    case "delete-post", "delete":
+      return .deletePost(
+        postID: try parseSingleExamplesMicroblogArgument(
+          from: &input,
+          usage: CLIExamplesMicroblogUsage.deletePost
+        )
+      )
+
+    case "reset":
+      try requireNoRemainingExamplesMicroblogArguments(
+        &input,
+        usage: CLIExamplesMicroblogUsage.reset
       )
       return .reset
 
@@ -4868,6 +5046,15 @@ private func requireNoRemainingExamplesChatArguments(
   }
 }
 
+private func requireNoRemainingExamplesMicroblogArguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if !input.isEmpty {
+    throw CLIExamplesMicroblogArgumentError.invalidArguments(usage: usage)
+  }
+}
+
 private func parseExamplesCountersAddOptions(
   _ input: inout ArraySlice<String>
 ) throws -> Int {
@@ -4961,6 +5148,75 @@ private func parseExamplesChatPostOptions(
     text: text,
     authorName: authorName
   )
+}
+
+private func parseRequiredExamplesMicroblogArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIExamplesMicroblogArgumentError.invalidArguments(usage: usage)
+  }
+  input.removeFirst()
+  let trimmedValue = trimmed(value)
+  guard !trimmedValue.isEmpty else {
+    throw CLIExamplesMicroblogArgumentError.invalidArguments(usage: usage)
+  }
+  return trimmedValue
+}
+
+private func parseSingleExamplesMicroblogArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  let value = try parseRequiredExamplesMicroblogArgument(from: &input, usage: usage)
+  try requireNoRemainingExamplesMicroblogArguments(&input, usage: usage)
+  return value
+}
+
+private func parseExamplesMicroblogPostOptions(
+  from input: inout ArraySlice<String>
+) throws -> CLIExamplesMicroblogPostInvocation {
+  var color = "bg-blue-100"
+  var contentParts: [String] = []
+
+  while let value = input.first {
+    input.removeFirst()
+    switch value {
+    case "--color":
+      guard let rawColor = input.first else {
+        throw CLIExamplesMicroblogArgumentError.invalidArguments(
+          usage: CLIExamplesMicroblogUsage.post
+        )
+      }
+      input.removeFirst()
+      let trimmedColor = trimmed(rawColor)
+      guard !trimmedColor.isEmpty else {
+        throw CLIExamplesMicroblogArgumentError.invalidArguments(
+          usage: CLIExamplesMicroblogUsage.post
+        )
+      }
+      color = trimmedColor
+
+    default:
+      if value.hasPrefix("--") {
+        throw CLIExamplesMicroblogArgumentError.unknownPostOption(
+          value,
+          usage: CLIExamplesMicroblogUsage.post
+        )
+      }
+      contentParts.append(value)
+    }
+  }
+
+  let content = contentParts.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+  guard !content.isEmpty else {
+    throw CLIExamplesMicroblogArgumentError.invalidArguments(
+      usage: CLIExamplesMicroblogUsage.post
+    )
+  }
+
+  return CLIExamplesMicroblogPostInvocation(content: content, color: color)
 }
 
 private func parseExamplesSyncUpsListOptions(
@@ -5773,6 +6029,18 @@ extension CLIExamplesChatArgumentError: CustomStringConvertible {
 
     case let .unknownPostOption(option, usage):
       return "Unknown chat post option: \(option). \(usage)"
+    }
+  }
+}
+
+extension CLIExamplesMicroblogArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case let .invalidArguments(usage):
+      return usage
+
+    case let .unknownPostOption(option, usage):
+      return "Unknown microblog post option: \(option). \(usage)"
     }
   }
 }

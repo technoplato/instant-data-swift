@@ -4029,6 +4029,91 @@ struct InstantStoreTests {
   }
 
   @Test
+  func microblogFeedIncludesAuthorsLikesAndCascadesDeletes() async throws {
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: MicroblogExample.attributes
+      )
+    )
+    let seededAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let seedIDs = MicroblogExample.SeedIDs(
+      userIDs: ["user-sarah", "user-alex", "user-jordan"],
+      postIDs: ["post-sarah", "post-alex", "post-jordan"],
+      likeIDs: [
+        (0..<12).map { "like-sarah-\($0)" },
+        (0..<19).map { "like-alex-\($0)" },
+        (0..<7).map { "like-jordan-\($0)" },
+      ]
+    )
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-microblog-seed",
+        operations: MicroblogExample.seedOperations(
+          ids: seedIDs,
+          baseTimestamp: seededAt,
+          transactionID: "tx-microblog-seed"
+        )
+      ),
+      createdAt: seededAt
+    )
+
+    let seededFeed = try await MicroblogExample.decodeFeed(
+      runtime.query(MicroblogExample.feedQuery)
+    )
+    expectNoDifference(
+      seededFeed.map { "\($0.post.id)|\($0.author?.handle ?? "missing")|\($0.likes.count)" },
+      [
+        "post-sarah|sarahchen|12",
+        "post-alex|alexrivera|19",
+        "post-jordan|jordanlee|7",
+      ]
+    )
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-microblog-delete-post",
+        operations: MicroblogExample.deletePostOperations(id: "post-sarah")
+      ),
+      createdAt: InstantTimestamp(milliseconds: seededAt.milliseconds + 1)
+    )
+    let afterPostDeleteFeed = try await MicroblogExample.decodeFeed(
+      runtime.query(MicroblogExample.feedQuery)
+    )
+    let afterPostDeleteLikes = try await MicroblogExample.decodeLikes(
+      runtime.query(MicroblogExample.likesQuery)
+    )
+    expectNoDifference(afterPostDeleteFeed.map(\.post.id), ["post-alex", "post-jordan"])
+    expectNoDifference(afterPostDeleteLikes.count, 26)
+    expectNoDifference(afterPostDeleteLikes.contains { $0.postID == "post-sarah" }, false)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-microblog-delete-user",
+        operations: MicroblogExample.deleteUserOperations(id: "user-alex")
+      ),
+      createdAt: InstantTimestamp(milliseconds: seededAt.milliseconds + 2)
+    )
+
+    let users = try await MicroblogExample.decodeUsers(runtime.query(MicroblogExample.usersQuery))
+    let profiles = try await MicroblogExample.decodeProfiles(
+      runtime.query(MicroblogExample.profilesQuery)
+    )
+    let posts = try await MicroblogExample.decodePosts(runtime.query(MicroblogExample.postsQuery))
+    let likes = try await MicroblogExample.decodeLikes(runtime.query(MicroblogExample.likesQuery))
+    let feed = try await MicroblogExample.decodeFeed(runtime.query(MicroblogExample.feedQuery))
+    expectNoDifference(users.map(\.id), ["user-jordan", "user-sarah"])
+    expectNoDifference(profiles.map(\.handle), ["jordanlee", "sarahchen"])
+    expectNoDifference(posts.map(\.id), ["post-jordan"])
+    expectNoDifference(likes.map(\.postID), Array(repeating: "post-jordan", count: 7))
+    expectNoDifference(feed.map { "\($0.post.id)|\($0.author?.handle ?? "missing")|\($0.likes.count)" }, [
+      "post-jordan|jordanlee|7"
+    ])
+  }
+
+  @Test
   func queryCacheStoresSameQueryIDDifferentPlansSeparately() async throws {
     let cacheURL = try temporaryCacheURL()
     let runtime = try await InstantRuntime.bootstrap(

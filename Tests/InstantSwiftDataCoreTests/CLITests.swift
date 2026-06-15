@@ -2919,7 +2919,7 @@ extension InstantStoreTests {
     expectNoDifference(result.status, 64)
     #expect(
       result.error.contains(
-        "Usage: instant-swift-data examples <todos|todo-links|counters|chat|reminders|sync-ups>"
+        "Usage: instant-swift-data examples <todos|todo-links|counters|chat|microblog|reminders|sync-ups>"
       )
     )
   }
@@ -5056,6 +5056,269 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliMicroblogExampleSeedsAuthPostsLikesAndCascadesAcrossLaunches() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let seeded = try JSONDecoder().decode(
+      CLIMicroblogOutput.self,
+      from: Data(try runCLI(["examples", "microblog", "seed", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(seeded.event, "seed")
+    expectNoDifference(seeded.transport, "not-implemented-local-cache-only")
+    expectNoDifference(seeded.authUserID, nil)
+    expectNoDifference(seeded.userCount, 3)
+    expectNoDifference(seeded.profileCount, 3)
+    expectNoDifference(seeded.postCount, 3)
+    expectNoDifference(seeded.likeCount, 38)
+    expectNoDifference(
+      seeded.feed.map { "\($0.post.id)|\($0.author?.handle ?? "missing")|\($0.likes.count)" },
+      [
+        "\(seeded.feed[0].post.id)|sarahchen|12",
+        "\(seeded.feed[1].post.id)|alexrivera|19",
+        "\(seeded.feed[2].post.id)|jordanlee|7",
+      ]
+    )
+    let seedPostID = try #require(seeded.feed.first?.post.id)
+
+    let jsonlOutput = try runCLI(["examples", "microblog", "feed", "--jsonl"], homeURL: homeURL)
+    let jsonlLines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(jsonlLines.count, 48)
+    let summary = try JSONDecoder().decode(
+      CLIMicroblogEvidence.self,
+      from: Data(try #require(jsonlLines.first).utf8)
+    )
+    expectNoDifference(summary.caseID, "cli.examples.microblog")
+    expectNoDifference(summary.event, "feed")
+    expectNoDifference(summary.details.userCount, 3)
+    expectNoDifference(summary.details.profileCount, 3)
+    expectNoDifference(summary.details.postCount, 3)
+    expectNoDifference(summary.details.likeCount, 38)
+    let eventRows = try jsonlLines.dropFirst().map {
+      try JSONDecoder().decode(CLIMicroblogEventEnvelope.self, from: Data($0.utf8))
+    }
+    expectNoDifference(eventRows.filter { $0.event == "user" }.count, 3)
+    expectNoDifference(eventRows.filter { $0.event == "profile" }.count, 3)
+    expectNoDifference(eventRows.filter { $0.event == "post" }.count, 3)
+    expectNoDifference(eventRows.filter { $0.event == "like" }.count, 38)
+
+    let profilesList = try JSONDecoder().decode(
+      CLIMicroblogOutput.self,
+      from: Data(try runCLI(["examples", "microblog", "profiles", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(profilesList.event, "profiles")
+    expectNoDifference(profilesList.profiles.map(\.handle), [
+      "alexrivera",
+      "jordanlee",
+      "sarahchen",
+    ])
+    let sarahUserID = try #require(
+      profilesList.profiles.first { $0.handle == "sarahchen" }?.userID
+    )
+    let sarahProfile = try JSONDecoder().decode(
+      CLIMicroblogOutput.self,
+      from: Data(
+        try runCLI(["examples", "microblog", "profile", sarahUserID, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(sarahProfile.event, "profile")
+    expectNoDifference(sarahProfile.selectedUserID, sarahUserID)
+    expectNoDifference(sarahProfile.selectedProfile?.handle, "sarahchen")
+
+    let missingSelectedProfile = try runCLIResult(
+      ["examples", "microblog", "profile", "missing-user", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(missingSelectedProfile.status, 66)
+    #expect(missingSelectedProfile.error.contains("Microblog profile not found for user: missing-user."))
+
+    let signedOutMutation = try runCLIResult(
+      ["examples", "microblog", "like", seedPostID, "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(signedOutMutation.status, 65)
+    #expect(signedOutMutation.error.contains("Microblog mutation requires a signed-in user."))
+
+    _ = try runCLI(
+      ["auth", "token", "microblog-refresh", "--user-id", "user-cli", "--json"],
+      homeURL: homeURL
+    )
+    let missingProfile = try runCLIResult(
+      ["examples", "microblog", "post", "Before profile", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(missingProfile.status, 66)
+    #expect(missingProfile.error.contains("Microblog profile not found for user: user-cli."))
+
+    let profile = try JSONDecoder().decode(
+      CLIMicroblogOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "microblog", "setup-profile", "CLI User", "@cli-user", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(profile.event, "setup-profile")
+    expectNoDifference(profile.changedID, "user-cli")
+    expectNoDifference(profile.selectedUserID, "user-cli")
+    expectNoDifference(profile.authUserID, "user-cli")
+    expectNoDifference(profile.userCount, 4)
+    expectNoDifference(profile.profileCount, 4)
+    let cliProfile = try #require(profile.profiles.first { $0.userID == "user-cli" })
+    expectNoDifference(cliProfile.handle, "cli-user")
+    expectNoDifference(cliProfile.displayName, "CLI User")
+
+    let currentProfile = try JSONDecoder().decode(
+      CLIMicroblogOutput.self,
+      from: Data(try runCLI(["examples", "microblog", "profile", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(currentProfile.event, "profile")
+    expectNoDifference(currentProfile.selectedUserID, "user-cli")
+    expectNoDifference(currentProfile.selectedProfile, cliProfile)
+
+    let duplicateProfile = try runCLIResult(
+      ["examples", "microblog", "setup-profile", "Again", "again", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(duplicateProfile.status, 66)
+    #expect(duplicateProfile.error.contains("strict create entity: An entity already exists"))
+
+    let posted = try JSONDecoder().decode(
+      CLIMicroblogOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "examples", "microblog", "post", "Hello from the CLI microblog",
+            "--color", "bg-green-100", "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(posted.event, "post")
+    expectNoDifference(posted.postCount, 4)
+    let createdPostID = try #require(posted.changedID)
+    expectNoDifference(posted.selectedPostID, createdPostID)
+    let createdFeedPost = try #require(posted.feed.first { $0.post.id == createdPostID })
+    expectNoDifference(createdFeedPost.author?.handle, "cli-user")
+    expectNoDifference(createdFeedPost.post.color, "bg-green-100")
+    expectNoDifference(createdFeedPost.post.content, "Hello from the CLI microblog")
+    expectNoDifference(createdFeedPost.likes, [])
+
+    let liked = try JSONDecoder().decode(
+      CLIMicroblogOutput.self,
+      from: Data(
+        try runCLI(["examples", "microblog", "like", seedPostID, "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(liked.event, "like")
+    expectNoDifference(liked.selectedPostID, seedPostID)
+    expectNoDifference(liked.likeCount, 39)
+    let likeID = try #require(liked.changedID)
+    expectNoDifference(
+      try #require(liked.feed.first { $0.post.id == seedPostID }).likes.count,
+      13
+    )
+
+    let repeatedLike = try JSONDecoder().decode(
+      CLIMicroblogOutput.self,
+      from: Data(
+        try runCLI(["examples", "microblog", "like", seedPostID, "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(repeatedLike.changedID, likeID)
+    expectNoDifference(repeatedLike.likeCount, 39)
+
+    let unliked = try JSONDecoder().decode(
+      CLIMicroblogOutput.self,
+      from: Data(
+        try runCLI(["examples", "microblog", "unlike", seedPostID, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(unliked.event, "unlike")
+    expectNoDifference(unliked.changedID, likeID)
+    expectNoDifference(unliked.likeCount, 38)
+    expectNoDifference(
+      try #require(unliked.feed.first { $0.post.id == seedPostID }).likes.count,
+      12
+    )
+
+    let unlikeMissing = try runCLIResult(
+      ["examples", "microblog", "unlike", seedPostID, "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(unlikeMissing.status, 66)
+    #expect(unlikeMissing.error.contains("Microblog like not found for post: \(seedPostID)"))
+
+    let wrongOwner = try runCLIResult(
+      ["examples", "microblog", "delete-post", seedPostID, "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(wrongOwner.status, 77)
+    #expect(wrongOwner.error.contains("is owned by profile"))
+
+    let deleted = try JSONDecoder().decode(
+      CLIMicroblogOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "microblog", "delete-post", createdPostID, "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(deleted.event, "delete-post")
+    expectNoDifference(deleted.changedID, createdPostID)
+    expectNoDifference(deleted.postCount, 3)
+    expectNoDifference(deleted.feed.contains { $0.post.id == createdPostID }, false)
+
+    let reset = try JSONDecoder().decode(
+      CLIMicroblogOutput.self,
+      from: Data(try runCLI(["examples", "microblog", "reset", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(reset.event, "reset")
+    expectNoDifference(reset.userCount, 0)
+    expectNoDifference(reset.profileCount, 0)
+    expectNoDifference(reset.postCount, 0)
+    expectNoDifference(reset.likeCount, 0)
+    expectNoDifference(reset.users, [])
+    expectNoDifference(reset.profiles, [])
+    expectNoDifference(reset.posts, [])
+    expectNoDifference(reset.likes, [])
+    expectNoDifference(reset.feed, [])
+  }
+
+  @Test
+  func cliMicroblogExampleReportsMalformedArguments() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let empty = try runCLIResult(["examples", "microblog", "--json"], homeURL: homeURL)
+    expectNoDifference(empty.status, 64)
+    #expect(empty.error.contains("examples microblog <seed|feed|profiles|profile|setup-profile"))
+
+    let badPost = try runCLIResult(
+      ["examples", "microblog", "post", "--surprise", "Hello", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(badPost.status, 64)
+    #expect(badPost.error.contains("Unknown microblog post option: --surprise."))
+
+    let missingLikeID = try runCLIResult(
+      ["examples", "microblog", "like", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(missingLikeID.status, 64)
+    #expect(missingLikeID.error.contains("examples microblog like <post-id>"))
+  }
+
+  @Test
   func cliValidationLocalTodosEmitsEvidence() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -5805,9 +6068,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 100)
+    expectNoDifference(jsonOutput.recordCount, 101)
     expectNoDifference(jsonOutput.exactCount, 19)
-    expectNoDifference(jsonOutput.adaptedCount, 78)
+    expectNoDifference(jsonOutput.adaptedCount, 79)
     expectNoDifference(jsonOutput.blockedCount, 3)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -5866,6 +6129,11 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.records.contains {
         $0.id == "instant.website.chat.local-cli" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.website.microblog.local-cli" && $0.status == "adapted"
       }
     )
     #expect(
@@ -6092,7 +6360,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 100"))
+    #expect(humanOutput.contains("records: 101"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 
@@ -6610,6 +6878,42 @@ private struct CLIChatMessageEvidence: Decodable {
   var event: String
   var entityID: String?
   var details: ChatMessageRecord
+}
+
+private struct CLIMicroblogOutput: Decodable {
+  var event: String
+  var changedID: String?
+  var selectedUserID: String?
+  var selectedProfile: MicroblogProfileRecord?
+  var selectedPostID: String?
+  var authUserID: String?
+  var transport: String
+  var pendingMutationCount: Int
+  var userCount: Int
+  var profileCount: Int
+  var postCount: Int
+  var likeCount: Int
+  var users: [MicroblogUserRecord]
+  var profiles: [MicroblogProfileRecord]
+  var posts: [MicroblogPostRecord]
+  var likes: [MicroblogLikeRecord]
+  var feed: [MicroblogFeedPostRecord]
+}
+
+private struct CLIMicroblogEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLIMicroblogOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
+}
+
+private struct CLIMicroblogEventEnvelope: Decodable {
+  var event: String
 }
 
 private struct CLIRemindersOutput: Decodable {

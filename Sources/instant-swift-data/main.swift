@@ -412,6 +412,8 @@ struct InstantSwiftDataCLI {
       throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesChatArgumentError {
       throw CLIError(error.description, exitCode: error.exitCode)
+    } catch let error as CLIExamplesMicroblogArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
     switch invocation {
     case let .chat(arguments):
@@ -420,6 +422,10 @@ struct InstantSwiftDataCLI {
 
     case let .counters(arguments):
       try await runCounters(arguments: arguments, output: output)
+      return
+
+    case let .microblog(arguments):
+      try await runMicroblog(arguments: arguments, output: output)
       return
 
     case let .syncUps(arguments):
@@ -1733,6 +1739,238 @@ struct InstantSwiftDataCLI {
 
     case .unknown:
       preconditionFailure("Unknown chat commands are handled before bootstrapping.")
+    }
+  }
+
+  private static func runMicroblog(arguments: [String], output: OutputMode) async throws {
+    let invocation: CLIExamplesMicroblogLeafInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLIExamplesMicroblogLeafParser().parse(&input)
+    } catch let error as CLIExamplesMicroblogArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
+    }
+
+    if case let .unknown(command) = invocation {
+      throw CLIError("Unknown microblog command: \(command). \(microblogUsage)", exitCode: 64)
+    }
+
+    let context = try await CLIContext.bootstrap(initialAttributes: MicroblogExample.attributes)
+
+    switch invocation {
+    case .seed:
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: MicroblogExample.seedOperations(
+            ids: try await microblogSeedIDs(context: context),
+            baseTimestamp: now,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.microblog.seed"
+      )
+      try await printMicroblog(context: context, output: output, event: "seed")
+
+    case .feed:
+      try await printMicroblog(context: context, output: output, event: "feed")
+
+    case .profiles:
+      try await printMicroblog(context: context, output: output, event: "profiles")
+
+    case let .profile(userID):
+      let selectedUserID = try await selectedMicroblogUserID(
+        context: context,
+        explicitUserID: userID
+      )
+      let selectedProfile = try await requireMicroblogProfile(
+        context: context,
+        userID: selectedUserID
+      )
+      try await printMicroblog(
+        context: context,
+        output: output,
+        event: "profile",
+        selectedUserID: selectedUserID,
+        selectedProfile: selectedProfile
+      )
+
+    case let .setupProfile(displayName, rawHandle):
+      let session = try await requireMicroblogAuthSession(
+        context: context,
+        operation: "set up a profile"
+      )
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: MicroblogExample.createProfileOperations(
+            userID: session.userID,
+            displayName: displayName,
+            handle: normalizedMicroblogHandle(rawHandle),
+            transactionID: transactionID,
+            updatedAt: now
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.microblog.setup-profile"
+      )
+      try await printMicroblog(
+        context: context,
+        output: output,
+        event: "setup-profile",
+        changedID: session.userID,
+        selectedUserID: session.userID
+      )
+
+    case let .post(post):
+      let profile = try await requireCurrentMicroblogProfile(context: context)
+      let postID = context.runtime.configuration.makeID()
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: MicroblogExample.createPostOperations(
+            id: postID,
+            authorProfileID: profile.id,
+            color: post.color,
+            content: post.content,
+            timestamp: now,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.microblog.post"
+      )
+      try await printMicroblog(
+        context: context,
+        output: output,
+        event: "post",
+        changedID: postID,
+        selectedUserID: profile.userID,
+        selectedPostID: postID
+      )
+
+    case let .like(postID):
+      let profile = try await requireCurrentMicroblogProfile(context: context)
+      _ = try await requireMicroblogPost(context: context, id: postID)
+      if let existing = try await currentMicroblogLikes(
+        context: context,
+        query: MicroblogExample.likesForPostQuery(postID)
+      )
+      .first(where: { $0.userID == profile.id }) {
+        try await printMicroblog(
+          context: context,
+          output: output,
+          event: "like",
+          changedID: existing.id,
+          selectedUserID: profile.userID,
+          selectedPostID: postID
+        )
+      } else {
+        let likeID = context.runtime.configuration.makeID()
+        let transactionID = context.runtime.configuration.makeID()
+        let now = context.runtime.configuration.now()
+        try await context.runtime.transact(
+          InstantStoreTransaction(
+            id: transactionID,
+            operations: MicroblogExample.createLikeOperations(
+              id: likeID,
+              userID: profile.id,
+              postID: postID,
+              transactionID: transactionID,
+              updatedAt: now
+            )
+          ),
+          createdAt: now,
+          source: "cli.examples.microblog.like"
+        )
+        try await printMicroblog(
+          context: context,
+          output: output,
+          event: "like",
+          changedID: likeID,
+          selectedUserID: profile.userID,
+          selectedPostID: postID
+        )
+      }
+
+    case let .unlike(postID):
+      let profile = try await requireCurrentMicroblogProfile(context: context)
+      _ = try await requireMicroblogPost(context: context, id: postID)
+      let like = try await requireMicroblogLike(
+        context: context,
+        postID: postID,
+        userID: profile.id
+      )
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: MicroblogExample.deleteLikeOperations(id: like.id)
+        ),
+        createdAt: now,
+        source: "cli.examples.microblog.unlike"
+      )
+      try await printMicroblog(
+        context: context,
+        output: output,
+        event: "unlike",
+        changedID: like.id,
+        selectedUserID: profile.userID,
+        selectedPostID: postID
+      )
+
+    case let .deletePost(postID):
+      let profile = try await requireCurrentMicroblogProfile(context: context)
+      let post = try await requireMicroblogPost(context: context, id: postID)
+      guard post.authorProfileID == profile.id else {
+        throw CLIError(
+          "Microblog post \(postID) is owned by profile \(post.authorProfileID).",
+          exitCode: 77
+        )
+      }
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: MicroblogExample.deletePostOperations(id: postID)
+        ),
+        createdAt: now,
+        source: "cli.examples.microblog.delete-post"
+      )
+      try await printMicroblog(
+        context: context,
+        output: output,
+        event: "delete-post",
+        changedID: postID,
+        selectedUserID: profile.userID,
+        selectedPostID: postID
+      )
+
+    case .reset:
+      let users = try await currentMicroblogUsers(context: context)
+      let operations = users.flatMap { MicroblogExample.deleteUserOperations(id: $0.id) }
+      if !operations.isEmpty {
+        let transactionID = context.runtime.configuration.makeID()
+        let now = context.runtime.configuration.now()
+        try await context.runtime.transact(
+          InstantStoreTransaction(id: transactionID, operations: operations),
+          createdAt: now,
+          source: "cli.examples.microblog.reset"
+        )
+      }
+      try await printMicroblog(context: context, output: output, event: "reset")
+
+    case .unknown:
+      preconditionFailure("Unknown microblog commands are handled before bootstrapping.")
     }
   }
 
@@ -4152,6 +4390,313 @@ struct InstantSwiftDataCLI {
     return try await context.runtime.signInAsGuest()
   }
 
+  private static func printMicroblog(
+    context: CLIContext,
+    output: OutputMode,
+    event: String,
+    changedID: String? = nil,
+    selectedUserID: String? = nil,
+    selectedProfile: MicroblogProfileRecord? = nil,
+    selectedPostID: String? = nil
+  ) async throws {
+    let users = try await currentMicroblogUsers(context: context)
+    let profiles = try await currentMicroblogProfiles(context: context)
+    let posts = try await currentMicroblogPosts(context: context)
+    let likes = try await currentMicroblogLikes(context: context)
+    let feed = try await currentMicroblogFeed(context: context)
+    let pending = await context.runtime.pendingMutations()
+    let session = try await context.runtime.authSession()
+    let payload = MicroblogOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      changedID: changedID,
+      selectedUserID: selectedUserID,
+      selectedProfile: selectedProfile,
+      selectedPostID: selectedPostID,
+      authUserID: session?.userID,
+      transport: "not-implemented-local-cache-only",
+      userQueryID: MicroblogExample.usersQuery.id,
+      profileQueryID: MicroblogExample.profilesQuery.id,
+      postQueryID: MicroblogExample.postsQuery.id,
+      likeQueryID: MicroblogExample.likesQuery.id,
+      feedQueryID: MicroblogExample.feedQuery.id,
+      userCacheKey: MicroblogExample.usersQuery.cacheKey,
+      profileCacheKey: MicroblogExample.profilesQuery.cacheKey,
+      postCacheKey: MicroblogExample.postsQuery.cacheKey,
+      likeCacheKey: MicroblogExample.likesQuery.cacheKey,
+      feedCacheKey: MicroblogExample.feedQuery.cacheKey,
+      pendingMutationCount: pending.count,
+      userCount: users.count,
+      profileCount: profiles.count,
+      postCount: posts.count,
+      likeCount: likes.count,
+      users: users,
+      profiles: profiles,
+      posts: posts,
+      likes: likes,
+      feed: feed
+    )
+
+    switch output {
+    case .human:
+      if let selectedProfile {
+        print(
+          "profile: \(selectedProfile.displayName) @\(selectedProfile.handle) user=\(selectedProfile.userID)"
+        )
+      }
+      if feed.isEmpty {
+        print("No microblog posts.")
+      } else {
+        for item in feed {
+          let author = item.author.map { "@\($0.handle)" } ?? "@unknown"
+          print(
+            "\(item.post.id) \(author) likes=\(item.likes.count) color=\(item.post.color) \(item.post.content)"
+          )
+        }
+      }
+      if !profiles.isEmpty {
+        print("profiles: \(profiles.map { "@\($0.handle)" }.joined(separator: " "))")
+      }
+      if let authUserID = payload.authUserID {
+        print("auth: \(authUserID)")
+      } else {
+        print("auth: signed out")
+      }
+      print("transport: \(payload.transport)")
+      print("pending mutations: \(pending.count)")
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.examples.microblog",
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          entityID: changedID,
+          ok: true,
+          details: payload
+        )
+      )
+      for user in users {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.microblog",
+            side: "swift",
+            event: "user",
+            appID: context.appID,
+            entityID: user.id,
+            ok: true,
+            details: user
+          )
+        )
+      }
+      for profile in profiles {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.microblog",
+            side: "swift",
+            event: "profile",
+            appID: context.appID,
+            entityID: profile.id,
+            ok: true,
+            details: profile
+          )
+        )
+      }
+      for post in posts {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.microblog",
+            side: "swift",
+            event: "post",
+            appID: context.appID,
+            entityID: post.id,
+            ok: true,
+            details: post
+          )
+        )
+      }
+      for like in likes {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.microblog",
+            side: "swift",
+            event: "like",
+            appID: context.appID,
+            entityID: like.id,
+            ok: true,
+            details: like
+          )
+        )
+      }
+    }
+  }
+
+  private static func microblogSeedIDs(context: CLIContext) async throws
+    -> MicroblogExample.SeedIDs
+  {
+    var userIDs: [String] = []
+    var postIDs: [String] = []
+    var likeIDs: [[String]] = []
+    for seed in MicroblogExample.seedPosts {
+      userIDs.append(
+        try await context.runtime.localID(named: "examples.microblog.users.\(seed.slug)")
+      )
+      postIDs.append(
+        try await context.runtime.localID(named: "examples.microblog.posts.\(seed.slug)")
+      )
+      var seedLikeIDs: [String] = []
+      for index in 0..<seed.likes {
+        seedLikeIDs.append(
+          try await context.runtime.localID(named: "examples.microblog.likes.\(seed.slug).\(index)")
+        )
+      }
+      likeIDs.append(seedLikeIDs)
+    }
+    return MicroblogExample.SeedIDs(userIDs: userIDs, postIDs: postIDs, likeIDs: likeIDs)
+  }
+
+  private static func currentMicroblogUsers(context: CLIContext) async throws
+    -> [MicroblogUserRecord]
+  {
+    try MicroblogExample.decodeUsers(
+      (try await context.runtime.queryOnce(MicroblogExample.usersQuery)).values
+    )
+  }
+
+  private static func currentMicroblogProfiles(context: CLIContext) async throws
+    -> [MicroblogProfileRecord]
+  {
+    try MicroblogExample.decodeProfiles(
+      (try await context.runtime.queryOnce(MicroblogExample.profilesQuery)).values
+    )
+  }
+
+  private static func currentMicroblogPosts(context: CLIContext) async throws
+    -> [MicroblogPostRecord]
+  {
+    try MicroblogExample.decodePosts(
+      (try await context.runtime.queryOnce(MicroblogExample.postsQuery)).values
+    )
+  }
+
+  private static func currentMicroblogLikes(
+    context: CLIContext,
+    query: InstantQueryPlan = MicroblogExample.likesQuery
+  ) async throws -> [MicroblogLikeRecord] {
+    try MicroblogExample.decodeLikes((try await context.runtime.queryOnce(query)).values)
+  }
+
+  private static func currentMicroblogFeed(context: CLIContext) async throws
+    -> [MicroblogFeedPostRecord]
+  {
+    try MicroblogExample.decodeFeed(
+      (try await context.runtime.queryOnce(MicroblogExample.feedQuery)).values
+    )
+  }
+
+  private static func selectedMicroblogUserID(
+    context: CLIContext,
+    explicitUserID: String?
+  ) async throws -> String {
+    if let explicitUserID {
+      return explicitUserID
+    }
+    let session = try await requireMicroblogAuthSession(
+      context: context,
+      operation: "view a profile"
+    )
+    return session.userID
+  }
+
+  private static func requireMicroblogAuthSession(
+    context: CLIContext,
+    operation: String
+  ) async throws -> InstantAuthSession {
+    guard let session = try await context.runtime.authSession() else {
+      throw CLIError(
+        """
+        Microblog \(operation) requires a signed-in user. Run \
+        'instant-swift-data auth token <refresh-token> --user-id <user-id>' first.
+        """,
+        exitCode: 65
+      )
+    }
+    return session
+  }
+
+  private static func requireMicroblogProfile(
+    context: CLIContext,
+    userID: String
+  ) async throws -> MicroblogProfileRecord {
+    let profiles = try MicroblogExample.decodeProfiles(
+      (try await context.runtime.queryOnce(MicroblogExample.profileForUserQuery(userID))).values
+    )
+    guard let profile = profiles.first else {
+      throw CLIError(
+        "Microblog profile not found for user: \(userID).",
+        exitCode: 66
+      )
+    }
+    return profile
+  }
+
+  private static func requireCurrentMicroblogProfile(
+    context: CLIContext
+  ) async throws -> MicroblogProfileRecord {
+    let session = try await requireMicroblogAuthSession(context: context, operation: "mutation")
+    do {
+      return try await requireMicroblogProfile(context: context, userID: session.userID)
+    } catch let error as CLIError where error.exitCode == 66 {
+      throw CLIError(
+        """
+        Microblog profile not found for user: \(session.userID). Run \
+        'instant-swift-data examples microblog setup-profile "Display Name" <handle>' first.
+        """,
+        exitCode: 66
+      )
+    }
+  }
+
+  private static func requireMicroblogPost(
+    context: CLIContext,
+    id: String
+  ) async throws -> MicroblogPostRecord {
+    let posts = try await currentMicroblogPosts(context: context)
+    guard let post = posts.first(where: { $0.id == id }) else {
+      throw CLIError("Microblog post not found: \(id)", exitCode: 66)
+    }
+    return post
+  }
+
+  private static func requireMicroblogLike(
+    context: CLIContext,
+    postID: String,
+    userID: String
+  ) async throws -> MicroblogLikeRecord {
+    let likes = try await currentMicroblogLikes(
+      context: context,
+      query: MicroblogExample.likesForPostQuery(postID)
+    )
+    guard let like = likes.first(where: { $0.userID == userID }) else {
+      throw CLIError("Microblog like not found for post: \(postID)", exitCode: 66)
+    }
+    return like
+  }
+
+  private static func normalizedMicroblogHandle(_ value: String) -> String {
+    var handle = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    if handle.hasPrefix("@") {
+      handle.removeFirst()
+    }
+    return handle.lowercased()
+  }
+
   private static func printReminders(
     context: CLIContext,
     output: OutputMode,
@@ -5992,11 +6537,12 @@ struct InstantSwiftDataCLI {
 
   private static var examplesUsage: String {
     """
-    Usage: instant-swift-data examples <todos|todo-links|counters|chat|reminders|sync-ups>
+    Usage: instant-swift-data examples <todos|todo-links|counters|chat|microblog|reminders|sync-ups>
       instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>
       instant-swift-data examples todo-links <seed|list|nested|unlink> [--json|--jsonl]
       instant-swift-data examples counters <seed|add|list|increment|decrement|delete> [--json|--jsonl]
       instant-swift-data examples chat <seed|channels|messages|post|reset> [--json|--jsonl]
+      instant-swift-data examples microblog <seed|feed|profiles|profile|setup-profile|post|like|unlike|delete-post|reset> [--json|--jsonl]
       instant-swift-data examples reminders <seed|list|stats|tags|list-tags|search|add-list|rename-list|delete-list|add|update|complete|delete|delete-completed|add-tag|remove-tag> [--json|--jsonl]
       instant-swift-data examples sync-ups <seed|list|detail|add|edit|add-attendee|record|record-demo|delete|delete-attendee|delete-meeting> [--json|--jsonl]
     """
@@ -6008,6 +6554,10 @@ struct InstantSwiftDataCLI {
 
   private static var chatUsage: String {
     CLIExamplesChatUsage.chat
+  }
+
+  private static var microblogUsage: String {
+    CLIExamplesMicroblogUsage.microblog
   }
 
   private static var syncUpsUsage: String {
@@ -6648,6 +7198,38 @@ private struct ChatOutput: Codable, Sendable {
   var messageCount: Int
   var channels: [ChatChannelRecord]
   var messages: [ChatMessageRecord]
+}
+
+private struct MicroblogOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var changedID: String?
+  var selectedUserID: String?
+  var selectedProfile: MicroblogProfileRecord?
+  var selectedPostID: String?
+  var authUserID: String?
+  var transport: String
+  var userQueryID: String
+  var profileQueryID: String
+  var postQueryID: String
+  var likeQueryID: String
+  var feedQueryID: String
+  var userCacheKey: String
+  var profileCacheKey: String
+  var postCacheKey: String
+  var likeCacheKey: String
+  var feedCacheKey: String
+  var pendingMutationCount: Int
+  var userCount: Int
+  var profileCount: Int
+  var postCount: Int
+  var likeCount: Int
+  var users: [MicroblogUserRecord]
+  var profiles: [MicroblogProfileRecord]
+  var posts: [MicroblogPostRecord]
+  var likes: [MicroblogLikeRecord]
+  var feed: [MicroblogFeedPostRecord]
 }
 
 private struct RemindersOutput: Codable, Sendable {

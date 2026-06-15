@@ -582,6 +582,140 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func examplesMicroblogLeafParserParsesCommandsAndOptions() throws {
+    expectNoDifference(try parseExamplesMicroblogLeaf(["seed"]), .seed)
+    expectNoDifference(try parseExamplesMicroblogLeaf(["feed"]), .feed)
+    expectNoDifference(try parseExamplesMicroblogLeaf(["posts"]), .feed)
+    expectNoDifference(try parseExamplesMicroblogLeaf(["profiles"]), .profiles)
+    expectNoDifference(try parseExamplesMicroblogLeaf(["profile"]), .profile(userID: nil))
+    expectNoDifference(
+      try parseExamplesMicroblogLeaf(["profile", "user-1"]),
+      .profile(userID: "user-1")
+    )
+    expectNoDifference(
+      try parseExamplesMicroblogLeaf(["setup-profile", "Blob", " @blob "]),
+      .setupProfile(displayName: "Blob", handle: "@blob")
+    )
+    expectNoDifference(
+      try parseExamplesMicroblogLeaf(["create-profile", "Blob Jr", "blob-jr"]),
+      .setupProfile(displayName: "Blob Jr", handle: "blob-jr")
+    )
+    expectNoDifference(
+      try parseExamplesMicroblogLeaf(["post", "Hello", "there"]),
+      .post(CLIExamplesMicroblogPostInvocation(content: "Hello there"))
+    )
+    expectNoDifference(
+      try parseExamplesMicroblogLeaf(["post", "--color", "bg-green-100", "Hello"]),
+      .post(CLIExamplesMicroblogPostInvocation(content: "Hello", color: "bg-green-100"))
+    )
+    expectNoDifference(
+      try parseExamplesMicroblogLeaf(["like", "post-1"]),
+      .like(postID: "post-1")
+    )
+    expectNoDifference(
+      try parseExamplesMicroblogLeaf(["unlike", "post-1"]),
+      .unlike(postID: "post-1")
+    )
+    expectNoDifference(
+      try parseExamplesMicroblogLeaf(["delete-post", "post-1"]),
+      .deletePost(postID: "post-1")
+    )
+    expectNoDifference(
+      try parseExamplesMicroblogLeaf(["delete", "post-1"]),
+      .deletePost(postID: "post-1")
+    )
+    expectNoDifference(try parseExamplesMicroblogLeaf(["reset"]), .reset)
+    expectNoDifference(
+      try parseExamplesMicroblogLeaf(["dance", "--fast"]),
+      .unknown("dance")
+    )
+  }
+
+  @Test
+  func examplesMicroblogLeafParserReportsMalformedArguments() throws {
+    try expectExamplesMicroblogLeafParseError(
+      [],
+      description: CLIExamplesMicroblogUsage.microblog
+    )
+    try expectExamplesMicroblogLeafParseError(
+      ["seed", "unexpected"],
+      description: CLIExamplesMicroblogUsage.seed
+    )
+    try expectExamplesMicroblogLeafParseError(
+      ["feed", "unexpected"],
+      description: CLIExamplesMicroblogUsage.feed
+    )
+    try expectExamplesMicroblogLeafParseError(
+      ["profiles", "unexpected"],
+      description: CLIExamplesMicroblogUsage.profiles
+    )
+    try expectExamplesMicroblogLeafParseError(
+      ["profile", "  "],
+      description: CLIExamplesMicroblogUsage.profile
+    )
+    try expectExamplesMicroblogLeafParseError(
+      ["profile", "user-1", "unexpected"],
+      description: CLIExamplesMicroblogUsage.profile
+    )
+    try expectExamplesMicroblogLeafParseError(
+      ["setup-profile"],
+      description: CLIExamplesMicroblogUsage.setupProfile
+    )
+    try expectExamplesMicroblogLeafParseError(
+      ["setup-profile", "Blob"],
+      description: CLIExamplesMicroblogUsage.setupProfile
+    )
+    try expectExamplesMicroblogLeafParseError(
+      ["setup-profile", "Blob", "  "],
+      description: CLIExamplesMicroblogUsage.setupProfile
+    )
+    try expectExamplesMicroblogLeafParseError(
+      ["setup-profile", "Blob", "blob", "unexpected"],
+      description: CLIExamplesMicroblogUsage.setupProfile
+    )
+    try expectExamplesMicroblogLeafParseError(
+      ["post"],
+      description: CLIExamplesMicroblogUsage.post
+    )
+    try expectExamplesMicroblogLeafParseError(
+      ["post", "--color"],
+      description: CLIExamplesMicroblogUsage.post
+    )
+    try expectExamplesMicroblogLeafParseError(
+      ["post", "--color", "  ", "Hello"],
+      description: CLIExamplesMicroblogUsage.post
+    )
+    try expectExamplesMicroblogLeafParseError(
+      ["post", "--surprise", "Hello"],
+      description: "Unknown microblog post option: --surprise. \(CLIExamplesMicroblogUsage.post)"
+    )
+    try expectExamplesMicroblogLeafParseError(
+      ["like"],
+      description: CLIExamplesMicroblogUsage.like
+    )
+    try expectExamplesMicroblogLeafParseError(
+      ["like", "  "],
+      description: CLIExamplesMicroblogUsage.like
+    )
+    try expectExamplesMicroblogLeafParseError(
+      ["like", "post-1", "unexpected"],
+      description: CLIExamplesMicroblogUsage.like
+    )
+    try expectExamplesMicroblogLeafParseError(
+      ["unlike"],
+      description: CLIExamplesMicroblogUsage.unlike
+    )
+    try expectExamplesMicroblogLeafParseError(
+      ["delete-post"],
+      description: CLIExamplesMicroblogUsage.deletePost
+    )
+    try expectExamplesMicroblogLeafParseError(
+      ["reset", "unexpected"],
+      description: CLIExamplesMicroblogUsage.reset
+    )
+  }
+
+  @Test
   func examplesSyncUpsLeafParserParsesCommandsAndOptions() throws {
     expectNoDifference(try parseExamplesSyncUpsLeaf(["seed"]), .seed)
     expectNoDifference(
@@ -2318,6 +2452,10 @@ struct CLIArgumentParserTests {
       .chat(arguments: ["seed"])
     )
     expectNoDifference(
+      try parseExamples(["microblog", "seed"]),
+      .microblog(arguments: ["seed"])
+    )
+    expectNoDifference(
       try parseExamples(["todos"]),
       .todos(CLIExamplesTodosInvocation(command: nil, arguments: []))
     )
@@ -2966,6 +3104,15 @@ private func parseExamplesChatLeaf(
   return invocation
 }
 
+private func parseExamplesMicroblogLeaf(
+  _ arguments: [String]
+) throws -> CLIExamplesMicroblogLeafInvocation {
+  var input = arguments[...]
+  let invocation = try CLIExamplesMicroblogLeafParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseExamplesSyncUpsLeaf(
   _ arguments: [String]
 ) throws -> CLIExamplesSyncUpsLeafInvocation {
@@ -3450,6 +3597,19 @@ private func expectExamplesChatLeafParseError(
     _ = try parseExamplesChatLeaf(arguments)
     Issue.record("Expected examples chat parser to reject \(arguments).")
   } catch let error as CLIExamplesChatArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectExamplesMicroblogLeafParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseExamplesMicroblogLeaf(arguments)
+    Issue.record("Expected examples microblog parser to reject \(arguments).")
+  } catch let error as CLIExamplesMicroblogArgumentError {
     expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }

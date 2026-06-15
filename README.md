@@ -138,6 +138,22 @@ swift run instant-swift-data examples chat messages "$GENERAL_CHANNEL_ID" --json
 swift run instant-swift-data examples chat reset --json
 ```
 
+Run the local Instant website-style microblog demo:
+
+```bash
+export INSTANT_SWIFT_DATA_HOME="$(mktemp -d)"
+swift run instant-swift-data examples microblog seed --json
+SEED_POST_ID="$(swift run instant-swift-data examples microblog feed --json | jq -r '.feed[0].post.id')"
+swift run instant-swift-data examples microblog feed --jsonl
+swift run instant-swift-data auth token microblog-refresh --user-id user-1 --json
+swift run instant-swift-data examples microblog setup-profile "CLI User" cli-user --json
+POST_ID="$(swift run instant-swift-data examples microblog post "Hello from the CLI microblog" --color bg-green-100 --json | jq -r '.changedID')"
+swift run instant-swift-data examples microblog like "$SEED_POST_ID" --json
+swift run instant-swift-data examples microblog unlike "$SEED_POST_ID" --json
+swift run instant-swift-data examples microblog delete-post "$POST_ID" --json
+swift run instant-swift-data examples microblog reset --json
+```
+
 Inspect the durable cache and optimistic outbox:
 
 ```bash

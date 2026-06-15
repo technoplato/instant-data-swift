@@ -1076,6 +1076,16 @@ public enum InstantSwiftDataParityCoverage {
       status: .adapted,
       notes: "The Instant CLI ports the website chat example into local channel/message refs, deterministic seed/reset tooling, guest auto-login for posts, and logged-in author attribution."
     ),
+    instant(
+      id: "instant.website.microblog.local-cli",
+      sourceFile: "upstream/instant/client/www/_examples/microblog.md",
+      sourceTestName: "$users/profiles/posts/likes feed, auth profile, likes, and cascade seed/reset",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/CLITests.swift",
+      swiftTestName: "cliMicroblogExampleSeedsAuthPostsLikesAndCascadesAcrossLaunches",
+      surface: "examples-microblog",
+      status: .adapted,
+      notes: "The Instant CLI ports the website microblog into local $users/profile/post/like refs, deterministic seed/reset tooling, auth-gated profile setup, post/like/unlike flows, and cascade delete proof."
+    ),
     sqlite(
       id: "sqlite.cloudkit-demo.local-counter-share",
       sourceFile: "upstream/sqlite-data/Examples/CloudKitDemo/CountersListFeature.swift",

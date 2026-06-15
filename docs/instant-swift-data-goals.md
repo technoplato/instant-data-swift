@@ -665,11 +665,23 @@ Agent-oriented output modes are required:
   signed-out posts auto-create a local guest session, and posts after
   `instant-swift-data auth token <refresh-token> --user-id <user-id>` preserve
   logged-in author attribution across CLI launches.
+- run the local Instant website-style microblog port with
+  `instant-swift-data examples microblog seed`,
+  `instant-swift-data examples microblog feed --jsonl`,
+  `instant-swift-data examples microblog setup-profile "Display Name" <handle>`,
+  `instant-swift-data examples microblog post "hello"`,
+  `instant-swift-data examples microblog like <post-id>`,
+  `instant-swift-data examples microblog unlike <post-id>`,
+  `instant-swift-data examples microblog delete-post <post-id>`, and
+  `instant-swift-data examples microblog reset`; `$users`, profiles, posts, and
+  likes are linked with the upstream cascade shape, and profile/post/like
+  mutations require an auth session from
+  `instant-swift-data auth token <refresh-token> --user-id <user-id>`.
 - run local admin write/query helpers such as
   `instant-swift-data admin transact notes note-1 --merge '{"title":"admin note"}' --transaction-id tx-admin-note-1`
   and `instant-swift-data admin query notes --json` for durable terminal
   ground-truth checks until real Instant admin transport is available.
-- run example business commands directly, such as todo/reminder/sync-up/chat
+- run example business commands directly, such as todo/reminder/sync-up/chat/microblog
   create, list, update, delete, share, accept, upload, and stream operations.
 
 Example command shapes:

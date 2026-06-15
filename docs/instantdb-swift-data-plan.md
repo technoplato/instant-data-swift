@@ -803,6 +803,14 @@ Create `validation/` with:
   `chatChannels`/`chatMessages` namespaces. A signed-out post creates a local
   guest session, while posts after `auth token --user-id` preserve logged-in
   author attribution across CLI launches.
+- Microblog: the local Instant website-style microblog port exposes durable
+  `examples microblog seed`, `feed`, `profiles`, `profile [user-id]`,
+  `setup-profile "Display Name" <handle>`, `post "content" [--color color]`,
+  `like <post-id>`, `unlike <post-id>`, `delete-post <post-id>`, and `reset`
+  commands over linked `$users`, `profiles`, `posts`, and `likes` namespaces.
+  Feed queries include author profiles and reverse likes, auth-gated mutations
+  preserve the current user profile across launches, and deleting users/posts
+  proves the upstream cascade shape.
 - CLI: `instant-swift-data examples todos add "do the dishes"` persists auth,
   local IDs, cache, and outbox state for a later CLI invocation.
 - Permissions: generated permissions reject an unauthorized write in both
