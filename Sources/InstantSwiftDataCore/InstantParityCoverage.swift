@@ -177,6 +177,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift materializes date attributes as Date values after coercing Instant-compatible inputs."
     ),
     instant(
+      id: "instant.store.json-serialization",
+      sourceFile: storeSource,
+      sourceTestName: "JSON serialization round-trips",
+      swiftFile: storeParitySwiftFile,
+      swiftTestName: "storeSnapshotJSONRoundTripsAndRestoresMaterializedLinks",
+      surface: "triple-store",
+      status: .adapted,
+      notes: "Swift Codable snapshots encode attributes and triples, decode back to the same value, and rematerialize forward/reverse links from the restored indexes."
+    ),
+    instant(
       id: "instant.utils.date-coercion",
       sourceFile: "upstream/instant/client/packages/core/__tests__/src/utils/dates.test.ts",
       sourceTestName: "coerceToDate valid strings, invalid strings, and edge cases",

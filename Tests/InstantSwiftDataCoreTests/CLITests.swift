@@ -5373,9 +5373,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 75)
+    expectNoDifference(jsonOutput.recordCount, 76)
     expectNoDifference(jsonOutput.exactCount, 11)
-    expectNoDifference(jsonOutput.adaptedCount, 61)
+    expectNoDifference(jsonOutput.adaptedCount, 62)
     expectNoDifference(jsonOutput.blockedCount, 3)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -5472,6 +5472,11 @@ extension InstantStoreTests {
     )
     #expect(
       jsonOutput.records.contains {
+        $0.id == "instant.store.json-serialization" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
         $0.id == "sqlite.fetch-subscription.explicit-cancel" && $0.status == "adapted"
       }
     )
@@ -5564,7 +5569,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 75"))
+    #expect(humanOutput.contains("records: 76"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 
