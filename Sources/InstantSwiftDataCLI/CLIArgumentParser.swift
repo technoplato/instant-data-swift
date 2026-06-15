@@ -49,7 +49,7 @@ public struct CLIInvocation: Equatable, Sendable {
 
 public enum CLIExamplesInvocation: Equatable, Sendable {
   case todos(CLIExamplesTodosInvocation)
-  case auth(arguments: [String])
+  case auth(CLIExamplesAuthLeafInvocation)
   case appBuilder(arguments: [String])
   case chat(arguments: [String])
   case counters(CLIExamplesCountersLeafInvocation)
@@ -2408,9 +2408,7 @@ public struct CLIExamplesParser: Parser {
       return .todos(try CLIExamplesTodosParser().parse(&input))
 
     case "auth", "authentication", "magic-code-auth":
-      let arguments = Array(input)
-      input.removeAll()
-      return .auth(arguments: arguments)
+      return .auth(try CLIExamplesAuthLeafParser().parse(&input))
 
     case "app-builder", "appbuilder", "builder":
       let arguments = Array(input)

@@ -430,8 +430,8 @@ struct InstantSwiftDataCLI {
       throw CLIError(error.description, exitCode: error.exitCode)
     }
     switch invocation {
-    case let .auth(arguments):
-      try await runAuthRecipe(arguments: arguments, output: output)
+    case let .auth(leaf):
+      try await runAuthRecipe(leaf: leaf, output: output)
       return
 
     case let .appBuilder(arguments):
@@ -507,15 +507,7 @@ struct InstantSwiftDataCLI {
     }
   }
 
-  private static func runAuthRecipe(arguments: [String], output: OutputMode) async throws {
-    let leaf: CLIExamplesAuthLeafInvocation
-    do {
-      var input = arguments[...]
-      leaf = try CLIExamplesAuthLeafParser().parse(&input)
-    } catch let error as CLIExamplesAuthArgumentError {
-      throw CLIError(error.description, exitCode: error.exitCode)
-    }
-
+  private static func runAuthRecipe(leaf: CLIExamplesAuthLeafInvocation, output: OutputMode) async throws {
     if case let .unknown(command) = leaf {
       throw CLIError("Unknown auth recipe command: \(command)", exitCode: 64)
     }

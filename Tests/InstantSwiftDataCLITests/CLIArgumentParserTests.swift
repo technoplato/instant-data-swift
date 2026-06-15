@@ -135,18 +135,18 @@ struct CLIArgumentParserTests {
   }
 
   @Test
-  func examplesParserNormalizesAuthRecipeAliasesAndPreservesArguments() throws {
+  func examplesParserNormalizesAuthRecipeAliasesAndParsesLeaf() throws {
     expectNoDifference(
       try parseExamples(["auth", "send-code", "User@Example.com"]),
-      .auth(arguments: ["send-code", "User@Example.com"])
+      .auth(.sendCode(email: "User@Example.com"))
     )
     expectNoDifference(
       try parseExamples(["authentication", "verify", "user@example.com", "123456"]),
-      .auth(arguments: ["verify", "user@example.com", "123456"])
+      .auth(.verifyCode(email: "user@example.com", code: "123456"))
     )
     expectNoDifference(
       try parseExamples(["magic-code-auth", "status"]),
-      .auth(arguments: ["status"])
+      .auth(.status)
     )
   }
 

@@ -786,6 +786,46 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliMalformedExamplesAuthArgumentsDoNotBootstrapState() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    func expectMalformed(_ arguments: [String], contains expectedFragment: String) throws {
+      let result = try runCLIResult(arguments, homeURL: homeURL)
+      expectNoDifference(result.status, 64)
+      #expect(result.error.contains(expectedFragment))
+    }
+
+    try expectMalformed(
+      ["examples", "auth", "--json"],
+      contains: "examples auth <send-code|verify-code|status|watch|sign-out>"
+    )
+    try expectMalformed(
+      ["examples", "authentication", "send-code", "--json"],
+      contains: "examples auth send-code <email>"
+    )
+    try expectMalformed(
+      ["examples", "auth", "verify-code", "user@example.com", "--json"],
+      contains: "examples auth verify-code <email> <code>"
+    )
+    try expectMalformed(
+      ["examples", "auth", "watch", "--events", "2", "--jsonl"],
+      contains: "examples auth watch --events 1"
+    )
+    try expectMalformed(
+      ["examples", "magic-code-auth", "dance", "--json"],
+      contains: "Unknown auth recipe command: dance"
+    )
+
+    expectNoDifference(
+      try FileManager.default.contentsOfDirectory(atPath: homeURL.path),
+      []
+    )
+  }
+
+  @Test
   func cliMalformedTodoLinksArgumentsDoNotBootstrapState() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
