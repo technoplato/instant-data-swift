@@ -427,6 +427,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift uses declared attributes and normalized physical triples rather than JavaScript add-attr generation; the reverse-side schema link intent is represented as a second write to the same forward ref attr, dedupes locally, and preserves both transport add-triple intents."
     ),
     instant(
+      id: "instant.instaml.schema-custom-lookup-attrs",
+      sourceFile: instamlSource,
+      sourceTestName: "Schema: lookup creates unique attrs for custom lookups",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "schemaLookupRefsUseDeclaredUniqueAttrForInstamlCustomLookupParity",
+      surface: "instaml",
+      status: .adapted,
+      notes: "Swift uses declared attributes rather than JavaScript add-attr generation; schema metadata preserves the unique/indexed lookup attr, unresolved lookup writes remain pending for transport, and seeded local lookup rows resolve optimistically."
+    ),
+    instant(
       id: "instant.weak-hash",
       sourceFile: weakHashSource,
       sourceTestName: "selected fields / object key order / date / known query",

@@ -1886,6 +1886,177 @@ struct InstantStoreTests {
   }
 
   @Test
+  func schemaLookupRefsUseDeclaredUniqueAttrForInstamlCustomLookupParity() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let source =
+      "upstream/instant/client/packages/core/__tests__/src/instaml.test.ts "
+      + "Schema: lookup creates unique attrs for custom lookups "
+      + "[adapted: Swift uses declared attrs; lookup entities and id values stay lookup-shaped for transport.]"
+    let attributes = [
+      InstantAttribute(
+        id: "users/nickname",
+        namespace: "users",
+        name: "nickname",
+        valueType: .string,
+        isRequired: false,
+        isIndexed: true,
+        isUnique: true
+      ),
+      InstantAttribute(
+        id: "users/handle",
+        namespace: "users",
+        name: "handle",
+        valueType: .string,
+        isRequired: false
+      ),
+    ]
+    let lookup = InstantLookupRef(
+      attributeID: "users/nickname",
+      value: .string("stopanator")
+    )
+    let transaction = InstantStoreTransaction(
+      id: "tx-instaml-schema-custom-lookup",
+      operations: [
+        .insertByLookup(
+          entity: lookup,
+          attributeID: "users/handle",
+          value: .string("stopa"),
+          txID: "tx-instaml-schema-custom-lookup",
+          txTime: time
+        ),
+        .insertByLookup(
+          entity: lookup,
+          attributeID: "users/id",
+          value: .lookupRef(lookup),
+          txID: "tx-instaml-schema-custom-lookup",
+          txTime: time
+        ),
+      ]
+    )
+
+    let store = InstantStore(snapshot: InstantStoreSnapshot(attributes: attributes))
+    _ = try await store.prepare(transaction)
+    let snapshot = await store.snapshot()
+    let attributesByID = Dictionary(uniqueKeysWithValues: snapshot.attributes.map { ($0.id, $0) })
+    let nicknameAttribute = try #require(attributesByID["users/nickname"])
+    expectNoDifference(nicknameAttribute.namespace, "users", source)
+    expectNoDifference(nicknameAttribute.name, "nickname", source)
+    expectNoDifference(nicknameAttribute.valueType, .string, source)
+    expectNoDifference(nicknameAttribute.cardinality, .one, source)
+    expectNoDifference(nicknameAttribute.isUnique, true, source)
+    expectNoDifference(nicknameAttribute.isIndexed, true, source)
+    expectNoDifference(snapshot.triples, [], source)
+
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: attributes
+      )
+    )
+    let unresolvedResult = try await runtime.transact(transaction, createdAt: time)
+    let emptyUsers = try await runtime.query(
+      InstantQueryPlan(id: "schema-custom-lookup.empty", namespace: "users")
+    )
+    expectNoDifference(unresolvedResult.changedEntityIDs, [], source)
+    expectNoDifference(unresolvedResult.tripleCount, 0, source)
+    expectNoDifference(emptyUsers, [], source)
+
+    let transportMutations = await runtime.outboxTransportMutations()
+    expectNoDifference(transportMutations.map(\.transactionID), ["tx-instaml-schema-custom-lookup"], source)
+    let transportMutation = try #require(transportMutations.first)
+    expectNoDifference(
+      transportMutation.txSteps,
+      [
+        .addTriple(entity: .lookup(lookup), attributeID: "users/handle", value: .string("stopa")),
+        .addTriple(
+          entity: .lookup(lookup),
+          attributeID: "users/id",
+          value: .array([.string("users/nickname"), .string("stopanator")])
+        ),
+      ],
+      source
+    )
+
+    let data = try JSONEncoder().encode(transportMutation)
+    let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let txSteps = try #require(object["txSteps"] as? [[Any]])
+    expectNoDifference(txSteps.count, 2, source)
+    expectNoDifference(txSteps.map { $0.first as? String }, ["add-triple", "add-triple"], source)
+    expectNoDifference(txSteps.map(\.count), [4, 4], source)
+    let firstLookupEntity = try #require(txSteps[0][1] as? [Any])
+    expectNoDifference(firstLookupEntity.count, 2, source)
+    expectNoDifference(firstLookupEntity[0] as? String, "users/nickname", source)
+    expectNoDifference(firstLookupEntity[1] as? String, "stopanator", source)
+    expectNoDifference(txSteps[0][2] as? String, "users/handle", source)
+    expectNoDifference(txSteps[0][3] as? String, "stopa", source)
+    let secondLookupEntity = try #require(txSteps[1][1] as? [Any])
+    expectNoDifference(secondLookupEntity.count, 2, source)
+    expectNoDifference(secondLookupEntity[0] as? String, "users/nickname", source)
+    expectNoDifference(secondLookupEntity[1] as? String, "stopanator", source)
+    expectNoDifference(txSteps[1][2] as? String, "users/id", source)
+    let lookupValue = try #require(txSteps[1][3] as? [Any])
+    expectNoDifference(lookupValue.count, 2, source)
+    expectNoDifference(lookupValue[0] as? String, "users/nickname", source)
+    expectNoDifference(lookupValue[1] as? String, "stopanator", source)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-instaml-schema-custom-lookup-seed",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: "user-1",
+              attributeID: "users/id",
+              value: .string("user-1"),
+              txID: "tx-instaml-schema-custom-lookup-seed",
+              txTime: InstantTimestamp(milliseconds: time.milliseconds + 1)
+            )
+          ),
+          .insert(
+            InstantTriple(
+              entityID: "user-1",
+              attributeID: "users/nickname",
+              value: .string("local-stopanator"),
+              txID: "tx-instaml-schema-custom-lookup-seed",
+              txTime: InstantTimestamp(milliseconds: time.milliseconds + 1)
+            )
+          ),
+        ]
+      ),
+      createdAt: InstantTimestamp(milliseconds: time.milliseconds + 1)
+    )
+    let localLookup = InstantLookupRef(
+      attributeID: "users/nickname",
+      value: .string("local-stopanator")
+    )
+    let localResult = try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-instaml-schema-custom-lookup-local",
+        operations: [
+          .insertByLookup(
+            entity: localLookup,
+            attributeID: "users/handle",
+            value: .string("stopa-local"),
+            txID: "tx-instaml-schema-custom-lookup-local",
+            txTime: InstantTimestamp(milliseconds: time.milliseconds + 2)
+          )
+        ]
+      ),
+      createdAt: InstantTimestamp(milliseconds: time.milliseconds + 2)
+    )
+    let users = try await runtime.query(
+      InstantQueryPlan(id: "schema-custom-lookup.users", namespace: "users")
+    )
+    expectNoDifference(localResult.changedEntityIDs, ["user-1"], source)
+    expectNoDifference(localResult.tripleCount, 3, source)
+    expectNoDifference(users.map(\.id), ["user-1"], source)
+    expectNoDifference(users.first?.values["nickname"]?.first, .string("local-stopanator"), source)
+    expectNoDifference(users.first?.values["handle"]?.first, .string("stopa-local"), source)
+  }
+
+  @Test
   func transportMutationPreservesLookupEntitiesForInstamlLinkAndUnlinkParity() throws {
     let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let userLookup = InstantLookupRef(
