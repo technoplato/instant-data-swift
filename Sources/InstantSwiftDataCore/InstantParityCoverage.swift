@@ -687,6 +687,26 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift writes the declared users/user_prefs relation directly; lookup link values preserve the reverse ref lookup attr id and resolve locally through the declared forward relation."
     ),
     instant(
+      id: "instant.instaml.lookups-create-entities-from-links",
+      sourceFile: instamlSource,
+      sourceTestName: "lookups create entities from links",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "transportMutationPreservesLookupEntitiesForInstamlLinkAndUnlinkParity",
+      surface: "instaml",
+      status: .adapted,
+      notes: "Swift models link creation by emitting an id add-triple for the lookup entity and a relation add-triple whose entity slot preserves the same two-element lookup ref."
+    ),
+    instant(
+      id: "instant.instaml.lookups-create-entities-from-unlinks",
+      sourceFile: instamlSource,
+      sourceTestName: "lookups create entities from unlinks",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "transportMutationPreservesLookupEntitiesForInstamlLinkAndUnlinkParity",
+      surface: "instaml",
+      status: .adapted,
+      notes: "Swift models unlink creation by emitting an id add-triple for the lookup entity and a relation retract-triple whose entity slot preserves the same two-element lookup ref."
+    ),
+    instant(
       id: "instant.instaml.mode-update",
       sourceFile: instamlSource,
       sourceTestName: "mode: update",

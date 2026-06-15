@@ -5128,7 +5128,9 @@ struct InstantStoreTests {
     )
 
     let source =
-      "upstream instaml.test.ts: lookups create entities from links and unlinks."
+      "upstream/instant/client/packages/core/__tests__/src/instaml.test.ts "
+      + "lookups create entities from links / lookups create entities from unlinks "
+      + "[adapted: Swift writes declared attr ids directly and preserves lookup-shaped entity refs.]"
     expectNoDifference(linkMutation.preconditions, [], source)
     expectNoDifference(
       linkMutation.txSteps,

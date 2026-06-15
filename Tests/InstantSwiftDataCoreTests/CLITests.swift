@@ -8316,9 +8316,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 133)
+    expectNoDifference(jsonOutput.recordCount, 135)
     expectNoDifference(jsonOutput.exactCount, 19)
-    expectNoDifference(jsonOutput.adaptedCount, 111)
+    expectNoDifference(jsonOutput.adaptedCount, 113)
     expectNoDifference(jsonOutput.blockedCount, 3)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -8563,6 +8563,16 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.records.contains {
         $0.id == "instant.instaml.ref-lookup-link-value" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.instaml.lookups-create-entities-from-links" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.instaml.lookups-create-entities-from-unlinks" && $0.status == "adapted"
       }
     )
     #expect(
@@ -8823,7 +8833,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 133"))
+    #expect(humanOutput.contains("records: 135"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 
