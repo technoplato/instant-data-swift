@@ -307,6 +307,205 @@ struct InstantStoreTests {
   }
 
   @Test
+  func queryCacheRowsSaveReplaceAndReloadForPersistedObjectParity() async throws {
+    let source = persistedObjectSource(
+      "PersistedObject saves values to storage / merges existing values "
+        + "[adapted: Swift has no storage-memory merge callback; query cache rows replace existing keyed storage.]"
+    )
+    let cacheURL = try temporaryCacheURL()
+    let store = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await store.bootstrap()
+
+    let firstEntry = persistedObjectCacheEntry(
+      cacheKey: "cache-a",
+      updatedAt: InstantTimestamp(milliseconds: 1),
+      payload: "b"
+    )
+    let didSaveFirstEntry = try await store.saveQueryCache(
+      firstEntry,
+      expectedStoreRevision: 0
+    )
+    expectNoDifference(didSaveFirstEntry, true, source)
+    let firstEntries = try await store.loadQueryCache()
+    expectNoDifference(firstEntries, [firstEntry], source)
+
+    let reloadedStore = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await reloadedStore.bootstrap()
+    let reloadedEntries = try await reloadedStore.loadQueryCache()
+    expectNoDifference(reloadedEntries, [firstEntry], source)
+
+    let replacementEntry = persistedObjectCacheEntry(
+      cacheKey: "cache-a",
+      updatedAt: InstantTimestamp(milliseconds: 2),
+      payload: "merged-value-2"
+    )
+    let didSaveReplacementEntry = try await reloadedStore.saveQueryCache(
+      replacementEntry,
+      expectedStoreRevision: 0
+    )
+    expectNoDifference(didSaveReplacementEntry, true, source)
+
+    let secondReloadedStore = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await secondReloadedStore.bootstrap()
+    let secondReloadedEntries = try await secondReloadedStore.loadQueryCache()
+    expectNoDifference(secondReloadedEntries, [replacementEntry], source)
+  }
+
+  @Test
+  func queryCachePruningPreservesLiveKeysAndDropsOldestUnpreservedRowsForPersistedObjectParity()
+    async throws
+  {
+    let source = persistedObjectSource(
+      "PersistedObject garbage collects when we exceed max items "
+        + "[adapted: preservingCacheKeys models PersistedObject's live in-memory keys.]"
+    )
+    let cacheURL = try temporaryCacheURL()
+    let store = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await store.bootstrap()
+    let entries = try await savePersistedObjectCacheEntries(in: store)
+    let allKeys = Set(entries.map(\.cacheKey))
+    let liveKeysAfterUnloadingE = Set(entries.dropLast().map(\.cacheKey))
+
+    let protected = try await store.pruneQueryCache(
+      policy: InstantQueryCachePruningPolicy(maxEntries: 3),
+      preservingCacheKeys: allKeys
+    )
+    expectNoDifference(protected.removedCacheKeys, [], source)
+    expectNoDifference(protected.remainingCacheKeys, entries.map(\.cacheKey), source)
+
+    let afterUnloadingE = try await store.pruneQueryCache(
+      policy: InstantQueryCachePruningPolicy(maxEntries: 3),
+      preservingCacheKeys: liveKeysAfterUnloadingE
+    )
+    expectNoDifference(afterUnloadingE.removedCacheKeys, ["cache-e"], source)
+    expectNoDifference(afterUnloadingE.remainingCacheKeys, ["cache-a", "cache-b", "cache-c", "cache-d"], source)
+
+    let reloadedStore = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await reloadedStore.bootstrap()
+    let afterRelaunch = try await reloadedStore.pruneQueryCache(
+      policy: InstantQueryCachePruningPolicy(maxEntries: 3)
+    )
+    expectNoDifference(afterRelaunch.removedCacheKeys, ["cache-a"], source)
+    expectNoDifference(afterRelaunch.remainingCacheKeys, ["cache-b", "cache-c", "cache-d"], source)
+  }
+
+  @Test
+  func queryCachePruningUsesEncodedRowBytesForPersistedObjectSizeParity() async throws {
+    let source = persistedObjectSource(
+      "PersistedObject garbage collects when we exceed max size "
+        + "[adapted: Swift uses persisted JSON row bytes instead of a JavaScript objectSize callback.]"
+    )
+    let cacheURL = try temporaryCacheURL()
+    let store = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await store.bootstrap()
+    let entries = try await savePersistedObjectCacheEntries(in: store)
+    let allKeys = Set(entries.map(\.cacheKey))
+    let liveKeysAfterUnloadingE = Set(entries.dropLast().map(\.cacheKey))
+    let cEntry = try #require(entries.first { $0.cacheKey == "cache-c" })
+    let dEntry = try #require(entries.first { $0.cacheKey == "cache-d" })
+    let cAndDBudget = try encodedQueryCacheByteCount(cEntry) + encodedQueryCacheByteCount(dEntry)
+
+    let protected = try await store.pruneQueryCache(
+      policy: InstantQueryCachePruningPolicy(maxEncodedJSONBytes: cAndDBudget),
+      preservingCacheKeys: allKeys
+    )
+    expectNoDifference(protected.removedCacheKeys, [], source)
+    expectNoDifference(protected.remainingCacheKeys, entries.map(\.cacheKey), source)
+
+    let afterUnloadingE = try await store.pruneQueryCache(
+      policy: InstantQueryCachePruningPolicy(maxEncodedJSONBytes: cAndDBudget),
+      preservingCacheKeys: liveKeysAfterUnloadingE
+    )
+    expectNoDifference(afterUnloadingE.removedCacheKeys, ["cache-e"], source)
+    expectNoDifference(afterUnloadingE.remainingCacheKeys, ["cache-a", "cache-b", "cache-c", "cache-d"], source)
+
+    let reloadedStore = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await reloadedStore.bootstrap()
+    let afterRelaunch = try await reloadedStore.pruneQueryCache(
+      policy: InstantQueryCachePruningPolicy(maxEncodedJSONBytes: cAndDBudget)
+    )
+    expectNoDifference(afterRelaunch.removedCacheKeys, ["cache-a", "cache-b"], source)
+    expectNoDifference(afterRelaunch.remainingCacheKeys, ["cache-c", "cache-d"], source)
+    expectNoDifference(afterRelaunch.remainingEncodedJSONByteCount, cAndDBudget, source)
+  }
+
+  @Test
+  func queryCachePruningUsesUpdatedAtForPersistedObjectAgeParity() async throws {
+    let source = persistedObjectSource(
+      "PersistedObject garbage collects when we exceed max age "
+        + "[adapted: Swift uses instant_query_cache.updated_at_ms as the persisted age clock.]"
+    )
+    let cacheURL = try temporaryCacheURL()
+    let store = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await store.bootstrap()
+    let entries = try await savePersistedObjectCacheEntries(in: store)
+    let allKeys = Set(entries.map(\.cacheKey))
+    let liveKeysAfterUnloadingE = Set(entries.dropLast().map(\.cacheKey))
+
+    let protected = try await store.pruneQueryCache(
+      policy: InstantQueryCachePruningPolicy(maxAgeMilliseconds: 0),
+      now: InstantTimestamp(milliseconds: 100),
+      preservingCacheKeys: allKeys
+    )
+    expectNoDifference(protected.removedCacheKeys, [], source)
+    expectNoDifference(protected.remainingCacheKeys, entries.map(\.cacheKey), source)
+
+    let afterUnloadingE = try await store.pruneQueryCache(
+      policy: InstantQueryCachePruningPolicy(maxAgeMilliseconds: 0),
+      now: InstantTimestamp(milliseconds: 100),
+      preservingCacheKeys: liveKeysAfterUnloadingE
+    )
+    expectNoDifference(afterUnloadingE.removedCacheKeys, ["cache-e"], source)
+    expectNoDifference(afterUnloadingE.remainingCacheKeys, ["cache-a", "cache-b", "cache-c", "cache-d"], source)
+
+    let reloadedStore = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await reloadedStore.bootstrap()
+    let afterRelaunch = try await reloadedStore.pruneQueryCache(
+      policy: InstantQueryCachePruningPolicy(maxAgeMilliseconds: 0),
+      now: InstantTimestamp(milliseconds: 100)
+    )
+    expectNoDifference(
+      afterRelaunch.removedCacheKeys,
+      ["cache-a", "cache-b", "cache-c", "cache-d"],
+      source
+    )
+    expectNoDifference(afterRelaunch.remainingCacheKeys, [], source)
+  }
+
+  @Test
+  func queryCachePruningKeepsRowsAtPersistedObjectAgeCutoff() async throws {
+    let source = persistedObjectSource(
+      "PersistedObject garbage collects when we exceed max age "
+        + "[adapted: Swift pins the same strict updatedAt cutoff boundary.]"
+    )
+    let cacheURL = try temporaryCacheURL()
+    let store = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await store.bootstrap()
+    let boundaryEntry = persistedObjectCacheEntry(
+      cacheKey: "cache-boundary",
+      updatedAt: InstantTimestamp(milliseconds: 50),
+      payload: "boundary"
+    )
+    let olderEntry = persistedObjectCacheEntry(
+      cacheKey: "cache-older",
+      updatedAt: InstantTimestamp(milliseconds: 49),
+      payload: "older"
+    )
+    for entry in [olderEntry, boundaryEntry] {
+      let didSave = try await store.saveQueryCache(entry, expectedStoreRevision: 0)
+      expectNoDifference(didSave, true, source)
+    }
+
+    let result = try await store.pruneQueryCache(
+      policy: InstantQueryCachePruningPolicy(maxAgeMilliseconds: 50),
+      now: InstantTimestamp(milliseconds: 100)
+    )
+
+    expectNoDifference(result.removedCacheKeys, ["cache-older"], source)
+    expectNoDifference(result.remainingCacheKeys, ["cache-boundary"], source)
+  }
+
+  @Test
   func observeRefreshesDurableSnapshotBeforeInitialEmission() async throws {
     let cacheURL = try temporaryCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
@@ -13703,6 +13902,66 @@ struct InstantStoreTests {
       .appendingPathComponent("InstantSwiftDataTests-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     return directory.appendingPathComponent("state.sqlite")
+  }
+
+  private func persistedObjectSource(_ testName: String) -> String {
+    "upstream/instant/client/packages/core/__tests__/src/utils/PersistedObject.test.ts \(testName)"
+  }
+
+  private func savePersistedObjectCacheEntries(
+    in store: SQLitePersistenceStore
+  ) async throws -> [InstantCachedQuery] {
+    let entries = zip(["a", "b", "c", "d", "e"], [10, 20, 50, 50, 50]).enumerated().map {
+      offset,
+      value in
+      persistedObjectCacheEntry(
+        cacheKey: "cache-\(value.0)",
+        updatedAt: InstantTimestamp(milliseconds: Int64(offset + 1) * 10),
+        payload: String(repeating: value.0, count: value.1)
+      )
+    }
+    for entry in entries {
+      let didSave = try await store.saveQueryCache(entry, expectedStoreRevision: 0)
+      expectNoDifference(didSave, true)
+    }
+    return entries
+  }
+
+  private func persistedObjectCacheEntry(
+    cacheKey: String,
+    updatedAt: InstantTimestamp,
+    payload: String
+  ) -> InstantCachedQuery {
+    let queryID = "persisted-object-parity"
+    let plan = InstantQueryPlan(
+      id: queryID,
+      namespace: "persisted_object_cache",
+      filters: [.equals(field: "cacheKey", value: .string(cacheKey))]
+    )
+    return InstantCachedQuery(
+      cacheKey: cacheKey,
+      queryID: queryID,
+      plan: plan,
+      emission: InstantQueryEmission(
+        queryID: queryID,
+        sequence: updatedAt.milliseconds,
+        values: [
+          InstantEntitySnapshot(
+            id: cacheKey,
+            namespace: "persisted_object_cache",
+            values: ["payload": .one(.string(payload))]
+          )
+        ]
+      ),
+      updatedAt: updatedAt,
+      storeRevision: 0
+    )
+  }
+
+  private func encodedQueryCacheByteCount(_ entry: InstantCachedQuery) throws -> Int {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.sortedKeys]
+    return try encoder.encode(entry).count
   }
 
   private func iso8601MillisecondsString(from date: Date) -> String {

@@ -27,6 +27,41 @@ public struct InstantPersistenceState: Hashable, Sendable {
   }
 }
 
+public struct InstantQueryCachePruningPolicy: Hashable, Codable, Sendable {
+  public var maxAgeMilliseconds: Int64?
+  public var maxEntries: Int?
+  public var maxEncodedJSONBytes: Int?
+
+  public init(
+    maxAgeMilliseconds: Int64? = nil,
+    maxEntries: Int? = nil,
+    maxEncodedJSONBytes: Int? = nil
+  ) {
+    self.maxAgeMilliseconds = maxAgeMilliseconds
+    self.maxEntries = maxEntries
+    self.maxEncodedJSONBytes = maxEncodedJSONBytes
+  }
+}
+
+public struct InstantQueryCachePruningResult: Hashable, Codable, Sendable {
+  public var removedCacheKeys: [String]
+  public var remainingCacheKeys: [String]
+  public var remainingEntryCount: Int
+  public var remainingEncodedJSONByteCount: Int
+
+  public init(
+    removedCacheKeys: [String],
+    remainingCacheKeys: [String],
+    remainingEntryCount: Int,
+    remainingEncodedJSONByteCount: Int
+  ) {
+    self.removedCacheKeys = removedCacheKeys
+    self.remainingCacheKeys = remainingCacheKeys
+    self.remainingEntryCount = remainingEntryCount
+    self.remainingEncodedJSONByteCount = remainingEncodedJSONByteCount
+  }
+}
+
 public actor SQLitePersistenceStore {
   private let fileURL: URL
   private let connection: SQLiteConnection
@@ -438,6 +473,76 @@ public actor SQLitePersistenceStore {
       "SELECT json FROM instant_query_cache WHERE query_id = ? ORDER BY updated_at_ms, cache_key",
       [.text(queryID)]
     )
+  }
+
+  public func pruneQueryCache(
+    policy: InstantQueryCachePruningPolicy,
+    preservingCacheKeys: Set<String> = []
+  ) throws -> InstantQueryCachePruningResult {
+    try pruneQueryCache(
+      policy: policy,
+      now: InstantTimestamp(milliseconds: Self.nowMilliseconds()),
+      preservingCacheKeys: preservingCacheKeys
+    )
+  }
+
+  public func pruneQueryCache(
+    policy: InstantQueryCachePruningPolicy,
+    now: InstantTimestamp,
+    preservingCacheKeys: Set<String> = []
+  ) throws -> InstantQueryCachePruningResult {
+    try transaction {
+      var rows = try loadQueryCacheRowsWithoutTransaction()
+      var removedCacheKeys: [String] = []
+
+      func remove(_ row: QueryCacheStorageRow) throws -> Bool {
+        guard !preservingCacheKeys.contains(row.cacheKey) else { return false }
+        try execute(
+          "DELETE FROM instant_query_cache WHERE cache_key = ?",
+          [.text(row.cacheKey)]
+        )
+        rows.removeAll { $0.cacheKey == row.cacheKey }
+        removedCacheKeys.append(row.cacheKey)
+        return true
+      }
+
+      if let maxAgeMilliseconds = policy.maxAgeMilliseconds {
+        let cutoff = now.milliseconds - Swift.max(0, maxAgeMilliseconds)
+        for row in rows.filter({ $0.updatedAtMilliseconds < cutoff }) {
+          _ = try remove(row)
+        }
+      }
+
+      if let maxEntries = policy.maxEntries {
+        let entryLimit = Swift.max(0, maxEntries)
+        while rows.count > entryLimit {
+          guard let candidate = rows.first(where: { !preservingCacheKeys.contains($0.cacheKey) })
+          else { break }
+          _ = try remove(candidate)
+        }
+      }
+
+      if let maxEncodedJSONBytes = policy.maxEncodedJSONBytes {
+        let byteLimit = Swift.max(0, maxEncodedJSONBytes)
+        var byteCount = rows.reduce(0) { $0 + $1.byteCount }
+        while byteCount > byteLimit {
+          guard let candidate = rows.first(where: { !preservingCacheKeys.contains($0.cacheKey) })
+          else { break }
+          if try remove(candidate) {
+            byteCount = rows.reduce(0) { $0 + $1.byteCount }
+          } else {
+            break
+          }
+        }
+      }
+
+      return InstantQueryCachePruningResult(
+        removedCacheKeys: removedCacheKeys,
+        remainingCacheKeys: rows.map(\.cacheKey),
+        remainingEntryCount: rows.count,
+        remainingEncodedJSONByteCount: rows.reduce(0) { $0 + $1.byteCount }
+      )
+    }
   }
 
   public func saveStoreSnapshot(_ snapshot: InstantStoreSnapshot) throws {
@@ -1194,6 +1299,46 @@ public actor SQLitePersistenceStore {
     return String(cString: cString)
   }
 
+  private func loadQueryCacheRowsWithoutTransaction() throws -> [QueryCacheStorageRow] {
+    var statement: OpaquePointer?
+    try prepare(
+      """
+      SELECT cache_key, json, updated_at_ms
+      FROM instant_query_cache
+      ORDER BY updated_at_ms, query_id, cache_key
+      """,
+      statement: &statement
+    )
+    defer { sqlite3_finalize(statement) }
+
+    var rows: [QueryCacheStorageRow] = []
+    while true {
+      let code = sqlite3_step(statement)
+      if code == SQLITE_DONE {
+        return rows
+      }
+      guard code == SQLITE_ROW else {
+        throw persistenceError(operation: "read query cache rows", message: lastErrorMessage())
+      }
+      guard
+        let cacheKeyCString = sqlite3_column_text(statement, 0),
+        let jsonCString = sqlite3_column_text(statement, 1)
+      else {
+        throw persistenceError(
+          operation: "read query cache rows",
+          message: "SQLite returned a NULL query cache column."
+        )
+      }
+      rows.append(
+        QueryCacheStorageRow(
+          cacheKey: String(cString: cacheKeyCString),
+          json: String(cString: jsonCString),
+          updatedAtMilliseconds: sqlite3_column_int64(statement, 2)
+        )
+      )
+    }
+  }
+
   private func saveStoreSnapshotWithoutTransaction(_ snapshot: InstantStoreSnapshot) throws {
     try execute("DELETE FROM instant_attributes")
     try execute("DELETE FROM instant_triples")
@@ -1516,6 +1661,16 @@ private enum SQLiteBinding: Sendable {
   case int(Int64)
   case text(String)
   case null
+}
+
+private struct QueryCacheStorageRow: Sendable {
+  var cacheKey: String
+  var json: String
+  var updatedAtMilliseconds: Int64
+
+  var byteCount: Int {
+    json.utf8.count
+  }
 }
 
 private extension InstantError {

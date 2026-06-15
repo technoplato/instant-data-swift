@@ -717,6 +717,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift pins stable cache keys for equivalent query plans and canonical JSON/date values."
     ),
     instant(
+      id: "instant.persisted-object.query-cache-gc",
+      sourceFile: persistedObjectSource,
+      sourceTestName: "save / replace-adapted / garbage collect by entries, size, and age",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "queryCacheRowsSaveReplaceAndReloadForPersistedObjectParity / queryCachePruningPreservesLiveKeysAndDropsOldestUnpreservedRowsForPersistedObjectParity / queryCachePruningUsesEncodedRowBytesForPersistedObjectSizeParity / queryCachePruningUsesUpdatedAtForPersistedObjectAgeParity / queryCachePruningKeepsRowsAtPersistedObjectAgeCutoff",
+      surface: "query-cache-persistence",
+      status: .adapted,
+      notes: "Swift ports PersistedObject's durable keyed cache lifecycle to SQLite query cache rows: cache-key replacement covers saved/reloaded storage but not PersistedObject's custom storage-memory merge callback, preservingCacheKeys protects live rows, and max-entry, encoded-JSON-byte, and strict updated-at age policies prune only unloaded rows. Browser IndexedDB connection recovery and onKeyLoaded callbacks are not claimed."
+    ),
+    instant(
       id: "instant.schema.builder-shape",
       sourceFile: schemaSource,
       sourceTestName: "runs without exception",
@@ -1350,6 +1360,8 @@ public enum InstantSwiftDataParityCoverage {
     "upstream/instant/client/packages/core/__tests__/src/transactionValidation.test.ts"
   private static let weakHashSource =
     "upstream/instant/client/packages/core/__tests__/src/utils/weakHash.test.ts"
+  private static let persistedObjectSource =
+    "upstream/instant/client/packages/core/__tests__/src/utils/PersistedObject.test.ts"
   private static let schemaSource =
     "upstream/instant/client/packages/core/__tests__/src/schema.test.ts"
   private static let serializeSchemaSource =
