@@ -4202,6 +4202,48 @@ struct TypedAPITests {
   }
 
   @Test
+  func fetchAllLoadPreservesLastValueAndRecordsDecodeError() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_365.5)
+    let todo = TypedTodo(
+      id: InstantID(rawValue: "todo-before-load-error"),
+      text: "Before load error",
+      isCompleted: false,
+      createdAt: baseDate
+    )
+    let recorder = ClientCallRecorder(
+      queryResults: [
+        [
+          InstantEntitySnapshot(
+            id: "todo-invalid-load",
+            namespace: TypedTodo.instantNamespace,
+            values: [:]
+          )
+        ]
+      ]
+    )
+    let fetch = FetchAll<TypedTodo>(
+      wrappedValue: [todo],
+      TypedTodo.query.order(TypedTodo.createdAt)
+    )
+
+    do {
+      try await fetch.load(using: recordingClient(recorder))
+      Issue.record("Expected malformed query result to fail decoding.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .decodeFailed)
+      expectNoDifference(error.operation, "decode typed todo")
+    }
+
+    expectNoDifference(fetch.wrappedValue.map(\.text), ["Before load error"])
+    expectNoDifference(fetch.loadError?.code, .decodeFailed)
+    expectNoDifference(fetch.loadError?.operation, "decode typed todo")
+    expectNoDifference(fetch.isLoading, false)
+    let counts = await recorder.counts()
+    expectNoDifference(counts.queryCount, 1)
+    expectNoDifference(counts.observationCount, 0)
+  }
+
+  @Test
   func fetchAllLoadNilQueryClearsResultsWithoutCallingClient() async throws {
     let todo = TypedTodo(
       id: InstantID(rawValue: "todo-nil-query"),

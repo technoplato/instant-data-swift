@@ -447,6 +447,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "FetchOne can load and dynamically replace single selected Instant fields while preserving required not-found and optional nil semantics."
     ),
     sqlite(
+      id: "sqlite.fetch-all.decode-failure",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchAllTests.swift",
+      sourceTestName: "fetchFailure",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "fetchAllLoadPreservesLastValueAndRecordsDecodeError",
+      surface: "adapter-fetch",
+      status: .adapted,
+      notes: "A malformed Instant query result throws a decode error, records it on FetchAll, and preserves the last successful value."
+    ),
+    sqlite(
       id: "sqlite.fetch-wrappers.basic-matrix",
       sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchTests.swift",
       sourceTestName: "bareFetchAll / fetchAllWithQuery / fetchOneCountWithQuery / fetchOneOptional / fetchOneWithDefault / fetchOneOptional_SQL",
