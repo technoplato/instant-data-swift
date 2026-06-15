@@ -438,6 +438,8 @@ struct InstantSwiftDataCLI {
       throw CLIError("Unknown SyncUps theme. Use one of: \(syncUpThemeList).", exitCode: 64)
     } catch let error as CLIExamplesSyncUpsArgumentError {
       throw CLIError(error.description, exitCode: error.exitCode)
+    } catch let error as CLIExamplesRemindersArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
     switch invocation {
     case let .auth(leaf):
@@ -496,8 +498,8 @@ struct InstantSwiftDataCLI {
       try await runSyncUps(leaf: leaf, output: output)
       return
 
-    case let .reminders(arguments):
-      try await runReminders(arguments: arguments, output: output)
+    case let .reminders(leaf):
+      try await runReminders(leaf: leaf, output: output)
       return
 
     case let .todoLinks(leaf):
@@ -1333,15 +1335,10 @@ struct InstantSwiftDataCLI {
     }
   }
 
-  private static func runReminders(arguments: [String], output: OutputMode) async throws {
-    let invocation: CLIExamplesRemindersLeafInvocation
-    do {
-      var input = arguments[...]
-      invocation = try CLIExamplesRemindersLeafParser().parse(&input)
-    } catch let error as CLIExamplesRemindersArgumentError {
-      throw CLIError(error.description, exitCode: error.exitCode)
-    }
-
+  private static func runReminders(
+    leaf invocation: CLIExamplesRemindersLeafInvocation,
+    output: OutputMode
+  ) async throws {
     if case let .unknown(command) = invocation {
       throw CLIError("Unknown reminders command: \(command). \(remindersUsage)", exitCode: 64)
     }

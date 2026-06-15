@@ -388,11 +388,11 @@ local IDs are inspectable with `instant-swift-data local-id get <name>` and
 top-level command/output normalization with combinator-driven token parsing,
 typed todos, auth recipe, app-builder, todo-links, reactions,
 typing-indicator, avatar-stack, cursors, custom-cursors, merge-tile-game, and
-Stroopwafel, SyncUps, and CloudKitDemo/counters example leaf dispatch without
-executable reparsing, init scaffolding, schema/perms generate/verify, malformed
-no-bootstrap coverage for reactions, typing-indicator, avatar-stack, cursors,
-custom-cursors, merge-tile-game, Stroopwafel, SyncUps, plus the reminders
-example leaf arguments, auth show/guest/token/id-token/OAuth/OAuth
+Stroopwafel, SyncUps, Reminders, and CloudKitDemo/counters example leaf
+dispatch without executable reparsing, init scaffolding, schema/perms
+generate/verify, malformed no-bootstrap coverage for reactions,
+typing-indicator, avatar-stack, cursors, custom-cursors, merge-tile-game,
+Stroopwafel, SyncUps, and Reminders, auth show/guest/token/id-token/OAuth/OAuth
 URL/issuer/magic-code/watch/sign-out, admin query/transact, app show/select/ephemeral,
 cache inspect/attributes/triples, connection status/connect/close, local-id get/list,
 outbox inspect/transport/flush/confirm/fail/retry/drain, query todos,

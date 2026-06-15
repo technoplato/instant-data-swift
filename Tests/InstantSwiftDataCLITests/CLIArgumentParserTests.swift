@@ -1997,6 +1997,20 @@ struct CLIArgumentParserTests {
   @Test
   func examplesRemindersLeafParserParsesCommandsAndOptions() throws {
     expectNoDifference(try parseExamplesRemindersLeaf(["seed"]), .seed)
+    expectNoDifference(try parseExamples(["reminders", "seed"]), .reminders(.seed))
+    expectNoDifference(
+      try parseExamples(["reminders", "list", "--today"]),
+      .reminders(
+        .list(
+          CLIExamplesRemindersListInvocation(
+            event: "list",
+            includeCompleted: false,
+            scheduled: true,
+            today: true
+          )
+        )
+      )
+    )
     expectNoDifference(
       try parseExamplesRemindersLeaf([
         "list", "--refresh", "--list-id", "list-1", "--completed", "false",
@@ -2034,6 +2048,10 @@ struct CLIArgumentParserTests {
     expectNoDifference(
       try parseExamplesRemindersLeaf(["add-list", "Family", "Errands"]),
       .addList(title: "Family Errands")
+    )
+    expectNoDifference(
+      try parseExamples(["reminders", "add-list", "Family", "Errands"]),
+      .reminders(.addList(title: "Family Errands"))
     )
     expectNoDifference(
       try parseExamplesRemindersLeaf(["update-list", "list-1", "New", "Title"]),
@@ -3490,10 +3508,6 @@ struct CLIArgumentParserTests {
 
   @Test
   func examplesParserKeepsLegacyDispatchForOtherExamplesAndUnknowns() throws {
-    expectNoDifference(
-      try parseExamples(["reminders", "list", "--today"]),
-      .reminders(arguments: ["list", "--today"])
-    )
     expectNoDifference(
       try parseExamples(["todo-links", "seed"]),
       .todoLinks(.seed)

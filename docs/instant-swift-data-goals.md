@@ -461,9 +461,9 @@ manual `popFirstArgument` parsing is allowed only as a temporary legacy bridge.
 Current progress: top-level command/output token parsing and `examples todos`,
 auth recipe, app-builder, todo-links, CloudKitDemo/counters, reactions,
 typing-indicator, avatar-stack, cursors, custom-cursors, merge-tile-game,
-Stroopwafel, and SyncUps dispatch are combinator-backed, and the executable
-consumes those typed leaves produced by the parser instead of reparsing those
-branches.
+Stroopwafel, SyncUps, and Reminders dispatch are combinator-backed, and the
+executable consumes those typed leaves produced by the parser instead of
+reparsing those branches.
 
 The CLI must maintain durable state across sessions using the same persistence
 work as the core library:
