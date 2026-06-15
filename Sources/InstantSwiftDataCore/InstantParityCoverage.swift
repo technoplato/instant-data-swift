@@ -497,6 +497,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "InstantFetchKeyRequest gives @Fetch a reusable request object for composite values; the load path performs separate rows/count reads and the live task maps row emissions into the same value shape."
     ),
     sqlite(
+      id: "sqlite.case-studies.animation-initializers",
+      sourceFile: "upstream/sqlite-data/Examples/CaseStudies/Animations.swift",
+      sourceTestName: "@FetchAll/@FetchOne/@Fetch animation initializers",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "fetchWrappersAcceptSQLiteDataStyleAnimationInitializers",
+      surface: "adapter-swiftui",
+      status: .adapted,
+      notes: "SwiftUI-only animation initializer overloads preserve SQLiteData case-study call-site ergonomics while reusing the normal Instant load/request paths."
+    ),
+    sqlite(
       id: "sqlite.bindings.fetch-wrappers",
       sourceFile: "upstream/sqlite-data/Sources/SQLiteData/FetchAll.swift",
       sourceTestName: "projectedValue binding",

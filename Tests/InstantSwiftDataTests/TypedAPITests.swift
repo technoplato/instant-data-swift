@@ -4858,6 +4858,100 @@ struct TypedAPITests {
 
   #if canImport(SwiftUI)
     @Test
+    func fetchWrappersAcceptSQLiteDataStyleAnimationInitializers() async throws {
+      let baseDate = Date(timeIntervalSince1970: 1_700_000_369)
+      let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000706")!
+      let defaultTodo = TypedTodo(
+        id: InstantID(rawValue: "todo-animation-default"),
+        text: "Animation default",
+        isCompleted: false,
+        createdAt: baseDate.addingTimeInterval(-1)
+      )
+
+      try await withDependencies {
+        $0.date.now = baseDate
+        $0.uuid = .constant(fixedUUID)
+        try await $0.bootstrapInstantSwiftData(
+          appID: "fetch-animation-\(UUID().uuidString)",
+          context: .test,
+          initialAttributes: TypedTodo.instantAttributes
+        )
+      } operation: {
+        @Dependency(\.defaultInstantSwiftData) var db
+
+        try await db.transact(id: "tx-fetch-animation-create") {
+          TypedTodo.create(
+            id: InstantID(rawValue: "todo-animation-first"),
+            TypedTodo.text.set("Animation first"),
+            TypedTodo.isCompleted.set(false),
+            TypedTodo.createdAt.set(baseDate)
+          )
+          TypedTodo.create(
+            id: InstantID(rawValue: "todo-animation-second"),
+            TypedTodo.text.set("Animation second"),
+            TypedTodo.isCompleted.set(true),
+            TypedTodo.createdAt.set(baseDate.addingTimeInterval(1))
+          )
+        }
+
+        @FetchAll(
+          TypedTodo.query.order(TypedTodo.createdAt),
+          animation: .default
+        )
+        var animatedTodos: [TypedTodo]
+        try await $animatedTodos.load()
+        expectNoDifference(animatedTodos.map(\.text), ["Animation first", "Animation second"])
+
+        @FetchOne(
+          TypedTodo.query.order(TypedTodo.createdAt),
+          animation: .default
+        )
+        var animatedTodo: TypedTodo?
+        try await $animatedTodo.load()
+        expectNoDifference(animatedTodo?.text, "Animation first")
+
+        let requiredTodo = FetchOne(
+          wrappedValue: defaultTodo,
+          TypedTodo.query.order(TypedTodo.createdAt),
+          animation: .default
+        )
+        try await requiredTodo.load()
+        expectNoDifference(requiredTodo.wrappedValue.text, "Animation first")
+
+        let animatedTitles = FetchAll<String>(
+          TypedTodo.query.order(TypedTodo.createdAt),
+          selecting: TypedTodo.text,
+          animation: .default
+        )
+        try await animatedTitles.load()
+        expectNoDifference(animatedTitles.wrappedValue, ["Animation first", "Animation second"])
+
+        @Fetch(
+          wrappedValue: FetchCounter(count: 0),
+          load: { client in
+            FetchCounter(count: try await client.query(TypedTodo.query).count)
+          },
+          animation: .default
+        )
+        var animatedCount: FetchCounter
+        try await $animatedCount.load()
+        expectNoDifference(animatedCount.count, 2)
+
+        let requestFetch = Fetch(
+          wrappedValue: TypedTodoFacts(),
+          TypedTodoFactsRequest(
+            rowsQuery: TypedTodo.query.where(TypedTodo.isCompleted == false),
+            countQuery: TypedTodo.query
+          ),
+          animation: .default
+        )
+        try await requestFetch.load()
+        expectNoDifference(requestFetch.wrappedValue.todos.map(\.text), ["Animation first"])
+        expectNoDifference(requestFetch.wrappedValue.count, 2)
+      }
+    }
+
+    @Test
     func projectedFetchWrappersExposeSwiftUIBindings() {
       let todo = TypedTodo(
         id: InstantID(rawValue: "todo-binding"),

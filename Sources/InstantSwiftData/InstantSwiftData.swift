@@ -1676,6 +1676,16 @@ public struct FetchAll<Element: Sendable>: Sendable {
     self.operations = FetchOperationStorage()
   }
 
+  #if canImport(SwiftUI)
+    @_disfavoredOverload
+    public init(
+      wrappedValue: [Element] = [],
+      animation: Animation?
+    ) {
+      self.init(wrappedValue: wrappedValue)
+    }
+  #endif
+
   public init(wrappedValue: [Element] = []) where Element: InstantEntityModel {
     self.init(wrappedValue: wrappedValue, Element.query)
   }
@@ -1687,6 +1697,23 @@ public struct FetchAll<Element: Sendable>: Sendable {
     self.storage = FetchStorage(value: wrappedValue)
     self.operations = FetchOperationStorage(Self.operations(for: query))
   }
+
+  #if canImport(SwiftUI)
+    public init(
+      wrappedValue: [Element] = [],
+      animation: Animation?
+    ) where Element: InstantEntityModel {
+      self.init(wrappedValue: wrappedValue, Element.query)
+    }
+
+    public init(
+      wrappedValue: [Element] = [],
+      _ query: InstantEntityQuery<Element>,
+      animation: Animation?
+    ) where Element: InstantEntityModel {
+      self.init(wrappedValue: wrappedValue, query)
+    }
+  #endif
 
   public var projectedValue: Self {
     get { self }
@@ -1934,6 +1961,17 @@ extension FetchAll where Element: InstantValueDecodable & InstantValueRepresenta
     self.operations = FetchOperationStorage(Self.scalarOperations(for: query, selecting: field))
   }
 
+  #if canImport(SwiftUI)
+    public init<Entity: InstantEntityModel>(
+      wrappedValue: [Element] = [],
+      _ field: InstantAttributePath<Entity, Element>,
+      from query: InstantEntityQuery<Entity> = Entity.query,
+      animation: Animation?
+    ) {
+      self.init(wrappedValue: wrappedValue, field, from: query)
+    }
+  #endif
+
   public init<Entity: InstantEntityModel>(
     wrappedValue: [Element] = [],
     _ query: InstantEntityQuery<Entity>,
@@ -1941,6 +1979,17 @@ extension FetchAll where Element: InstantValueDecodable & InstantValueRepresenta
   ) {
     self.init(wrappedValue: wrappedValue, field, from: query)
   }
+
+  #if canImport(SwiftUI)
+    public init<Entity: InstantEntityModel>(
+      wrappedValue: [Element] = [],
+      _ query: InstantEntityQuery<Entity>,
+      selecting field: InstantAttributePath<Entity, Element>,
+      animation: Animation?
+    ) {
+      self.init(wrappedValue: wrappedValue, query, selecting: field)
+    }
+  #endif
 
   public func load<Entity: InstantEntityModel>(
     _ field: InstantAttributePath<Entity, Element>,
@@ -2130,6 +2179,17 @@ extension FetchAll {
     self.operations = FetchOperationStorage(Self.optionalScalarOperations(for: query, selecting: field))
   }
 
+  #if canImport(SwiftUI)
+    public init<Entity: InstantEntityModel, FieldValue>(
+      wrappedValue: [FieldValue?] = [],
+      _ field: InstantAttributePath<Entity, FieldValue>,
+      from query: InstantEntityQuery<Entity> = Entity.query,
+      animation: Animation?
+    ) where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+      self.init(wrappedValue: wrappedValue, field, from: query)
+    }
+  #endif
+
   public init<Entity: InstantEntityModel, FieldValue>(
     wrappedValue: [FieldValue?] = [],
     _ query: InstantEntityQuery<Entity>,
@@ -2137,6 +2197,17 @@ extension FetchAll {
   ) where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
     self.init(wrappedValue: wrappedValue, field, from: query)
   }
+
+  #if canImport(SwiftUI)
+    public init<Entity: InstantEntityModel, FieldValue>(
+      wrappedValue: [FieldValue?] = [],
+      _ query: InstantEntityQuery<Entity>,
+      selecting field: InstantAttributePath<Entity, FieldValue>,
+      animation: Animation?
+    ) where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+      self.init(wrappedValue: wrappedValue, query, selecting: field)
+    }
+  #endif
 
   public func load<Entity: InstantEntityModel, FieldValue>(
     _ field: InstantAttributePath<Entity, FieldValue>,
@@ -2372,6 +2443,16 @@ public struct FetchOne<Value: Sendable>: Sendable {
     self.operations = FetchOperationStorage()
   }
 
+  #if canImport(SwiftUI)
+    @_disfavoredOverload
+    public init(
+      wrappedValue: Value,
+      animation: Animation?
+    ) {
+      self.init(wrappedValue: wrappedValue)
+    }
+  #endif
+
   public var projectedValue: Self {
     get { self }
     nonmutating set {
@@ -2517,6 +2598,15 @@ extension FetchOne where Value: InstantEntityModel {
     self.init(wrappedValue: wrappedValue, Value.query)
   }
 
+  #if canImport(SwiftUI)
+    public init(
+      wrappedValue: Value,
+      animation: Animation?
+    ) {
+      self.init(wrappedValue: wrappedValue, Value.query)
+    }
+  #endif
+
   public init(
     wrappedValue: Value,
     _ query: InstantEntityQuery<Value>
@@ -2524,6 +2614,16 @@ extension FetchOne where Value: InstantEntityModel {
     self.storage = FetchStorage(value: wrappedValue)
     self.operations = FetchOperationStorage(Self.requiredOperations(for: query))
   }
+
+  #if canImport(SwiftUI)
+    public init(
+      wrappedValue: Value,
+      _ query: InstantEntityQuery<Value>,
+      animation: Animation?
+    ) {
+      self.init(wrappedValue: wrappedValue, query)
+    }
+  #endif
 
   public func load(
     _ query: InstantEntityQuery<Value>
@@ -2604,6 +2704,15 @@ extension FetchOne {
     self.init(wrappedValue: wrappedValue, Entity.query)
   }
 
+  #if canImport(SwiftUI)
+    public init<Entity: InstantEntityModel>(
+      wrappedValue: Entity? = nil,
+      animation: Animation?
+    ) where Value == Entity? {
+      self.init(wrappedValue: wrappedValue, Entity.query)
+    }
+  #endif
+
   public init<Entity: InstantEntityModel>(
     wrappedValue: Entity? = nil,
     _ query: InstantEntityQuery<Entity>
@@ -2611,6 +2720,16 @@ extension FetchOne {
     self.storage = FetchStorage(value: wrappedValue)
     self.operations = FetchOperationStorage(Self.optionalOperations(for: query))
   }
+
+  #if canImport(SwiftUI)
+    public init<Entity: InstantEntityModel>(
+      wrappedValue: Entity? = nil,
+      _ query: InstantEntityQuery<Entity>,
+      animation: Animation?
+    ) where Value == Entity? {
+      self.init(wrappedValue: wrappedValue, query)
+    }
+  #endif
 
   public func load<Entity: InstantEntityModel>(
     _ query: InstantEntityQuery<Entity>
@@ -2748,6 +2867,17 @@ extension FetchOne where Value: InstantValueDecodable & InstantValueRepresentabl
     self.operations = FetchOperationStorage(Self.scalarOperations(for: query, selecting: field))
   }
 
+  #if canImport(SwiftUI)
+    public init<Entity: InstantEntityModel>(
+      wrappedValue: Value,
+      _ field: InstantAttributePath<Entity, Value>,
+      from query: InstantEntityQuery<Entity> = Entity.query,
+      animation: Animation?
+    ) {
+      self.init(wrappedValue: wrappedValue, field, from: query)
+    }
+  #endif
+
   public init<Entity: InstantEntityModel>(
     wrappedValue: Value,
     _ query: InstantEntityQuery<Entity>,
@@ -2755,6 +2885,17 @@ extension FetchOne where Value: InstantValueDecodable & InstantValueRepresentabl
   ) {
     self.init(wrappedValue: wrappedValue, field, from: query)
   }
+
+  #if canImport(SwiftUI)
+    public init<Entity: InstantEntityModel>(
+      wrappedValue: Value,
+      _ query: InstantEntityQuery<Entity>,
+      selecting field: InstantAttributePath<Entity, Value>,
+      animation: Animation?
+    ) {
+      self.init(wrappedValue: wrappedValue, query, selecting: field)
+    }
+  #endif
 
   public func load<Entity: InstantEntityModel>(
     _ field: InstantAttributePath<Entity, Value>,
@@ -2958,12 +3099,32 @@ extension FetchOne where
     self.init(wrappedValue: Value(nilLiteral: ()), field, from: query)
   }
 
+  #if canImport(SwiftUI)
+    public init<Entity: InstantEntityModel>(
+      _ field: InstantAttributePath<Entity, Value>,
+      from query: InstantEntityQuery<Entity> = Entity.query,
+      animation: Animation?
+    ) {
+      self.init(wrappedValue: Value(nilLiteral: ()), field, from: query)
+    }
+  #endif
+
   public init<Entity: InstantEntityModel>(
     _ query: InstantEntityQuery<Entity>,
     selecting field: InstantAttributePath<Entity, Value>
   ) {
     self.init(wrappedValue: Value(nilLiteral: ()), field, from: query)
   }
+
+  #if canImport(SwiftUI)
+    public init<Entity: InstantEntityModel>(
+      _ query: InstantEntityQuery<Entity>,
+      selecting field: InstantAttributePath<Entity, Value>,
+      animation: Animation?
+    ) {
+      self.init(wrappedValue: Value(nilLiteral: ()), field, from: query)
+    }
+  #endif
 }
 
 extension FetchOne {
@@ -2976,6 +3137,17 @@ extension FetchOne {
     self.operations = FetchOperationStorage(Self.optionalScalarOperations(for: query, selecting: field))
   }
 
+  #if canImport(SwiftUI)
+    public init<Entity: InstantEntityModel, FieldValue>(
+      wrappedValue: FieldValue? = nil,
+      _ field: InstantAttributePath<Entity, FieldValue>,
+      from query: InstantEntityQuery<Entity> = Entity.query,
+      animation: Animation?
+    ) where Value == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+      self.init(wrappedValue: wrappedValue, field, from: query)
+    }
+  #endif
+
   public init<Entity: InstantEntityModel, FieldValue>(
     wrappedValue: FieldValue? = nil,
     _ query: InstantEntityQuery<Entity>,
@@ -2983,6 +3155,17 @@ extension FetchOne {
   ) where Value == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
     self.init(wrappedValue: wrappedValue, field, from: query)
   }
+
+  #if canImport(SwiftUI)
+    public init<Entity: InstantEntityModel, FieldValue>(
+      wrappedValue: FieldValue? = nil,
+      _ query: InstantEntityQuery<Entity>,
+      selecting field: InstantAttributePath<Entity, FieldValue>,
+      animation: Animation?
+    ) where Value == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+      self.init(wrappedValue: wrappedValue, query, selecting: field)
+    }
+  #endif
 
   public func load<Entity: InstantEntityModel, FieldValue>(
     _ field: InstantAttributePath<Entity, FieldValue>,
@@ -3246,6 +3429,15 @@ public struct Fetch<Value: Sendable>: Sendable {
     self.operations = FetchOperationStorage()
   }
 
+  #if canImport(SwiftUI)
+    public init(
+      wrappedValue: Value,
+      animation: Animation?
+    ) {
+      self.init(wrappedValue: wrappedValue)
+    }
+  #endif
+
   public init(
     wrappedValue: Value,
     load: @escaping @Sendable (InstantSwiftDataClient) async throws -> Value,
@@ -3254,6 +3446,17 @@ public struct Fetch<Value: Sendable>: Sendable {
     self.storage = FetchStorage(value: wrappedValue)
     self.operations = FetchOperationStorage(FetchOperations(load: load, subscribe: subscribe))
   }
+
+  #if canImport(SwiftUI)
+    public init(
+      wrappedValue: Value,
+      load: @escaping @Sendable (InstantSwiftDataClient) async throws -> Value,
+      subscribe: (@Sendable (InstantSwiftDataClient) async throws -> FetchSubscription<Value>)? = nil,
+      animation: Animation?
+    ) {
+      self.init(wrappedValue: wrappedValue, load: load, subscribe: subscribe)
+    }
+  #endif
 
   public var projectedValue: Self {
     get { self }
@@ -3461,6 +3664,16 @@ extension Fetch {
     self.storage = FetchStorage(value: wrappedValue)
     self.operations = FetchOperationStorage(Self.operations(for: request))
   }
+
+  #if canImport(SwiftUI)
+    public init<Request: InstantFetchKeyRequest>(
+      wrappedValue: Value,
+      _ request: Request,
+      animation: Animation?
+    ) where Request.Value == Value {
+      self.init(wrappedValue: wrappedValue, request)
+    }
+  #endif
 
   public func load<Request: InstantFetchKeyRequest>(
     _ request: Request
