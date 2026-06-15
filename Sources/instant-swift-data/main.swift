@@ -4978,7 +4978,9 @@ struct InstantSwiftDataCLI {
       fileCount: Set(result.evidence.flatMap(\.details.fileIDs)).count,
       streamChunkCount: Set(result.evidence.flatMap(\.details.streamChunkIDs)).count,
       shareCount: Set(result.evidence.flatMap(\.details.shareIDs)).count,
-      lifecycleEventCount: result.evidence.filter { $0.event.hasPrefix("fetch-all-") }.count,
+      lifecycleEventCount: result.evidence.filter {
+        $0.event.hasPrefix("fetch-all-") || $0.event.hasPrefix("fetch-one-")
+      }.count,
       queryProbeCount: result.evidence.compactMap(\.details.queryCount).reduce(0, +),
       observationProbeCount: result.evidence.compactMap(\.details.observationCount).reduce(0, +),
       loadErrorOperations: result.evidence.compactMap(\.details.loadErrorOperation),

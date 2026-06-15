@@ -457,6 +457,15 @@ struct LocalTodoValidationTests {
     expectNoDifference(dynamic.queryCount, 2)
     expectNoDifference(dynamic.observationCount, 0)
 
+    let fetchOneDynamic = try #require(
+      result.evidence.first { $0.event == "fetch-one-dynamic-query" }?.details
+    )
+    expectNoDifference(fetchOneDynamic.previousTodoTitles, ["Open single"])
+    expectNoDifference(fetchOneDynamic.todoTitles, ["Done single"])
+    expectNoDifference(fetchOneDynamic.selectedTodoTitle, "Done single")
+    expectNoDifference(fetchOneDynamic.queryCount, 2)
+    expectNoDifference(fetchOneDynamic.observationCount, 0)
+
     let nilQuery = try #require(
       result.evidence.first { $0.event == "fetch-all-nil-query" }?.details
     )
@@ -465,6 +474,16 @@ struct LocalTodoValidationTests {
     expectNoDifference(nilQuery.queryCount, 0)
     expectNoDifference(nilQuery.observationCount, 0)
     expectNoDifference(nilQuery.nilQueryCleared, true)
+
+    let fetchOneNilQuery = try #require(
+      result.evidence.first { $0.event == "fetch-one-nil-query" }?.details
+    )
+    expectNoDifference(fetchOneNilQuery.previousTodoTitles, ["Cached optional nil query"])
+    expectNoDifference(fetchOneNilQuery.todoTitles, [])
+    expectNoDifference(fetchOneNilQuery.selectedTodoTitle, nil)
+    expectNoDifference(fetchOneNilQuery.queryCount, 0)
+    expectNoDifference(fetchOneNilQuery.observationCount, 0)
+    expectNoDifference(fetchOneNilQuery.nilQueryCleared, true)
 
     let cachedPrior = try #require(
       result.evidence.first { $0.event == "fetch-all-cached-prior-error" }?.details
@@ -724,15 +743,15 @@ struct LocalTodoValidationTests {
 
     expectNoDifference(run.result.event, "parity-report")
     expectNoDifference(run.result.coverageComplete, false)
-    expectNoDifference(run.result.recordCount, 96)
+    expectNoDifference(run.result.recordCount, 98)
     expectNoDifference(run.result.exactCount, 19)
-    expectNoDifference(run.result.adaptedCount, 74)
+    expectNoDifference(run.result.adaptedCount, 76)
     expectNoDifference(run.result.blockedCount, 3)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
     expectNoDifference(run.summary.appID, "validation-parity-test")
     expectNoDifference(run.summary.rowCount, run.result.recordCount)
     expectNoDifference(run.summary.ok, false)
-    expectNoDifference(run.summary.events, Array(repeating: "parity-record", count: 96))
+    expectNoDifference(run.summary.events, Array(repeating: "parity-record", count: 98))
     expectNoDifference(run.summary.failedEvents, Array(repeating: "parity-record", count: 3))
     #expect(
       run.result.sourceFiles.contains(
@@ -742,6 +761,16 @@ struct LocalTodoValidationTests {
     #expect(
       run.result.records.contains {
         $0.id == "sqlite.reminders.search-tags" && $0.status == .adapted
+      }
+    )
+    #expect(
+      run.result.records.contains {
+        $0.id == "sqlite.fetch-one.dynamic-query" && $0.status == .adapted
+      }
+    )
+    #expect(
+      run.result.records.contains {
+        $0.id == "sqlite.fetch-one.nil-query" && $0.status == .adapted
       }
     )
     #expect(
@@ -767,7 +796,7 @@ struct LocalTodoValidationTests {
     )
 
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 96)
+    expectNoDifference(rows.count, 98)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
@@ -798,7 +827,7 @@ struct LocalTodoValidationTests {
 
     #expect(result.status == 0)
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 96)
+    expectNoDifference(rows.count, 98)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
@@ -1533,7 +1562,9 @@ private let platformAdapterValidationEvents = [
   "shares",
   "fetch-all-filtered-reload",
   "fetch-all-dynamic-query",
+  "fetch-one-dynamic-query",
   "fetch-all-nil-query",
+  "fetch-one-nil-query",
   "fetch-all-cached-prior-error",
   "fetch-all-cancellation",
 ]
@@ -1551,7 +1582,9 @@ private let platformAdapterValidationAdapters = [
   "@Shares",
   "@FetchAll/@Fetch(filtered)",
   "@FetchAll(dynamic)",
+  "@FetchOne(dynamic)",
   "@FetchAll(nil)",
+  "@FetchOne(nil)",
   "@FetchAll(error)",
   "@FetchAll(cancellation)",
 ]

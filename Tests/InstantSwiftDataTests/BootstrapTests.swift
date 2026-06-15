@@ -483,12 +483,14 @@ struct BootstrapTests {
       "shares",
       "fetch-all-filtered-reload",
       "fetch-all-dynamic-query",
+      "fetch-one-dynamic-query",
       "fetch-all-nil-query",
+      "fetch-one-nil-query",
       "fetch-all-cached-prior-error",
       "fetch-all-cancellation",
     ])
-    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 15))
-    expectNoDifference(result.evidence.map(\.appID), Array(repeating: result.appID, count: 15))
+    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 17))
+    expectNoDifference(result.evidence.map(\.appID), Array(repeating: result.appID, count: 17))
     expectNoDifference(result.evidence.map(\.details.adapter), [
       "@FetchAll",
       "@FetchOne",
@@ -502,7 +504,9 @@ struct BootstrapTests {
       "@Shares",
       "@FetchAll/@Fetch(filtered)",
       "@FetchAll(dynamic)",
+      "@FetchOne(dynamic)",
       "@FetchAll(nil)",
+      "@FetchOne(nil)",
       "@FetchAll(error)",
       "@FetchAll(cancellation)",
     ])
@@ -550,6 +554,14 @@ struct BootstrapTests {
     expectNoDifference(dynamic.todoTitles, ["Done dynamic"])
     expectNoDifference(dynamic.queryCount, 2)
 
+    let fetchOneDynamic = try #require(
+      result.evidence.first { $0.event == "fetch-one-dynamic-query" }?.details
+    )
+    expectNoDifference(fetchOneDynamic.previousTodoTitles, ["Open single"])
+    expectNoDifference(fetchOneDynamic.todoTitles, ["Done single"])
+    expectNoDifference(fetchOneDynamic.selectedTodoTitle, "Done single")
+    expectNoDifference(fetchOneDynamic.queryCount, 2)
+
     let nilQuery = try #require(
       result.evidence.first { $0.event == "fetch-all-nil-query" }?.details
     )
@@ -557,6 +569,15 @@ struct BootstrapTests {
     expectNoDifference(nilQuery.todoTitles, [])
     expectNoDifference(nilQuery.queryCount, 0)
     expectNoDifference(nilQuery.nilQueryCleared, true)
+
+    let fetchOneNilQuery = try #require(
+      result.evidence.first { $0.event == "fetch-one-nil-query" }?.details
+    )
+    expectNoDifference(fetchOneNilQuery.previousTodoTitles, ["Cached optional nil query"])
+    expectNoDifference(fetchOneNilQuery.todoTitles, [])
+    expectNoDifference(fetchOneNilQuery.selectedTodoTitle, nil)
+    expectNoDifference(fetchOneNilQuery.queryCount, 0)
+    expectNoDifference(fetchOneNilQuery.nilQueryCleared, true)
 
     let cachedPrior = try #require(
       result.evidence.first { $0.event == "fetch-all-cached-prior-error" }?.details

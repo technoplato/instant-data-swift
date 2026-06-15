@@ -419,7 +419,21 @@ public enum InstantSwiftDataPlatformAdapterValidation {
       )
     )
     evidence.append(
+      try await validateFetchOneDynamicQueryReload(
+        appID: appID,
+        cacheURL: cacheURL,
+        timestamp: timestamp
+      )
+    )
+    evidence.append(
       try await validateNilQueryClearsWithoutClient(
+        appID: appID,
+        cacheURL: cacheURL,
+        timestamp: timestamp
+      )
+    )
+    evidence.append(
+      try await validateFetchOneNilQueryClearsWithoutClient(
         appID: appID,
         cacheURL: cacheURL,
         timestamp: timestamp
@@ -615,6 +629,86 @@ public enum InstantSwiftDataPlatformAdapterValidation {
     )
   }
 
+  private static func validateFetchOneDynamicQueryReload(
+    appID: String,
+    cacheURL: URL,
+    timestamp: @escaping @Sendable () -> InstantTimestamp
+  ) async throws -> ValidationEvidenceRow<PlatformAdapterValidationDetails> {
+    let open = todoSnapshot(
+      id: "adapter-fetch-one-open",
+      title: "Open single",
+      isCompleted: false,
+      createdAt: date(from: timestamp())
+    )
+    let done = todoSnapshot(
+      id: "adapter-fetch-one-done",
+      title: "Done single",
+      isCompleted: true,
+      createdAt: date(from: timestamp())
+    )
+    let recorder = PlatformAdapterLifecycleRecorder(queryResults: [[open], [done]])
+    let client = lifecycleClient(recorder)
+    let fetch = FetchOne<PlatformAdapterTodo?>(
+      PlatformAdapterTodo.query.order(PlatformAdapterTodo.createdAt)
+    )
+
+    try await fetch.load(
+      PlatformAdapterTodo.query
+        .where(PlatformAdapterTodo.isCompleted == false)
+        .order(PlatformAdapterTodo.createdAt),
+      using: client
+    )
+    let previousTitle = fetch.wrappedValue?.title
+
+    try await fetch.load(
+      PlatformAdapterTodo.query
+        .where(PlatformAdapterTodo.isCompleted == true)
+        .order(PlatformAdapterTodo.createdAt),
+      using: client
+    )
+    let selectedTodo = fetch.wrappedValue
+    let counts = await recorder.counts()
+    let plans = await recorder.queryPlans()
+
+    guard
+      previousTitle == "Open single",
+      selectedTodo?.title == "Done single",
+      counts.queryCount == 2,
+      counts.observationCount == 0,
+      plans.map(\.filters) == [
+        [.equals(field: "isCompleted", value: .bool(false))],
+        [.equals(field: "isCompleted", value: .bool(true))],
+      ],
+      plans.map(\.limit) == [1, 1],
+      fetch.loadError == nil,
+      fetch.isLoading == false
+    else {
+      throw validationFailure(
+        operation: "validate platform adapter dynamic FetchOne",
+        message: "Expected dynamic FetchOne loads to replace the selected optional entity."
+      )
+    }
+
+    return evidenceRow(
+      event: "fetch-one-dynamic-query",
+      appID: appID,
+      timestamp: timestamp,
+      details: PlatformAdapterValidationDetails(
+        cachePath: cacheURL.path,
+        adapter: "@FetchOne(dynamic)",
+        todoIDs: [selectedTodo?.id.rawValue].compactMap { $0 },
+        todoTitles: [selectedTodo?.title].compactMap { $0 },
+        previousTodoTitles: [previousTitle].compactMap { $0 },
+        todoCount: selectedTodo == nil ? 0 : 1,
+        selectedTodoID: selectedTodo?.id.rawValue,
+        selectedTodoTitle: selectedTodo?.title,
+        queryCount: counts.queryCount,
+        observationCount: counts.observationCount,
+        isLoading: fetch.isLoading
+      )
+    )
+  }
+
   private static func validateNilQueryClearsWithoutClient(
     appID: String,
     cacheURL: URL,
@@ -671,6 +765,68 @@ public enum InstantSwiftDataPlatformAdapterValidation {
         observationCount: counts.observationCount,
         isLoading: fetch.isLoading,
         nilQueryCleared: fetch.wrappedValue.isEmpty
+      )
+    )
+  }
+
+  private static func validateFetchOneNilQueryClearsWithoutClient(
+    appID: String,
+    cacheURL: URL,
+    timestamp: @escaping @Sendable () -> InstantTimestamp
+  ) async throws -> ValidationEvidenceRow<PlatformAdapterValidationDetails> {
+    let cached = PlatformAdapterTodo(
+      id: InstantID(rawValue: "adapter-fetch-one-nil-query-cached"),
+      title: "Cached optional nil query",
+      isCompleted: false,
+      createdAt: date(from: timestamp())
+    )
+    let recorder = PlatformAdapterLifecycleRecorder()
+    let fetch = FetchOne<PlatformAdapterTodo?>(
+      wrappedValue: cached,
+      PlatformAdapterTodo.query.order(PlatformAdapterTodo.createdAt)
+    )
+    fetch.loadError = InstantError(
+      code: .implementationFailed,
+      operation: "previous adapter FetchOne load",
+      message: "previous failure",
+      recovery: "Retry with a non-nil query."
+    )
+    fetch.isLoading = true
+
+    try await fetch.load(
+      nil as InstantEntityQuery<PlatformAdapterTodo>?,
+      using: lifecycleClient(recorder)
+    )
+    let counts = await recorder.counts()
+
+    guard
+      fetch.wrappedValue == nil,
+      counts.queryCount == 0,
+      counts.observationCount == 0,
+      fetch.loadError == nil,
+      fetch.isLoading == false
+    else {
+      throw validationFailure(
+        operation: "validate platform adapter nil FetchOne query",
+        message: "Expected a nil FetchOne query to clear cached optional state without calling the client."
+      )
+    }
+
+    return evidenceRow(
+      event: "fetch-one-nil-query",
+      appID: appID,
+      timestamp: timestamp,
+      details: PlatformAdapterValidationDetails(
+        cachePath: cacheURL.path,
+        adapter: "@FetchOne(nil)",
+        previousTodoTitles: [cached.title],
+        todoCount: fetch.wrappedValue == nil ? 0 : 1,
+        selectedTodoID: fetch.wrappedValue?.id.rawValue,
+        selectedTodoTitle: fetch.wrappedValue?.title,
+        queryCount: counts.queryCount,
+        observationCount: counts.observationCount,
+        isLoading: fetch.isLoading,
+        nilQueryCleared: fetch.wrappedValue == nil
       )
     )
   }

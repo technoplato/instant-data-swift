@@ -847,6 +847,26 @@ public enum InstantSwiftDataParityCoverage {
       notes: "The Instant adapter updates observable model state through projected wrapper dynamic query loading."
     ),
     sqlite(
+      id: "sqlite.fetch-one.dynamic-query",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchOneTests.swift",
+      sourceTestName: "selectStatementInit / optionalStatementInit projected load(query)",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName: "platformAdapterValidationProvesWrappersBindLocalRuntime",
+      surface: "adapter-fetch",
+      status: .adapted,
+      notes: "Optional Instant @FetchOne terminal validation swaps non-nil query filters, proves both limit-one plans, and updates the selected entity."
+    ),
+    sqlite(
+      id: "sqlite.fetch-one.nil-query",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchOneTests.swift",
+      sourceTestName: "optionalTableInit / optionalStatementInit empty optional state",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName: "platformAdapterValidationProvesWrappersBindLocalRuntime",
+      surface: "adapter-fetch",
+      status: .adapted,
+      notes: "The optional Instant @FetchOne adapter treats a nil dynamic query as a SwiftUI-style disabled binding, clearing cached value, error, and loading state without hitting the client."
+    ),
+    sqlite(
       id: "sqlite.fetch.transaction-request",
       sourceFile: "upstream/sqlite-data/Examples/CaseStudies/TransactionDemo.swift",
       sourceTestName: "@Fetch(Facts()) composite transaction value",
@@ -1128,6 +1148,8 @@ public enum InstantSwiftDataParityCoverage {
     "Tests/InstantSwiftDataCoreTests/InstantTransactionValidationParityTests.swift"
   private static let typedAPISwiftFile =
     "Tests/InstantSwiftDataTests/TypedAPITests.swift"
+  private static let platformAdapterValidationSwiftFile =
+    "Tests/InstantSwiftDataTests/BootstrapTests.swift"
 }
 
 extension Sequence where Element: Comparable & Hashable {

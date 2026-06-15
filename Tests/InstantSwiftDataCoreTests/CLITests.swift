@@ -5161,7 +5161,7 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.appID, "cli-cache-test")
     expectNoDifference(jsonOutput.event, "platform-adapters")
     expectNoDifference(jsonOutput.ok, true)
-    expectNoDifference(jsonOutput.evidenceCount, 15)
+    expectNoDifference(jsonOutput.evidenceCount, 17)
     expectNoDifference(jsonOutput.events, [
       "fetch-all",
       "fetch-one",
@@ -5175,7 +5175,9 @@ extension InstantStoreTests {
       "shares",
       "fetch-all-filtered-reload",
       "fetch-all-dynamic-query",
+      "fetch-one-dynamic-query",
       "fetch-all-nil-query",
+      "fetch-one-nil-query",
       "fetch-all-cached-prior-error",
       "fetch-all-cancellation",
     ])
@@ -5192,7 +5194,9 @@ extension InstantStoreTests {
       "@Shares",
       "@FetchAll/@Fetch(filtered)",
       "@FetchAll(dynamic)",
+      "@FetchOne(dynamic)",
       "@FetchAll(nil)",
+      "@FetchOne(nil)",
       "@FetchAll(error)",
       "@FetchAll(cancellation)",
     ])
@@ -5203,8 +5207,8 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.fileCount, 1)
     expectNoDifference(jsonOutput.streamChunkCount, 1)
     expectNoDifference(jsonOutput.shareCount, 1)
-    expectNoDifference(jsonOutput.lifecycleEventCount, 5)
-    expectNoDifference(jsonOutput.queryProbeCount, 10)
+    expectNoDifference(jsonOutput.lifecycleEventCount, 7)
+    expectNoDifference(jsonOutput.queryProbeCount, 12)
     expectNoDifference(jsonOutput.observationProbeCount, 1)
     expectNoDifference(jsonOutput.loadErrorOperations, ["query dynamic FetchAll"])
     expectNoDifference(jsonOutput.cancellationTerminated, true)
@@ -5213,7 +5217,7 @@ extension InstantStoreTests {
 
     let jsonlOutput = try runCLI(["validation", "wrappers", "--jsonl"], homeURL: homeURL)
     let lines = jsonlOutput.split(separator: "\n")
-    expectNoDifference(lines.count, 15)
+    expectNoDifference(lines.count, 17)
     let fetchEvidence = try JSONDecoder().decode(
       CLIPlatformAdapterValidationEvidence.self,
       from: Data(try #require(lines.first).utf8)
@@ -5250,6 +5254,24 @@ extension InstantStoreTests {
       [[], ["Engineering"], [], ["Engineering"]]
     )
 
+    let fetchOneDynamicEvidence = try #require(
+      evidenceRows.first { $0.event == "fetch-one-dynamic-query" }
+    )
+    expectNoDifference(fetchOneDynamicEvidence.details.adapter, "@FetchOne(dynamic)")
+    expectNoDifference(fetchOneDynamicEvidence.details.previousTodoTitles, ["Open single"])
+    expectNoDifference(fetchOneDynamicEvidence.details.todoTitles, ["Done single"])
+    expectNoDifference(fetchOneDynamicEvidence.details.selectedTodoTitle, "Done single")
+    expectNoDifference(fetchOneDynamicEvidence.details.queryCount, 2)
+
+    let fetchOneNilEvidence = try #require(
+      evidenceRows.first { $0.event == "fetch-one-nil-query" }
+    )
+    expectNoDifference(fetchOneNilEvidence.details.adapter, "@FetchOne(nil)")
+    expectNoDifference(fetchOneNilEvidence.details.previousTodoTitles, ["Cached optional nil query"])
+    expectNoDifference(fetchOneNilEvidence.details.todoTitles, [])
+    expectNoDifference(fetchOneNilEvidence.details.selectedTodoTitle, nil)
+    expectNoDifference(fetchOneNilEvidence.details.nilQueryCleared, true)
+
     let cancellationEvidence = try #require(
       evidenceRows.first { $0.event == "fetch-all-cancellation" }
     )
@@ -5260,8 +5282,8 @@ extension InstantStoreTests {
     let humanOutput = try runCLI(["validation", "adapters"], homeURL: homeURL)
     #expect(humanOutput.contains("validation: ok"))
     #expect(humanOutput.contains("case: validation.platform.adapters"))
-    #expect(humanOutput.contains("evidence rows: 15"))
-    #expect(humanOutput.contains("lifecycle probes: 5"))
+    #expect(humanOutput.contains("evidence rows: 17"))
+    #expect(humanOutput.contains("lifecycle probes: 7"))
     #expect(humanOutput.contains("cancellation terminated: true"))
     #expect(humanOutput.contains("@FetchAll"))
     #expect(humanOutput.contains("@Shares"))
@@ -5373,9 +5395,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 96)
+    expectNoDifference(jsonOutput.recordCount, 98)
     expectNoDifference(jsonOutput.exactCount, 19)
-    expectNoDifference(jsonOutput.adaptedCount, 74)
+    expectNoDifference(jsonOutput.adaptedCount, 76)
     expectNoDifference(jsonOutput.blockedCount, 3)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -5557,6 +5579,16 @@ extension InstantStoreTests {
     )
     #expect(
       jsonOutput.records.contains {
+        $0.id == "sqlite.fetch-one.dynamic-query" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "sqlite.fetch-one.nil-query" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
         $0.id == "sqlite.fetch-all.decode-failure" && $0.status == "adapted"
       }
     )
@@ -5639,7 +5671,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 96"))
+    #expect(humanOutput.contains("records: 98"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 
@@ -6947,8 +6979,10 @@ private struct CLIPlatformAdapterValidationEvidence: Decodable {
 private struct CLIPlatformAdapterValidationDetails: Decodable {
   var adapter: String
   var todoTitles: [String]
+  var previousTodoTitles: [String]
   var todoCount: Int
   var selectedTodoID: String?
+  var selectedTodoTitle: String?
   var localID: String?
   var authUserID: String?
   var roomMemberIDs: [String]
@@ -6960,6 +6994,7 @@ private struct CLIPlatformAdapterValidationDetails: Decodable {
   var fetchTitleBatches: [[String]]?
   var queryCount: Int?
   var observationCount: Int?
+  var nilQueryCleared: Bool?
   var cancellationTerminated: Bool?
 }
 
