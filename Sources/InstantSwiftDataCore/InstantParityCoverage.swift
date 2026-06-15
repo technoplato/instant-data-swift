@@ -627,6 +627,26 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift does not emit JavaScript add-attr txSteps for link or lookup attrs; update plus link lowering preserves the primary-key add-triple and the two-element lookup ref link value."
     ),
     instant(
+      id: "instant.instaml.lookup-link-forward-identity",
+      sourceFile: instamlSource,
+      sourceTestName: "lookup creates unique attrs for lookups in link values when fwd-ident exists",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "transportMutationPortsInstamlLookupLinkExistingForwardIdentity",
+      surface: "instaml",
+      status: .adapted,
+      notes: "Swift writes the declared forward relation attr id directly instead of emitting add-attr txSteps; local prepare reuses the declared relation when resolving the lookup link value."
+    ),
+    instant(
+      id: "instant.instaml.lookup-link-reverse-identity",
+      sourceFile: instamlSource,
+      sourceTestName: "lookup creates unique attrs for lookups in link values when rev-ident exists",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "transportMutationPortsInstamlLookupLinkExistingReverseIdentity",
+      surface: "instaml",
+      status: .adapted,
+      notes: "Swift models the reverse-identity link by writing through the declared forward ref attr with a lookup entity ref; local prepare resolves that write without minting a duplicate relation."
+    ),
+    instant(
       id: "instant.instaml.lookup-link-declared-attrs",
       sourceFile: instamlSource,
       sourceTestName: "lookup doesn't override attrs for lookups in link values",

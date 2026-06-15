@@ -1504,6 +1504,283 @@ struct InstantStoreTests {
   }
 
   @Test
+  func transportMutationPortsInstamlLookupLinkExistingForwardIdentity() async throws {
+    let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let source =
+      "upstream/instant/client/packages/core/__tests__/src/instaml.test.ts "
+      + "lookup creates unique attrs for lookups in link values when fwd-ident exists "
+      + "[adapted: Swift writes through the declared forward relation attr id.]"
+    let declaredAttributes = [
+      InstantAttribute(
+        id: "users/posts",
+        namespace: "users",
+        name: "posts",
+        valueType: .ref,
+        isRequired: false,
+        cardinality: .one,
+        isIndexed: true,
+        isUnique: true,
+        forwardIdentity: "users/posts",
+        reverseIdentity: "posts/users",
+        linkNamespace: "posts"
+      ),
+      InstantAttribute(
+        id: "posts/slug",
+        namespace: "posts",
+        name: "slug",
+        valueType: .string,
+        isRequired: false,
+        isIndexed: true,
+        isUnique: true
+      ),
+    ]
+    let seedTriples = [
+      InstantTriple(
+        entityID: "post-forward-link",
+        attributeID: "posts/id",
+        value: .string("post-forward-link"),
+        txID: "seed-instaml-forward-link",
+        txTime: txTime
+      ),
+      InstantTriple(
+        entityID: "post-forward-link",
+        attributeID: "posts/slug",
+        value: .string("life-is-good"),
+        txID: "seed-instaml-forward-link",
+        txTime: txTime
+      ),
+    ]
+    let postLookup = InstantLookupRef(
+      attributeID: "posts/slug",
+      value: .string("life-is-good")
+    )
+    let transaction = InstantStoreTransaction(
+      id: "tx-instaml-forward-lookup-link",
+      operations: InstantInstamlTransform.updateOperations(
+        namespace: "users",
+        entityID: "user-forward-link",
+        fields: [:],
+        txID: "tx-instaml-forward-lookup-link",
+        txTime: txTime
+      )
+      + [
+        .insert(
+          InstantTriple(
+            entityID: "user-forward-link",
+            attributeID: "users/posts",
+            value: .lookupRef(postLookup),
+            txID: "tx-instaml-forward-lookup-link",
+            txTime: txTime
+          )
+        )
+      ]
+    )
+    let mutation = InstantTransportMutation(
+      PendingMutation(id: transaction.id, createdAt: txTime, transaction: transaction)
+    )
+    expectNoDifference(
+      mutation.txSteps,
+      [
+        .addTriple(
+          entity: .id("user-forward-link"),
+          attributeID: "users/id",
+          value: .string("user-forward-link")
+        ),
+        .addTriple(
+          entity: .id("user-forward-link"),
+          attributeID: "users/posts",
+          value: .array([.string("posts/slug"), .string("life-is-good")])
+        ),
+      ],
+      source
+    )
+
+    let store = InstantStore(
+      snapshot: InstantStoreSnapshot(attributes: declaredAttributes, triples: seedTriples)
+    )
+    let prepared = try await store.prepare(transaction)
+    expectNoDifference(
+      prepared.snapshot.attributes.map(\.id),
+      ["posts/id", "posts/slug", "users/id", "users/posts"],
+      source
+    )
+    expectNoDifference(
+      prepared.snapshot.attributes.first { $0.id == "users/posts" },
+      declaredAttributes[0],
+      source
+    )
+    expectNoDifference(
+      prepared.result.changedEntityIDs,
+      ["post-forward-link", "user-forward-link"],
+      source
+    )
+    expectNoDifference(
+      prepared.snapshot.triples,
+      seedTriples
+        + [
+          InstantTriple(
+            entityID: "user-forward-link",
+            attributeID: "users/id",
+            value: .string("user-forward-link"),
+            txID: "tx-instaml-forward-lookup-link",
+            txTime: txTime
+          ),
+          InstantTriple(
+            entityID: "user-forward-link",
+            attributeID: "users/posts",
+            value: .ref("post-forward-link"),
+            txID: "tx-instaml-forward-lookup-link",
+            txTime: txTime
+          ),
+        ],
+      source
+    )
+  }
+
+  @Test
+  func transportMutationPortsInstamlLookupLinkExistingReverseIdentity() async throws {
+    let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let source =
+      "upstream/instant/client/packages/core/__tests__/src/instaml.test.ts "
+      + "lookup creates unique attrs for lookups in link values when rev-ident exists "
+      + "[adapted: Swift lowers the reverse field through the declared forward relation attr id.]"
+    let declaredAttributes = [
+      InstantAttribute.primaryKey(namespace: "users"),
+      InstantAttribute(
+        id: "posts/users",
+        namespace: "posts",
+        name: "users",
+        valueType: .ref,
+        isRequired: false,
+        cardinality: .one,
+        isIndexed: true,
+        isUnique: true,
+        forwardIdentity: "posts/users",
+        reverseIdentity: "users/posts",
+        linkNamespace: "users"
+      ),
+      InstantAttribute(
+        id: "posts/slug",
+        namespace: "posts",
+        name: "slug",
+        valueType: .string,
+        isRequired: false,
+        isIndexed: true,
+        isUnique: true
+      ),
+    ]
+    let seedTriples = [
+      InstantTriple(
+        entityID: "post-reverse-link",
+        attributeID: "posts/id",
+        value: .string("post-reverse-link"),
+        txID: "seed-instaml-reverse-link",
+        txTime: txTime
+      ),
+      InstantTriple(
+        entityID: "post-reverse-link",
+        attributeID: "posts/slug",
+        value: .string("life-is-good"),
+        txID: "seed-instaml-reverse-link",
+        txTime: txTime
+      ),
+    ]
+    let postLookup = InstantLookupRef(
+      attributeID: "posts/slug",
+      value: .string("life-is-good")
+    )
+    let transaction = InstantStoreTransaction(
+      id: "tx-instaml-reverse-lookup-link",
+      operations: InstantInstamlTransform.updateOperations(
+        namespace: "users",
+        entityID: "user-reverse-link",
+        fields: [:],
+        txID: "tx-instaml-reverse-lookup-link",
+        txTime: txTime
+      )
+      + [
+        .insertByLookup(
+          entity: postLookup,
+          attributeID: "posts/users",
+          value: .ref("user-reverse-link"),
+          txID: "tx-instaml-reverse-lookup-link",
+          txTime: txTime
+        )
+      ]
+    )
+    let mutation = InstantTransportMutation(
+      PendingMutation(id: transaction.id, createdAt: txTime, transaction: transaction)
+    )
+    expectNoDifference(
+      mutation.txSteps,
+      [
+        .addTriple(
+          entity: .id("user-reverse-link"),
+          attributeID: "users/id",
+          value: .string("user-reverse-link")
+        ),
+        .addTriple(
+          entity: .lookup(postLookup),
+          attributeID: "posts/users",
+          value: .string("user-reverse-link")
+        ),
+      ],
+      source
+    )
+
+    let data = try JSONEncoder().encode(mutation)
+    let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let txSteps = try #require(object["txSteps"] as? [[Any]])
+    let reverseStep = try #require(txSteps.first { $0[safe: 2] as? String == "posts/users" })
+    let reverseEntity = try #require(reverseStep[safe: 1] as? [Any])
+    expectNoDifference(reverseEntity.count, 2, source)
+    expectNoDifference(reverseEntity[0] as? String, "posts/slug", source)
+    expectNoDifference(reverseEntity[1] as? String, "life-is-good", source)
+    expectNoDifference(reverseStep[safe: 3] as? String, "user-reverse-link", source)
+
+    let store = InstantStore(
+      snapshot: InstantStoreSnapshot(attributes: declaredAttributes, triples: seedTriples)
+    )
+    let prepared = try await store.prepare(transaction)
+    expectNoDifference(
+      prepared.snapshot.attributes.map(\.id),
+      ["posts/id", "posts/slug", "posts/users", "users/id"],
+      source
+    )
+    expectNoDifference(
+      prepared.snapshot.attributes.first { $0.id == "posts/users" },
+      declaredAttributes[1],
+      source
+    )
+    expectNoDifference(
+      prepared.result.changedEntityIDs,
+      ["post-reverse-link", "user-reverse-link"],
+      source
+    )
+    expectNoDifference(
+      prepared.snapshot.triples,
+      seedTriples
+        + [
+          InstantTriple(
+            entityID: "post-reverse-link",
+            attributeID: "posts/users",
+            value: .ref("user-reverse-link"),
+            txID: "tx-instaml-reverse-lookup-link",
+            txTime: txTime
+          ),
+          InstantTriple(
+            entityID: "user-reverse-link",
+            attributeID: "users/id",
+            value: .string("user-reverse-link"),
+            txID: "tx-instaml-reverse-lookup-link",
+            txTime: txTime
+          ),
+        ],
+      source
+    )
+  }
+
+  @Test
   func transportMutationPortsInstamlDeclaredLookupLinkAttrsDoNotOverride() async throws {
     let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let source =
