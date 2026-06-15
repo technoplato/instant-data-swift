@@ -167,6 +167,7 @@ public struct PlatformAdapterValidationResult: Sendable {
 public enum InstantSwiftDataPlatformAdapterValidation {
   private static let projectedBindingAdapters = [
     "@FetchAll",
+    "@InfiniteQuery",
     "@FetchOne",
     "@Fetch",
     "@LocalID",
@@ -602,6 +603,9 @@ public enum InstantSwiftDataPlatformAdapterValidation {
       @FetchAll var all: [PlatformAdapterTodo] = []
       $all.binding.wrappedValue = [todo]
 
+      @InfiniteQuery var infinite: [PlatformAdapterTodo] = []
+      $infinite.binding.wrappedValue = [todo]
+
       @FetchOne var one: PlatformAdapterTodo? = nil
       $one.binding.wrappedValue = todo
 
@@ -632,6 +636,7 @@ public enum InstantSwiftDataPlatformAdapterValidation {
 
       guard
         all.map(\.id.rawValue) == [todo.id.rawValue],
+        infinite.map(\.id.rawValue) == [todo.id.rawValue],
         one?.id == todo.id,
         count == 1,
         local == localID,

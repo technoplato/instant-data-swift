@@ -772,6 +772,235 @@ struct TypedAPITests {
   }
 
   @Test
+  func infiniteQueryWrapperTasksAndLoadsNextPageThroughProjectedState() async throws {
+    let cacheURL = try typedTestCacheURL("infinite-query-wrapper")
+    let fixedDate = Date(timeIntervalSince1970: 1_700_000_413)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000413")!
+    let query = TypedTodo.query
+      .order(TypedTodo.createdAt)
+      .limit(1)
+
+    try await withDependencies {
+      $0.date.now = fixedDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "infinite-query-wrapper",
+        persistenceURL: cacheURL,
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+      let client = db
+      let infinite = InfiniteQuery<TypedTodo>(query)
+
+      let task = Task {
+        let infinite = infinite
+        let client = client
+        try await infinite.task(using: client)
+      }
+      defer {
+        task.cancel()
+      }
+
+      try await client.transact(
+        id: "tx-infinite-wrapper-create",
+        createdAt: InstantTimestamp(milliseconds: 1_700_000_413_010)
+      ) {
+        TypedTodo.create(
+          id: InstantID(rawValue: "todo-infinite-wrapper-first"),
+          TypedTodo.text.set("First wrapper page"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(fixedDate)
+        )
+        TypedTodo.create(
+          id: InstantID(rawValue: "todo-infinite-wrapper-second"),
+          TypedTodo.text.set("Second wrapper page"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(fixedDate.addingTimeInterval(1))
+        )
+      }
+
+      try await waitForTypedCondition(operation: "wait for first infinite wrapper page") {
+        infinite.wrappedValue.map(\.text) == ["First wrapper page"]
+      }
+      expectNoDifference(infinite.canLoadNextPage, true)
+      expectNoDifference(infinite.pageInfo?.endCursor?.entityID, "todo-infinite-wrapper-first")
+      expectNoDifference(infinite.loadError, nil)
+      expectNoDifference(infinite.isLoading, false)
+
+      infinite.loadNextPage()
+      try await waitForTypedCondition(operation: "wait for second infinite wrapper page") {
+        infinite.wrappedValue.map(\.text) == ["First wrapper page", "Second wrapper page"]
+      }
+      expectNoDifference(infinite.canLoadNextPage, false)
+      expectNoDifference(infinite.pageInfo?.endCursor?.entityID, "todo-infinite-wrapper-second")
+      expectNoDifference(infinite.loadError, nil)
+    }
+  }
+
+  @Test
+  func infiniteQueryWrapperPreservesErrorSnapshotsAndRecovers() async throws {
+    let error = InstantError(
+      code: .validationFailed,
+      operation: "validate infinite query",
+      namespace: TypedTodo.instantNamespace,
+      path: "createdAt",
+      message: "Cannot page an invalid wrapper query.",
+      recovery: "Use a schema-valid typed query before subscribing."
+    )
+    let rawStream = AsyncStream<InstantInfiniteQuerySnapshot>.makeStream(
+      bufferingPolicy: .bufferingNewest(1)
+    )
+    let client = InstantSwiftDataClient(
+      transact: { transaction in
+        InstantStoreMutationResult(
+          transactionID: transaction.id,
+          changedEntityIDs: [],
+          tripleCount: transaction.operations.count,
+          emissions: []
+        )
+      },
+      query: { _ in [] },
+      observe: { _ in finiteStream([] as [InstantQueryEmission]) },
+      subscribeInfiniteQuery: { _ in
+        InstantInfiniteQuerySubscription(
+          snapshots: rawStream.stream,
+          loadNextPage: {},
+          unsubscribe: {}
+        )
+      },
+      pendingMutations: { [] },
+      localID: { name in "infinite-wrapper-\(name)" }
+    )
+    let infinite = InfiniteQuery<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt).limit(1))
+
+    let task = Task {
+      let infinite = infinite
+      let client = client
+      try await infinite.task(using: client)
+    }
+    defer {
+      task.cancel()
+    }
+
+    rawStream.continuation.yield(
+      InstantInfiniteQuerySnapshot(
+        queryID: TypedTodo.query.plan.id,
+        sequence: 0,
+        values: [],
+        canLoadNextPage: false,
+        error: error
+      )
+    )
+    try await waitForTypedCondition(operation: "wait for infinite wrapper error state") {
+      infinite.loadError?.operation == "validate infinite query"
+    }
+    expectNoDifference(infinite.wrappedValue, [])
+    expectNoDifference(infinite.canLoadNextPage, false)
+
+    rawStream.continuation.yield(
+      InstantInfiniteQuerySnapshot(
+        queryID: TypedTodo.query.plan.id,
+        sequence: 1,
+        values: [
+          typedTodoSnapshot(
+            id: "todo-infinite-wrapper-recovered",
+            text: "Recovered wrapper page",
+            isCompleted: false,
+            createdAt: Date(timeIntervalSince1970: 1_700_000_414)
+          )
+        ],
+        canLoadNextPage: false
+      )
+    )
+    try await waitForTypedCondition(operation: "wait for infinite wrapper recovery") {
+      infinite.wrappedValue.map(\.text) == ["Recovered wrapper page"]
+    }
+    expectNoDifference(infinite.loadError, nil)
+    expectNoDifference(infinite.isLoading, false)
+    rawStream.continuation.finish()
+  }
+
+  @Test
+  func infiniteQueryWrapperCancelIsIdempotentAndStopsLoading() async throws {
+    let recorder = InfiniteQuerySubscriptionRecorder()
+    let rawStream = AsyncStream<InstantInfiniteQuerySnapshot>.makeStream(
+      bufferingPolicy: .bufferingNewest(1)
+    )
+    let client = InstantSwiftDataClient(
+      transact: { transaction in
+        InstantStoreMutationResult(
+          transactionID: transaction.id,
+          changedEntityIDs: [],
+          tripleCount: transaction.operations.count,
+          emissions: []
+        )
+      },
+      query: { _ in [] },
+      observe: { _ in finiteStream([] as [InstantQueryEmission]) },
+      subscribeInfiniteQuery: { _ in
+        InstantInfiniteQuerySubscription(
+          snapshots: rawStream.stream,
+          loadNextPage: {
+            Task {
+              await recorder.recordLoadNextPage()
+            }
+          },
+          unsubscribe: {
+            Task {
+              await recorder.recordUnsubscribe()
+            }
+          }
+        )
+      },
+      pendingMutations: { [] },
+      localID: { name in "infinite-wrapper-cancel-\(name)" }
+    )
+    let infinite = InfiniteQuery<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt).limit(1))
+
+    let task = Task {
+      let infinite = infinite
+      let client = client
+      try await infinite.task(using: client)
+    }
+    defer {
+      task.cancel()
+      rawStream.continuation.finish()
+    }
+
+    rawStream.continuation.yield(
+      InstantInfiniteQuerySnapshot(
+        queryID: TypedTodo.query.plan.id,
+        sequence: 0,
+        values: [],
+        canLoadNextPage: true
+      )
+    )
+    try await waitForTypedCondition(operation: "wait for active infinite wrapper subscription") {
+      infinite.canLoadNextPage
+    }
+
+    infinite.loadNextPage()
+    try await waitForTypedCondition(operation: "record wrapper infinite loadNextPage") {
+      await recorder.counts().loadNextPageCount == 1
+    }
+
+    infinite.cancel()
+    infinite.cancel()
+    try await waitForTypedCondition(operation: "record single wrapper infinite unsubscribe") {
+      await recorder.counts().unsubscribeCount == 1
+    }
+    expectNoDifference(infinite.isLoading, false)
+
+    infinite.loadNextPage()
+    try await Task.sleep(nanoseconds: 20_000_000)
+    let counts = await recorder.counts()
+    expectNoDifference(counts.loadNextPageCount, 1)
+    expectNoDifference(counts.unsubscribeCount, 1)
+  }
+
+  @Test
   func typedQuerySelectsFieldsForSnapshotsAndCompleteDecoding() async throws {
     let cacheURL = try typedTestCacheURL("typed-field-selection")
     let fixedDate = Date(timeIntervalSince1970: 1_700_000_450)
@@ -5788,6 +6017,11 @@ struct TypedAPITests {
       all.binding.wrappedValue = [todo]
       expectNoDifference(all.wrappedValue.map(\.text), ["Binding"])
       expectNoDifference(all.count, 1)
+
+      let infinite = InfiniteQuery<TypedTodo>()
+      infinite.binding.wrappedValue = [todo]
+      expectNoDifference(infinite.wrappedValue.map(\.text), ["Binding"])
+      expectNoDifference(infinite.count, 1)
 
       let one = FetchOne<TypedTodo?>()
       one.binding.wrappedValue = todo

@@ -744,6 +744,7 @@ struct BootstrapTests {
     expectNoDifference(projectedBindings.adapter, "Projected bindings")
     expectNoDifference(projectedBindings.bindingAdapters, [
       "@FetchAll",
+      "@InfiniteQuery",
       "@FetchOne",
       "@Fetch",
       "@LocalID",

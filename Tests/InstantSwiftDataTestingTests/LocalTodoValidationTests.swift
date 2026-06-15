@@ -2080,6 +2080,7 @@ private let platformAdapterValidationAdapters = [
 
 private let projectedBindingAdapters = [
   "@FetchAll",
+  "@InfiniteQuery",
   "@FetchOne",
   "@Fetch",
   "@LocalID",

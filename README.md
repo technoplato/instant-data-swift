@@ -563,12 +563,13 @@ metadata, summarized pending mutation payload shape, and relaunch persistence
 through `InstantSwiftDataClient.save(_:)`.
 `validation platform-adapters` emits terminal evidence that public wrapper
 adapters bind local client values for fetches, local IDs, auth, rooms, files,
-streams, and shares, that SwiftUI projected bindings cover those same wrapper
-adapters when available, that `@FetchAll` handles dynamic reloads, nil queries,
-cached prior values on errors, and cancellation cleanup, that optional
-`@FetchOne` handles dynamic and nil-query reloads, that `@Fetch` request
-adapters handle dynamic request reloads, nil request resets, and cancellation
-cleanup, and that `@FetchAll` and `@Fetch` reload filtered active rows.
+streams, and shares, that SwiftUI projected bindings cover fetches,
+`@InfiniteQuery`, local IDs, auth, rooms, files, streams, and shares when
+available, that `@FetchAll` handles dynamic reloads, nil queries, cached prior
+values on errors, and cancellation cleanup, that optional `@FetchOne` handles
+dynamic and nil-query reloads, that `@Fetch` request adapters handle dynamic
+request reloads, nil request resets, and cancellation cleanup, and that
+`@FetchAll` and `@Fetch` reload filtered active rows.
 `validation syncups-recording` emits terminal evidence for the SyncUps scripted
 speech recording flow, meeting persistence across relaunch, sound effect
 advancement, and denied speech open-settings dependency seam.
@@ -712,6 +713,18 @@ defer { subscription.cancel() }
 
 for try await todos in subscription {
   // Update model state from the latest local materialization.
+}
+
+@InfiniteQuery(Todo.query.order(Todo.createdAt).limit(20))
+var pagedTodos: [Todo]
+
+let paging = $pagedTodos
+let pagingTask = Task { try await paging.task() }
+defer { pagingTask.cancel() }
+
+// Later, from a scroll threshold or button action:
+if paging.canLoadNextPage {
+  paging.loadNextPage()
 }
 
 @LocalID("todos.compose") var composeTodoID: String?

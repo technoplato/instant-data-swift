@@ -472,11 +472,11 @@ public enum InstantSwiftDataParityCoverage {
       sourceTestName: "useInfiniteQuerySubscription data/loadNextPage/error result",
       swiftFile: "Tests/InstantSwiftDataTests/TypedAPITests.swift",
       swiftTestName:
-        "typedInfiniteQuerySubscriptionDecodesAndLoadsNextPage + typedInfiniteQuerySubscriptionPreservesErrorSnapshotsAndRecovers + typedInfiniteQuerySubscriptionCancellationIsIdempotentAndStopsLoading",
+        "typedInfiniteQuerySubscriptionDecodesAndLoadsNextPage + infiniteQueryWrapperTasksAndLoadsNextPageThroughProjectedState + infiniteQueryWrapperPreservesErrorSnapshotsAndRecovers + infiniteQueryWrapperCancelIsIdempotentAndStopsLoading",
       surface: "infinite-query-adapter",
       status: .adapted,
       notes:
-        "InstantSwiftDataClient exposes typed InfiniteQuerySubscription snapshots with decoded values, pageInfo, loadNextPage, idempotent cancellation, and recoverable error-state snapshots."
+        "InstantSwiftDataClient and @InfiniteQuery expose decoded values, pageInfo, loadNextPage, idempotent cancellation, projected bindings, and recoverable error-state snapshots."
     ),
     instant(
       id: "instant.reactor.query-subs-round-trips",

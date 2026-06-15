@@ -8051,9 +8051,10 @@ extension InstantStoreTests {
       "@FetchAll(cancellation)",
       "@Fetch(request cancellation)",
     ])
-    expectNoDifference(jsonOutput.bindingAdapterCount, 10)
+    expectNoDifference(jsonOutput.bindingAdapterCount, 11)
     expectNoDifference(jsonOutput.bindingAdapters, [
       "@FetchAll",
+      "@InfiniteQuery",
       "@FetchOne",
       "@Fetch",
       "@LocalID",
@@ -8111,6 +8112,7 @@ extension InstantStoreTests {
     expectNoDifference(projectedBindingsEvidence.details.adapter, "Projected bindings")
     expectNoDifference(projectedBindingsEvidence.details.bindingAdapters, [
       "@FetchAll",
+      "@InfiniteQuery",
       "@FetchOne",
       "@Fetch",
       "@LocalID",
@@ -8202,7 +8204,7 @@ extension InstantStoreTests {
     #expect(humanOutput.contains("validation: ok"))
     #expect(humanOutput.contains("case: validation.platform.adapters"))
     #expect(humanOutput.contains("evidence rows: 21"))
-    #expect(humanOutput.contains("binding adapters: @FetchAll, @FetchOne, @Fetch"))
+    #expect(humanOutput.contains("binding adapters: @FetchAll, @InfiniteQuery, @FetchOne"))
     #expect(humanOutput.contains("lifecycle probes: 10"))
     #expect(humanOutput.contains("cancellation terminated: true"))
     #expect(humanOutput.contains("@FetchAll"))

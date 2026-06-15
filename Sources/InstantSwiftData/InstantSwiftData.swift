@@ -1254,6 +1254,16 @@ public struct InfiniteQuerySubscription<Element: Sendable>: AsyncSequence, Senda
       }
     }
   }
+
+  fileprivate static func finished() -> Self {
+    let finished = AsyncThrowingStream<InfiniteQuerySnapshot<Element>, Error>.makeStream(
+      bufferingPolicy: .bufferingNewest(1)
+    )
+    finished.continuation.finish()
+    let subscription = Self(stream: finished.stream, loadNextPage: {}) {}
+    subscription.cancel()
+    return subscription
+  }
 }
 
 private func fetchSubscription<Element: Sendable>(
@@ -1408,6 +1418,165 @@ private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
   }
 }
 
+// SAFETY: all mutable infinite-query state is protected by `lock`.
+private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable {
+  private let lock = NSLock()
+  private var _initialValue: [Element]
+  private var _wrappedValue: [Element]
+  private var _loadError: InstantError?
+  private var _isLoading: Bool
+  private var _pageInfo: InstantQueryPageInfo?
+  private var _canLoadNextPage: Bool
+  private var _activeSubscriptionID = 0
+  private var _activeSubscription:
+    (id: Int, subscription: InfiniteQuerySubscription<Element>)?
+
+  init(value: [Element]) {
+    self._initialValue = value
+    self._wrappedValue = value
+    self._loadError = nil
+    self._isLoading = false
+    self._pageInfo = nil
+    self._canLoadNextPage = false
+  }
+
+  var initialValue: [Element] {
+    get {
+      withLock { _initialValue }
+    }
+    set {
+      withLock {
+        _initialValue = newValue
+      }
+    }
+  }
+
+  var wrappedValue: [Element] {
+    get {
+      withLock { _wrappedValue }
+    }
+    set {
+      withLock {
+        _wrappedValue = newValue
+      }
+    }
+  }
+
+  var loadError: InstantError? {
+    get {
+      withLock { _loadError }
+    }
+    set {
+      withLock {
+        _loadError = newValue
+      }
+    }
+  }
+
+  var isLoading: Bool {
+    get {
+      withLock { _isLoading }
+    }
+    set {
+      withLock {
+        _isLoading = newValue
+      }
+    }
+  }
+
+  var pageInfo: InstantQueryPageInfo? {
+    get {
+      withLock { _pageInfo }
+    }
+    set {
+      withLock {
+        _pageInfo = newValue
+      }
+    }
+  }
+
+  var canLoadNextPage: Bool {
+    get {
+      withLock { _canLoadNextPage }
+    }
+    set {
+      withLock {
+        _canLoadNextPage = newValue
+      }
+    }
+  }
+
+  func resetToInitialValue() {
+    withLock {
+      _wrappedValue = _initialValue
+      _loadError = nil
+      _isLoading = false
+      _pageInfo = nil
+      _canLoadNextPage = false
+    }
+  }
+
+  func apply(_ snapshot: InfiniteQuerySnapshot<Element>) {
+    withLock {
+      _wrappedValue = snapshot.values
+      _loadError = snapshot.error
+      _isLoading = false
+      _pageInfo = snapshot.pageInfo
+      _canLoadNextPage = snapshot.canLoadNextPage
+    }
+  }
+
+  func cancelActiveSubscription() {
+    let subscription = withLock {
+      _activeSubscriptionID += 1
+      let subscription = _activeSubscription?.subscription
+      _activeSubscription = nil
+      return subscription
+    }
+    subscription?.cancel()
+  }
+
+  func beginActiveSubscription(_ subscription: InfiniteQuerySubscription<Element>) -> Int {
+    var id = 0
+    let previousSubscription = withLock {
+      _activeSubscriptionID += 1
+      id = _activeSubscriptionID
+      let previousSubscription = _activeSubscription?.subscription
+      _activeSubscription = (id, subscription)
+      return previousSubscription
+    }
+    previousSubscription?.cancel()
+    return id
+  }
+
+  func isActiveSubscription(_ id: Int) -> Bool {
+    withLock {
+      _activeSubscription?.id == id
+    }
+  }
+
+  func endActiveSubscription(_ id: Int) {
+    withLock {
+      if _activeSubscription?.id == id {
+        _activeSubscription = nil
+      }
+    }
+  }
+
+  func loadNextPage() {
+    let subscription = withLock {
+      _activeSubscription?.subscription
+    }
+    subscription?.loadNextPage()
+  }
+
+  private func withLock<Result>(_ operation: () throws -> Result) rethrows -> Result {
+    lock.lock()
+    defer { lock.unlock() }
+    return try operation()
+  }
+}
+
 private struct FetchOperations<Value: Sendable>: Sendable {
   var load: (@Sendable (InstantSwiftDataClient) async throws -> Value)?
   var subscribe: (@Sendable (InstantSwiftDataClient) async throws -> FetchSubscription<Value>)?
@@ -1464,6 +1633,8 @@ final class FetchSubscriptionCancellation: @unchecked Sendable {
   private let lock = NSLock()
   private let operation: @Sendable () -> Void
   private var isCancelled = false
+  private var activeOperationCount = 0
+  private var didRunCancellation = false
   private var continuations: [CheckedContinuation<Void, Never>] = []
 
   init(_ operation: @escaping @Sendable () -> Void) {
@@ -1475,13 +1646,19 @@ final class FetchSubscriptionCancellation: @unchecked Sendable {
   }
 
   func cancel() {
+    let continuations: [CheckedContinuation<Void, Never>]
     lock.lock()
     guard !isCancelled else {
       lock.unlock()
       return
     }
     isCancelled = true
-    let continuations = self.continuations
+    guard activeOperationCount == 0, !didRunCancellation else {
+      lock.unlock()
+      return
+    }
+    didRunCancellation = true
+    continuations = self.continuations
     self.continuations.removeAll()
     lock.unlock()
 
@@ -1493,23 +1670,47 @@ final class FetchSubscriptionCancellation: @unchecked Sendable {
 
   func unlessCancelled(_ action: @Sendable () -> Void) {
     lock.lock()
-    let isCancelled = self.isCancelled
+    guard !isCancelled else {
+      lock.unlock()
+      return
+    }
+    activeOperationCount += 1
     lock.unlock()
 
-    guard !isCancelled else { return }
     action()
+
+    finishOperation()
   }
 
   func wait() async {
     await withCheckedContinuation { continuation in
       lock.lock()
-      if isCancelled {
+      if didRunCancellation {
         lock.unlock()
         continuation.resume()
       } else {
         continuations.append(continuation)
         lock.unlock()
       }
+    }
+  }
+
+  private func finishOperation() {
+    let continuations: [CheckedContinuation<Void, Never>]
+    lock.lock()
+    activeOperationCount -= 1
+    guard isCancelled, activeOperationCount == 0, !didRunCancellation else {
+      lock.unlock()
+      return
+    }
+    didRunCancellation = true
+    continuations = self.continuations
+    self.continuations.removeAll()
+    lock.unlock()
+
+    operation()
+    for continuation in continuations {
+      continuation.resume()
     }
   }
 }
@@ -1907,6 +2108,367 @@ extension DependencyValues {
 
     return FileManager.default.homeDirectoryForCurrentUser
       .appendingPathComponent(".instant-swift-data", isDirectory: true)
+  }
+}
+
+@dynamicMemberLookup
+@propertyWrapper
+public struct InfiniteQuery<Element: InstantEntityModel>: Sendable {
+  private let storage: InfiniteQueryStorage<Element>
+  private let query: LockedValueStorage<InstantEntityQuery<Element>?>
+
+  public var wrappedValue: [Element] {
+    get { storage.wrappedValue }
+    nonmutating set { storage.wrappedValue = newValue }
+  }
+
+  public var loadError: InstantError? {
+    get { storage.loadError }
+    nonmutating set { storage.loadError = newValue }
+  }
+
+  public var isLoading: Bool {
+    get { storage.isLoading }
+    nonmutating set { storage.isLoading = newValue }
+  }
+
+  public var pageInfo: InstantQueryPageInfo? {
+    get { storage.pageInfo }
+    nonmutating set { storage.pageInfo = newValue }
+  }
+
+  public var canLoadNextPage: Bool {
+    get { storage.canLoadNextPage }
+    nonmutating set { storage.canLoadNextPage = newValue }
+  }
+
+  public subscript<Member>(dynamicMember keyPath: KeyPath<[Element], Member>) -> Member {
+    wrappedValue[keyPath: keyPath]
+  }
+
+  #if canImport(SwiftUI)
+    public var binding: Binding<[Element]> {
+      Binding(
+        get: { storage.wrappedValue },
+        set: { storage.wrappedValue = $0 }
+      )
+    }
+
+    public subscript<Member>(
+      dynamicMember keyPath: WritableKeyPath<[Element], Member>
+    ) -> Binding<Member> {
+      binding[dynamicMember: keyPath]
+    }
+  #endif
+
+  public init(wrappedValue: [Element] = []) {
+    self.init(wrappedValue: wrappedValue, Element.query)
+  }
+
+  public init(
+    wrappedValue: [Element] = [],
+    _ query: InstantEntityQuery<Element>
+  ) {
+    self.storage = InfiniteQueryStorage(value: wrappedValue)
+    self.query = LockedValueStorage(query)
+  }
+
+  public init(
+    wrappedValue: [Element] = [],
+    _ query: InstantEntityQuery<Element>?
+  ) {
+    self.storage = InfiniteQueryStorage(value: wrappedValue)
+    self.query = LockedValueStorage(query)
+  }
+
+  #if canImport(SwiftUI)
+    public init(
+      wrappedValue: [Element] = [],
+      animation: Animation?
+    ) {
+      self.init(wrappedValue: wrappedValue, Element.query)
+    }
+
+    public init(
+      wrappedValue: [Element] = [],
+      _ query: InstantEntityQuery<Element>,
+      animation: Animation?
+    ) {
+      self.init(wrappedValue: wrappedValue, query)
+    }
+
+    public init(
+      wrappedValue: [Element] = [],
+      _ query: InstantEntityQuery<Element>?,
+      animation: Animation?
+    ) {
+      self.init(wrappedValue: wrappedValue, query)
+    }
+  #endif
+
+  public var projectedValue: Self {
+    get { self }
+    nonmutating set {
+      wrappedValue = newValue.wrappedValue
+      storage.initialValue = newValue.storage.initialValue
+      loadError = newValue.loadError
+      isLoading = newValue.isLoading
+      pageInfo = newValue.pageInfo
+      canLoadNextPage = newValue.canLoadNextPage
+      query.value = newValue.query.value
+    }
+  }
+
+  public func load() async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(using: client)
+  }
+
+  public func load(using client: InstantSwiftDataClient) async throws {
+    guard let query = query.value else {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "load InfiniteQuery",
+        message: "No Instant query has been configured for this infinite query wrapper.",
+        recovery:
+          "Initialize @InfiniteQuery with an InstantEntityQuery, or pass a query to load(_:using:)."
+      )
+      loadError = error
+      throw error
+    }
+
+    storage.cancelActiveSubscription()
+    isLoading = true
+    do {
+      storage.apply(try await client.infiniteQueryInitialSnapshot(query))
+    } catch let error as CancellationError {
+      loadError = nil
+      isLoading = false
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      isLoading = false
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "load InfiniteQuery",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient and infinite query decoder."
+      )
+      loadError = error
+      isLoading = false
+      throw error
+    }
+  }
+
+  public func load(
+    _ query: InstantEntityQuery<Element>
+  ) async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(query, using: client)
+  }
+
+  public func load(
+    _ query: InstantEntityQuery<Element>,
+    using client: InstantSwiftDataClient
+  ) async throws {
+    self.query.value = query
+    try await load(using: client)
+  }
+
+  public func load(
+    _ query: InstantEntityQuery<Element>?
+  ) async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(query, using: client)
+  }
+
+  public func load(
+    _ query: InstantEntityQuery<Element>?,
+    using client: InstantSwiftDataClient
+  ) async throws {
+    guard let query else {
+      clearQuery()
+      return
+    }
+    try await load(query, using: client)
+  }
+
+  public func subscribe() async throws -> InfiniteQuerySubscription<Element> {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(using: client)
+  }
+
+  public func subscribe(
+    using client: InstantSwiftDataClient
+  ) async throws -> InfiniteQuerySubscription<Element> {
+    guard let query = query.value else {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "subscribe InfiniteQuery",
+        message: "No Instant query has been configured for this infinite query wrapper.",
+        recovery:
+          "Initialize @InfiniteQuery with an InstantEntityQuery, or pass a query to subscribe(_:using:)."
+      )
+      loadError = error
+      throw error
+    }
+
+    loadError = nil
+    return await client.subscribeInfiniteQuery(query)
+  }
+
+  public func subscribe(
+    _ query: InstantEntityQuery<Element>
+  ) async throws -> InfiniteQuerySubscription<Element> {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(query, using: client)
+  }
+
+  public func subscribe(
+    _ query: InstantEntityQuery<Element>,
+    using client: InstantSwiftDataClient
+  ) async throws -> InfiniteQuerySubscription<Element> {
+    self.query.value = query
+    return try await subscribe(using: client)
+  }
+
+  public func subscribe(
+    _ query: InstantEntityQuery<Element>?
+  ) async throws -> InfiniteQuerySubscription<Element> {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(query, using: client)
+  }
+
+  public func subscribe(
+    _ query: InstantEntityQuery<Element>?,
+    using client: InstantSwiftDataClient
+  ) async throws -> InfiniteQuerySubscription<Element> {
+    guard let query else {
+      clearQuery()
+      return .finished()
+    }
+    return try await subscribe(query, using: client)
+  }
+
+  public func task() async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(using: client)
+  }
+
+  public func task(using client: InstantSwiftDataClient) async throws {
+    storage.cancelActiveSubscription()
+    isLoading = true
+    var activeSubscriptionID: Int?
+    do {
+      let subscription = try await subscribe(using: client)
+      let subscriptionID = storage.beginActiveSubscription(subscription)
+      activeSubscriptionID = subscriptionID
+      defer {
+        subscription.cancel()
+        storage.endActiveSubscription(subscriptionID)
+      }
+      for try await snapshot in subscription {
+        try Task.checkCancellation()
+        guard storage.isActiveSubscription(subscriptionID) else {
+          throw CancellationError()
+        }
+        storage.apply(snapshot)
+      }
+      try Task.checkCancellation()
+      guard storage.isActiveSubscription(subscriptionID) else {
+        throw CancellationError()
+      }
+      isLoading = false
+      storage.endActiveSubscription(subscriptionID)
+    } catch let error as CancellationError {
+      if activeSubscriptionID.map(storage.isActiveSubscription) ?? true {
+        loadError = nil
+        isLoading = false
+      }
+      if let activeSubscriptionID {
+        storage.endActiveSubscription(activeSubscriptionID)
+      }
+      throw error
+    } catch let error as InstantError {
+      if activeSubscriptionID.map(storage.isActiveSubscription) ?? true {
+        loadError = error
+        isLoading = false
+      }
+      if let activeSubscriptionID {
+        storage.endActiveSubscription(activeSubscriptionID)
+      }
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "observe InfiniteQuery",
+        message: String(describing: error),
+        recovery:
+          "Inspect the configured InstantSwiftDataClient and infinite query subscription operation."
+      )
+      if activeSubscriptionID.map(storage.isActiveSubscription) ?? true {
+        loadError = error
+        isLoading = false
+      }
+      if let activeSubscriptionID {
+        storage.endActiveSubscription(activeSubscriptionID)
+      }
+      throw error
+    }
+  }
+
+  public func task(
+    _ query: InstantEntityQuery<Element>
+  ) async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(query, using: client)
+  }
+
+  public func task(
+    _ query: InstantEntityQuery<Element>,
+    using client: InstantSwiftDataClient
+  ) async throws {
+    self.query.value = query
+    try await task(using: client)
+  }
+
+  public func task(
+    _ query: InstantEntityQuery<Element>?
+  ) async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(query, using: client)
+  }
+
+  public func task(
+    _ query: InstantEntityQuery<Element>?,
+    using client: InstantSwiftDataClient
+  ) async throws {
+    guard let query else {
+      clearQuery()
+      return
+    }
+    try await task(query, using: client)
+  }
+
+  public func loadNextPage() {
+    storage.loadNextPage()
+  }
+
+  public func cancel() {
+    storage.cancelActiveSubscription()
+    isLoading = false
+  }
+
+  private func clearQuery() {
+    query.value = nil
+    storage.cancelActiveSubscription()
+    wrappedValue = []
+    loadError = nil
+    isLoading = false
+    pageInfo = nil
+    canLoadNextPage = false
   }
 }
 
