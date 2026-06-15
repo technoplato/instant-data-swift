@@ -2840,6 +2840,188 @@ struct TypedAPITests {
   }
 
   @Test
+  func fetchAllScalarSelectionsPreserveSQLiteDataSelectionSemantics() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_205)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000704")!
+
+    try await withDependencies {
+      $0.date.now = baseDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "fetch-all-scalar-selection-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: MacroGeneratedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      try await db.transact {
+        MacroGeneratedTodo.create(
+          id: InstantID(rawValue: "todo-scalar-all-first"),
+          MacroGeneratedTodo.title.set("First scalar all"),
+          MacroGeneratedTodo.score.set(1),
+          MacroGeneratedTodo.dueAt.set(baseDate),
+          MacroGeneratedTodo.metadata.set(.object(["row": .string("first")])),
+          MacroGeneratedTodo.isCompleted.set(false)
+        )
+        MacroGeneratedTodo.create(
+          id: InstantID(rawValue: "todo-scalar-all-second"),
+          MacroGeneratedTodo.title.set("Second scalar all"),
+          MacroGeneratedTodo.score.set(2),
+          MacroGeneratedTodo.dueAt.set(nil),
+          MacroGeneratedTodo.metadata.set(.object(["row": .string("second")])),
+          MacroGeneratedTodo.isCompleted.set(true)
+        )
+        MacroGeneratedTodo.create(
+          id: InstantID(rawValue: "todo-scalar-all-third"),
+          MacroGeneratedTodo.title.set("Third scalar all"),
+          MacroGeneratedTodo.score.set(3),
+          MacroGeneratedTodo.dueAt.set(baseDate.addingTimeInterval(2)),
+          MacroGeneratedTodo.metadata.set(.object(["row": .string("third")])),
+          MacroGeneratedTodo.isCompleted.set(false)
+        )
+      }
+
+      @FetchAll(
+        MacroGeneratedTodo.query.order(MacroGeneratedTodo.score),
+        selecting: MacroGeneratedTodo.title
+      )
+      var titles: [String]
+      try await $titles.load()
+      expectNoDifference(titles, ["First scalar all", "Second scalar all", "Third scalar all"])
+      expectNoDifference($titles.loadError, nil)
+
+      try await $titles.load(
+        MacroGeneratedTodo.query
+          .where(MacroGeneratedTodo.isCompleted == true)
+          .order(MacroGeneratedTodo.score),
+        selecting: MacroGeneratedTodo.title
+      )
+      expectNoDifference(titles, ["Second scalar all"])
+      expectNoDifference($titles.loadError, nil)
+
+      @FetchAll(
+        MacroGeneratedTodo.query.order(MacroGeneratedTodo.score),
+        selecting: MacroGeneratedTodo.dueAt
+      )
+      var dueDates: [Date?]
+      try await $dueDates.load()
+      expectNoDifference(dueDates, [baseDate, nil, baseDate.addingTimeInterval(2)])
+      expectNoDifference($dueDates.loadError, nil)
+
+      let requiredMissingRecorder = ClientCallRecorder(queryResults: [
+        [
+          InstantEntitySnapshot(
+            id: "todo-scalar-all-missing-title",
+            namespace: MacroGeneratedTodo.instantNamespace,
+            values: [
+              "score": .one(.number(4))
+            ]
+          )
+        ]
+      ])
+      let requiredTitles = FetchAll<String>(
+        wrappedValue: ["Cached scalar all"],
+        MacroGeneratedTodo.query,
+        selecting: MacroGeneratedTodo.title
+      )
+      do {
+        try await requiredTitles.load(using: recordingClient(requiredMissingRecorder))
+        Issue.record("Expected malformed selected FetchAll row to fail decoding.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .decodeFailed)
+        expectNoDifference(error.operation, "load FetchAll")
+      }
+      expectNoDifference(requiredTitles.wrappedValue, ["Cached scalar all"])
+      expectNoDifference(requiredTitles.loadError?.operation, "load FetchAll")
+      let requiredPlans = await requiredMissingRecorder.queryPlans()
+      expectNoDifference(requiredPlans.map(\.selectedFields), [["title"]])
+
+      let optionalMissingRecorder = ClientCallRecorder(queryResults: [
+        [
+          InstantEntitySnapshot(
+            id: "todo-scalar-all-optional-missing",
+            namespace: MacroGeneratedTodo.instantNamespace,
+            values: [:]
+          ),
+          InstantEntitySnapshot(
+            id: "todo-scalar-all-optional-present",
+            namespace: MacroGeneratedTodo.instantNamespace,
+            values: [
+              "title": .one(.string("Present optional scalar all"))
+            ]
+          ),
+        ]
+      ])
+      let optionalTitles = FetchAll<String?>(
+        MacroGeneratedTodo.query,
+        selecting: MacroGeneratedTodo.title
+      )
+      try await optionalTitles.load(using: recordingClient(optionalMissingRecorder))
+      expectNoDifference(optionalTitles.wrappedValue, [nil, "Present optional scalar all"])
+      expectNoDifference(optionalTitles.loadError, nil)
+      let optionalPlans = await optionalMissingRecorder.queryPlans()
+      expectNoDifference(optionalPlans.map(\.selectedFields), [["title"]])
+    }
+  }
+
+  @Test
+  func fetchAllScalarSelectionsSubscribeAndTaskDecodePartialSnapshots() async throws {
+    let firstEmission = [
+      InstantEntitySnapshot(
+        id: "todo-scalar-all-subscribe-first",
+        namespace: MacroGeneratedTodo.instantNamespace,
+        values: [
+          "title": .one(.string("Subscribed first scalar all"))
+        ]
+      ),
+      InstantEntitySnapshot(
+        id: "todo-scalar-all-subscribe-second",
+        namespace: MacroGeneratedTodo.instantNamespace,
+        values: [
+          "title": .one(.string("Subscribed second scalar all"))
+        ]
+      ),
+    ]
+    let secondEmission = [
+      InstantEntitySnapshot(
+        id: "todo-scalar-all-subscribe-third",
+        namespace: MacroGeneratedTodo.instantNamespace,
+        values: [
+          "title": .one(.string("Subscribed third scalar all"))
+        ]
+      )
+    ]
+    let fetch = FetchAll<String>(
+      MacroGeneratedTodo.query,
+      selecting: MacroGeneratedTodo.title
+    )
+    let subscription = try await fetch.subscribe(
+      using: stagedObservationClient([firstEmission, secondEmission])
+    )
+    var iterator = subscription.makeAsyncIterator()
+    let firstValue = try await iterator.next()
+    let secondValue = try await iterator.next()
+    let finishedValue = try await iterator.next()
+    expectNoDifference(firstValue, [
+      "Subscribed first scalar all",
+      "Subscribed second scalar all",
+    ])
+    expectNoDifference(secondValue, ["Subscribed third scalar all"])
+    expectNoDifference(finishedValue, nil)
+    subscription.cancel()
+
+    let taskFetch = FetchAll<String>(
+      MacroGeneratedTodo.query,
+      selecting: MacroGeneratedTodo.title
+    )
+    try await taskFetch.task(using: finiteObservationClient([firstEmission, secondEmission]))
+    expectNoDifference(taskFetch.wrappedValue, ["Subscribed third scalar all"])
+    expectNoDifference(taskFetch.loadError, nil)
+    expectNoDifference(taskFetch.isLoading, false)
+  }
+
+  @Test
   func nonOptionalFetchOnePreservesLastValueWhenQueryIsEmpty() async throws {
     let baseDate = Date(timeIntervalSince1970: 1_700_000_156)
     let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000679")!

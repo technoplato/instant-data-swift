@@ -1924,6 +1924,408 @@ public struct FetchAll<Element: Sendable>: Sendable {
   }
 }
 
+extension FetchAll where Element: InstantValueDecodable & InstantValueRepresentable {
+  public init<Entity: InstantEntityModel>(
+    wrappedValue: [Element] = [],
+    _ field: InstantAttributePath<Entity, Element>,
+    from query: InstantEntityQuery<Entity> = Entity.query
+  ) {
+    self.storage = FetchStorage(value: wrappedValue)
+    self.operations = FetchOperationStorage(Self.scalarOperations(for: query, selecting: field))
+  }
+
+  public init<Entity: InstantEntityModel>(
+    wrappedValue: [Element] = [],
+    _ query: InstantEntityQuery<Entity>,
+    selecting field: InstantAttributePath<Entity, Element>
+  ) {
+    self.init(wrappedValue: wrappedValue, field, from: query)
+  }
+
+  public func load<Entity: InstantEntityModel>(
+    _ field: InstantAttributePath<Entity, Element>,
+    from query: InstantEntityQuery<Entity> = Entity.query
+  ) async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(field, from: query, using: client)
+  }
+
+  public func load<Entity: InstantEntityModel>(
+    _ field: InstantAttributePath<Entity, Element>,
+    from query: InstantEntityQuery<Entity> = Entity.query,
+    using client: InstantSwiftDataClient
+  ) async throws {
+    configureScalarQuery(query, selecting: field)
+    try await load(using: client)
+  }
+
+  public func load<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>,
+    selecting field: InstantAttributePath<Entity, Element>
+  ) async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(query, selecting: field, using: client)
+  }
+
+  public func load<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>,
+    selecting field: InstantAttributePath<Entity, Element>,
+    using client: InstantSwiftDataClient
+  ) async throws {
+    try await load(field, from: query, using: client)
+  }
+
+  public func subscribe<Entity: InstantEntityModel>(
+    _ field: InstantAttributePath<Entity, Element>,
+    from query: InstantEntityQuery<Entity> = Entity.query
+  ) async throws -> FetchSubscription<[Element]> {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(field, from: query, using: client)
+  }
+
+  public func subscribe<Entity: InstantEntityModel>(
+    _ field: InstantAttributePath<Entity, Element>,
+    from query: InstantEntityQuery<Entity> = Entity.query,
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[Element]> {
+    configureScalarQuery(query, selecting: field)
+    return try await subscribe(using: client)
+  }
+
+  public func subscribe<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>,
+    selecting field: InstantAttributePath<Entity, Element>
+  ) async throws -> FetchSubscription<[Element]> {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(query, selecting: field, using: client)
+  }
+
+  public func subscribe<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>,
+    selecting field: InstantAttributePath<Entity, Element>,
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[Element]> {
+    try await subscribe(field, from: query, using: client)
+  }
+
+  public func task<Entity: InstantEntityModel>(
+    _ field: InstantAttributePath<Entity, Element>,
+    from query: InstantEntityQuery<Entity> = Entity.query
+  ) async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(field, from: query, using: client)
+  }
+
+  public func task<Entity: InstantEntityModel>(
+    _ field: InstantAttributePath<Entity, Element>,
+    from query: InstantEntityQuery<Entity> = Entity.query,
+    using client: InstantSwiftDataClient
+  ) async throws {
+    configureScalarQuery(query, selecting: field)
+    try await task(using: client)
+  }
+
+  public func task<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>,
+    selecting field: InstantAttributePath<Entity, Element>
+  ) async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(query, selecting: field, using: client)
+  }
+
+  public func task<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>,
+    selecting field: InstantAttributePath<Entity, Element>,
+    using client: InstantSwiftDataClient
+  ) async throws {
+    try await task(field, from: query, using: client)
+  }
+
+  private func configureScalarQuery<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>,
+    selecting field: InstantAttributePath<Entity, Element>
+  ) {
+    operations.value = Self.scalarOperations(for: query, selecting: field)
+  }
+
+  private static func scalarOperations<Entity: InstantEntityModel>(
+    for query: InstantEntityQuery<Entity>,
+    selecting field: InstantAttributePath<Entity, Element>
+  ) -> FetchOperations<[Element]> {
+    let selectedQuery = query.select(field)
+    return FetchOperations(
+      load: { client in
+        try await scalarValues(
+          from: client.query(selectedQuery.plan),
+          field: field,
+          operation: "load FetchAll"
+        )
+      },
+      subscribe: { client in
+        await scalarSubscription(client: client, selectedQuery: selectedQuery, field: field)
+      }
+    )
+  }
+
+  private static func scalarSubscription<Entity: InstantEntityModel>(
+    client: InstantSwiftDataClient,
+    selectedQuery: InstantEntityQuery<Entity>,
+    field: InstantAttributePath<Entity, Element>
+  ) async -> FetchSubscription<[Element]> {
+    let emissions = await client.observe(selectedQuery.plan)
+    let stream = AsyncThrowingStream<[Element], Error>.makeStream(
+      bufferingPolicy: .bufferingNewest(1)
+    )
+    let task = Task {
+      for await emission in emissions {
+        do {
+          try Task.checkCancellation()
+          stream.continuation.yield(
+            try scalarValues(
+              from: emission.values,
+              field: field,
+              operation: "subscribe FetchAll"
+            )
+          )
+        } catch {
+          stream.continuation.finish(throwing: error)
+          return
+        }
+      }
+      stream.continuation.finish()
+    }
+    stream.continuation.onTermination = { @Sendable _ in
+      task.cancel()
+    }
+    return FetchSubscription<[Element]>(stream: stream.stream) {
+      task.cancel()
+      stream.continuation.finish()
+    }
+  }
+
+  private static func scalarValues<Entity: InstantEntityModel>(
+    from snapshots: [InstantEntitySnapshot],
+    field: InstantAttributePath<Entity, Element>,
+    operation: String
+  ) throws -> [Element] {
+    try snapshots.map { snapshot in
+      try Element.decodeInstantValue(
+        snapshot.values[field.name]?.first,
+        namespace: Entity.instantNamespace,
+        path: field.name,
+        localID: snapshot.id,
+        operation: operation
+      )
+    }
+  }
+}
+
+extension FetchAll {
+  public init<Entity: InstantEntityModel, FieldValue>(
+    wrappedValue: [FieldValue?] = [],
+    _ field: InstantAttributePath<Entity, FieldValue>,
+    from query: InstantEntityQuery<Entity> = Entity.query
+  ) where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+    self.storage = FetchStorage(value: wrappedValue)
+    self.operations = FetchOperationStorage(Self.optionalScalarOperations(for: query, selecting: field))
+  }
+
+  public init<Entity: InstantEntityModel, FieldValue>(
+    wrappedValue: [FieldValue?] = [],
+    _ query: InstantEntityQuery<Entity>,
+    selecting field: InstantAttributePath<Entity, FieldValue>
+  ) where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+    self.init(wrappedValue: wrappedValue, field, from: query)
+  }
+
+  public func load<Entity: InstantEntityModel, FieldValue>(
+    _ field: InstantAttributePath<Entity, FieldValue>,
+    from query: InstantEntityQuery<Entity> = Entity.query
+  ) async throws where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(field, from: query, using: client)
+  }
+
+  public func load<Entity: InstantEntityModel, FieldValue>(
+    _ field: InstantAttributePath<Entity, FieldValue>,
+    from query: InstantEntityQuery<Entity> = Entity.query,
+    using client: InstantSwiftDataClient
+  ) async throws where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+    configureOptionalScalarQuery(query, selecting: field)
+    try await load(using: client)
+  }
+
+  public func load<Entity: InstantEntityModel, FieldValue>(
+    _ query: InstantEntityQuery<Entity>,
+    selecting field: InstantAttributePath<Entity, FieldValue>
+  ) async throws where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(query, selecting: field, using: client)
+  }
+
+  public func load<Entity: InstantEntityModel, FieldValue>(
+    _ query: InstantEntityQuery<Entity>,
+    selecting field: InstantAttributePath<Entity, FieldValue>,
+    using client: InstantSwiftDataClient
+  ) async throws where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+    try await load(field, from: query, using: client)
+  }
+
+  public func subscribe<Entity: InstantEntityModel, FieldValue>(
+    _ field: InstantAttributePath<Entity, FieldValue>,
+    from query: InstantEntityQuery<Entity> = Entity.query
+  ) async throws -> FetchSubscription<[Element]>
+  where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(field, from: query, using: client)
+  }
+
+  public func subscribe<Entity: InstantEntityModel, FieldValue>(
+    _ field: InstantAttributePath<Entity, FieldValue>,
+    from query: InstantEntityQuery<Entity> = Entity.query,
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[Element]>
+  where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+    configureOptionalScalarQuery(query, selecting: field)
+    return try await subscribe(using: client)
+  }
+
+  public func subscribe<Entity: InstantEntityModel, FieldValue>(
+    _ query: InstantEntityQuery<Entity>,
+    selecting field: InstantAttributePath<Entity, FieldValue>
+  ) async throws -> FetchSubscription<[Element]>
+  where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(query, selecting: field, using: client)
+  }
+
+  public func subscribe<Entity: InstantEntityModel, FieldValue>(
+    _ query: InstantEntityQuery<Entity>,
+    selecting field: InstantAttributePath<Entity, FieldValue>,
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[Element]>
+  where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+    try await subscribe(field, from: query, using: client)
+  }
+
+  public func task<Entity: InstantEntityModel, FieldValue>(
+    _ field: InstantAttributePath<Entity, FieldValue>,
+    from query: InstantEntityQuery<Entity> = Entity.query
+  ) async throws where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(field, from: query, using: client)
+  }
+
+  public func task<Entity: InstantEntityModel, FieldValue>(
+    _ field: InstantAttributePath<Entity, FieldValue>,
+    from query: InstantEntityQuery<Entity> = Entity.query,
+    using client: InstantSwiftDataClient
+  ) async throws where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+    configureOptionalScalarQuery(query, selecting: field)
+    try await task(using: client)
+  }
+
+  public func task<Entity: InstantEntityModel, FieldValue>(
+    _ query: InstantEntityQuery<Entity>,
+    selecting field: InstantAttributePath<Entity, FieldValue>
+  ) async throws where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(query, selecting: field, using: client)
+  }
+
+  public func task<Entity: InstantEntityModel, FieldValue>(
+    _ query: InstantEntityQuery<Entity>,
+    selecting field: InstantAttributePath<Entity, FieldValue>,
+    using client: InstantSwiftDataClient
+  ) async throws where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+    try await task(field, from: query, using: client)
+  }
+
+  private func configureOptionalScalarQuery<Entity: InstantEntityModel, FieldValue>(
+    _ query: InstantEntityQuery<Entity>,
+    selecting field: InstantAttributePath<Entity, FieldValue>
+  ) where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+    operations.value = Self.optionalScalarOperations(for: query, selecting: field)
+  }
+
+  private static func optionalScalarOperations<Entity: InstantEntityModel, FieldValue>(
+    for query: InstantEntityQuery<Entity>,
+    selecting field: InstantAttributePath<Entity, FieldValue>
+  ) -> FetchOperations<[Element]>
+  where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+    let selectedQuery = query.select(field)
+    return FetchOperations(
+      load: { client in
+        try await optionalScalarValues(
+          from: client.query(selectedQuery.plan),
+          field: field,
+          operation: "load FetchAll"
+        )
+      },
+      subscribe: { client in
+        await optionalScalarSubscription(client: client, selectedQuery: selectedQuery, field: field)
+      }
+    )
+  }
+
+  private static func optionalScalarSubscription<Entity: InstantEntityModel, FieldValue>(
+    client: InstantSwiftDataClient,
+    selectedQuery: InstantEntityQuery<Entity>,
+    field: InstantAttributePath<Entity, FieldValue>
+  ) async -> FetchSubscription<[Element]>
+  where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+    let emissions = await client.observe(selectedQuery.plan)
+    let stream = AsyncThrowingStream<[Element], Error>.makeStream(
+      bufferingPolicy: .bufferingNewest(1)
+    )
+    let task = Task {
+      for await emission in emissions {
+        do {
+          try Task.checkCancellation()
+          stream.continuation.yield(
+            try optionalScalarValues(
+              from: emission.values,
+              field: field,
+              operation: "subscribe FetchAll"
+            )
+          )
+        } catch {
+          stream.continuation.finish(throwing: error)
+          return
+        }
+      }
+      stream.continuation.finish()
+    }
+    stream.continuation.onTermination = { @Sendable _ in
+      task.cancel()
+    }
+    return FetchSubscription<[Element]>(stream: stream.stream) {
+      task.cancel()
+      stream.continuation.finish()
+    }
+  }
+
+  private static func optionalScalarValues<Entity: InstantEntityModel, FieldValue>(
+    from snapshots: [InstantEntitySnapshot],
+    field: InstantAttributePath<Entity, FieldValue>,
+    operation: String
+  ) throws -> [Element]
+  where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+    try snapshots.map { snapshot in
+      guard let value = snapshot.values[field.name]?.first, value != .null else {
+        return nil
+      }
+      return try FieldValue.decodeInstantValue(
+        value,
+        namespace: Entity.instantNamespace,
+        path: field.name,
+        localID: snapshot.id,
+        operation: operation
+      )
+    }
+  }
+}
+
 @dynamicMemberLookup
 @propertyWrapper
 public struct FetchOne<Value: Sendable>: Sendable {

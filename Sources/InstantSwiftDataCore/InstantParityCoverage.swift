@@ -457,6 +457,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "A malformed Instant query result throws a decode error, records it on FetchAll, and preserves the last successful value."
     ),
     sqlite(
+      id: "sqlite.fetch-all.scalar-selection",
+      sourceFile: "upstream/sqlite-data/Sources/SQLiteData/FetchAll.swift",
+      sourceTestName: "@FetchAll selected value collection",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "fetchAllScalarSelectionsPreserveSQLiteDataSelectionSemantics",
+      surface: "adapter-fetch",
+      status: .adapted,
+      notes: "FetchAll can load, subscribe, and task over selected Instant fields as Swift arrays while preserving optional nil and decode-failure semantics."
+    ),
+    sqlite(
       id: "sqlite.fetch-wrappers.basic-matrix",
       sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchTests.swift",
       sourceTestName: "bareFetchAll / fetchAllWithQuery / fetchOneCountWithQuery / fetchOneOptional / fetchOneWithDefault / fetchOneOptional_SQL",
