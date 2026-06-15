@@ -2865,7 +2865,11 @@ extension InstantStoreTests {
     let result = try runCLIResult(["examples"], homeURL: homeURL)
 
     expectNoDifference(result.status, 64)
-    #expect(result.error.contains("Usage: instant-swift-data examples <todos|todo-links|reminders|sync-ups>"))
+    #expect(
+      result.error.contains(
+        "Usage: instant-swift-data examples <todos|todo-links|counters|reminders|sync-ups>"
+      )
+    )
   }
 
   @Test
@@ -4646,6 +4650,199 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliCountersCloudKitDemoShareMetadataAndRolesPersistAcrossLaunches() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    _ = try runCLI(
+      ["auth", "token", "owner-refresh", "--user-id", "user-1", "--json"],
+      homeURL: homeURL
+    )
+    let added = try JSONDecoder().decode(
+      CLICountersOutput.self,
+      from: Data(
+        try runCLI(["examples", "counters", "add", "--count", "2", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(added.event, "add")
+    expectNoDifference(added.transport, "not-implemented-local-cache-only")
+    expectNoDifference(added.counterCount, 1)
+    expectNoDifference(added.sharedCounterCount, 0)
+    expectNoDifference(added.counters.map(\.counter.count), [2])
+    expectNoDifference(added.counters.map(\.isShared), [false])
+    let counterID = try #require(added.changedID)
+
+    let incremented = try JSONDecoder().decode(
+      CLICountersOutput.self,
+      from: Data(
+        try runCLI(["examples", "cloudkit-demo", "increment", counterID, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(incremented.event, "increment")
+    expectNoDifference(incremented.changedID, counterID)
+    expectNoDifference(incremented.counters.map(\.counter.count), [3])
+
+    let createdShare = try JSONDecoder().decode(
+      CLIShareOutput.self,
+      from: Data(
+        try runCLI(["shares", "create", CounterExample.namespace, counterID, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    let share = try #require(createdShare.shares.first)
+    expectNoDifference(share.share.rootNamespace, CounterExample.namespace)
+    expectNoDifference(share.share.rootID, counterID)
+    expectNoDifference(share.memberships.map(\.role), [.owner])
+
+    let ownerList = try JSONDecoder().decode(
+      CLICountersOutput.self,
+      from: Data(try runCLI(["examples", "counters", "list", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(ownerList.sharedCounterCount, 1)
+    expectNoDifference(ownerList.counters.map(\.shareID), [share.share.id])
+    expectNoDifference(ownerList.counters.map(\.shareRole), [.owner])
+    expectNoDifference(ownerList.counters.map(\.shareMemberCount), [1])
+
+    _ = try runCLI(
+      ["auth", "token", "invitee-refresh", "--user-id", "user-2", "--json"],
+      homeURL: homeURL
+    )
+    let accepted = try JSONDecoder().decode(
+      CLIShareOutput.self,
+      from: Data(try runCLI(["shares", "accept", share.share.token, "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(accepted.shares.first?.memberships.map(\.role), [.owner, .reader])
+
+    let readerList = try JSONDecoder().decode(
+      CLICountersOutput.self,
+      from: Data(try runCLI(["examples", "cloudkit-demo", "list", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(readerList.counters.map(\.counter.count), [3])
+    expectNoDifference(readerList.counters.map(\.isShared), [true])
+    expectNoDifference(readerList.counters.map(\.shareRole), [.reader])
+    expectNoDifference(readerList.counters.map(\.shareMemberCount), [2])
+
+    let readerIncrement = try runCLIResult(
+      ["examples", "counters", "increment", counterID, "--json"],
+      homeURL: homeURL
+    )
+    #expect(readerIncrement.status == 77)
+    #expect(readerIncrement.error.contains("reader access"))
+    let unchanged = try JSONDecoder().decode(
+      CLICountersOutput.self,
+      from: Data(try runCLI(["examples", "counters", "list", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(unchanged.counters.map(\.counter.count), [3])
+
+    _ = try runCLI(
+      ["auth", "token", "owner-refresh", "--user-id", "user-1", "--json"],
+      homeURL: homeURL
+    )
+    let promoted = try JSONDecoder().decode(
+      CLIShareOutput.self,
+      from: Data(
+        try runCLI(["shares", "role", share.share.id, "user-2", "writer", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(promoted.shares.first?.memberships.map(\.role), [.owner, .writer])
+
+    _ = try runCLI(
+      ["auth", "token", "invitee-refresh", "--user-id", "user-2", "--json"],
+      homeURL: homeURL
+    )
+    let writerIncrement = try JSONDecoder().decode(
+      CLICountersOutput.self,
+      from: Data(
+        try runCLI(["examples", "counters", "increment", counterID, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(writerIncrement.counters.map(\.counter.count), [4])
+    expectNoDifference(writerIncrement.counters.map(\.shareRole), [.writer])
+
+    let writerDecrement = try JSONDecoder().decode(
+      CLICountersOutput.self,
+      from: Data(
+        try runCLI(["examples", "counters", "decrement", counterID, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(writerDecrement.counters.map(\.counter.count), [3])
+    expectNoDifference(writerDecrement.counters.map(\.shareRole), [.writer])
+
+    _ = try runCLI(
+      ["auth", "token", "owner-refresh", "--user-id", "user-1", "--json"],
+      homeURL: homeURL
+    )
+    let demoted = try JSONDecoder().decode(
+      CLIShareOutput.self,
+      from: Data(
+        try runCLI(["shares", "role", share.share.id, "user-2", "reader", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(demoted.shares.first?.memberships.map(\.role), [.owner, .reader])
+
+    _ = try runCLI(
+      ["auth", "token", "invitee-refresh", "--user-id", "user-2", "--json"],
+      homeURL: homeURL
+    )
+    let demotedDecrement = try runCLIResult(
+      ["examples", "counters", "decrement", counterID, "--json"],
+      homeURL: homeURL
+    )
+    #expect(demotedDecrement.status == 77)
+    #expect(demotedDecrement.error.contains("reader access"))
+
+    let readerDelete = try runCLIResult(
+      ["examples", "counters", "delete", counterID, "--json"],
+      homeURL: homeURL
+    )
+    #expect(readerDelete.status == 77)
+    #expect(readerDelete.error.contains("reader access"))
+
+    let jsonlOutput = try runCLI(["examples", "counters", "list", "--jsonl"], homeURL: homeURL)
+    let jsonlLines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(jsonlLines.count, 2)
+    let summary = try JSONDecoder().decode(
+      CLICountersEvidence.self,
+      from: Data(try #require(jsonlLines.first).utf8)
+    )
+    expectNoDifference(summary.caseID, "cli.examples.counters")
+    expectNoDifference(summary.event, "list")
+    expectNoDifference(summary.details.sharedCounterCount, 1)
+    let counterEvidence = try JSONDecoder().decode(
+      CLISharedCounterEvidence.self,
+      from: Data(try #require(jsonlLines.dropFirst().first).utf8)
+    )
+    expectNoDifference(counterEvidence.caseID, "cli.examples.counters")
+    expectNoDifference(counterEvidence.event, "counter")
+    expectNoDifference(counterEvidence.entityID, counterID)
+    expectNoDifference(counterEvidence.details.counter.count, 3)
+    expectNoDifference(counterEvidence.details.shareRole, .reader)
+    expectNoDifference(counterEvidence.details.shareMemberCount, 2)
+
+    _ = try runCLI(
+      ["auth", "token", "owner-refresh", "--user-id", "user-1", "--json"],
+      homeURL: homeURL
+    )
+    let deleted = try JSONDecoder().decode(
+      CLICountersOutput.self,
+      from: Data(try runCLI(["examples", "counters", "delete", counterID, "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(deleted.event, "delete")
+    expectNoDifference(deleted.changedID, counterID)
+    expectNoDifference(deleted.counterCount, 0)
+    expectNoDifference(deleted.sharedCounterCount, 0)
+    expectNoDifference(deleted.counters, [])
+  }
+
+  @Test
   func cliValidationLocalTodosEmitsEvidence() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -5395,9 +5592,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 98)
+    expectNoDifference(jsonOutput.recordCount, 99)
     expectNoDifference(jsonOutput.exactCount, 19)
-    expectNoDifference(jsonOutput.adaptedCount, 76)
+    expectNoDifference(jsonOutput.adaptedCount, 77)
     expectNoDifference(jsonOutput.blockedCount, 3)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -5415,6 +5612,7 @@ extension InstantStoreTests {
       )
     )
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantDateCoercionTests.swift"))
+    #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/CLITests.swift"))
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataTests/TypedAPITests.swift"))
     #expect(jsonOutput.records.contains { $0.id == "instant.store.simple-add" && $0.status == "exact" })
     #expect(
@@ -5445,6 +5643,11 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.records.contains {
         $0.id == "instant.store.v0-store-restore" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "sqlite.cloudkit-demo.local-counter-share" && $0.status == "adapted"
       }
     )
     #expect(
@@ -5671,7 +5874,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 98"))
+    #expect(humanOutput.contains("records: 99"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 
@@ -6135,6 +6338,26 @@ private struct CLITodoLinksOutput: Decodable {
   var todos: [CLILinkedTodo]
 }
 
+private struct CLICountersOutput: Decodable {
+  var event: String
+  var changedID: String?
+  var transport: String
+  var queryID: String
+  var cacheKey: String
+  var pendingMutationCount: Int
+  var counterCount: Int
+  var sharedCounterCount: Int
+  var counters: [CLISharedCounter]
+}
+
+private struct CLISharedCounter: Decodable, Equatable {
+  var counter: CounterRecord
+  var isShared: Bool
+  var shareID: String?
+  var shareRole: InstantShareRole?
+  var shareMemberCount: Int
+}
+
 private struct CLIRemindersOutput: Decodable {
   var event: String
   var changedID: String?
@@ -6291,6 +6514,32 @@ private struct CLITodosEvidence: Decodable {
   enum CodingKeys: String, CodingKey {
     case caseID = "case"
     case event
+    case details
+  }
+}
+
+private struct CLICountersEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLICountersOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
+}
+
+private struct CLISharedCounterEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var entityID: String?
+  var details: CLISharedCounter
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case entityID
     case details
   }
 }

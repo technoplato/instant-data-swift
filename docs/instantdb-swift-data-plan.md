@@ -421,6 +421,11 @@ Owners can now promote/demote accepted non-owner members between reader and
 writer roles with `instant-swift-data shares role`, and writer access is
 enforced through the same shared-root transaction guard
 without granting share ownership or duplicate-share creation.
+The CloudKitDemo counter concept now has a local Instant CLI surface:
+`instant-swift-data examples counters add/list/increment/decrement/delete`
+and the `examples cloudkit-demo` alias expose count mutations plus visible
+share metadata, current-user role, member count, reader rejection, and writer
+promotion proof.
 Real Instant sharing entities, generated permissions, Reminders UI sharing, and
 Swift/TypeScript boundary proof remain future work.
 
@@ -739,6 +744,10 @@ Create `validation/` with:
   mutate active shared roots through the normal transaction path, and demoted
   readers are rejected again before cache/outbox writes; share creation for an
   active shared root remains owner-only and non-duplicating.
+- Sharing: local CloudKitDemo-style counters can be added, incremented,
+  decremented, listed with visible share metadata, shared with a second user,
+  rejected for reader writes, and mutated after writer promotion through
+  `instant-swift-data examples counters` and the `cloudkit-demo` alias.
 - Reminders: the first local Reminders port slice exposes durable
   `examples reminders add-list`, `add`, `update`, `complete`, and
   `list --refresh` commands over `remindersLists`/`reminders` namespaces; reminder

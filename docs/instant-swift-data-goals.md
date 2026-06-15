@@ -103,6 +103,11 @@ Port the examples from `pointfreeco/sqlite-data/Examples`:
   mean using CloudKit; it means providing the Instant equivalent of shared
   records, participants, permissions, accept/share links, and visible sharing
   state.
+  Current local progress includes a CloudKitDemo-style counter CLI:
+  `instant-swift-data examples counters add/list/increment/decrement/delete`
+  and the `examples cloudkit-demo` alias. It proves local visible sharing
+  metadata, current-user roles, member counts, reader rejection, and writer
+  promotion for shared counter roots.
 
 ## Public API Goals
 
@@ -692,6 +697,11 @@ Research and implement an Instant sharing model using some combination of:
 The Reminders port must include real list sharing. A user must be able to share
 a reminders list, another user must accept it, permissions must govern writes,
 and both clients must observe the shared state through Instant.
+The CloudKitDemo concept must include shared counter-style records with visible
+share state. The current local CLI slice proves this shape through
+`instant-swift-data examples counters` and `examples cloudkit-demo`; the final
+acceptance bar still requires real Instant-backed sharing and Swift/TypeScript
+verification.
 
 ## Testing And Validation
 
@@ -833,7 +843,8 @@ The project is done when:
 - The SQLiteData example ports are complete.
 - Reminders sharing works through Instant.
 - SyncUps works through Instant.
-- CloudKitDemo's sync/share concepts have real Instant equivalents.
+- CloudKitDemo's sync/share concepts have real Instant equivalents; local
+  counter/share CLI proof is useful progress but not the final acceptance bar.
 - TypeScript Instant tests are ported or explicitly classified.
 - Swift/TypeScript real-run validation passes.
 - Offline, optimistic, and reconnect behavior is proven.

@@ -49,6 +49,7 @@ public struct CLIInvocation: Equatable, Sendable {
 
 public enum CLIExamplesInvocation: Equatable, Sendable {
   case todos(CLIExamplesTodosInvocation)
+  case counters(arguments: [String])
   case syncUps(arguments: [String])
   case reminders(arguments: [String])
   case todoLinks(arguments: [String])
@@ -165,6 +166,46 @@ public enum CLIExamplesTodoLinksUsage {
 }
 
 public enum CLIExamplesTodoLinksArgumentError: Error, Equatable, Sendable {
+  case invalidArguments(usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
+public enum CLIExamplesCountersLeafInvocation: Equatable, Sendable {
+  case seed
+  case add(count: Int)
+  case list
+  case increment(counterID: String)
+  case decrement(counterID: String)
+  case delete(counterID: String)
+  case unknown(String)
+}
+
+public enum CLIExamplesCountersUsage {
+  public static let counters = """
+    Usage: instant-swift-data examples counters <seed|add|list|increment|decrement|delete>
+      instant-swift-data examples counters seed [--json|--jsonl]
+      instant-swift-data examples counters add [--count n] [--json|--jsonl]
+      instant-swift-data examples counters list [--json|--jsonl]
+      instant-swift-data examples counters increment <counter-id> [--json|--jsonl]
+      instant-swift-data examples counters decrement <counter-id> [--json|--jsonl]
+      instant-swift-data examples counters delete <counter-id> [--json|--jsonl]
+    """
+  public static let seed =
+    "Usage: instant-swift-data examples counters seed [--json|--jsonl]"
+  public static let add =
+    "Usage: instant-swift-data examples counters add [--count n] [--json|--jsonl]"
+  public static let list =
+    "Usage: instant-swift-data examples counters list [--json|--jsonl]"
+  public static let increment =
+    "Usage: instant-swift-data examples counters increment <counter-id> [--json|--jsonl]"
+  public static let decrement =
+    "Usage: instant-swift-data examples counters decrement <counter-id> [--json|--jsonl]"
+  public static let delete =
+    "Usage: instant-swift-data examples counters delete <counter-id> [--json|--jsonl]"
+}
+
+public enum CLIExamplesCountersArgumentError: Error, Equatable, Sendable {
   case invalidArguments(usage: String)
 
   public var exitCode: Int32 { 64 }
@@ -1601,6 +1642,11 @@ public struct CLIExamplesParser: Parser {
     case "todos":
       return .todos(try CLIExamplesTodosParser().parse(&input))
 
+    case "counters", "cloudkit-demo":
+      let arguments = Array(input)
+      input.removeAll()
+      return .counters(arguments: arguments)
+
     case "sync-ups", "syncups":
       let arguments = Array(input)
       input.removeAll()
@@ -2028,6 +2074,89 @@ public struct CLIExamplesTodoLinksLeafParser: Parser {
       return .unknown(command)
     }
   }
+}
+
+public struct CLIExamplesCountersLeafParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIExamplesCountersLeafInvocation {
+    guard let command = input.first else {
+      throw CLIExamplesCountersArgumentError.invalidArguments(
+        usage: CLIExamplesCountersUsage.counters
+      )
+    }
+    input.removeFirst()
+
+    switch command {
+    case "seed":
+      try requireNoRemainingExamplesCountersArguments(
+        &input,
+        usage: CLIExamplesCountersUsage.seed
+      )
+      return .seed
+
+    case "add":
+      return .add(count: try parseExamplesCountersAddOptions(&input))
+
+    case "list":
+      try requireNoRemainingExamplesCountersArguments(
+        &input,
+        usage: CLIExamplesCountersUsage.list
+      )
+      return .list
+
+    case "increment", "inc", "+":
+      let counterID = try parseRequiredNonEmptyValue(
+        from: &input,
+        usage: CLIExamplesCountersUsage.increment
+      )
+      try requireNoRemainingExamplesCountersArguments(
+        &input,
+        usage: CLIExamplesCountersUsage.increment
+      )
+      return .increment(counterID: counterID)
+
+    case "decrement", "dec", "-":
+      let counterID = try parseRequiredNonEmptyValue(
+        from: &input,
+        usage: CLIExamplesCountersUsage.decrement
+      )
+      try requireNoRemainingExamplesCountersArguments(
+        &input,
+        usage: CLIExamplesCountersUsage.decrement
+      )
+      return .decrement(counterID: counterID)
+
+    case "delete", "remove":
+      let counterID = try parseRequiredNonEmptyValue(
+        from: &input,
+        usage: CLIExamplesCountersUsage.delete
+      )
+      try requireNoRemainingExamplesCountersArguments(
+        &input,
+        usage: CLIExamplesCountersUsage.delete
+      )
+      return .delete(counterID: counterID)
+
+    default:
+      input.removeAll()
+      return .unknown(command)
+    }
+  }
+}
+
+private func parseRequiredNonEmptyValue(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIExamplesCountersArgumentError.invalidArguments(usage: usage)
+  }
+  input.removeFirst()
+  guard !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+    throw CLIExamplesCountersArgumentError.invalidArguments(usage: usage)
+  }
+  return value
 }
 
 public struct CLIExamplesSyncUpsLeafParser: Parser {
@@ -4609,6 +4738,42 @@ private func requireNoRemainingExamplesTodoLinksArguments(
   }
 }
 
+private func requireNoRemainingExamplesCountersArguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if !input.isEmpty {
+    throw CLIExamplesCountersArgumentError.invalidArguments(usage: usage)
+  }
+}
+
+private func parseExamplesCountersAddOptions(
+  _ input: inout ArraySlice<String>
+) throws -> Int {
+  var count = 0
+
+  while let option = input.first {
+    switch option {
+    case "--count":
+      input.removeFirst()
+      guard let value = input.first, let parsed = Int(value) else {
+        throw CLIExamplesCountersArgumentError.invalidArguments(
+          usage: CLIExamplesCountersUsage.add
+        )
+      }
+      input.removeFirst()
+      count = parsed
+
+    default:
+      throw CLIExamplesCountersArgumentError.invalidArguments(
+        usage: CLIExamplesCountersUsage.add
+      )
+    }
+  }
+
+  return count
+}
+
 private func parseExamplesSyncUpsListOptions(
   from input: inout ArraySlice<String>,
   command: String
@@ -5394,6 +5559,15 @@ extension CLIExamplesTodosArgumentError: CustomStringConvertible {
 }
 
 extension CLIExamplesTodoLinksArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case let .invalidArguments(usage):
+      return usage
+    }
+  }
+}
+
+extension CLIExamplesCountersArgumentError: CustomStringConvertible {
   public var description: String {
     switch self {
     case let .invalidArguments(usage):

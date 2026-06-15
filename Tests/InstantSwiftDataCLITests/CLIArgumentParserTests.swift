@@ -395,6 +395,101 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func examplesCountersLeafParserParsesCommandsAndOptions() throws {
+    expectNoDifference(try parseExamplesCountersLeaf(["seed"]), .seed)
+    expectNoDifference(try parseExamplesCountersLeaf(["add"]), .add(count: 0))
+    expectNoDifference(
+      try parseExamplesCountersLeaf(["add", "--count", "24"]),
+      .add(count: 24)
+    )
+    expectNoDifference(try parseExamplesCountersLeaf(["list"]), .list)
+    expectNoDifference(
+      try parseExamplesCountersLeaf(["increment", "counter-1"]),
+      .increment(counterID: "counter-1")
+    )
+    expectNoDifference(
+      try parseExamplesCountersLeaf(["inc", "counter-1"]),
+      .increment(counterID: "counter-1")
+    )
+    expectNoDifference(
+      try parseExamplesCountersLeaf(["+", "counter-1"]),
+      .increment(counterID: "counter-1")
+    )
+    expectNoDifference(
+      try parseExamplesCountersLeaf(["decrement", "counter-1"]),
+      .decrement(counterID: "counter-1")
+    )
+    expectNoDifference(
+      try parseExamplesCountersLeaf(["dec", "counter-1"]),
+      .decrement(counterID: "counter-1")
+    )
+    expectNoDifference(
+      try parseExamplesCountersLeaf(["-", "counter-1"]),
+      .decrement(counterID: "counter-1")
+    )
+    expectNoDifference(
+      try parseExamplesCountersLeaf(["delete", "counter-1"]),
+      .delete(counterID: "counter-1")
+    )
+    expectNoDifference(
+      try parseExamplesCountersLeaf(["remove", "counter-1"]),
+      .delete(counterID: "counter-1")
+    )
+    expectNoDifference(
+      try parseExamplesCountersLeaf(["dance", "--fast"]),
+      .unknown("dance")
+    )
+  }
+
+  @Test
+  func examplesCountersLeafParserReportsMalformedArguments() throws {
+    try expectExamplesCountersLeafParseError(
+      [],
+      description: CLIExamplesCountersUsage.counters
+    )
+    try expectExamplesCountersLeafParseError(
+      ["seed", "unexpected"],
+      description: CLIExamplesCountersUsage.seed
+    )
+    try expectExamplesCountersLeafParseError(
+      ["add", "--count"],
+      description: CLIExamplesCountersUsage.add
+    )
+    try expectExamplesCountersLeafParseError(
+      ["add", "--count", "nope"],
+      description: CLIExamplesCountersUsage.add
+    )
+    try expectExamplesCountersLeafParseError(
+      ["add", "--surprise"],
+      description: CLIExamplesCountersUsage.add
+    )
+    try expectExamplesCountersLeafParseError(
+      ["list", "unexpected"],
+      description: CLIExamplesCountersUsage.list
+    )
+    try expectExamplesCountersLeafParseError(
+      ["increment"],
+      description: CLIExamplesCountersUsage.increment
+    )
+    try expectExamplesCountersLeafParseError(
+      ["increment", "  "],
+      description: CLIExamplesCountersUsage.increment
+    )
+    try expectExamplesCountersLeafParseError(
+      ["increment", "counter-1", "unexpected"],
+      description: CLIExamplesCountersUsage.increment
+    )
+    try expectExamplesCountersLeafParseError(
+      ["decrement"],
+      description: CLIExamplesCountersUsage.decrement
+    )
+    try expectExamplesCountersLeafParseError(
+      ["delete"],
+      description: CLIExamplesCountersUsage.delete
+    )
+  }
+
+  @Test
   func examplesSyncUpsLeafParserParsesCommandsAndOptions() throws {
     expectNoDifference(try parseExamplesSyncUpsLeaf(["seed"]), .seed)
     expectNoDifference(
@@ -2119,6 +2214,14 @@ struct CLIArgumentParserTests {
       .todoLinks(arguments: ["seed"])
     )
     expectNoDifference(
+      try parseExamples(["counters", "seed"]),
+      .counters(arguments: ["seed"])
+    )
+    expectNoDifference(
+      try parseExamples(["cloudkit-demo", "list"]),
+      .counters(arguments: ["list"])
+    )
+    expectNoDifference(
       try parseExamples(["chat", "seed"]),
       .unknown("chat", arguments: ["seed"])
     )
@@ -2753,6 +2856,15 @@ private func parseExamplesTodoLinksLeaf(
   return invocation
 }
 
+private func parseExamplesCountersLeaf(
+  _ arguments: [String]
+) throws -> CLIExamplesCountersLeafInvocation {
+  var input = arguments[...]
+  let invocation = try CLIExamplesCountersLeafParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseExamplesSyncUpsLeaf(
   _ arguments: [String]
 ) throws -> CLIExamplesSyncUpsLeafInvocation {
@@ -3211,6 +3323,19 @@ private func expectExamplesTodoLinksLeafParseError(
     _ = try parseExamplesTodoLinksLeaf(arguments)
     Issue.record("Expected examples todo-links parser to reject \(arguments).")
   } catch let error as CLIExamplesTodoLinksArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectExamplesCountersLeafParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseExamplesCountersLeaf(arguments)
+    Issue.record("Expected examples counters parser to reject \(arguments).")
+  } catch let error as CLIExamplesCountersArgumentError {
     expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }

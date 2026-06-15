@@ -266,6 +266,28 @@ swift run instant-swift-data auth token owner-refresh --user-id user-1 --json
 swift run instant-swift-data shares revoke "$SHARE_ID" --json
 ```
 
+Run the CloudKitDemo-style shared counter demo:
+
+```bash
+swift run instant-swift-data auth token owner-refresh --user-id user-1 --json
+COUNTER_JSON="$(swift run instant-swift-data examples counters add --count 24 --json)"
+COUNTER_ID="$(printf '%s' "$COUNTER_JSON" | jq -r '.changedID')"
+swift run instant-swift-data examples cloudkit-demo increment "$COUNTER_ID" --json
+SHARE_JSON="$(swift run instant-swift-data shares create counters "$COUNTER_ID" --json)"
+SHARE_ID="$(printf '%s' "$SHARE_JSON" | jq -r '.shares[0].share.id')"
+SHARE_TOKEN="$(printf '%s' "$SHARE_JSON" | jq -r '.shares[0].share.token')"
+swift run instant-swift-data examples counters list --json
+swift run instant-swift-data auth token invitee-refresh --user-id user-2 --json
+swift run instant-swift-data shares accept "$SHARE_TOKEN" --json
+swift run instant-swift-data examples counters list --jsonl
+swift run instant-swift-data examples counters increment "$COUNTER_ID" --json || test "$?" -eq 77
+swift run instant-swift-data auth token owner-refresh --user-id user-1 --json
+swift run instant-swift-data shares role "$SHARE_ID" user-2 writer --json
+swift run instant-swift-data auth token invitee-refresh --user-id user-2 --json
+swift run instant-swift-data examples counters increment "$COUNTER_ID" --json
+swift run instant-swift-data examples counters list --json
+```
+
 Create and verify a local todo scaffold:
 
 ```bash

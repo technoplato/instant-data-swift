@@ -408,8 +408,14 @@ struct InstantSwiftDataCLI {
       invocation = try CLIExamplesParser().parse(&input)
     } catch let error as CLIExamplesTodosArgumentError {
       throw CLIError(error.description, exitCode: error.exitCode)
+    } catch let error as CLIExamplesCountersArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
     switch invocation {
+    case let .counters(arguments):
+      try await runCounters(arguments: arguments, output: output)
+      return
+
     case let .syncUps(arguments):
       try await runSyncUps(arguments: arguments, output: output)
       return
@@ -1477,6 +1483,136 @@ struct InstantSwiftDataCLI {
 
     case .unknown:
       preconditionFailure("Unknown todo-links commands are handled before bootstrapping.")
+    }
+  }
+
+  private static func runCounters(arguments: [String], output: OutputMode) async throws {
+    let invocation: CLIExamplesCountersLeafInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLIExamplesCountersLeafParser().parse(&input)
+    } catch let error as CLIExamplesCountersArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
+    }
+
+    if case let .unknown(command) = invocation {
+      throw CLIError("Unknown counters command: \(command). \(countersUsage)", exitCode: 64)
+    }
+
+    let context = try await CLIContext.bootstrap(initialAttributes: CounterExample.attributes)
+
+    switch invocation {
+    case .seed:
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      let firstID = try await context.runtime.localID(named: CounterExample.firstSeedIDName)
+      let secondID = try await context.runtime.localID(named: CounterExample.secondSeedIDName)
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: CounterExample.upsertOperations(
+            id: firstID,
+            count: 24,
+            createdAt: now,
+            transactionID: transactionID
+          ) + CounterExample.upsertOperations(
+            id: secondID,
+            count: 1_729,
+            createdAt: InstantTimestamp(milliseconds: now.milliseconds + 1),
+            transactionID: transactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.counters.seed"
+      )
+      try await printCounters(context: context, output: output, event: "seed")
+
+    case let .add(count):
+      let transactionID = context.runtime.configuration.makeID()
+      let counterID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: CounterExample.createOperations(
+            id: counterID,
+            count: count,
+            createdAt: now,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.counters.add"
+      )
+      try await printCounters(context: context, output: output, event: "add", changedID: counterID)
+
+    case .list:
+      try await printCounters(context: context, output: output, event: "list")
+
+    case let .increment(counterID):
+      let counter = try await requireCounter(context: context, id: counterID)
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: CounterExample.updateCountOperations(
+            id: counterID,
+            count: counter.count + 1,
+            updatedAt: now,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.counters.increment"
+      )
+      try await printCounters(
+        context: context,
+        output: output,
+        event: "increment",
+        changedID: counterID
+      )
+
+    case let .decrement(counterID):
+      let counter = try await requireCounter(context: context, id: counterID)
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: CounterExample.updateCountOperations(
+            id: counterID,
+            count: counter.count - 1,
+            updatedAt: now,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.counters.decrement"
+      )
+      try await printCounters(
+        context: context,
+        output: output,
+        event: "decrement",
+        changedID: counterID
+      )
+
+    case let .delete(counterID):
+      _ = try await requireCounter(context: context, id: counterID)
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: CounterExample.deleteOperations(id: counterID)
+        ),
+        createdAt: now,
+        source: "cli.examples.counters.delete"
+      )
+      try await printCounters(context: context, output: output, event: "delete", changedID: counterID)
+
+    case .unknown:
+      preconditionFailure("Unknown counters commands are handled before bootstrapping.")
     }
   }
 
@@ -3676,6 +3812,88 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func printCounters(
+    context: CLIContext,
+    output: OutputMode,
+    event: String,
+    changedID: String? = nil
+  ) async throws {
+    let counters = try await currentCounters(context: context)
+    let status = try await context.runtime.connectionStatus()
+    let shares = status.userID == nil ? [] : try await context.runtime.shares()
+    let rows = CounterExample.sharedRows(counters: counters, shares: shares, userID: status.userID)
+    let pending = await context.runtime.pendingMutations()
+    let payload = CountersOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      changedID: changedID,
+      transport: "not-implemented-local-cache-only",
+      queryID: CounterExample.query.id,
+      cacheKey: CounterExample.query.cacheKey,
+      pendingMutationCount: pending.count,
+      counterCount: rows.count,
+      sharedCounterCount: rows.filter(\.isShared).count,
+      counters: rows
+    )
+
+    switch output {
+    case .human:
+      if rows.isEmpty {
+        print("No counters.")
+      } else {
+        for row in rows {
+          let shared = row.isShared ? " shared" : ""
+          print("\(row.counter.id) \(row.counter.count)\(shared)")
+        }
+      }
+      print("transport: \(payload.transport)")
+      print("pending mutations: \(pending.count)")
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.examples.counters",
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          entityID: changedID,
+          ok: true,
+          details: payload
+        )
+      )
+      for row in rows {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.counters",
+            side: "swift",
+            event: "counter",
+            appID: context.appID,
+            entityID: row.counter.id,
+            ok: true,
+            details: row
+          )
+        )
+      }
+    }
+  }
+
+  private static func currentCounters(context: CLIContext) async throws -> [CounterRecord] {
+    try CounterExample.decode((try await context.runtime.queryOnce(CounterExample.query)).values)
+  }
+
+  private static func requireCounter(context: CLIContext, id: String) async throws -> CounterRecord {
+    let counters = try await currentCounters(context: context)
+    guard let counter = counters.first(where: { $0.id == id }) else {
+      throw CLIError("Counter not found: \(id)", exitCode: 66)
+    }
+    return counter
+  }
+
   private static func printReminders(
     context: CLIContext,
     output: OutputMode,
@@ -4361,6 +4579,12 @@ struct InstantSwiftDataCLI {
         examples todo-links list [--json|--jsonl]
         examples todo-links nested [--json|--jsonl]
         examples todo-links unlink [--json|--jsonl]
+        examples counters seed [--json|--jsonl]
+        examples counters add [--count n] [--json|--jsonl]
+        examples counters list [--json|--jsonl]
+        examples counters increment <counter-id> [--json|--jsonl]
+        examples counters decrement <counter-id> [--json|--jsonl]
+        examples counters delete <counter-id> [--json|--jsonl]
         cache inspect [--json|--jsonl]
         cache attributes [namespace] [--json|--jsonl]
         cache triples [namespace] [--json|--jsonl]
@@ -5510,12 +5734,17 @@ struct InstantSwiftDataCLI {
 
   private static var examplesUsage: String {
     """
-    Usage: instant-swift-data examples <todos|todo-links|reminders|sync-ups>
+    Usage: instant-swift-data examples <todos|todo-links|counters|reminders|sync-ups>
       instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>
       instant-swift-data examples todo-links <seed|list|nested|unlink> [--json|--jsonl]
+      instant-swift-data examples counters <seed|add|list|increment|decrement|delete> [--json|--jsonl]
       instant-swift-data examples reminders <seed|list|stats|tags|list-tags|search|add-list|rename-list|delete-list|add|update|complete|delete|delete-completed|add-tag|remove-tag> [--json|--jsonl]
       instant-swift-data examples sync-ups <seed|list|detail|add|edit|add-attendee|record|record-demo|delete|delete-attendee|delete-meeting> [--json|--jsonl]
     """
+  }
+
+  private static var countersUsage: String {
+    CLIExamplesCountersUsage.counters
   }
 
   private static var syncUpsUsage: String {
@@ -6122,6 +6351,20 @@ private struct TodoLinksOutput: Codable, Sendable {
   var pendingMutationCount: Int
   var projects: [TodoProjectRecord]
   var todos: [LinkedTodoRecord]
+}
+
+private struct CountersOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var changedID: String?
+  var transport: String
+  var queryID: String
+  var cacheKey: String
+  var pendingMutationCount: Int
+  var counterCount: Int
+  var sharedCounterCount: Int
+  var counters: [SharedCounterRecord]
 }
 
 private struct RemindersOutput: Codable, Sendable {

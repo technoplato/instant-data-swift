@@ -1067,6 +1067,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "The TypeScript fixture runner is present, but Swift live subscription against a real Instant app remains incomplete."
     ),
     sqlite(
+      id: "sqlite.cloudkit-demo.local-counter-share",
+      sourceFile: "upstream/sqlite-data/Examples/CloudKitDemo/CountersListFeature.swift",
+      sourceTestName: "Counter rows, count mutations, and visible shared state",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/CLITests.swift",
+      swiftTestName: "cliCountersCloudKitDemoShareMetadataAndRolesPersistAcrossLaunches",
+      surface: "examples-cloudkit-demo",
+      status: .adapted,
+      notes: "The Instant CLI ports the CloudKitDemo counter shape with add/increment/decrement/delete commands, local share metadata, accepted participants, and reader/writer role proof."
+    ),
+    sqlite(
       id: "sqlite.cloudkit-demo.remote-share",
       sourceFile: "upstream/sqlite-data/Examples/CloudKitDemo",
       sourceTestName: "CloudKit shared records and participants",
@@ -1074,7 +1084,7 @@ public enum InstantSwiftDataParityCoverage {
       swiftTestName: "Instant share model local coverage",
       surface: "sharing",
       status: .blocked,
-      notes: "Local Instant share entities are covered; remote permission rejection and CloudKitDemo-equivalent app proof remain future work."
+      notes: "Local Instant share entities and the counter demo surface are covered; remote permission rejection and transport-backed CloudKitDemo-equivalent app proof remain future work."
     ),
   ]
 
