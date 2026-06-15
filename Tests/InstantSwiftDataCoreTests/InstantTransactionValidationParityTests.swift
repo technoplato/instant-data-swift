@@ -56,6 +56,11 @@ struct InstantTransactionValidationParityTests {
     let users = try await runtime.query(
       InstantQueryPlan(id: "parity.basic.users", namespace: "users"))
     expectNoDifference(users.map(\.id), ["user-array", "user-basic"], source)
+    let posts = try await runtime.query(
+      InstantQueryPlan(id: "parity.basic.posts", namespace: "posts"))
+    expectNoDifference(posts.map(\.id), ["post-array"], source)
+    expectNoDifference(posts.map { $0.values["title"]?.first }, [.string("Hello")], source)
+    expectNoDifference(posts.map { $0.values["body"]?.first }, [.string("World")], source)
   }
 
   @Test
@@ -461,6 +466,9 @@ struct InstantTransactionValidationParityTests {
     let comments = try await runtime.query(
       InstantQueryPlan(id: "parity.chain.comments", namespace: "comments"))
     expectNoDifference(users.map(\.id), ["user-chain", "user-friend"], source)
+    let userChain = try #require(users.first { $0.id == "user-chain" })
+    expectNoDifference(userChain.values["bio"]?.first, .string("Updated"), source)
+    expectNoDifference(userChain.values["friends"]?.values, [.ref("user-friend")], source)
     expectNoDifference(posts.map { $0.values["author"]?.first }, [.ref("user-chain")], source)
     expectNoDifference(comments.map { $0.values["post"]?.first }, [.ref("post-chain")], source)
 
@@ -665,6 +673,62 @@ struct InstantTransactionValidationParityTests {
     expectNoDifference(
       dateLookupUsers.first(where: { $0.id == "user-date-string" })?.values["junk"]?.first,
       .json(.object(["anything": .string("goes")])), source)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-parity-any-values",
+        operations: [
+          .insert(
+            triple(
+              "user-any-string", "users/name", .string("String Any"),
+              txID: "tx-parity-any-values", time: time)),
+          .insert(
+            triple(
+              "user-any-string", "users/email", .string("any-string@example.com"),
+              txID: "tx-parity-any-values", time: time)),
+          .insert(
+            triple(
+              "user-any-string",
+              "users/junk",
+              .string("this is the junk type"),
+              txID: "tx-parity-any-values",
+              time: time
+            )
+          ),
+          .insert(
+            triple(
+              "user-any-number", "users/name", .string("Number Any"),
+              txID: "tx-parity-any-values", time: time)),
+          .insert(
+            triple(
+              "user-any-number", "users/email", .string("any-number@example.com"),
+              txID: "tx-parity-any-values", time: time)),
+          .insert(
+            triple(
+              "user-any-number",
+              "users/junk",
+              .number(123),
+              txID: "tx-parity-any-values",
+              time: time
+            )
+          ),
+        ]
+      ),
+      createdAt: time
+    )
+    let anyUsers = try await runtime.query(
+      InstantQueryPlan(id: "parity.any.users", namespace: "users")
+    )
+    expectNoDifference(
+      anyUsers.first(where: { $0.id == "user-any-string" })?.values["junk"]?.first,
+      .string("this is the junk type"),
+      source
+    )
+    expectNoDifference(
+      anyUsers.first(where: { $0.id == "user-any-number" })?.values["junk"]?.first,
+      .number(123),
+      source
+    )
 
     await expectTransactionValidation(namespace: "users", path: "createdAt", source: source) {
       try await runtime.transact(

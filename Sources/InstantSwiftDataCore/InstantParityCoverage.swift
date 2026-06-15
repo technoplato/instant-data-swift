@@ -567,24 +567,126 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift starts from structured transaction values rather than JavaScript chunks."
     ),
     instant(
-      id: "instant.transaction-validation.create-update",
+      id: "instant.transaction-validation.chunk-arrays",
       sourceFile: transactionValidationSource,
-      sourceTestName: "validates create/update operations",
+      sourceTestName: "validates transaction chunk arrays",
+      swiftFile: transactionValidationSwiftFile,
+      swiftTestName: "upstreamValidatesBasicTransactionChunks",
+      surface: "transaction-validation",
+      status: .adapted,
+      notes: "Swift represents chunk arrays as one structured transaction containing the concrete operations for each entity namespace."
+    ),
+    instant(
+      id: "instant.transaction-validation.create-operations",
+      sourceFile: transactionValidationSource,
+      sourceTestName: "validates create operations",
       swiftFile: transactionValidationSwiftFile,
       swiftTestName: "upstreamValidatesCreateAndUpdateOperations",
       surface: "transaction-validation",
       status: .adapted,
-      notes: "Declared attributes are type checked while schemaless unknown scalar attributes remain hidden from materialization."
+      notes: "Swift create-style writes validate declared attribute types while permissive unknown scalar attrs remain hidden from materialization."
     ),
     instant(
-      id: "instant.transaction-validation.merge-delete",
+      id: "instant.transaction-validation.update-operations",
       sourceFile: transactionValidationSource,
-      sourceTestName: "validates merge/delete operations",
+      sourceTestName: "validates update operations",
+      swiftFile: transactionValidationSwiftFile,
+      swiftTestName: "upstreamValidatesCreateAndUpdateOperations",
+      surface: "transaction-validation",
+      status: .adapted,
+      notes: "Swift update-style writes validate declared attribute types and materialize multiple declared field updates."
+    ),
+    instant(
+      id: "instant.transaction-validation.merge-operations",
+      sourceFile: transactionValidationSource,
+      sourceTestName: "validates merge operations",
       swiftFile: transactionValidationSwiftFile,
       swiftTestName: "upstreamValidatesMergeAndDeleteOperations",
       surface: "transaction-validation",
       status: .adapted,
-      notes: "Swift validates merge values and deletes entities through typed triple operations."
+      notes: "Swift validates merge values through typed triple operations and applies JSON merge semantics for declared JSON attrs."
+    ),
+    instant(
+      id: "instant.transaction-validation.delete-operations",
+      sourceFile: transactionValidationSource,
+      sourceTestName: "validates delete operations",
+      swiftFile: transactionValidationSwiftFile,
+      swiftTestName: "upstreamValidatesMergeAndDeleteOperations",
+      surface: "transaction-validation",
+      status: .adapted,
+      notes: "Swift validates delete operations through typed entity deletion and removes the entity from local materialization."
+    ),
+    instant(
+      id: "instant.transaction-validation.link-operations",
+      sourceFile: transactionValidationSource,
+      sourceTestName: "validates link operations",
+      swiftFile: transactionValidationSwiftFile,
+      swiftTestName: "upstreamValidatesLinkAndUnlinkOperations",
+      surface: "transaction-validation",
+      status: .adapted,
+      notes: "Swift represents link operations as ref triples, including repeated ref triples for array links and validation for unknown or non-ref links."
+    ),
+    instant(
+      id: "instant.transaction-validation.unlink-operations",
+      sourceFile: transactionValidationSource,
+      sourceTestName: "validates unlink operations",
+      swiftFile: transactionValidationSwiftFile,
+      swiftTestName: "upstreamValidatesLinkAndUnlinkOperations",
+      surface: "transaction-validation",
+      status: .adapted,
+      notes: "Swift represents unlink operations as ref triple retractions and keeps remaining links materialized after the retract."
+    ),
+    instant(
+      id: "instant.transaction-validation.entity-existence",
+      sourceFile: transactionValidationSource,
+      sourceTestName: "validates entity existence",
+      swiftFile: transactionValidationSwiftFile,
+      swiftTestName:
+        "upstreamValidatesCreateAndUpdateOperations / upstreamValidatesWithoutSchemaAndAdaptsLocalIDFormat",
+      surface: "transaction-validation",
+      status: .adapted,
+      notes: "Swift rejects writes to undeclared namespaces when a schema is present and accepts arbitrary namespaces when no attributes are declared."
+    ),
+    instant(
+      id: "instant.transaction-validation.attribute-types",
+      sourceFile: transactionValidationSource,
+      sourceTestName: "validates attribute types",
+      swiftFile: transactionValidationSwiftFile,
+      swiftTestName:
+        "upstreamValidatesCreateAndUpdateOperations / upstreamValidatesDateAndLookupValueTypes",
+      surface: "transaction-validation",
+      status: .adapted,
+      notes: "Swift validates declared string, JSON, date, and any-compatible payloads, including non-finite number rejection before indexing."
+    ),
+    instant(
+      id: "instant.transaction-validation.chained-operations",
+      sourceFile: transactionValidationSource,
+      sourceTestName: "validates chained operations",
+      swiftFile: transactionValidationSwiftFile,
+      swiftTestName: "upstreamValidatesChainedOperationsAndMultipleEntityTypes",
+      surface: "transaction-validation",
+      status: .adapted,
+      notes: "Swift models chained JavaScript calls as one structured transaction containing the same create, update, and link triples."
+    ),
+    instant(
+      id: "instant.transaction-validation.multiple-entity-types",
+      sourceFile: transactionValidationSource,
+      sourceTestName: "validates multiple entity types",
+      swiftFile: transactionValidationSwiftFile,
+      swiftTestName: "upstreamValidatesChainedOperationsAndMultipleEntityTypes",
+      surface: "transaction-validation",
+      status: .adapted,
+      notes: "Swift validates a single transaction spanning users, posts, and comments with the corresponding relation triples."
+    ),
+    instant(
+      id: "instant.transaction-validation.link-relationships",
+      sourceFile: transactionValidationSource,
+      sourceTestName: "validates link relationships",
+      swiftFile: transactionValidationSwiftFile,
+      swiftTestName: "upstreamValidatesChainedOperationsAndMultipleEntityTypes",
+      surface: "transaction-validation",
+      status: .adapted,
+      notes: "Swift validates declared user/post, post/comment, and self-referential user links while rejecting links without a declared relationship."
     ),
     instant(
       id: "instant.transaction-validation.lookup-rule-params",

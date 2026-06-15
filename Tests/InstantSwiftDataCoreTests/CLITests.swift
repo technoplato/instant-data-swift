@@ -8316,10 +8316,11 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 143)
+    expectNoDifference(jsonOutput.recordCount, 153)
     expectNoDifference(jsonOutput.exactCount, 20)
-    expectNoDifference(jsonOutput.adaptedCount, 120)
+    expectNoDifference(jsonOutput.adaptedCount, 130)
     expectNoDifference(jsonOutput.blockedCount, 3)
+    expectNoDifference(jsonOutput.notApplicableCount, 0)
     #expect(
       jsonOutput.sourceFiles.contains(
         "upstream/instant/client/packages/core/__tests__/src/schema.test.ts"
@@ -8528,6 +8529,66 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.records.contains {
         $0.id == "instant.query.object-values" && $0.status == "exact"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.transaction-validation.chunk-arrays" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.transaction-validation.create-operations" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.transaction-validation.update-operations" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.transaction-validation.merge-operations" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.transaction-validation.delete-operations" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.transaction-validation.link-operations" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.transaction-validation.unlink-operations" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.transaction-validation.entity-existence" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.transaction-validation.attribute-types" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.transaction-validation.chained-operations" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.transaction-validation.multiple-entity-types" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.transaction-validation.link-relationships" && $0.status == "adapted"
       }
     )
     #expect(
@@ -8883,8 +8944,9 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 143"))
+    #expect(humanOutput.contains("records: 153"))
     #expect(humanOutput.contains("blocked: 3"))
+    #expect(humanOutput.contains("not applicable: 0"))
   }
 
   @Test
@@ -10793,6 +10855,7 @@ private struct CLIParityCoverageOutput: Decodable {
   var exactCount: Int
   var adaptedCount: Int
   var blockedCount: Int
+  var notApplicableCount: Int
   var sourceFiles: [String]
   var swiftFiles: [String]
   var records: [CLIParityCoverageRecord]

@@ -11,9 +11,9 @@ struct InstantStoreParityTests {
 
     expectNoDifference(report.event, "parity-report")
     expectNoDifference(report.coverageComplete, false)
-    expectNoDifference(report.recordCount, 143)
+    expectNoDifference(report.recordCount, 153)
     expectNoDifference(report.exactCount, 20)
-    expectNoDifference(report.adaptedCount, 120)
+    expectNoDifference(report.adaptedCount, 130)
     expectNoDifference(report.blockedCount, 3)
     expectNoDifference(report.notApplicableCount, 0)
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/schema.test.ts"))
@@ -64,6 +64,101 @@ struct InstantStoreParityTests {
     #expect(report.records.contains { $0.id == "instant.query.create-update-triples" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.query.object-values" && $0.status == .exact })
     #expect(report.records.contains { $0.id == "instant.datalog.pattern-query" && $0.status == .adapted })
+    #expect(report.records.contains { $0.id == "instant.transaction-validation.chunk-arrays" && $0.status == .adapted })
+    #expect(report.records.contains { $0.id == "instant.transaction-validation.create-operations" && $0.status == .adapted })
+    #expect(report.records.contains { $0.id == "instant.transaction-validation.update-operations" && $0.status == .adapted })
+    #expect(report.records.contains { $0.id == "instant.transaction-validation.merge-operations" && $0.status == .adapted })
+    #expect(report.records.contains { $0.id == "instant.transaction-validation.delete-operations" && $0.status == .adapted })
+    #expect(report.records.contains { $0.id == "instant.transaction-validation.link-operations" && $0.status == .adapted })
+    #expect(report.records.contains { $0.id == "instant.transaction-validation.unlink-operations" && $0.status == .adapted })
+    #expect(report.records.contains { $0.id == "instant.transaction-validation.entity-existence" && $0.status == .adapted })
+    #expect(report.records.contains { $0.id == "instant.transaction-validation.attribute-types" && $0.status == .adapted })
+    #expect(report.records.contains { $0.id == "instant.transaction-validation.chained-operations" && $0.status == .adapted })
+    #expect(report.records.contains { $0.id == "instant.transaction-validation.multiple-entity-types" && $0.status == .adapted })
+    #expect(report.records.contains { $0.id == "instant.transaction-validation.link-relationships" && $0.status == .adapted })
+    let transactionValidationMappings: [(
+      id: String, sourceTestName: String, swiftTestName: String, notes: String
+    )] = [
+      (
+        "instant.transaction-validation.chunk-arrays",
+        "validates transaction chunk arrays",
+        "upstreamValidatesBasicTransactionChunks",
+        "Swift represents chunk arrays as one structured transaction containing the concrete operations for each entity namespace."
+      ),
+      (
+        "instant.transaction-validation.create-operations",
+        "validates create operations",
+        "upstreamValidatesCreateAndUpdateOperations",
+        "Swift create-style writes validate declared attribute types while permissive unknown scalar attrs remain hidden from materialization."
+      ),
+      (
+        "instant.transaction-validation.update-operations",
+        "validates update operations",
+        "upstreamValidatesCreateAndUpdateOperations",
+        "Swift update-style writes validate declared attribute types and materialize multiple declared field updates."
+      ),
+      (
+        "instant.transaction-validation.merge-operations",
+        "validates merge operations",
+        "upstreamValidatesMergeAndDeleteOperations",
+        "Swift validates merge values through typed triple operations and applies JSON merge semantics for declared JSON attrs."
+      ),
+      (
+        "instant.transaction-validation.delete-operations",
+        "validates delete operations",
+        "upstreamValidatesMergeAndDeleteOperations",
+        "Swift validates delete operations through typed entity deletion and removes the entity from local materialization."
+      ),
+      (
+        "instant.transaction-validation.link-operations",
+        "validates link operations",
+        "upstreamValidatesLinkAndUnlinkOperations",
+        "Swift represents link operations as ref triples, including repeated ref triples for array links and validation for unknown or non-ref links."
+      ),
+      (
+        "instant.transaction-validation.unlink-operations",
+        "validates unlink operations",
+        "upstreamValidatesLinkAndUnlinkOperations",
+        "Swift represents unlink operations as ref triple retractions and keeps remaining links materialized after the retract."
+      ),
+      (
+        "instant.transaction-validation.entity-existence",
+        "validates entity existence",
+        "upstreamValidatesCreateAndUpdateOperations / upstreamValidatesWithoutSchemaAndAdaptsLocalIDFormat",
+        "Swift rejects writes to undeclared namespaces when a schema is present and accepts arbitrary namespaces when no attributes are declared."
+      ),
+      (
+        "instant.transaction-validation.attribute-types",
+        "validates attribute types",
+        "upstreamValidatesCreateAndUpdateOperations / upstreamValidatesDateAndLookupValueTypes",
+        "Swift validates declared string, JSON, date, and any-compatible payloads, including non-finite number rejection before indexing."
+      ),
+      (
+        "instant.transaction-validation.chained-operations",
+        "validates chained operations",
+        "upstreamValidatesChainedOperationsAndMultipleEntityTypes",
+        "Swift models chained JavaScript calls as one structured transaction containing the same create, update, and link triples."
+      ),
+      (
+        "instant.transaction-validation.multiple-entity-types",
+        "validates multiple entity types",
+        "upstreamValidatesChainedOperationsAndMultipleEntityTypes",
+        "Swift validates a single transaction spanning users, posts, and comments with the corresponding relation triples."
+      ),
+      (
+        "instant.transaction-validation.link-relationships",
+        "validates link relationships",
+        "upstreamValidatesChainedOperationsAndMultipleEntityTypes",
+        "Swift validates declared user/post, post/comment, and self-referential user links while rejecting links without a declared relationship."
+      ),
+    ]
+    for expected in transactionValidationMappings {
+      let record = try #require(report.records.first { $0.id == expected.id })
+      expectNoDifference(record.sourceTestName, expected.sourceTestName)
+      expectNoDifference(record.swiftTestName, expected.swiftTestName)
+      expectNoDifference(record.status, .adapted)
+      expectNoDifference(record.notes, expected.notes)
+    }
     #expect(report.records.contains { $0.id == "instant.transaction-validation.without-schema" && $0.status == .exact })
     #expect(report.records.contains { $0.id == "instant.transaction-validation.uuid-format" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.transaction-validation.lookup-source-update" && $0.status == .adapted })
