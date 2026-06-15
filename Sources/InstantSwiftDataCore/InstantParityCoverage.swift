@@ -587,6 +587,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift ports the basic update transform through InstantInstamlTransform: encoded txSteps contain add-triple entries for scalar and primary-key writes, nil payload fields produce no txStep, and payload id fields are ignored in favor of the entity id."
     ),
     instant(
+      id: "instant.instaml.lookup-resolves-attr-ids",
+      sourceFile: instamlSource,
+      sourceTestName: "lookup resolves attr ids",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "transportMutationPortsInstamlLookupResolvedUpdateTransform",
+      surface: "instaml",
+      status: .adapted,
+      notes: "Swift lookup refs already carry declared attribute ids; InstantInstamlTransform lowers lookup-backed updates to add-triple txSteps whose entity slot and primary-key value preserve the two-element lookup ref."
+    ),
+    instant(
       id: "instant.instaml.mode-update",
       sourceFile: instamlSource,
       sourceTestName: "mode: update",

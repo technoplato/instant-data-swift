@@ -53,8 +53,7 @@ enum InstantInstamlTransform {
     txTime: InstantTimestamp
   ) -> [InstantTripleOperation] {
     var operations: [InstantTripleOperation] = []
-    for field in fields.keys.sorted() where field != "id" {
-      guard let value = fields[field] ?? nil else { continue }
+    for (field, value) in payloadFields(fields) {
       operations.append(
         .insert(
           InstantTriple(
@@ -79,6 +78,44 @@ enum InstantInstamlTransform {
       )
     )
     return operations
+  }
+
+  static func updateOperations(
+    namespace: String,
+    entityLookup: InstantLookupRef,
+    fields: [String: InstantValue?],
+    txID: String,
+    txTime: InstantTimestamp
+  ) -> [InstantTripleOperation] {
+    var operations: [InstantTripleOperation] = []
+    for (field, value) in payloadFields(fields) {
+      operations.append(
+        .insertByLookup(
+          entity: entityLookup,
+          attributeID: "\(namespace)/\(field)",
+          value: value,
+          txID: txID,
+          txTime: txTime
+        )
+      )
+    }
+    operations.append(
+      .insertByLookup(
+        entity: entityLookup,
+        attributeID: InstantAttribute.primaryKeyID(namespace: namespace),
+        value: .lookupRef(entityLookup),
+        txID: txID,
+        txTime: txTime
+      )
+    )
+    return operations
+  }
+
+  private static func payloadFields(_ fields: [String: InstantValue?]) -> [(String, InstantValue)] {
+    fields.keys.sorted().compactMap { field in
+      guard field != "id", let value = fields[field] ?? nil else { return nil }
+      return (field, value)
+    }
   }
 }
 
