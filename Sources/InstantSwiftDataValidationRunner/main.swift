@@ -1,4 +1,5 @@
 import Foundation
+import InstantSwiftDataCLIParsing
 import InstantSwiftDataTesting
 
 @main
@@ -15,13 +16,22 @@ struct InstantSwiftDataValidationRunner {
         details: ["message": error.message]
       )
       exit(1)
+    } catch let error as CLIValidationRunnerArgumentError {
+      emit(
+        caseID: "validation.arguments",
+        event: "failed",
+        ok: false,
+        appID: CLIValidationRunnerInvocation.localTodos.appID,
+        details: ["message": error.description]
+      )
+      exit(1)
     } catch {
       let caseID = requestedCaseID()
       emit(
         caseID: caseID,
         event: "failed",
         ok: false,
-        appID: requestedAppID(caseID: caseID),
+        appID: requestedAppID(),
         details: ["message": String(describing: error)]
       )
       exit(1)
@@ -29,101 +39,65 @@ struct InstantSwiftDataValidationRunner {
   }
 
   private static func requestedCaseID() -> String {
-    switch Array(CommandLine.arguments.dropFirst()) {
-    case ["--local-integrations"]:
-      "validation.local.integrations"
-    case ["--reminders"], ["--local-reminders"]:
-      "validation.reminders"
-    case ["--typed-drafts"]:
-      "validation.typed.drafts"
-    case ["--platform-adapters"]:
-      "validation.platform.adapters"
-    case ["--syncups-recording"]:
-      "validation.syncups.recording"
-    case ["--parity-report"]:
-      "validation.parity.report"
-    case ["--coverage"]:
-      "validation.coverage"
-    case [], ["--local-todos"]:
-      "validation.local.todos"
-    default:
-      "validation.arguments"
-    }
+    (try? CLIValidationRunnerArguments.parse(Array(CommandLine.arguments.dropFirst())))?.caseID
+      ?? "validation.arguments"
   }
 
-  private static func requestedAppID(caseID: String) -> String {
-    switch caseID {
-    case "validation.typed.drafts":
-      "draft-validation"
-    case "validation.platform.adapters":
-      "platform-adapter-validation"
-    case "validation.syncups.recording":
-      "syncups-recording-validation"
-    default:
-      "local-validation"
-    }
+  private static func requestedAppID() -> String {
+    (try? CLIValidationRunnerArguments.parse(Array(CommandLine.arguments.dropFirst())))?.appID
+      ?? CLIValidationRunnerInvocation.localTodos.appID
   }
 
   private static func run() async throws {
     let arguments = Array(CommandLine.arguments.dropFirst())
-    guard arguments.isEmpty
-      || arguments == ["--local-todos"]
-      || arguments == ["--local-integrations"]
-      || arguments == ["--reminders"]
-      || arguments == ["--local-reminders"]
-      || arguments == ["--typed-drafts"]
-      || arguments == ["--platform-adapters"]
-      || arguments == ["--syncups-recording"]
-      || arguments == ["--parity-report"]
-      || arguments == ["--coverage"]
-    else {
-      throw ValidationFailure(
-        caseID: "validation.arguments",
-        appID: "local-validation",
-        message:
-          "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--reminders|--local-reminders|--typed-drafts|--platform-adapters|--syncups-recording|--parity-report|--coverage]"
-      )
-    }
+    let invocation = try CLIValidationRunnerArguments.parse(arguments)
 
     if ProcessInfo.processInfo.environment["INSTANT_SWIFT_DATA_VALIDATION_RUNNER_FAIL_CASE"]
-      == requestedCaseID()
+      == invocation.caseID
     {
-      throw ForcedValidationRunnerFailure(caseID: requestedCaseID())
+      throw ForcedValidationRunnerFailure(caseID: invocation.caseID)
     }
 
-    if arguments == ["--local-integrations"] {
+    switch invocation {
+    case .localIntegrations:
       let run = try await InstantSwiftDataTestHarness.runLocalIntegrationValidation()
       for row in run.result.evidence {
         try writeJSONLine(row)
       }
-    } else if arguments == ["--reminders"] || arguments == ["--local-reminders"] {
+
+    case .reminders:
       let run = try await InstantSwiftDataTestHarness.runRemindersValidation()
       for row in run.result.evidence {
         try writeJSONLine(row)
       }
-    } else if arguments == ["--typed-drafts"] {
+
+    case .typedDrafts:
       let run = try await InstantSwiftDataTestHarness.runDraftValidation()
       for row in run.result.evidence {
         try writeJSONLine(row)
       }
-    } else if arguments == ["--platform-adapters"] {
+
+    case .platformAdapters:
       let result = try await InstantSwiftDataPlatformAdapterValidation.run(
-        appID: requestedAppID(caseID: "validation.platform.adapters")
+        appID: invocation.appID
       )
       for row in result.evidence {
         try writeJSONLine(row)
       }
-    } else if arguments == ["--syncups-recording"] {
+
+    case .syncUpsRecording:
       let run = try await InstantSwiftDataTestHarness.runSyncUpsRecordingValidation()
       for row in run.result.evidence {
         try writeJSONLine(row)
       }
-    } else if arguments == ["--parity-report"] {
+
+    case .parityReport:
       let run = try InstantSwiftDataTestHarness.runParityCoverageValidation()
       for row in run.result.evidenceRows(appID: run.summary.appID ?? "local-validation") {
         try writeJSONLine(row)
       }
-    } else if arguments == ["--coverage"] {
+
+    case .coverage:
       let run = try InstantSwiftDataTestHarness.runParityCoverageValidation()
       let summary = InstantParityCoverageSummary(run.result)
       try writeJSONLine(
@@ -137,7 +111,8 @@ struct InstantSwiftDataValidationRunner {
           details: summary
         )
       )
-    } else {
+
+    case .localTodos:
       let run = try await InstantSwiftDataTestHarness.runLocalTodoValidation()
       for row in run.result.evidence {
         try writeJSONLine(row)

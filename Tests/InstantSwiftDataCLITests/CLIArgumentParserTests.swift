@@ -3237,6 +3237,44 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func validationRunnerParserParsesFlagsAndAliases() throws {
+    expectNoDifference(try parseValidationRunner([]), .localTodos)
+    expectNoDifference(try parseValidationRunner(["--local-todos"]), .localTodos)
+    expectNoDifference(try parseValidationRunner(["--local-integrations"]), .localIntegrations)
+    expectNoDifference(try parseValidationRunner(["--reminders"]), .reminders)
+    expectNoDifference(try parseValidationRunner(["--local-reminders"]), .reminders)
+    expectNoDifference(try parseValidationRunner(["--typed-drafts"]), .typedDrafts)
+    expectNoDifference(try parseValidationRunner(["--platform-adapters"]), .platformAdapters)
+    expectNoDifference(try parseValidationRunner(["--syncups-recording"]), .syncUpsRecording)
+    expectNoDifference(try parseValidationRunner(["--parity-report"]), .parityReport)
+    expectNoDifference(try parseValidationRunner(["--coverage"]), .coverage)
+    expectNoDifference(CLIValidationRunnerInvocation.typedDrafts.caseID, "validation.typed.drafts")
+    expectNoDifference(CLIValidationRunnerInvocation.typedDrafts.appID, "draft-validation")
+    expectNoDifference(
+      CLIValidationRunnerInvocation.platformAdapters.appID,
+      "platform-adapter-validation"
+    )
+    expectNoDifference(
+      CLIValidationRunnerInvocation.syncUpsRecording.appID,
+      "syncups-recording-validation"
+    )
+    expectNoDifference(CLIValidationRunnerInvocation.coverage.appID, "local-validation")
+  }
+
+  @Test
+  func validationRunnerParserReportsMalformedArguments() throws {
+    #expect(CLIValidationRunnerUsage.validationRunner.contains("--parity-report|--coverage"))
+    try expectValidationRunnerParseError(
+      ["--remote"],
+      description: CLIValidationRunnerUsage.validationRunner
+    )
+    try expectValidationRunnerParseError(
+      ["--local-todos", "--coverage"],
+      description: CLIValidationRunnerUsage.validationRunner
+    )
+  }
+
+  @Test
   func adminParserParsesCommandsOptionsAndAliases() throws {
     expectNoDifference(
       try parseAdmin(["query", "notes"]),
@@ -4476,6 +4514,15 @@ private func parseValidation(_ arguments: [String]) throws -> CLIValidationInvoc
   return invocation
 }
 
+private func parseValidationRunner(
+  _ arguments: [String]
+) throws -> CLIValidationRunnerInvocation {
+  var input = arguments[...]
+  let invocation = try CLIValidationRunnerParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseAdmin(_ arguments: [String]) throws -> CLIAdminInvocation {
   var input = arguments[...]
   let invocation = try CLIAdminParser().parse(&input)
@@ -5008,6 +5055,19 @@ private func expectValidationParseError(
     _ = try parseValidation(arguments)
     Issue.record("Expected validation parser to reject \(arguments).")
   } catch let error as CLIValidationArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectValidationRunnerParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseValidationRunner(arguments)
+    Issue.record("Expected validation runner parser to reject \(arguments).")
+  } catch let error as CLIValidationRunnerArgumentError {
     expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }

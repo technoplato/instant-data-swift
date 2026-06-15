@@ -1,5 +1,6 @@
 import CustomDump
 import Foundation
+import InstantSwiftDataCLIParsing
 import InstantSwiftDataTesting
 import Testing
 
@@ -1325,6 +1326,25 @@ struct LocalTodoValidationTests {
   }
 
   @Test
+  func validationRunnerMalformedArgumentsEmitMappedJSONL() throws {
+    let result = try runValidationRunner(arguments: ["--local-todos", "--coverage"])
+
+    #expect(result.status == 1)
+    let rows = try parseJSONLines(result.stdout)
+    expectNoDifference(rows.count, 1)
+    let row = try #require(rows.first)
+    expectNoDifference(row["case"] as? String, "validation.arguments")
+    expectNoDifference(row["appID"] as? String, "local-validation")
+    expectNoDifference(row["event"] as? String, "failed")
+    expectNoDifference(row["ok"] as? Bool, false)
+    let details = try #require(row["details"] as? [String: Any])
+    expectNoDifference(
+      details["message"] as? String,
+      CLIValidationRunnerUsage.validationRunner
+    )
+  }
+
+  @Test
   func validationRunE2EScriptOrchestratesLocalIntegrationEvidence() throws {
     let packageURL = packageRootURL()
     let scriptURL = packageURL.appendingPathComponent("validation/run-e2e.sh")
@@ -1364,16 +1384,27 @@ struct LocalTodoValidationTests {
       ),
       encoding: .utf8
     )
-    #expect(runnerSource.contains("--typed-drafts"))
     #expect(runnerSource.contains("runDraftValidation()"))
-    #expect(runnerSource.contains("--platform-adapters"))
     #expect(runnerSource.contains("InstantSwiftDataPlatformAdapterValidation.run"))
-    #expect(runnerSource.contains("--reminders"))
     #expect(runnerSource.contains("runRemindersValidation()"))
-    #expect(runnerSource.contains("--syncups-recording"))
     #expect(runnerSource.contains("runSyncUpsRecordingValidation()"))
-    #expect(runnerSource.contains("--parity-report"))
     #expect(runnerSource.contains("runParityCoverageValidation()"))
+    #expect(runnerSource.contains("CLIValidationRunnerArguments.parse"))
+    #expect(!runnerSource.contains("arguments == [\"--coverage\"]"))
+
+    let parserSource = try String(
+      contentsOf: packageURL.appendingPathComponent(
+        "Sources/InstantSwiftDataCLI/CLIArgumentParser.swift"
+      ),
+      encoding: .utf8
+    )
+    #expect(parserSource.contains("CLIValidationRunnerParser"))
+    #expect(parserSource.contains("--typed-drafts"))
+    #expect(parserSource.contains("--platform-adapters"))
+    #expect(parserSource.contains("--reminders\", \"--local-reminders"))
+    #expect(parserSource.contains("--syncups-recording"))
+    #expect(parserSource.contains("--parity-report"))
+    #expect(parserSource.contains("--coverage"))
 
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/bin/bash")

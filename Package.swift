@@ -103,7 +103,10 @@ let package = Package(
     ),
     .executableTarget(
       name: "InstantSwiftDataValidationRunner",
-      dependencies: ["InstantSwiftDataTesting"],
+      dependencies: [
+        "InstantSwiftDataCLIParsing",
+        "InstantSwiftDataTesting",
+      ],
       swiftSettings: strictConcurrencySettings
     ),
     .executableTarget(
@@ -141,6 +144,7 @@ let package = Package(
     .testTarget(
       name: "InstantSwiftDataTestingTests",
       dependencies: [
+        "InstantSwiftDataCLIParsing",
         "InstantSwiftDataTesting",
         .product(name: "CustomDump", package: "swift-custom-dump"),
       ],

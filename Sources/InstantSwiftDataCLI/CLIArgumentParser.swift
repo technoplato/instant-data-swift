@@ -1469,6 +1469,51 @@ public enum CLIValidationInvocation: Equatable, Sendable {
   case typedDrafts
 }
 
+public enum CLIValidationRunnerInvocation: Equatable, Sendable {
+  case localTodos
+  case localIntegrations
+  case reminders
+  case typedDrafts
+  case platformAdapters
+  case syncUpsRecording
+  case parityReport
+  case coverage
+
+  public var caseID: String {
+    switch self {
+    case .localTodos:
+      "validation.local.todos"
+    case .localIntegrations:
+      "validation.local.integrations"
+    case .reminders:
+      "validation.reminders"
+    case .typedDrafts:
+      "validation.typed.drafts"
+    case .platformAdapters:
+      "validation.platform.adapters"
+    case .syncUpsRecording:
+      "validation.syncups.recording"
+    case .parityReport:
+      "validation.parity.report"
+    case .coverage:
+      "validation.coverage"
+    }
+  }
+
+  public var appID: String {
+    switch self {
+    case .typedDrafts:
+      "draft-validation"
+    case .platformAdapters:
+      "platform-adapter-validation"
+    case .syncUpsRecording:
+      "syncups-recording-validation"
+    case .localTodos, .localIntegrations, .reminders, .parityReport, .coverage:
+      "local-validation"
+    }
+  }
+}
+
 public enum CLIValidationUsage {
   public static let validation = """
     Usage: instant-swift-data validation <local-todos|local-integrations|reminders|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>
@@ -1483,7 +1528,18 @@ public enum CLIValidationUsage {
     """
 }
 
+public enum CLIValidationRunnerUsage {
+  public static let validationRunner =
+    "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--reminders|--local-reminders|--typed-drafts|--platform-adapters|--syncups-recording|--parity-report|--coverage]"
+}
+
 public enum CLIValidationArgumentError: Error, Equatable, Sendable {
+  case invalidArguments
+
+  public var exitCode: Int32 { 64 }
+}
+
+public enum CLIValidationRunnerArgumentError: Error, Equatable, Sendable {
   case invalidArguments
 
   public var exitCode: Int32 { 64 }
@@ -4515,6 +4571,49 @@ public struct CLIValidationParser: Parser {
   }
 }
 
+public struct CLIValidationRunnerParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIValidationRunnerInvocation {
+    guard let flag = input.first else {
+      return .localTodos
+    }
+    input.removeFirst()
+    guard input.isEmpty else {
+      throw CLIValidationRunnerArgumentError.invalidArguments
+    }
+
+    switch flag {
+    case "--local-todos":
+      return .localTodos
+
+    case "--local-integrations":
+      return .localIntegrations
+
+    case "--reminders", "--local-reminders":
+      return .reminders
+
+    case "--typed-drafts":
+      return .typedDrafts
+
+    case "--platform-adapters":
+      return .platformAdapters
+
+    case "--syncups-recording":
+      return .syncUpsRecording
+
+    case "--parity-report":
+      return .parityReport
+
+    case "--coverage":
+      return .coverage
+
+    default:
+      throw CLIValidationRunnerArgumentError.invalidArguments
+    }
+  }
+}
+
 public struct CLIAdminParser: Parser {
   public init() {}
 
@@ -5947,6 +6046,13 @@ public enum CLIBenchmarkArguments {
       usageCommand: usageCommand
     )
     .parse(&input)
+  }
+}
+
+public enum CLIValidationRunnerArguments {
+  public static func parse(_ arguments: [String]) throws -> CLIValidationRunnerInvocation {
+    var input = arguments[...]
+    return try CLIValidationRunnerParser().parse(&input)
   }
 }
 
@@ -8539,6 +8645,12 @@ extension CLIQueryArgumentError: CustomStringConvertible {
 extension CLIValidationArgumentError: CustomStringConvertible {
   public var description: String {
     CLIValidationUsage.validation
+  }
+}
+
+extension CLIValidationRunnerArgumentError: CustomStringConvertible {
+  public var description: String {
+    CLIValidationRunnerUsage.validationRunner
   }
 }
 
