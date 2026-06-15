@@ -267,6 +267,36 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Top-level scalar equality filters match the upstream fixture results."
     ),
     instant(
+      id: "instant.query.simple-without-where",
+      sourceFile: instaQLSource,
+      sourceTestName: "Simple Query Without Where",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLSimpleWhereAndDeepRelationFilters",
+      surface: "query",
+      status: .exact,
+      notes: "A namespace query without filters returns the upstream Zeneca user handles."
+    ),
+    instant(
+      id: "instant.query.simple-where-expected-keys",
+      sourceFile: instaQLSource,
+      sourceTestName: "Simple Where has expected keys",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLSimpleWhereAndDeepRelationFilters",
+      surface: "query",
+      status: .adapted,
+      notes: "Swift snapshots expose the same scalar keys while storing id separately from the materialized values dictionary."
+    ),
+    instant(
+      id: "instant.query.simple-where-multiple-clauses",
+      sourceFile: instaQLSource,
+      sourceTestName: "Simple Where with multiple clauses",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLSimpleWhereAndDeepRelationFilters",
+      surface: "query",
+      status: .exact,
+      notes: "Multiple top-level where clauses combine with deep relation filters and match the upstream result sets."
+    ),
+    instant(
       id: "instant.query.where-in-like",
       sourceFile: instaQLSource,
       sourceTestName: "Where in / Where %like%",
@@ -277,6 +307,26 @@ public enum InstantSwiftDataParityCoverage {
       notes: "IN and LIKE filters over the Zeneca fixture match the upstream result sets."
     ),
     instant(
+      id: "instant.query.where-like-equality",
+      sourceFile: instaQLSource,
+      sourceTestName: "Where like equality",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLSimpleWhereAndDeepRelationFilters",
+      surface: "query",
+      status: .exact,
+      notes: "A LIKE pattern without wildcards behaves like equality for the upstream handle query."
+    ),
+    instant(
+      id: "instant.query.where-deep-like-prefix-suffix",
+      sourceFile: instaQLSource,
+      sourceTestName: "Where startsWith deep / Where endsWith deep",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLSimpleWhereAndDeepRelationFilters",
+      surface: "query",
+      status: .exact,
+      notes: "Deep relation LIKE prefix and suffix filters match the upstream bookshelf/book title fixtures."
+    ),
+    instant(
       id: "instant.query.like-edges",
       sourceFile: instaQLSource,
       sourceTestName: "like case sensitivity / like special regex characters",
@@ -285,6 +335,16 @@ public enum InstantSwiftDataParityCoverage {
       surface: "query",
       status: .exact,
       notes: "LIKE/ILIKE case behavior and pattern escaping are covered by fixture mutations."
+    ),
+    instant(
+      id: "instant.query.where-and",
+      sourceFile: instaQLSource,
+      sourceTestName: "Where and",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLLikeAndAndFilterEdges",
+      surface: "query",
+      status: .exact,
+      notes: "AND filters over two deep book-title relations return the same matching users as upstream."
     ),
     instant(
       id: "instant.query.logical-or",
@@ -305,6 +365,86 @@ public enum InstantSwiftDataParityCoverage {
       surface: "query",
       status: .adapted,
       notes: "Swift uses explicit include plans for forward, reverse, and deep linked materialization."
+    ),
+    instant(
+      id: "instant.query.nested-wheres",
+      sourceFile: instaQLSource,
+      sourceTestName: "Nested wheres / Nested wheres with OR queries / Nested wheres with AND queries",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLForwardAndReverseAssociations",
+      surface: "query",
+      status: .adapted,
+      notes: "Swift include plans carry nested filters and nested includes explicitly while preserving the upstream nested result sets."
+    ),
+    instant(
+      id: "instant.query.deep-where",
+      sourceFile: instaQLSource,
+      sourceTestName: "Deep where",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLSimpleWhereAndDeepRelationFilters",
+      surface: "query",
+      status: .exact,
+      notes: "A deep relation equality filter on bookshelf book title returns the upstream user handle."
+    ),
+    instant(
+      id: "instant.query.multiple-connections",
+      sourceFile: instaQLSource,
+      sourceTestName: "multiple connections",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLForwardAndReverseAssociations",
+      surface: "query",
+      status: .adapted,
+      notes: "Swift materializes multiple includes for the same namespace query with explicit forward and reverse include declarations."
+    ),
+    instant(
+      id: "instant.query.missing-namespaces-attributes",
+      sourceFile: instaQLSource,
+      sourceTestName: "Missing etype / Missing inner etype / Missing filter attr",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLMissingNamespacesAndAttributes",
+      surface: "query",
+      status: .adapted,
+      notes: "Raw Swift materialization treats missing namespaces and filters as empty, while strict runtime validation rejects undeclared include targets before cache writes."
+    ),
+    instant(
+      id: "instant.query.relation-filter-refs",
+      sourceFile: instaQLSource,
+      sourceTestName: "query forward references work with and without id / query reverse references work with and without id",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLRelationFiltersWorkWithIDsAndLinkFields",
+      surface: "query",
+      status: .adapted,
+      notes: "Swift tests both relation.id and relation-ref filter forms across declared forward and reverse link metadata."
+    ),
+    instant(
+      id: "instant.query.namespace-isolation",
+      sourceFile: instaQLSource,
+      sourceTestName: "objects are created by etype",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLNamespaceIsolationAndObjectValues",
+      surface: "query",
+      status: .adapted,
+      notes: "Swift ports the same raw id across namespaces and verifies attributes materialize only for the queried namespace."
+    ),
+    instant(
+      id: "instant.query.create-update-triples",
+      sourceFile: instaQLSource,
+      sourceTestName: "create and update triples in one tx",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLNamespaceIsolationAndObjectValues",
+      surface: "query",
+      status: .adapted,
+      notes: "Swift uses explicit strict-create and strict-update preconditions while proving the same create-then-update materialized values."
+    ),
+    instant(
+      id: "instant.query.object-values",
+      sourceFile: instaQLSource,
+      sourceTestName: "object values",
+      swiftFile: queryExecutionSwiftFile,
+      swiftTestName: "upstreamInstaQLNamespaceIsolationAndObjectValues",
+      surface: "query",
+      status: .exact,
+      notes: "JSON object attributes materialize through InstantValue.json with the upstream object payload."
     ),
     instant(
       id: "instant.query.pagination-ordering",

@@ -5373,9 +5373,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 82)
-    expectNoDifference(jsonOutput.exactCount, 12)
-    expectNoDifference(jsonOutput.adaptedCount, 67)
+    expectNoDifference(jsonOutput.recordCount, 96)
+    expectNoDifference(jsonOutput.exactCount, 19)
+    expectNoDifference(jsonOutput.adaptedCount, 74)
     expectNoDifference(jsonOutput.blockedCount, 3)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -5423,6 +5423,46 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.records.contains {
         $0.id == "instant.store.v0-store-restore" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.query.simple-without-where" && $0.status == "exact"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.query.simple-where-expected-keys" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.query.where-deep-like-prefix-suffix" && $0.status == "exact"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.query.nested-wheres" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.query.missing-namespaces-attributes" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.query.relation-filter-refs" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.query.create-update-triples" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.query.object-values" && $0.status == "exact"
       }
     )
     #expect(
@@ -5599,7 +5639,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 82"))
+    #expect(humanOutput.contains("records: 96"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 
@@ -5900,16 +5940,28 @@ extension InstantStoreTests {
     let errorPipe = Pipe()
     process.standardOutput = outputPipe
     process.standardError = errorPipe
+    let outputCapture = CLITestPipeCapture()
+    let errorCapture = CLITestPipeCapture()
+    outputPipe.fileHandleForReading.readabilityHandler = { handle in
+      outputCapture.append(handle.availableData)
+    }
+    errorPipe.fileHandleForReading.readabilityHandler = { handle in
+      errorCapture.append(handle.availableData)
+    }
 
     try process.run()
     process.waitUntilExit()
+    outputPipe.fileHandleForReading.readabilityHandler = nil
+    errorPipe.fileHandleForReading.readabilityHandler = nil
+    outputCapture.append(outputPipe.fileHandleForReading.readDataToEndOfFile())
+    errorCapture.append(errorPipe.fileHandleForReading.readDataToEndOfFile())
 
     let output = String(
-      decoding: outputPipe.fileHandleForReading.readDataToEndOfFile(),
+      decoding: outputCapture.data(),
       as: UTF8.self
     )
     let error = String(
-      decoding: errorPipe.fileHandleForReading.readDataToEndOfFile(),
+      decoding: errorCapture.data(),
       as: UTF8.self
     )
     return CLITestProcessResult(
@@ -6178,6 +6230,25 @@ private struct CLITestProcessResult {
   var status: Int32
   var output: String
   var error: String
+}
+
+// Protected by an NSLock because FileHandle readability handlers run concurrently.
+private final class CLITestPipeCapture: @unchecked Sendable {
+  private let lock = NSLock()
+  private var storage = Data()
+
+  func append(_ data: Data) {
+    guard !data.isEmpty else { return }
+    lock.lock()
+    storage.append(data)
+    lock.unlock()
+  }
+
+  func data() -> Data {
+    lock.lock()
+    defer { lock.unlock() }
+    return storage
+  }
 }
 
 private struct CLITodosEvidence: Decodable {

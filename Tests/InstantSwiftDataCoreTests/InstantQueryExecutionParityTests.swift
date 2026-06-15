@@ -399,11 +399,8 @@ struct InstantQueryExecutionParityTests {
       datalogSource("query")
     )
 
-    let allMovies = await movies(id: "datalog.movies.all")
-    let allPeople = await people(id: "datalog.people.all")
-    let materializedMovieFacts = allMovies.reduce(0) { $0 + $1.materializedFactCount }
-    let materializedPersonFacts = allPeople.reduce(0) { $0 + $1.materializedFactCount }
-    expectParityEqual(materializedMovieFacts + materializedPersonFacts, 301, datalogSource("play"))
+    let rawSnapshot = await fixture.store.snapshot()
+    expectParityEqual(rawSnapshot.triples.count, 301, datalogSource("play"))
 
     let alien = try await movie(title: "Alien")
     expectParityEqual(
@@ -419,11 +416,11 @@ struct InstantQueryExecutionParityTests {
       datalogSource("play")
     )
 
-    let terminatorValues = terminator.values.values
-      .flatMap(\.values)
-      .map(datalogValueDescription)
+    let rawTerminatorValues = rawSnapshot.triples
+      .filter { $0.entityID == terminator.id }
+      .map { datalogValueDescription($0.value) }
       .sorted()
-    let expectedTerminatorValues = try await [
+    let expectedRawTerminatorValues = try await [
       "The Terminator",
       "1984",
       person(name: "James Cameron").id,
@@ -435,9 +432,29 @@ struct InstantQueryExecutionParityTests {
     ]
     .sorted()
     expectParityEqual(
+      rawTerminatorValues,
+      expectedRawTerminatorValues,
+      datalogSource("play")
+    )
+
+    let terminatorValues = terminator.values.values
+      .flatMap(\.values)
+      .map(datalogValueDescription)
+      .sorted()
+    let expectedMaterializedTerminatorValues = try await [
+      "The Terminator",
+      "1984",
+      person(name: "James Cameron").id,
+      person(name: "Arnold Schwarzenegger").id,
+      person(name: "Linda Hamilton").id,
+      person(name: "Michael Biehn").id,
+      movie(title: "Terminator 2: Judgment Day").id,
+    ]
+    .sorted()
+    expectParityEqual(
       terminatorValues,
-      expectedTerminatorValues,
-      "\(datalogSource("play")) adapted: Swift snapshots expose the same entity facts as values."
+      expectedMaterializedTerminatorValues,
+      "\(datalogSource("play")) adapted: Swift snapshots expose primary keys as id rather than duplicating them in values."
     )
 
     let arnold = try await person(name: "Arnold Schwarzenegger")
@@ -801,6 +818,81 @@ struct InstantQueryExecutionParityTests {
       ).first
     )
     expectParityEqual(unchangedStopa.string("email"), "stopa@instantdb.com", source)
+
+    source = instaQLSource("create and update triples in one tx")
+    let createdUserID = "fixture-query-create-update-user"
+    let emailAttribute = try #require(fixture.attribute(namespace: "users", name: "email"))
+    let handleAttribute = try #require(fixture.attribute(namespace: "users", name: "handle"))
+    let fullNameAttribute = try #require(fixture.attribute(namespace: "users", name: "fullName"))
+    let createdUser = try await fixture.transacting(
+      operations: [
+        .requireEntityMissing(entityID: createdUserID, namespace: "users"),
+        .insert(
+          InstantTriple(
+            entityID: createdUserID,
+            attributeID: emailAttribute.id,
+            value: .string("e@mail"),
+            txID: "upstream-fixture-create-user",
+            txTime: InstantTimestamp(milliseconds: 9_000_000_000_150)
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: createdUserID,
+            attributeID: handleAttribute.id,
+            value: .string("handle"),
+            txID: "upstream-fixture-create-user",
+            txTime: InstantTimestamp(milliseconds: 9_000_000_000_150)
+          )
+        ),
+      ]
+    )
+    var createdSnapshot = try #require(
+      await createdUser.query(
+        InstantQueryPlan(
+          id: "users.where.id.created-user",
+          namespace: "users",
+          filters: [.equals(field: "id", value: .string(createdUserID))]
+        )
+      ).first
+    )
+    expectParityEqual(createdSnapshot.string("email"), "e@mail", source)
+    expectParityEqual(createdSnapshot.values["fullName"]?.first, nil, source)
+
+    let updatedUser = try await createdUser.transacting(
+      operations: [
+        .requireEntityExists(entityID: createdUserID, namespace: "users"),
+        .insert(
+          InstantTriple(
+            entityID: createdUserID,
+            attributeID: emailAttribute.id,
+            value: .string("e@mail 2"),
+            txID: "upstream-fixture-update-user",
+            txTime: InstantTimestamp(milliseconds: 9_000_000_000_151)
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: createdUserID,
+            attributeID: fullNameAttribute.id,
+            value: .string("Full Name"),
+            txID: "upstream-fixture-update-user",
+            txTime: InstantTimestamp(milliseconds: 9_000_000_000_151)
+          )
+        ),
+      ]
+    )
+    createdSnapshot = try #require(
+      await updatedUser.query(
+        InstantQueryPlan(
+          id: "users.where.id.updated-user",
+          namespace: "users",
+          filters: [.equals(field: "id", value: .string(createdUserID))]
+        )
+      ).first
+    )
+    expectParityEqual(createdSnapshot.string("email"), "e@mail 2", source)
+    expectParityEqual(createdSnapshot.string("fullName"), "Full Name", source)
 
     source = instaQLSource("object values")
     let jsonField = fixtureAttribute(namespace: "users", name: "jsonField", valueType: .json)
@@ -1685,10 +1777,6 @@ private func testTriple(
 private extension InstantEntitySnapshot {
   var materializedScalarKeysIncludingID: [String] {
     Array(values.filter { !$0.value.containsRef }.keys).appending("id").sorted()
-  }
-
-  var materializedFactCount: Int {
-    values.values.reduce(0) { $0 + $1.values.count }
   }
 
   func string(_ field: String) -> String? {

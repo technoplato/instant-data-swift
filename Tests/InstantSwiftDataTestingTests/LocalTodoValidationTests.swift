@@ -724,15 +724,15 @@ struct LocalTodoValidationTests {
 
     expectNoDifference(run.result.event, "parity-report")
     expectNoDifference(run.result.coverageComplete, false)
-    expectNoDifference(run.result.recordCount, 82)
-    expectNoDifference(run.result.exactCount, 12)
-    expectNoDifference(run.result.adaptedCount, 67)
+    expectNoDifference(run.result.recordCount, 96)
+    expectNoDifference(run.result.exactCount, 19)
+    expectNoDifference(run.result.adaptedCount, 74)
     expectNoDifference(run.result.blockedCount, 3)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
     expectNoDifference(run.summary.appID, "validation-parity-test")
     expectNoDifference(run.summary.rowCount, run.result.recordCount)
     expectNoDifference(run.summary.ok, false)
-    expectNoDifference(run.summary.events, Array(repeating: "parity-record", count: 82))
+    expectNoDifference(run.summary.events, Array(repeating: "parity-record", count: 96))
     expectNoDifference(run.summary.failedEvents, Array(repeating: "parity-record", count: 3))
     #expect(
       run.result.sourceFiles.contains(
@@ -767,7 +767,7 @@ struct LocalTodoValidationTests {
     )
 
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 82)
+    expectNoDifference(rows.count, 96)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
@@ -798,7 +798,7 @@ struct LocalTodoValidationTests {
 
     #expect(result.status == 0)
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 82)
+    expectNoDifference(rows.count, 96)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
@@ -1608,15 +1608,27 @@ private func runValidationRunner(
   let errorPipe = Pipe()
   process.standardOutput = outputPipe
   process.standardError = errorPipe
+  let outputCapture = ValidationPipeCapture()
+  let errorCapture = ValidationPipeCapture()
+  outputPipe.fileHandleForReading.readabilityHandler = { handle in
+    outputCapture.append(handle.availableData)
+  }
+  errorPipe.fileHandleForReading.readabilityHandler = { handle in
+    errorCapture.append(handle.availableData)
+  }
   try process.run()
   process.waitUntilExit()
+  outputPipe.fileHandleForReading.readabilityHandler = nil
+  errorPipe.fileHandleForReading.readabilityHandler = nil
+  outputCapture.append(outputPipe.fileHandleForReading.readDataToEndOfFile())
+  errorCapture.append(errorPipe.fileHandleForReading.readDataToEndOfFile())
 
   let output = String(
-    decoding: outputPipe.fileHandleForReading.readDataToEndOfFile(),
+    decoding: outputCapture.data(),
     as: UTF8.self
   )
   let error = String(
-    decoding: errorPipe.fileHandleForReading.readDataToEndOfFile(),
+    decoding: errorCapture.data(),
     as: UTF8.self
   )
   return (process.terminationStatus, output, error)
@@ -1636,6 +1648,14 @@ private func runValidationRunE2E(
   let errorPipe = Pipe()
   process.standardOutput = outputPipe
   process.standardError = errorPipe
+  let outputCapture = ValidationPipeCapture()
+  let errorCapture = ValidationPipeCapture()
+  outputPipe.fileHandleForReading.readabilityHandler = { handle in
+    outputCapture.append(handle.availableData)
+  }
+  errorPipe.fileHandleForReading.readabilityHandler = { handle in
+    errorCapture.append(handle.availableData)
+  }
   var environment = ProcessInfo.processInfo.environment
   environment["PATH"] = "\(binURL.path):\(environment["PATH", default: ""])"
   environment["INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR"] = resultsURL.path
@@ -1645,15 +1665,38 @@ private func runValidationRunE2E(
   process.environment = environment
   try process.run()
   process.waitUntilExit()
+  outputPipe.fileHandleForReading.readabilityHandler = nil
+  errorPipe.fileHandleForReading.readabilityHandler = nil
+  outputCapture.append(outputPipe.fileHandleForReading.readDataToEndOfFile())
+  errorCapture.append(errorPipe.fileHandleForReading.readDataToEndOfFile())
   let output = String(
-    decoding: outputPipe.fileHandleForReading.readDataToEndOfFile(),
+    decoding: outputCapture.data(),
     as: UTF8.self
   )
   let error = String(
-    decoding: errorPipe.fileHandleForReading.readDataToEndOfFile(),
+    decoding: errorCapture.data(),
     as: UTF8.self
   )
   return (process.terminationStatus, output, error)
+}
+
+// Protected by an NSLock because FileHandle readability handlers run concurrently.
+private final class ValidationPipeCapture: @unchecked Sendable {
+  private let lock = NSLock()
+  private var storage = Data()
+
+  func append(_ data: Data) {
+    guard !data.isEmpty else { return }
+    lock.lock()
+    storage.append(data)
+    lock.unlock()
+  }
+
+  func data() -> Data {
+    lock.lock()
+    defer { lock.unlock() }
+    return storage
+  }
 }
 
 private func writeExecutable(_ contents: String, to url: URL) throws {
