@@ -2316,6 +2316,73 @@ struct TypedAPITests {
   }
 
   @Test
+  func fetchAllReloadsAfterConcurrentCreatesAndDeletes() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_120)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000680")!
+    let count = 100
+
+    try await withDependencies {
+      $0.date.now = baseDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "fetch-all-concurrency-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+      let client = db
+
+      @FetchAll(TypedTodo.query.order(TypedTodo.createdAt)) var todos: [TypedTodo]
+      expectNoDifference(todos, [])
+
+      try await withThrowingTaskGroup(of: Void.self) { group in
+        for index in 1...count {
+          group.addTask {
+            try await client.transact(id: "tx-fetch-all-concurrency-create-\(index)") {
+              TypedTodo.create(
+                id: InstantID(rawValue: "todo-concurrency-\(index)"),
+                TypedTodo.text.set("Concurrent \(index)"),
+                TypedTodo.isCompleted.set(false),
+                TypedTodo.createdAt.set(baseDate.addingTimeInterval(Double(index)))
+              )
+            }
+          }
+        }
+        try await group.waitForAll()
+      }
+
+      try await $todos.load()
+      expectNoDifference(
+        todos.map(\.id.rawValue),
+        (1...count).map { "todo-concurrency-\($0)" }
+      )
+      expectNoDifference($todos.loadError, nil)
+      expectNoDifference($todos.isLoading, false)
+
+      try await withThrowingTaskGroup(of: Void.self) { group in
+        for index in 1...(count / 2) {
+          let evenIndex = index * 2
+          group.addTask {
+            try await client.transact(id: "tx-fetch-all-concurrency-delete-\(evenIndex)") {
+              TypedTodo.delete(id: InstantID(rawValue: "todo-concurrency-\(evenIndex)"))
+            }
+          }
+        }
+        try await group.waitForAll()
+      }
+
+      try await $todos.load()
+      expectNoDifference(
+        todos.map(\.id.rawValue),
+        (1...count).filter { !$0.isMultiple(of: 2) }.map { "todo-concurrency-\($0)" }
+      )
+      expectNoDifference($todos.loadError, nil)
+      expectNoDifference($todos.isLoading, false)
+    }
+  }
+
+  @Test
   func fetchAllSubscriptionEmitsInitialAndOptimisticUpdates() async throws {
     let baseDate = Date(timeIntervalSince1970: 1_700_000_125)
     let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000657")!

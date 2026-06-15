@@ -367,6 +367,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift cancellation tears down the underlying Instant observation."
     ),
     sqlite(
+      id: "sqlite.fetch-all.concurrency",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchAllTests.swift",
+      sourceTestName: "concurrency",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "fetchAllReloadsAfterConcurrentCreatesAndDeletes",
+      surface: "adapter-fetch",
+      status: .adapted,
+      notes: "Concurrent Instant creates and deletes are reloaded through @FetchAll with deterministic ordering."
+    ),
+    sqlite(
       id: "sqlite.fetch-subscription.explicit-cancel",
       sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchSubscriptionTests.swift",
       sourceTestName: "completeWhenTaskExplicitlyCancelled",
