@@ -8316,9 +8316,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 205)
+    expectNoDifference(jsonOutput.recordCount, 208)
     expectNoDifference(jsonOutput.exactCount, 28)
-    expectNoDifference(jsonOutput.adaptedCount, 171)
+    expectNoDifference(jsonOutput.adaptedCount, 174)
     expectNoDifference(jsonOutput.blockedCount, 5)
     expectNoDifference(jsonOutput.notApplicableCount, 1)
     #expect(
@@ -8373,6 +8373,11 @@ extension InstantStoreTests {
     )
     #expect(
       jsonOutput.sourceFiles.contains(
+        "upstream/instant/client/packages/core/__tests__/src/instaqlInference.test.ts"
+      )
+    )
+    #expect(
+      jsonOutput.sourceFiles.contains(
         "upstream/instant/client/www/_examples/app-builder.md + Galaxies-dev/app-builder@e67200cc70e01d88bd9a5382cf0380f4882fb8c7"
       )
     )
@@ -8385,6 +8390,7 @@ extension InstantStoreTests {
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantDateCoercionTests.swift"))
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantSimpleE2EParityTests.swift"))
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift"))
+    #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantInstaQLInferenceParityTests.swift"))
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/CLITests.swift"))
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataTests/TypedAPITests.swift"))
     #expect(jsonOutput.records.contains { $0.id == "instant.store.simple-add" && $0.status == "exact" })
@@ -8536,6 +8542,22 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.records.contains {
         $0.id == "instant.reactor.rewrite-mutations-multiple" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.instaql-inference.many-to-many" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.instaql-inference.one-to-one" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.instaql-inference.one-to-one-without-inference"
+          && $0.status == "adapted"
       }
     )
     #expect(
@@ -9097,9 +9119,9 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 205"))
+    #expect(humanOutput.contains("records: 208"))
     #expect(humanOutput.contains("exact: 28"))
-    #expect(humanOutput.contains("adapted: 171"))
+    #expect(humanOutput.contains("adapted: 174"))
     #expect(humanOutput.contains("blocked: 5"))
     #expect(humanOutput.contains("not applicable: 1"))
   }

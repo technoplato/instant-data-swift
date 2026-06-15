@@ -377,6 +377,36 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift proves every persisted pending typed transaction re-lowers to the same server-attribute transport steps, matching Reactor's multi-entry pendingMutations rewrite invariant."
     ),
     instant(
+      id: "instant.instaql-inference.many-to-many",
+      sourceFile: instaQLInferenceSource,
+      sourceTestName: "many-to-many with inference",
+      swiftFile: instaQLInferenceParitySwiftFile,
+      swiftTestName: "upstreamInstaQLManyToManyWithInferenceMaterializesArrays",
+      surface: "query-cardinality",
+      status: .adapted,
+      notes: "Swift InstaQL projection keeps many relationships array-shaped when cardinality inference is enabled and asserts forward and reverse materialized links."
+    ),
+    instant(
+      id: "instant.instaql-inference.one-to-one",
+      sourceFile: instaQLInferenceSource,
+      sourceTestName: "one-to-one with inference",
+      swiftFile: instaQLInferenceParitySwiftFile,
+      swiftTestName: "upstreamInstaQLOneToOneWithInferenceMaterializesSingularCardinality",
+      surface: "query-cardinality",
+      status: .adapted,
+      notes: "Swift InstaQL projection returns singular linked objects for one-to-one forward and reverse relationships when cardinality inference is enabled."
+    ),
+    instant(
+      id: "instant.instaql-inference.one-to-one-without-inference",
+      sourceFile: instaQLInferenceSource,
+      sourceTestName: "one-to-one without inference",
+      swiftFile: instaQLInferenceParitySwiftFile,
+      swiftTestName: "upstreamInstaQLOneToOneWithoutInferenceKeepsArraySurface",
+      surface: "query-cardinality",
+      status: .adapted,
+      notes: "Swift InstaQL projection keeps one-to-one linked results array-shaped when cardinality inference is disabled, matching the upstream no-inference branch."
+    ),
+    instant(
       id: "instant.query.simple-where",
       sourceFile: instaQLSource,
       sourceTestName: "Simple Where",
@@ -2202,6 +2232,8 @@ public enum InstantSwiftDataParityCoverage {
     "upstream/instant/client/packages/core/__tests__/src/store.test.ts"
   private static let instaQLSource =
     "upstream/instant/client/packages/core/__tests__/src/instaql.test.ts"
+  private static let instaQLInferenceSource =
+    "upstream/instant/client/packages/core/__tests__/src/instaqlInference.test.ts"
   private static let simpleE2ESource =
     "upstream/instant/client/packages/core/__tests__/src/simple.e2e.test.ts"
   private static let reactorSource =
@@ -2232,6 +2264,8 @@ public enum InstantSwiftDataParityCoverage {
     "Tests/InstantSwiftDataCoreTests/InstantSimpleE2EParityTests.swift"
   private static let reactorParitySwiftFile =
     "Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift"
+  private static let instaQLInferenceParitySwiftFile =
+    "Tests/InstantSwiftDataCoreTests/InstantInstaQLInferenceParityTests.swift"
   private static let queryExecutionSwiftFile =
     "Tests/InstantSwiftDataCoreTests/InstantQueryExecutionParityTests.swift"
   private static let queryValidationSwiftFile =

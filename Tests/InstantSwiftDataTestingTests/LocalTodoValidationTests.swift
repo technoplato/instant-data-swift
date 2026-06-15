@@ -811,9 +811,9 @@ struct LocalTodoValidationTests {
 
     expectNoDifference(run.result.event, "parity-report")
     expectNoDifference(run.result.coverageComplete, false)
-    expectNoDifference(run.result.recordCount, 205)
+    expectNoDifference(run.result.recordCount, 208)
     expectNoDifference(run.result.exactCount, 28)
-    expectNoDifference(run.result.adaptedCount, 171)
+    expectNoDifference(run.result.adaptedCount, 174)
     expectNoDifference(run.result.blockedCount, 5)
     expectNoDifference(run.result.notApplicableCount, 1)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
@@ -858,6 +858,11 @@ struct LocalTodoValidationTests {
     #expect(
       run.result.sourceFiles.contains(
         "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts"
+      )
+    )
+    #expect(
+      run.result.sourceFiles.contains(
+        "upstream/instant/client/packages/core/__tests__/src/instaqlInference.test.ts"
       )
     )
     #expect(
@@ -933,6 +938,22 @@ struct LocalTodoValidationTests {
     #expect(
       run.result.records.contains {
         $0.id == "instant.reactor.rewrite-mutations-multiple" && $0.status == .adapted
+      }
+    )
+    #expect(
+      run.result.records.contains {
+        $0.id == "instant.instaql-inference.many-to-many" && $0.status == .adapted
+      }
+    )
+    #expect(
+      run.result.records.contains {
+        $0.id == "instant.instaql-inference.one-to-one" && $0.status == .adapted
+      }
+    )
+    #expect(
+      run.result.records.contains {
+        $0.id == "instant.instaql-inference.one-to-one-without-inference"
+          && $0.status == .adapted
       }
     )
     for expected in [
@@ -1154,7 +1175,7 @@ struct LocalTodoValidationTests {
     )
 
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 205)
+    expectNoDifference(rows.count, 208)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
@@ -1216,7 +1237,7 @@ struct LocalTodoValidationTests {
 
     #expect(result.status == 0)
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 205)
+    expectNoDifference(rows.count, 208)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))

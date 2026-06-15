@@ -70,6 +70,18 @@ public actor InstantStore {
     indexes.materialize(plan, attributes: attributes)
   }
 
+  public func materializeInstaQL(
+    _ plan: InstantQueryPlan,
+    cardinalityInference: Bool = true
+  ) -> [InstantInstaQLObject] {
+    InstantInstaQLProjection.project(
+      indexes.materialize(plan, attributes: attributes),
+      plan: plan,
+      attributes: attributes,
+      cardinalityInference: cardinalityInference
+    )
+  }
+
   public func materializePage(_ plan: InstantQueryPlan) -> InstantQueryPage {
     indexes.materializePage(plan, attributes: attributes)
   }
