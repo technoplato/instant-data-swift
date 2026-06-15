@@ -653,6 +653,11 @@ Agent-oriented output modes are required:
   `instant-swift-data examples reminders stats --json`; the local counts expose
   all incomplete, completed, flagged, scheduled, and today reminders, and
   flagged/scheduled/today follow the upstream incomplete-only predicates.
+- exercise the local Reminders form model through core tests and
+  `instant-swift-data validation reminders --jsonl`; the model supports nil-id
+  create drafts, `Draft(existing)`-style edit flows, due-date toggling,
+  duplicate-safe selected tags, and full tag-link replacement for edit/create
+  flows.
 - run the first local SyncUps port slice with commands such as
   `instant-swift-data examples sync-ups add "Design" --seconds 900 --theme appOrange --attendee Blob`,
   `instant-swift-data examples sync-ups edit <sync-up-id> --title "Design Review" --attendee Blob`,

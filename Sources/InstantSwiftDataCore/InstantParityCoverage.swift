@@ -987,6 +987,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "The Instant port proves notes, flagged state, due-date filters, priority filters, completion counts, and rich-field edits through terminal validation."
     ),
     sqlite(
+      id: "sqlite.reminders.form-model",
+      sourceFile: "upstream/sqlite-data/Examples/Reminders/ReminderForm.swift",
+      sourceTestName: "Reminder.Draft create/edit form save, date toggle, and tag replacement",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift + Tests/InstantSwiftDataTestingTests/LocalTodoValidationTests.swift",
+      swiftTestName: "reminderFormModelSavesNewDraftWithTags + reminderFormModelEditsExistingDraftAndReplacesTags + remindersValidationProducesEvidenceAndPersistsLocalSurfaces",
+      surface: "examples-reminders",
+      status: .adapted,
+      notes: "The Instant Reminders form model mirrors the SQLiteData edit/create ergonomics with nil-id draft creation, Draft(existing)-style identity preservation, due-date toggling, selected tag de-duplication, full tag-link replacement, and terminal validation through the edit-rich-fields row."
+    ),
+    sqlite(
       id: "sqlite.reminders.lists-share-stats",
       sourceFile: "upstream/sqlite-data/Examples/RemindersTests/RemindersListsTests.swift",
       sourceTestName: "basics / share",

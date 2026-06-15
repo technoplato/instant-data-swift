@@ -219,22 +219,33 @@ public enum InstantSwiftDataRemindersValidation {
       )
     )
 
+    guard let reminderForForm = searched.first else {
+      throw validationError(
+        operation: "validate reminders form model",
+        message: "Expected a reminder to edit through the form model."
+      )
+    }
+    var formModel = ReminderFormModel(
+      reminder: reminderForForm,
+      selectedTags: [ReminderTagRecord(id: tagID, title: tagID)]
+    )
+    formModel.reminder.title = "Pack lunch and snacks"
+    formModel.reminder.notes = "Updated through validation"
+    formModel.reminder.isFlagged = false
+    formModel.reminder.setDateEnabled(false, defaultDueDate: today)
+    formModel.reminder.priority = nil
+    let formSave = formModel.saveButtonTapped(
+      newReminderID: "validation-reminders-unused-new-id",
+      updatedAt: today,
+      transactionID: "validation.reminders.edit-rich-fields"
+    )
     try await transact(
       runtime,
       id: "validation.reminders.edit-rich-fields",
       createdAt: today,
-      operations: ReminderExample.updateReminderDetailsOperations(
-        id: firstReminderID,
-        listID: listID,
-        title: "Pack lunch and snacks",
-        notes: "Updated through validation",
-        isFlagged: false,
-        dueDate: nil,
-        priority: nil,
-        updatedAt: today,
-        transactionID: "validation.reminders.edit-rich-fields"
-      )
+      operations: formSave.operations
     )
+    formModel.commit(formSave)
     let edited = try await reminders(
       runtime,
       query: ReminderExample.remindersSearchQuery(text: "snacks", includeCompleted: true)

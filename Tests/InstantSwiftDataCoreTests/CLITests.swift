@@ -7086,6 +7086,15 @@ extension InstantStoreTests {
     expectNoDifference(searchEvidence.details.reminderIDs, ["validation-reminders-pack-lunch"])
     expectNoDifference(searchEvidence.details.tagTitles, ["family"])
 
+    let editEvidence = try JSONDecoder().decode(
+      CLIRemindersValidationEvidence.self,
+      from: Data(try #require(lines.first { $0.contains("\"event\":\"edit-rich-fields\"") }).utf8)
+    )
+    expectNoDifference(editEvidence.details.reminderIDs, ["validation-reminders-pack-lunch"])
+    expectNoDifference(editEvidence.details.reminderTitles, ["Pack lunch and snacks"])
+    expectNoDifference(editEvidence.details.reminderNotes, ["Updated through validation"])
+    expectNoDifference(editEvidence.details.reminderTagIDs, ["validation-reminders-pack-lunch#family"])
+
     let readerEvidence = try JSONDecoder().decode(
       CLIRemindersValidationEvidence.self,
       from: Data(try #require(lines.first { $0.contains("\"event\":\"reader-rejection\"") }).utf8)
@@ -7607,9 +7616,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 111)
+    expectNoDifference(jsonOutput.recordCount, 112)
     expectNoDifference(jsonOutput.exactCount, 19)
-    expectNoDifference(jsonOutput.adaptedCount, 89)
+    expectNoDifference(jsonOutput.adaptedCount, 90)
     expectNoDifference(jsonOutput.blockedCount, 3)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -7917,6 +7926,11 @@ extension InstantStoreTests {
     )
     #expect(
       jsonOutput.records.contains {
+        $0.id == "sqlite.reminders.form-model" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
         $0.id == "sqlite.draft.generated-field-exclusion" && $0.status == "adapted"
       }
     )
@@ -7959,7 +7973,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 111"))
+    #expect(humanOutput.contains("records: 112"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 
@@ -9597,7 +9611,10 @@ private struct CLIRemindersValidationEvidence: Decodable {
 
 private struct CLIRemindersValidationDetails: Decodable {
   var reminderIDs: [String]
+  var reminderTitles: [String]
+  var reminderNotes: [String]
   var tagTitles: [String]
+  var reminderTagIDs: [String]
   var rejectedOperations: [String]
 }
 

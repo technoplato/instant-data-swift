@@ -544,8 +544,9 @@ closed-connection offline write, offline relaunch restore, and reconnect flush.
 `validation local-integrations` emits evidence for local auth, room
 presence/topic messages, file upload/read, stream chunks, and share
 create/accept/revoke. `validation reminders` emits terminal evidence for local
-Reminders search, tags, rich fields, smart-list stats, list sharing roles,
-permission rejections, writer updates, and relaunch persistence.
+Reminders search, tags, rich fields, form-model edit saves, smart-list stats,
+list sharing roles, permission rejections, writer updates, and relaunch
+persistence.
 `validation typed-drafts` emits terminal evidence for a
 macro-generated nil-id draft create, `Draft(existing)` edit, a writable relation
 draft with generated ref metadata, summarized pending mutation payload shape,

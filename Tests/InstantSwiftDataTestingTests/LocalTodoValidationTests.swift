@@ -232,6 +232,12 @@ struct LocalTodoValidationTests {
       RemindersStats(allCount: 2, completedCount: 0, flaggedCount: 1, scheduledCount: 1, todayCount: 1)
     )
 
+    let formEdit = result.evidence[3].details
+    expectNoDifference(formEdit.reminderIDs, ["validation-reminders-pack-lunch"])
+    expectNoDifference(formEdit.reminderTitles, ["Pack lunch and snacks"])
+    expectNoDifference(formEdit.reminderNotes, ["Updated through validation"])
+    expectNoDifference(formEdit.reminderTagIDs, ["validation-reminders-pack-lunch#family"])
+
     let readerRejection = result.evidence[5].details
     expectNoDifference(
       readerRejection.rejectedOperations,
@@ -743,15 +749,15 @@ struct LocalTodoValidationTests {
 
     expectNoDifference(run.result.event, "parity-report")
     expectNoDifference(run.result.coverageComplete, false)
-    expectNoDifference(run.result.recordCount, 111)
+    expectNoDifference(run.result.recordCount, 112)
     expectNoDifference(run.result.exactCount, 19)
-    expectNoDifference(run.result.adaptedCount, 89)
+    expectNoDifference(run.result.adaptedCount, 90)
     expectNoDifference(run.result.blockedCount, 3)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
     expectNoDifference(run.summary.appID, "validation-parity-test")
     expectNoDifference(run.summary.rowCount, run.result.recordCount)
     expectNoDifference(run.summary.ok, false)
-    expectNoDifference(run.summary.events, Array(repeating: "parity-record", count: 111))
+    expectNoDifference(run.summary.events, Array(repeating: "parity-record", count: 112))
     expectNoDifference(run.summary.failedEvents, Array(repeating: "parity-record", count: 3))
     #expect(
       run.result.sourceFiles.contains(
@@ -761,6 +767,11 @@ struct LocalTodoValidationTests {
     #expect(
       run.result.records.contains {
         $0.id == "sqlite.reminders.search-tags" && $0.status == .adapted
+      }
+    )
+    #expect(
+      run.result.records.contains {
+        $0.id == "sqlite.reminders.form-model" && $0.status == .adapted
       }
     )
     #expect(
@@ -851,7 +862,7 @@ struct LocalTodoValidationTests {
     )
 
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 111)
+    expectNoDifference(rows.count, 112)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
@@ -882,7 +893,7 @@ struct LocalTodoValidationTests {
 
     #expect(result.status == 0)
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 111)
+    expectNoDifference(rows.count, 112)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))

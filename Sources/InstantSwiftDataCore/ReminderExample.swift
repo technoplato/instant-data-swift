@@ -65,6 +65,61 @@ public struct ReminderRecord: Hashable, Codable, Sendable, Identifiable {
   }
 }
 
+public struct ReminderDraft: Hashable, Codable, Sendable, Identifiable {
+  public var id: String?
+  public var listID: String
+  public var title: String
+  public var notes: String
+  public var isFlagged: Bool
+  public var dueDate: InstantTimestamp?
+  public var priority: ReminderPriority?
+  public var position: Int
+
+  public init(
+    id: String? = nil,
+    listID: String,
+    title: String = "",
+    notes: String = "",
+    isFlagged: Bool = false,
+    dueDate: InstantTimestamp? = nil,
+    priority: ReminderPriority? = nil,
+    position: Int = 0
+  ) {
+    self.id = id
+    self.listID = listID
+    self.title = title
+    self.notes = notes
+    self.isFlagged = isFlagged
+    self.dueDate = dueDate
+    self.priority = priority
+    self.position = position
+  }
+
+  public init(_ reminder: ReminderRecord) {
+    self.init(
+      id: reminder.id,
+      listID: reminder.remindersListID,
+      title: reminder.title,
+      notes: reminder.notes,
+      isFlagged: reminder.isFlagged,
+      dueDate: reminder.dueDate,
+      priority: reminder.priority,
+      position: reminder.position
+    )
+  }
+
+  public var isDateSet: Bool {
+    dueDate != nil
+  }
+
+  public mutating func setDateEnabled(
+    _ isEnabled: Bool,
+    defaultDueDate: InstantTimestamp
+  ) {
+    dueDate = isEnabled ? (dueDate ?? defaultDueDate) : nil
+  }
+}
+
 public struct ReminderTagRecord: Hashable, Codable, Sendable, Identifiable {
   public var id: String
   public var title: String
@@ -72,6 +127,126 @@ public struct ReminderTagRecord: Hashable, Codable, Sendable, Identifiable {
   public init(id: String, title: String) {
     self.id = id
     self.title = title
+  }
+}
+
+public struct ReminderFormSave: Hashable, Sendable {
+  public var reminderID: String
+  public var operations: [InstantTripleOperation]
+  public var selectedTags: [ReminderTagRecord]
+
+  public init(
+    reminderID: String,
+    operations: [InstantTripleOperation],
+    selectedTags: [ReminderTagRecord]
+  ) {
+    self.reminderID = reminderID
+    self.operations = operations
+    self.selectedTags = selectedTags
+  }
+}
+
+public struct ReminderFormModel: Hashable, Sendable {
+  public var isDismissed: Bool
+  public var reminder: ReminderDraft
+  public var selectedTags: [ReminderTagRecord]
+  public private(set) var existingTagIDs: [String]
+
+  public init(
+    reminder: ReminderDraft,
+    selectedTags: [ReminderTagRecord] = [],
+    existingTagIDs: [String] = []
+  ) {
+    self.reminder = reminder
+    self.selectedTags = Self.uniqueTags(selectedTags)
+    self.existingTagIDs = Self.unique(existingTagIDs)
+    self.isDismissed = false
+  }
+
+  public init(
+    reminder: ReminderRecord,
+    selectedTags: [ReminderTagRecord] = []
+  ) {
+    self.init(
+      reminder: ReminderDraft(reminder),
+      selectedTags: selectedTags,
+      existingTagIDs: selectedTags.map(\.id)
+    )
+  }
+
+  public mutating func cancelButtonTapped() {
+    isDismissed = true
+  }
+
+  public mutating func saveButtonTapped(
+    newReminderID: String,
+    updatedAt: InstantTimestamp,
+    transactionID: String
+  ) -> ReminderFormSave {
+    selectedTags = Self.uniqueTags(selectedTags)
+
+    let isNew = reminder.id == nil
+    let reminderID = reminder.id ?? newReminderID
+    let reminderOperations =
+      isNew
+      ? ReminderExample.createReminderOperations(
+        id: reminderID,
+        listID: reminder.listID,
+        title: reminder.title,
+        notes: reminder.notes,
+        isFlagged: reminder.isFlagged,
+        dueDate: reminder.dueDate,
+        priority: reminder.priority,
+        position: reminder.position,
+        createdAt: updatedAt,
+        transactionID: transactionID
+      )
+      : ReminderExample.updateReminderDetailsOperations(
+        id: reminderID,
+        listID: reminder.listID,
+        title: reminder.title,
+        notes: reminder.notes,
+        isFlagged: reminder.isFlagged,
+        dueDate: reminder.dueDate,
+        priority: reminder.priority,
+        updatedAt: updatedAt,
+        transactionID: transactionID
+      )
+    let operations =
+      reminderOperations
+      + ReminderExample.replaceReminderTagsOperations(
+        reminderID: reminderID,
+        listID: reminder.listID,
+        existingTagIDs: existingTagIDs,
+        selectedTags: selectedTags,
+        updatedAt: updatedAt,
+        transactionID: transactionID,
+        requiresExistingReminder: !isNew
+      )
+    return ReminderFormSave(
+      reminderID: reminderID,
+      operations: operations,
+      selectedTags: selectedTags
+    )
+  }
+
+  public mutating func commit(_ save: ReminderFormSave) {
+    reminder.id = save.reminderID
+    selectedTags = save.selectedTags
+    existingTagIDs = save.selectedTags.map(\.id)
+    isDismissed = true
+  }
+
+  private static func uniqueTags(_ tags: [ReminderTagRecord]) -> [ReminderTagRecord] {
+    var seen: Set<String> = []
+    return tags.filter { tag in
+      seen.insert(tag.id).inserted
+    }
+  }
+
+  private static func unique(_ ids: [String]) -> [String] {
+    var seen: Set<String> = []
+    return ids.filter { seen.insert($0).inserted }
   }
 }
 
@@ -843,6 +1018,58 @@ public enum ReminderExample {
     ]
   }
 
+  public static func replaceReminderTagsOperations(
+    reminderID: String,
+    listID: String,
+    existingTagIDs: [String],
+    selectedTags: [ReminderTagRecord],
+    updatedAt: InstantTimestamp,
+    transactionID: String,
+    requiresExistingReminder: Bool = true
+  ) -> [InstantTripleOperation] {
+    let selectedTags = uniqueTags(selectedTags)
+    let selectedTagIDs = Set(selectedTags.map(\.id))
+    let existingTagIDs = unique(existingTagIDs)
+    var operations: [InstantTripleOperation] = [
+      .requireEntityExists(entityID: listID, namespace: listsNamespace),
+      listRefOperation(reminderID: reminderID, listID: listID, updatedAt: updatedAt, transactionID: transactionID),
+    ]
+    if requiresExistingReminder {
+      operations.insert(
+        contentsOf: [
+          .requireEntityExists(entityID: reminderID, namespace: remindersNamespace),
+          requireReminderInListOperation(reminderID: reminderID, listID: listID),
+        ],
+        at: 1
+      )
+    }
+    return operations + existingTagIDs.filter { !selectedTagIDs.contains($0) }.map { tagID in
+      .retract(
+        InstantTriple(
+          entityID: reminderID,
+          attributeID: "reminders/tags",
+          value: .ref(tagID),
+          txID: transactionID,
+          txTime: updatedAt
+        )
+      )
+    } + selectedTags.flatMap { tag in
+      upsertTagOperations(
+        id: tag.id,
+        title: tag.title,
+        updatedAt: updatedAt,
+        transactionID: transactionID
+      ) + [
+        tagRefOperation(
+          reminderID: reminderID,
+          tagID: tag.id,
+          updatedAt: updatedAt,
+          transactionID: transactionID
+        )
+      ]
+    }
+  }
+
   public static func deleteReminderOperations(
     id: String,
     listID: String,
@@ -1332,6 +1559,18 @@ public enum ReminderExample {
 
   private static func timestampMilliseconds(for date: Date) -> Int64 {
     Int64((date.timeIntervalSince1970 * 1000).rounded())
+  }
+
+  private static func uniqueTags(_ tags: [ReminderTagRecord]) -> [ReminderTagRecord] {
+    var seen: Set<String> = []
+    return tags.filter { tag in
+      seen.insert(tag.id).inserted
+    }
+  }
+
+  private static func unique(_ ids: [String]) -> [String] {
+    var seen: Set<String> = []
+    return ids.filter { seen.insert($0).inserted }
   }
 
   private static func queryIDFragment(_ value: String) -> String {

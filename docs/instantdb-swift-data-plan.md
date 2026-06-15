@@ -788,9 +788,12 @@ Create `validation/` with:
 - Reminders: `validation reminders --jsonl` now records the local Reminders port
   as acceptance evidence, including search/tag filtering, rich-field edits,
   smart-list stats, local list-sharing reader rejection, writer updates,
-  demotion rejection, and relaunch persistence. This is still local Instant
-  proof; real Instant sharing entities, generated permissions, and
-  Swift/TypeScript boundary proof remain future work.
+  demotion rejection, and relaunch persistence. Rich edits now run through a
+  Sendable `ReminderFormModel` that mirrors the SQLiteData ReminderForm flow for
+  nil-id creates, existing edits, due-date toggles, selected tag de-duplication,
+  and tag-link replacement. This is still local Instant proof; real Instant
+  sharing entities, generated permissions, and Swift/TypeScript boundary proof
+  remain future work.
 - SyncUps: the first local SyncUps port slice exposes durable
   `examples sync-ups add`, `detail`, `edit`, `add-attendee`,
   `delete-attendee`, `record`, `record-demo`, `delete-meeting`, `list`, and

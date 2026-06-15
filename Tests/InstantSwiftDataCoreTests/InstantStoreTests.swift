@@ -7932,6 +7932,207 @@ struct InstantStoreTests {
   }
 
   @Test
+  func reminderFormModelSavesNewDraftWithTags() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let dueDate = InstantTimestamp(milliseconds: 1_700_086_400_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: ReminderExample.attributes
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-reminder-form-list",
+        operations: ReminderExample.createListOperations(
+          id: "list-form",
+          title: "Family",
+          position: 0,
+          createdAt: timestamp,
+          transactionID: "tx-reminder-form-list"
+        )
+      ),
+      createdAt: timestamp
+    )
+
+    var draft = ReminderDraft(
+      listID: "list-form",
+      title: "Get milk",
+      notes: "Whole milk",
+      isFlagged: true,
+      priority: .medium,
+      position: 0
+    )
+    expectNoDifference(draft.isDateSet, false)
+    draft.setDateEnabled(true, defaultDueDate: dueDate)
+    expectNoDifference(draft.dueDate, dueDate)
+
+    var model = ReminderFormModel(
+      reminder: draft,
+      selectedTags: [
+        ReminderTagRecord(id: "shopping", title: "shopping"),
+        ReminderTagRecord(id: "shopping", title: "duplicate"),
+        ReminderTagRecord(id: "family", title: "family"),
+      ]
+    )
+    let save = model.saveButtonTapped(
+      newReminderID: "reminder-form-new",
+      updatedAt: timestamp,
+      transactionID: "tx-reminder-form-save"
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(id: "tx-reminder-form-save", operations: save.operations),
+      createdAt: timestamp
+    )
+    model.commit(save)
+
+    expectNoDifference(model.reminder.id, "reminder-form-new")
+    expectNoDifference(model.isDismissed, true)
+    expectNoDifference(model.selectedTags.map(\.id), ["shopping", "family"])
+    expectNoDifference(model.existingTagIDs, ["shopping", "family"])
+
+    let reminders = try ReminderExample.decodeReminders(
+      (try await runtime.queryOnce(ReminderExample.remindersQuery)).values
+    )
+    expectNoDifference(reminders.map(\.id), ["reminder-form-new"])
+    expectNoDifference(reminders.map(\.title), ["Get milk"])
+    expectNoDifference(reminders.map(\.notes), ["Whole milk"])
+    expectNoDifference(reminders.map(\.isFlagged), [true])
+    expectNoDifference(reminders.map(\.dueDate), [dueDate])
+    expectNoDifference(reminders.map(\.priority), [.medium])
+
+    let tags = try ReminderExample.decodeTags(
+      (try await runtime.queryOnce(ReminderExample.tagsQuery)).values
+    )
+    expectNoDifference(tags.map(\.id), ["family", "shopping"])
+    expectNoDifference(tags.map(\.title), ["family", "shopping"])
+
+    let tagLinks = try ReminderExample.decodeReminderTagLinks(
+      (try await runtime.queryOnce(ReminderExample.remindersQuery)).values
+    )
+    expectNoDifference(
+      tagLinks,
+      [
+        ReminderTagLinkRecord(reminderID: "reminder-form-new", tagID: "family"),
+        ReminderTagLinkRecord(reminderID: "reminder-form-new", tagID: "shopping"),
+      ]
+    )
+  }
+
+  @Test
+  func reminderFormModelEditsExistingDraftAndReplacesTags() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let dueDate = InstantTimestamp(milliseconds: 1_700_086_400_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        initialAttributes: ReminderExample.attributes
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-reminder-form-existing",
+        operations: ReminderExample.createListOperations(
+          id: "list-form",
+          title: "Family",
+          position: 0,
+          createdAt: timestamp,
+          transactionID: "tx-reminder-form-existing"
+        ) + ReminderExample.createReminderOperations(
+          id: "reminder-form-existing",
+          listID: "list-form",
+          title: "Pack lunch",
+          notes: "Bring a cooler",
+          isFlagged: true,
+          dueDate: dueDate,
+          priority: .high,
+          position: 0,
+          createdAt: timestamp,
+          transactionID: "tx-reminder-form-existing"
+        ) + ReminderExample.addTagOperations(
+          reminderID: "reminder-form-existing",
+          listID: "list-form",
+          tagID: "old",
+          title: "old",
+          updatedAt: timestamp,
+          transactionID: "tx-reminder-form-existing"
+        ) + ReminderExample.addTagOperations(
+          reminderID: "reminder-form-existing",
+          listID: "list-form",
+          tagID: "keep",
+          title: "keep",
+          updatedAt: timestamp,
+          transactionID: "tx-reminder-form-existing"
+        )
+      ),
+      createdAt: timestamp
+    )
+
+    let existing = try #require(
+      try ReminderExample.decodeReminders(
+        (try await runtime.queryOnce(ReminderExample.remindersQuery)).values
+      )
+      .first
+    )
+    var model = ReminderFormModel(
+      reminder: ReminderDraft(existing),
+      selectedTags: [
+        ReminderTagRecord(id: "keep", title: "keep"),
+        ReminderTagRecord(id: "new", title: "new"),
+      ],
+      existingTagIDs: ["old", "keep"]
+    )
+    model.reminder.title = "Pack lunch and snacks"
+    model.reminder.notes = "Edited from form"
+    model.reminder.isFlagged = false
+    model.reminder.setDateEnabled(false, defaultDueDate: timestamp)
+    model.reminder.priority = nil
+    let save = model.saveButtonTapped(
+      newReminderID: "unused-new-reminder",
+      updatedAt: timestamp,
+      transactionID: "tx-reminder-form-edit"
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(id: "tx-reminder-form-edit", operations: save.operations),
+      createdAt: timestamp
+    )
+    model.commit(save)
+
+    expectNoDifference(model.reminder.id, "reminder-form-existing")
+    expectNoDifference(model.existingTagIDs, ["keep", "new"])
+    expectNoDifference(model.isDismissed, true)
+
+    let edited = try ReminderExample.decodeReminders(
+      (try await runtime.queryOnce(ReminderExample.remindersSearchQuery(text: "snacks", includeCompleted: true))).values
+    )
+    expectNoDifference(edited.map(\.id), ["reminder-form-existing"])
+    expectNoDifference(edited.map(\.notes), ["Edited from form"])
+    expectNoDifference(edited.map(\.isFlagged), [false])
+    expectNoDifference(edited.map(\.dueDate), [nil])
+    expectNoDifference(edited.map(\.priority), [nil])
+
+    let oldTagged = try ReminderExample.decodeReminders(
+      (try await runtime.queryOnce(ReminderExample.remindersSearchQuery(text: "", tagID: "old", includeCompleted: true))).values
+    )
+    expectNoDifference(oldTagged, [])
+
+    let tagLinks = try ReminderExample.decodeReminderTagLinks(
+      (try await runtime.queryOnce(ReminderExample.remindersQuery)).values
+    )
+    expectNoDifference(
+      tagLinks,
+      [
+        ReminderTagLinkRecord(reminderID: "reminder-form-existing", tagID: "keep"),
+        ReminderTagLinkRecord(reminderID: "reminder-form-existing", tagID: "new"),
+      ]
+    )
+  }
+
+  @Test
   func remindersExampleStatsUseUpstreamIncompletePredicates() {
     let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let today = InstantTimestamp(milliseconds: 1_700_000_100_000)
