@@ -73,7 +73,10 @@ public actor SQLitePersistenceStore {
     self.encoder = JSONEncoder()
     self.encoder.outputFormatting = [.sortedKeys]
     self.decoder = JSONDecoder()
+    self.connection = SQLiteConnection(try Self.openRawConnection(fileURL: fileURL))
+  }
 
+  private static func openRawConnection(fileURL: URL) throws -> OpaquePointer? {
     let directory = fileURL.deletingLastPathComponent()
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
@@ -102,7 +105,18 @@ public actor SQLitePersistenceStore {
         recovery: "Check that the cache directory is writable, or choose another persistence path."
       )
     }
-    self.connection = SQLiteConnection(opened)
+    guard sqlite3_exec(opened, "PRAGMA foreign_keys = ON", nil, nil, nil) == SQLITE_OK else {
+      let message = opened.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) }
+        ?? "SQLite could not enable foreign keys for \(fileURL.path)."
+      sqlite3_close(opened)
+      throw InstantError(
+        code: .persistenceFailed,
+        operation: "configure local cache",
+        message: message,
+        recovery: "Check that the cache directory is writable, or choose another persistence path."
+      )
+    }
+    return opened
   }
 
   public func bootstrap() throws {
@@ -422,6 +436,11 @@ public actor SQLitePersistenceStore {
         )
       }
     }
+  }
+
+  func simulateUnexpectedConnectionCloseForTesting() {
+    sqlite3_close(connection.raw)
+    connection.raw = nil
   }
 
   public func loadSnapshot() throws -> InstantPersistenceSnapshot {
@@ -1132,6 +1151,29 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  func saveQueryCache(
+    _ entries: [InstantCachedQuery],
+    expectedStoreRevision: Int64
+  ) throws -> Bool {
+    try transaction {
+      guard try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision else {
+        return false
+      }
+
+      for entry in entries {
+        try saveQueryCacheEntryWithoutTransaction(entry)
+      }
+      return true
+    }
+  }
+
+  func deleteQueryCache(cacheKey: String) throws {
+    try execute(
+      "DELETE FROM instant_query_cache WHERE cache_key = ?",
+      [.text(cacheKey)]
+    )
+  }
+
   public func localID(named name: String, makeID: @Sendable () -> String) throws -> String {
     if let existing = try selectScalar(
       "SELECT entity_id FROM instant_local_ids WHERE name = ? LIMIT 1",
@@ -1568,9 +1610,21 @@ public actor SQLitePersistenceStore {
   }
 
   private func prepare(_ sql: String, statement: inout OpaquePointer?) throws {
+    try ensureOpenConnection()
     guard sqlite3_prepare_v2(connection.raw, sql, -1, &statement, nil) == SQLITE_OK else {
       throw persistenceError(operation: "prepare SQL", message: lastErrorMessage())
     }
+  }
+
+  private func ensureOpenConnection() throws {
+    guard connection.raw == nil else { return }
+    try reopenConnection()
+  }
+
+  private func reopenConnection() throws {
+    sqlite3_close(connection.raw)
+    connection.raw = nil
+    connection.raw = try Self.openRawConnection(fileURL: fileURL)
   }
 
   private func bind(_ bindings: [SQLiteBinding], to statement: OpaquePointer?) throws {

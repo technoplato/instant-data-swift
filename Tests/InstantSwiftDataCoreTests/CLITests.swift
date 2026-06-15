@@ -8320,8 +8320,8 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.coverageComplete, false)
     expectNoDifference(jsonOutput.recordCount, 223)
     expectNoDifference(jsonOutput.exactCount, 28)
-    expectNoDifference(jsonOutput.adaptedCount, 190)
-    expectNoDifference(jsonOutput.blockedCount, 4)
+    expectNoDifference(jsonOutput.adaptedCount, 191)
+    expectNoDifference(jsonOutput.blockedCount, 3)
     expectNoDifference(jsonOutput.notApplicableCount, 1)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -8980,7 +8980,7 @@ extension InstantStoreTests {
       ("instant.persisted-object.gc-max-items", "adapted"),
       ("instant.persisted-object.gc-max-size", "adapted"),
       ("instant.persisted-object.gc-max-age", "adapted"),
-      ("instant.persisted-object.indexeddb-connection-recovery", "blocked"),
+      ("instant.persisted-object.indexeddb-connection-recovery", "adapted"),
     ] {
       #expect(
         jsonOutput.records.contains { $0.id == expected.0 && $0.status == expected.1 },
@@ -9167,8 +9167,8 @@ extension InstantStoreTests {
     #expect(humanOutput.contains("parity coverage: incomplete"))
     #expect(humanOutput.contains("records: 223"))
     #expect(humanOutput.contains("exact: 28"))
-    #expect(humanOutput.contains("adapted: 190"))
-    #expect(humanOutput.contains("blocked: 4"))
+    #expect(humanOutput.contains("adapted: 191"))
+    #expect(humanOutput.contains("blocked: 3"))
     #expect(humanOutput.contains("not applicable: 1"))
   }
 
@@ -9190,15 +9190,14 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.coverageComplete, false)
     expectNoDifference(jsonOutput.recordCount, 223)
     expectNoDifference(jsonOutput.exactCount, 28)
-    expectNoDifference(jsonOutput.adaptedCount, 190)
-    expectNoDifference(jsonOutput.blockedCount, 4)
+    expectNoDifference(jsonOutput.adaptedCount, 191)
+    expectNoDifference(jsonOutput.blockedCount, 3)
     expectNoDifference(jsonOutput.notApplicableCount, 1)
     #expect(jsonOutput.sourceFileCount > 0)
     expectNoDifference(jsonOutput.swiftFileCount, 22)
     expectNoDifference(
       jsonOutput.blockedIDs,
       [
-        "instant.persisted-object.indexeddb-connection-recovery",
         "instant.live-transport.swift-to-typescript",
         "instant.live-transport.typescript-to-swift",
         "sqlite.cloudkit-demo.remote-share",
@@ -9221,7 +9220,7 @@ extension InstantStoreTests {
     let humanOutput = try runCLI(["validation", "coverage"], homeURL: homeURL)
     #expect(humanOutput.contains("validation coverage: incomplete"))
     #expect(humanOutput.contains("records: 223"))
-    #expect(humanOutput.contains("blocked: 4"))
+    #expect(humanOutput.contains("blocked: 3"))
   }
 
   @Test

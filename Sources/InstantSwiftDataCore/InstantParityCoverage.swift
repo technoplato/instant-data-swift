@@ -1724,11 +1724,11 @@ public enum InstantSwiftDataParityCoverage {
       id: "instant.persisted-object.indexeddb-connection-recovery",
       sourceFile: persistedObjectSource,
       sourceTestName: "IndexedDBStorage recovers when the database connection closes",
-      swiftFile: "blocked",
-      swiftTestName: "blocked",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "queryCacheRecoversAfterSQLiteConnectionCloseForPersistedObjectParity",
       surface: "query-cache-persistence",
-      status: .blocked,
-      notes: "Swift local persistence uses SQLite, and there is no browser IndexedDB connection-close retry harness or IndexedDB-backed adapter in this package yet."
+      status: .adapted,
+      notes: "Swift uses an actor-confined SQLite handle instead of IndexedDB and proves query-cache get, set, list, and delete operations transparently reopen after a simulated unexpected connection close."
     ),
     instant(
       id: "instant.schema.builder-shape",

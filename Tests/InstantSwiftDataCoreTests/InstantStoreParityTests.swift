@@ -13,8 +13,8 @@ struct InstantStoreParityTests {
     expectNoDifference(report.coverageComplete, false)
     expectNoDifference(report.recordCount, 223)
     expectNoDifference(report.exactCount, 28)
-    expectNoDifference(report.adaptedCount, 190)
-    expectNoDifference(report.blockedCount, 4)
+    expectNoDifference(report.adaptedCount, 191)
+    expectNoDifference(report.blockedCount, 3)
     expectNoDifference(report.notApplicableCount, 1)
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/schema.test.ts"))
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/serializeSchema.test.ts"))
@@ -657,9 +657,9 @@ struct InstantStoreParityTests {
       (
         "instant.persisted-object.indexeddb-connection-recovery",
         "IndexedDBStorage recovers when the database connection closes",
-        "blocked",
-        .blocked,
-        "Swift local persistence uses SQLite, and there is no browser IndexedDB connection-close retry harness or IndexedDB-backed adapter in this package yet."
+        "queryCacheRecoversAfterSQLiteConnectionCloseForPersistedObjectParity",
+        .adapted,
+        "Swift uses an actor-confined SQLite handle instead of IndexedDB and proves query-cache get, set, list, and delete operations transparently reopen after a simulated unexpected connection close."
       ),
     ]
     for expected in persistedObjectMappings {

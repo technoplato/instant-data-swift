@@ -352,6 +352,64 @@ struct InstantStoreTests {
   }
 
   @Test
+  func queryCacheRecoversAfterSQLiteConnectionCloseForPersistedObjectParity() async throws {
+    let source = persistedObjectSource(
+      "IndexedDBStorage recovers when the database connection closes "
+        + "[adapted: Swift reopens its actor-confined SQLite handle after an unexpected close.]"
+    )
+    let cacheURL = try temporaryCacheURL()
+    let store = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await store.bootstrap()
+
+    let firstEntry = persistedObjectCacheEntry(
+      cacheKey: "key1",
+      updatedAt: InstantTimestamp(milliseconds: 1),
+      payload: "value1"
+    )
+    let didSaveFirstEntry = try await store.saveQueryCache(firstEntry, expectedStoreRevision: 0)
+    expectNoDifference(didSaveFirstEntry, true, source)
+    let firstValue = try await store.cachedQuery(cacheKey: "key1")
+    expectNoDifference(firstValue, firstEntry, source)
+
+    await store.simulateUnexpectedConnectionCloseForTesting()
+    let secondEntry = persistedObjectCacheEntry(
+      cacheKey: "key2",
+      updatedAt: InstantTimestamp(milliseconds: 2),
+      payload: "value2"
+    )
+    let thirdEntry = persistedObjectCacheEntry(
+      cacheKey: "key3",
+      updatedAt: InstantTimestamp(milliseconds: 3),
+      payload: "value3"
+    )
+    let fourthEntry = persistedObjectCacheEntry(
+      cacheKey: "key4",
+      updatedAt: InstantTimestamp(milliseconds: 4),
+      payload: "value4"
+    )
+    let didSaveSecondEntry = try await store.saveQueryCache(secondEntry, expectedStoreRevision: 0)
+    let didSaveBatch = try await store.saveQueryCache(
+      [thirdEntry, fourthEntry],
+      expectedStoreRevision: 0
+    )
+    expectNoDifference(didSaveSecondEntry, true, source)
+    expectNoDifference(didSaveBatch, true, source)
+    let recoveredFirstValue = try await store.cachedQuery(cacheKey: "key1")
+    let secondValue = try await store.cachedQuery(cacheKey: "key2")
+    expectNoDifference(recoveredFirstValue, firstEntry, source)
+    expectNoDifference(secondValue, secondEntry, source)
+
+    await store.simulateUnexpectedConnectionCloseForTesting()
+    let cacheKeys = try await store.loadQueryCache().map(\.cacheKey).sorted()
+    expectNoDifference(cacheKeys, ["key1", "key2", "key3", "key4"], source)
+
+    await store.simulateUnexpectedConnectionCloseForTesting()
+    try await store.deleteQueryCache(cacheKey: "key4")
+    let deletedValue = try await store.cachedQuery(cacheKey: "key4")
+    expectNoDifference(deletedValue, nil, source)
+  }
+
+  @Test
   func queryCachePruningPreservesLiveKeysAndDropsOldestUnpreservedRowsForPersistedObjectParity()
     async throws
   {
