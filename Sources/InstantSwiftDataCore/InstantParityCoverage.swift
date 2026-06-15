@@ -357,6 +357,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Lookup refs and rule params are preserved for transport lowering while local optimistic effects stay deterministic."
     ),
     instant(
+      id: "instant.instaml.mode-update",
+      sourceFile: instamlSource,
+      sourceTestName: "mode: update",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "transportMutationPortsInstamlModeUpdateOptions",
+      surface: "instaml",
+      status: .adapted,
+      notes: "Swift uses explicit update preconditions instead of JavaScript store-aware inference; encoded txSteps preserve absent options for upserts and exact update-mode payloads."
+    ),
+    instant(
       id: "instant.weak-hash",
       sourceFile: weakHashSource,
       sourceTestName: "selected fields / object key order / date / known query",
@@ -758,6 +768,8 @@ public enum InstantSwiftDataParityCoverage {
     "upstream/instant/client/packages/core/__tests__/src/store.test.ts"
   private static let instaQLSource =
     "upstream/instant/client/packages/core/__tests__/src/instaql.test.ts"
+  private static let instamlSource =
+    "upstream/instant/client/packages/core/__tests__/src/instaml.test.ts"
   private static let datalogSource =
     "upstream/instant/client/packages/core/__tests__/src/datalog.test.ts"
   private static let queryValidationSource =

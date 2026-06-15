@@ -5373,10 +5373,15 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 61)
+    expectNoDifference(jsonOutput.recordCount, 62)
     expectNoDifference(jsonOutput.exactCount, 11)
-    expectNoDifference(jsonOutput.adaptedCount, 47)
+    expectNoDifference(jsonOutput.adaptedCount, 48)
     expectNoDifference(jsonOutput.blockedCount, 3)
+    #expect(
+      jsonOutput.sourceFiles.contains(
+        "upstream/instant/client/packages/core/__tests__/src/instaml.test.ts"
+      )
+    )
     #expect(
       jsonOutput.sourceFiles.contains(
         "upstream/instant/client/packages/core/__tests__/src/store.test.ts"
@@ -5390,6 +5395,11 @@ extension InstantStoreTests {
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantDateCoercionTests.swift"))
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataTests/TypedAPITests.swift"))
     #expect(jsonOutput.records.contains { $0.id == "instant.store.simple-add" && $0.status == "exact" })
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.instaml.mode-update" && $0.status == "adapted"
+      }
+    )
     #expect(
       jsonOutput.records.contains {
         $0.id == "instant.utils.date-coercion" && $0.status == "adapted"
@@ -5489,7 +5499,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 61"))
+    #expect(humanOutput.contains("records: 62"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 

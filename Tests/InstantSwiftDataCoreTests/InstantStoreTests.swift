@@ -970,6 +970,141 @@ struct InstantStoreTests {
   }
 
   @Test
+  func transportMutationPortsInstamlModeUpdateOptions() throws {
+    let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let source =
+      "upstream/instant/client/packages/core/__tests__/src/instaml.test.ts mode: update "
+      + "[adapted: Swift explicit preconditions replace JavaScript store-aware mode inference.]"
+
+    func txSteps(for transaction: InstantStoreTransaction) throws -> [[Any]] {
+      let mutation = InstantTransportMutation(
+        PendingMutation(id: transaction.id, createdAt: txTime, transaction: transaction)
+      )
+      let data = try JSONEncoder().encode(mutation)
+      let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+      return try #require(object["txSteps"] as? [[Any]])
+    }
+
+    func expectAddTripleMode(
+      _ transaction: InstantStoreTransaction,
+      _ expectedMode: String?,
+      source: String
+    ) throws {
+      let steps = try txSteps(for: transaction)
+      expectNoDifference(steps.map { $0.first as? String }, ["add-triple"], source)
+      if let expectedMode {
+        expectNoDifference(steps.first?.count, 5, source)
+        let options = try #require(steps.first?[4] as? [String: Any])
+        expectNoDifference(options.keys.sorted(), ["mode"], source)
+        expectNoDifference(options["mode"] as? String, expectedMode, source)
+      } else {
+        expectNoDifference(steps.first?.count, 4, source)
+      }
+    }
+
+    try expectAddTripleMode(
+      InstantStoreTransaction(
+        id: "tx-instaml-upsert-new-id",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: "new-user",
+              attributeID: "users/handle",
+              value: .string("test"),
+              txID: "tx-instaml-upsert-new-id",
+              txTime: txTime
+            )
+          )
+        ]
+      ),
+      nil,
+      source: source
+    )
+
+    try expectAddTripleMode(
+      InstantStoreTransaction(
+        id: "tx-instaml-update-by-id",
+        operations: [
+          .requireEntityExists(entityID: "ce942051-2d74-404a-9c7d-4aa3f2d54ae4", namespace: "users"),
+          .insert(
+            InstantTriple(
+              entityID: "ce942051-2d74-404a-9c7d-4aa3f2d54ae4",
+              attributeID: "users/handle",
+              value: .string("joe2"),
+              txID: "tx-instaml-update-by-id",
+              txTime: txTime
+            )
+          ),
+        ]
+      ),
+      "update",
+      source: source
+    )
+
+    let emailLookup = InstantLookupRef(
+      attributeID: "users/email",
+      value: .string("stopa@instantdb.com")
+    )
+    let updateByLookup = InstantStoreTransaction(
+      id: "tx-instaml-update-by-lookup",
+      operations: [
+        .requireEntityExistsByLookup(emailLookup, namespace: "users"),
+        .insertByLookup(
+          entity: emailLookup,
+          attributeID: "users/handle",
+          value: .string("stopa2"),
+          txID: "tx-instaml-update-by-lookup",
+          txTime: txTime
+        ),
+      ]
+    )
+    try expectAddTripleMode(updateByLookup, "update", source: source)
+    let lookupSteps = try txSteps(for: updateByLookup)
+    let lookupEntity = try #require(lookupSteps.first?[1] as? [Any])
+    expectNoDifference(lookupEntity[0] as? String, "users/email", source)
+    expectNoDifference(lookupEntity[1] as? String, "stopa@instantdb.com", source)
+
+    try expectAddTripleMode(
+      InstantStoreTransaction(
+        id: "tx-instaml-forced-update",
+        operations: [
+          .requireEntityExists(entityID: "forced-user", namespace: "users"),
+          .insert(
+            InstantTriple(
+              entityID: "forced-user",
+              attributeID: "users/handle",
+              value: .string("test"),
+              txID: "tx-instaml-forced-update",
+              txTime: txTime
+            )
+          ),
+        ]
+      ),
+      "update",
+      source: source
+    )
+
+    try expectAddTripleMode(
+      InstantStoreTransaction(
+        id: "tx-instaml-forced-upsert",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: "ce942051-2d74-404a-9c7d-4aa3f2d54ae4",
+              attributeID: "users/handle",
+              value: .string("test"),
+              txID: "tx-instaml-forced-upsert",
+              txTime: txTime
+            )
+          )
+        ]
+      ),
+      nil,
+      source: source
+    )
+  }
+
+  @Test
   func transportMutationPreservesLookupRefsInLinkValuesForInstamlParity() throws {
     let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let postLookup = InstantLookupRef(
