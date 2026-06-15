@@ -408,6 +408,8 @@ struct InstantSwiftDataCLI {
       invocation = try CLIExamplesParser().parse(&input)
     } catch let error as CLIExamplesTodosArgumentError {
       throw CLIError(error.description, exitCode: error.exitCode)
+    } catch let error as CLIExamplesAuthArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesCountersArgumentError {
       throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesChatArgumentError {
@@ -426,6 +428,10 @@ struct InstantSwiftDataCLI {
       throw CLIError(error.description, exitCode: error.exitCode)
     }
     switch invocation {
+    case let .auth(arguments):
+      try await runAuthRecipe(arguments: arguments, output: output)
+      return
+
     case let .chat(arguments):
       try await runChat(arguments: arguments, output: output)
       return
@@ -492,6 +498,76 @@ struct InstantSwiftDataCLI {
 
     case .unknown:
       throw CLIError(examplesUsage, exitCode: 64)
+    }
+  }
+
+  private static func runAuthRecipe(arguments: [String], output: OutputMode) async throws {
+    let leaf: CLIExamplesAuthLeafInvocation
+    do {
+      var input = arguments[...]
+      leaf = try CLIExamplesAuthLeafParser().parse(&input)
+    } catch let error as CLIExamplesAuthArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
+    }
+
+    if case let .unknown(command) = leaf {
+      throw CLIError("Unknown auth recipe command: \(command)", exitCode: 64)
+    }
+
+    let context = try await CLIContext.bootstrap(initialAttributes: [])
+
+    switch leaf {
+    case let .sendCode(email):
+      try await requireAuthRecipeSignedOut(context: context, operation: "send-code")
+      let challenge = try await context.runtime.sendMagicCode(email: email)
+      let session = try await context.runtime.authSession()
+      try printAuthRecipe(
+        context: context,
+        event: "send-code",
+        session: session,
+        challenge: challenge,
+        output: output
+      )
+
+    case let .verifyCode(email, code):
+      try await requireAuthRecipeSignedOut(context: context, operation: "verify-code")
+      let session = try await context.runtime.signInWithMagicCode(email: email, code: code)
+      try printAuthRecipe(
+        context: context,
+        event: "verify-code",
+        session: session,
+        sentEmail: email,
+        output: output
+      )
+
+    case .status:
+      let session = try await context.runtime.authSession()
+      try printAuthRecipe(context: context, event: "status", session: session, output: output)
+
+    case let .watch(options):
+      try await watchAuthRecipe(context: context, output: output, eventCount: options.eventCount)
+
+    case let .signOut(options):
+      try await context.runtime.signOut(invalidateToken: options.invalidateToken)
+      try printAuthRecipe(context: context, event: "sign-out", session: nil, output: output)
+
+    case .unknown:
+      break
+    }
+  }
+
+  private static func requireAuthRecipeSignedOut(
+    context: CLIContext,
+    operation: String
+  ) async throws {
+    if try await context.runtime.authSession() != nil {
+      throw CLIError(
+        """
+        Auth recipe \(operation) is only available while signed out. Run \
+        'instant-swift-data examples auth sign-out' first.
+        """,
+        exitCode: 65
+      )
     }
   }
 
@@ -3525,6 +3601,167 @@ struct InstantSwiftDataCLI {
           appID: context.appID,
           cachePath: context.cacheURL.path,
           event: "watch",
+          transport: "not-implemented-local-cache-only",
+          requestedEventCount: eventCount,
+          emittedEventCount: emissions.count,
+          emissions: emissions
+        )
+      )
+    }
+  }
+
+  private static func printAuthRecipe(
+    context: CLIContext,
+    event: String,
+    session: InstantAuthSession?,
+    challenge: InstantMagicCodeChallenge? = nil,
+    sentEmail: String? = nil,
+    output: OutputMode
+  ) throws {
+    let payload = makeAuthRecipeOutput(
+      context: context,
+      event: event,
+      session: session,
+      challenge: challenge,
+      sentEmail: sentEmail
+    )
+
+    switch output {
+    case .human:
+      printAuthRecipe(payload)
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.examples.auth",
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          entityID: session?.userID ?? challenge?.email,
+          ok: true,
+          details: payload
+        )
+      )
+    }
+  }
+
+  private static func makeAuthRecipeOutput(
+    context: CLIContext,
+    event: String,
+    session: InstantAuthSession?,
+    challenge: InstantMagicCodeChallenge? = nil,
+    sentEmail: String? = nil
+  ) -> AuthRecipeOutput {
+    let recipeEmail = AuthRecipeExample.userEmail(from: session)
+    return AuthRecipeOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      recipeSlug: AuthRecipeExample.recipeSlug,
+      transport: "not-implemented-local-cache-only",
+      isLoginVisible: AuthRecipeExample.isLoginVisible(for: session),
+      isEmailEntryVisible: AuthRecipeExample.isEmailEntryVisible(
+        session: session,
+        challenge: challenge
+      ),
+      isCodeEntryVisible: AuthRecipeExample.isCodeEntryVisible(
+        session: session,
+        challenge: challenge
+      ),
+      isDashboardVisible: AuthRecipeExample.isDashboardVisible(for: session),
+      isSignedIn: session != nil,
+      userID: session?.userID,
+      userEmail: recipeEmail,
+      isGuest: session?.isGuest,
+      hasRefreshToken: session?.refreshToken != nil,
+      sentEmail: challenge?.email ?? sentEmail,
+      localVerificationCode: challenge?.code,
+      expiresAt: challenge?.expiresAt,
+      createdAt: session?.createdAt,
+      updatedAt: session?.updatedAt
+    )
+  }
+
+  private static func printAuthRecipe(_ payload: AuthRecipeOutput) {
+    print("recipe: \(payload.recipeSlug)")
+    if payload.isDashboardVisible {
+      print("view: dashboard")
+      if let email = payload.userEmail {
+        print("email: \(email)")
+      } else if let userID = payload.userID {
+        print("user: \(userID)")
+      }
+      print("refresh token: \(payload.hasRefreshToken ? "present" : "none")")
+    } else {
+      print("view: \(payload.isCodeEntryVisible ? "code-entry" : "login")")
+      if let sentEmail = payload.sentEmail {
+        print("sent email: \(sentEmail)")
+      }
+      if let localVerificationCode = payload.localVerificationCode {
+        print("local verification code: \(localVerificationCode)")
+      }
+    }
+    print("cache: \(payload.cachePath)")
+  }
+
+  private static func watchAuthRecipe(
+    context: CLIContext,
+    output: OutputMode,
+    eventCount: Int
+  ) async throws {
+    let stream = try await context.runtime.observeAuthSession()
+    var iterator = stream.makeAsyncIterator()
+    var emissions: [AuthRecipeOutput] = []
+    emissions.reserveCapacity(eventCount)
+
+    while emissions.count < eventCount {
+      guard let session = await iterator.next() else { break }
+      let payload = makeAuthRecipeOutput(
+        context: context,
+        event: "watch",
+        session: session
+      )
+
+      switch output {
+      case .human:
+        print("event: watch index=\(emissions.count)")
+        printAuthRecipe(payload)
+
+      case .json, .jsonl:
+        break
+      }
+
+      emissions.append(payload)
+
+      if output == .jsonl {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.auth.watch",
+            side: "swift",
+            event: "watch",
+            appID: context.appID,
+            entityID: session?.userID,
+            ok: true,
+            details: payload
+          )
+        )
+      }
+    }
+
+    switch output {
+    case .human, .jsonl:
+      break
+
+    case .json:
+      try writeJSON(
+        AuthRecipeWatchOutput(
+          appID: context.appID,
+          cachePath: context.cacheURL.path,
+          event: "watch",
+          recipeSlug: AuthRecipeExample.recipeSlug,
           transport: "not-implemented-local-cache-only",
           requestedEventCount: eventCount,
           emittedEventCount: emissions.count,
@@ -9059,8 +9296,9 @@ struct InstantSwiftDataCLI {
 
   private static var examplesUsage: String {
     """
-    Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|sync-ups>
+    Usage: instant-swift-data examples <todos|auth|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|sync-ups>
       instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>
+      instant-swift-data examples auth <send-code|verify-code|status|watch|sign-out> [--json|--jsonl]
       instant-swift-data examples todo-links <seed|list|nested|unlink> [--json|--jsonl]
       instant-swift-data examples counters <seed|add|list|increment|decrement|delete> [--json|--jsonl]
       instant-swift-data examples chat <seed|channels|messages|post|reset> [--json|--jsonl]
@@ -10172,6 +10410,39 @@ private struct AuthWatchOutput: Codable, Sendable {
   var requestedEventCount: Int
   var emittedEventCount: Int
   var emissions: [AuthOutput]
+}
+
+private struct AuthRecipeWatchOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var recipeSlug: String
+  var transport: String
+  var requestedEventCount: Int
+  var emittedEventCount: Int
+  var emissions: [AuthRecipeOutput]
+}
+
+private struct AuthRecipeOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var recipeSlug: String
+  var transport: String
+  var isLoginVisible: Bool
+  var isEmailEntryVisible: Bool
+  var isCodeEntryVisible: Bool
+  var isDashboardVisible: Bool
+  var isSignedIn: Bool
+  var userID: String?
+  var userEmail: String?
+  var isGuest: Bool?
+  var hasRefreshToken: Bool
+  var sentEmail: String?
+  var localVerificationCode: String?
+  var expiresAt: InstantTimestamp?
+  var createdAt: InstantTimestamp?
+  var updatedAt: InstantTimestamp?
 }
 
 private struct AuthOutput: Codable, Sendable {

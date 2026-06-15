@@ -267,6 +267,14 @@ The CLI proves this path non-captively with commands such as
 `instant-swift-data auth watch --events 1 --jsonl`; sign-out defaults to token
 invalidation and can skip it locally with
 `instant-swift-data auth sign-out --skip-token-invalidation --json`.
+The upstream auth recipe is also exposed through
+`instant-swift-data examples auth send-code <email>`,
+`verify-code <email> <code>`, `status`, `watch --events 1 --jsonl`, and
+`sign-out`, reusing the same `InstantMagicCodeExchange` dependency seam and
+local durable auth-session store. The terminal `send-code` output represents
+the transient code-entry form state that the React recipe keeps in component
+state, and dashboard output derives the email from `email:<address>` local user
+ids.
 `InstantRuntimeConfiguration` now carries Instant-compatible `apiURI` and
 `websocketURI` values, and endpoint helpers such as
 `instant-swift-data auth oauth-url <client-name> <redirect-url> --json` and
@@ -836,6 +844,15 @@ Create `validation/` with:
   soft-delete. The current upstream source declares `rooms: {}` and uses durable
   room membership rather than typed presence/topics, so the Swift port records
   that adaptation explicitly.
+- Auth recipe: the local Instant recipe port exposes durable
+  `examples auth send-code <email>`, `verify-code <email> <code>`, `status`,
+  `watch --events 1`, and `sign-out` commands over the existing auth runtime. It
+  preserves the upstream magic-code-only recipe scope, signed-out login state,
+  signed-out code-entry state, signed-in dashboard state, and sign-out flow while
+  adapting `db.useUser().email` to the local `InstantAuthSession` shape by
+  deriving the display email from `email:<address>` user ids created by
+  `InstantMagicCodeExchange.local`. `send-code` carries the pending code-entry
+  state; plain `status` reports persisted auth/dashboard state.
 - Reactions recipe: the local Instant recipe port exposes durable
   `examples reactions tap <fire|wave|confetti|heart>`, `list [--limit n]`, and
   `watch --events 1` commands over the existing room-topic runtime. It preserves

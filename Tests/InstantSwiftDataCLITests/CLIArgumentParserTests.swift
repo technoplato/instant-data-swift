@@ -135,6 +135,22 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func examplesParserNormalizesAuthRecipeAliasesAndPreservesArguments() throws {
+    expectNoDifference(
+      try parseExamples(["auth", "send-code", "User@Example.com"]),
+      .auth(arguments: ["send-code", "User@Example.com"])
+    )
+    expectNoDifference(
+      try parseExamples(["authentication", "verify", "user@example.com", "123456"]),
+      .auth(arguments: ["verify", "user@example.com", "123456"])
+    )
+    expectNoDifference(
+      try parseExamples(["magic-code-auth", "status"]),
+      .auth(arguments: ["status"])
+    )
+  }
+
+  @Test
   func examplesTodosLeafParserParsesCommandsAndOptions() throws {
     expectNoDifference(try parseExamplesTodosLeaf(["seed"]), .seed)
     expectNoDifference(
@@ -197,6 +213,80 @@ struct CLIArgumentParserTests {
     expectNoDifference(
       try parseExamplesTodosLeaf(["dance", "--fast"]),
       .unknown("dance")
+    )
+  }
+
+  @Test
+  func examplesAuthLeafParserParsesCommandsAndOptions() throws {
+    expectNoDifference(
+      try parseExamplesAuthLeaf(["send-code", "User@Example.com"]),
+      .sendCode(email: "User@Example.com")
+    )
+    expectNoDifference(
+      try parseExamplesAuthLeaf(["send", " user@example.com "]),
+      .sendCode(email: " user@example.com ")
+    )
+    expectNoDifference(
+      try parseExamplesAuthLeaf(["verify-code", "user@example.com", "123456"]),
+      .verifyCode(email: "user@example.com", code: "123456")
+    )
+    expectNoDifference(
+      try parseExamplesAuthLeaf(["magic-code-verify", "user@example.com", " 654321 "]),
+      .verifyCode(email: "user@example.com", code: " 654321 ")
+    )
+    expectNoDifference(try parseExamplesAuthLeaf(["status"]), .status)
+    expectNoDifference(try parseExamplesAuthLeaf(["dashboard"]), .status)
+    expectNoDifference(
+      try parseExamplesAuthLeaf(["watch", "--events", "1"]),
+      .watch(CLIExamplesAuthWatchInvocation(eventCount: 1))
+    )
+    expectNoDifference(
+      try parseExamplesAuthLeaf(["observe"]),
+      .watch(CLIExamplesAuthWatchInvocation(eventCount: 1))
+    )
+    expectNoDifference(
+      try parseExamplesAuthLeaf(["sign-out", "--skip-token-invalidation"]),
+      .signOut(CLIExamplesAuthSignOutInvocation(invalidateToken: false))
+    )
+    expectNoDifference(
+      try parseExamplesAuthLeaf(["logout"]),
+      .signOut(CLIExamplesAuthSignOutInvocation(invalidateToken: true))
+    )
+    expectNoDifference(
+      try parseExamplesAuthLeaf(["dance", "--fast"]),
+      .unknown("dance")
+    )
+  }
+
+  @Test
+  func examplesAuthLeafParserReportsMalformedArguments() throws {
+    try expectExamplesAuthLeafParseError([], description: CLIExamplesAuthUsage.auth)
+    try expectExamplesAuthLeafParseError(
+      ["send-code"],
+      description: CLIExamplesAuthUsage.sendCode
+    )
+    try expectExamplesAuthLeafParseError(
+      ["send-code", "user@example.com", "extra"],
+      description:
+        "Unknown examples auth option: extra. \(CLIExamplesAuthUsage.sendCode)"
+    )
+    try expectExamplesAuthLeafParseError(
+      ["verify-code", "user@example.com"],
+      description: CLIExamplesAuthUsage.verifyCode
+    )
+    try expectExamplesAuthLeafParseError(
+      ["watch", "--events", "2"],
+      description: "Usage: instant-swift-data examples auth watch --events 1"
+    )
+    try expectExamplesAuthLeafParseError(
+      ["watch", "--unknown"],
+      description:
+        "Unknown examples auth watch option: --unknown. \(CLIExamplesAuthUsage.watch)"
+    )
+    try expectExamplesAuthLeafParseError(
+      ["sign-out", "--unknown"],
+      description:
+        "Unknown examples auth sign-out option: --unknown. \(CLIExamplesAuthUsage.signOut)"
     )
   }
 
@@ -3882,6 +3972,15 @@ private func parseExamplesTodosLeaf(
   return invocation
 }
 
+private func parseExamplesAuthLeaf(
+  _ arguments: [String]
+) throws -> CLIExamplesAuthLeafInvocation {
+  var input = arguments[...]
+  let invocation = try CLIExamplesAuthLeafParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseExamplesTodosQueryOptions(
   _ arguments: [String]
 ) throws -> CLITodosQueryInvocation {
@@ -4460,6 +4559,19 @@ private func expectExamplesTodosWatchOptionsParseError(
     _ = try parseExamplesTodosWatchOptions(arguments)
     Issue.record("Expected examples todos watch options parser to reject \(arguments).")
   } catch let error as CLIExamplesTodosArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectExamplesAuthLeafParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseExamplesAuthLeaf(arguments)
+    Issue.record("Expected examples auth parser to reject \(arguments).")
+  } catch let error as CLIExamplesAuthArgumentError {
     expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }

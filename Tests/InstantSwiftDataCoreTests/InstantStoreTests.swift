@@ -9844,6 +9844,43 @@ struct InstantStoreTests {
   }
 
   @Test
+  func authRecipeExampleDerivesDashboardStateFromMagicCodeSessions() {
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let session = InstantAuthSession(
+      appID: "app-a",
+      userID: "email:user@example.com",
+      refreshToken: "local-magic:app-a:user@example.com",
+      isGuest: false,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    )
+
+    expectNoDifference(AuthRecipeExample.recipeSlug, "auth")
+    expectNoDifference(AuthRecipeExample.userEmail(from: session), "user@example.com")
+    expectNoDifference(AuthRecipeExample.isDashboardVisible(for: session), true)
+    expectNoDifference(AuthRecipeExample.isLoginVisible(for: session), false)
+    expectNoDifference(AuthRecipeExample.isEmailEntryVisible(session: session, challenge: nil), false)
+    expectNoDifference(AuthRecipeExample.isCodeEntryVisible(session: session, challenge: nil), false)
+    expectNoDifference(AuthRecipeExample.userEmail(from: nil), nil)
+    expectNoDifference(AuthRecipeExample.isDashboardVisible(for: nil), false)
+    expectNoDifference(AuthRecipeExample.isLoginVisible(for: nil), true)
+    expectNoDifference(AuthRecipeExample.isEmailEntryVisible(session: nil, challenge: nil), true)
+    expectNoDifference(
+      AuthRecipeExample.isCodeEntryVisible(
+        session: nil,
+        challenge: InstantMagicCodeChallenge(
+          appID: "app-a",
+          email: "user@example.com",
+          code: "123456",
+          createdAt: timestamp,
+          expiresAt: timestamp
+        )
+      ),
+      true
+    )
+  }
+
+  @Test
   func magicCodeChallengePersistsAndVerifiesAcrossLaunches() async throws {
     let cacheURL = try temporaryCacheURL()
     let sentAt = InstantTimestamp(milliseconds: 1_700_000_000_000)

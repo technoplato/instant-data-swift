@@ -2413,6 +2413,122 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliAuthRecipeSendsVerifiesWatchesAndSignsOutAcrossLaunches() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let signedOut = try JSONDecoder().decode(
+      CLIAuthRecipeOutput.self,
+      from: Data(
+        try runCLI(["examples", "auth", "status", "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(signedOut.event, "status")
+    expectNoDifference(signedOut.recipeSlug, "auth")
+    expectNoDifference(signedOut.isLoginVisible, true)
+    expectNoDifference(signedOut.isEmailEntryVisible, true)
+    expectNoDifference(signedOut.isCodeEntryVisible, false)
+    expectNoDifference(signedOut.isDashboardVisible, false)
+    expectNoDifference(signedOut.isSignedIn, false)
+    expectNoDifference(signedOut.userEmail, nil)
+
+    let challenge = try JSONDecoder().decode(
+      CLIAuthRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "auth", "send-code", "User@Example.com", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(challenge.event, "send-code")
+    expectNoDifference(challenge.isLoginVisible, true)
+    expectNoDifference(challenge.isEmailEntryVisible, false)
+    expectNoDifference(challenge.isCodeEntryVisible, true)
+    expectNoDifference(challenge.isDashboardVisible, false)
+    expectNoDifference(challenge.sentEmail, "user@example.com")
+    let localVerificationCode = try #require(challenge.localVerificationCode)
+    expectNoDifference(localVerificationCode.count, 6)
+
+    let verified = try JSONDecoder().decode(
+      CLIAuthRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "examples", "auth", "verify-code", " user@example.com ",
+            " \(localVerificationCode) ", "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(verified.event, "verify-code")
+    expectNoDifference(verified.isLoginVisible, false)
+    expectNoDifference(verified.isEmailEntryVisible, false)
+    expectNoDifference(verified.isCodeEntryVisible, false)
+    expectNoDifference(verified.isDashboardVisible, true)
+    expectNoDifference(verified.isSignedIn, true)
+    expectNoDifference(verified.userID, "email:user@example.com")
+    expectNoDifference(verified.userEmail, "user@example.com")
+    expectNoDifference(verified.hasRefreshToken, true)
+
+    let signedInSend = try runCLIResult(
+      ["examples", "auth", "send-code", "another@example.com", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(signedInSend.status, 65)
+    #expect(signedInSend.error.contains("Auth recipe send-code is only available while signed out."))
+    let signedInVerify = try runCLIResult(
+      ["examples", "auth", "verify-code", "another@example.com", "123456", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(signedInVerify.status, 65)
+    #expect(signedInVerify.error.contains("Auth recipe verify-code is only available while signed out."))
+
+    let watchJSONL = try runCLI(
+      ["examples", "auth", "watch", "--events", "1", "--jsonl"],
+      homeURL: homeURL
+    )
+    let watchLines = watchJSONL.split(separator: "\n")
+    expectNoDifference(watchLines.count, 1)
+    let watchEvidence = try JSONDecoder().decode(
+      CLIAuthRecipeEvidence.self,
+      from: Data(try #require(watchLines.first).utf8)
+    )
+    expectNoDifference(watchEvidence.caseID, "cli.examples.auth.watch")
+    expectNoDifference(watchEvidence.side, "swift")
+    expectNoDifference(watchEvidence.event, "watch")
+    expectNoDifference(watchEvidence.ok, true)
+    expectNoDifference(watchEvidence.details.userEmail, "user@example.com")
+    expectNoDifference(watchEvidence.details.isDashboardVisible, true)
+
+    let signedOutAgain = try JSONDecoder().decode(
+      CLIAuthRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "auth", "sign-out", "--skip-token-invalidation", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(signedOutAgain.event, "sign-out")
+    expectNoDifference(signedOutAgain.isLoginVisible, true)
+    expectNoDifference(signedOutAgain.isEmailEntryVisible, true)
+    expectNoDifference(signedOutAgain.isCodeEntryVisible, false)
+    expectNoDifference(signedOutAgain.isDashboardVisible, false)
+    expectNoDifference(signedOutAgain.isSignedIn, false)
+
+    let malformedVerify = try runCLIResult(
+      ["examples", "auth", "verify-code", "user@example.com", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(malformedVerify.status, 64)
+    #expect(malformedVerify.error.contains("examples auth verify-code"))
+  }
+
+  @Test
   func cliAuthSignOutSupportsTokenInvalidationOption() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -2919,7 +3035,7 @@ extension InstantStoreTests {
     expectNoDifference(result.status, 64)
     #expect(
       result.error.contains(
-        "Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|sync-ups>"
+        "Usage: instant-swift-data examples <todos|auth|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|sync-ups>"
       )
     )
   }
@@ -7356,9 +7472,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 109)
+    expectNoDifference(jsonOutput.recordCount, 110)
     expectNoDifference(jsonOutput.exactCount, 19)
-    expectNoDifference(jsonOutput.adaptedCount, 87)
+    expectNoDifference(jsonOutput.adaptedCount, 88)
     expectNoDifference(jsonOutput.blockedCount, 3)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -7373,6 +7489,11 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.sourceFiles.contains(
         "upstream/instant/client/packages/core/__tests__/src/utils/dates.test.ts"
+      )
+    )
+    #expect(
+      jsonOutput.sourceFiles.contains(
+        "upstream/instant/client/www/lib/recipes/auth.tsx"
       )
     )
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantDateCoercionTests.swift"))
@@ -7432,6 +7553,11 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.records.contains {
         $0.id == "instant.website.stroopwafel.local-cli" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.recipe.auth.local-cli" && $0.status == "adapted"
       }
     )
     #expect(
@@ -7688,7 +7814,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 109"))
+    #expect(humanOutput.contains("records: 110"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 
@@ -8542,6 +8668,37 @@ private struct CLIAuthOutput: Decodable {
   var userID: String?
   var isGuest: Bool?
   var hasRefreshToken: Bool
+}
+
+private struct CLIAuthRecipeOutput: Decodable, Equatable {
+  var event: String
+  var recipeSlug: String
+  var isLoginVisible: Bool
+  var isEmailEntryVisible: Bool
+  var isCodeEntryVisible: Bool
+  var isDashboardVisible: Bool
+  var isSignedIn: Bool
+  var userID: String?
+  var userEmail: String?
+  var hasRefreshToken: Bool
+  var sentEmail: String?
+  var localVerificationCode: String?
+}
+
+private struct CLIAuthRecipeEvidence: Decodable {
+  var caseID: String
+  var side: String
+  var event: String
+  var ok: Bool
+  var details: CLIAuthRecipeOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case side
+    case event
+    case ok
+    case details
+  }
 }
 
 private struct CLIMagicCodeOutput: Decodable {

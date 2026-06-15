@@ -49,6 +49,7 @@ public struct CLIInvocation: Equatable, Sendable {
 
 public enum CLIExamplesInvocation: Equatable, Sendable {
   case todos(CLIExamplesTodosInvocation)
+  case auth(arguments: [String])
   case chat(arguments: [String])
   case counters(arguments: [String])
   case microblog(arguments: [String])
@@ -145,6 +146,61 @@ public enum CLIExamplesTodosArgumentError: Error, Equatable, Sendable {
   case invalidArguments(usage: String)
   case unknownListOption(String, usage: String)
   case unknownWatchOption(String, usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
+public enum CLIExamplesAuthLeafInvocation: Equatable, Sendable {
+  case sendCode(email: String)
+  case verifyCode(email: String, code: String)
+  case status
+  case watch(CLIExamplesAuthWatchInvocation)
+  case signOut(CLIExamplesAuthSignOutInvocation)
+  case unknown(String)
+}
+
+public struct CLIExamplesAuthWatchInvocation: Equatable, Sendable {
+  public var eventCount: Int
+
+  public init(eventCount: Int = 1) {
+    self.eventCount = eventCount
+  }
+}
+
+public struct CLIExamplesAuthSignOutInvocation: Equatable, Sendable {
+  public var invalidateToken: Bool
+
+  public init(invalidateToken: Bool = true) {
+    self.invalidateToken = invalidateToken
+  }
+}
+
+public enum CLIExamplesAuthUsage {
+  public static let auth = """
+    Usage: instant-swift-data examples auth <send-code|verify-code|status|watch|sign-out>
+      instant-swift-data examples auth send-code <email> [--json|--jsonl]
+      instant-swift-data examples auth verify-code <email> <code> [--json|--jsonl]
+      instant-swift-data examples auth status [--json|--jsonl]
+      instant-swift-data examples auth watch [--events 1] [--json|--jsonl]
+      instant-swift-data examples auth sign-out [--skip-token-invalidation] [--json|--jsonl]
+    """
+  public static let sendCode =
+    "Usage: instant-swift-data examples auth send-code <email> [--json|--jsonl]"
+  public static let verifyCode =
+    "Usage: instant-swift-data examples auth verify-code <email> <code> [--json|--jsonl]"
+  public static let status =
+    "Usage: instant-swift-data examples auth status [--json|--jsonl]"
+  public static let watch =
+    "Usage: instant-swift-data examples auth watch [--events 1] [--json|--jsonl]"
+  public static let signOut =
+    "Usage: instant-swift-data examples auth sign-out [--skip-token-invalidation] [--json|--jsonl]"
+}
+
+public enum CLIExamplesAuthArgumentError: Error, Equatable, Sendable {
+  case invalidArguments(usage: String)
+  case invalidEventCount(String, usageCommand: String)
+  case missingValue(option: String, usage: String)
+  case unknownOption(domain: String, option: String, usage: String)
 
   public var exitCode: Int32 { 64 }
 }
@@ -2279,6 +2335,11 @@ public struct CLIExamplesParser: Parser {
     case "todos":
       return .todos(try CLIExamplesTodosParser().parse(&input))
 
+    case "auth", "authentication", "magic-code-auth":
+      let arguments = Array(input)
+      input.removeAll()
+      return .auth(arguments: arguments)
+
     case "chat":
       let arguments = Array(input)
       input.removeAll()
@@ -2483,6 +2544,109 @@ public struct CLIExamplesTodosLeafParser: Parser {
       input.removeAll()
       return .unknown(command)
     }
+  }
+}
+
+public struct CLIExamplesAuthLeafParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIExamplesAuthLeafInvocation {
+    guard let command = input.first else {
+      throw CLIExamplesAuthArgumentError.invalidArguments(usage: CLIExamplesAuthUsage.auth)
+    }
+    input.removeFirst()
+
+    switch command {
+    case "send-code", "send", "magic-code-send":
+      let email = try parseRawAuthRecipeArgument(from: &input, usage: CLIExamplesAuthUsage.sendCode)
+      try requireNoRemainingExamplesAuthArguments(&input, usage: CLIExamplesAuthUsage.sendCode)
+      return .sendCode(email: email)
+
+    case "verify-code", "verify", "magic-code-verify":
+      let email = try parseRawAuthRecipeArgument(from: &input, usage: CLIExamplesAuthUsage.verifyCode)
+      let code = try parseRawAuthRecipeArgument(from: &input, usage: CLIExamplesAuthUsage.verifyCode)
+      try requireNoRemainingExamplesAuthArguments(&input, usage: CLIExamplesAuthUsage.verifyCode)
+      return .verifyCode(email: email, code: code)
+
+    case "status", "show", "dashboard":
+      try requireNoRemainingExamplesAuthArguments(&input, usage: CLIExamplesAuthUsage.status)
+      return .status
+
+    case "watch", "observe":
+      return .watch(try CLIExamplesAuthWatchParser().parse(&input))
+
+    case "sign-out", "signout", "logout":
+      return .signOut(try CLIExamplesAuthSignOutParser().parse(&input))
+
+    default:
+      input.removeAll()
+      return .unknown(command)
+    }
+  }
+}
+
+public struct CLIExamplesAuthWatchParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIExamplesAuthWatchInvocation {
+    let usageCommand = "instant-swift-data examples auth watch"
+    var eventCount = 1
+
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--events":
+        let value = try parseAuthRecipeOptionValue(
+          from: &input,
+          option: option,
+          usage: "Usage: \(usageCommand) --events 1"
+        )
+        guard let parsed = Int(value), parsed == 1 else {
+          throw CLIExamplesAuthArgumentError.invalidEventCount(
+            value,
+            usageCommand: usageCommand
+          )
+        }
+        eventCount = parsed
+
+      default:
+        throw CLIExamplesAuthArgumentError.unknownOption(
+          domain: "examples auth watch",
+          option: option,
+          usage: CLIExamplesAuthUsage.watch
+        )
+      }
+    }
+
+    return CLIExamplesAuthWatchInvocation(eventCount: eventCount)
+  }
+}
+
+public struct CLIExamplesAuthSignOutParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIExamplesAuthSignOutInvocation {
+    var invalidateToken = true
+
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--invalidate-token":
+        invalidateToken = true
+
+      case "--skip-token-invalidation", "--no-invalidate-token":
+        invalidateToken = false
+
+      default:
+        throw CLIExamplesAuthArgumentError.unknownOption(
+          domain: "examples auth sign-out",
+          option: option,
+          usage: CLIExamplesAuthUsage.signOut
+        )
+      }
+    }
+
+    return CLIExamplesAuthSignOutInvocation(invalidateToken: invalidateToken)
   }
 }
 
@@ -5687,6 +5851,49 @@ private func requireNoRemainingAuthArguments(
   }
 }
 
+private func parseRawAuthRecipeArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIExamplesAuthArgumentError.invalidArguments(usage: usage)
+  }
+  input.removeFirst()
+  guard !trimmed(value).isEmpty else {
+    throw CLIExamplesAuthArgumentError.invalidArguments(usage: usage)
+  }
+  return value
+}
+
+private func parseAuthRecipeOptionValue(
+  from input: inout ArraySlice<String>,
+  option: String,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIExamplesAuthArgumentError.missingValue(option: option, usage: usage)
+  }
+  input.removeFirst()
+  let trimmedValue = trimmed(value)
+  guard !trimmedValue.isEmpty else {
+    throw CLIExamplesAuthArgumentError.missingValue(option: option, usage: usage)
+  }
+  return trimmedValue
+}
+
+private func requireNoRemainingExamplesAuthArguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if let argument = input.first {
+    throw CLIExamplesAuthArgumentError.unknownOption(
+      domain: "examples auth",
+      option: argument,
+      usage: usage
+    )
+  }
+}
+
 private func parseSingleFileArgument(
   from input: inout ArraySlice<String>,
   usage: String
@@ -7874,6 +8081,24 @@ extension CLIExamplesTodosArgumentError: CustomStringConvertible {
 
     case let .unknownWatchOption(option, usage):
       return "Unknown todo watch option: \(option). Usage: \(usage)"
+    }
+  }
+}
+
+extension CLIExamplesAuthArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case let .invalidArguments(usage):
+      return usage
+
+    case let .invalidEventCount(_, usageCommand):
+      return "Usage: \(usageCommand) --events 1"
+
+    case let .missingValue(option, usage):
+      return "Missing value for \(option). \(usage)"
+
+    case let .unknownOption(domain, option, usage):
+      return "Unknown \(domain) option: \(option). \(usage)"
     }
   }
 }

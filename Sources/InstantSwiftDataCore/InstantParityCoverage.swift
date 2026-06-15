@@ -1067,6 +1067,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "The TypeScript fixture runner is present, but Swift live subscription against a real Instant app remains incomplete."
     ),
     instant(
+      id: "instant.recipe.auth.local-cli",
+      sourceFile: "upstream/instant/client/www/lib/recipes/auth.tsx",
+      sourceTestName: "magic-code auth SignedOut/Login and SignedIn/Dashboard flow",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/CLITests.swift",
+      swiftTestName: "cliAuthRecipeSendsVerifiesWatchesAndSignsOutAcrossLaunches",
+      surface: "recipes-auth",
+      status: .adapted,
+      notes: "The Instant CLI ports the Auth recipe into a durable magic-code terminal flow with send-code, verify-code, status/dashboard, watch, and sign-out commands. send-code output represents the upstream code-entry form state; status reports persisted auth state. Local magic-code sessions derive the dashboard email from email-prefixed user ids because InstantAuthSession stores userID rather than a user.email field."
+    ),
+    instant(
       id: "instant.website.chat.local-cli",
       sourceFile: "upstream/instant/client/www/_examples/chat.md",
       sourceTestName: "IRC-style chat guest login, channels, messages, seed/reset tooling",

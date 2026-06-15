@@ -80,7 +80,8 @@ Port the examples from `client/www/_examples`:
 Port the recipes from `client/www/pages/recipes`:
 
 - todos.
-- auth.
+- auth: `instant-swift-data examples auth send-code`, `verify-code`, `status`,
+  `watch`, and `sign-out`.
 - cursors via presence: `instant-swift-data examples cursors move`, `list`,
   `watch`, `clear`, and `leave`.
 - custom cursors via presence: `instant-swift-data examples custom-cursors
@@ -666,6 +667,18 @@ Agent-oriented output modes are required:
   `record-demo` path must use Sendable speech, sound, and open-settings
   dependency clients with reusable `.local` instances so the terminal demo
   proves the same effect seams that the eventual SwiftUI recording flow uses.
+- run the local Instant auth recipe port with
+  `instant-swift-data examples auth status`,
+  `instant-swift-data examples auth send-code user@example.com`,
+  `instant-swift-data examples auth verify-code user@example.com <code>`,
+  `instant-swift-data examples auth watch --events 1 --jsonl`, and
+  `instant-swift-data examples auth sign-out`; the port uses the same
+  `InstantMagicCodeExchange` Swift Dependencies seam as app auth, preserves the
+  upstream signed-out login/code-entry versus signed-in dashboard state, and
+  derives the displayed email from local `email:<address>` user ids because the
+  local `InstantAuthSession` stores a user id rather than a `user.email` field.
+  The terminal `send-code` output represents the transient code-entry step that
+  the React recipe keeps in component state.
 - run the local Instant website-style chat port with
   `instant-swift-data examples chat seed`,
   `instant-swift-data examples chat channels`,

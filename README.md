@@ -64,6 +64,28 @@ swift run instant-swift-data examples todos watch --events 1 --jsonl
 swift run instant-swift-data examples todos reset --jsonl
 ```
 
+Run the local Instant auth recipe port:
+
+```bash
+export INSTANT_SWIFT_DATA_HOME="$(mktemp -d)"
+
+swift run instant-swift-data examples auth status --json
+MAGIC_CODE_JSON="$(swift run instant-swift-data examples auth send-code user@example.com --json)"
+MAGIC_CODE="$(printf '%s' "$MAGIC_CODE_JSON" | jq -r '.localVerificationCode')"
+swift run instant-swift-data examples auth verify-code user@example.com "$MAGIC_CODE" --json
+swift run instant-swift-data examples auth watch --events 1 --jsonl
+swift run instant-swift-data examples auth sign-out --json
+```
+
+The auth recipe mirrors the upstream magic-code flow: signed-out state shows the
+login step, `send-code` persists a local verification challenge, `verify-code`
+creates a durable email-backed session, `status` exposes the dashboard state,
+and `sign-out` returns to the login state. Local sessions store a user id, so the
+recipe output derives the dashboard email from `email:<address>` user ids.
+Because the React recipe keeps the pending code-entry step in component state,
+the terminal port exposes that step on the `send-code` result rather than making
+plain `status` guess which pending email to show.
+
 Create a local Reminders list, add reminders, and prove two-user list sharing:
 
 ```bash
