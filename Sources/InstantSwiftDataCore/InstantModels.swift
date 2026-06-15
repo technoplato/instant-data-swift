@@ -71,6 +71,92 @@ public enum JSONValuePathComponent:
   }
 }
 
+enum InstantLegacyWeakHash {
+  static func hash(_ value: JSONValue) -> String {
+    switch value {
+    case .null:
+      return "null"
+
+    case let .bool(value):
+      return value ? "1" : "0"
+
+    case let .number(value):
+      guard value.isFinite else { return "0" }
+      let product = abs(value * 2_654_435_761)
+      guard product.isFinite else { return "0" }
+      return String(toUInt32(product), radix: 16)
+
+    case let .string(value):
+      return hashString(value)
+
+    case let .array(values):
+      var runningHash = Double(0x811c9dc5)
+      for (index, value) in values.enumerated() {
+        runningHash = bitwiseXOR(runningHash, Double(index + 1) * 2_654_435_761)
+        for codeUnit in hash(value).utf16 {
+          runningHash = bitwiseXOR(runningHash, Double(codeUnit))
+          runningHash *= 16_777_619
+          runningHash = Double(toUInt32(runningHash))
+        }
+      }
+      return String(toUInt32(runningHash), radix: 16)
+
+    case let .object(values):
+      var runningHash = Double(0x811c9dc5)
+      for key in values.keys.sorted(by: utf16LexicographicallyPrecedes) {
+        let keyHash = Double(UInt32(hash(.string(key)), radix: 16) ?? 0)
+        runningHash = bitwiseXOR(runningHash, keyHash)
+        runningHash *= 16_777_619
+        runningHash = Double(toUInt32(runningHash))
+
+        let valueHash = Double(UInt32(hash(values[key] ?? .null), radix: 16) ?? 0)
+        runningHash = bitwiseXOR(runningHash, valueHash)
+        runningHash *= 16_777_619
+        runningHash = Double(toUInt32(runningHash))
+      }
+      return String(toUInt32(runningHash), radix: 16)
+    }
+  }
+
+  private static func hashString(_ value: String) -> String {
+    var hash = Double(0x811c9dc5)
+    for codeUnit in value.utf16 {
+      hash = bitwiseXOR(hash, Double(codeUnit))
+      hash += leftShift(hash, by: 1)
+        + leftShift(hash, by: 4)
+        + leftShift(hash, by: 7)
+        + leftShift(hash, by: 8)
+        + leftShift(hash, by: 24)
+      hash = Double(toUInt32(hash))
+    }
+    return String(toUInt32(hash), radix: 16)
+  }
+
+  private static func bitwiseXOR(_ lhs: Double, _ rhs: Double) -> Double {
+    Double(Int32(bitPattern: toUInt32(lhs) ^ toUInt32(rhs)))
+  }
+
+  private static func leftShift(_ value: Double, by shift: Int) -> Double {
+    let shifted = toUInt32(value) << UInt32(shift & 31)
+    return Double(Int32(bitPattern: shifted))
+  }
+
+  private static func toUInt32(_ value: Double) -> UInt32 {
+    guard value.isFinite, value != 0 else { return 0 }
+    let twoTo32 = 4_294_967_296.0
+    var integer = value.sign == .minus ? -floor(abs(value)) : floor(abs(value))
+    integer = integer.truncatingRemainder(dividingBy: twoTo32)
+    if integer < 0 {
+      integer += twoTo32
+    }
+    return UInt32(integer)
+  }
+
+  private static func utf16LexicographicallyPrecedes(_ lhs: String, _ rhs: String) -> Bool {
+    Array(lhs.utf16).lexicographicallyPrecedes(Array(rhs.utf16))
+  }
+}
+
 public extension JSONValue {
   mutating func assocIn(
     _ path: [JSONValuePathComponent],

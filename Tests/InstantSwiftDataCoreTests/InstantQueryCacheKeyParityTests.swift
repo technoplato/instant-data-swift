@@ -131,8 +131,60 @@ struct InstantQueryCacheKeyParityTests {
       weakHashSource("produces a stable hash for a known query [adapted: Swift pins the plan cache key.]")
     )
   }
+
+  @Test
+  func upstreamWeakHashLegacyKnownQueryPin() {
+    let query = JSONValue.object([
+      "pro_search_properties": .object([
+        "$": .object([
+          "where": .object([
+            "pro_searches": .string("b14fae2f-ce9b-4677-b6a9-6dddd81914d0"),
+            "propertyId": .number(936),
+          ]),
+        ]),
+        "pro_searches": .object([:]),
+      ]),
+    ])
+
+    expectNoDifference(
+      InstantLegacyWeakHash.hash(query),
+      "dcb9614",
+      weakHashLegacySource("produces a stable hash for a known query")
+    )
+  }
+
+  @Test
+  func upstreamWeakHashLegacyJSSemanticsPins() {
+    let source = weakHashLegacySource(
+      "JS Number, UTF-16, array, object, and parseInt coercion pins [adapted: supplemental Swift regression table.]"
+    )
+    let cases: [(String, JSONValue, String)] = [
+      ("number 936", .number(936), "7ad4ef28"),
+      ("NaN", .number(.nan), "0"),
+      ("infinity", .number(.infinity), "0"),
+      ("emoji string", .string("😀"), "cb31c4b8"),
+      ("array null", .array([.null]), "15c231b8"),
+      ("array mixed", .array([.number(1), .string("a")]), "178d2a48"),
+      ("object sorted ascii", .object(["b": .number(2), "a": .number(1)]), "253d73ce"),
+      ("object null", .object(["a": .null]), "6ae33f24"),
+      ("object false", .object(["a": .bool(false)]), "6ae33f24"),
+      ("object non-ascii keys", .object(["😀": .number(1), "\u{E000}": .number(2)]), "d22f77d0"),
+    ]
+
+    for (label, value, expectedHash) in cases {
+      expectNoDifference(
+        InstantLegacyWeakHash.hash(value),
+        expectedHash,
+        "\(source) \(label)"
+      )
+    }
+  }
 }
 
 private func weakHashSource(_ testName: String) -> String {
   "upstream/instant/client/packages/core/__tests__/src/utils/weakHash.test.ts \(testName)"
+}
+
+private func weakHashLegacySource(_ testName: String) -> String {
+  "upstream/instant/client/packages/core/__tests__/src/utils/weakHashLegacy.test.ts \(testName)"
 }

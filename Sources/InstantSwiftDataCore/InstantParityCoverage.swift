@@ -717,6 +717,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift pins stable cache keys for equivalent query plans and canonical JSON/date values."
     ),
     instant(
+      id: "instant.weak-hash-legacy-known-query",
+      sourceFile: weakHashLegacySource,
+      sourceTestName: "produces a stable hash for a known query",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantQueryCacheKeyParityTests.swift",
+      swiftTestName: "upstreamWeakHashLegacyKnownQueryPin / upstreamWeakHashLegacyJSSemanticsPins",
+      surface: "query-cache",
+      status: .adapted,
+      notes: "Swift ports the pre-v1.0.39 weakHashLegacy algorithm for representable JSONValue query shapes, including JS Number, UTF-16, array, object, and parseInt coercion behavior, and pins the upstream migration smoke-test key; IndexedDB querySubs/syncSubs migration behavior is not exercised."
+    ),
+    instant(
       id: "instant.persisted-object.query-cache-gc",
       sourceFile: persistedObjectSource,
       sourceTestName: "save / replace-adapted / garbage collect by entries, size, and age",
@@ -1360,6 +1370,8 @@ public enum InstantSwiftDataParityCoverage {
     "upstream/instant/client/packages/core/__tests__/src/transactionValidation.test.ts"
   private static let weakHashSource =
     "upstream/instant/client/packages/core/__tests__/src/utils/weakHash.test.ts"
+  private static let weakHashLegacySource =
+    "upstream/instant/client/packages/core/__tests__/src/utils/weakHashLegacy.test.ts"
   private static let persistedObjectSource =
     "upstream/instant/client/packages/core/__tests__/src/utils/PersistedObject.test.ts"
   private static let schemaSource =
