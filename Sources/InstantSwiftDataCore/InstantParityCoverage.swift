@@ -667,6 +667,26 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift has no add-attr txStep in transport; self-link writes use the declared forward ref attr, and the reverse child-side write is modeled by writing that same attr from the child lookup back to the source lookup."
     ),
     instant(
+      id: "instant.instaml.ref-lookup-attrs",
+      sourceFile: instamlSource,
+      sourceTestName: "lookup creates unique ref attrs for ref lookup",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "transportMutationPortsInstamlRefLookupUpdateTransform",
+      surface: "instaml",
+      status: .adapted,
+      notes: "Swift uses declared ref lookup attr ids instead of JavaScript add-attr txSteps; lookup-backed user_prefs updates preserve the ref lookup in both the entity slot and primary-key value."
+    ),
+    instant(
+      id: "instant.instaml.ref-lookup-link-value",
+      sourceFile: instamlSource,
+      sourceTestName: "lookup creates unique ref attrs for ref lookup in link value",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "transportMutationPortsInstamlRefLookupInLinkValueTransform",
+      surface: "instaml",
+      status: .adapted,
+      notes: "Swift writes the declared users/user_prefs relation directly; lookup link values preserve the reverse ref lookup attr id and resolve locally through the declared forward relation."
+    ),
+    instant(
       id: "instant.instaml.mode-update",
       sourceFile: instamlSource,
       sourceTestName: "mode: update",
