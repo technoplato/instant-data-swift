@@ -64,7 +64,7 @@ public enum CLIExamplesInvocation: Equatable, Sendable {
   case stroopwafel(arguments: [String])
   case syncUps(arguments: [String])
   case reminders(arguments: [String])
-  case todoLinks(arguments: [String])
+  case todoLinks(CLIExamplesTodoLinksLeafInvocation)
   case unknown(String, arguments: [String])
 }
 
@@ -2477,9 +2477,7 @@ public struct CLIExamplesParser: Parser {
       return .reminders(arguments: arguments)
 
     case "todo-links":
-      let arguments = Array(input)
-      input.removeAll()
-      return .todoLinks(arguments: arguments)
+      return .todoLinks(try CLIExamplesTodoLinksLeafParser().parse(&input))
 
     default:
       let arguments = Array(input)

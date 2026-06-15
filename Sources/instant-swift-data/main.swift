@@ -412,6 +412,8 @@ struct InstantSwiftDataCLI {
       throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesAppBuilderArgumentError {
       throw CLIError(error.description, exitCode: error.exitCode)
+    } catch let error as CLIExamplesTodoLinksArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesCountersArgumentError {
       throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesChatArgumentError {
@@ -490,8 +492,8 @@ struct InstantSwiftDataCLI {
       try await runReminders(arguments: arguments, output: output)
       return
 
-    case let .todoLinks(arguments):
-      try await runTodoLinks(arguments: arguments, output: output)
+    case let .todoLinks(leaf):
+      try await runTodoLinks(leaf: leaf, output: output)
       return
 
     case let .todos(todosInvocation):
@@ -1770,22 +1772,14 @@ struct InstantSwiftDataCLI {
     }
   }
 
-  private static func runTodoLinks(arguments: [String], output: OutputMode) async throws {
-    let invocation: CLIExamplesTodoLinksLeafInvocation
-    do {
-      var input = arguments[...]
-      invocation = try CLIExamplesTodoLinksLeafParser().parse(&input)
-    } catch let error as CLIExamplesTodoLinksArgumentError {
-      throw CLIError(error.description, exitCode: error.exitCode)
-    }
-
-    if case let .unknown(command) = invocation {
+  private static func runTodoLinks(leaf: CLIExamplesTodoLinksLeafInvocation, output: OutputMode) async throws {
+    if case let .unknown(command) = leaf {
       throw CLIError("Unknown todo-links command: \(command). \(todoLinksUsage)", exitCode: 64)
     }
 
     let context = try await CLIContext.bootstrap(initialAttributes: TodoProjectExample.attributes)
 
-    switch invocation {
+    switch leaf {
     case .seed:
       let projectID = try await context.runtime.localID(named: TodoProjectExample.projectIDName)
       let todoID = try await context.runtime.localID(named: TodoProjectExample.todoIDName)

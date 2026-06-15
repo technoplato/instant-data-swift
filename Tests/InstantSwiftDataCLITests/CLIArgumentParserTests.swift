@@ -3457,7 +3457,7 @@ struct CLIArgumentParserTests {
     )
     expectNoDifference(
       try parseExamples(["todo-links", "seed"]),
-      .todoLinks(arguments: ["seed"])
+      .todoLinks(.seed)
     )
     expectNoDifference(
       try parseExamples(["counters", "seed"]),
