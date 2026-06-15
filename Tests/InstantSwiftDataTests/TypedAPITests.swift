@@ -564,6 +564,214 @@ struct TypedAPITests {
   }
 
   @Test
+  func typedInfiniteQuerySubscriptionDecodesAndLoadsNextPage() async throws {
+    let cacheURL = try typedTestCacheURL("typed-infinite-query")
+    let fixedDate = Date(timeIntervalSince1970: 1_700_000_411)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000411")!
+    let query = TypedTodo.query
+      .order(TypedTodo.createdAt)
+      .limit(1)
+
+    try await withDependencies {
+      $0.date.now = fixedDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "typed-infinite-query",
+        persistenceURL: cacheURL,
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      let subscription = await db.subscribeInfiniteQuery(query)
+      defer { subscription.cancel() }
+      var iterator = subscription.makeAsyncIterator()
+
+      let empty = try #require(await iterator.next())
+      expectNoDifference(empty.values, [])
+      expectNoDifference(empty.canLoadNextPage, false)
+      expectNoDifference(empty.error, nil)
+
+      try await db.transact(
+        id: "tx-typed-infinite-create",
+        createdAt: InstantTimestamp(milliseconds: 1_700_000_411_010)
+      ) {
+        TypedTodo.create(
+          id: InstantID(rawValue: "todo-infinite-first"),
+          TypedTodo.text.set("First infinite page"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(fixedDate)
+        )
+        TypedTodo.create(
+          id: InstantID(rawValue: "todo-infinite-second"),
+          TypedTodo.text.set("Second infinite page"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(fixedDate.addingTimeInterval(1))
+        )
+      }
+
+      let firstPage = try #require(await iterator.next())
+      expectNoDifference(firstPage.values.map(\.text), ["First infinite page"])
+      expectNoDifference(firstPage.canLoadNextPage, true)
+      expectNoDifference(firstPage.error, nil)
+      expectNoDifference(firstPage.pageInfo?.endCursor?.entityID, "todo-infinite-first")
+
+      let initialSnapshot = try await db.infiniteQueryInitialSnapshot(query)
+      expectNoDifference(initialSnapshot.values.map(\.text), ["First infinite page"])
+      expectNoDifference(initialSnapshot.canLoadNextPage, false)
+      expectNoDifference(initialSnapshot.error, nil)
+      expectNoDifference(initialSnapshot.pageInfo?.hasNextPage, true)
+
+      subscription.loadNextPage()
+      let secondPage = try #require(await iterator.next())
+      expectNoDifference(
+        secondPage.values.map(\.text),
+        ["First infinite page", "Second infinite page"]
+      )
+      expectNoDifference(secondPage.canLoadNextPage, false)
+      expectNoDifference(secondPage.error, nil)
+      expectNoDifference(secondPage.pageInfo?.endCursor?.entityID, "todo-infinite-second")
+    }
+  }
+
+  @Test
+  func typedInfiniteQuerySubscriptionPreservesErrorSnapshotsAndRecovers() async throws {
+    let error = InstantError(
+      code: .validationFailed,
+      operation: "validate infinite query",
+      namespace: TypedTodo.instantNamespace,
+      path: "createdAt",
+      message: "Cannot page an invalid typed query.",
+      recovery: "Use a schema-valid typed query before subscribing."
+    )
+    let rawStream = AsyncStream<InstantInfiniteQuerySnapshot>.makeStream(
+      bufferingPolicy: .bufferingNewest(1)
+    )
+    let client = InstantSwiftDataClient(
+      transact: { transaction in
+        InstantStoreMutationResult(
+          transactionID: transaction.id,
+          changedEntityIDs: [],
+          tripleCount: transaction.operations.count,
+          emissions: []
+        )
+      },
+      query: { _ in [] },
+      observe: { _ in finiteStream([] as [InstantQueryEmission]) },
+      subscribeInfiniteQuery: { _ in
+        InstantInfiniteQuerySubscription(
+          snapshots: rawStream.stream,
+          loadNextPage: {},
+          unsubscribe: {}
+        )
+      },
+      pendingMutations: { [] },
+      localID: { name in "typed-infinite-\(name)" }
+    )
+
+    let subscription = await client.subscribeInfiniteQuery(
+      TypedTodo.query.order(TypedTodo.createdAt).limit(1)
+    )
+    defer { subscription.cancel() }
+    var iterator = subscription.makeAsyncIterator()
+
+    rawStream.continuation.yield(
+      InstantInfiniteQuerySnapshot(
+        queryID: TypedTodo.query.plan.id,
+        sequence: 0,
+        values: [],
+        canLoadNextPage: false,
+        error: error
+      )
+    )
+    let errorSnapshot = try #require(await iterator.next())
+    expectNoDifference(errorSnapshot.values, [])
+    expectNoDifference(errorSnapshot.canLoadNextPage, false)
+    expectNoDifference(errorSnapshot.error?.operation, "validate infinite query")
+    expectNoDifference(errorSnapshot.error?.namespace, TypedTodo.instantNamespace)
+    expectNoDifference(errorSnapshot.error?.path, "createdAt")
+
+    rawStream.continuation.yield(
+      InstantInfiniteQuerySnapshot(
+        queryID: TypedTodo.query.plan.id,
+        sequence: 1,
+        values: [
+          typedTodoSnapshot(
+            id: "todo-infinite-recovery",
+            text: "Recovered infinite page",
+            isCompleted: false,
+            createdAt: Date(timeIntervalSince1970: 1_700_000_412)
+          )
+        ],
+        canLoadNextPage: false
+      )
+    )
+    let recovered = try #require(await iterator.next())
+    expectNoDifference(recovered.values.map(\.text), ["Recovered infinite page"])
+    expectNoDifference(recovered.error, nil)
+    rawStream.continuation.finish()
+  }
+
+  @Test
+  func typedInfiniteQuerySubscriptionCancellationIsIdempotentAndStopsLoading() async throws {
+    let recorder = InfiniteQuerySubscriptionRecorder()
+    let rawStream = AsyncStream<InstantInfiniteQuerySnapshot>.makeStream(
+      bufferingPolicy: .bufferingNewest(1)
+    )
+    let client = InstantSwiftDataClient(
+      transact: { transaction in
+        InstantStoreMutationResult(
+          transactionID: transaction.id,
+          changedEntityIDs: [],
+          tripleCount: transaction.operations.count,
+          emissions: []
+        )
+      },
+      query: { _ in [] },
+      observe: { _ in finiteStream([] as [InstantQueryEmission]) },
+      subscribeInfiniteQuery: { _ in
+        InstantInfiniteQuerySubscription(
+          snapshots: rawStream.stream,
+          loadNextPage: {
+            Task {
+              await recorder.recordLoadNextPage()
+            }
+          },
+          unsubscribe: {
+            Task {
+              await recorder.recordUnsubscribe()
+            }
+          }
+        )
+      },
+      pendingMutations: { [] },
+      localID: { name in "typed-infinite-cancel-\(name)" }
+    )
+
+    let subscription = await client.subscribeInfiniteQuery(
+      TypedTodo.query.order(TypedTodo.createdAt).limit(1)
+    )
+
+    subscription.loadNextPage()
+    try await waitForTypedCondition(operation: "record initial infinite loadNextPage") {
+      await recorder.counts().loadNextPageCount == 1
+    }
+
+    subscription.cancel()
+    subscription.cancel()
+    try await waitForTypedCondition(operation: "record single infinite unsubscribe") {
+      await recorder.counts().unsubscribeCount == 1
+    }
+
+    subscription.loadNextPage()
+    try await Task.sleep(nanoseconds: 20_000_000)
+    let counts = await recorder.counts()
+    expectNoDifference(counts.loadNextPageCount, 1)
+    expectNoDifference(counts.unsubscribeCount, 1)
+  }
+
+  @Test
   func typedQuerySelectsFieldsForSnapshotsAndCompleteDecoding() async throws {
     let cacheURL = try typedTestCacheURL("typed-field-selection")
     let fixedDate = Date(timeIntervalSince1970: 1_700_000_450)
@@ -5654,6 +5862,23 @@ private struct DerivedFetchFailure: Error, CustomStringConvertible, Sendable {
 
 private struct FetchCounter: Hashable, Sendable {
   var count: Int
+}
+
+private actor InfiniteQuerySubscriptionRecorder {
+  private var loadNextPageCount = 0
+  private var unsubscribeCount = 0
+
+  func recordLoadNextPage() {
+    loadNextPageCount += 1
+  }
+
+  func recordUnsubscribe() {
+    unsubscribeCount += 1
+  }
+
+  func counts() -> (loadNextPageCount: Int, unsubscribeCount: Int) {
+    (loadNextPageCount, unsubscribeCount)
+  }
 }
 
 private func adapterSurfaceClient() -> InstantSwiftDataClient {

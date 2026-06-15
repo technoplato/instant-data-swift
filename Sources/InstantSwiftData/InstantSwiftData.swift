@@ -24,6 +24,10 @@ public struct InstantSwiftDataClient: Sendable {
     @Sendable (InstantQueryPlan) async throws -> InstantQueryEmission
   private var queryOperation: @Sendable (InstantQueryPlan) async throws -> [InstantEntitySnapshot]
   private var observeOperation: @Sendable (InstantQueryPlan) async -> AsyncStream<InstantQueryEmission>
+  private var subscribeInfiniteQueryOperation:
+    @Sendable (InstantQueryPlan) async -> InstantInfiniteQuerySubscription
+  private var infiniteQueryInitialSnapshotOperation:
+    @Sendable (InstantQueryPlan) async throws -> InstantInfiniteQuerySnapshot
   private var pendingMutationsOperation: @Sendable () async -> [PendingMutation]
   private var flushPendingMutationsOperation:
     @Sendable (Int?) async throws -> InstantMutationTransportFlushResult
@@ -104,6 +108,12 @@ public struct InstantSwiftDataClient: Sendable {
     }
     self.observeOperation = { plan in
       await runtime.observe(plan)
+    }
+    self.subscribeInfiniteQueryOperation = { plan in
+      await runtime.subscribeInfiniteQuery(plan)
+    }
+    self.infiniteQueryInitialSnapshotOperation = { plan in
+      try await runtime.infiniteQueryInitialSnapshot(plan)
     }
     self.pendingMutationsOperation = {
       await runtime.pendingMutations()
@@ -239,6 +249,10 @@ public struct InstantSwiftDataClient: Sendable {
     queryOnce: (@Sendable (InstantQueryPlan) async throws -> InstantQueryEmission)? = nil,
     query: @escaping @Sendable (InstantQueryPlan) async throws -> [InstantEntitySnapshot],
     observe: @escaping @Sendable (InstantQueryPlan) async -> AsyncStream<InstantQueryEmission>,
+    subscribeInfiniteQuery:
+      (@Sendable (InstantQueryPlan) async -> InstantInfiniteQuerySubscription)? = nil,
+    infiniteQueryInitialSnapshot:
+      (@Sendable (InstantQueryPlan) async throws -> InstantInfiniteQuerySnapshot)? = nil,
     pendingMutations: @escaping @Sendable () async -> [PendingMutation],
     flushPendingMutations:
       (@Sendable (Int?) async throws -> InstantMutationTransportFlushResult)? = nil,
@@ -313,6 +327,8 @@ public struct InstantSwiftDataClient: Sendable {
       queryOnce: queryOnce,
       query: query,
       observe: observe,
+      subscribeInfiniteQuery: subscribeInfiniteQuery,
+      infiniteQueryInitialSnapshot: infiniteQueryInitialSnapshot,
       pendingMutations: pendingMutations,
       flushPendingMutations: flushPendingMutations,
       connectionStatus: connectionStatus,
@@ -362,6 +378,10 @@ public struct InstantSwiftDataClient: Sendable {
     queryOnce: (@Sendable (InstantQueryPlan) async throws -> InstantQueryEmission)? = nil,
     query: @escaping @Sendable (InstantQueryPlan) async throws -> [InstantEntitySnapshot],
     observe: @escaping @Sendable (InstantQueryPlan) async -> AsyncStream<InstantQueryEmission>,
+    subscribeInfiniteQuery:
+      (@Sendable (InstantQueryPlan) async -> InstantInfiniteQuerySubscription)? = nil,
+    infiniteQueryInitialSnapshot:
+      (@Sendable (InstantQueryPlan) async throws -> InstantInfiniteQuerySnapshot)? = nil,
     pendingMutations: @escaping @Sendable () async -> [PendingMutation],
     flushPendingMutations:
       (@Sendable (Int?) async throws -> InstantMutationTransportFlushResult)? = nil,
@@ -453,6 +473,13 @@ public struct InstantSwiftDataClient: Sendable {
       recovery:
         "Bootstrap Instant Swift Data before inspecting connection status, or override the status closure in tests."
     )
+    let infiniteQueryError = InstantError(
+      code: .implementationFailed,
+      operation: "subscribe InfiniteQuery",
+      message: "No infinite query client has been configured.",
+      recovery:
+        "Bootstrap Instant Swift Data before subscribing to infinite queries, or override the infinite query closures in tests."
+    )
     let roomsError = InstantError(
       code: .implementationFailed,
       operation: "access InstantSwiftData rooms",
@@ -491,6 +518,11 @@ public struct InstantSwiftDataClient: Sendable {
       }
     self.queryOperation = query
     self.observeOperation = observe
+    self.subscribeInfiniteQueryOperation =
+      subscribeInfiniteQuery
+      ?? { plan in Self.failedInfiniteQuerySubscription(error: infiniteQueryError, queryID: plan.id) }
+    self.infiniteQueryInitialSnapshotOperation =
+      infiniteQueryInitialSnapshot ?? { _ in throw infiniteQueryError }
     self.pendingMutationsOperation = pendingMutations
     self.flushPendingMutationsOperation = flushPendingMutations ?? { _ in throw transportError }
     self.connectionStatusOperation = connectionStatus ?? { throw runtimeStatusError }
@@ -687,6 +719,30 @@ public struct InstantSwiftDataClient: Sendable {
     )
   }
 
+  private static func failedInfiniteQuerySubscription(
+    error: InstantError,
+    queryID: String
+  ) -> InstantInfiniteQuerySubscription {
+    let stream = AsyncStream<InstantInfiniteQuerySnapshot>.makeStream(
+      bufferingPolicy: .bufferingNewest(1)
+    )
+    stream.continuation.yield(
+      InstantInfiniteQuerySnapshot(
+        queryID: queryID,
+        sequence: 0,
+        values: [],
+        canLoadNextPage: false,
+        error: error
+      )
+    )
+    stream.continuation.finish()
+    return InstantInfiniteQuerySubscription(
+      snapshots: stream.stream,
+      loadNextPage: {},
+      unsubscribe: {}
+    )
+  }
+
   public static func bootstrap(
     configuration: InstantRuntimeConfiguration
   ) async throws -> Self {
@@ -710,6 +766,18 @@ public struct InstantSwiftDataClient: Sendable {
 
   public func observe(_ plan: InstantQueryPlan) async -> AsyncStream<InstantQueryEmission> {
     await observeOperation(plan)
+  }
+
+  public func subscribeInfiniteQuery(
+    _ plan: InstantQueryPlan
+  ) async -> InstantInfiniteQuerySubscription {
+    await subscribeInfiniteQueryOperation(plan)
+  }
+
+  public func infiniteQueryInitialSnapshot(
+    _ plan: InstantQueryPlan
+  ) async throws -> InstantInfiniteQuerySnapshot {
+    try await infiniteQueryInitialSnapshotOperation(plan)
   }
 
   public func pendingMutations() async -> [PendingMutation] {
@@ -1116,6 +1184,78 @@ public struct FetchSubscription<Element: Sendable>: AsyncSequence, Sendable {
   }
 }
 
+public struct InfiniteQuerySnapshot<Element: Sendable>: Sendable {
+  public var queryID: String
+  public var sequence: Int64
+  public var values: [Element]
+  public var pageInfo: InstantQueryPageInfo?
+  public var canLoadNextPage: Bool
+  public var error: InstantError?
+
+  public init(
+    queryID: String,
+    sequence: Int64,
+    values: [Element],
+    pageInfo: InstantQueryPageInfo? = nil,
+    canLoadNextPage: Bool,
+    error: InstantError? = nil
+  ) {
+    self.queryID = queryID
+    self.sequence = sequence
+    self.values = values
+    self.pageInfo = pageInfo
+    self.canLoadNextPage = canLoadNextPage
+    self.error = error
+  }
+}
+
+extension InfiniteQuerySnapshot: Equatable where Element: Equatable {}
+extension InfiniteQuerySnapshot: Hashable where Element: Hashable {}
+
+public struct InfiniteQuerySubscription<Element: Sendable>: AsyncSequence, Sendable {
+  public typealias AsyncIterator = AsyncThrowingStream<InfiniteQuerySnapshot<Element>, Error>
+    .Iterator
+
+  private let stream: AsyncThrowingStream<InfiniteQuerySnapshot<Element>, Error>
+  private let loadNextPageOperation: @Sendable () -> Void
+  private let cancellation: FetchSubscriptionCancellation
+
+  public init(
+    stream: AsyncThrowingStream<InfiniteQuerySnapshot<Element>, Error>,
+    loadNextPage: @escaping @Sendable () -> Void,
+    cancel: @escaping @Sendable () -> Void
+  ) {
+    self.stream = stream
+    self.loadNextPageOperation = loadNextPage
+    self.cancellation = FetchSubscriptionCancellation(cancel)
+  }
+
+  public func makeAsyncIterator() -> AsyncIterator {
+    stream.makeAsyncIterator()
+  }
+
+  public func loadNextPage() {
+    cancellation.unlessCancelled {
+      loadNextPageOperation()
+    }
+  }
+
+  public func cancel() {
+    cancellation.cancel()
+  }
+
+  public var task: Void {
+    get async throws {
+      try await withTaskCancellationHandler {
+        await cancellation.wait()
+        try Task.checkCancellation()
+      } onCancel: {
+        self.cancel()
+      }
+    }
+  }
+}
+
 private func fetchSubscription<Element: Sendable>(
   from values: AsyncStream<Element>
 ) -> FetchSubscription<Element> {
@@ -1319,8 +1459,8 @@ private final class LockedValueStorage<Value: Sendable>: @unchecked Sendable {
   }
 }
 
-// SAFETY: the only mutable state is `isCancelled`, which is protected by `lock`.
-private final class FetchSubscriptionCancellation: @unchecked Sendable {
+// SAFETY: all mutable state is protected by `lock`.
+final class FetchSubscriptionCancellation: @unchecked Sendable {
   private let lock = NSLock()
   private let operation: @Sendable () -> Void
   private var isCancelled = false
@@ -1349,6 +1489,15 @@ private final class FetchSubscriptionCancellation: @unchecked Sendable {
     for continuation in continuations {
       continuation.resume()
     }
+  }
+
+  func unlessCancelled(_ action: @Sendable () -> Void) {
+    lock.lock()
+    let isCancelled = self.isCancelled
+    lock.unlock()
+
+    guard !isCancelled else { return }
+    action()
   }
 
   func wait() async {

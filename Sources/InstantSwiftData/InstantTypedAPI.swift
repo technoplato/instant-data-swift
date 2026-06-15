@@ -2016,6 +2016,82 @@ extension InstantSwiftDataClient {
     return (try Entity.decode(emission.values), emission.pageInfo)
   }
 
+  public func infiniteQueryInitialSnapshot<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>
+  ) async throws -> InfiniteQuerySnapshot<Entity> {
+    let snapshot = try await infiniteQueryInitialSnapshot(query.plan)
+    return InfiniteQuerySnapshot(
+      queryID: snapshot.queryID,
+      sequence: snapshot.sequence,
+      values: snapshot.error == nil ? try Entity.decode(snapshot.values) : [],
+      pageInfo: snapshot.pageInfo,
+      canLoadNextPage: snapshot.canLoadNextPage,
+      error: snapshot.error
+    )
+  }
+
+  public func subscribeInfiniteQuery<Entity: InstantEntityModel>(
+    _ query: InstantEntityQuery<Entity>
+  ) async -> InfiniteQuerySubscription<Entity> {
+    let subscription = await subscribeInfiniteQuery(query.plan)
+    let stream = AsyncThrowingStream<InfiniteQuerySnapshot<Entity>, Error>.makeStream(
+      bufferingPolicy: .bufferingNewest(1)
+    )
+    let task = Task {
+      for await snapshot in subscription.snapshots {
+        do {
+          try Task.checkCancellation()
+          if let error = snapshot.error {
+            stream.continuation.yield(
+              InfiniteQuerySnapshot(
+                queryID: snapshot.queryID,
+                sequence: snapshot.sequence,
+                values: [],
+                pageInfo: snapshot.pageInfo,
+                canLoadNextPage: snapshot.canLoadNextPage,
+                error: error
+              )
+            )
+            continue
+          }
+          stream.continuation.yield(
+            InfiniteQuerySnapshot(
+              queryID: snapshot.queryID,
+              sequence: snapshot.sequence,
+              values: try Entity.decode(snapshot.values),
+              pageInfo: snapshot.pageInfo,
+              canLoadNextPage: snapshot.canLoadNextPage,
+              error: nil
+            )
+          )
+        } catch {
+          stream.continuation.finish(throwing: error)
+          return
+        }
+      }
+      stream.continuation.finish()
+    }
+    let upstreamCancellation = FetchSubscriptionCancellation {
+      task.cancel()
+      subscription.unsubscribe()
+    }
+    stream.continuation.onTermination = { @Sendable _ in
+      upstreamCancellation.cancel()
+    }
+    return InfiniteQuerySubscription(
+      stream: stream.stream,
+      loadNextPage: {
+        upstreamCancellation.unlessCancelled {
+          subscription.loadNextPage()
+        }
+      },
+      cancel: {
+        upstreamCancellation.cancel()
+        stream.continuation.finish()
+      }
+    )
+  }
+
   @discardableResult
   public func save<Draft: InstantEntityDraft>(
     _ draft: Draft,

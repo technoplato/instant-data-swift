@@ -467,6 +467,18 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift expands one local descending row per loaded page."
     ),
     instant(
+      id: "instant.infinite-query.typed-client-adapter",
+      sourceFile: infiniteQueryAdapterSource,
+      sourceTestName: "useInfiniteQuerySubscription data/loadNextPage/error result",
+      swiftFile: "Tests/InstantSwiftDataTests/TypedAPITests.swift",
+      swiftTestName:
+        "typedInfiniteQuerySubscriptionDecodesAndLoadsNextPage + typedInfiniteQuerySubscriptionPreservesErrorSnapshotsAndRecovers + typedInfiniteQuerySubscriptionCancellationIsIdempotentAndStopsLoading",
+      surface: "infinite-query-adapter",
+      status: .adapted,
+      notes:
+        "InstantSwiftDataClient exposes typed InfiniteQuerySubscription snapshots with decoded values, pageInfo, loadNextPage, idempotent cancellation, and recoverable error-state snapshots."
+    ),
+    instant(
       id: "instant.reactor.query-subs-round-trips",
       sourceFile: reactorSource,
       sourceTestName: "querySubs round-trips",
@@ -2380,6 +2392,8 @@ public enum InstantSwiftDataParityCoverage {
     "upstream/instant/client/packages/core/__tests__/src/cookieSync.e2e.test.ts + upstream/instant/client/packages/core/src/Reactor.js + upstream/instant/client/packages/core/src/routeHandlerProtocol.ts + upstream/instant/client/packages/core/src/createRouteHandler.ts"
   private static let infiniteQuerySource =
     "upstream/instant/client/packages/core/__tests__/src/infiniteQuery.e2e.test.ts + upstream/instant/client/packages/core/src/infiniteQuery.ts"
+  private static let infiniteQueryAdapterSource =
+    "upstream/instant/client/packages/react-common/src/useInfiniteQuerySubscription.ts + upstream/instant/client/packages/core/src/infiniteQuery.ts"
   private static let reactorSource =
     "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts"
   private static let instamlSource =
