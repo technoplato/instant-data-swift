@@ -4271,6 +4271,226 @@ struct InstantStoreTests {
   }
 
   @Test
+  func stroopwafelRoomGameScoringAndSoftDeleteFlow() async throws {
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: temporaryCacheURL(),
+        initialAttributes: StroopwafelExample.attributes
+      )
+    )
+    let attributesByID = Dictionary(
+      uniqueKeysWithValues: StroopwafelExample.attributes.map { ($0.id, $0) }
+    )
+    func roomForCode(_ code: String) async throws -> StroopwafelRoomRecord {
+      let page = try await runtime.queryOnce(StroopwafelExample.roomForCodeQuery(code))
+      return try #require(try StroopwafelExample.decodeRooms(page.values).first)
+    }
+    func gameRecord(_ id: String) async throws -> StroopwafelGameRecord {
+      let page = try await runtime.queryOnce(StroopwafelExample.gameQuery(id))
+      return try #require(try StroopwafelExample.decodeGames(page.values).first)
+    }
+
+    expectNoDifference(attributesByID["$users/email"]?.valueType, .any)
+    expectNoDifference(attributesByID["rooms/code"]?.isIndexed, true)
+    expectNoDifference(attributesByID["rooms/readyIds"]?.valueType, .json)
+    expectNoDifference(attributesByID["rooms/users"]?.reverseIdentity, "$users/rooms")
+    expectNoDifference(attributesByID["games/points"]?.onDeleteReverse, .cascade)
+
+    let startedAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-stroopwafel-users",
+        operations:
+          StroopwafelExample.setupProfileOperations(
+            userID: "user-host",
+            handle: "Host123",
+            highScore: 0,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            transactionID: "tx-stroopwafel-users",
+            updatedAt: startedAt
+          )
+          + StroopwafelExample.setupProfileOperations(
+            userID: "user-guest",
+            handle: "Guest123",
+            highScore: 0,
+            createdAt: "2026-01-01T00:00:00.001Z",
+            transactionID: "tx-stroopwafel-users",
+            updatedAt: startedAt
+          )
+          + StroopwafelExample.setupProfileOperations(
+            userID: "user-kicked",
+            handle: "Kicked123",
+            highScore: 0,
+            createdAt: "2026-01-01T00:00:00.002Z",
+            transactionID: "tx-stroopwafel-users",
+            updatedAt: startedAt
+          )
+      ),
+      createdAt: startedAt
+    )
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-stroopwafel-room",
+        operations: StroopwafelExample.createRoomOperations(
+          id: "room-1",
+          code: "AB12",
+          hostID: "user-host",
+          createdAt: "2026-01-01T00:00:00.010Z",
+          transactionID: "tx-stroopwafel-room",
+          updatedAt: InstantTimestamp(milliseconds: startedAt.milliseconds + 10)
+        )
+      ),
+      createdAt: InstantTimestamp(milliseconds: startedAt.milliseconds + 10)
+    )
+    var room = try await roomForCode("AB12")
+    expectNoDifference(room.users.map(\.id), ["user-host"])
+    expectNoDifference(room.readyIDs, [])
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-stroopwafel-join",
+        operations:
+          StroopwafelExample.joinRoomOperations(
+            room: room,
+            userID: "user-guest",
+            transactionID: "tx-stroopwafel-join",
+            updatedAt: InstantTimestamp(milliseconds: startedAt.milliseconds + 20)
+          )
+          + StroopwafelExample.joinRoomOperations(
+            room: room,
+            userID: "user-kicked",
+            transactionID: "tx-stroopwafel-join",
+            updatedAt: InstantTimestamp(milliseconds: startedAt.milliseconds + 20)
+          )
+      ),
+      createdAt: InstantTimestamp(milliseconds: startedAt.milliseconds + 20)
+    )
+    room = try await roomForCode("AB12")
+    expectNoDifference(room.users.map(\.id), ["user-guest", "user-host", "user-kicked"])
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-stroopwafel-ready",
+        operations: StroopwafelExample.readyRoomOperations(
+          room: room,
+          userID: "user-guest",
+          isReady: true,
+          transactionID: "tx-stroopwafel-ready",
+          updatedAt: InstantTimestamp(milliseconds: startedAt.milliseconds + 30)
+        )
+      ),
+      createdAt: InstantTimestamp(milliseconds: startedAt.milliseconds + 30)
+    )
+    room = try await roomForCode("AB12")
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-stroopwafel-kick",
+        operations: StroopwafelExample.kickRoomOperations(
+          room: room,
+          userID: "user-kicked",
+          transactionID: "tx-stroopwafel-kick",
+          updatedAt: InstantTimestamp(milliseconds: startedAt.milliseconds + 31)
+        )
+      ),
+      createdAt: InstantTimestamp(milliseconds: startedAt.milliseconds + 31)
+    )
+    room = try await roomForCode("AB12")
+    expectNoDifference(room.readyIDs, ["user-guest"])
+    expectNoDifference(room.kickedIDs, ["user-kicked"])
+    expectNoDifference(room.users.map(\.id), ["user-guest", "user-host"])
+
+    let playerIDs = room.users.map(\.id).filter { $0 == room.hostID || room.readyIDs.contains($0) }
+    let pointIDsByPlayerID = playerIDs.map { (pointID: "point-\($0)", playerID: $0) }
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-stroopwafel-start",
+        operations: StroopwafelExample.startGameOperations(
+          room: room,
+          gameID: "game-1",
+          pointIDsByPlayerID: pointIDsByPlayerID,
+          colors: StroopwafelExample.generateGameColors(seed: "game-1"),
+          createdAt: "2026-01-01T00:00:00.040Z",
+          transactionID: "tx-stroopwafel-start",
+          updatedAt: InstantTimestamp(milliseconds: startedAt.milliseconds + 40)
+        )
+      ),
+      createdAt: InstantTimestamp(milliseconds: startedAt.milliseconds + 40)
+    )
+    var game = try await gameRecord("game-1")
+    expectNoDifference(game.status, StroopwafelExample.gameInProgress)
+    expectNoDifference(game.playerIDs.sorted(), ["user-guest", "user-host"])
+    expectNoDifference(game.points.map(\.value), [0, 0])
+    expectNoDifference(game.rooms.first?.currentGameID, "game-1")
+
+    let hostPoint = try #require(game.points.first { $0.userID == "user-host" })
+    let firstPrompt = try #require(game.colors.first)
+    let wrongColor = try #require(StroopwafelExample.colorChoices.first { $0 != firstPrompt.label })
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-stroopwafel-wrong-tap",
+        operations: StroopwafelExample.tapOperations(
+          game: game,
+          userID: "user-host",
+          selectedColor: wrongColor,
+          transactionID: "tx-stroopwafel-wrong-tap",
+          updatedAt: InstantTimestamp(milliseconds: startedAt.milliseconds + 50)
+        )
+      ),
+      createdAt: InstantTimestamp(milliseconds: startedAt.milliseconds + 50)
+    )
+    game = try await gameRecord("game-1")
+    expectNoDifference(game.points.first { $0.id == hostPoint.id }?.value, 0)
+
+    var tapIndex = 0
+    while game.status == StroopwafelExample.gameInProgress {
+      let point = try #require(game.points.first { $0.userID == "user-host" })
+      let prompt = try #require(game.colors[safe: point.value])
+      let transactionID = "tx-stroopwafel-correct-tap-\(tapIndex)"
+      try await runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: StroopwafelExample.tapOperations(
+            game: game,
+            userID: "user-host",
+            selectedColor: prompt.label,
+            transactionID: transactionID,
+            updatedAt: InstantTimestamp(milliseconds: startedAt.milliseconds + 60 + Int64(tapIndex))
+          )
+        ),
+        createdAt: InstantTimestamp(milliseconds: startedAt.milliseconds + 60 + Int64(tapIndex))
+      )
+      game = try await gameRecord("game-1")
+      tapIndex += 1
+    }
+    expectNoDifference(game.status, StroopwafelExample.gameCompleted)
+    expectNoDifference(game.points.first { $0.userID == "user-host" }?.value, 13)
+    expectNoDifference(game.rooms.first?.currentGameID, nil)
+
+    room = try #require(game.rooms.first)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-stroopwafel-host-leave",
+        operations: StroopwafelExample.leaveRoomOperations(
+          room: room,
+          userID: "user-host",
+          deletedAt: "2026-01-01T00:00:00.090Z",
+          transactionID: "tx-stroopwafel-host-leave",
+          updatedAt: InstantTimestamp(milliseconds: startedAt.milliseconds + 90)
+        )
+      ),
+      createdAt: InstantTimestamp(milliseconds: startedAt.milliseconds + 90)
+    )
+    let activeRoomPage = try await runtime.queryOnce(StroopwafelExample.roomForCodeQuery("AB12"))
+    let activeRooms = try StroopwafelExample.decodeRooms(activeRoomPage.values)
+    let allRoomPage = try await runtime.queryOnce(StroopwafelExample.roomsQuery)
+    let allRooms = try StroopwafelExample.decodeRooms(allRoomPage.values)
+    expectNoDifference(activeRooms, [])
+    expectNoDifference(allRooms.first?.deletedAt, "2026-01-01T00:00:00.090Z")
+  }
+
+  @Test
   func queryCacheStoresSameQueryIDDifferentPlansSeparately() async throws {
     let cacheURL = try temporaryCacheURL()
     let runtime = try await InstantRuntime.bootstrap(
@@ -12921,6 +13141,12 @@ private final class LockIsolated<Value>: @unchecked Sendable {
     lock.lock()
     defer { lock.unlock() }
     return try operation(&value)
+  }
+}
+
+private extension Array {
+  subscript(safe index: Index) -> Element? {
+    indices.contains(index) ? self[index] : nil
   }
 }
 

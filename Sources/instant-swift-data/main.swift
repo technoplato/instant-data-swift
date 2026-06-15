@@ -416,6 +416,8 @@ struct InstantSwiftDataCLI {
       throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesMobileChatArgumentError {
       throw CLIError(error.description, exitCode: error.exitCode)
+    } catch let error as CLIExamplesStroopwafelArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
     switch invocation {
     case let .chat(arguments):
@@ -432,6 +434,10 @@ struct InstantSwiftDataCLI {
 
     case let .mobileChat(arguments):
       try await runMobileChat(arguments: arguments, output: output)
+      return
+
+    case let .stroopwafel(arguments):
+      try await runStroopwafel(arguments: arguments, output: output)
       return
 
     case let .syncUps(arguments):
@@ -5247,6 +5253,783 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func runStroopwafel(arguments: [String], output: OutputMode) async throws {
+    let invocation: CLIExamplesStroopwafelLeafInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLIExamplesStroopwafelLeafParser().parse(&input)
+    } catch let error as CLIExamplesStroopwafelArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
+    }
+
+    if case let .unknown(command) = invocation {
+      throw CLIError("Unknown Stroopwafel command: \(command). \(stroopwafelUsage)", exitCode: 64)
+    }
+
+    let context = try await CLIContext.bootstrap(initialAttributes: StroopwafelExample.attributes)
+
+    switch invocation {
+    case let .setupProfile(handle):
+      let session = try await requireStroopwafelAuthSession(
+        context: context,
+        operation: "set up a profile"
+      )
+      let normalizedHandle = try normalizedStroopwafelHandle(handle)
+      let existingUser = try await currentStroopwafelUsers(context: context)
+        .first { $0.id == session.userID }
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: StroopwafelExample.setupProfileOperations(
+            userID: session.userID,
+            handle: normalizedHandle,
+            email: stroopwafelEmail(for: session),
+            highScore: existingUser == nil ? 0 : nil,
+            createdAt: existingUser == nil ? stroopwafelISOString(from: now) : nil,
+            transactionID: transactionID,
+            updatedAt: now
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.stroopwafel.setup-profile"
+      )
+      try await printStroopwafel(
+        context: context,
+        output: output,
+        event: "setup-profile",
+        changedID: session.userID,
+        selectedUserID: session.userID
+      )
+
+    case let .profile(userID):
+      let selectedUserID = try await selectedStroopwafelUserID(
+        context: context,
+        explicitUserID: userID
+      )
+      let user = try await requireStroopwafelUser(context: context, userID: selectedUserID)
+      try await printStroopwafel(
+        context: context,
+        output: output,
+        event: "profile",
+        selectedUserID: selectedUserID,
+        selectedUser: user
+      )
+
+    case let .score(score):
+      let user = try await requireCurrentStroopwafelUser(context: context, operation: "save score")
+      let currentHighScore = user.highScore ?? 0
+      if score > currentHighScore {
+        let transactionID = context.runtime.configuration.makeID()
+        let now = context.runtime.configuration.now()
+        try await context.runtime.transact(
+          InstantStoreTransaction(
+            id: transactionID,
+            operations: StroopwafelExample.updateHighScoreOperations(
+              userID: user.id,
+              score: score,
+              transactionID: transactionID,
+              updatedAt: now
+            )
+          ),
+          createdAt: now,
+          source: "cli.examples.stroopwafel.score"
+        )
+      }
+      try await printStroopwafel(
+        context: context,
+        output: output,
+        event: "score",
+        changedID: user.id,
+        selectedUserID: user.id
+      )
+
+    case let .createRoom(explicitCode):
+      let user = try await requireCurrentStroopwafelUser(context: context, operation: "create a room")
+      let code = try await availableStroopwafelRoomCode(context: context, explicitCode: explicitCode)
+      let roomID = context.runtime.configuration.makeID()
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: StroopwafelExample.createRoomOperations(
+            id: roomID,
+            code: code,
+            hostID: user.id,
+            createdAt: stroopwafelISOString(from: now),
+            transactionID: transactionID,
+            updatedAt: now
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.stroopwafel.create-room"
+      )
+      let room = try await requireStroopwafelRoom(context: context, code: code)
+      try await printStroopwafel(
+        context: context,
+        output: output,
+        event: "create-room",
+        changedID: roomID,
+        selectedUserID: user.id,
+        selectedRoomCode: code,
+        selectedRoom: room
+      )
+
+    case .rooms:
+      try await printStroopwafel(context: context, output: output, event: "rooms")
+
+    case let .room(code):
+      let room = try await requireStroopwafelRoom(context: context, code: code)
+      try await printStroopwafel(
+        context: context,
+        output: output,
+        event: "room",
+        selectedRoomCode: room.code,
+        selectedRoom: room,
+        selectedGameID: room.currentGameID
+      )
+
+    case let .join(code):
+      let user = try await requireCurrentStroopwafelUser(context: context, operation: "join a room")
+      let room = try await requireStroopwafelRoom(context: context, code: code)
+      try validateStroopwafelCanJoin(room: room, userID: user.id)
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: StroopwafelExample.joinRoomOperations(
+            room: room,
+            userID: user.id,
+            transactionID: transactionID,
+            updatedAt: now
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.stroopwafel.join"
+      )
+      try await printStroopwafel(
+        context: context,
+        output: output,
+        event: "join",
+        changedID: user.id,
+        selectedUserID: user.id,
+        selectedRoomCode: room.code
+      )
+
+    case let .ready(code, isReady):
+      let user = try await requireCurrentStroopwafelUser(context: context, operation: "mark ready")
+      let room = try await requireStroopwafelRoom(context: context, code: code)
+      try validateStroopwafelMembership(room: room, userID: user.id, operation: "mark ready")
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: StroopwafelExample.readyRoomOperations(
+            room: room,
+            userID: user.id,
+            isReady: isReady,
+            transactionID: transactionID,
+            updatedAt: now
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.stroopwafel.ready"
+      )
+      try await printStroopwafel(
+        context: context,
+        output: output,
+        event: isReady ? "ready" : "unready",
+        changedID: user.id,
+        selectedUserID: user.id,
+        selectedRoomCode: room.code
+      )
+
+    case let .kick(code, userID):
+      let host = try await requireCurrentStroopwafelUser(context: context, operation: "kick a player")
+      let room = try await requireStroopwafelRoom(context: context, code: code)
+      try validateStroopwafelHost(room: room, userID: host.id, operation: "kick a player")
+      guard userID != host.id else {
+        throw CLIError("Stroopwafel host cannot kick themselves.", exitCode: 77)
+      }
+      try validateStroopwafelMembership(room: room, userID: userID, operation: "kick a player")
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: StroopwafelExample.kickRoomOperations(
+            room: room,
+            userID: userID,
+            transactionID: transactionID,
+            updatedAt: now
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.stroopwafel.kick"
+      )
+      try await printStroopwafel(
+        context: context,
+        output: output,
+        event: "kick",
+        changedID: userID,
+        selectedUserID: host.id,
+        selectedRoomCode: room.code
+      )
+
+    case let .start(code):
+      let host = try await requireCurrentStroopwafelUser(context: context, operation: "start a game")
+      let room = try await requireStroopwafelRoom(context: context, code: code)
+      try validateStroopwafelHost(room: room, userID: host.id, operation: "start a game")
+      let playerIDs = stroopwafelPlayerIDs(in: room)
+      guard !playerIDs.isEmpty else {
+        throw CLIError("Stroopwafel room \(code) has no players.", exitCode: 66)
+      }
+      let gameID = context.runtime.configuration.makeID()
+      let pointIDsByPlayerID = playerIDs.map {
+        (pointID: context.runtime.configuration.makeID(), playerID: $0)
+      }
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: StroopwafelExample.startGameOperations(
+            room: room,
+            gameID: gameID,
+            pointIDsByPlayerID: pointIDsByPlayerID,
+            colors: StroopwafelExample.generateGameColors(seed: gameID),
+            createdAt: stroopwafelISOString(from: now),
+            transactionID: transactionID,
+            updatedAt: now
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.stroopwafel.start"
+      )
+      try await printStroopwafel(
+        context: context,
+        output: output,
+        event: "start",
+        changedID: gameID,
+        selectedUserID: host.id,
+        selectedRoomCode: room.code,
+        selectedGameID: gameID
+      )
+
+    case .games:
+      try await printStroopwafel(context: context, output: output, event: "games")
+
+    case let .game(gameID):
+      let game = try await requireStroopwafelGame(context: context, id: gameID)
+      try await printStroopwafel(
+        context: context,
+        output: output,
+        event: "game",
+        selectedGameID: gameID,
+        selectedGame: game
+      )
+
+    case let .tap(gameID, color):
+      let user = try await requireCurrentStroopwafelUser(context: context, operation: "tap a color")
+      let game = try await requireStroopwafelGame(context: context, id: gameID)
+      try validateStroopwafelPlayer(game: game, userID: user.id)
+      guard game.status == StroopwafelExample.gameInProgress else {
+        throw CLIError("Stroopwafel game \(gameID) is not in progress.", exitCode: 77)
+      }
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      let operations = StroopwafelExample.tapOperations(
+        game: game,
+        userID: user.id,
+        selectedColor: color,
+        transactionID: transactionID,
+        updatedAt: now
+      )
+      guard !operations.isEmpty else {
+        throw CLIError("Stroopwafel point row not found for user: \(user.id)", exitCode: 66)
+      }
+      try await context.runtime.transact(
+        InstantStoreTransaction(id: transactionID, operations: operations),
+        createdAt: now,
+        source: "cli.examples.stroopwafel.tap"
+      )
+      try await printStroopwafel(
+        context: context,
+        output: output,
+        event: "tap",
+        changedID: user.id,
+        selectedUserID: user.id,
+        selectedGameID: gameID
+      )
+
+    case let .leave(code):
+      let user = try await requireCurrentStroopwafelUser(context: context, operation: "leave a room")
+      let room = try await requireStroopwafelRoom(context: context, code: code)
+      try validateStroopwafelMembership(room: room, userID: user.id, operation: "leave a room")
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: StroopwafelExample.leaveRoomOperations(
+            room: room,
+            userID: user.id,
+            deletedAt: stroopwafelISOString(from: now),
+            transactionID: transactionID,
+            updatedAt: now
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.stroopwafel.leave"
+      )
+      try await printStroopwafel(
+        context: context,
+        output: output,
+        event: "leave",
+        changedID: user.id,
+        selectedUserID: user.id,
+        selectedRoomCode: room.code
+      )
+
+    case .reset:
+      let games = try await currentStroopwafelGames(context: context)
+      let rooms = try await currentStroopwafelRooms(context: context)
+      let gameAndRoomOperations =
+        games.flatMap { StroopwafelExample.deleteGameOperations(id: $0.id) }
+        + rooms.flatMap { StroopwafelExample.deleteRoomOperations(id: $0.id) }
+      if !gameAndRoomOperations.isEmpty {
+        let transactionID = context.runtime.configuration.makeID()
+        let now = context.runtime.configuration.now()
+        try await context.runtime.transact(
+          InstantStoreTransaction(id: transactionID, operations: gameAndRoomOperations),
+          createdAt: now,
+          source: "cli.examples.stroopwafel.reset"
+        )
+      }
+      let points = try await currentStroopwafelPoints(context: context)
+      let pointOperations = points.flatMap {
+        StroopwafelExample.deletePointOperations(id: $0.id)
+      }
+      if !pointOperations.isEmpty {
+        let transactionID = context.runtime.configuration.makeID()
+        let now = context.runtime.configuration.now()
+        try await context.runtime.transact(
+          InstantStoreTransaction(id: transactionID, operations: pointOperations),
+          createdAt: now,
+          source: "cli.examples.stroopwafel.reset.points"
+        )
+      }
+      try await printStroopwafel(context: context, output: output, event: "reset")
+
+    case .unknown:
+      preconditionFailure("Unknown Stroopwafel commands are handled before bootstrapping.")
+    }
+  }
+
+  private static func printStroopwafel(
+    context: CLIContext,
+    output: OutputMode,
+    event: String,
+    changedID: String? = nil,
+    selectedUserID: String? = nil,
+    selectedUser: StroopwafelUserRecord? = nil,
+    selectedRoomCode: String? = nil,
+    selectedRoom: StroopwafelRoomRecord? = nil,
+    selectedGameID: String? = nil,
+    selectedGame: StroopwafelGameRecord? = nil
+  ) async throws {
+    let users = try await currentStroopwafelUsers(context: context)
+    let rooms = try await currentStroopwafelRooms(context: context)
+    let games = try await currentStroopwafelGames(context: context)
+    let points = try await currentStroopwafelPoints(context: context)
+    let pending = await context.runtime.pendingMutations()
+    let session = try await context.runtime.authSession()
+    let resolvedSelectedRoom =
+      selectedRoom
+      ?? selectedRoomCode.flatMap { code in
+        rooms.first { $0.code == StroopwafelExample.normalizeRoomCode(code) }
+      }
+    let resolvedSelectedGame =
+      selectedGame
+      ?? selectedGameID.flatMap { id in games.first { $0.id == id } }
+    let resolvedSelectedUser =
+      selectedUser
+      ?? selectedUserID.flatMap { id in users.first { $0.id == id } }
+    let payload = StroopwafelOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      changedID: changedID,
+      selectedUserID: selectedUserID,
+      selectedUser: resolvedSelectedUser,
+      selectedRoomCode: resolvedSelectedRoom?.code ?? selectedRoomCode,
+      selectedRoom: resolvedSelectedRoom,
+      selectedGameID: resolvedSelectedGame?.id ?? selectedGameID,
+      selectedGame: resolvedSelectedGame,
+      authUserID: session?.userID,
+      authIsGuest: session?.isGuest,
+      transport: "not-implemented-local-cache-only",
+      userQueryID: StroopwafelExample.usersQuery.id,
+      roomQueryID: StroopwafelExample.roomsQuery.id,
+      gameQueryID: StroopwafelExample.gamesQuery.id,
+      pointQueryID: StroopwafelExample.pointsQuery.id,
+      userCacheKey: StroopwafelExample.usersQuery.cacheKey,
+      roomCacheKey: StroopwafelExample.roomsQuery.cacheKey,
+      gameCacheKey: StroopwafelExample.gamesQuery.cacheKey,
+      pointCacheKey: StroopwafelExample.pointsQuery.cacheKey,
+      pendingMutationCount: pending.count,
+      userCount: users.count,
+      roomCount: rooms.count,
+      gameCount: games.count,
+      pointCount: points.count,
+      users: users,
+      rooms: rooms,
+      games: games,
+      points: points
+    )
+
+    switch output {
+    case .human:
+      if let user = payload.selectedUser {
+        print(
+          "profile: \(user.handle ?? "(no handle)") user=\(user.id) highScore=\(user.highScore ?? 0)"
+        )
+      }
+      if rooms.isEmpty {
+        print("No Stroopwafel rooms.")
+      } else {
+        for room in rooms {
+          let code = room.code ?? "(deleted)"
+          let handles = room.users.map { $0.handle ?? $0.id }.joined(separator: ",")
+          print(
+            "room \(room.id) code=\(code) host=\(room.hostID) ready=\(room.readyIDs.count) players=[\(handles)] currentGame=\(room.currentGameID ?? "none")"
+          )
+        }
+      }
+      if games.isEmpty {
+        print("No Stroopwafel games.")
+      } else {
+        for game in games {
+          let points = game.points
+            .sorted { $0.userID < $1.userID }
+            .map { "\($0.userID):\($0.value)" }
+            .joined(separator: ",")
+          print("game \(game.id) status=\(game.status) players=\(game.playerIDs.count) points=[\(points)]")
+        }
+      }
+      if let authUserID = payload.authUserID {
+        print("auth: \(payload.authIsGuest == true ? "guest" : "user") \(authUserID)")
+      } else {
+        print("auth: signed out")
+      }
+      print("transport: \(payload.transport)")
+      print("pending mutations: \(pending.count)")
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.examples.stroopwafel",
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          entityID: changedID,
+          ok: true,
+          details: payload
+        )
+      )
+      for user in users {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.stroopwafel",
+            side: "swift",
+            event: "user",
+            appID: context.appID,
+            entityID: user.id,
+            ok: true,
+            details: user
+          )
+        )
+      }
+      for room in rooms {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.stroopwafel",
+            side: "swift",
+            event: "room",
+            appID: context.appID,
+            entityID: room.id,
+            ok: true,
+            details: room
+          )
+        )
+      }
+      for game in games {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.stroopwafel",
+            side: "swift",
+            event: "game",
+            appID: context.appID,
+            entityID: game.id,
+            ok: true,
+            details: game
+          )
+        )
+      }
+      for point in points {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.stroopwafel",
+            side: "swift",
+            event: "point",
+            appID: context.appID,
+            entityID: point.id,
+            ok: true,
+            details: point
+          )
+        )
+      }
+    }
+  }
+
+  private static func currentStroopwafelUsers(context: CLIContext) async throws
+    -> [StroopwafelUserRecord]
+  {
+    try StroopwafelExample.decodeUsers(
+      (try await context.runtime.queryOnce(StroopwafelExample.usersQuery)).values
+    )
+    .filter { $0.handle != nil || $0.highScore != nil || $0.createdAt != nil }
+  }
+
+  private static func currentStroopwafelRooms(context: CLIContext) async throws
+    -> [StroopwafelRoomRecord]
+  {
+    try StroopwafelExample.decodeRooms(
+      (try await context.runtime.queryOnce(StroopwafelExample.roomsQuery)).values
+    )
+  }
+
+  private static func currentStroopwafelGames(context: CLIContext) async throws
+    -> [StroopwafelGameRecord]
+  {
+    try StroopwafelExample.decodeGames(
+      (try await context.runtime.queryOnce(StroopwafelExample.gamesQuery)).values
+    )
+  }
+
+  private static func currentStroopwafelPoints(context: CLIContext) async throws
+    -> [StroopwafelPointRecord]
+  {
+    try StroopwafelExample.decodePoints(
+      (try await context.runtime.queryOnce(StroopwafelExample.pointsQuery)).values
+    )
+  }
+
+  private static func selectedStroopwafelUserID(
+    context: CLIContext,
+    explicitUserID: String?
+  ) async throws -> String {
+    if let explicitUserID {
+      return explicitUserID
+    }
+    let session = try await requireStroopwafelAuthSession(
+      context: context,
+      operation: "view a profile"
+    )
+    return session.userID
+  }
+
+  private static func requireStroopwafelAuthSession(
+    context: CLIContext,
+    operation: String
+  ) async throws -> InstantAuthSession {
+    guard let session = try await context.runtime.authSession() else {
+      throw CLIError(
+        """
+        Stroopwafel \(operation) requires a signed-in user. Run \
+        'instant-swift-data auth guest' or \
+        'instant-swift-data auth token <refresh-token> --user-id <user-id>' first.
+        """,
+        exitCode: 65
+      )
+    }
+    return session
+  }
+
+  private static func requireStroopwafelUser(
+    context: CLIContext,
+    userID: String
+  ) async throws -> StroopwafelUserRecord {
+    guard
+      let user = try StroopwafelExample.decodeUsers(
+        (try await context.runtime.queryOnce(StroopwafelExample.userQuery(userID))).values
+      )
+      .first
+    else {
+      throw CLIError("Stroopwafel profile not found for user: \(userID).", exitCode: 66)
+    }
+    return user
+  }
+
+  private static func requireCurrentStroopwafelUser(
+    context: CLIContext,
+    operation: String
+  ) async throws -> StroopwafelUserRecord {
+    let session = try await requireStroopwafelAuthSession(context: context, operation: operation)
+    do {
+      let user = try await requireStroopwafelUser(context: context, userID: session.userID)
+      guard user.handle != nil else {
+        throw CLIError("Stroopwafel profile has no handle for user: \(session.userID).", exitCode: 66)
+      }
+      return user
+    } catch let error as CLIError where error.exitCode == 66 {
+      throw CLIError(
+        """
+        Stroopwafel profile not found for user: \(session.userID). Run \
+        'instant-swift-data examples stroopwafel setup-profile <handle>' first.
+        """,
+        exitCode: 66
+      )
+    }
+  }
+
+  private static func requireStroopwafelRoom(
+    context: CLIContext,
+    code rawCode: String
+  ) async throws -> StroopwafelRoomRecord {
+    let code = StroopwafelExample.normalizeRoomCode(rawCode)
+    guard !code.isEmpty else {
+      throw CLIError("Invalid Stroopwafel room code: \(rawCode)", exitCode: 64)
+    }
+    let rooms = try StroopwafelExample.decodeRooms(
+      (try await context.runtime.queryOnce(StroopwafelExample.roomForCodeQuery(code))).values
+    )
+    guard let room = rooms.first else {
+      throw CLIError("Stroopwafel room not found for code: \(code)", exitCode: 66)
+    }
+    return room
+  }
+
+  private static func requireStroopwafelGame(
+    context: CLIContext,
+    id: String
+  ) async throws -> StroopwafelGameRecord {
+    guard
+      let game = try StroopwafelExample.decodeGames(
+        (try await context.runtime.queryOnce(StroopwafelExample.gameQuery(id))).values
+      )
+      .first
+    else {
+      throw CLIError("Stroopwafel game not found: \(id)", exitCode: 66)
+    }
+    return game
+  }
+
+  private static func validateStroopwafelCanJoin(
+    room: StroopwafelRoomRecord,
+    userID: String
+  ) throws {
+    guard !room.kickedIDs.contains(userID) else {
+      throw CLIError(
+        "User \(userID) was kicked from Stroopwafel room \(room.code ?? room.id).",
+        exitCode: 77
+      )
+    }
+    guard room.deletedAt == nil, room.code != nil else {
+      throw CLIError("Stroopwafel room \(room.id) has been deleted.", exitCode: 66)
+    }
+  }
+
+  private static func validateStroopwafelMembership(
+    room: StroopwafelRoomRecord,
+    userID: String,
+    operation: String
+  ) throws {
+    guard room.users.contains(where: { $0.id == userID }) else {
+      throw CLIError(
+        "User \(userID) must be in Stroopwafel room \(room.code ?? room.id) to \(operation).",
+        exitCode: 77
+      )
+    }
+  }
+
+  private static func validateStroopwafelHost(
+    room: StroopwafelRoomRecord,
+    userID: String,
+    operation: String
+  ) throws {
+    guard room.hostID == userID else {
+      throw CLIError(
+        "User \(userID) must host Stroopwafel room \(room.code ?? room.id) to \(operation).",
+        exitCode: 77
+      )
+    }
+  }
+
+  private static func validateStroopwafelPlayer(
+    game: StroopwafelGameRecord,
+    userID: String
+  ) throws {
+    guard game.playerIDs.contains(userID) else {
+      throw CLIError("User \(userID) is a spectator in Stroopwafel game \(game.id).", exitCode: 77)
+    }
+  }
+
+  private static func stroopwafelPlayerIDs(in room: StroopwafelRoomRecord) -> [String] {
+    room.users.map(\.id).filter { $0 == room.hostID || room.readyIDs.contains($0) }
+  }
+
+  private static func availableStroopwafelRoomCode(
+    context: CLIContext,
+    explicitCode: String?
+  ) async throws -> String {
+    let rawCode = explicitCode ?? String(context.runtime.configuration.makeID().prefix(8))
+    let code = StroopwafelExample.normalizeRoomCode(rawCode)
+    guard !code.isEmpty else {
+      throw CLIError("Invalid Stroopwafel room code: \(rawCode)", exitCode: 64)
+    }
+    let existing = try StroopwafelExample.decodeRooms(
+      (try await context.runtime.queryOnce(StroopwafelExample.roomForCodeQuery(code))).values
+    )
+    guard existing.isEmpty else {
+      throw CLIError("Stroopwafel room already exists for code: \(code)", exitCode: 77)
+    }
+    return code
+  }
+
+  private static func normalizedStroopwafelHandle(_ value: String) throws -> String {
+    let handle = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard StroopwafelExample.isValidHandle(handle) else {
+      throw CLIError(
+        "Invalid Stroopwafel handle: \(value). Handles must be 3-16 alphanumeric characters.",
+        exitCode: 64
+      )
+    }
+    return handle
+  }
+
+  private static func stroopwafelEmail(for session: InstantAuthSession) -> String? {
+    let prefix = "email:"
+    guard session.userID.hasPrefix(prefix) else { return nil }
+    let email = String(session.userID.dropFirst(prefix.count))
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return email.contains("@") ? email : nil
+  }
+
+  private static func stroopwafelISOString(from timestamp: InstantTimestamp) -> String {
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    return formatter.string(from: Date(timeIntervalSince1970: Double(timestamp.milliseconds) / 1000))
+  }
+
   private static func printReminders(
     context: CLIContext,
     output: OutputMode,
@@ -7087,13 +7870,14 @@ struct InstantSwiftDataCLI {
 
   private static var examplesUsage: String {
     """
-    Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|reminders|sync-ups>
+    Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|stroopwafel|reminders|sync-ups>
       instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>
       instant-swift-data examples todo-links <seed|list|nested|unlink> [--json|--jsonl]
       instant-swift-data examples counters <seed|add|list|increment|decrement|delete> [--json|--jsonl]
       instant-swift-data examples chat <seed|channels|messages|post|reset> [--json|--jsonl]
       instant-swift-data examples mobile-chat <seed|channels|messages|profiles|profile|setup-profile|send|join|presence|leave|reset> [--json|--jsonl]
       instant-swift-data examples microblog <seed|feed|profiles|profile|setup-profile|post|like|unlike|delete-post|reset> [--json|--jsonl]
+      instant-swift-data examples stroopwafel <setup-profile|profile|score|create-room|rooms|room|join|ready|unready|kick|start|games|game|tap|leave|reset> [--json|--jsonl]
       instant-swift-data examples reminders <seed|list|stats|tags|list-tags|search|add-list|rename-list|delete-list|add|update|complete|delete|delete-completed|add-tag|remove-tag> [--json|--jsonl]
       instant-swift-data examples sync-ups <seed|list|detail|add|edit|add-attendee|record|record-demo|delete|delete-attendee|delete-meeting> [--json|--jsonl]
     """
@@ -7113,6 +7897,10 @@ struct InstantSwiftDataCLI {
 
   private static var mobileChatUsage: String {
     CLIExamplesMobileChatUsage.mobileChat
+  }
+
+  private static var stroopwafelUsage: String {
+    CLIExamplesStroopwafelUsage.stroopwafel
   }
 
   private static var syncUpsUsage: String {
@@ -7818,6 +8606,39 @@ private struct MobileChatOutput: Codable, Sendable {
   var channels: [MobileChatChannelRecord]
   var messages: [MobileChatMessageRecord]
   var presenceMembers: [InstantRoomPresenceMember]
+}
+
+private struct StroopwafelOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var changedID: String?
+  var selectedUserID: String?
+  var selectedUser: StroopwafelUserRecord?
+  var selectedRoomCode: String?
+  var selectedRoom: StroopwafelRoomRecord?
+  var selectedGameID: String?
+  var selectedGame: StroopwafelGameRecord?
+  var authUserID: String?
+  var authIsGuest: Bool?
+  var transport: String
+  var userQueryID: String
+  var roomQueryID: String
+  var gameQueryID: String
+  var pointQueryID: String
+  var userCacheKey: String
+  var roomCacheKey: String
+  var gameCacheKey: String
+  var pointCacheKey: String
+  var pendingMutationCount: Int
+  var userCount: Int
+  var roomCount: Int
+  var gameCount: Int
+  var pointCount: Int
+  var users: [StroopwafelUserRecord]
+  var rooms: [StroopwafelRoomRecord]
+  var games: [StroopwafelGameRecord]
+  var points: [StroopwafelPointRecord]
 }
 
 private struct RemindersOutput: Codable, Sendable {

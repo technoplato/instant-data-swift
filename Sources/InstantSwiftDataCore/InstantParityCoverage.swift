@@ -1096,6 +1096,16 @@ public enum InstantSwiftDataParityCoverage {
       status: .adapted,
       notes: "The Instant CLI ports betomoedano/instant-realtime-chat at a844b48eacd2669316667cab5ffb8f5548948cf6 into isolated local channel/profile/message namespaces, preserving $users auth, channel.id-filtered message queries with nested author.user includes, optional profile authors, room presence, and explicit local seed/reset tooling."
     ),
+    instant(
+      id: "instant.website.stroopwafel.local-cli",
+      sourceFile: "upstream/instant/client/www/_examples/stroopwafel.md + jsventures/stroopwafel@7f5e2379464d932c0e4681655cbf022f8d9c2614",
+      sourceTestName: "$users, rooms, games, points, host/member room flow, ready/kick/start/tap/reset",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/CLITests.swift + Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "cliStroopwafelExampleRunsTwoUserRoomAndGameAcrossLaunches + stroopwafelRoomGameScoringAndSoftDeleteFlow",
+      surface: "examples-stroopwafel",
+      status: .adapted,
+      notes: "The Instant CLI ports the Stroopwafel multiplayer source into local $users/rooms/games/points namespaces, auth-gated profile setup, code-based room join, ready membership, host-only start rejection, per-player points, JSONL game evidence, and reset. Core operation coverage proves kick, game completion, host leave as a soft-delete, and game-to-point cascade semantics. The current source declares rooms: {} and uses durable room users rather than typed presence/topics."
+    ),
     sqlite(
       id: "sqlite.cloudkit-demo.local-counter-share",
       sourceFile: "upstream/sqlite-data/Examples/CloudKitDemo/CountersListFeature.swift",

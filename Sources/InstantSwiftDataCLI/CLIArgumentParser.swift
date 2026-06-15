@@ -53,6 +53,7 @@ public enum CLIExamplesInvocation: Equatable, Sendable {
   case counters(arguments: [String])
   case microblog(arguments: [String])
   case mobileChat(arguments: [String])
+  case stroopwafel(arguments: [String])
   case syncUps(arguments: [String])
   case reminders(arguments: [String])
   case todoLinks(arguments: [String])
@@ -397,6 +398,87 @@ public enum CLIExamplesMobileChatUsage {
 public enum CLIExamplesMobileChatArgumentError: Error, Equatable, Sendable {
   case invalidArguments(usage: String)
   case unknownSendOption(String, usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
+public enum CLIExamplesStroopwafelLeafInvocation: Equatable, Sendable {
+  case setupProfile(handle: String)
+  case profile(userID: String?)
+  case score(Int)
+  case createRoom(code: String?)
+  case rooms
+  case room(code: String)
+  case join(code: String)
+  case ready(code: String, isReady: Bool)
+  case kick(code: String, userID: String)
+  case start(code: String)
+  case games
+  case game(gameID: String)
+  case tap(gameID: String, color: String)
+  case leave(code: String)
+  case reset
+  case unknown(String)
+}
+
+public enum CLIExamplesStroopwafelUsage {
+  public static let stroopwafel = """
+    Usage: instant-swift-data examples stroopwafel <setup-profile|profile|score|create-room|rooms|room|join|ready|unready|kick|start|games|game|tap|leave|reset>
+      instant-swift-data examples stroopwafel setup-profile <handle> [--json|--jsonl]
+      instant-swift-data examples stroopwafel profile [user-id] [--json|--jsonl]
+      instant-swift-data examples stroopwafel score <score> [--json|--jsonl]
+      instant-swift-data examples stroopwafel create-room [code] [--json|--jsonl]
+      instant-swift-data examples stroopwafel rooms [--json|--jsonl]
+      instant-swift-data examples stroopwafel room <code> [--json|--jsonl]
+      instant-swift-data examples stroopwafel join <code> [--json|--jsonl]
+      instant-swift-data examples stroopwafel ready <code> [--json|--jsonl]
+      instant-swift-data examples stroopwafel unready <code> [--json|--jsonl]
+      instant-swift-data examples stroopwafel kick <code> <user-id> [--json|--jsonl]
+      instant-swift-data examples stroopwafel start <code> [--json|--jsonl]
+      instant-swift-data examples stroopwafel games [--json|--jsonl]
+      instant-swift-data examples stroopwafel game <game-id> [--json|--jsonl]
+      instant-swift-data examples stroopwafel tap <game-id> <red|green|blue|yellow> [--json|--jsonl]
+      instant-swift-data examples stroopwafel leave <code> [--json|--jsonl]
+      instant-swift-data examples stroopwafel reset [--json|--jsonl]
+    """
+  public static let setupProfile =
+    "Usage: instant-swift-data examples stroopwafel setup-profile <handle> [--json|--jsonl]"
+  public static let profile =
+    "Usage: instant-swift-data examples stroopwafel profile [user-id] [--json|--jsonl]"
+  public static let score =
+    "Usage: instant-swift-data examples stroopwafel score <score> [--json|--jsonl]"
+  public static let createRoom =
+    "Usage: instant-swift-data examples stroopwafel create-room [code] [--json|--jsonl]"
+  public static let rooms =
+    "Usage: instant-swift-data examples stroopwafel rooms [--json|--jsonl]"
+  public static let room =
+    "Usage: instant-swift-data examples stroopwafel room <code> [--json|--jsonl]"
+  public static let join =
+    "Usage: instant-swift-data examples stroopwafel join <code> [--json|--jsonl]"
+  public static let ready =
+    "Usage: instant-swift-data examples stroopwafel ready <code> [--json|--jsonl]"
+  public static let unready =
+    "Usage: instant-swift-data examples stroopwafel unready <code> [--json|--jsonl]"
+  public static let kick =
+    "Usage: instant-swift-data examples stroopwafel kick <code> <user-id> [--json|--jsonl]"
+  public static let start =
+    "Usage: instant-swift-data examples stroopwafel start <code> [--json|--jsonl]"
+  public static let games =
+    "Usage: instant-swift-data examples stroopwafel games [--json|--jsonl]"
+  public static let game =
+    "Usage: instant-swift-data examples stroopwafel game <game-id> [--json|--jsonl]"
+  public static let tap =
+    "Usage: instant-swift-data examples stroopwafel tap <game-id> <red|green|blue|yellow> [--json|--jsonl]"
+  public static let leave =
+    "Usage: instant-swift-data examples stroopwafel leave <code> [--json|--jsonl]"
+  public static let reset =
+    "Usage: instant-swift-data examples stroopwafel reset [--json|--jsonl]"
+}
+
+public enum CLIExamplesStroopwafelArgumentError: Error, Equatable, Sendable {
+  case invalidArguments(usage: String)
+  case invalidColor(String, usage: String)
+  case invalidScore(String, usage: String)
 
   public var exitCode: Int32 { 64 }
 }
@@ -1852,6 +1934,11 @@ public struct CLIExamplesParser: Parser {
       input.removeAll()
       return .mobileChat(arguments: arguments)
 
+    case "stroopwafel":
+      let arguments = Array(input)
+      input.removeAll()
+      return .stroopwafel(arguments: arguments)
+
     case "sync-ups", "syncups":
       let arguments = Array(input)
       input.removeAll()
@@ -2631,6 +2718,191 @@ public struct CLIExamplesMobileChatLeafParser: Parser {
       try requireNoRemainingExamplesMobileChatArguments(
         &input,
         usage: CLIExamplesMobileChatUsage.reset
+      )
+      return .reset
+
+    default:
+      input.removeAll()
+      return .unknown(command)
+    }
+  }
+}
+
+public struct CLIExamplesStroopwafelLeafParser: Parser {
+  public init() {}
+
+  public func parse(
+    _ input: inout ArraySlice<String>
+  ) throws -> CLIExamplesStroopwafelLeafInvocation {
+    guard let command = input.first else {
+      throw CLIExamplesStroopwafelArgumentError.invalidArguments(
+        usage: CLIExamplesStroopwafelUsage.stroopwafel
+      )
+    }
+    input.removeFirst()
+
+    switch command {
+    case "setup-profile", "profile-set", "settings":
+      return .setupProfile(
+        handle: try parseSingleExamplesStroopwafelArgument(
+          from: &input,
+          usage: CLIExamplesStroopwafelUsage.setupProfile
+        )
+      )
+
+    case "profile":
+      if input.isEmpty {
+        return .profile(userID: nil)
+      }
+      let userID = try parseRequiredExamplesStroopwafelArgument(
+        from: &input,
+        usage: CLIExamplesStroopwafelUsage.profile
+      )
+      try requireNoRemainingExamplesStroopwafelArguments(
+        &input,
+        usage: CLIExamplesStroopwafelUsage.profile
+      )
+      return .profile(userID: userID)
+
+    case "score", "singleplayer-score":
+      let rawScore = try parseSingleExamplesStroopwafelArgument(
+        from: &input,
+        usage: CLIExamplesStroopwafelUsage.score
+      )
+      guard let score = Int(rawScore), score >= 0 else {
+        throw CLIExamplesStroopwafelArgumentError.invalidScore(
+          rawScore,
+          usage: CLIExamplesStroopwafelUsage.score
+        )
+      }
+      return .score(score)
+
+    case "create-room", "create-game":
+      if input.isEmpty {
+        return .createRoom(code: nil)
+      }
+      let code = try parseRequiredExamplesStroopwafelArgument(
+        from: &input,
+        usage: CLIExamplesStroopwafelUsage.createRoom
+      )
+      try requireNoRemainingExamplesStroopwafelArguments(
+        &input,
+        usage: CLIExamplesStroopwafelUsage.createRoom
+      )
+      return .createRoom(code: code)
+
+    case "rooms":
+      try requireNoRemainingExamplesStroopwafelArguments(
+        &input,
+        usage: CLIExamplesStroopwafelUsage.rooms
+      )
+      return .rooms
+
+    case "room", "status":
+      return .room(
+        code: try parseSingleExamplesStroopwafelArgument(
+          from: &input,
+          usage: CLIExamplesStroopwafelUsage.room
+        )
+      )
+
+    case "join":
+      return .join(
+        code: try parseSingleExamplesStroopwafelArgument(
+          from: &input,
+          usage: CLIExamplesStroopwafelUsage.join
+        )
+      )
+
+    case "ready":
+      return .ready(
+        code: try parseSingleExamplesStroopwafelArgument(
+          from: &input,
+          usage: CLIExamplesStroopwafelUsage.ready
+        ),
+        isReady: true
+      )
+
+    case "unready", "not-ready":
+      return .ready(
+        code: try parseSingleExamplesStroopwafelArgument(
+          from: &input,
+          usage: CLIExamplesStroopwafelUsage.unready
+        ),
+        isReady: false
+      )
+
+    case "kick":
+      let code = try parseRequiredExamplesStroopwafelArgument(
+        from: &input,
+        usage: CLIExamplesStroopwafelUsage.kick
+      )
+      let userID = try parseRequiredExamplesStroopwafelArgument(
+        from: &input,
+        usage: CLIExamplesStroopwafelUsage.kick
+      )
+      try requireNoRemainingExamplesStroopwafelArguments(
+        &input,
+        usage: CLIExamplesStroopwafelUsage.kick
+      )
+      return .kick(code: code, userID: userID)
+
+    case "start":
+      return .start(
+        code: try parseSingleExamplesStroopwafelArgument(
+          from: &input,
+          usage: CLIExamplesStroopwafelUsage.start
+        )
+      )
+
+    case "games":
+      try requireNoRemainingExamplesStroopwafelArguments(
+        &input,
+        usage: CLIExamplesStroopwafelUsage.games
+      )
+      return .games
+
+    case "game":
+      return .game(
+        gameID: try parseSingleExamplesStroopwafelArgument(
+          from: &input,
+          usage: CLIExamplesStroopwafelUsage.game
+        )
+      )
+
+    case "tap":
+      let gameID = try parseRequiredExamplesStroopwafelArgument(
+        from: &input,
+        usage: CLIExamplesStroopwafelUsage.tap
+      )
+      let color = try parseRequiredExamplesStroopwafelArgument(
+        from: &input,
+        usage: CLIExamplesStroopwafelUsage.tap
+      )
+      try requireNoRemainingExamplesStroopwafelArguments(
+        &input,
+        usage: CLIExamplesStroopwafelUsage.tap
+      )
+      guard ["red", "green", "blue", "yellow"].contains(color.lowercased()) else {
+        throw CLIExamplesStroopwafelArgumentError.invalidColor(
+          color,
+          usage: CLIExamplesStroopwafelUsage.tap
+        )
+      }
+      return .tap(gameID: gameID, color: color.lowercased())
+
+    case "leave":
+      return .leave(
+        code: try parseSingleExamplesStroopwafelArgument(
+          from: &input,
+          usage: CLIExamplesStroopwafelUsage.leave
+        )
+      )
+
+    case "reset":
+      try requireNoRemainingExamplesStroopwafelArguments(
+        &input,
+        usage: CLIExamplesStroopwafelUsage.reset
       )
       return .reset
 
@@ -5256,6 +5528,15 @@ private func requireNoRemainingExamplesMobileChatArguments(
   }
 }
 
+private func requireNoRemainingExamplesStroopwafelArguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if !input.isEmpty {
+    throw CLIExamplesStroopwafelArgumentError.invalidArguments(usage: usage)
+  }
+}
+
 private func parseExamplesCountersAddOptions(
   _ input: inout ArraySlice<String>
 ) throws -> Int {
@@ -5472,6 +5753,30 @@ private func parseExamplesMobileChatSendOptions(
   }
 
   return CLIExamplesMobileChatSendInvocation(channelID: channelID, content: content)
+}
+
+private func parseRequiredExamplesStroopwafelArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIExamplesStroopwafelArgumentError.invalidArguments(usage: usage)
+  }
+  input.removeFirst()
+  let trimmedValue = trimmed(value)
+  guard !trimmedValue.isEmpty else {
+    throw CLIExamplesStroopwafelArgumentError.invalidArguments(usage: usage)
+  }
+  return trimmedValue
+}
+
+private func parseSingleExamplesStroopwafelArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  let value = try parseRequiredExamplesStroopwafelArgument(from: &input, usage: usage)
+  try requireNoRemainingExamplesStroopwafelArguments(&input, usage: usage)
+  return value
 }
 
 private func parseExamplesSyncUpsListOptions(
@@ -6308,6 +6613,21 @@ extension CLIExamplesMobileChatArgumentError: CustomStringConvertible {
 
     case let .unknownSendOption(option, usage):
       return "Unknown mobile chat send option: \(option). \(usage)"
+    }
+  }
+}
+
+extension CLIExamplesStroopwafelArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case let .invalidArguments(usage):
+      return usage
+
+    case let .invalidColor(color, usage):
+      return "Invalid Stroopwafel color: \(color). \(usage)"
+
+    case let .invalidScore(score, usage):
+      return "Invalid Stroopwafel score: \(score). \(usage)"
     }
   }
 }

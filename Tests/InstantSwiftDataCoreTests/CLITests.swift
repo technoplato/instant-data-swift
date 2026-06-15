@@ -2919,7 +2919,7 @@ extension InstantStoreTests {
     expectNoDifference(result.status, 64)
     #expect(
       result.error.contains(
-        "Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|reminders|sync-ups>"
+        "Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|stroopwafel|reminders|sync-ups>"
       )
     )
   }
@@ -5571,6 +5571,201 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliStroopwafelExampleRunsTwoUserRoomAndGameAcrossLaunches() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let signedOutCreate = try runCLIResult(
+      ["examples", "stroopwafel", "create-room", "AB12", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(signedOutCreate.status, 65)
+    #expect(signedOutCreate.error.contains("Stroopwafel create a room requires a signed-in user."))
+
+    _ = try runCLI(
+      ["auth", "token", "host-refresh", "--user-id", "user-host", "--json"],
+      homeURL: homeURL
+    )
+    let hostProfile = try JSONDecoder().decode(
+      CLIStroopwafelOutput.self,
+      from: Data(
+        try runCLI(["examples", "stroopwafel", "setup-profile", "Host123", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(hostProfile.event, "setup-profile")
+    expectNoDifference(hostProfile.selectedUser?.handle, "Host123")
+    expectNoDifference(hostProfile.authUserID, "user-host")
+    let hostCreatedAt = try #require(hostProfile.selectedUser?.createdAt)
+
+    let highScore = try JSONDecoder().decode(
+      CLIStroopwafelOutput.self,
+      from: Data(
+        try runCLI(["examples", "stroopwafel", "score", "7", "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(highScore.selectedUser?.highScore, 7)
+
+    let renamedHost = try JSONDecoder().decode(
+      CLIStroopwafelOutput.self,
+      from: Data(
+        try runCLI(["examples", "stroopwafel", "setup-profile", "HostRenamed", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(renamedHost.selectedUser?.handle, "HostRenamed")
+    expectNoDifference(renamedHost.selectedUser?.highScore, 7)
+    expectNoDifference(renamedHost.selectedUser?.createdAt, hostCreatedAt)
+
+    let room = try JSONDecoder().decode(
+      CLIStroopwafelOutput.self,
+      from: Data(
+        try runCLI(["examples", "stroopwafel", "create-room", "ab12", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(room.event, "create-room")
+    expectNoDifference(room.selectedRoomCode, "AB12")
+    expectNoDifference(room.selectedRoom?.hostID, "user-host")
+    expectNoDifference(room.selectedRoom?.users.map(\.id), ["user-host"])
+
+    _ = try runCLI(
+      ["auth", "token", "guest-refresh", "--user-id", "user-guest", "--json"],
+      homeURL: homeURL
+    )
+    let guestProfile = try JSONDecoder().decode(
+      CLIStroopwafelOutput.self,
+      from: Data(
+        try runCLI(["examples", "stroopwafel", "setup-profile", "Guest123", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(guestProfile.selectedUser?.handle, "Guest123")
+
+    let joined = try JSONDecoder().decode(
+      CLIStroopwafelOutput.self,
+      from: Data(try runCLI(["examples", "stroopwafel", "join", "AB12", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(joined.event, "join")
+    expectNoDifference(joined.selectedRoom?.users.map(\.id), ["user-guest", "user-host"])
+
+    let ready = try JSONDecoder().decode(
+      CLIStroopwafelOutput.self,
+      from: Data(try runCLI(["examples", "stroopwafel", "ready", "AB12", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(ready.event, "ready")
+    expectNoDifference(ready.selectedRoom?.readyIDs, ["user-guest"])
+
+    let guestStart = try runCLIResult(
+      ["examples", "stroopwafel", "start", "AB12", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(guestStart.status, 77)
+    #expect(guestStart.error.contains("must host Stroopwafel room AB12"))
+
+    _ = try runCLI(
+      ["auth", "token", "host-refresh", "--user-id", "user-host", "--json"],
+      homeURL: homeURL
+    )
+    let started = try JSONDecoder().decode(
+      CLIStroopwafelOutput.self,
+      from: Data(try runCLI(["examples", "stroopwafel", "start", "AB12", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(started.event, "start")
+    let gameID = try #require(started.selectedGameID)
+    let game = try #require(started.selectedGame)
+    expectNoDifference(game.status, StroopwafelExample.gameInProgress)
+    expectNoDifference(game.playerIDs.sorted(), ["user-guest", "user-host"])
+    expectNoDifference(game.points.count, 2)
+    expectNoDifference(started.selectedRoom?.currentGameID, gameID)
+
+    let jsonlOutput = try runCLI(["examples", "stroopwafel", "games", "--jsonl"], homeURL: homeURL)
+    let jsonlLines = jsonlOutput.split(separator: "\n")
+    let summary = try JSONDecoder().decode(
+      CLIStroopwafelEvidence.self,
+      from: Data(try #require(jsonlLines.first).utf8)
+    )
+    expectNoDifference(summary.caseID, "cli.examples.stroopwafel")
+    expectNoDifference(summary.event, "games")
+    expectNoDifference(summary.details.gameCount, 1)
+    expectNoDifference(summary.details.pointCount, 2)
+
+    _ = try runCLI(
+      ["auth", "token", "guest-refresh", "--user-id", "user-guest", "--json"],
+      homeURL: homeURL
+    )
+    let label = try #require(game.colors.first?.label)
+    let tapped = try JSONDecoder().decode(
+      CLIStroopwafelOutput.self,
+      from: Data(
+        try runCLI(["examples", "stroopwafel", "tap", gameID, label, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(tapped.event, "tap")
+    let guestPoint = try #require(tapped.selectedGame?.points.first { $0.userID == "user-guest" })
+    expectNoDifference(guestPoint.value, 1)
+
+    let roomStatus = try JSONDecoder().decode(
+      CLIStroopwafelOutput.self,
+      from: Data(try runCLI(["examples", "stroopwafel", "room", "AB12", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(roomStatus.selectedRoom?.currentGameID, gameID)
+    expectNoDifference(roomStatus.roomCount, 1)
+    expectNoDifference(roomStatus.gameCount, 1)
+
+    let reset = try JSONDecoder().decode(
+      CLIStroopwafelOutput.self,
+      from: Data(try runCLI(["examples", "stroopwafel", "reset", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(reset.event, "reset")
+    expectNoDifference(reset.userCount, 2)
+    expectNoDifference(reset.roomCount, 0)
+    expectNoDifference(reset.gameCount, 0)
+    expectNoDifference(reset.pointCount, 0)
+  }
+
+  @Test
+  func cliStroopwafelMagicCodeProfilePreservesEmail() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let challenge = try JSONDecoder().decode(
+      CLIMagicCodeOutput.self,
+      from: Data(
+        try runCLI(
+          ["auth", "magic-code", "send", "Stroop@Example.com", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(challenge.email, "stroop@example.com")
+    _ = try runCLI(
+      [
+        "auth", "magic-code", "verify", "stroop@example.com",
+        challenge.localVerificationCode, "--json",
+      ],
+      homeURL: homeURL
+    )
+
+    let profile = try JSONDecoder().decode(
+      CLIStroopwafelOutput.self,
+      from: Data(
+        try runCLI(["examples", "stroopwafel", "setup-profile", "Wafel123", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(profile.authUserID, "email:stroop@example.com")
+    let user = try #require(profile.users.first { $0.id == "email:stroop@example.com" })
+    expectNoDifference(user.email, "stroop@example.com")
+    expectNoDifference(user.handle, "Wafel123")
+  }
+
+  @Test
   func cliMicroblogExampleReportsMalformedArguments() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -5627,6 +5822,51 @@ extension InstantStoreTests {
     )
     expectNoDifference(unknown.status, 64)
     #expect(unknown.error.contains("Unknown mobile chat command: dance"))
+
+    expectNoDifference(
+      try FileManager.default.contentsOfDirectory(atPath: homeURL.path),
+      []
+    )
+  }
+
+  @Test
+  func cliStroopwafelExampleReportsMalformedArguments() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let empty = try runCLIResult(["examples", "stroopwafel", "--json"], homeURL: homeURL)
+    expectNoDifference(empty.status, 64)
+    #expect(empty.error.contains("examples stroopwafel <setup-profile|profile|score"))
+
+    let badColor = try runCLIResult(
+      ["examples", "stroopwafel", "tap", "game-1", "purple", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(badColor.status, 64)
+    #expect(badColor.error.contains("Invalid Stroopwafel color: purple."))
+
+    let badScore = try runCLIResult(
+      ["examples", "stroopwafel", "score", "-1", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(badScore.status, 64)
+    #expect(badScore.error.contains("Invalid Stroopwafel score: -1."))
+
+    let missingJoinCode = try runCLIResult(
+      ["examples", "stroopwafel", "join", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(missingJoinCode.status, 64)
+    #expect(missingJoinCode.error.contains("examples stroopwafel join <code>"))
+
+    let unknown = try runCLIResult(
+      ["examples", "stroopwafel", "dance", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(unknown.status, 64)
+    #expect(unknown.error.contains("Unknown Stroopwafel command: dance"))
 
     expectNoDifference(
       try FileManager.default.contentsOfDirectory(atPath: homeURL.path),
@@ -6384,9 +6624,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 102)
+    expectNoDifference(jsonOutput.recordCount, 103)
     expectNoDifference(jsonOutput.exactCount, 19)
-    expectNoDifference(jsonOutput.adaptedCount, 80)
+    expectNoDifference(jsonOutput.adaptedCount, 81)
     expectNoDifference(jsonOutput.blockedCount, 3)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -6455,6 +6695,11 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.records.contains {
         $0.id == "instant.website.mobile-chat.local-cli" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.website.stroopwafel.local-cli" && $0.status == "adapted"
       }
     )
     #expect(
@@ -6681,7 +6926,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 102"))
+    #expect(humanOutput.contains("records: 103"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 
@@ -7274,6 +7519,41 @@ private struct CLIMobileChatEvidence: Decodable {
 
 private struct CLIMobileChatEventEnvelope: Decodable {
   var event: String
+}
+
+private struct CLIStroopwafelOutput: Decodable {
+  var event: String
+  var changedID: String?
+  var selectedUserID: String?
+  var selectedUser: StroopwafelUserRecord?
+  var selectedRoomCode: String?
+  var selectedRoom: StroopwafelRoomRecord?
+  var selectedGameID: String?
+  var selectedGame: StroopwafelGameRecord?
+  var authUserID: String?
+  var authIsGuest: Bool?
+  var transport: String
+  var pendingMutationCount: Int
+  var userCount: Int
+  var roomCount: Int
+  var gameCount: Int
+  var pointCount: Int
+  var users: [StroopwafelUserRecord]
+  var rooms: [StroopwafelRoomRecord]
+  var games: [StroopwafelGameRecord]
+  var points: [StroopwafelPointRecord]
+}
+
+private struct CLIStroopwafelEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLIStroopwafelOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
 }
 
 private struct CLIRemindersOutput: Decodable {

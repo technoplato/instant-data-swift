@@ -174,6 +174,29 @@ swift run instant-swift-data examples mobile-chat reset --json
 and presence. It leaves shared auth and `$users` system state alone so other
 examples and the selected app session are not wiped unexpectedly.
 
+Run the local Instant Stroopwafel multiplayer demo:
+
+```bash
+export INSTANT_SWIFT_DATA_HOME="$(mktemp -d)"
+swift run instant-swift-data auth token stroop-host --user-id user-host --json
+swift run instant-swift-data examples stroopwafel setup-profile Host123 --json
+swift run instant-swift-data examples stroopwafel create-room AB12 --json
+swift run instant-swift-data auth token stroop-guest --user-id user-guest --json
+swift run instant-swift-data examples stroopwafel setup-profile Guest123 --json
+swift run instant-swift-data examples stroopwafel join AB12 --json
+swift run instant-swift-data examples stroopwafel ready AB12 --json
+swift run instant-swift-data auth token stroop-host --user-id user-host --json
+GAME_ID="$(swift run instant-swift-data examples stroopwafel start AB12 --json | jq -r '.selectedGameID')"
+LABEL="$(swift run instant-swift-data examples stroopwafel game "$GAME_ID" --json | jq -r '.selectedGame.colors[0].label')"
+swift run instant-swift-data auth token stroop-guest --user-id user-guest --json
+swift run instant-swift-data examples stroopwafel tap "$GAME_ID" "$LABEL" --json
+swift run instant-swift-data examples stroopwafel games --jsonl
+swift run instant-swift-data examples stroopwafel reset --json
+```
+
+`stroopwafel reset` clears local rooms, games, and point records while preserving
+shared auth and `$users` profile state.
+
 Inspect the durable cache and optimistic outbox:
 
 ```bash

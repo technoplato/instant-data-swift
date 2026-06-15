@@ -823,6 +823,19 @@ Create `validation/` with:
   explicit terminal conveniences because the React Native upstream app does not
   ship bootstrap data or profile-creation UI; reset clears mobile chat domains
   and presence while preserving shared auth and `$users` system state.
+- Stroopwafel: the local Instant website-style multiplayer port exposes durable
+  `examples stroopwafel setup-profile <handle>`, `profile [user-id]`,
+  `create-room [code]`, `rooms`, `room <code>`, `join <code>`,
+  `ready <code>`, `unready <code>`, `kick <code> <user-id>`,
+  `start <code>`, `games`, `game <game-id>`, `tap <game-id> <color>`,
+  `leave <code>`, and `reset` commands. It preserves the current
+  jsventures/stroopwafel source schema at
+  `7f5e2379464d932c0e4681655cbf022f8d9c2614`: `$users`, rooms, games, points,
+  code-based room lookup, ready/kicked user lists, host-only kick/start checks,
+  per-player point rows, game completion at 13 points, and host leave as a room
+  soft-delete. The current upstream source declares `rooms: {}` and uses durable
+  room membership rather than typed presence/topics, so the Swift port records
+  that adaptation explicitly.
 - CLI: `instant-swift-data examples todos add "do the dishes"` persists auth,
   local IDs, cache, and outbox state for a later CLI invocation.
 - Permissions: generated permissions reject an unauthorized write in both

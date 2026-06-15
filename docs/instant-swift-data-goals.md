@@ -69,7 +69,10 @@ Port the examples from `client/www/_examples`:
   cascade delete, auth integration.
 - `mobile-chat`: mobile realtime chat shape and React Native parity concepts
   translated into Swift.
-- `stroopwafel`: multiplayer game shape using presence/topics/permissions.
+- `stroopwafel`: multiplayer game shape using the current upstream durable
+  `$users`, rooms, games, and points schema, with host/member permission checks;
+  presence/topics should be covered where upstream source actually declares and
+  uses them.
 - `app-builder`: schema, storage, platform/tooling concepts where applicable.
 
 ### Instant Recipes
@@ -693,11 +696,24 @@ Agent-oriented output modes are required:
   terminal conveniences because upstream ships no app-data bootstrap. Reset
   clears mobile chat channels, profiles, messages, and presence while preserving
   shared auth and `$users` system state.
+- run the local Instant Stroopwafel port with
+  `instant-swift-data examples stroopwafel setup-profile <handle>`,
+  `instant-swift-data examples stroopwafel create-room [code]`,
+  `instant-swift-data examples stroopwafel join <code>`,
+  `instant-swift-data examples stroopwafel ready <code>`,
+  `instant-swift-data examples stroopwafel start <code>`,
+  `instant-swift-data examples stroopwafel tap <game-id> <color>`,
+  `instant-swift-data examples stroopwafel games --jsonl`, and
+  `instant-swift-data examples stroopwafel reset`; `$users`, rooms, games, and
+  points follow jsventures/stroopwafel at
+  `7f5e2379464d932c0e4681655cbf022f8d9c2614`, profile/room/game mutations
+  require an auth session, host-only kick/start behavior is checked locally, and
+  reset clears room/game/point state while preserving shared auth and `$users`.
 - run local admin write/query helpers such as
   `instant-swift-data admin transact notes note-1 --merge '{"title":"admin note"}' --transaction-id tx-admin-note-1`
   and `instant-swift-data admin query notes --json` for durable terminal
   ground-truth checks until real Instant admin transport is available.
-- run example business commands directly, such as todo/reminder/sync-up/chat/mobile-chat/microblog
+- run example business commands directly, such as todo/reminder/sync-up/chat/mobile-chat/microblog/stroopwafel
   create, list, update, delete, share, accept, upload, and stream operations.
 
 Example command shapes:

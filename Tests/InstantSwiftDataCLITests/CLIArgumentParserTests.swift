@@ -842,6 +842,147 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func examplesStroopwafelLeafParserParsesCommandsAndOptions() throws {
+    expectNoDifference(
+      try parseExamples(["stroopwafel", "rooms"]),
+      .stroopwafel(arguments: ["rooms"])
+    )
+    expectNoDifference(
+      try parseExamplesStroopwafelLeaf(["setup-profile", "Ada123"]),
+      .setupProfile(handle: "Ada123")
+    )
+    expectNoDifference(
+      try parseExamplesStroopwafelLeaf(["profile"]),
+      .profile(userID: nil)
+    )
+    expectNoDifference(
+      try parseExamplesStroopwafelLeaf(["profile", "user-1"]),
+      .profile(userID: "user-1")
+    )
+    expectNoDifference(try parseExamplesStroopwafelLeaf(["score", "42"]), .score(42))
+    expectNoDifference(
+      try parseExamplesStroopwafelLeaf(["create-room"]),
+      .createRoom(code: nil)
+    )
+    expectNoDifference(
+      try parseExamplesStroopwafelLeaf(["create-game", "ab12"]),
+      .createRoom(code: "ab12")
+    )
+    expectNoDifference(try parseExamplesStroopwafelLeaf(["rooms"]), .rooms)
+    expectNoDifference(try parseExamplesStroopwafelLeaf(["room", "AB12"]), .room(code: "AB12"))
+    expectNoDifference(try parseExamplesStroopwafelLeaf(["status", "AB12"]), .room(code: "AB12"))
+    expectNoDifference(try parseExamplesStroopwafelLeaf(["join", "AB12"]), .join(code: "AB12"))
+    expectNoDifference(
+      try parseExamplesStroopwafelLeaf(["ready", "AB12"]),
+      .ready(code: "AB12", isReady: true)
+    )
+    expectNoDifference(
+      try parseExamplesStroopwafelLeaf(["not-ready", "AB12"]),
+      .ready(code: "AB12", isReady: false)
+    )
+    expectNoDifference(
+      try parseExamplesStroopwafelLeaf(["kick", "AB12", "user-2"]),
+      .kick(code: "AB12", userID: "user-2")
+    )
+    expectNoDifference(try parseExamplesStroopwafelLeaf(["start", "AB12"]), .start(code: "AB12"))
+    expectNoDifference(try parseExamplesStroopwafelLeaf(["games"]), .games)
+    expectNoDifference(
+      try parseExamplesStroopwafelLeaf(["game", "game-1"]),
+      .game(gameID: "game-1")
+    )
+    expectNoDifference(
+      try parseExamplesStroopwafelLeaf(["tap", "game-1", "Blue"]),
+      .tap(gameID: "game-1", color: "blue")
+    )
+    expectNoDifference(try parseExamplesStroopwafelLeaf(["leave", "AB12"]), .leave(code: "AB12"))
+    expectNoDifference(try parseExamplesStroopwafelLeaf(["reset"]), .reset)
+    expectNoDifference(
+      try parseExamplesStroopwafelLeaf(["dance", "--fast"]),
+      .unknown("dance")
+    )
+  }
+
+  @Test
+  func examplesStroopwafelLeafParserReportsMalformedArguments() throws {
+    try expectExamplesStroopwafelLeafParseError(
+      [],
+      description: CLIExamplesStroopwafelUsage.stroopwafel
+    )
+    try expectExamplesStroopwafelLeafParseError(
+      ["setup-profile"],
+      description: CLIExamplesStroopwafelUsage.setupProfile
+    )
+    try expectExamplesStroopwafelLeafParseError(
+      ["setup-profile", "  "],
+      description: CLIExamplesStroopwafelUsage.setupProfile
+    )
+    try expectExamplesStroopwafelLeafParseError(
+      ["profile", "user-1", "extra"],
+      description: CLIExamplesStroopwafelUsage.profile
+    )
+    try expectExamplesStroopwafelLeafParseError(
+      ["score"],
+      description: CLIExamplesStroopwafelUsage.score
+    )
+    try expectExamplesStroopwafelLeafParseError(
+      ["score", "-1"],
+      description: "Invalid Stroopwafel score: -1. \(CLIExamplesStroopwafelUsage.score)"
+    )
+    try expectExamplesStroopwafelLeafParseError(
+      ["score", "NaN"],
+      description: "Invalid Stroopwafel score: NaN. \(CLIExamplesStroopwafelUsage.score)"
+    )
+    try expectExamplesStroopwafelLeafParseError(
+      ["create-room", "AB12", "extra"],
+      description: CLIExamplesStroopwafelUsage.createRoom
+    )
+    try expectExamplesStroopwafelLeafParseError(
+      ["rooms", "extra"],
+      description: CLIExamplesStroopwafelUsage.rooms
+    )
+    try expectExamplesStroopwafelLeafParseError(
+      ["room"],
+      description: CLIExamplesStroopwafelUsage.room
+    )
+    try expectExamplesStroopwafelLeafParseError(
+      ["join"],
+      description: CLIExamplesStroopwafelUsage.join
+    )
+    try expectExamplesStroopwafelLeafParseError(
+      ["ready", "AB12", "extra"],
+      description: CLIExamplesStroopwafelUsage.ready
+    )
+    try expectExamplesStroopwafelLeafParseError(
+      ["kick", "AB12"],
+      description: CLIExamplesStroopwafelUsage.kick
+    )
+    try expectExamplesStroopwafelLeafParseError(
+      ["start"],
+      description: CLIExamplesStroopwafelUsage.start
+    )
+    try expectExamplesStroopwafelLeafParseError(
+      ["game"],
+      description: CLIExamplesStroopwafelUsage.game
+    )
+    try expectExamplesStroopwafelLeafParseError(
+      ["tap", "game-1"],
+      description: CLIExamplesStroopwafelUsage.tap
+    )
+    try expectExamplesStroopwafelLeafParseError(
+      ["tap", "game-1", "purple"],
+      description: "Invalid Stroopwafel color: purple. \(CLIExamplesStroopwafelUsage.tap)"
+    )
+    try expectExamplesStroopwafelLeafParseError(
+      ["leave"],
+      description: CLIExamplesStroopwafelUsage.leave
+    )
+    try expectExamplesStroopwafelLeafParseError(
+      ["reset", "extra"],
+      description: CLIExamplesStroopwafelUsage.reset
+    )
+  }
+
+  @Test
   func examplesSyncUpsLeafParserParsesCommandsAndOptions() throws {
     expectNoDifference(try parseExamplesSyncUpsLeaf(["seed"]), .seed)
     expectNoDifference(
@@ -3256,6 +3397,15 @@ private func parseExamplesMobileChatLeaf(
   return invocation
 }
 
+private func parseExamplesStroopwafelLeaf(
+  _ arguments: [String]
+) throws -> CLIExamplesStroopwafelLeafInvocation {
+  var input = arguments[...]
+  let invocation = try CLIExamplesStroopwafelLeafParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseExamplesSyncUpsLeaf(
   _ arguments: [String]
 ) throws -> CLIExamplesSyncUpsLeafInvocation {
@@ -3766,6 +3916,19 @@ private func expectExamplesMobileChatLeafParseError(
     _ = try parseExamplesMobileChatLeaf(arguments)
     Issue.record("Expected examples mobile chat parser to reject \(arguments).")
   } catch let error as CLIExamplesMobileChatArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectExamplesStroopwafelLeafParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseExamplesStroopwafelLeaf(arguments)
+    Issue.record("Expected examples Stroopwafel parser to reject \(arguments).")
+  } catch let error as CLIExamplesStroopwafelArgumentError {
     expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }
