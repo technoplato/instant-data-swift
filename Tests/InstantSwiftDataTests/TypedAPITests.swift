@@ -4259,6 +4259,80 @@ struct TypedAPITests {
   }
 
   @Test
+  func typedMutationSurfaceIsClosedForInstamlPermissivenessParity() async throws {
+    let source =
+      "upstream/instant/client/packages/core/__tests__/src/instaml.test.ts "
+      + "instatx should not be too permissive "
+      + "[adapted: Swift has no dynamic unknown operation member; supported mutations lower to closed InstantTripleOperation cases.]"
+    let time = InstantTimestamp(milliseconds: 1_700_000_220_000)
+    let recorder = TransactionRecorder()
+    let mock = InstantSwiftDataClient(
+      transact: { transaction in
+        await recorder.record(transaction)
+        return InstantStoreMutationResult(
+          transactionID: transaction.id,
+          changedEntityIDs: ["todo-not-permissive"],
+          tripleCount: transaction.operations.count,
+          emissions: []
+        )
+      },
+      query: { _ in [] },
+      observe: { _ in AsyncStream { continuation in continuation.finish() } },
+      pendingMutations: { [] },
+      localID: { name in "mock-\(name)" }
+    )
+
+    try await withDependencies {
+      $0.defaultInstantSwiftData = mock
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+      let result = try await db.transact(
+        id: "tx-instaml-not-permissive",
+        createdAt: time
+      ) {
+        TypedTodo.update(
+          id: InstantID(rawValue: "todo-not-permissive"),
+          TypedTodo.text.set("New Title")
+        )
+      }
+
+      expectNoDifference(result.transactionID, "tx-instaml-not-permissive", source)
+      expectNoDifference(result.tripleCount, 2, source)
+    }
+
+    let transactions = await recorder.transactions
+    expectNoDifference(
+      transactions,
+      [
+        InstantStoreTransaction(
+          id: "tx-instaml-not-permissive",
+          operations: [
+            .insert(
+              InstantTriple(
+                entityID: "todo-not-permissive",
+                attributeID: "todos/id",
+                value: .string("todo-not-permissive"),
+                txID: "tx-instaml-not-permissive",
+                txTime: time
+              )
+            ),
+            .insert(
+              InstantTriple(
+                entityID: "todo-not-permissive",
+                attributeID: "todos/text",
+                value: .string("New Title"),
+                txID: "tx-instaml-not-permissive",
+                txTime: time
+              )
+            ),
+          ]
+        )
+      ],
+      source
+    )
+  }
+
+  @Test
   func typedTransactionBuilderSkipsEmptyMutationBody() async throws {
     let baseDate = Date(timeIntervalSince1970: 1_700_000_210)
     let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000988")!

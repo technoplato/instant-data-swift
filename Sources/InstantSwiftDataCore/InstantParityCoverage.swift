@@ -487,6 +487,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift uses declared value types rather than JavaScript add-attr generation; string, number, date, and boolean map to checked scalar metadata, i.any() is modeled explicitly, and runtime writes are type checked before persistence."
     ),
     instant(
+      id: "instant.instaml.closed-mutation-surface",
+      sourceFile: instamlSource,
+      sourceTestName: "instatx should not be too permissive",
+      swiftFile: "Tests/InstantSwiftDataTests/TypedAPITests.swift",
+      swiftTestName: "typedMutationSurfaceIsClosedForInstamlPermissivenessParity",
+      surface: "instaml",
+      status: .adapted,
+      notes: "Swift has no dynamic unknown operation member to access after update; the adapted proof records a supported typed update lowering to the closed InstantTripleOperation enum."
+    ),
+    instant(
       id: "instant.weak-hash",
       sourceFile: weakHashSource,
       sourceTestName: "selected fields / object key order / date / known query",
