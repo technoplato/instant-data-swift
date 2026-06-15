@@ -5373,9 +5373,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 76)
-    expectNoDifference(jsonOutput.exactCount, 11)
-    expectNoDifference(jsonOutput.adaptedCount, 62)
+    expectNoDifference(jsonOutput.recordCount, 82)
+    expectNoDifference(jsonOutput.exactCount, 12)
+    expectNoDifference(jsonOutput.adaptedCount, 67)
     expectNoDifference(jsonOutput.blockedCount, 3)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -5395,6 +5395,36 @@ extension InstantStoreTests {
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantDateCoercionTests.swift"))
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataTests/TypedAPITests.swift"))
     #expect(jsonOutput.records.contains { $0.id == "instant.store.simple-add" && $0.status == "exact" })
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.store.link-unlink-multi" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.store.link-unlink-without-update" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.store.on-delete-reverse-cascade" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.store.rule-params-no-op" && $0.status == "exact"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.store.recursive-links-same-id" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.store.v0-store-restore" && $0.status == "adapted"
+      }
+    )
     #expect(
       jsonOutput.records.contains {
         $0.id == "instant.instaml.mode-update" && $0.status == "adapted"
@@ -5569,7 +5599,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 76"))
+    #expect(humanOutput.contains("records: 82"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 

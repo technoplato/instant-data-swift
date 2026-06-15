@@ -127,6 +127,26 @@ public enum InstantSwiftDataParityCoverage {
       notes: "User/bookshelf scalar writes, links, unlink, and relink materialize through the core store."
     ),
     instant(
+      id: "instant.store.link-unlink-multi",
+      sourceFile: storeSource,
+      sourceTestName: "link/unlink multi",
+      swiftFile: storeParitySwiftFile,
+      swiftTestName: "manyLinkUnlinkAndRelinkPortsUpstreamMultiLinkShape",
+      surface: "links",
+      status: .adapted,
+      notes: "Swift uses an article/tag many-ref fixture and verifies both forward and reverse materialized links through unlink and relink."
+    ),
+    instant(
+      id: "instant.store.link-unlink-without-update",
+      sourceFile: storeSource,
+      sourceTestName: "link/unlink without update",
+      swiftFile: storeParitySwiftFile,
+      swiftTestName: "linkAndUnlinkWithoutScalarUpdatesMaintainForwardAndReverseIndexes",
+      surface: "links",
+      status: .adapted,
+      notes: "Swift links already-created entities without scalar writes and verifies forward/reverse indexes before and after relink."
+    ),
+    instant(
       id: "instant.store.delete-entity",
       sourceFile: storeSource,
       sourceTestName: "delete entity",
@@ -159,12 +179,22 @@ public enum InstantSwiftDataParityCoverage {
     instant(
       id: "instant.store.cascade-delete",
       sourceFile: storeSource,
-      sourceTestName: "cascade delete",
+      sourceTestName: "on-delete cascade",
       swiftFile: storeParitySwiftFile,
       swiftTestName: "onDeleteCascadePortsUpstreamBookSeriesShape",
       surface: "links",
       status: .adapted,
       notes: "Swift uses schema-aware delete steps and local cascade metadata."
+    ),
+    instant(
+      id: "instant.store.on-delete-reverse-cascade",
+      sourceFile: storeSource,
+      sourceTestName: "on-delete-reverse cascade",
+      swiftFile: storeParitySwiftFile,
+      swiftTestName: "onDeleteReverseCascadePortsUpstreamBookSeriesShape",
+      surface: "links",
+      status: .adapted,
+      notes: "Swift ports the reverse cascade book series fixture with explicit reverse on-delete metadata."
     ),
     instant(
       id: "instant.store.date-conversion",
@@ -185,6 +215,36 @@ public enum InstantSwiftDataParityCoverage {
       surface: "triple-store",
       status: .adapted,
       notes: "Swift Codable snapshots encode attributes and triples, decode back to the same value, and rematerialize forward/reverse links from the restored indexes."
+    ),
+    instant(
+      id: "instant.store.rule-params-no-op",
+      sourceFile: storeSource,
+      sourceTestName: "ruleParams no-ops",
+      swiftFile: storeParitySwiftFile,
+      swiftTestName: "ruleParamsNoOpsAndFollowingUpdateMaterializes",
+      surface: "mutations",
+      status: .exact,
+      notes: "Rule params are retained as a transaction operation that does not write triples, while the following update materializes."
+    ),
+    instant(
+      id: "instant.store.recursive-links-same-id",
+      sourceFile: storeSource,
+      sourceTestName: "recursive links w same id",
+      swiftFile: storeParitySwiftFile,
+      swiftTestName: "recursiveLinksWithSameRawIDDeleteOnlyRequestedNamespace",
+      surface: "links",
+      status: .adapted,
+      notes: "Swift uses namespace-scoped deletion so an entity sharing the same raw id in another namespace survives the cascading delete."
+    ),
+    instant(
+      id: "instant.store.v0-store-restore",
+      sourceFile: storeSource,
+      sourceTestName: "v0 store restores",
+      swiftFile: storeParitySwiftFile,
+      swiftTestName: "v0StoreSnapshotRestoresFromLegacyAttrsPayload",
+      surface: "triple-store",
+      status: .adapted,
+      notes: "Swift accepts legacy attrs/triples snapshot payloads, decodes them into the modern snapshot, and rematerializes links."
     ),
     instant(
       id: "instant.utils.date-coercion",
