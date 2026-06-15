@@ -1504,6 +1504,127 @@ struct InstantStoreTests {
   }
 
   @Test
+  func transportMutationPortsInstamlDeclaredLookupLinkAttrsDoNotOverride() async throws {
+    let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let source =
+      "upstream/instant/client/packages/core/__tests__/src/instaml.test.ts "
+      + "lookup doesn't override attrs for lookups in link values "
+      + "[adapted: Swift writes declared attr ids directly and keeps the local schema fixed.]"
+    let declaredAttributes = [
+      InstantAttribute(
+        id: "users/posts",
+        namespace: "users",
+        name: "posts",
+        valueType: .ref,
+        isRequired: false,
+        cardinality: .one,
+        isIndexed: true,
+        isUnique: true,
+        forwardIdentity: "users/posts",
+        reverseIdentity: "posts/users",
+        linkNamespace: "posts"
+      ),
+      InstantAttribute(
+        id: "posts/slug",
+        namespace: "posts",
+        name: "slug",
+        valueType: .string,
+        isRequired: false,
+        isIndexed: true,
+        isUnique: true
+      ),
+    ]
+    let postLookup = InstantLookupRef(
+      attributeID: "posts/slug",
+      value: .string("life-is-good")
+    )
+    let transaction = InstantStoreTransaction(
+      id: "tx-instaml-declared-lookup-link",
+      operations: InstantInstamlTransform.updateOperations(
+        namespace: "users",
+        entityID: "user-declared-link",
+        fields: [:],
+        txID: "tx-instaml-declared-lookup-link",
+        txTime: txTime
+      )
+      + [
+        .insert(
+          InstantTriple(
+            entityID: "user-declared-link",
+            attributeID: "users/posts",
+            value: .lookupRef(postLookup),
+            txID: "tx-instaml-declared-lookup-link",
+            txTime: txTime
+          )
+        )
+      ]
+    )
+    let mutation = InstantTransportMutation(
+      PendingMutation(id: transaction.id, createdAt: txTime, transaction: transaction)
+    )
+    expectNoDifference(mutation.preconditions, [], source)
+    expectNoDifference(
+      mutation.txSteps,
+      [
+        .addTriple(
+          entity: .id("user-declared-link"),
+          attributeID: "users/id",
+          value: .string("user-declared-link")
+        ),
+        .addTriple(
+          entity: .id("user-declared-link"),
+          attributeID: "users/posts",
+          value: .array([.string("posts/slug"), .string("life-is-good")])
+        ),
+      ],
+      source
+    )
+
+    let data = try JSONEncoder().encode(mutation)
+    let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let txSteps = try #require(object["txSteps"] as? [[Any]])
+    expectNoDifference(txSteps.map(\.count), [4, 4], source)
+    expectNoDifference(txSteps.map { $0.first as? String }, ["add-triple", "add-triple"], source)
+    expectNoDifference(txSteps.compactMap { $0[safe: 2] as? String }, ["users/id", "users/posts"], source)
+    let linkValue = try #require(txSteps[1][safe: 3] as? [Any])
+    expectNoDifference(linkValue.count, 2, source)
+    expectNoDifference(linkValue[0] as? String, "posts/slug", source)
+    expectNoDifference(linkValue[1] as? String, "life-is-good", source)
+
+    let store = InstantStore(snapshot: InstantStoreSnapshot(attributes: declaredAttributes))
+    let prepared = try await store.prepare(transaction)
+    expectNoDifference(
+      prepared.snapshot.attributes.map(\.id),
+      ["posts/id", "posts/slug", "users/id", "users/posts"],
+      source
+    )
+    expectNoDifference(
+      prepared.snapshot.attributes.first { $0.id == "users/posts" },
+      declaredAttributes[0],
+      source
+    )
+    expectNoDifference(
+      prepared.snapshot.attributes.first { $0.id == "posts/slug" },
+      declaredAttributes[1],
+      source
+    )
+    expectNoDifference(prepared.result.changedEntityIDs, ["user-declared-link"], source)
+    expectNoDifference(
+      prepared.snapshot.triples,
+      [
+        InstantTriple(
+          entityID: "user-declared-link",
+          attributeID: "users/id",
+          value: .string("user-declared-link"),
+          txID: "tx-instaml-declared-lookup-link",
+          txTime: txTime
+        )
+      ],
+      source
+    )
+  }
+
+  @Test
   func transportMutationInfersLookupDeleteNamespaceWithoutPrecondition() throws {
     let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let lookup = InstantLookupRef(

@@ -627,6 +627,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift does not emit JavaScript add-attr txSteps for link or lookup attrs; update plus link lowering preserves the primary-key add-triple and the two-element lookup ref link value."
     ),
     instant(
+      id: "instant.instaml.lookup-link-declared-attrs",
+      sourceFile: instamlSource,
+      sourceTestName: "lookup doesn't override attrs for lookups in link values",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "transportMutationPortsInstamlDeclaredLookupLinkAttrsDoNotOverride",
+      surface: "instaml",
+      status: .adapted,
+      notes: "Swift writes declared attr ids directly and has no add-attr txStep; transport lowering preserves the primary-key attr, link attr, and lookup value attr ids while local prepare keeps the declared schema unchanged."
+    ),
+    instant(
       id: "instant.instaml.mode-update",
       sourceFile: instamlSource,
       sourceTestName: "mode: update",
