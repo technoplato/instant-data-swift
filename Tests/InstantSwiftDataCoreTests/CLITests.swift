@@ -8316,9 +8316,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 135)
-    expectNoDifference(jsonOutput.exactCount, 19)
-    expectNoDifference(jsonOutput.adaptedCount, 113)
+    expectNoDifference(jsonOutput.recordCount, 141)
+    expectNoDifference(jsonOutput.exactCount, 20)
+    expectNoDifference(jsonOutput.adaptedCount, 118)
     expectNoDifference(jsonOutput.blockedCount, 3)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -8508,6 +8508,36 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.records.contains {
         $0.id == "instant.query.object-values" && $0.status == "exact"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.transaction-validation.without-schema" && $0.status == "exact"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.transaction-validation.uuid-format" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.transaction-validation.lookup-source-update" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.transaction-validation.lookup-source-link" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.transaction-validation.lookup-link-value" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.transaction-validation.lookup-proxy" && $0.status == "adapted"
       }
     )
     #expect(
@@ -8833,7 +8863,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 135"))
+    #expect(humanOutput.contains("records: 141"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 

@@ -577,6 +577,66 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Lookup refs and rule params are preserved for transport lowering while local optimistic effects stay deterministic."
     ),
     instant(
+      id: "instant.transaction-validation.without-schema",
+      sourceFile: transactionValidationSource,
+      sourceTestName: "validates without schema",
+      swiftFile: transactionValidationSwiftFile,
+      swiftTestName: "upstreamValidatesWithoutSchemaAndAdaptsLocalIDFormat",
+      surface: "transaction-validation",
+      status: .exact,
+      notes: "With no declared attributes, Swift accepts arbitrary namespaces, scalar values, and link-shaped ref values."
+    ),
+    instant(
+      id: "instant.transaction-validation.uuid-format",
+      sourceFile: transactionValidationSource,
+      sourceTestName: "validates UUID format for entity IDs",
+      swiftFile: transactionValidationSwiftFile,
+      swiftTestName: "upstreamValidatesWithoutSchemaAndAdaptsLocalIDFormat",
+      surface: "transaction-validation",
+      status: .adapted,
+      notes: "Swift accepts stable local IDs beyond UUIDs, so the parity assertion documents the intentional local-ID relaxation."
+    ),
+    instant(
+      id: "instant.transaction-validation.lookup-source-update",
+      sourceFile: transactionValidationSource,
+      sourceTestName: "allows lookup values in square bracket",
+      swiftFile: transactionValidationSwiftFile,
+      swiftTestName: "upstreamAllowsLookupValuesForEntityWrites",
+      surface: "transaction-validation",
+      status: .adapted,
+      notes: "Swift expresses square-bracket lookup updates as insertByLookup over a declared unique attribute."
+    ),
+    instant(
+      id: "instant.transaction-validation.lookup-source-link",
+      sourceFile: transactionValidationSource,
+      sourceTestName: "allows lookup values in square bracket",
+      swiftFile: transactionValidationSwiftFile,
+      swiftTestName: "upstreamAllowsLookupSourceIDsInLinks",
+      surface: "transaction-validation",
+      status: .adapted,
+      notes: "Swift stores the users.posts relation through the physical posts.author ref attr, preserving lookup refs for source IDs in links."
+    ),
+    instant(
+      id: "instant.transaction-validation.lookup-link-value",
+      sourceFile: transactionValidationSource,
+      sourceTestName: "allows lookup values in link",
+      swiftFile: transactionValidationSwiftFile,
+      swiftTestName: "upstreamAllowsLookupValuesInLinks",
+      surface: "transaction-validation",
+      status: .adapted,
+      notes: "Swift resolves lookup-valued links through the physical posts.author relation and the declared unique posts.slug lookup attr."
+    ),
+    instant(
+      id: "instant.transaction-validation.lookup-proxy",
+      sourceFile: transactionValidationSource,
+      sourceTestName: "lookup proxy",
+      swiftFile: transactionValidationSwiftFile,
+      swiftTestName: "upstreamValidatesLookupProxyUniqueAttributes / upstreamRejectsNonUniqueLookupAttributes",
+      surface: "transaction-validation",
+      status: .adapted,
+      notes: "Swift validates lookup proxy behavior at runtime: unique string/date lookup attrs resolve, and non-unique lookup attrs are rejected."
+    ),
+    instant(
       id: "instant.instaml.basic-update-transform",
       sourceFile: instamlSource,
       sourceTestName: "simple update transform / undefined is ignored in update / ignores id attrs",
