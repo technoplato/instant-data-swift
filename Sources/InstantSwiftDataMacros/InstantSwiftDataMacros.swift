@@ -57,6 +57,7 @@ public struct InstantEntityMacro: MemberMacro {
       """
     ]
     let explicitStaticMembers = staticMemberNames(in: declaration)
+    let explicitAttributePathMembers = staticAttributePathMemberNames(in: declaration)
     let typeAliases = typeAliases(in: declaration)
     let properties = storedProperties(in: declaration, context: context)
     let invalidRelationProperties = properties.filter { property in
@@ -79,15 +80,18 @@ public struct InstantEntityMacro: MemberMacro {
       )
     }
     let reservedPropertyNames = Set(reservedProperties.map(\.name))
-    let generatedAttributeNames = Set(
-      properties
-        .filter { property in
-          isGeneratedSchemaHelper(property)
-            && !explicitStaticMembers.contains(property.name)
-            && !reservedPropertyNames.contains(property.name)
-        }
-        .map(\.name)
-    )
+    let usesManualAttributes = explicitStaticMembers.contains("instantAttributes")
+    let generatedAttributeNames = usesManualAttributes
+      ? []
+      : Set(
+        properties
+          .filter { property in
+            isGeneratedSchemaHelper(property)
+              && !explicitStaticMembers.contains(property.name)
+              && !reservedPropertyNames.contains(property.name)
+          }
+          .map(\.name)
+      )
     let relationProperties = properties.filter { property in
       property.relation != nil && property.schemaValue?.refTargetType != nil
     }
@@ -138,7 +142,9 @@ public struct InstantEntityMacro: MemberMacro {
         properties: properties,
         typeName: typeName,
         explicitStaticMembers: explicitStaticMembers,
+        explicitAttributePathMembers: explicitAttributePathMembers,
         generatedAttributeNames: generatedAttributeNames,
+        usesManualAttributes: usesManualAttributes,
         duplicateReverseNames: duplicateReverseNames
       )
     )
@@ -155,6 +161,8 @@ public struct InstantEntityMacro: MemberMacro {
       properties: properties,
       typeName: typeName,
       typeAliases: typeAliases,
+      explicitStaticMembers: explicitStaticMembers,
+      explicitAttributePathMembers: explicitAttributePathMembers,
       reservedPropertyNames: reservedPropertyNames
     ) {
       members.append(draft)
@@ -168,7 +176,9 @@ public struct InstantEntityMacro: MemberMacro {
     explicitStaticMembers: Set<String>,
     reservedPropertyNames: Set<String>
   ) -> [DeclSyntax] {
-    properties
+    guard !explicitStaticMembers.contains("instantAttributes") else { return [] }
+
+    return properties
       .filter { property in
         isGeneratedSchemaHelper(property)
           && !explicitStaticMembers.contains(property.name)
@@ -187,13 +197,18 @@ public struct InstantEntityMacro: MemberMacro {
     properties: [StoredProperty],
     typeName: String,
     explicitStaticMembers: Set<String>,
+    explicitAttributePathMembers: Set<String>,
     generatedAttributeNames: Set<String>,
+    usesManualAttributes: Bool,
     duplicateReverseNames: Set<String>
   ) -> [DeclSyntax] {
     properties.compactMap { property in
+      let hasAttributePath = explicitAttributePathMembers.contains(property.name)
+        || (!usesManualAttributes && !explicitStaticMembers.contains(property.name))
       guard
         let relation = property.relation,
         let targetType = property.schemaValue?.refTargetType,
+        hasAttributePath,
         relation.reverseName.isSwiftIdentifier,
         !explicitStaticMembers.contains(relation.reverseName),
         !reservedGeneratedMemberNames.contains(relation.reverseName),
@@ -247,6 +262,8 @@ public struct InstantEntityMacro: MemberMacro {
     properties: [StoredProperty],
     typeName: String,
     typeAliases: [String: String],
+    explicitStaticMembers: Set<String>,
+    explicitAttributePathMembers: Set<String>,
     reservedPropertyNames: Set<String>
   ) -> DeclSyntax? {
     guard
@@ -257,9 +274,18 @@ public struct InstantEntityMacro: MemberMacro {
       return nil
     }
 
+    let usesManualAttributes = explicitStaticMembers.contains("instantAttributes")
     let draftProperties = properties.filter { property in
-      isGeneratedSchemaHelper(property)
-        && !reservedPropertyNames.contains(property.name)
+      guard isGeneratedSchemaHelper(property),
+        !reservedPropertyNames.contains(property.name)
+      else {
+        return false
+      }
+      if usesManualAttributes {
+        return explicitAttributePathMembers.contains(property.name)
+      } else {
+        return true
+      }
     }
     let declarations = draftProperties.map { property in
       "  public var \(property.name): \(property.type)"
@@ -435,10 +461,7 @@ public struct InstantEntityMacro: MemberMacro {
     Set(
       declaration.memberBlock.members.flatMap { member -> [String] in
         guard let variable = member.decl.as(VariableDeclSyntax.self),
-          variable.modifiers.contains(where: { modifier in
-            modifier.name.tokenKind == .keyword(.static)
-              || modifier.name.tokenKind == .keyword(.class)
-          })
+          isStaticMember(variable)
         else { return [] }
 
         return variable.bindings.compactMap { binding in
@@ -446,6 +469,55 @@ public struct InstantEntityMacro: MemberMacro {
         }
       }
     )
+  }
+
+  private static func staticAttributePathMemberNames(
+    in declaration: some DeclGroupSyntax
+  ) -> Set<String> {
+    Set(
+      declaration.memberBlock.members.flatMap { member -> [String] in
+        guard let variable = member.decl.as(VariableDeclSyntax.self),
+          isStaticMember(variable)
+        else { return [] }
+
+        return variable.bindings.compactMap { binding in
+          guard isInstantAttributePathBinding(binding) else { return nil }
+          return binding.pattern.as(IdentifierPatternSyntax.self)?.identifier.text
+        }
+      }
+    )
+  }
+
+  private static func isStaticMember(_ declaration: VariableDeclSyntax) -> Bool {
+    declaration.modifiers.contains { modifier in
+      modifier.name.tokenKind == .keyword(.static)
+        || modifier.name.tokenKind == .keyword(.class)
+    }
+  }
+
+  private static func isInstantAttributePathBinding(_ binding: PatternBindingSyntax) -> Bool {
+    if let type = binding.typeAnnotation?.type.description.trimmed,
+      isInstantAttributePathType(type)
+    {
+      return true
+    }
+    if let expression = binding.initializer?.value.description.trimmed.removingWhitespace,
+      expression.hasPrefix("InstantAttributePath(")
+        || expression.hasPrefix("InstantAttributePath<")
+        || expression.contains(".InstantAttributePath(")
+        || expression.contains(".InstantAttributePath<")
+    {
+      return true
+    }
+    return false
+  }
+
+  private static func isInstantAttributePathType(_ type: String) -> Bool {
+    let type = type.removingWhitespace
+    return type == "InstantAttributePath"
+      || type.hasPrefix("InstantAttributePath<")
+      || type.contains(".InstantAttributePath<")
+      || type.hasSuffix(".InstantAttributePath")
   }
 
   private static func typeAliases(in declaration: some DeclGroupSyntax) -> [String: String] {

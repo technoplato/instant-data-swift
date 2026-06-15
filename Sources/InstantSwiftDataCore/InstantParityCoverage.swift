@@ -497,6 +497,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Draft(existing) preserves identity and save emits update assignments for edit flows."
     ),
     sqlite(
+      id: "sqlite.draft.generated-field-exclusion",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/CloudKitTests/UserlandTests.swift",
+      sourceTestName: "ModelA.Draft(id:) omits generated isEven column",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "generatedDraftExcludesUndeclaredStoredFieldsFromAssignments",
+      surface: "drafts",
+      status: .adapted,
+      notes: "Manual Instant attributes constrain generated Draft assignments so local or server-managed stored fields stay out of create/edit payloads."
+    ),
+    sqlite(
       id: "sqlite.reminders.search-tags",
       sourceFile: "upstream/sqlite-data/Examples/RemindersTests/SearchRemindersTests.swift",
       sourceTestName: "basics / showCompleted / deleteCompleted",

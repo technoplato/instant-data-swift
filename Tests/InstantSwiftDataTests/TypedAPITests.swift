@@ -976,10 +976,11 @@ struct TypedAPITests {
   }
 
   @Test
-  func generatedDraftRejectsUndeclaredStoredFieldsBeforeMockClientReceivesTransaction()
+  func generatedDraftExcludesUndeclaredStoredFieldsFromAssignments()
     async throws
   {
     let recorder = TransactionRecorder()
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000527")!
     let mock = InstantSwiftDataClient(
       transact: { transaction in
         await recorder.record(transaction)
@@ -996,27 +997,24 @@ struct TypedAPITests {
       localID: { name in "mock-\(name)" }
     )
 
-    await withDependencies {
+    try await withDependencies {
       $0.date.now = Date(timeIntervalSince1970: 1_700_000_027)
-      $0.uuid = .constant(UUID(uuidString: "00000000-0000-0000-0000-000000000527")!)
+      $0.uuid = .constant(fixedUUID)
       $0.defaultInstantSwiftData = mock
     } operation: {
       @Dependency(\.defaultInstantSwiftData) var db
 
-      do {
-        try await db.save(
-          DraftWithUndeclaredFieldTodo.Draft(title: "Draft with managed field"),
-          transactionID: "tx-draft-undeclared-field"
-        )
-        #expect(Bool(false), "Expected undeclared draft assignment validation to fail.")
-      } catch let error as InstantError {
-        expectNoDifference(error.code, .validationFailed)
-        expectNoDifference(error.operation, "write entity attribute")
-        expectNoDifference(error.namespace, "draftWithUndeclaredFieldTodos")
-        expectNoDifference(error.path, "serverManaged")
-      } catch {
-        #expect(Bool(false), "Unexpected error: \(error)")
-      }
+      let draft = DraftWithUndeclaredFieldTodo.Draft(title: "Draft with managed field")
+      expectNoDifference(draft.instantAssignments.map(\.name), ["title"])
+      expectNoDifference(draft.instantAssignments.map(\.attributeID), [
+        "draftWithUndeclaredFieldTodos/title"
+      ])
+
+      let savedID = try await db.save(
+        draft,
+        transactionID: "tx-draft-managed-field-excluded"
+      )
+      expectNoDifference(savedID.rawValue, fixedUUID.uuidString.lowercased())
 
       do {
         try await db.transact(id: "tx-typed-undeclared-field") {
@@ -1041,7 +1039,34 @@ struct TypedAPITests {
     }
 
     let transactions = await recorder.transactions
-    expectNoDifference(transactions, [])
+    expectNoDifference(transactions.map(\.id), ["tx-draft-managed-field-excluded"])
+    expectNoDifference(
+      transactions.first?.operations,
+      [
+        .requireEntityMissing(
+          entityID: fixedUUID.uuidString.lowercased(),
+          namespace: "draftWithUndeclaredFieldTodos"
+        ),
+        .insert(
+          InstantTriple(
+            entityID: fixedUUID.uuidString.lowercased(),
+            attributeID: "draftWithUndeclaredFieldTodos/id",
+            value: .string(fixedUUID.uuidString.lowercased()),
+            txID: "tx-draft-managed-field-excluded",
+            txTime: InstantTimestamp(milliseconds: 1_700_000_027_000)
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: fixedUUID.uuidString.lowercased(),
+            attributeID: "draftWithUndeclaredFieldTodos/title",
+            value: .string("Draft with managed field"),
+            txID: "tx-draft-managed-field-excluded",
+            txTime: InstantTimestamp(milliseconds: 1_700_000_027_000)
+          )
+        ),
+      ]
+    )
   }
 
   @Test

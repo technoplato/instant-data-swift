@@ -1339,6 +1339,77 @@
       }
     }
 
+    func testManualInstantAttributesSkipReverseRelationWithoutAttributePath() {
+      assertMacro {
+        """
+        @InstantEntity
+        struct Post {
+          var id: InstantID<Post>
+
+          @InstantRelation(reverse: "posts")
+          var author: InstantID<User>
+
+          static let instantAttributes = [
+            InstantAttribute(
+              id: "posts/author",
+              namespace: Post.instantNamespace,
+              name: "author",
+              valueType: .ref,
+              forwardIdentity: "posts/author",
+              reverseIdentity: User.instantNamespace + "/posts",
+              linkNamespace: User.instantNamespace
+            )
+          ]
+        }
+        """
+      } expansion: {
+        """
+        struct Post {
+          var id: InstantID<Post>
+          var author: InstantID<User>
+
+          static let instantAttributes = [
+            InstantAttribute(
+              id: "posts/author",
+              namespace: Post.instantNamespace,
+              name: "author",
+              valueType: .ref,
+              forwardIdentity: "posts/author",
+              reverseIdentity: User.instantNamespace + "/posts",
+              linkNamespace: User.instantNamespace
+            )
+          ]
+
+          public static var instantNamespace: String {
+            "posts"
+          }
+
+          public struct Draft: InstantEntityDraft {
+            public typealias Entity = Post
+            public var id: Post.ID? = nil
+
+
+            public init(
+              id: Post.ID? = nil
+            ) {
+              self.id = id
+            }
+
+            public init(_ entity: Post) {
+              self.id = entity.id
+            }
+
+            public var instantAssignments: [InstantAttributeAssignment<Post>] {
+              [
+
+              ]
+            }
+          }
+        }
+        """
+      }
+    }
+
     func testGeneratedSchemaHelpersRespectManualDeclarations() {
       assertMacro {
         """
@@ -1401,6 +1472,87 @@
                   })?.id
                   ?? Todo.instantNamespace + "/text",
                 value: self.text.instantValue
+              )
+              ]
+            }
+          }
+        }
+        """
+      }
+    }
+
+    func testManualInstantAttributesExcludeManagedFieldsFromDrafts() {
+      assertMacro {
+        """
+        @InstantEntity
+        struct Todo {
+          var id: InstantID<Todo>
+          var title: String
+          var serverManaged = "server"
+
+          static let title = InstantAttributePath<Todo, String>("title")
+          static let serverManaged = "local-only"
+          static let instantAttributes = [
+            InstantAttribute(
+              id: Todo.title.attributeID,
+              namespace: Todo.instantNamespace,
+              name: Todo.title.name,
+              valueType: .string
+            )
+          ]
+        }
+        """
+      } expansion: {
+        """
+        struct Todo {
+          var id: InstantID<Todo>
+          var title: String
+          var serverManaged = "server"
+
+          static let title = InstantAttributePath<Todo, String>("title")
+          static let serverManaged = "local-only"
+          static let instantAttributes = [
+            InstantAttribute(
+              id: Todo.title.attributeID,
+              namespace: Todo.instantNamespace,
+              name: Todo.title.name,
+              valueType: .string
+            )
+          ]
+
+          public static var instantNamespace: String {
+            "todos"
+          }
+
+          public struct Draft: InstantEntityDraft {
+            public typealias Entity = Todo
+            public var id: Todo.ID? = nil
+
+            public var title: String
+
+            public init(
+              id: Todo.ID? = nil,
+              title: String
+            ) {
+              self.id = id
+              self.title = title
+            }
+
+            public init(_ entity: Todo) {
+              self.id = entity.id
+              self.title = entity.title
+            }
+
+            public var instantAssignments: [InstantAttributeAssignment<Todo>] {
+              [
+              InstantAttributeAssignment<Todo>(
+                name: "title",
+                attributeID: Todo.instantAttributes
+                  .first(where: {
+                    $0.name == "title"
+                  })?.id
+                  ?? Todo.instantNamespace + "/title",
+                value: self.title.instantValue
               )
               ]
             }

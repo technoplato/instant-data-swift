@@ -5373,9 +5373,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 51)
+    expectNoDifference(jsonOutput.recordCount, 52)
     expectNoDifference(jsonOutput.exactCount, 11)
-    expectNoDifference(jsonOutput.adaptedCount, 37)
+    expectNoDifference(jsonOutput.adaptedCount, 38)
     expectNoDifference(jsonOutput.blockedCount, 3)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -5392,6 +5392,11 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.records.contains {
         $0.id == "sqlite.reminders.search-tags" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "sqlite.draft.generated-field-exclusion" && $0.status == "adapted"
       }
     )
     #expect(
@@ -5433,7 +5438,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 51"))
+    #expect(humanOutput.contains("records: 52"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 
