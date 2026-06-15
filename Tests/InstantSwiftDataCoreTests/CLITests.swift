@@ -8316,9 +8316,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 182)
+    expectNoDifference(jsonOutput.recordCount, 188)
     expectNoDifference(jsonOutput.exactCount, 28)
-    expectNoDifference(jsonOutput.adaptedCount, 150)
+    expectNoDifference(jsonOutput.adaptedCount, 156)
     expectNoDifference(jsonOutput.blockedCount, 4)
     expectNoDifference(jsonOutput.notApplicableCount, 0)
     #expect(
@@ -8836,6 +8836,20 @@ extension InstantStoreTests {
         $0.id == "instant.store.json-serialization" && $0.status == "adapted"
       }
     )
+    for id in [
+      "instant.utils.object-path-mutation.assoc-shallow",
+      "instant.utils.object-path-mutation.assoc-nested",
+      "instant.utils.object-path-mutation.insert-objects",
+      "instant.utils.object-path-mutation.insert-arrays",
+      "instant.utils.object-path-mutation.dissoc-shallow",
+      "instant.utils.object-path-mutation.dissoc-nested",
+      "instant.utils.object-path-mutation.dissoc-arrays",
+    ] {
+      #expect(
+        jsonOutput.records.contains { $0.id == id && $0.status == "adapted" },
+        "Expected adapted object path parity record \(id)"
+      )
+    }
     #expect(
       jsonOutput.records.contains {
         $0.id == "sqlite.fetch-subscription.explicit-cancel" && $0.status == "adapted"
@@ -9014,9 +9028,9 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 182"))
+    #expect(humanOutput.contains("records: 188"))
     #expect(humanOutput.contains("exact: 28"))
-    #expect(humanOutput.contains("adapted: 150"))
+    #expect(humanOutput.contains("adapted: 156"))
     #expect(humanOutput.contains("blocked: 4"))
     #expect(humanOutput.contains("not applicable: 0"))
   }

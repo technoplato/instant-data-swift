@@ -811,9 +811,9 @@ struct LocalTodoValidationTests {
 
     expectNoDifference(run.result.event, "parity-report")
     expectNoDifference(run.result.coverageComplete, false)
-    expectNoDifference(run.result.recordCount, 182)
+    expectNoDifference(run.result.recordCount, 188)
     expectNoDifference(run.result.exactCount, 28)
-    expectNoDifference(run.result.adaptedCount, 150)
+    expectNoDifference(run.result.adaptedCount, 156)
     expectNoDifference(run.result.blockedCount, 4)
     expectNoDifference(run.result.notApplicableCount, 0)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
@@ -905,6 +905,20 @@ struct LocalTodoValidationTests {
       #expect(
         run.result.records.contains { $0.id == expected.0 && $0.status == expected.1 },
         "Expected \(expected.1.rawValue) date coercion parity record \(expected.0)"
+      )
+    }
+    for id in [
+      "instant.utils.object-path-mutation.assoc-shallow",
+      "instant.utils.object-path-mutation.assoc-nested",
+      "instant.utils.object-path-mutation.insert-objects",
+      "instant.utils.object-path-mutation.insert-arrays",
+      "instant.utils.object-path-mutation.dissoc-shallow",
+      "instant.utils.object-path-mutation.dissoc-nested",
+      "instant.utils.object-path-mutation.dissoc-arrays",
+    ] {
+      #expect(
+        run.result.records.contains { $0.id == id && $0.status == .adapted },
+        "Expected adapted object path parity record \(id)"
       )
     }
     #expect(
@@ -1073,7 +1087,7 @@ struct LocalTodoValidationTests {
     )
 
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 182)
+    expectNoDifference(rows.count, 188)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
@@ -1135,7 +1149,7 @@ struct LocalTodoValidationTests {
 
     #expect(result.status == 0)
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 182)
+    expectNoDifference(rows.count, 188)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))

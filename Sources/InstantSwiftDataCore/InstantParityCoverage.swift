@@ -1369,14 +1369,74 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift mirrors Instant's stringify/parseSchemaFromJSON proof with Swift-native Codable schema values: the same entity, link, and room payload shape JSON-encodes, decodes, and compares equal. TypeScript asType helper assertions are out of scope for this adapted record."
     ),
     instant(
-      id: "instant.utils.object-path-mutation",
+      id: "instant.utils.object-path-mutation.assoc-shallow",
       sourceFile: objectUtilsSource,
-      sourceTestName: "assocInMutative / insertInMutative / dissocInMutative",
+      sourceTestName: "adds value at a shallow path",
       swiftFile: "Tests/InstantSwiftDataCoreTests/JSONValuePathMutationParityTests.swift",
-      swiftTestName: "JSONValuePathMutationParityTests",
+      swiftTestName: "assocInMutativeAddsShallowAndNestedValues",
       surface: "json-utils",
       status: .adapted,
-      notes: "Swift ports Instant's mutative object path helpers onto JSONValue's value semantics, preserving shallow/nested object writes, array insertions, object leaf replacement, and object/array deletion."
+      notes: "Swift ports assocInMutative onto JSONValue's mutating value semantics and preserves the same shallow object write result."
+    ),
+    instant(
+      id: "instant.utils.object-path-mutation.assoc-nested",
+      sourceFile: objectUtilsSource,
+      sourceTestName: "adds value at a nested path",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/JSONValuePathMutationParityTests.swift",
+      swiftTestName: "assocInMutativeAddsShallowAndNestedValues",
+      surface: "json-utils",
+      status: .adapted,
+      notes: "Swift ports assocInMutative onto JSONValue's mutating value semantics and creates the same nested object intermediates."
+    ),
+    instant(
+      id: "instant.utils.object-path-mutation.insert-objects",
+      sourceFile: objectUtilsSource,
+      sourceTestName: "it works on normal objects",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/JSONValuePathMutationParityTests.swift",
+      swiftTestName: "insertInMutativeWorksOnObjectsAndArrays",
+      surface: "json-utils",
+      status: .adapted,
+      notes: "Swift ports insertInMutative object writes onto JSONValue's mutating value semantics for both shallow and nested object paths."
+    ),
+    instant(
+      id: "instant.utils.object-path-mutation.insert-arrays",
+      sourceFile: objectUtilsSource,
+      sourceTestName: "inserts on arrays",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/JSONValuePathMutationParityTests.swift",
+      swiftTestName: "insertInMutativeWorksOnObjectsAndArrays",
+      surface: "json-utils",
+      status: .adapted,
+      notes: "Swift ports insertInMutative array insertion onto JSONValue and preserves empty, prepend, append, nested, deep nested, and object-leaf replacement results."
+    ),
+    instant(
+      id: "instant.utils.object-path-mutation.dissoc-shallow",
+      sourceFile: objectUtilsSource,
+      sourceTestName: "deletes a shallow property",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/JSONValuePathMutationParityTests.swift",
+      swiftTestName: "dissocInMutativeDeletesObjectsAndArrays",
+      surface: "json-utils",
+      status: .adapted,
+      notes: "Swift ports dissocInMutative onto JSONValue's mutating value semantics and preserves the same shallow object deletion result."
+    ),
+    instant(
+      id: "instant.utils.object-path-mutation.dissoc-nested",
+      sourceFile: objectUtilsSource,
+      sourceTestName: "deletes a nested property",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/JSONValuePathMutationParityTests.swift",
+      swiftTestName: "dissocInMutativeDeletesObjectsAndArrays",
+      surface: "json-utils",
+      status: .adapted,
+      notes: "Swift ports dissocInMutative onto JSONValue's mutating value semantics and preserves sibling fields during nested deletion."
+    ),
+    instant(
+      id: "instant.utils.object-path-mutation.dissoc-arrays",
+      sourceFile: objectUtilsSource,
+      sourceTestName: "works on arrays",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/JSONValuePathMutationParityTests.swift",
+      swiftTestName: "dissocInMutativeDeletesObjectsAndArrays",
+      surface: "json-utils",
+      status: .adapted,
+      notes: "Swift ports dissocInMutative array deletion onto JSONValue and removes the same nested array element."
     ),
     sqlite(
       id: "sqlite.fetch-subscription.task-cancel",

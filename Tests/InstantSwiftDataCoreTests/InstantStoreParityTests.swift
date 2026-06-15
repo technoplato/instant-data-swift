@@ -11,9 +11,9 @@ struct InstantStoreParityTests {
 
     expectNoDifference(report.event, "parity-report")
     expectNoDifference(report.coverageComplete, false)
-    expectNoDifference(report.recordCount, 182)
+    expectNoDifference(report.recordCount, 188)
     expectNoDifference(report.exactCount, 28)
-    expectNoDifference(report.adaptedCount, 150)
+    expectNoDifference(report.adaptedCount, 156)
     expectNoDifference(report.blockedCount, 4)
     expectNoDifference(report.notApplicableCount, 0)
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/schema.test.ts"))
@@ -476,7 +476,57 @@ struct InstantStoreParityTests {
     }
     #expect(report.records.contains { $0.id == "instant.schema.builder-shape" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.schema.json-serialization-round-trip" && $0.status == .adapted })
-    #expect(report.records.contains { $0.id == "instant.utils.object-path-mutation" && $0.status == .adapted })
+    let objectPathMappings: [(id: String, sourceTestName: String, swiftTestName: String, notes: String)] = [
+      (
+        "instant.utils.object-path-mutation.assoc-shallow",
+        "adds value at a shallow path",
+        "assocInMutativeAddsShallowAndNestedValues",
+        "Swift ports assocInMutative onto JSONValue's mutating value semantics and preserves the same shallow object write result."
+      ),
+      (
+        "instant.utils.object-path-mutation.assoc-nested",
+        "adds value at a nested path",
+        "assocInMutativeAddsShallowAndNestedValues",
+        "Swift ports assocInMutative onto JSONValue's mutating value semantics and creates the same nested object intermediates."
+      ),
+      (
+        "instant.utils.object-path-mutation.insert-objects",
+        "it works on normal objects",
+        "insertInMutativeWorksOnObjectsAndArrays",
+        "Swift ports insertInMutative object writes onto JSONValue's mutating value semantics for both shallow and nested object paths."
+      ),
+      (
+        "instant.utils.object-path-mutation.insert-arrays",
+        "inserts on arrays",
+        "insertInMutativeWorksOnObjectsAndArrays",
+        "Swift ports insertInMutative array insertion onto JSONValue and preserves empty, prepend, append, nested, deep nested, and object-leaf replacement results."
+      ),
+      (
+        "instant.utils.object-path-mutation.dissoc-shallow",
+        "deletes a shallow property",
+        "dissocInMutativeDeletesObjectsAndArrays",
+        "Swift ports dissocInMutative onto JSONValue's mutating value semantics and preserves the same shallow object deletion result."
+      ),
+      (
+        "instant.utils.object-path-mutation.dissoc-nested",
+        "deletes a nested property",
+        "dissocInMutativeDeletesObjectsAndArrays",
+        "Swift ports dissocInMutative onto JSONValue's mutating value semantics and preserves sibling fields during nested deletion."
+      ),
+      (
+        "instant.utils.object-path-mutation.dissoc-arrays",
+        "works on arrays",
+        "dissocInMutativeDeletesObjectsAndArrays",
+        "Swift ports dissocInMutative array deletion onto JSONValue and removes the same nested array element."
+      ),
+    ]
+    for expected in objectPathMappings {
+      let record = try #require(report.records.first { $0.id == expected.id })
+      expectNoDifference(record.sourceTestName, expected.sourceTestName)
+      expectNoDifference(record.swiftTestName, expected.swiftTestName)
+      expectNoDifference(record.status, .adapted)
+      expectNoDifference(record.notes, expected.notes)
+    }
     #expect(report.records.contains { $0.id == "sqlite.fetch-subscription.explicit-cancel" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "sqlite.fetch-one.initializer-defaults" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "sqlite.fetch-one.scalar-selection" && $0.status == .adapted })
