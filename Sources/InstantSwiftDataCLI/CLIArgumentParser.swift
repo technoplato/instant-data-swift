@@ -53,6 +53,7 @@ public enum CLIExamplesInvocation: Equatable, Sendable {
   case counters(arguments: [String])
   case microblog(arguments: [String])
   case mobileChat(arguments: [String])
+  case reactions(arguments: [String])
   case stroopwafel(arguments: [String])
   case syncUps(arguments: [String])
   case reminders(arguments: [String])
@@ -479,6 +480,72 @@ public enum CLIExamplesStroopwafelArgumentError: Error, Equatable, Sendable {
   case invalidArguments(usage: String)
   case invalidColor(String, usage: String)
   case invalidScore(String, usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
+public enum CLIExamplesReactionsLeafInvocation: Equatable, Sendable {
+  case tap(CLIExamplesReactionsTapInvocation)
+  case list(CLIExamplesReactionsListInvocation)
+  case watch(CLIExamplesReactionsWatchInvocation)
+  case unknown(String)
+}
+
+public struct CLIExamplesReactionsTapInvocation: Equatable, Sendable {
+  public var name: String
+  public var directionAngle: Double
+  public var rotationAngle: Double
+  public var userID: String?
+
+  public init(
+    name: String,
+    directionAngle: Double = 0,
+    rotationAngle: Double = 0,
+    userID: String? = nil
+  ) {
+    self.name = name
+    self.directionAngle = directionAngle
+    self.rotationAngle = rotationAngle
+    self.userID = userID
+  }
+}
+
+public struct CLIExamplesReactionsListInvocation: Equatable, Sendable {
+  public var limit: Int?
+
+  public init(limit: Int? = nil) {
+    self.limit = limit
+  }
+}
+
+public struct CLIExamplesReactionsWatchInvocation: Equatable, Sendable {
+  public var eventCount: Int
+
+  public init(eventCount: Int = 1) {
+    self.eventCount = eventCount
+  }
+}
+
+public enum CLIExamplesReactionsUsage {
+  public static let reactions = """
+    Usage: instant-swift-data examples reactions <tap|list|watch>
+      instant-swift-data examples reactions tap <fire|wave|confetti|heart> [--direction degrees] [--rotation degrees] [--user-id id] [--json|--jsonl]
+      instant-swift-data examples reactions list [--limit n] [--json|--jsonl]
+      instant-swift-data examples reactions watch [--events 1] [--json|--jsonl]
+    """
+  public static let tap =
+    "Usage: instant-swift-data examples reactions tap <fire|wave|confetti|heart> [--direction degrees] [--rotation degrees] [--user-id id] [--json|--jsonl]"
+  public static let list =
+    "Usage: instant-swift-data examples reactions list [--limit n] [--json|--jsonl]"
+  public static let watch =
+    "Usage: instant-swift-data examples reactions watch [--events 1] [--json|--jsonl]"
+}
+
+public enum CLIExamplesReactionsArgumentError: Error, Equatable, Sendable {
+  case invalidArguments(usage: String)
+  case invalidReactionName(String, usage: String)
+  case invalidAngle(String, usage: String)
+  case unknownTapOption(String, usage: String)
 
   public var exitCode: Int32 { 64 }
 }
@@ -1934,6 +2001,11 @@ public struct CLIExamplesParser: Parser {
       input.removeAll()
       return .mobileChat(arguments: arguments)
 
+    case "reactions", "reaction", "topics-reactions":
+      let arguments = Array(input)
+      input.removeAll()
+      return .reactions(arguments: arguments)
+
     case "stroopwafel":
       let arguments = Array(input)
       input.removeAll()
@@ -2905,6 +2977,36 @@ public struct CLIExamplesStroopwafelLeafParser: Parser {
         usage: CLIExamplesStroopwafelUsage.reset
       )
       return .reset
+
+    default:
+      input.removeAll()
+      return .unknown(command)
+    }
+  }
+}
+
+public struct CLIExamplesReactionsLeafParser: Parser {
+  public init() {}
+
+  public func parse(
+    _ input: inout ArraySlice<String>
+  ) throws -> CLIExamplesReactionsLeafInvocation {
+    guard let command = input.first else {
+      throw CLIExamplesReactionsArgumentError.invalidArguments(
+        usage: CLIExamplesReactionsUsage.reactions
+      )
+    }
+    input.removeFirst()
+
+    switch command {
+    case "tap", "send", "publish":
+      return .tap(try parseExamplesReactionsTapOptions(from: &input))
+
+    case "list", "messages":
+      return .list(try parseExamplesReactionsListOptions(from: &input))
+
+    case "watch", "observe":
+      return .watch(try parseExamplesReactionsWatchOptions(from: &input))
 
     default:
       input.removeAll()
@@ -5537,6 +5639,157 @@ private func requireNoRemainingExamplesStroopwafelArguments(
   }
 }
 
+private func parseExamplesReactionsTapOptions(
+  from input: inout ArraySlice<String>
+) throws -> CLIExamplesReactionsTapInvocation {
+  let name = try parseRequiredExamplesReactionsArgument(
+    from: &input,
+    usage: CLIExamplesReactionsUsage.tap
+  )
+  guard examplesReactionsAllowedNames.contains(name) else {
+    throw CLIExamplesReactionsArgumentError.invalidReactionName(
+      name,
+      usage: CLIExamplesReactionsUsage.tap
+    )
+  }
+
+  var invocation = CLIExamplesReactionsTapInvocation(name: name)
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--direction", "--direction-angle":
+      invocation.directionAngle = try parseExamplesReactionsAngle(
+        from: &input,
+        usage: CLIExamplesReactionsUsage.tap
+      )
+
+    case "--rotation", "--rotation-angle":
+      invocation.rotationAngle = try parseExamplesReactionsAngle(
+        from: &input,
+        usage: CLIExamplesReactionsUsage.tap
+      )
+
+    case "--user-id":
+      invocation.userID = try parseRequiredExamplesReactionsArgument(
+        from: &input,
+        usage: CLIExamplesReactionsUsage.tap
+      )
+
+    default:
+      if option.hasPrefix("--") {
+        throw CLIExamplesReactionsArgumentError.unknownTapOption(
+          option,
+          usage: CLIExamplesReactionsUsage.tap
+        )
+      }
+      throw CLIExamplesReactionsArgumentError.invalidArguments(
+        usage: CLIExamplesReactionsUsage.tap
+      )
+    }
+  }
+
+  return invocation
+}
+
+private func parseExamplesReactionsListOptions(
+  from input: inout ArraySlice<String>
+) throws -> CLIExamplesReactionsListInvocation {
+  var invocation = CLIExamplesReactionsListInvocation()
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--limit":
+      invocation.limit = try parseExamplesReactionsNonNegativeInt(
+        from: &input,
+        usage: CLIExamplesReactionsUsage.list
+      )
+
+    default:
+      throw CLIExamplesReactionsArgumentError.invalidArguments(
+        usage: CLIExamplesReactionsUsage.list
+      )
+    }
+  }
+  return invocation
+}
+
+private func parseExamplesReactionsWatchOptions(
+  from input: inout ArraySlice<String>
+) throws -> CLIExamplesReactionsWatchInvocation {
+  var invocation = CLIExamplesReactionsWatchInvocation()
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--events":
+      guard let value = input.first,
+        let parsed = Int(value),
+        parsed == 1
+      else {
+        throw CLIExamplesReactionsArgumentError.invalidArguments(
+          usage: CLIExamplesReactionsUsage.watch
+        )
+      }
+      input.removeFirst()
+      invocation.eventCount = parsed
+
+    default:
+      throw CLIExamplesReactionsArgumentError.invalidArguments(
+        usage: CLIExamplesReactionsUsage.watch
+      )
+    }
+  }
+  return invocation
+}
+
+private let examplesReactionsAllowedNames = ["fire", "wave", "confetti", "heart"]
+
+private func parseRequiredExamplesReactionsArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIExamplesReactionsArgumentError.invalidArguments(usage: usage)
+  }
+  input.removeFirst()
+  let trimmedValue = trimmed(value)
+  guard !trimmedValue.isEmpty else {
+    throw CLIExamplesReactionsArgumentError.invalidArguments(usage: usage)
+  }
+  return trimmedValue
+}
+
+private func parseExamplesReactionsAngle(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> Double {
+  guard let value = input.first else {
+    throw CLIExamplesReactionsArgumentError.invalidArguments(usage: usage)
+  }
+  input.removeFirst()
+  guard let parsed = Double(value),
+    parsed.isFinite,
+    parsed >= 0,
+    parsed < 360
+  else {
+    throw CLIExamplesReactionsArgumentError.invalidAngle(value, usage: usage)
+  }
+  return parsed
+}
+
+private func parseExamplesReactionsNonNegativeInt(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> Int {
+  guard let value = input.first,
+    let parsed = Int(value),
+    parsed >= 0
+  else {
+    throw CLIExamplesReactionsArgumentError.invalidArguments(usage: usage)
+  }
+  input.removeFirst()
+  return parsed
+}
+
 private func parseExamplesCountersAddOptions(
   _ input: inout ArraySlice<String>
 ) throws -> Int {
@@ -6628,6 +6881,24 @@ extension CLIExamplesStroopwafelArgumentError: CustomStringConvertible {
 
     case let .invalidScore(score, usage):
       return "Invalid Stroopwafel score: \(score). \(usage)"
+    }
+  }
+}
+
+extension CLIExamplesReactionsArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case let .invalidArguments(usage):
+      return usage
+
+    case let .invalidReactionName(name, usage):
+      return "Invalid reactions name: \(name). \(usage)"
+
+    case let .invalidAngle(angle, usage):
+      return "Invalid reactions angle: \(angle). \(usage)"
+
+    case let .unknownTapOption(option, usage):
+      return "Unknown reactions tap option: \(option). \(usage)"
     }
   }
 }

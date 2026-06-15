@@ -836,6 +836,12 @@ Create `validation/` with:
   soft-delete. The current upstream source declares `rooms: {}` and uses durable
   room membership rather than typed presence/topics, so the Swift port records
   that adaptation explicitly.
+- Reactions recipe: the local Instant recipe port exposes durable
+  `examples reactions tap <fire|wave|confetti|heart>`, `list [--limit n]`, and
+  `watch --events 1` commands over the existing room-topic runtime. It preserves
+  the upstream `topics-example/123` room, `emoji` topic, four reaction names, and
+  `{name, directionAngle, rotationAngle}` payload shape while adapting live peer
+  broadcasts into local persistent topic evidence for non-captive terminal use.
 - CLI: `instant-swift-data examples todos add "do the dishes"` persists auth,
   local IDs, cache, and outbox state for a later CLI invocation.
 - Permissions: generated permissions reject an unauthorized write in both

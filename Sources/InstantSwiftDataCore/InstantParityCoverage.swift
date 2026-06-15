@@ -1106,6 +1106,16 @@ public enum InstantSwiftDataParityCoverage {
       status: .adapted,
       notes: "The Instant CLI ports the Stroopwafel multiplayer source into local $users/rooms/games/points namespaces, auth-gated profile setup, code-based room join, ready membership, host-only start rejection, per-player points, JSONL game evidence, and reset. Core operation coverage proves kick, game completion, host leave as a soft-delete, and game-to-point cascade semantics. The current source declares rooms: {} and uses durable room users rather than typed presence/topics."
     ),
+    instant(
+      id: "instant.recipe.reactions.local-cli",
+      sourceFile: "upstream/instant/client/www/lib/recipes/reactions.tsx",
+      sourceTestName: "topics-example/123 emoji topic reactions",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/CLITests.swift + Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "cliReactionsRecipePublishesAndWatchesTopicMessagesAcrossLaunches + reactionsRecipePayloadsDecodeTopicMessages",
+      surface: "recipes-reactions",
+      status: .adapted,
+      notes: "The Instant CLI ports the Reactions recipe onto the local room-topic runtime with the same topics-example/123 room, emoji topic, four reaction names, and {name, directionAngle, rotationAngle} payload. Local topic history is durable and listable for terminal evidence, while unknown recipe payload names are ignored during decoding like the upstream topic effect."
+    ),
     sqlite(
       id: "sqlite.cloudkit-demo.local-counter-share",
       sourceFile: "upstream/sqlite-data/Examples/CloudKitDemo/CountersListFeature.swift",

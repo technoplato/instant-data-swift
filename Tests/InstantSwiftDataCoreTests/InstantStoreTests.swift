@@ -6132,6 +6132,140 @@ struct InstantStoreTests {
   }
 
   @Test
+  func reactionsRecipePayloadsDecodeTopicMessages() async throws {
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let idSequence = LockIsolated(0)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reactions-test",
+        persistenceURL: temporaryCacheURL(),
+        now: { timestamp },
+        makeID: {
+          let nextID = idSequence.withValue { value in
+            value += 1
+            return value
+          }
+          return "message-\(nextID)"
+        }
+      )
+    )
+    _ = try await runtime.signInWithRefreshToken("refresh-token", userID: "user-1")
+
+    let firePayload = ReactionsRecipeExample.payload(
+      name: "fire",
+      directionAngle: 45,
+      rotationAngle: 90
+    )
+    let fireMessage = try await runtime.publishTopicMessage(
+      room: ReactionsRecipeExample.room,
+      topic: ReactionsRecipeExample.topic,
+      payload: firePayload
+    )
+    expectNoDifference(
+      fireMessage.payload,
+      .object([
+        "directionAngle": .number(45),
+        "name": .string("fire"),
+        "rotationAngle": .number(90),
+      ])
+    )
+
+    _ = try await runtime.publishTopicMessage(
+      room: ReactionsRecipeExample.room,
+      topic: ReactionsRecipeExample.topic,
+      userID: "user-2",
+      payload: ReactionsRecipeExample.payload(
+        name: "wave",
+        directionAngle: 135,
+        rotationAngle: 180
+      )
+    )
+    _ = try await runtime.publishTopicMessage(
+      room: ReactionsRecipeExample.room,
+      topic: ReactionsRecipeExample.topic,
+      userID: "user-3",
+      payload: ReactionsRecipeExample.payload(
+        name: "confetti",
+        directionAngle: 200,
+        rotationAngle: 315
+      )
+    )
+    _ = try await runtime.publishTopicMessage(
+      room: ReactionsRecipeExample.room,
+      topic: ReactionsRecipeExample.topic,
+      userID: "user-4",
+      payload: .object([
+        "directionAngle": .number(20),
+        "name": .string("sparkle"),
+        "rotationAngle": .number(30),
+      ])
+    )
+
+    let messages = try await runtime.roomTopicMessages(
+      room: ReactionsRecipeExample.room,
+      topic: ReactionsRecipeExample.topic
+    )
+    let fireSymbol = try #require(ReactionsRecipeExample.symbol(forReactionName: "fire"))
+    let waveSymbol = try #require(ReactionsRecipeExample.symbol(forReactionName: "wave"))
+    let confettiSymbol = try #require(ReactionsRecipeExample.symbol(forReactionName: "confetti"))
+    expectNoDifference(
+      ReactionsRecipeExample.reactions(from: messages),
+      [
+        ReactionsRecipeReaction(
+          id: "message-1",
+          name: "fire",
+          symbol: fireSymbol,
+          directionAngle: 45,
+          rotationAngle: 90,
+          userID: "user-1",
+          createdAt: timestamp
+        ),
+        ReactionsRecipeReaction(
+          id: "message-2",
+          name: "wave",
+          symbol: waveSymbol,
+          directionAngle: 135,
+          rotationAngle: 180,
+          userID: "user-2",
+          createdAt: timestamp
+        ),
+        ReactionsRecipeReaction(
+          id: "message-3",
+          name: "confetti",
+          symbol: confettiSymbol,
+          directionAngle: 200,
+          rotationAngle: 315,
+          userID: "user-3",
+          createdAt: timestamp
+        ),
+      ]
+    )
+    expectNoDifference(messages.count, 4)
+    expectNoDifference(ReactionsRecipeExample.containsReactionName("heart"), true)
+    expectNoDifference(ReactionsRecipeExample.containsReactionName("sparkle"), false)
+    expectNoDifference(
+      ReactionsRecipeExample.reaction(
+        from: InstantRoomTopicMessage(
+          id: "message-4",
+          appID: "reactions-test",
+          room: InstantRoomHandle(type: "chat", id: "lobby"),
+          topic: ReactionsRecipeExample.topic,
+          userID: "user-1",
+          payload: firePayload,
+          createdAt: timestamp
+        )
+      ),
+      nil
+    )
+    let limited = try await runtime.roomTopicMessages(
+      room: ReactionsRecipeExample.room,
+      topic: ReactionsRecipeExample.topic,
+      limit: 1
+    )
+    expectNoDifference(limited.map(\.id), ["message-1"])
+  }
+
+  @Test
   func storedFilesPersistByAppIDAcrossLaunchesAndDeleteContent() async throws {
     let cacheURL = try temporaryCacheURL()
     let sourceURL = cacheURL.deletingLastPathComponent().appendingPathComponent("source.txt")

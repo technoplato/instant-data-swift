@@ -983,6 +983,116 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func examplesReactionsLeafParserParsesCommandsAndOptions() throws {
+    expectNoDifference(
+      try parseExamples(["reactions", "tap", "fire"]),
+      .reactions(arguments: ["tap", "fire"])
+    )
+    expectNoDifference(
+      try parseExamples(["reaction", "list"]),
+      .reactions(arguments: ["list"])
+    )
+    expectNoDifference(
+      try parseExamples(["topics-reactions", "watch"]),
+      .reactions(arguments: ["watch"])
+    )
+    expectNoDifference(
+      try parseExamplesReactionsLeaf(
+        [
+          "tap", "wave",
+          "--direction", "45",
+          "--rotation", "90",
+          "--user-id", "user-2",
+        ]
+      ),
+      .tap(
+        CLIExamplesReactionsTapInvocation(
+          name: "wave",
+          directionAngle: 45,
+          rotationAngle: 90,
+          userID: "user-2"
+        )
+      )
+    )
+    expectNoDifference(
+      try parseExamplesReactionsLeaf(["send", "heart"]),
+      .tap(CLIExamplesReactionsTapInvocation(name: "heart"))
+    )
+    expectNoDifference(
+      try parseExamplesReactionsLeaf(["tap", "confetti"]),
+      .tap(CLIExamplesReactionsTapInvocation(name: "confetti"))
+    )
+    expectNoDifference(
+      try parseExamplesReactionsLeaf(["list", "--limit", "1"]),
+      .list(CLIExamplesReactionsListInvocation(limit: 1))
+    )
+    expectNoDifference(
+      try parseExamplesReactionsLeaf(["messages"]),
+      .list(CLIExamplesReactionsListInvocation())
+    )
+    expectNoDifference(
+      try parseExamplesReactionsLeaf(["watch", "--events", "1"]),
+      .watch(CLIExamplesReactionsWatchInvocation(eventCount: 1))
+    )
+    expectNoDifference(
+      try parseExamplesReactionsLeaf(["dance", "--fast"]),
+      .unknown("dance")
+    )
+  }
+
+  @Test
+  func examplesReactionsLeafParserReportsMalformedArguments() throws {
+    try expectExamplesReactionsLeafParseError(
+      [],
+      description: CLIExamplesReactionsUsage.reactions
+    )
+    try expectExamplesReactionsLeafParseError(
+      ["tap"],
+      description: CLIExamplesReactionsUsage.tap
+    )
+    try expectExamplesReactionsLeafParseError(
+      ["tap", "sparkle"],
+      description: "Invalid reactions name: sparkle. \(CLIExamplesReactionsUsage.tap)"
+    )
+    try expectExamplesReactionsLeafParseError(
+      ["tap", "wave", "--direction", "-1"],
+      description: "Invalid reactions angle: -1. \(CLIExamplesReactionsUsage.tap)"
+    )
+    try expectExamplesReactionsLeafParseError(
+      ["tap", "wave", "--rotation", "NaN"],
+      description: "Invalid reactions angle: NaN. \(CLIExamplesReactionsUsage.tap)"
+    )
+    try expectExamplesReactionsLeafParseError(
+      ["tap", "wave", "--user-id", "  "],
+      description: CLIExamplesReactionsUsage.tap
+    )
+    try expectExamplesReactionsLeafParseError(
+      ["tap", "wave", "--surprise"],
+      description: "Unknown reactions tap option: --surprise. \(CLIExamplesReactionsUsage.tap)"
+    )
+    try expectExamplesReactionsLeafParseError(
+      ["tap", "wave", "extra"],
+      description: CLIExamplesReactionsUsage.tap
+    )
+    try expectExamplesReactionsLeafParseError(
+      ["list", "--limit", "-1"],
+      description: CLIExamplesReactionsUsage.list
+    )
+    try expectExamplesReactionsLeafParseError(
+      ["list", "unexpected"],
+      description: CLIExamplesReactionsUsage.list
+    )
+    try expectExamplesReactionsLeafParseError(
+      ["watch", "--events", "2"],
+      description: CLIExamplesReactionsUsage.watch
+    )
+    try expectExamplesReactionsLeafParseError(
+      ["watch", "--surprise"],
+      description: CLIExamplesReactionsUsage.watch
+    )
+  }
+
+  @Test
   func examplesSyncUpsLeafParserParsesCommandsAndOptions() throws {
     expectNoDifference(try parseExamplesSyncUpsLeaf(["seed"]), .seed)
     expectNoDifference(
@@ -3406,6 +3516,15 @@ private func parseExamplesStroopwafelLeaf(
   return invocation
 }
 
+private func parseExamplesReactionsLeaf(
+  _ arguments: [String]
+) throws -> CLIExamplesReactionsLeafInvocation {
+  var input = arguments[...]
+  let invocation = try CLIExamplesReactionsLeafParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseExamplesSyncUpsLeaf(
   _ arguments: [String]
 ) throws -> CLIExamplesSyncUpsLeafInvocation {
@@ -3929,6 +4048,19 @@ private func expectExamplesStroopwafelLeafParseError(
     _ = try parseExamplesStroopwafelLeaf(arguments)
     Issue.record("Expected examples Stroopwafel parser to reject \(arguments).")
   } catch let error as CLIExamplesStroopwafelArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectExamplesReactionsLeafParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseExamplesReactionsLeaf(arguments)
+    Issue.record("Expected examples reactions parser to reject \(arguments).")
+  } catch let error as CLIExamplesReactionsArgumentError {
     expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }

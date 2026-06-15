@@ -2919,7 +2919,7 @@ extension InstantStoreTests {
     expectNoDifference(result.status, 64)
     #expect(
       result.error.contains(
-        "Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|stroopwafel|reminders|sync-ups>"
+        "Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|reactions|stroopwafel|reminders|sync-ups>"
       )
     )
   }
@@ -4079,6 +4079,134 @@ extension InstantStoreTests {
     )
     #expect(anonymous.status == 65)
     #expect(anonymous.error.contains("Room operations require a signed-in user"))
+  }
+
+  @Test
+  func cliReactionsRecipePublishesAndWatchesTopicMessagesAcrossLaunches() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let signedOutTap = try runCLIResult(
+      ["examples", "reactions", "tap", "fire", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(signedOutTap.status, 65)
+    #expect(signedOutTap.error.contains("Room operations require a signed-in user"))
+
+    _ = try runCLI(
+      ["auth", "token", "reactions-a", "--user-id", "user-a", "--json"],
+      homeURL: homeURL
+    )
+    let wave = try JSONDecoder().decode(
+      CLIReactionsRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "examples", "reactions", "tap", "wave",
+            "--direction", "45",
+            "--rotation", "90",
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(wave.event, "tap")
+    expectNoDifference(wave.transport, "not-implemented-local-cache-only")
+    expectNoDifference(wave.room, ReactionsRecipeExample.room)
+    expectNoDifference(wave.topic, ReactionsRecipeExample.topic)
+    expectNoDifference(wave.authUserID, "user-a")
+    expectNoDifference(wave.messageCount, 1)
+    expectNoDifference(wave.reactionCount, 1)
+    expectNoDifference(wave.reactions.map(\.name), ["wave"])
+    expectNoDifference(wave.reactions.map(\.directionAngle), [45])
+    expectNoDifference(wave.reactions.map(\.rotationAngle), [90])
+    expectNoDifference(wave.publishedMessageID, wave.messages.first?.id)
+    expectNoDifference(
+      wave.messages.map(\.payload),
+      [CLIReactionsRecipePayload(name: "wave", directionAngle: 45, rotationAngle: 90)]
+    )
+
+    _ = try runCLI(
+      ["auth", "token", "reactions-b", "--user-id", "user-b", "--json"],
+      homeURL: homeURL
+    )
+    let heart = try JSONDecoder().decode(
+      CLIReactionsRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "examples", "reactions", "send", "heart",
+            "--direction", "135",
+            "--rotation", "270",
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(heart.event, "tap")
+    expectNoDifference(heart.authUserID, "user-b")
+    expectNoDifference(heart.messageCount, 2)
+    expectNoDifference(heart.reactionCount, 2)
+    expectNoDifference(heart.reactions.map(\.name), ["wave", "heart"])
+    expectNoDifference(heart.reactions.map(\.userID), ["user-a", "user-b"])
+    expectNoDifference(
+      heart.messages.map(\.payload),
+      [
+        CLIReactionsRecipePayload(name: "wave", directionAngle: 45, rotationAngle: 90),
+        CLIReactionsRecipePayload(name: "heart", directionAngle: 135, rotationAngle: 270),
+      ]
+    )
+
+    let limited = try JSONDecoder().decode(
+      CLIReactionsRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "reactions", "list", "--limit", "1", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(limited.event, "list")
+    expectNoDifference(limited.messageCount, 1)
+    expectNoDifference(limited.reactions.map(\.name), ["wave"])
+
+    let watchJSONL = try runCLI(
+      ["examples", "reactions", "watch", "--events", "1", "--jsonl"],
+      homeURL: homeURL
+    )
+    let watchLines = watchJSONL.split(separator: "\n")
+    expectNoDifference(watchLines.count, 3)
+    let watch = try JSONDecoder().decode(
+      CLIReactionsRecipeEvidence.self,
+      from: Data(try #require(watchLines.first).utf8)
+    )
+    expectNoDifference(watch.caseID, "cli.examples.reactions")
+    expectNoDifference(watch.event, "watch")
+    expectNoDifference(watch.details.reactionCount, 2)
+    expectNoDifference(watch.details.reactions.map(\.name), ["wave", "heart"])
+    let rows = try watchLines.dropFirst().map {
+      try JSONDecoder().decode(CLIReactionsRecipeReactionEvidence.self, from: Data($0.utf8))
+    }
+    expectNoDifference(rows.map(\.event), ["reaction", "reaction"])
+    expectNoDifference(rows.map(\.details.name), ["wave", "heart"])
+
+    let invalidName = try runCLIResult(
+      ["examples", "reactions", "tap", "sparkle", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(invalidName.status, 64)
+    #expect(invalidName.error.contains("Invalid reactions name: sparkle."))
+
+    let invalidAngle = try runCLIResult(
+      ["examples", "reactions", "tap", "fire", "--direction", "360", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(invalidAngle.status, 64)
+    #expect(invalidAngle.error.contains("Invalid reactions angle: 360."))
   }
 
   @Test
@@ -6624,9 +6752,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 103)
+    expectNoDifference(jsonOutput.recordCount, 104)
     expectNoDifference(jsonOutput.exactCount, 19)
-    expectNoDifference(jsonOutput.adaptedCount, 81)
+    expectNoDifference(jsonOutput.adaptedCount, 82)
     expectNoDifference(jsonOutput.blockedCount, 3)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -6700,6 +6828,11 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.records.contains {
         $0.id == "instant.website.stroopwafel.local-cli" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.recipe.reactions.local-cli" && $0.status == "adapted"
       }
     )
     #expect(
@@ -6926,7 +7059,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 103"))
+    #expect(humanOutput.contains("records: 104"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 
@@ -8069,6 +8202,52 @@ private struct CLIRoomTopicEvidence: Decodable {
 private struct CLIRoomTopicMessageEvidence: Decodable {
   var event: String
   var details: InstantRoomTopicMessage
+}
+
+private struct CLIReactionsRecipeOutput: Decodable, Equatable {
+  var event: String
+  var publishedMessageID: String?
+  var authUserID: String?
+  var transport: String
+  var room: InstantRoomHandle
+  var topic: String
+  var messageCount: Int
+  var reactionCount: Int
+  var messages: [CLIReactionsRecipeMessage]
+  var reactions: [ReactionsRecipeReaction]
+}
+
+private struct CLIReactionsRecipeMessage: Decodable, Equatable {
+  var id: String
+  var appID: String
+  var room: InstantRoomHandle
+  var topic: String
+  var userID: String
+  var payload: CLIReactionsRecipePayload
+  var createdAt: InstantTimestamp
+}
+
+private struct CLIReactionsRecipePayload: Decodable, Equatable {
+  var name: String
+  var directionAngle: Double
+  var rotationAngle: Double
+}
+
+private struct CLIReactionsRecipeEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLIReactionsRecipeOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
+}
+
+private struct CLIReactionsRecipeReactionEvidence: Decodable {
+  var event: String
+  var details: ReactionsRecipeReaction
 }
 
 private struct CLIFilesOutput: Decodable, Equatable {

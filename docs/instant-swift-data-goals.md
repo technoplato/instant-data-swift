@@ -83,7 +83,8 @@ Port the recipes from `client/www/pages/recipes`:
 - auth.
 - cursors.
 - custom cursors.
-- reactions via topics.
+- reactions via topics: `instant-swift-data examples reactions tap`, `list`,
+  and `watch`.
 - typing indicator via presence.
 - avatar stack via presence slices.
 - merge tile game using `merge` and multiplayer presence.
@@ -709,11 +710,19 @@ Agent-oriented output modes are required:
   `7f5e2379464d932c0e4681655cbf022f8d9c2614`, profile/room/game mutations
   require an auth session, host-only kick/start behavior is checked locally, and
   reset clears room/game/point state while preserving shared auth and `$users`.
+- run the local Instant reactions recipe port with
+  `instant-swift-data examples reactions tap <fire|wave|confetti|heart> --direction <degrees> --rotation <degrees>`,
+  `instant-swift-data examples reactions list`, and
+  `instant-swift-data examples reactions watch --events 1 --jsonl`; the port uses
+  the upstream `topics-example/123` room, `emoji` topic, and
+  `{name, directionAngle, rotationAngle}` payload while decoding only the four
+  upstream reaction names and leaving durable local topic history available for
+  terminal evidence.
 - run local admin write/query helpers such as
   `instant-swift-data admin transact notes note-1 --merge '{"title":"admin note"}' --transaction-id tx-admin-note-1`
   and `instant-swift-data admin query notes --json` for durable terminal
   ground-truth checks until real Instant admin transport is available.
-- run example business commands directly, such as todo/reminder/sync-up/chat/mobile-chat/microblog/stroopwafel
+- run example business commands directly, such as todo/reminder/sync-up/chat/mobile-chat/microblog/reactions/stroopwafel
   create, list, update, delete, share, accept, upload, and stream operations.
 
 Example command shapes:

@@ -416,6 +416,8 @@ struct InstantSwiftDataCLI {
       throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesMobileChatArgumentError {
       throw CLIError(error.description, exitCode: error.exitCode)
+    } catch let error as CLIExamplesReactionsArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesStroopwafelArgumentError {
       throw CLIError(error.description, exitCode: error.exitCode)
     }
@@ -434,6 +436,10 @@ struct InstantSwiftDataCLI {
 
     case let .mobileChat(arguments):
       try await runMobileChat(arguments: arguments, output: output)
+      return
+
+    case let .reactions(arguments):
+      try await runReactions(arguments: arguments, output: output)
       return
 
     case let .stroopwafel(arguments):
@@ -5253,6 +5259,163 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func runReactions(arguments: [String], output: OutputMode) async throws {
+    let invocation: CLIExamplesReactionsLeafInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLIExamplesReactionsLeafParser().parse(&input)
+    } catch let error as CLIExamplesReactionsArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
+    }
+
+    if case let .unknown(command) = invocation {
+      throw CLIError("Unknown reactions command: \(command). \(reactionsUsage)", exitCode: 64)
+    }
+
+    let context = try await CLIContext.bootstrap(initialAttributes: [])
+    switch invocation {
+    case let .tap(options):
+      let message = try await context.runtime.publishTopicMessage(
+        room: ReactionsRecipeExample.room,
+        topic: ReactionsRecipeExample.topic,
+        userID: options.userID,
+        payload: ReactionsRecipeExample.payload(
+          name: options.name,
+          directionAngle: options.directionAngle,
+          rotationAngle: options.rotationAngle
+        )
+      )
+      let messages = try await context.runtime.roomTopicMessages(
+        room: ReactionsRecipeExample.room,
+        topic: ReactionsRecipeExample.topic
+      )
+      try await printReactions(
+        context: context,
+        output: output,
+        event: "tap",
+        publishedMessageID: message.id,
+        messages: messages
+      )
+
+    case let .list(options):
+      let messages = try await context.runtime.roomTopicMessages(
+        room: ReactionsRecipeExample.room,
+        topic: ReactionsRecipeExample.topic,
+        limit: options.limit
+      )
+      try await printReactions(
+        context: context,
+        output: output,
+        event: "list",
+        publishedMessageID: nil,
+        messages: messages
+      )
+
+    case let .watch(options):
+      let messages = try await firstWatchSnapshot(
+        from: context.runtime.observeRoomTopicMessages(
+          room: ReactionsRecipeExample.room,
+          topic: ReactionsRecipeExample.topic
+        ),
+        operation: "reactions watch",
+        eventCount: options.eventCount
+      )
+      try await printReactions(
+        context: context,
+        output: output,
+        event: "watch",
+        publishedMessageID: nil,
+        messages: messages
+      )
+
+    case .unknown:
+      preconditionFailure("Unknown reactions commands are handled before bootstrapping.")
+    }
+  }
+
+  private static func printReactions(
+    context: CLIContext,
+    output: OutputMode,
+    event: String,
+    publishedMessageID: String?,
+    messages: [InstantRoomTopicMessage]
+  ) async throws {
+    let reactions = ReactionsRecipeExample.reactions(from: messages)
+    let recipeMessages = messages.compactMap(ReactionsRecipeMessageOutput.init(message:))
+    let session = try await context.runtime.authSession()
+    let payload = ReactionsRecipeOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      publishedMessageID: publishedMessageID,
+      authUserID: session?.userID,
+      authIsGuest: session?.isGuest,
+      transport: "not-implemented-local-cache-only",
+      room: ReactionsRecipeExample.room,
+      topic: ReactionsRecipeExample.topic,
+      messageCount: messages.count,
+      reactionCount: reactions.count,
+      messages: recipeMessages,
+      reactions: reactions
+    )
+
+    switch output {
+    case .human:
+      print("room: \(payload.room.type)/\(payload.room.id)")
+      print("topic: \(payload.topic)")
+      if let publishedMessageID {
+        print("message: \(publishedMessageID)")
+      }
+      if reactions.isEmpty {
+        print("No reactions.")
+      } else {
+        for reaction in reactions {
+          print(
+            "- \(reaction.id) \(reaction.name) \(reaction.symbol) user=\(reaction.userID) direction=\(reaction.directionAngle) rotation=\(reaction.rotationAngle)"
+          )
+        }
+      }
+      if let authUserID = payload.authUserID {
+        print("auth: \(payload.authIsGuest == true ? "guest" : "user") \(authUserID)")
+      } else {
+        print("auth: signed out")
+      }
+      print("messages: \(messages.count)")
+      print("reactions: \(reactions.count)")
+      print("transport: \(payload.transport)")
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.examples.reactions",
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          entityID: publishedMessageID,
+          ok: true,
+          details: payload
+        )
+      )
+      for reaction in reactions {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.reactions",
+            side: "swift",
+            event: "reaction",
+            appID: context.appID,
+            entityID: reaction.id,
+            ok: true,
+            details: reaction
+          )
+        )
+      }
+    }
+  }
+
   private static func runStroopwafel(arguments: [String], output: OutputMode) async throws {
     let invocation: CLIExamplesStroopwafelLeafInvocation
     do {
@@ -7870,13 +8033,14 @@ struct InstantSwiftDataCLI {
 
   private static var examplesUsage: String {
     """
-    Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|stroopwafel|reminders|sync-ups>
+    Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|reactions|stroopwafel|reminders|sync-ups>
       instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>
       instant-swift-data examples todo-links <seed|list|nested|unlink> [--json|--jsonl]
       instant-swift-data examples counters <seed|add|list|increment|decrement|delete> [--json|--jsonl]
       instant-swift-data examples chat <seed|channels|messages|post|reset> [--json|--jsonl]
       instant-swift-data examples mobile-chat <seed|channels|messages|profiles|profile|setup-profile|send|join|presence|leave|reset> [--json|--jsonl]
       instant-swift-data examples microblog <seed|feed|profiles|profile|setup-profile|post|like|unlike|delete-post|reset> [--json|--jsonl]
+      instant-swift-data examples reactions <tap|list|watch> [--json|--jsonl]
       instant-swift-data examples stroopwafel <setup-profile|profile|score|create-room|rooms|room|join|ready|unready|kick|start|games|game|tap|leave|reset> [--json|--jsonl]
       instant-swift-data examples reminders <seed|list|stats|tags|list-tags|search|add-list|rename-list|delete-list|add|update|complete|delete|delete-completed|add-tag|remove-tag> [--json|--jsonl]
       instant-swift-data examples sync-ups <seed|list|detail|add|edit|add-attendee|record|record-demo|delete|delete-attendee|delete-meeting> [--json|--jsonl]
@@ -7897,6 +8061,10 @@ struct InstantSwiftDataCLI {
 
   private static var mobileChatUsage: String {
     CLIExamplesMobileChatUsage.mobileChat
+  }
+
+  private static var reactionsUsage: String {
+    CLIExamplesReactionsUsage.reactions
   }
 
   private static var stroopwafelUsage: String {
@@ -9044,6 +9212,45 @@ private struct RoomTopicOutput: Codable, Sendable {
   var publishedMessageID: String?
   var messageCount: Int
   var messages: [InstantRoomTopicMessage]
+}
+
+private struct ReactionsRecipeOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var publishedMessageID: String?
+  var authUserID: String?
+  var authIsGuest: Bool?
+  var transport: String
+  var room: InstantRoomHandle
+  var topic: String
+  var messageCount: Int
+  var reactionCount: Int
+  var messages: [ReactionsRecipeMessageOutput]
+  var reactions: [ReactionsRecipeReaction]
+}
+
+private struct ReactionsRecipeMessageOutput: Codable, Sendable {
+  var id: String
+  var appID: String
+  var room: InstantRoomHandle
+  var topic: String
+  var userID: String
+  var payload: ReactionsRecipePayload
+  var createdAt: InstantTimestamp
+
+  init?(message: InstantRoomTopicMessage) {
+    guard let payload = ReactionsRecipeExample.recipePayload(from: message.payload) else {
+      return nil
+    }
+    self.id = message.id
+    self.appID = message.appID
+    self.room = message.room
+    self.topic = message.topic
+    self.userID = message.userID
+    self.payload = payload
+    self.createdAt = message.createdAt
+  }
 }
 
 private struct FilesOutput: Codable, Sendable {

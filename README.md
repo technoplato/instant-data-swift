@@ -174,6 +174,22 @@ swift run instant-swift-data examples mobile-chat reset --json
 and presence. It leaves shared auth and `$users` system state alone so other
 examples and the selected app session are not wiped unexpectedly.
 
+Run the local Instant reactions recipe port:
+
+```bash
+export INSTANT_SWIFT_DATA_HOME="$(mktemp -d)"
+swift run instant-swift-data auth token reactions-a --user-id user-a --json
+swift run instant-swift-data examples reactions tap wave --direction 45 --rotation 90 --json
+swift run instant-swift-data auth token reactions-b --user-id user-b --json
+swift run instant-swift-data examples reactions tap heart --direction 135 --rotation 270 --json
+swift run instant-swift-data examples reactions list --json
+swift run instant-swift-data examples reactions watch --events 1 --jsonl
+```
+
+The reactions recipe uses the upstream `topics-example/123` room, `emoji` topic,
+and `{name, directionAngle, rotationAngle}` payload. Use a fresh
+`INSTANT_SWIFT_DATA_HOME` for an empty local topic history.
+
 Run the local Instant Stroopwafel multiplayer demo:
 
 ```bash
