@@ -442,8 +442,8 @@ struct InstantSwiftDataCLI {
       try await runChat(arguments: arguments, output: output)
       return
 
-    case let .counters(arguments):
-      try await runCounters(arguments: arguments, output: output)
+    case let .counters(leaf):
+      try await runCounters(leaf: leaf, output: output)
       return
 
     case let .microblog(arguments):
@@ -1865,22 +1865,14 @@ struct InstantSwiftDataCLI {
     }
   }
 
-  private static func runCounters(arguments: [String], output: OutputMode) async throws {
-    let invocation: CLIExamplesCountersLeafInvocation
-    do {
-      var input = arguments[...]
-      invocation = try CLIExamplesCountersLeafParser().parse(&input)
-    } catch let error as CLIExamplesCountersArgumentError {
-      throw CLIError(error.description, exitCode: error.exitCode)
-    }
-
-    if case let .unknown(command) = invocation {
+  private static func runCounters(leaf: CLIExamplesCountersLeafInvocation, output: OutputMode) async throws {
+    if case let .unknown(command) = leaf {
       throw CLIError("Unknown counters command: \(command). \(countersUsage)", exitCode: 64)
     }
 
     let context = try await CLIContext.bootstrap(initialAttributes: CounterExample.attributes)
 
-    switch invocation {
+    switch leaf {
     case .seed:
       let transactionID = context.runtime.configuration.makeID()
       let now = context.runtime.configuration.now()

@@ -830,6 +830,42 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliMalformedCountersArgumentsDoNotBootstrapState() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    func expectMalformed(_ arguments: [String], contains expectedFragment: String) throws {
+      let result = try runCLIResult(arguments, homeURL: homeURL)
+      expectNoDifference(result.status, 64)
+      #expect(result.error.contains(expectedFragment))
+    }
+
+    try expectMalformed(
+      ["examples", "counters", "--json"],
+      contains: "examples counters <seed|add|list|increment|decrement|delete>"
+    )
+    try expectMalformed(
+      ["examples", "counters", "add", "--count", "nope", "--json"],
+      contains: "examples counters add"
+    )
+    try expectMalformed(
+      ["examples", "cloudkit-demo", "increment", "  ", "--json"],
+      contains: "examples counters increment <counter-id>"
+    )
+    try expectMalformed(
+      ["examples", "cloudkit-demo", "dance", "--json"],
+      contains: "Unknown counters command: dance"
+    )
+
+    expectNoDifference(
+      try FileManager.default.contentsOfDirectory(atPath: homeURL.path),
+      []
+    )
+  }
+
+  @Test
   func cliMalformedChatArgumentsDoNotBootstrapState() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)

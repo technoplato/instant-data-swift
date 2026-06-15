@@ -3454,11 +3454,11 @@ struct CLIArgumentParserTests {
     )
     expectNoDifference(
       try parseExamples(["counters", "seed"]),
-      .counters(arguments: ["seed"])
+      .counters(.seed)
     )
     expectNoDifference(
       try parseExamples(["cloudkit-demo", "list"]),
-      .counters(arguments: ["list"])
+      .counters(.list)
     )
     expectNoDifference(
       try parseExamples(["chat", "seed"]),

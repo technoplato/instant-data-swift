@@ -52,7 +52,7 @@ public enum CLIExamplesInvocation: Equatable, Sendable {
   case auth(arguments: [String])
   case appBuilder(arguments: [String])
   case chat(arguments: [String])
-  case counters(arguments: [String])
+  case counters(CLIExamplesCountersLeafInvocation)
   case microblog(arguments: [String])
   case mobileChat(arguments: [String])
   case reactions(arguments: [String])
@@ -2423,9 +2423,7 @@ public struct CLIExamplesParser: Parser {
       return .chat(arguments: arguments)
 
     case "counters", "cloudkit-demo":
-      let arguments = Array(input)
-      input.removeAll()
-      return .counters(arguments: arguments)
+      return .counters(try CLIExamplesCountersLeafParser().parse(&input))
 
     case "microblog":
       let arguments = Array(input)
