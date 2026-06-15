@@ -1497,12 +1497,24 @@ struct CLIArgumentParserTests {
   @Test
   func examplesCursorsLeafParserParsesCommandsAndOptions() throws {
     expectNoDifference(
-      try parseExamples(["cursors", "move", "user-1"]),
-      .cursors(arguments: ["move", "user-1"])
+      try parseExamples([
+        "cursors", "move", "user-1",
+        "--x", "0",
+        "--y", "0",
+        "--x-percent", "0",
+        "--y-percent", "0",
+      ]),
+      .cursors(.move(CLIExamplesCursorsMoveInvocation(
+        userID: "user-1",
+        x: 0,
+        y: 0,
+        xPercent: 0,
+        yPercent: 0
+      )))
     )
     expectNoDifference(
       try parseExamples(["cursor", "list"]),
-      .cursors(arguments: ["list"])
+      .cursors(.list(CLIExamplesCursorsListInvocation()))
     )
     expectNoDifference(
       try parseExamples(["custom-cursors", "move", "user-1"]),

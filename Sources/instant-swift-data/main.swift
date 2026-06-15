@@ -428,6 +428,8 @@ struct InstantSwiftDataCLI {
       throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesAvatarStackArgumentError {
       throw CLIError(error.description, exitCode: error.exitCode)
+    } catch let error as CLIExamplesCursorsArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesStroopwafelArgumentError {
       throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesMergeTileGameArgumentError {
@@ -470,8 +472,8 @@ struct InstantSwiftDataCLI {
       try await runAvatarStack(leaf: leaf, output: output)
       return
 
-    case let .cursors(arguments):
-      try await runCursors(arguments: arguments, output: output)
+    case let .cursors(leaf):
+      try await runCursors(leaf: leaf, output: output)
       return
 
     case let .customCursors(arguments):
@@ -6481,32 +6483,29 @@ struct InstantSwiftDataCLI {
     }
   }
 
-  private static func runCursors(arguments: [String], output: OutputMode) async throws {
-    try await runCursorsRecipe(kind: .plain, arguments: arguments, output: output)
+  private static func runCursors(
+    leaf: CLIExamplesCursorsLeafInvocation,
+    output: OutputMode
+  ) async throws {
+    try await runCursorsRecipe(kind: .plain, leaf: leaf, output: output)
   }
 
   private static func runCustomCursors(arguments: [String], output: OutputMode) async throws {
-    try await runCursorsRecipe(kind: .custom, arguments: arguments, output: output)
+    let invocation: CLIExamplesCursorsLeafInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLIExamplesCustomCursorsLeafParser().parse(&input)
+    } catch let error as CLIExamplesCursorsArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
+    }
+    try await runCursorsRecipe(kind: .custom, leaf: invocation, output: output)
   }
 
   private static func runCursorsRecipe(
     kind: CursorsRecipeKind,
-    arguments: [String],
+    leaf invocation: CLIExamplesCursorsLeafInvocation,
     output: OutputMode
   ) async throws {
-    let invocation: CLIExamplesCursorsLeafInvocation
-    do {
-      var input = arguments[...]
-      switch kind {
-      case .plain:
-        invocation = try CLIExamplesCursorsLeafParser().parse(&input)
-      case .custom:
-        invocation = try CLIExamplesCustomCursorsLeafParser().parse(&input)
-      }
-    } catch let error as CLIExamplesCursorsArgumentError {
-      throw CLIError(error.description, exitCode: error.exitCode)
-    }
-
     if case let .unknown(command) = invocation {
       throw CLIError("Unknown \(kind.commandName) command: \(command). \(kind.usage)", exitCode: 64)
     }

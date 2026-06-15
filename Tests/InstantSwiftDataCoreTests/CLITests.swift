@@ -1138,6 +1138,62 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliMalformedCursorsArgumentsDoNotBootstrapState() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    func expectMalformed(_ arguments: [String], contains expectedFragment: String) throws {
+      let result = try runCLIResult(arguments, homeURL: homeURL)
+      expectNoDifference(result.status, 64)
+      #expect(result.error.contains(expectedFragment))
+    }
+
+    try expectMalformed(
+      ["examples", "cursors", "--json"],
+      contains: "examples cursors <move|list|watch|clear|leave>"
+    )
+    try expectMalformed(
+      ["examples", "cursor", "move", "user-1", "--x", "1", "--y", "2", "--x-percent", "3", "--json"],
+      contains: "examples cursors move <user-id>"
+    )
+    try expectMalformed(
+      [
+        "examples", "cursors", "move", "user-1",
+        "--x", "1",
+        "--y", "2",
+        "--x-percent", "3",
+        "--y-percent", "4",
+        "--name", "Ada",
+        "--json",
+      ],
+      contains: "examples cursors move <user-id>"
+    )
+    try expectMalformed(
+      ["examples", "cursors", "list", "--viewer-user-id", "  ", "--json"],
+      contains: "examples cursors list"
+    )
+    try expectMalformed(
+      ["examples", "cursors", "watch", "--events", "2", "--jsonl"],
+      contains: "examples cursors watch"
+    )
+    try expectMalformed(
+      ["examples", "cursors", "clear", "--json"],
+      contains: "examples cursors <clear|leave> <user-id>"
+    )
+    try expectMalformed(
+      ["examples", "cursors", "dance", "--json"],
+      contains: "Unknown cursors command: dance"
+    )
+
+    expectNoDifference(
+      try FileManager.default.contentsOfDirectory(atPath: homeURL.path),
+      []
+    )
+  }
+
+  @Test
   func cliMalformedSyncUpsArgumentsDoNotBootstrapState() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
