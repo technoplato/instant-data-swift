@@ -337,6 +337,26 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift proves the same concurrent local-id convergence and relaunch persistence through InstantRuntime.localID over SQLite persistence instead of the IndexedDB-backed Reactor harness."
     ),
     instant(
+      id: "instant.reactor.rewrite-mutations",
+      sourceFile: reactorSource,
+      sourceTestName: "rewrite mutations",
+      swiftFile: reactorParitySwiftFile,
+      swiftTestName: "upstreamReactorRewriteMutationsKeepsPendingTransportStable",
+      surface: "pending-mutations",
+      status: .adapted,
+      notes: "Swift pending mutations store typed transactions, so the adaptation proves a scalar update, lookup update, link, and unlink lower to stable transport steps before and after persistence instead of rewriting cached JavaScript tx-steps."
+    ),
+    instant(
+      id: "instant.reactor.rewrite-mutations-multiple",
+      sourceFile: reactorSource,
+      sourceTestName: "rewrite mutations works with multiple transactions",
+      swiftFile: reactorParitySwiftFile,
+      swiftTestName: "upstreamReactorRewriteMutationsHandlesMultiplePendingTransactions",
+      surface: "pending-mutations",
+      status: .adapted,
+      notes: "Swift proves every persisted pending typed transaction re-lowers to the same server-attribute transport steps, matching Reactor's multi-entry pendingMutations rewrite invariant."
+    ),
+    instant(
       id: "instant.query.simple-where",
       sourceFile: instaQLSource,
       sourceTestName: "Simple Where",
