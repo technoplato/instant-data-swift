@@ -1126,6 +1126,16 @@ public enum InstantSwiftDataParityCoverage {
       status: .adapted,
       notes: "The Instant CLI ports the Typing Indicator recipe onto the local room-presence runtime with the same typing-indicator-example/1234 room, optional id presence field, chat-input activity field, and active-peer derivation. Local presence is durable and watchable for terminal evidence, and --viewer-user-id exposes the upstream hook's peer-only view while false, null, and unrelated-room values stay idle or ignored."
     ),
+    instant(
+      id: "instant.recipe.avatar-stack.local-cli",
+      sourceFile: "upstream/instant/client/www/lib/recipes/avatar-stack.tsx",
+      sourceTestName: "avatars-example/avatars-example-1234 presence name stack",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/CLITests.swift + Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "cliAvatarStackRecipePersistsPresenceAcrossLaunches + avatarStackRecipeBuildsViewerAndPeerSnapshot",
+      surface: "recipes-avatar-stack",
+      status: .adapted,
+      notes: "The Instant CLI ports the Avatar Stack recipe onto the local room-presence runtime with the same avatars-example/avatars-example-1234 room and name presence field. Local presence is durable and watchable for terminal evidence, default names use the upstream user-id prefix behavior, and --viewer-user-id exposes the upstream hook's current-user plus peers view."
+    ),
     sqlite(
       id: "sqlite.cloudkit-demo.local-counter-share",
       sourceFile: "upstream/sqlite-data/Examples/CloudKitDemo/CountersListFeature.swift",

@@ -1197,6 +1197,106 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func examplesAvatarStackLeafParserParsesCommandsAndOptions() throws {
+    expectNoDifference(
+      try parseExamples(["avatar-stack", "join", "user-1"]),
+      .avatarStack(arguments: ["join", "user-1"])
+    )
+    expectNoDifference(
+      try parseExamples(["avatars", "list"]),
+      .avatarStack(arguments: ["list"])
+    )
+    expectNoDifference(
+      try parseExamples(["avatar-stack-recipe", "watch"]),
+      .avatarStack(arguments: ["watch"])
+    )
+    expectNoDifference(
+      try parseExamplesAvatarStackLeaf(["join", "user-1"]),
+      .join(CLIExamplesAvatarStackJoinInvocation(userID: "user-1"))
+    )
+    expectNoDifference(
+      try parseExamplesAvatarStackLeaf(["enter", "user-2", "--name", "Betty"]),
+      .join(CLIExamplesAvatarStackJoinInvocation(userID: "user-2", name: "Betty"))
+    )
+    expectNoDifference(
+      try parseExamplesAvatarStackLeaf(["list"]),
+      .list(CLIExamplesAvatarStackListInvocation())
+    )
+    expectNoDifference(
+      try parseExamplesAvatarStackLeaf(["presence", "--viewer-user-id", "user-1"]),
+      .list(CLIExamplesAvatarStackListInvocation(viewerUserID: "user-1"))
+    )
+    expectNoDifference(
+      try parseExamplesAvatarStackLeaf(["watch", "--events", "1"]),
+      .watch(CLIExamplesAvatarStackWatchInvocation(eventCount: 1))
+    )
+    expectNoDifference(
+      try parseExamplesAvatarStackLeaf(["observe", "--viewer-user-id", "user-2"]),
+      .watch(CLIExamplesAvatarStackWatchInvocation(viewerUserID: "user-2"))
+    )
+    expectNoDifference(
+      try parseExamplesAvatarStackLeaf(["leave", "user-1"]),
+      .leave(userID: "user-1")
+    )
+    expectNoDifference(
+      try parseExamplesAvatarStackLeaf(["dance", "--fast"]),
+      .unknown("dance")
+    )
+  }
+
+  @Test
+  func examplesAvatarStackLeafParserReportsMalformedArguments() throws {
+    try expectExamplesAvatarStackLeafParseError(
+      [],
+      description: CLIExamplesAvatarStackUsage.avatarStack
+    )
+    try expectExamplesAvatarStackLeafParseError(
+      ["join"],
+      description: CLIExamplesAvatarStackUsage.join
+    )
+    try expectExamplesAvatarStackLeafParseError(
+      ["join", "  "],
+      description: CLIExamplesAvatarStackUsage.join
+    )
+    try expectExamplesAvatarStackLeafParseError(
+      ["join", "user-1", "--name", "  "],
+      description: CLIExamplesAvatarStackUsage.join
+    )
+    try expectExamplesAvatarStackLeafParseError(
+      ["join", "user-1", "extra"],
+      description: CLIExamplesAvatarStackUsage.join
+    )
+    try expectExamplesAvatarStackLeafParseError(
+      ["list", "unexpected"],
+      description: CLIExamplesAvatarStackUsage.list
+    )
+    try expectExamplesAvatarStackLeafParseError(
+      ["list", "--viewer-user-id", "  "],
+      description: CLIExamplesAvatarStackUsage.list
+    )
+    try expectExamplesAvatarStackLeafParseError(
+      ["watch", "--events", "2"],
+      description: CLIExamplesAvatarStackUsage.watch
+    )
+    try expectExamplesAvatarStackLeafParseError(
+      ["watch", "--viewer-user-id", "  "],
+      description: CLIExamplesAvatarStackUsage.watch
+    )
+    try expectExamplesAvatarStackLeafParseError(
+      ["watch", "--surprise"],
+      description: CLIExamplesAvatarStackUsage.watch
+    )
+    try expectExamplesAvatarStackLeafParseError(
+      ["leave"],
+      description: CLIExamplesAvatarStackUsage.leave
+    )
+    try expectExamplesAvatarStackLeafParseError(
+      ["leave", "user-1", "extra"],
+      description: CLIExamplesAvatarStackUsage.leave
+    )
+  }
+
+  @Test
   func examplesSyncUpsLeafParserParsesCommandsAndOptions() throws {
     expectNoDifference(try parseExamplesSyncUpsLeaf(["seed"]), .seed)
     expectNoDifference(
@@ -3638,6 +3738,15 @@ private func parseExamplesTypingIndicatorLeaf(
   return invocation
 }
 
+private func parseExamplesAvatarStackLeaf(
+  _ arguments: [String]
+) throws -> CLIExamplesAvatarStackLeafInvocation {
+  var input = arguments[...]
+  let invocation = try CLIExamplesAvatarStackLeafParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseExamplesSyncUpsLeaf(
   _ arguments: [String]
 ) throws -> CLIExamplesSyncUpsLeafInvocation {
@@ -4187,6 +4296,19 @@ private func expectExamplesTypingIndicatorLeafParseError(
     _ = try parseExamplesTypingIndicatorLeaf(arguments)
     Issue.record("Expected examples typing indicator parser to reject \(arguments).")
   } catch let error as CLIExamplesTypingIndicatorArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectExamplesAvatarStackLeafParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseExamplesAvatarStackLeaf(arguments)
+    Issue.record("Expected examples avatar stack parser to reject \(arguments).")
+  } catch let error as CLIExamplesAvatarStackArgumentError {
     expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }

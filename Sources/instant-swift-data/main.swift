@@ -448,6 +448,10 @@ struct InstantSwiftDataCLI {
       try await runTypingIndicator(arguments: arguments, output: output)
       return
 
+    case let .avatarStack(arguments):
+      try await runAvatarStack(arguments: arguments, output: output)
+      return
+
     case let .stroopwafel(arguments):
       try await runStroopwafel(arguments: arguments, output: output)
       return
@@ -5635,6 +5639,164 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func runAvatarStack(arguments: [String], output: OutputMode) async throws {
+    let invocation: CLIExamplesAvatarStackLeafInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLIExamplesAvatarStackLeafParser().parse(&input)
+    } catch let error as CLIExamplesAvatarStackArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
+    }
+
+    if case let .unknown(command) = invocation {
+      throw CLIError("Unknown avatar stack command: \(command). \(avatarStackUsage)", exitCode: 64)
+    }
+
+    let context = try await CLIContext.bootstrap(initialAttributes: [])
+    switch invocation {
+    case let .join(options):
+      let name = options.name ?? AvatarStackRecipeExample.defaultName(forUserID: options.userID)
+      _ = try await context.runtime.setPresence(
+        room: AvatarStackRecipeExample.room,
+        userID: options.userID,
+        values: AvatarStackRecipeExample.presenceValues(name: name)
+      )
+      let members = try await context.runtime.roomPresence(room: AvatarStackRecipeExample.room)
+      try printAvatarStack(
+        context: context,
+        output: output,
+        event: "join",
+        userID: options.userID,
+        viewerUserID: options.userID,
+        presence: members
+      )
+
+    case let .list(options):
+      let members = try await context.runtime.roomPresence(room: AvatarStackRecipeExample.room)
+      try printAvatarStack(
+        context: context,
+        output: output,
+        event: "list",
+        userID: nil,
+        viewerUserID: options.viewerUserID,
+        presence: members
+      )
+
+    case let .watch(options):
+      let members = try await firstWatchSnapshot(
+        from: context.runtime.observeRoomPresence(room: AvatarStackRecipeExample.room),
+        operation: "avatar stack watch",
+        eventCount: options.eventCount
+      )
+      try printAvatarStack(
+        context: context,
+        output: output,
+        event: "watch",
+        userID: nil,
+        viewerUserID: options.viewerUserID,
+        presence: members
+      )
+
+    case let .leave(userID):
+      let leftUserID = try await context.runtime.leavePresence(
+        room: AvatarStackRecipeExample.room,
+        userID: userID
+      )
+      let members = try await context.runtime.roomPresence(room: AvatarStackRecipeExample.room)
+      try printAvatarStack(
+        context: context,
+        output: output,
+        event: "leave",
+        userID: leftUserID,
+        viewerUserID: leftUserID,
+        presence: members
+      )
+
+    case .unknown:
+      preconditionFailure("Unknown avatar stack commands are handled before bootstrapping.")
+    }
+  }
+
+  private static func printAvatarStack(
+    context: CLIContext,
+    output: OutputMode,
+    event: String,
+    userID: String?,
+    viewerUserID: String?,
+    presence: [InstantRoomPresenceMember]
+  ) throws {
+    let snapshot = AvatarStackRecipeExample.snapshot(
+      from: presence,
+      viewerUserID: viewerUserID
+    )
+    let payload = AvatarStackRecipeOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      userID: userID,
+      viewerUserID: viewerUserID,
+      transport: "not-implemented-local-cache-only",
+      room: AvatarStackRecipeExample.room,
+      nameKey: AvatarStackRecipeExample.nameKey,
+      memberCount: snapshot.members.count,
+      peerCount: snapshot.peers.count,
+      onlineCount: snapshot.onlineCount,
+      currentUser: snapshot.currentUser,
+      peers: snapshot.peers,
+      members: snapshot.members
+    )
+
+    switch output {
+    case .human:
+      print("room: \(payload.room.type)/\(payload.room.id)")
+      if let userID {
+        print("user: \(userID)")
+      }
+      if let viewerUserID {
+        print("viewer: \(viewerUserID)")
+      }
+      print("members: \(payload.memberCount)")
+      print("online: \(payload.onlineCount)")
+      if let currentUser = payload.currentUser {
+        print("current: \(currentUser.name) (\(currentUser.userID))")
+      }
+      for peer in payload.peers {
+        print("- \(peer.name) (\(peer.userID))")
+      }
+      print("transport: \(payload.transport)")
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.examples.avatar-stack",
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          entityID: userID,
+          ok: true,
+          details: payload
+        )
+      )
+      for member in snapshot.members {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.avatar-stack",
+            side: "swift",
+            event: member.isViewer ? "current-user" : "avatar-member",
+            appID: context.appID,
+            entityID: member.userID,
+            ok: true,
+            details: member
+          )
+        )
+      }
+    }
+  }
+
   private static func runStroopwafel(arguments: [String], output: OutputMode) async throws {
     let invocation: CLIExamplesStroopwafelLeafInvocation
     do {
@@ -7097,6 +7259,7 @@ struct InstantSwiftDataCLI {
         examples todo-links list [--json|--jsonl]
         examples todo-links nested [--json|--jsonl]
         examples todo-links unlink [--json|--jsonl]
+        examples avatar-stack <join|list|watch|leave> [--json|--jsonl]
         examples counters seed [--json|--jsonl]
         examples counters add [--count n] [--json|--jsonl]
         examples counters list [--json|--jsonl]
@@ -8252,7 +8415,7 @@ struct InstantSwiftDataCLI {
 
   private static var examplesUsage: String {
     """
-    Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|stroopwafel|reminders|sync-ups>
+    Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|stroopwafel|reminders|sync-ups>
       instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>
       instant-swift-data examples todo-links <seed|list|nested|unlink> [--json|--jsonl]
       instant-swift-data examples counters <seed|add|list|increment|decrement|delete> [--json|--jsonl]
@@ -8261,6 +8424,7 @@ struct InstantSwiftDataCLI {
       instant-swift-data examples microblog <seed|feed|profiles|profile|setup-profile|post|like|unlike|delete-post|reset> [--json|--jsonl]
       instant-swift-data examples reactions <tap|list|watch> [--json|--jsonl]
       instant-swift-data examples typing-indicator <join|type|stop|list|watch|leave> [--json|--jsonl]
+      instant-swift-data examples avatar-stack <join|list|watch|leave> [--json|--jsonl]
       instant-swift-data examples stroopwafel <setup-profile|profile|score|create-room|rooms|room|join|ready|unready|kick|start|games|game|tap|leave|reset> [--json|--jsonl]
       instant-swift-data examples reminders <seed|list|stats|tags|list-tags|search|add-list|rename-list|delete-list|add|update|complete|delete|delete-completed|add-tag|remove-tag> [--json|--jsonl]
       instant-swift-data examples sync-ups <seed|list|detail|add|edit|add-attendee|record|record-demo|delete|delete-attendee|delete-meeting> [--json|--jsonl]
@@ -8289,6 +8453,10 @@ struct InstantSwiftDataCLI {
 
   private static var typingIndicatorUsage: String {
     CLIExamplesTypingIndicatorUsage.typingIndicator
+  }
+
+  private static var avatarStackUsage: String {
+    CLIExamplesAvatarStackUsage.avatarStack
   }
 
   private static var stroopwafelUsage: String {
@@ -9491,6 +9659,23 @@ private struct TypingIndicatorRecipeOutput: Codable, Sendable {
   var typingInfo: String?
   var members: [TypingIndicatorRecipeMember]
   var activeMembers: [TypingIndicatorRecipeMember]
+}
+
+private struct AvatarStackRecipeOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var userID: String?
+  var viewerUserID: String?
+  var transport: String
+  var room: InstantRoomHandle
+  var nameKey: String
+  var memberCount: Int
+  var peerCount: Int
+  var onlineCount: Int
+  var currentUser: AvatarStackRecipeMember?
+  var peers: [AvatarStackRecipeMember]
+  var members: [AvatarStackRecipeMember]
 }
 
 private struct FilesOutput: Codable, Sendable {

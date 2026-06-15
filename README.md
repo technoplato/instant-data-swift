@@ -208,6 +208,22 @@ The typing indicator recipe uses the upstream `typing-indicator-example/1234`
 room and derives active typers from the `chat-input` presence field. Pass
 `--viewer-user-id` to `list` or `watch` for the upstream hook's peer-only view.
 
+Run the local Instant avatar stack recipe port:
+
+```bash
+export INSTANT_SWIFT_DATA_HOME="$(mktemp -d)"
+swift run instant-swift-data examples avatar-stack join user-alpha --json
+swift run instant-swift-data examples avatar-stack join user-beta --name Betty --json
+swift run instant-swift-data examples avatar-stack list --viewer-user-id user-alpha --json
+swift run instant-swift-data examples avatar-stack watch --events 1 --viewer-user-id user-alpha --jsonl
+swift run instant-swift-data examples avatar-stack leave user-beta --json
+```
+
+The avatar stack recipe uses the upstream `avatars-example/avatars-example-1234`
+room and `{name}` presence payload. Omit `--name` on `join` to derive the
+upstream-style name from the first six characters of the user id, and pass
+`--viewer-user-id` to `list` or `watch` to split the current user from peers.
+
 Run the local Instant Stroopwafel multiplayer demo:
 
 ```bash

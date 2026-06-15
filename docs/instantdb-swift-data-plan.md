@@ -851,6 +851,13 @@ Create `validation/` with:
   `chat-input` activity key while deriving active typers from presence values
   where `chat-input` is `true`; supplying a viewer id gives the upstream hook's
   peer-only view.
+- Avatar stack recipe: the local Instant recipe port exposes durable
+  `examples avatar-stack join <user-id> [--name name]`,
+  `list [--viewer-user-id id]`, `watch --events 1 [--viewer-user-id id]`, and
+  `leave <user-id>` commands over the existing room-presence runtime. It
+  preserves the upstream `avatars-example/avatars-example-1234` room and `name`
+  presence payload, derives omitted names from the first six user-id characters,
+  and splits current user from peers when a viewer id is supplied.
 - CLI: `instant-swift-data examples todos add "do the dishes"` persists auth,
   local IDs, cache, and outbox state for a later CLI invocation.
 - Permissions: generated permissions reject an unauthorized write in both

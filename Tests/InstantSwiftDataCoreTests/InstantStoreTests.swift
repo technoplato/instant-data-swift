@@ -6390,6 +6390,107 @@ struct InstantStoreTests {
   }
 
   @Test
+  func avatarStackRecipeBuildsViewerAndPeerSnapshot() async throws {
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "avatar-stack-test",
+        persistenceURL: temporaryCacheURL(),
+        now: { timestamp }
+      )
+    )
+
+    _ = try await runtime.setPresence(
+      room: AvatarStackRecipeExample.room,
+      userID: "user-alpha",
+      values: AvatarStackRecipeExample.presenceValues(
+        name: AvatarStackRecipeExample.defaultName(forUserID: "user-alpha")
+      )
+    )
+    _ = try await runtime.setPresence(
+      room: AvatarStackRecipeExample.room,
+      userID: "user-beta",
+      values: AvatarStackRecipeExample.presenceValues(name: "Betty")
+    )
+    _ = try await runtime.setPresence(
+      room: AvatarStackRecipeExample.room,
+      userID: "user-missing",
+      values: [:]
+    )
+    _ = try await runtime.setPresence(
+      room: AvatarStackRecipeExample.room,
+      userID: "user-number",
+      values: [AvatarStackRecipeExample.nameKey: .number(42)]
+    )
+
+    let presence = try await runtime.roomPresence(room: AvatarStackRecipeExample.room)
+    let viewerSnapshot = AvatarStackRecipeExample.snapshot(
+      from: presence,
+      viewerUserID: "user-alpha"
+    )
+    expectNoDifference(AvatarStackRecipeExample.defaultName(forUserID: "abcdefghi"), "abcdef")
+    expectNoDifference(
+      AvatarStackRecipeExample.presenceValues(name: "Alice"),
+      [AvatarStackRecipeExample.nameKey: .string("Alice")]
+    )
+    expectNoDifference(
+      viewerSnapshot,
+      AvatarStackRecipeSnapshot(
+        viewerUserID: "user-alpha",
+        onlineCount: 2,
+        currentUser: AvatarStackRecipeMember(
+          userID: "user-alpha",
+          name: "user-a",
+          isViewer: true,
+          updatedAt: timestamp
+        ),
+        peers: [
+          AvatarStackRecipeMember(
+            userID: "user-beta",
+            name: "Betty",
+            isViewer: false,
+            updatedAt: timestamp
+          )
+        ],
+        members: [
+          AvatarStackRecipeMember(
+            userID: "user-alpha",
+            name: "user-a",
+            isViewer: true,
+            updatedAt: timestamp
+          ),
+          AvatarStackRecipeMember(
+            userID: "user-beta",
+            name: "Betty",
+            isViewer: false,
+            updatedAt: timestamp
+          ),
+        ]
+      )
+    )
+
+    let terminalSnapshot = AvatarStackRecipeExample.snapshot(from: presence)
+    expectNoDifference(terminalSnapshot.viewerUserID, nil)
+    expectNoDifference(terminalSnapshot.onlineCount, 2)
+    expectNoDifference(terminalSnapshot.currentUser, nil)
+    expectNoDifference(terminalSnapshot.peers.map(\.userID), ["user-alpha", "user-beta"])
+    expectNoDifference(terminalSnapshot.peers.map(\.isViewer), [false, false])
+    expectNoDifference(
+      AvatarStackRecipeExample.member(
+        from: InstantRoomPresenceMember(
+          appID: "avatar-stack-test",
+          room: InstantRoomHandle(type: "chat", id: "lobby"),
+          userID: "user-gamma",
+          values: AvatarStackRecipeExample.presenceValues(name: "Gamma"),
+          updatedAt: timestamp
+        ),
+        viewerUserID: "user-gamma"
+      ),
+      nil
+    )
+  }
+
+  @Test
   func storedFilesPersistByAppIDAcrossLaunchesAndDeleteContent() async throws {
     let cacheURL = try temporaryCacheURL()
     let sourceURL = cacheURL.deletingLastPathComponent().appendingPathComponent("source.txt")

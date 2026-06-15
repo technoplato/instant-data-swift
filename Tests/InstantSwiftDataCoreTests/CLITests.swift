@@ -2919,7 +2919,7 @@ extension InstantStoreTests {
     expectNoDifference(result.status, 64)
     #expect(
       result.error.contains(
-        "Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|stroopwafel|reminders|sync-ups>"
+        "Usage: instant-swift-data examples <todos|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|stroopwafel|reminders|sync-ups>"
       )
     )
   }
@@ -4347,6 +4347,132 @@ extension InstantStoreTests {
     )
     expectNoDifference(invalidWatch.status, 64)
     #expect(invalidWatch.error.contains("typing-indicator watch"))
+  }
+
+  @Test
+  func cliAvatarStackRecipePersistsPresenceAcrossLaunches() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let joined = try JSONDecoder().decode(
+      CLIAvatarStackRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "avatar-stack", "join", "user-alpha", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(joined.event, "join")
+    expectNoDifference(joined.transport, "not-implemented-local-cache-only")
+    expectNoDifference(joined.room, AvatarStackRecipeExample.room)
+    expectNoDifference(joined.nameKey, AvatarStackRecipeExample.nameKey)
+    expectNoDifference(joined.userID, "user-alpha")
+    expectNoDifference(joined.viewerUserID, "user-alpha")
+    expectNoDifference(joined.memberCount, 1)
+    expectNoDifference(joined.peerCount, 0)
+    expectNoDifference(joined.onlineCount, 1)
+    expectNoDifference(joined.currentUser?.userID, "user-alpha")
+    expectNoDifference(joined.currentUser?.name, "user-a")
+    expectNoDifference(joined.peers, [])
+    expectNoDifference(joined.members.map(\.isViewer), [true])
+
+    let bettyJoined = try JSONDecoder().decode(
+      CLIAvatarStackRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "avatars", "join", "user-beta", "--name", "Betty", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(bettyJoined.viewerUserID, "user-beta")
+    expectNoDifference(bettyJoined.currentUser?.name, "Betty")
+    expectNoDifference(bettyJoined.peers.map(\.userID), ["user-alpha"])
+    expectNoDifference(bettyJoined.onlineCount, 2)
+
+    let listed = try JSONDecoder().decode(
+      CLIAvatarStackRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "avatar-stack", "list", "--viewer-user-id", "user-alpha", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(listed.event, "list")
+    expectNoDifference(listed.viewerUserID, "user-alpha")
+    expectNoDifference(listed.currentUser?.userID, "user-alpha")
+    expectNoDifference(listed.currentUser?.name, "user-a")
+    expectNoDifference(listed.peers.map(\.userID), ["user-beta"])
+    expectNoDifference(listed.peers.map(\.name), ["Betty"])
+    expectNoDifference(listed.peerCount, 1)
+    expectNoDifference(listed.onlineCount, 2)
+
+    let terminalListed = try JSONDecoder().decode(
+      CLIAvatarStackRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "avatar-stack", "list", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(terminalListed.viewerUserID, nil)
+    expectNoDifference(terminalListed.currentUser, nil)
+    expectNoDifference(terminalListed.peers.map(\.userID), ["user-alpha", "user-beta"])
+    expectNoDifference(terminalListed.onlineCount, 2)
+
+    let watchJSONL = try runCLI(
+      [
+        "examples", "avatar-stack", "watch",
+        "--events", "1",
+        "--viewer-user-id", "user-alpha",
+        "--jsonl",
+      ],
+      homeURL: homeURL
+    )
+    let watchLines = watchJSONL.split(separator: "\n")
+    expectNoDifference(watchLines.count, 3)
+    let watch = try JSONDecoder().decode(
+      CLIAvatarStackRecipeEvidence.self,
+      from: Data(try #require(watchLines.first).utf8)
+    )
+    expectNoDifference(watch.caseID, "cli.examples.avatar-stack")
+    expectNoDifference(watch.event, "watch")
+    expectNoDifference(watch.details.viewerUserID, "user-alpha")
+    expectNoDifference(watch.details.currentUser?.name, "user-a")
+    expectNoDifference(watch.details.peers.map(\.name), ["Betty"])
+    let memberRows = try watchLines.dropFirst().map {
+      try JSONDecoder().decode(CLIAvatarStackRecipeMemberEvidence.self, from: Data($0.utf8))
+    }
+    expectNoDifference(memberRows.map(\.event), ["current-user", "avatar-member"])
+    expectNoDifference(memberRows.map(\.details.userID), ["user-alpha", "user-beta"])
+
+    let left = try JSONDecoder().decode(
+      CLIAvatarStackRecipeOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "avatar-stack", "leave", "user-beta", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(left.event, "leave")
+    expectNoDifference(left.userID, "user-beta")
+    expectNoDifference(left.viewerUserID, "user-beta")
+    expectNoDifference(left.currentUser, nil)
+    expectNoDifference(left.members.map(\.userID), ["user-alpha"])
+    expectNoDifference(left.onlineCount, 1)
+
+    let invalidWatch = try runCLIResult(
+      ["examples", "avatar-stack", "watch", "--events", "2", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(invalidWatch.status, 64)
+    #expect(invalidWatch.error.contains("avatar-stack watch"))
   }
 
   @Test
@@ -6892,9 +7018,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 105)
+    expectNoDifference(jsonOutput.recordCount, 106)
     expectNoDifference(jsonOutput.exactCount, 19)
-    expectNoDifference(jsonOutput.adaptedCount, 83)
+    expectNoDifference(jsonOutput.adaptedCount, 84)
     expectNoDifference(jsonOutput.blockedCount, 3)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -6978,6 +7104,11 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.records.contains {
         $0.id == "instant.recipe.typing-indicator.local-cli" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.recipe.avatar-stack.local-cli" && $0.status == "adapted"
       }
     )
     #expect(
@@ -7204,7 +7335,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 105"))
+    #expect(humanOutput.contains("records: 106"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 
@@ -8424,6 +8555,38 @@ private struct CLITypingIndicatorRecipeEvidence: Decodable {
 private struct CLITypingIndicatorRecipeMemberEvidence: Decodable {
   var event: String
   var details: TypingIndicatorRecipeMember
+}
+
+private struct CLIAvatarStackRecipeOutput: Decodable, Equatable {
+  var event: String
+  var userID: String?
+  var viewerUserID: String?
+  var transport: String
+  var room: InstantRoomHandle
+  var nameKey: String
+  var memberCount: Int
+  var peerCount: Int
+  var onlineCount: Int
+  var currentUser: AvatarStackRecipeMember?
+  var peers: [AvatarStackRecipeMember]
+  var members: [AvatarStackRecipeMember]
+}
+
+private struct CLIAvatarStackRecipeEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLIAvatarStackRecipeOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
+}
+
+private struct CLIAvatarStackRecipeMemberEvidence: Decodable {
+  var event: String
+  var details: AvatarStackRecipeMember
 }
 
 private struct CLIFilesOutput: Decodable, Equatable {

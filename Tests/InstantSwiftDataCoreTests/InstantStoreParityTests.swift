@@ -11,9 +11,9 @@ struct InstantStoreParityTests {
 
     expectNoDifference(report.event, "parity-report")
     expectNoDifference(report.coverageComplete, false)
-    expectNoDifference(report.recordCount, 105)
+    expectNoDifference(report.recordCount, 106)
     expectNoDifference(report.exactCount, 19)
-    expectNoDifference(report.adaptedCount, 83)
+    expectNoDifference(report.adaptedCount, 84)
     expectNoDifference(report.blockedCount, 3)
     expectNoDifference(report.notApplicableCount, 0)
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/instaml.test.ts"))
@@ -85,6 +85,7 @@ struct InstantStoreParityTests {
     #expect(report.records.contains { $0.id == "instant.website.stroopwafel.local-cli" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.recipe.reactions.local-cli" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.recipe.typing-indicator.local-cli" && $0.status == .adapted })
+    #expect(report.records.contains { $0.id == "instant.recipe.avatar-stack.local-cli" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.live-transport.swift-to-typescript" && $0.status == .blocked })
 
     let evidenceRows = report.evidenceRows(appID: "parity-test")

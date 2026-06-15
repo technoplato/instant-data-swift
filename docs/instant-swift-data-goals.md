@@ -87,7 +87,8 @@ Port the recipes from `client/www/pages/recipes`:
   and `watch`.
 - typing indicator via presence: `instant-swift-data examples typing-indicator
   join`, `type`, `stop`, `list`, `watch`, and `leave`.
-- avatar stack via presence slices.
+- avatar stack via presence: `instant-swift-data examples avatar-stack join`,
+  `list`, `watch`, and `leave`.
 - merge tile game using `merge` and multiplayer presence.
 
 ### SQLiteData Examples
@@ -729,6 +730,14 @@ Agent-oriented output modes are required:
   the upstream `typing-indicator-example/1234` room, `id` presence field, and
   `chat-input` activity field while deriving active typers only from peers whose
   `chat-input` value is `true` when a viewer id is supplied.
+- run the local Instant avatar stack recipe port with
+  `instant-swift-data examples avatar-stack join <user-id> [--name <name>]`,
+  `instant-swift-data examples avatar-stack list [--viewer-user-id <user-id>]`,
+  `instant-swift-data examples avatar-stack watch --events 1 --jsonl [--viewer-user-id <user-id>]`, and
+  `instant-swift-data examples avatar-stack leave <user-id>`; the port uses the
+  upstream `avatars-example/avatars-example-1234` room and `name` presence field,
+  derives omitted names from the first six user-id characters, and exposes the
+  upstream current-user plus peers view when a viewer id is supplied.
 - run local admin write/query helpers such as
   `instant-swift-data admin transact notes note-1 --merge '{"title":"admin note"}' --transaction-id tx-admin-note-1`
   and `instant-swift-data admin query notes --json` for durable terminal

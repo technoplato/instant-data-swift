@@ -743,15 +743,15 @@ struct LocalTodoValidationTests {
 
     expectNoDifference(run.result.event, "parity-report")
     expectNoDifference(run.result.coverageComplete, false)
-    expectNoDifference(run.result.recordCount, 105)
+    expectNoDifference(run.result.recordCount, 106)
     expectNoDifference(run.result.exactCount, 19)
-    expectNoDifference(run.result.adaptedCount, 83)
+    expectNoDifference(run.result.adaptedCount, 84)
     expectNoDifference(run.result.blockedCount, 3)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
     expectNoDifference(run.summary.appID, "validation-parity-test")
     expectNoDifference(run.summary.rowCount, run.result.recordCount)
     expectNoDifference(run.summary.ok, false)
-    expectNoDifference(run.summary.events, Array(repeating: "parity-record", count: 105))
+    expectNoDifference(run.summary.events, Array(repeating: "parity-record", count: 106))
     expectNoDifference(run.summary.failedEvents, Array(repeating: "parity-record", count: 3))
     #expect(
       run.result.sourceFiles.contains(
@@ -800,6 +800,11 @@ struct LocalTodoValidationTests {
     )
     #expect(
       run.result.records.contains {
+        $0.id == "instant.recipe.avatar-stack.local-cli" && $0.status == .adapted
+      }
+    )
+    #expect(
+      run.result.records.contains {
         $0.id == "instant.live-transport.swift-to-typescript" && $0.status == .blocked
       }
     )
@@ -821,7 +826,7 @@ struct LocalTodoValidationTests {
     )
 
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 105)
+    expectNoDifference(rows.count, 106)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
@@ -852,7 +857,7 @@ struct LocalTodoValidationTests {
 
     #expect(result.status == 0)
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 105)
+    expectNoDifference(rows.count, 106)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))

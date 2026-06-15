@@ -55,6 +55,7 @@ public enum CLIExamplesInvocation: Equatable, Sendable {
   case mobileChat(arguments: [String])
   case reactions(arguments: [String])
   case typingIndicator(arguments: [String])
+  case avatarStack(arguments: [String])
   case stroopwafel(arguments: [String])
   case syncUps(arguments: [String])
   case reminders(arguments: [String])
@@ -598,6 +599,66 @@ public enum CLIExamplesTypingIndicatorUsage {
 }
 
 public enum CLIExamplesTypingIndicatorArgumentError: Error, Equatable, Sendable {
+  case invalidArguments(usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
+public enum CLIExamplesAvatarStackLeafInvocation: Equatable, Sendable {
+  case join(CLIExamplesAvatarStackJoinInvocation)
+  case list(CLIExamplesAvatarStackListInvocation)
+  case watch(CLIExamplesAvatarStackWatchInvocation)
+  case leave(userID: String)
+  case unknown(String)
+}
+
+public struct CLIExamplesAvatarStackJoinInvocation: Equatable, Sendable {
+  public var userID: String
+  public var name: String?
+
+  public init(userID: String, name: String? = nil) {
+    self.userID = userID
+    self.name = name
+  }
+}
+
+public struct CLIExamplesAvatarStackListInvocation: Equatable, Sendable {
+  public var viewerUserID: String?
+
+  public init(viewerUserID: String? = nil) {
+    self.viewerUserID = viewerUserID
+  }
+}
+
+public struct CLIExamplesAvatarStackWatchInvocation: Equatable, Sendable {
+  public var eventCount: Int
+  public var viewerUserID: String?
+
+  public init(eventCount: Int = 1, viewerUserID: String? = nil) {
+    self.eventCount = eventCount
+    self.viewerUserID = viewerUserID
+  }
+}
+
+public enum CLIExamplesAvatarStackUsage {
+  public static let avatarStack = """
+    Usage: instant-swift-data examples avatar-stack <join|list|watch|leave>
+      instant-swift-data examples avatar-stack join <user-id> [--name name] [--json|--jsonl]
+      instant-swift-data examples avatar-stack list [--viewer-user-id id] [--json|--jsonl]
+      instant-swift-data examples avatar-stack watch [--events 1] [--viewer-user-id id] [--json|--jsonl]
+      instant-swift-data examples avatar-stack leave <user-id> [--json|--jsonl]
+    """
+  public static let join =
+    "Usage: instant-swift-data examples avatar-stack join <user-id> [--name name] [--json|--jsonl]"
+  public static let list =
+    "Usage: instant-swift-data examples avatar-stack list [--viewer-user-id id] [--json|--jsonl]"
+  public static let watch =
+    "Usage: instant-swift-data examples avatar-stack watch [--events 1] [--viewer-user-id id] [--json|--jsonl]"
+  public static let leave =
+    "Usage: instant-swift-data examples avatar-stack leave <user-id> [--json|--jsonl]"
+}
+
+public enum CLIExamplesAvatarStackArgumentError: Error, Equatable, Sendable {
   case invalidArguments(usage: String)
 
   public var exitCode: Int32 { 64 }
@@ -2064,6 +2125,11 @@ public struct CLIExamplesParser: Parser {
       input.removeAll()
       return .typingIndicator(arguments: arguments)
 
+    case "avatar-stack", "avatars", "avatar-stack-recipe":
+      let arguments = Array(input)
+      input.removeAll()
+      return .avatarStack(arguments: arguments)
+
     case "stroopwafel":
       let arguments = Array(input)
       input.removeAll()
@@ -3111,6 +3177,44 @@ public struct CLIExamplesTypingIndicatorLeafParser: Parser {
     case "leave":
       return .leave(
         userID: try parseSingleExamplesTypingIndicatorUserID(from: &input)
+      )
+
+    default:
+      input.removeAll()
+      return .unknown(command)
+    }
+  }
+}
+
+public struct CLIExamplesAvatarStackLeafParser: Parser {
+  public init() {}
+
+  public func parse(
+    _ input: inout ArraySlice<String>
+  ) throws -> CLIExamplesAvatarStackLeafInvocation {
+    guard let command = input.first else {
+      throw CLIExamplesAvatarStackArgumentError.invalidArguments(
+        usage: CLIExamplesAvatarStackUsage.avatarStack
+      )
+    }
+    input.removeFirst()
+
+    switch command {
+    case "join", "enter":
+      return .join(try parseExamplesAvatarStackJoinOptions(from: &input))
+
+    case "list", "presence":
+      return .list(try parseExamplesAvatarStackListOptions(from: &input))
+
+    case "watch", "observe":
+      return .watch(try parseExamplesAvatarStackWatchOptions(from: &input))
+
+    case "leave":
+      return .leave(
+        userID: try parseSingleExamplesAvatarStackUserID(
+          from: &input,
+          usage: CLIExamplesAvatarStackUsage.leave
+        )
       )
 
     default:
@@ -5753,6 +5857,15 @@ private func requireNoRemainingExamplesTypingIndicatorArguments(
   }
 }
 
+private func requireNoRemainingExamplesAvatarStackArguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if !input.isEmpty {
+    throw CLIExamplesAvatarStackArgumentError.invalidArguments(usage: usage)
+  }
+}
+
 private func parseSingleExamplesTypingIndicatorUserID(
   from input: inout ArraySlice<String>
 ) throws -> String {
@@ -5780,6 +5893,118 @@ private func parseRequiredExamplesTypingIndicatorArgument(
     throw CLIExamplesTypingIndicatorArgumentError.invalidArguments(usage: usage)
   }
   return trimmedValue
+}
+
+private func parseSingleExamplesAvatarStackUserID(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  let userID = try parseRequiredExamplesAvatarStackArgument(
+    from: &input,
+    usage: usage
+  )
+  try requireNoRemainingExamplesAvatarStackArguments(
+    &input,
+    usage: usage
+  )
+  return userID
+}
+
+private func parseRequiredExamplesAvatarStackArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIExamplesAvatarStackArgumentError.invalidArguments(usage: usage)
+  }
+  input.removeFirst()
+  let trimmedValue = trimmed(value)
+  guard !trimmedValue.isEmpty else {
+    throw CLIExamplesAvatarStackArgumentError.invalidArguments(usage: usage)
+  }
+  return trimmedValue
+}
+
+private func parseExamplesAvatarStackJoinOptions(
+  from input: inout ArraySlice<String>
+) throws -> CLIExamplesAvatarStackJoinInvocation {
+  let userID = try parseRequiredExamplesAvatarStackArgument(
+    from: &input,
+    usage: CLIExamplesAvatarStackUsage.join
+  )
+  var invocation = CLIExamplesAvatarStackJoinInvocation(userID: userID)
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--name":
+      invocation.name = try parseRequiredExamplesAvatarStackArgument(
+        from: &input,
+        usage: CLIExamplesAvatarStackUsage.join
+      )
+
+    default:
+      throw CLIExamplesAvatarStackArgumentError.invalidArguments(
+        usage: CLIExamplesAvatarStackUsage.join
+      )
+    }
+  }
+  return invocation
+}
+
+private func parseExamplesAvatarStackListOptions(
+  from input: inout ArraySlice<String>
+) throws -> CLIExamplesAvatarStackListInvocation {
+  var invocation = CLIExamplesAvatarStackListInvocation()
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--viewer-user-id":
+      invocation.viewerUserID = try parseRequiredExamplesAvatarStackArgument(
+        from: &input,
+        usage: CLIExamplesAvatarStackUsage.list
+      )
+
+    default:
+      throw CLIExamplesAvatarStackArgumentError.invalidArguments(
+        usage: CLIExamplesAvatarStackUsage.list
+      )
+    }
+  }
+  return invocation
+}
+
+private func parseExamplesAvatarStackWatchOptions(
+  from input: inout ArraySlice<String>
+) throws -> CLIExamplesAvatarStackWatchInvocation {
+  var invocation = CLIExamplesAvatarStackWatchInvocation()
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--events":
+      guard let value = input.first,
+        let parsed = Int(value),
+        parsed == 1
+      else {
+        throw CLIExamplesAvatarStackArgumentError.invalidArguments(
+          usage: CLIExamplesAvatarStackUsage.watch
+        )
+      }
+      input.removeFirst()
+      invocation.eventCount = parsed
+
+    case "--viewer-user-id":
+      invocation.viewerUserID = try parseRequiredExamplesAvatarStackArgument(
+        from: &input,
+        usage: CLIExamplesAvatarStackUsage.watch
+      )
+
+    default:
+      throw CLIExamplesAvatarStackArgumentError.invalidArguments(
+        usage: CLIExamplesAvatarStackUsage.watch
+      )
+    }
+  }
+  return invocation
 }
 
 private func parseExamplesTypingIndicatorListOptions(
@@ -7103,6 +7328,15 @@ extension CLIExamplesReactionsArgumentError: CustomStringConvertible {
 }
 
 extension CLIExamplesTypingIndicatorArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case let .invalidArguments(usage):
+      return usage
+    }
+  }
+}
+
+extension CLIExamplesAvatarStackArgumentError: CustomStringConvertible {
   public var description: String {
     switch self {
     case let .invalidArguments(usage):
