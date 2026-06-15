@@ -1090,6 +1090,54 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliMalformedAvatarStackArgumentsDoNotBootstrapState() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    func expectMalformed(_ arguments: [String], contains expectedFragment: String) throws {
+      let result = try runCLIResult(arguments, homeURL: homeURL)
+      expectNoDifference(result.status, 64)
+      #expect(result.error.contains(expectedFragment))
+    }
+
+    try expectMalformed(
+      ["examples", "avatar-stack", "--json"],
+      contains: "examples avatar-stack <join|list|watch|leave>"
+    )
+    try expectMalformed(
+      ["examples", "avatars", "join", "--json"],
+      contains: "examples avatar-stack join <user-id>"
+    )
+    try expectMalformed(
+      ["examples", "avatar-stack", "join", "user-1", "--name", "  ", "--json"],
+      contains: "examples avatar-stack join <user-id>"
+    )
+    try expectMalformed(
+      ["examples", "avatar-stack", "list", "unexpected", "--json"],
+      contains: "examples avatar-stack list"
+    )
+    try expectMalformed(
+      ["examples", "avatar-stack-recipe", "watch", "--events", "2", "--jsonl"],
+      contains: "examples avatar-stack watch"
+    )
+    try expectMalformed(
+      ["examples", "avatar-stack", "leave", "--json"],
+      contains: "examples avatar-stack leave <user-id>"
+    )
+    try expectMalformed(
+      ["examples", "avatar-stack", "dance", "--json"],
+      contains: "Unknown avatar stack command: dance"
+    )
+
+    expectNoDifference(
+      try FileManager.default.contentsOfDirectory(atPath: homeURL.path),
+      []
+    )
+  }
+
+  @Test
   func cliMalformedSyncUpsArgumentsDoNotBootstrapState() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)

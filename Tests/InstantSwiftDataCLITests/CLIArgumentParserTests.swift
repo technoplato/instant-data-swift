@@ -1398,15 +1398,15 @@ struct CLIArgumentParserTests {
   func examplesAvatarStackLeafParserParsesCommandsAndOptions() throws {
     expectNoDifference(
       try parseExamples(["avatar-stack", "join", "user-1"]),
-      .avatarStack(arguments: ["join", "user-1"])
+      .avatarStack(.join(CLIExamplesAvatarStackJoinInvocation(userID: "user-1")))
     )
     expectNoDifference(
       try parseExamples(["avatars", "list"]),
-      .avatarStack(arguments: ["list"])
+      .avatarStack(.list(CLIExamplesAvatarStackListInvocation()))
     )
     expectNoDifference(
       try parseExamples(["avatar-stack-recipe", "watch"]),
-      .avatarStack(arguments: ["watch"])
+      .avatarStack(.watch(CLIExamplesAvatarStackWatchInvocation()))
     )
     expectNoDifference(
       try parseExamplesAvatarStackLeaf(["join", "user-1"]),
