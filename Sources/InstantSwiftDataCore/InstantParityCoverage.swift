@@ -397,6 +397,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift uses declared attr ids and repeated ref inserts instead of JavaScript link arrays/add-attr generation; transport lowering preserves each lookup ref value on the same link attr."
     ),
     instant(
+      id: "instant.instaml.no-duplicate-ref-attrs",
+      sourceFile: instamlSource,
+      sourceTestName: "it doesn't create duplicate ref attrs",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "reciprocalLinksUseSingleRefAttributeForInstamlDuplicateRefAttrParity",
+      surface: "instaml",
+      status: .adapted,
+      notes: "Swift uses declared attributes rather than JavaScript add-attr generation; reciprocal forward/reverse link intents share one physical ref attr, materialize once locally, and preserve both transport add-triple intents."
+    ),
+    instant(
       id: "instant.weak-hash",
       sourceFile: weakHashSource,
       sourceTestName: "selected fields / object key order / date / known query",

@@ -1503,6 +1503,131 @@ struct InstantStoreTests {
   }
 
   @Test
+  func reciprocalLinksUseSingleRefAttributeForInstamlDuplicateRefAttrParity() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let source =
+      "upstream/instant/client/packages/core/__tests__/src/instaml.test.ts "
+      + "it doesn't create duplicate ref attrs "
+      + "[adapted: Swift uses declared attrs; reciprocal link intents share one physical ref attr.]"
+    let attributes = [
+      InstantAttribute(
+        id: "nsA/nsB",
+        namespace: "nsA",
+        name: "nsB",
+        valueType: .ref,
+        isRequired: false,
+        cardinality: .many,
+        forwardIdentity: "nsA/nsB",
+        reverseIdentity: "nsB/nsA",
+        linkNamespace: "nsB"
+      ),
+      InstantAttribute(
+        id: "nsB/title",
+        namespace: "nsB",
+        name: "title",
+        valueType: .string,
+        isRequired: false
+      ),
+    ]
+    let transaction = InstantStoreTransaction(
+      id: "tx-instaml-no-duplicate-ref-attrs",
+      operations: [
+        .insert(
+          InstantTriple(
+            entityID: "a-1",
+            attributeID: "nsA/id",
+            value: .string("a-1"),
+            txID: "tx-instaml-no-duplicate-ref-attrs",
+            txTime: time
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "a-1",
+            attributeID: "nsA/nsB",
+            value: .ref("b-1"),
+            txID: "tx-instaml-no-duplicate-ref-attrs",
+            txTime: time
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "b-1",
+            attributeID: "nsB/id",
+            value: .string("b-1"),
+            txID: "tx-instaml-no-duplicate-ref-attrs",
+            txTime: time
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "a-1",
+            attributeID: "nsA/nsB",
+            value: .ref("b-1"),
+            txID: "tx-instaml-no-duplicate-ref-attrs",
+            txTime: time
+          )
+        ),
+      ]
+    )
+
+    let store = InstantStore(snapshot: InstantStoreSnapshot(attributes: attributes))
+    _ = try await store.prepare(transaction)
+    let snapshot = await store.snapshot()
+    expectNoDifference(
+      snapshot.attributes.filter { $0.valueType == .ref }.map(\.id),
+      ["nsA/nsB"],
+      source
+    )
+    expectNoDifference(snapshot.triples.count, 3, source)
+
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: attributes
+      )
+    )
+    let result = try await runtime.transact(transaction, createdAt: time)
+    let nsA = try await runtime.query(
+      InstantQueryPlan(
+        id: "duplicate-ref-attrs.nsA",
+        namespace: "nsA",
+        includes: [InstantQueryInclude("nsB")]
+      )
+    )
+    let nsB = try await runtime.query(
+      InstantQueryPlan(
+        id: "duplicate-ref-attrs.nsB",
+        namespace: "nsB",
+        includes: [InstantQueryInclude("nsA", direction: .reverse)]
+      )
+    )
+
+    expectNoDifference(result.changedEntityIDs, Set(["a-1", "b-1"]), source)
+    expectNoDifference(result.tripleCount, 3, source)
+    expectNoDifference(nsA.map(\.id), ["a-1"], source)
+    expectNoDifference(nsA.first?.values["nsB"]?.values, [.ref("b-1")], source)
+    expectNoDifference(nsA.first?.links?["nsB"]?.map(\.id), ["b-1"], source)
+    expectNoDifference(nsB.map(\.id), ["b-1"], source)
+    expectNoDifference(nsB.first?.links?["nsA"]?.map(\.id), ["a-1"], source)
+
+    let transportMutations = await runtime.outboxTransportMutations()
+    let transportMutation = try #require(transportMutations.first)
+    expectNoDifference(
+      transportMutation.txSteps,
+      [
+        .addTriple(entity: .id("a-1"), attributeID: "nsA/id", value: .string("a-1")),
+        .addTriple(entity: .id("a-1"), attributeID: "nsA/nsB", value: .string("b-1")),
+        .addTriple(entity: .id("b-1"), attributeID: "nsB/id", value: .string("b-1")),
+        .addTriple(entity: .id("a-1"), attributeID: "nsA/nsB", value: .string("b-1")),
+      ],
+      source
+    )
+  }
+
+  @Test
   func transportMutationPreservesLookupEntitiesForInstamlLinkAndUnlinkParity() throws {
     let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let userLookup = InstantLookupRef(
