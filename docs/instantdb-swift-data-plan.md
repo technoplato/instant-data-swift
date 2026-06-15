@@ -541,9 +541,11 @@ public API into SQL:
   to magic-code, refresh-token, id-token, OAuth exchange, auth token
   invalidation, and mutation transport, and should later apply to live sync,
   file storage, and network clients.
-  Current local progress: `InstantMagicCodeExchange` and
-  `InstantMutationTransportClient` follow this shape, the
-  public `InstantSwiftData` target exposes
+  Current local progress: `InstantMagicCodeExchange`,
+  `InstantRefreshTokenVerifier`, `InstantIDTokenExchange`,
+  `InstantOAuthExchange`, `InstantAuthTokenInvalidator`, and
+  `InstantMutationTransportClient` follow this shape, the public
+  `InstantSwiftData` target exposes
   `DependencyValues.instantMagicCodeExchange` and
   `DependencyValues.instantRefreshTokenVerifier` and
   `DependencyValues.instantIDTokenExchange` and

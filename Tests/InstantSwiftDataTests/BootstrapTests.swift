@@ -174,6 +174,60 @@ struct BootstrapTests {
   }
 
   @Test
+  func bootstrapUsesLocalMagicCodeExchangeByDefault() async throws {
+    let appID = "local-magic-code-default-\(UUID().uuidString)"
+    let fixedDate = Date(timeIntervalSince1970: 1_700_000_000)
+    let fixedTimestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let fixedUUID = UUID(uuidString: "12345678-0000-0000-0000-000000000000")!
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataLocalMagicCode-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    try await withDependencies {
+      $0.date.now = fixedDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: appID,
+        persistenceURL: directory.appendingPathComponent("cache.sqlite"),
+        context: .test
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var client
+
+      let challenge = try await client.sendMagicCode(email: " User@Example.COM ")
+      expectNoDifference(
+        challenge,
+        InstantMagicCodeChallenge(
+          appID: appID,
+          email: "user@example.com",
+          code: "123456",
+          createdAt: fixedTimestamp,
+          expiresAt: InstantTimestamp(milliseconds: fixedTimestamp.milliseconds + 600_000)
+        )
+      )
+
+      let session = try await client.signInWithMagicCode(
+        email: "user@example.com",
+        code: " 123456 "
+      )
+      expectNoDifference(
+        session,
+        InstantAuthSession(
+          appID: appID,
+          userID: "email:user@example.com",
+          refreshToken: "local-magic:\(appID):user@example.com",
+          isGuest: false,
+          createdAt: fixedTimestamp,
+          updatedAt: fixedTimestamp
+        )
+      )
+      let persistedSession = try await client.authSession()
+      expectNoDifference(persistedSession, session)
+    }
+  }
+
+  @Test
   func runtimeBackedClientForwardsShareOperations() async throws {
     let appID = "share-forwarding-\(UUID().uuidString)"
     let directory = FileManager.default.temporaryDirectory
