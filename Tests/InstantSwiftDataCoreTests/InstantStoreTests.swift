@@ -1105,6 +1105,71 @@ struct InstantStoreTests {
   }
 
   @Test
+  func invalidLookupAttributePortsInstamlInvalidLinkAttrRejection() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let lookup = InstantLookupRef(
+      attributeID: "users/user_pref.email",
+      value: .string("test@example.com")
+    )
+    let transaction = InstantStoreTransaction(
+      id: "tx-instaml-invalid-link-lookup",
+      operations: [
+        .insertByLookup(
+          entity: lookup,
+          attributeID: "users/a",
+          value: .number(1),
+          txID: "tx-instaml-invalid-link-lookup",
+          txTime: time
+        )
+      ]
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: [
+          InstantAttribute(
+            id: "users/a",
+            namespace: "users",
+            name: "a",
+            valueType: .number
+          )
+        ]
+      )
+    )
+
+    let source =
+      "upstream/instant/client/packages/core/__tests__/src/instaml.test.ts "
+      + "it throws if you use an invalid link attr "
+      + "[adapted: Swift lookup refs use declared attribute ids rather than JavaScript lookup labels.]"
+    do {
+      try await runtime.transact(transaction, createdAt: time)
+      #expect(Bool(false), "Expected invalid link-shaped lookup attr to fail. \(source)")
+    } catch let error as InstantError {
+      expectNoDifference(
+        error,
+        InstantError(
+          code: .validationFailed,
+          operation: "lookup entity",
+          path: "users/user_pref.email",
+          localID: lookup.description,
+          message: "No attribute named 'users/user_pref.email' is declared for this lookup ref.",
+          recovery: "Declare the lookup attribute in the schema before writing by lookup ref."
+        ),
+        source
+      )
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error). \(source)")
+    }
+
+    let users = try await runtime.query(InstantQueryPlan(id: "invalid-link-lookup.users", namespace: "users"))
+    let pending = await runtime.pendingMutations()
+    expectNoDifference(users, [], source)
+    expectNoDifference(pending, [], source)
+  }
+
+  @Test
   func lookupAttributeWithPeriodPortsInstamlDottedAttr() async throws {
     let cacheURL = try temporaryCacheURL()
     let time = InstantTimestamp(milliseconds: 1_700_000_000_000)

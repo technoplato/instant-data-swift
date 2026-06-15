@@ -367,6 +367,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift uses explicit update preconditions instead of JavaScript store-aware inference; encoded txSteps preserve absent options for upserts and exact update-mode payloads."
     ),
     instant(
+      id: "instant.instaml.invalid-link-lookup-attr",
+      sourceFile: instamlSource,
+      sourceTestName: "it throws if you use an invalid link attr",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "invalidLookupAttributePortsInstamlInvalidLinkAttrRejection",
+      surface: "instaml",
+      status: .adapted,
+      notes: "Swift lookup refs use declared attribute ids rather than JavaScript lookup labels; link-shaped undeclared lookup attrs fail validation before local materialization or outbox persistence."
+    ),
+    instant(
       id: "instant.instaml.dotted-lookup-attribute",
       sourceFile: instamlSource,
       sourceTestName: "it doesn't throw if you have a period in your attr",
