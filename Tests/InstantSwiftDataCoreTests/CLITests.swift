@@ -5161,7 +5161,7 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.appID, "cli-cache-test")
     expectNoDifference(jsonOutput.event, "platform-adapters")
     expectNoDifference(jsonOutput.ok, true)
-    expectNoDifference(jsonOutput.evidenceCount, 14)
+    expectNoDifference(jsonOutput.evidenceCount, 15)
     expectNoDifference(jsonOutput.events, [
       "fetch-all",
       "fetch-one",
@@ -5173,6 +5173,7 @@ extension InstantStoreTests {
       "stored-files",
       "stream-chunks",
       "shares",
+      "fetch-all-filtered-reload",
       "fetch-all-dynamic-query",
       "fetch-all-nil-query",
       "fetch-all-cached-prior-error",
@@ -5189,6 +5190,7 @@ extension InstantStoreTests {
       "@StoredFiles",
       "@StreamChunks",
       "@Shares",
+      "@FetchAll/@Fetch(filtered)",
       "@FetchAll(dynamic)",
       "@FetchAll(nil)",
       "@FetchAll(error)",
@@ -5201,8 +5203,8 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.fileCount, 1)
     expectNoDifference(jsonOutput.streamChunkCount, 1)
     expectNoDifference(jsonOutput.shareCount, 1)
-    expectNoDifference(jsonOutput.lifecycleEventCount, 4)
-    expectNoDifference(jsonOutput.queryProbeCount, 4)
+    expectNoDifference(jsonOutput.lifecycleEventCount, 5)
+    expectNoDifference(jsonOutput.queryProbeCount, 10)
     expectNoDifference(jsonOutput.observationProbeCount, 1)
     expectNoDifference(jsonOutput.loadErrorOperations, ["query dynamic FetchAll"])
     expectNoDifference(jsonOutput.cancellationTerminated, true)
@@ -5211,7 +5213,7 @@ extension InstantStoreTests {
 
     let jsonlOutput = try runCLI(["validation", "wrappers", "--jsonl"], homeURL: homeURL)
     let lines = jsonlOutput.split(separator: "\n")
-    expectNoDifference(lines.count, 14)
+    expectNoDifference(lines.count, 15)
     let fetchEvidence = try JSONDecoder().decode(
       CLIPlatformAdapterValidationEvidence.self,
       from: Data(try #require(lines.first).utf8)
@@ -5235,6 +5237,19 @@ extension InstantStoreTests {
     expectNoDifference(shareEvidence.details.authUserID, "adapter-user")
     expectNoDifference(shareEvidence.details.shareIDs.count, 1)
 
+    let filteredReloadEvidence = try #require(
+      evidenceRows.first { $0.event == "fetch-all-filtered-reload" }
+    )
+    expectNoDifference(filteredReloadEvidence.details.adapter, "@FetchAll/@Fetch(filtered)")
+    expectNoDifference(
+      filteredReloadEvidence.details.fetchAllTitleBatches ?? [],
+      [[], ["Engineering"], [], ["Engineering"]]
+    )
+    expectNoDifference(
+      filteredReloadEvidence.details.fetchTitleBatches ?? [],
+      [[], ["Engineering"], [], ["Engineering"]]
+    )
+
     let cancellationEvidence = try #require(
       evidenceRows.first { $0.event == "fetch-all-cancellation" }
     )
@@ -5245,8 +5260,8 @@ extension InstantStoreTests {
     let humanOutput = try runCLI(["validation", "adapters"], homeURL: homeURL)
     #expect(humanOutput.contains("validation: ok"))
     #expect(humanOutput.contains("case: validation.platform.adapters"))
-    #expect(humanOutput.contains("evidence rows: 14"))
-    #expect(humanOutput.contains("lifecycle probes: 4"))
+    #expect(humanOutput.contains("evidence rows: 15"))
+    #expect(humanOutput.contains("lifecycle probes: 5"))
     #expect(humanOutput.contains("cancellation terminated: true"))
     #expect(humanOutput.contains("@FetchAll"))
     #expect(humanOutput.contains("@Shares"))
@@ -5358,9 +5373,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 45)
+    expectNoDifference(jsonOutput.recordCount, 46)
     expectNoDifference(jsonOutput.exactCount, 11)
-    expectNoDifference(jsonOutput.adaptedCount, 31)
+    expectNoDifference(jsonOutput.adaptedCount, 32)
     expectNoDifference(jsonOutput.blockedCount, 3)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -5418,7 +5433,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 45"))
+    #expect(humanOutput.contains("records: 46"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 
@@ -6704,6 +6719,8 @@ private struct CLIPlatformAdapterValidationDetails: Decodable {
   var fileIDs: [String]
   var streamChunkIDs: [String]
   var shareIDs: [String]
+  var fetchAllTitleBatches: [[String]]?
+  var fetchTitleBatches: [[String]]?
   var queryCount: Int?
   var observationCount: Int?
   var cancellationTerminated: Bool?

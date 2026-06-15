@@ -2867,6 +2867,79 @@ struct TypedAPITests {
   }
 
   @Test
+  func fetchAllAndFetchReloadFilteredActiveRows() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_175.5)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000681")!
+
+    try await withDependencies {
+      $0.date.now = baseDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "fetch-filtered-reload-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+      let activeQuery = TypedTodo.query
+        .where(TypedTodo.text == "Engineering")
+        .where(TypedTodo.isCompleted == false)
+        .order(TypedTodo.createdAt)
+
+      @FetchAll(activeQuery) var activeTodos: [TypedTodo]
+      @Fetch(
+        wrappedValue: [],
+        load: { client in
+          try await client.query(activeQuery)
+        }
+      ) var fetchedActiveTodos: [TypedTodo]
+
+      expectNoDifference(activeTodos, [])
+      expectNoDifference(fetchedActiveTodos, [])
+
+      let todoID = InstantID<TypedTodo>(rawValue: "todo-filtered-reload")
+      try await db.transact(id: "tx-filtered-reload-create-active") {
+        TypedTodo.create(
+          id: todoID,
+          TypedTodo.text.set("Engineering"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate)
+        )
+      }
+      try await $activeTodos.load()
+      try await $fetchedActiveTodos.load()
+      expectNoDifference(activeTodos.map(\.text), ["Engineering"])
+      expectNoDifference(fetchedActiveTodos.map(\.text), ["Engineering"])
+
+      try await db.transact(id: "tx-filtered-reload-update-inactive") {
+        TypedTodo.update(
+          id: todoID,
+          TypedTodo.isCompleted.set(true)
+        )
+      }
+      try await $activeTodos.load()
+      try await $fetchedActiveTodos.load()
+      expectNoDifference(activeTodos, [])
+      expectNoDifference(fetchedActiveTodos, [])
+
+      try await db.transact(id: "tx-filtered-reload-update-active") {
+        TypedTodo.update(
+          id: todoID,
+          TypedTodo.isCompleted.set(false)
+        )
+      }
+      try await $activeTodos.load()
+      try await $fetchedActiveTodos.load()
+      expectNoDifference(activeTodos.map(\.text), ["Engineering"])
+      expectNoDifference(fetchedActiveTodos.map(\.text), ["Engineering"])
+      expectNoDifference($activeTodos.loadError, nil)
+      expectNoDifference($fetchedActiveTodos.loadError, nil)
+      expectNoDifference($activeTodos.isLoading, false)
+      expectNoDifference($fetchedActiveTodos.isLoading, false)
+    }
+  }
+
+  @Test
   func fetchSubscribesToCustomDerivedValues() async throws {
     let baseDate = Date(timeIntervalSince1970: 1_700_000_176)
     let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000677")!

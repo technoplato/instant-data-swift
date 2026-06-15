@@ -481,13 +481,14 @@ struct BootstrapTests {
       "stored-files",
       "stream-chunks",
       "shares",
+      "fetch-all-filtered-reload",
       "fetch-all-dynamic-query",
       "fetch-all-nil-query",
       "fetch-all-cached-prior-error",
       "fetch-all-cancellation",
     ])
-    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 14))
-    expectNoDifference(result.evidence.map(\.appID), Array(repeating: result.appID, count: 14))
+    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 15))
+    expectNoDifference(result.evidence.map(\.appID), Array(repeating: result.appID, count: 15))
     expectNoDifference(result.evidence.map(\.details.adapter), [
       "@FetchAll",
       "@FetchOne",
@@ -499,6 +500,7 @@ struct BootstrapTests {
       "@StoredFiles",
       "@StreamChunks",
       "@Shares",
+      "@FetchAll/@Fetch(filtered)",
       "@FetchAll(dynamic)",
       "@FetchAll(nil)",
       "@FetchAll(error)",
@@ -527,6 +529,19 @@ struct BootstrapTests {
 
     let file = try #require(result.evidence.first { $0.event == "stored-files" }?.details)
     expectNoDifference(file.fileIDs, ["platform-adapter-validation-id"])
+
+    let filteredReload = try #require(
+      result.evidence.first { $0.event == "fetch-all-filtered-reload" }?.details
+    )
+    expectNoDifference(
+      filteredReload.fetchAllTitleBatches,
+      [[], ["Engineering"], [], ["Engineering"]]
+    )
+    expectNoDifference(
+      filteredReload.fetchTitleBatches,
+      [[], ["Engineering"], [], ["Engineering"]]
+    )
+    expectNoDifference(filteredReload.queryCount, 6)
 
     let dynamic = try #require(
       result.evidence.first { $0.event == "fetch-all-dynamic-query" }?.details

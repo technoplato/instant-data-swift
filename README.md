@@ -320,8 +320,9 @@ draft with generated ref metadata, summarized pending mutation payload shape,
 and relaunch persistence through `InstantSwiftDataClient.save(_:)`.
 `validation platform-adapters` emits terminal evidence that public wrapper
 adapters bind local client values for fetches, local IDs, auth, rooms, files,
-streams, and shares, and that `@FetchAll` handles dynamic reloads, nil
-queries, cached prior values on errors, and cancellation cleanup.
+streams, and shares, that `@FetchAll` handles dynamic reloads, nil queries,
+cached prior values on errors, and cancellation cleanup, and that `@FetchAll`
+and `@Fetch` reload filtered active rows.
 `validation syncups-recording` emits terminal evidence for the SyncUps scripted
 speech recording flow, meeting persistence across relaunch, sound effect
 advancement, and denied speech open-settings dependency seam.

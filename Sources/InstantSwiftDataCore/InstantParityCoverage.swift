@@ -377,6 +377,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Concurrent Instant creates and deletes are reloaded through @FetchAll with deterministic ordering."
     ),
     sqlite(
+      id: "sqlite.integration.filtered-reload",
+      sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/IntegrationTests.swift",
+      sourceTestName: "fetchAll_SQLString / fetch_FetchKeyRequest",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "fetchAllAndFetchReloadFilteredActiveRows",
+      surface: "adapter-fetch",
+      status: .adapted,
+      notes: "@FetchAll and @Fetch both reload the filtered active row set after active/inactive updates."
+    ),
+    sqlite(
       id: "sqlite.fetch-subscription.explicit-cancel",
       sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchSubscriptionTests.swift",
       sourceTestName: "completeWhenTaskExplicitlyCancelled",

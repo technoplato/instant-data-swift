@@ -417,6 +417,20 @@ struct LocalTodoValidationTests {
     expectNoDifference(result.evidence[8].details.streamChunkIDs.count, 1)
     expectNoDifference(result.evidence[9].details.shareIDs.count, 1)
 
+    let filteredReload = try #require(
+      result.evidence.first { $0.event == "fetch-all-filtered-reload" }?.details
+    )
+    expectNoDifference(
+      filteredReload.fetchAllTitleBatches,
+      [[], ["Engineering"], [], ["Engineering"]]
+    )
+    expectNoDifference(
+      filteredReload.fetchTitleBatches,
+      [[], ["Engineering"], [], ["Engineering"]]
+    )
+    expectNoDifference(filteredReload.queryCount, 6)
+    expectNoDifference(filteredReload.observationCount, 0)
+
     let dynamic = try #require(
       result.evidence.first { $0.event == "fetch-all-dynamic-query" }?.details
     )
@@ -692,15 +706,15 @@ struct LocalTodoValidationTests {
 
     expectNoDifference(run.result.event, "parity-report")
     expectNoDifference(run.result.coverageComplete, false)
-    expectNoDifference(run.result.recordCount, 45)
+    expectNoDifference(run.result.recordCount, 46)
     expectNoDifference(run.result.exactCount, 11)
-    expectNoDifference(run.result.adaptedCount, 31)
+    expectNoDifference(run.result.adaptedCount, 32)
     expectNoDifference(run.result.blockedCount, 3)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
     expectNoDifference(run.summary.appID, "validation-parity-test")
     expectNoDifference(run.summary.rowCount, run.result.recordCount)
     expectNoDifference(run.summary.ok, false)
-    expectNoDifference(run.summary.events, Array(repeating: "parity-record", count: 45))
+    expectNoDifference(run.summary.events, Array(repeating: "parity-record", count: 46))
     expectNoDifference(run.summary.failedEvents, Array(repeating: "parity-record", count: 3))
     #expect(
       run.result.sourceFiles.contains(
@@ -735,7 +749,7 @@ struct LocalTodoValidationTests {
     )
 
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 45)
+    expectNoDifference(rows.count, 46)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
@@ -766,7 +780,7 @@ struct LocalTodoValidationTests {
 
     #expect(result.status == 0)
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 45)
+    expectNoDifference(rows.count, 46)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
@@ -1497,6 +1511,7 @@ private let platformAdapterValidationEvents = [
   "stored-files",
   "stream-chunks",
   "shares",
+  "fetch-all-filtered-reload",
   "fetch-all-dynamic-query",
   "fetch-all-nil-query",
   "fetch-all-cached-prior-error",
@@ -1514,6 +1529,7 @@ private let platformAdapterValidationAdapters = [
   "@StoredFiles",
   "@StreamChunks",
   "@Shares",
+  "@FetchAll/@Fetch(filtered)",
   "@FetchAll(dynamic)",
   "@FetchAll(nil)",
   "@FetchAll(error)",

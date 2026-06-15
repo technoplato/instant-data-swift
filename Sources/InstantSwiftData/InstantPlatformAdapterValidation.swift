@@ -6,6 +6,8 @@ public struct PlatformAdapterValidationDetails: Codable, Equatable, Sendable {
   public var todoIDs: [String]
   public var todoTitles: [String]
   public var previousTodoTitles: [String]
+  public var fetchAllTitleBatches: [[String]]
+  public var fetchTitleBatches: [[String]]
   public var todoCount: Int
   public var selectedTodoID: String?
   public var selectedTodoTitle: String?
@@ -29,6 +31,8 @@ public struct PlatformAdapterValidationDetails: Codable, Equatable, Sendable {
     todoIDs: [String] = [],
     todoTitles: [String] = [],
     previousTodoTitles: [String] = [],
+    fetchAllTitleBatches: [[String]] = [],
+    fetchTitleBatches: [[String]] = [],
     todoCount: Int = 0,
     selectedTodoID: String? = nil,
     selectedTodoTitle: String? = nil,
@@ -51,6 +55,8 @@ public struct PlatformAdapterValidationDetails: Codable, Equatable, Sendable {
     self.todoIDs = todoIDs
     self.todoTitles = todoTitles
     self.previousTodoTitles = previousTodoTitles
+    self.fetchAllTitleBatches = fetchAllTitleBatches
+    self.fetchTitleBatches = fetchTitleBatches
     self.todoCount = todoCount
     self.selectedTodoID = selectedTodoID
     self.selectedTodoTitle = selectedTodoTitle
@@ -398,6 +404,14 @@ public enum InstantSwiftDataPlatformAdapterValidation {
     )
 
     evidence.append(
+      try await validateFilteredReload(
+        client: client,
+        appID: appID,
+        cacheURL: cacheURL,
+        timestamp: timestamp
+      )
+    )
+    evidence.append(
       try await validateDynamicQueryReload(
         appID: appID,
         cacheURL: cacheURL,
@@ -427,6 +441,97 @@ public enum InstantSwiftDataPlatformAdapterValidation {
     )
 
     return PlatformAdapterValidationResult(appID: appID, cacheURL: cacheURL, evidence: evidence)
+  }
+
+  private static func validateFilteredReload(
+    client: InstantSwiftDataClient,
+    appID: String,
+    cacheURL: URL,
+    timestamp: @escaping @Sendable () -> InstantTimestamp
+  ) async throws -> ValidationEvidenceRow<PlatformAdapterValidationDetails> {
+    let title = "Engineering"
+    let activeID = InstantID<PlatformAdapterTodo>(rawValue: "adapter-filtered-reload")
+    let activeQuery = PlatformAdapterTodo.query
+      .where(PlatformAdapterTodo.title == title)
+      .where(PlatformAdapterTodo.isCompleted == false)
+      .order(PlatformAdapterTodo.createdAt)
+    let fetchAll = FetchAll<PlatformAdapterTodo>(activeQuery)
+    let fetch = Fetch<[PlatformAdapterTodo]>(
+      wrappedValue: [],
+      load: { client in
+        try await client.query(activeQuery)
+      }
+    )
+    var fetchAllTitleBatches = [fetchAll.wrappedValue.map(\.title)]
+    var fetchTitleBatches = [fetch.wrappedValue.map(\.title)]
+
+    try await client.transact(id: "validation.platform-adapters.filtered.create") {
+      PlatformAdapterTodo.create(
+        id: activeID,
+        PlatformAdapterTodo.title.set(title),
+        PlatformAdapterTodo.isCompleted.set(false),
+        PlatformAdapterTodo.createdAt.set(date(from: timestamp()))
+      )
+    }
+    try await fetchAll.load(using: client)
+    try await fetch.load(using: client)
+    fetchAllTitleBatches.append(fetchAll.wrappedValue.map(\.title))
+    fetchTitleBatches.append(fetch.wrappedValue.map(\.title))
+
+    try await client.transact(id: "validation.platform-adapters.filtered.inactive") {
+      PlatformAdapterTodo.update(
+        id: activeID,
+        PlatformAdapterTodo.isCompleted.set(true)
+      )
+    }
+    try await fetchAll.load(using: client)
+    try await fetch.load(using: client)
+    fetchAllTitleBatches.append(fetchAll.wrappedValue.map(\.title))
+    fetchTitleBatches.append(fetch.wrappedValue.map(\.title))
+
+    try await client.transact(id: "validation.platform-adapters.filtered.active") {
+      PlatformAdapterTodo.update(
+        id: activeID,
+        PlatformAdapterTodo.isCompleted.set(false)
+      )
+    }
+    try await fetchAll.load(using: client)
+    try await fetch.load(using: client)
+    fetchAllTitleBatches.append(fetchAll.wrappedValue.map(\.title))
+    fetchTitleBatches.append(fetch.wrappedValue.map(\.title))
+
+    let expectedBatches = [[], [title], [], [title]]
+    guard
+      fetchAllTitleBatches == expectedBatches,
+      fetchTitleBatches == expectedBatches,
+      fetchAll.loadError == nil,
+      fetch.loadError == nil,
+      fetchAll.isLoading == false,
+      fetch.isLoading == false
+    else {
+      throw validationFailure(
+        operation: "validate platform adapter filtered reload",
+        message: "Expected @FetchAll and @Fetch to reload active rows after inactive/active updates."
+      )
+    }
+
+    return evidenceRow(
+      event: "fetch-all-filtered-reload",
+      appID: appID,
+      timestamp: timestamp,
+      details: PlatformAdapterValidationDetails(
+        cachePath: cacheURL.path,
+        adapter: "@FetchAll/@Fetch(filtered)",
+        todoIDs: fetchAll.wrappedValue.map(\.id.rawValue),
+        todoTitles: fetchAll.wrappedValue.map(\.title),
+        fetchAllTitleBatches: fetchAllTitleBatches,
+        fetchTitleBatches: fetchTitleBatches,
+        todoCount: fetchAll.wrappedValue.count,
+        queryCount: 6,
+        observationCount: 0,
+        isLoading: fetchAll.isLoading || fetch.isLoading
+      )
+    )
   }
 
   private static func validateDynamicQueryReload(
