@@ -151,18 +151,25 @@ struct CLIArgumentParserTests {
   }
 
   @Test
-  func examplesParserNormalizesAppBuilderAliasesAndPreservesArguments() throws {
+  func examplesParserNormalizesAppBuilderAliasesAndParsesLeaf() throws {
     expectNoDifference(
       try parseExamples(["app-builder", "generate", "Build", "a", "game"]),
-      .appBuilder(arguments: ["generate", "Build", "a", "game"])
+      .appBuilder(
+        .generate(
+          CLIExamplesAppBuilderGenerateInvocation(
+            prompt: "Build a game",
+            orgID: "local-instant-swift-data"
+          )
+        )
+      )
     )
     expectNoDifference(
       try parseExamples(["appbuilder", "list"]),
-      .appBuilder(arguments: ["list"])
+      .appBuilder(.list)
     )
     expectNoDifference(
       try parseExamples(["builder", "show", "build-1"]),
-      .appBuilder(arguments: ["show", "build-1"])
+      .appBuilder(.show(buildID: "build-1"))
     )
   }
 

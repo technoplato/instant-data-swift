@@ -434,8 +434,8 @@ struct InstantSwiftDataCLI {
       try await runAuthRecipe(leaf: leaf, output: output)
       return
 
-    case let .appBuilder(arguments):
-      try await runAppBuilder(arguments: arguments, output: output)
+    case let .appBuilder(leaf):
+      try await runAppBuilder(leaf: leaf, output: output)
       return
 
     case let .chat(arguments):
@@ -569,22 +569,14 @@ struct InstantSwiftDataCLI {
     }
   }
 
-  private static func runAppBuilder(arguments: [String], output: OutputMode) async throws {
-    let invocation: CLIExamplesAppBuilderLeafInvocation
-    do {
-      var input = arguments[...]
-      invocation = try CLIExamplesAppBuilderLeafParser().parse(&input)
-    } catch let error as CLIExamplesAppBuilderArgumentError {
-      throw CLIError(error.description, exitCode: error.exitCode)
-    }
-
-    if case let .unknown(command) = invocation {
+  private static func runAppBuilder(leaf: CLIExamplesAppBuilderLeafInvocation, output: OutputMode) async throws {
+    if case let .unknown(command) = leaf {
       throw CLIError("Unknown app-builder command: \(command). \(appBuilderUsage)", exitCode: 64)
     }
 
     let context = try await CLIContext.bootstrap(initialAttributes: AppBuilderExample.attributes)
 
-    switch invocation {
+    switch leaf {
     case let .generate(options):
       let (session, email) = try await requireAppBuilderEmailSession(context: context)
       let buildID = context.runtime.configuration.makeID()

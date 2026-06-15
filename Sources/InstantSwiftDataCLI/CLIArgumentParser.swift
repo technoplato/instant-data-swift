@@ -50,7 +50,7 @@ public struct CLIInvocation: Equatable, Sendable {
 public enum CLIExamplesInvocation: Equatable, Sendable {
   case todos(CLIExamplesTodosInvocation)
   case auth(CLIExamplesAuthLeafInvocation)
-  case appBuilder(arguments: [String])
+  case appBuilder(CLIExamplesAppBuilderLeafInvocation)
   case chat(arguments: [String])
   case counters(CLIExamplesCountersLeafInvocation)
   case microblog(arguments: [String])
@@ -2411,9 +2411,7 @@ public struct CLIExamplesParser: Parser {
       return .auth(try CLIExamplesAuthLeafParser().parse(&input))
 
     case "app-builder", "appbuilder", "builder":
-      let arguments = Array(input)
-      input.removeAll()
-      return .appBuilder(arguments: arguments)
+      return .appBuilder(try CLIExamplesAppBuilderLeafParser().parse(&input))
 
     case "chat":
       let arguments = Array(input)

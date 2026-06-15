@@ -826,6 +826,46 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliMalformedAppBuilderArgumentsDoNotBootstrapState() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    func expectMalformed(_ arguments: [String], contains expectedFragment: String) throws {
+      let result = try runCLIResult(arguments, homeURL: homeURL)
+      expectNoDifference(result.status, 64)
+      #expect(result.error.contains(expectedFragment))
+    }
+
+    try expectMalformed(
+      ["examples", "app-builder", "--json"],
+      contains: "examples app-builder <generate|list|show|append|finish|reset>"
+    )
+    try expectMalformed(
+      ["examples", "appbuilder", "generate", "--org-id", "org-1", "--json"],
+      contains: #"examples app-builder generate "prompt""#
+    )
+    try expectMalformed(
+      ["examples", "app-builder", "generate", "Build notes", "--org-id", "--json"],
+      contains: "Missing value for --org-id"
+    )
+    try expectMalformed(
+      ["examples", "builder", "append", "build-1", "--json"],
+      contains: "examples app-builder append <build-id>"
+    )
+    try expectMalformed(
+      ["examples", "builder", "dance", "--json"],
+      contains: "Unknown app-builder command: dance"
+    )
+
+    expectNoDifference(
+      try FileManager.default.contentsOfDirectory(atPath: homeURL.path),
+      []
+    )
+  }
+
+  @Test
   func cliMalformedTodoLinksArgumentsDoNotBootstrapState() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
