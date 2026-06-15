@@ -347,6 +347,126 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift uses a live/injectable user-cookie sync client and app-scoped SQLite metadata to prove startup does not sync again one millisecond before the one-day threshold."
     ),
     instant(
+      id: "instant.infinite-query.initial-snapshot",
+      sourceFile: infiniteQuerySource,
+      sourceTestName: "empty result",
+      swiftFile: infiniteQueryParitySwiftFile,
+      swiftTestName: "upstreamInfiniteQueryInitialSnapshotMatchesLiveSubscriptionData",
+      surface: "infinite-query",
+      status: .adapted,
+      notes: "Swift reads the local first-page snapshot instead of Reactor.getPreviousResult and compares it to the live subscription data."
+    ),
+    instant(
+      id: "instant.infinite-query.no-order-field",
+      sourceFile: infiniteQuerySource,
+      sourceTestName: "no order field",
+      swiftFile: infiniteQueryParitySwiftFile,
+      swiftTestName: "upstreamInfiniteQueryNoOrderFieldUsesImplicitStableOrder",
+      surface: "infinite-query",
+      status: .adapted,
+      notes: "Swift observes the local store with implicit serverCreatedAt ordering and proves the loaded values avoid the upstream stale order regression."
+    ),
+    instant(
+      id: "instant.infinite-query.adding-new-numbers",
+      sourceFile: infiniteQuerySource,
+      sourceTestName: "adding new numbers",
+      swiftFile: infiniteQueryParitySwiftFile,
+      swiftTestName: "upstreamInfiniteQueryAddingNewNumbersLoadsNextPageOnDemand",
+      surface: "infinite-query",
+      status: .adapted,
+      notes: "Swift uses a local infinite-query coordinator over InstantRuntime.observe and expands the forward page window only after loadNextPage."
+    ),
+    instant(
+      id: "instant.infinite-query.adding-negative-numbers",
+      sourceFile: infiniteQuerySource,
+      sourceTestName: "adding negative numbers",
+      swiftFile: infiniteQueryParitySwiftFile,
+      swiftTestName: "upstreamInfiniteQueryAddingNegativeNumbersPrependsLeadingRows",
+      surface: "infinite-query",
+      status: .adapted,
+      notes: "Swift prepends rows before the initial anchor instead of maintaining separate reverse subscriptions."
+    ),
+    instant(
+      id: "instant.infinite-query.add-zero-twice",
+      sourceFile: infiniteQuerySource,
+      sourceTestName: "add zero twice",
+      swiftFile: infiniteQueryParitySwiftFile,
+      swiftTestName: "upstreamInfiniteQueryAddZeroTwiceKeepsDuplicateSortValues",
+      surface: "infinite-query",
+      status: .adapted,
+      notes: "Swift relies on materialized duplicate scalar rows and deterministic id tie-breaking for equal descending values."
+    ),
+    instant(
+      id: "instant.infinite-query.descending",
+      sourceFile: infiniteQuerySource,
+      sourceTestName: "descending",
+      swiftFile: infiniteQueryParitySwiftFile,
+      swiftTestName: "upstreamInfiniteQueryDescendingLoadsDuplicateLowerValues",
+      surface: "infinite-query",
+      status: .adapted,
+      notes: "Swift expands the local descending forward page window on loadNextPage and preserves duplicate lower values."
+    ),
+    instant(
+      id: "instant.infinite-query.duplicate-boundary-desc",
+      sourceFile: infiniteQuerySource,
+      sourceTestName: "duplicate boundary values across pages (desc)",
+      swiftFile: infiniteQueryParitySwiftFile,
+      swiftTestName: "upstreamInfiniteQueryDuplicateBoundaryValuesAcrossDescendingPages",
+      surface: "infinite-query",
+      status: .adapted,
+      notes: "Swift uses full local ordering plus loaded page counts instead of chunk subscriptions and keeps duplicate boundary values across page loads."
+    ),
+    instant(
+      id: "instant.infinite-query.rapid-load-next-page",
+      sourceFile: infiniteQuerySource,
+      sourceTestName: "rapid loadNextPage calls do not duplicate pages",
+      swiftFile: infiniteQueryParitySwiftFile,
+      swiftTestName: "upstreamInfiniteQueryLoadNextPageDoesNotDuplicatePages",
+      surface: "infinite-query",
+      status: .adapted,
+      notes: "Swift mirrors the upstream single loadNextPage assertion and proves a page expansion does not duplicate already loaded rows."
+    ),
+    instant(
+      id: "instant.infinite-query.deleting-item",
+      sourceFile: infiniteQuerySource,
+      sourceTestName: "deleting an item",
+      swiftFile: infiniteQueryParitySwiftFile,
+      swiftTestName: "upstreamInfiniteQueryDeletingLoadedItemKeepsNextPageClosed",
+      surface: "infinite-query",
+      status: .adapted,
+      notes: "Swift recomputes the loaded local window after deletion and keeps canLoadNextPage false when the remaining loaded rows fit."
+    ),
+    instant(
+      id: "instant.infinite-query.update-out-of-window",
+      sourceFile: infiniteQuerySource,
+      sourceTestName: "updating an out-of-window item can reorder into visible chunk",
+      swiftFile: infiniteQueryParitySwiftFile,
+      swiftTestName: "upstreamInfiniteQueryUpdatingOutOfWindowItemReordersIntoVisibleChunk",
+      surface: "infinite-query",
+      status: .adapted,
+      notes: "Swift recomputes the anchored forward chunk after local updates so an out-of-window item can move into the visible page."
+    ),
+    instant(
+      id: "instant.infinite-query.page-size-one-asc",
+      sourceFile: infiniteQuerySource,
+      sourceTestName: "page size 1, asc",
+      swiftFile: infiniteQueryParitySwiftFile,
+      swiftTestName: "upstreamInfiniteQueryPageSizeOneAscending",
+      surface: "infinite-query",
+      status: .adapted,
+      notes: "Swift expands one local ascending row per loaded page."
+    ),
+    instant(
+      id: "instant.infinite-query.page-size-one-desc",
+      sourceFile: infiniteQuerySource,
+      sourceTestName: "page size 1, desc",
+      swiftFile: infiniteQueryParitySwiftFile,
+      swiftTestName: "upstreamInfiniteQueryPageSizeOneDescending",
+      surface: "infinite-query",
+      status: .adapted,
+      notes: "Swift expands one local descending row per loaded page."
+    ),
+    instant(
       id: "instant.reactor.query-subs-round-trips",
       sourceFile: reactorSource,
       sourceTestName: "querySubs round-trips",
@@ -2258,6 +2378,8 @@ public enum InstantSwiftDataParityCoverage {
     "upstream/instant/client/packages/core/__tests__/src/simple.e2e.test.ts"
   private static let cookieSyncSource =
     "upstream/instant/client/packages/core/__tests__/src/cookieSync.e2e.test.ts + upstream/instant/client/packages/core/src/Reactor.js + upstream/instant/client/packages/core/src/routeHandlerProtocol.ts + upstream/instant/client/packages/core/src/createRouteHandler.ts"
+  private static let infiniteQuerySource =
+    "upstream/instant/client/packages/core/__tests__/src/infiniteQuery.e2e.test.ts + upstream/instant/client/packages/core/src/infiniteQuery.ts"
   private static let reactorSource =
     "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts"
   private static let instamlSource =
@@ -2286,6 +2408,8 @@ public enum InstantSwiftDataParityCoverage {
     "Tests/InstantSwiftDataCoreTests/InstantSimpleE2EParityTests.swift"
   private static let cookieSyncParitySwiftFile =
     "Tests/InstantSwiftDataCoreTests/InstantCookieSyncParityTests.swift"
+  private static let infiniteQueryParitySwiftFile =
+    "Tests/InstantSwiftDataCoreTests/InstantInfiniteQueryParityTests.swift"
   private static let reactorParitySwiftFile =
     "Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift"
   private static let instaQLInferenceParitySwiftFile =

@@ -811,9 +811,9 @@ struct LocalTodoValidationTests {
 
     expectNoDifference(run.result.event, "parity-report")
     expectNoDifference(run.result.coverageComplete, false)
-    expectNoDifference(run.result.recordCount, 210)
+    expectNoDifference(run.result.recordCount, 222)
     expectNoDifference(run.result.exactCount, 28)
-    expectNoDifference(run.result.adaptedCount, 176)
+    expectNoDifference(run.result.adaptedCount, 188)
     expectNoDifference(run.result.blockedCount, 5)
     expectNoDifference(run.result.notApplicableCount, 1)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
@@ -858,6 +858,11 @@ struct LocalTodoValidationTests {
     #expect(
       run.result.sourceFiles.contains(
         "upstream/instant/client/packages/core/__tests__/src/cookieSync.e2e.test.ts + upstream/instant/client/packages/core/src/Reactor.js + upstream/instant/client/packages/core/src/routeHandlerProtocol.ts + upstream/instant/client/packages/core/src/createRouteHandler.ts"
+      )
+    )
+    #expect(
+      run.result.sourceFiles.contains(
+        "upstream/instant/client/packages/core/__tests__/src/infiniteQuery.e2e.test.ts + upstream/instant/client/packages/core/src/infiniteQuery.ts"
       )
     )
     #expect(
@@ -930,6 +935,25 @@ struct LocalTodoValidationTests {
         $0.id == "instant.cookie-sync.startup-recent" && $0.status == .adapted
       }
     )
+    for id in [
+      "instant.infinite-query.initial-snapshot",
+      "instant.infinite-query.no-order-field",
+      "instant.infinite-query.adding-new-numbers",
+      "instant.infinite-query.adding-negative-numbers",
+      "instant.infinite-query.add-zero-twice",
+      "instant.infinite-query.descending",
+      "instant.infinite-query.duplicate-boundary-desc",
+      "instant.infinite-query.rapid-load-next-page",
+      "instant.infinite-query.deleting-item",
+      "instant.infinite-query.update-out-of-window",
+      "instant.infinite-query.page-size-one-asc",
+      "instant.infinite-query.page-size-one-desc",
+    ] {
+      #expect(
+        run.result.records.contains { $0.id == id && $0.status == .adapted },
+        "Expected adapted infinite-query parity record \(id)"
+      )
+    }
     #expect(
       run.result.records.contains {
         $0.id == "instant.reactor.query-subs-round-trips" && $0.status == .adapted
@@ -1190,7 +1214,7 @@ struct LocalTodoValidationTests {
     )
 
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 210)
+    expectNoDifference(rows.count, 222)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
@@ -1252,7 +1276,7 @@ struct LocalTodoValidationTests {
 
     #expect(result.status == 0)
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 210)
+    expectNoDifference(rows.count, 222)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))

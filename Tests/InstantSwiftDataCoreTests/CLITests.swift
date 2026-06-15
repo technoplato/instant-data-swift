@@ -8316,9 +8316,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 210)
+    expectNoDifference(jsonOutput.recordCount, 222)
     expectNoDifference(jsonOutput.exactCount, 28)
-    expectNoDifference(jsonOutput.adaptedCount, 176)
+    expectNoDifference(jsonOutput.adaptedCount, 188)
     expectNoDifference(jsonOutput.blockedCount, 5)
     expectNoDifference(jsonOutput.notApplicableCount, 1)
     #expect(
@@ -8373,6 +8373,11 @@ extension InstantStoreTests {
     )
     #expect(
       jsonOutput.sourceFiles.contains(
+        "upstream/instant/client/packages/core/__tests__/src/infiniteQuery.e2e.test.ts + upstream/instant/client/packages/core/src/infiniteQuery.ts"
+      )
+    )
+    #expect(
+      jsonOutput.sourceFiles.contains(
         "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts"
       )
     )
@@ -8395,6 +8400,7 @@ extension InstantStoreTests {
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantDateCoercionTests.swift"))
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantSimpleE2EParityTests.swift"))
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantCookieSyncParityTests.swift"))
+    #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantInfiniteQueryParityTests.swift"))
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift"))
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantInstaQLInferenceParityTests.swift"))
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/CLITests.swift"))
@@ -8535,6 +8541,25 @@ extension InstantStoreTests {
         $0.id == "instant.cookie-sync.startup-recent" && $0.status == "adapted"
       }
     )
+    for id in [
+      "instant.infinite-query.initial-snapshot",
+      "instant.infinite-query.no-order-field",
+      "instant.infinite-query.adding-new-numbers",
+      "instant.infinite-query.adding-negative-numbers",
+      "instant.infinite-query.add-zero-twice",
+      "instant.infinite-query.descending",
+      "instant.infinite-query.duplicate-boundary-desc",
+      "instant.infinite-query.rapid-load-next-page",
+      "instant.infinite-query.deleting-item",
+      "instant.infinite-query.update-out-of-window",
+      "instant.infinite-query.page-size-one-asc",
+      "instant.infinite-query.page-size-one-desc",
+    ] {
+      #expect(
+        jsonOutput.records.contains { $0.id == id && $0.status == "adapted" },
+        "Expected adapted infinite-query parity record \(id)"
+      )
+    }
     #expect(
       jsonOutput.records.contains {
         $0.id == "instant.reactor.query-subs-round-trips" && $0.status == "adapted"
@@ -9135,9 +9160,9 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 210"))
+    #expect(humanOutput.contains("records: 222"))
     #expect(humanOutput.contains("exact: 28"))
-    #expect(humanOutput.contains("adapted: 176"))
+    #expect(humanOutput.contains("adapted: 188"))
     #expect(humanOutput.contains("blocked: 5"))
     #expect(humanOutput.contains("not applicable: 1"))
   }
