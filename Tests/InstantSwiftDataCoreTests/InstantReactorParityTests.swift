@@ -83,6 +83,102 @@ struct InstantReactorParityTests {
   }
 
   @Test
+  func upstreamReactorOptimisticTxIsNotOverwrittenByRefreshOK() async throws {
+    let cacheURL = try temporaryReactorParityCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_040_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reactor-optimistic-refresh-parity",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-reactor-optimistic-seed",
+        operations: TodoExample.createOperations(
+          id: "todo-reactor-optimistic",
+          text: "joe",
+          createdAt: createdAt,
+          transactionID: "tx-reactor-optimistic-seed"
+        )
+      ),
+      createdAt: createdAt
+    )
+    try await runtime.confirmMutation(id: "tx-reactor-optimistic-seed")
+    var visibleTexts = try await reactorOptimisticTextsFromQueryOnce(runtime)
+    expectNoDifference(visibleTexts, ["joe"], reactorOptimisticRefreshSource)
+
+    let joe2At = InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-reactor-optimistic-joe2",
+        operations: TodoExample.updateTextOperations(
+          id: "todo-reactor-optimistic",
+          text: "joe2",
+          updatedAt: joe2At,
+          transactionID: "tx-reactor-optimistic-joe2"
+        )
+      ),
+      createdAt: joe2At
+    )
+    visibleTexts = try await reactorOptimisticTextsFromQueryOnce(runtime)
+    expectNoDifference(visibleTexts, ["joe2"], reactorOptimisticRefreshSource)
+
+    let joe3At = InstantTimestamp(milliseconds: createdAt.milliseconds + 2)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-reactor-optimistic-joe3",
+        operations: TodoExample.updateTextOperations(
+          id: "todo-reactor-optimistic",
+          text: "joe3",
+          updatedAt: joe3At,
+          transactionID: "tx-reactor-optimistic-joe3"
+        )
+      ),
+      createdAt: joe3At
+    )
+    visibleTexts = try await reactorOptimisticTextsFromQueryOnce(runtime)
+    expectNoDifference(visibleTexts, ["joe3"], reactorOptimisticRefreshSource)
+
+    try await runtime.confirmMutation(id: "tx-reactor-optimistic-joe2")
+    let refreshEmission = try await runtime.queryOnce(TodoExample.query)
+    visibleTexts = try TodoExample.decode(refreshEmission.values).map(\.text)
+    let refreshedCache = try #require(try await runtime.cachedQuery(TodoExample.query))
+    let refreshedCacheTexts = try TodoExample.decode(refreshedCache.emission.values).map(\.text)
+    let pendingAfterFirstConfirm = await runtime.pendingMutations().map(\.id)
+    expectNoDifference(visibleTexts, ["joe3"], reactorOptimisticRefreshSource)
+    expectNoDifference(refreshedCacheTexts, ["joe3"], reactorOptimisticRefreshSource)
+    expectNoDifference(
+      pendingAfterFirstConfirm,
+      ["tx-reactor-optimistic-joe3"],
+      reactorOptimisticRefreshSource
+    )
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reactor-optimistic-refresh-parity",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let relaunchedTexts = try await reactorOptimisticTextsFromQueryOnce(relaunchedRuntime)
+    let relaunchedPending = await relaunchedRuntime.pendingMutations().map(\.id)
+    expectNoDifference(relaunchedTexts, ["joe3"], reactorOptimisticRefreshSource)
+    expectNoDifference(
+      relaunchedPending,
+      ["tx-reactor-optimistic-joe3"],
+      reactorOptimisticRefreshSource
+    )
+
+    try await relaunchedRuntime.confirmMutation(id: "tx-reactor-optimistic-joe3")
+    let afterSecondConfirmTexts = try await reactorOptimisticTextsFromQueryOnce(relaunchedRuntime)
+    let pendingAfterSecondConfirm = await relaunchedRuntime.pendingMutations()
+    expectNoDifference(afterSecondConfirmTexts, ["joe3"], reactorOptimisticRefreshSource)
+    expectNoDifference(pendingAfterSecondConfirm, [], reactorOptimisticRefreshSource)
+  }
+
+  @Test
   func upstreamReactorRewriteMutationsKeepsPendingTransportStable() async throws {
     let cacheURL = try temporaryReactorParityCacheURL()
     let seedTime = InstantTimestamp(milliseconds: 1_700_000_010_000)
@@ -206,6 +302,9 @@ private let reactorGetLocalIDSource =
 private let reactorQuerySubsSource =
   "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts querySubs round-trips [adapted: Swift writes queryOnce results to the SQLite query cache and relaunches cachedQuery/queryOnce fallback instead of IndexedDB querySubs callbacks.]"
 
+private let reactorOptimisticRefreshSource =
+  "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts optimisticTx is not overwritten by refresh-ok [adapted: Swift has no raw refresh-ok handler; it confirms earlier outbox mutations and runs queryOnce/cache refresh without replacing the later optimistic local write.]"
+
 private let reactorRewriteSource =
   "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts rewrite mutations [adapted: Swift pending mutations store typed transactions and lower them to stable transport steps over declared server attributes instead of rewriting cached JavaScript tx-steps.]"
 
@@ -230,6 +329,10 @@ private func reactorRewriteRuntime(
       initialAttributes: attributes
     )
   )
+}
+
+private func reactorOptimisticTextsFromQueryOnce(_ runtime: InstantRuntime) async throws -> [String] {
+  try await TodoExample.decode(runtime.queryOnce(TodoExample.query).values).map(\.text)
 }
 
 private func seedReactorRewriteFixture(

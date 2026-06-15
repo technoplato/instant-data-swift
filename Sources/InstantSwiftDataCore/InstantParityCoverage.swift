@@ -337,6 +337,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift persists queryOnce emissions to SQLite query cache rows and proves a relaunched runtime can read the cached result and surface it on closed queryOnce errors, adapting Reactor's IndexedDB querySubs callback round-trip."
     ),
     instant(
+      id: "instant.reactor.optimistic-refresh-preserves-local",
+      sourceFile: reactorSource,
+      sourceTestName: "optimisticTx is not overwritten by refresh-ok",
+      swiftFile: reactorParitySwiftFile,
+      swiftTestName: "upstreamReactorOptimisticTxIsNotOverwrittenByRefreshOK",
+      surface: "optimistic-mutations",
+      status: .adapted,
+      notes: "Swift has no raw refresh-ok message, so the adaptation confirms the first pending mutation, runs queryOnce/cache refresh, relaunches, and proves the later optimistic write remains visible until and after it is confirmed."
+    ),
+    instant(
       id: "instant.reactor.get-local-id-stability",
       sourceFile: reactorSource,
       sourceTestName: "getLocalId always returns the same id",

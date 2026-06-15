@@ -8316,9 +8316,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 204)
+    expectNoDifference(jsonOutput.recordCount, 205)
     expectNoDifference(jsonOutput.exactCount, 28)
-    expectNoDifference(jsonOutput.adaptedCount, 170)
+    expectNoDifference(jsonOutput.adaptedCount, 171)
     expectNoDifference(jsonOutput.blockedCount, 5)
     expectNoDifference(jsonOutput.notApplicableCount, 1)
     #expect(
@@ -8516,6 +8516,11 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.records.contains {
         $0.id == "instant.reactor.query-subs-round-trips" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.reactor.optimistic-refresh-preserves-local" && $0.status == "adapted"
       }
     )
     #expect(
@@ -9092,9 +9097,9 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 204"))
+    #expect(humanOutput.contains("records: 205"))
     #expect(humanOutput.contains("exact: 28"))
-    #expect(humanOutput.contains("adapted: 170"))
+    #expect(humanOutput.contains("adapted: 171"))
     #expect(humanOutput.contains("blocked: 5"))
     #expect(humanOutput.contains("not applicable: 1"))
   }
