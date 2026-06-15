@@ -8160,9 +8160,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 115)
+    expectNoDifference(jsonOutput.recordCount, 116)
     expectNoDifference(jsonOutput.exactCount, 19)
-    expectNoDifference(jsonOutput.adaptedCount, 93)
+    expectNoDifference(jsonOutput.adaptedCount, 94)
     expectNoDifference(jsonOutput.blockedCount, 3)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -8189,6 +8189,7 @@ extension InstantStoreTests {
         "upstream/instant/client/www/lib/recipes/auth.tsx"
       )
     )
+    #expect(jsonOutput.sourceFiles.contains("upstream/instant/client/packages/react-common/src"))
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantDateCoercionTests.swift"))
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/CLITests.swift"))
     #expect(jsonOutput.swiftFiles.contains("Tests/InstantSwiftDataTests/TypedAPITests.swift"))
@@ -8478,6 +8479,29 @@ extension InstantStoreTests {
         $0.id == "sqlite.case-studies.uikit-controller" && $0.status == "adapted"
       }
     )
+    let platformAdapterBinding = try #require(
+      jsonOutput.records.first { $0.id == "instant.react-common.platform-adapter-bindings" }
+    )
+    expectNoDifference(platformAdapterBinding.sourceKind, "instant-typescript")
+    expectNoDifference(platformAdapterBinding.sourceFile, "upstream/instant/client/packages/react-common/src")
+    expectNoDifference(
+      platformAdapterBinding.sourceTestName,
+      "useQuery, useAuth, useId, room, storage, streams, and shares hooks"
+    )
+    expectNoDifference(
+      platformAdapterBinding.swiftFile,
+      "Tests/InstantSwiftDataTests/BootstrapTests.swift"
+    )
+    expectNoDifference(
+      platformAdapterBinding.swiftTestName,
+      "platformAdapterValidationProvesWrappersBindLocalRuntime"
+    )
+    expectNoDifference(platformAdapterBinding.surface, "adapter-bindings")
+    expectNoDifference(platformAdapterBinding.status, "adapted")
+    expectNoDifference(
+      platformAdapterBinding.notes,
+      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares."
+    )
     #expect(
       jsonOutput.records.contains {
         $0.id == "sqlite.reminders.search-tags" && $0.status == "adapted"
@@ -8507,6 +8531,9 @@ extension InstantStoreTests {
     let jsonlOutput = try runCLI(["validation", "coverage", "--jsonl"], homeURL: homeURL)
     let lines = jsonlOutput.split(separator: "\n")
     expectNoDifference(lines.count, jsonOutput.recordCount)
+    let evidenceRows = try lines.map { line in
+      try JSONDecoder().decode(CLIParityCoverageEvidence.self, from: Data(line.utf8))
+    }
     let firstEvidence = try JSONDecoder().decode(
       CLIParityCoverageEvidence.self,
       from: Data(try #require(lines.first).utf8)
@@ -8523,6 +8550,34 @@ extension InstantStoreTests {
       "upstream/instant/client/packages/core/__tests__/src/store.test.ts"
     )
     expectNoDifference(firstEvidence.details.status, "exact")
+    let platformAdapterBindingEvidence = try #require(
+      evidenceRows.first { $0.entityID == "instant.react-common.platform-adapter-bindings" }
+    )
+    expectNoDifference(platformAdapterBindingEvidence.side, "instant-typescript")
+    expectNoDifference(platformAdapterBindingEvidence.ok, true)
+    expectNoDifference(platformAdapterBindingEvidence.details.sourceKind, "instant-typescript")
+    expectNoDifference(
+      platformAdapterBindingEvidence.details.sourceFile,
+      "upstream/instant/client/packages/react-common/src"
+    )
+    expectNoDifference(
+      platformAdapterBindingEvidence.details.sourceTestName,
+      "useQuery, useAuth, useId, room, storage, streams, and shares hooks"
+    )
+    expectNoDifference(
+      platformAdapterBindingEvidence.details.swiftFile,
+      "Tests/InstantSwiftDataTests/BootstrapTests.swift"
+    )
+    expectNoDifference(
+      platformAdapterBindingEvidence.details.swiftTestName,
+      "platformAdapterValidationProvesWrappersBindLocalRuntime"
+    )
+    expectNoDifference(platformAdapterBindingEvidence.details.surface, "adapter-bindings")
+    expectNoDifference(platformAdapterBindingEvidence.details.status, "adapted")
+    expectNoDifference(
+      platformAdapterBindingEvidence.details.notes,
+      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares."
+    )
     let blockedEvidence = try JSONDecoder().decode(
       CLIParityCoverageEvidence.self,
       from: Data(try #require(lines.last).utf8)
@@ -8532,7 +8587,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 115"))
+    #expect(humanOutput.contains("records: 116"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 

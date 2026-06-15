@@ -6,18 +6,19 @@ import Testing
 @Suite(.serialized)
 struct InstantStoreParityTests {
   @Test
-  func parityCoverageReportRecordsCurrentSourceProvenance() {
+  func parityCoverageReportRecordsCurrentSourceProvenance() throws {
     let report = InstantSwiftDataParityCoverage.current
 
     expectNoDifference(report.event, "parity-report")
     expectNoDifference(report.coverageComplete, false)
-    expectNoDifference(report.recordCount, 115)
+    expectNoDifference(report.recordCount, 116)
     expectNoDifference(report.exactCount, 19)
-    expectNoDifference(report.adaptedCount, 93)
+    expectNoDifference(report.adaptedCount, 94)
     expectNoDifference(report.blockedCount, 3)
     expectNoDifference(report.notApplicableCount, 0)
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/instaml.test.ts"))
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/store.test.ts"))
+    #expect(report.sourceFiles.contains("upstream/instant/client/packages/react-common/src"))
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/utils/dates.test.ts"))
     #expect(report.sourceFiles.contains("upstream/instant/client/www/_examples/app-builder.md + Galaxies-dev/app-builder@e67200cc70e01d88bd9a5382cf0380f4882fb8c7"))
     #expect(report.sourceFiles.contains("upstream/instant/client/www/lib/recipes/auth.tsx"))
@@ -27,6 +28,17 @@ struct InstantStoreParityTests {
     #expect(report.swiftFiles.contains("Tests/InstantSwiftDataCoreTests/InstantDateCoercionTests.swift"))
     #expect(report.swiftFiles.contains("Tests/InstantSwiftDataMacrosTests/InstantEntityMacroTests.swift"))
     #expect(report.swiftFiles.contains("Tests/InstantSwiftDataTests/TypedAPITests.swift"))
+    let fetchWrapperBindings = try #require(
+      report.records.first { $0.id == "sqlite.bindings.fetch-wrappers" }
+    )
+    expectNoDifference(
+      fetchWrapperBindings.sourceFile,
+      "upstream/sqlite-data/Sources/SQLiteData/FetchAll.swift + upstream/sqlite-data/Sources/SQLiteData/FetchOne.swift + upstream/sqlite-data/Sources/SQLiteData/Fetch.swift"
+    )
+    expectNoDifference(
+      fetchWrapperBindings.notes,
+      "FetchAll, FetchOne, and Fetch expose projected SwiftUI bindings over Instant values."
+    )
     #expect(report.records.contains { $0.id == "instant.store.simple-add" && $0.status == .exact })
     #expect(report.records.contains { $0.id == "instant.store.link-unlink-multi" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.store.link-unlink-without-update" && $0.status == .adapted })
@@ -97,6 +109,29 @@ struct InstantStoreParityTests {
     #expect(report.records.contains { $0.id == "instant.recipe.cursors.local-cli" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.recipe.custom-cursors.local-cli" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.recipe.merge-tile-game.local-cli" && $0.status == .adapted })
+    let platformAdapterBinding = try #require(
+      report.records.first { $0.id == "instant.react-common.platform-adapter-bindings" }
+    )
+    expectNoDifference(platformAdapterBinding.sourceKind, .instantTypeScript)
+    expectNoDifference(platformAdapterBinding.sourceFile, "upstream/instant/client/packages/react-common/src")
+    expectNoDifference(
+      platformAdapterBinding.sourceTestName,
+      "useQuery, useAuth, useId, room, storage, streams, and shares hooks"
+    )
+    expectNoDifference(
+      platformAdapterBinding.swiftFile,
+      "Tests/InstantSwiftDataTests/BootstrapTests.swift"
+    )
+    expectNoDifference(
+      platformAdapterBinding.swiftTestName,
+      "platformAdapterValidationProvesWrappersBindLocalRuntime"
+    )
+    expectNoDifference(platformAdapterBinding.surface, "adapter-bindings")
+    expectNoDifference(platformAdapterBinding.status, .adapted)
+    expectNoDifference(
+      platformAdapterBinding.notes,
+      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares."
+    )
     #expect(report.records.contains { $0.id == "instant.live-transport.swift-to-typescript" && $0.status == .blocked })
 
     let evidenceRows = report.evidenceRows(appID: "parity-test")

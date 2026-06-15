@@ -950,13 +950,23 @@ public enum InstantSwiftDataParityCoverage {
     ),
     sqlite(
       id: "sqlite.bindings.fetch-wrappers",
-      sourceFile: "upstream/sqlite-data/Sources/SQLiteData/FetchAll.swift",
+      sourceFile: "upstream/sqlite-data/Sources/SQLiteData/FetchAll.swift + upstream/sqlite-data/Sources/SQLiteData/FetchOne.swift + upstream/sqlite-data/Sources/SQLiteData/Fetch.swift",
       sourceTestName: "projectedValue binding",
       swiftFile: typedAPISwiftFile,
       swiftTestName: "projectedFetchWrappersExposeSwiftUIBindings",
       surface: "adapter-bindings",
       status: .adapted,
       notes: "FetchAll, FetchOne, and Fetch expose projected SwiftUI bindings over Instant values."
+    ),
+    instant(
+      id: "instant.react-common.platform-adapter-bindings",
+      sourceFile: "upstream/instant/client/packages/react-common/src",
+      sourceTestName: "useQuery, useAuth, useId, room, storage, streams, and shares hooks",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName: "platformAdapterValidationProvesWrappersBindLocalRuntime",
+      surface: "adapter-bindings",
+      status: .adapted,
+      notes: "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares."
     ),
     sqlite(
       id: "sqlite.draft.macro-generation",

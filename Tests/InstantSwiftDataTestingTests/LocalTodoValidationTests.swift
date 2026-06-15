@@ -441,6 +441,20 @@ struct LocalTodoValidationTests {
     expectNoDifference(result.evidence[8].details.streamChunkIDs.count, 1)
     expectNoDifference(result.evidence[9].details.shareIDs.count, 1)
 
+    let projectedBindings = try #require(
+      result.evidence.first { $0.event == "projected-bindings" }?.details
+    )
+    expectNoDifference(projectedBindings.adapter, "Projected bindings")
+    expectNoDifference(projectedBindings.bindingAdapters, projectedBindingAdapters)
+    expectNoDifference(projectedBindings.todoTitles, ["Bind public adapter wrappers"])
+    expectNoDifference(projectedBindings.todoCount, 1)
+    expectNoDifference(projectedBindings.authUserID, "adapter-user")
+    expectNoDifference(projectedBindings.roomMemberIDs, ["adapter-user"])
+    expectNoDifference(projectedBindings.topicMessageIDs.count, 1)
+    expectNoDifference(projectedBindings.fileIDs.count, 1)
+    expectNoDifference(projectedBindings.streamChunkIDs.count, 1)
+    expectNoDifference(projectedBindings.shareIDs.count, 1)
+
     let filteredReload = try #require(
       result.evidence.first { $0.event == "fetch-all-filtered-reload" }?.details
     )
@@ -575,6 +589,17 @@ struct LocalTodoValidationTests {
       rows.first { $0["event"] as? String == "shares" }?["details"] as? [String: Any]
     )
     expectNoDifference((shares["shareIDs"] as? [String])?.count, 1)
+
+    let projectedBindings = try #require(
+      rows.first { $0["event"] as? String == "projected-bindings" }?["details"]
+        as? [String: Any]
+    )
+    expectNoDifference(projectedBindings["adapter"] as? String, "Projected bindings")
+    expectNoDifference(projectedBindings["bindingAdapters"] as? [String], projectedBindingAdapters)
+    expectNoDifference(projectedBindings["todoTitles"] as? [String], [
+      "Bind public adapter wrappers"
+    ])
+    expectNoDifference(projectedBindings["authUserID"] as? String, "adapter-user")
 
     let cancellation = try #require(
       rows.first { $0["event"] as? String == "fetch-all-cancellation" }?["details"]
@@ -786,15 +811,18 @@ struct LocalTodoValidationTests {
 
     expectNoDifference(run.result.event, "parity-report")
     expectNoDifference(run.result.coverageComplete, false)
-    expectNoDifference(run.result.recordCount, 115)
+    expectNoDifference(run.result.recordCount, 116)
     expectNoDifference(run.result.exactCount, 19)
-    expectNoDifference(run.result.adaptedCount, 93)
+    expectNoDifference(run.result.adaptedCount, 94)
     expectNoDifference(run.result.blockedCount, 3)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
     expectNoDifference(run.summary.appID, "validation-parity-test")
     expectNoDifference(run.summary.rowCount, run.result.recordCount)
     expectNoDifference(run.summary.ok, false)
-    expectNoDifference(run.summary.events, Array(repeating: "parity-record", count: 115))
+    expectNoDifference(
+      run.summary.events,
+      Array(repeating: "parity-record", count: run.result.recordCount)
+    )
     expectNoDifference(run.summary.failedEvents, Array(repeating: "parity-record", count: 3))
     #expect(
       run.result.sourceFiles.contains(
@@ -876,6 +904,29 @@ struct LocalTodoValidationTests {
         $0.id == "instant.recipe.merge-tile-game.local-cli" && $0.status == .adapted
       }
     )
+    let platformAdapterBinding = try #require(
+      run.result.records.first { $0.id == "instant.react-common.platform-adapter-bindings" }
+    )
+    expectNoDifference(platformAdapterBinding.sourceKind.rawValue, "instant-typescript")
+    expectNoDifference(platformAdapterBinding.sourceFile, "upstream/instant/client/packages/react-common/src")
+    expectNoDifference(
+      platformAdapterBinding.sourceTestName,
+      "useQuery, useAuth, useId, room, storage, streams, and shares hooks"
+    )
+    expectNoDifference(
+      platformAdapterBinding.swiftFile,
+      "Tests/InstantSwiftDataTests/BootstrapTests.swift"
+    )
+    expectNoDifference(
+      platformAdapterBinding.swiftTestName,
+      "platformAdapterValidationProvesWrappersBindLocalRuntime"
+    )
+    expectNoDifference(platformAdapterBinding.surface, "adapter-bindings")
+    expectNoDifference(platformAdapterBinding.status, .adapted)
+    expectNoDifference(
+      platformAdapterBinding.notes,
+      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares."
+    )
     #expect(
       run.result.records.contains {
         $0.id == "instant.live-transport.swift-to-typescript" && $0.status == .blocked
@@ -899,13 +950,44 @@ struct LocalTodoValidationTests {
     )
 
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 115)
+    expectNoDifference(rows.count, 116)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
     expectNoDifference(Set(rows.map { $0["appID"] as? String ?? "" }), Set(["local-validation"]))
     expectNoDifference(Set(rows.map { $0["event"] as? String ?? "" }), Set(["parity-record"]))
     expectNoDifference(rows.filter { ($0["ok"] as? Bool) == false }.count, 3)
+    let platformAdapterBinding = try #require(rows.first { row in
+      row["entityID"] as? String == "instant.react-common.platform-adapter-bindings"
+    })
+    expectNoDifference(platformAdapterBinding["side"] as? String, "instant-typescript")
+    expectNoDifference(platformAdapterBinding["ok"] as? Bool, true)
+    let platformAdapterBindingDetails = try #require(
+      platformAdapterBinding["details"] as? [String: Any]
+    )
+    expectNoDifference(platformAdapterBindingDetails["sourceKind"] as? String, "instant-typescript")
+    expectNoDifference(
+      platformAdapterBindingDetails["sourceFile"] as? String,
+      "upstream/instant/client/packages/react-common/src"
+    )
+    expectNoDifference(
+      platformAdapterBindingDetails["sourceTestName"] as? String,
+      "useQuery, useAuth, useId, room, storage, streams, and shares hooks"
+    )
+    expectNoDifference(
+      platformAdapterBindingDetails["swiftFile"] as? String,
+      "Tests/InstantSwiftDataTests/BootstrapTests.swift"
+    )
+    expectNoDifference(
+      platformAdapterBindingDetails["swiftTestName"] as? String,
+      "platformAdapterValidationProvesWrappersBindLocalRuntime"
+    )
+    expectNoDifference(platformAdapterBindingDetails["surface"] as? String, "adapter-bindings")
+    expectNoDifference(platformAdapterBindingDetails["status"] as? String, "adapted")
+    expectNoDifference(
+      platformAdapterBindingDetails["notes"] as? String,
+      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares."
+    )
 
     let first = try #require(rows.first)
     expectNoDifference(first["entityID"] as? String, "instant.store.simple-add")
@@ -930,13 +1012,44 @@ struct LocalTodoValidationTests {
 
     #expect(result.status == 0)
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 115)
+    expectNoDifference(rows.count, 116)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
     expectNoDifference(Set(rows.map { $0["appID"] as? String ?? "" }), Set(["local-validation"]))
     expectNoDifference(Set(rows.map { $0["event"] as? String ?? "" }), Set(["parity-record"]))
     expectNoDifference(rows.filter { ($0["ok"] as? Bool) == false }.count, 3)
+    let platformAdapterBinding = try #require(rows.first { row in
+      row["entityID"] as? String == "instant.react-common.platform-adapter-bindings"
+    })
+    expectNoDifference(platformAdapterBinding["side"] as? String, "instant-typescript")
+    expectNoDifference(platformAdapterBinding["ok"] as? Bool, true)
+    let platformAdapterBindingDetails = try #require(
+      platformAdapterBinding["details"] as? [String: Any]
+    )
+    expectNoDifference(platformAdapterBindingDetails["sourceKind"] as? String, "instant-typescript")
+    expectNoDifference(
+      platformAdapterBindingDetails["sourceFile"] as? String,
+      "upstream/instant/client/packages/react-common/src"
+    )
+    expectNoDifference(
+      platformAdapterBindingDetails["sourceTestName"] as? String,
+      "useQuery, useAuth, useId, room, storage, streams, and shares hooks"
+    )
+    expectNoDifference(
+      platformAdapterBindingDetails["swiftFile"] as? String,
+      "Tests/InstantSwiftDataTests/BootstrapTests.swift"
+    )
+    expectNoDifference(
+      platformAdapterBindingDetails["swiftTestName"] as? String,
+      "platformAdapterValidationProvesWrappersBindLocalRuntime"
+    )
+    expectNoDifference(platformAdapterBindingDetails["surface"] as? String, "adapter-bindings")
+    expectNoDifference(platformAdapterBindingDetails["status"] as? String, "adapted")
+    expectNoDifference(
+      platformAdapterBindingDetails["notes"] as? String,
+      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares."
+    )
   }
 
   @Test
@@ -1663,6 +1776,7 @@ private let platformAdapterValidationEvents = [
   "stored-files",
   "stream-chunks",
   "shares",
+  "projected-bindings",
   "fetch-all-filtered-reload",
   "fetch-all-dynamic-query",
   "fetch-one-dynamic-query",
@@ -1686,6 +1800,7 @@ private let platformAdapterValidationAdapters = [
   "@StoredFiles",
   "@StreamChunks",
   "@Shares",
+  "Projected bindings",
   "@FetchAll/@Fetch(filtered)",
   "@FetchAll(dynamic)",
   "@FetchOne(dynamic)",
@@ -1696,6 +1811,19 @@ private let platformAdapterValidationAdapters = [
   "@FetchAll(error)",
   "@FetchAll(cancellation)",
   "@Fetch(request cancellation)",
+]
+
+private let projectedBindingAdapters = [
+  "@FetchAll",
+  "@FetchOne",
+  "@Fetch",
+  "@LocalID",
+  "@AuthSession",
+  "@RoomPresence",
+  "@RoomTopicMessages",
+  "@StoredFiles",
+  "@StreamChunks",
+  "@Shares",
 ]
 
 private let syncUpsRecordingValidationEvents = [
