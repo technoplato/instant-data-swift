@@ -912,6 +912,11 @@ public struct InstantQueryPageInfo: Hashable, Codable, Sendable {
   }
 }
 
+public enum InstantQueryRemotePageInfo: Hashable, Codable, Sendable {
+  case waiting
+  case ready(InstantQueryPageInfo)
+}
+
 public enum InstantQueryIncludeDirection: String, Codable, Sendable {
   case forward
   case reverse

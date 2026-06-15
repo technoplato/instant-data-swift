@@ -13882,6 +13882,95 @@ struct InstantStoreTests {
   }
 
   @Test
+  func storeObservationsHonorRemotePageInfoWindows() async throws {
+    let store = InstantStore(snapshot: InstantStoreSnapshot(attributes: TodoExample.attributes))
+    let firstCreatedAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let secondCreatedAt = InstantTimestamp(milliseconds: 1_700_000_000_100)
+    let thirdCreatedAt = InstantTimestamp(milliseconds: 1_700_000_000_200)
+    let secondCreatedAtDate = Date(
+      timeIntervalSince1970: Double(secondCreatedAt.milliseconds) / 1000
+    )
+    _ = try await store.prepare(
+      InstantStoreTransaction(
+        id: "tx-remote-page-info-seed",
+        operations: TodoExample.createOperations(
+          id: "todo-1",
+          text: "first",
+          createdAt: firstCreatedAt,
+          transactionID: "tx-remote-page-info-seed"
+        ) + TodoExample.createOperations(
+          id: "todo-2",
+          text: "second",
+          createdAt: secondCreatedAt,
+          transactionID: "tx-remote-page-info-seed"
+        ) + TodoExample.createOperations(
+          id: "todo-3",
+          text: "third",
+          createdAt: thirdCreatedAt,
+          transactionID: "tx-remote-page-info-seed"
+        )
+      )
+    )
+    let plan = InstantQueryPlan(
+      id: "todos.remote-page-info",
+      namespace: TodoExample.namespace,
+      order: InstantQueryOrder("createdAt"),
+      offset: 1,
+      limit: 1
+    )
+    let pageInfo = InstantQueryPageInfo(
+      startCursor: InstantQueryCursor(
+        entityID: "todo-2",
+        sortValue: .date(secondCreatedAtDate)
+      ),
+      endCursor: InstantQueryCursor(
+        entityID: "todo-2",
+        sortValue: .date(secondCreatedAtDate)
+      ),
+      hasPreviousPage: true,
+      hasNextPage: true
+    )
+
+    let waitingStream = await store.observe(plan, remotePageInfo: .waiting)
+    var waitingIterator = waitingStream.makeAsyncIterator()
+    let waitingInitial = await waitingIterator.next()
+    expectNoDifference(waitingInitial?.values.map(\.id), [])
+    expectNoDifference(waitingInitial?.pageInfo, nil)
+
+    let readyStream = await store.observe(plan, remotePageInfo: .ready(pageInfo))
+    var readyIterator = readyStream.makeAsyncIterator()
+    let readyInitial = await readyIterator.next()
+    expectNoDifference(readyInitial?.values.map(\.id), ["todo-2"])
+    expectNoDifference(readyInitial?.pageInfo, pageInfo)
+
+    let prepared = try await store.prepare(
+      InstantStoreTransaction(
+        id: "tx-remote-page-info-optimistic",
+        operations: TodoExample.createOperations(
+          id: "todo-0",
+          text: "optimistic before window",
+          createdAt: InstantTimestamp(milliseconds: 1_699_999_999_900),
+          transactionID: "tx-remote-page-info-optimistic"
+        )
+      ),
+      applyingTo: await store.snapshot()
+    )
+    let committed = await store.commitAndPublish(prepared)
+
+    let publishedWindows = committed.result.emissions
+      .map { $0.values.map(\.id) }
+      .sorted { $0.joined(separator: "|") < $1.joined(separator: "|") }
+    expectNoDifference(publishedWindows, [[], ["todo-2"]])
+
+    let waitingUpdate = await waitingIterator.next()
+    expectNoDifference(waitingUpdate?.values.map(\.id), [])
+    expectNoDifference(waitingUpdate?.pageInfo, nil)
+    let readyUpdate = await readyIterator.next()
+    expectNoDifference(readyUpdate?.values.map(\.id), ["todo-2"])
+    expectNoDifference(readyUpdate?.pageInfo, pageInfo)
+  }
+
+  @Test
   func liveObservationEmitsInitialAndOptimisticUpdates() async throws {
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(

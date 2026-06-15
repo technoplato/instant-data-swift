@@ -8320,8 +8320,8 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.coverageComplete, false)
     expectNoDifference(jsonOutput.recordCount, 223)
     expectNoDifference(jsonOutput.exactCount, 28)
-    expectNoDifference(jsonOutput.adaptedCount, 189)
-    expectNoDifference(jsonOutput.blockedCount, 5)
+    expectNoDifference(jsonOutput.adaptedCount, 190)
+    expectNoDifference(jsonOutput.blockedCount, 4)
     expectNoDifference(jsonOutput.notApplicableCount, 1)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -8644,7 +8644,7 @@ extension InstantStoreTests {
     for expected in [
       ("instant.query.pagination-limit", "exact"),
       ("instant.query.nested-limit-warning", "adapted"),
-      ("instant.query.pagination-offset-page-info", "blocked"),
+      ("instant.query.pagination-offset-page-info", "adapted"),
       ("instant.query.pagination-last", "exact"),
       ("instant.query.pagination-first", "exact"),
       ("instant.query.leading-ignores-start-cursor", "adapted"),
@@ -9167,8 +9167,8 @@ extension InstantStoreTests {
     #expect(humanOutput.contains("parity coverage: incomplete"))
     #expect(humanOutput.contains("records: 223"))
     #expect(humanOutput.contains("exact: 28"))
-    #expect(humanOutput.contains("adapted: 189"))
-    #expect(humanOutput.contains("blocked: 5"))
+    #expect(humanOutput.contains("adapted: 190"))
+    #expect(humanOutput.contains("blocked: 4"))
     #expect(humanOutput.contains("not applicable: 1"))
   }
 
@@ -9190,15 +9190,14 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.coverageComplete, false)
     expectNoDifference(jsonOutput.recordCount, 223)
     expectNoDifference(jsonOutput.exactCount, 28)
-    expectNoDifference(jsonOutput.adaptedCount, 189)
-    expectNoDifference(jsonOutput.blockedCount, 5)
+    expectNoDifference(jsonOutput.adaptedCount, 190)
+    expectNoDifference(jsonOutput.blockedCount, 4)
     expectNoDifference(jsonOutput.notApplicableCount, 1)
     #expect(jsonOutput.sourceFileCount > 0)
     expectNoDifference(jsonOutput.swiftFileCount, 22)
     expectNoDifference(
       jsonOutput.blockedIDs,
       [
-        "instant.query.pagination-offset-page-info",
         "instant.persisted-object.indexeddb-connection-recovery",
         "instant.live-transport.swift-to-typescript",
         "instant.live-transport.typescript-to-swift",
@@ -9222,7 +9221,7 @@ extension InstantStoreTests {
     let humanOutput = try runCLI(["validation", "coverage"], homeURL: homeURL)
     #expect(humanOutput.contains("validation coverage: incomplete"))
     #expect(humanOutput.contains("records: 223"))
-    #expect(humanOutput.contains("blocked: 5"))
+    #expect(humanOutput.contains("blocked: 4"))
   }
 
   @Test

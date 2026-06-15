@@ -255,14 +255,16 @@ struct TripleIndexes: Hashable, Codable, Sendable {
 
   func materialize(
     _ plan: InstantQueryPlan,
-    attributes: AttributeStore
+    attributes: AttributeStore,
+    remotePageInfo: InstantQueryRemotePageInfo? = nil
   ) -> [InstantEntitySnapshot] {
-    materializePage(plan, attributes: attributes).values
+    materializePage(plan, attributes: attributes, remotePageInfo: remotePageInfo).values
   }
 
   func materializePage(
     _ plan: InstantQueryPlan,
-    attributes: AttributeStore
+    attributes: AttributeStore,
+    remotePageInfo: InstantQueryRemotePageInfo? = nil
   ) -> InstantQueryPage {
     var snapshots: [QuerySnapshot] = []
 
@@ -312,7 +314,8 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       snapshots,
       plan: plan,
       effectiveOrder: effectiveOrder,
-      attributes: attributes
+      attributes: attributes,
+      remotePageInfo: remotePageInfo
     )
     let linked = includeLinks(paged.values.map(\.snapshot), plan: plan, attributes: attributes)
     return InstantQueryPage(
@@ -497,7 +500,8 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     _ snapshots: [QuerySnapshot],
     plan: InstantQueryPlan,
     effectiveOrder: InstantQueryOrder,
-    attributes: AttributeStore
+    attributes: AttributeStore,
+    remotePageInfo: InstantQueryRemotePageInfo? = nil
   ) -> (values: [QuerySnapshot], pageInfo: InstantQueryPageInfo?) {
     guard isValidPagination(plan) else {
       return ([], pageInfo(for: [], plan: plan, effectiveOrder: effectiveOrder))
@@ -506,8 +510,53 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     var page = snapshots
     var removedBefore = 0
     var removedAfter = 0
+    var returnedPageInfo: InstantQueryPageInfo?
 
-    if let after = plan.after {
+    switch remotePageInfo {
+    case .waiting? where requiresRemotePageInfo(plan):
+      return ([], nil)
+
+    case let .ready(pageInfo)? where requiresRemotePageInfo(plan):
+      guard let startCursor = pageInfo.startCursor else {
+        return ([], pageInfo)
+      }
+      let startIndex =
+        page.firstIndex {
+          Self.compare(
+            $0,
+            to: startCursor,
+            order: effectiveOrder,
+            namespace: plan.namespace,
+            attributes: attributes
+          ) != .orderedAscending
+        }
+        ?? page.count
+      removedBefore += min(startIndex, page.count)
+      page = Array(page.dropFirst(startIndex))
+
+      if let endCursor = pageInfo.endCursor {
+        let endIndex =
+          page.firstIndex {
+            Self.compare(
+              $0,
+              to: endCursor,
+              order: effectiveOrder,
+              namespace: plan.namespace,
+              attributes: attributes
+            ) == .orderedDescending
+          }
+          ?? page.count
+        let boundedEndIndex = max(0, min(endIndex, page.count))
+        removedAfter += page.count - boundedEndIndex
+        page = Array(page.prefix(boundedEndIndex))
+      }
+      returnedPageInfo = pageInfo
+
+    case .some(.ready(_)), .some(.waiting), .none:
+      break
+    }
+
+    if returnedPageInfo == nil, let after = plan.after {
       let startIndex: Int
       if after.sortValue == nil {
         guard let index = page.firstIndex(where: { $0.snapshot.id == after.entityID }) else {
@@ -532,7 +581,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       page = Array(page.dropFirst(startIndex))
     }
 
-    if let before = plan.before {
+    if returnedPageInfo == nil, let before = plan.before {
       let endIndex: Int
       if before.sortValue == nil {
         guard let index = page.firstIndex(where: { $0.snapshot.id == before.entityID }) else {
@@ -558,7 +607,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       page = Array(page.prefix(boundedEndIndex))
     }
 
-    if let offset = plan.offset {
+    if returnedPageInfo == nil, let offset = plan.offset {
       let count = min(offset, page.count)
       removedBefore += count
       page = Array(page.dropFirst(offset))
@@ -584,14 +633,21 @@ struct TripleIndexes: Hashable, Codable, Sendable {
 
     return (
       page,
-      pageInfo(
-        for: page,
-        plan: plan,
-        effectiveOrder: effectiveOrder,
-        hasPreviousPage: removedBefore > 0,
-        hasNextPage: removedAfter > 0
-      )
+      returnedPageInfo
+        ?? pageInfo(
+          for: page,
+          plan: plan,
+          effectiveOrder: effectiveOrder,
+          hasPreviousPage: removedBefore > 0,
+          hasNextPage: removedAfter > 0
+        )
     )
+  }
+
+  private func requiresRemotePageInfo(_ plan: InstantQueryPlan) -> Bool {
+    plan.offset.map { $0 > 0 } ?? false
+      || plan.after != nil
+      || plan.before != nil
   }
 
   private func isValidPagination(_ plan: InstantQueryPlan) -> Bool {

@@ -13,8 +13,8 @@ struct InstantStoreParityTests {
     expectNoDifference(report.coverageComplete, false)
     expectNoDifference(report.recordCount, 223)
     expectNoDifference(report.exactCount, 28)
-    expectNoDifference(report.adaptedCount, 189)
-    expectNoDifference(report.blockedCount, 5)
+    expectNoDifference(report.adaptedCount, 190)
+    expectNoDifference(report.blockedCount, 4)
     expectNoDifference(report.notApplicableCount, 1)
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/schema.test.ts"))
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/serializeSchema.test.ts"))
@@ -120,9 +120,9 @@ struct InstantStoreParityTests {
       (
         "instant.query.pagination-offset-page-info",
         "pagination offset waits for pageInfo",
-        "blocked",
-        .blocked,
-        "Swift supports local offset pagination, but upstream's wait-for-remote-pageInfo behavior and pageInfo-supplied window bounds have no local store input yet."
+        "upstreamInstaQLPaginationOrderingAndFields",
+        .adapted,
+        "Swift keeps local offset pagination by default and adds an explicit remote pageInfo execution input that waits for server bounds, filters by supplied start/end cursors, and passes the remote pageInfo through."
       ),
       (
         "instant.query.pagination-last",

@@ -27,7 +27,13 @@ struct PreparedStoreMutation: Sendable {
 
 private struct StoreObserver: Sendable {
   var plan: InstantQueryPlan
+  var remotePageInfo: InstantQueryRemotePageInfo?
   var continuation: AsyncStream<InstantQueryEmission>.Continuation
+}
+
+private struct StoreObservationKey: Hashable {
+  var plan: InstantQueryPlan
+  var remotePageInfo: InstantQueryRemotePageInfo?
 }
 
 public actor InstantStore {
@@ -66,28 +72,38 @@ public actor InstantStore {
     InstantStoreSnapshot(attributes: attributes.attributes, triples: indexes.triples)
   }
 
-  public func materialize(_ plan: InstantQueryPlan) -> [InstantEntitySnapshot] {
-    indexes.materialize(plan, attributes: attributes)
+  public func materialize(
+    _ plan: InstantQueryPlan,
+    remotePageInfo: InstantQueryRemotePageInfo? = nil
+  ) -> [InstantEntitySnapshot] {
+    indexes.materialize(plan, attributes: attributes, remotePageInfo: remotePageInfo)
   }
 
   public func materializeInstaQL(
     _ plan: InstantQueryPlan,
+    remotePageInfo: InstantQueryRemotePageInfo? = nil,
     cardinalityInference: Bool = true
   ) -> [InstantInstaQLObject] {
     InstantInstaQLProjection.project(
-      indexes.materialize(plan, attributes: attributes),
+      indexes.materialize(plan, attributes: attributes, remotePageInfo: remotePageInfo),
       plan: plan,
       attributes: attributes,
       cardinalityInference: cardinalityInference
     )
   }
 
-  public func materializePage(_ plan: InstantQueryPlan) -> InstantQueryPage {
-    indexes.materializePage(plan, attributes: attributes)
+  public func materializePage(
+    _ plan: InstantQueryPlan,
+    remotePageInfo: InstantQueryRemotePageInfo? = nil
+  ) -> InstantQueryPage {
+    indexes.materializePage(plan, attributes: attributes, remotePageInfo: remotePageInfo)
   }
 
-  public func materializeEmission(_ plan: InstantQueryPlan) -> InstantQueryEmission {
-    let page = indexes.materializePage(plan, attributes: attributes)
+  public func materializeEmission(
+    _ plan: InstantQueryPlan,
+    remotePageInfo: InstantQueryRemotePageInfo? = nil
+  ) -> InstantQueryEmission {
+    let page = indexes.materializePage(plan, attributes: attributes, remotePageInfo: remotePageInfo)
     return InstantQueryEmission(
       queryID: plan.id,
       sequence: sequence,
@@ -96,12 +112,20 @@ public actor InstantStore {
     )
   }
 
-  public func observe(_ plan: InstantQueryPlan) -> AsyncStream<InstantQueryEmission> {
+  public func observe(
+    _ plan: InstantQueryPlan,
+    remotePageInfo: InstantQueryRemotePageInfo? = nil
+  ) -> AsyncStream<InstantQueryEmission> {
     let observerID = UUID()
     let stream = AsyncStream<InstantQueryEmission>.makeStream(
       bufferingPolicy: .bufferingNewest(1)
     )
-    registerObserver(id: observerID, plan: plan, continuation: stream.continuation)
+    registerObserver(
+      id: observerID,
+      plan: plan,
+      remotePageInfo: remotePageInfo,
+      continuation: stream.continuation
+    )
     stream.continuation.onTermination = { @Sendable _ in
       Task {
         await self.cancelObservation(id: observerID)
@@ -263,34 +287,76 @@ public actor InstantStore {
     self.indexes = TripleIndexes(triples: prepared.snapshot.triples, attributes: self.attributes)
     self.sequence = prepared.sequence
 
-    var emissionsByPlan: [InstantQueryPlan: InstantQueryEmission] = [:]
+    var emissionsByObservation: [StoreObservationKey: InstantQueryEmission] = [:]
     for observer in observers.values {
+      let key = StoreObservationKey(
+        plan: observer.plan,
+        remotePageInfo: observer.remotePageInfo
+      )
       let emission: InstantQueryEmission
-      if let existing = emissionsByPlan[observer.plan] {
+      if let existing = emissionsByObservation[key] {
         emission = existing
       } else {
-        let page = indexes.materializePage(observer.plan, attributes: attributes)
+        let page = indexes.materializePage(
+          observer.plan,
+          attributes: attributes,
+          remotePageInfo: observer.remotePageInfo
+        )
         emission = InstantQueryEmission(
           queryID: observer.plan.id,
           sequence: sequence,
           values: page.values,
           pageInfo: page.pageInfo
         )
-        emissionsByPlan[observer.plan] = emission
+        emissionsByObservation[key] = emission
       }
       if shouldPublish {
         observer.continuation.yield(emission)
       }
     }
     var result = prepared.result
-    result.emissions = emissionsByPlan
+    result.emissions = emissionsByObservation
       .sorted { lhs, rhs in Self.emissionSortKey(lhs.key) < Self.emissionSortKey(rhs.key) }
       .map(\.value)
     return PreparedStoreMutation(result: result, snapshot: prepared.snapshot, sequence: sequence)
   }
 
-  private static func emissionSortKey(_ plan: InstantQueryPlan) -> String {
-    plan.cacheKey
+  private static func emissionSortKey(_ key: StoreObservationKey) -> String {
+    [
+      key.plan.cacheKey,
+      remotePageInfoSortKey(key.remotePageInfo),
+    ]
+    .joined(separator: "|")
+  }
+
+  private static func remotePageInfoSortKey(
+    _ remotePageInfo: InstantQueryRemotePageInfo?
+  ) -> String {
+    switch remotePageInfo {
+    case nil:
+      return "local"
+    case .waiting?:
+      return "waiting"
+    case let .ready(pageInfo)?:
+      return [
+        "ready",
+        cursorSortKey(pageInfo.startCursor),
+        cursorSortKey(pageInfo.endCursor),
+        "previous:\(pageInfo.hasPreviousPage)",
+        "next:\(pageInfo.hasNextPage)",
+      ]
+      .joined(separator: "|")
+    }
+  }
+
+  private static func cursorSortKey(_ cursor: InstantQueryCursor?) -> String {
+    guard let cursor else { return "nil" }
+    return [
+      cursor.entityID,
+      cursor.sortValue?.comparableKey ?? "nil",
+      "inclusive:\(cursor.inclusive)",
+    ]
+    .joined(separator: "|")
   }
 
   private static func duplicateEntityError(entityID: String, namespace: String?) -> InstantError {
@@ -923,10 +989,15 @@ public actor InstantStore {
   private func registerObserver(
     id: UUID,
     plan: InstantQueryPlan,
+    remotePageInfo: InstantQueryRemotePageInfo? = nil,
     continuation: AsyncStream<InstantQueryEmission>.Continuation
   ) {
-    observers[id] = StoreObserver(plan: plan, continuation: continuation)
-    continuation.yield(materializeEmission(plan))
+    observers[id] = StoreObserver(
+      plan: plan,
+      remotePageInfo: remotePageInfo,
+      continuation: continuation
+    )
+    continuation.yield(materializeEmission(plan, remotePageInfo: remotePageInfo))
   }
 
   private func cancelObservation(id: UUID) {

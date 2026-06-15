@@ -814,8 +814,8 @@ struct LocalTodoValidationTests {
     expectNoDifference(run.result.coverageComplete, false)
     expectNoDifference(run.result.recordCount, 223)
     expectNoDifference(run.result.exactCount, 28)
-    expectNoDifference(run.result.adaptedCount, 189)
-    expectNoDifference(run.result.blockedCount, 5)
+    expectNoDifference(run.result.adaptedCount, 190)
+    expectNoDifference(run.result.blockedCount, 4)
     expectNoDifference(run.result.notApplicableCount, 1)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
     expectNoDifference(run.summary.appID, "validation-parity-test")
@@ -825,7 +825,7 @@ struct LocalTodoValidationTests {
       run.summary.events,
       Array(repeating: "parity-record", count: run.result.recordCount)
     )
-    expectNoDifference(run.summary.failedEvents, Array(repeating: "parity-record", count: 5))
+    expectNoDifference(run.summary.failedEvents, Array(repeating: "parity-record", count: 4))
     #expect(
       run.result.sourceFiles.contains(
         "upstream/instant/client/packages/core/__tests__/src/store.test.ts"
@@ -1291,14 +1291,13 @@ struct LocalTodoValidationTests {
     expectNoDifference(details["coverageComplete"] as? Bool, false)
     expectNoDifference((details["recordCount"] as? NSNumber)?.intValue, 223)
     expectNoDifference((details["exactCount"] as? NSNumber)?.intValue, 28)
-    expectNoDifference((details["adaptedCount"] as? NSNumber)?.intValue, 189)
-    expectNoDifference((details["blockedCount"] as? NSNumber)?.intValue, 5)
+    expectNoDifference((details["adaptedCount"] as? NSNumber)?.intValue, 190)
+    expectNoDifference((details["blockedCount"] as? NSNumber)?.intValue, 4)
     expectNoDifference((details["notApplicableCount"] as? NSNumber)?.intValue, 1)
     expectNoDifference((details["swiftFileCount"] as? NSNumber)?.intValue, 22)
     expectNoDifference(
       details["blockedIDs"] as? [String],
       [
-        "instant.query.pagination-offset-page-info",
         "instant.persisted-object.indexeddb-connection-recovery",
         "instant.live-transport.swift-to-typescript",
         "instant.live-transport.typescript-to-swift",

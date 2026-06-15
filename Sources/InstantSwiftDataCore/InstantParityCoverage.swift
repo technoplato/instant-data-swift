@@ -803,10 +803,10 @@ public enum InstantSwiftDataParityCoverage {
       sourceFile: instaQLSource,
       sourceTestName: "pagination offset waits for pageInfo",
       swiftFile: queryExecutionSwiftFile,
-      swiftTestName: "blocked",
+      swiftTestName: "upstreamInstaQLPaginationOrderingAndFields",
       surface: "query",
-      status: .blocked,
-      notes: "Swift supports local offset pagination, but upstream's wait-for-remote-pageInfo behavior and pageInfo-supplied window bounds have no local store input yet."
+      status: .adapted,
+      notes: "Swift keeps local offset pagination by default and adds an explicit remote pageInfo execution input that waits for server bounds, filters by supplied start/end cursors, and passes the remote pageInfo through."
     ),
     instant(
       id: "instant.query.pagination-last",

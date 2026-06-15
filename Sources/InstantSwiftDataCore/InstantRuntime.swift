@@ -433,7 +433,10 @@ public final class InstantRuntime: Sendable {
     throw transactionChangedDuringPersistence(id: transaction.id)
   }
 
-  public func observe(_ plan: InstantQueryPlan) async -> AsyncStream<InstantQueryEmission> {
+  public func observe(
+    _ plan: InstantQueryPlan,
+    remotePageInfo: InstantQueryRemotePageInfo? = nil
+  ) async -> AsyncStream<InstantQueryEmission> {
     await enterOperationGate()
     recordActorHop(.persistence)
     let attributes: [InstantAttribute]
@@ -450,7 +453,7 @@ public final class InstantRuntime: Sendable {
       return Self.emptyObservation(plan)
     }
     recordActorHop(.store)
-    let stream = await store.observe(plan)
+    let stream = await store.observe(plan, remotePageInfo: remotePageInfo)
     await leaveOperationGate()
     return stream
   }

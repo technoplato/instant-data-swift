@@ -1140,6 +1140,89 @@ struct InstantQueryExecutionParityTests {
       "\(source) adapted: Swift rejects paginated nested includes at construction time instead of allowing them with a runtime warning."
     )
 
+    source = instaQLSource("pagination offset waits for pageInfo")
+    let waitingOffsetPage = await fixture.queryPage(
+      InstantQueryPlan(
+        id: "books.offset.waiting",
+        namespace: "books",
+        offset: 10,
+        limit: 5
+      ),
+      remotePageInfo: .waiting
+    )
+    expectParityEqual(waitingOffsetPage.values.map(\.id), [], source)
+    expectParityEqual(waitingOffsetPage.pageInfo, nil, "\(source) waiting pageInfo")
+
+    let descendingOffsetPage = await fixture.queryPage(
+      InstantQueryPlan(
+        id: "books.offset.desc",
+        namespace: "books",
+        order: .serverCreatedAtDescending,
+        offset: 10,
+        limit: 5
+      ),
+      remotePageInfo: .ready(
+        InstantQueryPageInfo(
+          startCursor: InstantQueryCursor(
+            entityID: "000212ec-fe77-473d-9494-d29898c53b7a",
+            sortValue: .number(1_718_118_155_976)
+          ),
+          endCursor: InstantQueryCursor(
+            entityID: "0270a27f-1363-4f6d-93c0-39cc43d92a78",
+            sortValue: .number(1_718_118_151_976)
+          ),
+          hasPreviousPage: false,
+          hasNextPage: false
+        )
+      )
+    )
+    expectParityEqual(
+      descendingOffsetPage.values.compactMap { $0.string("title") },
+      [
+        "Norse Mythology",
+        "Love-at-Arms",
+        "The Young Lions",
+        "The Hounds of God",
+        "Which Comes First, Cardio or Weights?",
+      ],
+      "\(source) serverCreatedAt desc"
+    )
+
+    let ascendingOffsetPage = await fixture.queryPage(
+      InstantQueryPlan(
+        id: "books.offset.asc",
+        namespace: "books",
+        order: .serverCreatedAt,
+        offset: 10,
+        limit: 5
+      ),
+      remotePageInfo: .ready(
+        InstantQueryPageInfo(
+          startCursor: InstantQueryCursor(
+            entityID: "f11c998f-d951-426b-b2b1-ffcb8d17bac5",
+            sortValue: .number(1_718_117_715_976)
+          ),
+          endCursor: InstantQueryCursor(
+            entityID: "f1c15604-93cd-4189-bb9a-d4ee97b95f32",
+            sortValue: .number(1_718_117_721_976)
+          ),
+          hasPreviousPage: false,
+          hasNextPage: false
+        )
+      )
+    )
+    expectParityEqual(
+      ascendingOffsetPage.values.compactMap { $0.string("title") },
+      [
+        "Sum",
+        "Insurgent",
+        "The Rational Male",
+        "The Restaurant at the End of the Universe",
+        "Bardelys the Magnificent",
+      ],
+      "\(source) serverCreatedAt asc"
+    )
+
     source = instaQLSource("pagination last")
     books = await fixture.query(
       InstantQueryPlan(id: "books.last", namespace: "books", last: 10)
@@ -1791,6 +1874,13 @@ private struct UpstreamInstantFixture {
 
   func query(_ plan: InstantQueryPlan) async -> [InstantEntitySnapshot] {
     await store.materialize(plan)
+  }
+
+  func queryPage(
+    _ plan: InstantQueryPlan,
+    remotePageInfo: InstantQueryRemotePageInfo? = nil
+  ) async -> InstantQueryPage {
+    await store.materializePage(plan, remotePageInfo: remotePageInfo)
   }
 
   func attribute(namespace: String, name: String) -> InstantAttribute? {
