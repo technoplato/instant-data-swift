@@ -1359,6 +1359,8 @@ struct LocalTodoValidationTests {
     #expect(script.contains("swift run instant-swift-data validation parity-report --jsonl"))
     #expect(script.contains("swift run instant-swift-data validation coverage --jsonl"))
     #expect(script.contains("swift run instant-swift-data-benchmarks"))
+    #expect(script.contains("swift run instant-swift-data admin transact validationTransport"))
+    #expect(script.contains("swift run instant-swift-data outbox transport --json"))
     #expect(script.contains("swift-local-integrations.jsonl"))
     #expect(script.contains("swift-reminders.jsonl"))
     #expect(script.contains("swift-typed-drafts.jsonl"))
@@ -1366,9 +1368,11 @@ struct LocalTodoValidationTests {
     #expect(script.contains("swift-syncups-recording.jsonl"))
     #expect(script.contains("swift-parity-report.jsonl"))
     #expect(script.contains("swift-coverage.jsonl"))
+    #expect(script.contains("swift-transport-contract.json"))
     #expect(script.contains("swift-benchmark.jsonl"))
     #expect(script.contains("INSTANT_SWIFT_DATA_NODE"))
     #expect(script.contains("validation/ts-runner/src/main.ts --fixtures"))
+    #expect(script.contains("--swift-transport-contract"))
     #expect(script.contains("--boundary-preflight"))
     #expect(script.contains("INSTANT_SWIFT_DATA_REMOTE_APP_ID"))
     #expect(script.contains("INSTANT_SWIFT_DATA_REQUIRE_REMOTE_PREFLIGHT"))
@@ -1588,6 +1592,44 @@ struct LocalTodoValidationTests {
           fi
           echo '{"case":"benchmark.local.todos","side":"swift","event":"summary","appID":"local-validation","timestampMs":7,"ok":true,"details":{"suite":"local-todos","iterations":7}}'
           ;;
+        instant-swift-data:admin:transact)
+          if [ "$5:$6:$7:$8:$9:${10}:${11}" != 'validationTransport:contract-note:--merge:{"done":false,"title":"Swift transport contract"}:--transaction-id:validation-transport-contract:--json' ]; then
+            echo "unexpected admin transact arguments: $*" >&2
+            exit 65
+          fi
+          if [ "${INSTANT_APP_ID:-}" != "local-validation" ]; then
+            echo "unexpected transport contract app id: ${INSTANT_APP_ID:-}" >&2
+            exit 66
+          fi
+          case "${INSTANT_SWIFT_DATA_HOME:-}" in
+            */transport-contract-home)
+              ;;
+            *)
+              echo "unexpected transport contract home: ${INSTANT_SWIFT_DATA_HOME:-}" >&2
+              exit 67
+              ;;
+          esac
+          echo '{"appID":"local-validation","event":"transact","changedID":"contract-note","transport":"not-implemented-local-cache-only","namespace":"validationTransport","transactionID":"validation-transport-contract","changedEntityIDs":["contract-note"],"tripleCount":3,"pendingMutationCount":1,"snapshotCount":1,"snapshots":[]}'
+          ;;
+        instant-swift-data:outbox:transport)
+          if [ "$5" != "--json" ] || [ -n "${6:-}" ]; then
+            echo "unexpected outbox transport arguments: $*" >&2
+            exit 65
+          fi
+          if [ "${INSTANT_APP_ID:-}" != "local-validation" ]; then
+            echo "unexpected outbox transport app id: ${INSTANT_APP_ID:-}" >&2
+            exit 66
+          fi
+          case "${INSTANT_SWIFT_DATA_HOME:-}" in
+            */transport-contract-home)
+              ;;
+            *)
+              echo "unexpected outbox transport home: ${INSTANT_SWIFT_DATA_HOME:-}" >&2
+              exit 67
+              ;;
+          esac
+          echo '{"appID":"local-validation","event":"transport","transport":"not-implemented-local-cache-only","includeFailed":false,"mutationCount":1,"txStepCount":3,"preconditionCount":0,"mutations":[{"mutationID":"validation-transport-contract","transactionID":"validation-transport-contract","status":"pending","preconditions":[],"txSteps":[["add-triple","contract-note","validationTransport/id","contract-note"],["add-triple","contract-note","validationTransport/done",false],["add-triple","contract-note","validationTransport/title","Swift transport contract"]]}]}'
+          ;;
         *)
           echo "unexpected swift arguments: $*" >&2
           exit 64
@@ -1610,6 +1652,17 @@ struct LocalTodoValidationTests {
             exit 68
           fi
           echo '{"case":"validation.typescript.fixtures","side":"typescript","event":"fixtures","appID":"local-validation","timestampMs":8,"ok":true,"details":{}}'
+          ;;
+        --swift-transport-contract)
+          if [ "$4:$5" != "--app-id:local-validation" ]; then
+            echo "unexpected transport contract arguments: $*" >&2
+            exit 73
+          fi
+          if [ ! -s "$3" ]; then
+            echo "missing swift transport contract artifact: $3" >&2
+            exit 74
+          fi
+          echo '{"case":"validation.typescript.transport-contract","side":"typescript","event":"swift-transport-contract","appID":"local-validation","timestampMs":9,"ok":true,"details":{"proofLevel":"contract-only","remoteBoundary":"pending"}}'
           ;;
         --boundary-preflight)
           if [ "$3:$4" != "--app-id:local-validation" ]; then
@@ -1683,8 +1736,13 @@ struct LocalTodoValidationTests {
       "swift-coverage-complete",
       "swift-benchmark-start",
       "swift-benchmark-complete",
+      "swift-transport-contract-start",
+      "swift-transport-contract-transact-complete",
+      "swift-transport-contract-complete",
       "typescript-fixtures-start",
       "typescript-fixtures-complete",
+      "typescript-transport-contract-start",
+      "typescript-transport-contract-complete",
       "typescript-boundary-preflight-start",
       "typescript-boundary-preflight-complete",
       "complete",
@@ -1735,7 +1793,17 @@ struct LocalTodoValidationTests {
     )
     #expect(
       FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-transport-contract.json").path
+      )
+    )
+    #expect(
+      FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("typescript-fixtures.jsonl").path
+      )
+    )
+    #expect(
+      FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-transport-contract.jsonl").path
       )
     )
     #expect(
@@ -1743,6 +1811,14 @@ struct LocalTodoValidationTests {
         atPath: resultsURL.appendingPathComponent("typescript-boundary.jsonl").path
       )
     )
+    let transportContractRows = try readJSONLines(
+      resultsURL.appendingPathComponent("typescript-transport-contract.jsonl")
+    )
+    expectNoDifference(
+      transportContractRows.map { $0["event"] as? String ?? "" },
+      ["swift-transport-contract"]
+    )
+    expectNoDifference(transportContractRows.first?["ok"] as? Bool, true)
     let boundaryRows = try readJSONLines(
       resultsURL.appendingPathComponent("typescript-boundary.jsonl")
     )
@@ -1761,8 +1837,11 @@ struct LocalTodoValidationTests {
         --fixtures)
           echo '{"case":"validation.typescript.fixtures","side":"typescript","event":"fixtures-override","appID":"local-validation","timestampMs":9,"ok":true,"details":{}}'
           ;;
+        --swift-transport-contract)
+          echo '{"case":"validation.typescript.transport-contract","side":"typescript","event":"transport-override","appID":"local-validation","timestampMs":10,"ok":true,"details":{}}'
+          ;;
         --boundary-preflight)
-          echo '{"case":"validation.typescript.boundary","side":"typescript","event":"boundary-override","appID":"local-validation","timestampMs":10,"ok":false,"details":{}}'
+          echo '{"case":"validation.typescript.boundary","side":"typescript","event":"boundary-override","appID":"local-validation","timestampMs":11,"ok":false,"details":{}}'
           ;;
         *)
           echo "unexpected node arguments: $*" >&2
@@ -1787,6 +1866,13 @@ struct LocalTodoValidationTests {
     expectNoDifference(
       overrideTypeScriptRows.map { $0["event"] as? String ?? "" },
       ["fixtures-override"]
+    )
+    let overrideTransportRows = try readJSONLines(
+      resultsURL.appendingPathComponent("typescript-transport-contract.jsonl")
+    )
+    expectNoDifference(
+      overrideTransportRows.map { $0["event"] as? String ?? "" },
+      ["transport-override"]
     )
     let overrideBoundaryRows = try readJSONLines(
       resultsURL.appendingPathComponent("typescript-boundary.jsonl")
@@ -1824,8 +1910,11 @@ struct LocalTodoValidationTests {
         --fixtures)
           echo '{"case":"validation.typescript.fixtures","side":"typescript","event":"fixtures-bundled","appID":"local-validation","timestampMs":10,"ok":true,"details":{}}'
           ;;
+        --swift-transport-contract)
+          echo '{"case":"validation.typescript.transport-contract","side":"typescript","event":"transport-bundled","appID":"local-validation","timestampMs":11,"ok":true,"details":{}}'
+          ;;
         --boundary-preflight)
-          echo '{"case":"validation.typescript.boundary","side":"typescript","event":"boundary-bundled","appID":"local-validation","timestampMs":11,"ok":false,"details":{}}'
+          echo '{"case":"validation.typescript.boundary","side":"typescript","event":"boundary-bundled","appID":"local-validation","timestampMs":12,"ok":false,"details":{}}'
           ;;
         *)
           echo "unexpected bundled node arguments: $*" >&2
@@ -1857,6 +1946,13 @@ struct LocalTodoValidationTests {
     expectNoDifference(
       bundledTypeScriptRows.map { $0["event"] as? String ?? "" },
       ["fixtures-bundled"]
+    )
+    let bundledTransportRows = try readJSONLines(
+      resultsURL.appendingPathComponent("typescript-transport-contract.jsonl")
+    )
+    expectNoDifference(
+      bundledTransportRows.map { $0["event"] as? String ?? "" },
+      ["transport-bundled"]
     )
     let bundledBoundaryRows = try readJSONLines(
       resultsURL.appendingPathComponent("typescript-boundary.jsonl")
@@ -1906,6 +2002,9 @@ struct LocalTodoValidationTests {
       "swift-coverage-complete",
       "swift-benchmark-start",
       "swift-benchmark-complete",
+      "swift-transport-contract-start",
+      "swift-transport-contract-transact-complete",
+      "swift-transport-contract-complete",
       "missing-node",
       "complete",
     ])
@@ -1915,6 +2014,11 @@ struct LocalTodoValidationTests {
     #expect(
       !FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("typescript-fixtures.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-transport-contract.jsonl").path
       )
     )
     #expect(
@@ -1963,8 +2067,41 @@ struct LocalTodoValidationTests {
       atomically: true,
       encoding: .utf8
     )
+    try "stale swift transport contract transact\n".write(
+      to: resultsURL.appendingPathComponent("swift-transport-contract-transact.json"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try "stale swift transport contract\n".write(
+      to: resultsURL.appendingPathComponent("swift-transport-contract.json"),
+      atomically: true,
+      encoding: .utf8
+    )
+    let staleTransportHomeURL = resultsURL.appendingPathComponent(
+      "transport-contract-home",
+      isDirectory: true
+    )
+    try FileManager.default.createDirectory(
+      at: staleTransportHomeURL,
+      withIntermediateDirectories: true
+    )
+    try "stale transport home\n".write(
+      to: staleTransportHomeURL.appendingPathComponent("cache.sqlite"),
+      atomically: true,
+      encoding: .utf8
+    )
     try "stale typescript\n".write(
       to: resultsURL.appendingPathComponent("typescript-fixtures.jsonl"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try "stale typescript transport contract\n".write(
+      to: resultsURL.appendingPathComponent("typescript-transport-contract.jsonl"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try "stale boundary\n".write(
+      to: resultsURL.appendingPathComponent("typescript-boundary.jsonl"),
       atomically: true,
       encoding: .utf8
     )
@@ -2032,7 +2169,28 @@ struct LocalTodoValidationTests {
     )
     #expect(
       !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-transport-contract-transact.json").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-transport-contract.json").path
+      )
+    )
+    #expect(!FileManager.default.fileExists(atPath: staleTransportHomeURL.path))
+    #expect(
+      !FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("typescript-fixtures.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-transport-contract.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-boundary.jsonl").path
       )
     )
 
@@ -2285,8 +2443,13 @@ struct LocalTodoValidationTests {
       "swift-coverage-complete",
       "swift-benchmark-start",
       "swift-benchmark-complete",
+      "swift-transport-contract-start",
+      "swift-transport-contract-transact-complete",
+      "swift-transport-contract-complete",
       "typescript-fixtures-start",
       "typescript-fixtures-complete",
+      "typescript-transport-contract-start",
+      "typescript-transport-contract-complete",
       "typescript-boundary-preflight-start",
       "typescript-boundary-preflight-failed",
       "complete",

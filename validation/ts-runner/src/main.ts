@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const runnerDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(runnerDirectory, "../../..");
 const usage =
-  "Usage: node validation/ts-runner/src/main.ts [--fixtures|--boundary-preflight] [--require-boundary] [--app-id id] [--fixtures-dir path]";
+  "Usage: node validation/ts-runner/src/main.ts [--fixtures|--boundary-preflight|--swift-transport-contract path] [--require-boundary] [--app-id id] [--fixtures-dir path]";
 const defaultAPIURI = "https://api.instantdb.com";
 const defaultWebSocketURI = "wss://api.instantdb.com/runtime/session";
 
@@ -53,6 +53,7 @@ function parseArguments(argv) {
     websocketURI: process.env.INSTANT_WEBSOCKET_URI ?? defaultWebSocketURI,
     adminToken: adminToken.value,
     adminTokenSource: adminToken.source,
+    swiftTransportContractPath: null,
   };
 
   const args = [...argv];
@@ -70,6 +71,16 @@ function parseArguments(argv) {
       case "--require-boundary":
         options.requireBoundary = true;
         break;
+
+      case "--swift-transport-contract": {
+        const value = args.shift();
+        if (!value) {
+          throw new UsageError(usage);
+        }
+        options.mode = "swift-transport-contract";
+        options.swiftTransportContractPath = resolve(value);
+        break;
+      }
 
       case "--app-id": {
         const value = args.shift();
@@ -819,6 +830,141 @@ function verifyBoundaryPreflight(options) {
   }
 }
 
+const expectedSwiftTransportContract = {
+  appID: "local-validation",
+  event: "transport",
+  transport: "not-implemented-local-cache-only",
+  includeFailed: false,
+  mutationCount: 1,
+  mutationArrayCount: 1,
+  txStepCount: 3,
+  preconditionCount: 0,
+  mutationID: "validation-transport-contract",
+  status: "pending",
+  txSteps: [
+    ["add-triple", "contract-note", "validationTransport/id", "contract-note"],
+    ["add-triple", "contract-note", "validationTransport/done", false],
+    [
+      "add-triple",
+      "contract-note",
+      "validationTransport/title",
+      "Swift transport contract",
+    ],
+  ],
+};
+
+function issue(path, expected, actual) {
+  return { path, expected, actual };
+}
+
+function verifySwiftTransportContract(options) {
+  const path = options.swiftTransportContractPath;
+  if (!path || !existsSync(path)) {
+    emit({
+      case: "validation.typescript.transport-contract",
+      event: "swift-transport-contract",
+      appID: options.appID,
+      ok: false,
+      details: {
+        path,
+        proofLevel: "contract-only",
+        remoteBoundary: "pending",
+        issues: [issue("$.path", "existing Swift transport artifact", path)],
+      },
+    });
+    process.exitCode = 1;
+    return;
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(readFileSync(path, "utf8"));
+  } catch (error) {
+    emit({
+      case: "validation.typescript.transport-contract",
+      event: "swift-transport-contract",
+      appID: options.appID,
+      ok: false,
+      details: {
+        path,
+        proofLevel: "contract-only",
+        remoteBoundary: "pending",
+        issues: [issue("$.json", "valid JSON", String(error))],
+      },
+    });
+    process.exitCode = 1;
+    return;
+  }
+
+  const mutation = Array.isArray(payload.mutations) ? payload.mutations[0] : undefined;
+  const actual = {
+    appID: payload.appID,
+    event: payload.event,
+    transport: payload.transport,
+    includeFailed: payload.includeFailed,
+    mutationCount: payload.mutationCount,
+    mutationArrayCount: Array.isArray(payload.mutations) ? payload.mutations.length : null,
+    txStepCount: payload.txStepCount,
+    preconditionCount: payload.preconditionCount,
+    mutationID: mutation?.mutationID,
+    transactionID: mutation?.transactionID,
+    status: mutation?.status,
+    preconditions: mutation?.preconditions,
+    txSteps: mutation?.txSteps,
+  };
+  const expected = {
+    ...expectedSwiftTransportContract,
+    appID: options.appID,
+    transactionID: expectedSwiftTransportContract.mutationID,
+    preconditions: [],
+  };
+  const issues = [];
+
+  for (const key of [
+    "appID",
+    "event",
+    "transport",
+    "includeFailed",
+    "mutationCount",
+    "mutationArrayCount",
+    "txStepCount",
+    "preconditionCount",
+    "mutationID",
+    "transactionID",
+    "status",
+  ]) {
+    if (!Object.is(actual[key], expected[key])) {
+      issues.push(issue(`$.${key}`, expected[key], actual[key]));
+    }
+  }
+  if (JSON.stringify(actual.preconditions ?? null) !== JSON.stringify(expected.preconditions)) {
+    issues.push(issue("$.preconditions", expected.preconditions, actual.preconditions));
+  }
+  if (JSON.stringify(actual.txSteps ?? null) !== JSON.stringify(expected.txSteps)) {
+    issues.push(issue("$.txSteps", expected.txSteps, actual.txSteps));
+  }
+
+  const ok = issues.length === 0;
+  emit({
+    case: "validation.typescript.transport-contract",
+    event: "swift-transport-contract",
+    appID: options.appID,
+    ok,
+    details: {
+      path,
+      proofLevel: "contract-only",
+      remoteBoundary: "pending",
+      expected,
+      actual,
+      issues,
+    },
+  });
+
+  if (!ok) {
+    process.exitCode = 1;
+  }
+}
+
 function verifyFixtures(options) {
   const schemaPath = resolve(options.fixturesDirectory, "instant.schema.ts");
   const permsPath = resolve(options.fixturesDirectory, "instant.perms.ts");
@@ -885,6 +1031,10 @@ try {
   switch (options.mode) {
     case "boundary-preflight":
       verifyBoundaryPreflight(options);
+      break;
+
+    case "swift-transport-contract":
+      verifySwiftTransportContract(options);
       break;
 
     default:

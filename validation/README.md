@@ -95,6 +95,8 @@ evidence without requiring an Instant app or admin token:
 
 ```bash
 node validation/ts-runner/src/main.ts --fixtures
+INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR=/tmp/instant-validation-results validation/run-e2e.sh
+node validation/ts-runner/src/main.ts --swift-transport-contract /tmp/instant-validation-results/swift-transport-contract.json --app-id local-validation
 node validation/ts-runner/src/main.ts --boundary-preflight
 INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token node validation/ts-runner/src/main.ts --boundary-preflight --require-boundary
 ```
@@ -122,8 +124,12 @@ artifacts (`swift-schema-generate.json`,
 `swift-perms-verify.json`, `swift-generated-schema-verify.json`, and
 `swift-generated-perms-verify.json`), records the MacroTesting run as
 `swift-macro-tests.log`, records the local benchmark evidence, and then runs
-this fixture check and the remote boundary preflight when Node is available. The
-preflight writes `typescript-boundary.jsonl`; set
+this fixture check, a TypeScript structural check of the Swift-produced
+`swift-transport-contract.json`, and the remote boundary preflight when Node is
+available. The transport-contract check writes
+`typescript-transport-contract.jsonl` as contract-only evidence; it proves the
+local Swift outbox lowering can be consumed from TypeScript, not that Instant has
+accepted the mutation. The preflight writes `typescript-boundary.jsonl`; set
 `INSTANT_SWIFT_DATA_REMOTE_APP_ID` or `INSTANT_APP_ID`, plus
 `INSTANT_ADMIN_TOKEN` or `INSTANTDB_ADMIN_TOKEN`, and add
 `INSTANT_SWIFT_DATA_REQUIRE_REMOTE_PREFLIGHT=1` to make missing credentials fail

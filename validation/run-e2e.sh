@@ -21,6 +21,8 @@ rm -f \
   "${RESULTS_DIR}/swift-syncups-recording.jsonl" \
   "${RESULTS_DIR}/swift-parity-report.jsonl" \
   "${RESULTS_DIR}/swift-coverage.jsonl" \
+  "${RESULTS_DIR}/swift-transport-contract-transact.json" \
+  "${RESULTS_DIR}/swift-transport-contract.json" \
   "${RESULTS_DIR}/swift-schema-generate.json" \
   "${RESULTS_DIR}/swift-perms-generate.json" \
   "${RESULTS_DIR}/swift-schema-verify.json" \
@@ -30,9 +32,11 @@ rm -f \
   "${RESULTS_DIR}/swift-macro-tests.log" \
   "${RESULTS_DIR}/swift-benchmark.jsonl" \
   "${RESULTS_DIR}/typescript-fixtures.jsonl" \
+  "${RESULTS_DIR}/typescript-transport-contract.jsonl" \
   "${RESULTS_DIR}/typescript-boundary.jsonl" \
   "${RESULTS_DIR}/generated.instant.schema.ts" \
   "${RESULTS_DIR}/generated.instant.perms.ts"
+rm -rf "${RESULTS_DIR}/transport-contract-home"
 : > "${RESULTS_DIR}/orchestrator.jsonl"
 
 timestamp_ms() {
@@ -499,6 +503,51 @@ else
   exit "${status}"
 fi
 
+TRANSPORT_CONTRACT_HOME="${RESULTS_DIR}/transport-contract-home"
+log_json "swift-transport-contract-start" true "$(json_object "home" "${TRANSPORT_CONTRACT_HOME}")"
+if (
+  cd "${ROOT}"
+  INSTANT_APP_ID="${VALIDATION_APP_ID}" \
+    INSTANT_SWIFT_DATA_HOME="${TRANSPORT_CONTRACT_HOME}" \
+    swift run instant-swift-data admin transact validationTransport contract-note \
+      --merge '{"done":false,"title":"Swift transport contract"}' \
+      --transaction-id validation-transport-contract \
+      --json
+) | tee "${RESULTS_DIR}/swift-transport-contract-transact.json"; then
+  log_json "swift-transport-contract-transact-complete" true "$(json_object "path" "${RESULTS_DIR}/swift-transport-contract-transact.json")"
+else
+  status=$?
+  log_json \
+    "swift-transport-contract-transact-failed" \
+    false \
+    "$(json_failure_details "${RESULTS_DIR}/swift-transport-contract-transact.json" "${status}")"
+  log_json \
+    "complete" \
+    false \
+    "$(printf '{"resultsDir":%s,"failed":"swift-transport-contract-transact","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+  exit "${status}"
+fi
+
+if (
+  cd "${ROOT}"
+  INSTANT_APP_ID="${VALIDATION_APP_ID}" \
+    INSTANT_SWIFT_DATA_HOME="${TRANSPORT_CONTRACT_HOME}" \
+    swift run instant-swift-data outbox transport --json
+) | tee "${RESULTS_DIR}/swift-transport-contract.json"; then
+  log_json "swift-transport-contract-complete" true "$(json_object "path" "${RESULTS_DIR}/swift-transport-contract.json")"
+else
+  status=$?
+  log_json \
+    "swift-transport-contract-failed" \
+    false \
+    "$(json_failure_details "${RESULTS_DIR}/swift-transport-contract.json" "${status}")"
+  log_json \
+    "complete" \
+    false \
+    "$(printf '{"resultsDir":%s,"failed":"swift-transport-contract","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+  exit "${status}"
+fi
+
 NODE_EXECUTABLE=""
 if NODE_EXECUTABLE="$(resolve_node)"; then
   log_json "typescript-fixtures-start" true "$(json_object "node" "${NODE_EXECUTABLE}")"
@@ -517,6 +566,27 @@ if NODE_EXECUTABLE="$(resolve_node)"; then
       "complete" \
       false \
       "$(printf '{"resultsDir":%s,"failed":"typescript-fixtures","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+    exit "${status}"
+  fi
+
+  log_json "typescript-transport-contract-start" true "$(json_object "path" "${RESULTS_DIR}/swift-transport-contract.json")"
+  if (
+    cd "${ROOT}"
+    VALIDATION_APP_ID="${VALIDATION_APP_ID}" "${NODE_EXECUTABLE}" validation/ts-runner/src/main.ts \
+      --swift-transport-contract "${RESULTS_DIR}/swift-transport-contract.json" \
+      --app-id "${VALIDATION_APP_ID}"
+  ) | tee "${RESULTS_DIR}/typescript-transport-contract.jsonl"; then
+    log_json "typescript-transport-contract-complete" true "$(json_object "path" "${RESULTS_DIR}/typescript-transport-contract.jsonl")"
+  else
+    status=$?
+    log_json \
+      "typescript-transport-contract-failed" \
+      false \
+      "$(json_failure_details "${RESULTS_DIR}/typescript-transport-contract.jsonl" "${status}")"
+    log_json \
+      "complete" \
+      false \
+      "$(printf '{"resultsDir":%s,"failed":"typescript-transport-contract","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
     exit "${status}"
   fi
 
