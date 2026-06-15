@@ -462,8 +462,8 @@ struct InstantSwiftDataCLI {
       try await runMicroblog(leaf: leaf, output: output)
       return
 
-    case let .mobileChat(arguments):
-      try await runMobileChat(arguments: arguments, output: output)
+    case let .mobileChat(leaf):
+      try await runMobileChat(leaf: leaf, output: output)
       return
 
     case let .reactions(leaf):
@@ -2299,15 +2299,10 @@ struct InstantSwiftDataCLI {
     }
   }
 
-  private static func runMobileChat(arguments: [String], output: OutputMode) async throws {
-    let invocation: CLIExamplesMobileChatLeafInvocation
-    do {
-      var input = arguments[...]
-      invocation = try CLIExamplesMobileChatLeafParser().parse(&input)
-    } catch let error as CLIExamplesMobileChatArgumentError {
-      throw CLIError(error.description, exitCode: error.exitCode)
-    }
-
+  private static func runMobileChat(
+    leaf invocation: CLIExamplesMobileChatLeafInvocation,
+    output: OutputMode
+  ) async throws {
     if case let .unknown(command) = invocation {
       throw CLIError("Unknown mobile chat command: \(command). \(mobileChatUsage)", exitCode: 64)
     }

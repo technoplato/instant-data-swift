@@ -54,7 +54,7 @@ public enum CLIExamplesInvocation: Equatable, Sendable {
   case chat(CLIExamplesChatLeafInvocation)
   case counters(CLIExamplesCountersLeafInvocation)
   case microblog(CLIExamplesMicroblogLeafInvocation)
-  case mobileChat(arguments: [String])
+  case mobileChat(CLIExamplesMobileChatLeafInvocation)
   case reactions(CLIExamplesReactionsLeafInvocation)
   case typingIndicator(CLIExamplesTypingIndicatorLeafInvocation)
   case avatarStack(CLIExamplesAvatarStackLeafInvocation)
@@ -2423,9 +2423,7 @@ public struct CLIExamplesParser: Parser {
       return .microblog(try CLIExamplesMicroblogLeafParser().parse(&input))
 
     case "mobile-chat", "mobilechat":
-      let arguments = Array(input)
-      input.removeAll()
-      return .mobileChat(arguments: arguments)
+      return .mobileChat(try CLIExamplesMobileChatLeafParser().parse(&input))
 
     case "reactions", "reaction", "topics-reactions":
       return .reactions(try CLIExamplesReactionsLeafParser().parse(&input))

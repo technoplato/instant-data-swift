@@ -944,11 +944,17 @@ struct CLIArgumentParserTests {
   @Test
   func examplesMobileChatLeafParserParsesCommandsAndOptions() throws {
     expectNoDifference(try parseExamplesMobileChatLeaf(["seed"]), .seed)
+    expectNoDifference(try parseExamples(["mobile-chat", "seed"]), .mobileChat(.seed))
+    expectNoDifference(try parseExamples(["mobilechat", "seed"]), .mobileChat(.seed))
     expectNoDifference(try parseExamplesMobileChatLeaf(["channels"]), .channels)
     expectNoDifference(try parseExamplesMobileChatLeaf(["messages"]), .messages(channelID: nil))
     expectNoDifference(
       try parseExamplesMobileChatLeaf(["messages", "channel-1"]),
       .messages(channelID: "channel-1")
+    )
+    expectNoDifference(
+      try parseExamples(["mobile-chat", "messages", "channel-1"]),
+      .mobileChat(.messages(channelID: "channel-1"))
     )
     expectNoDifference(try parseExamplesMobileChatLeaf(["profiles"]), .profiles)
     expectNoDifference(try parseExamplesMobileChatLeaf(["profile"]), .profile(userID: nil))
@@ -967,6 +973,17 @@ struct CLIArgumentParserTests {
     expectNoDifference(
       try parseExamplesMobileChatLeaf(["send", "channel-1", "Hello", "there"]),
       .send(CLIExamplesMobileChatSendInvocation(channelID: "channel-1", content: "Hello there"))
+    )
+    expectNoDifference(
+      try parseExamples(["mobile-chat", "send", "channel-1", "Hello", "there"]),
+      .mobileChat(
+        .send(
+          CLIExamplesMobileChatSendInvocation(
+            channelID: "channel-1",
+            content: "Hello there"
+          )
+        )
+      )
     )
     expectNoDifference(
       try parseExamplesMobileChatLeaf(["post", "channel-1", "Hello"]),
@@ -3547,14 +3564,6 @@ struct CLIArgumentParserTests {
     expectNoDifference(
       try parseExamples(["cloudkit-demo", "list"]),
       .counters(.list)
-    )
-    expectNoDifference(
-      try parseExamples(["mobile-chat", "seed"]),
-      .mobileChat(arguments: ["seed"])
-    )
-    expectNoDifference(
-      try parseExamples(["mobilechat", "seed"]),
-      .mobileChat(arguments: ["seed"])
     )
     expectNoDifference(
       try parseExamples(["todos"]),
