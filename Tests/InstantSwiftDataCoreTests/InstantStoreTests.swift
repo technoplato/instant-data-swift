@@ -1628,6 +1628,123 @@ struct InstantStoreTests {
   }
 
   @Test
+  func schemaMetadataPortsInstamlAttrsAndLinks() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let source =
+      "upstream/instant/client/packages/core/__tests__/src/instaml.test.ts "
+      + "Schema: uses info in `attrs` and `links` "
+      + "[adapted: Swift uses declared attrs rather than transform-time add-attr generation.]"
+    let attributes = [
+      InstantAttribute(
+        id: "comments/slug",
+        namespace: "comments",
+        name: "slug",
+        valueType: .string,
+        isRequired: false,
+        isIndexed: true,
+        isUnique: true
+      ),
+      InstantAttribute(
+        id: "comments/book",
+        namespace: "comments",
+        name: "book",
+        valueType: .ref,
+        isRequired: false,
+        cardinality: .one,
+        forwardIdentity: "comments/book",
+        reverseIdentity: "books/comments",
+        linkNamespace: "books"
+      ),
+    ]
+    let transaction = InstantStoreTransaction(
+      id: "tx-instaml-schema-attrs-links",
+      operations: [
+        .insert(
+          InstantTriple(
+            entityID: "comment-1",
+            attributeID: "comments/id",
+            value: .string("comment-1"),
+            txID: "tx-instaml-schema-attrs-links",
+            txTime: time
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "comment-1",
+            attributeID: "comments/slug",
+            value: .string("test-slug"),
+            txID: "tx-instaml-schema-attrs-links",
+            txTime: time
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "comment-1",
+            attributeID: "comments/book",
+            value: .ref("book-1"),
+            txID: "tx-instaml-schema-attrs-links",
+            txTime: time
+          )
+        ),
+      ]
+    )
+
+    let store = InstantStore(snapshot: InstantStoreSnapshot(attributes: attributes))
+    _ = try await store.prepare(transaction)
+    let snapshot = await store.snapshot()
+    let attributesByID = Dictionary(uniqueKeysWithValues: snapshot.attributes.map { ($0.id, $0) })
+    let slugAttribute = try #require(attributesByID["comments/slug"])
+    let bookAttribute = try #require(attributesByID["comments/book"])
+    expectNoDifference(slugAttribute.namespace, "comments", source)
+    expectNoDifference(slugAttribute.name, "slug", source)
+    expectNoDifference(slugAttribute.valueType, .string, source)
+    expectNoDifference(slugAttribute.cardinality, .one, source)
+    expectNoDifference(slugAttribute.isUnique, true, source)
+    expectNoDifference(slugAttribute.isIndexed, true, source)
+    expectNoDifference(bookAttribute.namespace, "comments", source)
+    expectNoDifference(bookAttribute.name, "book", source)
+    expectNoDifference(bookAttribute.valueType, .ref, source)
+    expectNoDifference(bookAttribute.cardinality, .one, source)
+    expectNoDifference(bookAttribute.isUnique, false, source)
+    expectNoDifference(bookAttribute.isIndexed, false, source)
+    expectNoDifference(bookAttribute.forwardIdentity, "comments/book", source)
+    expectNoDifference(bookAttribute.reverseIdentity, "books/comments", source)
+    expectNoDifference(bookAttribute.linkNamespace, "books", source)
+    expectNoDifference(snapshot.triples.count, 3, source)
+
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: attributes
+      )
+    )
+    let result = try await runtime.transact(transaction, createdAt: time)
+    let comments = try await runtime.query(
+      InstantQueryPlan(id: "schema-attrs-links.comments", namespace: "comments")
+    )
+
+    expectNoDifference(result.changedEntityIDs, Set(["book-1", "comment-1"]), source)
+    expectNoDifference(result.tripleCount, 3, source)
+    expectNoDifference(comments.map(\.id), ["comment-1"], source)
+    expectNoDifference(comments.first?.values["slug"]?.first, .string("test-slug"), source)
+    expectNoDifference(comments.first?.values["book"]?.first, .ref("book-1"), source)
+
+    let transportMutations = await runtime.outboxTransportMutations()
+    let transportMutation = try #require(transportMutations.first)
+    expectNoDifference(
+      transportMutation.txSteps,
+      [
+        .addTriple(entity: .id("comment-1"), attributeID: "comments/id", value: .string("comment-1")),
+        .addTriple(entity: .id("comment-1"), attributeID: "comments/slug", value: .string("test-slug")),
+        .addTriple(entity: .id("comment-1"), attributeID: "comments/book", value: .string("book-1")),
+      ],
+      source
+    )
+  }
+
+  @Test
   func transportMutationPreservesLookupEntitiesForInstamlLinkAndUnlinkParity() throws {
     let txTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let userLookup = InstantLookupRef(
