@@ -119,17 +119,21 @@ public actor InstantStore {
         }
 
       case let .requireEntityMissingByLookup(lookup, namespace):
-        let attribute = try Self.validateLookup(
+        let lookupAttribute = try Self.validateLookup(
           lookup,
           expectedNamespace: namespace,
           attributes: attributes
         )
-        let entityIDs = try Self.entityIDs(matching: lookup, in: indexes, attribute: attribute)
+        let entityIDs = try Self.entityIDs(
+          matching: lookup,
+          in: indexes,
+          lookupAttribute: lookupAttribute
+        )
         if let entityID = entityIDs.first {
           throw Self.duplicateEntityError(
             lookup: lookup,
             entityID: entityID,
-            attribute: attribute
+            attribute: lookupAttribute.attribute
           )
         }
 
@@ -154,14 +158,18 @@ public actor InstantStore {
         }
 
       case let .requireEntityExistsByLookup(lookup, namespace):
-        let attribute = try Self.validateLookup(
+        let lookupAttribute = try Self.validateLookup(
           lookup,
           expectedNamespace: namespace,
           attributes: attributes
         )
-        let entityIDs = try Self.entityIDs(matching: lookup, in: indexes, attribute: attribute)
+        let entityIDs = try Self.entityIDs(
+          matching: lookup,
+          in: indexes,
+          lookupAttribute: lookupAttribute
+        )
         guard !entityIDs.isEmpty else {
-          throw Self.missingEntityError(lookup: lookup, attribute: attribute)
+          throw Self.missingEntityError(lookup: lookup, attribute: lookupAttribute.attribute)
         }
 
       case .ruleParams:
@@ -465,7 +473,12 @@ public actor InstantStore {
       ]
 
     case let .deleteEntityByLookup(lookup):
-      let namespace = attributes[lookup.attributeID]?.namespace
+      let lookupAttribute = try validateLookup(
+        lookup,
+        expectedNamespace: nil,
+        attributes: attributes
+      )
+      let namespace = lookupAttribute.namespace
       guard
         let entityID = try resolveEntityID(
           lookup,
@@ -475,11 +488,7 @@ public actor InstantStore {
           resolvedLookups: &resolvedLookups
         )
       else { return [] }
-      if let namespace {
-        return [.deleteEntityInNamespace(entityID: entityID, namespace: namespace)]
-      } else {
-        return [.deleteEntity(entityID)]
-      }
+      return [.deleteEntityInNamespace(entityID: entityID, namespace: namespace)]
 
     case .requireEntityMissing, .requireEntityMissingByLookup,
       .requireEntityExists, .requireEntityExistsByLookup,
@@ -658,7 +667,7 @@ public actor InstantStore {
     attributes: AttributeStore,
     resolvedLookups: inout [InstantLookupRef: String]
   ) throws -> String? {
-    let attribute = try validateLookup(
+    let lookupAttribute = try validateLookup(
       lookup,
       expectedNamespace: expectedNamespace,
       attributes: attributes
@@ -666,7 +675,11 @@ public actor InstantStore {
     if let entityID = resolvedLookups[lookup] {
       return entityID
     }
-    let entityIDs = try entityIDs(matching: lookup, in: indexes, attribute: attribute)
+    let entityIDs = try entityIDs(
+      matching: lookup,
+      in: indexes,
+      lookupAttribute: lookupAttribute
+    )
     guard let entityID = entityIDs.first else { return nil }
     resolvedLookups[lookup] = entityID
     return entityID
@@ -721,8 +734,8 @@ public actor InstantStore {
     _ lookup: InstantLookupRef,
     expectedNamespace: String?,
     attributes: AttributeStore
-  ) throws -> InstantAttribute {
-    guard let attribute = attributes[lookup.attributeID] else {
+  ) throws -> InstantResolvedLookupAttribute {
+    guard let lookupAttribute = attributes.lookupAttribute(id: lookup.attributeID) else {
       throw InstantError(
         code: .validationFailed,
         operation: "lookup entity",
@@ -732,16 +745,17 @@ public actor InstantStore {
         recovery: "Declare the lookup attribute in the schema before writing by lookup ref."
       )
     }
+    let attribute = lookupAttribute.attribute
 
-    if let expectedNamespace, attribute.namespace != expectedNamespace {
+    if let expectedNamespace, lookupAttribute.namespace != expectedNamespace {
       throw InstantError(
         code: .validationFailed,
         operation: "lookup entity",
         namespace: expectedNamespace,
-        path: attribute.name,
+        path: lookupAttribute.name,
         localID: lookup.description,
         message:
-          "Lookup attribute '\(attribute.id)' belongs to '\(attribute.namespace)', not '\(expectedNamespace)'.",
+          "Lookup attribute '\(lookup.attributeID)' belongs to '\(lookupAttribute.namespace)', not '\(expectedNamespace)'.",
         recovery: "Use a lookup attribute from the same namespace as the entity being written."
       )
     }
@@ -750,10 +764,10 @@ public actor InstantStore {
       throw InstantError(
         code: .validationFailed,
         operation: "lookup entity",
-        namespace: attribute.namespace,
-        path: attribute.name,
+        namespace: lookupAttribute.namespace,
+        path: lookupAttribute.name,
         localID: lookup.description,
-        message: "Attribute '\(attribute.id)' is not unique, so it cannot be used as a lookup ref.",
+        message: "Attribute '\(lookup.attributeID)' is not unique, so it cannot be used as a lookup ref.",
         recovery: "Mark the attribute unique in the schema, or write the entity by id."
       )
     }
@@ -762,8 +776,8 @@ public actor InstantStore {
       throw InstantError(
         code: .validationFailed,
         operation: "lookup entity",
-        namespace: attribute.namespace,
-        path: attribute.name,
+        namespace: lookupAttribute.namespace,
+        path: lookupAttribute.name,
         localID: lookup.description,
         message: "Lookup value contains a non-finite number.",
         recovery: "Use only finite numbers in lookup refs."
@@ -774,29 +788,29 @@ public actor InstantStore {
       throw InstantError(
         code: .validationFailed,
         operation: "lookup entity",
-        namespace: attribute.namespace,
-        path: attribute.name,
+        namespace: lookupAttribute.namespace,
+        path: lookupAttribute.name,
         localID: lookup.description,
-        message: "Lookup value does not match the declared type of '\(attribute.id)'.",
+        message: "Lookup value does not match the declared type of '\(lookup.attributeID)'.",
         recovery: "Use a lookup value whose Swift type matches the unique attribute."
       )
     }
 
-    return attribute
+    return lookupAttribute
   }
 
   private static func entityIDs(
     matching lookup: InstantLookupRef,
     in indexes: TripleIndexes,
-    attribute: InstantAttribute
+    lookupAttribute: InstantResolvedLookupAttribute
   ) throws -> [String] {
-    let entityIDs = indexes.entityIDs(matching: lookup, attribute: attribute)
+    let entityIDs = indexes.entityIDs(matching: lookup, lookupAttribute: lookupAttribute)
     guard entityIDs.count < 2 else {
       throw InstantError(
         code: .validationFailed,
         operation: "lookup entity",
-        namespace: attribute.namespace,
-        path: attribute.name,
+        namespace: lookupAttribute.namespace,
+        path: lookupAttribute.name,
         localID: lookup.description,
         message: "Lookup ref '\(lookup.description)' matched more than one local entity.",
         recovery: "Repair the local cache so unique attributes map to one entity before writing by lookup ref."

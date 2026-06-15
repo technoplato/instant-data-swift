@@ -467,6 +467,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift uses declared attributes rather than JavaScript add-attr generation and normalizes id attrs as indexed primary keys; ref lookup entities and lookup id values stay lookup-shaped for transport and resolve locally when the unique ref row exists."
     ),
     instant(
+      id: "instant.instaml.schema-ref-lookup-link-value",
+      sourceFile: instamlSource,
+      sourceTestName: "Schema: lookup creates unique ref attrs for ref lookup in link value",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "schemaRefLookupInLinkValueUsesReverseIdentityForInstamlParity",
+      surface: "instaml",
+      status: .adapted,
+      notes: "Swift uses declared attributes rather than JavaScript add-attr generation and normalizes id attrs as indexed primary keys; reverse-identity ref lookups stay lookup-shaped for transport link values and resolve locally through the declared forward ref attr."
+    ),
+    instant(
       id: "instant.weak-hash",
       sourceFile: weakHashSource,
       sourceTestName: "selected fields / object key order / date / known query",

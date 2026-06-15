@@ -42,6 +42,26 @@ struct AttributeStore: Hashable, Codable, Sendable {
     self[InstantAttribute.primaryKeyID(namespace: namespace)] ?? .primaryKey(namespace: namespace)
   }
 
+  func lookupAttribute(id: String) -> InstantResolvedLookupAttribute? {
+    if let attribute = self[id] {
+      return InstantResolvedLookupAttribute(
+        attribute: attribute,
+        direction: .forward,
+        namespace: attribute.namespace,
+        name: attribute.name
+      )
+    }
+    guard let attribute = attributesByID.values.first(where: { $0.reverseIdentity == id }) else {
+      return nil
+    }
+    return InstantResolvedLookupAttribute(
+      attribute: attribute,
+      direction: .reverse,
+      namespace: attribute.linkNamespace ?? Self.namespace(in: id) ?? attribute.namespace,
+      name: Self.name(in: id) ?? id
+    )
+  }
+
   private static func withPrimaryKeys(_ attributes: [InstantAttribute]) -> [InstantAttribute] {
     let namespaces = Set(attributes.map(\.namespace))
     let primaryKeys = namespaces.map(InstantAttribute.primaryKey(namespace:))
@@ -54,6 +74,31 @@ struct AttributeStore: Hashable, Codable, Sendable {
     guard !namespace.isEmpty else { return nil }
     return .primaryKey(namespace: namespace)
   }
+
+  private static func namespace(in attributeID: String) -> String? {
+    guard let separator = attributeID.firstIndex(of: "/"), separator != attributeID.startIndex
+    else { return nil }
+    return String(attributeID[..<separator])
+  }
+
+  private static func name(in attributeID: String) -> String? {
+    guard let separator = attributeID.firstIndex(of: "/"),
+      attributeID.index(after: separator) != attributeID.endIndex
+    else { return nil }
+    return String(attributeID[attributeID.index(after: separator)...])
+  }
+}
+
+enum InstantLookupAttributeDirection: Hashable, Sendable {
+  case forward
+  case reverse
+}
+
+struct InstantResolvedLookupAttribute: Hashable, Sendable {
+  var attribute: InstantAttribute
+  var direction: InstantLookupAttributeDirection
+  var namespace: String
+  var name: String
 }
 
 struct InstantQueryValidationIssue: Error, Hashable, Sendable {
@@ -127,14 +172,30 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     eav[entityID]?[attributeID]?[Self.normalizedValue(value, attribute: attribute)] != nil
   }
 
-  func entityIDs(matching lookup: InstantLookupRef, attribute: InstantAttribute?) -> [String] {
-    let value = Self.normalizedValue(lookup.value.instantValue, attribute: attribute)
-    return aev[lookup.attributeID]?
-      .compactMap { entityID, valuesByValue in
-        valuesByValue[value] == nil ? nil : entityID
-      }
-      .sorted()
-      ?? []
+  func entityIDs(
+    matching lookup: InstantLookupRef,
+    lookupAttribute: InstantResolvedLookupAttribute
+  ) -> [String] {
+    switch lookupAttribute.direction {
+    case .forward:
+      let value = Self.normalizedValue(
+        lookup.value.instantValue,
+        attribute: lookupAttribute.attribute
+      )
+      return aev[lookupAttribute.attribute.id]?
+        .compactMap { entityID, valuesByValue in
+          valuesByValue[value] == nil ? nil : entityID
+        }
+        .sorted()
+        ?? []
+
+    case .reverse:
+      guard case let .ref(sourceID) = lookup.value else { return [] }
+      let targetIDs = eav[sourceID]?[lookupAttribute.attribute.id]?.values
+        .compactMap(\.value.refValue)
+        ?? []
+      return Array(Set(targetIDs)).sorted()
+    }
   }
 
   func reverseRefTriples(targetEntityID: String) -> [InstantTriple] {

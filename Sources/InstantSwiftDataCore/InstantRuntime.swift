@@ -1867,7 +1867,11 @@ public final class InstantRuntime: Sendable {
           attributesByID: attributesByID,
           into: &targets
         )
-        let sourceIDs = entityIDs(matching: lookup, snapshot: snapshot)
+        let sourceIDs = entityIDs(
+          matching: lookup,
+          snapshot: snapshot,
+          attributesByID: attributesByID
+        )
         if sourceIDs.isEmpty, let target = primaryKeyLookupWriteTarget(
           lookup,
           attributesByID: attributesByID
@@ -1901,8 +1905,13 @@ public final class InstantRuntime: Sendable {
         )
 
       case let .deleteEntityByLookup(lookup):
-        let lookupNamespace = attributesByID[lookup.attributeID]?.namespace
-        let entityIDs = entityIDs(matching: lookup, snapshot: snapshot)
+        let lookupAttribute = lookupAttribute(for: lookup.attributeID, attributesByID: attributesByID)
+        let lookupNamespace = lookupAttribute?.namespace
+        let entityIDs = entityIDs(
+          matching: lookup,
+          snapshot: snapshot,
+          attributesByID: attributesByID
+        )
         if entityIDs.isEmpty, let target = primaryKeyLookupWriteTarget(
           lookup,
           attributesByID: attributesByID
@@ -1985,7 +1994,11 @@ public final class InstantRuntime: Sendable {
       targets.insert(InstantSharedRootWriteTarget(namespace: targetNamespace, id: entityID))
 
     case let .lookupRef(lookup):
-      let entityIDs = entityIDs(matching: lookup, snapshot: snapshot)
+      let entityIDs = entityIDs(
+        matching: lookup,
+        snapshot: snapshot,
+        attributesByID: attributesByID
+      )
       if entityIDs.isEmpty, let target = primaryKeyLookupWriteTarget(
         lookup,
         attributesByID: attributesByID
@@ -2004,6 +2017,36 @@ public final class InstantRuntime: Sendable {
     case .null, .bool, .number, .string, .date, .json:
       break
     }
+  }
+
+  private struct RuntimeLookupAttribute {
+    var attribute: InstantAttribute
+    var isReverse: Bool
+    var namespace: String
+  }
+
+  private func lookupAttribute(
+    for attributeID: String,
+    attributesByID: [String: InstantAttribute]
+  ) -> RuntimeLookupAttribute? {
+    if let attribute = attributesByID[attributeID] {
+      return RuntimeLookupAttribute(
+        attribute: attribute,
+        isReverse: false,
+        namespace: attribute.namespace
+      )
+    }
+    guard let attribute = attributesByID.values.first(where: { $0.reverseIdentity == attributeID })
+    else {
+      return nil
+    }
+    return RuntimeLookupAttribute(
+      attribute: attribute,
+      isReverse: true,
+      namespace: attribute.linkNamespace
+        ?? sharedRootNamespace(for: attributeID, attribute: nil)
+        ?? attribute.namespace
+    )
   }
 
   private func cascadeDeleteWriteTargets(
@@ -2082,11 +2125,48 @@ public final class InstantRuntime: Sendable {
 
   private func entityIDs(
     matching lookup: InstantLookupRef,
+    snapshot: InstantStoreSnapshot,
+    attributesByID: [String: InstantAttribute]
+  ) -> [String] {
+    guard let lookupAttribute = lookupAttribute(
+      for: lookup.attributeID,
+      attributesByID: attributesByID
+    ) else {
+      return entityIDs(
+        matchingForwardAttribute: lookup.attributeID,
+        value: lookup.value,
+        snapshot: snapshot
+      )
+    }
+
+    if lookupAttribute.isReverse {
+      guard case let .ref(sourceID) = lookup.value else { return [] }
+      let ids = snapshot.triples.compactMap { triple -> String? in
+        guard triple.entityID == sourceID,
+          triple.attributeID == lookupAttribute.attribute.id
+        else {
+          return nil
+        }
+        return triple.value.refValue
+      }
+      return Array(Set(ids)).sorted()
+    }
+
+    return entityIDs(
+      matchingForwardAttribute: lookupAttribute.attribute.id,
+      value: lookup.value,
+      snapshot: snapshot
+    )
+  }
+
+  private func entityIDs(
+    matchingForwardAttribute attributeID: String,
+    value expectedValue: InstantLookupValue,
     snapshot: InstantStoreSnapshot
   ) -> [String] {
     let ids = snapshot.triples.compactMap { triple -> String? in
-      guard triple.attributeID == lookup.attributeID,
-        lookupValue(lookup.value, matches: triple.value)
+      guard triple.attributeID == attributeID,
+        lookupValue(expectedValue, matches: triple.value)
       else {
         return nil
       }
