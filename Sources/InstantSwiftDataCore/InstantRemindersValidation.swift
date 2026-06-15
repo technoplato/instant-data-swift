@@ -12,6 +12,7 @@ public struct RemindersValidationDetails: Codable, Equatable, Sendable {
   public var scheduledReminderIDs: [String]
   public var todayReminderIDs: [String]
   public var priorityReminderIDs: [String]
+  public var priorityRanksByReminderID: [String: Int]
   public var tagIDs: [String]
   public var tagTitles: [String]
   public var reminderTagIDs: [String]
@@ -34,6 +35,7 @@ public struct RemindersValidationDetails: Codable, Equatable, Sendable {
     scheduledReminderIDs: [String] = [],
     todayReminderIDs: [String] = [],
     priorityReminderIDs: [String] = [],
+    priorityRanksByReminderID: [String: Int] = [:],
     tagIDs: [String] = [],
     tagTitles: [String] = [],
     reminderTagIDs: [String] = [],
@@ -55,6 +57,7 @@ public struct RemindersValidationDetails: Codable, Equatable, Sendable {
     self.scheduledReminderIDs = scheduledReminderIDs
     self.todayReminderIDs = todayReminderIDs
     self.priorityReminderIDs = priorityReminderIDs
+    self.priorityRanksByReminderID = priorityRanksByReminderID
     self.tagIDs = tagIDs
     self.tagTitles = tagTitles
     self.reminderTagIDs = reminderTagIDs
@@ -480,6 +483,7 @@ public enum InstantSwiftDataRemindersValidation {
         scheduledReminderIDs: scheduledReminderIDs ?? allReminders.filter { $0.dueDate != nil }.map(\.id),
         todayReminderIDs: todayReminderIDs ?? reminderIDsDueToday(in: allReminders, today: today),
         priorityReminderIDs: priorityReminderIDs ?? allReminders.filter { $0.priority != nil }.map(\.id),
+        priorityRanksByReminderID: priorityRanksByReminderID(in: allReminders),
         tagIDs: tags.map(\.id),
         tagTitles: tags.map(\.title),
         reminderTagIDs: reminderTags.map(\.id),
@@ -513,6 +517,16 @@ public enum InstantSwiftDataRemindersValidation {
         return dueDate.milliseconds >= start && dueDate.milliseconds < start + Int64(day)
       }
       .map(\.id)
+  }
+
+  private static func priorityRanksByReminderID(
+    in reminders: [ReminderRecord]
+  ) -> [String: Int] {
+    Dictionary(
+      uniqueKeysWithValues: reminders.compactMap { reminder in
+        reminder.priority.map { (reminder.id, $0.rank) }
+      }
+    )
   }
 
   private static func shareRoleSummaries(

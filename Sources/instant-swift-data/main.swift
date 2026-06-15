@@ -10295,6 +10295,10 @@ private struct CLIContext: Sendable {
         now: now
       )
     )
+    try await runtime.migrateLocalPersistenceSnapshot(
+      name: "reminders.priority-ranks",
+      transform: ReminderExample.migrateLegacyPriorityRanks(in:)
+    )
     return Self(
       appID: resolved.appID,
       appIDSource: resolved.source,

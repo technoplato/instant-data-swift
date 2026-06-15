@@ -433,6 +433,48 @@ public final class InstantRuntime: Sendable {
     throw transactionChangedDuringPersistence(id: transaction.id)
   }
 
+  @discardableResult
+  package func migrateLocalPersistenceSnapshot(
+    name: String,
+    transform: @Sendable (InstantPersistenceSnapshot) throws -> InstantPersistenceSnapshot
+  ) async throws -> Bool {
+    await enterOperationGate()
+    do {
+      for _ in 0..<5 {
+        recordActorHop(.persistence)
+        let state = try await persistence.loadState()
+        let nextSnapshot = try transform(state.snapshot)
+        if nextSnapshot == state.snapshot {
+          recordActorHop(.store)
+          await store.replaceSnapshot(state.snapshot.store)
+          recordActorHop(.outbox)
+          await outbox.replace(with: state.snapshot.outbox)
+          await leaveOperationGate()
+          return false
+        }
+        recordActorHop(.persistence)
+        let didSave = try await persistence.saveSnapshot(
+          nextSnapshot,
+          expectedStoreRevision: state.storeRevision,
+          expectedOutboxRevision: state.outboxRevision
+        )
+        if didSave {
+          recordActorHop(.store)
+          await store.replaceSnapshot(nextSnapshot.store)
+          recordActorHop(.outbox)
+          await outbox.replace(with: nextSnapshot.outbox)
+          await leaveOperationGate()
+          return true
+        }
+      }
+
+      throw persistenceChangedDuringMigration(name: name)
+    } catch {
+      await leaveOperationGate()
+      throw error
+    }
+  }
+
   public func observe(
     _ plan: InstantQueryPlan,
     remotePageInfo: InstantQueryRemotePageInfo? = nil
@@ -2682,6 +2724,16 @@ public final class InstantRuntime: Sendable {
       localID: id,
       message: "The local store changed repeatedly while persisting transaction '\(id)'.",
       recovery: "Retry the transaction after reloading the local cache."
+    )
+  }
+
+  private func persistenceChangedDuringMigration(name: String) -> InstantError {
+    InstantError(
+      code: .persistenceFailed,
+      operation: "migrate local persistence",
+      localID: name,
+      message: "The local store changed repeatedly while applying migration '\(name)'.",
+      recovery: "Retry after reloading the local cache."
     )
   }
 

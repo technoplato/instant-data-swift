@@ -218,6 +218,7 @@ struct LocalTodoValidationTests {
     expectNoDifference(seed.listTitles, ["Family"])
     expectNoDifference(seed.reminderTitles, ["Pack lunch", "Read book"])
     expectNoDifference(seed.flaggedReminderIDs, ["validation-reminders-pack-lunch"])
+    expectNoDifference(seed.priorityRanksByReminderID, ["validation-reminders-pack-lunch": 3])
     expectNoDifference(seed.tagTitles, ["family"])
 
     let search = result.evidence[1].details
@@ -228,6 +229,7 @@ struct LocalTodoValidationTests {
     expectNoDifference(richFilters.scheduledReminderIDs, ["validation-reminders-pack-lunch"])
     expectNoDifference(richFilters.todayReminderIDs, ["validation-reminders-pack-lunch"])
     expectNoDifference(richFilters.priorityReminderIDs, ["validation-reminders-pack-lunch"])
+    expectNoDifference(richFilters.priorityRanksByReminderID, ["validation-reminders-pack-lunch": 3])
     expectNoDifference(
       richFilters.stats,
       RemindersStats(allCount: 2, completedCount: 0, flaggedCount: 1, scheduledCount: 1, todayCount: 1)
@@ -268,6 +270,7 @@ struct LocalTodoValidationTests {
     expectNoDifference(finalDetails.flaggedReminderIDs, [])
     expectNoDifference(finalDetails.scheduledReminderIDs, [])
     expectNoDifference(finalDetails.priorityReminderIDs, [])
+    expectNoDifference(finalDetails.priorityRanksByReminderID, [:])
     expectNoDifference(finalDetails.pendingMutationIDs.count, 6)
     expectNoDifference(
       finalDetails.stats,

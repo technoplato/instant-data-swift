@@ -123,6 +123,7 @@ swift run instant-swift-data examples reminders add-tag "$REMINDER_ID" family --
 swift run instant-swift-data examples reminders list --scheduled --json
 swift run instant-swift-data examples reminders list --today --json
 swift run instant-swift-data examples reminders list --flagged --priority high --json
+swift run instant-swift-data outbox transport --json | jq '.mutations[].txSteps[] | select(.[2] == "reminders/priority")'
 swift run instant-swift-data examples reminders stats --json
 swift run instant-swift-data examples reminders search "Pack" --tag family --json
 swift run instant-swift-data examples reminders tags --jsonl
@@ -538,6 +539,7 @@ swift run instant-swift-data validation coverage --jsonl
 swift run instant-swift-data-validation-runner --local-todos
 swift run instant-swift-data-validation-runner --local-integrations
 swift run instant-swift-data-validation-runner --reminders
+swift run instant-swift-data validation reminders --jsonl | jq 'select(.event == "rich-filters") | .details.priorityRanksByReminderID'
 swift run instant-swift-data-validation-runner --typed-drafts
 swift run instant-swift-data-validation-runner --platform-adapters
 swift run instant-swift-data-validation-runner --syncups-recording
@@ -558,9 +560,9 @@ closed-connection offline write, offline relaunch restore, and reconnect flush.
 `validation local-integrations` emits evidence for local auth, room
 presence/topic messages, file upload/read, stream chunks, and share
 create/accept/revoke. `validation reminders` emits terminal evidence for local
-Reminders search, tags, rich fields, form-model edit saves, smart-list stats,
-list sharing roles, permission rejections, writer updates, and relaunch
-persistence.
+Reminders search, tags, rich fields, upstream-ranked numeric priority storage
+with named CLI filters, form-model edit saves, smart-list stats, list sharing
+roles, permission rejections, writer updates, and relaunch persistence.
 `validation typed-drafts` emits terminal evidence for a macro-generated create
 draft whose `id` starts as `nil` and whose writable assignments omit the managed
 primary key, `Draft(existing)` edit, a writable relation draft with generated ref

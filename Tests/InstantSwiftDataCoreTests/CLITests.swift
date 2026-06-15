@@ -2394,6 +2394,165 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliRemindersPriorityUsesUpstreamNumericTransportRank() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let addedList = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(["examples", "reminders", "add-list", "Family", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    let listID = try #require(addedList.changedID)
+    let added = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "examples", "reminders", "add", listID, "Pack lunch",
+            "--priority", "high",
+            "--json",
+          ],
+          homeURL: homeURL
+        )
+          .utf8
+      )
+    )
+    let reminderID = try #require(added.changedID)
+    expectNoDifference(added.reminders.map(\.priority), [.high])
+
+    let filtered = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "reminders", "list", "--priority", "high", "--json"],
+          homeURL: homeURL
+        )
+          .utf8
+      )
+    )
+    expectNoDifference(filtered.reminders.map(\.id), [reminderID])
+
+    let transport = try #require(
+      JSONSerialization.jsonObject(
+        with: Data(try runCLI(["outbox", "transport", "--json"], homeURL: homeURL).utf8)
+      ) as? [String: Any]
+    )
+    let mutations = try #require(transport["mutations"] as? [[String: Any]])
+    let txSteps = mutations.flatMap { mutation in
+      mutation["txSteps"] as? [[Any]] ?? []
+    }
+    let priorityStep = try #require(
+      txSteps.first { step in
+        step.count > 3
+          && step[1] as? String == reminderID
+          && step[2] as? String == "reminders/priority"
+      }
+    )
+    expectNoDifference((priorityStep[3] as? NSNumber)?.intValue, 3)
+    expectNoDifference(priorityStep[3] as? String, nil)
+
+    let human = try runCLI(
+      ["examples", "reminders", "list", "--priority", "high"],
+      homeURL: homeURL
+    )
+    #expect(human.contains("priority=high"))
+  }
+
+  @Test
+  func cliRemindersMigratesLegacyStringPriorityRanks() async throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let legacyAttributes = ReminderExample.attributes.map { attribute in
+      var attribute = attribute
+      if attribute.id == "reminders/priority" {
+        attribute.valueType = .string
+      }
+      return attribute
+    }
+    let legacyRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "cli-cache-test",
+        persistenceURL: homeURL.appendingPathComponent("state.sqlite"),
+        initialAttributes: legacyAttributes,
+        now: { timestamp }
+      )
+    )
+    try await legacyRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-legacy-priority",
+        operations: ReminderExample.createListOperations(
+          id: "legacy-list",
+          title: "Legacy",
+          position: 0,
+          createdAt: timestamp,
+          transactionID: "tx-legacy-priority"
+        )
+          + ReminderExample.createReminderOperations(
+            id: "legacy-reminder",
+            listID: "legacy-list",
+            title: "Legacy high priority",
+            position: 0,
+            createdAt: timestamp,
+            transactionID: "tx-legacy-priority"
+          )
+          + [
+            .merge(
+              InstantTriple(
+                entityID: "legacy-reminder",
+                attributeID: "reminders/priority",
+                value: .string("high"),
+                txID: "tx-legacy-priority",
+                txTime: timestamp
+              )
+            )
+          ]
+      ),
+      createdAt: timestamp,
+      source: "cli.test.reminders.legacy-priority"
+    )
+
+    let transport = try #require(
+      JSONSerialization.jsonObject(
+        with: Data(try runCLI(["outbox", "transport", "--json"], homeURL: homeURL).utf8)
+      ) as? [String: Any]
+    )
+    let mutations = try #require(transport["mutations"] as? [[String: Any]])
+    expectNoDifference(mutations.compactMap { $0["mutationID"] as? String }, ["tx-legacy-priority"])
+    let txSteps = mutations.flatMap { mutation in
+      mutation["txSteps"] as? [[Any]] ?? []
+    }
+    let prioritySteps = txSteps.filter { step in
+      step.count > 3
+        && step[1] as? String == "legacy-reminder"
+        && step[2] as? String == "reminders/priority"
+    }
+    #expect(prioritySteps.contains { ($0[3] as? NSNumber)?.intValue == 3 })
+    expectNoDifference(prioritySteps.compactMap { $0[3] as? String }, [])
+
+    let filtered = try JSONDecoder().decode(
+      CLIRemindersOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "reminders", "list", "--priority", "high", "--json"],
+          homeURL: homeURL
+        )
+          .utf8
+      )
+    )
+    expectNoDifference(filtered.reminders.map(\.id), ["legacy-reminder"])
+    expectNoDifference(filtered.reminders.map(\.priority), [.high])
+  }
+
+  @Test
   func cliSyncUpsDemoPersistsEditsMeetingsAndCascadeDeletes() async throws {
     let seedHomeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -7684,6 +7843,15 @@ extension InstantStoreTests {
     expectNoDifference(searchEvidence.details.reminderIDs, ["validation-reminders-pack-lunch"])
     expectNoDifference(searchEvidence.details.tagTitles, ["family"])
 
+    let richFiltersEvidence = try JSONDecoder().decode(
+      CLIRemindersValidationEvidence.self,
+      from: Data(try #require(lines.first { $0.contains("\"event\":\"rich-filters\"") }).utf8)
+    )
+    expectNoDifference(
+      richFiltersEvidence.details.priorityRanksByReminderID,
+      ["validation-reminders-pack-lunch": 3]
+    )
+
     let editEvidence = try JSONDecoder().decode(
       CLIRemindersValidationEvidence.self,
       from: Data(try #require(lines.first { $0.contains("\"event\":\"edit-rich-fields\"") }).utf8)
@@ -10876,6 +11044,7 @@ private struct CLIRemindersValidationDetails: Decodable {
   var reminderIDs: [String]
   var reminderTitles: [String]
   var reminderNotes: [String]
+  var priorityRanksByReminderID: [String: Int]
   var tagTitles: [String]
   var reminderTagIDs: [String]
   var rejectedOperations: [String]

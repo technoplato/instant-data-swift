@@ -655,9 +655,10 @@ Agent-oriented output modes are required:
   `instant-swift-data examples reminders list --scheduled --json`,
   `instant-swift-data examples reminders list --today --json`, and
   `instant-swift-data examples reminders list --flagged --priority high --json`;
-  due dates use Instant date values, priority is a local Swift enum encoded as a
-  string for now, and filtered views default to incomplete reminders like the
-  upstream Reminders predicates.
+  due dates use Instant date values, priority uses the upstream integer rank in
+  Instant triples while the CLI keeps stable `low`/`medium`/`high` names, and
+  filtered views default to incomplete reminders like the upstream Reminders
+  predicates.
 - inspect upstream-style Reminders smart-list stats with
   `instant-swift-data examples reminders stats --json`; the local counts expose
   all incomplete, completed, flagged, scheduled, and today reminders, and

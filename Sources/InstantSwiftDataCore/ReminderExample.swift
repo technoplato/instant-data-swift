@@ -4,6 +4,30 @@ public enum ReminderPriority: String, CaseIterable, Codable, Hashable, Sendable 
   case low
   case medium
   case high
+
+  public var rank: Int {
+    switch self {
+    case .low:
+      return 1
+    case .medium:
+      return 2
+    case .high:
+      return 3
+    }
+  }
+
+  public init?(rank: Int) {
+    switch rank {
+    case 1:
+      self = .low
+    case 2:
+      self = .medium
+    case 3:
+      self = .high
+    default:
+      return nil
+    }
+  }
 }
 
 public struct RemindersListRecord: Hashable, Codable, Sendable, Identifiable {
@@ -485,7 +509,7 @@ public enum ReminderExample {
       id: "reminders/priority",
       namespace: remindersNamespace,
       name: "priority",
-      valueType: .string,
+      valueType: .number,
       isRequired: false,
       isIndexed: true
     ),
@@ -609,7 +633,7 @@ public enum ReminderExample {
 
     if let priority {
       fragments.append("priority-\(priority.rawValue)")
-      filters.append(.equals(field: "priority", value: .string(priority.rawValue)))
+      filters.append(priorityFilter(priority))
     }
 
     return InstantQueryPlan(
@@ -680,7 +704,7 @@ public enum ReminderExample {
 
     if let priority {
       fragments.append("priority-\(priority.rawValue)")
-      filters.append(.equals(field: "priority", value: .string(priority.rawValue)))
+      filters.append(priorityFilter(priority))
     }
 
     if !includeCompleted {
@@ -1368,11 +1392,131 @@ public enum ReminderExample {
       InstantTriple(
         entityID: reminderID,
         attributeID: "reminders/priority",
-        value: priority.map { .string($0.rawValue) } ?? .null,
+        value: priority.map { .number(Double($0.rank)) } ?? .null,
         txID: transactionID,
         txTime: updatedAt
       )
     )
+  }
+
+  private static func priorityFilter(_ priority: ReminderPriority) -> InstantQueryFilter {
+    .equals(field: "priority", value: .number(Double(priority.rank)))
+  }
+
+  public static func migrateLegacyPriorityRanks(
+    in snapshot: InstantPersistenceSnapshot
+  ) -> InstantPersistenceSnapshot {
+    InstantPersistenceSnapshot(
+      store: migrateLegacyPriorityRanks(in: snapshot.store),
+      outbox: snapshot.outbox.map(migrateLegacyPriorityRanks(in:))
+    )
+  }
+
+  public static func migrateLegacyPriorityRanks(
+    in snapshot: InstantStoreSnapshot
+  ) -> InstantStoreSnapshot {
+    let attributes = snapshot.attributes.map { attribute in
+      var attribute = attribute
+      if attribute.id == "reminders/priority" {
+        attribute.valueType = .number
+      }
+      return attribute
+    }
+    var seenTriples: Set<InstantTriple> = []
+    let triples = snapshot.triples.compactMap { triple -> InstantTriple? in
+      let migrated = migrateLegacyPriorityRank(in: triple)
+      guard seenTriples.insert(migrated).inserted else { return nil }
+      return migrated
+    }
+    return InstantStoreSnapshot(attributes: attributes, triples: triples)
+  }
+
+  private static func migrateLegacyPriorityRanks(
+    in mutation: PendingMutation
+  ) -> PendingMutation {
+    var mutation = mutation
+    mutation.transaction = InstantStoreTransaction(
+      id: mutation.transaction.id,
+      operations: mutation.transaction.operations.map(migrateLegacyPriorityRank(in:))
+    )
+    return mutation
+  }
+
+  private static func migrateLegacyPriorityRank(
+    in operation: InstantTripleOperation
+  ) -> InstantTripleOperation {
+    switch operation {
+    case let .requireTripleExists(entityID, attributeID, value):
+      return .requireTripleExists(
+        entityID: entityID,
+        attributeID: attributeID,
+        value: migrateLegacyPriorityRank(attributeID: attributeID, value: value)
+      )
+
+    case let .merge(triple):
+      return .merge(migrateLegacyPriorityRank(in: triple))
+
+    case let .mergeByLookup(entity, attributeID, value, txID, txTime):
+      return .mergeByLookup(
+        entity: entity,
+        attributeID: attributeID,
+        value: migrateLegacyPriorityRank(attributeID: attributeID, value: value),
+        txID: txID,
+        txTime: txTime
+      )
+
+    case let .insert(triple):
+      return .insert(migrateLegacyPriorityRank(in: triple))
+
+    case let .insertByLookup(entity, attributeID, value, txID, txTime):
+      return .insertByLookup(
+        entity: entity,
+        attributeID: attributeID,
+        value: migrateLegacyPriorityRank(attributeID: attributeID, value: value),
+        txID: txID,
+        txTime: txTime
+      )
+
+    case let .retract(triple):
+      return .retract(migrateLegacyPriorityRank(in: triple))
+
+    case let .retractByLookup(entity, attributeID, value, txID, txTime):
+      return .retractByLookup(
+        entity: entity,
+        attributeID: attributeID,
+        value: migrateLegacyPriorityRank(attributeID: attributeID, value: value),
+        txID: txID,
+        txTime: txTime
+      )
+
+    case .requireEntityMissing, .requireEntityMissingByLookup,
+      .requireEntityExists, .requireEntityExistsByLookup,
+      .deleteEntity, .deleteEntityInNamespace, .deleteEntityByLookup,
+      .ruleParams, .ruleParamsByLookup:
+      return operation
+    }
+  }
+
+  private static func migrateLegacyPriorityRank(
+    in triple: InstantTriple
+  ) -> InstantTriple {
+    var triple = triple
+    triple.value = migrateLegacyPriorityRank(
+      attributeID: triple.attributeID,
+      value: triple.value
+    )
+    return triple
+  }
+
+  private static func migrateLegacyPriorityRank(
+    attributeID: String,
+    value: InstantValue
+  ) -> InstantValue {
+    guard attributeID == "reminders/priority",
+      case let .string(rawValue) = value,
+      let priority = ReminderPriority(rawValue: rawValue)
+    else { return value }
+    return .number(Double(priority.rank))
   }
 
   private static func requireReminderInListOperation(
@@ -1519,8 +1663,19 @@ public enum ReminderExample {
         throw decodeError(namespace: namespace, id: snapshot.id, field: field, expected: "priority")
       }
       return priority
+    case let .number(rawValue):
+      let rank = Int(rawValue.rounded())
+      guard Double(rank) == rawValue, let priority = ReminderPriority(rank: rank) else {
+        throw decodeError(namespace: namespace, id: snapshot.id, field: field, expected: "priority")
+      }
+      return priority
     default:
-      throw decodeError(namespace: namespace, id: snapshot.id, field: field, expected: "priority")
+      throw decodeError(
+        namespace: namespace,
+        id: snapshot.id,
+        field: field,
+        expected: "priority"
+      )
     }
   }
 
