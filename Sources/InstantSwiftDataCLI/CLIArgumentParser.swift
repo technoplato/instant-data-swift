@@ -49,6 +49,7 @@ public struct CLIInvocation: Equatable, Sendable {
 
 public enum CLIExamplesInvocation: Equatable, Sendable {
   case todos(CLIExamplesTodosInvocation)
+  case chat(arguments: [String])
   case counters(arguments: [String])
   case syncUps(arguments: [String])
   case reminders(arguments: [String])
@@ -207,6 +208,55 @@ public enum CLIExamplesCountersUsage {
 
 public enum CLIExamplesCountersArgumentError: Error, Equatable, Sendable {
   case invalidArguments(usage: String)
+
+  public var exitCode: Int32 { 64 }
+}
+
+public enum CLIExamplesChatLeafInvocation: Equatable, Sendable {
+  case seed
+  case channels
+  case messages(channelID: String?)
+  case post(CLIExamplesChatPostInvocation)
+  case reset
+  case unknown(String)
+}
+
+public struct CLIExamplesChatPostInvocation: Equatable, Sendable {
+  public var channelID: String
+  public var text: String
+  public var authorName: String?
+
+  public init(channelID: String, text: String, authorName: String? = nil) {
+    self.channelID = channelID
+    self.text = text
+    self.authorName = authorName
+  }
+}
+
+public enum CLIExamplesChatUsage {
+  public static let chat = """
+    Usage: instant-swift-data examples chat <seed|channels|messages|post|reset>
+      instant-swift-data examples chat seed [--json|--jsonl]
+      instant-swift-data examples chat channels [--json|--jsonl]
+      instant-swift-data examples chat messages [channel-id] [--json|--jsonl]
+      instant-swift-data examples chat post <channel-id> "message text" [--author name] [--json|--jsonl]
+      instant-swift-data examples chat reset [--json|--jsonl]
+    """
+  public static let seed =
+    "Usage: instant-swift-data examples chat seed [--json|--jsonl]"
+  public static let channels =
+    "Usage: instant-swift-data examples chat channels [--json|--jsonl]"
+  public static let messages =
+    "Usage: instant-swift-data examples chat messages [channel-id] [--json|--jsonl]"
+  public static let post =
+    #"Usage: instant-swift-data examples chat post <channel-id> "message text" [--author name] [--json|--jsonl]"#
+  public static let reset =
+    "Usage: instant-swift-data examples chat reset [--json|--jsonl]"
+}
+
+public enum CLIExamplesChatArgumentError: Error, Equatable, Sendable {
+  case invalidArguments(usage: String)
+  case unknownPostOption(String, usage: String)
 
   public var exitCode: Int32 { 64 }
 }
@@ -1642,6 +1692,11 @@ public struct CLIExamplesParser: Parser {
     case "todos":
       return .todos(try CLIExamplesTodosParser().parse(&input))
 
+    case "chat":
+      let arguments = Array(input)
+      input.removeAll()
+      return .chat(arguments: arguments)
+
     case "counters", "cloudkit-demo":
       let arguments = Array(input)
       input.removeAll()
@@ -2157,6 +2212,63 @@ private func parseRequiredNonEmptyValue(
     throw CLIExamplesCountersArgumentError.invalidArguments(usage: usage)
   }
   return value
+}
+
+public struct CLIExamplesChatLeafParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIExamplesChatLeafInvocation {
+    guard let command = input.first else {
+      throw CLIExamplesChatArgumentError.invalidArguments(
+        usage: CLIExamplesChatUsage.chat
+      )
+    }
+    input.removeFirst()
+
+    switch command {
+    case "seed":
+      try requireNoRemainingExamplesChatArguments(
+        &input,
+        usage: CLIExamplesChatUsage.seed
+      )
+      return .seed
+
+    case "channels":
+      try requireNoRemainingExamplesChatArguments(
+        &input,
+        usage: CLIExamplesChatUsage.channels
+      )
+      return .channels
+
+    case "messages":
+      if input.isEmpty {
+        return .messages(channelID: nil)
+      }
+      let channelID = try parseRequiredExamplesChatArgument(
+        from: &input,
+        usage: CLIExamplesChatUsage.messages
+      )
+      try requireNoRemainingExamplesChatArguments(
+        &input,
+        usage: CLIExamplesChatUsage.messages
+      )
+      return .messages(channelID: channelID)
+
+    case "post", "send":
+      return .post(try parseExamplesChatPostOptions(from: &input))
+
+    case "reset":
+      try requireNoRemainingExamplesChatArguments(
+        &input,
+        usage: CLIExamplesChatUsage.reset
+      )
+      return .reset
+
+    default:
+      input.removeAll()
+      return .unknown(command)
+    }
+  }
 }
 
 public struct CLIExamplesSyncUpsLeafParser: Parser {
@@ -4747,6 +4859,15 @@ private func requireNoRemainingExamplesCountersArguments(
   }
 }
 
+private func requireNoRemainingExamplesChatArguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if !input.isEmpty {
+    throw CLIExamplesChatArgumentError.invalidArguments(usage: usage)
+  }
+}
+
 private func parseExamplesCountersAddOptions(
   _ input: inout ArraySlice<String>
 ) throws -> Int {
@@ -4772,6 +4893,74 @@ private func parseExamplesCountersAddOptions(
   }
 
   return count
+}
+
+private func parseRequiredExamplesChatArgument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIExamplesChatArgumentError.invalidArguments(usage: usage)
+  }
+  input.removeFirst()
+  let trimmedValue = trimmed(value)
+  guard !trimmedValue.isEmpty else {
+    throw CLIExamplesChatArgumentError.invalidArguments(usage: usage)
+  }
+  return trimmedValue
+}
+
+private func parseExamplesChatPostOptions(
+  from input: inout ArraySlice<String>
+) throws -> CLIExamplesChatPostInvocation {
+  let channelID = try parseRequiredExamplesChatArgument(
+    from: &input,
+    usage: CLIExamplesChatUsage.post
+  )
+  var authorName: String?
+  var textParts: [String] = []
+
+  while let value = input.first {
+    input.removeFirst()
+    switch value {
+    case "--author":
+      guard let rawAuthorName = input.first else {
+        throw CLIExamplesChatArgumentError.invalidArguments(
+          usage: CLIExamplesChatUsage.post
+        )
+      }
+      input.removeFirst()
+      let trimmedAuthorName = trimmed(rawAuthorName)
+      guard !trimmedAuthorName.isEmpty else {
+        throw CLIExamplesChatArgumentError.invalidArguments(
+          usage: CLIExamplesChatUsage.post
+        )
+      }
+      authorName = trimmedAuthorName
+
+    default:
+      if value.hasPrefix("--") {
+        throw CLIExamplesChatArgumentError.unknownPostOption(
+          value,
+          usage: CLIExamplesChatUsage.post
+        )
+      }
+      textParts.append(value)
+    }
+  }
+
+  let text = textParts.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+  guard !text.isEmpty else {
+    throw CLIExamplesChatArgumentError.invalidArguments(
+      usage: CLIExamplesChatUsage.post
+    )
+  }
+
+  return CLIExamplesChatPostInvocation(
+    channelID: channelID,
+    text: text,
+    authorName: authorName
+  )
 }
 
 private func parseExamplesSyncUpsListOptions(
@@ -5572,6 +5761,18 @@ extension CLIExamplesCountersArgumentError: CustomStringConvertible {
     switch self {
     case let .invalidArguments(usage):
       return usage
+    }
+  }
+}
+
+extension CLIExamplesChatArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case let .invalidArguments(usage):
+      return usage
+
+    case let .unknownPostOption(option, usage):
+      return "Unknown chat post option: \(option). \(usage)"
     }
   }
 }

@@ -797,6 +797,12 @@ Create `validation/` with:
   transcript from the terminal. Full SwiftUI navigation, platform live speech,
   actual audio playback, and wall-clock meeting timers remain app-facing future
   work.
+- Chat: the local Instant website-style chat port exposes durable
+  `examples chat seed`, `channels`, `messages [channel-id]`,
+  `post <channel-id> "message" [--author name]`, and `reset` commands over linked
+  `chatChannels`/`chatMessages` namespaces. A signed-out post creates a local
+  guest session, while posts after `auth token --user-id` preserve logged-in
+  author attribution across CLI launches.
 - CLI: `instant-swift-data examples todos add "do the dishes"` persists auth,
   local IDs, cache, and outbox state for a later CLI invocation.
 - Permissions: generated permissions reject an unauthorized write in both

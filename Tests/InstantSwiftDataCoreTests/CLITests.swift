@@ -830,6 +830,58 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliMalformedChatArgumentsDoNotBootstrapState() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    func expectMalformed(_ arguments: [String], contains expectedFragment: String) throws {
+      let result = try runCLIResult(arguments, homeURL: homeURL)
+      expectNoDifference(result.status, 64)
+      #expect(result.error.contains(expectedFragment))
+    }
+
+    try expectMalformed(
+      ["examples", "chat", "--json"],
+      contains: "examples chat <seed|channels|messages|post|reset>"
+    )
+    try expectMalformed(
+      ["examples", "chat", "seed", "unexpected", "--json"],
+      contains: "examples chat seed"
+    )
+    try expectMalformed(
+      ["examples", "chat", "channels", "unexpected", "--json"],
+      contains: "examples chat channels"
+    )
+    try expectMalformed(
+      ["examples", "chat", "messages", "channel-1", "unexpected", "--json"],
+      contains: "examples chat messages"
+    )
+    try expectMalformed(
+      ["examples", "chat", "post", "channel-1", "--json"],
+      contains: "examples chat post <channel-id>"
+    )
+    try expectMalformed(
+      ["examples", "chat", "post", "channel-1", "--surprise", "Hello", "--json"],
+      contains: "Unknown chat post option: --surprise"
+    )
+    try expectMalformed(
+      ["examples", "chat", "reset", "unexpected", "--json"],
+      contains: "examples chat reset"
+    )
+    try expectMalformed(
+      ["examples", "chat", "dance", "--json"],
+      contains: "Unknown chat command: dance"
+    )
+
+    expectNoDifference(
+      try FileManager.default.contentsOfDirectory(atPath: homeURL.path),
+      []
+    )
+  }
+
+  @Test
   func cliMalformedSyncUpsArgumentsDoNotBootstrapState() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -2867,7 +2919,7 @@ extension InstantStoreTests {
     expectNoDifference(result.status, 64)
     #expect(
       result.error.contains(
-        "Usage: instant-swift-data examples <todos|todo-links|counters|reminders|sync-ups>"
+        "Usage: instant-swift-data examples <todos|todo-links|counters|chat|reminders|sync-ups>"
       )
     )
   }
@@ -4843,6 +4895,167 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliChatExampleSeedsPostsAndResetsAcrossLaunches() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let seeded = try JSONDecoder().decode(
+      CLIChatOutput.self,
+      from: Data(try runCLI(["examples", "chat", "seed", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(seeded.event, "seed")
+    expectNoDifference(seeded.transport, "not-implemented-local-cache-only")
+    expectNoDifference(seeded.channelCount, 2)
+    expectNoDifference(seeded.messageCount, 2)
+    expectNoDifference(seeded.channels.map(\.title), ["general", "random"])
+    expectNoDifference(
+      Set(seeded.messages.map(\.text)),
+      Set(["Welcome to Instant chat.", "Use this channel for anything else."])
+    )
+    let generalChannelID = try #require(
+      seeded.channels.first { $0.title == "general" }?.id
+    )
+
+    let channels = try JSONDecoder().decode(
+      CLIChatOutput.self,
+      from: Data(try runCLI(["examples", "chat", "channels", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(channels.event, "channels")
+    expectNoDifference(channels.channels.map(\.id), seeded.channels.map(\.id))
+
+    let generalMessages = try JSONDecoder().decode(
+      CLIChatOutput.self,
+      from: Data(
+        try runCLI(["examples", "chat", "messages", generalChannelID, "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(generalMessages.event, "messages")
+    expectNoDifference(generalMessages.selectedChannelID, generalChannelID)
+    expectNoDifference(generalMessages.messages.map(\.channelID), [generalChannelID])
+    expectNoDifference(generalMessages.messages.map(\.text), ["Welcome to Instant chat."])
+
+    let guestPost = try JSONDecoder().decode(
+      CLIChatOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "examples", "chat", "post", generalChannelID,
+            "--author", "Guest CLI",
+            "Hello from the guest CLI",
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(guestPost.event, "post")
+    expectNoDifference(guestPost.selectedChannelID, generalChannelID)
+    expectNoDifference(guestPost.authIsGuest, true)
+    let guestUserID = try #require(guestPost.authUserID)
+    let guestMessageID = try #require(guestPost.changedID)
+    let guestMessage = try #require(guestPost.messages.first { $0.id == guestMessageID })
+    expectNoDifference(guestMessage.channelID, generalChannelID)
+    expectNoDifference(guestMessage.authorName, "Guest CLI")
+    expectNoDifference(guestMessage.authorUserID, guestUserID)
+    expectNoDifference(guestMessage.text, "Hello from the guest CLI")
+
+    let guestAuth = try JSONDecoder().decode(
+      CLIAuthOutput.self,
+      from: Data(try runCLI(["auth", "show", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(guestAuth.isSignedIn, true)
+    expectNoDifference(guestAuth.isGuest, true)
+    expectNoDifference(guestAuth.userID, guestUserID)
+
+    _ = try runCLI(
+      ["auth", "token", "local-chat-refresh", "--user-id", "user-1", "--json"],
+      homeURL: homeURL
+    )
+    let userPost = try JSONDecoder().decode(
+      CLIChatOutput.self,
+      from: Data(
+        try runCLI(
+          ["examples", "chat", "send", generalChannelID, "Hello from a logged-in user", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(userPost.event, "post")
+    expectNoDifference(userPost.authUserID, "user-1")
+    expectNoDifference(userPost.authIsGuest, false)
+    let userMessageID = try #require(userPost.changedID)
+    let userMessage = try #require(userPost.messages.first { $0.id == userMessageID })
+    expectNoDifference(userMessage.channelID, generalChannelID)
+    expectNoDifference(userMessage.authorName, "user-1")
+    expectNoDifference(userMessage.authorUserID, "user-1")
+    expectNoDifference(userMessage.text, "Hello from a logged-in user")
+    expectNoDifference(userPost.messages.count, 3)
+
+    let missingChannel = try runCLIResult(
+      ["examples", "chat", "post", "missing-channel", "Hello", "--json"],
+      homeURL: homeURL
+    )
+    expectNoDifference(missingChannel.status, 66)
+    #expect(missingChannel.error.contains("Chat channel not found: missing-channel"))
+
+    let jsonlOutput = try runCLI(
+      ["examples", "chat", "messages", generalChannelID, "--jsonl"],
+      homeURL: homeURL
+    )
+    let jsonlLines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(jsonlLines.count, 6)
+    let summary = try JSONDecoder().decode(
+      CLIChatEvidence.self,
+      from: Data(try #require(jsonlLines.first).utf8)
+    )
+    expectNoDifference(summary.caseID, "cli.examples.chat")
+    expectNoDifference(summary.event, "messages")
+    expectNoDifference(summary.details.selectedChannelID, generalChannelID)
+    expectNoDifference(summary.details.channelCount, 2)
+    expectNoDifference(summary.details.messageCount, 3)
+    let eventRows = try jsonlLines.dropFirst().map {
+      try JSONDecoder().decode(CLIChatEventEnvelope.self, from: Data($0.utf8))
+    }
+    expectNoDifference(
+      eventRows.map(\.event),
+      ["channel", "channel", "message", "message", "message"]
+    )
+    let messageRows = try jsonlLines.dropFirst(3).map {
+      try JSONDecoder().decode(CLIChatMessageEvidence.self, from: Data($0.utf8))
+    }
+    expectNoDifference(
+      Set(messageRows.map(\.details.text)),
+      Set([
+        "Welcome to Instant chat.",
+        "Hello from the guest CLI",
+        "Hello from a logged-in user",
+      ])
+    )
+    expectNoDifference(Set(messageRows.map(\.details.channelID)), Set([generalChannelID]))
+
+    let reset = try JSONDecoder().decode(
+      CLIChatOutput.self,
+      from: Data(try runCLI(["examples", "chat", "reset", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(reset.event, "reset")
+    expectNoDifference(reset.channelCount, 0)
+    expectNoDifference(reset.messageCount, 0)
+    expectNoDifference(reset.channels, [])
+    expectNoDifference(reset.messages, [])
+
+    let emptyMessages = try JSONDecoder().decode(
+      CLIChatOutput.self,
+      from: Data(try runCLI(["examples", "chat", "messages", "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(emptyMessages.event, "messages")
+    expectNoDifference(emptyMessages.channelCount, 0)
+    expectNoDifference(emptyMessages.messageCount, 0)
+  }
+
+  @Test
   func cliValidationLocalTodosEmitsEvidence() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -5592,9 +5805,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 99)
+    expectNoDifference(jsonOutput.recordCount, 100)
     expectNoDifference(jsonOutput.exactCount, 19)
-    expectNoDifference(jsonOutput.adaptedCount, 77)
+    expectNoDifference(jsonOutput.adaptedCount, 78)
     expectNoDifference(jsonOutput.blockedCount, 3)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -5648,6 +5861,11 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.records.contains {
         $0.id == "sqlite.cloudkit-demo.local-counter-share" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "instant.website.chat.local-cli" && $0.status == "adapted"
       }
     )
     #expect(
@@ -5874,7 +6092,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 99"))
+    #expect(humanOutput.contains("records: 100"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 
@@ -6356,6 +6574,42 @@ private struct CLISharedCounter: Decodable, Equatable {
   var shareID: String?
   var shareRole: InstantShareRole?
   var shareMemberCount: Int
+}
+
+private struct CLIChatOutput: Decodable {
+  var event: String
+  var changedID: String?
+  var selectedChannelID: String?
+  var authUserID: String?
+  var authIsGuest: Bool?
+  var transport: String
+  var pendingMutationCount: Int
+  var channelCount: Int
+  var messageCount: Int
+  var channels: [ChatChannelRecord]
+  var messages: [ChatMessageRecord]
+}
+
+private struct CLIChatEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLIChatOutput
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
+}
+
+private struct CLIChatEventEnvelope: Decodable {
+  var event: String
+}
+
+private struct CLIChatMessageEvidence: Decodable {
+  var event: String
+  var entityID: String?
+  var details: ChatMessageRecord
 }
 
 private struct CLIRemindersOutput: Decodable {

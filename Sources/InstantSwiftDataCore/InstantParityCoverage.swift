@@ -1066,6 +1066,16 @@ public enum InstantSwiftDataParityCoverage {
       status: .blocked,
       notes: "The TypeScript fixture runner is present, but Swift live subscription against a real Instant app remains incomplete."
     ),
+    instant(
+      id: "instant.website.chat.local-cli",
+      sourceFile: "upstream/instant/client/www/_examples/chat.md",
+      sourceTestName: "IRC-style chat guest login, channels, messages, seed/reset tooling",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/CLITests.swift",
+      swiftTestName: "cliChatExampleSeedsPostsAndResetsAcrossLaunches",
+      surface: "examples-chat",
+      status: .adapted,
+      notes: "The Instant CLI ports the website chat example into local channel/message refs, deterministic seed/reset tooling, guest auto-login for posts, and logged-in author attribution."
+    ),
     sqlite(
       id: "sqlite.cloudkit-demo.local-counter-share",
       sourceFile: "upstream/sqlite-data/Examples/CloudKitDemo/CountersListFeature.swift",

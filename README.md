@@ -126,6 +126,18 @@ swift run instant-swift-data examples sync-ups delete "$SYNCUP_ID" --json
 deterministic `.local` speech and sound clients, saves the transcript as a
 meeting, and prints recording diagnostics alongside the normal SyncUps snapshot.
 
+Run the local Instant website-style chat demo:
+
+```bash
+swift run instant-swift-data examples chat seed --json
+GENERAL_CHANNEL_ID="$(swift run instant-swift-data examples chat channels --json | jq -r '.channels[] | select(.title == "general") | .id')"
+swift run instant-swift-data examples chat post "$GENERAL_CHANNEL_ID" "Hello from the guest CLI" --author "Guest CLI" --json
+swift run instant-swift-data auth token local-chat-refresh --user-id user-1 --json
+swift run instant-swift-data examples chat post "$GENERAL_CHANNEL_ID" "Hello from a logged-in user" --json
+swift run instant-swift-data examples chat messages "$GENERAL_CHANNEL_ID" --jsonl
+swift run instant-swift-data examples chat reset --json
+```
+
 Inspect the durable cache and optimistic outbox:
 
 ```bash

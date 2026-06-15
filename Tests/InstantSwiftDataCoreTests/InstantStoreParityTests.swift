@@ -11,9 +11,9 @@ struct InstantStoreParityTests {
 
     expectNoDifference(report.event, "parity-report")
     expectNoDifference(report.coverageComplete, false)
-    expectNoDifference(report.recordCount, 99)
+    expectNoDifference(report.recordCount, 100)
     expectNoDifference(report.exactCount, 19)
-    expectNoDifference(report.adaptedCount, 77)
+    expectNoDifference(report.adaptedCount, 78)
     expectNoDifference(report.blockedCount, 3)
     expectNoDifference(report.notApplicableCount, 0)
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/instaml.test.ts"))
@@ -79,6 +79,7 @@ struct InstantStoreParityTests {
     #expect(report.records.contains { $0.id == "sqlite.reminders.search-tags" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "sqlite.syncups.record-meeting" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "sqlite.cloudkit-demo.local-counter-share" && $0.status == .adapted })
+    #expect(report.records.contains { $0.id == "instant.website.chat.local-cli" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.live-transport.swift-to-typescript" && $0.status == .blocked })
 
     let evidenceRows = report.evidenceRows(appID: "parity-test")

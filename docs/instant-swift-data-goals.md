@@ -656,6 +656,15 @@ Agent-oriented output modes are required:
   `record-demo` path must use Sendable speech, sound, and open-settings
   dependency clients with reusable `.local` instances so the terminal demo
   proves the same effect seams that the eventual SwiftUI recording flow uses.
+- run the local Instant website-style chat port with
+  `instant-swift-data examples chat seed`,
+  `instant-swift-data examples chat channels`,
+  `instant-swift-data examples chat post <channel-id> "hello"`,
+  `instant-swift-data examples chat messages <channel-id> --jsonl`, and
+  `instant-swift-data examples chat reset`; messages are linked to channels,
+  signed-out posts auto-create a local guest session, and posts after
+  `instant-swift-data auth token <refresh-token> --user-id <user-id>` preserve
+  logged-in author attribution across CLI launches.
 - run local admin write/query helpers such as
   `instant-swift-data admin transact notes note-1 --merge '{"title":"admin note"}' --transaction-id tx-admin-note-1`
   and `instant-swift-data admin query notes --json` for durable terminal

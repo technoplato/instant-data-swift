@@ -490,6 +490,98 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func examplesChatLeafParserParsesCommandsAndOptions() throws {
+    expectNoDifference(try parseExamplesChatLeaf(["seed"]), .seed)
+    expectNoDifference(try parseExamplesChatLeaf(["channels"]), .channels)
+    expectNoDifference(try parseExamplesChatLeaf(["messages"]), .messages(channelID: nil))
+    expectNoDifference(
+      try parseExamplesChatLeaf(["messages", "channel-1"]),
+      .messages(channelID: "channel-1")
+    )
+    expectNoDifference(
+      try parseExamplesChatLeaf(["post", "channel-1", "Hello", "there"]),
+      .post(CLIExamplesChatPostInvocation(channelID: "channel-1", text: "Hello there"))
+    )
+    expectNoDifference(
+      try parseExamplesChatLeaf(["send", "channel-1", "--author", "Blob", "Hello"]),
+      .post(
+        CLIExamplesChatPostInvocation(
+          channelID: "channel-1",
+          text: "Hello",
+          authorName: "Blob"
+        )
+      )
+    )
+    expectNoDifference(
+      try parseExamplesChatLeaf(["post", "channel-1", "Hello", "--author", "Blob Jr"]),
+      .post(
+        CLIExamplesChatPostInvocation(
+          channelID: "channel-1",
+          text: "Hello",
+          authorName: "Blob Jr"
+        )
+      )
+    )
+    expectNoDifference(try parseExamplesChatLeaf(["reset"]), .reset)
+    expectNoDifference(
+      try parseExamplesChatLeaf(["dance", "--fast"]),
+      .unknown("dance")
+    )
+  }
+
+  @Test
+  func examplesChatLeafParserReportsMalformedArguments() throws {
+    try expectExamplesChatLeafParseError(
+      [],
+      description: CLIExamplesChatUsage.chat
+    )
+    try expectExamplesChatLeafParseError(
+      ["seed", "unexpected"],
+      description: CLIExamplesChatUsage.seed
+    )
+    try expectExamplesChatLeafParseError(
+      ["channels", "unexpected"],
+      description: CLIExamplesChatUsage.channels
+    )
+    try expectExamplesChatLeafParseError(
+      ["messages", "channel-1", "unexpected"],
+      description: CLIExamplesChatUsage.messages
+    )
+    try expectExamplesChatLeafParseError(
+      ["messages", "  "],
+      description: CLIExamplesChatUsage.messages
+    )
+    try expectExamplesChatLeafParseError(
+      ["post"],
+      description: CLIExamplesChatUsage.post
+    )
+    try expectExamplesChatLeafParseError(
+      ["post", "  ", "Hello"],
+      description: CLIExamplesChatUsage.post
+    )
+    try expectExamplesChatLeafParseError(
+      ["post", "channel-1"],
+      description: CLIExamplesChatUsage.post
+    )
+    try expectExamplesChatLeafParseError(
+      ["post", "channel-1", "--author"],
+      description: CLIExamplesChatUsage.post
+    )
+    try expectExamplesChatLeafParseError(
+      ["post", "channel-1", "--author", "  ", "Hello"],
+      description: CLIExamplesChatUsage.post
+    )
+    try expectExamplesChatLeafParseError(
+      ["post", "channel-1", "--surprise", "Hello"],
+      description: "Unknown chat post option: --surprise. \(CLIExamplesChatUsage.post)"
+    )
+    try expectExamplesChatLeafParseError(
+      ["reset", "unexpected"],
+      description: CLIExamplesChatUsage.reset
+    )
+  }
+
+  @Test
   func examplesSyncUpsLeafParserParsesCommandsAndOptions() throws {
     expectNoDifference(try parseExamplesSyncUpsLeaf(["seed"]), .seed)
     expectNoDifference(
@@ -2223,7 +2315,7 @@ struct CLIArgumentParserTests {
     )
     expectNoDifference(
       try parseExamples(["chat", "seed"]),
-      .unknown("chat", arguments: ["seed"])
+      .chat(arguments: ["seed"])
     )
     expectNoDifference(
       try parseExamples(["todos"]),
@@ -2865,6 +2957,15 @@ private func parseExamplesCountersLeaf(
   return invocation
 }
 
+private func parseExamplesChatLeaf(
+  _ arguments: [String]
+) throws -> CLIExamplesChatLeafInvocation {
+  var input = arguments[...]
+  let invocation = try CLIExamplesChatLeafParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return invocation
+}
+
 private func parseExamplesSyncUpsLeaf(
   _ arguments: [String]
 ) throws -> CLIExamplesSyncUpsLeafInvocation {
@@ -3336,6 +3437,19 @@ private func expectExamplesCountersLeafParseError(
     _ = try parseExamplesCountersLeaf(arguments)
     Issue.record("Expected examples counters parser to reject \(arguments).")
   } catch let error as CLIExamplesCountersArgumentError {
+    expectNoDifference(error.description, expectedDescription)
+    expectNoDifference(error.exitCode, 64)
+  }
+}
+
+private func expectExamplesChatLeafParseError(
+  _ arguments: [String],
+  description expectedDescription: String
+) throws {
+  do {
+    _ = try parseExamplesChatLeaf(arguments)
+    Issue.record("Expected examples chat parser to reject \(arguments).")
+  } catch let error as CLIExamplesChatArgumentError {
     expectNoDifference(error.description, expectedDescription)
     expectNoDifference(error.exitCode, 64)
   }

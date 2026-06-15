@@ -410,8 +410,14 @@ struct InstantSwiftDataCLI {
       throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesCountersArgumentError {
       throw CLIError(error.description, exitCode: error.exitCode)
+    } catch let error as CLIExamplesChatArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
     switch invocation {
+    case let .chat(arguments):
+      try await runChat(arguments: arguments, output: output)
+      return
+
     case let .counters(arguments):
       try await runCounters(arguments: arguments, output: output)
       return
@@ -1613,6 +1619,120 @@ struct InstantSwiftDataCLI {
 
     case .unknown:
       preconditionFailure("Unknown counters commands are handled before bootstrapping.")
+    }
+  }
+
+  private static func runChat(arguments: [String], output: OutputMode) async throws {
+    let invocation: CLIExamplesChatLeafInvocation
+    do {
+      var input = arguments[...]
+      invocation = try CLIExamplesChatLeafParser().parse(&input)
+    } catch let error as CLIExamplesChatArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
+    }
+
+    if case let .unknown(command) = invocation {
+      throw CLIError("Unknown chat command: \(command). \(chatUsage)", exitCode: 64)
+    }
+
+    let context = try await CLIContext.bootstrap(initialAttributes: ChatExample.attributes)
+
+    switch invocation {
+    case .seed:
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      let generalChannelID = try await context.runtime.localID(
+        named: ChatExample.generalChannelIDName
+      )
+      let randomChannelID = try await context.runtime.localID(
+        named: ChatExample.randomChannelIDName
+      )
+      let welcomeMessageID = try await context.runtime.localID(
+        named: ChatExample.welcomeMessageIDName
+      )
+      let randomMessageID = try await context.runtime.localID(
+        named: ChatExample.randomMessageIDName
+      )
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: ChatExample.seedOperations(
+            generalChannelID: generalChannelID,
+            randomChannelID: randomChannelID,
+            welcomeMessageID: welcomeMessageID,
+            randomMessageID: randomMessageID,
+            createdAt: now,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.chat.seed"
+      )
+      try await printChat(context: context, output: output, event: "seed")
+
+    case .channels:
+      try await printChat(context: context, output: output, event: "channels")
+
+    case let .messages(channelID):
+      if let channelID {
+        _ = try await requireChatChannel(context: context, id: channelID)
+      }
+      try await printChat(
+        context: context,
+        output: output,
+        event: "messages",
+        selectedChannelID: channelID
+      )
+
+    case let .post(post):
+      _ = try await requireChatChannel(context: context, id: post.channelID)
+      let session = try await currentOrGuestChatSession(context: context)
+      let messageID = context.runtime.configuration.makeID()
+      let transactionID = context.runtime.configuration.makeID()
+      let now = context.runtime.configuration.now()
+      try await context.runtime.transact(
+        InstantStoreTransaction(
+          id: transactionID,
+          operations: ChatExample.createMessageOperations(
+            id: messageID,
+            channelID: post.channelID,
+            text: post.text,
+            authorName: post.authorName ?? (session.isGuest ? "Guest" : session.userID),
+            authorUserID: session.userID,
+            createdAt: now,
+            transactionID: transactionID
+          )
+        ),
+        createdAt: now,
+        source: "cli.examples.chat.post"
+      )
+      try await printChat(
+        context: context,
+        output: output,
+        event: "post",
+        changedID: messageID,
+        selectedChannelID: post.channelID
+      )
+
+    case .reset:
+      let channels = try await currentChatChannels(context: context)
+      let messages = try await currentChatMessages(context: context)
+      let operations =
+        messages.flatMap { ChatExample.deleteMessageOperations(id: $0.id) }
+        + channels.flatMap { ChatExample.deleteChannelOperations(id: $0.id) }
+      if !operations.isEmpty {
+        let transactionID = context.runtime.configuration.makeID()
+        let now = context.runtime.configuration.now()
+        try await context.runtime.transact(
+          InstantStoreTransaction(id: transactionID, operations: operations),
+          createdAt: now,
+          source: "cli.examples.chat.reset"
+        )
+      }
+      try await printChat(context: context, output: output, event: "reset")
+
+    case .unknown:
+      preconditionFailure("Unknown chat commands are handled before bootstrapping.")
     }
   }
 
@@ -3894,6 +4014,144 @@ struct InstantSwiftDataCLI {
     return counter
   }
 
+  private static func printChat(
+    context: CLIContext,
+    output: OutputMode,
+    event: String,
+    changedID: String? = nil,
+    selectedChannelID: String? = nil
+  ) async throws {
+    let channels = try await currentChatChannels(context: context)
+    let messageQuery = selectedChannelID.map(ChatExample.messagesForChannelQuery)
+      ?? ChatExample.messagesQuery
+    let messages = try await currentChatMessages(context: context, query: messageQuery)
+    let pending = await context.runtime.pendingMutations()
+    let session = try await context.runtime.authSession()
+    let payload = ChatOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      changedID: changedID,
+      selectedChannelID: selectedChannelID,
+      authUserID: session?.userID,
+      authIsGuest: session?.isGuest,
+      transport: "not-implemented-local-cache-only",
+      channelQueryID: ChatExample.channelsQuery.id,
+      messageQueryID: messageQuery.id,
+      channelCacheKey: ChatExample.channelsQuery.cacheKey,
+      messageCacheKey: messageQuery.cacheKey,
+      pendingMutationCount: pending.count,
+      channelCount: channels.count,
+      messageCount: messages.count,
+      channels: channels,
+      messages: messages
+    )
+
+    switch output {
+    case .human:
+      if channels.isEmpty {
+        print("No channels.")
+      } else {
+        for channel in channels {
+          print("channel \(channel.id) #\(channel.title)")
+        }
+      }
+      if messages.isEmpty {
+        print("No messages.")
+      } else {
+        for message in messages {
+          let user = message.authorUserID.map { " user=\($0)" } ?? ""
+          print(
+            "\(message.id) channel=\(message.channelID)\(user) \(message.authorName): \(message.text)"
+          )
+        }
+      }
+      if let authUserID = payload.authUserID {
+        print("auth: \(payload.authIsGuest == true ? "guest" : "user") \(authUserID)")
+      } else {
+        print("auth: signed out")
+      }
+      print("transport: \(payload.transport)")
+      print("pending mutations: \(pending.count)")
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.examples.chat",
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          entityID: changedID,
+          ok: true,
+          details: payload
+        )
+      )
+      for channel in channels {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.chat",
+            side: "swift",
+            event: "channel",
+            appID: context.appID,
+            entityID: channel.id,
+            ok: true,
+            details: channel
+          )
+        )
+      }
+      for message in messages {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.chat",
+            side: "swift",
+            event: "message",
+            appID: context.appID,
+            entityID: message.id,
+            ok: true,
+            details: message
+          )
+        )
+      }
+    }
+  }
+
+  private static func currentChatChannels(context: CLIContext) async throws -> [ChatChannelRecord] {
+    try ChatExample.decodeChannels(
+      (try await context.runtime.queryOnce(ChatExample.channelsQuery)).values
+    )
+  }
+
+  private static func currentChatMessages(
+    context: CLIContext,
+    query: InstantQueryPlan = ChatExample.messagesQuery
+  ) async throws -> [ChatMessageRecord] {
+    try ChatExample.decodeMessages((try await context.runtime.queryOnce(query)).values)
+  }
+
+  private static func requireChatChannel(
+    context: CLIContext,
+    id: String
+  ) async throws -> ChatChannelRecord {
+    let channels = try await currentChatChannels(context: context)
+    guard let channel = channels.first(where: { $0.id == id }) else {
+      throw CLIError("Chat channel not found: \(id)", exitCode: 66)
+    }
+    return channel
+  }
+
+  private static func currentOrGuestChatSession(
+    context: CLIContext
+  ) async throws -> InstantAuthSession {
+    if let session = try await context.runtime.authSession() {
+      return session
+    }
+    return try await context.runtime.signInAsGuest()
+  }
+
   private static func printReminders(
     context: CLIContext,
     output: OutputMode,
@@ -5734,10 +5992,11 @@ struct InstantSwiftDataCLI {
 
   private static var examplesUsage: String {
     """
-    Usage: instant-swift-data examples <todos|todo-links|counters|reminders|sync-ups>
+    Usage: instant-swift-data examples <todos|todo-links|counters|chat|reminders|sync-ups>
       instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>
       instant-swift-data examples todo-links <seed|list|nested|unlink> [--json|--jsonl]
       instant-swift-data examples counters <seed|add|list|increment|decrement|delete> [--json|--jsonl]
+      instant-swift-data examples chat <seed|channels|messages|post|reset> [--json|--jsonl]
       instant-swift-data examples reminders <seed|list|stats|tags|list-tags|search|add-list|rename-list|delete-list|add|update|complete|delete|delete-completed|add-tag|remove-tag> [--json|--jsonl]
       instant-swift-data examples sync-ups <seed|list|detail|add|edit|add-attendee|record|record-demo|delete|delete-attendee|delete-meeting> [--json|--jsonl]
     """
@@ -5745,6 +6004,10 @@ struct InstantSwiftDataCLI {
 
   private static var countersUsage: String {
     CLIExamplesCountersUsage.counters
+  }
+
+  private static var chatUsage: String {
+    CLIExamplesChatUsage.chat
   }
 
   private static var syncUpsUsage: String {
@@ -6365,6 +6628,26 @@ private struct CountersOutput: Codable, Sendable {
   var counterCount: Int
   var sharedCounterCount: Int
   var counters: [SharedCounterRecord]
+}
+
+private struct ChatOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var changedID: String?
+  var selectedChannelID: String?
+  var authUserID: String?
+  var authIsGuest: Bool?
+  var transport: String
+  var channelQueryID: String
+  var messageQueryID: String
+  var channelCacheKey: String
+  var messageCacheKey: String
+  var pendingMutationCount: Int
+  var channelCount: Int
+  var messageCount: Int
+  var channels: [ChatChannelRecord]
+  var messages: [ChatMessageRecord]
 }
 
 private struct RemindersOutput: Codable, Sendable {
