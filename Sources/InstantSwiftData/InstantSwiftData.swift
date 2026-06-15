@@ -3182,6 +3182,25 @@ extension FetchOne {
   }
 }
 
+public protocol InstantFetchKeyRequest: Sendable {
+  associatedtype Value: Sendable
+
+  func fetch(using client: InstantSwiftDataClient) async throws -> Value
+  func subscribe(using client: InstantSwiftDataClient) async throws -> FetchSubscription<Value>
+}
+
+public extension InstantFetchKeyRequest {
+  func subscribe(using client: InstantSwiftDataClient) async throws -> FetchSubscription<Value> {
+    throw InstantError(
+      code: .implementationFailed,
+      operation: "subscribe Fetch",
+      message: "No Instant subscription operation has been configured for this fetch request.",
+      recovery:
+        "Implement subscribe(using:) on the InstantFetchKeyRequest, or initialize @Fetch with an explicit subscribe operation."
+    )
+  }
+}
+
 @dynamicMemberLookup
 @propertyWrapper
 public struct Fetch<Value: Sendable>: Sendable {
@@ -3431,6 +3450,74 @@ public struct Fetch<Value: Sendable>: Sendable {
     operations.subscribe = operation
     self.operations.value = operations
     try await task(using: client)
+  }
+}
+
+extension Fetch {
+  public init<Request: InstantFetchKeyRequest>(
+    wrappedValue: Value,
+    _ request: Request
+  ) where Request.Value == Value {
+    self.storage = FetchStorage(value: wrappedValue)
+    self.operations = FetchOperationStorage(Self.operations(for: request))
+  }
+
+  public func load<Request: InstantFetchKeyRequest>(
+    _ request: Request
+  ) async throws where Request.Value == Value {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(request, using: client)
+  }
+
+  public func load<Request: InstantFetchKeyRequest>(
+    _ request: Request,
+    using client: InstantSwiftDataClient
+  ) async throws where Request.Value == Value {
+    operations.value = Self.operations(for: request)
+    try await load(using: client)
+  }
+
+  public func subscribe<Request: InstantFetchKeyRequest>(
+    _ request: Request
+  ) async throws -> FetchSubscription<Value> where Request.Value == Value {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(request, using: client)
+  }
+
+  public func subscribe<Request: InstantFetchKeyRequest>(
+    _ request: Request,
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<Value> where Request.Value == Value {
+    operations.value = Self.operations(for: request)
+    return try await subscribe(using: client)
+  }
+
+  public func task<Request: InstantFetchKeyRequest>(
+    _ request: Request
+  ) async throws where Request.Value == Value {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(request, using: client)
+  }
+
+  public func task<Request: InstantFetchKeyRequest>(
+    _ request: Request,
+    using client: InstantSwiftDataClient
+  ) async throws where Request.Value == Value {
+    operations.value = Self.operations(for: request)
+    try await task(using: client)
+  }
+
+  private static func operations<Request: InstantFetchKeyRequest>(
+    for request: Request
+  ) -> FetchOperations<Value> where Request.Value == Value {
+    FetchOperations(
+      load: { client in
+        try await request.fetch(using: client)
+      },
+      subscribe: { client in
+        try await request.subscribe(using: client)
+      }
+    )
   }
 }
 

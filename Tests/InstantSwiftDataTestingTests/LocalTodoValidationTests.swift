@@ -706,15 +706,15 @@ struct LocalTodoValidationTests {
 
     expectNoDifference(run.result.event, "parity-report")
     expectNoDifference(run.result.coverageComplete, false)
-    expectNoDifference(run.result.recordCount, 55)
+    expectNoDifference(run.result.recordCount, 56)
     expectNoDifference(run.result.exactCount, 11)
-    expectNoDifference(run.result.adaptedCount, 41)
+    expectNoDifference(run.result.adaptedCount, 42)
     expectNoDifference(run.result.blockedCount, 3)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
     expectNoDifference(run.summary.appID, "validation-parity-test")
     expectNoDifference(run.summary.rowCount, run.result.recordCount)
     expectNoDifference(run.summary.ok, false)
-    expectNoDifference(run.summary.events, Array(repeating: "parity-record", count: 55))
+    expectNoDifference(run.summary.events, Array(repeating: "parity-record", count: 56))
     expectNoDifference(run.summary.failedEvents, Array(repeating: "parity-record", count: 3))
     #expect(
       run.result.sourceFiles.contains(

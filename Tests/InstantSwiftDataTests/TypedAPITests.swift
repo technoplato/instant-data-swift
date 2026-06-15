@@ -3335,6 +3335,161 @@ struct TypedAPITests {
   }
 
   @Test
+  func fetchKeyRequestLoadsTransactionStyleCompositeValues() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_175.25)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000705")!
+
+    try await withDependencies {
+      $0.date.now = baseDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "fetch-request-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+      let request = TypedTodoFactsRequest(
+        rowsQuery: TypedTodo.query.order(TypedTodo.createdAt),
+        countQuery: TypedTodo.query
+      )
+
+      @Fetch(request) var facts = TypedTodoFacts()
+      expectNoDifference(facts, TypedTodoFacts())
+
+      let firstID = InstantID<TypedTodo>(rawValue: "todo-fetch-request-first")
+      let secondID = InstantID<TypedTodo>(rawValue: "todo-fetch-request-second")
+      try await db.transact(id: "tx-fetch-request-create") {
+        TypedTodo.create(
+          id: firstID,
+          TypedTodo.text.set("Transaction first"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate)
+        )
+        TypedTodo.create(
+          id: secondID,
+          TypedTodo.text.set("Transaction second"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate.addingTimeInterval(1))
+        )
+      }
+
+      try await $facts.load()
+      expectNoDifference(facts.todos.map(\.text), ["Transaction first", "Transaction second"])
+      expectNoDifference(facts.count, 2)
+      expectNoDifference($facts.loadError, nil)
+      expectNoDifference($facts.isLoading, false)
+
+      try await db.transact(id: "tx-fetch-request-delete") {
+        TypedTodo.delete(id: firstID)
+      }
+
+      try await $facts.load(request)
+      expectNoDifference(facts.todos.map(\.text), ["Transaction second"])
+      expectNoDifference(facts.count, 1)
+      expectNoDifference($facts.loadError, nil)
+      expectNoDifference($facts.isLoading, false)
+
+      let recorder = ClientCallRecorder(queryResults: [
+        [
+          typedTodoSnapshot(
+            id: "todo-fetch-request-visible",
+            text: "Visible row",
+            isCompleted: false,
+            createdAt: baseDate
+          )
+        ],
+        [
+          typedTodoSnapshot(
+            id: "todo-fetch-request-counted-first",
+            text: "Counted first",
+            isCompleted: false,
+            createdAt: baseDate
+          ),
+          typedTodoSnapshot(
+            id: "todo-fetch-request-counted-second",
+            text: "Counted second",
+            isCompleted: false,
+            createdAt: baseDate.addingTimeInterval(1)
+          ),
+        ],
+      ])
+      let visibleOpenRows = TypedTodoFactsRequest(
+        rowsQuery: TypedTodo.query.where(TypedTodo.text == "Visible row"),
+        countQuery: TypedTodo.query
+      )
+      let recordedFetch = Fetch(wrappedValue: TypedTodoFacts(), visibleOpenRows)
+      try await recordedFetch.load(using: recordingClient(recorder))
+      expectNoDifference(recordedFetch.wrappedValue.todos.map(\.text), ["Visible row"])
+      expectNoDifference(recordedFetch.wrappedValue.count, 2)
+      let plans = await recorder.queryPlans()
+      expectNoDifference(plans.map(\.namespace), ["todos", "todos"])
+      expectNoDifference(plans.count, 2)
+    }
+  }
+
+  @Test
+  func fetchKeyRequestTaskBindsCompositeSubscriptionValues() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_175.35)
+    let firstEmission = [
+      typedTodoSnapshot(
+        id: "todo-fetch-request-live-first",
+        text: "Live transaction first",
+        isCompleted: false,
+        createdAt: baseDate
+      )
+    ]
+    let secondEmission = [
+      typedTodoSnapshot(
+        id: "todo-fetch-request-live-first",
+        text: "Live transaction first",
+        isCompleted: false,
+        createdAt: baseDate
+      ),
+      typedTodoSnapshot(
+        id: "todo-fetch-request-live-second",
+        text: "Live transaction second",
+        isCompleted: false,
+        createdAt: baseDate.addingTimeInterval(1)
+      ),
+    ]
+    let fetch = Fetch(
+      wrappedValue: TypedTodoFacts(),
+      TypedTodoFactsRequest(
+        rowsQuery: TypedTodo.query.order(TypedTodo.createdAt),
+        countQuery: TypedTodo.query
+      )
+    )
+
+    try await fetch.task(using: finiteObservationClient([firstEmission, secondEmission]))
+
+    expectNoDifference(fetch.wrappedValue.todos.map(\.text), [
+      "Live transaction first",
+      "Live transaction second",
+    ])
+    expectNoDifference(fetch.wrappedValue.count, 2)
+    expectNoDifference(fetch.loadError, nil)
+    expectNoDifference(fetch.isLoading, false)
+  }
+
+  @Test
+  func fetchKeyRequestWithoutSubscriptionReportsTaskError() async throws {
+    let fetch = Fetch(wrappedValue: 0, FetchOnlyCountRequest())
+
+    do {
+      try await fetch.task(using: recordingClient(ClientCallRecorder()))
+      Issue.record("Expected fetch-only request task to fail without a subscription implementation.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .implementationFailed)
+      expectNoDifference(error.operation, "subscribe Fetch")
+    }
+
+    expectNoDifference(fetch.wrappedValue, 0)
+    expectNoDifference(fetch.loadError?.operation, "subscribe Fetch")
+    expectNoDifference(fetch.isLoading, false)
+  }
+
+  @Test
   func fetchAllAndFetchReloadFilteredActiveRows() async throws {
     let baseDate = Date(timeIntervalSince1970: 1_700_000_175.5)
     let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000681")!
@@ -5058,6 +5213,55 @@ private actor ClientCallRecorder {
 
   func queryPlans() -> [InstantQueryPlan] {
     plans
+  }
+}
+
+private struct TypedTodoFacts: Equatable, Sendable {
+  var todos: [TypedTodo] = []
+  var count = 0
+}
+
+private struct TypedTodoFactsRequest: InstantFetchKeyRequest {
+  var rowsQuery: InstantEntityQuery<TypedTodo>
+  var countQuery: InstantEntityQuery<TypedTodo>
+
+  func fetch(using client: InstantSwiftDataClient) async throws -> TypedTodoFacts {
+    let todos = try await client.query(rowsQuery)
+    let count = try await client.query(countQuery).count
+    return TypedTodoFacts(todos: todos, count: count)
+  }
+
+  func subscribe(using client: InstantSwiftDataClient) async throws -> FetchSubscription<TypedTodoFacts> {
+    let subscription = await client.subscribe(rowsQuery)
+    let stream = AsyncThrowingStream<TypedTodoFacts, Error>.makeStream(
+      bufferingPolicy: .bufferingNewest(1)
+    )
+    let task = Task {
+      do {
+        for try await todos in subscription {
+          try Task.checkCancellation()
+          stream.continuation.yield(TypedTodoFacts(todos: todos, count: todos.count))
+        }
+        stream.continuation.finish()
+      } catch {
+        stream.continuation.finish(throwing: error)
+      }
+    }
+    stream.continuation.onTermination = { @Sendable _ in
+      task.cancel()
+      subscription.cancel()
+    }
+    return FetchSubscription<TypedTodoFacts>(stream: stream.stream) {
+      task.cancel()
+      subscription.cancel()
+      stream.continuation.finish()
+    }
+  }
+}
+
+private struct FetchOnlyCountRequest: InstantFetchKeyRequest {
+  func fetch(using client: InstantSwiftDataClient) async throws -> Int {
+    try await client.query(TypedTodo.query).count
   }
 }
 

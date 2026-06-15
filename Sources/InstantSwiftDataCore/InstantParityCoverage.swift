@@ -487,6 +487,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "The Instant adapter updates observable model state through projected wrapper dynamic query loading."
     ),
     sqlite(
+      id: "sqlite.fetch.transaction-request",
+      sourceFile: "upstream/sqlite-data/Examples/CaseStudies/TransactionDemo.swift",
+      sourceTestName: "@Fetch(Facts()) composite transaction value",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "fetchKeyRequestLoadsTransactionStyleCompositeValues",
+      surface: "adapter-fetch",
+      status: .adapted,
+      notes: "InstantFetchKeyRequest gives @Fetch a reusable request object for composite values; the load path performs separate rows/count reads and the live task maps row emissions into the same value shape."
+    ),
+    sqlite(
       id: "sqlite.bindings.fetch-wrappers",
       sourceFile: "upstream/sqlite-data/Sources/SQLiteData/FetchAll.swift",
       sourceTestName: "projectedValue binding",
