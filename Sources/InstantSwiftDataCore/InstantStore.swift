@@ -536,7 +536,7 @@ public actor InstantStore {
     case .string where attribute.primaryKey || attribute.name == "id":
       return .string(entityID)
 
-    case .string, .number, .boolean, .date, .json:
+    case .string, .number, .boolean, .date, .json, .any:
       throw InstantError(
         code: .validationFailed,
         operation: "resolve lookup ref",
@@ -643,6 +643,15 @@ public actor InstantStore {
       return true
 
     case let (.number(value), .number):
+      return value.isFinite
+
+    case (.string, .any),
+      (.bool, .any),
+      (.date, .any),
+      (.json, .any):
+      return true
+
+    case let (.number(value), .any):
       return value.isFinite
 
     case (.string, .date), (.number, .date):
@@ -835,6 +844,15 @@ public actor InstantStore {
     case let (.number(value), .number):
       return value.isFinite
 
+    case (.string, .any),
+      (.bool, .any),
+      (.date, .any),
+      (.json, .any):
+      return true
+
+    case let (.number(value), .any):
+      return value.isFinite
+
     case (.string, .date), (.number, .date):
       return InstantDateCoercion.coerce(value.instantValue) != nil
 
@@ -944,6 +962,8 @@ private extension InstantValueType {
       return "date"
     case .json:
       return "json"
+    case .any:
+      return "any"
     case .ref:
       return "ref"
     }

@@ -2988,6 +2988,447 @@ struct InstantStoreTests {
   }
 
   @Test
+  func schemaCheckedDataTypesPreserveInstamlScalarMetadata() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let source =
+      "upstream/instant/client/packages/core/__tests__/src/instaml.test.ts "
+      + "Schema: populates checked-data-type "
+      + "[adapted: Swift preserves checked scalar metadata as value types, models i.any() explicitly, and applies local type validation before persistence.]"
+    let attributes = [
+      InstantAttribute(
+        id: "comments/s",
+        namespace: "comments",
+        name: "s",
+        valueType: .string,
+        isRequired: false
+      ),
+      InstantAttribute(
+        id: "comments/n",
+        namespace: "comments",
+        name: "n",
+        valueType: .number,
+        isRequired: false
+      ),
+      InstantAttribute(
+        id: "comments/d",
+        namespace: "comments",
+        name: "d",
+        valueType: .date,
+        isRequired: false
+      ),
+      InstantAttribute(
+        id: "comments/b",
+        namespace: "comments",
+        name: "b",
+        valueType: .boolean,
+        isRequired: false
+      ),
+      InstantAttribute(
+        id: "comments/a",
+        namespace: "comments",
+        name: "a",
+        valueType: .any,
+        isRequired: false
+      ),
+      InstantAttribute(
+        id: "comments/j",
+        namespace: "comments",
+        name: "j",
+        valueType: .json,
+        isRequired: false
+      ),
+    ]
+    let transportOnlyTransaction = InstantStoreTransaction(
+      id: "tx-instaml-schema-checked-types-transport",
+      operations: [
+        .insert(
+          InstantTriple(
+            entityID: "comment-1",
+            attributeID: "comments/id",
+            value: .string("comment-1"),
+            txID: "tx-instaml-schema-checked-types-transport",
+            txTime: time
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "comment-1",
+            attributeID: "comments/s",
+            value: .string("str"),
+            txID: "tx-instaml-schema-checked-types-transport",
+            txTime: time
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "comment-1",
+            attributeID: "comments/n",
+            value: .string("num"),
+            txID: "tx-instaml-schema-checked-types-transport",
+            txTime: time
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "comment-1",
+            attributeID: "comments/d",
+            value: .string("date"),
+            txID: "tx-instaml-schema-checked-types-transport",
+            txTime: time
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "comment-1",
+            attributeID: "comments/b",
+            value: .string("bool"),
+            txID: "tx-instaml-schema-checked-types-transport",
+            txTime: time
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "comment-1",
+            attributeID: "comments/a",
+            value: .string("any"),
+            txID: "tx-instaml-schema-checked-types-transport",
+            txTime: time
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "comment-1",
+            attributeID: "comments/j",
+            value: .string("json"),
+            txID: "tx-instaml-schema-checked-types-transport",
+            txTime: time
+          )
+        ),
+      ]
+    )
+    let runtimeTransaction = InstantStoreTransaction(
+      id: "tx-instaml-schema-checked-types",
+      operations: [
+        .insert(
+          InstantTriple(
+            entityID: "comment-1",
+            attributeID: "comments/id",
+            value: .string("comment-1"),
+            txID: "tx-instaml-schema-checked-types",
+            txTime: time
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "comment-1",
+            attributeID: "comments/s",
+            value: .string("str"),
+            txID: "tx-instaml-schema-checked-types",
+            txTime: time
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "comment-1",
+            attributeID: "comments/n",
+            value: .number(42),
+            txID: "tx-instaml-schema-checked-types",
+            txTime: time
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "comment-1",
+            attributeID: "comments/d",
+            value: .date(date),
+            txID: "tx-instaml-schema-checked-types",
+            txTime: time
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "comment-1",
+            attributeID: "comments/b",
+            value: .bool(true),
+            txID: "tx-instaml-schema-checked-types",
+            txTime: time
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "comment-1",
+            attributeID: "comments/a",
+            value: .json(.object(["kind": .string("any"), "count": .number(1)])),
+            txID: "tx-instaml-schema-checked-types",
+            txTime: time
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "comment-1",
+            attributeID: "comments/j",
+            value: .json(.string("json")),
+            txID: "tx-instaml-schema-checked-types",
+            txTime: time
+          )
+        ),
+      ]
+    )
+
+    let store = InstantStore(snapshot: InstantStoreSnapshot(attributes: attributes))
+    _ = try await store.prepare(runtimeTransaction)
+    let snapshot = await store.snapshot()
+    let attributesByID = Dictionary(uniqueKeysWithValues: snapshot.attributes.map { ($0.id, $0) })
+    expectNoDifference(
+      attributesByID.mapValues(\.valueType),
+      [
+        "comments/a": .any,
+        "comments/b": .boolean,
+        "comments/d": .date,
+        "comments/id": .string,
+        "comments/j": .json,
+        "comments/n": .number,
+        "comments/s": .string,
+      ],
+      source
+    )
+    let primaryKey = try #require(attributesByID["comments/id"])
+    expectNoDifference(primaryKey.isUnique, true, source)
+    expectNoDifference(primaryKey.isIndexed, true, source)
+    expectNoDifference(primaryKey.primaryKey, true, source)
+
+    let transportOnlyMutation = InstantTransportMutation(
+      PendingMutation(
+        id: "mutation-instaml-schema-checked-types-transport",
+        createdAt: time,
+        transaction: transportOnlyTransaction
+      )
+    )
+    expectNoDifference(
+      transportOnlyMutation.txSteps,
+      [
+        .addTriple(entity: .id("comment-1"), attributeID: "comments/id", value: .string("comment-1")),
+        .addTriple(entity: .id("comment-1"), attributeID: "comments/s", value: .string("str")),
+        .addTriple(entity: .id("comment-1"), attributeID: "comments/n", value: .string("num")),
+        .addTriple(entity: .id("comment-1"), attributeID: "comments/d", value: .string("date")),
+        .addTriple(entity: .id("comment-1"), attributeID: "comments/b", value: .string("bool")),
+        .addTriple(entity: .id("comment-1"), attributeID: "comments/a", value: .string("any")),
+        .addTriple(entity: .id("comment-1"), attributeID: "comments/j", value: .string("json")),
+      ],
+      source
+    )
+
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "test-app",
+        persistenceURL: cacheURL,
+        initialAttributes: attributes
+      )
+    )
+    let result = try await runtime.transact(runtimeTransaction, createdAt: time)
+    let comments = try await runtime.query(
+      InstantQueryPlan(id: "schema-checked-types.comments", namespace: "comments")
+    )
+    let transportMutations = await runtime.outboxTransportMutations()
+    let transportMutation = try #require(transportMutations.first)
+
+    expectNoDifference(result.changedEntityIDs, Set(["comment-1"]), source)
+    expectNoDifference(result.tripleCount, 7, source)
+    expectNoDifference(comments.map(\.id), ["comment-1"], source)
+    expectNoDifference(comments.first?.values["s"]?.first, .string("str"), source)
+    expectNoDifference(comments.first?.values["n"]?.first, .number(42), source)
+    expectNoDifference(comments.first?.values["d"]?.first, .date(date), source)
+    expectNoDifference(comments.first?.values["b"]?.first, .bool(true), source)
+    expectNoDifference(
+      comments.first?.values["a"]?.first,
+      .json(.object(["count": .number(1), "kind": .string("any")])),
+      source
+    )
+    expectNoDifference(comments.first?.values["j"]?.first, .json(.string("json")), source)
+    expectNoDifference(
+      transportMutation.txSteps,
+      [
+        .addTriple(entity: .id("comment-1"), attributeID: "comments/id", value: .string("comment-1")),
+        .addTriple(entity: .id("comment-1"), attributeID: "comments/s", value: .string("str")),
+        .addTriple(entity: .id("comment-1"), attributeID: "comments/n", value: .number(42)),
+        .addTriple(
+          entity: .id("comment-1"),
+          attributeID: "comments/d",
+          value: InstantTransportValue(InstantValue.date(date))
+        ),
+        .addTriple(entity: .id("comment-1"), attributeID: "comments/b", value: .bool(true)),
+        .addTriple(
+          entity: .id("comment-1"),
+          attributeID: "comments/a",
+          value: .object(["count": .number(1), "kind": .string("any")])
+        ),
+        .addTriple(entity: .id("comment-1"), attributeID: "comments/j", value: .string("json")),
+      ],
+      source
+    )
+  }
+
+  @Test
+  func anyValueTypeAcceptsNonLinkPayloadsAndRejectsRefs() async throws {
+    let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let date = Date(timeIntervalSince1970: 1_700_000_000)
+    let source = "InstantValueType.any accepts any non-link payload but does not model relationships."
+    let attributes = [
+      InstantAttribute(
+        id: "comments/slug",
+        namespace: "comments",
+        name: "slug",
+        valueType: .string,
+        isRequired: false,
+        isIndexed: true,
+        isUnique: true
+      ),
+      InstantAttribute(
+        id: "comments/a",
+        namespace: "comments",
+        name: "a",
+        valueType: .any,
+        isRequired: false
+      )
+    ]
+    let store = InstantStore(snapshot: InstantStoreSnapshot(attributes: attributes))
+    _ = try await store.prepare(
+      InstantStoreTransaction(
+        id: "tx-any-payloads",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: "comment-string",
+              attributeID: "comments/slug",
+              value: .string("slug-1"),
+              txID: "tx-any-payloads",
+              txTime: time
+            )
+          ),
+          .insert(
+            InstantTriple(
+              entityID: "comment-string",
+              attributeID: "comments/a",
+              value: .string("any"),
+              txID: "tx-any-payloads",
+              txTime: time
+            )
+          ),
+          .insert(
+            InstantTriple(
+              entityID: "comment-number",
+              attributeID: "comments/a",
+              value: .number(42),
+              txID: "tx-any-payloads",
+              txTime: time
+            )
+          ),
+          .insert(
+            InstantTriple(
+              entityID: "comment-bool",
+              attributeID: "comments/a",
+              value: .bool(false),
+              txID: "tx-any-payloads",
+              txTime: time
+            )
+          ),
+          .insert(
+            InstantTriple(
+              entityID: "comment-date",
+              attributeID: "comments/a",
+              value: .date(date),
+              txID: "tx-any-payloads",
+              txTime: time
+            )
+          ),
+          .insert(
+            InstantTriple(
+              entityID: "comment-json",
+              attributeID: "comments/a",
+              value: .json(.object(["kind": .string("json")])),
+              txID: "tx-any-payloads",
+              txTime: time
+            )
+          ),
+        ]
+      )
+    )
+    let snapshot = await store.snapshot()
+    let valuesByEntityID = Dictionary(
+      uniqueKeysWithValues: snapshot.triples
+        .filter { $0.attributeID == "comments/a" }
+        .map { ($0.entityID, $0.value) }
+    )
+    expectNoDifference(
+      valuesByEntityID,
+      [
+        "comment-bool": .bool(false),
+        "comment-date": .date(date),
+        "comment-json": .json(.object(["kind": .string("json")])),
+        "comment-number": .number(42),
+        "comment-string": .string("any"),
+      ],
+      source
+    )
+
+    do {
+      _ = try await store.prepare(
+        InstantStoreTransaction(
+          id: "tx-any-ref",
+          operations: [
+            .insert(
+              InstantTriple(
+                entityID: "comment-ref",
+                attributeID: "comments/a",
+                value: .ref("book-1"),
+                txID: "tx-any-ref",
+                txTime: time
+              )
+            )
+          ]
+        )
+      )
+      #expect(Bool(false), "Expected .any to reject ref payloads.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed, source)
+      expectNoDifference(error.operation, "write entity attribute", source)
+      expectNoDifference(error.path, "a", source)
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      _ = try await store.prepare(
+        InstantStoreTransaction(
+          id: "tx-any-lookup-ref",
+          operations: [
+            .insert(
+              InstantTriple(
+                entityID: "comment-lookup-ref",
+                attributeID: "comments/a",
+                value: .lookupRef(
+                  InstantLookupRef(attributeID: "comments/slug", value: .string("slug-1"))
+                ),
+                txID: "tx-any-lookup-ref",
+                txTime: time
+              )
+            )
+          ]
+        )
+      )
+      #expect(Bool(false), "Expected .any to reject lookup ref payloads.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed, source)
+      expectNoDifference(error.operation, "resolve lookup ref", source)
+      expectNoDifference(error.path, "a", source)
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
   func deleteEntityByReverseIdentityLookupUsesResolvedNamespace() async throws {
     let time = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let attributes = [

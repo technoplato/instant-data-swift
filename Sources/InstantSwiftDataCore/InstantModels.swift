@@ -201,6 +201,7 @@ public enum InstantValueType: String, Codable, Sendable {
   case boolean
   case date
   case json
+  case any
   case ref
 }
 

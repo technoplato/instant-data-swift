@@ -142,11 +142,14 @@ public enum InstantSchemaValidationError: Error, Equatable, Sendable, CustomStri
     endpoint: String,
     cardinality: InstantCardinality
   )
+  case unsupportedRefAttribute(namespace: String, name: String)
 
   public var description: String {
     switch self {
     case .invalidLinkCascadeEndpoint(let link, let endpoint, let cardinality):
       "Link '\(link)' \(endpoint) endpoint has invalid cascade delete for cardinality '\(cardinality.rawValue)'. Cascade delete is only supported on has: \"one\" links."
+    case .unsupportedRefAttribute(let namespace, let name):
+      "Attribute '\(namespace)/\(name)' is a ref attribute. Encode relationships with the schema links section instead."
     }
   }
 }
@@ -471,6 +474,15 @@ public struct TypeScriptSchemaPrinter: Sendable {
   }
 
   private func validate(_ document: InstantSchemaDocument) throws {
+    for entity in document.entities {
+      try validatePrintableAttributes(entity.attributes)
+    }
+    for room in document.rooms {
+      try validatePrintableAttributes(room.presence.attributes)
+      for topic in room.topics {
+        try validatePrintableAttributes(topic.payload.attributes)
+      }
+    }
     for link in document.links {
       try validateCascadeEndpoint(
         link: link.name,
@@ -481,6 +493,15 @@ public struct TypeScriptSchemaPrinter: Sendable {
         link: link.name,
         endpoint: "reverse",
         value: link.reverse
+      )
+    }
+  }
+
+  private func validatePrintableAttributes(_ attributes: [InstantAttribute]) throws {
+    for attribute in printableAttributes(attributes) where attribute.valueType == .ref {
+      throw InstantSchemaValidationError.unsupportedRefAttribute(
+        namespace: attribute.namespace,
+        name: attribute.name
       )
     }
   }
@@ -529,8 +550,10 @@ public struct TypeScriptSchemaPrinter: Sendable {
         "i.date()"
       case .json:
         "i.json()"
-      case .ref:
+      case .any:
         "i.any()"
+      case .ref:
+        preconditionFailure("Ref attributes must be printed from schema links.")
       }
 
     var expression = scalar

@@ -477,6 +477,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift uses declared attributes rather than JavaScript add-attr generation and normalizes id attrs as indexed primary keys; reverse-identity ref lookups stay lookup-shaped for transport link values and resolve locally through the declared forward ref attr."
     ),
     instant(
+      id: "instant.instaml.schema-checked-data-types",
+      sourceFile: instamlSource,
+      sourceTestName: "Schema: populates checked-data-type",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "schemaCheckedDataTypesPreserveInstamlScalarMetadata",
+      surface: "instaml",
+      status: .adapted,
+      notes: "Swift uses declared value types rather than JavaScript add-attr generation; string, number, date, and boolean map to checked scalar metadata, i.any() is modeled explicitly, and runtime writes are type checked before persistence."
+    ),
+    instant(
       id: "instant.weak-hash",
       sourceFile: weakHashSource,
       sourceTestName: "selected fields / object key order / date / known query",

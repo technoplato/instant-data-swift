@@ -492,7 +492,7 @@ private struct ParsedAttributeExpression {
       ("i.boolean()", .boolean),
       ("i.date()", .date),
       ("i.json()", .json),
-      ("i.any()", .ref),
+      ("i.any()", .any),
     ]
 
     guard let scalar = scalarPrefixes.first(where: { scalarString.hasPrefix($0.0) })

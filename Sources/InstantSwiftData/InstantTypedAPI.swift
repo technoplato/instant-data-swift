@@ -781,6 +781,11 @@ extension InstantEntityModel {
       (.bool, .boolean),
       (.date, .date),
       (.json, .json),
+      (.string, .any),
+      (.number, .any),
+      (.bool, .any),
+      (.date, .any),
+      (.json, .any),
       (.ref, .ref),
       (.lookupRef, .ref):
       return
@@ -967,6 +972,11 @@ extension InstantEntityModel {
       (.bool, .boolean),
       (.date, .date),
       (.json, .json),
+      (.string, .any),
+      (.number, .any),
+      (.bool, .any),
+      (.date, .any),
+      (.json, .any),
       (.ref, .ref):
       return true
 

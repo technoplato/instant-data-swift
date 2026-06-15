@@ -142,7 +142,7 @@ struct TypeScriptPrinterTests {
             isRequired: false
           ),
           InstantAttribute(id: "users/stuff", namespace: "users", name: "stuff", valueType: .json),
-          InstantAttribute(id: "users/junk", namespace: "users", name: "junk", valueType: .ref),
+          InstantAttribute(id: "users/junk", namespace: "users", name: "junk", valueType: .any),
         ]
       ),
     ],
@@ -378,8 +378,7 @@ struct TypeScriptPrinterTests {
   func schemaParserRoundTripsUpstreamCoreSchemaShape() throws {
     let source =
       "upstream/instant/client/packages/core/__tests__/src/schema.test.ts runs without exception "
-      + "and serializeSchema.test.ts ability to parse stringified schema into real schema object "
-      + "[adapted: Swift IR maps upstream i.any() to i.any()/.ref for the users.junk field.]"
+      + "and serializeSchema.test.ts ability to parse stringified schema into real schema object."
     let printed = try TypeScriptSchemaPrinter().printSchema(Self.upstreamCoreSchemaDocument)
     let parsed = try TypeScriptSchemaParser().parseDocument(printed)
 
@@ -606,6 +605,38 @@ struct TypeScriptPrinterTests {
           endpoint: "forward",
           cardinality: .many
         )
+      )
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
+  func schemaPrinterRejectsStandaloneRefAttributes() {
+    let document = InstantSchemaDocument(
+      entities: [
+        InstantEntitySchema(
+          typeName: "Comment",
+          namespace: "comments",
+          attributes: [
+            InstantAttribute(
+              id: "comments/book",
+              namespace: "comments",
+              name: "book",
+              valueType: .ref
+            )
+          ]
+        )
+      ]
+    )
+
+    do {
+      _ = try TypeScriptSchemaPrinter().printSchema(document)
+      #expect(Bool(false), "Expected printer to reject standalone ref attributes.")
+    } catch let error as InstantSchemaValidationError {
+      expectNoDifference(
+        error,
+        .unsupportedRefAttribute(namespace: "comments", name: "book")
       )
     } catch {
       #expect(Bool(false), "Unexpected error: \(error)")

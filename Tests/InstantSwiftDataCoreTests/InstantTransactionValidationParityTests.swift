@@ -562,9 +562,9 @@ struct InstantTransactionValidationParityTests {
     let time = InstantTimestamp(milliseconds: 1_700_000_000_045)
     let source = transactionValidationSource(
       "validates attribute types and lookup proxy",
-      assertion: "lines 244-280 and 415-449 date-compatible lookup values",
+      assertion: "lines 124-130 valid any create plus lines 244-280 and 415-449 date-compatible lookup values",
       status:
-        "adapted: Swift has no any type, so this covers declared string/json/date/ref compatibility and date lookup coercion."
+        "adapted: Swift covers declared string/json/date/ref compatibility, any payloads, and date lookup coercion."
     )
 
     try await runtime.transact(
@@ -614,6 +614,15 @@ struct InstantTransactionValidationParityTests {
               time: time
             )
           ),
+          .insert(
+            triple(
+              "user-date-string",
+              "users/junk",
+              .json(.object(["anything": .string("goes")])),
+              txID: "tx-parity-date-values",
+              time: time
+            )
+          ),
         ]
       ),
       createdAt: time
@@ -653,6 +662,9 @@ struct InstantTransactionValidationParityTests {
     expectNoDifference(
       dateLookupUsers.first(where: { $0.id == "user-date-string" })?.values["bio"]?.first,
       .string("Found by date"), source)
+    expectNoDifference(
+      dateLookupUsers.first(where: { $0.id == "user-date-string" })?.values["junk"]?.first,
+      .json(.object(["anything": .string("goes")])), source)
 
     await expectTransactionValidation(namespace: "users", path: "createdAt", source: source) {
       try await runtime.transact(
@@ -1235,6 +1247,13 @@ private func transactionValidationParityAttributes() -> [InstantAttribute] {
       namespace: "users",
       name: "stuff",
       valueType: .json,
+      isRequired: false
+    ),
+    InstantAttribute(
+      id: "users/junk",
+      namespace: "users",
+      name: "junk",
+      valueType: .any,
       isRequired: false
     ),
     InstantAttribute(

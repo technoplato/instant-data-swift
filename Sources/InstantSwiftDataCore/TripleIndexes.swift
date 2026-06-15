@@ -1462,6 +1462,13 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     case (.date, .date):
       return true
 
+    case (.string, .any),
+      (.number, .any),
+      (.bool, .any),
+      (.date, .any),
+      (.json, .any):
+      return true
+
     case (.string, .date), (.number, .date):
       return InstantDateCoercion.coerce(value) != nil
 
@@ -2305,6 +2312,8 @@ private extension InstantValueType {
       return "date"
     case .json:
       return "json"
+    case .any:
+      return "any"
     case .ref:
       return "ref"
     }
@@ -2314,7 +2323,7 @@ private extension InstantValueType {
     switch self {
     case .string, .number, .boolean, .date:
       return true
-    case .json, .ref:
+    case .json, .any, .ref:
       return false
     }
   }

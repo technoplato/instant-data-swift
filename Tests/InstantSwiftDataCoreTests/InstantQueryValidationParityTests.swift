@@ -185,8 +185,8 @@ struct InstantQueryValidationParityTests {
     let runtime = try await queryValidationRuntime()
     let source = queryValidationSource(
       "where clause type validation",
-      assertion: "lines 241-272 string field value types",
-      status: "adapted: Swift has no InstantValueType.any, so this covers the schema-backed string cases."
+      assertion: "lines 241-291 string field value types and valid any filters",
+      status: "adapted: Swift validates schema-backed string fields and accepts non-link any values."
     )
 
     let valid = try await runtime.query(
@@ -200,6 +200,24 @@ struct InstantQueryValidationParityTests {
       )
     )
     expectNoDifference(valid, [], source)
+
+    let validAnyString = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.users.valid-any-string-filter",
+        namespace: "users",
+        filters: [.equals(field: "junk", value: .string("string"))]
+      )
+    )
+    expectNoDifference(validAnyString, [], source)
+
+    let validAnyNumber = try await runtime.query(
+      InstantQueryPlan(
+        id: "query-validation-parity.users.valid-any-number-filter",
+        namespace: "users",
+        filters: [.equals(field: "junk", value: .number(123))]
+      )
+    )
+    expectNoDifference(validAnyNumber, [], source)
 
     await expectQueryValidation(
       namespace: "users",
@@ -872,6 +890,14 @@ private func queryValidationParityAttributes() -> [InstantAttribute] {
       namespace: "users",
       name: "stuff",
       valueType: .json,
+      isIndexed: true
+    ),
+    InstantAttribute(
+      id: "users/junk",
+      namespace: "users",
+      name: "junk",
+      valueType: .any,
+      isRequired: false,
       isIndexed: true
     ),
     InstantAttribute(
