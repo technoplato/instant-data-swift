@@ -177,6 +177,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift materializes date attributes as Date values after coercing Instant-compatible inputs."
     ),
     instant(
+      id: "instant.utils.date-coercion",
+      sourceFile: "upstream/instant/client/packages/core/__tests__/src/utils/dates.test.ts",
+      sourceTestName: "coerceToDate valid strings, invalid strings, and edge cases",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantDateCoercionTests.swift",
+      swiftTestName: "InstantDateCoercionTests",
+      surface: "dates",
+      status: .adapted,
+      notes: "Swift ports Instant's date string, Date, number, and unsupported-type coercion matrix through InstantValue; invalid Swift inputs return nil instead of throwing JavaScript exceptions."
+    ),
+    instant(
       id: "instant.query.simple-where",
       sourceFile: instaQLSource,
       sourceTestName: "Simple Where",
