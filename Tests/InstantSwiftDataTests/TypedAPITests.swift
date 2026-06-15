@@ -886,12 +886,17 @@ struct TypedAPITests {
         isCompleted: false,
         createdAt: createdAt
       )
+      expectNoDifference(draft.id, nil)
       expectNoDifference(draft.instantAssignments.map(\.attributeID), [
         "draftBackedTodos/body",
         "draftBackedTodos/isCompleted",
         "draftBackedTodos/createdAt",
         "draftBackedTodos/notes",
       ])
+      expectNoDifference(
+        draft.instantAssignments.map(\.attributeID).contains("draftBackedTodos/id"),
+        false
+      )
       let createdID = try await db.save(
         draft,
         localIDName: "typed.drafts.todo",

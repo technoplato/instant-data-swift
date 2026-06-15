@@ -7570,6 +7570,17 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.ok, true)
     expectNoDifference(jsonOutput.evidenceCount, 4)
     expectNoDifference(jsonOutput.events, ["create", "edit", "relation", "relaunch"])
+    expectNoDifference(jsonOutput.newDraftIDWasNil, true)
+    expectNoDifference(
+      jsonOutput.newDraftAssignmentAttributeIDs,
+      [
+        "draftValidationTodos/title",
+        "draftValidationTodos/isCompleted",
+        "draftValidationTodos/createdAt",
+        "draftValidationTodos/notes",
+      ]
+    )
+    expectNoDifference(jsonOutput.newDraftIncludedPrimaryKeyAssignment, false)
     expectNoDifference(
       jsonOutput.draftTodoAttributeIDs,
       [
@@ -7716,6 +7727,17 @@ extension InstantStoreTests {
     expectNoDifference(createEvidence.caseID, "validation.typed.drafts")
     expectNoDifference(createEvidence.appID, "cli-cache-test")
     expectNoDifference(createEvidence.event, "create")
+    expectNoDifference(createEvidence.details.newDraftIDWasNil, true)
+    expectNoDifference(
+      createEvidence.details.newDraftAssignmentAttributeIDs,
+      [
+        "draftValidationTodos/title",
+        "draftValidationTodos/isCompleted",
+        "draftValidationTodos/createdAt",
+        "draftValidationTodos/notes",
+      ]
+    )
+    expectNoDifference(createEvidence.details.newDraftIncludedPrimaryKeyAssignment, false)
     expectNoDifference(
       createEvidence.details.draftTodoAttributeIDs,
       [
@@ -7803,6 +7825,8 @@ extension InstantStoreTests {
     #expect(humanOutput.contains("validation: ok"))
     #expect(humanOutput.contains("case: validation.typed.drafts"))
     #expect(humanOutput.contains("evidence rows: 4"))
+    #expect(humanOutput.contains("new draft id omitted: true"))
+    #expect(humanOutput.contains("new draft assignments: draftValidationTodos/title"))
     #expect(humanOutput.contains("draft post ids:"))
     #expect(humanOutput.contains("draft post author relation: ref draftValidationAuthors"))
     #expect(humanOutput.contains("draft create mutation: entity-missing"))
@@ -10116,6 +10140,9 @@ private struct CLIDraftValidationOutput: Decodable {
   var ok: Bool
   var evidenceCount: Int
   var events: [String]
+  var newDraftIDWasNil: Bool
+  var newDraftAssignmentAttributeIDs: [String]
+  var newDraftIncludedPrimaryKeyAssignment: Bool
   var draftTodoAttributeIDs: [String]
   var draftTodoTitles: [String]
   var draftTodoCompletionStates: [Bool]
@@ -10155,6 +10182,9 @@ private struct CLIDraftValidationEvidence: Decodable {
 }
 
 private struct CLIDraftValidationDetails: Decodable {
+  var newDraftIDWasNil: Bool
+  var newDraftAssignmentAttributeIDs: [String]
+  var newDraftIncludedPrimaryKeyAssignment: Bool
   var draftTodoAttributeIDs: [String]
   var draftTodoTitles: [String]
   var draftTodoCompletionStates: [Bool]

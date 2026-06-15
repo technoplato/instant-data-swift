@@ -314,6 +314,20 @@ struct BootstrapTests {
     expectNoDifference(result.evidence.map(\.event), ["create", "edit", "relation", "relaunch"])
     expectNoDifference(result.evidence.map(\.ok), [true, true, true, true])
     expectNoDifference(result.evidence.first?.details.createdID, "draft-validation-created")
+    expectNoDifference(result.evidence.first?.details.newDraftIDWasNil, true)
+    expectNoDifference(
+      result.evidence.first?.details.newDraftAssignmentAttributeIDs,
+      [
+        "draftValidationTodos/title",
+        "draftValidationTodos/isCompleted",
+        "draftValidationTodos/createdAt",
+        "draftValidationTodos/notes",
+      ]
+    )
+    expectNoDifference(
+      result.evidence.first?.details.newDraftIncludedPrimaryKeyAssignment,
+      false
+    )
     let relationDetails = try #require(result.evidence.first { $0.event == "relation" }?.details)
     expectNoDifference(relationDetails.draftAuthorIDs, ["draft-validation-author"])
     expectNoDifference(relationDetails.draftAuthorNames, ["Draft relation author"])
@@ -367,6 +381,17 @@ struct BootstrapTests {
         "validation.typed-drafts.post",
       ]
     )
+    expectNoDifference(finalDetails.newDraftIDWasNil, true)
+    expectNoDifference(
+      finalDetails.newDraftAssignmentAttributeIDs,
+      [
+        "draftValidationTodos/title",
+        "draftValidationTodos/isCompleted",
+        "draftValidationTodos/createdAt",
+        "draftValidationTodos/notes",
+      ]
+    )
+    expectNoDifference(finalDetails.newDraftIncludedPrimaryKeyAssignment, false)
     let createMutation = try #require(
       finalDetails.draftMutationSummaries.first {
         $0.mutationID == "validation.typed-drafts.create"
@@ -502,6 +527,9 @@ struct BootstrapTests {
     expectNoDifference(details.draftPostAuthorAttributeValueType, nil)
     expectNoDifference(details.draftPostAuthorLinkNamespace, nil)
     expectNoDifference(details.draftMutationSummaries, [])
+    expectNoDifference(details.newDraftIDWasNil, false)
+    expectNoDifference(details.newDraftAssignmentAttributeIDs, [])
+    expectNoDifference(details.newDraftIncludedPrimaryKeyAssignment, false)
     expectNoDifference(details.createdID, "draft-validation-created")
     expectNoDifference(details.editedID, "draft-validation-created")
   }

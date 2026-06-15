@@ -547,10 +547,11 @@ create/accept/revoke. `validation reminders` emits terminal evidence for local
 Reminders search, tags, rich fields, form-model edit saves, smart-list stats,
 list sharing roles, permission rejections, writer updates, and relaunch
 persistence.
-`validation typed-drafts` emits terminal evidence for a
-macro-generated nil-id draft create, `Draft(existing)` edit, a writable relation
-draft with generated ref metadata, summarized pending mutation payload shape,
-and relaunch persistence through `InstantSwiftDataClient.save(_:)`.
+`validation typed-drafts` emits terminal evidence for a macro-generated create
+draft whose `id` starts as `nil` and whose writable assignments omit the managed
+primary key, `Draft(existing)` edit, a writable relation draft with generated ref
+metadata, summarized pending mutation payload shape, and relaunch persistence
+through `InstantSwiftDataClient.save(_:)`.
 `validation platform-adapters` emits terminal evidence that public wrapper
 adapters bind local client values for fetches, local IDs, auth, rooms, files,
 streams, and shares, that `@FetchAll` handles dynamic reloads, nil queries,
@@ -766,7 +767,8 @@ than once against durable state.
 
 Primary-keyed `@InstantEntity` models also derive SQLiteData-style drafts for
 form flows. New drafts may omit `id`; saving allocates the Instant id and
-returns it. Optional writable fields default to `nil` even when the entity
+returns it, and draft assignments never write that managed id as a normal
+attribute. Optional writable fields default to `nil` even when the entity
 property does not spell out `= nil`, while non-optional fields keep their Swift
 defaults or remain required. Writable Instant ref fields are included with their
 relation metadata so linked entity forms can save relation drafts. Edit drafts

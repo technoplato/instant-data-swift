@@ -9041,6 +9041,10 @@ struct InstantSwiftDataCLI {
       ok: result.evidence.allSatisfy { $0.ok },
       evidenceCount: result.evidence.count,
       events: result.evidence.map(\.event),
+      newDraftIDWasNil: finalDetails?.newDraftIDWasNil ?? false,
+      newDraftAssignmentAttributeIDs: finalDetails?.newDraftAssignmentAttributeIDs ?? [],
+      newDraftIncludedPrimaryKeyAssignment: finalDetails?.newDraftIncludedPrimaryKeyAssignment
+        ?? false,
       draftTodoAttributeIDs: finalDetails?.draftTodoAttributeIDs ?? [],
       draftTodoIDs: finalDetails?.draftTodoIDs ?? [],
       draftTodoTitles: finalDetails?.draftTodoTitles ?? [],
@@ -9070,6 +9074,8 @@ struct InstantSwiftDataCLI {
       print("case: validation.typed.drafts")
       print("events: \(summary.events.joined(separator: ", "))")
       print("evidence rows: \(summary.evidenceCount)")
+      print("new draft id omitted: \(summary.newDraftIDWasNil)")
+      print("new draft assignments: \(summary.newDraftAssignmentAttributeIDs.joined(separator: ", "))")
       print("draft attributes: \(summary.draftTodoAttributeIDs.joined(separator: ", "))")
       print("draft todo ids: \(summary.draftTodoIDs.joined(separator: ", "))")
       print("draft post ids: \(summary.draftPostIDs.joined(separator: ", "))")
@@ -11194,6 +11200,9 @@ private struct DraftValidationOutput: Codable, Sendable {
   var ok: Bool
   var evidenceCount: Int
   var events: [String]
+  var newDraftIDWasNil: Bool
+  var newDraftAssignmentAttributeIDs: [String]
+  var newDraftIncludedPrimaryKeyAssignment: Bool
   var draftTodoAttributeIDs: [String]
   var draftTodoIDs: [String]
   var draftTodoTitles: [String]

@@ -19,6 +19,9 @@ public struct DraftValidationDetails: Codable, Equatable, Sendable {
   public var draftPostAuthorReverseIdentity: String?
   public var draftMutationSummaries: [DraftValidationMutationSummary]
   public var pendingMutationIDs: [String]
+  public var newDraftIDWasNil: Bool
+  public var newDraftAssignmentAttributeIDs: [String]
+  public var newDraftIncludedPrimaryKeyAssignment: Bool
   public var createdID: String?
   public var editedID: String?
   public var relationAuthorID: String?
@@ -43,6 +46,9 @@ public struct DraftValidationDetails: Codable, Equatable, Sendable {
     draftPostAuthorReverseIdentity: String? = nil,
     draftMutationSummaries: [DraftValidationMutationSummary] = [],
     pendingMutationIDs: [String],
+    newDraftIDWasNil: Bool = false,
+    newDraftAssignmentAttributeIDs: [String] = [],
+    newDraftIncludedPrimaryKeyAssignment: Bool = false,
     createdID: String? = nil,
     editedID: String? = nil,
     relationAuthorID: String? = nil,
@@ -66,6 +72,9 @@ public struct DraftValidationDetails: Codable, Equatable, Sendable {
     self.draftPostAuthorReverseIdentity = draftPostAuthorReverseIdentity
     self.draftMutationSummaries = draftMutationSummaries
     self.pendingMutationIDs = pendingMutationIDs
+    self.newDraftIDWasNil = newDraftIDWasNil
+    self.newDraftAssignmentAttributeIDs = newDraftAssignmentAttributeIDs
+    self.newDraftIncludedPrimaryKeyAssignment = newDraftIncludedPrimaryKeyAssignment
     self.createdID = createdID
     self.editedID = editedID
     self.relationAuthorID = relationAuthorID
@@ -91,6 +100,9 @@ public struct DraftValidationDetails: Codable, Equatable, Sendable {
     case draftPostAuthorReverseIdentity
     case draftMutationSummaries
     case pendingMutationIDs
+    case newDraftIDWasNil
+    case newDraftAssignmentAttributeIDs
+    case newDraftIncludedPrimaryKeyAssignment
     case createdID
     case editedID
     case relationAuthorID
@@ -138,6 +150,14 @@ public struct DraftValidationDetails: Codable, Equatable, Sendable {
       ) ?? [],
       pendingMutationIDs: try container.decodeIfPresent([String].self, forKey: .pendingMutationIDs)
         ?? [],
+      newDraftIDWasNil: try container.decodeIfPresent(Bool.self, forKey: .newDraftIDWasNil)
+        ?? false,
+      newDraftAssignmentAttributeIDs: try container.decodeIfPresent(
+        [String].self, forKey: .newDraftAssignmentAttributeIDs
+      ) ?? [],
+      newDraftIncludedPrimaryKeyAssignment: try container.decodeIfPresent(
+        Bool.self, forKey: .newDraftIncludedPrimaryKeyAssignment
+      ) ?? false,
       createdID: try container.decodeIfPresent(String.self, forKey: .createdID),
       editedID: try container.decodeIfPresent(String.self, forKey: .editedID),
       relationAuthorID: try container.decodeIfPresent(String.self, forKey: .relationAuthorID),
@@ -253,6 +273,30 @@ public enum InstantSwiftDataDraftValidation {
       isCompleted: false,
       createdAt: createDate
     )
+    let newDraftIDWasNil = draft.id == nil
+    let newDraftAssignmentAttributeIDs = draft.instantAssignments.map(\.attributeID)
+    let newDraftIncludedPrimaryKeyAssignment = newDraftAssignmentAttributeIDs.contains(
+      DraftValidationTodo.instantNamespace + "/id"
+    )
+    guard newDraftIDWasNil else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "validate typed draft create",
+        namespace: DraftValidationTodo.instantNamespace,
+        message: "Expected a newly initialized generated draft to omit its managed Instant id.",
+        recovery: "Inspect generated Draft memberwise defaults for primary-keyed @InstantEntity models."
+      )
+    }
+    guard !newDraftIncludedPrimaryKeyAssignment else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "validate typed draft create",
+        namespace: DraftValidationTodo.instantNamespace,
+        localID: DraftValidationTodo.instantNamespace + "/id",
+        message: "Expected generated draft assignments to exclude the managed Instant id.",
+        recovery: "Inspect generated Draft assignments and managed primary-key handling."
+      )
+    }
     let createdID = try await client.save(
       draft,
       localIDName: "validation.typed-drafts.todo",
@@ -264,6 +308,9 @@ public enum InstantSwiftDataDraftValidation {
         event: "create",
         runtime: runtime,
         cacheURL: cacheURL,
+        newDraftIDWasNil: newDraftIDWasNil,
+        newDraftAssignmentAttributeIDs: newDraftAssignmentAttributeIDs,
+        newDraftIncludedPrimaryKeyAssignment: newDraftIncludedPrimaryKeyAssignment,
         createdID: createdID.rawValue,
         timestamp: timestamp
       )
@@ -308,6 +355,9 @@ public enum InstantSwiftDataDraftValidation {
         event: "edit",
         runtime: runtime,
         cacheURL: cacheURL,
+        newDraftIDWasNil: newDraftIDWasNil,
+        newDraftAssignmentAttributeIDs: newDraftAssignmentAttributeIDs,
+        newDraftIncludedPrimaryKeyAssignment: newDraftIncludedPrimaryKeyAssignment,
         editedID: editedID.rawValue,
         timestamp: timestamp
       )
@@ -374,6 +424,9 @@ public enum InstantSwiftDataDraftValidation {
         event: "relation",
         runtime: runtime,
         cacheURL: cacheURL,
+        newDraftIDWasNil: newDraftIDWasNil,
+        newDraftAssignmentAttributeIDs: newDraftAssignmentAttributeIDs,
+        newDraftIncludedPrimaryKeyAssignment: newDraftIncludedPrimaryKeyAssignment,
         relationAuthorID: authorID.rawValue,
         relationPostID: postID.rawValue,
         timestamp: timestamp
@@ -394,6 +447,9 @@ public enum InstantSwiftDataDraftValidation {
         event: "relaunch",
         runtime: relaunchedRuntime,
         cacheURL: cacheURL,
+        newDraftIDWasNil: newDraftIDWasNil,
+        newDraftAssignmentAttributeIDs: newDraftAssignmentAttributeIDs,
+        newDraftIncludedPrimaryKeyAssignment: newDraftIncludedPrimaryKeyAssignment,
         createdID: createdID.rawValue,
         editedID: editedID.rawValue,
         relationAuthorID: authorID.rawValue,
@@ -409,6 +465,9 @@ public enum InstantSwiftDataDraftValidation {
     event: String,
     runtime: InstantRuntime,
     cacheURL: URL,
+    newDraftIDWasNil: Bool = false,
+    newDraftAssignmentAttributeIDs: [String] = [],
+    newDraftIncludedPrimaryKeyAssignment: Bool = false,
     createdID: String? = nil,
     editedID: String? = nil,
     relationAuthorID: String? = nil,
@@ -449,6 +508,9 @@ public enum InstantSwiftDataDraftValidation {
         draftPostAuthorReverseIdentity: postAuthorAttribute?.reverseIdentity,
         draftMutationSummaries: summaries,
         pendingMutationIDs: pending.map(\.id),
+        newDraftIDWasNil: newDraftIDWasNil,
+        newDraftAssignmentAttributeIDs: newDraftAssignmentAttributeIDs,
+        newDraftIncludedPrimaryKeyAssignment: newDraftIncludedPrimaryKeyAssignment,
         createdID: createdID,
         editedID: editedID,
         relationAuthorID: relationAuthorID,
