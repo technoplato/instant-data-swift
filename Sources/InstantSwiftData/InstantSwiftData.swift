@@ -15,6 +15,10 @@ public macro InstantEntity(_ namespace: String? = nil) =
 public macro InstantRelation(reverse: String) =
   #externalMacro(module: "InstantSwiftDataMacros", type: "InstantRelationMacro")
 
+@attached(peer)
+public macro InstantWire(_ valueType: InstantValueType) =
+  #externalMacro(module: "InstantSwiftDataMacros", type: "InstantWireMacro")
+
 public struct InstantSwiftDataClient: Sendable {
   public let runtime: InstantRuntime?
 

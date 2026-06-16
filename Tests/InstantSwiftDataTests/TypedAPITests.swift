@@ -292,6 +292,119 @@ struct TypedAPITests {
   }
 
   @Test
+  func instantWireEnumsGenerateSchemaDraftsAndDecodeValidation() async throws {
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000531")!
+
+    expectNoDifference(
+      EnumBackedTodo.instantAttributes,
+      [
+        InstantAttribute(
+          id: "enumBackedTodos/status",
+          namespace: EnumBackedTodo.instantNamespace,
+          name: "status",
+          valueType: .string,
+          isIndexed: true
+        ),
+        InstantAttribute(
+          id: "enumBackedTodos/priority",
+          namespace: EnumBackedTodo.instantNamespace,
+          name: "priority",
+          valueType: .number,
+          isRequired: false,
+          isIndexed: true
+        ),
+      ]
+    )
+
+    let draft = EnumBackedTodo.Draft(status: .open, priority: .high)
+    expectNoDifference(
+      draft.instantAssignments.map(\.value),
+      [
+        .string("open"),
+        .number(2),
+      ]
+    )
+
+    try await withDependencies {
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "enum-backed-todo-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: EnumBackedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      let createdID = try await db.save(
+        draft,
+        transactionID: "tx-enum-draft-create"
+      )
+      expectNoDifference(createdID.rawValue, fixedUUID.uuidString.lowercased())
+
+      var editDraft = EnumBackedTodo.Draft(
+        EnumBackedTodo(id: createdID, status: .open, priority: .high)
+      )
+      editDraft.status = .done
+      editDraft.priority = nil
+      let editedID = try await db.save(
+        editDraft,
+        transactionID: "tx-enum-draft-edit"
+      )
+      expectNoDifference(editedID, createdID)
+
+      let todos = try await db.query(
+        EnumBackedTodo.query.order(EnumBackedTodo.status)
+      )
+      expectNoDifference(
+        todos,
+        [
+          EnumBackedTodo(id: createdID, status: .done, priority: nil)
+        ]
+      )
+    }
+
+    do {
+      _ = try EnumBackedTodo(
+        snapshot: InstantEntitySnapshot(
+          id: "bad-enum",
+          namespace: EnumBackedTodo.instantNamespace,
+          values: [
+            "status": .one(.string("later")),
+            "priority": .one(.number(1)),
+          ]
+        )
+      )
+      Issue.record("Expected unknown enum raw value to fail decoding.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .decodeFailed)
+      expectNoDifference(error.operation, "decode enum-backed todo")
+      expectNoDifference(error.namespace, EnumBackedTodo.instantNamespace)
+      expectNoDifference(error.path, "status")
+      #expect(error.message.contains("valid EnumBackedStatus string case"))
+    }
+
+    do {
+      _ = try EnumBackedTodo(
+        snapshot: InstantEntitySnapshot(
+          id: "bad-priority",
+          namespace: EnumBackedTodo.instantNamespace,
+          values: [
+            "status": .one(.string("open")),
+            "priority": .one(.number(99)),
+          ]
+        )
+      )
+      Issue.record("Expected unknown numeric enum raw value to fail decoding.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .decodeFailed)
+      expectNoDifference(error.operation, "decode enum-backed todo")
+      expectNoDifference(error.namespace, EnumBackedTodo.instantNamespace)
+      expectNoDifference(error.path, "priority")
+      #expect(error.message.contains("valid EnumBackedPriority integer case"))
+    }
+  }
+
+  @Test
   func instantEntityMacroGeneratedRelationMetadataDrivesReverseIncludes() throws {
     expectNoDifference(
       MacroGeneratedPost.instantAttributes,
@@ -7890,6 +8003,55 @@ private struct RequiredTypedTodoFetchOneModel {
 
   mutating func load() async throws {
     try await $todo.load()
+  }
+}
+
+private enum EnumBackedStatus: String, Codable, Hashable, Sendable, InstantStringEnum {
+  case open
+  case done
+}
+
+private enum EnumBackedPriority: Int, Codable, Hashable, Sendable, InstantNumberEnum {
+  case low = 1
+  case high = 2
+}
+
+@InstantEntity
+private struct EnumBackedTodo: Hashable, Codable, InstantEntityModel {
+  var id: InstantID<EnumBackedTodo>
+
+  @InstantWire(.string)
+  var status: EnumBackedStatus
+
+  @InstantWire(.number)
+  var priority: EnumBackedPriority?
+
+  init(
+    id: InstantID<EnumBackedTodo>,
+    status: EnumBackedStatus,
+    priority: EnumBackedPriority?
+  ) {
+    self.id = id
+    self.status = status
+    self.priority = priority
+  }
+
+  init(snapshot: InstantEntitySnapshot) throws {
+    self.id = InstantID(rawValue: snapshot.id)
+    self.status = try EnumBackedStatus.decodeInstantValue(
+      snapshot.values["status"]?.first,
+      namespace: Self.instantNamespace,
+      path: "status",
+      localID: snapshot.id,
+      operation: "decode enum-backed todo"
+    )
+    self.priority = try Optional<EnumBackedPriority>.decodeInstantValue(
+      snapshot.values["priority"]?.first,
+      namespace: Self.instantNamespace,
+      path: "priority",
+      localID: snapshot.id,
+      operation: "decode enum-backed todo"
+    )
   }
 }
 

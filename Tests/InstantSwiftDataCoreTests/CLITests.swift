@@ -9986,7 +9986,7 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.blockedCount, 2)
     expectNoDifference(jsonOutput.notApplicableCount, 2)
     #expect(jsonOutput.sourceFileCount > 0)
-    expectNoDifference(jsonOutput.swiftFileCount, 25)
+    expectNoDifference(jsonOutput.swiftFileCount, 26)
     expectNoDifference(
       jsonOutput.blockedIDs,
       [

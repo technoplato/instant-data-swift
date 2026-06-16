@@ -903,6 +903,37 @@ materializing or caching results.
 subscription time; resubscribe after switching auth sessions or runtime
 instances.
 
+Raw-value enums can participate in typed filters, ordering, generated schema,
+draft assignments, and snapshot decoding by conforming to a scalar wire
+protocol and marking the property with `@InstantWire`:
+
+```swift
+enum TodoStatus: String, InstantStringEnum {
+  case open
+  case done
+}
+
+enum TodoPriority: Int, InstantNumberEnum {
+  case low = 1
+  case high = 2
+}
+
+@InstantEntity
+struct Todo {
+  var id: InstantID<Todo>
+
+  @InstantWire(.string)
+  var status: TodoStatus
+
+  @InstantWire(.number)
+  var priority: TodoPriority?
+}
+```
+
+The generated attributes use Instant's `.string` and `.number` schema types,
+while invalid raw values fail decoding with field-level `InstantError`
+metadata.
+
 `create` follows Instant's strict-insert semantics and fails when the entity
 already exists. Use `update` for upsert-style writes, `updateExisting` when a
 missing entity should fail, and `merge` for deep JSON merges. The local seed

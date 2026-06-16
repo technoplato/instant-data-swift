@@ -1996,7 +1996,7 @@ struct LocalTodoValidationTests {
     expectNoDifference((details["adaptedCount"] as? NSNumber)?.intValue, 255)
     expectNoDifference((details["blockedCount"] as? NSNumber)?.intValue, 2)
     expectNoDifference((details["notApplicableCount"] as? NSNumber)?.intValue, 2)
-    expectNoDifference((details["swiftFileCount"] as? NSNumber)?.intValue, 25)
+    expectNoDifference((details["swiftFileCount"] as? NSNumber)?.intValue, 26)
     expectNoDifference(
       details["blockedIDs"] as? [String],
       [

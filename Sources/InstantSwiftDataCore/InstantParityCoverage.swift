@@ -2129,11 +2129,13 @@ public enum InstantSwiftDataParityCoverage {
       id: "instant.instaml.schema-checked-data-types",
       sourceFile: instamlSource,
       sourceTestName: "Schema: populates checked-data-type",
-      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
-      swiftTestName: "schemaCheckedDataTypesPreserveInstamlScalarMetadata",
+      swiftFile:
+        "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift + Tests/InstantSwiftDataMacrosTests/InstantEntityMacroTests.swift + Tests/InstantSwiftDataTests/TypedAPITests.swift",
+      swiftTestName:
+        "schemaCheckedDataTypesPreserveInstamlScalarMetadata + testGeneratedSchemaHelpersUseInstantWireMetadataForEnumFields + instantWireEnumsGenerateSchemaDraftsAndDecodeValidation",
       surface: "instaml",
       status: .adapted,
-      notes: "Swift uses declared value types rather than JavaScript add-attr generation; string, number, date, and boolean map to checked scalar metadata, i.any() is modeled explicitly, and runtime writes are type checked before persistence."
+      notes: "Swift uses declared value types rather than JavaScript add-attr generation; string, number, date, and boolean map to checked scalar metadata, i.any() is modeled explicitly, and runtime writes are type checked before persistence. Raw-value enum fields can opt into the same scalar wire metadata with @InstantWire and validate unknown raw values during decoding."
     ),
     instant(
       id: "instant.instaml.closed-mutation-surface",

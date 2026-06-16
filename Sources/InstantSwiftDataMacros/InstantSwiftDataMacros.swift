@@ -10,6 +10,7 @@ struct InstantSwiftDataMacrosPlugin: CompilerPlugin {
   let providingMacros: [Macro.Type] = [
     InstantEntityMacro.self,
     InstantRelationMacro.self,
+    InstantWireMacro.self,
   ]
 }
 
@@ -148,6 +149,7 @@ public struct InstantEntityMacro: MemberMacro {
         duplicateReverseNames: duplicateReverseNames
       )
     )
+    members.append(contentsOf: wireValidationDeclarations(properties: properties))
     if !explicitStaticMembers.contains("instantAttributes") {
       members.append(
         instantAttributesDeclaration(
@@ -221,6 +223,21 @@ public struct InstantEntityMacro: MemberMacro {
       return DeclSyntax(
         stringLiteral: """
         public static let `\(relation.reverseName)` = InstantReverseRelation<\(targetType), \(typeName)>(attribute: \(typeName).\(property.name))
+        """
+      )
+    }
+  }
+
+  private static func wireValidationDeclarations(properties: [StoredProperty]) -> [DeclSyntax] {
+    properties.compactMap { property in
+      guard let wireValue = property.wireValue else { return nil }
+      let type = property.type.removingWhitespace.unwrappedOptionalType().type
+
+      return DeclSyntax(
+        stringLiteral: """
+        private static let __instantWireValidation_\(property.name): Void = {
+          let _: \(wireValue.protocolTypeName).Type = \(type).self
+        }()
         """
       )
     }
@@ -412,6 +429,7 @@ public struct InstantEntityMacro: MemberMacro {
         )
         return nil
       }
+      let wireValue = wireValueMetadata(from: variable.attributes, context: context)
 
       return StoredProperty(
         name: pattern.identifier.text,
@@ -419,10 +437,46 @@ public struct InstantEntityMacro: MemberMacro {
         isWritable: isWritable,
         isOptional: binding.typeAnnotation?.type.isInstantOptionalType ?? false,
         defaultValue: binding.initializer?.value.description.trimmed,
-        schemaValue: InstantSchemaValue(type: type),
+        wireValue: wireValue,
+        schemaValue: InstantSchemaValue(
+          type: type,
+          wireValue: wireValue
+        ),
         relation: relationMetadata(from: variable.attributes, context: context)
       )
     }
+  }
+
+  private static func wireValueMetadata(
+    from attributes: AttributeListSyntax,
+    context: some MacroExpansionContext
+  ) -> InstantWireValue? {
+    for element in attributes {
+      guard
+        case let .attribute(attribute) = element,
+        attribute.attributeName.description.trimmed == "InstantWire"
+      else { continue }
+
+      guard
+        case let .argumentList(arguments) = attribute.arguments,
+        arguments.count == 1,
+        let argument = arguments.first,
+        argument.label == nil,
+        let memberAccess = argument.expression.as(MemberAccessExprSyntax.self),
+        memberAccess.base == nil,
+        let wireValue = InstantWireValue(rawValue: memberAccess.declName.baseName.text)
+      else {
+        context.diagnose(
+          InstantEntityDiagnostic.unsupportedInstantWireArgument
+            .diagnose(at: Syntax(attribute))
+        )
+        return nil
+      }
+
+      return wireValue
+    }
+
+    return nil
   }
 
   private static func relationMetadata(
@@ -610,10 +664,58 @@ public struct InstantRelationMacro: PeerMacro {
   }
 }
 
+public struct InstantWireMacro: PeerMacro {
+  public static func expansion(
+    of node: AttributeSyntax,
+    providingPeersOf declaration: some DeclSyntaxProtocol,
+    in context: some MacroExpansionContext
+  ) throws -> [DeclSyntax] {
+    []
+  }
+}
+
 private enum ExplicitNamespace {
   case none
   case namespace(String)
   case unsupported
+}
+
+private enum InstantWireValue: String {
+  case string
+  case number
+  case boolean
+  case date
+  case json
+
+  var valueTypeLiteral: String {
+    switch self {
+    case .string:
+      ".string"
+    case .number:
+      ".number"
+    case .boolean:
+      ".boolean"
+    case .date:
+      ".date"
+    case .json:
+      ".json"
+    }
+  }
+
+  var protocolTypeName: String {
+    switch self {
+    case .string:
+      "InstantStringWireValue"
+    case .number:
+      "InstantNumberWireValue"
+    case .boolean:
+      "InstantBooleanWireValue"
+    case .date:
+      "InstantDateWireValue"
+    case .json:
+      "InstantJSONWireValue"
+    }
+  }
 }
 
 private struct StoredProperty {
@@ -622,6 +724,7 @@ private struct StoredProperty {
   var isWritable: Bool
   var isOptional: Bool
   var defaultValue: String?
+  var wireValue: InstantWireValue?
   var schemaValue: InstantSchemaValue?
   var relation: InstantRelationMetadata?
 
@@ -673,11 +776,16 @@ private struct InstantSchemaValue {
   var refTargetType: String?
   var isOptional: Bool
 
-  init?(type rawType: String) {
+  init?(type rawType: String, wireValue: InstantWireValue? = nil) {
     let normalizedType = rawType.removingWhitespace
     let (type, isOptional) = normalizedType.unwrappedOptionalType()
     self.isOptional = isOptional
     self.refTargetType = nil
+
+    if let wireValue {
+      self.valueTypeLiteral = wireValue.valueTypeLiteral
+      return
+    }
 
     switch type {
     case "String":
@@ -794,6 +902,7 @@ private enum InstantEntityDiagnostic {
   case requiresSingleDraftPropertyBinding
   case reverseRelationNameCollidesWithGeneratedMember(String)
   case unsupportedInstantRelationArgument
+  case unsupportedInstantWireArgument
   case unsupportedNamespaceArgument
 
   func diagnose(at node: Syntax) -> Diagnostic {
@@ -826,6 +935,8 @@ extension InstantEntityDiagnostic: DiagnosticMessage {
       return "Reverse relation name '\(name)' collides with a generated @InstantEntity member."
     case .unsupportedInstantRelationArgument:
       return #"@InstantRelation requires a non-empty string literal reverse name, for example @InstantRelation(reverse: "posts")."#
+    case .unsupportedInstantWireArgument:
+      return "@InstantWire requires a scalar wire type, for example @InstantWire(.string)."
     case .unsupportedNamespaceArgument:
       return "@InstantEntity namespace overrides must be string literals."
     }
@@ -858,6 +969,8 @@ extension InstantEntityDiagnostic: DiagnosticMessage {
       )
     case .unsupportedInstantRelationArgument:
       return MessageID(domain: "InstantSwiftDataMacros", id: "unsupportedInstantRelationArgument")
+    case .unsupportedInstantWireArgument:
+      return MessageID(domain: "InstantSwiftDataMacros", id: "unsupportedInstantWireArgument")
     case .unsupportedNamespaceArgument:
       return MessageID(domain: "InstantSwiftDataMacros", id: "unsupportedNamespaceArgument")
     }
@@ -875,6 +988,7 @@ extension InstantEntityDiagnostic: DiagnosticMessage {
       .requiresSingleDraftPropertyBinding,
       .reverseRelationNameCollidesWithGeneratedMember,
       .unsupportedInstantRelationArgument,
+      .unsupportedInstantWireArgument,
       .unsupportedNamespaceArgument:
       return .error
     case .redundantNamespace:

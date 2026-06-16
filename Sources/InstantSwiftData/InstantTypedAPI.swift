@@ -24,7 +24,109 @@ public extension InstantValueDecodable {
 
 public protocol InstantComparableValue: InstantValueRepresentable {}
 
-extension String: InstantComparableValue {
+public protocol InstantWireValue: InstantValueRepresentable, InstantValueDecodable {
+  static var instantValueType: InstantValueType { get }
+}
+
+public protocol InstantStringWireValue: InstantComparableValue, InstantWireValue {}
+
+public extension InstantStringWireValue {
+  static var instantValueType: InstantValueType { .string }
+}
+
+public protocol InstantNumberWireValue: InstantComparableValue, InstantWireValue {}
+
+public extension InstantNumberWireValue {
+  static var instantValueType: InstantValueType { .number }
+}
+
+public protocol InstantBooleanWireValue: InstantWireValue {}
+
+public extension InstantBooleanWireValue {
+  static var instantValueType: InstantValueType { .boolean }
+}
+
+public protocol InstantDateWireValue: InstantComparableValue, InstantWireValue {}
+
+public extension InstantDateWireValue {
+  static var instantValueType: InstantValueType { .date }
+}
+
+public protocol InstantJSONWireValue: InstantWireValue {}
+
+public extension InstantJSONWireValue {
+  static var instantValueType: InstantValueType { .json }
+}
+
+public protocol InstantStringEnum: InstantStringWireValue, RawRepresentable
+where RawValue == String {}
+
+public extension InstantStringEnum {
+  var instantValue: InstantValue { .string(rawValue) }
+
+  static func decodeInstantValue(
+    _ value: InstantValue?,
+    namespace: String,
+    path: String,
+    localID: String?,
+    operation: String
+  ) throws -> Self {
+    let rawValue = try String.decodeInstantValue(
+      value,
+      namespace: namespace,
+      path: path,
+      localID: localID,
+      operation: operation
+    )
+    guard let decoded = Self(rawValue: rawValue) else {
+      throw instantValueDecodeError(
+        value,
+        expectedType: "valid \(Self.self) string case",
+        namespace: namespace,
+        path: path,
+        localID: localID,
+        operation: operation
+      )
+    }
+    return decoded
+  }
+}
+
+public protocol InstantNumberEnum: InstantNumberWireValue, RawRepresentable
+where RawValue == Int {}
+
+public extension InstantNumberEnum {
+  var instantValue: InstantValue { .number(Double(rawValue)) }
+
+  static func decodeInstantValue(
+    _ value: InstantValue?,
+    namespace: String,
+    path: String,
+    localID: String?,
+    operation: String
+  ) throws -> Self {
+    let rawValue = try Int.decodeInstantValue(
+      value,
+      namespace: namespace,
+      path: path,
+      localID: localID,
+      operation: operation
+    )
+    guard let decoded = Self(rawValue: rawValue) else {
+      throw instantValueDecodeError(
+        value,
+        expectedType: "valid \(Self.self) integer case",
+        namespace: namespace,
+        path: path,
+        localID: localID,
+        operation: operation
+      )
+    }
+    return decoded
+  }
+}
+
+extension String: InstantStringWireValue {
   public var instantValue: InstantValue { .string(self) }
 }
 
@@ -50,7 +152,7 @@ extension String: InstantValueDecodable {
   }
 }
 
-extension Bool: InstantValueRepresentable {
+extension Bool: InstantBooleanWireValue {
   public var instantValue: InstantValue { .bool(self) }
 }
 
@@ -76,7 +178,7 @@ extension Bool: InstantValueDecodable {
   }
 }
 
-extension Date: InstantComparableValue {
+extension Date: InstantDateWireValue {
   public var instantValue: InstantValue { .date(self) }
 }
 
@@ -102,7 +204,7 @@ extension Date: InstantValueDecodable {
   }
 }
 
-extension Double: InstantComparableValue {
+extension Double: InstantNumberWireValue {
   public var instantValue: InstantValue { .number(self) }
 }
 
@@ -128,7 +230,7 @@ extension Double: InstantValueDecodable {
   }
 }
 
-extension Float: InstantComparableValue {
+extension Float: InstantNumberWireValue {
   public var instantValue: InstantValue { .number(Double(self)) }
 }
 
@@ -158,7 +260,7 @@ extension Float: InstantValueDecodable {
   }
 }
 
-extension Int: InstantComparableValue {
+extension Int: InstantNumberWireValue {
   public var instantValue: InstantValue { .number(Double(self)) }
 }
 
@@ -186,7 +288,7 @@ extension Int: InstantValueDecodable {
   }
 }
 
-extension Int64: InstantComparableValue {
+extension Int64: InstantNumberWireValue {
   public var instantValue: InstantValue { .number(Double(self)) }
 }
 
@@ -214,7 +316,7 @@ extension Int64: InstantValueDecodable {
   }
 }
 
-extension InstantTimestamp: InstantComparableValue {
+extension InstantTimestamp: InstantDateWireValue {
   public var instantValue: InstantValue {
     .date(Date(timeIntervalSince1970: Double(milliseconds) / 1000))
   }
@@ -323,7 +425,7 @@ extension Optional: InstantValueDecodable where Wrapped: InstantValueDecodable {
   }
 }
 
-extension JSONValue: InstantValueRepresentable {
+extension JSONValue: InstantJSONWireValue {
   public var instantValue: InstantValue { .json(self) }
 }
 

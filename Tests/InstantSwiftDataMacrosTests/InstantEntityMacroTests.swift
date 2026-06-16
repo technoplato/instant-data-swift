@@ -10,6 +10,7 @@
         macros: [
           "InstantEntity": InstantEntityMacro.self,
           "InstantRelation": InstantRelationMacro.self,
+          "InstantWire": InstantWireMacro.self,
         ]
       ) {
         super.invokeTest()
@@ -1012,6 +1013,160 @@
               ]
             }
           }
+        }
+        """
+      }
+    }
+
+    func testGeneratedSchemaHelpersUseInstantWireMetadataForEnumFields() {
+      assertMacro {
+        """
+        enum Status: String, InstantStringEnum {
+          case open
+          case done
+        }
+
+        enum Priority: Int, InstantNumberEnum {
+          case low = 1
+          case high = 2
+        }
+
+        @InstantEntity
+        struct Todo {
+          var id: InstantID<Todo>
+
+          @InstantWire(.string)
+          var status: Status
+
+          @InstantWire(.number)
+          var priority: Priority?
+        }
+        """
+      } expansion: {
+        """
+        enum Status: String, InstantStringEnum {
+          case open
+          case done
+        }
+
+        enum Priority: Int, InstantNumberEnum {
+          case low = 1
+          case high = 2
+        }
+        struct Todo {
+          var id: InstantID<Todo>
+          var status: Status
+          var priority: Priority?
+
+          public static var instantNamespace: String {
+            "todos"
+          }
+
+          public static let status = InstantAttributePath<Todo, Status>("status")
+
+          public static let priority = InstantAttributePath<Todo, Priority?>("priority")
+
+          private static let __instantWireValidation_status: Void = {
+            let _: InstantStringWireValue.Type = Status.self
+          }()
+
+          private static let __instantWireValidation_priority: Void = {
+            let _: InstantNumberWireValue.Type = Priority.self
+          }()
+
+          public static var instantAttributes: [InstantAttribute] {
+            [
+                InstantAttribute(
+                  id: Todo.status.attributeID,
+                  namespace: Todo.instantNamespace,
+                  name: Todo.status.name,
+                  valueType: .string,
+                  isRequired: true,
+                  isIndexed: true
+                ),
+                InstantAttribute(
+                  id: Todo.priority.attributeID,
+                  namespace: Todo.instantNamespace,
+                  name: Todo.priority.name,
+                  valueType: .number,
+                  isRequired: false,
+                  isIndexed: true
+                )
+            ]
+          }
+
+          public struct Draft: InstantEntityDraft {
+            public typealias Entity = Todo
+            public var id: Todo.ID? = nil
+
+            public var status: Status
+            public var priority: Priority?
+
+            public init(
+              id: Todo.ID? = nil,
+              status: Status,
+              priority: Priority? = nil
+            ) {
+              self.id = id
+              self.status = status
+              self.priority = priority
+            }
+
+            public init(_ entity: Todo) {
+              self.id = entity.id
+              self.status = entity.status
+              self.priority = entity.priority
+            }
+
+            public var instantAssignments: [InstantAttributeAssignment<Todo>] {
+              [
+              InstantAttributeAssignment<Todo>(
+                name: "status",
+                attributeID: Todo.instantAttributes
+                  .first(where: {
+                    $0.name == "status"
+                  })?.id
+                  ?? Todo.instantNamespace + "/status",
+                value: self.status.instantValue
+              ),
+              InstantAttributeAssignment<Todo>(
+                name: "priority",
+                attributeID: Todo.instantAttributes
+                  .first(where: {
+                    $0.name == "priority"
+                  })?.id
+                  ?? Todo.instantNamespace + "/priority",
+                value: self.priority.instantValue
+              )
+              ]
+            }
+          }
+        }
+        """
+      }
+    }
+
+    func testInstantWireRequiresScalarWireTypeDiagnostic() {
+      assertMacro {
+        """
+        @InstantEntity
+        struct Todo {
+          var id: InstantID<Todo>
+
+          @InstantWire("string")
+          var status: Status
+        }
+        """
+      } diagnostics: {
+        """
+        @InstantEntity
+        struct Todo {
+          var id: InstantID<Todo>
+
+          @InstantWire("string")
+          ┬─────────────────────
+          ╰─ 🛑 @InstantWire requires a scalar wire type, for example @InstantWire(.string).
+          var status: Status
         }
         """
       }
