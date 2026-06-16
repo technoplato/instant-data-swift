@@ -9513,6 +9513,8 @@ struct InstantSwiftDataCLI {
       tagCount: finalDetails?.tagIDs.count ?? 0,
       activeShareCount: finalDetails?.activeShareIDs.count ?? 0,
       rejectedOperations: result.evidence.flatMap(\.details.rejectedOperations),
+      modelLoadErrorOperations: result.evidence.flatMap(\.details.modelLoadErrorOperations),
+      modelLoadErrorSummaries: result.evidence.flatMap(\.details.modelLoadErrorSummaries),
       pendingMutationCount: finalDetails?.pendingMutationIDs.count ?? 0,
       stats: finalDetails?.stats ?? RemindersStats()
     )
@@ -9529,6 +9531,8 @@ struct InstantSwiftDataCLI {
       print("tags: \(summary.tagCount)")
       print("active shares: \(summary.activeShareCount)")
       print("rejections: \(summary.rejectedOperations.joined(separator: ", "))")
+      print("model load errors: \(summary.modelLoadErrorOperations.joined(separator: ", "))")
+      print("model load error details: \(summary.modelLoadErrorSummaries.joined(separator: ", "))")
       print("pending mutations: \(summary.pendingMutationCount)")
       print("cache: \(summary.cachePath)")
 
@@ -12088,6 +12092,8 @@ private struct RemindersValidationOutput: Codable, Sendable {
   var tagCount: Int
   var activeShareCount: Int
   var rejectedOperations: [String]
+  var modelLoadErrorOperations: [String]
+  var modelLoadErrorSummaries: [String]
   var pendingMutationCount: Int
   var stats: RemindersStats
 }

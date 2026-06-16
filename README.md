@@ -575,6 +575,7 @@ swift run instant-swift-data-validation-runner --live-session
 swift run instant-swift-data-validation-runner --live-transaction
 swift run instant-swift-data-validation-runner --live-observe
 swift run instant-swift-data validation reminders --jsonl | jq 'select(.event == "search-token-model") | .details.searchTokens'
+swift run instant-swift-data validation reminders --jsonl | jq 'select(.event == "model-status") | .details.modelLoadErrorSummaries'
 swift run instant-swift-data validation reminders --jsonl | jq 'select(.event == "rich-filters") | .details.priorityRanksByReminderID'
 swift run instant-swift-data-validation-runner --typed-drafts
 swift run instant-swift-data-validation-runner --platform-adapters
@@ -618,7 +619,8 @@ node validation/ts-runner/src/main.ts --swift-local-integrations-contract /tmp/i
 ```
 
 `validation reminders` emits terminal evidence for local
-Reminders search, tag suggestions, tag-token model search, rich fields,
+Reminders search, tag suggestions, tag-token model search, model loading/error
+state, rich fields,
 upstream-ranked numeric priority storage with named CLI filters, form-model edit
 saves, smart-list stats, list sharing roles, permission rejections, writer
 updates, and relaunch persistence.

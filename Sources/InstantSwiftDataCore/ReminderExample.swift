@@ -374,6 +374,8 @@ public struct SearchRemindersModel: Sendable {
   public var searchText: String
   public var searchTokens: [Token]
   public var showCompletedInSearchResults: Bool
+  public private(set) var isLoading: Bool
+  public private(set) var loadError: InstantError?
   public private(set) var searchResults: SearchRemindersResults
   public private(set) var tagSuggestions: [ReminderTagRecord]
 
@@ -391,6 +393,8 @@ public struct SearchRemindersModel: Sendable {
     self.searchText = searchText
     self.searchTokens = searchTokens
     self.showCompletedInSearchResults = showCompletedInSearchResults
+    self.isLoading = false
+    self.loadError = nil
     self.searchResults = SearchRemindersResults()
     self.tagSuggestions = []
     self.now = now
@@ -402,6 +406,23 @@ public struct SearchRemindersModel: Sendable {
   }
 
   public mutating func load() async throws {
+    isLoading = true
+    loadError = nil
+    do {
+      try await loadSearchResults()
+      isLoading = false
+    } catch let error as CancellationError {
+      isLoading = false
+      throw error
+    } catch {
+      isLoading = false
+      let error = ReminderExample.modelLoadError(from: error, operation: "load search reminders")
+      loadError = error
+      throw error
+    }
+  }
+
+  private mutating func loadSearchResults() async throws {
     if searchText.hasSuffix("\t") {
       let tokenText = String(searchText.dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
       if !tokenText.isEmpty {
@@ -589,6 +610,8 @@ public struct RemindersDetailRow: Hashable, Codable, Sendable, Identifiable {
 
 public struct RemindersDetailModel: Sendable {
   public let detailType: RemindersDetailType
+  public private(set) var isLoading: Bool
+  public private(set) var loadError: InstantError?
   public var ordering: RemindersDetailOrdering
   public var showCompleted: Bool
   public private(set) var reminderRows: [RemindersDetailRow]
@@ -606,11 +629,30 @@ public struct RemindersDetailModel: Sendable {
     self.runtime = runtime
     self.ordering = ordering
     self.showCompleted = detailType == .completed
+    self.isLoading = false
+    self.loadError = nil
     self.reminderRows = []
     self.now = now
   }
 
   public mutating func load() async throws {
+    isLoading = true
+    loadError = nil
+    do {
+      try await loadReminderRows()
+      isLoading = false
+    } catch let error as CancellationError {
+      isLoading = false
+      throw error
+    } catch {
+      isLoading = false
+      let error = ReminderExample.modelLoadError(from: error, operation: "load reminders detail")
+      loadError = error
+      throw error
+    }
+  }
+
+  private mutating func loadReminderRows() async throws {
     let context = try await ReminderExample.modelContext(runtime: runtime)
     let reminders = context.reminders
       .filter { ReminderExample.matchesDetailType($0, detailType, context: context, now: now()) }
@@ -1732,6 +1774,28 @@ public enum ReminderExample {
       tagsByID: tagsByID,
       tagIDsByReminderID: tagIDsByReminderID,
       tagsByReminderID: tagsByReminderID
+    )
+  }
+
+  fileprivate static func modelLoadError(from error: Error, operation: String) -> InstantError {
+    if let error = error as? InstantError {
+      return InstantError(
+        code: error.code,
+        operation: operation,
+        namespace: error.namespace,
+        path: error.path,
+        localID: error.localID,
+        serverEventID: error.serverEventID,
+        message: error.message,
+        recovery: error.recovery,
+        cachedQuery: error.cachedQuery
+      )
+    }
+    return InstantError(
+      code: .implementationFailed,
+      operation: operation,
+      message: String(describing: error),
+      recovery: "Inspect Reminders model loading and local runtime query decoding."
     )
   }
 

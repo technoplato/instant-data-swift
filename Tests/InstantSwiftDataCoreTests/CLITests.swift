@@ -8461,13 +8461,14 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.event, "reminders")
     expectNoDifference(jsonOutput.transport, "not-implemented-local-cache-only")
     expectNoDifference(jsonOutput.ok, true)
-    expectNoDifference(jsonOutput.evidenceCount, 10)
+    expectNoDifference(jsonOutput.evidenceCount, 11)
     expectNoDifference(
       jsonOutput.events,
       [
         "seed",
         "search-tags",
         "search-token-model",
+        "model-status",
         "rich-filters",
         "edit-rich-fields",
         "complete",
@@ -8483,6 +8484,14 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.tagCount, 1)
     expectNoDifference(jsonOutput.activeShareCount, 1)
     expectNoDifference(jsonOutput.pendingMutationCount, 6)
+    expectNoDifference(jsonOutput.modelLoadErrorOperations, [
+      "load search reminders",
+      "load reminders detail",
+    ])
+    expectNoDifference(jsonOutput.modelLoadErrorSummaries, [
+      "load search reminders:decodeFailed:reminders:title",
+      "load reminders detail:decodeFailed:reminders:title",
+    ])
     expectNoDifference(
       jsonOutput.rejectedOperations,
       [
@@ -8497,7 +8506,7 @@ extension InstantStoreTests {
 
     let jsonlOutput = try runCLI(["validation", "local-reminders", "--jsonl"], homeURL: homeURL)
     let lines = jsonlOutput.split(separator: "\n")
-    expectNoDifference(lines.count, 10)
+    expectNoDifference(lines.count, 11)
     let searchEvidence = try JSONDecoder().decode(
       CLIRemindersValidationEvidence.self,
       from: Data(try #require(lines.first { $0.contains("\"event\":\"search-tags\"") }).utf8)
@@ -8521,6 +8530,27 @@ extension InstantStoreTests {
     expectNoDifference(tokenSearchEvidence.details.searchTokens, ["tag:family"])
     expectNoDifference(tokenSearchEvidence.details.tagSuggestionTitles, ["family"])
     expectNoDifference(tokenSearchEvidence.details.searchCompletedCount, 0)
+
+    let modelStatusEvidence = try JSONDecoder().decode(
+      CLIRemindersValidationEvidence.self,
+      from: Data(try #require(lines.first { $0.contains("\"event\":\"model-status\"") }).utf8)
+    )
+    expectNoDifference(modelStatusEvidence.caseID, "validation.reminders")
+    expectNoDifference(modelStatusEvidence.appID, "cli-cache-test")
+    expectNoDifference(modelStatusEvidence.event, "model-status")
+    expectNoDifference(modelStatusEvidence.ok, true)
+    expectNoDifference(modelStatusEvidence.details.modelIsLoadingStates, [
+      "detail": false,
+      "search": false,
+    ])
+    expectNoDifference(modelStatusEvidence.details.modelLoadErrorOperations, [
+      "load search reminders",
+      "load reminders detail",
+    ])
+    expectNoDifference(modelStatusEvidence.details.modelLoadErrorSummaries, [
+      "load search reminders:decodeFailed:reminders:title",
+      "load reminders detail:decodeFailed:reminders:title",
+    ])
 
     let richFiltersEvidence = try JSONDecoder().decode(
       CLIRemindersValidationEvidence.self,
@@ -12104,6 +12134,8 @@ private struct CLIRemindersValidationOutput: Decodable {
   var tagCount: Int
   var activeShareCount: Int
   var rejectedOperations: [String]
+  var modelLoadErrorOperations: [String]
+  var modelLoadErrorSummaries: [String]
   var pendingMutationCount: Int
   var stats: RemindersStats
 }
@@ -12134,6 +12166,9 @@ private struct CLIRemindersValidationDetails: Decodable {
   var searchTokens: [String]
   var tagSuggestionTitles: [String]
   var searchCompletedCount: Int
+  var modelIsLoadingStates: [String: Bool]
+  var modelLoadErrorOperations: [String]
+  var modelLoadErrorSummaries: [String]
   var rejectedOperations: [String]
 }
 

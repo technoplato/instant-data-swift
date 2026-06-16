@@ -876,8 +876,9 @@ Create `validation/` with:
   derives visible reminder-tag rows. A runtime-backed `SearchRemindersModel`
   now ports the upstream basics/show-completed/delete-completed tests with
   highlighted titles, tag suggestions, tag-token search, tab-created near
-  tokens, and aged completed deletion; full upstream FTS ranking/snippet
-  behavior and SwiftUI search views remain future work.
+  tokens, aged completed deletion, and loading/error state that keeps previous
+  rows visible on load failure; full upstream FTS ranking/snippet behavior and
+  SwiftUI search views remain future work.
 - Reminders: local delete workflows now cover
   `examples reminders delete <reminder-id>`,
   `delete-completed [--list-id id]`, and `delete-list <list-id>`. Reminder
@@ -893,16 +894,18 @@ Create `validation/` with:
   CLI accepts and prints stable `low`/`medium`/`high` names. A runtime-backed
   `RemindersDetailModel` now ports upstream due-date, priority, and title
   ordering, show-completed toggling, move-to-manual position persistence, and
-  smart-list/tag detail filters; status transition states, FTS/highlighting
-  parity, and SwiftUI detail views remain future work.
+  smart-list/tag detail filters, plus loading/error state that keeps previous
+  rows visible on load failure; FTS/highlighting parity and SwiftUI detail views
+  remain future work.
 - Reminders: local smart-list stats now expose `examples reminders stats --json`
   with all incomplete, completed, flagged, scheduled, and today counts. The
   flagged/scheduled/today counts exclude completed reminders, matching the
-  upstream Reminders list model. Status states, FTS/highlighting, and SwiftUI
-  detail views remain future work.
+  upstream Reminders list model. FTS/highlighting and SwiftUI detail views
+  remain future work.
 - Reminders: `validation reminders --jsonl` now records the local Reminders port
   as acceptance evidence, including search/tag filtering, rich-field edits,
-  smart-list stats, local list-sharing reader rejection, writer updates,
+  search/detail model loading/error state, smart-list stats, local list-sharing
+  reader rejection, writer updates,
   demotion rejection, and relaunch persistence. Rich edits now run through a
   Sendable `ReminderFormModel` that mirrors the SQLiteData ReminderForm flow for
   nil-id creates, existing edits, due-date toggles, selected tag de-duplication,

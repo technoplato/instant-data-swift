@@ -10591,6 +10591,44 @@ struct InstantStoreTests {
   }
 
   @Test
+  func searchRemindersModelPreservesRowsAndRecordsLoadError() async throws {
+    let fixture = try await upstreamRemindersFixture()
+    var model = SearchRemindersModel(
+      runtime: fixture.runtime,
+      searchText: "Take",
+      now: { fixture.now }
+    )
+
+    try await model.load()
+    expectNoDifference(model.isLoading, false)
+    expectNoDifference(model.loadError, nil)
+    expectNoDifference(model.searchResults.rows.map(\.reminder.title), ["Take out trash"])
+
+    try await corruptReminderTitle(
+      runtime: fixture.runtime,
+      reminderID: "00000000-0000-0000-0000-00000000000A",
+      title: "Take out trash",
+      timestamp: fixture.now,
+      transactionID: "tx-reminders-search-status-corruption"
+    )
+
+    do {
+      try await model.load()
+      #expect(Bool(false), "Expected corrupted search model load to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.operation, "load search reminders")
+      expectNoDifference(error.code, .decodeFailed)
+      expectNoDifference(error.namespace, ReminderExample.remindersNamespace)
+      expectNoDifference(error.path, "title")
+    }
+
+    expectNoDifference(model.isLoading, false)
+    expectNoDifference(model.loadError?.operation, "load search reminders")
+    expectNoDifference(model.loadError?.code, .decodeFailed)
+    expectNoDifference(model.searchResults.rows.map(\.reminder.title), ["Take out trash"])
+  }
+
+  @Test
   func remindersDetailModelPortsOrderingAndRichRows() async throws {
     let fixture = try await upstreamRemindersFixture()
     var model = RemindersDetailModel(
@@ -10706,6 +10744,54 @@ struct InstantStoreTests {
       "Buy concert tickets",
       "Haircut",
       "Doctor appointment",
+      "Groceries",
+    ])
+  }
+
+  @Test
+  func remindersDetailModelPreservesRowsAndRecordsLoadError() async throws {
+    let fixture = try await upstreamRemindersFixture()
+    var model = RemindersDetailModel(
+      detailType: .remindersList(fixture.personalList),
+      runtime: fixture.runtime,
+      now: { fixture.now }
+    )
+
+    try await model.load()
+    expectNoDifference(model.isLoading, false)
+    expectNoDifference(model.loadError, nil)
+    expectNoDifference(model.reminderRows.map(\.reminder.title), [
+      "Haircut",
+      "Doctor appointment",
+      "Buy concert tickets",
+      "Groceries",
+    ])
+
+    try await corruptReminderTitle(
+      runtime: fixture.runtime,
+      reminderID: "00000000-0000-0000-0000-000000000003",
+      title: "Groceries",
+      timestamp: fixture.now,
+      transactionID: "tx-reminders-detail-status-corruption"
+    )
+
+    do {
+      try await model.load()
+      #expect(Bool(false), "Expected corrupted detail model load to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.operation, "load reminders detail")
+      expectNoDifference(error.code, .decodeFailed)
+      expectNoDifference(error.namespace, ReminderExample.remindersNamespace)
+      expectNoDifference(error.path, "title")
+    }
+
+    expectNoDifference(model.isLoading, false)
+    expectNoDifference(model.loadError?.operation, "load reminders detail")
+    expectNoDifference(model.loadError?.code, .decodeFailed)
+    expectNoDifference(model.reminderRows.map(\.reminder.title), [
+      "Haircut",
+      "Doctor appointment",
+      "Buy concert tickets",
       "Groceries",
     ])
   }
@@ -17072,6 +17158,32 @@ struct InstantStoreTests {
       now: now,
       personalList: personalList,
       tags: decodedTags
+    )
+  }
+
+  private func corruptReminderTitle(
+    runtime: InstantRuntime,
+    reminderID: String,
+    title: String,
+    timestamp: InstantTimestamp,
+    transactionID: String
+  ) async throws {
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: transactionID,
+        operations: [
+          .retract(
+            InstantTriple(
+              entityID: reminderID,
+              attributeID: "\(ReminderExample.remindersNamespace)/title",
+              value: .string(title),
+              txID: transactionID,
+              txTime: timestamp
+            )
+          )
+        ]
+      ),
+      createdAt: timestamp
     )
   }
 

@@ -25,6 +25,9 @@ public struct RemindersValidationDetails: Codable, Equatable, Sendable {
   public var rejectedOperations: [String]
   public var pendingMutationIDs: [String]
   public var queryCacheCount: Int
+  public var modelIsLoadingStates: [String: Bool]
+  public var modelLoadErrorOperations: [String]
+  public var modelLoadErrorSummaries: [String]
 
   public init(
     cachePath: String,
@@ -50,7 +53,10 @@ public struct RemindersValidationDetails: Codable, Equatable, Sendable {
     shareRoleSummaries: [String] = [],
     rejectedOperations: [String] = [],
     pendingMutationIDs: [String] = [],
-    queryCacheCount: Int = 0
+    queryCacheCount: Int = 0,
+    modelIsLoadingStates: [String: Bool] = [:],
+    modelLoadErrorOperations: [String] = [],
+    modelLoadErrorSummaries: [String] = []
   ) {
     self.cachePath = cachePath
     self.listIDs = listIDs
@@ -76,6 +82,9 @@ public struct RemindersValidationDetails: Codable, Equatable, Sendable {
     self.rejectedOperations = rejectedOperations
     self.pendingMutationIDs = pendingMutationIDs
     self.queryCacheCount = queryCacheCount
+    self.modelIsLoadingStates = modelIsLoadingStates
+    self.modelLoadErrorOperations = modelLoadErrorOperations
+    self.modelLoadErrorSummaries = modelLoadErrorSummaries
   }
 }
 
@@ -230,6 +239,83 @@ public enum InstantSwiftDataRemindersValidation {
         searchTokens: searchModel.searchTokens.map { "\($0.kind.rawValue):\($0.rawValue)" },
         tagSuggestionTitles: tagSuggestionTitles,
         searchCompletedCount: searchModel.searchResults.completedCount
+      )
+    )
+
+    let detailLists = try ReminderExample.decodeLists(
+      (try await runtime.queryOnce(ReminderExample.listsQuery)).values
+    )
+    guard let familyList = detailLists.first(where: { $0.id == listID }) else {
+      throw validationError(
+        operation: "validate reminders model status",
+        message: "Expected the validation list to load through the detail model."
+      )
+    }
+    var detailModel = RemindersDetailModel(
+      detailType: .remindersList(familyList),
+      runtime: runtime,
+      now: { today }
+    )
+    try await detailModel.load()
+    let detailReminderIDs = detailModel.reminderRows.map(\.reminder.id)
+    let corruptTransactionID = "validation.reminders.model-status-corrupt"
+    let repairTransactionID = "validation.reminders.model-status-repair"
+    try await applyLocalTitleChange(
+      runtime,
+      id: corruptTransactionID,
+      reminderID: firstReminderID,
+      title: "Pack lunch",
+      operation: .retract,
+      timestamp: today
+    )
+    let searchLoadError = try await expectModelLoadError(operation: "load search reminders") {
+      try await searchModel.load()
+    }
+    let detailLoadError = try await expectModelLoadError(operation: "load reminders detail") {
+      try await detailModel.load()
+    }
+    try require(
+      searchModel.searchResults.rows.map(\.reminder.id) == [firstReminderID]
+        && detailModel.reminderRows.map(\.reminder.id) == detailReminderIDs
+        && searchModel.isLoading == false
+        && detailModel.isLoading == false
+        && searchModel.loadError?.operation == "load search reminders"
+        && detailModel.loadError?.operation == "load reminders detail",
+      operation: "validate reminders model status",
+      message: "Expected search and detail models to preserve rows and record load errors."
+    )
+    try await applyLocalTitleChange(
+      runtime,
+      id: repairTransactionID,
+      reminderID: firstReminderID,
+      title: "Pack lunch",
+      operation: .insert,
+      timestamp: today
+    )
+    _ = try await runtime.confirmMutation(id: corruptTransactionID)
+    _ = try await runtime.confirmMutation(id: repairTransactionID)
+    evidence.append(
+      try await evidenceRow(
+        event: "model-status",
+        runtime: runtime,
+        cacheURL: cacheURL,
+        today: today,
+        eventReminders: searchModel.searchResults.rows.map(\.reminder),
+        searchTokens: searchModel.searchTokens.map { "\($0.kind.rawValue):\($0.rawValue)" },
+        tagSuggestionTitles: tagSuggestionTitles,
+        searchCompletedCount: searchModel.searchResults.completedCount,
+        modelIsLoadingStates: [
+          "detail": detailModel.isLoading,
+          "search": searchModel.isLoading,
+        ],
+        modelLoadErrorOperations: [
+          searchLoadError.operation,
+          detailLoadError.operation,
+        ],
+        modelLoadErrorSummaries: [
+          modelLoadErrorSummary(searchLoadError),
+          modelLoadErrorSummary(detailLoadError),
+        ]
       )
     )
 
@@ -494,7 +580,10 @@ public enum InstantSwiftDataRemindersValidation {
     tagSuggestionTitles: [String] = [],
     searchCompletedCount: Int = 0,
     shareSnapshots: [InstantShareSnapshot] = [],
-    rejectedOperations: [String] = []
+    rejectedOperations: [String] = [],
+    modelIsLoadingStates: [String: Bool] = [:],
+    modelLoadErrorOperations: [String] = [],
+    modelLoadErrorSummaries: [String] = []
   ) async throws -> ValidationEvidenceRow<RemindersValidationDetails> {
     let lists = try ReminderExample.decodeLists(
       (try await runtime.queryOnce(ReminderExample.listsQuery)).values
@@ -541,9 +630,88 @@ public enum InstantSwiftDataRemindersValidation {
         shareRoleSummaries: shareRoleSummaries(from: shareSnapshots.isEmpty ? activeShares : shareSnapshots),
         rejectedOperations: rejectedOperations,
         pendingMutationIDs: pending.map(\.id),
-        queryCacheCount: cachedQueries.count
+        queryCacheCount: cachedQueries.count,
+        modelIsLoadingStates: modelIsLoadingStates,
+        modelLoadErrorOperations: modelLoadErrorOperations,
+        modelLoadErrorSummaries: modelLoadErrorSummaries
       )
     )
+  }
+
+  private enum ReminderTitleChangeOperation {
+    case insert
+    case retract
+  }
+
+  private static func applyLocalTitleChange(
+    _ runtime: InstantRuntime,
+    id: String,
+    reminderID: String,
+    title: String,
+    operation: ReminderTitleChangeOperation,
+    timestamp: InstantTimestamp
+  ) async throws {
+    let triple = InstantTriple(
+      entityID: reminderID,
+      attributeID: "\(ReminderExample.remindersNamespace)/title",
+      value: .string(title),
+      txID: id,
+      txTime: timestamp
+    )
+    let tripleOperation: InstantTripleOperation
+    switch operation {
+    case .insert:
+      tripleOperation = .insert(triple)
+    case .retract:
+      tripleOperation = .retract(triple)
+    }
+    try await runtime.transact(
+      InstantStoreTransaction(id: id, operations: [tripleOperation]),
+      createdAt: timestamp,
+      source: "validation.reminders.model-status"
+    )
+  }
+
+  private static func expectModelLoadError(
+    operation: String,
+    work: () async throws -> Void
+  ) async throws -> InstantError {
+    do {
+      try await work()
+    } catch let error as InstantError where error.operation == operation {
+      guard
+        error.code == .decodeFailed,
+        error.namespace == ReminderExample.remindersNamespace,
+        error.path == "title"
+      else {
+        throw validationError(
+          operation: "validate reminders model status",
+          message:
+            "Expected \(operation) to fail decoding reminders/title, got \(modelLoadErrorSummary(error))."
+        )
+      }
+      return error
+    } catch {
+      throw validationError(
+        operation: "validate reminders model status",
+        message: "Expected \(operation) to fail with an InstantError, got \(error)."
+      )
+    }
+    throw validationError(
+      operation: "validate reminders model status",
+      message: "Expected \(operation) to fail."
+    )
+  }
+
+  private static func modelLoadErrorSummary(_ error: InstantError) -> String {
+    [
+      error.operation,
+      error.code.rawValue,
+      error.namespace,
+      error.path,
+    ]
+    .compactMap { $0 }
+    .joined(separator: ":")
   }
 
   private static func reminders(

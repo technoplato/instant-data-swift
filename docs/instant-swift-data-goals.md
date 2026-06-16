@@ -733,10 +733,11 @@ Agent-oriented output modes are required:
 - exercise runtime-backed Reminders search and detail models through core tests;
   `SearchRemindersModel` ports upstream basics/show-completed/delete-completed,
   tag suggestions, tag-token search, tab-created near tokens, and aged completed
-  deletion,
+  deletion, plus loading/error state that preserves previous rows on load
+  failure,
   and `RemindersDetailModel` ports list detail rows, due-date/priority/title
   ordering, show-completed toggling, move-to-manual position persistence, and
-  upstream smart-list/tag detail filters.
+  upstream smart-list/tag detail filters with the same load-state contract.
 - run the first local SyncUps port slice with commands such as
   `instant-swift-data examples sync-ups add "Design" --seconds 900 --theme appOrange --attendee Blob`,
   `instant-swift-data examples sync-ups edit <sync-up-id> --title "Design Review" --attendee Blob`,
