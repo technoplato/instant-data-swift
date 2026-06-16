@@ -11,9 +11,9 @@ struct InstantStoreParityTests {
 
     expectNoDifference(report.event, "parity-report")
     expectNoDifference(report.coverageComplete, false)
-    expectNoDifference(report.recordCount, 235)
+    expectNoDifference(report.recordCount, 254)
     expectNoDifference(report.exactCount, 28)
-    expectNoDifference(report.adaptedCount, 204)
+    expectNoDifference(report.adaptedCount, 223)
     expectNoDifference(report.blockedCount, 2)
     expectNoDifference(report.notApplicableCount, 1)
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/schema.test.ts"))
@@ -71,6 +71,32 @@ struct InstantStoreParityTests {
     #expect(report.records.contains { $0.id == "instant.simple-e2e.can-make-query" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.cookie-sync.startup-old" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.cookie-sync.startup-recent" && $0.status == .adapted })
+    for id in [
+      "instant.svelte.use-query-starts-loading",
+      "instant.svelte.use-query-subscribes-on-mount",
+      "instant.svelte.use-query-updates-state",
+      "instant.svelte.use-query-unsubscribes-on-cleanup",
+      "instant.svelte.use-query-null-query",
+      "instant.svelte.use-query-function-query",
+      "instant.svelte.use-query-function-null-query",
+      "instant.svelte.use-query-function-query-change",
+      "instant.svelte.use-query-cached-result",
+      "instant.vue.use-query-starts-loading",
+      "instant.vue.use-query-subscribes-when-mounted",
+      "instant.vue.use-query-updates-state",
+      "instant.vue.use-query-unsubscribes-on-scope-stop",
+      "instant.vue.use-query-null-query",
+      "instant.vue.use-query-function-query",
+      "instant.vue.use-query-ref-query",
+      "instant.vue.use-query-getter-null",
+      "instant.vue.use-query-reactive-query-change",
+      "instant.vue.use-query-cached-result",
+    ] {
+      #expect(
+        report.records.contains { $0.id == id && $0.status == .adapted },
+        "Expected adapted useQuery parity record \(id)"
+      )
+    }
     #expect(report.records.contains { $0.id == "instant.infinite-query.initial-snapshot" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.infinite-query.no-order-field" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.infinite-query.adding-new-numbers" && $0.status == .adapted })
@@ -743,7 +769,10 @@ struct InstantStoreParityTests {
     expectNoDifference(evidenceRows.first?.appID, "parity-test")
     expectNoDifference(evidenceRows.first?.event, "parity-record")
     expectNoDifference(evidenceRows.first?.ok, true)
-    expectNoDifference(evidenceRows.last?.ok, false)
+    let blockedEvidenceRow = try #require(
+      evidenceRows.first { $0.entityID == "instant.live-transport.swift-to-typescript" }
+    )
+    expectNoDifference(blockedEvidenceRow.ok, false)
   }
 
   @Test

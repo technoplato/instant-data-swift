@@ -406,6 +406,227 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift uses a live/injectable user-cookie sync client and app-scoped SQLite metadata to prove startup does not sync again one millisecond before the one-day threshold."
     ),
     instant(
+      id: "instant.svelte.use-query-starts-loading",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "useQuery starts in loading state",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
+      surface: "adapter-query",
+      status: .adapted,
+      notes:
+        "Swift adapts Svelte's store state as @FetchAll projected state: task(query:) starts loading with empty values and nil error while awaiting the first subscription emission."
+    ),
+    instant(
+      id: "instant.svelte.use-query-subscribes-on-mount",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "useQuery subscribes to core on mount",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName:
+        "fetchAllTaskBindsSubscriptionEmissionsIntoWrappedValue + fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
+      surface: "adapter-query",
+      status: .adapted,
+      notes:
+        "Swift models the mount effect with @FetchAll.task(query:using:), which starts an InstantSwiftDataClient subscription and binds emissions into the wrapper state."
+    ),
+    instant(
+      id: "instant.svelte.use-query-updates-state",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "useQuery updates state when query result arrives",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "fetchAllTaskBindsSubscriptionEmissionsIntoWrappedValue",
+      surface: "adapter-query",
+      status: .adapted,
+      notes:
+        "Swift decodes subscription emissions into typed @FetchAll values and clears loading/error state once the result arrives."
+    ),
+    instant(
+      id: "instant.svelte.use-query-unsubscribes-on-cleanup",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "useQuery unsubscribes on cleanup",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName:
+        "fetchAllTaskCancellationTerminatesUnderlyingObservation + fetchSubscriptionTaskCompletesWhenSubscriptionExplicitlyCancelled",
+      surface: "adapter-query",
+      status: .adapted,
+      notes:
+        "Swift cleanup is modeled by canceling the wrapper task or explicit FetchSubscription, which terminates the underlying observation."
+    ),
+    instant(
+      id: "instant.svelte.use-query-null-query",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "useQuery handles null query",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName:
+        "fetchAllTaskNilQueryDoesNotStartObservationAndClearsLoading + fetchAllSubscribeNilQueryReturnsFinishedSubscriptionWithoutCallingClient",
+      surface: "adapter-query",
+      status: .adapted,
+      notes:
+        "Swift adapts a null query as nil InstantEntityQuery: no client subscription is started, task(nil) clears values/loading/error, and subscribe(nil) returns a finished subscription."
+    ),
+    instant(
+      id: "instant.svelte.use-query-function-query",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "useQuery accepts a function that returns a query",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName:
+        "fetchAllTaskBindsSubscriptionEmissionsIntoWrappedValue + fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
+      surface: "adapter-query",
+      status: .adapted,
+      notes:
+        "Swift adapts a reactive query function as passing the resolved InstantEntityQuery into the wrapper task/subscribe lifecycle."
+    ),
+    instant(
+      id: "instant.svelte.use-query-function-null-query",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "useQuery skips subscription when function returns null",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName:
+        "fetchAllTaskNilQueryDoesNotStartObservationAndClearsLoading + fetchAllSubscribeNilQueryReturnsFinishedSubscriptionWithoutCallingClient",
+      surface: "adapter-query",
+      status: .adapted,
+      notes:
+        "Swift adapts a function-returned null as nil InstantEntityQuery and proves both task and subscribe paths avoid the client."
+    ),
+    instant(
+      id: "instant.svelte.use-query-function-query-change",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "useQuery re-subscribes when function query changes",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
+      surface: "adapter-query",
+      status: .adapted,
+      notes:
+        "Swift models a changed function query by replacing @FetchAll.task with a new query, canceling the stale subscription, preserving cached values while loading, and ignoring stale emissions."
+    ),
+    instant(
+      id: "instant.svelte.use-query-cached-result",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "useQuery uses cached result when available",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName:
+        "fetchAllTaskUsesLocalRuntimeSnapshotAsCachedQueryResult + fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
+      surface: "adapter-query",
+      status: .adapted,
+      notes:
+        "Swift adapts Reactor's getPreviousResult cache as the local SQLite runtime snapshot emitted immediately by @FetchAll.task, and dynamic task replacement preserves the last value while the next subscription is loading."
+    ),
+    instant(
+      id: "instant.vue.use-query-starts-loading",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "useQuery starts in loading state",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
+      surface: "adapter-query",
+      status: .adapted,
+      notes:
+        "Swift adapts Vue refs as @FetchAll projected state: task(query:) starts loading with empty values and nil error while awaiting the first subscription emission."
+    ),
+    instant(
+      id: "instant.vue.use-query-subscribes-when-mounted",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "useQuery subscribes to core when mounted",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName:
+        "fetchAllTaskBindsSubscriptionEmissionsIntoWrappedValue + fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
+      surface: "adapter-query",
+      status: .adapted,
+      notes:
+        "Swift models the Vue effect scope with @FetchAll.task(query:using:), which starts an InstantSwiftDataClient subscription and binds emissions into wrapper state."
+    ),
+    instant(
+      id: "instant.vue.use-query-updates-state",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "useQuery updates state when query result arrives",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "fetchAllTaskBindsSubscriptionEmissionsIntoWrappedValue",
+      surface: "adapter-query",
+      status: .adapted,
+      notes:
+        "Swift decodes subscription emissions into typed @FetchAll values and clears loading/error state once the result arrives."
+    ),
+    instant(
+      id: "instant.vue.use-query-unsubscribes-on-scope-stop",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "useQuery unsubscribes when scope is stopped",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName:
+        "fetchAllTaskCancellationTerminatesUnderlyingObservation + fetchSubscriptionTaskCompletesWhenSubscriptionExplicitlyCancelled",
+      surface: "adapter-query",
+      status: .adapted,
+      notes:
+        "Swift cleanup is modeled by canceling the wrapper task or explicit FetchSubscription, which terminates the underlying observation."
+    ),
+    instant(
+      id: "instant.vue.use-query-null-query",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "useQuery handles null query",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName:
+        "fetchAllTaskNilQueryDoesNotStartObservationAndClearsLoading + fetchAllSubscribeNilQueryReturnsFinishedSubscriptionWithoutCallingClient",
+      surface: "adapter-query",
+      status: .adapted,
+      notes:
+        "Swift adapts a null query as nil InstantEntityQuery: no client subscription is started, task(nil) clears values/loading/error, and subscribe(nil) returns a finished subscription."
+    ),
+    instant(
+      id: "instant.vue.use-query-function-query",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "useQuery accepts a function that returns a query",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName:
+        "fetchAllTaskBindsSubscriptionEmissionsIntoWrappedValue + fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
+      surface: "adapter-query",
+      status: .adapted,
+      notes:
+        "Swift adapts a Vue getter as passing the resolved InstantEntityQuery into the wrapper task/subscribe lifecycle."
+    ),
+    instant(
+      id: "instant.vue.use-query-ref-query",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "useQuery accepts a ref containing a query",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
+      surface: "adapter-query",
+      status: .adapted,
+      notes:
+        "Swift adapts a Vue query ref as a dynamic InstantEntityQuery passed through @FetchAll.task(query:using:), including replacement when the query changes."
+    ),
+    instant(
+      id: "instant.vue.use-query-getter-null",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "useQuery skips subscription when getter returns null",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName:
+        "fetchAllTaskNilQueryDoesNotStartObservationAndClearsLoading + fetchAllSubscribeNilQueryReturnsFinishedSubscriptionWithoutCallingClient",
+      surface: "adapter-query",
+      status: .adapted,
+      notes:
+        "Swift adapts a getter-returned null as nil InstantEntityQuery and proves both task and subscribe paths avoid the client."
+    ),
+    instant(
+      id: "instant.vue.use-query-reactive-query-change",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "useQuery re-subscribes when reactive query changes",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
+      surface: "adapter-query",
+      status: .adapted,
+      notes:
+        "Swift models a changed reactive query by replacing @FetchAll.task with a new query, canceling the stale subscription, preserving cached values while loading, and ignoring stale emissions."
+    ),
+    instant(
+      id: "instant.vue.use-query-cached-result",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "useQuery uses cached result when available",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName:
+        "fetchAllTaskUsesLocalRuntimeSnapshotAsCachedQueryResult + fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
+      surface: "adapter-query",
+      status: .adapted,
+      notes:
+        "Swift adapts Reactor's getPreviousResult cache as the local SQLite runtime snapshot emitted immediately by @FetchAll.task, and dynamic task replacement preserves the last value while the next subscription is loading."
+    ),
+    instant(
       id: "instant.infinite-query.initial-snapshot",
       sourceFile: infiniteQuerySource,
       sourceTestName: "empty result",
@@ -2193,7 +2414,7 @@ public enum InstantSwiftDataParityCoverage {
     ),
     instant(
       id: "instant.vue.connection-status-adapter",
-      sourceFile: "upstream/instant/client/packages/vue/src/tests/InstantVueDatabase.test.ts",
+      sourceFile: vueAdapterSource,
       sourceTestName:
         "useConnectionStatus returns initial status / updates when connection status changes",
       swiftFile: platformAdapterValidationSwiftFile,
@@ -2592,6 +2813,8 @@ public enum InstantSwiftDataParityCoverage {
     "upstream/instant/client/packages/react-common/src/useInfiniteQuerySubscription.ts + upstream/instant/client/packages/core/src/infiniteQuery.ts"
   private static let svelteAdapterSource =
     "upstream/instant/client/packages/svelte/src/tests/InstantSvelteDatabase.svelte.test.ts"
+  private static let vueAdapterSource =
+    "upstream/instant/client/packages/vue/src/tests/InstantVueDatabase.test.ts"
   private static let reactorSource =
     "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts"
   private static let instamlSource =

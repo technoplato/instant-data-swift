@@ -1341,9 +1341,9 @@ struct LocalTodoValidationTests {
 
     expectNoDifference(run.result.event, "parity-report")
     expectNoDifference(run.result.coverageComplete, false)
-    expectNoDifference(run.result.recordCount, 235)
+    expectNoDifference(run.result.recordCount, 254)
     expectNoDifference(run.result.exactCount, 28)
-    expectNoDifference(run.result.adaptedCount, 204)
+    expectNoDifference(run.result.adaptedCount, 223)
     expectNoDifference(run.result.blockedCount, 2)
     expectNoDifference(run.result.notApplicableCount, 1)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
@@ -1470,6 +1470,32 @@ struct LocalTodoValidationTests {
         $0.id == "instant.cookie-sync.startup-recent" && $0.status == .adapted
       }
     )
+    for id in [
+      "instant.svelte.use-query-starts-loading",
+      "instant.svelte.use-query-subscribes-on-mount",
+      "instant.svelte.use-query-updates-state",
+      "instant.svelte.use-query-unsubscribes-on-cleanup",
+      "instant.svelte.use-query-null-query",
+      "instant.svelte.use-query-function-query",
+      "instant.svelte.use-query-function-null-query",
+      "instant.svelte.use-query-function-query-change",
+      "instant.svelte.use-query-cached-result",
+      "instant.vue.use-query-starts-loading",
+      "instant.vue.use-query-subscribes-when-mounted",
+      "instant.vue.use-query-updates-state",
+      "instant.vue.use-query-unsubscribes-on-scope-stop",
+      "instant.vue.use-query-null-query",
+      "instant.vue.use-query-function-query",
+      "instant.vue.use-query-ref-query",
+      "instant.vue.use-query-getter-null",
+      "instant.vue.use-query-reactive-query-change",
+      "instant.vue.use-query-cached-result",
+    ] {
+      #expect(
+        run.result.records.contains { $0.id == id && $0.status == .adapted },
+        "Expected adapted useQuery parity record \(id)"
+      )
+    }
     for id in [
       "instant.infinite-query.initial-snapshot",
       "instant.infinite-query.no-order-field",
@@ -1788,7 +1814,7 @@ struct LocalTodoValidationTests {
     )
 
     expectNoDifference(run.result.coverageComplete, true)
-    expectNoDifference(run.result.adaptedCount, 206)
+    expectNoDifference(run.result.adaptedCount, 225)
     expectNoDifference(run.result.blockedCount, 0)
     expectNoDifference(run.summary.ok, true)
     let swiftToTypeScript = try #require(
@@ -1827,7 +1853,7 @@ struct LocalTodoValidationTests {
     )
 
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 235)
+    expectNoDifference(rows.count, 254)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
@@ -1900,9 +1926,9 @@ struct LocalTodoValidationTests {
     expectNoDifference(details["event"] as? String, "coverage")
     expectNoDifference(details["ok"] as? Bool, false)
     expectNoDifference(details["coverageComplete"] as? Bool, false)
-    expectNoDifference((details["recordCount"] as? NSNumber)?.intValue, 235)
+    expectNoDifference((details["recordCount"] as? NSNumber)?.intValue, 254)
     expectNoDifference((details["exactCount"] as? NSNumber)?.intValue, 28)
-    expectNoDifference((details["adaptedCount"] as? NSNumber)?.intValue, 204)
+    expectNoDifference((details["adaptedCount"] as? NSNumber)?.intValue, 223)
     expectNoDifference((details["blockedCount"] as? NSNumber)?.intValue, 2)
     expectNoDifference((details["notApplicableCount"] as? NSNumber)?.intValue, 1)
     expectNoDifference((details["swiftFileCount"] as? NSNumber)?.intValue, 24)

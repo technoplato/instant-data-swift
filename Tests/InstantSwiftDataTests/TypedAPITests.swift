@@ -6333,6 +6333,176 @@ struct TypedAPITests {
   }
 
   @Test
+  func fetchAllTaskUsesLocalRuntimeSnapshotAsCachedQueryResult() async throws {
+    let cacheURL = try typedTestCacheURL("fetch-all-cached-query-result")
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_368.625)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000625")!
+
+    try await withDependencies {
+      $0.date.now = baseDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: "fetch-all-cached-query-result",
+        persistenceURL: cacheURL,
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+      try await db.transact {
+        TypedTodo.create(
+          id: InstantID(rawValue: "todo-fetch-all-cached-query-result"),
+          TypedTodo.text.set("Cached query result"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(baseDate)
+        )
+      }
+
+      let fetch = FetchAll<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt))
+      let task = Task {
+        let fetch = fetch
+        try await fetch.task(using: db)
+      }
+      defer {
+        task.cancel()
+      }
+
+      try await waitForTypedCondition(operation: "wait for cached FetchAll query result") {
+        fetch.wrappedValue.map(\.text) == ["Cached query result"]
+      }
+      expectNoDifference(fetch.loadError, nil)
+      expectNoDifference(fetch.isLoading, false)
+    }
+  }
+
+  @Test
+  func fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_368.75)
+    let recorder = DynamicRequestObservationRecorder()
+    let client = dynamicRequestObservationClient(recorder)
+    let fetch = FetchAll<TypedTodo>()
+    let openQuery = TypedTodo.query
+      .where(TypedTodo.isCompleted == false)
+      .order(TypedTodo.createdAt)
+    let doneQuery = TypedTodo.query
+      .where(TypedTodo.isCompleted == true)
+      .order(TypedTodo.createdAt)
+
+    let openTask = Task {
+      let fetch = fetch
+      try await fetch.task(openQuery, using: client)
+    }
+    try await waitForTypedCondition(
+      operation: "wait for first dynamic FetchAll query observation"
+    ) {
+      await recorder.counts().observationCount == 1
+    }
+    expectNoDifference(fetch.wrappedValue, [])
+    expectNoDifference(fetch.loadError, nil)
+    expectNoDifference(fetch.isLoading, true)
+
+    await recorder.yield(
+      .open,
+      values: [
+        typedTodoSnapshot(
+          id: "todo-fetch-all-live-open",
+          text: "Live open",
+          isCompleted: false,
+          createdAt: baseDate
+        )
+      ]
+    )
+    try await waitForTypedCondition(
+      operation: "wait for first dynamic FetchAll query value"
+    ) {
+      fetch.wrappedValue.map(\.text) == ["Live open"]
+    }
+    expectNoDifference(fetch.isLoading, false)
+
+    let doneTask = Task {
+      let fetch = fetch
+      try await fetch.task(doneQuery, using: client)
+    }
+    try await waitForTypedCondition(
+      operation: "wait for second dynamic FetchAll query observation"
+    ) {
+      await recorder.counts().observationCount == 2
+    }
+    try await waitForTypedCondition(
+      operation: "wait for first dynamic FetchAll query termination"
+    ) {
+      await recorder.counts().terminationCount == 1
+    }
+    expectNoDifference(fetch.wrappedValue.map(\.text), ["Live open"])
+    expectNoDifference(fetch.loadError, nil)
+    expectNoDifference(fetch.isLoading, true)
+    do {
+      try await openTask.value
+      Issue.record("Expected first dynamic FetchAll task replacement to throw.")
+    } catch is CancellationError {
+    } catch {
+      Issue.record("Expected CancellationError, got \(error).")
+    }
+
+    await recorder.yield(
+      .done,
+      values: [
+        typedTodoSnapshot(
+          id: "todo-fetch-all-live-done",
+          text: "Live done",
+          isCompleted: true,
+          createdAt: baseDate.addingTimeInterval(1)
+        )
+      ]
+    )
+    try await waitForTypedCondition(
+      operation: "wait for second dynamic FetchAll query value"
+    ) {
+      fetch.wrappedValue.map(\.text) == ["Live done"]
+    }
+
+    await recorder.yield(
+      .open,
+      values: [
+        typedTodoSnapshot(
+          id: "todo-fetch-all-live-stale",
+          text: "Stale open",
+          isCompleted: false,
+          createdAt: baseDate.addingTimeInterval(2)
+        )
+      ],
+      sequence: 1
+    )
+    try await Task.sleep(nanoseconds: 10_000_000)
+
+    expectNoDifference(fetch.wrappedValue.map(\.text), ["Live done"])
+    expectNoDifference(fetch.loadError, nil)
+    expectNoDifference(fetch.isLoading, false)
+
+    doneTask.cancel()
+    do {
+      try await doneTask.value
+      Issue.record("Expected second dynamic FetchAll task cancellation to throw.")
+    } catch is CancellationError {
+    } catch {
+      Issue.record("Expected CancellationError, got \(error).")
+    }
+    try await waitForTypedCondition(
+      operation: "wait for second dynamic FetchAll query termination"
+    ) {
+      await recorder.counts().terminationCount == 2
+    }
+    let plans = await recorder.queryPlans()
+    expectNoDifference(
+      plans.map(\.filters),
+      [
+        [.equals(field: "isCompleted", value: .bool(false))],
+        [.equals(field: "isCompleted", value: .bool(true))],
+      ]
+    )
+  }
+
+  @Test
   func fetchAllDynamicQueryPreservesCachedPriorResultsOnNonNilError() async throws {
     let cached = typedTodoSnapshot(
       id: "todo-dynamic-cached",
