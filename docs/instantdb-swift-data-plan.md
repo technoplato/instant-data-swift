@@ -79,8 +79,15 @@ authenticated, and closed local lifecycle states, current user id, pending
 outbox count, and processed transaction checkpoint. The CLI proves this local
 runtime shape with `instant-swift-data connection status --jsonl`,
 `instant-swift-data connection close --json`, and
-`instant-swift-data connection connect --json`. Live connecting/errored
-transitions remain future WebSocket transport work.
+`instant-swift-data connection connect --json`. `InstantLiveTransportClient`
+now provides injectable `.local` and `.live` session clients for the upstream
+WebSocket protocol shape; `instant-swift-data validation live-session --jsonl`
+builds `/runtime/session?app_id=...`, sends `init`, decodes `init-ok`, sends
+`add-query`, and decodes a query/refresh response. The command uses `.local` by
+default and switches to the real WebSocket when
+`INSTANT_SWIFT_DATA_RUN_LIVE_SESSION=1` is set. Cross-client Swift/TypeScript
+mutation delivery, reconnect replay, and observer refresh application remain
+future transport work.
 
 ### Schema
 
@@ -384,8 +391,9 @@ optimistic outbox state. The SyncUps recording/dependency flow,
 including meeting restore after relaunch, can be proven with
 `instant-swift-data validation syncups-recording --jsonl`.
 `validation/run-e2e.sh` now records the Swift local todo, local integration,
-server transaction loopback, Reminders, typed draft, platform adapter, SyncUps
-recording, detailed parity report, and compact coverage summary evidence
+server transaction loopback, CloudKitDemo, live session protocol smoke,
+Reminders, typed draft, platform adapter, SyncUps recording, detailed parity
+report, and compact coverage summary evidence
 streams, Swift schema/perms fixture generation and verification artifacts, the
 Swift benchmark evidence, the TypeScript fixture check, Swift outbox payloads
 consumed by TypeScript, and TypeScript-authored server transaction operation

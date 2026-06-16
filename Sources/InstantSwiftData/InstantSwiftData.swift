@@ -2172,6 +2172,22 @@ extension InstantMutationTransportKey: DependencyKey {
   }
 }
 
+private enum InstantLiveTransportKey: TestDependencyKey {
+  static var testValue: InstantLiveTransportClient? {
+    nil
+  }
+
+  static var previewValue: InstantLiveTransportClient? {
+    nil
+  }
+}
+
+extension InstantLiveTransportKey: DependencyKey {
+  static var liveValue: InstantLiveTransportClient? {
+    nil
+  }
+}
+
 private enum InstantUserCookieSyncClientKey: TestDependencyKey {
   static var testValue: InstantUserCookieSyncClient {
     .local
@@ -2304,6 +2320,11 @@ extension DependencyValues {
     set { self[InstantMutationTransportKey.self] = newValue }
   }
 
+  public var instantLiveTransport: InstantLiveTransportClient? {
+    get { self[InstantLiveTransportKey.self] }
+    set { self[InstantLiveTransportKey.self] = newValue }
+  }
+
   public var instantUserCookieSyncClient: InstantUserCookieSyncClient {
     get { self[InstantUserCookieSyncClientKey.self] }
     set { self[InstantUserCookieSyncClientKey.self] = newValue }
@@ -2369,6 +2390,7 @@ extension DependencyValues {
     let oauthExchange = self.instantOAuthExchange
     let authTokenInvalidator = self.instantAuthTokenInvalidator
     let mutationTransport = self.instantMutationTransport
+    let liveTransport = self.instantLiveTransport
     let userCookieSyncClient = self.instantUserCookieSyncClient
     let platformAppClient = self.instantPlatformAppClient
     let appBuilderCodeGenerator = self.appBuilderCodeGenerator
@@ -2400,6 +2422,7 @@ extension DependencyValues {
         oauthExchange: oauthExchange,
         authTokenInvalidator: authTokenInvalidator,
         mutationTransport: mutationTransport,
+        liveTransport: liveTransport,
         userCookieSyncClient: userCookieSyncClient,
         platformAppClient: platformAppClient,
         appBuilderCodeGenerator: appBuilderCodeGenerator

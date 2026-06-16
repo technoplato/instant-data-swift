@@ -280,6 +280,41 @@ struct InstantSwiftDataCLI {
         throw error
       }
 
+    case .liveSession:
+      let appID = validationAppID(defaultAppID: "live-session-validation")
+      do {
+        let result = try await InstantSwiftDataLiveSessionValidation.run(
+          appID: appID,
+          websocketURI: try validationWebSocketURI(),
+          refreshToken: validationRefreshToken(),
+          adminToken: validationAdminToken(),
+          liveTransport: validationRunsLiveSession() ? .live : .local,
+          proofLevel: validationRunsLiveSession() ? "live-websocket-session" : "local-protocol"
+        )
+        try printLiveSessionValidation(result: result, output: output)
+      } catch let failure as LiveSessionValidationFailure {
+        if output == .jsonl {
+          for row in failure.evidence {
+            try writeJSONLine(row)
+          }
+        }
+        if let instantError = failure.instantError {
+          throw instantError
+        }
+        throw failure
+      } catch {
+        if output == .jsonl {
+          try writeJSONLine(
+            validationFailureRow(
+              caseID: "validation.live.session",
+              appID: appID,
+              error: error
+            )
+          )
+        }
+        throw error
+      }
+
     case .parityReport:
       let appID = validationAppID()
       try printParityCoverageReport(
@@ -9206,6 +9241,57 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func printLiveSessionValidation(
+    result: LiveSessionValidationResult,
+    output: OutputMode
+  ) throws {
+    let finalDetails = result.evidence.last?.details
+    let summary = LiveSessionValidationOutput(
+      appID: result.appID,
+      websocketURL: result.websocketURL.absoluteString,
+      event: "live-session",
+      transport: finalDetails?.proofLevel == "live-websocket-session"
+        ? "websocket"
+        : "local-protocol",
+      ok: result.evidence.allSatisfy { $0.ok },
+      evidenceCount: result.evidence.count,
+      events: result.evidence.map(\.event),
+      sentOps: finalDetails?.sentOps ?? [],
+      receivedOps: finalDetails?.receivedOps ?? [],
+      clientEventIDs: finalDetails?.clientEventIDs ?? [],
+      sessionID: finalDetails?.sessionID,
+      attrCount: finalDetails?.attrCount ?? 0,
+      queryResultCount: finalDetails?.queryResultCount ?? 0,
+      refreshComputationCount: finalDetails?.refreshComputationCount ?? 0,
+      processedTransactionID: finalDetails?.processedTransactionID,
+      proofLevel: finalDetails?.proofLevel ?? "local-protocol",
+      remoteBoundary: finalDetails?.remoteBoundary ?? "pending-cross-client-sync"
+    )
+
+    switch output {
+    case .human:
+      print("validation: \(summary.ok ? "ok" : "failed")")
+      print("case: validation.live.session")
+      print("events: \(summary.events.joined(separator: ", "))")
+      print("evidence rows: \(summary.evidenceCount)")
+      print("transport: \(summary.transport)")
+      print("sent ops: \(summary.sentOps.joined(separator: ", "))")
+      print("received ops: \(summary.receivedOps.joined(separator: ", "))")
+      print("session: \(summary.sessionID ?? "")")
+      print("attrs: \(summary.attrCount)")
+      print("query results: \(summary.queryResultCount)")
+      print("websocket: \(summary.websocketURL)")
+
+    case .json:
+      try writeJSON(summary)
+
+    case .jsonl:
+      for row in result.evidence {
+        try writeJSONLine(row)
+      }
+    }
+  }
+
   private static func printDraftValidation(
     result: DraftValidationResult,
     output: OutputMode
@@ -9506,6 +9592,48 @@ struct InstantSwiftDataCLI {
       return defaultAppID
     }
     return appID
+  }
+
+  private static func validationWebSocketURI() throws -> URL {
+    guard
+      let rawValue = ProcessInfo.processInfo.environment["INSTANT_WEBSOCKET_URI"]?
+        .trimmingCharacters(in: .whitespacesAndNewlines),
+      !rawValue.isEmpty
+    else {
+      return InstantRuntimeConfiguration.defaultWebSocketURI
+    }
+    guard let url = URL(string: rawValue),
+      InstantRuntimeConfiguration.isValidWebSocketURI(url)
+    else {
+      throw CLIError(
+        "INSTANT_WEBSOCKET_URI must be an absolute ws or wss URL with a host and no query or fragment.",
+        exitCode: 64
+      )
+    }
+    return url
+  }
+
+  private static func validationRunsLiveSession() -> Bool {
+    let value = ProcessInfo.processInfo.environment["INSTANT_SWIFT_DATA_RUN_LIVE_SESSION"]?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+    return value == "1" || value == "true" || value == "yes"
+  }
+
+  private static func validationRefreshToken() -> String? {
+    trimmedValidationEnvironmentValue("INSTANT_REFRESH_TOKEN")
+  }
+
+  private static func validationAdminToken() -> String? {
+    trimmedValidationEnvironmentValue("INSTANT_ADMIN_TOKEN")
+      ?? trimmedValidationEnvironmentValue("INSTANTDB_ADMIN_TOKEN")
+  }
+
+  private static func trimmedValidationEnvironmentValue(_ key: String) -> String? {
+    let value = ProcessInfo.processInfo.environment[key]?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let value, !value.isEmpty else { return nil }
+    return value
   }
 
   private static func typeScriptServerTransactionContract() throws
@@ -11469,6 +11597,26 @@ private struct CloudKitDemoValidationOutput: Codable, Sendable {
   var pendingMutationCount: Int
   var storeRevision: Int64
   var outboxRevision: Int64
+}
+
+private struct LiveSessionValidationOutput: Codable, Sendable {
+  var appID: String
+  var websocketURL: String
+  var event: String
+  var transport: String
+  var ok: Bool
+  var evidenceCount: Int
+  var events: [String]
+  var sentOps: [String]
+  var receivedOps: [String]
+  var clientEventIDs: [String]
+  var sessionID: String?
+  var attrCount: Int
+  var queryResultCount: Int
+  var refreshComputationCount: Int
+  var processedTransactionID: String?
+  var proofLevel: String
+  var remoteBoundary: String
 }
 
 private struct DraftValidationOutput: Codable, Sendable {

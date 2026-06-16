@@ -103,6 +103,19 @@ public struct InstantCloudKitDemoValidationRun: Sendable {
   }
 }
 
+public struct InstantLiveSessionValidationRun: Sendable {
+  public var result: LiveSessionValidationResult
+  public var summary: InstantValidationEvidenceSummary
+
+  public init(
+    result: LiveSessionValidationResult,
+    summary: InstantValidationEvidenceSummary
+  ) {
+    self.result = result
+    self.summary = summary
+  }
+}
+
 public struct InstantDraftValidationRun: Sendable {
   public var result: DraftValidationResult
   public var summary: InstantValidationEvidenceSummary
@@ -278,6 +291,30 @@ public enum InstantSwiftDataTestHarness {
       makeID: makeID
     )
     return InstantCloudKitDemoValidationRun(
+      result: result,
+      summary: try requireAllEvidenceOK(result.evidence)
+    )
+  }
+
+  public static func runLiveSessionValidation(
+    appID: String = "live-session-validation",
+    websocketURI: URL = InstantRuntimeConfiguration.defaultWebSocketURI,
+    liveTransport: InstantLiveTransportClient = .local,
+    proofLevel: String = "local-protocol",
+    timestamp: @escaping @Sendable () -> InstantTimestamp = {
+      InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
+    },
+    makeID: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() }
+  ) async throws -> InstantLiveSessionValidationRun {
+    let result = try await InstantSwiftDataLiveSessionValidation.run(
+      appID: appID,
+      websocketURI: websocketURI,
+      liveTransport: liveTransport,
+      proofLevel: proofLevel,
+      timestamp: timestamp,
+      makeID: makeID
+    )
+    return InstantLiveSessionValidationRun(
       result: result,
       summary: try requireAllEvidenceOK(result.evidence)
     )

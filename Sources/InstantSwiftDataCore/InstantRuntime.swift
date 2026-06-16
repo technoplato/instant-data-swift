@@ -20,6 +20,7 @@ public struct InstantRuntimeConfiguration: Sendable {
   public var oauthExchange: InstantOAuthExchange
   public var authTokenInvalidator: InstantAuthTokenInvalidator
   public var mutationTransport: InstantMutationTransportClient
+  public var liveTransport: InstantLiveTransportClient?
   public var userCookieSyncClient: InstantUserCookieSyncClient
   public var platformAppClient: InstantPlatformAppClient
   public var appBuilderCodeGenerator: AppBuilderCodeGeneratorClient
@@ -55,6 +56,7 @@ public struct InstantRuntimeConfiguration: Sendable {
       oauthExchange: oauthExchange,
       authTokenInvalidator: authTokenInvalidator,
       mutationTransport: .local,
+      liveTransport: nil,
       platformAppClient: platformAppClient,
       appBuilderCodeGenerator: appBuilderCodeGenerator
     )
@@ -77,6 +79,7 @@ public struct InstantRuntimeConfiguration: Sendable {
     oauthExchange: InstantOAuthExchange = .local,
     authTokenInvalidator: InstantAuthTokenInvalidator = .local,
     mutationTransport: InstantMutationTransportClient = .local,
+    liveTransport: InstantLiveTransportClient? = nil,
     userCookieSyncClient: InstantUserCookieSyncClient = .live,
     platformAppClient: InstantPlatformAppClient = .local,
     appBuilderCodeGenerator: AppBuilderCodeGeneratorClient = .local
@@ -95,6 +98,7 @@ public struct InstantRuntimeConfiguration: Sendable {
     self.oauthExchange = oauthExchange
     self.authTokenInvalidator = authTokenInvalidator
     self.mutationTransport = mutationTransport
+    self.liveTransport = liveTransport
     self.userCookieSyncClient = userCookieSyncClient
     self.platformAppClient = platformAppClient
     self.appBuilderCodeGenerator = appBuilderCodeGenerator
@@ -168,6 +172,85 @@ private final class InstantFileUploadProgressCancellation: @unchecked Sendable {
   }
 }
 
+private actor InstantRuntimeLiveSession {
+  private var session: InstantLiveWebSocketSession?
+  private var isOpened = false
+
+  var isOpen: Bool {
+    isOpened
+  }
+
+  func open(
+    request: InstantLiveSessionRequest,
+    transport: InstantLiveTransportClient,
+    clientEventID: String
+  ) async throws {
+    if let session {
+      await session.close()
+    }
+    session = nil
+    isOpened = false
+    let opened = try await transport.connect(request)
+    do {
+      try await instantLiveWithTimeout(
+        operation: "open Instant live session",
+        timeoutMilliseconds: 10_000
+      ) {
+        try await opened.send(request.initMessage(clientEventID: clientEventID))
+      }
+      let event = try await instantLiveWithTimeout(
+        operation: "open Instant live session",
+        timeoutMilliseconds: 10_000
+      ) {
+        InstantLiveServerEvent(message: try await opened.receive())
+      }
+      switch event {
+      case let .initOK(initOK):
+        guard !initOK.sessionID.isEmpty else {
+          throw InstantError(
+            code: .networkFailed,
+            operation: "open Instant live session",
+            message: "Instant live init-ok did not include a session-id.",
+            recovery: "Inspect the Instant runtime WebSocket init response."
+          )
+        }
+        self.session = opened
+        self.isOpened = true
+
+      case let .error(error):
+        throw InstantError(
+          code: .networkFailed,
+          operation: "open Instant live session",
+          serverEventID: error.clientEventID,
+          message: error.message,
+          recovery: "Inspect the Instant runtime WebSocket init request and credentials."
+        )
+
+      default:
+        throw InstantError(
+          code: .networkFailed,
+          operation: "open Instant live session",
+          message: "Expected init-ok from Instant live transport, received \(event.op).",
+          recovery: "Inspect the Instant runtime WebSocket protocol handling."
+        )
+      }
+    } catch {
+      await opened.close()
+      session = nil
+      isOpened = false
+      throw error
+    }
+  }
+
+  func close() async {
+    if let session {
+      await session.close()
+    }
+    session = nil
+    isOpened = false
+  }
+}
+
 private struct InstantSharedRootWriteTarget: Hashable, Sendable {
   var namespace: String?
   var id: String
@@ -196,6 +279,7 @@ public final class InstantRuntime: Sendable {
     InstantSnapshotObservers<InstantSharesObservationKey, [InstantShareSnapshot]>()
   private let operationGate = AsyncSerialGate()
   private let mutationFlushGate = AsyncSerialGate()
+  private let liveSession = InstantRuntimeLiveSession()
 
   private init(
     configuration: InstantRuntimeConfiguration,
@@ -777,6 +861,9 @@ public final class InstantRuntime: Sendable {
       await operationGate.leave()
       return status
     } catch {
+      if configuration.liveTransport != nil {
+        await liveSession.close()
+      }
       await operationGate.leave()
       throw error
     }
@@ -786,6 +873,23 @@ public final class InstantRuntime: Sendable {
   public func connect() async throws -> InstantConnectionStatus {
     await operationGate.enter()
     do {
+      if let liveTransport = configuration.liveTransport {
+        let session = try await persistence.loadAuthSession(key: authSessionKey)
+        do {
+          try await liveSession.open(
+            request: InstantLiveSessionRequest(
+              appID: configuration.appID,
+              websocketURI: configuration.websocketURI,
+              refreshToken: session?.refreshToken
+            ),
+            transport: liveTransport,
+            clientEventID: configuration.makeID()
+          )
+        } catch {
+          try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
+          throw error
+        }
+      }
       try await saveOpenedConnectionMetadataWithGateHeld()
       let status = try await connectionStatusWithGateHeld()
       await operationGate.leave()
@@ -800,6 +904,7 @@ public final class InstantRuntime: Sendable {
   public func closeConnection() async throws -> InstantConnectionStatus {
     await operationGate.enter()
     do {
+      await liveSession.close()
       try await persistence.saveMetadataValue(
         InstantConnectionState.closed.rawValue,
         key: connectionStateMetadataKey,
@@ -824,12 +929,17 @@ public final class InstantRuntime: Sendable {
     let lastErrorMessage = try await persistence.loadMetadataValue(
       key: connectionLastErrorMetadataKey
     )
+    let liveSessionIsOpen = await liveSession.isOpen
     return InstantConnectionStatus(
       appID: configuration.appID,
       apiURI: configuration.apiURI,
       websocketURI: configuration.websocketURI,
-      transport: .localCacheOnly,
-      state: connectionState(storedState, isAuthenticated: session != nil),
+      transport: configuration.liveTransport == nil ? .localCacheOnly : .webSocket,
+      state: connectionState(
+        storedState,
+        isAuthenticated: session != nil,
+        liveSessionIsOpen: liveSessionIsOpen
+      ),
       isAuthenticated: session != nil,
       userID: session?.userID,
       pendingMutationCount: state.snapshot.outbox.filter { $0.status == .pending }.count,
@@ -884,10 +994,14 @@ public final class InstantRuntime: Sendable {
 
   private func connectionState(
     _ state: InstantConnectionState,
-    isAuthenticated: Bool
+    isAuthenticated: Bool,
+    liveSessionIsOpen: Bool
   ) -> InstantConnectionState {
     switch state {
     case .opened, .authenticated:
+      if configuration.liveTransport != nil, !liveSessionIsOpen {
+        return .closed
+      }
       return isAuthenticated ? .authenticated : .opened
     case .connecting, .closed, .errored:
       return state

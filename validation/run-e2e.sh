@@ -17,6 +17,7 @@ rm -f \
   "${RESULTS_DIR}/swift-local-integrations.jsonl" \
   "${RESULTS_DIR}/swift-server-transaction-loopback.jsonl" \
   "${RESULTS_DIR}/swift-cloudkit-demo.jsonl" \
+  "${RESULTS_DIR}/swift-live-session.jsonl" \
   "${RESULTS_DIR}/swift-reminders.jsonl" \
   "${RESULTS_DIR}/swift-typed-drafts.jsonl" \
   "${RESULTS_DIR}/swift-platform-adapters.jsonl" \
@@ -406,6 +407,25 @@ else
     "complete" \
     false \
     "$(printf '{"resultsDir":%s,"failed":"swift-cloudkit-demo","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+  exit "${status}"
+fi
+
+log_json "swift-live-session-start" true
+if (
+  cd "${ROOT}"
+  INSTANT_APP_ID="${REMOTE_VALIDATION_APP_ID}" swift run instant-swift-data validation live-session --jsonl
+) | tee "${RESULTS_DIR}/swift-live-session.jsonl"; then
+  log_json "swift-live-session-complete" true "$(json_object "path" "${RESULTS_DIR}/swift-live-session.jsonl")"
+else
+  status=$?
+  log_json \
+    "swift-live-session-failed" \
+    false \
+    "$(json_failure_details "${RESULTS_DIR}/swift-live-session.jsonl" "${status}")"
+  log_json \
+    "complete" \
+    false \
+    "$(printf '{"resultsDir":%s,"failed":"swift-live-session","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
   exit "${status}"
 fi
 

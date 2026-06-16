@@ -1228,6 +1228,44 @@ struct BootstrapTests {
   }
 
   @Test
+  func bootstrapUsesLiveTransportDependency() async throws {
+    let appID = "live-transport-dependency-\(UUID().uuidString)"
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataLiveTransport-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    try await withDependencies {
+      $0.instantLiveTransport = .local
+      try await $0.bootstrapInstantSwiftData(
+        appID: appID,
+        websocketURI: try #require(URL(string: "wss://ws.example.test/runtime/session")),
+        persistenceURL: directory.appendingPathComponent("cache.sqlite"),
+        context: .test
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var client
+
+      let status = try await client.connectionStatus()
+      expectNoDifference(status.transport, .webSocket)
+      expectNoDifference(status.state, .closed)
+      expectNoDifference(
+        status.websocketURI.absoluteString,
+        "wss://ws.example.test/runtime/session"
+      )
+
+      let connectedStatus = try await client.connect()
+      expectNoDifference(connectedStatus.transport, .webSocket)
+      expectNoDifference(connectedStatus.state, .opened)
+      expectNoDifference(connectedStatus.pendingMutationCount, 0)
+
+      let closedStatus = try await client.closeConnection()
+      expectNoDifference(closedStatus.transport, .webSocket)
+      expectNoDifference(closedStatus.state, .closed)
+    }
+  }
+
+  @Test
   func bootstrapUsesAppBuilderPlatformAndGeneratorDependencies() async throws {
     let appID = "app-builder-dependency-\(UUID().uuidString)"
     let directory = FileManager.default.temporaryDirectory

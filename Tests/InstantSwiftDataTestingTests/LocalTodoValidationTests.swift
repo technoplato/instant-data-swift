@@ -385,6 +385,87 @@ struct LocalTodoValidationTests {
   }
 
   @Test
+  func liveSessionValidationHarnessProvesProtocolHandshakeAndQueryIngress() async throws {
+    let idGenerator = ValidationIDGenerator(["event-init", "event-query"])
+
+    let run = try await InstantSwiftDataTestHarness.runLiveSessionValidation(
+      appID: "validation-live-session-test",
+      websocketURI: try #require(URL(string: "wss://ws.example.test/runtime/session")),
+      timestamp: { InstantTimestamp(milliseconds: 1_700_004_000_000) },
+      makeID: { idGenerator.next() }
+    )
+    let result = run.result
+
+    expectNoDifference(result.appID, "validation-live-session-test")
+    expectNoDifference(
+      result.websocketURL.absoluteString,
+      "wss://ws.example.test/runtime/session?app_id=validation-live-session-test"
+    )
+    expectNoDifference(run.summary.caseID, "validation.live.session")
+    expectNoDifference(run.summary.rowCount, 5)
+    expectNoDifference(run.summary.ok, true)
+    expectNoDifference(run.summary.events, [
+      "session-url",
+      "send-init",
+      "receive-init-ok",
+      "send-add-query",
+      "receive-query",
+    ])
+    expectNoDifference(result.evidence.map(\.event), run.summary.events)
+    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 5))
+
+    let finalDetails = try #require(result.evidence.last?.details)
+    expectNoDifference(finalDetails.sentOps, ["init", "add-query"])
+    expectNoDifference(finalDetails.receivedOps, ["init-ok", "add-query-ok"])
+    expectNoDifference(finalDetails.clientEventIDs, ["event-init", "event-query"])
+    expectNoDifference(finalDetails.sessionID, "local-session-validation-live-session-test")
+    expectNoDifference(finalDetails.proofLevel, "local-protocol")
+    expectNoDifference(finalDetails.remoteBoundary, "pending-cross-client-sync")
+  }
+
+  @Test
+  func validationRunnerLiveSessionCommandEmitsJSONL() throws {
+    let result = try runValidationRunner(arguments: ["--live-session"])
+
+    #expect(
+      result.status == 0,
+      """
+      instant-swift-data-validation-runner --live-session failed.
+      stdout:
+      \(result.stdout)
+      stderr:
+      \(result.stderr)
+      """
+    )
+
+    let rows = try parseJSONLines(result.stdout)
+    expectNoDifference(rows.count, 5)
+    expectNoDifference(
+      rows.map { $0["case"] as? String ?? "" },
+      Array(repeating: "validation.live.session", count: 5)
+    )
+    expectNoDifference(
+      rows.map { $0["appID"] as? String ?? "" },
+      Array(repeating: "live-session-validation", count: 5)
+    )
+    expectNoDifference(rows.map { $0["event"] as? String ?? "" }, [
+      "session-url",
+      "send-init",
+      "receive-init-ok",
+      "send-add-query",
+      "receive-query",
+    ])
+    expectNoDifference(rows.map { $0["ok"] as? Bool ?? false }, Array(repeating: true, count: 5))
+
+    let finalDetails = try #require(rows.last?["details"] as? [String: Any])
+    expectNoDifference(finalDetails["sentOps"] as? [String], ["init", "add-query"])
+    expectNoDifference(finalDetails["receivedOps"] as? [String], ["init-ok", "add-query-ok"])
+    expectNoDifference(finalDetails["sessionID"] as? String, "local-session-live-session-validation")
+    expectNoDifference(finalDetails["proofLevel"] as? String, "local-protocol")
+    expectNoDifference(finalDetails["remoteBoundary"] as? String, "pending-cross-client-sync")
+  }
+
+  @Test
   func validationRunnerCloudKitDemoFailureEmitsMappedJSONL() throws {
     let result = try runValidationRunner(
       arguments: ["--cloudkit-demo"],
@@ -1682,6 +1763,7 @@ struct LocalTodoValidationTests {
     #expect(script.contains("swift run instant-swift-data-validation-runner --local-integrations"))
     #expect(script.contains("swift run instant-swift-data-validation-runner --server-transaction-loopback"))
     #expect(script.contains("swift run instant-swift-data-validation-runner --cloudkit-demo"))
+    #expect(script.contains("swift run instant-swift-data validation live-session --jsonl"))
     #expect(script.contains("swift run instant-swift-data validation reminders --jsonl"))
     #expect(script.contains("swift run instant-swift-data validation typed-drafts --jsonl"))
     #expect(script.contains("swift run instant-swift-data validation platform-adapters --jsonl"))
@@ -1694,6 +1776,7 @@ struct LocalTodoValidationTests {
     #expect(script.contains("swift-local-integrations.jsonl"))
     #expect(script.contains("swift-server-transaction-loopback.jsonl"))
     #expect(script.contains("swift-cloudkit-demo.jsonl"))
+    #expect(script.contains("swift-live-session.jsonl"))
     #expect(script.contains("swift-reminders.jsonl"))
     #expect(script.contains("swift-typed-drafts.jsonl"))
     #expect(script.contains("swift-platform-adapters.jsonl"))
@@ -1727,6 +1810,7 @@ struct LocalTodoValidationTests {
     )
     #expect(runnerSource.contains("runDraftValidation()"))
     #expect(runnerSource.contains("runCloudKitDemoValidation"))
+    #expect(runnerSource.contains("runLiveSessionValidation"))
     #expect(runnerSource.contains("InstantSwiftDataPlatformAdapterValidation.run"))
     #expect(runnerSource.contains("runRemindersValidation()"))
     #expect(runnerSource.contains("runSyncUpsRecordingValidation()"))
@@ -1843,6 +1927,18 @@ struct LocalTodoValidationTests {
           ;;
         instant-swift-data-validation-runner:--cloudkit-demo:)
           echo '{"case":"validation.cloudkit.demo","side":"swift","event":"stub-cloudkit-demo","appID":"cloudkit-demo-validation","timestampMs":3,"ok":true,"details":{}}'
+          ;;
+        instant-swift-data:validation:live-session)
+          expected="run instant-swift-data validation live-session --jsonl"
+          if [ "$*" != "$expected" ]; then
+            echo "unexpected live session arguments: $*" >&2
+            exit 65
+          fi
+          if [ "${INSTANT_APP_ID:-}" != "local-validation" ]; then
+            echo "unexpected live session app id: ${INSTANT_APP_ID:-}" >&2
+            exit 66
+          fi
+          echo '{"case":"validation.live.session","side":"swift","event":"stub-live-session","appID":"local-validation","timestampMs":3,"ok":true,"details":{"sentOps":["init","add-query"],"receivedOps":["init-ok","add-query-ok"],"proofLevel":"local-protocol","remoteBoundary":"pending-cross-client-sync"}}'
           ;;
         instant-swift-data:validation:reminders)
           expected="run instant-swift-data validation reminders --jsonl"
@@ -2099,6 +2195,8 @@ struct LocalTodoValidationTests {
       "swift-server-transaction-loopback-complete",
       "swift-cloudkit-demo-start",
       "swift-cloudkit-demo-complete",
+      "swift-live-session-start",
+      "swift-live-session-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -2145,6 +2243,11 @@ struct LocalTodoValidationTests {
     #expect(
       FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("swift-cloudkit-demo.jsonl").path
+      )
+    )
+    #expect(
+      FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-live-session.jsonl").path
       )
     )
     #expect(
@@ -2472,6 +2575,8 @@ struct LocalTodoValidationTests {
       "swift-server-transaction-loopback-complete",
       "swift-cloudkit-demo-start",
       "swift-cloudkit-demo-complete",
+      "swift-live-session-start",
+      "swift-live-session-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -2766,6 +2871,8 @@ struct LocalTodoValidationTests {
       "swift-server-transaction-loopback-complete",
       "swift-cloudkit-demo-start",
       "swift-cloudkit-demo-complete",
+      "swift-live-session-start",
+      "swift-live-session-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -2839,6 +2946,8 @@ struct LocalTodoValidationTests {
       "swift-server-transaction-loopback-complete",
       "swift-cloudkit-demo-start",
       "swift-cloudkit-demo-complete",
+      "swift-live-session-start",
+      "swift-live-session-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -2920,6 +3029,8 @@ struct LocalTodoValidationTests {
       "swift-server-transaction-loopback-complete",
       "swift-cloudkit-demo-start",
       "swift-cloudkit-demo-complete",
+      "swift-live-session-start",
+      "swift-live-session-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -2994,6 +3105,8 @@ struct LocalTodoValidationTests {
       "swift-server-transaction-loopback-complete",
       "swift-cloudkit-demo-start",
       "swift-cloudkit-demo-complete",
+      "swift-live-session-start",
+      "swift-live-session-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",

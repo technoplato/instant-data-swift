@@ -293,6 +293,11 @@ transport objects into feature code.
 - Mutation transport should be an injectable Sendable client so local demos,
   tests, previews, and future live WebSocket transport share the same
   send/ack/failure application path.
+- Live session transport should also be an injectable Sendable client with
+  reusable `.local` and `.live` instances. Swift Dependencies should expose it
+  through `DependencyValues.instantLiveTransport`, defaulting to nil so the
+  local-cache runtime remains deterministic until apps explicitly opt into a
+  WebSocket session.
 - Local delete must remove the entity, forward refs, and reverse refs, and must
   honor `onDelete`/`onDeleteReverse` cascade metadata. Until Swift transactions
   carry namespace-specific delete steps, `deleteEntity(String)` is a
@@ -571,9 +576,11 @@ Agent-oriented output modes are required:
 - run local Swift validation evidence, including
   `instant-swift-data validation local-todos --jsonl` and
   `instant-swift-data validation local-integrations --jsonl`, plus Reminders,
-  server transaction loopback, typed draft, platform adapter, and SyncUps
-  recording evidence via
+  CloudKitDemo-style sharing, live session protocol smoke, server transaction
+  loopback, typed draft, platform adapter, and SyncUps recording evidence via
   `instant-swift-data validation reminders --jsonl`,
+  `instant-swift-data validation cloudkit-demo --jsonl`,
+  `instant-swift-data validation live-session --jsonl`,
   `instant-swift-data validation server-transaction-loopback --jsonl`,
   `instant-swift-data validation typed-drafts --jsonl`,
   `instant-swift-data validation platform-adapters --jsonl`, and

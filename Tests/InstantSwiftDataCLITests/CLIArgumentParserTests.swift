@@ -3222,6 +3222,9 @@ struct CLIArgumentParserTests {
     expectNoDifference(try parseValidation(["cloudkit-demo"]), .cloudKitDemo)
     expectNoDifference(try parseValidation(["cloudkit"]), .cloudKitDemo)
     expectNoDifference(try parseValidation(["shared-counters"]), .cloudKitDemo)
+    expectNoDifference(try parseValidation(["live-session"]), .liveSession)
+    expectNoDifference(try parseValidation(["websocket-session"]), .liveSession)
+    expectNoDifference(try parseValidation(["ws-session"]), .liveSession)
     expectNoDifference(try parseValidation(["typed-drafts"]), .typedDrafts)
     expectNoDifference(try parseValidation(["drafts"]), .typedDrafts)
     expectNoDifference(try parseValidation(["platform-adapters"]), .platformAdapters)
@@ -3246,6 +3249,7 @@ struct CLIArgumentParserTests {
       )
     )
     #expect(CLIValidationUsage.validation.contains("validation cloudkit-demo [--json|--jsonl]"))
+    #expect(CLIValidationUsage.validation.contains("validation live-session [--json|--jsonl]"))
     #expect(CLIValidationUsage.validation.contains("validation coverage [--json|--jsonl]"))
     try expectValidationParseError([], description: CLIValidationUsage.validation)
     try expectValidationParseError(["remote"], description: CLIValidationUsage.validation)
@@ -3271,6 +3275,9 @@ struct CLIArgumentParserTests {
     expectNoDifference(try parseValidationRunner(["--cloudkit-demo"]), .cloudKitDemo)
     expectNoDifference(try parseValidationRunner(["--cloudkit"]), .cloudKitDemo)
     expectNoDifference(try parseValidationRunner(["--shared-counters"]), .cloudKitDemo)
+    expectNoDifference(try parseValidationRunner(["--live-session"]), .liveSession)
+    expectNoDifference(try parseValidationRunner(["--websocket-session"]), .liveSession)
+    expectNoDifference(try parseValidationRunner(["--ws-session"]), .liveSession)
     expectNoDifference(try parseValidationRunner(["--typed-drafts"]), .typedDrafts)
     expectNoDifference(try parseValidationRunner(["--platform-adapters"]), .platformAdapters)
     expectNoDifference(try parseValidationRunner(["--syncups-recording"]), .syncUpsRecording)
@@ -3288,6 +3295,8 @@ struct CLIArgumentParserTests {
     )
     expectNoDifference(CLIValidationRunnerInvocation.cloudKitDemo.caseID, "validation.cloudkit.demo")
     expectNoDifference(CLIValidationRunnerInvocation.cloudKitDemo.appID, "cloudkit-demo-validation")
+    expectNoDifference(CLIValidationRunnerInvocation.liveSession.caseID, "validation.live.session")
+    expectNoDifference(CLIValidationRunnerInvocation.liveSession.appID, "live-session-validation")
     expectNoDifference(CLIValidationRunnerInvocation.coverage.appID, "local-validation")
   }
 
@@ -3295,6 +3304,7 @@ struct CLIArgumentParserTests {
   func validationRunnerParserReportsMalformedArguments() throws {
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--parity-report|--coverage"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--cloudkit-demo"))
+    #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-session"))
     try expectValidationRunnerParseError(
       ["--remote"],
       description: CLIValidationRunnerUsage.validationRunner

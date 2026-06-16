@@ -38,6 +38,7 @@ swift run instant-swift-data validation local-todos --jsonl
 swift run instant-swift-data validation local-integrations --jsonl
 swift run instant-swift-data validation reminders --jsonl
 swift run instant-swift-data validation cloudkit-demo --jsonl
+swift run instant-swift-data validation live-session --jsonl
 swift run instant-swift-data validation typed-drafts --jsonl
 swift run instant-swift-data validation platform-adapters --jsonl
 swift run instant-swift-data validation syncups-recording --jsonl
@@ -47,6 +48,7 @@ swift run instant-swift-data-validation-runner --local-todos
 swift run instant-swift-data-validation-runner --local-integrations
 swift run instant-swift-data-validation-runner --reminders
 swift run instant-swift-data-validation-runner --cloudkit-demo
+swift run instant-swift-data-validation-runner --live-session
 swift run instant-swift-data-validation-runner --typed-drafts
 swift run instant-swift-data-validation-runner --platform-adapters
 swift run instant-swift-data-validation-runner --syncups-recording
@@ -101,6 +103,7 @@ INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR=/tmp/instant-validation-results valida
 node validation/ts-runner/src/main.ts --swift-transport-contract /tmp/instant-validation-results/swift-transport-contract.json --app-id local-validation
 node validation/ts-runner/src/main.ts --boundary-preflight
 INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token node validation/ts-runner/src/main.ts --boundary-preflight --require-boundary
+INSTANT_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_LIVE_SESSION=1 swift run instant-swift-data validation live-session --jsonl
 ```
 
 When running from launchd or another sparse shell environment, point the harness
@@ -117,7 +120,7 @@ nil-query, cached-prior-error, and cancellation-cleanup probes for `@FetchAll`,
 plus filtered active-row reloads through `@FetchAll` and `@Fetch`.
 `validation/run-e2e.sh` records all Swift local validation
 streams (`swift-local.jsonl`, `swift-local-integrations.jsonl`,
-`swift-reminders.jsonl`, `swift-typed-drafts.jsonl`,
+`swift-live-session.jsonl`, `swift-reminders.jsonl`, `swift-typed-drafts.jsonl`,
 `swift-platform-adapters.jsonl`, `swift-syncups-recording.jsonl`, and
 `swift-parity-report.jsonl`), records the compact coverage gate as
 `swift-coverage.jsonl`, records Swift schema/perms generation and verification
@@ -137,6 +140,10 @@ accepted the mutation. The preflight writes `typescript-boundary.jsonl`; set
 `INSTANT_SWIFT_DATA_REQUIRE_REMOTE_PREFLIGHT=1` to make missing credentials fail
 the orchestration run. This preflight checks credential-shaped inputs and
 endpoint syntax only; it does not contact Instant. Set
+`INSTANT_SWIFT_DATA_RUN_LIVE_SESSION=1` to make the Swift live-session smoke
+use Instant's real WebSocket endpoint instead of the deterministic local
+protocol client.
+Set
 `INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR` to direct artifacts to a specific
 directory, and
 `INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS` to adjust the benchmark

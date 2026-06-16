@@ -8036,6 +8036,67 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliValidationLiveSessionEmitsEvidence() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let jsonOutput = try JSONDecoder().decode(
+      CLILiveSessionValidationOutput.self,
+      from: Data(
+        try runCLI(["validation", "live-session", "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(jsonOutput.appID, "cli-cache-test")
+    expectNoDifference(jsonOutput.event, "live-session")
+    expectNoDifference(jsonOutput.transport, "local-protocol")
+    expectNoDifference(jsonOutput.ok, true)
+    expectNoDifference(jsonOutput.evidenceCount, 5)
+    expectNoDifference(jsonOutput.events, [
+      "session-url",
+      "send-init",
+      "receive-init-ok",
+      "send-add-query",
+      "receive-query",
+    ])
+    expectNoDifference(jsonOutput.sentOps, ["init", "add-query"])
+    expectNoDifference(jsonOutput.receivedOps, ["init-ok", "add-query-ok"])
+    expectNoDifference(jsonOutput.sessionID, "local-session-cli-cache-test")
+    expectNoDifference(jsonOutput.proofLevel, "local-protocol")
+    expectNoDifference(jsonOutput.remoteBoundary, "pending-cross-client-sync")
+
+    let jsonlOutput = try runCLI(["validation", "ws-session", "--jsonl"], homeURL: homeURL)
+    let lines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(lines.count, 5)
+    let initEvidence = try JSONDecoder().decode(
+      CLILiveSessionValidationEvidence.self,
+      from: Data(lines[2].utf8)
+    )
+    expectNoDifference(initEvidence.caseID, "validation.live.session")
+    expectNoDifference(initEvidence.appID, "cli-cache-test")
+    expectNoDifference(initEvidence.event, "receive-init-ok")
+    expectNoDifference(initEvidence.details.receivedOps, ["init-ok"])
+    expectNoDifference(initEvidence.details.sessionID, "local-session-cli-cache-test")
+
+    let queryEvidence = try JSONDecoder().decode(
+      CLILiveSessionValidationEvidence.self,
+      from: Data(try #require(lines.last).utf8)
+    )
+    expectNoDifference(queryEvidence.event, "receive-query")
+    expectNoDifference(queryEvidence.details.sentOps, ["init", "add-query"])
+    expectNoDifference(queryEvidence.details.receivedOps, ["init-ok", "add-query-ok"])
+    expectNoDifference(queryEvidence.details.clientEventIDs.count, 2)
+    expectNoDifference(queryEvidence.details.queryResultCount, 0)
+
+    let humanOutput = try runCLI(["validation", "websocket-session"], homeURL: homeURL)
+    #expect(humanOutput.contains("validation: ok"))
+    #expect(humanOutput.contains("case: validation.live.session"))
+    #expect(humanOutput.contains("transport: local-protocol"))
+    #expect(humanOutput.contains("received ops: init-ok, add-query-ok"))
+  }
+
+  @Test
   func cliValidationRemindersEmitsEvidence() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -11441,6 +11502,57 @@ private struct CLICloudKitDemoValidationDetails: Decodable {
   var pendingMutationCount: Int
   var storeRevision: Int64
   var outboxRevision: Int64
+}
+
+private struct CLILiveSessionValidationOutput: Decodable {
+  var appID: String
+  var websocketURL: String
+  var event: String
+  var transport: String
+  var ok: Bool
+  var evidenceCount: Int
+  var events: [String]
+  var sentOps: [String]
+  var receivedOps: [String]
+  var clientEventIDs: [String]
+  var sessionID: String?
+  var attrCount: Int
+  var queryResultCount: Int
+  var refreshComputationCount: Int
+  var processedTransactionID: String?
+  var proofLevel: String
+  var remoteBoundary: String
+}
+
+private struct CLILiveSessionValidationEvidence: Decodable {
+  var caseID: String
+  var appID: String
+  var event: String
+  var ok: Bool
+  var details: CLILiveSessionValidationDetails
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case appID
+    case event
+    case ok
+    case details
+  }
+}
+
+private struct CLILiveSessionValidationDetails: Decodable {
+  var websocketURL: String
+  var sentOps: [String]
+  var receivedOps: [String]
+  var clientEventIDs: [String]
+  var sessionID: String?
+  var attrCount: Int
+  var queryResultCount: Int
+  var refreshComputationCount: Int
+  var processedTransactionID: String?
+  var proofLevel: String
+  var remoteBoundary: String
+  var errorMessage: String?
 }
 
 private struct CLIDraftValidationOutput: Decodable {
