@@ -96,6 +96,15 @@ public struct InstantEntityMacro: MemberMacro {
     let relationProperties = properties.filter { property in
       property.relation != nil && property.schemaValue?.refTargetType != nil
     }
+    if usesManualAttributes {
+      for property in relationProperties
+      where !explicitAttributePathMembers.contains(property.name) {
+        context.diagnose(
+          InstantEntityDiagnostic.manualRelationRequiresAttributePath(property.name)
+            .diagnose(at: Syntax(declaration))
+        )
+      }
+    }
     let duplicateReverseNames = Set(
       Dictionary(grouping: relationProperties, by: { $0.relation?.reverseName ?? "" })
         .filter { !$0.key.isEmpty && $0.value.count > 1 }
@@ -894,6 +903,7 @@ private enum InstantEntityDiagnostic {
   case duplicateReverseRelationName(String)
   case invalidReverseRelationName(String)
   case instantRelationRequiresRef(String)
+  case manualRelationRequiresAttributePath(String)
   case reservedGeneratedMemberName(String)
   case reservedReverseRelationName(String)
   case redundantNamespace(String)
@@ -919,6 +929,9 @@ extension InstantEntityDiagnostic: DiagnosticMessage {
       return "Reverse relation name '\(name)' is not a valid Swift member name for @InstantRelation."
     case let .instantRelationRequiresRef(name):
       return "Stored property '\(name)' uses @InstantRelation, but it is not an Instant ref attribute."
+    case let .manualRelationRequiresAttributePath(name):
+      return "Stored relation property '\(name)' uses @InstantRelation with manually declared instantAttributes; "
+        + "declare a static InstantAttributePath for '\(name)' so @InstantEntity can generate draft assignments and reverse relation helpers."
     case let .reservedGeneratedMemberName(name):
       return "Stored property '\(name)' uses a name reserved by @InstantEntity generated helpers."
     case let .reservedReverseRelationName(name):
@@ -950,6 +963,11 @@ extension InstantEntityDiagnostic: DiagnosticMessage {
       return MessageID(domain: "InstantSwiftDataMacros", id: "invalidReverseRelationName")
     case .instantRelationRequiresRef:
       return MessageID(domain: "InstantSwiftDataMacros", id: "instantRelationRequiresRef")
+    case .manualRelationRequiresAttributePath:
+      return MessageID(
+        domain: "InstantSwiftDataMacros",
+        id: "manualRelationRequiresAttributePath"
+      )
     case .reservedGeneratedMemberName:
       return MessageID(domain: "InstantSwiftDataMacros", id: "reservedGeneratedMemberName")
     case .reservedReverseRelationName:
@@ -981,6 +999,7 @@ extension InstantEntityDiagnostic: DiagnosticMessage {
     case .duplicateReverseRelationName,
       .invalidReverseRelationName,
       .instantRelationRequiresRef,
+      .manualRelationRequiresAttributePath,
       .reservedGeneratedMemberName,
       .reservedReverseRelationName,
       .requiresDraftTypeAnnotation,

@@ -435,6 +435,78 @@
       }
     }
 
+    func testGeneratedDraftAcceptsLetInstantPrimaryKey() {
+      assertMacro {
+        """
+        @InstantEntity
+        struct ImmutableTodo {
+          let id: InstantID<ImmutableTodo>
+          var title: String
+        }
+        """
+      } expansion: {
+        """
+        struct ImmutableTodo {
+          let id: InstantID<ImmutableTodo>
+          var title: String
+
+          public static var instantNamespace: String {
+            "immutableTodos"
+          }
+
+          public static let title = InstantAttributePath<ImmutableTodo, String>("title")
+
+          public static var instantAttributes: [InstantAttribute] {
+            [
+                InstantAttribute(
+                  id: ImmutableTodo.title.attributeID,
+                  namespace: ImmutableTodo.instantNamespace,
+                  name: ImmutableTodo.title.name,
+                  valueType: .string,
+                  isRequired: true,
+                  isIndexed: true
+                )
+            ]
+          }
+
+          public struct Draft: InstantEntityDraft {
+            public typealias Entity = ImmutableTodo
+            public var id: ImmutableTodo.ID? = nil
+
+            public var title: String
+
+            public init(
+              id: ImmutableTodo.ID? = nil,
+              title: String
+            ) {
+              self.id = id
+              self.title = title
+            }
+
+            public init(_ entity: ImmutableTodo) {
+              self.id = entity.id
+              self.title = entity.title
+            }
+
+            public var instantAssignments: [InstantAttributeAssignment<ImmutableTodo>] {
+              [
+              InstantAttributeAssignment<ImmutableTodo>(
+                name: "title",
+                attributeID: ImmutableTodo.instantAttributes
+                  .first(where: {
+                    $0.name == "title"
+                  })?.id
+                  ?? ImmutableTodo.instantNamespace + "/title",
+                value: self.title.instantValue
+              )
+              ]
+            }
+          }
+        }
+        """
+      }
+    }
+
     func testGeneratedDraftAcceptsInstantPrimaryKeyAliases() {
       assertMacro {
         """
@@ -1494,7 +1566,7 @@
       }
     }
 
-    func testManualInstantAttributesSkipReverseRelationWithoutAttributePath() {
+    func testManualInstantAttributesRequireRelationAttributePath() {
       assertMacro {
         """
         @InstantEntity
@@ -1517,10 +1589,14 @@
           ]
         }
         """
-      } expansion: {
+      } diagnostics: {
         """
+        @InstantEntity
+        ╰─ 🛑 Stored relation property 'author' uses @InstantRelation with manually declared instantAttributes; declare a static InstantAttributePath for 'author' so @InstantEntity can generate draft assignments and reverse relation helpers.
         struct Post {
           var id: InstantID<Post>
+
+          @InstantRelation(reverse: "posts")
           var author: InstantID<User>
 
           static let instantAttributes = [
@@ -1534,29 +1610,98 @@
               linkNamespace: User.instantNamespace
             )
           ]
+        }
+        """
+      }
+    }
+
+    func testManualInstantAttributesIncludeRelationDraftsWithAttributePaths() {
+      assertMacro {
+        """
+        @InstantEntity
+        struct Post {
+          var id: InstantID<Post>
+
+          @InstantRelation(reverse: "posts")
+          var author: InstantID<User>
+
+          static let author = InstantAttributePath<Post, InstantID<User>>(
+            "author",
+            attributeID: "posts/writer"
+          )
+
+          static let instantAttributes = [
+            InstantAttribute(
+              id: Post.author.attributeID,
+              namespace: Post.instantNamespace,
+              name: Post.author.name,
+              valueType: .ref,
+              forwardIdentity: Post.author.attributeID,
+              reverseIdentity: User.instantNamespace + "/posts",
+              linkNamespace: User.instantNamespace
+            )
+          ]
+        }
+        """
+      } expansion: {
+        """
+        struct Post {
+          var id: InstantID<Post>
+          var author: InstantID<User>
+
+          static let author = InstantAttributePath<Post, InstantID<User>>(
+            "author",
+            attributeID: "posts/writer"
+          )
+
+          static let instantAttributes = [
+            InstantAttribute(
+              id: Post.author.attributeID,
+              namespace: Post.instantNamespace,
+              name: Post.author.name,
+              valueType: .ref,
+              forwardIdentity: Post.author.attributeID,
+              reverseIdentity: User.instantNamespace + "/posts",
+              linkNamespace: User.instantNamespace
+            )
+          ]
 
           public static var instantNamespace: String {
             "posts"
           }
 
+          public static let `posts` = InstantReverseRelation<User, Post>(attribute: Post.author)
+
           public struct Draft: InstantEntityDraft {
             public typealias Entity = Post
             public var id: Post.ID? = nil
 
+            public var author: InstantID<User>
 
             public init(
-              id: Post.ID? = nil
+              id: Post.ID? = nil,
+              author: InstantID<User>
             ) {
               self.id = id
+              self.author = author
             }
 
             public init(_ entity: Post) {
               self.id = entity.id
+              self.author = entity.author
             }
 
             public var instantAssignments: [InstantAttributeAssignment<Post>] {
               [
-
+              InstantAttributeAssignment<Post>(
+                name: "author",
+                attributeID: Post.instantAttributes
+                  .first(where: {
+                    $0.name == "author"
+                  })?.id
+                  ?? Post.instantNamespace + "/author",
+                value: self.author.instantValue
+              )
               ]
             }
           }

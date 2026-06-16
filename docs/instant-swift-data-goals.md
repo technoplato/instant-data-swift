@@ -254,14 +254,19 @@ transport objects into feature code.
 - Generate `Entity.Draft` for primary-keyed `@InstantEntity` models. A draft's
   `id` must be optional, `Draft(existingEntity)` must copy persisted values for
   edit flows, and the memberwise initializer must support new drafts whose id is
-  omitted so the client can allocate the Instant id at save time.
+  omitted so the client can allocate the Instant id at save time. Entities that
+  declare the primary key as immutable `let id` must receive the same generated
+  draft surface.
 - Generated drafts should include only writable stored fields, should not emit
   the managed Instant id as a normal attribute assignment, and should not conform
   to `Identifiable` by default. UI examples may add their own stable local
   editing identity when needed. Writable Instant ref fields must be included
   with their generated relation metadata so linked edit/create forms can save
-  relation drafts. Terminal validation should prove the summarized pending
-  mutation shape for nil-id creates and `Draft(existing)` edits.
+  and clear relation drafts. When `instantAttributes` is manual, relation draft
+  fields must also have an explicit static `InstantAttributePath`; the macro
+  should diagnose the missing path rather than silently omitting the draft
+  assignment. Terminal validation should prove the summarized pending mutation
+  shape for nil-id creates and `Draft(existing)` edits.
 
 ## Mutation Semantics
 

@@ -973,9 +973,14 @@ form flows. New drafts may omit `id`; saving allocates the Instant id and
 returns it, and draft assignments never write that managed id as a normal
 attribute. Optional writable fields default to `nil` even when the entity
 property does not spell out `= nil`, while non-optional fields keep their Swift
-defaults or remain required. Writable Instant ref fields are included with their
-relation metadata so linked entity forms can save relation drafts. Edit drafts
-copy an existing entity and save back through the same typed mutation surface:
+defaults or remain required. Primary keys may be declared as immutable `let id`
+properties. Writable Instant ref fields are included with their relation
+metadata so linked entity forms can save, replace, or clear relation drafts.
+When `instantAttributes` is declared manually, any `@InstantRelation` draft field
+must also declare a matching static `InstantAttributePath`; otherwise the macro
+diagnoses the missing path instead of silently omitting the draft assignment.
+Edit drafts copy an existing entity and save back through the same typed
+mutation surface:
 
 ```swift
 var draft = Todo.Draft(

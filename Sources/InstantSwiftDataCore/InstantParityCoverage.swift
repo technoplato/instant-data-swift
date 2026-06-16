@@ -2804,10 +2804,10 @@ public enum InstantSwiftDataParityCoverage {
       sourceFile: "upstream/sqlite-data/Sources/SQLiteData/Documentation.docc/Articles/AddingToGRDB.md",
       sourceTestName: "@Table generated Draft type",
       swiftFile: "Tests/InstantSwiftDataMacrosTests/InstantEntityMacroTests.swift",
-      swiftTestName: "testGeneratedDraft",
+      swiftTestName: "testGeneratedDraft + testGeneratedDraftAcceptsLetInstantPrimaryKey",
       surface: "drafts",
       status: .adapted,
-      notes: "@InstantEntity generates an InstantEntityDraft with optional id, defaulted memberwise init, init(_ entity), and writable assignments; unlike SQLiteData TableDrafts, Instant drafts are write values rather than query tables."
+      notes: "@InstantEntity generates an InstantEntityDraft with optional id, defaulted memberwise init, init(_ entity), immutable let-id primary key support, and writable assignments; unlike SQLiteData TableDrafts, Instant drafts are write values rather than query tables."
     ),
     sqlite(
       id: "sqlite.draft.nil-id-create",
@@ -2837,7 +2837,7 @@ public enum InstantSwiftDataParityCoverage {
       swiftTestName: "generatedDraftExcludesUndeclaredStoredFieldsFromAssignments",
       surface: "drafts",
       status: .adapted,
-      notes: "Manual Instant attributes constrain generated Draft assignments so local or server-managed stored fields stay out of create/edit payloads."
+      notes: "Manual Instant attributes constrain generated Draft assignments so local or server-managed stored fields stay out of create/edit payloads; manual relation fields require explicit InstantAttributePath declarations so draft relation assignments are never silently dropped."
     ),
     sqlite(
       id: "sqlite.draft.transaction-composition",
@@ -2853,11 +2853,11 @@ public enum InstantSwiftDataParityCoverage {
       id: "sqlite.draft.relation-ref-save",
       sourceFile: "upstream/sqlite-data/Examples/Reminders/ReminderForm.swift + upstream/sqlite-data/Examples/SyncUps/SyncUpForm.swift",
       sourceTestName: "ReminderTag.Draft(reminderID:tagID:) and Attendee.Draft(name:syncUpID:) save relation rows after parent draft ids exist",
-      swiftFile: "Sources/InstantSwiftData/InstantDraftValidation.swift",
-      swiftTestName: "draftValidationProvesGeneratedCreateEditAndRelaunch + cliValidationTypedDraftsEmitsEvidence",
+      swiftFile: "Sources/InstantSwiftData/InstantDraftValidation.swift + Tests/InstantSwiftDataTests/TypedAPITests.swift",
+      swiftTestName: "draftValidationProvesGeneratedCreateEditAndRelaunch + cliValidationTypedDraftsEmitsEvidence + generatedDraftSaveCreatesEditsAndClearsOptionalRelations",
       surface: "drafts",
       status: .adapted,
-      notes: "Typed draft validation saves an author draft and post draft through generated Instant refs, proves the writable relation assignment metadata, emits the ref-bearing pending mutation summary, and relaunches from the persisted relation rows."
+      notes: "Typed draft validation saves an author draft and post draft through generated Instant refs, proves the writable relation assignment metadata, emits the ref-bearing pending mutation summary, relaunches from the persisted relation rows, and covers optional relation drafts that save and clear refs."
     ),
     sqlite(
       id: "sqlite.reminders.search-tags",

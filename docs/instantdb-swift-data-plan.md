@@ -595,14 +595,19 @@ materializes Swift values from those triples.
 
 `@InstantEntity` should generate SQLiteData-style `Draft` types for
 primary-keyed entities. Draft ids are optional, new forms can omit the id,
-`Draft(existing)` supports edit flows, and saving a nil-id draft allocates a
-durable Instant id through the client/runtime rather than treating the id as a
-normal writable attribute. `InstantSwiftDataClient.transact(saving:)` mirrors
-SQLiteData form saves that upsert a draft, use the returned id, and write related
-rows inside the same database write. The `typed-drafts` validation now also
-saves a macro-generated draft with a writable `@InstantRelation` ref field and
-verifies the generated ref metadata and summarized pending mutation payload
-shape so relation form flows have terminal JSONL evidence.
+entities may declare immutable `let id` primary keys, `Draft(existing)` supports
+edit flows, and saving a nil-id draft allocates a durable Instant id through the
+client/runtime rather than treating the id as a normal writable attribute.
+`InstantSwiftDataClient.transact(saving:)` mirrors SQLiteData form saves that
+upsert a draft, use the returned id, and write related rows inside the same
+database write. Writable optional relation drafts must save and clear refs.
+Manual `instantAttributes` schemas must declare explicit static
+`InstantAttributePath` values for relation draft fields; missing paths should be
+diagnosed rather than silently dropping draft assignments. The `typed-drafts`
+validation now also saves a macro-generated draft with a writable
+`@InstantRelation` ref field and verifies the generated ref metadata and
+summarized pending mutation payload shape so relation form flows have terminal
+JSONL evidence.
 
 ## SQLiteData Audit Notes
 

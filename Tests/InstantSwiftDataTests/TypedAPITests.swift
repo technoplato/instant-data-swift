@@ -1920,6 +1920,134 @@ struct TypedAPITests {
   }
 
   @Test
+  func generatedDraftSupportsImmutableInstantPrimaryKeys() async throws {
+    try await withDependencies {
+      try await $0.bootstrapInstantSwiftData(
+        appID: "typed-immutable-id-draft-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: ImmutableIDDraftTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      let draft = ImmutableIDDraftTodo.Draft(title: "Create immutable id draft")
+      expectNoDifference(draft.id, nil)
+      expectNoDifference(draft.instantAssignments.map(\.attributeID), [
+        "immutableIDDraftTodos/title"
+      ])
+
+      let createdID = try await db.save(
+        draft,
+        localIDName: "typed.drafts.immutable-id",
+        transactionID: "tx-draft-immutable-id-create"
+      )
+      expectNoDifference(createdID.rawValue.isEmpty, false)
+
+      let createdTodos = try await db.query(
+        ImmutableIDDraftTodo.query.order(ImmutableIDDraftTodo.title)
+      )
+      var editDraft = ImmutableIDDraftTodo.Draft(try #require(createdTodos.first))
+      editDraft.title = "Edit immutable id draft"
+      let editedID = try await db.save(
+        editDraft,
+        transactionID: "tx-draft-immutable-id-edit"
+      )
+      expectNoDifference(editedID, createdID)
+
+      let todos = try await db.query(ImmutableIDDraftTodo.query.order(ImmutableIDDraftTodo.title))
+      expectNoDifference(todos, [
+        ImmutableIDDraftTodo(id: createdID, title: "Edit immutable id draft")
+      ])
+    }
+  }
+
+  @Test
+  func generatedDraftSaveCreatesEditsAndClearsOptionalRelations() async throws {
+    let authorID = InstantID<MacroGeneratedOptionalUser>(rawValue: "optional-draft-author")
+    let postID = InstantID<MacroGeneratedOptionalPost>(rawValue: "optional-draft-post")
+    let initialAttributes =
+      MacroGeneratedOptionalUser.instantAttributes
+      + MacroGeneratedOptionalPost.instantAttributes
+
+    try await withDependencies {
+      try await $0.bootstrapInstantSwiftData(
+        appID: "typed-optional-relation-draft-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: initialAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      try await db.save(
+        MacroGeneratedOptionalUser.Draft(id: authorID, name: "Optional draft author"),
+        transactionID: "tx-draft-optional-author"
+      )
+
+      let linkedDraft = MacroGeneratedOptionalPost.Draft(
+        id: postID,
+        title: "Linked optional relation",
+        author: authorID
+      )
+      expectNoDifference(linkedDraft.instantAssignments.map(\.attributeID), [
+        "macroGeneratedOptionalPosts/title",
+        "macroGeneratedOptionalPosts/author",
+      ])
+      expectNoDifference(linkedDraft.instantAssignments.map(\.value), [
+        .string("Linked optional relation"),
+        .ref(authorID.rawValue),
+      ])
+
+      let linkedID = try await db.save(
+        linkedDraft,
+        transactionID: "tx-draft-optional-post-link"
+      )
+      expectNoDifference(linkedID, postID)
+
+      let linkedPosts = try await db.query(
+        MacroGeneratedOptionalPost.query.order(MacroGeneratedOptionalPost.title)
+      )
+      expectNoDifference(linkedPosts, [
+        MacroGeneratedOptionalPost(
+          id: postID,
+          title: "Linked optional relation",
+          author: authorID
+        )
+      ])
+
+      var editDraft = MacroGeneratedOptionalPost.Draft(try #require(linkedPosts.first))
+      editDraft.title = "Cleared optional relation"
+      editDraft.author = nil
+      let editedID = try await db.save(
+        editDraft,
+        transactionID: "tx-draft-optional-post-clear"
+      )
+      expectNoDifference(editedID, postID)
+      expectNoDifference(editDraft.instantAssignments.map(\.value), [
+        .string("Cleared optional relation"),
+        .null,
+      ])
+
+      let clearedPosts = try await db.query(
+        MacroGeneratedOptionalPost.query.order(MacroGeneratedOptionalPost.title)
+      )
+      expectNoDifference(clearedPosts, [
+        MacroGeneratedOptionalPost(
+          id: postID,
+          title: "Cleared optional relation",
+          author: nil
+        )
+      ])
+
+      let pending = await db.pendingMutations()
+      expectNoDifference(pending.map(\.id), [
+        "tx-draft-optional-author",
+        "tx-draft-optional-post-link",
+        "tx-draft-optional-post-clear",
+      ])
+    }
+  }
+
+  @Test
   func generatedDraftSaveComposesRelatedMutationsInOneTransaction()
     async throws
   {
@@ -8191,6 +8319,16 @@ private struct MacroGeneratedOptionalPost: Hashable, Codable, InstantEntityModel
   @InstantRelation(reverse: "posts")
   var author: InstantID<MacroGeneratedOptionalUser>?
 
+  init(
+    id: InstantID<MacroGeneratedOptionalPost>,
+    title: String,
+    author: InstantID<MacroGeneratedOptionalUser>?
+  ) {
+    self.id = id
+    self.title = title
+    self.author = author
+  }
+
   init(snapshot: InstantEntitySnapshot) throws {
     self.id = InstantID(rawValue: snapshot.id)
     if case let .string(title) = snapshot.values["title"]?.first {
@@ -8245,6 +8383,37 @@ private struct DraftWithUndeclaredFieldTodo: Hashable, Codable, InstantEntityMod
         message: "Expected string for draft-with-undeclared-field todo field 'title'.",
         recovery:
           "Check the Instant entity schema and server values for the draft-with-undeclared-field todo namespace."
+      )
+    }
+    self.id = InstantID(rawValue: snapshot.id)
+    self.title = title
+  }
+}
+
+@InstantEntity
+private struct ImmutableIDDraftTodo: Hashable, Codable, InstantEntityModel {
+  let id: InstantID<ImmutableIDDraftTodo>
+  var title: String
+
+  init(
+    id: InstantID<ImmutableIDDraftTodo>,
+    title: String
+  ) {
+    self.id = id
+    self.title = title
+  }
+
+  init(snapshot: InstantEntitySnapshot) throws {
+    guard case let .string(title) = snapshot.values["title"]?.first else {
+      throw InstantError(
+        code: .decodeFailed,
+        operation: "decode immutable-id draft todo",
+        namespace: Self.instantNamespace,
+        path: "title",
+        localID: snapshot.id,
+        message: "Expected string for immutable-id draft todo field 'title'.",
+        recovery:
+          "Check the Instant entity schema and server values for the immutable-id draft todo namespace."
       )
     }
     self.id = InstantID(rawValue: snapshot.id)
