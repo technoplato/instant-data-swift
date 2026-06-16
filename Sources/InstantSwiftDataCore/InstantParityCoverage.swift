@@ -538,6 +538,86 @@ public enum InstantSwiftDataParityCoverage {
         "InstantSwiftDataClient and @InfiniteQuery expose decoded values, pageInfo, loadNextPage, idempotent cancellation, projected bindings, recoverable error-state snapshots, and stale pending subscription/load protection."
     ),
     instant(
+      id: "instant.svelte.infinite-query-starts-loading",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "useInfiniteQuery starts in loading state",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "infiniteQueryWrapperTaskCancellationBeforeSubscribeReturnsCancelsSubscription",
+      surface: "adapter-infinite-query",
+      status: .adapted,
+      notes:
+        "Swift adapts Svelte's initial store state as @InfiniteQuery isLoading=true with empty values, nil error, and canLoadNextPage=false while the subscription task is pending."
+    ),
+    instant(
+      id: "instant.svelte.infinite-query-subscribes-on-mount",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "useInfiniteQuery subscribes to core on mount",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName:
+        "infiniteQueryWrapperTaskCancellationBeforeSubscribeReturnsCancelsSubscription + infiniteQueryWrapperTaskReplacementIgnoresPendingSubscribe",
+      surface: "adapter-infinite-query",
+      status: .adapted,
+      notes:
+        "Swift's task(using:) lifecycle starts an Instant infinite-query subscription for a configured query and records the same subscribe boundary as the Svelte mount effect."
+    ),
+    instant(
+      id: "instant.svelte.infinite-query-updates-state",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "useInfiniteQuery updates state when result arrives",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "infiniteQueryWrapperTasksAndLoadsNextPageThroughProjectedState",
+      surface: "adapter-infinite-query",
+      status: .adapted,
+      notes:
+        "Swift applies incoming infinite-query snapshots to @InfiniteQuery wrapped values, pageInfo, canLoadNextPage, loading, and error state."
+    ),
+    instant(
+      id: "instant.svelte.infinite-query-load-next-page",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "useInfiniteQuery loadNextPage delegates to the active subscription",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName:
+        "typedInfiniteQuerySubscriptionDecodesAndLoadsNextPage + infiniteQueryWrapperTasksAndLoadsNextPageThroughProjectedState + infiniteQueryWrapperCancelIsIdempotentAndStopsLoading",
+      surface: "adapter-infinite-query",
+      status: .adapted,
+      notes:
+        "Swift exposes loadNextPage on both decoded subscriptions and @InfiniteQuery, delegating only to the active subscription and ignoring calls after cancellation."
+    ),
+    instant(
+      id: "instant.svelte.infinite-query-unsubscribes-on-cleanup",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "useInfiniteQuery unsubscribes on cleanup",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName:
+        "infiniteQueryWrapperCancelIsIdempotentAndStopsLoading + infiniteQueryWrapperTaskCancellationBeforeSubscribeReturnsCancelsSubscription",
+      surface: "adapter-infinite-query",
+      status: .adapted,
+      notes:
+        "Swift cleanup is modeled by canceling the wrapper task or subscription, which cancels the underlying active infinite-query observation exactly once."
+    ),
+    instant(
+      id: "instant.svelte.infinite-query-null-query",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "useInfiniteQuery handles null query",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "infiniteQueryWrapperNilQuerySubscribeAndTaskDoNotStartObservation",
+      surface: "adapter-infinite-query",
+      status: .adapted,
+      notes:
+        "Swift adapts a null/function-returned-null query as nil InstantEntityQuery: subscribe(nil) returns a finished subscription, task(nil) clears loading/error/page state, and neither path calls the client."
+    ),
+    instant(
+      id: "instant.svelte.infinite-query-function-query-change",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "useInfiniteQuery re-subscribes when function query changes",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "infiniteQueryWrapperTaskReplacementIgnoresPendingSubscribe",
+      surface: "adapter-infinite-query",
+      status: .adapted,
+      notes:
+        "Swift models Svelte's reactive function query by replacing @InfiniteQuery tasks with a new query, canceling the stale subscription, ignoring stale emissions, and routing loadNextPage to the latest subscription."
+    ),
+    instant(
       id: "instant.reactor.query-subs-round-trips",
       sourceFile: reactorSource,
       sourceTestName: "querySubs round-trips",
@@ -2510,6 +2590,8 @@ public enum InstantSwiftDataParityCoverage {
     "upstream/instant/client/packages/core/__tests__/src/infiniteQuery.e2e.test.ts + upstream/instant/client/packages/core/src/infiniteQuery.ts"
   private static let infiniteQueryAdapterSource =
     "upstream/instant/client/packages/react-common/src/useInfiniteQuerySubscription.ts + upstream/instant/client/packages/core/src/infiniteQuery.ts"
+  private static let svelteAdapterSource =
+    "upstream/instant/client/packages/svelte/src/tests/InstantSvelteDatabase.svelte.test.ts"
   private static let reactorSource =
     "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts"
   private static let instamlSource =

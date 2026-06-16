@@ -1341,9 +1341,9 @@ struct LocalTodoValidationTests {
 
     expectNoDifference(run.result.event, "parity-report")
     expectNoDifference(run.result.coverageComplete, false)
-    expectNoDifference(run.result.recordCount, 228)
+    expectNoDifference(run.result.recordCount, 235)
     expectNoDifference(run.result.exactCount, 28)
-    expectNoDifference(run.result.adaptedCount, 197)
+    expectNoDifference(run.result.adaptedCount, 204)
     expectNoDifference(run.result.blockedCount, 2)
     expectNoDifference(run.result.notApplicableCount, 1)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
@@ -1484,6 +1484,13 @@ struct LocalTodoValidationTests {
       "instant.infinite-query.page-size-one-asc",
       "instant.infinite-query.page-size-one-desc",
       "instant.infinite-query.typed-client-adapter",
+      "instant.svelte.infinite-query-starts-loading",
+      "instant.svelte.infinite-query-subscribes-on-mount",
+      "instant.svelte.infinite-query-updates-state",
+      "instant.svelte.infinite-query-load-next-page",
+      "instant.svelte.infinite-query-unsubscribes-on-cleanup",
+      "instant.svelte.infinite-query-null-query",
+      "instant.svelte.infinite-query-function-query-change",
     ] {
       #expect(
         run.result.records.contains { $0.id == id && $0.status == .adapted },
@@ -1740,7 +1747,7 @@ struct LocalTodoValidationTests {
     expectNoDifference(platformAdapterBinding.status, .adapted)
     expectNoDifference(
       platformAdapterBinding.notes,
-      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares, plus dynamic InfiniteQuery and live wrapper replacement/cancellation evidence."
+      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, ConnectionStatus, room presence/topic messages, storage, streams, and shares, plus dynamic InfiniteQuery and live wrapper replacement/cancellation evidence."
     )
     #expect(
       run.result.records.contains {
@@ -1781,7 +1788,7 @@ struct LocalTodoValidationTests {
     )
 
     expectNoDifference(run.result.coverageComplete, true)
-    expectNoDifference(run.result.adaptedCount, 199)
+    expectNoDifference(run.result.adaptedCount, 206)
     expectNoDifference(run.result.blockedCount, 0)
     expectNoDifference(run.summary.ok, true)
     let swiftToTypeScript = try #require(
@@ -1820,7 +1827,7 @@ struct LocalTodoValidationTests {
     )
 
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 228)
+    expectNoDifference(rows.count, 235)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
@@ -1856,7 +1863,7 @@ struct LocalTodoValidationTests {
     expectNoDifference(platformAdapterBindingDetails["status"] as? String, "adapted")
     expectNoDifference(
       platformAdapterBindingDetails["notes"] as? String,
-      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares, plus dynamic InfiniteQuery and live wrapper replacement/cancellation evidence."
+      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, ConnectionStatus, room presence/topic messages, storage, streams, and shares, plus dynamic InfiniteQuery and live wrapper replacement/cancellation evidence."
     )
 
     let first = try #require(rows.first)
@@ -1893,9 +1900,9 @@ struct LocalTodoValidationTests {
     expectNoDifference(details["event"] as? String, "coverage")
     expectNoDifference(details["ok"] as? Bool, false)
     expectNoDifference(details["coverageComplete"] as? Bool, false)
-    expectNoDifference((details["recordCount"] as? NSNumber)?.intValue, 228)
+    expectNoDifference((details["recordCount"] as? NSNumber)?.intValue, 235)
     expectNoDifference((details["exactCount"] as? NSNumber)?.intValue, 28)
-    expectNoDifference((details["adaptedCount"] as? NSNumber)?.intValue, 197)
+    expectNoDifference((details["adaptedCount"] as? NSNumber)?.intValue, 204)
     expectNoDifference((details["blockedCount"] as? NSNumber)?.intValue, 2)
     expectNoDifference((details["notApplicableCount"] as? NSNumber)?.intValue, 1)
     expectNoDifference((details["swiftFileCount"] as? NSNumber)?.intValue, 24)

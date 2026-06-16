@@ -1022,6 +1022,10 @@ struct TypedAPITests {
     try await waitForTypedCondition(operation: "wait for pending infinite subscribe") {
       await recorder.counts().subscribeCount == 1
     }
+    expectNoDifference(infinite.isLoading, true)
+    expectNoDifference(infinite.wrappedValue, [])
+    expectNoDifference(infinite.loadError, nil)
+    expectNoDifference(infinite.canLoadNextPage, false)
 
     task.cancel()
     await recorder.releaseFirstSubscription()
@@ -1056,12 +1060,24 @@ struct TypedAPITests {
         await recorder.subscribe(plan: plan)
       }
     )
-    let infinite = InfiniteQuery<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt).limit(1))
+    let firstQuery = TypedTodo.query
+      .where(TypedTodo.isCompleted == false)
+      .order(TypedTodo.createdAt)
+      .limit(1)
+    let secondQuery = TypedTodo.query
+      .where(TypedTodo.isCompleted == true)
+      .order(TypedTodo.createdAt)
+      .limit(1)
+    let infinite = InfiniteQuery<TypedTodo>(nil as InstantEntityQuery<TypedTodo>?)
+
+    try await infinite.task(nil as InstantEntityQuery<TypedTodo>?, using: client)
+    let nilQueryCounts = await recorder.counts()
+    expectNoDifference(nilQueryCounts.subscribeCount, 0)
 
     let firstTask = Task {
       let infinite = infinite
       let client = client
-      try await infinite.task(using: client)
+      try await infinite.task(firstQuery, using: client)
     }
     defer {
       firstTask.cancel()
@@ -1074,7 +1090,7 @@ struct TypedAPITests {
     let secondTask = Task {
       let infinite = infinite
       let client = client
-      try await infinite.task(using: client)
+      try await infinite.task(secondQuery, using: client)
     }
     defer {
       secondTask.cancel()
@@ -1119,6 +1135,14 @@ struct TypedAPITests {
     let counts = await recorder.counts()
     expectNoDifference(counts.firstLoadNextPageCount, 0)
     expectNoDifference(counts.secondLoadNextPageCount, 1)
+    let subscribedPlans = await recorder.plans()
+    expectNoDifference(
+      subscribedPlans.map(\.filters),
+      [
+        [.equals(field: "isCompleted", value: .bool(false))],
+        [.equals(field: "isCompleted", value: .bool(true))],
+      ]
+    )
   }
 
   @Test
@@ -1286,6 +1310,83 @@ struct TypedAPITests {
     expectNoDifference(infinite.isLoading, false)
     expectNoDifference(infinite.pageInfo, nil)
     expectNoDifference(infinite.canLoadNextPage, false)
+  }
+
+  @Test
+  func infiniteQueryWrapperNilQuerySubscribeAndTaskDoNotStartObservation() async throws {
+    let recorder = InfiniteQueryLifecycleRecorder()
+    let client = infiniteQueryLifecycleClient(
+      subscribeInfiniteQuery: { plan in
+        await recorder.subscribe(plan: plan)
+      },
+      infiniteQueryInitialSnapshot: { _ in
+        typedInfiniteQuerySnapshot(
+          id: "unused-nil-infinite-load",
+          text: "Unused nil load",
+          sequence: 1
+        )
+      }
+    )
+    let infinite = InfiniteQuery<TypedTodo>(
+      wrappedValue:
+      [
+        TypedTodo(
+          id: InstantID(rawValue: "todo-infinite-nil-cached"),
+          text: "Cached before nil",
+          isCompleted: false,
+          createdAt: Date(timeIntervalSince1970: 1_700_000_451)
+        )
+      ],
+      TypedTodo.query.order(TypedTodo.createdAt).limit(1)
+    )
+    infinite.loadError = InstantError(
+      code: .validationFailed,
+      operation: "cached infinite query",
+      message: "Cached error before nil query.",
+      recovery: "Clear the dynamic query."
+    )
+    infinite.isLoading = true
+    infinite.pageInfo = InstantQueryPageInfo(
+      startCursor: nil,
+      endCursor: nil,
+      hasPreviousPage: false,
+      hasNextPage: true
+    )
+    infinite.canLoadNextPage = true
+
+    let subscription = try await infinite.subscribe(
+      nil as InstantEntityQuery<TypedTodo>?,
+      using: client
+    )
+    var iterator = subscription.makeAsyncIterator()
+    let finishedSnapshot = try await iterator.next()
+    expectNoDifference(finishedSnapshot, nil)
+    subscription.loadNextPage()
+
+    expectNoDifference(infinite.wrappedValue.map(\.text), [])
+    expectNoDifference(infinite.loadError, nil)
+    expectNoDifference(infinite.isLoading, false)
+    expectNoDifference(infinite.pageInfo, nil)
+    expectNoDifference(infinite.canLoadNextPage, false)
+    let countsAfterSubscribe = await recorder.counts()
+    expectNoDifference(countsAfterSubscribe.subscribeCount, 0)
+
+    try await infinite.task(nil as InstantEntityQuery<TypedTodo>?, using: client)
+    expectNoDifference(infinite.wrappedValue.map(\.text), [])
+    expectNoDifference(infinite.loadError, nil)
+    expectNoDifference(infinite.isLoading, false)
+    expectNoDifference(infinite.pageInfo, nil)
+    expectNoDifference(infinite.canLoadNextPage, false)
+    let countsAfterTask = await recorder.counts()
+    expectNoDifference(countsAfterTask.subscribeCount, 0)
+
+    infinite.loadNextPage()
+    let counts = await recorder.counts()
+    expectNoDifference(counts.subscribeCount, 0)
+    expectNoDifference(counts.firstLoadNextPageCount, 0)
+    expectNoDifference(counts.secondLoadNextPageCount, 0)
+    expectNoDifference(counts.firstUnsubscribeCount, 0)
+    expectNoDifference(counts.secondUnsubscribeCount, 0)
   }
 
   @Test
@@ -6616,6 +6717,7 @@ private actor InfiniteQueryLifecycleRecorder {
   private var secondLoadNextPageCount = 0
   private var firstUnsubscribeCount = 0
   private var secondUnsubscribeCount = 0
+  private var capturedPlans: [InstantQueryPlan] = []
   private var firstContinuation: CheckedContinuation<InstantInfiniteQuerySubscription, Never>?
   private let firstStream = AsyncStream<InstantInfiniteQuerySnapshot>.makeStream(
     bufferingPolicy: .bufferingNewest(1)
@@ -6631,6 +6733,7 @@ private actor InfiniteQueryLifecycleRecorder {
 
   func subscribe(plan: InstantQueryPlan) async -> InstantInfiniteQuerySubscription {
     subscribeCount += 1
+    capturedPlans.append(plan)
     switch subscribeCount {
     case 1:
       return await withCheckedContinuation { continuation in
@@ -6666,6 +6769,10 @@ private actor InfiniteQueryLifecycleRecorder {
       firstUnsubscribeCount,
       secondUnsubscribeCount
     )
+  }
+
+  func plans() -> [InstantQueryPlan] {
+    capturedPlans
   }
 
   private func subscription(name: SubscriptionName) -> InstantInfiniteQuerySubscription {
