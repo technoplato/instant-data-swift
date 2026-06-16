@@ -2220,7 +2220,7 @@ public enum InstantSwiftDataParityCoverage {
       swiftTestName: "Swift/TypeScript real-run validation",
       surface: "live-transport",
       status: .blocked,
-      notes: "The TypeScript fixture runner is present, but Swift live subscription against a real Instant app remains incomplete."
+      notes: "Swift now has a local server-applied transaction loopback that persists inbound triples, publishes observers, advances the processed checkpoint, and preserves the optimistic outbox; real TypeScript-to-Swift WebSocket delivery against an Instant app remains incomplete."
     ),
     instant(
       id: "instant.recipe.auth.local-cli",

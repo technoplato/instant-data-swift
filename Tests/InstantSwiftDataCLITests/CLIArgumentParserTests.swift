@@ -3212,6 +3212,13 @@ struct CLIArgumentParserTests {
     expectNoDifference(try parseValidation(["integrations"]), .localIntegrations)
     expectNoDifference(try parseValidation(["reminders"]), .reminders)
     expectNoDifference(try parseValidation(["local-reminders"]), .reminders)
+    expectNoDifference(
+      try parseValidation(["server-transaction-loopback"]),
+      .serverTransactionLoopback
+    )
+    expectNoDifference(try parseValidation(["server-loopback"]), .serverTransactionLoopback)
+    expectNoDifference(try parseValidation(["transport-loopback"]), .serverTransactionLoopback)
+    expectNoDifference(try parseValidation(["inbound-loopback"]), .serverTransactionLoopback)
     expectNoDifference(try parseValidation(["typed-drafts"]), .typedDrafts)
     expectNoDifference(try parseValidation(["drafts"]), .typedDrafts)
     expectNoDifference(try parseValidation(["platform-adapters"]), .platformAdapters)
@@ -3230,6 +3237,11 @@ struct CLIArgumentParserTests {
   func validationParserReportsMalformedArguments() throws {
     #expect(CLIValidationUsage.validation.contains("parity-report|coverage"))
     #expect(CLIValidationUsage.validation.contains("validation reminders [--json|--jsonl]"))
+    #expect(
+      CLIValidationUsage.validation.contains(
+        "validation server-transaction-loopback [--json|--jsonl]"
+      )
+    )
     #expect(CLIValidationUsage.validation.contains("validation coverage [--json|--jsonl]"))
     try expectValidationParseError([], description: CLIValidationUsage.validation)
     try expectValidationParseError(["remote"], description: CLIValidationUsage.validation)
@@ -3243,6 +3255,15 @@ struct CLIArgumentParserTests {
     expectNoDifference(try parseValidationRunner(["--local-integrations"]), .localIntegrations)
     expectNoDifference(try parseValidationRunner(["--reminders"]), .reminders)
     expectNoDifference(try parseValidationRunner(["--local-reminders"]), .reminders)
+    expectNoDifference(
+      try parseValidationRunner(["--server-transaction-loopback"]),
+      .serverTransactionLoopback
+    )
+    expectNoDifference(try parseValidationRunner(["--server-loopback"]), .serverTransactionLoopback)
+    expectNoDifference(
+      try parseValidationRunner(["--transport-loopback"]),
+      .serverTransactionLoopback
+    )
     expectNoDifference(try parseValidationRunner(["--typed-drafts"]), .typedDrafts)
     expectNoDifference(try parseValidationRunner(["--platform-adapters"]), .platformAdapters)
     expectNoDifference(try parseValidationRunner(["--syncups-recording"]), .syncUpsRecording)

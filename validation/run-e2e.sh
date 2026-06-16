@@ -366,6 +366,25 @@ else
   exit "${status}"
 fi
 
+log_json "swift-server-transaction-loopback-start" true
+if (
+  cd "${ROOT}"
+  swift run instant-swift-data-validation-runner --server-transaction-loopback
+) | tee "${RESULTS_DIR}/swift-server-transaction-loopback.jsonl"; then
+  log_json "swift-server-transaction-loopback-complete" true "$(json_object "path" "${RESULTS_DIR}/swift-server-transaction-loopback.jsonl")"
+else
+  status=$?
+  log_json \
+    "swift-server-transaction-loopback-failed" \
+    false \
+    "$(json_failure_details "${RESULTS_DIR}/swift-server-transaction-loopback.jsonl" "${status}")"
+  log_json \
+    "complete" \
+    false \
+    "$(printf '{"resultsDir":%s,"failed":"swift-server-transaction-loopback","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+  exit "${status}"
+fi
+
 log_json "swift-reminders-start" true
 if (
   cd "${ROOT}"

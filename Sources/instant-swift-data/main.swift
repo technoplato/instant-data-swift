@@ -241,6 +241,24 @@ struct InstantSwiftDataCLI {
         throw error
       }
 
+    case .serverTransactionLoopback:
+      let appID = validationAppID(defaultAppID: "server-transaction-loopback-validation")
+      do {
+        let result = try await InstantSwiftDataServerTransactionLoopbackValidation.run(appID: appID)
+        try printServerTransactionLoopbackValidation(result: result, output: output)
+      } catch {
+        if output == .jsonl {
+          try writeJSONLine(
+            validationFailureRow(
+              caseID: "validation.server.transaction.loopback",
+              appID: appID,
+              error: error
+            )
+          )
+        }
+        throw error
+      }
+
     case .parityReport:
       let appID = validationAppID()
       try printParityCoverageReport(
@@ -8554,6 +8572,7 @@ struct InstantSwiftDataCLI {
         validation local-todos [--json|--jsonl]
         validation local-integrations [--json|--jsonl]
         validation reminders [--json|--jsonl]
+        validation server-transaction-loopback [--json|--jsonl]
         validation typed-drafts [--json|--jsonl]
         validation platform-adapters [--json|--jsonl]
         validation syncups-recording [--json|--jsonl]
@@ -9065,6 +9084,52 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func printServerTransactionLoopbackValidation(
+    result: ServerTransactionLoopbackValidationResult,
+    output: OutputMode
+  ) throws {
+    let finalDetails = result.evidence.last?.details
+    let summary = ServerTransactionLoopbackValidationOutput(
+      appID: result.appID,
+      cachePath: result.cacheURL.path,
+      event: "server-transaction-loopback",
+      transport: "local-server-transaction-loopback",
+      ok: result.evidence.allSatisfy { $0.ok },
+      evidenceCount: result.evidence.count,
+      events: result.evidence.map(\.event),
+      todoIDs: finalDetails?.todoIDs ?? [],
+      pendingMutationIDs: finalDetails?.pendingMutationIDs ?? [],
+      processedTransactionID: finalDetails?.processedTransactionID,
+      mutationTransactionID: finalDetails?.mutationTransactionID,
+      changedEntityIDs: finalDetails?.changedEntityIDs ?? [],
+      emissionQueryIDs: finalDetails?.emissionQueryIDs ?? [],
+      pendingMutationCount: finalDetails?.pendingMutationCount ?? 0,
+      storeRevision: finalDetails?.storeRevision ?? 0,
+      outboxRevision: finalDetails?.outboxRevision ?? 0
+    )
+
+    switch output {
+    case .human:
+      print("validation: \(summary.ok ? "ok" : "failed")")
+      print("case: validation.server.transaction.loopback")
+      print("events: \(summary.events.joined(separator: ", "))")
+      print("evidence rows: \(summary.evidenceCount)")
+      print("processed transaction: \(summary.processedTransactionID ?? "")")
+      print("pending mutations: \(summary.pendingMutationCount)")
+      print("revisions: store \(summary.storeRevision), outbox \(summary.outboxRevision)")
+      print("todos: \(summary.todoIDs.joined(separator: ", "))")
+      print("cache: \(summary.cachePath)")
+
+    case .json:
+      try writeJSON(summary)
+
+    case .jsonl:
+      for row in result.evidence {
+        try writeJSONLine(row)
+      }
+    }
+  }
+
   private static func printDraftValidation(
     result: DraftValidationResult,
     output: OutputMode
@@ -9356,11 +9421,11 @@ struct InstantSwiftDataCLI {
     }
   }
 
-  private static func validationAppID() -> String {
+  private static func validationAppID(defaultAppID: String = "local-demo") -> String {
     let appID = ProcessInfo.processInfo.environment["INSTANT_APP_ID"]?
       .trimmingCharacters(in: .whitespacesAndNewlines)
     guard let appID, !appID.isEmpty else {
-      return "local-demo"
+      return defaultAppID
     }
     return appID
   }
@@ -11271,6 +11336,25 @@ private struct RemindersValidationOutput: Codable, Sendable {
   var rejectedOperations: [String]
   var pendingMutationCount: Int
   var stats: RemindersStats
+}
+
+private struct ServerTransactionLoopbackValidationOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var transport: String
+  var ok: Bool
+  var evidenceCount: Int
+  var events: [String]
+  var todoIDs: [String]
+  var pendingMutationIDs: [String]
+  var processedTransactionID: String?
+  var mutationTransactionID: String?
+  var changedEntityIDs: [String]
+  var emissionQueryIDs: [String]
+  var pendingMutationCount: Int
+  var storeRevision: Int64
+  var outboxRevision: Int64
 }
 
 private struct DraftValidationOutput: Codable, Sendable {

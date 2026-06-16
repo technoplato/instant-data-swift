@@ -125,6 +125,54 @@ struct LocalTodoValidationTests {
   }
 
   @Test
+  func serverTransactionLoopbackValidationProducesEvidenceAndPreservesOutbox() async throws {
+    let cacheURL = temporaryCacheURL()
+
+    let run = try await InstantSwiftDataTestHarness.runServerTransactionLoopbackValidation(
+      appID: "validation-server-loopback-test",
+      cacheURL: cacheURL,
+      timestamp: { InstantTimestamp(milliseconds: 1_700_002_000_000) }
+    )
+    let result = run.result
+
+    expectNoDifference(result.appID, "validation-server-loopback-test")
+    expectNoDifference(result.cacheURL, cacheURL)
+    expectNoDifference(run.summary.caseID, "validation.server.transaction.loopback")
+    expectNoDifference(run.summary.rowCount, 4)
+    expectNoDifference(run.summary.ok, true)
+    expectNoDifference(
+      run.summary.events,
+      ["local-outbox", "server-apply", "observer-publish", "relaunch"]
+    )
+    expectNoDifference(result.evidence.map(\.event), run.summary.events)
+    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 4))
+
+    let serverApply = try #require(result.evidence.first { $0.event == "server-apply" }?.details)
+    let localOutbox = try #require(result.evidence.first { $0.event == "local-outbox" }?.details)
+    expectNoDifference(serverApply.changedEntityIDs, ["validation-loopback-server"])
+    expectNoDifference(serverApply.emissionQueryIDs, [TodoExample.query.id])
+    expectNoDifference(serverApply.pendingMutationIDs, ["validation.loopback.local"])
+    expectNoDifference(serverApply.processedTransactionID, "validation.loopback.server")
+    expectNoDifference(serverApply.storeRevision, localOutbox.storeRevision + 1)
+    expectNoDifference(serverApply.outboxRevision, localOutbox.outboxRevision)
+
+    let observerPublish = try #require(
+      result.evidence.first { $0.event == "observer-publish" }?.details
+    )
+    expectNoDifference(
+      observerPublish.observerTodoIDs,
+      ["validation-loopback-local", "validation-loopback-server"]
+    )
+
+    let finalDetails = try #require(result.evidence.last?.details)
+    expectNoDifference(finalDetails.todoIDs, ["validation-loopback-local", "validation-loopback-server"])
+    expectNoDifference(finalDetails.pendingMutationIDs, ["validation.loopback.local"])
+    expectNoDifference(finalDetails.pendingMutationCount, 1)
+    expectNoDifference(finalDetails.processedTransactionID, "validation.loopback.server")
+    expectNoDifference(finalDetails.outboxRevision, localOutbox.outboxRevision)
+  }
+
+  @Test
   func localIntegrationValidationProducesEvidenceAndPersistsLocalSurfaces() async throws {
     let cacheURL = temporaryCacheURL()
 

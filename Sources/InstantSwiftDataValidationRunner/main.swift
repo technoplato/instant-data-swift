@@ -71,6 +71,14 @@ struct InstantSwiftDataValidationRunner {
         try writeJSONLine(row)
       }
 
+    case .serverTransactionLoopback:
+      let run = try await InstantSwiftDataTestHarness.runServerTransactionLoopbackValidation(
+        appID: invocation.appID
+      )
+      for row in run.result.evidence {
+        try writeJSONLine(row)
+      }
+
     case .typedDrafts:
       let run = try await InstantSwiftDataTestHarness.runDraftValidation()
       for row in run.result.evidence {

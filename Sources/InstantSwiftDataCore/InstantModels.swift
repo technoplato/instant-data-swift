@@ -849,6 +849,22 @@ public struct InstantSyncState: Hashable, Codable, Sendable {
   }
 }
 
+public struct InstantServerTransactionApplicationResult: Hashable, Codable, Sendable {
+  public var mutation: InstantStoreMutationResult
+  public var syncState: InstantSyncState
+  public var pendingMutationCount: Int
+
+  public init(
+    mutation: InstantStoreMutationResult,
+    syncState: InstantSyncState,
+    pendingMutationCount: Int
+  ) {
+    self.mutation = mutation
+    self.syncState = syncState
+    self.pendingMutationCount = pendingMutationCount
+  }
+}
+
 public enum InstantQuerySortDirection: String, Codable, Sendable {
   case ascending
   case descending

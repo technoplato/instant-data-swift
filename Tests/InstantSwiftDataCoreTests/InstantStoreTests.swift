@@ -97,6 +97,230 @@ struct InstantStoreTests {
   }
 
   @Test
+  func serverTransactionPersistsPublishesCheckpointAndDoesNotAppendOutbox() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let localCreatedAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let serverCreatedAt = InstantTimestamp(milliseconds: localCreatedAt.milliseconds + 1)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "server-transaction-loopback",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-local",
+        operations: TodoExample.createOperations(
+          id: "todo-local",
+          text: "local optimistic write",
+          createdAt: localCreatedAt,
+          transactionID: "tx-local"
+        )
+      ),
+      createdAt: localCreatedAt
+    )
+
+    let stream = await runtime.observe(TodoExample.query)
+    var iterator = stream.makeAsyncIterator()
+    let initialEmission = try #require(await iterator.next())
+    expectNoDifference(
+      try TodoExample.decode(initialEmission.values),
+      [
+        TodoRecord(
+          id: "todo-local",
+          text: "local optimistic write",
+          isCompleted: false,
+          createdAt: localCreatedAt
+        )
+      ]
+    )
+    let pendingBeforeServerApply = await runtime.pendingMutations()
+    expectNoDifference(pendingBeforeServerApply.map(\.id), ["tx-local"])
+    let syncStateBeforeServerApply = try await runtime.syncState()
+    expectNoDifference(syncStateBeforeServerApply.processedTransactionID, nil)
+    let persistenceStateBeforeServerApply = try await runtime.persistence.loadState()
+
+    let result = try await runtime.applyServerTransaction(
+      InstantStoreTransaction(
+        id: " server-tx-1 ",
+        operations: TodoExample.createOperations(
+          id: "todo-server",
+          text: "server inbound write",
+          createdAt: serverCreatedAt,
+          transactionID: "server-tx-1"
+        )
+      ),
+      receivedAt: InstantTimestamp(milliseconds: serverCreatedAt.milliseconds + 1)
+    )
+
+    expectNoDifference(result.mutation.transactionID, "server-tx-1")
+    expectNoDifference(result.mutation.changedEntityIDs, Set(["todo-server"]))
+    expectNoDifference(result.mutation.emissions.map(\.queryID), [TodoExample.query.id])
+    expectNoDifference(result.syncState.processedTransactionID, "server-tx-1")
+    expectNoDifference(result.pendingMutationCount, 1)
+    let pendingAfterServerApply = await runtime.pendingMutations()
+    expectNoDifference(pendingAfterServerApply.map(\.id), ["tx-local"])
+    let syncStateAfterServerApply = try await runtime.syncState()
+    expectNoDifference(syncStateAfterServerApply.processedTransactionID, "server-tx-1")
+    let persistenceStateAfterServerApply = try await runtime.persistence.loadState()
+    expectNoDifference(
+      persistenceStateAfterServerApply.storeRevision,
+      persistenceStateBeforeServerApply.storeRevision + 1
+    )
+    expectNoDifference(
+      persistenceStateAfterServerApply.outboxRevision,
+      persistenceStateBeforeServerApply.outboxRevision
+    )
+
+    let update = try #require(await iterator.next())
+    expectNoDifference(
+      try TodoExample.decode(update.values),
+      [
+        TodoRecord(
+          id: "todo-local",
+          text: "local optimistic write",
+          isCompleted: false,
+          createdAt: localCreatedAt
+        ),
+        TodoRecord(
+          id: "todo-server",
+          text: "server inbound write",
+          isCompleted: false,
+          createdAt: serverCreatedAt
+        ),
+      ]
+    )
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "server-transaction-loopback",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let relaunchedTodos = try await TodoExample.decode(relaunchedRuntime.query(TodoExample.query))
+    expectNoDifference(
+      relaunchedTodos,
+      [
+        TodoRecord(
+          id: "todo-local",
+          text: "local optimistic write",
+          isCompleted: false,
+          createdAt: localCreatedAt
+        ),
+        TodoRecord(
+          id: "todo-server",
+          text: "server inbound write",
+          isCompleted: false,
+          createdAt: serverCreatedAt
+        ),
+      ]
+    )
+    let relaunchedPending = await relaunchedRuntime.pendingMutations()
+    expectNoDifference(relaunchedPending.map(\.id), ["tx-local"])
+    let relaunchedSyncState = try await relaunchedRuntime.syncState()
+    expectNoDifference(relaunchedSyncState.processedTransactionID, "server-tx-1")
+  }
+
+  @Test
+  func emptyServerTransactionUpdatesCheckpointWithoutOutboxOrStoreRevision() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "empty-server-transaction-loopback",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let before = try await runtime.persistence.loadState()
+
+    let result = try await runtime.applyServerTransaction(
+      InstantStoreTransaction(id: "server-empty-tx", operations: []),
+      receivedAt: InstantTimestamp(milliseconds: 1_700_000_000_000)
+    )
+
+    expectNoDifference(result.mutation.transactionID, "server-empty-tx")
+    expectNoDifference(result.mutation.changedEntityIDs, [])
+    expectNoDifference(result.mutation.emissions, [])
+    expectNoDifference(result.syncState.processedTransactionID, "server-empty-tx")
+    expectNoDifference(result.pendingMutationCount, 0)
+    let after = try await runtime.persistence.loadState()
+    expectNoDifference(after.storeRevision, before.storeRevision)
+    expectNoDifference(after.outboxRevision, before.outboxRevision)
+    expectNoDifference(after.snapshot.store, before.snapshot.store)
+    expectNoDifference(after.snapshot.outbox, [])
+    let syncState = try await runtime.syncState()
+    expectNoDifference(syncState.processedTransactionID, "server-empty-tx")
+  }
+
+  @Test
+  func staleRuntimeServerTransactionPreservesNewerPersistedOutbox() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let localCreatedAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let serverCreatedAt = InstantTimestamp(milliseconds: localCreatedAt.milliseconds + 1)
+    let staleRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "stale-server-transaction-loopback",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let writerRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "stale-server-transaction-loopback",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await writerRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-newer-local",
+        operations: TodoExample.createOperations(
+          id: "todo-newer-local",
+          text: "newer persisted local write",
+          createdAt: localCreatedAt,
+          transactionID: "tx-newer-local"
+        )
+      ),
+      createdAt: localCreatedAt
+    )
+    let persistedAfterWriter = try await writerRuntime.persistence.loadState()
+    expectNoDifference(persistedAfterWriter.snapshot.outbox.map(\.id), ["tx-newer-local"])
+    let initialStalePending = await staleRuntime.pendingMutations()
+    expectNoDifference(initialStalePending, [])
+
+    let result = try await staleRuntime.applyServerTransaction(
+      InstantStoreTransaction(
+        id: "server-stale-runtime",
+        operations: TodoExample.createOperations(
+          id: "todo-server-stale-runtime",
+          text: "server write on stale runtime",
+          createdAt: serverCreatedAt,
+          transactionID: "server-stale-runtime"
+        )
+      ),
+      receivedAt: InstantTimestamp(milliseconds: serverCreatedAt.milliseconds + 1)
+    )
+
+    expectNoDifference(result.pendingMutationCount, 1)
+    let staleRuntimePending = await staleRuntime.pendingMutations()
+    expectNoDifference(staleRuntimePending.map(\.id), ["tx-newer-local"])
+    let persistedAfterServerApply = try await staleRuntime.persistence.loadState()
+    expectNoDifference(persistedAfterServerApply.snapshot.outbox.map(\.id), ["tx-newer-local"])
+    expectNoDifference(
+      persistedAfterServerApply.outboxRevision,
+      persistedAfterWriter.outboxRevision
+    )
+    expectNoDifference(
+      persistedAfterServerApply.storeRevision,
+      persistedAfterWriter.storeRevision + 1
+    )
+    let staleRuntimeTodos = try await TodoExample.decode(staleRuntime.query(TodoExample.query))
+    expectNoDifference(staleRuntimeTodos.map(\.id), ["todo-newer-local", "todo-server-stale-runtime"])
+  }
+
+  @Test
   func runtimeBootstrapRejectsServerCreatedAtAttributes() async throws {
     do {
       _ = try await InstantRuntime.bootstrap(

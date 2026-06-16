@@ -1089,17 +1089,25 @@ public actor SQLitePersistenceStore {
     key: String,
     updatedAt: InstantTimestamp
   ) throws {
-    try execute(
-      """
-      INSERT OR REPLACE INTO instant_sync_metadata (key, value, updated_at_ms)
-      VALUES (?, ?, ?)
-      """,
-      [
-        .text(key),
-        .text(value),
-        .int(updatedAt.milliseconds),
-      ]
-    )
+    try saveMetadataValueWithoutTransaction(value, key: key, updatedAt: updatedAt)
+  }
+
+  public func saveMetadataValue(
+    _ value: String,
+    key: String,
+    updatedAt: InstantTimestamp,
+    expectedStoreRevision: Int64,
+    expectedOutboxRevision: Int64
+  ) throws -> Bool {
+    try transaction {
+      guard try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
+        try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision
+      else {
+        return false
+      }
+      try saveMetadataValueWithoutTransaction(value, key: key, updatedAt: updatedAt)
+      return true
+    }
   }
 
   public func deleteMetadataValue(key: String) throws {
@@ -1133,6 +1141,31 @@ public actor SQLitePersistenceStore {
       try saveOutboxWithoutTransaction(snapshot.outbox)
       _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
       _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+      return true
+    }
+  }
+
+  public func saveStoreSnapshot(
+    _ snapshot: InstantStoreSnapshot,
+    metadataKey: String,
+    metadataValue: String,
+    metadataUpdatedAt: InstantTimestamp,
+    expectedStoreRevision: Int64,
+    expectedOutboxRevision: Int64
+  ) throws -> Bool {
+    try transaction {
+      guard try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
+        try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision
+      else {
+        return false
+      }
+      try saveStoreSnapshotWithoutTransaction(snapshot)
+      try saveMetadataValueWithoutTransaction(
+        metadataValue,
+        key: metadataKey,
+        updatedAt: metadataUpdatedAt
+      )
+      _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
       return true
     }
   }
@@ -1443,6 +1476,24 @@ public actor SQLitePersistenceStore {
         .text(entry.queryID),
         .text(try encode(entry)),
         .int(entry.updatedAt.milliseconds),
+      ]
+    )
+  }
+
+  private func saveMetadataValueWithoutTransaction(
+    _ value: String,
+    key: String,
+    updatedAt: InstantTimestamp
+  ) throws {
+    try execute(
+      """
+      INSERT OR REPLACE INTO instant_sync_metadata (key, value, updated_at_ms)
+      VALUES (?, ?, ?)
+      """,
+      [
+        .text(key),
+        .text(value),
+        .int(updatedAt.milliseconds),
       ]
     )
   }

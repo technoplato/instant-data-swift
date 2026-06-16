@@ -227,6 +227,12 @@ closed-connection offline write, offline relaunch restore, and reconnect flush
 evidence rows for this local path. `connection status/connect/close` argument
 validation now flows through the shared `swift-parsing` target while preserving
 the `inspect`/`show`, `open`, and `disconnect` aliases.
+Inbound server-applied transaction handling now has a local loopback path:
+`InstantRuntime.applyServerTransaction` persists the server triples, publishes
+matching live observers, advances the processed transaction checkpoint, and
+leaves the optimistic outbox untouched. The terminal proof is
+`instant-swift-data validation server-transaction-loopback --jsonl`; real
+WebSocket delivery remains future transport work.
 
 ### Realtime Sync
 
@@ -369,16 +375,19 @@ the terminal with `instant-swift-data validation platform-adapters --jsonl`,
 including `@FetchAll` dynamic reload, nil-query, cached-prior-error, and
 cancellation cleanup evidence, optional `@FetchOne` dynamic and nil-query
 reload evidence, `@Fetch` request dynamic reload, nil request reset, and
-cancellation cleanup evidence, plus `@FetchAll`/`@Fetch` filtered active-row reloads. The
-SyncUps recording/dependency flow,
+cancellation cleanup evidence, plus `@FetchAll`/`@Fetch` filtered active-row
+reloads. Server-applied transaction loopback can be proven with
+`instant-swift-data validation server-transaction-loopback --jsonl`, covering
+observer publication, checkpoint persistence, relaunch restore, and unchanged
+optimistic outbox state. The SyncUps recording/dependency flow,
 including meeting restore after relaunch, can be proven with
 `instant-swift-data validation syncups-recording --jsonl`.
 `validation/run-e2e.sh` now records the Swift local todo, local integration,
-Reminders, typed draft, platform adapter, SyncUps recording, detailed parity
-report, and compact coverage summary evidence streams, Swift schema/perms
-fixture generation and verification artifacts, then the Swift benchmark evidence
-and TypeScript fixture check. Real remote push/pull remains future transport
-work.
+server transaction loopback, Reminders, typed draft, platform adapter, SyncUps
+recording, detailed parity report, and compact coverage summary evidence
+streams, Swift schema/perms fixture generation and verification artifacts, then
+the Swift benchmark evidence and TypeScript fixture check. Real remote push/pull
+remains future transport work.
 
 Current local progress: the CLI exposes non-captive local admin helpers:
 `instant-swift-data admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id]`

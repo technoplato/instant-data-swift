@@ -531,6 +531,7 @@ Run the local Swift validation evidence runner:
 swift run instant-swift-data validation local-todos --jsonl
 swift run instant-swift-data validation local-integrations --jsonl
 swift run instant-swift-data validation reminders --jsonl
+swift run instant-swift-data validation server-transaction-loopback --jsonl
 swift run instant-swift-data validation typed-drafts --jsonl
 swift run instant-swift-data validation platform-adapters --jsonl
 swift run instant-swift-data validation syncups-recording --jsonl
@@ -539,6 +540,7 @@ swift run instant-swift-data validation coverage --jsonl
 swift run instant-swift-data-validation-runner --local-todos
 swift run instant-swift-data-validation-runner --local-integrations
 swift run instant-swift-data-validation-runner --reminders
+swift run instant-swift-data-validation-runner --server-transaction-loopback
 swift run instant-swift-data validation reminders --jsonl | jq 'select(.event == "rich-filters") | .details.priorityRanksByReminderID'
 swift run instant-swift-data-validation-runner --typed-drafts
 swift run instant-swift-data-validation-runner --platform-adapters
@@ -563,6 +565,10 @@ create/accept/revoke. `validation reminders` emits terminal evidence for local
 Reminders search, tags, rich fields, upstream-ranked numeric priority storage
 with named CLI filters, form-model edit saves, smart-list stats, list sharing
 roles, permission rejections, writer updates, and relaunch persistence.
+`validation server-transaction-loopback` emits terminal evidence that a
+server-applied transaction persists triples, publishes a live todo observer,
+advances the processed transaction checkpoint, survives relaunch, and leaves the
+local optimistic outbox untouched.
 `validation typed-drafts` emits terminal evidence for a macro-generated create
 draft whose `id` starts as `nil` and whose writable assignments omit the managed
 primary key, `Draft(existing)` edit, a writable relation draft with generated ref

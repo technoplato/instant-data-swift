@@ -77,6 +77,19 @@ public struct InstantRemindersValidationRun: Sendable {
   }
 }
 
+public struct InstantServerTransactionLoopbackValidationRun: Sendable {
+  public var result: ServerTransactionLoopbackValidationResult
+  public var summary: InstantValidationEvidenceSummary
+
+  public init(
+    result: ServerTransactionLoopbackValidationResult,
+    summary: InstantValidationEvidenceSummary
+  ) {
+    self.result = result
+    self.summary = summary
+  }
+}
+
 public struct InstantDraftValidationRun: Sendable {
   public var result: DraftValidationResult
   public var summary: InstantValidationEvidenceSummary
@@ -210,6 +223,26 @@ public enum InstantSwiftDataTestHarness {
       makeID: makeID
     )
     return InstantRemindersValidationRun(
+      result: result,
+      summary: try requireAllEvidenceOK(result.evidence)
+    )
+  }
+
+  public static func runServerTransactionLoopbackValidation(
+    appID: String = "server-transaction-loopback-validation",
+    cacheURL: URL? = nil,
+    timestamp: @escaping @Sendable () -> InstantTimestamp = {
+      InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
+    },
+    makeID: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() }
+  ) async throws -> InstantServerTransactionLoopbackValidationRun {
+    let result = try await InstantSwiftDataServerTransactionLoopbackValidation.run(
+      appID: appID,
+      cacheURL: cacheURL,
+      timestamp: timestamp,
+      makeID: makeID
+    )
+    return InstantServerTransactionLoopbackValidationRun(
       result: result,
       summary: try requireAllEvidenceOK(result.evidence)
     )

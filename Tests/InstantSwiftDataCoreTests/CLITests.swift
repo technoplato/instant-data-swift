@@ -7698,7 +7698,7 @@ extension InstantStoreTests {
     #expect(malformed.status == 64)
     #expect(
       malformed.error.contains(
-        "validation <local-todos|local-integrations|reminders|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>"
+        "validation <local-todos|local-integrations|reminders|server-transaction-loopback|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>"
       )
     )
   }
@@ -7777,6 +7777,88 @@ extension InstantStoreTests {
     #expect(humanOutput.contains("case: validation.local.integrations"))
     #expect(humanOutput.contains("evidence rows: 9"))
     #expect(humanOutput.contains("revoked shares: 1"))
+  }
+
+  @Test
+  func cliValidationServerTransactionLoopbackEmitsEvidence() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let jsonOutput = try JSONDecoder().decode(
+      CLIServerTransactionLoopbackValidationOutput.self,
+      from: Data(
+        try runCLI(["validation", "server-transaction-loopback", "--json"], homeURL: homeURL)
+          .utf8
+      )
+    )
+    expectNoDifference(jsonOutput.appID, "cli-cache-test")
+    expectNoDifference(jsonOutput.event, "server-transaction-loopback")
+    expectNoDifference(jsonOutput.transport, "local-server-transaction-loopback")
+    expectNoDifference(jsonOutput.ok, true)
+    expectNoDifference(jsonOutput.evidenceCount, 4)
+    expectNoDifference(
+      jsonOutput.events,
+      ["local-outbox", "server-apply", "observer-publish", "relaunch"]
+    )
+    expectNoDifference(jsonOutput.pendingMutationIDs, ["validation.loopback.local"])
+    expectNoDifference(jsonOutput.processedTransactionID, "validation.loopback.server")
+    expectNoDifference(jsonOutput.pendingMutationCount, 1)
+    expectNoDifference(jsonOutput.outboxRevision, 1)
+
+    let jsonlOutput = try runCLI(
+      ["validation", "server-transaction-loopback", "--jsonl"],
+      homeURL: homeURL
+    )
+    let lines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(lines.count, 4)
+    let localOutboxEvidence = try JSONDecoder().decode(
+      CLIServerTransactionLoopbackValidationEvidence.self,
+      from: Data(try #require(lines.first).utf8)
+    )
+    expectNoDifference(localOutboxEvidence.caseID, "validation.server.transaction.loopback")
+    expectNoDifference(localOutboxEvidence.appID, "cli-cache-test")
+    expectNoDifference(localOutboxEvidence.event, "local-outbox")
+    expectNoDifference(localOutboxEvidence.details.pendingMutationIDs, ["validation.loopback.local"])
+
+    let serverApplyEvidence = try JSONDecoder().decode(
+      CLIServerTransactionLoopbackValidationEvidence.self,
+      from: Data(lines[1].utf8)
+    )
+    expectNoDifference(serverApplyEvidence.event, "server-apply")
+    expectNoDifference(serverApplyEvidence.details.changedEntityIDs, ["validation-loopback-server"])
+    expectNoDifference(serverApplyEvidence.details.emissionQueryIDs, [TodoExample.query.id])
+    expectNoDifference(
+      serverApplyEvidence.details.outboxRevision,
+      localOutboxEvidence.details.outboxRevision
+    )
+    expectNoDifference(
+      serverApplyEvidence.details.storeRevision,
+      localOutboxEvidence.details.storeRevision + 1
+    )
+
+    let observerEvidence = try JSONDecoder().decode(
+      CLIServerTransactionLoopbackValidationEvidence.self,
+      from: Data(lines[2].utf8)
+    )
+    expectNoDifference(
+      observerEvidence.details.observerTodoIDs,
+      ["validation-loopback-local", "validation-loopback-server"]
+    )
+
+    let relaunchEvidence = try JSONDecoder().decode(
+      CLIServerTransactionLoopbackValidationEvidence.self,
+      from: Data(lines[3].utf8)
+    )
+    expectNoDifference(relaunchEvidence.details.outboxRevision, localOutboxEvidence.details.outboxRevision)
+    expectNoDifference(relaunchEvidence.details.pendingMutationIDs, ["validation.loopback.local"])
+    expectNoDifference(relaunchEvidence.details.processedTransactionID, "validation.loopback.server")
+
+    let humanOutput = try runCLI(["validation", "server-loopback"], homeURL: homeURL)
+    #expect(humanOutput.contains("validation: ok"))
+    #expect(humanOutput.contains("case: validation.server.transaction.loopback"))
+    #expect(humanOutput.contains("revisions: store"))
   }
 
   @Test
@@ -11048,6 +11130,51 @@ private struct CLIRemindersValidationDetails: Decodable {
   var tagTitles: [String]
   var reminderTagIDs: [String]
   var rejectedOperations: [String]
+}
+
+private struct CLIServerTransactionLoopbackValidationOutput: Decodable {
+  var appID: String
+  var event: String
+  var transport: String
+  var ok: Bool
+  var evidenceCount: Int
+  var events: [String]
+  var todoIDs: [String]
+  var pendingMutationIDs: [String]
+  var processedTransactionID: String?
+  var changedEntityIDs: [String]
+  var emissionQueryIDs: [String]
+  var pendingMutationCount: Int
+  var storeRevision: Int64
+  var outboxRevision: Int64
+}
+
+private struct CLIServerTransactionLoopbackValidationEvidence: Decodable {
+  var caseID: String
+  var appID: String
+  var event: String
+  var ok: Bool
+  var details: CLIServerTransactionLoopbackValidationDetails
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case appID
+    case event
+    case ok
+    case details
+  }
+}
+
+private struct CLIServerTransactionLoopbackValidationDetails: Decodable {
+  var todoIDs: [String]
+  var pendingMutationIDs: [String]
+  var processedTransactionID: String?
+  var changedEntityIDs: [String]
+  var emissionQueryIDs: [String]
+  var observerTodoIDs: [String]
+  var pendingMutationCount: Int
+  var storeRevision: Int64
+  var outboxRevision: Int64
 }
 
 private struct CLIDraftValidationOutput: Decodable {

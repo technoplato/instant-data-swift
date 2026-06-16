@@ -434,6 +434,103 @@ public final class InstantRuntime: Sendable {
   }
 
   @discardableResult
+  public func applyServerTransaction(
+    _ transaction: InstantStoreTransaction,
+    processedTransactionID: String? = nil,
+    receivedAt: InstantTimestamp? = nil
+  ) async throws -> InstantServerTransactionApplicationResult {
+    await enterOperationGate()
+    do {
+      let result = try await performApplyServerTransaction(
+        transaction,
+        processedTransactionID: processedTransactionID,
+        receivedAt: receivedAt
+      )
+      await leaveOperationGate()
+      return result
+    } catch {
+      await leaveOperationGate()
+      throw error
+    }
+  }
+
+  private func performApplyServerTransaction(
+    _ transaction: InstantStoreTransaction,
+    processedTransactionID: String?,
+    receivedAt: InstantTimestamp?
+  ) async throws -> InstantServerTransactionApplicationResult {
+    let processedTransactionID = (processedTransactionID ?? transaction.id)
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !processedTransactionID.isEmpty else {
+      throw validationFailed(
+        operation: "apply server transaction",
+        message: "Processed transaction id must not be empty.",
+        recovery: "Pass the Instant transaction id that has been fully received from the server."
+      )
+    }
+    let transactionID = transaction.id.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    var transaction = transaction
+    transaction.id = transactionID.isEmpty ? processedTransactionID : transactionID
+    let metadataUpdatedAt = receivedAt ?? configuration.now()
+
+    for _ in 0..<5 {
+      recordActorHop(.persistence)
+      let state = try await persistence.loadState()
+      if transaction.operations.isEmpty {
+        recordActorHop(.persistence)
+        let didSave = try await persistence.saveMetadataValue(
+          processedTransactionID,
+          key: processedTransactionIDMetadataKey,
+          updatedAt: metadataUpdatedAt,
+          expectedStoreRevision: state.storeRevision,
+          expectedOutboxRevision: state.outboxRevision
+        )
+        if didSave {
+          recordActorHop(.store)
+          await store.replaceSnapshot(state.snapshot.store)
+          recordActorHop(.outbox)
+          await outbox.replace(with: state.snapshot.outbox)
+          return InstantStoreMutationResult(
+            transactionID: transaction.id,
+            changedEntityIDs: [],
+            tripleCount: state.snapshot.store.triples.count,
+            emissions: []
+          ).serverApplicationResult(
+            processedTransactionID: processedTransactionID,
+            pendingMutations: state.snapshot.outbox
+          )
+        }
+        continue
+      }
+
+      recordActorHop(.store)
+      let prepared = try await store.prepare(transaction, applyingTo: state.snapshot.store)
+      recordActorHop(.persistence)
+      let didSave = try await persistence.saveStoreSnapshot(
+        prepared.snapshot,
+        metadataKey: processedTransactionIDMetadataKey,
+        metadataValue: processedTransactionID,
+        metadataUpdatedAt: metadataUpdatedAt,
+        expectedStoreRevision: state.storeRevision,
+        expectedOutboxRevision: state.outboxRevision
+      )
+      if didSave {
+        recordActorHop(.store)
+        let committed = await store.commitAndPublish(prepared)
+        recordActorHop(.outbox)
+        await outbox.replace(with: state.snapshot.outbox)
+        return committed.result.serverApplicationResult(
+          processedTransactionID: processedTransactionID,
+          pendingMutations: state.snapshot.outbox
+        )
+      }
+    }
+
+    throw serverTransactionChangedDuringPersistence(id: processedTransactionID)
+  }
+
+  @discardableResult
   package func migrateLocalPersistenceSnapshot(
     name: String,
     transform: @Sendable (InstantPersistenceSnapshot) throws -> InstantPersistenceSnapshot
@@ -2727,6 +2824,16 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  private func serverTransactionChangedDuringPersistence(id: String) -> InstantError {
+    InstantError(
+      code: .persistenceFailed,
+      operation: "apply server transaction",
+      localID: id,
+      message: "The local store changed repeatedly while applying server transaction '\(id)'.",
+      recovery: "Retry after reloading the local cache."
+    )
+  }
+
   private func persistenceChangedDuringMigration(name: String) -> InstantError {
     InstantError(
       code: .persistenceFailed,
@@ -3095,6 +3202,19 @@ public final class InstantRuntime: Sendable {
   private func leaveMutationFlushGate() async {
     recordActorHop(.mutationFlushGate)
     await mutationFlushGate.leave()
+  }
+}
+
+private extension InstantStoreMutationResult {
+  func serverApplicationResult(
+    processedTransactionID: String,
+    pendingMutations: [PendingMutation]
+  ) -> InstantServerTransactionApplicationResult {
+    InstantServerTransactionApplicationResult(
+      mutation: self,
+      syncState: InstantSyncState(processedTransactionID: processedTransactionID),
+      pendingMutationCount: pendingMutations.filter { $0.status == .pending }.count
+    )
   }
 }
 
