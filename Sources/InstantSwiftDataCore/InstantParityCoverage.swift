@@ -2544,6 +2544,61 @@ public enum InstantSwiftDataParityCoverage {
       notes:
         "Swift adapts Svelte's useConnectionStatus store as @ConnectionStatus plus InstantSwiftDataClient.observeConnectionStatus/subscribeConnectionStatus, proving the initial connecting state and live status updates through the idiomatic Swift wrapper surface."
     ),
+    instant(
+      id: "instant.svelte.use-local-id-starts-null",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "useLocalId starts as null",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "localIDPropertyWrapperStartsNil",
+      surface: "adapter-local-id",
+      status: .adapted,
+      notes:
+        "Swift adapts Svelte's useLocalId store as the @LocalID wrapper, preserving the platform-idiomatic optional nil initial state before an id is resolved."
+    ),
+    instant(
+      id: "instant.svelte.use-local-id-loads-asynchronously",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "useLocalId loads the ID asynchronously",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "localIDPropertyWrapperLoadsUsingDependencyClient + localIDPropertyWrapperTaskBindsResolvedValue",
+      surface: "adapter-local-id",
+      status: .adapted,
+      notes:
+        "The @LocalID projected wrapper loads named local ids through the dependency-injected InstantSwiftDataClient and binds the asynchronously resolved value back into Swift wrapper state."
+    ),
+    instant(
+      id: "instant.vue.use-local-id-starts-null",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "useLocalId starts as null",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "localIDPropertyWrapperStartsNil",
+      surface: "adapter-local-id",
+      status: .adapted,
+      notes:
+        "Swift adapts Vue's useLocalId ref as the @LocalID wrapper, preserving the idiomatic optional nil initial state before the named id load completes."
+    ),
+    instant(
+      id: "instant.vue.use-local-id-loads-asynchronously",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "useLocalId loads the ID asynchronously",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "localIDPropertyWrapperLoadsUsingDependencyClient + localIDPropertyWrapperTaskBindsResolvedValue",
+      surface: "adapter-local-id",
+      status: .adapted,
+      notes:
+        "The @LocalID load/task surface matches Vue's asynchronous ref update by resolving a named local id via InstantSwiftDataClient and publishing the value through wrapper state."
+    ),
+    instant(
+      id: "instant.vue.use-local-id-reloads-when-name-ref-changes",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "useLocalId reloads when name ref changes",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "localIDPropertyWrapperReloadsWhenNameChanges",
+      surface: "adapter-local-id",
+      status: .adapted,
+      notes:
+        "Dynamic @LocalID loads preserve Vue ref-change semantics by replacing the requested local-id name and binding the newly resolved value."
+    ),
     sqlite(
       id: "sqlite.draft.macro-generation",
       sourceFile: "upstream/sqlite-data/Sources/SQLiteData/Documentation.docc/Articles/AddingToGRDB.md",
