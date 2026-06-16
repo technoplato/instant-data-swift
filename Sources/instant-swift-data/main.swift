@@ -9228,6 +9228,8 @@ struct InstantSwiftDataCLI {
         $0.event.hasPrefix("fetch-all-")
           || $0.event.hasPrefix("fetch-one-")
           || $0.event.hasPrefix("fetch-request-")
+          || $0.event.hasPrefix("infinite-query-")
+          || $0.event.hasPrefix("live-wrapper-")
       }.count,
       queryProbeCount: result.evidence.compactMap(\.details.queryCount).reduce(0, +),
       observationProbeCount: result.evidence.compactMap(\.details.observationCount).reduce(0, +),

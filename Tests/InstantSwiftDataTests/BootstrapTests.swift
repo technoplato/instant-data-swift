@@ -688,10 +688,12 @@ struct BootstrapTests {
       "fetch-all-cached-prior-error",
       "fetch-all-cancellation",
       "fetch-request-cancellation",
+      "infinite-query-dynamic-cancellation",
+      "infinite-query-dynamic-load",
       "live-wrapper-dynamic-cancellation",
     ])
-    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 22))
-    expectNoDifference(result.evidence.map(\.appID), Array(repeating: result.appID, count: 22))
+    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 24))
+    expectNoDifference(result.evidence.map(\.appID), Array(repeating: result.appID, count: 24))
     expectNoDifference(result.evidence.map(\.details.adapter), [
       "@FetchAll",
       "@FetchOne",
@@ -714,6 +716,8 @@ struct BootstrapTests {
       "@FetchAll(error)",
       "@FetchAll(cancellation)",
       "@Fetch(request cancellation)",
+      "@InfiniteQuery(dynamic cancellation)",
+      "@InfiniteQuery(dynamic load)",
       "@RoomPresence(dynamic cancellation)",
     ])
 
@@ -822,6 +826,26 @@ struct BootstrapTests {
     expectNoDifference(requestCancellation.queryCount, 0)
     expectNoDifference(requestCancellation.observationCount, 1)
     expectNoDifference(requestCancellation.cancellationTerminated, true)
+
+    let infiniteCancellation = try #require(
+      result.evidence.first { $0.event == "infinite-query-dynamic-cancellation" }?.details
+    )
+    expectNoDifference(infiniteCancellation.todoTitles, ["Second infinite subscription"])
+    expectNoDifference(infiniteCancellation.previousTodoTitles, ["First infinite subscription"])
+    expectNoDifference(infiniteCancellation.observationCount, 2)
+    expectNoDifference(infiniteCancellation.cancellationTerminated, true)
+    expectNoDifference(infiniteCancellation.isLoading, false)
+
+    let infiniteLoad = try #require(
+      result.evidence.first { $0.event == "infinite-query-dynamic-load" }?.details
+    )
+    expectNoDifference(infiniteLoad.previousTodoTitles, ["Fresh infinite load"])
+    expectNoDifference(infiniteLoad.fetchAllTitleBatches, [["Fresh infinite load"], []])
+    expectNoDifference(infiniteLoad.todoTitles, [])
+    expectNoDifference(infiniteLoad.queryCount, 3)
+    expectNoDifference(infiniteLoad.nilQueryCleared, true)
+    expectNoDifference(infiniteLoad.isLoading, false)
+    expectNoDifference(infiniteLoad.loadErrorOperation, nil)
 
     let liveWrapperCancellation = try #require(
       result.evidence.first { $0.event == "live-wrapper-dynamic-cancellation" }?.details

@@ -600,6 +600,26 @@ struct LocalTodoValidationTests {
     expectNoDifference(requestCancellation.observationCount, 1)
     expectNoDifference(requestCancellation.cancellationTerminated, true)
     expectNoDifference(requestCancellation.isLoading, false)
+
+    let infiniteCancellation = try #require(
+      result.evidence.first { $0.event == "infinite-query-dynamic-cancellation" }?.details
+    )
+    expectNoDifference(infiniteCancellation.todoTitles, ["Second infinite subscription"])
+    expectNoDifference(infiniteCancellation.previousTodoTitles, ["First infinite subscription"])
+    expectNoDifference(infiniteCancellation.observationCount, 2)
+    expectNoDifference(infiniteCancellation.cancellationTerminated, true)
+    expectNoDifference(infiniteCancellation.isLoading, false)
+
+    let infiniteLoad = try #require(
+      result.evidence.first { $0.event == "infinite-query-dynamic-load" }?.details
+    )
+    expectNoDifference(infiniteLoad.previousTodoTitles, ["Fresh infinite load"])
+    expectNoDifference(infiniteLoad.fetchAllTitleBatches, [["Fresh infinite load"], []])
+    expectNoDifference(infiniteLoad.todoTitles, [])
+    expectNoDifference(infiniteLoad.queryCount, 3)
+    expectNoDifference(infiniteLoad.nilQueryCleared, true)
+    expectNoDifference(infiniteLoad.isLoading, false)
+    expectNoDifference(infiniteLoad.loadErrorOperation, nil)
   }
 
   @Test
@@ -667,6 +687,29 @@ struct LocalTodoValidationTests {
       (requestCancellation["cancellationTerminated"] as? NSNumber)?.boolValue,
       true
     )
+
+    let infiniteCancellation = try #require(
+      rows.first { $0["event"] as? String == "infinite-query-dynamic-cancellation" }?["details"]
+        as? [String: Any]
+    )
+    expectNoDifference(
+      infiniteCancellation["todoTitles"] as? [String],
+      ["Second infinite subscription"]
+    )
+    expectNoDifference(
+      (infiniteCancellation["cancellationTerminated"] as? NSNumber)?.boolValue,
+      true
+    )
+
+    let infiniteLoad = try #require(
+      rows.first { $0["event"] as? String == "infinite-query-dynamic-load" }?["details"]
+        as? [String: Any]
+    )
+    expectNoDifference(
+      infiniteLoad["previousTodoTitles"] as? [String],
+      ["Fresh infinite load"]
+    )
+    expectNoDifference((infiniteLoad["nilQueryCleared"] as? NSNumber)?.boolValue, true)
   }
 
   @Test
@@ -1242,7 +1285,7 @@ struct LocalTodoValidationTests {
     expectNoDifference(platformAdapterBinding.status, .adapted)
     expectNoDifference(
       platformAdapterBinding.notes,
-      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares, plus dynamic live wrapper replacement/cancellation evidence."
+      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares, plus dynamic InfiniteQuery and live wrapper replacement/cancellation evidence."
     )
     #expect(
       run.result.records.contains {
@@ -1303,7 +1346,7 @@ struct LocalTodoValidationTests {
     expectNoDifference(platformAdapterBindingDetails["status"] as? String, "adapted")
     expectNoDifference(
       platformAdapterBindingDetails["notes"] as? String,
-      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares, plus dynamic live wrapper replacement/cancellation evidence."
+      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares, plus dynamic InfiniteQuery and live wrapper replacement/cancellation evidence."
     )
 
     let first = try #require(rows.first)
@@ -2552,6 +2595,9 @@ private let platformAdapterValidationEvents = [
   "fetch-all-cached-prior-error",
   "fetch-all-cancellation",
   "fetch-request-cancellation",
+  "infinite-query-dynamic-cancellation",
+  "infinite-query-dynamic-load",
+  "live-wrapper-dynamic-cancellation",
 ]
 
 private let platformAdapterValidationAdapters = [
@@ -2576,6 +2622,9 @@ private let platformAdapterValidationAdapters = [
   "@FetchAll(error)",
   "@FetchAll(cancellation)",
   "@Fetch(request cancellation)",
+  "@InfiniteQuery(dynamic cancellation)",
+  "@InfiniteQuery(dynamic load)",
+  "@RoomPresence(dynamic cancellation)",
 ]
 
 private let projectedBindingAdapters = [

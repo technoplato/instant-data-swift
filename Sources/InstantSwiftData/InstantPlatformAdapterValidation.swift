@@ -582,6 +582,20 @@ public enum InstantSwiftDataPlatformAdapterValidation {
       )
     )
     evidence.append(
+      try await validateInfiniteQueryDynamicCancellation(
+        appID: appID,
+        cacheURL: cacheURL,
+        timestamp: timestamp
+      )
+    )
+    evidence.append(
+      try await validateInfiniteQueryDynamicLoad(
+        appID: appID,
+        cacheURL: cacheURL,
+        timestamp: timestamp
+      )
+    )
+    evidence.append(
       try await validateLiveWrapperDynamicCancellation(
         appID: appID,
         cacheURL: cacheURL,
@@ -1446,6 +1460,278 @@ public enum InstantSwiftDataPlatformAdapterValidation {
     )
   }
 
+  private static func validateInfiniteQueryDynamicCancellation(
+    appID: String,
+    cacheURL: URL,
+    timestamp: @escaping @Sendable () -> InstantTimestamp
+  ) async throws -> ValidationEvidenceRow<PlatformAdapterValidationDetails> {
+    let recorder = PlatformAdapterInfiniteQueryLifecycleRecorder()
+    let client = infiniteQueryLifecycleClient(recorder)
+    let infinite = InfiniteQuery<PlatformAdapterTodo>(
+      PlatformAdapterTodo.query.order(PlatformAdapterTodo.createdAt).limit(1)
+    )
+    let firstTask = Task {
+      let infinite = infinite
+      try await infinite.task(using: client)
+    }
+
+    try await waitForLifecycle(
+      operation: "wait for platform adapter InfiniteQuery first subscription"
+    ) {
+      let counts = await recorder.counts()
+      return counts.subscribeCount == 1
+    }
+
+    let secondTask = Task {
+      let infinite = infinite
+      try await infinite.task(using: client)
+    }
+
+    try await waitForLifecycle(
+      operation: "wait for platform adapter InfiniteQuery replacement subscription"
+    ) {
+      let counts = await recorder.counts()
+      return counts.subscribeCount == 2
+    }
+
+    await recorder.yieldSecond(
+      InstantInfiniteQuerySnapshot(
+        queryID: PlatformAdapterTodo.query.plan.id,
+        sequence: 2,
+        values: [
+          todoSnapshot(
+            id: "platform-adapter-infinite-second",
+            title: "Second infinite subscription",
+            isCompleted: false,
+            createdAt: date(from: timestamp())
+          )
+        ],
+        canLoadNextPage: true
+      )
+    )
+
+    try await waitForLifecycle(
+      operation: "wait for platform adapter InfiniteQuery replacement value"
+    ) {
+      infinite.wrappedValue.map(\.title) == ["Second infinite subscription"]
+    }
+
+    await recorder.releaseFirstSubscription()
+    do {
+      try await firstTask.value
+      throw validationFailure(
+        operation: "validate platform adapter InfiniteQuery replacement",
+        message: "Expected replacing a pending @InfiniteQuery task to cancel the stale task."
+      )
+    } catch is CancellationError {
+    }
+
+    try await waitForLifecycle(
+      operation: "wait for platform adapter InfiniteQuery stale cancellation"
+    ) {
+      let counts = await recorder.counts()
+      return counts.firstUnsubscribeCount >= 1
+    }
+
+    infinite.loadNextPage()
+    try await waitForLifecycle(
+      operation: "wait for platform adapter InfiniteQuery latest loadNextPage"
+    ) {
+      let counts = await recorder.counts()
+      return counts.secondLoadNextPageCount == 1
+    }
+
+    secondTask.cancel()
+    do {
+      try await secondTask.value
+      throw validationFailure(
+        operation: "validate platform adapter InfiniteQuery cancellation",
+        message: "Expected canceling the replacement @InfiniteQuery task to throw CancellationError."
+      )
+    } catch is CancellationError {
+    }
+
+    try await waitForLifecycle(
+      operation: "wait for platform adapter InfiniteQuery final cancellation"
+    ) {
+      let counts = await recorder.counts()
+      return counts.secondUnsubscribeCount >= 1
+    }
+
+    let counts = await recorder.counts()
+    let cancellationTerminated = counts.firstUnsubscribeCount >= 1
+      && counts.secondUnsubscribeCount >= 1
+    guard
+      counts.subscribeCount == 2,
+      counts.firstLoadNextPageCount == 0,
+      counts.secondLoadNextPageCount == 1,
+      cancellationTerminated,
+      infinite.wrappedValue.map(\.title) == ["Second infinite subscription"],
+      infinite.loadError == nil,
+      infinite.isLoading == false
+    else {
+      throw validationFailure(
+        operation: "validate platform adapter InfiniteQuery lifecycle",
+        message:
+          "Expected @InfiniteQuery to ignore stale pending subscriptions and target the live subscription."
+      )
+    }
+
+    return evidenceRow(
+      event: "infinite-query-dynamic-cancellation",
+      appID: appID,
+      timestamp: timestamp,
+      details: PlatformAdapterValidationDetails(
+        cachePath: cacheURL.path,
+        adapter: "@InfiniteQuery(dynamic cancellation)",
+        todoTitles: infinite.wrappedValue.map(\.title),
+        previousTodoTitles: ["First infinite subscription"],
+        todoCount: infinite.wrappedValue.count,
+        observationCount: counts.subscribeCount,
+        isLoading: infinite.isLoading,
+        cancellationTerminated: cancellationTerminated
+      )
+    )
+  }
+
+  private static func validateInfiniteQueryDynamicLoad(
+    appID: String,
+    cacheURL: URL,
+    timestamp: @escaping @Sendable () -> InstantTimestamp
+  ) async throws -> ValidationEvidenceRow<PlatformAdapterValidationDetails> {
+    let recorder = PlatformAdapterInfiniteQueryLoadRecorder(
+      staleSnapshot: InstantInfiniteQuerySnapshot(
+        queryID: PlatformAdapterTodo.query.plan.id,
+        sequence: 1,
+        values: [
+          todoSnapshot(
+            id: "platform-adapter-infinite-stale-load",
+            title: "Stale infinite load",
+            isCompleted: false,
+            createdAt: date(from: timestamp())
+          )
+        ],
+        canLoadNextPage: true
+      ),
+      freshSnapshot: InstantInfiniteQuerySnapshot(
+        queryID: PlatformAdapterTodo.query.plan.id,
+        sequence: 2,
+        values: [
+          todoSnapshot(
+            id: "platform-adapter-infinite-fresh-load",
+            title: "Fresh infinite load",
+            isCompleted: false,
+            createdAt: date(from: timestamp())
+          )
+        ],
+        canLoadNextPage: false
+      ),
+      clearedStaleSnapshot: InstantInfiniteQuerySnapshot(
+        queryID: PlatformAdapterTodo.query.plan.id,
+        sequence: 3,
+        values: [
+          todoSnapshot(
+            id: "platform-adapter-infinite-cleared-load",
+            title: "Cleared stale infinite load",
+            isCompleted: false,
+            createdAt: date(from: timestamp())
+          )
+        ],
+        canLoadNextPage: true
+      )
+    )
+    let client = infiniteQueryLoadClient(recorder)
+    let infinite = InfiniteQuery<PlatformAdapterTodo>(
+      PlatformAdapterTodo.query.order(PlatformAdapterTodo.createdAt).limit(1)
+    )
+
+    let staleLoad = Task {
+      let infinite = infinite
+      try await infinite.load(using: client)
+    }
+    try await waitForLifecycle(
+      operation: "wait for platform adapter InfiniteQuery stale load"
+    ) {
+      await recorder.loadCount() == 1
+    }
+
+    try await infinite.load(
+      PlatformAdapterTodo.query.order(PlatformAdapterTodo.createdAt).limit(2),
+      using: client
+    )
+    let freshTitles = infinite.wrappedValue.map(\.title)
+    let loadLimitsAfterReplacement = await recorder.plans().map(\.limit)
+    await recorder.releasePendingLoad(1)
+    do {
+      try await staleLoad.value
+      throw validationFailure(
+        operation: "validate platform adapter InfiniteQuery stale load",
+        message: "Expected a stale @InfiniteQuery load to be canceled after replacement."
+      )
+    } catch is CancellationError {
+    }
+
+    let clearedLoad = Task {
+      let infinite = infinite
+      try await infinite.load(using: client)
+    }
+    try await waitForLifecycle(
+      operation: "wait for platform adapter InfiniteQuery clearable load"
+    ) {
+      await recorder.loadCount() == 3
+    }
+
+    try await infinite.load(nil, using: client)
+    await recorder.releasePendingLoad(3)
+    do {
+      try await clearedLoad.value
+      throw validationFailure(
+        operation: "validate platform adapter InfiniteQuery nil query",
+        message: "Expected clearing an @InfiniteQuery query to cancel the pending load."
+      )
+    } catch is CancellationError {
+    }
+
+    let counts = await recorder.loadCount()
+    let loadLimits = await recorder.plans().map(\.limit)
+    let nilQueryCleared = infinite.wrappedValue.isEmpty
+      && infinite.loadError == nil
+      && infinite.isLoading == false
+      && infinite.pageInfo == nil
+      && infinite.canLoadNextPage == false
+    guard
+      freshTitles == ["Fresh infinite load"],
+      counts == 3,
+      loadLimitsAfterReplacement == [1, 2],
+      loadLimits == [1, 2, 2],
+      nilQueryCleared
+    else {
+      throw validationFailure(
+        operation: "validate platform adapter InfiniteQuery dynamic load",
+        message:
+          "Expected @InfiniteQuery load replacement and nil-query clearing to ignore stale completions."
+      )
+    }
+
+    return evidenceRow(
+      event: "infinite-query-dynamic-load",
+      appID: appID,
+      timestamp: timestamp,
+      details: PlatformAdapterValidationDetails(
+        cachePath: cacheURL.path,
+        adapter: "@InfiniteQuery(dynamic load)",
+        todoTitles: infinite.wrappedValue.map(\.title),
+        previousTodoTitles: freshTitles,
+        fetchAllTitleBatches: [freshTitles, infinite.wrappedValue.map(\.title)],
+        todoCount: infinite.wrappedValue.count,
+        queryCount: counts,
+        loadErrorOperation: infinite.loadError?.operation,
+        isLoading: infinite.isLoading,
+        nilQueryCleared: nilQueryCleared
+      )
+    )
+  }
+
   private static func validateLiveWrapperDynamicCancellation(
     appID: String,
     cacheURL: URL,
@@ -1606,6 +1892,50 @@ public enum InstantSwiftDataPlatformAdapterValidation {
     )
   }
 
+  private static func infiniteQueryLifecycleClient(
+    _ recorder: PlatformAdapterInfiniteQueryLifecycleRecorder
+  ) -> InstantSwiftDataClient {
+    InstantSwiftDataClient(
+      transact: { transaction in
+        InstantStoreMutationResult(
+          transactionID: transaction.id,
+          changedEntityIDs: [],
+          tripleCount: transaction.operations.count,
+          emissions: []
+        )
+      },
+      query: { _ in [] },
+      observe: { _ in AsyncStream { continuation in continuation.finish() } },
+      subscribeInfiniteQuery: { plan in
+        await recorder.subscribe(plan: plan)
+      },
+      pendingMutations: { [] },
+      localID: { name in "adapter-infinite-lifecycle-\(name)" }
+    )
+  }
+
+  private static func infiniteQueryLoadClient(
+    _ recorder: PlatformAdapterInfiniteQueryLoadRecorder
+  ) -> InstantSwiftDataClient {
+    InstantSwiftDataClient(
+      transact: { transaction in
+        InstantStoreMutationResult(
+          transactionID: transaction.id,
+          changedEntityIDs: [],
+          tripleCount: transaction.operations.count,
+          emissions: []
+        )
+      },
+      query: { _ in [] },
+      observe: { _ in AsyncStream { continuation in continuation.finish() } },
+      infiniteQueryInitialSnapshot: { plan in
+        try await recorder.initialSnapshot(plan: plan)
+      },
+      pendingMutations: { [] },
+      localID: { name in "adapter-infinite-load-\(name)" }
+    )
+  }
+
   private static func liveWrapperLifecycleClient(
     _ recorder: PlatformAdapterLiveWrapperLifecycleRecorder
   ) -> InstantSwiftDataClient {
@@ -1755,6 +2085,156 @@ private actor PlatformAdapterLifecycleRecorder {
 
   private func recordTermination() {
     terminationCount += 1
+  }
+}
+
+private actor PlatformAdapterInfiniteQueryLifecycleRecorder {
+  private var subscribeCount = 0
+  private var firstLoadNextPageCount = 0
+  private var secondLoadNextPageCount = 0
+  private var firstUnsubscribeCount = 0
+  private var secondUnsubscribeCount = 0
+  private var firstContinuation: CheckedContinuation<InstantInfiniteQuerySubscription, Never>?
+  private let firstStream = AsyncStream<InstantInfiniteQuerySnapshot>.makeStream(
+    bufferingPolicy: .bufferingNewest(1)
+  )
+  private let secondStream = AsyncStream<InstantInfiniteQuerySnapshot>.makeStream(
+    bufferingPolicy: .bufferingNewest(1)
+  )
+
+  deinit {
+    firstStream.continuation.finish()
+    secondStream.continuation.finish()
+  }
+
+  func subscribe(plan: InstantQueryPlan) async -> InstantInfiniteQuerySubscription {
+    subscribeCount += 1
+    switch subscribeCount {
+    case 1:
+      return await withCheckedContinuation { continuation in
+        firstContinuation = continuation
+      }
+    default:
+      return subscription(name: .second)
+    }
+  }
+
+  func releaseFirstSubscription() {
+    firstContinuation?.resume(returning: subscription(name: .first))
+    firstContinuation = nil
+  }
+
+  func yieldSecond(_ snapshot: InstantInfiniteQuerySnapshot) {
+    secondStream.continuation.yield(snapshot)
+  }
+
+  func counts() -> (
+    subscribeCount: Int,
+    firstLoadNextPageCount: Int,
+    secondLoadNextPageCount: Int,
+    firstUnsubscribeCount: Int,
+    secondUnsubscribeCount: Int
+  ) {
+    (
+      subscribeCount,
+      firstLoadNextPageCount,
+      secondLoadNextPageCount,
+      firstUnsubscribeCount,
+      secondUnsubscribeCount
+    )
+  }
+
+  private func subscription(name: SubscriptionName) -> InstantInfiniteQuerySubscription {
+    InstantInfiniteQuerySubscription(
+      snapshots: name == .first ? firstStream.stream : secondStream.stream,
+      loadNextPage: {
+        Task {
+          await self.recordLoadNextPage(name: name)
+        }
+      },
+      unsubscribe: {
+        Task {
+          await self.recordUnsubscribe(name: name)
+        }
+      }
+    )
+  }
+
+  private func recordLoadNextPage(name: SubscriptionName) {
+    switch name {
+    case .first:
+      firstLoadNextPageCount += 1
+    case .second:
+      secondLoadNextPageCount += 1
+    }
+  }
+
+  private func recordUnsubscribe(name: SubscriptionName) {
+    switch name {
+    case .first:
+      firstUnsubscribeCount += 1
+    case .second:
+      secondUnsubscribeCount += 1
+    }
+  }
+
+  private enum SubscriptionName: Sendable {
+    case first
+    case second
+  }
+}
+
+private actor PlatformAdapterInfiniteQueryLoadRecorder {
+  private let staleSnapshot: InstantInfiniteQuerySnapshot
+  private let freshSnapshot: InstantInfiniteQuerySnapshot
+  private let clearedStaleSnapshot: InstantInfiniteQuerySnapshot
+  private var count = 0
+  private var capturedPlans: [InstantQueryPlan] = []
+  private var pendingContinuations: [Int: CheckedContinuation<Void, Never>] = [:]
+
+  init(
+    staleSnapshot: InstantInfiniteQuerySnapshot,
+    freshSnapshot: InstantInfiniteQuerySnapshot,
+    clearedStaleSnapshot: InstantInfiniteQuerySnapshot
+  ) {
+    self.staleSnapshot = staleSnapshot
+    self.freshSnapshot = freshSnapshot
+    self.clearedStaleSnapshot = clearedStaleSnapshot
+  }
+
+  func initialSnapshot(plan: InstantQueryPlan) async throws -> InstantInfiniteQuerySnapshot {
+    count += 1
+    capturedPlans.append(plan)
+    switch count {
+    case 1:
+      await waitForRelease(count)
+      return staleSnapshot
+    case 2:
+      return freshSnapshot
+    case 3:
+      await waitForRelease(count)
+      return clearedStaleSnapshot
+    default:
+      return freshSnapshot
+    }
+  }
+
+  func loadCount() -> Int {
+    count
+  }
+
+  func plans() -> [InstantQueryPlan] {
+    capturedPlans
+  }
+
+  func releasePendingLoad(_ count: Int) {
+    pendingContinuations.removeValue(forKey: count)?.resume()
+  }
+
+  private func waitForRelease(_ count: Int) async {
+    await withCheckedContinuation { continuation in
+      pendingContinuations[count] = continuation
+    }
   }
 }
 

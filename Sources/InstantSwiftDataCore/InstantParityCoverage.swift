@@ -502,11 +502,11 @@ public enum InstantSwiftDataParityCoverage {
       sourceTestName: "useInfiniteQuerySubscription data/loadNextPage/error result",
       swiftFile: "Tests/InstantSwiftDataTests/TypedAPITests.swift",
       swiftTestName:
-        "typedInfiniteQuerySubscriptionDecodesAndLoadsNextPage + infiniteQueryWrapperTasksAndLoadsNextPageThroughProjectedState + infiniteQueryWrapperPreservesErrorSnapshotsAndRecovers + infiniteQueryWrapperCancelIsIdempotentAndStopsLoading",
+        "typedInfiniteQuerySubscriptionDecodesAndLoadsNextPage + infiniteQueryWrapperTasksAndLoadsNextPageThroughProjectedState + infiniteQueryWrapperPreservesErrorSnapshotsAndRecovers + infiniteQueryWrapperCancelIsIdempotentAndStopsLoading + infiniteQueryWrapperTaskReplacementIgnoresPendingSubscribe + infiniteQueryWrapperLoadReplacementIgnoresPendingSuccess",
       surface: "infinite-query-adapter",
       status: .adapted,
       notes:
-        "InstantSwiftDataClient and @InfiniteQuery expose decoded values, pageInfo, loadNextPage, idempotent cancellation, projected bindings, and recoverable error-state snapshots."
+        "InstantSwiftDataClient and @InfiniteQuery expose decoded values, pageInfo, loadNextPage, idempotent cancellation, projected bindings, recoverable error-state snapshots, and stale pending subscription/load protection."
     ),
     instant(
       id: "instant.reactor.query-subs-round-trips",
@@ -2070,7 +2070,7 @@ public enum InstantSwiftDataParityCoverage {
       swiftTestName: "platformAdapterValidationProvesWrappersBindLocalRuntime",
       surface: "adapter-bindings",
       status: .adapted,
-      notes: "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares, plus dynamic live wrapper replacement/cancellation evidence."
+      notes: "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares, plus dynamic InfiniteQuery and live wrapper replacement/cancellation evidence."
     ),
     sqlite(
       id: "sqlite.draft.macro-generation",

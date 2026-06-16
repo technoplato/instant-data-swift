@@ -7728,7 +7728,7 @@ extension InstantStoreTests {
       ]
     )
     expectNoDifference(jsonOutput.authUserID, "user-1")
-    expectNoDifference(jsonOutput.roomMemberCount, 1)
+    expectNoDifference(jsonOutput.roomMemberCount, 2)
     expectNoDifference(jsonOutput.topicMessageCount, 1)
     expectNoDifference(jsonOutput.fileCount, 1)
     expectNoDifference(jsonOutput.streamChunkCount, 1)
@@ -8254,7 +8254,7 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.appID, "cli-cache-test")
     expectNoDifference(jsonOutput.event, "platform-adapters")
     expectNoDifference(jsonOutput.ok, true)
-    expectNoDifference(jsonOutput.evidenceCount, 21)
+    expectNoDifference(jsonOutput.evidenceCount, 24)
     expectNoDifference(jsonOutput.events, [
       "fetch-all",
       "fetch-one",
@@ -8277,6 +8277,9 @@ extension InstantStoreTests {
       "fetch-all-cached-prior-error",
       "fetch-all-cancellation",
       "fetch-request-cancellation",
+      "infinite-query-dynamic-cancellation",
+      "infinite-query-dynamic-load",
+      "live-wrapper-dynamic-cancellation",
     ])
     expectNoDifference(jsonOutput.adapters, [
       "@FetchAll",
@@ -8300,6 +8303,9 @@ extension InstantStoreTests {
       "@FetchAll(error)",
       "@FetchAll(cancellation)",
       "@Fetch(request cancellation)",
+      "@InfiniteQuery(dynamic cancellation)",
+      "@InfiniteQuery(dynamic load)",
+      "@RoomPresence(dynamic cancellation)",
     ])
     expectNoDifference(jsonOutput.bindingAdapterCount, 11)
     expectNoDifference(jsonOutput.bindingAdapters, [
@@ -8317,14 +8323,14 @@ extension InstantStoreTests {
     ])
     expectNoDifference(jsonOutput.todoCount, 1)
     expectNoDifference(jsonOutput.authUserID, "adapter-user")
-    expectNoDifference(jsonOutput.roomMemberCount, 1)
+    expectNoDifference(jsonOutput.roomMemberCount, 2)
     expectNoDifference(jsonOutput.topicMessageCount, 1)
     expectNoDifference(jsonOutput.fileCount, 1)
     expectNoDifference(jsonOutput.streamChunkCount, 1)
     expectNoDifference(jsonOutput.shareCount, 1)
-    expectNoDifference(jsonOutput.lifecycleEventCount, 10)
-    expectNoDifference(jsonOutput.queryProbeCount, 16)
-    expectNoDifference(jsonOutput.observationProbeCount, 2)
+    expectNoDifference(jsonOutput.lifecycleEventCount, 13)
+    expectNoDifference(jsonOutput.queryProbeCount, 19)
+    expectNoDifference(jsonOutput.observationProbeCount, 6)
     expectNoDifference(jsonOutput.loadErrorOperations, ["query dynamic FetchAll"])
     expectNoDifference(jsonOutput.cancellationTerminated, true)
     #expect(jsonOutput.selectedTodoID != nil)
@@ -8332,7 +8338,7 @@ extension InstantStoreTests {
 
     let jsonlOutput = try runCLI(["validation", "wrappers", "--jsonl"], homeURL: homeURL)
     let lines = jsonlOutput.split(separator: "\n")
-    expectNoDifference(lines.count, 21)
+    expectNoDifference(lines.count, 24)
     let fetchEvidence = try JSONDecoder().decode(
       CLIPlatformAdapterValidationEvidence.self,
       from: Data(try #require(lines.first).utf8)
@@ -8450,14 +8456,40 @@ extension InstantStoreTests {
     expectNoDifference(fetchRequestCancellationEvidence.details.observationCount, 1)
     expectNoDifference(fetchRequestCancellationEvidence.details.cancellationTerminated, true)
 
+    let infiniteCancellationEvidence = try #require(
+      evidenceRows.first { $0.event == "infinite-query-dynamic-cancellation" }
+    )
+    expectNoDifference(
+      infiniteCancellationEvidence.details.adapter,
+      "@InfiniteQuery(dynamic cancellation)"
+    )
+    expectNoDifference(infiniteCancellationEvidence.details.todoTitles, [
+      "Second infinite subscription"
+    ])
+    expectNoDifference(infiniteCancellationEvidence.details.observationCount, 2)
+    expectNoDifference(infiniteCancellationEvidence.details.cancellationTerminated, true)
+
+    let infiniteLoadEvidence = try #require(
+      evidenceRows.first { $0.event == "infinite-query-dynamic-load" }
+    )
+    expectNoDifference(infiniteLoadEvidence.details.adapter, "@InfiniteQuery(dynamic load)")
+    expectNoDifference(infiniteLoadEvidence.details.previousTodoTitles, ["Fresh infinite load"])
+    expectNoDifference(infiniteLoadEvidence.details.fetchAllTitleBatches ?? [], [
+      ["Fresh infinite load"],
+      [],
+    ])
+    expectNoDifference(infiniteLoadEvidence.details.queryCount, 3)
+    expectNoDifference(infiniteLoadEvidence.details.nilQueryCleared, true)
+
     let humanOutput = try runCLI(["validation", "adapters"], homeURL: homeURL)
     #expect(humanOutput.contains("validation: ok"))
     #expect(humanOutput.contains("case: validation.platform.adapters"))
-    #expect(humanOutput.contains("evidence rows: 21"))
+    #expect(humanOutput.contains("evidence rows: 24"))
     #expect(humanOutput.contains("binding adapters: @FetchAll, @InfiniteQuery, @FetchOne"))
-    #expect(humanOutput.contains("lifecycle probes: 10"))
+    #expect(humanOutput.contains("lifecycle probes: 13"))
     #expect(humanOutput.contains("cancellation terminated: true"))
     #expect(humanOutput.contains("@FetchAll"))
+    #expect(humanOutput.contains("@InfiniteQuery(dynamic cancellation)"))
     #expect(humanOutput.contains("@Fetch(request dynamic)"))
     #expect(humanOutput.contains("@Shares"))
   }
@@ -9328,7 +9360,7 @@ extension InstantStoreTests {
     expectNoDifference(platformAdapterBinding.status, "adapted")
     expectNoDifference(
       platformAdapterBinding.notes,
-      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares, plus dynamic live wrapper replacement/cancellation evidence."
+      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares, plus dynamic InfiniteQuery and live wrapper replacement/cancellation evidence."
     )
     #expect(
       jsonOutput.records.contains {
@@ -9404,7 +9436,7 @@ extension InstantStoreTests {
     expectNoDifference(platformAdapterBindingEvidence.details.status, "adapted")
     expectNoDifference(
       platformAdapterBindingEvidence.details.notes,
-      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares, plus dynamic live wrapper replacement/cancellation evidence."
+      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares, plus dynamic InfiniteQuery and live wrapper replacement/cancellation evidence."
     )
     let blockedEvidence = try JSONDecoder().decode(
       CLIParityCoverageEvidence.self,

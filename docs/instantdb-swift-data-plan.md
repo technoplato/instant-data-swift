@@ -1030,8 +1030,8 @@ must emit the same metrics on day one so regressions become visible.
 9. Query surface: `@FetchAll`, `@InfiniteQuery`, `@FetchOne`, `@Fetch`,
    `queryOnce`, pagination, infinite query, nested linked queries, dynamic
    query changes, loading/error state, animation hooks, projected bindings,
-   observable-model adapters, and cancellable `AsyncSequence` subscription
-   handles.
+   observable-model adapters, stale pending load/subscription protection, and
+   cancellable `AsyncSequence` subscription handles.
 10. Realtime linked entities: multi-link resolution, field filters, different
     `with` clauses, and reverse observer propagation.
 11. Offline: cached subscription emission, strict offline `queryOnce`, restart

@@ -1726,6 +1726,47 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
     return id
   }
 
+  func prepareActiveSubscriptionTask() -> Int {
+    let result = withLock {
+      _activeSubscriptionID += 1
+      let subscription = _activeSubscription?.subscription
+      _activeSubscription = nil
+      _isLoading = true
+      return (generation: _activeSubscriptionID, subscription: subscription)
+    }
+    result.subscription?.cancel()
+    return result.generation
+  }
+
+  func preparePendingLoad() -> Int {
+    let result = withLock {
+      _activeSubscriptionID += 1
+      let subscription = _activeSubscription?.subscription
+      _activeSubscription = nil
+      _isLoading = true
+      return (generation: _activeSubscriptionID, subscription: subscription)
+    }
+    result.subscription?.cancel()
+    return result.generation
+  }
+
+  func beginActiveSubscription(
+    _ subscription: InfiniteQuerySubscription<Element>,
+    after generation: Int
+  ) -> Int? {
+    let result: (id: Int, previousSubscription: InfiniteQuerySubscription<Element>?)? =
+      withLock {
+        guard _activeSubscriptionID == generation else { return nil }
+        _activeSubscriptionID += 1
+        let id = _activeSubscriptionID
+        let previousSubscription = _activeSubscription?.subscription
+        _activeSubscription = (id, subscription)
+        return (id, previousSubscription)
+      }
+    result?.previousSubscription?.cancel()
+    return result?.id
+  }
+
   func isActiveSubscription(_ id: Int) -> Bool {
     withLock {
       _activeSubscription?.id == id
@@ -1740,6 +1781,66 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
     }
   }
 
+  func applyActiveSubscriptionSnapshot(
+    _ snapshot: InfiniteQuerySnapshot<Element>,
+    id: Int
+  ) -> Bool {
+    withLock {
+      guard _activeSubscription?.id == id else { return false }
+      _wrappedValue = snapshot.values
+      _loadError = snapshot.error
+      _isLoading = false
+      _pageInfo = snapshot.pageInfo
+      _canLoadNextPage = snapshot.canLoadNextPage
+      return true
+    }
+  }
+
+  func applyPendingLoadSnapshot(
+    _ snapshot: InfiniteQuerySnapshot<Element>,
+    generation: Int
+  ) -> Bool {
+    withLock {
+      guard _activeSubscriptionID == generation else { return false }
+      _wrappedValue = snapshot.values
+      _loadError = snapshot.error
+      _isLoading = false
+      _pageInfo = snapshot.pageInfo
+      _canLoadNextPage = snapshot.canLoadNextPage
+      return true
+    }
+  }
+
+  func finishPendingLoad(
+    generation: Int,
+    loadError: InstantError?
+  ) -> Bool {
+    withLock {
+      guard _activeSubscriptionID == generation else { return false }
+      _loadError = loadError
+      _isLoading = false
+      return true
+    }
+  }
+
+  func finishActiveOrPendingSubscriptionTask(
+    id: Int?,
+    generation: Int,
+    loadError: InstantError?
+  ) -> Bool {
+    withLock {
+      if let id {
+        guard _activeSubscription?.id == id else { return false }
+        _activeSubscription = nil
+      } else {
+        guard _activeSubscriptionID == generation else { return false }
+      }
+      _loadError = loadError
+      _isLoading = false
+      return true
+    }
+  }
+
   func loadNextPage() {
     let subscription = withLock {
       _activeSubscription?.subscription
@@ -1751,6 +1852,73 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
     lock.lock()
     defer { lock.unlock() }
     return try operation()
+  }
+}
+
+private func runInfiniteQueryStorageSubscriptionTask<Element: Sendable>(
+  storage: InfiniteQueryStorage<Element>,
+  subscribe: @escaping @Sendable () async throws -> InfiniteQuerySubscription<Element>,
+  operation: String,
+  recovery: String
+) async throws {
+  let generation = storage.prepareActiveSubscriptionTask()
+  var activeSubscriptionID: Int?
+  do {
+    let subscription = try await subscribe()
+    defer {
+      subscription.cancel()
+    }
+    try Task.checkCancellation()
+    guard let subscriptionID = storage.beginActiveSubscription(subscription, after: generation)
+    else {
+      throw CancellationError()
+    }
+    activeSubscriptionID = subscriptionID
+    for try await snapshot in subscription {
+      try Task.checkCancellation()
+      guard storage.applyActiveSubscriptionSnapshot(snapshot, id: subscriptionID) else {
+        throw CancellationError()
+      }
+    }
+    try Task.checkCancellation()
+    guard storage.finishActiveOrPendingSubscriptionTask(
+      id: subscriptionID,
+      generation: generation,
+      loadError: nil
+    ) else {
+      throw CancellationError()
+    }
+  } catch let error as CancellationError {
+    _ = storage.finishActiveOrPendingSubscriptionTask(
+      id: activeSubscriptionID,
+      generation: generation,
+      loadError: nil
+    )
+    throw error
+  } catch let error as InstantError {
+    guard storage.finishActiveOrPendingSubscriptionTask(
+      id: activeSubscriptionID,
+      generation: generation,
+      loadError: error
+    ) else {
+      throw CancellationError()
+    }
+    throw error
+  } catch {
+    let error = InstantError(
+      code: .implementationFailed,
+      operation: operation,
+      message: String(describing: error),
+      recovery: recovery
+    )
+    guard storage.finishActiveOrPendingSubscriptionTask(
+      id: activeSubscriptionID,
+      generation: generation,
+      loadError: error
+    ) else {
+      throw CancellationError()
+    }
+    throw error
   }
 }
 
@@ -2414,17 +2582,20 @@ public struct InfiniteQuery<Element: InstantEntityModel>: Sendable {
       throw error
     }
 
-    storage.cancelActiveSubscription()
-    isLoading = true
+    let generation = storage.preparePendingLoad()
     do {
-      storage.apply(try await client.infiniteQueryInitialSnapshot(query))
+      let snapshot = try await client.infiniteQueryInitialSnapshot(query)
+      try Task.checkCancellation()
+      guard storage.applyPendingLoadSnapshot(snapshot, generation: generation) else {
+        throw CancellationError()
+      }
     } catch let error as CancellationError {
-      loadError = nil
-      isLoading = false
+      _ = storage.finishPendingLoad(generation: generation, loadError: nil)
       throw error
     } catch let error as InstantError {
-      loadError = error
-      isLoading = false
+      guard storage.finishPendingLoad(generation: generation, loadError: error) else {
+        throw CancellationError()
+      }
       throw error
     } catch {
       let error = InstantError(
@@ -2433,8 +2604,9 @@ public struct InfiniteQuery<Element: InstantEntityModel>: Sendable {
         message: String(describing: error),
         recovery: "Inspect the configured InstantSwiftDataClient and infinite query decoder."
       )
-      loadError = error
-      isLoading = false
+      guard storage.finishPendingLoad(generation: generation, loadError: error) else {
+        throw CancellationError()
+      }
       throw error
     }
   }
@@ -2480,6 +2652,19 @@ public struct InfiniteQuery<Element: InstantEntityModel>: Sendable {
   public func subscribe(
     using client: InstantSwiftDataClient
   ) async throws -> InfiniteQuerySubscription<Element> {
+    do {
+      let subscription = try await makeSubscription(using: client)
+      loadError = nil
+      return subscription
+    } catch let error as InstantError {
+      loadError = error
+      throw error
+    }
+  }
+
+  private func makeSubscription(
+    using client: InstantSwiftDataClient
+  ) async throws -> InfiniteQuerySubscription<Element> {
     guard let query = query.value else {
       let error = InstantError(
         code: .implementationFailed,
@@ -2488,11 +2673,9 @@ public struct InfiniteQuery<Element: InstantEntityModel>: Sendable {
         recovery:
           "Initialize @InfiniteQuery with an InstantEntityQuery, or pass a query to subscribe(_:using:)."
       )
-      loadError = error
       throw error
     }
 
-    loadError = nil
     return await client.subscribeInfiniteQuery(query)
   }
 
@@ -2535,65 +2718,12 @@ public struct InfiniteQuery<Element: InstantEntityModel>: Sendable {
   }
 
   public func task(using client: InstantSwiftDataClient) async throws {
-    storage.cancelActiveSubscription()
-    isLoading = true
-    var activeSubscriptionID: Int?
-    do {
-      let subscription = try await subscribe(using: client)
-      let subscriptionID = storage.beginActiveSubscription(subscription)
-      activeSubscriptionID = subscriptionID
-      defer {
-        subscription.cancel()
-        storage.endActiveSubscription(subscriptionID)
-      }
-      for try await snapshot in subscription {
-        try Task.checkCancellation()
-        guard storage.isActiveSubscription(subscriptionID) else {
-          throw CancellationError()
-        }
-        storage.apply(snapshot)
-      }
-      try Task.checkCancellation()
-      guard storage.isActiveSubscription(subscriptionID) else {
-        throw CancellationError()
-      }
-      isLoading = false
-      storage.endActiveSubscription(subscriptionID)
-    } catch let error as CancellationError {
-      if activeSubscriptionID.map(storage.isActiveSubscription) ?? true {
-        loadError = nil
-        isLoading = false
-      }
-      if let activeSubscriptionID {
-        storage.endActiveSubscription(activeSubscriptionID)
-      }
-      throw error
-    } catch let error as InstantError {
-      if activeSubscriptionID.map(storage.isActiveSubscription) ?? true {
-        loadError = error
-        isLoading = false
-      }
-      if let activeSubscriptionID {
-        storage.endActiveSubscription(activeSubscriptionID)
-      }
-      throw error
-    } catch {
-      let error = InstantError(
-        code: .implementationFailed,
-        operation: "observe InfiniteQuery",
-        message: String(describing: error),
-        recovery:
-          "Inspect the configured InstantSwiftDataClient and infinite query subscription operation."
-      )
-      if activeSubscriptionID.map(storage.isActiveSubscription) ?? true {
-        loadError = error
-        isLoading = false
-      }
-      if let activeSubscriptionID {
-        storage.endActiveSubscription(activeSubscriptionID)
-      }
-      throw error
-    }
+    try await runInfiniteQueryStorageSubscriptionTask(
+      storage: storage,
+      subscribe: { try await makeSubscription(using: client) },
+      operation: "observe InfiniteQuery",
+      recovery: "Inspect the configured InstantSwiftDataClient and infinite query subscription operation."
+    )
   }
 
   public func task(

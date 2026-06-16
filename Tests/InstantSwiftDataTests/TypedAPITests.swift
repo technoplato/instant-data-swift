@@ -1001,6 +1001,294 @@ struct TypedAPITests {
   }
 
   @Test
+  func infiniteQueryWrapperTaskCancellationBeforeSubscribeReturnsCancelsSubscription() async throws {
+    let recorder = InfiniteQueryLifecycleRecorder()
+    let client = infiniteQueryLifecycleClient(
+      subscribeInfiniteQuery: { plan in
+        await recorder.subscribe(plan: plan)
+      }
+    )
+    let infinite = InfiniteQuery<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt).limit(1))
+
+    let task = Task {
+      let infinite = infinite
+      let client = client
+      try await infinite.task(using: client)
+    }
+    defer {
+      task.cancel()
+    }
+
+    try await waitForTypedCondition(operation: "wait for pending infinite subscribe") {
+      await recorder.counts().subscribeCount == 1
+    }
+
+    task.cancel()
+    await recorder.releaseFirstSubscription()
+
+    do {
+      try await task.value
+      Issue.record("Expected canceled @InfiniteQuery task to throw CancellationError.")
+    } catch is CancellationError {
+    } catch {
+      Issue.record("Expected CancellationError, got \(error).")
+    }
+
+    try await waitForTypedCondition(operation: "record first infinite unsubscribe") {
+      await recorder.counts().firstUnsubscribeCount == 1
+    }
+    expectNoDifference(infinite.wrappedValue, [])
+    expectNoDifference(infinite.loadError, nil)
+    expectNoDifference(infinite.isLoading, false)
+
+    infinite.loadNextPage()
+    try await Task.sleep(nanoseconds: 20_000_000)
+    let counts = await recorder.counts()
+    expectNoDifference(counts.firstLoadNextPageCount, 0)
+    expectNoDifference(counts.secondLoadNextPageCount, 0)
+  }
+
+  @Test
+  func infiniteQueryWrapperTaskReplacementIgnoresPendingSubscribe() async throws {
+    let recorder = InfiniteQueryLifecycleRecorder()
+    let client = infiniteQueryLifecycleClient(
+      subscribeInfiniteQuery: { plan in
+        await recorder.subscribe(plan: plan)
+      }
+    )
+    let infinite = InfiniteQuery<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt).limit(1))
+
+    let firstTask = Task {
+      let infinite = infinite
+      let client = client
+      try await infinite.task(using: client)
+    }
+    defer {
+      firstTask.cancel()
+    }
+
+    try await waitForTypedCondition(operation: "wait for first infinite subscribe") {
+      await recorder.counts().subscribeCount == 1
+    }
+
+    let secondTask = Task {
+      let infinite = infinite
+      let client = client
+      try await infinite.task(using: client)
+    }
+    defer {
+      secondTask.cancel()
+    }
+
+    try await waitForTypedCondition(operation: "wait for second infinite subscribe") {
+      await recorder.counts().subscribeCount == 2
+    }
+
+    await recorder.yieldSecond(
+      typedInfiniteQuerySnapshot(
+        id: "todo-infinite-second-live",
+        text: "Second live subscription",
+        sequence: 2,
+        canLoadNextPage: true
+      )
+    )
+    try await waitForTypedCondition(operation: "wait for second infinite value") {
+      infinite.wrappedValue.map(\.text) == ["Second live subscription"]
+    }
+
+    await recorder.releaseFirstSubscription()
+    do {
+      try await firstTask.value
+      Issue.record("Expected replaced @InfiniteQuery task to throw CancellationError.")
+    } catch is CancellationError {
+    } catch {
+      Issue.record("Expected CancellationError, got \(error).")
+    }
+
+    try await waitForTypedCondition(operation: "record stale infinite unsubscribe") {
+      await recorder.counts().firstUnsubscribeCount == 1
+    }
+    expectNoDifference(infinite.wrappedValue.map(\.text), ["Second live subscription"])
+    expectNoDifference(infinite.loadError, nil)
+    expectNoDifference(infinite.isLoading, false)
+
+    infinite.loadNextPage()
+    try await waitForTypedCondition(operation: "record latest infinite loadNextPage") {
+      await recorder.counts().secondLoadNextPageCount == 1
+    }
+    let counts = await recorder.counts()
+    expectNoDifference(counts.firstLoadNextPageCount, 0)
+    expectNoDifference(counts.secondLoadNextPageCount, 1)
+  }
+
+  @Test
+  func infiniteQueryWrapperLoadReplacementIgnoresPendingSuccess() async throws {
+    let recorder = InfiniteQueryInitialLoadRecorder(
+      firstResolution: .success(
+        typedInfiniteQuerySnapshot(
+          id: "todo-infinite-stale-load",
+          text: "Stale load",
+          sequence: 1
+        )
+      ),
+      secondSnapshot: typedInfiniteQuerySnapshot(
+        id: "todo-infinite-fresh-load",
+        text: "Fresh load",
+        sequence: 2
+      )
+    )
+    let client = infiniteQueryLifecycleClient(
+      infiniteQueryInitialSnapshot: { plan in
+        try await recorder.initialSnapshot(plan: plan)
+      }
+    )
+    let infinite = InfiniteQuery<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt).limit(1))
+
+    let staleLoad = Task {
+      let infinite = infinite
+      let client = client
+      try await infinite.load(using: client)
+    }
+    defer {
+      staleLoad.cancel()
+    }
+
+    try await waitForTypedCondition(operation: "wait for stale infinite load") {
+      await recorder.loadCount() == 1
+    }
+    try await infinite.load(TypedTodo.query.order(TypedTodo.createdAt).limit(2), using: client)
+    expectNoDifference(infinite.wrappedValue.map(\.text), ["Fresh load"])
+    expectNoDifference(infinite.loadError, nil)
+    expectNoDifference(infinite.isLoading, false)
+    let replacementLoadLimits = await recorder.plans().map(\.limit)
+    expectNoDifference(replacementLoadLimits, [1, 2])
+
+    await recorder.releaseFirst()
+    do {
+      try await staleLoad.value
+      Issue.record("Expected stale @InfiniteQuery load to throw CancellationError.")
+    } catch is CancellationError {
+    } catch {
+      Issue.record("Expected CancellationError, got \(error).")
+    }
+    expectNoDifference(infinite.wrappedValue.map(\.text), ["Fresh load"])
+    expectNoDifference(infinite.loadError, nil)
+    expectNoDifference(infinite.isLoading, false)
+  }
+
+  @Test
+  func infiniteQueryWrapperLoadReplacementIgnoresPendingError() async throws {
+    let staleError = InstantError(
+      code: .validationFailed,
+      operation: "load stale InfiniteQuery",
+      message: "This error belongs to a stale load.",
+      recovery: "Ignore superseded infinite query loads."
+    )
+    let recorder = InfiniteQueryInitialLoadRecorder(
+      firstResolution: .failure(staleError),
+      secondSnapshot: typedInfiniteQuerySnapshot(
+        id: "todo-infinite-fresh-after-error",
+        text: "Fresh after stale error",
+        sequence: 2
+      )
+    )
+    let client = infiniteQueryLifecycleClient(
+      infiniteQueryInitialSnapshot: { plan in
+        try await recorder.initialSnapshot(plan: plan)
+      }
+    )
+    let infinite = InfiniteQuery<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt).limit(1))
+
+    let staleLoad = Task {
+      let infinite = infinite
+      let client = client
+      try await infinite.load(using: client)
+    }
+    defer {
+      staleLoad.cancel()
+    }
+
+    try await waitForTypedCondition(operation: "wait for stale infinite load error") {
+      await recorder.loadCount() == 1
+    }
+    try await infinite.load(TypedTodo.query.order(TypedTodo.createdAt).limit(2), using: client)
+    expectNoDifference(infinite.wrappedValue.map(\.text), ["Fresh after stale error"])
+    expectNoDifference(infinite.loadError, nil)
+    let replacementLoadLimits = await recorder.plans().map(\.limit)
+    expectNoDifference(replacementLoadLimits, [1, 2])
+
+    await recorder.releaseFirst()
+    do {
+      try await staleLoad.value
+      Issue.record("Expected stale @InfiniteQuery load error to throw CancellationError.")
+    } catch is CancellationError {
+    } catch {
+      Issue.record("Expected CancellationError, got \(error).")
+    }
+    expectNoDifference(infinite.wrappedValue.map(\.text), ["Fresh after stale error"])
+    expectNoDifference(infinite.loadError, nil)
+    expectNoDifference(infinite.isLoading, false)
+  }
+
+  @Test
+  func infiniteQueryWrapperNilQueryCancelsPendingLoad() async throws {
+    let recorder = InfiniteQueryInitialLoadRecorder(
+      firstResolution: .success(
+        typedInfiniteQuerySnapshot(
+          id: "todo-infinite-cleared-stale-load",
+          text: "Cleared stale load",
+          sequence: 1,
+          canLoadNextPage: true
+        )
+      ),
+      secondSnapshot: typedInfiniteQuerySnapshot(
+        id: "unused-second-load",
+        text: "Unused",
+        sequence: 2
+      )
+    )
+    let client = infiniteQueryLifecycleClient(
+      infiniteQueryInitialSnapshot: { plan in
+        try await recorder.initialSnapshot(plan: plan)
+      }
+    )
+    let infinite = InfiniteQuery<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt).limit(1))
+
+    let staleLoad = Task {
+      let infinite = infinite
+      let client = client
+      try await infinite.load(using: client)
+    }
+    defer {
+      staleLoad.cancel()
+    }
+
+    try await waitForTypedCondition(operation: "wait for pending infinite load before clear") {
+      await recorder.loadCount() == 1
+    }
+    try await infinite.load(nil, using: client)
+    expectNoDifference(infinite.wrappedValue, [])
+    expectNoDifference(infinite.loadError, nil)
+    expectNoDifference(infinite.isLoading, false)
+    expectNoDifference(infinite.pageInfo, nil)
+    expectNoDifference(infinite.canLoadNextPage, false)
+
+    await recorder.releaseFirst()
+    do {
+      try await staleLoad.value
+      Issue.record("Expected cleared @InfiniteQuery load to throw CancellationError.")
+    } catch is CancellationError {
+    } catch {
+      Issue.record("Expected CancellationError, got \(error).")
+    }
+    expectNoDifference(infinite.wrappedValue, [])
+    expectNoDifference(infinite.loadError, nil)
+    expectNoDifference(infinite.isLoading, false)
+    expectNoDifference(infinite.pageInfo, nil)
+    expectNoDifference(infinite.canLoadNextPage, false)
+  }
+
+  @Test
   func typedQuerySelectsFieldsForSnapshotsAndCompleteDecoding() async throws {
     let cacheURL = try typedTestCacheURL("typed-field-selection")
     let fixedDate = Date(timeIntervalSince1970: 1_700_000_450)
@@ -6322,6 +6610,180 @@ private actor InfiniteQuerySubscriptionRecorder {
   }
 }
 
+private actor InfiniteQueryLifecycleRecorder {
+  private var subscribeCount = 0
+  private var firstLoadNextPageCount = 0
+  private var secondLoadNextPageCount = 0
+  private var firstUnsubscribeCount = 0
+  private var secondUnsubscribeCount = 0
+  private var firstContinuation: CheckedContinuation<InstantInfiniteQuerySubscription, Never>?
+  private let firstStream = AsyncStream<InstantInfiniteQuerySnapshot>.makeStream(
+    bufferingPolicy: .bufferingNewest(1)
+  )
+  private let secondStream = AsyncStream<InstantInfiniteQuerySnapshot>.makeStream(
+    bufferingPolicy: .bufferingNewest(1)
+  )
+
+  deinit {
+    firstStream.continuation.finish()
+    secondStream.continuation.finish()
+  }
+
+  func subscribe(plan: InstantQueryPlan) async -> InstantInfiniteQuerySubscription {
+    subscribeCount += 1
+    switch subscribeCount {
+    case 1:
+      return await withCheckedContinuation { continuation in
+        firstContinuation = continuation
+      }
+    case 2:
+      return subscription(name: .second)
+    default:
+      return subscription(name: .second)
+    }
+  }
+
+  func releaseFirstSubscription() {
+    firstContinuation?.resume(returning: subscription(name: .first))
+    firstContinuation = nil
+  }
+
+  func yieldSecond(_ snapshot: InstantInfiniteQuerySnapshot) {
+    secondStream.continuation.yield(snapshot)
+  }
+
+  func counts() -> (
+    subscribeCount: Int,
+    firstLoadNextPageCount: Int,
+    secondLoadNextPageCount: Int,
+    firstUnsubscribeCount: Int,
+    secondUnsubscribeCount: Int
+  ) {
+    (
+      subscribeCount,
+      firstLoadNextPageCount,
+      secondLoadNextPageCount,
+      firstUnsubscribeCount,
+      secondUnsubscribeCount
+    )
+  }
+
+  private func subscription(name: SubscriptionName) -> InstantInfiniteQuerySubscription {
+    InstantInfiniteQuerySubscription(
+      snapshots: name == .first ? firstStream.stream : secondStream.stream,
+      loadNextPage: {
+        Task {
+          await self.recordLoadNextPage(name: name)
+        }
+      },
+      unsubscribe: {
+        Task {
+          await self.recordUnsubscribe(name: name)
+        }
+      }
+    )
+  }
+
+  private func recordLoadNextPage(name: SubscriptionName) {
+    switch name {
+    case .first:
+      firstLoadNextPageCount += 1
+    case .second:
+      secondLoadNextPageCount += 1
+    }
+  }
+
+  private func recordUnsubscribe(name: SubscriptionName) {
+    switch name {
+    case .first:
+      firstUnsubscribeCount += 1
+    case .second:
+      secondUnsubscribeCount += 1
+    }
+  }
+
+  private enum SubscriptionName: Sendable {
+    case first
+    case second
+  }
+}
+
+private actor InfiniteQueryInitialLoadRecorder {
+  private let firstResolution: FirstResolution
+  private let secondSnapshot: InstantInfiniteQuerySnapshot
+  private var firstContinuation: CheckedContinuation<Void, Never>?
+  private var count = 0
+  private var capturedPlans: [InstantQueryPlan] = []
+
+  init(
+    firstResolution: FirstResolution,
+    secondSnapshot: InstantInfiniteQuerySnapshot
+  ) {
+    self.firstResolution = firstResolution
+    self.secondSnapshot = secondSnapshot
+  }
+
+  func initialSnapshot(plan: InstantQueryPlan) async throws -> InstantInfiniteQuerySnapshot {
+    count += 1
+    capturedPlans.append(plan)
+    guard count == 1 else {
+      return secondSnapshot
+    }
+
+    await withCheckedContinuation { continuation in
+      firstContinuation = continuation
+    }
+    switch firstResolution {
+    case let .success(snapshot):
+      return snapshot
+    case let .failure(error):
+      throw error
+    }
+  }
+
+  func loadCount() -> Int {
+    count
+  }
+
+  func plans() -> [InstantQueryPlan] {
+    capturedPlans
+  }
+
+  func releaseFirst() {
+    firstContinuation?.resume()
+    firstContinuation = nil
+  }
+
+  enum FirstResolution: Sendable {
+    case success(InstantInfiniteQuerySnapshot)
+    case failure(InstantError)
+  }
+}
+
+private func infiniteQueryLifecycleClient(
+  subscribeInfiniteQuery: (@Sendable (InstantQueryPlan) async -> InstantInfiniteQuerySubscription)? =
+    nil,
+  infiniteQueryInitialSnapshot:
+    (@Sendable (InstantQueryPlan) async throws -> InstantInfiniteQuerySnapshot)? = nil
+) -> InstantSwiftDataClient {
+  InstantSwiftDataClient(
+    transact: { transaction in
+      InstantStoreMutationResult(
+        transactionID: transaction.id,
+        changedEntityIDs: [],
+        tripleCount: transaction.operations.count,
+        emissions: []
+      )
+    },
+    query: { _ in [] },
+    observe: { _ in finiteStream([] as [InstantQueryEmission]) },
+    subscribeInfiniteQuery: subscribeInfiniteQuery,
+    infiniteQueryInitialSnapshot: infiniteQueryInitialSnapshot,
+    pendingMutations: { [] },
+    localID: { name in "infinite-lifecycle-\(name)" }
+  )
+}
+
 private func adapterSurfaceClient() -> InstantSwiftDataClient {
   InstantSwiftDataClient(
     transact: { transaction in
@@ -6955,6 +7417,27 @@ private func typedTodoSnapshot(
       "isCompleted": .one(.bool(isCompleted)),
       "createdAt": .one(.date(createdAt)),
     ]
+  )
+}
+
+private func typedInfiniteQuerySnapshot(
+  id: String,
+  text: String,
+  sequence: Int64,
+  canLoadNextPage: Bool = false
+) -> InstantInfiniteQuerySnapshot {
+  InstantInfiniteQuerySnapshot(
+    queryID: TypedTodo.query.plan.id,
+    sequence: sequence,
+    values: [
+      typedTodoSnapshot(
+        id: id,
+        text: text,
+        isCompleted: false,
+        createdAt: Date(timeIntervalSince1970: TimeInterval(1_700_000_500 + sequence))
+      )
+    ],
+    canLoadNextPage: canLoadNextPage
   )
 }
 
