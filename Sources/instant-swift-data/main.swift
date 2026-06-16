@@ -244,7 +244,10 @@ struct InstantSwiftDataCLI {
     case .serverTransactionLoopback:
       let appID = validationAppID(defaultAppID: "server-transaction-loopback-validation")
       do {
-        let result = try await InstantSwiftDataServerTransactionLoopbackValidation.run(appID: appID)
+        let result = try await InstantSwiftDataServerTransactionLoopbackValidation.run(
+          appID: appID,
+          typeScriptServerTransactionContract: try typeScriptServerTransactionContract()
+        )
         try printServerTransactionLoopbackValidation(result: result, output: output)
       } catch {
         if output == .jsonl {
@@ -9430,6 +9433,19 @@ struct InstantSwiftDataCLI {
       return defaultAppID
     }
     return appID
+  }
+
+  private static func typeScriptServerTransactionContract() throws
+    -> TypeScriptServerTransactionContract?
+  {
+    guard
+      let path = ProcessInfo.processInfo.environment[
+        "INSTANT_SWIFT_DATA_TYPESCRIPT_SERVER_TRANSACTION_CONTRACT"
+      ]?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !path.isEmpty
+    else { return nil }
+    return try InstantSwiftDataServerTransactionLoopbackValidation
+      .loadTypeScriptServerTransactionContract(from: URL(fileURLWithPath: path))
   }
 
   private static func validationFailureRow(

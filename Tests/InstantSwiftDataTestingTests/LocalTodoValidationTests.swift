@@ -173,6 +173,95 @@ struct LocalTodoValidationTests {
   }
 
   @Test
+  func serverTransactionLoopbackValidationConsumesTypeScriptContract() async throws {
+    let cacheURL = temporaryCacheURL()
+
+    let run = try await InstantSwiftDataTestHarness.runServerTransactionLoopbackValidation(
+      appID: "validation-server-loopback-typescript-test",
+      cacheURL: cacheURL,
+      typeScriptServerTransactionContract: TypeScriptServerTransactionContract(
+        appID: "validation-server-loopback-typescript-test",
+        transactionID: "validation.typescript.server.tx",
+        processedTransactionID: "validation.typescript.processed",
+        entityID: "validation-typescript-server",
+        text: "TypeScript-authored server transaction",
+        createdAtMs: 1_700_002_000_003
+      ),
+      timestamp: { InstantTimestamp(milliseconds: 1_700_002_000_000) }
+    )
+    let result = run.result
+
+    expectNoDifference(run.summary.rowCount, 5)
+    expectNoDifference(
+      run.summary.events,
+      [
+        "local-outbox",
+        "server-apply",
+        "observer-publish",
+        "typescript-contract-apply",
+        "relaunch",
+      ]
+    )
+    let typeScriptApply = try #require(
+      result.evidence.first { $0.event == "typescript-contract-apply" }?.details
+    )
+    expectNoDifference(typeScriptApply.changedEntityIDs, ["validation-typescript-server"])
+    expectNoDifference(typeScriptApply.emissionQueryIDs, [TodoExample.query.id])
+    expectNoDifference(typeScriptApply.mutationTransactionID, "validation.typescript.server.tx")
+    expectNoDifference(typeScriptApply.processedTransactionID, "validation.typescript.processed")
+    expectNoDifference(
+      typeScriptApply.observerTodoIDs,
+      [
+        "validation-loopback-local",
+        "validation-loopback-server",
+        "validation-typescript-server",
+      ]
+    )
+
+    let finalDetails = try #require(result.evidence.last?.details)
+    expectNoDifference(
+      finalDetails.todoIDs,
+      [
+        "validation-loopback-local",
+        "validation-loopback-server",
+        "validation-typescript-server",
+      ]
+    )
+    expectNoDifference(finalDetails.pendingMutationIDs, ["validation.loopback.local"])
+    expectNoDifference(finalDetails.pendingMutationCount, 1)
+    expectNoDifference(finalDetails.mutationTransactionID, "validation.typescript.server.tx")
+    expectNoDifference(finalDetails.processedTransactionID, "validation.typescript.processed")
+    expectNoDifference(finalDetails.outboxRevision, typeScriptApply.outboxRevision)
+  }
+
+  @Test
+  func serverTransactionLoopbackValidationRejectsEmptyTypeScriptContractOperations() async throws {
+    do {
+      _ = try await InstantSwiftDataTestHarness.runServerTransactionLoopbackValidation(
+        appID: "validation-server-loopback-empty-typescript-test",
+        cacheURL: temporaryCacheURL(),
+        typeScriptServerTransactionContract: TypeScriptServerTransactionContract(
+          appID: "validation-server-loopback-empty-typescript-test",
+          transactionID: "validation.typescript.empty.tx",
+          processedTransactionID: "validation.typescript.empty.processed",
+          entityID: "validation-typescript-empty",
+          text: "Empty TypeScript-authored server transaction",
+          createdAtMs: 4_100_002_000_003,
+          operations: []
+        ),
+        timestamp: { InstantTimestamp(milliseconds: 1_700_002_000_000) }
+      )
+      #expect(Bool(false), "Expected empty TypeScript contract operations to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "decode TypeScript server transaction contract")
+      #expect(error.message.contains("must include at least one operation"))
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+  }
+
+  @Test
   func localIntegrationValidationProducesEvidenceAndPersistsLocalSurfaces() async throws {
     let cacheURL = temporaryCacheURL()
 
@@ -1446,6 +1535,7 @@ struct LocalTodoValidationTests {
     #expect(script.contains("INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS"))
     #expect(script.contains("swift run instant-swift-data-validation-runner --local-todos"))
     #expect(script.contains("swift run instant-swift-data-validation-runner --local-integrations"))
+    #expect(script.contains("swift run instant-swift-data-validation-runner --server-transaction-loopback"))
     #expect(script.contains("swift run instant-swift-data validation reminders --jsonl"))
     #expect(script.contains("swift run instant-swift-data validation typed-drafts --jsonl"))
     #expect(script.contains("swift run instant-swift-data validation platform-adapters --jsonl"))
@@ -1456,6 +1546,7 @@ struct LocalTodoValidationTests {
     #expect(script.contains("swift run instant-swift-data admin transact validationTransport"))
     #expect(script.contains("swift run instant-swift-data outbox transport --json"))
     #expect(script.contains("swift-local-integrations.jsonl"))
+    #expect(script.contains("swift-server-transaction-loopback.jsonl"))
     #expect(script.contains("swift-reminders.jsonl"))
     #expect(script.contains("swift-typed-drafts.jsonl"))
     #expect(script.contains("swift-platform-adapters.jsonl"))
@@ -1463,10 +1554,14 @@ struct LocalTodoValidationTests {
     #expect(script.contains("swift-parity-report.jsonl"))
     #expect(script.contains("swift-coverage.jsonl"))
     #expect(script.contains("swift-transport-contract.json"))
+    #expect(script.contains("typescript-server-transaction-contract.json"))
+    #expect(script.contains("swift-typescript-server-transaction-contract.jsonl"))
     #expect(script.contains("swift-benchmark.jsonl"))
     #expect(script.contains("INSTANT_SWIFT_DATA_NODE"))
     #expect(script.contains("validation/ts-runner/src/main.ts --fixtures"))
     #expect(script.contains("--swift-transport-contract"))
+    #expect(script.contains("--typescript-server-transaction-contract"))
+    #expect(script.contains("INSTANT_SWIFT_DATA_TYPESCRIPT_SERVER_TRANSACTION_CONTRACT"))
     #expect(script.contains("--boundary-preflight"))
     #expect(script.contains("INSTANT_SWIFT_DATA_REMOTE_APP_ID"))
     #expect(script.contains("INSTANT_SWIFT_DATA_REQUIRE_REMOTE_PREFLIGHT"))
@@ -1594,6 +1689,9 @@ struct LocalTodoValidationTests {
         instant-swift-data-validation-runner:--local-integrations:)
           echo '{"case":"validation.local.integrations","side":"swift","event":"stub-integrations","appID":"local-validation","timestampMs":2,"ok":true,"details":{}}'
           ;;
+        instant-swift-data-validation-runner:--server-transaction-loopback:)
+          echo '{"case":"validation.server.transaction.loopback","side":"swift","event":"stub-server-loopback","appID":"local-validation","timestampMs":2,"ok":true,"details":{}}'
+          ;;
         instant-swift-data:validation:reminders)
           expected="run instant-swift-data validation reminders --jsonl"
           if [ "$*" != "$expected" ]; then
@@ -1674,6 +1772,26 @@ struct LocalTodoValidationTests {
             exit 66
           fi
           echo '{"case":"validation.coverage","side":"swift","event":"stub-coverage","appID":"local-validation","timestampMs":6,"ok":true,"details":{}}'
+          ;;
+        instant-swift-data:validation:server-transaction-loopback)
+          expected="run instant-swift-data validation server-transaction-loopback --jsonl"
+          if [ "$*" != "$expected" ]; then
+            echo "unexpected TypeScript contract loopback arguments: $*" >&2
+            exit 65
+          fi
+          if [ "${INSTANT_APP_ID:-}" != "local-validation" ]; then
+            echo "unexpected TypeScript contract loopback app id: ${INSTANT_APP_ID:-}" >&2
+            exit 66
+          fi
+          if [ ! -s "${INSTANT_SWIFT_DATA_TYPESCRIPT_SERVER_TRANSACTION_CONTRACT:-}" ]; then
+            echo "missing TypeScript server transaction contract: ${INSTANT_SWIFT_DATA_TYPESCRIPT_SERVER_TRANSACTION_CONTRACT:-}" >&2
+            exit 67
+          fi
+          echo '{"case":"validation.server.transaction.loopback","side":"swift","event":"local-outbox","appID":"local-validation","timestampMs":6,"ok":true,"details":{"pendingMutationIDs":["validation.loopback.local"],"todoIDs":["validation-loopback-local"]}}'
+          echo '{"case":"validation.server.transaction.loopback","side":"swift","event":"server-apply","appID":"local-validation","timestampMs":6,"ok":true,"details":{"mutationTransactionID":"validation.loopback.server","processedTransactionID":"validation.loopback.server","changedEntityIDs":["validation-loopback-server"],"todoIDs":["validation-loopback-local","validation-loopback-server"]}}'
+          echo '{"case":"validation.server.transaction.loopback","side":"swift","event":"observer-publish","appID":"local-validation","timestampMs":6,"ok":true,"details":{"mutationTransactionID":"validation.loopback.server","processedTransactionID":"validation.loopback.server","observerTodoIDs":["validation-loopback-local","validation-loopback-server"],"todoIDs":["validation-loopback-local","validation-loopback-server"]}}'
+          echo '{"case":"validation.server.transaction.loopback","side":"swift","event":"typescript-contract-apply","appID":"local-validation","timestampMs":6,"ok":true,"details":{"mutationTransactionID":"validation.typescript.server.tx","processedTransactionID":"validation.typescript.server.processed","changedEntityIDs":["validation-typescript-server"],"observerTodoIDs":["validation-loopback-local","validation-loopback-server","validation-typescript-server"],"todoIDs":["validation-loopback-local","validation-loopback-server","validation-typescript-server"]}}'
+          echo '{"case":"validation.server.transaction.loopback","side":"swift","event":"relaunch","appID":"local-validation","timestampMs":6,"ok":true,"details":{"mutationTransactionID":"validation.typescript.server.tx","processedTransactionID":"validation.typescript.server.processed","pendingMutationIDs":["validation.loopback.local"],"todoIDs":["validation-loopback-local","validation-loopback-server","validation-typescript-server"]}}'
           ;;
         instant-swift-data-benchmarks:--suite:local-todos)
           expected="run instant-swift-data-benchmarks --suite local-todos --iterations ${INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS:-1} --app-id local-validation --jsonl"
@@ -1758,6 +1876,15 @@ struct LocalTodoValidationTests {
           fi
           echo '{"case":"validation.typescript.transport-contract","side":"typescript","event":"swift-transport-contract","appID":"local-validation","timestampMs":9,"ok":true,"details":{"proofLevel":"contract-only","remoteBoundary":"pending"}}'
           ;;
+        --typescript-server-transaction-contract)
+          if [ "$4:$5" != "--app-id:local-validation" ]; then
+            echo "unexpected TypeScript server transaction contract arguments: $*" >&2
+            exit 75
+          fi
+          mkdir -p "$(dirname "$3")"
+          printf '%s\n' '{"case":"validation.typescript.server.transaction.contract","event":"typescript-server-transaction-contract","appID":"local-validation","transactionID":"validation.typescript.server.tx","processedTransactionID":"validation.typescript.server.processed","entityID":"validation-typescript-server","text":"TypeScript-authored server transaction","createdAtMs":4100002000003,"operations":[{"type":"requireEntityMissing","entityID":"validation-typescript-server","namespace":"todos"},{"type":"insert","entityID":"validation-typescript-server","attributeID":"todos/id","value":{"type":"string","string":"validation-typescript-server"},"txTimeMs":4100002000003},{"type":"insert","entityID":"validation-typescript-server","attributeID":"todos/text","value":{"type":"string","string":"TypeScript-authored server transaction"},"txTimeMs":4100002000003},{"type":"insert","entityID":"validation-typescript-server","attributeID":"todos/isCompleted","value":{"type":"bool","bool":false},"txTimeMs":4100002000003},{"type":"insert","entityID":"validation-typescript-server","attributeID":"todos/createdAt","value":{"type":"date","dateMs":4100002000003},"txTimeMs":4100002000003}]}' > "$3"
+          echo '{"case":"validation.typescript.server.transaction.contract","side":"typescript","event":"typescript-server-transaction-contract","appID":"local-validation","timestampMs":10,"ok":true,"details":{"proofLevel":"contract-only","remoteBoundary":"pending","transactionID":"validation.typescript.server.tx","processedTransactionID":"validation.typescript.server.processed","operationCount":5}}'
+          ;;
         --boundary-preflight)
           if [ "$3:$4" != "--app-id:local-validation" ]; then
             echo "unexpected boundary arguments: $*" >&2
@@ -1816,6 +1943,8 @@ struct LocalTodoValidationTests {
       "swift-local-complete",
       "swift-local-integrations-start",
       "swift-local-integrations-complete",
+      "swift-server-transaction-loopback-start",
+      "swift-server-transaction-loopback-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -1837,6 +1966,10 @@ struct LocalTodoValidationTests {
       "typescript-fixtures-complete",
       "typescript-transport-contract-start",
       "typescript-transport-contract-complete",
+      "typescript-server-transaction-contract-start",
+      "typescript-server-transaction-contract-complete",
+      "swift-typescript-server-transaction-contract-start",
+      "swift-typescript-server-transaction-contract-complete",
       "typescript-boundary-preflight-start",
       "typescript-boundary-preflight-complete",
       "complete",
@@ -1848,6 +1981,11 @@ struct LocalTodoValidationTests {
     #expect(
       FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("swift-local-integrations.jsonl").path
+      )
+    )
+    #expect(
+      FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-server-transaction-loopback.jsonl").path
       )
     )
     #expect(
@@ -1902,6 +2040,21 @@ struct LocalTodoValidationTests {
     )
     #expect(
       FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-server-transaction-contract.json").path
+      )
+    )
+    #expect(
+      FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-server-transaction-contract.jsonl").path
+      )
+    )
+    #expect(
+      FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-typescript-server-transaction-contract.jsonl").path
+      )
+    )
+    #expect(
+      FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("typescript-boundary.jsonl").path
       )
     )
@@ -1913,6 +2066,30 @@ struct LocalTodoValidationTests {
       ["swift-transport-contract"]
     )
     expectNoDifference(transportContractRows.first?["ok"] as? Bool, true)
+    let typeScriptServerContractRows = try readJSONLines(
+      resultsURL.appendingPathComponent("typescript-server-transaction-contract.jsonl")
+    )
+    expectNoDifference(
+      typeScriptServerContractRows.map { $0["event"] as? String ?? "" },
+      ["typescript-server-transaction-contract"]
+    )
+    expectNoDifference(typeScriptServerContractRows.first?["ok"] as? Bool, true)
+    let swiftTypeScriptServerContractRows = try readJSONLines(
+      resultsURL.appendingPathComponent("swift-typescript-server-transaction-contract.jsonl")
+    )
+    expectNoDifference(
+      swiftTypeScriptServerContractRows.map { $0["event"] as? String ?? "" },
+      [
+        "local-outbox",
+        "server-apply",
+        "observer-publish",
+        "typescript-contract-apply",
+        "relaunch",
+      ]
+    )
+    expectNoDifference(swiftTypeScriptServerContractRows.map { $0["ok"] as? Bool }, [
+      true, true, true, true, true,
+    ])
     let boundaryRows = try readJSONLines(
       resultsURL.appendingPathComponent("typescript-boundary.jsonl")
     )
@@ -1933,6 +2110,11 @@ struct LocalTodoValidationTests {
           ;;
         --swift-transport-contract)
           echo '{"case":"validation.typescript.transport-contract","side":"typescript","event":"transport-override","appID":"local-validation","timestampMs":10,"ok":true,"details":{}}'
+          ;;
+        --typescript-server-transaction-contract)
+          mkdir -p "$(dirname "$3")"
+          printf '%s\n' '{"case":"validation.typescript.server.transaction.contract","event":"typescript-server-transaction-contract","appID":"local-validation","transactionID":"validation.typescript.server.tx","processedTransactionID":"validation.typescript.server.processed","entityID":"validation-typescript-server","text":"TypeScript-authored server transaction","createdAtMs":4100002000003,"operations":[{"type":"requireEntityMissing","entityID":"validation-typescript-server","namespace":"todos"},{"type":"insert","entityID":"validation-typescript-server","attributeID":"todos/id","value":{"type":"string","string":"validation-typescript-server"},"txTimeMs":4100002000003},{"type":"insert","entityID":"validation-typescript-server","attributeID":"todos/text","value":{"type":"string","string":"TypeScript-authored server transaction"},"txTimeMs":4100002000003},{"type":"insert","entityID":"validation-typescript-server","attributeID":"todos/isCompleted","value":{"type":"bool","bool":false},"txTimeMs":4100002000003},{"type":"insert","entityID":"validation-typescript-server","attributeID":"todos/createdAt","value":{"type":"date","dateMs":4100002000003},"txTimeMs":4100002000003}]}' > "$3"
+          echo '{"case":"validation.typescript.server.transaction.contract","side":"typescript","event":"server-contract-override","appID":"local-validation","timestampMs":10,"ok":true,"details":{}}'
           ;;
         --boundary-preflight)
           echo '{"case":"validation.typescript.boundary","side":"typescript","event":"boundary-override","appID":"local-validation","timestampMs":11,"ok":false,"details":{}}'
@@ -1967,6 +2149,26 @@ struct LocalTodoValidationTests {
     expectNoDifference(
       overrideTransportRows.map { $0["event"] as? String ?? "" },
       ["transport-override"]
+    )
+    let overrideServerContractRows = try readJSONLines(
+      resultsURL.appendingPathComponent("typescript-server-transaction-contract.jsonl")
+    )
+    expectNoDifference(
+      overrideServerContractRows.map { $0["event"] as? String ?? "" },
+      ["server-contract-override"]
+    )
+    let overrideSwiftServerContractRows = try readJSONLines(
+      resultsURL.appendingPathComponent("swift-typescript-server-transaction-contract.jsonl")
+    )
+    expectNoDifference(
+      overrideSwiftServerContractRows.map { $0["event"] as? String ?? "" },
+      [
+        "local-outbox",
+        "server-apply",
+        "observer-publish",
+        "typescript-contract-apply",
+        "relaunch",
+      ]
     )
     let overrideBoundaryRows = try readJSONLines(
       resultsURL.appendingPathComponent("typescript-boundary.jsonl")
@@ -2006,6 +2208,11 @@ struct LocalTodoValidationTests {
           ;;
         --swift-transport-contract)
           echo '{"case":"validation.typescript.transport-contract","side":"typescript","event":"transport-bundled","appID":"local-validation","timestampMs":11,"ok":true,"details":{}}'
+          ;;
+        --typescript-server-transaction-contract)
+          mkdir -p "$(dirname "$3")"
+          printf '%s\n' '{"case":"validation.typescript.server.transaction.contract","event":"typescript-server-transaction-contract","appID":"local-validation","transactionID":"validation.typescript.server.tx","processedTransactionID":"validation.typescript.server.processed","entityID":"validation-typescript-server","text":"TypeScript-authored server transaction","createdAtMs":4100002000003,"operations":[{"type":"requireEntityMissing","entityID":"validation-typescript-server","namespace":"todos"},{"type":"insert","entityID":"validation-typescript-server","attributeID":"todos/id","value":{"type":"string","string":"validation-typescript-server"},"txTimeMs":4100002000003},{"type":"insert","entityID":"validation-typescript-server","attributeID":"todos/text","value":{"type":"string","string":"TypeScript-authored server transaction"},"txTimeMs":4100002000003},{"type":"insert","entityID":"validation-typescript-server","attributeID":"todos/isCompleted","value":{"type":"bool","bool":false},"txTimeMs":4100002000003},{"type":"insert","entityID":"validation-typescript-server","attributeID":"todos/createdAt","value":{"type":"date","dateMs":4100002000003},"txTimeMs":4100002000003}]}' > "$3"
+          echo '{"case":"validation.typescript.server.transaction.contract","side":"typescript","event":"server-contract-bundled","appID":"local-validation","timestampMs":11,"ok":true,"details":{}}'
           ;;
         --boundary-preflight)
           echo '{"case":"validation.typescript.boundary","side":"typescript","event":"boundary-bundled","appID":"local-validation","timestampMs":12,"ok":false,"details":{}}'
@@ -2048,6 +2255,26 @@ struct LocalTodoValidationTests {
       bundledTransportRows.map { $0["event"] as? String ?? "" },
       ["transport-bundled"]
     )
+    let bundledServerContractRows = try readJSONLines(
+      resultsURL.appendingPathComponent("typescript-server-transaction-contract.jsonl")
+    )
+    expectNoDifference(
+      bundledServerContractRows.map { $0["event"] as? String ?? "" },
+      ["server-contract-bundled"]
+    )
+    let bundledSwiftServerContractRows = try readJSONLines(
+      resultsURL.appendingPathComponent("swift-typescript-server-transaction-contract.jsonl")
+    )
+    expectNoDifference(
+      bundledSwiftServerContractRows.map { $0["event"] as? String ?? "" },
+      [
+        "local-outbox",
+        "server-apply",
+        "observer-publish",
+        "typescript-contract-apply",
+        "relaunch",
+      ]
+    )
     let bundledBoundaryRows = try readJSONLines(
       resultsURL.appendingPathComponent("typescript-boundary.jsonl")
     )
@@ -2082,6 +2309,8 @@ struct LocalTodoValidationTests {
       "swift-local-complete",
       "swift-local-integrations-start",
       "swift-local-integrations-complete",
+      "swift-server-transaction-loopback-start",
+      "swift-server-transaction-loopback-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -2117,12 +2346,32 @@ struct LocalTodoValidationTests {
     )
     #expect(
       !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-server-transaction-contract.json").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-server-transaction-contract.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-typescript-server-transaction-contract.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("typescript-boundary.jsonl").path
       )
     )
 
     try "stale integrations\n".write(
       to: resultsURL.appendingPathComponent("swift-local-integrations.jsonl"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try "stale server loopback\n".write(
+      to: resultsURL.appendingPathComponent("swift-server-transaction-loopback.jsonl"),
       atomically: true,
       encoding: .utf8
     )
@@ -2194,6 +2443,21 @@ struct LocalTodoValidationTests {
       atomically: true,
       encoding: .utf8
     )
+    try "stale typescript server transaction contract\n".write(
+      to: resultsURL.appendingPathComponent("typescript-server-transaction-contract.json"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try "stale typescript server transaction contract evidence\n".write(
+      to: resultsURL.appendingPathComponent("typescript-server-transaction-contract.jsonl"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try "stale swift typescript server transaction contract\n".write(
+      to: resultsURL.appendingPathComponent("swift-typescript-server-transaction-contract.jsonl"),
+      atomically: true,
+      encoding: .utf8
+    )
     try "stale boundary\n".write(
       to: resultsURL.appendingPathComponent("typescript-boundary.jsonl"),
       atomically: true,
@@ -2224,6 +2488,11 @@ struct LocalTodoValidationTests {
     #expect(
       !FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("swift-local-integrations.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-server-transaction-loopback.jsonl").path
       )
     )
     #expect(
@@ -2284,6 +2553,21 @@ struct LocalTodoValidationTests {
     )
     #expect(
       !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-server-transaction-contract.json").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-server-transaction-contract.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-typescript-server-transaction-contract.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("typescript-boundary.jsonl").path
       )
     )
@@ -2307,6 +2591,8 @@ struct LocalTodoValidationTests {
       "swift-local-complete",
       "swift-local-integrations-start",
       "swift-local-integrations-complete",
+      "swift-server-transaction-loopback-start",
+      "swift-server-transaction-loopback-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -2376,6 +2662,8 @@ struct LocalTodoValidationTests {
       "swift-local-complete",
       "swift-local-integrations-start",
       "swift-local-integrations-complete",
+      "swift-server-transaction-loopback-start",
+      "swift-server-transaction-loopback-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -2453,6 +2741,8 @@ struct LocalTodoValidationTests {
       "swift-local-complete",
       "swift-local-integrations-start",
       "swift-local-integrations-complete",
+      "swift-server-transaction-loopback-start",
+      "swift-server-transaction-loopback-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -2523,6 +2813,8 @@ struct LocalTodoValidationTests {
       "swift-local-complete",
       "swift-local-integrations-start",
       "swift-local-integrations-complete",
+      "swift-server-transaction-loopback-start",
+      "swift-server-transaction-loopback-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -2544,6 +2836,10 @@ struct LocalTodoValidationTests {
       "typescript-fixtures-complete",
       "typescript-transport-contract-start",
       "typescript-transport-contract-complete",
+      "typescript-server-transaction-contract-start",
+      "typescript-server-transaction-contract-complete",
+      "swift-typescript-server-transaction-contract-start",
+      "swift-typescript-server-transaction-contract-complete",
       "typescript-boundary-preflight-start",
       "typescript-boundary-preflight-failed",
       "complete",

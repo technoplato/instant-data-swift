@@ -15,6 +15,7 @@ mkdir -p "${RESULTS_DIR}"
 rm -f \
   "${RESULTS_DIR}/swift-local.jsonl" \
   "${RESULTS_DIR}/swift-local-integrations.jsonl" \
+  "${RESULTS_DIR}/swift-server-transaction-loopback.jsonl" \
   "${RESULTS_DIR}/swift-reminders.jsonl" \
   "${RESULTS_DIR}/swift-typed-drafts.jsonl" \
   "${RESULTS_DIR}/swift-platform-adapters.jsonl" \
@@ -33,6 +34,9 @@ rm -f \
   "${RESULTS_DIR}/swift-benchmark.jsonl" \
   "${RESULTS_DIR}/typescript-fixtures.jsonl" \
   "${RESULTS_DIR}/typescript-transport-contract.jsonl" \
+  "${RESULTS_DIR}/typescript-server-transaction-contract.json" \
+  "${RESULTS_DIR}/typescript-server-transaction-contract.jsonl" \
+  "${RESULTS_DIR}/swift-typescript-server-transaction-contract.jsonl" \
   "${RESULTS_DIR}/typescript-boundary.jsonl" \
   "${RESULTS_DIR}/generated.instant.schema.ts" \
   "${RESULTS_DIR}/generated.instant.perms.ts"
@@ -606,6 +610,48 @@ if NODE_EXECUTABLE="$(resolve_node)"; then
       "complete" \
       false \
       "$(printf '{"resultsDir":%s,"failed":"typescript-transport-contract","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+    exit "${status}"
+  fi
+
+  log_json "typescript-server-transaction-contract-start" true "$(json_object "path" "${RESULTS_DIR}/typescript-server-transaction-contract.json")"
+  if (
+    cd "${ROOT}"
+    VALIDATION_APP_ID="${VALIDATION_APP_ID}" "${NODE_EXECUTABLE}" validation/ts-runner/src/main.ts \
+      --typescript-server-transaction-contract "${RESULTS_DIR}/typescript-server-transaction-contract.json" \
+      --app-id "${VALIDATION_APP_ID}"
+  ) | tee "${RESULTS_DIR}/typescript-server-transaction-contract.jsonl"; then
+    log_json "typescript-server-transaction-contract-complete" true "$(json_object "path" "${RESULTS_DIR}/typescript-server-transaction-contract.jsonl")"
+  else
+    status=$?
+    log_json \
+      "typescript-server-transaction-contract-failed" \
+      false \
+      "$(json_failure_details "${RESULTS_DIR}/typescript-server-transaction-contract.jsonl" "${status}")"
+    log_json \
+      "complete" \
+      false \
+      "$(printf '{"resultsDir":%s,"failed":"typescript-server-transaction-contract","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+    exit "${status}"
+  fi
+
+  log_json "swift-typescript-server-transaction-contract-start" true "$(json_object "path" "${RESULTS_DIR}/typescript-server-transaction-contract.json")"
+  if (
+    cd "${ROOT}"
+    INSTANT_APP_ID="${VALIDATION_APP_ID}" \
+      INSTANT_SWIFT_DATA_TYPESCRIPT_SERVER_TRANSACTION_CONTRACT="${RESULTS_DIR}/typescript-server-transaction-contract.json" \
+      swift run instant-swift-data validation server-transaction-loopback --jsonl
+  ) | tee "${RESULTS_DIR}/swift-typescript-server-transaction-contract.jsonl"; then
+    log_json "swift-typescript-server-transaction-contract-complete" true "$(json_object "path" "${RESULTS_DIR}/swift-typescript-server-transaction-contract.jsonl")"
+  else
+    status=$?
+    log_json \
+      "swift-typescript-server-transaction-contract-failed" \
+      false \
+      "$(json_failure_details "${RESULTS_DIR}/swift-typescript-server-transaction-contract.jsonl" "${status}")"
+    log_json \
+      "complete" \
+      false \
+      "$(printf '{"resultsDir":%s,"failed":"swift-typescript-server-transaction-contract","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
     exit "${status}"
   fi
 

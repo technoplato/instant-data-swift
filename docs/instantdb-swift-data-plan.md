@@ -386,9 +386,11 @@ including meeting restore after relaunch, can be proven with
 `validation/run-e2e.sh` now records the Swift local todo, local integration,
 server transaction loopback, Reminders, typed draft, platform adapter, SyncUps
 recording, detailed parity report, and compact coverage summary evidence
-streams, Swift schema/perms fixture generation and verification artifacts, then
-the Swift benchmark evidence and TypeScript fixture check. Real remote push/pull
-remains future transport work.
+streams, Swift schema/perms fixture generation and verification artifacts, the
+Swift benchmark evidence, the TypeScript fixture check, Swift outbox payloads
+consumed by TypeScript, and TypeScript-authored server transaction operation
+tuples consumed by Swift through the local server transaction loopback. Real
+remote push/pull remains future transport work.
 
 Current local progress: the CLI exposes non-captive local admin helpers:
 `instant-swift-data admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id]`

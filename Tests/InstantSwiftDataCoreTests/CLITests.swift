@@ -7862,6 +7862,109 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliValidationServerTransactionLoopbackConsumesTypeScriptContract() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let contractURL = homeURL.appendingPathComponent("typescript-server-transaction-contract.json")
+    try JSONEncoder().encode(
+      TypeScriptServerTransactionContract(
+        appID: "cli-cache-test",
+        transactionID: "validation.typescript.server.tx",
+        processedTransactionID: "validation.typescript.processed",
+        entityID: "validation-typescript-server",
+        text: "TypeScript-authored server transaction",
+        createdAtMs: 4_100_002_000_003
+      )
+    )
+    .write(to: contractURL)
+
+    let environment = [
+      "INSTANT_SWIFT_DATA_TYPESCRIPT_SERVER_TRANSACTION_CONTRACT": contractURL.path
+    ]
+    let jsonOutput = try JSONDecoder().decode(
+      CLIServerTransactionLoopbackValidationOutput.self,
+      from: Data(
+        try runCLI(
+          ["validation", "server-transaction-loopback", "--json"],
+          homeURL: homeURL,
+          environment: environment
+        )
+        .utf8
+      )
+    )
+    expectNoDifference(jsonOutput.evidenceCount, 5)
+    expectNoDifference(
+      jsonOutput.events,
+      [
+        "local-outbox",
+        "server-apply",
+        "observer-publish",
+        "typescript-contract-apply",
+        "relaunch",
+      ]
+    )
+    expectNoDifference(
+      jsonOutput.todoIDs,
+      [
+        "validation-loopback-local",
+        "validation-loopback-server",
+        "validation-typescript-server",
+      ]
+    )
+    expectNoDifference(jsonOutput.processedTransactionID, "validation.typescript.processed")
+    expectNoDifference(jsonOutput.mutationTransactionID, "validation.typescript.server.tx")
+    expectNoDifference(jsonOutput.changedEntityIDs, ["validation-typescript-server"])
+    expectNoDifference(jsonOutput.pendingMutationIDs, ["validation.loopback.local"])
+
+    let jsonlOutput = try runCLI(
+      ["validation", "server-transaction-loopback", "--jsonl"],
+      homeURL: homeURL,
+      environment: environment
+    )
+    let lines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(lines.count, 5)
+    let typeScriptApply = try JSONDecoder().decode(
+      CLIServerTransactionLoopbackValidationEvidence.self,
+      from: Data(lines[3].utf8)
+    )
+    expectNoDifference(typeScriptApply.event, "typescript-contract-apply")
+    expectNoDifference(typeScriptApply.details.changedEntityIDs, ["validation-typescript-server"])
+    expectNoDifference(typeScriptApply.details.emissionQueryIDs, [TodoExample.query.id])
+    expectNoDifference(
+      typeScriptApply.details.mutationTransactionID,
+      "validation.typescript.server.tx"
+    )
+    expectNoDifference(typeScriptApply.details.processedTransactionID, "validation.typescript.processed")
+    expectNoDifference(
+      typeScriptApply.details.observerTodoIDs,
+      [
+        "validation-loopback-local",
+        "validation-loopback-server",
+        "validation-typescript-server",
+      ]
+    )
+
+    let relaunchEvidence = try JSONDecoder().decode(
+      CLIServerTransactionLoopbackValidationEvidence.self,
+      from: Data(lines[4].utf8)
+    )
+    expectNoDifference(
+      relaunchEvidence.details.todoIDs,
+      [
+        "validation-loopback-local",
+        "validation-loopback-server",
+        "validation-typescript-server",
+      ]
+    )
+    expectNoDifference(relaunchEvidence.details.processedTransactionID, "validation.typescript.processed")
+    expectNoDifference(relaunchEvidence.details.mutationTransactionID, "validation.typescript.server.tx")
+    expectNoDifference(relaunchEvidence.details.pendingMutationIDs, ["validation.loopback.local"])
+  }
+
+  @Test
   func cliValidationRemindersEmitsEvidence() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -11174,6 +11277,7 @@ private struct CLIServerTransactionLoopbackValidationOutput: Decodable {
   var todoIDs: [String]
   var pendingMutationIDs: [String]
   var processedTransactionID: String?
+  var mutationTransactionID: String?
   var changedEntityIDs: [String]
   var emissionQueryIDs: [String]
   var pendingMutationCount: Int
@@ -11201,6 +11305,7 @@ private struct CLIServerTransactionLoopbackValidationDetails: Decodable {
   var todoIDs: [String]
   var pendingMutationIDs: [String]
   var processedTransactionID: String?
+  var mutationTransactionID: String?
   var changedEntityIDs: [String]
   var emissionQueryIDs: [String]
   var observerTodoIDs: [String]

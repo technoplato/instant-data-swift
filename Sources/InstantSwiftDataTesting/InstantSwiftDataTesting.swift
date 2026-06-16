@@ -231,6 +231,7 @@ public enum InstantSwiftDataTestHarness {
   public static func runServerTransactionLoopbackValidation(
     appID: String = "server-transaction-loopback-validation",
     cacheURL: URL? = nil,
+    typeScriptServerTransactionContract: TypeScriptServerTransactionContract? = nil,
     timestamp: @escaping @Sendable () -> InstantTimestamp = {
       InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
     },
@@ -239,6 +240,7 @@ public enum InstantSwiftDataTestHarness {
     let result = try await InstantSwiftDataServerTransactionLoopbackValidation.run(
       appID: appID,
       cacheURL: cacheURL,
+      typeScriptServerTransactionContract: typeScriptServerTransactionContract,
       timestamp: timestamp,
       makeID: makeID
     )

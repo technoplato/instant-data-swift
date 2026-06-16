@@ -1,11 +1,11 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const runnerDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(runnerDirectory, "../../..");
 const usage =
-  "Usage: node validation/ts-runner/src/main.ts [--fixtures|--boundary-preflight|--swift-transport-contract path] [--require-boundary] [--app-id id] [--fixtures-dir path]";
+  "Usage: node validation/ts-runner/src/main.ts [--fixtures|--boundary-preflight|--swift-transport-contract path|--typescript-server-transaction-contract path] [--require-boundary] [--app-id id] [--fixtures-dir path]";
 const defaultAPIURI = "https://api.instantdb.com";
 const defaultWebSocketURI = "wss://api.instantdb.com/runtime/session";
 
@@ -54,6 +54,7 @@ function parseArguments(argv) {
     adminToken: adminToken.value,
     adminTokenSource: adminToken.source,
     swiftTransportContractPath: null,
+    typeScriptServerTransactionContractPath: null,
   };
 
   const args = [...argv];
@@ -79,6 +80,16 @@ function parseArguments(argv) {
         }
         options.mode = "swift-transport-contract";
         options.swiftTransportContractPath = resolve(value);
+        break;
+      }
+
+      case "--typescript-server-transaction-contract": {
+        const value = args.shift();
+        if (!value) {
+          throw new UsageError(usage);
+        }
+        options.mode = "typescript-server-transaction-contract";
+        options.typeScriptServerTransactionContractPath = resolve(value);
         break;
       }
 
@@ -965,6 +976,98 @@ function verifySwiftTransportContract(options) {
   }
 }
 
+function typeScriptServerTransactionContract(appID) {
+  const transactionID = "validation.typescript.server.tx";
+  const entityID = "validation-typescript-server";
+  const text = "TypeScript-authored server transaction";
+  const createdAtMs = 4_100_002_000_003;
+  return {
+    case: "validation.typescript.server.transaction.contract",
+    event: "typescript-server-transaction-contract",
+    appID,
+    transactionID,
+    processedTransactionID: "validation.typescript.server.processed",
+    entityID,
+    text,
+    createdAtMs,
+    operations: [
+      {
+        type: "requireEntityMissing",
+        entityID,
+        namespace: "todos",
+      },
+      {
+        type: "insert",
+        entityID,
+        attributeID: "todos/id",
+        value: { type: "string", string: entityID },
+        txTimeMs: createdAtMs,
+      },
+      {
+        type: "insert",
+        entityID,
+        attributeID: "todos/text",
+        value: { type: "string", string: text },
+        txTimeMs: createdAtMs,
+      },
+      {
+        type: "insert",
+        entityID,
+        attributeID: "todos/isCompleted",
+        value: { type: "bool", bool: false },
+        txTimeMs: createdAtMs,
+      },
+      {
+        type: "insert",
+        entityID,
+        attributeID: "todos/createdAt",
+        value: { type: "date", dateMs: createdAtMs },
+        txTimeMs: createdAtMs,
+      },
+    ],
+  };
+}
+
+function writeTypeScriptServerTransactionContract(options) {
+  const path = options.typeScriptServerTransactionContractPath;
+  if (!path) {
+    emit({
+      case: "validation.typescript.server.transaction.contract",
+      event: "typescript-server-transaction-contract",
+      appID: options.appID,
+      ok: false,
+      details: {
+        path,
+        proofLevel: "contract-only",
+        remoteBoundary: "pending",
+        issues: [issue("$.path", "output path", path)],
+      },
+    });
+    process.exitCode = 1;
+    return;
+  }
+
+  const contract = typeScriptServerTransactionContract(options.appID);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(contract, null, 2)}\n`, "utf8");
+  emit({
+    case: contract.case,
+    event: contract.event,
+    appID: options.appID,
+    ok: true,
+    details: {
+      path,
+      proofLevel: "contract-only",
+      remoteBoundary: "pending",
+      transactionID: contract.transactionID,
+      processedTransactionID: contract.processedTransactionID,
+      entityID: contract.entityID,
+      createdAtMs: contract.createdAtMs,
+      operationCount: contract.operations.length,
+    },
+  });
+}
+
 function verifyFixtures(options) {
   const schemaPath = resolve(options.fixturesDirectory, "instant.schema.ts");
   const permsPath = resolve(options.fixturesDirectory, "instant.perms.ts");
@@ -1035,6 +1138,10 @@ try {
 
     case "swift-transport-contract":
       verifySwiftTransportContract(options);
+      break;
+
+    case "typescript-server-transaction-contract":
+      writeTypeScriptServerTransactionContract(options);
       break;
 
     default:

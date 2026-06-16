@@ -1,5 +1,155 @@
 import Foundation
 
+public struct TypeScriptServerTransactionOperation: Codable, Equatable, Sendable {
+  public struct Value: Codable, Equatable, Sendable {
+    public var type: String
+    public var string: String?
+    public var bool: Bool?
+    public var dateMs: Int64?
+
+    public init(
+      type: String,
+      string: String? = nil,
+      bool: Bool? = nil,
+      dateMs: Int64? = nil
+    ) {
+      self.type = type
+      self.string = string
+      self.bool = bool
+      self.dateMs = dateMs
+    }
+
+    public static func string(_ value: String) -> Self {
+      Self(type: "string", string: value)
+    }
+
+    public static func bool(_ value: Bool) -> Self {
+      Self(type: "bool", bool: value)
+    }
+
+    public static func date(milliseconds: Int64) -> Self {
+      Self(type: "date", dateMs: milliseconds)
+    }
+  }
+
+  public var type: String
+  public var entityID: String
+  public var namespace: String?
+  public var attributeID: String?
+  public var value: Value?
+  public var txTimeMs: Int64?
+
+  public init(
+    type: String,
+    entityID: String,
+    namespace: String? = nil,
+    attributeID: String? = nil,
+    value: Value? = nil,
+    txTimeMs: Int64? = nil
+  ) {
+    self.type = type
+    self.entityID = entityID
+    self.namespace = namespace
+    self.attributeID = attributeID
+    self.value = value
+    self.txTimeMs = txTimeMs
+  }
+}
+
+public struct TypeScriptServerTransactionContract: Codable, Equatable, Sendable {
+  public var caseID: String
+  public var event: String
+  public var appID: String
+  public var transactionID: String
+  public var processedTransactionID: String
+  public var entityID: String
+  public var text: String
+  public var createdAtMs: Int64
+  public var operations: [TypeScriptServerTransactionOperation]
+
+  public init(
+    caseID: String = "validation.typescript.server.transaction.contract",
+    event: String = "typescript-server-transaction-contract",
+    appID: String,
+    transactionID: String,
+    processedTransactionID: String? = nil,
+    entityID: String,
+    text: String,
+    createdAtMs: Int64,
+    operations: [TypeScriptServerTransactionOperation]? = nil
+  ) {
+    self.caseID = caseID
+    self.event = event
+    self.appID = appID
+    self.transactionID = transactionID
+    self.processedTransactionID = processedTransactionID ?? transactionID
+    self.entityID = entityID
+    self.text = text
+    self.createdAtMs = createdAtMs
+    self.operations =
+      operations
+      ?? Self.todoCreateOperations(
+        entityID: entityID,
+        text: text,
+        createdAtMs: createdAtMs
+      )
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case appID
+    case transactionID
+    case processedTransactionID
+    case entityID
+    case text
+    case createdAtMs
+    case operations
+  }
+
+  private static func todoCreateOperations(
+    entityID: String,
+    text: String,
+    createdAtMs: Int64
+  ) -> [TypeScriptServerTransactionOperation] {
+    [
+      TypeScriptServerTransactionOperation(
+        type: "requireEntityMissing",
+        entityID: entityID,
+        namespace: TodoExample.namespace
+      ),
+      TypeScriptServerTransactionOperation(
+        type: "insert",
+        entityID: entityID,
+        attributeID: InstantAttribute.primaryKeyID(namespace: TodoExample.namespace),
+        value: .string(entityID),
+        txTimeMs: createdAtMs
+      ),
+      TypeScriptServerTransactionOperation(
+        type: "insert",
+        entityID: entityID,
+        attributeID: "todos/text",
+        value: .string(text),
+        txTimeMs: createdAtMs
+      ),
+      TypeScriptServerTransactionOperation(
+        type: "insert",
+        entityID: entityID,
+        attributeID: "todos/isCompleted",
+        value: .bool(false),
+        txTimeMs: createdAtMs
+      ),
+      TypeScriptServerTransactionOperation(
+        type: "insert",
+        entityID: entityID,
+        attributeID: "todos/createdAt",
+        value: .date(milliseconds: createdAtMs),
+        txTimeMs: createdAtMs
+      ),
+    ]
+  }
+}
+
 public struct ServerTransactionLoopbackValidationDetails: Codable, Equatable, Sendable {
   public var cachePath: String
   public var todoIDs: [String]
@@ -60,9 +210,19 @@ public struct ServerTransactionLoopbackValidationResult: Sendable {
 }
 
 public enum InstantSwiftDataServerTransactionLoopbackValidation {
+  public static func loadTypeScriptServerTransactionContract(
+    from url: URL
+  ) throws -> TypeScriptServerTransactionContract {
+    try JSONDecoder().decode(
+      TypeScriptServerTransactionContract.self,
+      from: Data(contentsOf: url)
+    )
+  }
+
   public static func run(
     appID: String = "server-transaction-loopback-validation",
     cacheURL: URL? = nil,
+    typeScriptServerTransactionContract: TypeScriptServerTransactionContract? = nil,
     timestamp: @escaping @Sendable () -> InstantTimestamp = {
       InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
     },
@@ -86,6 +246,10 @@ public enum InstantSwiftDataServerTransactionLoopbackValidation {
     var evidence: [ValidationEvidenceRow<ServerTransactionLoopbackValidationDetails>] = []
     let localCreatedAt = timestamp()
     let serverCreatedAt = InstantTimestamp(milliseconds: localCreatedAt.milliseconds + 1)
+    let expectedTodoIDsWithoutTypeScript = [
+      "validation-loopback-local",
+      "validation-loopback-server",
+    ]
     try await runtime.transact(
       InstantStoreTransaction(
         id: "validation.loopback.local",
@@ -153,8 +317,7 @@ public enum InstantSwiftDataServerTransactionLoopbackValidation {
       )
     }
     let observerTodos = try TodoExample.decode(observerEmission.values)
-    guard observerTodos.map(\.id) == ["validation-loopback-local", "validation-loopback-server"]
-    else {
+    guard observerTodos.map(\.id) == expectedTodoIDsWithoutTypeScript else {
       throw validationError(
         operation: "validate server loopback observer",
         message: "Expected the observer to contain local and server todos after applying the server transaction."
@@ -171,6 +334,63 @@ public enum InstantSwiftDataServerTransactionLoopbackValidation {
       )
     )
 
+    var finalApplication = application
+    var expectedFinalTodoIDs = expectedTodoIDsWithoutTypeScript
+    if let typeScriptContract = typeScriptServerTransactionContract {
+      guard typeScriptContract.appID == appID else {
+        throw validationError(
+          operation: "validate TypeScript server transaction contract",
+          message:
+            "Expected the TypeScript server transaction contract app id to match \(appID), got \(typeScriptContract.appID)."
+        )
+      }
+
+      let typeScriptCreatedAt = InstantTimestamp(milliseconds: typeScriptContract.createdAtMs)
+      let typeScriptApplication = try await runtime.applyServerTransaction(
+        InstantStoreTransaction(
+          id: typeScriptContract.transactionID,
+          operations: try instantOperations(from: typeScriptContract)
+        ),
+        processedTransactionID: typeScriptContract.processedTransactionID,
+        receivedAt: InstantTimestamp(milliseconds: typeScriptCreatedAt.milliseconds + 1)
+      )
+      guard
+        typeScriptApplication.mutation.changedEntityIDs.contains(typeScriptContract.entityID),
+        typeScriptApplication.mutation.emissions.contains(where: { $0.queryID == TodoExample.query.id })
+      else {
+        throw validationError(
+          operation: "validate TypeScript server transaction contract",
+          message:
+            "Expected the TypeScript-authored server transaction to mutate \(typeScriptContract.entityID) and publish the todo observer."
+        )
+      }
+      guard let typeScriptObserverEmission = await iterator.next() else {
+        throw validationError(
+          operation: "validate TypeScript server transaction contract observer",
+          message: "Expected the live todo observer to emit the TypeScript-authored server transaction."
+        )
+      }
+      let typeScriptObserverTodos = try TodoExample.decode(typeScriptObserverEmission.values)
+      expectedFinalTodoIDs.append(typeScriptContract.entityID)
+      guard typeScriptObserverTodos.map(\.id) == expectedFinalTodoIDs else {
+        throw validationError(
+          operation: "validate TypeScript server transaction contract observer",
+          message: "Expected the observer to contain local, Swift server, and TypeScript-authored todos."
+        )
+      }
+      evidence.append(
+        try await evidenceRow(
+          event: "typescript-contract-apply",
+          runtime: runtime,
+          cacheURL: cacheURL,
+          timestamp: timestamp,
+          application: typeScriptApplication,
+          observerTodos: typeScriptObserverTodos
+        )
+      )
+      finalApplication = typeScriptApplication
+    }
+
     let relaunchedRuntime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
         appID: appID,
@@ -183,8 +403,8 @@ public enum InstantSwiftDataServerTransactionLoopbackValidation {
     let relaunchedTodos = try await TodoExample.decode(relaunchedRuntime.query(TodoExample.query))
     let relaunchedSyncState = try await relaunchedRuntime.syncState()
     let relaunchedPending = await relaunchedRuntime.pendingMutations()
-    guard relaunchedTodos.map(\.id) == ["validation-loopback-local", "validation-loopback-server"],
-      relaunchedSyncState.processedTransactionID == "validation.loopback.server",
+    guard relaunchedTodos.map(\.id) == expectedFinalTodoIDs,
+      relaunchedSyncState.processedTransactionID == finalApplication.syncState.processedTransactionID,
       relaunchedPending.map(\.id) == ["validation.loopback.local"]
     else {
       throw validationError(
@@ -198,7 +418,7 @@ public enum InstantSwiftDataServerTransactionLoopbackValidation {
         runtime: relaunchedRuntime,
         cacheURL: cacheURL,
         timestamp: timestamp,
-        application: application
+        application: finalApplication
       )
     )
 
@@ -243,6 +463,100 @@ public enum InstantSwiftDataServerTransactionLoopbackValidation {
         outboxRevision: state.outboxRevision
       )
     )
+  }
+
+  private static func instantOperations(
+    from contract: TypeScriptServerTransactionContract
+  ) throws -> [InstantTripleOperation] {
+    guard !contract.operations.isEmpty else {
+      throw validationError(
+        operation: "decode TypeScript server transaction contract",
+        message: "TypeScript server transaction contracts must include at least one operation."
+      )
+    }
+    return try contract.operations.map { operation -> InstantTripleOperation in
+      switch operation.type {
+      case "requireEntityMissing":
+        return .requireEntityMissing(
+          entityID: operation.entityID,
+          namespace: operation.namespace
+        )
+
+      case "insert":
+        guard let attributeID = operation.attributeID, !attributeID.isEmpty else {
+          throw validationError(
+            operation: "decode TypeScript server transaction contract",
+            message: "Insert operations must include an attribute id."
+          )
+        }
+        guard let value = operation.value else {
+          throw validationError(
+            operation: "decode TypeScript server transaction contract",
+            message: "Insert operations must include a value payload."
+          )
+        }
+        guard let txTimeMs = operation.txTimeMs else {
+          throw validationError(
+            operation: "decode TypeScript server transaction contract",
+            message: "Insert operations must include a txTimeMs value."
+          )
+        }
+        return .insert(
+          InstantTriple(
+            entityID: operation.entityID,
+            attributeID: attributeID,
+            value: try instantValue(from: value),
+            txID: contract.transactionID,
+            txTime: InstantTimestamp(milliseconds: txTimeMs)
+          )
+        )
+
+      default:
+        throw validationError(
+          operation: "decode TypeScript server transaction contract",
+          message: "Unsupported TypeScript server transaction operation: \(operation.type)."
+        )
+      }
+    }
+  }
+
+  private static func instantValue(
+    from value: TypeScriptServerTransactionOperation.Value
+  ) throws -> InstantValue {
+    switch value.type {
+    case "string":
+      guard let string = value.string else {
+        throw validationError(
+          operation: "decode TypeScript server transaction contract",
+          message: "String values must include a string payload."
+        )
+      }
+      return .string(string)
+
+    case "bool":
+      guard let bool = value.bool else {
+        throw validationError(
+          operation: "decode TypeScript server transaction contract",
+          message: "Bool values must include a bool payload."
+        )
+      }
+      return .bool(bool)
+
+    case "date":
+      guard let dateMs = value.dateMs else {
+        throw validationError(
+          operation: "decode TypeScript server transaction contract",
+          message: "Date values must include a dateMs payload."
+        )
+      }
+      return .date(Date(timeIntervalSince1970: Double(dateMs) / 1000))
+
+    default:
+      throw validationError(
+        operation: "decode TypeScript server transaction contract",
+        message: "Unsupported TypeScript server transaction value: \(value.type)."
+      )
+    }
   }
 
   private static func validationError(

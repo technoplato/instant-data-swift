@@ -2230,7 +2230,7 @@ public enum InstantSwiftDataParityCoverage {
       swiftTestName: "Swift/TypeScript real-run validation",
       surface: "live-transport",
       status: .blocked,
-      notes: "Swift now has a local server-applied transaction loopback that persists inbound triples, publishes observers, advances the processed checkpoint, and preserves the optimistic outbox; real TypeScript-to-Swift WebSocket delivery against an Instant app remains incomplete."
+      notes: "Swift now consumes a TypeScript-authored server transaction contract with operation tuples, persists inbound triples, publishes observers, advances a distinct processed checkpoint, and preserves the optimistic outbox; real TypeScript-to-Swift WebSocket delivery against an Instant app remains incomplete."
     ),
     instant(
       id: "instant.auth-extra-fields.magic-code",

@@ -583,6 +583,11 @@ Agent-oriented output modes are required:
   reset, cancellation cleanup, live wrapper dynamic replacement/cancellation,
   and `@FetchAll`/`@Fetch` filtered reload behavior.
 - run Swift/TypeScript parity suites.
+- run credential-free Swift/TypeScript transport-contract validation in both
+  local directions: Swift outbox payloads consumed by TypeScript, and
+  TypeScript-authored server transaction operation tuples consumed by
+  `instant-swift-data validation server-transaction-loopback --jsonl` via
+  `INSTANT_SWIFT_DATA_TYPESCRIPT_SERVER_TRANSACTION_CONTRACT`.
 - run benchmarks.
 - inspect local SQLite cache, including namespace summaries, attributes, and
   triples with commands such as `instant-swift-data cache inspect`,
