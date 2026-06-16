@@ -8988,9 +8988,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 286)
+    expectNoDifference(jsonOutput.recordCount, 287)
     expectNoDifference(jsonOutput.exactCount, 28)
-    expectNoDifference(jsonOutput.adaptedCount, 254)
+    expectNoDifference(jsonOutput.adaptedCount, 255)
     expectNoDifference(jsonOutput.blockedCount, 2)
     expectNoDifference(jsonOutput.notApplicableCount, 2)
     #expect(
@@ -9885,6 +9885,11 @@ extension InstantStoreTests {
     )
     #expect(
       jsonOutput.records.contains {
+        $0.id == "sqlite.draft.relation-ref-save" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
         $0.id == "sqlite.syncups.record-meeting" && $0.status == "adapted"
       }
     )
@@ -9952,9 +9957,9 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 286"))
+    #expect(humanOutput.contains("records: 287"))
     #expect(humanOutput.contains("exact: 28"))
-    #expect(humanOutput.contains("adapted: 254"))
+    #expect(humanOutput.contains("adapted: 255"))
     #expect(humanOutput.contains("blocked: 2"))
     #expect(humanOutput.contains("not applicable: 2"))
   }
@@ -9975,13 +9980,13 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.event, "coverage")
     expectNoDifference(jsonOutput.ok, false)
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 286)
+    expectNoDifference(jsonOutput.recordCount, 287)
     expectNoDifference(jsonOutput.exactCount, 28)
-    expectNoDifference(jsonOutput.adaptedCount, 254)
+    expectNoDifference(jsonOutput.adaptedCount, 255)
     expectNoDifference(jsonOutput.blockedCount, 2)
     expectNoDifference(jsonOutput.notApplicableCount, 2)
     #expect(jsonOutput.sourceFileCount > 0)
-    expectNoDifference(jsonOutput.swiftFileCount, 24)
+    expectNoDifference(jsonOutput.swiftFileCount, 25)
     expectNoDifference(
       jsonOutput.blockedIDs,
       [
@@ -10005,7 +10010,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "coverage"], homeURL: homeURL)
     #expect(humanOutput.contains("validation coverage: incomplete"))
-    #expect(humanOutput.contains("records: 286"))
+    #expect(humanOutput.contains("records: 287"))
     #expect(humanOutput.contains("blocked: 2"))
   }
 
@@ -10041,7 +10046,7 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(partialOutput.coverageComplete, false)
-    expectNoDifference(partialOutput.adaptedCount, 255)
+    expectNoDifference(partialOutput.adaptedCount, 256)
     expectNoDifference(partialOutput.blockedCount, 1)
     expectNoDifference(partialOutput.blockedIDs, ["instant.live-transport.typescript-to-swift"])
 
@@ -10065,7 +10070,7 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(summaryOnlyOutput.coverageComplete, false)
-    expectNoDifference(summaryOnlyOutput.adaptedCount, 255)
+    expectNoDifference(summaryOnlyOutput.adaptedCount, 256)
     expectNoDifference(summaryOnlyOutput.blockedCount, 1)
     expectNoDifference(summaryOnlyOutput.blockedIDs, ["instant.live-transport.typescript-to-swift"])
 
@@ -10090,7 +10095,7 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(mismatchedEvidenceOutput.coverageComplete, false)
-    expectNoDifference(mismatchedEvidenceOutput.adaptedCount, 255)
+    expectNoDifference(mismatchedEvidenceOutput.adaptedCount, 256)
     expectNoDifference(mismatchedEvidenceOutput.blockedCount, 1)
     expectNoDifference(
       mismatchedEvidenceOutput.blockedIDs,
@@ -10118,7 +10123,7 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(malformedCountOutput.coverageComplete, false)
-    expectNoDifference(malformedCountOutput.adaptedCount, 255)
+    expectNoDifference(malformedCountOutput.adaptedCount, 256)
     expectNoDifference(malformedCountOutput.blockedCount, 1)
     expectNoDifference(malformedCountOutput.blockedIDs, ["instant.live-transport.typescript-to-swift"])
 
@@ -10143,7 +10148,7 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(fractionalCountOutput.coverageComplete, false)
-    expectNoDifference(fractionalCountOutput.adaptedCount, 255)
+    expectNoDifference(fractionalCountOutput.adaptedCount, 256)
     expectNoDifference(fractionalCountOutput.blockedCount, 1)
     expectNoDifference(fractionalCountOutput.blockedIDs, ["instant.live-transport.typescript-to-swift"])
 
@@ -10169,7 +10174,7 @@ extension InstantStoreTests {
     )
     expectNoDifference(completeOutput.ok, true)
     expectNoDifference(completeOutput.coverageComplete, true)
-    expectNoDifference(completeOutput.adaptedCount, 256)
+    expectNoDifference(completeOutput.adaptedCount, 257)
     expectNoDifference(completeOutput.blockedCount, 0)
     expectNoDifference(completeOutput.blockedIDs, [])
   }

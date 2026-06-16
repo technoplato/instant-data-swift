@@ -1341,9 +1341,9 @@ struct LocalTodoValidationTests {
 
     expectNoDifference(run.result.event, "parity-report")
     expectNoDifference(run.result.coverageComplete, false)
-    expectNoDifference(run.result.recordCount, 286)
+    expectNoDifference(run.result.recordCount, 287)
     expectNoDifference(run.result.exactCount, 28)
-    expectNoDifference(run.result.adaptedCount, 254)
+    expectNoDifference(run.result.adaptedCount, 255)
     expectNoDifference(run.result.blockedCount, 2)
     expectNoDifference(run.result.notApplicableCount, 2)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
@@ -1879,7 +1879,7 @@ struct LocalTodoValidationTests {
     )
 
     expectNoDifference(run.result.coverageComplete, true)
-    expectNoDifference(run.result.adaptedCount, 256)
+    expectNoDifference(run.result.adaptedCount, 257)
     expectNoDifference(run.result.blockedCount, 0)
     expectNoDifference(run.summary.ok, true)
     let swiftToTypeScript = try #require(
@@ -1918,7 +1918,7 @@ struct LocalTodoValidationTests {
     )
 
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 286)
+    expectNoDifference(rows.count, 287)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
@@ -1991,12 +1991,12 @@ struct LocalTodoValidationTests {
     expectNoDifference(details["event"] as? String, "coverage")
     expectNoDifference(details["ok"] as? Bool, false)
     expectNoDifference(details["coverageComplete"] as? Bool, false)
-    expectNoDifference((details["recordCount"] as? NSNumber)?.intValue, 286)
+    expectNoDifference((details["recordCount"] as? NSNumber)?.intValue, 287)
     expectNoDifference((details["exactCount"] as? NSNumber)?.intValue, 28)
-    expectNoDifference((details["adaptedCount"] as? NSNumber)?.intValue, 254)
+    expectNoDifference((details["adaptedCount"] as? NSNumber)?.intValue, 255)
     expectNoDifference((details["blockedCount"] as? NSNumber)?.intValue, 2)
     expectNoDifference((details["notApplicableCount"] as? NSNumber)?.intValue, 2)
-    expectNoDifference((details["swiftFileCount"] as? NSNumber)?.intValue, 24)
+    expectNoDifference((details["swiftFileCount"] as? NSNumber)?.intValue, 25)
     expectNoDifference(
       details["blockedIDs"] as? [String],
       [
@@ -2122,6 +2122,72 @@ struct LocalTodoValidationTests {
   }
 
   @Test
+  func typeScriptTypedDraftsContractVerifierConsumesSwiftEvidence() throws {
+    let packageURL = packageRootURL()
+    let tempURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataTypedDraftsContract-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: tempURL, withIntermediateDirectories: true)
+
+    let appID = "local-validation-test"
+    let createdID = "draft-created"
+    let authorID = "draft-author"
+    let postID = "draft-post"
+    let artifactURL = tempURL.appendingPathComponent("swift-typed-drafts.jsonl")
+    try """
+    {"case":"validation.typed.drafts","side":"swift","event":"create","appID":"\(appID)","entityID":"\(createdID)","timestampMs":1,"ok":true,"details":{"createdID":"\(createdID)","newDraftIDWasNil":true,"newDraftAssignmentAttributeIDs":["draftValidationTodos/title","draftValidationTodos/isCompleted","draftValidationTodos/createdAt","draftValidationTodos/notes"],"newDraftIncludedPrimaryKeyAssignment":false,"draftTodoIDs":["\(createdID)"],"draftTodoTitles":["Create from generated draft"],"pendingMutationIDs":["validation.typed-drafts.create"],"draftMutationSummaries":[{"mutationID":"validation.typed-drafts.create","transactionID":"validation.typed-drafts.create","status":"pending","draftAssignmentAttributeIDs":["draftValidationTodos/title","draftValidationTodos/isCompleted","draftValidationTodos/createdAt","draftValidationTodos/notes"],"preconditionKinds":["entity-missing"],"preconditionNamespaces":["draftValidationTodos"],"refAttributeIDs":[],"primaryKeyStepCount":1,"txStepAttributeIDs":["draftValidationTodos/id","draftValidationTodos/title","draftValidationTodos/isCompleted","draftValidationTodos/createdAt","draftValidationTodos/notes"],"txStepKinds":["add-triple","add-triple","add-triple","add-triple","add-triple"],"txStepOptionModes":["create","create","create","create","create"],"operationKinds":["requireEntityMissing","insert","insert","insert","insert","insert"],"operationValueTypes":["string","string","boolean","date","null"],"txStepValueTypes":["string","string","boolean","string","null"]}]}}
+    {"case":"validation.typed.drafts","side":"swift","event":"edit","appID":"\(appID)","entityID":"\(createdID)","timestampMs":2,"ok":true,"details":{"editedID":"\(createdID)","draftTodoTitles":["Edit from generated draft"],"draftTodoCompletionStates":[true],"draftTodoNotes":["Edited through Draft(existing)"],"pendingMutationIDs":["validation.typed-drafts.create","validation.typed-drafts.edit"],"draftMutationSummaries":[{"mutationID":"validation.typed-drafts.edit","transactionID":"validation.typed-drafts.edit","status":"pending","draftAssignmentAttributeIDs":["draftValidationTodos/title","draftValidationTodos/isCompleted","draftValidationTodos/createdAt","draftValidationTodos/notes"],"preconditionKinds":[],"preconditionNamespaces":[],"refAttributeIDs":[],"primaryKeyStepCount":1,"txStepAttributeIDs":["draftValidationTodos/id","draftValidationTodos/title","draftValidationTodos/isCompleted","draftValidationTodos/createdAt","draftValidationTodos/notes"],"txStepKinds":["add-triple","add-triple","add-triple","add-triple","add-triple"],"txStepOptionModes":["none","none","none","none","none"],"operationKinds":["insert","insert","insert","insert","insert"],"operationValueTypes":["string","string","boolean","date","string"],"txStepValueTypes":["string","string","boolean","string","string"]}]}}
+    {"case":"validation.typed.drafts","side":"swift","event":"relation","appID":"\(appID)","entityID":"\(postID)","timestampMs":3,"ok":true,"details":{"relationAuthorID":"\(authorID)","relationPostID":"\(postID)","draftAuthorIDs":["\(authorID)"],"draftAuthorNames":["Draft relation author"],"draftPostIDs":["\(postID)"],"draftPostTitles":["Post from relation draft"],"draftPostAttributeIDs":["draftValidationPosts/title","draftValidationPosts/author"],"draftPostAuthorIDs":["\(authorID)"],"draftPostAuthorAttributeValueType":"ref","draftPostAuthorLinkNamespace":"draftValidationAuthors","draftPostAuthorForwardIdentity":"draftValidationPosts/author","draftPostAuthorReverseIdentity":"draftValidationAuthors/posts","pendingMutationIDs":["validation.typed-drafts.create","validation.typed-drafts.edit","validation.typed-drafts.author","validation.typed-drafts.post"],"draftMutationSummaries":[{"mutationID":"validation.typed-drafts.author","transactionID":"validation.typed-drafts.author","status":"pending","draftAssignmentAttributeIDs":["draftValidationAuthors/name"],"preconditionKinds":["entity-missing"],"preconditionNamespaces":["draftValidationAuthors"],"refAttributeIDs":[],"primaryKeyStepCount":1,"txStepAttributeIDs":["draftValidationAuthors/id","draftValidationAuthors/name"],"txStepKinds":["add-triple","add-triple"],"txStepOptionModes":["create","create"],"operationKinds":["requireEntityMissing","insert","insert"],"operationValueTypes":["string","string"],"txStepValueTypes":["string","string"]},{"mutationID":"validation.typed-drafts.post","transactionID":"validation.typed-drafts.post","status":"pending","draftAssignmentAttributeIDs":["draftValidationPosts/title","draftValidationPosts/author"],"preconditionKinds":["entity-missing"],"preconditionNamespaces":["draftValidationPosts"],"refAttributeIDs":["draftValidationPosts/author"],"primaryKeyStepCount":1,"txStepAttributeIDs":["draftValidationPosts/id","draftValidationPosts/title","draftValidationPosts/author"],"txStepKinds":["add-triple","add-triple","add-triple"],"txStepOptionModes":["create","create","create"],"operationKinds":["requireEntityMissing","insert","insert","insert"],"operationValueTypes":["string","string","ref"],"txStepValueTypes":["string","string","string"]}]}}
+    {"case":"validation.typed.drafts","side":"swift","event":"relaunch","appID":"\(appID)","entityID":"\(createdID)","timestampMs":4,"ok":true,"details":{"createdID":"\(createdID)","editedID":"\(createdID)","relationAuthorID":"\(authorID)","relationPostID":"\(postID)","draftTodoNotes":["Edited through Draft(existing)"],"draftPostAuthorIDs":["\(authorID)"],"pendingMutationIDs":["validation.typed-drafts.create","validation.typed-drafts.edit","validation.typed-drafts.author","validation.typed-drafts.post"]}}
+
+    """.write(to: artifactURL, atomically: true, encoding: .utf8)
+
+    let valid = try runTypeScriptValidationRunner(
+      arguments: ["--swift-typed-drafts-contract", artifactURL.path, "--app-id", appID],
+      currentDirectory: packageURL
+    )
+    #expect(valid.status == 0, "TypeScript typed-drafts verifier failed: \(valid.stderr)")
+    let validRows = try parseJSONLines(valid.stdout)
+    let row = try #require(validRows.first)
+    expectNoDifference(row["case"] as? String, "validation.typescript.typed-drafts-contract")
+    expectNoDifference(row["event"] as? String, "swift-typed-drafts-contract")
+    expectNoDifference(row["appID"] as? String, appID)
+    expectNoDifference(row["ok"] as? Bool, true)
+    let details = try #require(row["details"] as? [String: Any])
+    expectNoDifference(details["proofLevel"] as? String, "contract-only")
+    expectNoDifference(details["remoteBoundary"] as? String, "local-draft-contract")
+    expectNoDifference(details["actualEvents"] as? [String], ["create", "edit", "relation", "relaunch"])
+    expectNoDifference(
+      details["draftAssignmentAttributeIDs"] as? [String],
+      [
+        "draftValidationTodos/title",
+        "draftValidationTodos/isCompleted",
+        "draftValidationTodos/createdAt",
+        "draftValidationTodos/notes",
+      ]
+    )
+    expectNoDifference(
+      details["draftPostAttributeIDs"] as? [String],
+      ["draftValidationPosts/title", "draftValidationPosts/author"]
+    )
+    expectNoDifference(details["pendingMutationIDs"] as? [String], [
+      "validation.typed-drafts.create",
+      "validation.typed-drafts.edit",
+      "validation.typed-drafts.author",
+      "validation.typed-drafts.post",
+    ])
+
+    let mismatch = try runTypeScriptValidationRunner(
+      arguments: ["--swift-typed-drafts-contract", artifactURL.path, "--app-id", "wrong-app"],
+      currentDirectory: packageURL
+    )
+    #expect(mismatch.status == 1)
+    let mismatchRows = try parseJSONLines(mismatch.stdout)
+    let mismatchDetails = try #require(mismatchRows.first?["details"] as? [String: Any])
+    let issues = try #require(mismatchDetails["issues"] as? [[String: Any]])
+    #expect(issues.contains { ($0["path"] as? String) == "$[0].appID" })
+  }
+
+  @Test
   func typeScriptLocalIntegrationsContractVerifierRequiresRelaunchRoomKeys() throws {
     let packageURL = packageRootURL()
     let tempURL = FileManager.default.temporaryDirectory
@@ -2223,11 +2289,13 @@ struct LocalTodoValidationTests {
     #expect(script.contains("INSTANT_SWIFT_DATA_COVERAGE_ARTIFACTS_DIR"))
     #expect(script.contains("swift-transport-contract.json"))
     #expect(script.contains("typescript-server-transaction-contract.json"))
+    #expect(script.contains("typescript-typed-drafts-contract.jsonl"))
     #expect(script.contains("swift-typescript-server-transaction-contract.jsonl"))
     #expect(script.contains("swift-benchmark.jsonl"))
     #expect(script.contains("INSTANT_SWIFT_DATA_NODE"))
     #expect(script.contains("validation/ts-runner/src/main.ts --fixtures"))
     #expect(script.contains("--swift-transport-contract"))
+    #expect(script.contains("--swift-typed-drafts-contract"))
     #expect(script.contains("--swift-live-session-contract"))
     #expect(script.contains("--typescript-server-transaction-contract"))
     #expect(script.contains("INSTANT_SWIFT_DATA_TYPESCRIPT_SERVER_TRANSACTION_CONTRACT"))
@@ -2637,6 +2705,17 @@ struct LocalTodoValidationTests {
           fi
           echo '{"case":"validation.typescript.local-integrations-contract","side":"typescript","event":"swift-local-integrations-contract","appID":"local-validation","timestampMs":9,"ok":true,"details":{"proofLevel":"contract-only","remoteBoundary":"local-room-contract","room":{"type":"chat","id":"validation"},"topic":"sendEmoji","roomMemberIDs":["user-1"],"topicMessageIDs":["topic-stub"],"roomPresenceValueKeys":["name","status"],"topicPayloadKeys":["emoji"]}}'
           ;;
+        --swift-typed-drafts-contract)
+          if [ "$4:$5" != "--app-id:local-validation" ]; then
+            echo "unexpected typed drafts contract arguments: $*" >&2
+            exit 84
+          fi
+          if [ ! -s "$3" ]; then
+            echo "missing swift typed drafts contract artifact: $3" >&2
+            exit 85
+          fi
+          echo '{"case":"validation.typescript.typed-drafts-contract","side":"typescript","event":"swift-typed-drafts-contract","appID":"local-validation","timestampMs":9,"ok":true,"details":{"proofLevel":"contract-only","remoteBoundary":"local-draft-contract","pendingMutationIDs":["validation.typed-drafts.create","validation.typed-drafts.edit","validation.typed-drafts.author","validation.typed-drafts.post"]}}'
+          ;;
         --swift-live-session-contract)
           if [ "$4:$5" != "--app-id:$remote_app_id" ]; then
             echo "unexpected live session contract arguments: $*" >&2
@@ -2782,6 +2861,8 @@ struct LocalTodoValidationTests {
       "typescript-transport-contract-complete",
       "typescript-local-integrations-contract-start",
       "typescript-local-integrations-contract-complete",
+      "typescript-typed-drafts-contract-start",
+      "typescript-typed-drafts-contract-complete",
       "typescript-live-session-contract-start",
       "typescript-live-session-contract-complete",
       "typescript-live-transaction-contract-start",
@@ -2899,6 +2980,11 @@ struct LocalTodoValidationTests {
     )
     #expect(
       FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-typed-drafts-contract.jsonl").path
+      )
+    )
+    #expect(
+      FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("typescript-live-session-contract.jsonl").path
       )
     )
@@ -2951,6 +3037,26 @@ struct LocalTodoValidationTests {
       ["name", "status"]
     )
     expectNoDifference(localIntegrationsContractDetails["topicPayloadKeys"] as? [String], ["emoji"])
+    let typedDraftsContractRows = try readJSONLines(
+      resultsURL.appendingPathComponent("typescript-typed-drafts-contract.jsonl")
+    )
+    expectNoDifference(
+      typedDraftsContractRows.map { $0["event"] as? String ?? "" },
+      ["swift-typed-drafts-contract"]
+    )
+    expectNoDifference(typedDraftsContractRows.first?["ok"] as? Bool, true)
+    let typedDraftsContractDetails = try #require(
+      typedDraftsContractRows.first?["details"] as? [String: Any]
+    )
+    expectNoDifference(
+      typedDraftsContractDetails["pendingMutationIDs"] as? [String],
+      [
+        "validation.typed-drafts.create",
+        "validation.typed-drafts.edit",
+        "validation.typed-drafts.author",
+        "validation.typed-drafts.post",
+      ]
+    )
     let swiftLiveSessionRows = try readJSONLines(
       resultsURL.appendingPathComponent("swift-live-session.jsonl")
     )
@@ -3030,6 +3136,9 @@ struct LocalTodoValidationTests {
         --swift-local-integrations-contract)
           echo '{"case":"validation.typescript.local-integrations-contract","side":"typescript","event":"local-integrations-override","appID":"local-validation","timestampMs":10,"ok":true,"details":{}}'
           ;;
+        --swift-typed-drafts-contract)
+          echo '{"case":"validation.typescript.typed-drafts-contract","side":"typescript","event":"typed-drafts-override","appID":"local-validation","timestampMs":10,"ok":true,"details":{}}'
+          ;;
         --swift-live-session-contract)
           echo '{"case":"validation.typescript.live-session-contract","side":"typescript","event":"live-session-override","appID":"local-validation","timestampMs":10,"ok":true,"details":{}}'
           ;;
@@ -3081,6 +3190,13 @@ struct LocalTodoValidationTests {
     expectNoDifference(
       overrideLocalIntegrationsRows.map { $0["event"] as? String ?? "" },
       ["local-integrations-override"]
+    )
+    let overrideTypedDraftsRows = try readJSONLines(
+      resultsURL.appendingPathComponent("typescript-typed-drafts-contract.jsonl")
+    )
+    expectNoDifference(
+      overrideTypedDraftsRows.map { $0["event"] as? String ?? "" },
+      ["typed-drafts-override"]
     )
     let overrideLiveSessionRows = try readJSONLines(
       resultsURL.appendingPathComponent("typescript-live-session-contract.jsonl")
@@ -3158,6 +3274,9 @@ struct LocalTodoValidationTests {
         --swift-local-integrations-contract)
           echo '{"case":"validation.typescript.local-integrations-contract","side":"typescript","event":"local-integrations-bundled","appID":"local-validation","timestampMs":11,"ok":true,"details":{}}'
           ;;
+        --swift-typed-drafts-contract)
+          echo '{"case":"validation.typescript.typed-drafts-contract","side":"typescript","event":"typed-drafts-bundled","appID":"local-validation","timestampMs":11,"ok":true,"details":{}}'
+          ;;
         --swift-live-session-contract)
           echo '{"case":"validation.typescript.live-session-contract","side":"typescript","event":"live-session-bundled","appID":"local-validation","timestampMs":11,"ok":true,"details":{}}'
           ;;
@@ -3216,6 +3335,13 @@ struct LocalTodoValidationTests {
     expectNoDifference(
       bundledLocalIntegrationsRows.map { $0["event"] as? String ?? "" },
       ["local-integrations-bundled"]
+    )
+    let bundledTypedDraftsRows = try readJSONLines(
+      resultsURL.appendingPathComponent("typescript-typed-drafts-contract.jsonl")
+    )
+    expectNoDifference(
+      bundledTypedDraftsRows.map { $0["event"] as? String ?? "" },
+      ["typed-drafts-bundled"]
     )
     let bundledLiveSessionRows = try readJSONLines(
       resultsURL.appendingPathComponent("typescript-live-session-contract.jsonl")
@@ -3375,6 +3501,11 @@ struct LocalTodoValidationTests {
     )
     #expect(
       !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-typed-drafts-contract.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("typescript-live-session-contract.jsonl").path
       )
     )
@@ -3484,6 +3615,11 @@ struct LocalTodoValidationTests {
     )
     try "stale typescript transport contract\n".write(
       to: resultsURL.appendingPathComponent("typescript-transport-contract.jsonl"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try "stale typescript typed drafts contract\n".write(
+      to: resultsURL.appendingPathComponent("typescript-typed-drafts-contract.jsonl"),
       atomically: true,
       encoding: .utf8
     )
@@ -3608,6 +3744,11 @@ struct LocalTodoValidationTests {
     #expect(
       !FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("typescript-transport-contract.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-typed-drafts-contract.jsonl").path
       )
     )
     #expect(
@@ -3969,6 +4110,8 @@ struct LocalTodoValidationTests {
       "typescript-transport-contract-complete",
       "typescript-local-integrations-contract-start",
       "typescript-local-integrations-contract-complete",
+      "typescript-typed-drafts-contract-start",
+      "typescript-typed-drafts-contract-complete",
       "typescript-live-session-contract-start",
       "typescript-live-session-contract-complete",
       "typescript-live-transaction-contract-start",

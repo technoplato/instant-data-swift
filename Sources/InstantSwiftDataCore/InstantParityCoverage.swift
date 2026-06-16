@@ -2848,6 +2848,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "InstantSwiftDataClient.transact(saving:) prepares the generated draft save, passes the allocated or existing typed id into related mutations, and commits every operation with one transaction id/time."
     ),
     sqlite(
+      id: "sqlite.draft.relation-ref-save",
+      sourceFile: "upstream/sqlite-data/Examples/Reminders/ReminderForm.swift + upstream/sqlite-data/Examples/SyncUps/SyncUpForm.swift",
+      sourceTestName: "ReminderTag.Draft(reminderID:tagID:) and Attendee.Draft(name:syncUpID:) save relation rows after parent draft ids exist",
+      swiftFile: "Sources/InstantSwiftData/InstantDraftValidation.swift",
+      swiftTestName: "draftValidationProvesGeneratedCreateEditAndRelaunch + cliValidationTypedDraftsEmitsEvidence",
+      surface: "drafts",
+      status: .adapted,
+      notes: "Typed draft validation saves an author draft and post draft through generated Instant refs, proves the writable relation assignment metadata, emits the ref-bearing pending mutation summary, and relaunches from the persisted relation rows."
+    ),
+    sqlite(
       id: "sqlite.reminders.search-tags",
       sourceFile: "upstream/sqlite-data/Examples/RemindersTests/SearchRemindersTests.swift; upstream/sqlite-data/Examples/Reminders/SearchReminders.swift",
       sourceTestName: "basics / showCompleted / deleteCompleted; model tag suggestions / tokenized search",

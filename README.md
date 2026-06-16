@@ -560,6 +560,7 @@ node validation/ts-runner/src/main.ts --fixtures
 INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR=/tmp/instant-validation-results validation/run-e2e.sh
 node validation/ts-runner/src/main.ts --swift-transport-contract /tmp/instant-validation-results/swift-transport-contract.json --app-id local-validation
 node validation/ts-runner/src/main.ts --swift-local-integrations-contract /tmp/instant-validation-results/swift-local-integrations.jsonl --app-id local-validation
+node validation/ts-runner/src/main.ts --swift-typed-drafts-contract /tmp/instant-validation-results/swift-typed-drafts.jsonl --app-id local-validation
 node validation/ts-runner/src/main.ts --swift-live-session-contract /tmp/instant-validation-results/swift-live-session.jsonl --app-id local-validation
 node validation/ts-runner/src/main.ts --swift-live-transaction-contract /tmp/instant-validation-results/swift-live-transaction.jsonl --app-id local-validation
 node validation/ts-runner/src/main.ts --typescript-server-transaction-contract /tmp/instant-validation-results/typescript-server-transaction-contract.json --app-id local-validation
@@ -648,11 +649,13 @@ as `swift-live-transaction.jsonl`, the local live observer proof as
 `swift-live-observe.jsonl`, the MacroTesting log, and a one-iteration
 `local-todos` benchmark JSONL artifact by default; set
 `INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS` to change that count. When
-Node is available it also writes `typescript-fixtures.jsonl` and
-`typescript-transport-contract.jsonl` after checking Swift's
-`swift-transport-contract.json` lowered outbox payload, validates Swift's
-live-session protocol evidence into `typescript-live-session-contract.jsonl`,
-validates Swift's local live-transaction transcript into
+Node is available it also writes `typescript-fixtures.jsonl`, validates Swift's
+local integration evidence into `typescript-local-integrations-contract.jsonl`,
+checks Swift's lowered outbox payload into `typescript-transport-contract.jsonl`,
+validates generated draft evidence into
+`typescript-typed-drafts-contract.jsonl`, validates Swift's live-session
+protocol evidence into `typescript-live-session-contract.jsonl`, validates
+Swift's local live-transaction transcript into
 `typescript-live-transaction-contract.jsonl`, and `validation live-transaction`
 locally proves the upstream `transact` / `transact-ok` / `refresh-ok` WebSocket
 message shape. It then writes

@@ -107,6 +107,8 @@ INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR=/tmp/instant-validation-results valida
 node validation/ts-runner/src/main.ts --swift-transport-contract /tmp/instant-validation-results/swift-transport-contract.json --app-id local-validation
 INSTANT_APP_ID=local-validation swift run instant-swift-data validation local-integrations --jsonl > /tmp/instant-validation-results/swift-local-integrations.jsonl
 node validation/ts-runner/src/main.ts --swift-local-integrations-contract /tmp/instant-validation-results/swift-local-integrations.jsonl --app-id local-validation
+INSTANT_APP_ID=local-validation swift run instant-swift-data validation typed-drafts --jsonl > /tmp/instant-validation-results/swift-typed-drafts.jsonl
+node validation/ts-runner/src/main.ts --swift-typed-drafts-contract /tmp/instant-validation-results/swift-typed-drafts.jsonl --app-id local-validation
 node validation/ts-runner/src/main.ts --swift-live-session-contract /tmp/instant-validation-results/swift-live-session.jsonl --app-id local-validation
 swift run instant-swift-data validation live-transaction --jsonl
 node validation/ts-runner/src/main.ts --swift-live-transaction-contract /tmp/instant-validation-results/swift-live-transaction.jsonl --app-id local-validation
@@ -151,10 +153,13 @@ artifacts (`swift-schema-generate.json`,
 `swift-macro-tests.log`, records the local benchmark evidence, and then runs
 the TypeScript fixture and contract checks when Node is available. The local
 integration contract check writes `typescript-local-integrations-contract.jsonl`
-after TypeScript validates Swift's room presence/topic evidence. The transport
-contract check writes `typescript-transport-contract.jsonl` as contract-only
-evidence; it proves the local Swift outbox lowering can be consumed from
-TypeScript, not that Instant has accepted the mutation. The live-session
+after TypeScript validates Swift's room presence/topic evidence. The typed
+drafts contract check writes `typescript-typed-drafts-contract.jsonl` after
+TypeScript validates Swift's nil-id draft create, `Draft(existing)` edit,
+relation ref metadata, pending mutation shape, and relaunch persistence. The
+transport contract check writes `typescript-transport-contract.jsonl` as
+contract-only evidence; it proves the local Swift outbox lowering can be
+consumed from TypeScript, not that Instant has accepted the mutation. The live-session
 contract check writes
 `typescript-live-session-contract.jsonl` after TypeScript validates Swift's
 WebSocket protocol evidence. `instant-swift-data validation live-transaction`

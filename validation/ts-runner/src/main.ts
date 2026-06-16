@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const runnerDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(runnerDirectory, "../../..");
 const usage =
-  "Usage: node validation/ts-runner/src/main.ts [--fixtures|--boundary-preflight|--boundary-admin-smoke|--boundary-swift-live-observe|--boundary-typescript-live-observe|--swift-transport-contract path|--swift-local-integrations-contract path|--swift-live-session-contract path|--swift-live-transaction-contract path|--typescript-server-transaction-contract path] [--require-boundary] [--app-id id] [--fixtures-dir path]";
+  "Usage: node validation/ts-runner/src/main.ts [--fixtures|--boundary-preflight|--boundary-admin-smoke|--boundary-swift-live-observe|--boundary-typescript-live-observe|--swift-transport-contract path|--swift-local-integrations-contract path|--swift-typed-drafts-contract path|--swift-live-session-contract path|--swift-live-transaction-contract path|--typescript-server-transaction-contract path] [--require-boundary] [--app-id id] [--fixtures-dir path]";
 const defaultAPIURI = "https://api.instantdb.com";
 const defaultWebSocketURI = "wss://api.instantdb.com/runtime/session";
 
@@ -56,6 +56,7 @@ function parseArguments(argv) {
     adminTokenSource: adminToken.source,
     swiftTransportContractPath: null,
     swiftLocalIntegrationsContractPath: null,
+    swiftTypedDraftsContractPath: null,
     swiftLiveSessionContractPath: null,
     swiftLiveTransactionContractPath: null,
     typeScriptServerTransactionContractPath: null,
@@ -109,6 +110,16 @@ function parseArguments(argv) {
         }
         options.mode = "swift-local-integrations-contract";
         options.swiftLocalIntegrationsContractPath = resolve(value);
+        break;
+      }
+
+      case "--swift-typed-drafts-contract": {
+        const value = args.shift();
+        if (!value) {
+          throw new UsageError(usage);
+        }
+        options.mode = "swift-typed-drafts-contract";
+        options.swiftTypedDraftsContractPath = resolve(value);
         break;
       }
 
@@ -2206,6 +2217,18 @@ function sameArray(actual, expected) {
   return JSON.stringify(actual ?? null) === JSON.stringify(expected);
 }
 
+function pushEqual(issues, path, expected, actual) {
+  if (!Object.is(actual, expected)) {
+    issues.push(issue(path, expected, actual));
+  }
+}
+
+function pushArray(issues, path, expected, actual) {
+  if (!sameArray(actual, expected)) {
+    issues.push(issue(path, expected, actual));
+  }
+}
+
 function verifySwiftLocalIntegrationsContract(options) {
   const path = options.swiftLocalIntegrationsContractPath;
   if (!path || !existsSync(path)) {
@@ -2371,6 +2394,398 @@ function verifySwiftLocalIntegrationsContract(options) {
       topicMessageIDs: relaunchDetails.topicMessageIDs ?? [],
       roomPresenceValueKeys: relaunchDetails.roomPresenceValueKeys ?? [],
       topicPayloadKeys: relaunchDetails.topicPayloadKeys ?? [],
+      issues,
+    },
+  });
+
+  if (!ok) {
+    process.exitCode = 1;
+  }
+}
+
+function draftMutation(details, mutationID) {
+  return (details.draftMutationSummaries ?? []).find(
+    (summary) => summary.mutationID === mutationID,
+  ) ?? {};
+}
+
+function validateDraftMutationSummary(issues, pathPrefix, summary, expected) {
+  pushEqual(issues, `${pathPrefix}.mutationID`, expected.mutationID, summary.mutationID);
+  pushEqual(issues, `${pathPrefix}.transactionID`, expected.mutationID, summary.transactionID);
+  pushEqual(issues, `${pathPrefix}.status`, "pending", summary.status);
+  pushArray(
+    issues,
+    `${pathPrefix}.draftAssignmentAttributeIDs`,
+    expected.draftAssignmentAttributeIDs,
+    summary.draftAssignmentAttributeIDs,
+  );
+  pushArray(
+    issues,
+    `${pathPrefix}.preconditionKinds`,
+    expected.preconditionKinds,
+    summary.preconditionKinds,
+  );
+  pushArray(
+    issues,
+    `${pathPrefix}.preconditionNamespaces`,
+    expected.preconditionNamespaces,
+    summary.preconditionNamespaces,
+  );
+  pushArray(issues, `${pathPrefix}.refAttributeIDs`, expected.refAttributeIDs, summary.refAttributeIDs);
+  pushEqual(issues, `${pathPrefix}.primaryKeyStepCount`, 1, summary.primaryKeyStepCount);
+  pushArray(
+    issues,
+    `${pathPrefix}.txStepAttributeIDs`,
+    expected.txStepAttributeIDs,
+    summary.txStepAttributeIDs,
+  );
+  pushArray(
+    issues,
+    `${pathPrefix}.txStepKinds`,
+    expected.txStepAttributeIDs.map(() => "add-triple"),
+    summary.txStepKinds,
+  );
+  pushArray(
+    issues,
+    `${pathPrefix}.txStepOptionModes`,
+    expected.txStepOptionModes,
+    summary.txStepOptionModes,
+  );
+  pushArray(
+    issues,
+    `${pathPrefix}.operationKinds`,
+    expected.operationKinds,
+    summary.operationKinds,
+  );
+  pushArray(
+    issues,
+    `${pathPrefix}.operationValueTypes`,
+    expected.operationValueTypes,
+    summary.operationValueTypes,
+  );
+  pushArray(
+    issues,
+    `${pathPrefix}.txStepValueTypes`,
+    expected.txStepValueTypes,
+    summary.txStepValueTypes,
+  );
+}
+
+function verifySwiftTypedDraftsContract(options) {
+  const path = options.swiftTypedDraftsContractPath;
+  if (!path || !existsSync(path)) {
+    emit({
+      case: "validation.typescript.typed-drafts-contract",
+      event: "swift-typed-drafts-contract",
+      appID: options.appID,
+      ok: false,
+      details: {
+        path,
+        proofLevel: "contract-only",
+        remoteBoundary: "local-draft-contract",
+        issues: [issue("$.path", "existing Swift typed-drafts JSONL artifact", path)],
+      },
+    });
+    process.exitCode = 1;
+    return;
+  }
+
+  let rows;
+  try {
+    rows = readJSONLines(path);
+  } catch (error) {
+    emit({
+      case: "validation.typescript.typed-drafts-contract",
+      event: "swift-typed-drafts-contract",
+      appID: options.appID,
+      ok: false,
+      details: {
+        path,
+        proofLevel: "contract-only",
+        remoteBoundary: "local-draft-contract",
+        issues: [issue("$.jsonl", "valid Swift typed-drafts JSONL", String(error))],
+      },
+    });
+    process.exitCode = 1;
+    return;
+  }
+
+  const expectedEvents = ["create", "edit", "relation", "relaunch"];
+  const actualEvents = rows.map((row) => row.event);
+  const issues = [];
+  pushArray(issues, "$.events", expectedEvents, actualEvents);
+
+  for (const [index, row] of rows.entries()) {
+    pushEqual(issues, `$[${index}].case`, "validation.typed.drafts", row.case);
+    pushEqual(issues, `$[${index}].side`, "swift", row.side);
+    pushEqual(issues, `$[${index}].appID`, options.appID, row.appID);
+    pushEqual(issues, `$[${index}].ok`, true, row.ok);
+  }
+
+  const createRow = rows.find((row) => row.event === "create") ?? {};
+  const editRow = rows.find((row) => row.event === "edit") ?? {};
+  const relationRow = rows.find((row) => row.event === "relation") ?? {};
+  const relaunchRow = rows.find((row) => row.event === "relaunch") ?? {};
+  const createDetails = createRow.details ?? {};
+  const editDetails = editRow.details ?? {};
+  const relationDetails = relationRow.details ?? {};
+  const relaunchDetails = relaunchRow.details ?? {};
+
+  const todoAssignments = [
+    "draftValidationTodos/title",
+    "draftValidationTodos/isCompleted",
+    "draftValidationTodos/createdAt",
+    "draftValidationTodos/notes",
+  ];
+  const todoStepAttributes = ["draftValidationTodos/id", ...todoAssignments];
+  const relationAssignments = [
+    "draftValidationPosts/title",
+    "draftValidationPosts/author",
+  ];
+  const allMutationIDs = [
+    "validation.typed-drafts.create",
+    "validation.typed-drafts.edit",
+    "validation.typed-drafts.author",
+    "validation.typed-drafts.post",
+  ];
+
+  pushEqual(issues, "$.create.details.newDraftIDWasNil", true, createDetails.newDraftIDWasNil);
+  pushArray(
+    issues,
+    "$.create.details.newDraftAssignmentAttributeIDs",
+    todoAssignments,
+    createDetails.newDraftAssignmentAttributeIDs,
+  );
+  pushEqual(
+    issues,
+    "$.create.details.newDraftIncludedPrimaryKeyAssignment",
+    false,
+    createDetails.newDraftIncludedPrimaryKeyAssignment,
+  );
+  pushEqual(issues, "$.create.details.createdID", createRow.entityID, createDetails.createdID);
+  pushArray(issues, "$.create.details.draftTodoIDs", [createRow.entityID], createDetails.draftTodoIDs);
+  pushArray(
+    issues,
+    "$.create.details.draftTodoTitles",
+    ["Create from generated draft"],
+    createDetails.draftTodoTitles,
+  );
+  pushArray(
+    issues,
+    "$.create.details.pendingMutationIDs",
+    ["validation.typed-drafts.create"],
+    createDetails.pendingMutationIDs,
+  );
+
+  validateDraftMutationSummary(
+    issues,
+    "$.create.details.draftMutationSummaries.create",
+    draftMutation(createDetails, "validation.typed-drafts.create"),
+    {
+      mutationID: "validation.typed-drafts.create",
+      draftAssignmentAttributeIDs: todoAssignments,
+      preconditionKinds: ["entity-missing"],
+      preconditionNamespaces: ["draftValidationTodos"],
+      refAttributeIDs: [],
+      txStepAttributeIDs: todoStepAttributes,
+      txStepOptionModes: ["create", "create", "create", "create", "create"],
+      operationKinds: ["requireEntityMissing", "insert", "insert", "insert", "insert", "insert"],
+      operationValueTypes: ["string", "string", "boolean", "date", "null"],
+      txStepValueTypes: ["string", "string", "boolean", "string", "null"],
+    },
+  );
+
+  pushEqual(issues, "$.edit.details.editedID", createRow.entityID, editDetails.editedID);
+  pushArray(
+    issues,
+    "$.edit.details.draftTodoTitles",
+    ["Edit from generated draft"],
+    editDetails.draftTodoTitles,
+  );
+  pushArray(issues, "$.edit.details.draftTodoCompletionStates", [true], editDetails.draftTodoCompletionStates);
+  pushArray(
+    issues,
+    "$.edit.details.draftTodoNotes",
+    ["Edited through Draft(existing)"],
+    editDetails.draftTodoNotes,
+  );
+  pushArray(
+    issues,
+    "$.edit.details.pendingMutationIDs",
+    ["validation.typed-drafts.create", "validation.typed-drafts.edit"],
+    editDetails.pendingMutationIDs,
+  );
+  validateDraftMutationSummary(
+    issues,
+    "$.edit.details.draftMutationSummaries.edit",
+    draftMutation(editDetails, "validation.typed-drafts.edit"),
+    {
+      mutationID: "validation.typed-drafts.edit",
+      draftAssignmentAttributeIDs: todoAssignments,
+      preconditionKinds: [],
+      preconditionNamespaces: [],
+      refAttributeIDs: [],
+      txStepAttributeIDs: todoStepAttributes,
+      txStepOptionModes: ["none", "none", "none", "none", "none"],
+      operationKinds: ["insert", "insert", "insert", "insert", "insert"],
+      operationValueTypes: ["string", "string", "boolean", "date", "string"],
+      txStepValueTypes: ["string", "string", "boolean", "string", "string"],
+    },
+  );
+
+  pushArray(
+    issues,
+    "$.relation.details.draftAuthorNames",
+    ["Draft relation author"],
+    relationDetails.draftAuthorNames,
+  );
+  pushArray(
+    issues,
+    "$.relation.details.draftPostTitles",
+    ["Post from relation draft"],
+    relationDetails.draftPostTitles,
+  );
+  pushArray(
+    issues,
+    "$.relation.details.draftPostAttributeIDs",
+    relationAssignments,
+    relationDetails.draftPostAttributeIDs,
+  );
+  pushEqual(
+    issues,
+    "$.relation.details.draftPostAuthorAttributeValueType",
+    "ref",
+    relationDetails.draftPostAuthorAttributeValueType,
+  );
+  pushEqual(
+    issues,
+    "$.relation.details.draftPostAuthorLinkNamespace",
+    "draftValidationAuthors",
+    relationDetails.draftPostAuthorLinkNamespace,
+  );
+  pushEqual(
+    issues,
+    "$.relation.details.draftPostAuthorForwardIdentity",
+    "draftValidationPosts/author",
+    relationDetails.draftPostAuthorForwardIdentity,
+  );
+  pushEqual(
+    issues,
+    "$.relation.details.draftPostAuthorReverseIdentity",
+    "draftValidationAuthors/posts",
+    relationDetails.draftPostAuthorReverseIdentity,
+  );
+  pushEqual(
+    issues,
+    "$.relation.details.relationPostID",
+    relationRow.entityID,
+    relationDetails.relationPostID,
+  );
+  pushArray(
+    issues,
+    "$.relation.details.draftAuthorIDs",
+    [relationDetails.relationAuthorID],
+    relationDetails.draftAuthorIDs,
+  );
+  pushArray(
+    issues,
+    "$.relation.details.draftPostAuthorIDs",
+    [relationDetails.relationAuthorID],
+    relationDetails.draftPostAuthorIDs,
+  );
+  pushArray(
+    issues,
+    "$.relation.details.draftPostIDs",
+    [relationDetails.relationPostID],
+    relationDetails.draftPostIDs,
+  );
+  pushArray(issues, "$.relation.details.pendingMutationIDs", allMutationIDs, relationDetails.pendingMutationIDs);
+  validateDraftMutationSummary(
+    issues,
+    "$.relation.details.draftMutationSummaries.author",
+    draftMutation(relationDetails, "validation.typed-drafts.author"),
+    {
+      mutationID: "validation.typed-drafts.author",
+      draftAssignmentAttributeIDs: ["draftValidationAuthors/name"],
+      preconditionKinds: ["entity-missing"],
+      preconditionNamespaces: ["draftValidationAuthors"],
+      refAttributeIDs: [],
+      txStepAttributeIDs: ["draftValidationAuthors/id", "draftValidationAuthors/name"],
+      txStepOptionModes: ["create", "create"],
+      operationKinds: ["requireEntityMissing", "insert", "insert"],
+      operationValueTypes: ["string", "string"],
+      txStepValueTypes: ["string", "string"],
+    },
+  );
+  validateDraftMutationSummary(
+    issues,
+    "$.relation.details.draftMutationSummaries.post",
+    draftMutation(relationDetails, "validation.typed-drafts.post"),
+    {
+      mutationID: "validation.typed-drafts.post",
+      draftAssignmentAttributeIDs: relationAssignments,
+      preconditionKinds: ["entity-missing"],
+      preconditionNamespaces: ["draftValidationPosts"],
+      refAttributeIDs: ["draftValidationPosts/author"],
+      txStepAttributeIDs: [
+        "draftValidationPosts/id",
+        "draftValidationPosts/title",
+        "draftValidationPosts/author",
+      ],
+      txStepOptionModes: ["create", "create", "create"],
+      operationKinds: ["requireEntityMissing", "insert", "insert", "insert"],
+      operationValueTypes: ["string", "string", "ref"],
+      txStepValueTypes: ["string", "string", "string"],
+    },
+  );
+
+  pushEqual(issues, "$.relaunch.details.createdID", createRow.entityID, relaunchDetails.createdID);
+  pushEqual(issues, "$.relaunch.details.editedID", createRow.entityID, relaunchDetails.editedID);
+  pushEqual(
+    issues,
+    "$.relaunch.details.relationAuthorID",
+    relationDetails.relationAuthorID,
+    relaunchDetails.relationAuthorID,
+  );
+  pushEqual(
+    issues,
+    "$.relaunch.details.relationPostID",
+    relationDetails.relationPostID,
+    relaunchDetails.relationPostID,
+  );
+  pushArray(
+    issues,
+    "$.relaunch.details.draftTodoNotes",
+    ["Edited through Draft(existing)"],
+    relaunchDetails.draftTodoNotes,
+  );
+  pushArray(
+    issues,
+    "$.relaunch.details.draftPostAuthorIDs",
+    [relationDetails.relationAuthorID],
+    relaunchDetails.draftPostAuthorIDs,
+  );
+  pushArray(issues, "$.relaunch.details.pendingMutationIDs", allMutationIDs, relaunchDetails.pendingMutationIDs);
+
+  const ok = issues.length === 0;
+  emit({
+    case: "validation.typescript.typed-drafts-contract",
+    event: "swift-typed-drafts-contract",
+    appID: options.appID,
+    ok,
+    details: {
+      path,
+      proofLevel: "contract-only",
+      remoteBoundary: "local-draft-contract",
+      expectedEvents,
+      actualEvents,
+      createdID: createDetails.createdID ?? null,
+      editedID: editDetails.editedID ?? null,
+      relationAuthorID: relationDetails.relationAuthorID ?? null,
+      relationPostID: relationDetails.relationPostID ?? null,
+      draftAssignmentAttributeIDs: createDetails.newDraftAssignmentAttributeIDs ?? [],
+      draftPostAttributeIDs: relationDetails.draftPostAttributeIDs ?? [],
+      pendingMutationIDs: relaunchDetails.pendingMutationIDs ?? [],
       issues,
     },
   });
@@ -2876,6 +3291,10 @@ async function main() {
 
     case "swift-local-integrations-contract":
       verifySwiftLocalIntegrationsContract(options);
+      break;
+
+    case "swift-typed-drafts-contract":
+      verifySwiftTypedDraftsContract(options);
       break;
 
     case "swift-live-session-contract":
