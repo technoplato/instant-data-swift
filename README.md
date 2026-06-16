@@ -546,6 +546,7 @@ swift run instant-swift-data-validation-runner --server-transaction-loopback
 swift run instant-swift-data-validation-runner --cloudkit-demo
 swift run instant-swift-data-validation-runner --live-session
 swift run instant-swift-data-validation-runner --live-transaction
+swift run instant-swift-data validation reminders --jsonl | jq 'select(.event == "search-token-model") | .details.searchTokens'
 swift run instant-swift-data validation reminders --jsonl | jq 'select(.event == "rich-filters") | .details.priorityRanksByReminderID'
 swift run instant-swift-data-validation-runner --typed-drafts
 swift run instant-swift-data-validation-runner --platform-adapters
@@ -583,9 +584,10 @@ node validation/ts-runner/src/main.ts --swift-local-integrations-contract /tmp/i
 ```
 
 `validation reminders` emits terminal evidence for local
-Reminders search, tags, rich fields, upstream-ranked numeric priority storage
-with named CLI filters, form-model edit saves, smart-list stats, list sharing
-roles, permission rejections, writer updates, and relaunch persistence.
+Reminders search, tag suggestions, tag-token model search, rich fields,
+upstream-ranked numeric priority storage with named CLI filters, form-model edit
+saves, smart-list stats, list sharing roles, permission rejections, writer
+updates, and relaunch persistence.
 `validation server-transaction-loopback` emits terminal evidence that a
 server-applied transaction persists triples, publishes a live todo observer,
 advances the processed transaction checkpoint, survives relaunch, and leaves the

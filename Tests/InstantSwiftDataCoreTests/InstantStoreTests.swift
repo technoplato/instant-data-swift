@@ -10213,6 +10213,133 @@ struct InstantStoreTests {
   }
 
   @Test
+  func searchRemindersModelPortsTagTokensSuggestionsAndAgedCompletedDelete() async throws {
+    let fixture = try await upstreamRemindersFixture()
+    var model = SearchRemindersModel(runtime: fixture.runtime, now: { fixture.now })
+
+    model.searchText = "#so"
+    try await model.load()
+    expectNoDifference(model.tagSuggestions.map(\.title), ["social", "someday"])
+
+    model.searchText = "#"
+    try await model.load()
+    expectNoDifference(model.tagSuggestions.map(\.title), [
+      "adulting",
+      "car",
+      "kids",
+      "night",
+      "optional",
+      "social",
+      "someday",
+    ])
+
+    model.searchText = "#ult"
+    try await model.load()
+    expectNoDifference(model.tagSuggestions.map(\.title), [])
+
+    model.searchText = "#so"
+    try await model.load()
+
+    let social = try #require(fixture.tags.first { $0.id == "social" })
+    model.tagButtonTapped(social)
+    expectNoDifference(
+      model.searchTokens,
+      [SearchRemindersModel.Token(kind: .tag, rawValue: "social")]
+    )
+    expectNoDifference(model.searchText, "")
+
+    try await model.load()
+    expectNoDifference(model.searchResults.completedCount, 1)
+    expectNoDifference(model.searchResults.rows.map(\.reminder.title), [
+      "Buy concert tickets",
+      "Prepare for WWDC",
+    ])
+
+    try await model.showCompletedButtonTapped()
+    expectNoDifference(model.searchResults.rows.map(\.reminder.title), [
+      "Buy concert tickets",
+      "Prepare for WWDC",
+      "Take a walk",
+    ])
+    expectNoDifference(model.searchResults.rows.map(\.tags), [
+      "#**social** #night",
+      "#**social**",
+      "#car #kids #**social**",
+    ])
+
+    try await model.deleteCompletedReminders(
+      monthsAgo: 6,
+      updatedAt: fixture.now,
+      transactionID: "tx-reminders-search-delete-aged-completed"
+    )
+    expectNoDifference(model.searchResults.completedCount, 0)
+    expectNoDifference(model.searchResults.rows.map(\.reminder.title), [
+      "Buy concert tickets",
+      "Prepare for WWDC",
+    ])
+
+    var nearModel = SearchRemindersModel(runtime: fixture.runtime, now: { fixture.now })
+    nearModel.searchText = "Doctor\t"
+    try await nearModel.load()
+    expectNoDifference(
+      nearModel.searchTokens,
+      [SearchRemindersModel.Token(kind: .near, rawValue: "Doctor")]
+    )
+    expectNoDifference(nearModel.searchText, "")
+    expectNoDifference(nearModel.searchResults.rows.map(\.title), ["**Doctor** appointment"])
+
+    var multiWordModel = SearchRemindersModel(runtime: fixture.runtime, now: { fixture.now })
+    multiWordModel.searchText = "Take trash"
+    try await multiWordModel.load()
+    expectNoDifference(multiWordModel.searchResults.rows.map(\.reminder.title), ["Take out trash"])
+
+    let remainingCompleted = try ReminderExample.decodeReminders(
+      try await fixture.runtime.query(
+        ReminderExample.remindersSearchQuery(text: "", tagIDs: ["social"], includeCompleted: true)
+      )
+    )
+    expectNoDifference(remainingCompleted.map(\.title), [
+      "Buy concert tickets",
+      "Prepare for WWDC",
+    ])
+
+    let concert = try #require(remainingCompleted.first { $0.title == "Buy concert tickets" })
+    try await fixture.runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-reminders-search-custom-tag",
+        operations: ReminderExample.addTagOperations(
+          reminderID: concert.id,
+          listID: concert.remindersListID,
+          tagID: "tag-errands-uuid",
+          title: "Errands",
+          updatedAt: fixture.now,
+          transactionID: "tx-reminders-search-custom-tag"
+        )
+      ),
+      createdAt: fixture.now
+    )
+
+    var customTagModel = SearchRemindersModel(runtime: fixture.runtime, now: { fixture.now })
+    customTagModel.searchText = "#err"
+    try await customTagModel.load()
+    expectNoDifference(customTagModel.tagSuggestions, [
+      ReminderTagRecord(id: "tag-errands-uuid", title: "Errands")
+    ])
+    customTagModel.tagButtonTapped(try #require(customTagModel.tagSuggestions.first))
+    expectNoDifference(customTagModel.searchTokens, [
+      SearchRemindersModel.Token(kind: .tag, rawValue: "Errands")
+    ])
+
+    try await customTagModel.load()
+    expectNoDifference(customTagModel.searchResults.rows.map(\.reminder.title), [
+      "Buy concert tickets"
+    ])
+    expectNoDifference(customTagModel.searchResults.rows.map(\.tags), [
+      "#social #night #**Errands**"
+    ])
+  }
+
+  @Test
   func remindersDetailModelPortsOrderingAndRichRows() async throws {
     let fixture = try await upstreamRemindersFixture()
     var model = RemindersDetailModel(

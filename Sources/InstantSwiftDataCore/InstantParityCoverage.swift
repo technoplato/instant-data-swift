@@ -2124,13 +2124,13 @@ public enum InstantSwiftDataParityCoverage {
     ),
     sqlite(
       id: "sqlite.reminders.search-tags",
-      sourceFile: "upstream/sqlite-data/Examples/RemindersTests/SearchRemindersTests.swift",
-      sourceTestName: "basics / showCompleted / deleteCompleted",
+      sourceFile: "upstream/sqlite-data/Examples/RemindersTests/SearchRemindersTests.swift; upstream/sqlite-data/Examples/Reminders/SearchReminders.swift",
+      sourceTestName: "basics / showCompleted / deleteCompleted; model tag suggestions / tokenized search",
       swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
-      swiftTestName: "searchRemindersModelPortsBasicsShowCompletedAndDeleteCompleted",
+      swiftTestName: "searchRemindersModelPortsBasicsShowCompletedAndDeleteCompleted + searchRemindersModelPortsTagTokensSuggestionsAndAgedCompletedDelete",
       surface: "examples-reminders",
       status: .adapted,
-      notes: "The Instant-native SearchRemindersModel ports the upstream search basics, completed-count/show toggle, highlighted title rows, and completed deletion against a local runtime-backed fixture."
+      notes: "The Instant-native SearchRemindersModel ports the upstream search basics, completed-count/show toggle, highlighted title rows, tag suggestions, tag tokens, tab-created near tokens, and aged completed deletion against a local runtime-backed fixture. Instant adapts the upstream FTS NEAR token to local text filters until a full FTS engine is introduced."
     ),
     sqlite(
       id: "sqlite.reminders.detail-rich-fields",

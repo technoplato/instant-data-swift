@@ -28,7 +28,8 @@ seed, update, cache, reset, relaunch, authenticate, publish room
 presence/topics, upload/read file contents, append stream chunks,
 create/accept/revoke shares, validate Reminders search/tags/share roles, create
 and edit generated drafts, bind public wrapper adapters, and report upstream
-Instant/SQLiteData parity records without SwiftUI.
+Instant/SQLiteData parity records without SwiftUI. Reminders validation includes
+a `search-token-model` row for tag suggestions and tag-token search.
 The standalone runner goes through
 `InstantSwiftDataTesting.InstantSwiftDataTestHarness` where practical, so the
 same evidence helpers are available to package tests and terminal validation:
@@ -51,6 +52,7 @@ swift run instant-swift-data-validation-runner --reminders
 swift run instant-swift-data-validation-runner --cloudkit-demo
 swift run instant-swift-data-validation-runner --live-session
 swift run instant-swift-data-validation-runner --live-transaction
+swift run instant-swift-data validation reminders --jsonl | jq 'select(.event == "search-token-model") | .details.searchTokens'
 swift run instant-swift-data-validation-runner --typed-drafts
 swift run instant-swift-data-validation-runner --platform-adapters
 swift run instant-swift-data-validation-runner --syncups-recording
@@ -67,10 +69,10 @@ validation/run-macro-tests.sh
 ```
 
 Validation commands that accept `--jsonl` emit the JSON Lines evidence format
-below. `validation reminders` covers local Reminders search, tags, rich fields,
-smart-list stats, list sharing roles, permission rejections, writer updates, and
-relaunch persistence. Real InstantDB and Swift/TypeScript boundary cases remain
-required for final acceptance.
+below. `validation reminders` covers local Reminders search, tag suggestions,
+tag-token search, tags, rich fields, smart-list stats, list sharing roles,
+permission rejections, writer updates, and relaunch persistence. Real InstantDB
+and Swift/TypeScript boundary cases remain required for final acceptance.
 
 ## Local Swift Fixture Evidence
 

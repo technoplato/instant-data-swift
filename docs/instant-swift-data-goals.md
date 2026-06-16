@@ -701,6 +701,8 @@ Agent-oriented output modes are required:
   flows.
 - exercise runtime-backed Reminders search and detail models through core tests;
   `SearchRemindersModel` ports upstream basics/show-completed/delete-completed,
+  tag suggestions, tag-token search, tab-created near tokens, and aged completed
+  deletion,
   and `RemindersDetailModel` ports list detail rows, due-date/priority/title
   ordering, show-completed toggling, move-to-manual position persistence, and
   upstream smart-list/tag detail filters.

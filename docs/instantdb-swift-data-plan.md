@@ -823,8 +823,9 @@ Create `validation/` with:
   entities with a many-ref `reminders/tags` relation, and JSON/JSONL output
   derives visible reminder-tag rows. A runtime-backed `SearchRemindersModel`
   now ports the upstream basics/show-completed/delete-completed tests with
-  highlighted titles; full upstream FTS and SwiftUI search views remain future
-  work.
+  highlighted titles, tag suggestions, tag-token search, tab-created near
+  tokens, and aged completed deletion; full upstream FTS ranking/snippet
+  behavior and SwiftUI search views remain future work.
 - Reminders: local delete workflows now cover
   `examples reminders delete <reminder-id>`,
   `delete-completed [--list-id id]`, and `delete-list <list-id>`. Reminder

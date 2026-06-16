@@ -355,9 +355,27 @@ public struct SearchRemindersRow: Hashable, Codable, Sendable, Identifiable {
 }
 
 public struct SearchRemindersModel: Sendable {
+  public struct Token: Hashable, Codable, Sendable, Identifiable {
+    public enum Kind: String, Codable, Sendable {
+      case near
+      case tag
+    }
+
+    public var id: Self { self }
+    public var kind: Kind
+    public var rawValue: String
+
+    public init(kind: Kind, rawValue: String) {
+      self.kind = kind
+      self.rawValue = rawValue
+    }
+  }
+
   public var searchText: String
+  public var searchTokens: [Token]
   public var showCompletedInSearchResults: Bool
   public private(set) var searchResults: SearchRemindersResults
+  public private(set) var tagSuggestions: [ReminderTagRecord]
 
   private let runtime: InstantRuntime
   private let now: @Sendable () -> InstantTimestamp
@@ -365,29 +383,76 @@ public struct SearchRemindersModel: Sendable {
   public init(
     runtime: InstantRuntime,
     searchText: String = "",
+    searchTokens: [Token] = [],
     showCompletedInSearchResults: Bool = false,
     now: @escaping @Sendable () -> InstantTimestamp
   ) {
     self.runtime = runtime
     self.searchText = searchText
+    self.searchTokens = searchTokens
     self.showCompletedInSearchResults = showCompletedInSearchResults
     self.searchResults = SearchRemindersResults()
+    self.tagSuggestions = []
     self.now = now
   }
 
+  public var isSearching: Bool {
+    !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      || !searchTokens.isEmpty
+  }
+
   public mutating func load() async throws {
+    if searchText.hasSuffix("\t") {
+      let tokenText = String(searchText.dropLast()).trimmingCharacters(in: .whitespacesAndNewlines)
+      if !tokenText.isEmpty {
+        searchTokens.append(Token(kind: .near, rawValue: tokenText))
+      }
+      searchText = ""
+    }
+
     let trimmedText = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmedText.isEmpty else {
+    let context = try await ReminderExample.modelContext(runtime: runtime)
+
+    if trimmedText.hasPrefix("#") {
+      tagSuggestions = ReminderExample.tagSuggestions(
+        in: Array(context.tagsByID.values),
+        matching: trimmedText,
+        excluding: searchTokens.compactMap { token in
+          token.kind == .tag ? token.rawValue : nil
+        }
+      )
+      if searchTokens.isEmpty {
+        searchResults = SearchRemindersResults()
+      }
+      return
+    }
+
+    tagSuggestions = []
+
+    guard isSearching else {
       showCompletedInSearchResults = false
       searchResults = SearchRemindersResults()
       return
     }
 
-    let context = try await ReminderExample.modelContext(runtime: runtime)
+    let tagIDs = ReminderExample.searchTokenTagIDs(searchTokens, context: context)
+    let nearTexts = searchTokens.compactMap { token in
+      token.kind == .near ? token.rawValue : nil
+    }
+    let highlightText = ReminderExample.searchHighlightText(
+      searchText: trimmedText,
+      nearTexts: nearTexts
+    )
+    let tagHighlightText =
+      trimmedText.isEmpty
+      ? searchTokens.first { $0.kind == .tag }?.rawValue ?? ""
+      : trimmedText
     let matchingReminders = try ReminderExample.decodeReminders(
       try await runtime.query(
         ReminderExample.remindersSearchQuery(
           text: trimmedText,
+          tagIDs: tagIDs,
+          nearTexts: nearTexts,
           includeCompleted: true
         )
       )
@@ -404,17 +469,24 @@ public struct SearchRemindersModel: Sendable {
         guard let list = context.listsByID[reminder.remindersListID] else { return nil }
         return SearchRemindersRow(
           isPastDue: ReminderExample.isPastDue(reminder, now: now()),
-          notes: ReminderExample.searchSnippet(reminder.notes, matching: trimmedText),
+          notes: ReminderExample.searchSnippet(reminder.notes, matching: highlightText),
           reminder: reminder,
           remindersList: list,
           tags: ReminderExample.highlightedTags(
             context.tagsByReminderID[reminder.id] ?? [],
-            matching: trimmedText
+            matching: tagHighlightText
           ),
-          title: ReminderExample.highlight(reminder.title, matching: trimmedText)
+          title: ReminderExample.highlight(reminder.title, matching: highlightText)
         )
       }
     )
+  }
+
+  public mutating func tagButtonTapped(_ tag: ReminderTagRecord) {
+    guard !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+    searchTokens.append(Token(kind: .tag, rawValue: tag.title))
+    searchText = ""
+    tagSuggestions = []
   }
 
   public mutating func showCompletedButtonTapped() async throws {
@@ -423,21 +495,39 @@ public struct SearchRemindersModel: Sendable {
   }
 
   public mutating func deleteCompletedReminders(
+    monthsAgo: Int? = nil,
     updatedAt: InstantTimestamp,
     transactionID: String
   ) async throws {
     let trimmedText = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !trimmedText.isEmpty else { return }
+    guard isSearching else { return }
+    let context = try await ReminderExample.modelContext(runtime: runtime)
+    let tagIDs = ReminderExample.searchTokenTagIDs(searchTokens, context: context)
+    let nearTexts = searchTokens.compactMap { token in
+      token.kind == .near ? token.rawValue : nil
+    }
     let matchingReminders = try ReminderExample.decodeReminders(
       try await runtime.query(
         ReminderExample.remindersSearchQuery(
           text: trimmedText,
+          tagIDs: tagIDs,
+          nearTexts: nearTexts,
           includeCompleted: true
         )
       )
     )
+    let cutoff = monthsAgo.flatMap { ReminderExample.monthsAgoCutoff($0, from: now()) }
+    if monthsAgo != nil, cutoff == nil {
+      try await load()
+      return
+    }
     let completedReminders = matchingReminders
       .filter(\.isCompleted)
+      .filter { reminder in
+        guard let cutoff else { return true }
+        guard let dueDate = reminder.dueDate else { return false }
+        return dueDate < cutoff
+      }
       .map { (id: $0.id, listID: $0.remindersListID) }
     guard !completedReminders.isEmpty else {
       try await load()
@@ -909,6 +999,8 @@ public enum ReminderExample {
     text: String,
     listID: String? = nil,
     tagID: String? = nil,
+    tagIDs: [String] = [],
+    nearTexts: [String] = [],
     includeCompleted: Bool = false,
     flagged: Bool? = nil,
     scheduled: Bool = false,
@@ -920,16 +1012,15 @@ public enum ReminderExample {
     var filters: [InstantQueryFilter] = []
 
     if !trimmedText.isEmpty {
-      let pattern = "%\(likePatternLiteral(trimmedText))%"
       fragments.append("text-\(queryIDFragment(trimmedText))")
-      filters.append(
-        .or([
-          .iLike(field: "title", pattern: pattern),
-          .iLike(field: "notes", pattern: pattern),
-          .iLike(field: "tags.title", pattern: pattern),
-          .iLike(field: "tags.id", pattern: pattern),
-        ])
-      )
+      filters.append(searchTextFilter(trimmedText))
+    }
+
+    for nearText in nearTexts.map({ $0.trimmingCharacters(in: .whitespacesAndNewlines) })
+      where !nearText.isEmpty
+    {
+      fragments.append("near-\(queryIDFragment(nearText))")
+      filters.append(searchTextFilter(nearText))
     }
 
     if let listID {
@@ -937,7 +1028,7 @@ public enum ReminderExample {
       filters.append(.equals(field: "list", value: .ref(listID)))
     }
 
-    if let tagID {
+    for tagID in Array(Set([tagID].compactMap(\.self) + tagIDs)).sorted() {
       fragments.append("tag-\(queryIDFragment(tagID))")
       filters.append(.equals(field: "tags", value: .ref(tagID)))
     }
@@ -990,6 +1081,74 @@ public enum ReminderExample {
     }
     let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     return normalized.isEmpty ? nil : normalized
+  }
+
+  public static func tagSuggestions(
+    in tags: [ReminderTagRecord],
+    matching searchText: String,
+    excluding existingTagTitles: [String]
+  ) -> [ReminderTagRecord] {
+    let trimmedSearchText = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard trimmedSearchText.hasPrefix("#") else { return [] }
+    let prefix = normalizedTagTitle(String(trimmedSearchText.dropFirst())) ?? ""
+    let existing = Set(existingTagTitles.compactMap(normalizedTagTitle))
+    return tags
+      .filter { tag in
+        let normalizedTitle = normalizedTagTitle(tag.title) ?? tag.id
+        return !existing.contains(normalizedTitle) && tag.title.lowercased().hasPrefix(prefix)
+      }
+      .sorted { ($0.title.lowercased(), $0.id) < ($1.title.lowercased(), $1.id) }
+  }
+
+  fileprivate static func searchHighlightText(
+    searchText: String,
+    nearTexts: [String]
+  ) -> String {
+    let trimmedSearchText = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    if !trimmedSearchText.isEmpty {
+      return trimmedSearchText
+    }
+    return nearTexts
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .first { !$0.isEmpty } ?? ""
+  }
+
+  fileprivate static func searchTokenTagIDs(
+    _ tokens: [SearchRemindersModel.Token],
+    context: ModelContext
+  ) -> [String] {
+    let tagsByTitle = Dictionary(
+      grouping: context.tagsByID.values,
+      by: { normalizedTagTitle($0.title) ?? $0.title.lowercased() }
+    )
+    var seen: Set<String> = []
+    return tokens.compactMap { token -> String? in
+      guard token.kind == .tag else { return nil }
+      let rawValue = token.rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+      let resolvedID =
+        context.tagsByID[rawValue]?.id
+        ?? normalizedTagTitle(rawValue).flatMap { normalized in
+          tagsByTitle[normalized]?.sorted {
+            ($0.title.lowercased(), $0.id) < ($1.title.lowercased(), $1.id)
+          }.first?.id
+        }
+      guard let resolvedID, seen.insert(resolvedID).inserted else { return nil }
+      return resolvedID
+    }
+  }
+
+  fileprivate static func monthsAgoCutoff(
+    _ monthsAgo: Int,
+    from timestamp: InstantTimestamp
+  ) -> InstantTimestamp? {
+    guard monthsAgo >= 0 else { return nil }
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+    let date = Date(timeIntervalSince1970: Double(timestamp.milliseconds) / 1000)
+    guard let cutoff = calendar.date(byAdding: .month, value: -monthsAgo, to: date) else {
+      return nil
+    }
+    return InstantTimestamp(milliseconds: timestampMilliseconds(for: calendar.startOfDay(for: cutoff)))
   }
 
   public static func stats(
@@ -2191,6 +2350,24 @@ public enum ReminderExample {
       character != "%" && character != "_" && character != "\\"
     }
     return sanitized.isEmpty ? "\u{0}" : String(sanitized)
+  }
+
+  private static func searchTextFilter(_ text: String) -> InstantQueryFilter {
+    let filters = text.split(whereSeparator: \.isWhitespace).map { searchTermFilter(String($0)) }
+    if filters.count == 1, let filter = filters.first {
+      return filter
+    }
+    return .and(filters)
+  }
+
+  private static func searchTermFilter(_ term: String) -> InstantQueryFilter {
+    let pattern = "%\(likePatternLiteral(term))%"
+    return .or([
+      .iLike(field: "title", pattern: pattern),
+      .iLike(field: "notes", pattern: pattern),
+      .iLike(field: "tags.title", pattern: pattern),
+      .iLike(field: "tags.id", pattern: pattern),
+    ])
   }
 
   private static func dayRange(containing timestamp: InstantTimestamp) -> (start: Date, end: Date) {

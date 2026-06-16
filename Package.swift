@@ -105,6 +105,7 @@ let package = Package(
       name: "InstantSwiftDataValidationRunner",
       dependencies: [
         "InstantSwiftDataCLIParsing",
+        "InstantSwiftDataCore",
         "InstantSwiftDataTesting",
       ],
       swiftSettings: strictConcurrencySettings

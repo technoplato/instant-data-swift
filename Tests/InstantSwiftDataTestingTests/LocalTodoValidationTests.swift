@@ -659,13 +659,14 @@ struct LocalTodoValidationTests {
     expectNoDifference(result.appID, "validation-reminders-test")
     expectNoDifference(result.cacheURL, cacheURL)
     expectNoDifference(run.summary.caseID, "validation.reminders")
-    expectNoDifference(run.summary.rowCount, 9)
+    expectNoDifference(run.summary.rowCount, 10)
     expectNoDifference(run.summary.ok, true)
     expectNoDifference(
       run.summary.events,
       [
         "seed",
         "search-tags",
+        "search-token-model",
         "rich-filters",
         "edit-rich-fields",
         "complete",
@@ -676,7 +677,7 @@ struct LocalTodoValidationTests {
       ]
     )
     expectNoDifference(result.evidence.map(\.event), run.summary.events)
-    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 9))
+    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 10))
     expectNoDifference(
       result.evidence.map(\.caseID),
       Array(repeating: "validation.reminders", count: result.evidence.count)
@@ -693,7 +694,13 @@ struct LocalTodoValidationTests {
     expectNoDifference(search.reminderIDs, ["validation-reminders-pack-lunch"])
     expectNoDifference(search.reminderTagIDs, ["validation-reminders-pack-lunch#family"])
 
-    let richFilters = result.evidence[2].details
+    let searchTokenModel = result.evidence[2].details
+    expectNoDifference(searchTokenModel.reminderIDs, ["validation-reminders-pack-lunch"])
+    expectNoDifference(searchTokenModel.searchTokens, ["tag:family"])
+    expectNoDifference(searchTokenModel.tagSuggestionTitles, ["family"])
+    expectNoDifference(searchTokenModel.searchCompletedCount, 0)
+
+    let richFilters = result.evidence[3].details
     expectNoDifference(richFilters.scheduledReminderIDs, ["validation-reminders-pack-lunch"])
     expectNoDifference(richFilters.todayReminderIDs, ["validation-reminders-pack-lunch"])
     expectNoDifference(richFilters.priorityReminderIDs, ["validation-reminders-pack-lunch"])
@@ -703,13 +710,13 @@ struct LocalTodoValidationTests {
       RemindersStats(allCount: 2, completedCount: 0, flaggedCount: 1, scheduledCount: 1, todayCount: 1)
     )
 
-    let formEdit = result.evidence[3].details
+    let formEdit = result.evidence[4].details
     expectNoDifference(formEdit.reminderIDs, ["validation-reminders-pack-lunch"])
     expectNoDifference(formEdit.reminderTitles, ["Pack lunch and snacks"])
     expectNoDifference(formEdit.reminderNotes, ["Updated through validation"])
     expectNoDifference(formEdit.reminderTagIDs, ["validation-reminders-pack-lunch#family"])
 
-    let readerRejection = result.evidence[5].details
+    let readerRejection = result.evidence[6].details
     expectNoDifference(
       readerRejection.rejectedOperations,
       ["reader-update:permissionRejected:remindersLists:validation-reminders-list"]
@@ -722,7 +729,7 @@ struct LocalTodoValidationTests {
       ]
     )
 
-    let writerUpdate = result.evidence[6].details
+    let writerUpdate = result.evidence[7].details
     expectNoDifference(writerUpdate.reminderTitles, ["Writer edit"])
     expectNoDifference(
       writerUpdate.shareRoleSummaries,
@@ -1166,7 +1173,7 @@ struct LocalTodoValidationTests {
     )
 
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 9)
+    expectNoDifference(rows.count, 10)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.reminders"
     ]))
@@ -1176,6 +1183,7 @@ struct LocalTodoValidationTests {
       [
         "seed",
         "search-tags",
+        "search-token-model",
         "rich-filters",
         "edit-rich-fields",
         "complete",
@@ -1185,12 +1193,19 @@ struct LocalTodoValidationTests {
         "relaunch",
       ]
     )
-    expectNoDifference(rows.map { $0["ok"] as? Bool ?? false }, Array(repeating: true, count: 9))
+    expectNoDifference(rows.map { $0["ok"] as? Bool ?? false }, Array(repeating: true, count: 10))
 
     let search = try #require(rows.first { $0["event"] as? String == "search-tags" })
     let searchDetails = try #require(search["details"] as? [String: Any])
     expectNoDifference(searchDetails["reminderIDs"] as? [String], ["validation-reminders-pack-lunch"])
     expectNoDifference(searchDetails["tagTitles"] as? [String], ["family"])
+
+    let tokenSearch = try #require(rows.first { $0["event"] as? String == "search-token-model" })
+    let tokenSearchDetails = try #require(tokenSearch["details"] as? [String: Any])
+    expectNoDifference(tokenSearchDetails["reminderIDs"] as? [String], ["validation-reminders-pack-lunch"])
+    expectNoDifference(tokenSearchDetails["searchTokens"] as? [String], ["tag:family"])
+    expectNoDifference(tokenSearchDetails["tagSuggestionTitles"] as? [String], ["family"])
+    expectNoDifference(tokenSearchDetails["searchCompletedCount"] as? Int, 0)
 
     let reader = try #require(rows.first { $0["event"] as? String == "reader-rejection" })
     let readerDetails = try #require(reader["details"] as? [String: Any])
@@ -1206,7 +1221,7 @@ struct LocalTodoValidationTests {
 
     #expect(result.status == 0)
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 9)
+    expectNoDifference(rows.count, 10)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set(["validation.reminders"]))
   }
 
@@ -2064,7 +2079,7 @@ struct LocalTodoValidationTests {
     #expect(runnerSource.contains("runCloudKitDemoValidation"))
     #expect(runnerSource.contains("runLiveSessionValidation"))
     #expect(runnerSource.contains("InstantSwiftDataPlatformAdapterValidation.run"))
-    #expect(runnerSource.contains("runRemindersValidation()"))
+    #expect(runnerSource.contains("InstantSwiftDataRemindersValidation.run"))
     #expect(runnerSource.contains("runSyncUpsRecordingValidation()"))
     #expect(runnerSource.contains("runParityCoverageValidation()"))
     #expect(runnerSource.contains("CLIValidationRunnerArguments.parse"))

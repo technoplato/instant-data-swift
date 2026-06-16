@@ -8203,12 +8203,13 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.event, "reminders")
     expectNoDifference(jsonOutput.transport, "not-implemented-local-cache-only")
     expectNoDifference(jsonOutput.ok, true)
-    expectNoDifference(jsonOutput.evidenceCount, 9)
+    expectNoDifference(jsonOutput.evidenceCount, 10)
     expectNoDifference(
       jsonOutput.events,
       [
         "seed",
         "search-tags",
+        "search-token-model",
         "rich-filters",
         "edit-rich-fields",
         "complete",
@@ -8238,7 +8239,7 @@ extension InstantStoreTests {
 
     let jsonlOutput = try runCLI(["validation", "local-reminders", "--jsonl"], homeURL: homeURL)
     let lines = jsonlOutput.split(separator: "\n")
-    expectNoDifference(lines.count, 9)
+    expectNoDifference(lines.count, 10)
     let searchEvidence = try JSONDecoder().decode(
       CLIRemindersValidationEvidence.self,
       from: Data(try #require(lines.first { $0.contains("\"event\":\"search-tags\"") }).utf8)
@@ -8249,6 +8250,19 @@ extension InstantStoreTests {
     expectNoDifference(searchEvidence.ok, true)
     expectNoDifference(searchEvidence.details.reminderIDs, ["validation-reminders-pack-lunch"])
     expectNoDifference(searchEvidence.details.tagTitles, ["family"])
+
+    let tokenSearchEvidence = try JSONDecoder().decode(
+      CLIRemindersValidationEvidence.self,
+      from: Data(try #require(lines.first { $0.contains("\"event\":\"search-token-model\"") }).utf8)
+    )
+    expectNoDifference(tokenSearchEvidence.caseID, "validation.reminders")
+    expectNoDifference(tokenSearchEvidence.appID, "cli-cache-test")
+    expectNoDifference(tokenSearchEvidence.event, "search-token-model")
+    expectNoDifference(tokenSearchEvidence.ok, true)
+    expectNoDifference(tokenSearchEvidence.details.reminderIDs, ["validation-reminders-pack-lunch"])
+    expectNoDifference(tokenSearchEvidence.details.searchTokens, ["tag:family"])
+    expectNoDifference(tokenSearchEvidence.details.tagSuggestionTitles, ["family"])
+    expectNoDifference(tokenSearchEvidence.details.searchCompletedCount, 0)
 
     let richFiltersEvidence = try JSONDecoder().decode(
       CLIRemindersValidationEvidence.self,
@@ -11497,6 +11511,9 @@ private struct CLIRemindersValidationDetails: Decodable {
   var priorityRanksByReminderID: [String: Int]
   var tagTitles: [String]
   var reminderTagIDs: [String]
+  var searchTokens: [String]
+  var tagSuggestionTitles: [String]
+  var searchCompletedCount: Int
   var rejectedOperations: [String]
 }
 

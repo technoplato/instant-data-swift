@@ -16,6 +16,9 @@ public struct RemindersValidationDetails: Codable, Equatable, Sendable {
   public var tagIDs: [String]
   public var tagTitles: [String]
   public var reminderTagIDs: [String]
+  public var searchTokens: [String]
+  public var tagSuggestionTitles: [String]
+  public var searchCompletedCount: Int
   public var stats: RemindersStats
   public var activeShareIDs: [String]
   public var shareRoleSummaries: [String]
@@ -39,6 +42,9 @@ public struct RemindersValidationDetails: Codable, Equatable, Sendable {
     tagIDs: [String] = [],
     tagTitles: [String] = [],
     reminderTagIDs: [String] = [],
+    searchTokens: [String] = [],
+    tagSuggestionTitles: [String] = [],
+    searchCompletedCount: Int = 0,
     stats: RemindersStats = RemindersStats(),
     activeShareIDs: [String] = [],
     shareRoleSummaries: [String] = [],
@@ -61,6 +67,9 @@ public struct RemindersValidationDetails: Codable, Equatable, Sendable {
     self.tagIDs = tagIDs
     self.tagTitles = tagTitles
     self.reminderTagIDs = reminderTagIDs
+    self.searchTokens = searchTokens
+    self.tagSuggestionTitles = tagSuggestionTitles
+    self.searchCompletedCount = searchCompletedCount
     self.stats = stats
     self.activeShareIDs = activeShareIDs
     self.shareRoleSummaries = shareRoleSummaries
@@ -187,6 +196,40 @@ public enum InstantSwiftDataRemindersValidation {
         cacheURL: cacheURL,
         today: today,
         eventReminders: searched
+      )
+    )
+
+    var searchModel = SearchRemindersModel(
+      runtime: runtime,
+      searchText: "#fam",
+      now: { today }
+    )
+    try await searchModel.load()
+    let tagSuggestionTitles = searchModel.tagSuggestions.map(\.title)
+    guard let familyTag = searchModel.tagSuggestions.first(where: { $0.id == tagID }) else {
+      throw validationError(
+        operation: "validate reminders search token model",
+        message: "Expected the search model to suggest the family tag."
+      )
+    }
+    searchModel.tagButtonTapped(familyTag)
+    try await searchModel.load()
+    try require(
+      searchModel.searchTokens == [SearchRemindersModel.Token(kind: .tag, rawValue: tagID)]
+        && searchModel.searchResults.rows.map(\.reminder.id) == [firstReminderID],
+      operation: "validate reminders search token model",
+      message: "Expected tag-token search to return the tagged reminder through the model surface."
+    )
+    evidence.append(
+      try await evidenceRow(
+        event: "search-token-model",
+        runtime: runtime,
+        cacheURL: cacheURL,
+        today: today,
+        eventReminders: searchModel.searchResults.rows.map(\.reminder),
+        searchTokens: searchModel.searchTokens.map { "\($0.kind.rawValue):\($0.rawValue)" },
+        tagSuggestionTitles: tagSuggestionTitles,
+        searchCompletedCount: searchModel.searchResults.completedCount
       )
     )
 
@@ -447,6 +490,9 @@ public enum InstantSwiftDataRemindersValidation {
     scheduledReminderIDs: [String]? = nil,
     todayReminderIDs: [String]? = nil,
     priorityReminderIDs: [String]? = nil,
+    searchTokens: [String] = [],
+    tagSuggestionTitles: [String] = [],
+    searchCompletedCount: Int = 0,
     shareSnapshots: [InstantShareSnapshot] = [],
     rejectedOperations: [String] = []
   ) async throws -> ValidationEvidenceRow<RemindersValidationDetails> {
@@ -487,6 +533,9 @@ public enum InstantSwiftDataRemindersValidation {
         tagIDs: tags.map(\.id),
         tagTitles: tags.map(\.title),
         reminderTagIDs: reminderTags.map(\.id),
+        searchTokens: searchTokens,
+        tagSuggestionTitles: tagSuggestionTitles,
+        searchCompletedCount: searchCompletedCount,
         stats: ReminderExample.stats(for: allReminders, today: today),
         activeShareIDs: activeShares.map(\.id),
         shareRoleSummaries: shareRoleSummaries(from: shareSnapshots.isEmpty ? activeShares : shareSnapshots),

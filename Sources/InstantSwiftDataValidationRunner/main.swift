@@ -1,5 +1,6 @@
 import Foundation
 import InstantSwiftDataCLIParsing
+import InstantSwiftDataCore
 import InstantSwiftDataTesting
 
 @main
@@ -68,8 +69,8 @@ struct InstantSwiftDataValidationRunner {
       }
 
     case .reminders:
-      let run = try await InstantSwiftDataTestHarness.runRemindersValidation()
-      for row in run.result.evidence {
+      let result = try await InstantSwiftDataRemindersValidation.run(appID: invocation.appID)
+      for row in result.evidence {
         try writeJSONLine(row)
       }
 
