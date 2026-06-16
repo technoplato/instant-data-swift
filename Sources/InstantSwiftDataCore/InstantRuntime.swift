@@ -621,7 +621,24 @@ public final class InstantRuntime: Sendable {
         }
         if try await persistedConnectionState() == .closed {
           recordActorHop(.persistence)
-          let cachedQuery = try await persistence.cachedQuery(cacheKey: plan.cacheKey)
+          let cachedState = try await persistence.loadStateAndCachedQuery(cacheKey: plan.cacheKey)
+          if let issue = TripleIndexes.validate(
+            plan,
+            attributes: AttributeStore(attributes: cachedState.state.snapshot.store.attributes)
+          ) {
+            throw validationFailed(
+              operation: "validate query",
+              namespace: issue.namespace,
+              path: issue.path,
+              message: issue.message,
+              recovery: issue.recovery
+            )
+          }
+          let freshCachedQuery = await freshCachedQueryForClosedQuery(
+            cachedState.cachedQuery,
+            plan: plan,
+            state: cachedState.state
+          )
           throw InstantError(
             code: .networkFailed,
             operation: "queryOnce",
@@ -629,7 +646,7 @@ public final class InstantRuntime: Sendable {
             message: "Cannot run query '\(plan.id)' while the Instant connection is closed.",
             recovery:
               "Call connect() or run 'instant-swift-data connection connect' before querying again.",
-            cachedQuery: cachedQuery
+            cachedQuery: freshCachedQuery
           )
         }
         recordActorHop(.store)
@@ -658,6 +675,27 @@ public final class InstantRuntime: Sendable {
       await leaveOperationGate()
       throw error
     }
+  }
+
+  private func freshCachedQueryForClosedQuery(
+    _ cachedQuery: InstantCachedQuery?,
+    plan: InstantQueryPlan,
+    state: InstantPersistenceState
+  ) async -> InstantCachedQuery? {
+    guard let cachedQuery else { return nil }
+    guard cachedQuery.storeRevision != state.storeRevision else { return cachedQuery }
+
+    recordActorHop(.store)
+    await store.replaceSnapshot(state.snapshot.store)
+    recordActorHop(.store)
+    let localEmission = await store.materializeEmission(plan)
+    guard cachedQuery.emission.queryID == localEmission.queryID,
+      cachedQuery.emission.values == localEmission.values,
+      cachedQuery.emission.pageInfo == localEmission.pageInfo
+    else {
+      return nil
+    }
+    return cachedQuery
   }
 
   public func cachedQuery(_ plan: InstantQueryPlan) async throws -> InstantCachedQuery? {

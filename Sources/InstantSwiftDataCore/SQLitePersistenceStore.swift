@@ -487,6 +487,23 @@ public actor SQLitePersistenceStore {
     return rows.first
   }
 
+  func loadStateAndCachedQuery(
+    cacheKey: String
+  ) throws -> (state: InstantPersistenceState, cachedQuery: InstantCachedQuery?) {
+    try readTransaction {
+      let state = try InstantPersistenceState(
+        snapshot: loadSnapshotWithoutTransaction(),
+        storeRevision: loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey),
+        outboxRevision: loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+      )
+      let rows: [InstantCachedQuery] = try selectJSON(
+        "SELECT json FROM instant_query_cache WHERE cache_key = ? LIMIT 1",
+        [.text(cacheKey)]
+      )
+      return (state: state, cachedQuery: rows.first)
+    }
+  }
+
   public func cachedQueries(queryID: String) throws -> [InstantCachedQuery] {
     try selectJSON(
       "SELECT json FROM instant_query_cache WHERE query_id = ? ORDER BY updated_at_ms, cache_key",

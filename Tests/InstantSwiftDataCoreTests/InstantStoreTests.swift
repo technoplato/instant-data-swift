@@ -531,6 +531,232 @@ struct InstantStoreTests {
   }
 
   @Test
+  func closedQueryDoesNotReturnStaleCachedQueryAfterServerTransaction() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let seedCreatedAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let serverCreatedAt = InstantTimestamp(milliseconds: seedCreatedAt.milliseconds + 1)
+    let cachedAt = InstantTimestamp(milliseconds: seedCreatedAt.milliseconds + 10)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "stale-server-cache",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        now: { cachedAt }
+      )
+    )
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-stale-cache-seed",
+        operations: TodoExample.createOperations(
+          id: "todo-stale-cache-seed",
+          text: "cached before server",
+          createdAt: seedCreatedAt,
+          transactionID: "tx-stale-cache-seed"
+        )
+      ),
+      createdAt: seedCreatedAt
+    )
+    let seededSnapshots = try await runtime.query(TodoExample.query)
+    let seededCache = try #require(try await runtime.cachedQuery(TodoExample.query))
+    let stateBeforeServerApply = try await runtime.persistence.loadState()
+
+    expectNoDifference(seededCache.storeRevision, stateBeforeServerApply.storeRevision)
+    expectNoDifference(seededCache.emission.values, seededSnapshots)
+
+    try await runtime.applyServerTransaction(
+      InstantStoreTransaction(
+        id: "server-stale-cache",
+        operations: TodoExample.createOperations(
+          id: "todo-server-stale-cache",
+          text: "server after cache",
+          createdAt: serverCreatedAt,
+          transactionID: "server-stale-cache"
+        )
+      ),
+      receivedAt: InstantTimestamp(milliseconds: serverCreatedAt.milliseconds + 1)
+    )
+    let stateAfterServerApply = try await runtime.persistence.loadState()
+    expectNoDifference(
+      stateAfterServerApply.storeRevision,
+      stateBeforeServerApply.storeRevision + 1
+    )
+
+    let persistedStaleCache = try #require(try await runtime.cachedQuery(TodoExample.query))
+    expectNoDifference(persistedStaleCache.storeRevision, stateBeforeServerApply.storeRevision)
+    expectNoDifference(persistedStaleCache.emission.values, seededSnapshots)
+
+    try await runtime.closeConnection()
+    do {
+      _ = try await runtime.queryOnce(TodoExample.query)
+      Issue.record("Expected closed queryOnce to fail without a stale cached query.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .networkFailed)
+      expectNoDifference(error.operation, "queryOnce")
+      expectNoDifference(error.namespace, TodoExample.namespace)
+      expectNoDifference(error.cachedQuery, nil)
+    } catch {
+      Issue.record("Unexpected error: \(error)")
+    }
+  }
+
+  @Test
+  func closedQueryReturnsCachedQueryWhenRevisionChangedButResultMatches() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let seedCreatedAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let completedCreatedAt = InstantTimestamp(milliseconds: seedCreatedAt.milliseconds + 1)
+    let cachedAt = InstantTimestamp(milliseconds: seedCreatedAt.milliseconds + 10)
+    let openPlan = InstantQueryPlan(
+      id: "examples.todos.open",
+      namespace: TodoExample.namespace,
+      filters: [.equals(field: "isCompleted", value: .bool(false))],
+      order: InstantQueryOrder("createdAt", .ascending)
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "matching-stale-revision-cache",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        now: { cachedAt }
+      )
+    )
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-matching-revision-seed",
+        operations: TodoExample.createOperations(
+          id: "todo-matching-revision-seed",
+          text: "open cached todo",
+          createdAt: seedCreatedAt,
+          transactionID: "tx-matching-revision-seed"
+        )
+      ),
+      createdAt: seedCreatedAt
+    )
+    let openSnapshots = try await runtime.query(openPlan)
+    let cachedOpenQuery = try #require(try await runtime.cachedQuery(openPlan))
+    let stateBeforeUnrelatedApply = try await runtime.persistence.loadState()
+
+    expectNoDifference(cachedOpenQuery.storeRevision, stateBeforeUnrelatedApply.storeRevision)
+    expectNoDifference(cachedOpenQuery.emission.values, openSnapshots)
+
+    try await runtime.applyServerTransaction(
+      InstantStoreTransaction(
+        id: "server-completed-unrelated",
+        operations: TodoExample.createOperations(
+          id: "todo-completed-unrelated",
+          text: "completed after cache",
+          createdAt: completedCreatedAt,
+          transactionID: "server-completed-unrelated"
+        ) + TodoExample.completeOperations(
+          id: "todo-completed-unrelated",
+          updatedAt: completedCreatedAt,
+          transactionID: "server-completed-unrelated"
+        )
+      ),
+      receivedAt: InstantTimestamp(milliseconds: completedCreatedAt.milliseconds + 1)
+    )
+    let stateAfterUnrelatedApply = try await runtime.persistence.loadState()
+    expectNoDifference(
+      stateAfterUnrelatedApply.storeRevision,
+      stateBeforeUnrelatedApply.storeRevision + 1
+    )
+
+    let persistedOlderCache = try #require(try await runtime.cachedQuery(openPlan))
+    expectNoDifference(persistedOlderCache.storeRevision, stateBeforeUnrelatedApply.storeRevision)
+    expectNoDifference(persistedOlderCache.emission.values, openSnapshots)
+
+    try await runtime.closeConnection()
+    do {
+      _ = try await runtime.queryOnce(openPlan)
+      Issue.record("Expected closed queryOnce to fail with a matching cached query.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .networkFailed)
+      expectNoDifference(error.operation, "queryOnce")
+      expectNoDifference(error.namespace, TodoExample.namespace)
+      expectNoDifference(error.cachedQuery?.queryID, openPlan.id)
+      expectNoDifference(error.cachedQuery?.cacheKey, openPlan.cacheKey)
+      expectNoDifference(error.cachedQuery?.storeRevision, stateBeforeUnrelatedApply.storeRevision)
+      expectNoDifference(error.cachedQuery?.emission.values, openSnapshots)
+    } catch {
+      Issue.record("Unexpected error: \(error)")
+    }
+  }
+
+  @Test
+  func closedQueryDoesNotReturnStaleCachedQueryAfterCrossRuntimeTransaction() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let seedCreatedAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let writerCreatedAt = InstantTimestamp(milliseconds: seedCreatedAt.milliseconds + 1)
+    let cachedAt = InstantTimestamp(milliseconds: seedCreatedAt.milliseconds + 10)
+    let staleRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "stale-cross-runtime-cache",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        now: { cachedAt }
+      )
+    )
+
+    try await staleRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-cross-runtime-cache-seed",
+        operations: TodoExample.createOperations(
+          id: "todo-cross-runtime-cache-seed",
+          text: "cached before writer",
+          createdAt: seedCreatedAt,
+          transactionID: "tx-cross-runtime-cache-seed"
+        )
+      ),
+      createdAt: seedCreatedAt
+    )
+    let seededSnapshots = try await staleRuntime.query(TodoExample.query)
+    let seededCache = try #require(try await staleRuntime.cachedQuery(TodoExample.query))
+    let stateBeforeWriter = try await staleRuntime.persistence.loadState()
+
+    expectNoDifference(seededCache.storeRevision, stateBeforeWriter.storeRevision)
+    expectNoDifference(seededCache.emission.values, seededSnapshots)
+
+    let writerRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "stale-cross-runtime-cache",
+        persistenceURL: cacheURL
+      )
+    )
+    try await writerRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-cross-runtime-cache-writer",
+        operations: TodoExample.createOperations(
+          id: "todo-cross-runtime-cache-writer",
+          text: "writer after cache",
+          createdAt: writerCreatedAt,
+          transactionID: "tx-cross-runtime-cache-writer"
+        )
+      ),
+      createdAt: writerCreatedAt
+    )
+    let stateAfterWriter = try await staleRuntime.persistence.loadState()
+    expectNoDifference(stateAfterWriter.storeRevision, stateBeforeWriter.storeRevision + 1)
+
+    let persistedStaleCache = try #require(try await staleRuntime.cachedQuery(TodoExample.query))
+    expectNoDifference(persistedStaleCache.storeRevision, stateBeforeWriter.storeRevision)
+    expectNoDifference(persistedStaleCache.emission.values, seededSnapshots)
+
+    try await staleRuntime.closeConnection()
+    do {
+      _ = try await staleRuntime.queryOnce(TodoExample.query)
+      Issue.record("Expected closed queryOnce to fail without a stale cached query.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .networkFailed)
+      expectNoDifference(error.operation, "queryOnce")
+      expectNoDifference(error.namespace, TodoExample.namespace)
+      expectNoDifference(error.cachedQuery, nil)
+    } catch {
+      Issue.record("Unexpected error: \(error)")
+    }
+  }
+
+  @Test
   func queryCacheRowsSaveReplaceAndReloadForPersistedObjectParity() async throws {
     let source = persistedObjectSource(
       "PersistedObject saves values to storage / merges existing values "
