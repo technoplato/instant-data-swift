@@ -425,7 +425,8 @@ observe the external refresh. When those opt-in modes produce
 non-local app id, the coverage gate can consume the artifacts through
 `INSTANT_SWIFT_DATA_COVERAGE_ARTIFACTS_DIR` or
 `INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR` and promote both live-transport
-records from blocked to adapted.
+records from blocked to adapted; `validation/run-e2e.sh` now archives that
+post-boundary gate as `swift-coverage-final.jsonl`.
 
 Current local progress: the CLI exposes non-captive local admin helpers:
 `instant-swift-data admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id]`

@@ -2105,6 +2105,8 @@ struct LocalTodoValidationTests {
     #expect(script.contains("swift-syncups-recording.jsonl"))
     #expect(script.contains("swift-parity-report.jsonl"))
     #expect(script.contains("swift-coverage.jsonl"))
+    #expect(script.contains("swift-coverage-final.jsonl"))
+    #expect(script.contains("INSTANT_SWIFT_DATA_COVERAGE_ARTIFACTS_DIR"))
     #expect(script.contains("swift-transport-contract.json"))
     #expect(script.contains("typescript-server-transaction-contract.json"))
     #expect(script.contains("swift-typescript-server-transaction-contract.jsonl"))
@@ -2397,7 +2399,14 @@ struct LocalTodoValidationTests {
             echo "unexpected coverage app id: ${INSTANT_APP_ID:-}" >&2
             exit 66
           fi
-          echo '{"case":"validation.coverage","side":"swift","event":"stub-coverage","appID":"local-validation","timestampMs":6,"ok":true,"details":{}}'
+          coverage_event="stub-coverage"
+          if [ -n "${INSTANT_SWIFT_DATA_COVERAGE_ARTIFACTS_DIR:-}" ]; then
+            if [ "${SWIFT_STUB_FAIL_FINAL_COVERAGE:-}" = "1" ]; then
+              exit 48
+            fi
+            coverage_event="stub-coverage-final"
+          fi
+          echo '{"case":"validation.coverage","side":"swift","event":"'"$coverage_event"'","appID":"local-validation","timestampMs":6,"ok":true,"details":{}}'
           ;;
         instant-swift-data:validation:server-transaction-loopback)
           expected="run instant-swift-data validation server-transaction-loopback --jsonl"
@@ -2572,6 +2581,20 @@ struct LocalTodoValidationTests {
           fi
           echo '{"case":"validation.typescript.boundary","side":"typescript","event":"preflight-skipped","appID":"'"$remote_app_id"'","timestampMs":9,"ok":false,"details":{"missing":["INSTANT_SWIFT_DATA_REMOTE_APP_ID or INSTANT_APP_ID"]}}'
           ;;
+        --boundary-swift-live-observe)
+          if [ "$3:$4:$5" != "--app-id:$remote_app_id:--require-boundary" ]; then
+            echo "unexpected Swift-to-TypeScript boundary arguments: $*" >&2
+            exit 82
+          fi
+          echo '{"case":"validation.typescript.boundary","side":"typescript","event":"swift-to-typescript-boundary","appID":"'"$remote_app_id"'","timestampMs":9,"ok":true,"details":{"proofLevel":"real-swift-websocket-to-typescript-admin-sse","remoteBoundary":"swift-websocket-to-typescript-admin-sse"}}'
+          ;;
+        --boundary-typescript-live-observe)
+          if [ "$3:$4:$5" != "--app-id:$remote_app_id:--require-boundary" ]; then
+            echo "unexpected TypeScript-to-Swift boundary arguments: $*" >&2
+            exit 83
+          fi
+          echo '{"case":"validation.typescript.boundary","side":"typescript","event":"typescript-to-swift-boundary","appID":"'"$remote_app_id"'","timestampMs":9,"ok":true,"details":{"proofLevel":"real-typescript-admin-http-to-swift-websocket","remoteBoundary":"typescript-admin-http-to-swift-websocket"}}'
+          ;;
         *)
           echo "unexpected node arguments: $*" >&2
           exit 70
@@ -2654,6 +2677,8 @@ struct LocalTodoValidationTests {
       "swift-typescript-server-transaction-contract-complete",
       "typescript-boundary-preflight-start",
       "typescript-boundary-preflight-complete",
+      "swift-coverage-final-start",
+      "swift-coverage-final-complete",
       "complete",
     ])
     expectNoDifference(successRows.last?["ok"] as? Bool, true)
@@ -2722,6 +2747,11 @@ struct LocalTodoValidationTests {
     )
     #expect(
       FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-coverage-final.jsonl").path
+      )
+    )
+    #expect(
+      FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("swift-benchmark.jsonl").path
       )
     )
@@ -2729,6 +2759,13 @@ struct LocalTodoValidationTests {
       FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("swift-transport-contract.json").path
       )
+    )
+    let finalCoverageRows = try readJSONLines(
+      resultsURL.appendingPathComponent("swift-coverage-final.jsonl")
+    )
+    expectNoDifference(
+      finalCoverageRows.map { $0["event"] as? String ?? "" },
+      ["stub-coverage-final"]
     )
     #expect(
       FileManager.default.fileExists(
@@ -3107,6 +3144,48 @@ struct LocalTodoValidationTests {
       ["boundary-bundled"]
     )
 
+    let liveBoundaryRun = try runValidationRunE2E(
+      scriptURL: scriptURL,
+      resultsURL: resultsURL,
+      binURL: binURL,
+      extraEnvironment: [
+        "INSTANT_SWIFT_DATA_REMOTE_APP_ID": "remote-validation",
+        "INSTANT_SWIFT_DATA_RUN_LIVE_BOUNDARY": "1",
+        "INSTANT_SWIFT_DATA_RUN_TYPESCRIPT_LIVE_BOUNDARY": "1",
+      ]
+    )
+    #expect(liveBoundaryRun.status == 0, "live-boundary run-e2e.sh failed: \(liveBoundaryRun.stderr)")
+    let liveBoundaryRows = try readJSONLines(
+      resultsURL.appendingPathComponent("orchestrator.jsonl")
+    )
+    expectNoDifference(
+      liveBoundaryRows.suffix(7).map { $0["event"] as? String ?? "" },
+      [
+        "typescript-swift-boundary-start",
+        "typescript-swift-boundary-complete",
+        "swift-typescript-boundary-start",
+        "swift-typescript-boundary-complete",
+        "swift-coverage-final-start",
+        "swift-coverage-final-complete",
+        "complete",
+      ]
+    )
+    expectNoDifference(liveBoundaryRows.last?["ok"] as? Bool, true)
+    let liveSwiftToTypeScriptRows = try readJSONLines(
+      resultsURL.appendingPathComponent("typescript-swift-boundary.jsonl")
+    )
+    expectNoDifference(
+      liveSwiftToTypeScriptRows.map { $0["event"] as? String ?? "" },
+      ["swift-to-typescript-boundary"]
+    )
+    let liveTypeScriptToSwiftRows = try readJSONLines(
+      resultsURL.appendingPathComponent("swift-typescript-boundary.jsonl")
+    )
+    expectNoDifference(
+      liveTypeScriptToSwiftRows.map { $0["event"] as? String ?? "" },
+      ["typescript-to-swift-boundary"]
+    )
+
     let missingNodeRun = try runValidationRunE2E(
       scriptURL: scriptURL,
       resultsURL: resultsURL,
@@ -3234,6 +3313,11 @@ struct LocalTodoValidationTests {
     )
     try "stale coverage\n".write(
       to: resultsURL.appendingPathComponent("swift-coverage.jsonl"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try "stale final coverage\n".write(
+      to: resultsURL.appendingPathComponent("swift-coverage-final.jsonl"),
       atomically: true,
       encoding: .utf8
     )
@@ -3365,6 +3449,11 @@ struct LocalTodoValidationTests {
     #expect(
       !FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("swift-coverage.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-coverage-final.jsonl").path
       )
     )
     #expect(
@@ -3657,6 +3746,41 @@ struct LocalTodoValidationTests {
       !FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("typescript-fixtures.jsonl").path
       )
+    )
+
+    let finalCoverageFailedRun = try runValidationRunE2E(
+      scriptURL: scriptURL,
+      resultsURL: resultsURL,
+      binURL: binURL,
+      extraEnvironment: [
+        "INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS": benchmarkIterations,
+        "SWIFT_STUB_FAIL_FINAL_COVERAGE": "1",
+      ]
+    )
+    #expect(finalCoverageFailedRun.status == 48)
+    let finalCoverageFailedRows = try readJSONLines(
+      resultsURL.appendingPathComponent("orchestrator.jsonl")
+    )
+    expectNoDifference(
+      finalCoverageFailedRows.suffix(3).map { $0["event"] as? String ?? "" },
+      [
+        "swift-coverage-final-start",
+        "swift-coverage-final-failed",
+        "complete",
+      ]
+    )
+    expectNoDifference(finalCoverageFailedRows.last?["ok"] as? Bool, false)
+    let finalCoverageFailedDetails = try #require(
+      finalCoverageFailedRows.last?["details"] as? [String: Any]
+    )
+    expectNoDifference(finalCoverageFailedDetails["failed"] as? String, "swift-coverage-final")
+    expectNoDifference((finalCoverageFailedDetails["exitCode"] as? NSNumber)?.intValue, 48)
+    expectNoDifference(
+      try String(
+        contentsOf: resultsURL.appendingPathComponent("swift-coverage-final.jsonl"),
+        encoding: .utf8
+      ),
+      ""
     )
 
     try "stale typescript\n".write(

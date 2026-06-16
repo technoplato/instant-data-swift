@@ -574,8 +574,7 @@ INSTANT_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DA
 INSTANT_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_LIVE_OBSERVE=1 swift run instant-swift-data validation live-observe --jsonl
 INSTANT_SWIFT_DATA_NODE=/path/to/node validation/run-e2e.sh
 INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_REQUIRE_REMOTE_PREFLIGHT=1 validation/run-e2e.sh
-INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_LIVE_BOUNDARY=1 validation/run-e2e.sh
-INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_TYPESCRIPT_LIVE_BOUNDARY=1 validation/run-e2e.sh
+INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR=/tmp/instant-validation-results INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_LIVE_BOUNDARY=1 INSTANT_SWIFT_DATA_RUN_TYPESCRIPT_LIVE_BOUNDARY=1 validation/run-e2e.sh
 INSTANT_SWIFT_DATA_COVERAGE_ARTIFACTS_DIR=/tmp/instant-validation-results swift run instant-swift-data validation coverage --json
 validation/run-e2e.sh
 ```
@@ -676,7 +675,9 @@ After both opt-in live boundary modes have written
 `typescript-swift-boundary.jsonl` and `swift-typescript-boundary.jsonl`, rerun
 `INSTANT_SWIFT_DATA_COVERAGE_ARTIFACTS_DIR=/tmp/instant-validation-results swift run instant-swift-data validation coverage --json`
 to let the compact coverage gate consume the credentialed artifacts and clear
-the two live-transport blockers.
+the two live-transport blockers. The e2e harness also writes the same
+artifact-aware gate as `swift-coverage-final.jsonl` before its final
+orchestrator `complete` row.
 
 Run local core benchmarks:
 

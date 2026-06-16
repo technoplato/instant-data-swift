@@ -593,7 +593,8 @@ Agent-oriented output modes are required:
   `INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR` points at credentialed
   `typescript-swift-boundary.jsonl` and `swift-typescript-boundary.jsonl`
   artifacts, that gate should promote the two real live-transport records from
-  blocked to adapted.
+  blocked to adapted. The e2e harness should archive that post-boundary gate as
+  `swift-coverage-final.jsonl`.
   The TypeScript runner should keep validating Swift-authored transport evidence,
   including `--swift-transport-contract`,
   `--swift-local-integrations-contract`, `--swift-live-session-contract`, and

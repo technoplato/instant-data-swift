@@ -28,6 +28,7 @@ rm -f \
   "${RESULTS_DIR}/swift-syncups-recording.jsonl" \
   "${RESULTS_DIR}/swift-parity-report.jsonl" \
   "${RESULTS_DIR}/swift-coverage.jsonl" \
+  "${RESULTS_DIR}/swift-coverage-final.jsonl" \
   "${RESULTS_DIR}/swift-transport-contract-transact.json" \
   "${RESULTS_DIR}/swift-transport-contract.json" \
   "${RESULTS_DIR}/swift-schema-generate.json" \
@@ -911,6 +912,27 @@ else
     exit 1
   fi
   log_json "typescript-boundary-skipped" true "$(json_object "reason" "node is not available; set INSTANT_SWIFT_DATA_NODE to run TypeScript fixture validation")"
+fi
+
+log_json "swift-coverage-final-start" true "$(json_object "artifactsDir" "${RESULTS_DIR}")"
+if (
+  cd "${ROOT}"
+  INSTANT_APP_ID="${VALIDATION_APP_ID}" \
+  INSTANT_SWIFT_DATA_COVERAGE_ARTIFACTS_DIR="${RESULTS_DIR}" \
+  swift run instant-swift-data validation coverage --jsonl
+) | tee "${RESULTS_DIR}/swift-coverage-final.jsonl"; then
+  log_json "swift-coverage-final-complete" true "$(json_object "path" "${RESULTS_DIR}/swift-coverage-final.jsonl")"
+else
+  status=$?
+  log_json \
+    "swift-coverage-final-failed" \
+    false \
+    "$(json_failure_details "${RESULTS_DIR}/swift-coverage-final.jsonl" "${status}")"
+  log_json \
+    "complete" \
+    false \
+    "$(printf '{"resultsDir":%s,"failed":"swift-coverage-final","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+  exit "${status}"
 fi
 
 log_json "complete" true "$(json_object "resultsDir" "${RESULTS_DIR}")"
