@@ -1760,6 +1760,49 @@ struct BootstrapTests {
   }
 
   @Test
+  func authSessionPropertyWrapperTaskUsesCachedRuntimeSession() async throws {
+    let appID = "auth-session-cached-runtime-\(UUID().uuidString)"
+    let fixedDate = Date(timeIntervalSince1970: 1_700_000_004)
+    let fixedUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000704")!
+
+    try await withDependencies {
+      $0.date.now = fixedDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: appID,
+        context: .test,
+        initialAttributes: TodoExample.attributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var client
+      let guest = try await client.signInAsGuest()
+      let auth = AuthSession()
+      let task = Task {
+        let auth = auth
+        try await auth.task(using: client)
+      }
+      defer {
+        task.cancel()
+      }
+
+      try await waitForBootstrapCondition(operation: "wait for cached AuthSession task value") {
+        auth.wrappedValue == guest
+      }
+      expectNoDifference(auth.loadError, nil)
+      expectNoDifference(auth.isLoading, false)
+
+      task.cancel()
+      do {
+        try await task.value
+        Issue.record("Expected @AuthSession cached runtime task cancellation to throw.")
+      } catch is CancellationError {
+      } catch {
+        Issue.record("Expected CancellationError, got \(error).")
+      }
+    }
+  }
+
+  @Test
   func authSessionPropertyWrapperTaskBindsObservedSessions() async throws {
     let signedIn = mockAuthSession(userID: "observed-user")
     let client = authSessionClient(
@@ -1779,6 +1822,73 @@ struct BootstrapTests {
 
     expectNoDifference(session, signedIn)
     expectNoDifference($session.loadError, nil)
+    expectNoDifference($session.isLoading, false)
+  }
+
+  @Test
+  func authSessionPropertyWrapperTaskStartsLoadingUntilObservationBegins() async throws {
+    let gate = AuthSessionLoadGate()
+    let signedIn = mockAuthSession(userID: "pending-observed-user")
+    let client = authSessionClient(
+      load: { nil },
+      observe: {
+        await gate.recordStarted()
+        await gate.waitUntilReleased()
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield(signedIn)
+          continuation.finish()
+        }
+      }
+    )
+
+    let auth = AuthSession()
+    let task = Task {
+      let auth = auth
+      try await auth.task(using: client)
+    }
+
+    await gate.waitUntilStarted()
+    expectNoDifference(auth.wrappedValue, nil)
+    expectNoDifference(auth.loadError, nil)
+    expectNoDifference(auth.isLoading, true)
+
+    await gate.release()
+    try await task.value
+
+    expectNoDifference(auth.wrappedValue, signedIn)
+    expectNoDifference(auth.loadError, nil)
+    expectNoDifference(auth.isLoading, false)
+  }
+
+  @Test
+  func authSessionPropertyWrapperTaskPreservesCachedValueAndRecordsObservationError()
+    async throws
+  {
+    let cached = mockAuthSession(userID: "cached-user")
+    let expectedError = InstantError(
+      code: .implementationFailed,
+      operation: "observe test AuthSession",
+      message: "auth observation failed",
+      recovery: "Retry with a working auth observer."
+    )
+    let client = authSessionClient(
+      load: { nil },
+      observe: { throw expectedError }
+    )
+
+    @AuthSession var session: InstantAuthSession? = cached
+
+    do {
+      try await $session.task(using: client)
+      #expect(Bool(false), "Expected @AuthSession task to surface observer failures.")
+    } catch let error as InstantError {
+      expectNoDifference(error.operation, "observe test AuthSession")
+      expectNoDifference($session.loadError?.operation, "observe test AuthSession")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    expectNoDifference(session, cached)
     expectNoDifference($session.isLoading, false)
   }
 
@@ -3839,6 +3949,24 @@ private func integrationClient(
     observeShares: observeShares,
     updateShareMembershipRole: updateShareMembershipRole,
     revokeShare: revokeShare
+  )
+}
+
+private func waitForBootstrapCondition(
+  operation: String,
+  until condition: @escaping @Sendable () async -> Bool
+) async throws {
+  for _ in 0..<100 {
+    if await condition() {
+      return
+    }
+    try await Task.sleep(nanoseconds: 10_000_000)
+  }
+  throw InstantError(
+    code: .validationFailed,
+    operation: operation,
+    message: "Timed out waiting for bootstrap test condition.",
+    recovery: "Inspect the controlled test client, subscription lifecycle, and wrapper state."
   )
 }
 

@@ -1341,9 +1341,9 @@ struct LocalTodoValidationTests {
 
     expectNoDifference(run.result.event, "parity-report")
     expectNoDifference(run.result.coverageComplete, false)
-    expectNoDifference(run.result.recordCount, 254)
+    expectNoDifference(run.result.recordCount, 263)
     expectNoDifference(run.result.exactCount, 28)
-    expectNoDifference(run.result.adaptedCount, 223)
+    expectNoDifference(run.result.adaptedCount, 232)
     expectNoDifference(run.result.blockedCount, 2)
     expectNoDifference(run.result.notApplicableCount, 1)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
@@ -1494,6 +1494,22 @@ struct LocalTodoValidationTests {
       #expect(
         run.result.records.contains { $0.id == id && $0.status == .adapted },
         "Expected adapted useQuery parity record \(id)"
+      )
+    }
+    for id in [
+      "instant.svelte.use-auth-starts-loading",
+      "instant.svelte.use-auth-updates-state",
+      "instant.svelte.use-auth-cached-state",
+      "instant.svelte.use-auth-error",
+      "instant.vue.use-auth-starts-loading",
+      "instant.vue.use-auth-updates-state",
+      "instant.vue.use-auth-cached-state",
+      "instant.vue.use-auth-error",
+      "instant.vue.use-auth-unsubscribes-on-scope-stop",
+    ] {
+      #expect(
+        run.result.records.contains { $0.id == id && $0.status == .adapted },
+        "Expected adapted useAuth parity record \(id)"
       )
     }
     for id in [
@@ -1814,7 +1830,7 @@ struct LocalTodoValidationTests {
     )
 
     expectNoDifference(run.result.coverageComplete, true)
-    expectNoDifference(run.result.adaptedCount, 225)
+    expectNoDifference(run.result.adaptedCount, 234)
     expectNoDifference(run.result.blockedCount, 0)
     expectNoDifference(run.summary.ok, true)
     let swiftToTypeScript = try #require(
@@ -1853,7 +1869,7 @@ struct LocalTodoValidationTests {
     )
 
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 254)
+    expectNoDifference(rows.count, 263)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
@@ -1926,9 +1942,9 @@ struct LocalTodoValidationTests {
     expectNoDifference(details["event"] as? String, "coverage")
     expectNoDifference(details["ok"] as? Bool, false)
     expectNoDifference(details["coverageComplete"] as? Bool, false)
-    expectNoDifference((details["recordCount"] as? NSNumber)?.intValue, 254)
+    expectNoDifference((details["recordCount"] as? NSNumber)?.intValue, 263)
     expectNoDifference((details["exactCount"] as? NSNumber)?.intValue, 28)
-    expectNoDifference((details["adaptedCount"] as? NSNumber)?.intValue, 223)
+    expectNoDifference((details["adaptedCount"] as? NSNumber)?.intValue, 232)
     expectNoDifference((details["blockedCount"] as? NSNumber)?.intValue, 2)
     expectNoDifference((details["notApplicableCount"] as? NSNumber)?.intValue, 1)
     expectNoDifference((details["swiftFileCount"] as? NSNumber)?.intValue, 24)

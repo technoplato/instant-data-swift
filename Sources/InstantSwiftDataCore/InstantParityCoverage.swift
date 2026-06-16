@@ -627,6 +627,111 @@ public enum InstantSwiftDataParityCoverage {
         "Swift adapts Reactor's getPreviousResult cache as the local SQLite runtime snapshot emitted immediately by @FetchAll.task, and dynamic task replacement preserves the last value while the next subscription is loading."
     ),
     instant(
+      id: "instant.svelte.use-auth-starts-loading",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "useAuth starts in loading state",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName:
+        "authSessionPropertyWrapperTaskStartsLoadingUntilObservationBegins + authSessionPropertyWrapperStartsNil",
+      surface: "adapter-auth",
+      status: .adapted,
+      notes:
+        "Swift adapts Svelte's auth store as @AuthSession projected state: a running task is loading with nil user/error while it awaits the first auth-session observation."
+    ),
+    instant(
+      id: "instant.svelte.use-auth-updates-state",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "useAuth updates when auth state changes",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName: "authSessionPropertyWrapperTaskBindsObservedSessions",
+      surface: "adapter-auth",
+      status: .adapted,
+      notes:
+        "Swift binds auth-session observations into @AuthSession wrapped values and clears loading/error state when a session arrives."
+    ),
+    instant(
+      id: "instant.svelte.use-auth-cached-state",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "useAuth uses cached auth state",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName:
+        "authSessionPropertyWrapperTaskUsesCachedRuntimeSession + authSessionPropertyWrapperLoadsUsingDependencyClient + authSessionPropertyWrapperLoadCancellationDoesNotOverwriteCachedValue",
+      surface: "adapter-auth",
+      status: .adapted,
+      notes:
+        "Swift adapts the cached auth state as the runtime's persisted auth session emitted immediately through @AuthSession.task, and preserves an existing wrapper value when in-flight loads are canceled."
+    ),
+    instant(
+      id: "instant.svelte.use-auth-error",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "useAuth handles auth error",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName:
+        "authSessionPropertyWrapperTaskPreservesCachedValueAndRecordsObservationError + authSessionPropertyWrapperPreservesCachedValueAndRecordsLoadError",
+      surface: "adapter-auth",
+      status: .adapted,
+      notes:
+        "Swift represents auth failures as InstantError values rather than JavaScript AuthState error payloads, surfacing observer/load failures through @AuthSession.loadError while preserving the current user value and clearing loading state."
+    ),
+    instant(
+      id: "instant.vue.use-auth-starts-loading",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "useAuth starts in loading state",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName:
+        "authSessionPropertyWrapperTaskStartsLoadingUntilObservationBegins + authSessionPropertyWrapperStartsNil",
+      surface: "adapter-auth",
+      status: .adapted,
+      notes:
+        "Swift adapts Vue auth refs as @AuthSession projected state: a running task is loading with nil user/error while it awaits the first auth-session observation."
+    ),
+    instant(
+      id: "instant.vue.use-auth-updates-state",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "useAuth updates when auth state changes",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName: "authSessionPropertyWrapperTaskBindsObservedSessions",
+      surface: "adapter-auth",
+      status: .adapted,
+      notes:
+        "Swift binds auth-session observations into @AuthSession wrapped values and clears loading/error state when a session arrives."
+    ),
+    instant(
+      id: "instant.vue.use-auth-cached-state",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "useAuth uses cached auth state",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName:
+        "authSessionPropertyWrapperTaskUsesCachedRuntimeSession + authSessionPropertyWrapperLoadsUsingDependencyClient + authSessionPropertyWrapperLoadCancellationDoesNotOverwriteCachedValue",
+      surface: "adapter-auth",
+      status: .adapted,
+      notes:
+        "Swift adapts the cached auth state as the runtime's persisted auth session emitted immediately through @AuthSession.task, and preserves an existing wrapper value when in-flight loads are canceled."
+    ),
+    instant(
+      id: "instant.vue.use-auth-error",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "useAuth handles auth error",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName:
+        "authSessionPropertyWrapperTaskPreservesCachedValueAndRecordsObservationError + authSessionPropertyWrapperPreservesCachedValueAndRecordsLoadError",
+      surface: "adapter-auth",
+      status: .adapted,
+      notes:
+        "Swift represents auth failures as InstantError values rather than JavaScript AuthState error payloads, surfacing observer/load failures through @AuthSession.loadError while preserving the current user value and clearing loading state."
+    ),
+    instant(
+      id: "instant.vue.use-auth-unsubscribes-on-scope-stop",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "useAuth unsubscribes when scope is stopped",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName: "authSessionPropertyWrapperSubscribeCancelsUnderlyingObservation",
+      surface: "adapter-auth",
+      status: .adapted,
+      notes:
+        "Swift cleanup is modeled by canceling the FetchSubscription returned by @AuthSession.subscribe, which terminates the underlying auth observation."
+    ),
+    instant(
       id: "instant.infinite-query.initial-snapshot",
       sourceFile: infiniteQuerySource,
       sourceTestName: "empty result",

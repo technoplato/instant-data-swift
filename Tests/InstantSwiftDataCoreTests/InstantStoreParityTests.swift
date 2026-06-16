@@ -11,9 +11,9 @@ struct InstantStoreParityTests {
 
     expectNoDifference(report.event, "parity-report")
     expectNoDifference(report.coverageComplete, false)
-    expectNoDifference(report.recordCount, 254)
+    expectNoDifference(report.recordCount, 263)
     expectNoDifference(report.exactCount, 28)
-    expectNoDifference(report.adaptedCount, 223)
+    expectNoDifference(report.adaptedCount, 232)
     expectNoDifference(report.blockedCount, 2)
     expectNoDifference(report.notApplicableCount, 1)
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/schema.test.ts"))
@@ -95,6 +95,22 @@ struct InstantStoreParityTests {
       #expect(
         report.records.contains { $0.id == id && $0.status == .adapted },
         "Expected adapted useQuery parity record \(id)"
+      )
+    }
+    for id in [
+      "instant.svelte.use-auth-starts-loading",
+      "instant.svelte.use-auth-updates-state",
+      "instant.svelte.use-auth-cached-state",
+      "instant.svelte.use-auth-error",
+      "instant.vue.use-auth-starts-loading",
+      "instant.vue.use-auth-updates-state",
+      "instant.vue.use-auth-cached-state",
+      "instant.vue.use-auth-error",
+      "instant.vue.use-auth-unsubscribes-on-scope-stop",
+    ] {
+      #expect(
+        report.records.contains { $0.id == id && $0.status == .adapted },
+        "Expected adapted useAuth parity record \(id)"
       )
     }
     #expect(report.records.contains { $0.id == "instant.infinite-query.initial-snapshot" && $0.status == .adapted })
