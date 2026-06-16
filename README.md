@@ -545,6 +545,7 @@ swift run instant-swift-data-validation-runner --reminders
 swift run instant-swift-data-validation-runner --server-transaction-loopback
 swift run instant-swift-data-validation-runner --cloudkit-demo
 swift run instant-swift-data-validation-runner --live-session
+swift run instant-swift-data-validation-runner --live-transaction
 swift run instant-swift-data validation reminders --jsonl | jq 'select(.event == "rich-filters") | .details.priorityRanksByReminderID'
 swift run instant-swift-data-validation-runner --typed-drafts
 swift run instant-swift-data-validation-runner --platform-adapters
@@ -555,11 +556,14 @@ node validation/ts-runner/src/main.ts --fixtures
 INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR=/tmp/instant-validation-results validation/run-e2e.sh
 node validation/ts-runner/src/main.ts --swift-transport-contract /tmp/instant-validation-results/swift-transport-contract.json --app-id local-validation
 node validation/ts-runner/src/main.ts --swift-live-session-contract /tmp/instant-validation-results/swift-live-session.jsonl --app-id local-validation
+node validation/ts-runner/src/main.ts --swift-live-transaction-contract /tmp/instant-validation-results/swift-live-transaction.jsonl --app-id local-validation
 node validation/ts-runner/src/main.ts --typescript-server-transaction-contract /tmp/instant-validation-results/typescript-server-transaction-contract.json --app-id local-validation
 INSTANT_APP_ID=local-validation INSTANT_SWIFT_DATA_TYPESCRIPT_SERVER_TRANSACTION_CONTRACT=/tmp/instant-validation-results/typescript-server-transaction-contract.json swift run instant-swift-data validation server-transaction-loopback --jsonl
+swift run instant-swift-data validation live-transaction --jsonl
 node validation/ts-runner/src/main.ts --boundary-preflight
 INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token node validation/ts-runner/src/main.ts --boundary-preflight --require-boundary
 INSTANT_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_LIVE_SESSION=1 swift run instant-swift-data validation live-session --jsonl
+INSTANT_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_LIVE_TRANSACTION=1 swift run instant-swift-data validation live-transaction --jsonl
 INSTANT_SWIFT_DATA_NODE=/path/to/node validation/run-e2e.sh
 INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_REQUIRE_REMOTE_PREFLIGHT=1 validation/run-e2e.sh
 validation/run-e2e.sh
@@ -613,14 +617,18 @@ adapted, and blocked parity records. `validation coverage` emits the same
 coverage gate as a compact summary with blocked record ids.
 `validation/run-e2e.sh` records those Swift validation streams, the Swift
 schema/perms fixture generation and verification artifacts, the live-session
-protocol smoke as `swift-live-session.jsonl`, the MacroTesting log, and a
-one-iteration `local-todos` benchmark JSONL artifact by default; set
+protocol smoke as `swift-live-session.jsonl`, the local live transaction proof
+as `swift-live-transaction.jsonl`, the MacroTesting log, and a one-iteration
+`local-todos` benchmark JSONL artifact by default; set
 `INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS` to change that count. When
 Node is available it also writes `typescript-fixtures.jsonl` and
 `typescript-transport-contract.jsonl` after checking Swift's
 `swift-transport-contract.json` lowered outbox payload, validates Swift's
 live-session protocol evidence into `typescript-live-session-contract.jsonl`,
-then writes
+validates Swift's local live-transaction transcript into
+`typescript-live-transaction-contract.jsonl`, and `validation live-transaction`
+locally proves the upstream `transact` / `transact-ok` / `refresh-ok` WebSocket
+message shape. It then writes
 `typescript-server-transaction-contract.json` and proves Swift can consume that
 TypeScript-authored operation tuple contract through
 `swift-typescript-server-transaction-contract.jsonl`. This proves local

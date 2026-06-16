@@ -10,6 +10,8 @@ public struct LiveSessionValidationDetails: Codable, Equatable, Sendable {
   public var queryResultCount: Int
   public var refreshComputationCount: Int
   public var processedTransactionID: String?
+  public var transactionID: String?
+  public var transactionISN: String?
   public var proofLevel: String
   public var remoteBoundary: String
   public var errorMessage: String?
@@ -24,6 +26,8 @@ public struct LiveSessionValidationDetails: Codable, Equatable, Sendable {
     queryResultCount: Int = 0,
     refreshComputationCount: Int = 0,
     processedTransactionID: String? = nil,
+    transactionID: String? = nil,
+    transactionISN: String? = nil,
     proofLevel: String,
     remoteBoundary: String = "pending-cross-client-sync",
     errorMessage: String? = nil
@@ -37,6 +41,8 @@ public struct LiveSessionValidationDetails: Codable, Equatable, Sendable {
     self.queryResultCount = queryResultCount
     self.refreshComputationCount = refreshComputationCount
     self.processedTransactionID = processedTransactionID
+    self.transactionID = transactionID
+    self.transactionISN = transactionISN
     self.proofLevel = proofLevel
     self.remoteBoundary = remoteBoundary
     self.errorMessage = errorMessage
@@ -82,13 +88,34 @@ public enum InstantSwiftDataLiveSessionValidation {
   public static let defaultQuery: InstantLiveJSONValue = .object([
     TodoExample.namespace: .object([:])
   ])
+  public static let defaultTransactionSteps: [InstantTransportStep] = [
+    .addTriple(
+      entity: .id("live-transaction-note"),
+      attributeID: "todos/id",
+      value: .string("live-transaction-note")
+    ),
+    .addTriple(
+      entity: .id("live-transaction-note"),
+      attributeID: "todos/text",
+      value: .string("Swift live transaction")
+    ),
+    .addTriple(
+      entity: .id("live-transaction-note"),
+      attributeID: "todos/isCompleted",
+      value: .bool(false)
+    ),
+  ]
 
   public static func run(
     appID: String = "live-session-validation",
+    caseID: String = "validation.live.session",
     websocketURI: URL = InstantRuntimeConfiguration.defaultWebSocketURI,
     refreshToken: String? = nil,
     adminToken: String? = nil,
     query: InstantLiveJSONValue = Self.defaultQuery,
+    includeTransaction: Bool = false,
+    transactionSteps: [InstantTransportStep] = Self.defaultTransactionSteps,
+    resolveTransactionAttributeIDs: Bool = false,
     liveTransport: InstantLiveTransportClient = .local,
     proofLevel: String = "local-protocol",
     timestamp: @escaping @Sendable () -> InstantTimestamp = {
@@ -122,6 +149,9 @@ public enum InstantSwiftDataLiveSessionValidation {
     var queryResultCount = 0
     var refreshComputationCount = 0
     var processedTransactionID: String?
+    var transactionID: String?
+    var transactionISN: String?
+    var initAttrs: [InstantLiveJSONValue] = []
     var evidence: [ValidationEvidenceRow<LiveSessionValidationDetails>] = []
 
     func details(errorMessage: String? = nil) -> LiveSessionValidationDetails {
@@ -135,6 +165,8 @@ public enum InstantSwiftDataLiveSessionValidation {
         queryResultCount: queryResultCount,
         refreshComputationCount: refreshComputationCount,
         processedTransactionID: processedTransactionID,
+        transactionID: transactionID,
+        transactionISN: transactionISN,
         proofLevel: proofLevel,
         errorMessage: errorMessage
       )
@@ -146,7 +178,7 @@ public enum InstantSwiftDataLiveSessionValidation {
       errorMessage: String? = nil
     ) -> ValidationEvidenceRow<LiveSessionValidationDetails> {
       ValidationEvidenceRow(
-        caseID: "validation.live.session",
+        caseID: caseID,
         side: "swift",
         event: event,
         appID: appID,
@@ -192,6 +224,7 @@ public enum InstantSwiftDataLiveSessionValidation {
         }
         sessionID = initOK.sessionID
         attrCount = initOK.attrs.count
+        initAttrs = initOK.attrs
         evidence.append(row(event: "receive-init-ok"))
 
       case let .error(error):
@@ -267,6 +300,101 @@ public enum InstantSwiftDataLiveSessionValidation {
         )
       }
 
+      if includeTransaction {
+        let transactClientEventID = makeID()
+        clientEventIDs.append(transactClientEventID)
+        let resolvedTransactionSteps = resolveTransactionAttributeIDs
+          ? try Self.resolveLiveTransactionAttributeIDs(
+            transactionSteps,
+            attrs: initAttrs
+          )
+          : transactionSteps
+        let transact = try InstantLiveMessage.transact(
+          resolvedTransactionSteps,
+          clientEventID: transactClientEventID
+        )
+        try await instantLiveWithTimeout(
+          operation: "validate Instant live transaction",
+          timeoutMilliseconds: eventTimeoutMilliseconds
+        ) {
+          try await openedSession.send(transact)
+        }
+        sentOps.append(transact.op)
+        evidence.append(row(event: "send-transact"))
+
+        var receivedTransactOK = false
+        var receivedTransactionRefresh = false
+        var pendingRefreshOK: InstantLiveRefreshOK?
+
+        func acceptRefresh(_ refreshOK: InstantLiveRefreshOK) -> Bool {
+          guard let transactionID,
+            refreshOK.processedTransactionID == transactionID
+          else {
+            return false
+          }
+          refreshComputationCount = refreshOK.computations.count
+          processedTransactionID = refreshOK.processedTransactionID
+          evidence.append(row(event: "receive-transaction-refresh"))
+          receivedTransactionRefresh = true
+          return true
+        }
+
+        for _ in 0..<(maxServerEvents * 2) {
+          let envelope = try await instantLiveWithTimeout(
+            operation: "validate Instant live transaction",
+            timeoutMilliseconds: eventTimeoutMilliseconds
+          ) {
+            try await openedSession.receive()
+          }
+          let event = InstantLiveServerEvent(message: envelope)
+          receivedOps.append(event.op)
+          switch event {
+          case let .transactOK(transactOK):
+            transactionID = transactOK.transactionID
+            transactionISN = transactOK.isn
+            evidence.append(row(event: "receive-transact-ok"))
+            receivedTransactOK = true
+            if let pendingRefreshOK {
+              _ = acceptRefresh(pendingRefreshOK)
+            }
+
+          case let .refreshOK(refreshOK):
+            if !acceptRefresh(refreshOK) {
+              pendingRefreshOK = refreshOK
+            }
+
+          case let .error(error):
+            evidence.append(row(event: "receive-error", ok: false, errorMessage: error.message))
+            throw validationError(
+              operation: "validate Instant live transaction",
+              message: "Instant live transaction returned an error: \(error.message)"
+            )
+
+          default:
+            continue
+          }
+
+          if receivedTransactOK && receivedTransactionRefresh {
+            break
+          }
+        }
+
+        guard receivedTransactOK else {
+          throw validationError(
+            operation: "validate Instant live transaction",
+            message:
+              "Expected transact-ok within \(maxServerEvents * 2) server event(s)."
+          )
+        }
+        guard receivedTransactionRefresh else {
+          throw validationError(
+            operation: "validate Instant live transaction",
+            message:
+              "Expected refresh-ok with processed-tx-id matching the transaction id within \(maxServerEvents * 2) server event(s)."
+          )
+        }
+      }
+
       await openedSession.close()
       session = nil
       return LiveSessionValidationResult(
@@ -292,5 +420,128 @@ public enum InstantSwiftDataLiveSessionValidation {
       message: message,
       recovery: "Inspect the Instant live WebSocket protocol smoke evidence."
     )
+  }
+
+  private static func resolveLiveTransactionAttributeIDs(
+    _ steps: [InstantTransportStep],
+    attrs: [InstantLiveJSONValue]
+  ) throws -> [InstantTransportStep] {
+    let resolver = InstantLiveAttributeIDResolver(attrs: attrs)
+    return try steps.map { step in
+      switch step {
+      case let .addTriple(entity, attributeID, value, options):
+        return .addTriple(
+          entity: try resolver.resolve(entity),
+          attributeID: try resolver.resolve(attributeID),
+          value: try resolver.resolve(value),
+          options: options
+        )
+
+      case let .deepMergeTriple(entity, attributeID, value, options):
+        return .deepMergeTriple(
+          entity: try resolver.resolve(entity),
+          attributeID: try resolver.resolve(attributeID),
+          value: try resolver.resolve(value),
+          options: options
+        )
+
+      case let .retractTriple(entity, attributeID, value):
+        return .retractTriple(
+          entity: try resolver.resolve(entity),
+          attributeID: try resolver.resolve(attributeID),
+          value: try resolver.resolve(value)
+        )
+
+      case let .deleteEntity(entity, namespace):
+        return .deleteEntity(entity: try resolver.resolve(entity), namespace: namespace)
+
+      case let .ruleParams(entity, namespace, params):
+        return .ruleParams(
+          entity: try resolver.resolve(entity),
+          namespace: namespace,
+          params: try resolver.resolve(params)
+        )
+      }
+    }
+  }
+}
+
+private struct InstantLiveAttributeIDResolver {
+  private var ids: Set<String> = []
+  private var idsByIdentity: [String: String] = [:]
+
+  init(attrs: [InstantLiveJSONValue]) {
+    for attr in attrs {
+      guard let object = attr.objectValue,
+        let id = object["id"]?.stringValue
+      else {
+        continue
+      }
+      ids.insert(id)
+
+      for key in ["forward-identity", "reverse-identity"] {
+        guard let identity = object[key]?.arrayValue,
+          identity.count >= 3,
+          let namespace = identity[1].stringValue,
+          let name = identity[2].stringValue
+        else {
+          continue
+        }
+        idsByIdentity["\(namespace)/\(name)"] = id
+      }
+    }
+  }
+
+  func resolve(_ attributeID: String) throws -> String {
+    if ids.contains(attributeID) {
+      return attributeID
+    }
+    if let id = idsByIdentity[attributeID] {
+      return id
+    }
+    throw InstantError(
+      code: .validationFailed,
+      operation: "resolve Instant live transaction attribute ids",
+      path: attributeID,
+      message: "Could not resolve '\(attributeID)' from the attrs returned by init-ok.",
+      recovery:
+        "Push a schema containing this attribute before running live transaction validation, or run without INSTANT_SWIFT_DATA_RUN_LIVE_TRANSACTION for the local protocol proof."
+    )
+  }
+
+  func resolve(_ entity: InstantTransportEntityRef) throws -> InstantTransportEntityRef {
+    switch entity {
+    case .id:
+      return entity
+
+    case let .lookup(lookup):
+      return .lookup(
+        InstantLookupRef(
+          attributeID: try resolve(lookup.attributeID),
+          value: lookup.value
+        )
+      )
+    }
+  }
+
+  func resolve(_ value: InstantTransportValue) throws -> InstantTransportValue {
+    switch value {
+    case .null, .bool, .number, .string:
+      return value
+
+    case let .array(values):
+      if values.count == 2,
+        case let .string(attributeID) = values[0]
+      {
+        return .array([
+          .string(try resolve(attributeID)),
+          try resolve(values[1]),
+        ])
+      }
+      return .array(try values.map(resolve))
+
+    case let .object(values):
+      return .object(try values.mapValues(resolve))
+    }
   }
 }

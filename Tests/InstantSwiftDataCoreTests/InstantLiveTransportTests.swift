@@ -45,6 +45,39 @@ struct InstantLiveTransportTests {
   }
 
   @Test
+  func transactMessageEncodesUpstreamShape() throws {
+    let message = try InstantLiveMessage.transact(
+      [
+        .addTriple(
+          entity: .id("todo-1"),
+          attributeID: "todos/id",
+          value: .string("todo-1")
+        ),
+        .addTriple(
+          entity: .id("todo-1"),
+          attributeID: "todos/done",
+          value: .bool(false)
+        ),
+      ],
+      clientEventID: "event-transact"
+    )
+
+    let data = try JSONEncoder().encode(message)
+    let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    expectNoDifference(object["op"] as? String, "transact")
+    expectNoDifference(object["client-event-id"] as? String, "event-transact")
+    let txSteps = try #require(object["tx-steps"] as? [[Any]])
+    expectNoDifference(txSteps.count, 2)
+    expectNoDifference(txSteps[0].count, 4)
+    expectNoDifference(txSteps[1].count, 4)
+    expectNoDifference(txSteps[0][0] as? String, "add-triple")
+    expectNoDifference(txSteps[0][1] as? String, "todo-1")
+    expectNoDifference(txSteps[0][2] as? String, "todos/id")
+    expectNoDifference(txSteps[0][3] as? String, "todo-1")
+    expectNoDifference(txSteps[1][3] as? Bool, false)
+  }
+
+  @Test
   func serverEventDecodesDynamicHyphenatedMessages() throws {
     let data = Data(
       """
@@ -117,6 +150,32 @@ struct InstantLiveTransportTests {
   }
 
   @Test
+  func serverEventPreservesTransactISN() throws {
+    let data = Data(
+      """
+      {
+        "op": "transact-ok",
+        "client-event-id": "event-tx",
+        "tx-id": 126,
+        "isn": "slot:lsn"
+      }
+      """.utf8
+    )
+
+    guard
+      case let .transactOK(transactOK) = InstantLiveServerEvent(
+        message: try JSONDecoder().decode(InstantLiveMessage.self, from: data)
+      )
+    else {
+      #expect(Bool(false), "Expected transact-ok.")
+      return
+    }
+    expectNoDifference(transactOK.clientEventID, "event-tx")
+    expectNoDifference(transactOK.transactionID, "126")
+    expectNoDifference(transactOK.isn, "slot:lsn")
+  }
+
+  @Test
   func liveSessionValidationUsesLocalProtocolHarness() async throws {
     let ids = InstantLiveTransportTestIDSequence(["event-init", "event-query"])
     let result = try await InstantSwiftDataLiveSessionValidation.run(
@@ -150,6 +209,160 @@ struct InstantLiveTransportTests {
     expectNoDifference(finalDetails.proofLevel, "local-protocol")
     expectNoDifference(finalDetails.remoteBoundary, "pending-cross-client-sync")
   }
+
+  @Test
+  func liveSessionValidationCanIncludeLocalTransaction() async throws {
+    let ids = InstantLiveTransportTestIDSequence(["event-init", "event-query", "event-tx"])
+    let result = try await InstantSwiftDataLiveSessionValidation.run(
+      appID: "live-transaction-test",
+      caseID: "validation.live.transaction",
+      websocketURI: try #require(URL(string: "wss://ws.example.test/runtime/session")),
+      includeTransaction: true,
+      timestamp: { InstantTimestamp(milliseconds: 1_700_000_000_000) },
+      makeID: { ids.next() }
+    )
+
+    expectNoDifference(result.evidence.map(\.caseID), Array(
+      repeating: "validation.live.transaction",
+      count: 8
+    ))
+    expectNoDifference(result.evidence.map(\.event), [
+      "session-url",
+      "send-init",
+      "receive-init-ok",
+      "send-add-query",
+      "receive-query",
+      "send-transact",
+      "receive-transact-ok",
+      "receive-transaction-refresh",
+    ])
+    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 8))
+
+    let finalDetails = try #require(result.evidence.last?.details)
+    expectNoDifference(finalDetails.sentOps, ["init", "add-query", "transact"])
+    expectNoDifference(finalDetails.receivedOps, [
+      "init-ok", "add-query-ok", "transact-ok", "refresh-ok",
+    ])
+    expectNoDifference(finalDetails.clientEventIDs, ["event-init", "event-query", "event-tx"])
+    expectNoDifference(finalDetails.transactionID, "local-event-tx")
+    expectNoDifference(finalDetails.transactionISN, "local-isn-event-tx")
+    expectNoDifference(finalDetails.processedTransactionID, "local-event-tx")
+    expectNoDifference(finalDetails.refreshComputationCount, 0)
+  }
+
+  @Test
+  func liveTransactionResolvesServerAttributeIDsFromInitAttrs() async throws {
+    let ids = InstantLiveTransportTestIDSequence(["event-init", "event-query", "event-tx"])
+    let session = InstantScriptedLiveSession(messages: [
+      .initOK(clientEventID: "event-init", attrs: [
+        .serverAttr(id: "server-todos-id", namespace: "todos", name: "id"),
+        .serverAttr(id: "server-todos-text", namespace: "todos", name: "text"),
+        .serverAttr(id: "server-todos-is-completed", namespace: "todos", name: "isCompleted"),
+        .serverAttr(id: "server-todos-prerequisite", namespace: "todos", name: "prerequisite"),
+      ]),
+      .addQueryOK(clientEventID: "event-query"),
+      .transactOK(clientEventID: "event-tx", transactionID: "server-tx-1", isn: "server-isn-1"),
+      .refreshOK(clientEventID: "event-tx", processedTransactionID: "server-tx-1"),
+    ])
+
+    let result = try await InstantSwiftDataLiveSessionValidation.run(
+      appID: "live-transaction-test",
+      caseID: "validation.live.transaction",
+      websocketURI: try #require(URL(string: "wss://ws.example.test/runtime/session")),
+      includeTransaction: true,
+      transactionSteps: InstantSwiftDataLiveSessionValidation.defaultTransactionSteps + [
+        .addTriple(
+          entity: .id("live-transaction-note"),
+          attributeID: "todos/prerequisite",
+          value: .array([
+            .string("todos/id"),
+            .string("seed-todo"),
+          ])
+        )
+      ],
+      resolveTransactionAttributeIDs: true,
+      liveTransport: session.transport,
+      proofLevel: "live-websocket-transaction",
+      timestamp: { InstantTimestamp(milliseconds: 1_700_000_000_000) },
+      makeID: { ids.next() }
+    )
+
+    let finalDetails = try #require(result.evidence.last?.details)
+    expectNoDifference(finalDetails.transactionID, "server-tx-1")
+    expectNoDifference(finalDetails.transactionISN, "server-isn-1")
+    expectNoDifference(finalDetails.processedTransactionID, "server-tx-1")
+
+    let sentMessages = await session.sentMessages()
+    let transact = try #require(sentMessages.first { $0.op == "transact" })
+    expectNoDifference(
+      transact.fields["tx-steps"],
+      .array([
+        .array([
+          .string("add-triple"),
+          .string("live-transaction-note"),
+          .string("server-todos-id"),
+          .string("live-transaction-note"),
+        ]),
+        .array([
+          .string("add-triple"),
+          .string("live-transaction-note"),
+          .string("server-todos-text"),
+          .string("Swift live transaction"),
+        ]),
+        .array([
+          .string("add-triple"),
+          .string("live-transaction-note"),
+          .string("server-todos-is-completed"),
+          .bool(false),
+        ]),
+        .array([
+          .string("add-triple"),
+          .string("live-transaction-note"),
+          .string("server-todos-prerequisite"),
+          .array([
+            .string("server-todos-id"),
+            .string("seed-todo"),
+          ]),
+        ]),
+      ])
+    )
+  }
+
+  @Test
+  func liveTransactionRejectsUncorrelatedRefreshOK() async throws {
+    let ids = InstantLiveTransportTestIDSequence(["event-init", "event-query", "event-tx"])
+    let session = InstantScriptedLiveSession(messages: [
+      .initOK(clientEventID: "event-init"),
+      .addQueryOK(clientEventID: "event-query"),
+      .transactOK(clientEventID: "event-tx", transactionID: "server-tx-1"),
+      .refreshOK(clientEventID: "event-tx", processedTransactionID: "other-tx"),
+    ])
+
+    do {
+      _ = try await InstantSwiftDataLiveSessionValidation.run(
+        appID: "live-transaction-test",
+        caseID: "validation.live.transaction",
+        websocketURI: try #require(URL(string: "wss://ws.example.test/runtime/session")),
+        includeTransaction: true,
+        liveTransport: session.transport,
+        timestamp: { InstantTimestamp(milliseconds: 1_700_000_000_000) },
+        makeID: { ids.next() },
+        eventTimeoutMilliseconds: 1,
+        maxServerEvents: 1
+      )
+      Issue.record("Expected live transaction validation to reject an unrelated refresh-ok.")
+    } catch let failure as LiveSessionValidationFailure {
+      expectNoDifference(failure.evidence.last?.event, "failed")
+      expectNoDifference(
+        failure.evidence.last?.details.errorMessage?.contains("processed-tx-id matching"),
+        true
+      )
+      expectNoDifference(
+        failure.evidence.last?.details.receivedOps,
+        ["init-ok", "add-query-ok", "transact-ok", "refresh-ok"]
+      )
+    }
+  }
 }
 
 private final class InstantLiveTransportTestIDSequence: @unchecked Sendable {
@@ -165,5 +378,118 @@ private final class InstantLiveTransportTestIDSequence: @unchecked Sendable {
     defer { lock.unlock() }
     guard !ids.isEmpty else { return UUID().uuidString.lowercased() }
     return ids.removeFirst()
+  }
+}
+
+private actor InstantScriptedLiveSession {
+  private var messages: [InstantLiveMessage]
+  private var sent: [InstantLiveMessage] = []
+
+  init(messages: [InstantLiveMessage]) {
+    self.messages = messages
+  }
+
+  nonisolated var transport: InstantLiveTransportClient {
+    InstantLiveTransportClient { _ in
+      InstantLiveWebSocketSession(
+        send: { message in
+          await self.send(message)
+        },
+        receive: {
+          try await self.receive()
+        },
+        close: {}
+      )
+    }
+  }
+
+  func sentMessages() -> [InstantLiveMessage] {
+    sent
+  }
+
+  private func send(_ message: InstantLiveMessage) {
+    sent.append(message)
+  }
+
+  private func receive() throws -> InstantLiveMessage {
+    guard !messages.isEmpty else {
+      throw InstantError(
+        code: .networkFailed,
+        operation: "script Instant live session",
+        message: "No scripted live messages remain.",
+        recovery: "Add another scripted message for this test."
+      )
+    }
+    return messages.removeFirst()
+  }
+}
+
+private extension InstantLiveMessage {
+  static func initOK(
+    clientEventID: String,
+    attrs: [InstantLiveJSONValue] = []
+  ) -> Self {
+    Self(
+      op: "init-ok",
+      clientEventID: clientEventID,
+      fields: [
+        "attrs": .array(attrs),
+        "auth": .null,
+        "session-id": .string("scripted-session"),
+      ]
+    )
+  }
+
+  static func addQueryOK(clientEventID: String) -> Self {
+    Self(
+      op: "add-query-ok",
+      clientEventID: clientEventID,
+      fields: [
+        "q": .object([TodoExample.namespace: .object([:])]),
+        "result": .array([]),
+      ]
+    )
+  }
+
+  static func transactOK(
+    clientEventID: String,
+    transactionID: String,
+    isn: String? = nil
+  ) -> Self {
+    var fields: [String: InstantLiveJSONValue] = [
+      "tx-id": .string(transactionID)
+    ]
+    if let isn {
+      fields["isn"] = .string(isn)
+    }
+    return Self(op: "transact-ok", clientEventID: clientEventID, fields: fields)
+  }
+
+  static func refreshOK(
+    clientEventID: String,
+    processedTransactionID: String
+  ) -> Self {
+    Self(
+      op: "refresh-ok",
+      clientEventID: clientEventID,
+      fields: [
+        "attrs": .array([]),
+        "computations": .array([]),
+        "processed-tx-id": .string(processedTransactionID),
+      ]
+    )
+  }
+}
+
+private extension InstantLiveJSONValue {
+  static func serverAttr(id: String, namespace: String, name: String) -> Self {
+    .object([
+      "forward-identity": .array([
+        .string("identity-\(id)"),
+        .string(namespace),
+        .string(name),
+      ]),
+      "id": .string(id),
+    ])
   }
 }

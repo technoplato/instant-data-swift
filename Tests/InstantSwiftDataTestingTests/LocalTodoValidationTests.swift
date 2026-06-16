@@ -424,6 +424,48 @@ struct LocalTodoValidationTests {
   }
 
   @Test
+  func liveSessionValidationHarnessCanProveLocalTransaction() async throws {
+    let idGenerator = ValidationIDGenerator(["event-init", "event-query", "event-tx"])
+
+    let run = try await InstantSwiftDataTestHarness.runLiveSessionValidation(
+      appID: "validation-live-transaction-test",
+      caseID: "validation.live.transaction",
+      websocketURI: try #require(URL(string: "wss://ws.example.test/runtime/session")),
+      includeTransaction: true,
+      timestamp: { InstantTimestamp(milliseconds: 1_700_004_000_000) },
+      makeID: { idGenerator.next() }
+    )
+    let result = run.result
+
+    expectNoDifference(result.appID, "validation-live-transaction-test")
+    expectNoDifference(run.summary.caseID, "validation.live.transaction")
+    expectNoDifference(run.summary.rowCount, 8)
+    expectNoDifference(run.summary.ok, true)
+    expectNoDifference(run.summary.events, [
+      "session-url",
+      "send-init",
+      "receive-init-ok",
+      "send-add-query",
+      "receive-query",
+      "send-transact",
+      "receive-transact-ok",
+      "receive-transaction-refresh",
+    ])
+    expectNoDifference(result.evidence.map(\.event), run.summary.events)
+    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 8))
+
+    let finalDetails = try #require(result.evidence.last?.details)
+    expectNoDifference(finalDetails.sentOps, ["init", "add-query", "transact"])
+    expectNoDifference(finalDetails.receivedOps, [
+      "init-ok", "add-query-ok", "transact-ok", "refresh-ok",
+    ])
+    expectNoDifference(finalDetails.clientEventIDs, ["event-init", "event-query", "event-tx"])
+    expectNoDifference(finalDetails.transactionID, "local-event-tx")
+    expectNoDifference(finalDetails.transactionISN, "local-isn-event-tx")
+    expectNoDifference(finalDetails.processedTransactionID, "local-event-tx")
+  }
+
+  @Test
   func validationRunnerLiveSessionCommandEmitsJSONL() throws {
     let result = try runValidationRunner(arguments: ["--live-session"])
 
@@ -463,6 +505,54 @@ struct LocalTodoValidationTests {
     expectNoDifference(finalDetails["sessionID"] as? String, "local-session-live-session-validation")
     expectNoDifference(finalDetails["proofLevel"] as? String, "local-protocol")
     expectNoDifference(finalDetails["remoteBoundary"] as? String, "pending-cross-client-sync")
+  }
+
+  @Test
+  func validationRunnerLiveTransactionCommandEmitsJSONL() throws {
+    let result = try runValidationRunner(arguments: ["--live-transaction"])
+
+    #expect(
+      result.status == 0,
+      """
+      instant-swift-data-validation-runner --live-transaction failed.
+      stdout:
+      \(result.stdout)
+      stderr:
+      \(result.stderr)
+      """
+    )
+
+    let rows = try parseJSONLines(result.stdout)
+    expectNoDifference(rows.count, 8)
+    expectNoDifference(
+      rows.map { $0["case"] as? String ?? "" },
+      Array(repeating: "validation.live.transaction", count: 8)
+    )
+    expectNoDifference(
+      rows.map { $0["appID"] as? String ?? "" },
+      Array(repeating: "live-transaction-validation", count: 8)
+    )
+    expectNoDifference(rows.map { $0["event"] as? String ?? "" }, [
+      "session-url",
+      "send-init",
+      "receive-init-ok",
+      "send-add-query",
+      "receive-query",
+      "send-transact",
+      "receive-transact-ok",
+      "receive-transaction-refresh",
+    ])
+    expectNoDifference(rows.map { $0["ok"] as? Bool ?? false }, Array(repeating: true, count: 8))
+
+    let finalDetails = try #require(rows.last?["details"] as? [String: Any])
+    expectNoDifference(finalDetails["sentOps"] as? [String], ["init", "add-query", "transact"])
+    expectNoDifference(finalDetails["receivedOps"] as? [String], [
+      "init-ok", "add-query-ok", "transact-ok", "refresh-ok",
+    ])
+    expectNoDifference(finalDetails["transactionID"] as? String != nil, true)
+    expectNoDifference(finalDetails["transactionISN"] as? String != nil, true)
+    expectNoDifference(finalDetails["processedTransactionID"] as? String != nil, true)
+    expectNoDifference(finalDetails["proofLevel"] as? String, "local-protocol")
   }
 
   @Test
@@ -2020,6 +2110,26 @@ struct LocalTodoValidationTests {
           fi
           echo '{"case":"validation.live.session","side":"swift","event":"stub-live-session","appID":"'"$remote_app_id"'","timestampMs":3,"ok":true,"details":{"sentOps":["init","add-query"],"receivedOps":["init-ok","add-query-ok"],"proofLevel":"local-protocol","remoteBoundary":"pending-cross-client-sync","websocketURL":"wss://api.instantdb.com/runtime/session?app_id='"$remote_app_id"'"}}'
           ;;
+        instant-swift-data:validation:live-transaction)
+          expected="run instant-swift-data validation live-transaction --jsonl"
+          if [ "$*" != "$expected" ]; then
+            echo "unexpected live transaction arguments: $*" >&2
+            exit 65
+          fi
+          remote_app_id="${INSTANT_SWIFT_DATA_REMOTE_APP_ID:-local-validation}"
+          if [ "${INSTANT_APP_ID:-}" != "$remote_app_id" ]; then
+            echo "unexpected live transaction app id: ${INSTANT_APP_ID:-}" >&2
+            exit 66
+          fi
+          echo '{"case":"validation.live.transaction","side":"swift","event":"session-url","appID":"'"$remote_app_id"'","timestampMs":3,"ok":true,"details":{"sentOps":[],"receivedOps":[],"proofLevel":"local-protocol","remoteBoundary":"pending-cross-client-sync","websocketURL":"wss://api.instantdb.com/runtime/session?app_id='"$remote_app_id"'"}}'
+          echo '{"case":"validation.live.transaction","side":"swift","event":"send-init","appID":"'"$remote_app_id"'","timestampMs":3,"ok":true,"details":{"sentOps":["init"],"receivedOps":[],"proofLevel":"local-protocol","remoteBoundary":"pending-cross-client-sync","websocketURL":"wss://api.instantdb.com/runtime/session?app_id='"$remote_app_id"'"}}'
+          echo '{"case":"validation.live.transaction","side":"swift","event":"receive-init-ok","appID":"'"$remote_app_id"'","timestampMs":3,"ok":true,"details":{"sentOps":["init"],"receivedOps":["init-ok"],"proofLevel":"local-protocol","remoteBoundary":"pending-cross-client-sync","websocketURL":"wss://api.instantdb.com/runtime/session?app_id='"$remote_app_id"'"}}'
+          echo '{"case":"validation.live.transaction","side":"swift","event":"send-add-query","appID":"'"$remote_app_id"'","timestampMs":3,"ok":true,"details":{"sentOps":["init","add-query"],"receivedOps":["init-ok"],"proofLevel":"local-protocol","remoteBoundary":"pending-cross-client-sync","websocketURL":"wss://api.instantdb.com/runtime/session?app_id='"$remote_app_id"'"}}'
+          echo '{"case":"validation.live.transaction","side":"swift","event":"receive-query","appID":"'"$remote_app_id"'","timestampMs":3,"ok":true,"details":{"sentOps":["init","add-query"],"receivedOps":["init-ok","add-query-ok"],"proofLevel":"local-protocol","remoteBoundary":"pending-cross-client-sync","websocketURL":"wss://api.instantdb.com/runtime/session?app_id='"$remote_app_id"'"}}'
+          echo '{"case":"validation.live.transaction","side":"swift","event":"send-transact","appID":"'"$remote_app_id"'","timestampMs":3,"ok":true,"details":{"sentOps":["init","add-query","transact"],"receivedOps":["init-ok","add-query-ok"],"proofLevel":"local-protocol","remoteBoundary":"pending-cross-client-sync","websocketURL":"wss://api.instantdb.com/runtime/session?app_id='"$remote_app_id"'"}}'
+          echo '{"case":"validation.live.transaction","side":"swift","event":"receive-transact-ok","appID":"'"$remote_app_id"'","timestampMs":3,"ok":true,"details":{"sentOps":["init","add-query","transact"],"receivedOps":["init-ok","add-query-ok","transact-ok"],"transactionID":"local-stub-tx","transactionISN":"local-isn-stub-tx","proofLevel":"local-protocol","remoteBoundary":"pending-cross-client-sync","websocketURL":"wss://api.instantdb.com/runtime/session?app_id='"$remote_app_id"'"}}'
+          echo '{"case":"validation.live.transaction","side":"swift","event":"receive-transaction-refresh","appID":"'"$remote_app_id"'","timestampMs":3,"ok":true,"details":{"sentOps":["init","add-query","transact"],"receivedOps":["init-ok","add-query-ok","transact-ok","refresh-ok"],"transactionID":"local-stub-tx","transactionISN":"local-isn-stub-tx","processedTransactionID":"local-stub-tx","proofLevel":"local-protocol","remoteBoundary":"pending-cross-client-sync","websocketURL":"wss://api.instantdb.com/runtime/session?app_id='"$remote_app_id"'"}}'
+          ;;
         instant-swift-data:validation:reminders)
           expected="run instant-swift-data validation reminders --jsonl"
           if [ "$*" != "$expected" ]; then
@@ -2216,6 +2326,17 @@ struct LocalTodoValidationTests {
           fi
           echo '{"case":"validation.typescript.live-session-contract","side":"typescript","event":"swift-live-session-contract","appID":"'"$remote_app_id"'","timestampMs":9,"ok":true,"details":{"proofLevel":"contract-only","remoteBoundary":"pending-cross-client-sync"}}'
           ;;
+        --swift-live-transaction-contract)
+          if [ "$4:$5" != "--app-id:$remote_app_id" ]; then
+            echo "unexpected live transaction contract arguments: $*" >&2
+            exit 78
+          fi
+          if [ ! -s "$3" ]; then
+            echo "missing swift live transaction contract artifact: $3" >&2
+            exit 79
+          fi
+          echo '{"case":"validation.typescript.live-transaction-contract","side":"typescript","event":"swift-live-transaction-contract","appID":"'"$remote_app_id"'","timestampMs":9,"ok":true,"details":{"proofLevel":"contract-only","remoteBoundary":"pending-cross-client-sync","transactionID":"local-stub-tx","processedTransactionID":"local-stub-tx","transactionISN":"local-isn-stub-tx"}}'
+          ;;
         --typescript-server-transaction-contract)
           if [ "$4:$5" != "--app-id:local-validation" ]; then
             echo "unexpected TypeScript server transaction contract arguments: $*" >&2
@@ -2290,6 +2411,8 @@ struct LocalTodoValidationTests {
       "swift-cloudkit-demo-complete",
       "swift-live-session-start",
       "swift-live-session-complete",
+      "swift-live-transaction-start",
+      "swift-live-transaction-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -2313,6 +2436,8 @@ struct LocalTodoValidationTests {
       "typescript-transport-contract-complete",
       "typescript-live-session-contract-start",
       "typescript-live-session-contract-complete",
+      "typescript-live-transaction-contract-start",
+      "typescript-live-transaction-contract-complete",
       "typescript-server-transaction-contract-start",
       "typescript-server-transaction-contract-complete",
       "swift-typescript-server-transaction-contract-start",
@@ -2343,6 +2468,11 @@ struct LocalTodoValidationTests {
     #expect(
       FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("swift-live-session.jsonl").path
+      )
+    )
+    #expect(
+      FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-live-transaction.jsonl").path
       )
     )
     #expect(
@@ -2402,6 +2532,11 @@ struct LocalTodoValidationTests {
     )
     #expect(
       FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-live-transaction-contract.jsonl").path
+      )
+    )
+    #expect(
+      FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("typescript-server-transaction-contract.json").path
       )
     )
@@ -2441,6 +2576,19 @@ struct LocalTodoValidationTests {
     )
     expectNoDifference(liveSessionContractRows.first?["ok"] as? Bool, true)
     expectNoDifference(liveSessionContractRows.first?["appID"] as? String, "remote-validation")
+    let swiftLiveTransactionRows = try readJSONLines(
+      resultsURL.appendingPathComponent("swift-live-transaction.jsonl")
+    )
+    expectNoDifference(swiftLiveTransactionRows.first?["appID"] as? String, "remote-validation")
+    let liveTransactionContractRows = try readJSONLines(
+      resultsURL.appendingPathComponent("typescript-live-transaction-contract.jsonl")
+    )
+    expectNoDifference(
+      liveTransactionContractRows.map { $0["event"] as? String ?? "" },
+      ["swift-live-transaction-contract"]
+    )
+    expectNoDifference(liveTransactionContractRows.first?["ok"] as? Bool, true)
+    expectNoDifference(liveTransactionContractRows.first?["appID"] as? String, "remote-validation")
     let typeScriptServerContractRows = try readJSONLines(
       resultsURL.appendingPathComponent("typescript-server-transaction-contract.jsonl")
     )
@@ -2490,6 +2638,9 @@ struct LocalTodoValidationTests {
         --swift-live-session-contract)
           echo '{"case":"validation.typescript.live-session-contract","side":"typescript","event":"live-session-override","appID":"local-validation","timestampMs":10,"ok":true,"details":{}}'
           ;;
+        --swift-live-transaction-contract)
+          echo '{"case":"validation.typescript.live-transaction-contract","side":"typescript","event":"live-transaction-override","appID":"local-validation","timestampMs":10,"ok":true,"details":{}}'
+          ;;
         --typescript-server-transaction-contract)
           mkdir -p "$(dirname "$3")"
           printf '%s\n' '{"case":"validation.typescript.server.transaction.contract","event":"typescript-server-transaction-contract","appID":"local-validation","transactionID":"validation.typescript.server.tx","processedTransactionID":"validation.typescript.server.processed","entityID":"validation-typescript-server","text":"TypeScript-authored server transaction","createdAtMs":4100002000003,"operations":[{"type":"requireEntityMissing","entityID":"validation-typescript-server","namespace":"todos"},{"type":"insert","entityID":"validation-typescript-server","attributeID":"todos/id","value":{"type":"string","string":"validation-typescript-server"},"txTimeMs":4100002000003},{"type":"insert","entityID":"validation-typescript-server","attributeID":"todos/text","value":{"type":"string","string":"TypeScript-authored server transaction"},"txTimeMs":4100002000003},{"type":"insert","entityID":"validation-typescript-server","attributeID":"todos/isCompleted","value":{"type":"bool","bool":false},"txTimeMs":4100002000003},{"type":"insert","entityID":"validation-typescript-server","attributeID":"todos/createdAt","value":{"type":"date","dateMs":4100002000003},"txTimeMs":4100002000003}]}' > "$3"
@@ -2535,6 +2686,13 @@ struct LocalTodoValidationTests {
     expectNoDifference(
       overrideLiveSessionRows.map { $0["event"] as? String ?? "" },
       ["live-session-override"]
+    )
+    let overrideLiveTransactionRows = try readJSONLines(
+      resultsURL.appendingPathComponent("typescript-live-transaction-contract.jsonl")
+    )
+    expectNoDifference(
+      overrideLiveTransactionRows.map { $0["event"] as? String ?? "" },
+      ["live-transaction-override"]
     )
     let overrideServerContractRows = try readJSONLines(
       resultsURL.appendingPathComponent("typescript-server-transaction-contract.jsonl")

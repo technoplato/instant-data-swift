@@ -169,6 +169,19 @@ extension InstantLiveMessage {
       fields: ["q": query]
     )
   }
+
+  public static func transact(
+    _ txSteps: [InstantTransportStep],
+    clientEventID: String
+  ) throws -> Self {
+    let data = try JSONEncoder().encode(txSteps)
+    let jsonObject = try JSONSerialization.jsonObject(with: data)
+    return Self(
+      op: "transact",
+      clientEventID: clientEventID,
+      fields: ["tx-steps": try InstantLiveJSONValue(jsonObject: jsonObject)]
+    )
+  }
 }
 
 public struct InstantLiveInitOK: Hashable, Sendable {
@@ -234,10 +247,12 @@ public struct InstantLiveRefreshOK: Hashable, Sendable {
 public struct InstantLiveTransactOK: Hashable, Sendable {
   public var clientEventID: String?
   public var transactionID: String?
+  public var isn: String?
 
-  public init(clientEventID: String?, transactionID: String?) {
+  public init(clientEventID: String?, transactionID: String?, isn: String? = nil) {
     self.clientEventID = clientEventID
     self.transactionID = transactionID
+    self.isn = isn
   }
 }
 
@@ -320,7 +335,8 @@ public enum InstantLiveServerEvent: Hashable, Sendable {
       self = .transactOK(
         InstantLiveTransactOK(
           clientEventID: message.clientEventID,
-          transactionID: message.fields["tx-id"]?.scalarStringValue
+          transactionID: message.fields["tx-id"]?.scalarStringValue,
+          isn: message.fields["isn"]?.scalarStringValue
         )
       )
 
@@ -530,6 +546,45 @@ private struct InstantLiveDynamicCodingKey: CodingKey {
 }
 
 private extension InstantLiveJSONValue {
+  init(jsonObject: Any) throws {
+    switch jsonObject {
+    case _ as NSNull:
+      self = .null
+
+    case let value as Bool:
+      self = .bool(value)
+
+    case let value as Int:
+      self = .number(Double(value))
+
+    case let value as Int64:
+      self = .number(Double(value))
+
+    case let value as Double:
+      self = .number(value)
+
+    case let value as String:
+      self = .string(value)
+
+    case let values as [Any]:
+      self = .array(try values.map(Self.init(jsonObject:)))
+
+    case let values as [String: Any]:
+      self = .object(try values.mapValues(Self.init(jsonObject:)))
+
+    case let value as NSNumber:
+      self = .number(value.doubleValue)
+
+    default:
+      throw InstantError(
+        code: .decodeFailed,
+        operation: "encode Instant live JSON value",
+        message: "Unsupported JSON object in live transport payload.",
+        recovery: "Ensure the live transport payload contains JSON-compatible values."
+      )
+    }
+  }
+
   var intValue: Int? {
     guard case let .number(value) = self,
       value.isFinite,
@@ -565,6 +620,7 @@ private actor InstantLocalLiveSession {
   private let appID: String
   private var pending: [InstantLiveMessage] = []
   private var isClosed = false
+  private var hasQuery = false
 
   init(appID: String) {
     self.appID = appID
@@ -587,6 +643,7 @@ private actor InstantLocalLiveSession {
       )
 
     case "add-query":
+      hasQuery = true
       pending.append(
         InstantLiveMessage(
           op: "add-query-ok",
@@ -597,6 +654,32 @@ private actor InstantLocalLiveSession {
           ]
         )
       )
+
+    case "transact":
+      let transactionID = "local-\(message.clientEventID ?? "transaction")"
+      pending.append(
+        InstantLiveMessage(
+          op: "transact-ok",
+          clientEventID: message.clientEventID,
+          fields: [
+            "isn": .string("local-isn-\(message.clientEventID ?? "transaction")"),
+            "tx-id": .string(transactionID),
+          ]
+        )
+      )
+      if hasQuery {
+        pending.append(
+          InstantLiveMessage(
+            op: "refresh-ok",
+            clientEventID: message.clientEventID,
+            fields: [
+              "attrs": .array([]),
+              "computations": .array([]),
+              "processed-tx-id": .string(transactionID),
+            ]
+          )
+        )
+      }
 
     default:
       pending.append(

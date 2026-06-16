@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const runnerDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(runnerDirectory, "../../..");
 const usage =
-  "Usage: node validation/ts-runner/src/main.ts [--fixtures|--boundary-preflight|--swift-transport-contract path|--swift-live-session-contract path|--typescript-server-transaction-contract path] [--require-boundary] [--app-id id] [--fixtures-dir path]";
+  "Usage: node validation/ts-runner/src/main.ts [--fixtures|--boundary-preflight|--swift-transport-contract path|--swift-live-session-contract path|--swift-live-transaction-contract path|--typescript-server-transaction-contract path] [--require-boundary] [--app-id id] [--fixtures-dir path]";
 const defaultAPIURI = "https://api.instantdb.com";
 const defaultWebSocketURI = "wss://api.instantdb.com/runtime/session";
 
@@ -55,6 +55,7 @@ function parseArguments(argv) {
     adminTokenSource: adminToken.source,
     swiftTransportContractPath: null,
     swiftLiveSessionContractPath: null,
+    swiftLiveTransactionContractPath: null,
     typeScriptServerTransactionContractPath: null,
   };
 
@@ -91,6 +92,16 @@ function parseArguments(argv) {
         }
         options.mode = "swift-live-session-contract";
         options.swiftLiveSessionContractPath = resolve(value);
+        break;
+      }
+
+      case "--swift-live-transaction-contract": {
+        const value = args.shift();
+        if (!value) {
+          throw new UsageError(usage);
+        }
+        options.mode = "swift-live-transaction-contract";
+        options.swiftLiveTransactionContractPath = resolve(value);
         break;
       }
 
@@ -1149,6 +1160,179 @@ function verifySwiftLiveSessionContract(options) {
   }
 }
 
+function verifySwiftLiveTransactionContract(options) {
+  const path = options.swiftLiveTransactionContractPath;
+  if (!path || !existsSync(path)) {
+    emit({
+      case: "validation.typescript.live-transaction-contract",
+      event: "swift-live-transaction-contract",
+      appID: options.appID,
+      ok: false,
+      details: {
+        path,
+        proofLevel: "contract-only",
+        remoteBoundary: "pending-cross-client-sync",
+        issues: [issue("$.path", "existing Swift live-transaction JSONL artifact", path)],
+      },
+    });
+    process.exitCode = 1;
+    return;
+  }
+
+  let rows;
+  try {
+    rows = readJSONLines(path);
+  } catch (error) {
+    emit({
+      case: "validation.typescript.live-transaction-contract",
+      event: "swift-live-transaction-contract",
+      appID: options.appID,
+      ok: false,
+      details: {
+        path,
+        proofLevel: "contract-only",
+        remoteBoundary: "pending-cross-client-sync",
+        issues: [issue("$.jsonl", "valid Swift live-transaction JSONL", String(error))],
+      },
+    });
+    process.exitCode = 1;
+    return;
+  }
+
+  const actualEvents = rows.map((row) => row.event);
+  const finalRow = rows[rows.length - 1];
+  const details = finalRow?.details ?? {};
+  const receivedOps = Array.isArray(details.receivedOps) ? details.receivedOps : [];
+  const finalEventByReceivedOp = {
+    "add-query-ok": "receive-query",
+    "add-query-exists": "receive-query",
+    "refresh-ok": "receive-refresh",
+  };
+  const expectedEvents = [
+    "session-url",
+    "send-init",
+    "receive-init-ok",
+    "send-add-query",
+    finalEventByReceivedOp[receivedOps[1]] ?? "receive-query|receive-refresh",
+    "send-transact",
+    "receive-transact-ok",
+    "receive-transaction-refresh",
+  ];
+  const issues = [];
+
+  if (
+    actualEvents.length !== 8
+      || !sameArray(actualEvents.slice(0, 4), expectedEvents.slice(0, 4))
+      || !["receive-query", "receive-refresh"].includes(actualEvents[4])
+      || !sameArray(actualEvents.slice(5), expectedEvents.slice(5))
+  ) {
+    issues.push(issue("$.events", expectedEvents, actualEvents));
+  }
+  for (const [index, row] of rows.entries()) {
+    if (row.case !== "validation.live.transaction") {
+      issues.push(issue(`$[${index}].case`, "validation.live.transaction", row.case));
+    }
+    if (row.side !== "swift") {
+      issues.push(issue(`$[${index}].side`, "swift", row.side));
+    }
+    if (row.appID !== options.appID) {
+      issues.push(issue(`$[${index}].appID`, options.appID, row.appID));
+    }
+    if (row.ok !== true) {
+      issues.push(issue(`$[${index}].ok`, true, row.ok));
+    }
+  }
+  if (!sameArray(details.sentOps, ["init", "add-query", "transact"])) {
+    issues.push(issue("$.details.sentOps", ["init", "add-query", "transact"], details.sentOps));
+  }
+  if (receivedOps[0] !== "init-ok") {
+    issues.push(issue("$.details.receivedOps[0]", "init-ok", receivedOps[0]));
+  }
+  if (!["add-query-ok", "add-query-exists", "refresh-ok"].includes(receivedOps[1])) {
+    issues.push(
+      issue(
+        "$.details.receivedOps[1]",
+        "add-query-ok|add-query-exists|refresh-ok",
+        receivedOps[1],
+      ),
+    );
+  }
+  if (!receivedOps.slice(2).includes("transact-ok")) {
+    issues.push(issue("$.details.receivedOps[2...]", "transact-ok", receivedOps.slice(2)));
+  }
+  if (!receivedOps.slice(2).includes("refresh-ok")) {
+    issues.push(issue("$.details.receivedOps[2...]", "refresh-ok", receivedOps.slice(2)));
+  }
+  const expectedFinalQueryEvent = finalEventByReceivedOp[receivedOps[1]];
+  if (expectedFinalQueryEvent && actualEvents[4] !== expectedFinalQueryEvent) {
+    issues.push(issue("$.events[4]", expectedFinalQueryEvent, actualEvents[4]));
+  }
+  if (
+    details.proofLevel !== "local-protocol"
+      && details.proofLevel !== "live-websocket-transaction"
+  ) {
+    issues.push(
+      issue(
+        "$.details.proofLevel",
+        "local-protocol|live-websocket-transaction",
+        details.proofLevel,
+      ),
+    );
+  }
+  if (details.remoteBoundary !== "pending-cross-client-sync") {
+    issues.push(
+      issue("$.details.remoteBoundary", "pending-cross-client-sync", details.remoteBoundary),
+    );
+  }
+  if (!String(details.websocketURL ?? "").includes(`app_id=${options.appID}`)) {
+    issues.push(
+      issue("$.details.websocketURL", `URL containing app_id=${options.appID}`, details.websocketURL),
+    );
+  }
+  if (!details.transactionID) {
+    issues.push(issue("$.details.transactionID", "non-empty transaction id", details.transactionID));
+  }
+  if (!details.transactionISN) {
+    issues.push(issue("$.details.transactionISN", "non-empty transaction isn", details.transactionISN));
+  }
+  if (details.processedTransactionID !== details.transactionID) {
+    issues.push(
+      issue(
+        "$.details.processedTransactionID",
+        details.transactionID,
+        details.processedTransactionID,
+      ),
+    );
+  }
+
+  const ok = issues.length === 0;
+  emit({
+    case: "validation.typescript.live-transaction-contract",
+    event: "swift-live-transaction-contract",
+    appID: options.appID,
+    ok,
+    details: {
+      path,
+      proofLevel: "contract-only",
+      remoteBoundary: "pending-cross-client-sync",
+      expectedEvents,
+      actualEvents,
+      sentOps: details.sentOps ?? [],
+      receivedOps,
+      transactionID: details.transactionID ?? null,
+      processedTransactionID: details.processedTransactionID ?? null,
+      transactionISN: details.transactionISN ?? null,
+      swiftProofLevel: details.proofLevel,
+      websocketURI: redactedEndpoint(details.websocketURL ?? options.websocketURI),
+      issues,
+    },
+  });
+
+  if (!ok) {
+    process.exitCode = 1;
+  }
+}
+
 function typeScriptServerTransactionContract(appID) {
   const transactionID = "validation.typescript.server.tx";
   const entityID = "validation-typescript-server";
@@ -1315,6 +1499,10 @@ try {
 
     case "swift-live-session-contract":
       verifySwiftLiveSessionContract(options);
+      break;
+
+    case "swift-live-transaction-contract":
+      verifySwiftLiveTransactionContract(options);
       break;
 
     case "typescript-server-transaction-contract":

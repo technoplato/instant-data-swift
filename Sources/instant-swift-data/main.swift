@@ -283,13 +283,14 @@ struct InstantSwiftDataCLI {
     case .liveSession:
       let appID = validationAppID(defaultAppID: "live-session-validation")
       do {
+        let runsLive = validationRunsLiveSession()
         let result = try await InstantSwiftDataLiveSessionValidation.run(
           appID: appID,
           websocketURI: try validationWebSocketURI(),
           refreshToken: validationRefreshToken(),
           adminToken: validationAdminToken(),
-          liveTransport: validationRunsLiveSession() ? .live : .local,
-          proofLevel: validationRunsLiveSession() ? "live-websocket-session" : "local-protocol"
+          liveTransport: runsLive ? .live : .local,
+          proofLevel: runsLive ? "live-websocket-session" : "local-protocol"
         )
         try printLiveSessionValidation(result: result, output: output)
       } catch let failure as LiveSessionValidationFailure {
@@ -307,6 +308,49 @@ struct InstantSwiftDataCLI {
           try writeJSONLine(
             validationFailureRow(
               caseID: "validation.live.session",
+              appID: appID,
+              error: error
+            )
+          )
+        }
+        throw error
+      }
+
+    case .liveTransaction:
+      let appID = validationAppID(defaultAppID: "live-transaction-validation")
+      do {
+        let runsLive = validationRunsLiveTransaction()
+        let result = try await InstantSwiftDataLiveSessionValidation.run(
+          appID: appID,
+          caseID: "validation.live.transaction",
+          websocketURI: try validationWebSocketURI(),
+          refreshToken: validationRefreshToken(),
+          adminToken: validationAdminToken(),
+          includeTransaction: true,
+          resolveTransactionAttributeIDs: runsLive,
+          liveTransport: runsLive ? .live : .local,
+          proofLevel: runsLive ? "live-websocket-transaction" : "local-protocol"
+        )
+        try printLiveSessionValidation(
+          result: result,
+          output: output,
+          event: "live-transaction"
+        )
+      } catch let failure as LiveSessionValidationFailure {
+        if output == .jsonl {
+          for row in failure.evidence {
+            try writeJSONLine(row)
+          }
+        }
+        if let instantError = failure.instantError {
+          throw instantError
+        }
+        throw failure
+      } catch {
+        if output == .jsonl {
+          try writeJSONLine(
+            validationFailureRow(
+              caseID: "validation.live.transaction",
               appID: appID,
               error: error
             )
@@ -9243,16 +9287,24 @@ struct InstantSwiftDataCLI {
 
   private static func printLiveSessionValidation(
     result: LiveSessionValidationResult,
-    output: OutputMode
+    output: OutputMode,
+    event: String = "live-session"
   ) throws {
     let finalDetails = result.evidence.last?.details
+    let caseID = result.evidence.first?.caseID ?? "validation.live.session"
+    let transport: String
+    switch finalDetails?.proofLevel {
+    case "live-websocket-session", "live-websocket-transaction":
+      transport = "websocket"
+    default:
+      transport = "local-protocol"
+    }
     let summary = LiveSessionValidationOutput(
       appID: result.appID,
+      caseID: caseID,
       websocketURL: result.websocketURL.absoluteString,
-      event: "live-session",
-      transport: finalDetails?.proofLevel == "live-websocket-session"
-        ? "websocket"
-        : "local-protocol",
+      event: event,
+      transport: transport,
       ok: result.evidence.allSatisfy { $0.ok },
       evidenceCount: result.evidence.count,
       events: result.evidence.map(\.event),
@@ -9264,6 +9316,8 @@ struct InstantSwiftDataCLI {
       queryResultCount: finalDetails?.queryResultCount ?? 0,
       refreshComputationCount: finalDetails?.refreshComputationCount ?? 0,
       processedTransactionID: finalDetails?.processedTransactionID,
+      transactionID: finalDetails?.transactionID,
+      transactionISN: finalDetails?.transactionISN,
       proofLevel: finalDetails?.proofLevel ?? "local-protocol",
       remoteBoundary: finalDetails?.remoteBoundary ?? "pending-cross-client-sync"
     )
@@ -9271,7 +9325,7 @@ struct InstantSwiftDataCLI {
     switch output {
     case .human:
       print("validation: \(summary.ok ? "ok" : "failed")")
-      print("case: validation.live.session")
+      print("case: \(summary.caseID)")
       print("events: \(summary.events.joined(separator: ", "))")
       print("evidence rows: \(summary.evidenceCount)")
       print("transport: \(summary.transport)")
@@ -9280,6 +9334,12 @@ struct InstantSwiftDataCLI {
       print("session: \(summary.sessionID ?? "")")
       print("attrs: \(summary.attrCount)")
       print("query results: \(summary.queryResultCount)")
+      if let transactionID = summary.transactionID {
+        print("transaction: \(transactionID)")
+      }
+      if let transactionISN = summary.transactionISN {
+        print("transaction isn: \(transactionISN)")
+      }
       print("websocket: \(summary.websocketURL)")
 
     case .json:
@@ -9615,6 +9675,13 @@ struct InstantSwiftDataCLI {
 
   private static func validationRunsLiveSession() -> Bool {
     let value = ProcessInfo.processInfo.environment["INSTANT_SWIFT_DATA_RUN_LIVE_SESSION"]?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+    return value == "1" || value == "true" || value == "yes"
+  }
+
+  private static func validationRunsLiveTransaction() -> Bool {
+    let value = ProcessInfo.processInfo.environment["INSTANT_SWIFT_DATA_RUN_LIVE_TRANSACTION"]?
       .trimmingCharacters(in: .whitespacesAndNewlines)
       .lowercased()
     return value == "1" || value == "true" || value == "yes"
@@ -11601,6 +11668,7 @@ private struct CloudKitDemoValidationOutput: Codable, Sendable {
 
 private struct LiveSessionValidationOutput: Codable, Sendable {
   var appID: String
+  var caseID: String
   var websocketURL: String
   var event: String
   var transport: String
@@ -11615,6 +11683,8 @@ private struct LiveSessionValidationOutput: Codable, Sendable {
   var queryResultCount: Int
   var refreshComputationCount: Int
   var processedTransactionID: String?
+  var transactionID: String?
+  var transactionISN: String?
   var proofLevel: String
   var remoteBoundary: String
 }

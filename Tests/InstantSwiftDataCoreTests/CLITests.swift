@@ -8097,6 +8097,67 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliValidationLiveTransactionProvesLocalTransactAndRefresh() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let jsonOutput = try JSONDecoder().decode(
+      CLILiveSessionValidationOutput.self,
+      from: Data(
+        try runCLI(["validation", "live-transaction", "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(jsonOutput.appID, "cli-cache-test")
+    expectNoDifference(jsonOutput.event, "live-transaction")
+    expectNoDifference(jsonOutput.transport, "local-protocol")
+    expectNoDifference(jsonOutput.ok, true)
+    expectNoDifference(jsonOutput.evidenceCount, 8)
+    expectNoDifference(jsonOutput.events, [
+      "session-url",
+      "send-init",
+      "receive-init-ok",
+      "send-add-query",
+      "receive-query",
+      "send-transact",
+      "receive-transact-ok",
+      "receive-transaction-refresh",
+    ])
+    expectNoDifference(jsonOutput.sentOps, ["init", "add-query", "transact"])
+    expectNoDifference(jsonOutput.receivedOps, [
+      "init-ok", "add-query-ok", "transact-ok", "refresh-ok",
+    ])
+    expectNoDifference(jsonOutput.transactionID != nil, true)
+    expectNoDifference(jsonOutput.transactionISN != nil, true)
+    expectNoDifference(jsonOutput.proofLevel, "local-protocol")
+
+    let jsonlOutput = try runCLI(["validation", "ws-transaction", "--jsonl"], homeURL: homeURL)
+    let lines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(lines.count, 8)
+    let finalEvidence = try JSONDecoder().decode(
+      CLILiveSessionValidationEvidence.self,
+      from: Data(try #require(lines.last).utf8)
+    )
+    expectNoDifference(finalEvidence.caseID, "validation.live.transaction")
+    expectNoDifference(finalEvidence.event, "receive-transaction-refresh")
+    expectNoDifference(finalEvidence.details.sentOps, ["init", "add-query", "transact"])
+    expectNoDifference(finalEvidence.details.receivedOps, [
+      "init-ok", "add-query-ok", "transact-ok", "refresh-ok",
+    ])
+    expectNoDifference(finalEvidence.details.transactionID != nil, true)
+    expectNoDifference(finalEvidence.details.transactionISN != nil, true)
+    expectNoDifference(finalEvidence.details.processedTransactionID != nil, true)
+
+    let humanOutput = try runCLI(["validation", "websocket-transaction"], homeURL: homeURL)
+    #expect(humanOutput.contains("validation: ok"))
+    #expect(humanOutput.contains("case: validation.live.transaction"))
+    #expect(humanOutput.contains("received ops: init-ok, add-query-ok, transact-ok, refresh-ok"))
+    #expect(humanOutput.contains("transaction: local-"))
+    #expect(humanOutput.contains("transaction isn: local-isn-"))
+  }
+
+  @Test
   func cliValidationRemindersEmitsEvidence() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -11520,6 +11581,8 @@ private struct CLILiveSessionValidationOutput: Decodable {
   var queryResultCount: Int
   var refreshComputationCount: Int
   var processedTransactionID: String?
+  var transactionID: String?
+  var transactionISN: String?
   var proofLevel: String
   var remoteBoundary: String
 }
@@ -11550,6 +11613,8 @@ private struct CLILiveSessionValidationDetails: Decodable {
   var queryResultCount: Int
   var refreshComputationCount: Int
   var processedTransactionID: String?
+  var transactionID: String?
+  var transactionISN: String?
   var proofLevel: String
   var remoteBoundary: String
   var errorMessage: String?

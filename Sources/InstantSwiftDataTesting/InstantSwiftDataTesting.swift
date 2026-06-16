@@ -298,9 +298,11 @@ public enum InstantSwiftDataTestHarness {
 
   public static func runLiveSessionValidation(
     appID: String = "live-session-validation",
+    caseID: String = "validation.live.session",
     websocketURI: URL = InstantRuntimeConfiguration.defaultWebSocketURI,
     liveTransport: InstantLiveTransportClient = .local,
     proofLevel: String = "local-protocol",
+    includeTransaction: Bool = false,
     timestamp: @escaping @Sendable () -> InstantTimestamp = {
       InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
     },
@@ -308,7 +310,9 @@ public enum InstantSwiftDataTestHarness {
   ) async throws -> InstantLiveSessionValidationRun {
     let result = try await InstantSwiftDataLiveSessionValidation.run(
       appID: appID,
+      caseID: caseID,
       websocketURI: websocketURI,
+      includeTransaction: includeTransaction,
       liveTransport: liveTransport,
       proofLevel: proofLevel,
       timestamp: timestamp,

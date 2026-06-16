@@ -85,10 +85,17 @@ WebSocket protocol shape; `instant-swift-data validation live-session --jsonl`
 builds `/runtime/session?app_id=...`, sends `init`, decodes `init-ok`, sends
 `add-query`, and decodes a query/refresh response. The command uses `.local` by
 default and switches to the real WebSocket when
-`INSTANT_SWIFT_DATA_RUN_LIVE_SESSION=1` is set. The TypeScript validation runner
+`INSTANT_SWIFT_DATA_RUN_LIVE_SESSION=1` is set. `validation live-transaction`
+extends the local protocol proof through `transact`, `transact-ok`, and the
+query `refresh-ok`, while real WebSocket mutation requires the separate
+`INSTANT_SWIFT_DATA_RUN_LIVE_TRANSACTION=1` opt-in and resolves Swift
+`namespace/field` attr ids from the server attrs returned by `init-ok`. The
+TypeScript validation runner
 also consumes the Swift JSONL with `--swift-live-session-contract` so the
-protocol transcript stays readable from both sides while remote cross-client
-delivery remains future work. Cross-client Swift/TypeScript mutation delivery,
+protocol transcript stays readable from both sides, and
+`--swift-live-transaction-contract` validates the local transaction transcript
+from the TypeScript side while remote cross-client delivery remains future work.
+Cross-client Swift/TypeScript mutation delivery,
 reconnect replay, and observer refresh application remain future transport work.
 
 ### Schema

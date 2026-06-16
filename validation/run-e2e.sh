@@ -18,6 +18,7 @@ rm -f \
   "${RESULTS_DIR}/swift-server-transaction-loopback.jsonl" \
   "${RESULTS_DIR}/swift-cloudkit-demo.jsonl" \
   "${RESULTS_DIR}/swift-live-session.jsonl" \
+  "${RESULTS_DIR}/swift-live-transaction.jsonl" \
   "${RESULTS_DIR}/swift-reminders.jsonl" \
   "${RESULTS_DIR}/swift-typed-drafts.jsonl" \
   "${RESULTS_DIR}/swift-platform-adapters.jsonl" \
@@ -37,6 +38,7 @@ rm -f \
   "${RESULTS_DIR}/typescript-fixtures.jsonl" \
   "${RESULTS_DIR}/typescript-transport-contract.jsonl" \
   "${RESULTS_DIR}/typescript-live-session-contract.jsonl" \
+  "${RESULTS_DIR}/typescript-live-transaction-contract.jsonl" \
   "${RESULTS_DIR}/typescript-server-transaction-contract.json" \
   "${RESULTS_DIR}/typescript-server-transaction-contract.jsonl" \
   "${RESULTS_DIR}/swift-typescript-server-transaction-contract.jsonl" \
@@ -430,6 +432,25 @@ else
   exit "${status}"
 fi
 
+log_json "swift-live-transaction-start" true
+if (
+  cd "${ROOT}"
+  INSTANT_APP_ID="${REMOTE_VALIDATION_APP_ID}" swift run instant-swift-data validation live-transaction --jsonl
+) | tee "${RESULTS_DIR}/swift-live-transaction.jsonl"; then
+  log_json "swift-live-transaction-complete" true "$(json_object "path" "${RESULTS_DIR}/swift-live-transaction.jsonl")"
+else
+  status=$?
+  log_json \
+    "swift-live-transaction-failed" \
+    false \
+    "$(json_failure_details "${RESULTS_DIR}/swift-live-transaction.jsonl" "${status}")"
+  log_json \
+    "complete" \
+    false \
+    "$(printf '{"resultsDir":%s,"failed":"swift-live-transaction","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+  exit "${status}"
+fi
+
 log_json "swift-reminders-start" true
 if (
   cd "${ROOT}"
@@ -672,6 +693,27 @@ if NODE_EXECUTABLE="$(resolve_node)"; then
       "complete" \
       false \
       "$(printf '{"resultsDir":%s,"failed":"typescript-live-session-contract","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+    exit "${status}"
+  fi
+
+  log_json "typescript-live-transaction-contract-start" true "$(json_object "path" "${RESULTS_DIR}/swift-live-transaction.jsonl")"
+  if (
+    cd "${ROOT}"
+    VALIDATION_APP_ID="${REMOTE_VALIDATION_APP_ID}" "${NODE_EXECUTABLE}" validation/ts-runner/src/main.ts \
+      --swift-live-transaction-contract "${RESULTS_DIR}/swift-live-transaction.jsonl" \
+      --app-id "${REMOTE_VALIDATION_APP_ID}"
+  ) | tee "${RESULTS_DIR}/typescript-live-transaction-contract.jsonl"; then
+    log_json "typescript-live-transaction-contract-complete" true "$(json_object "path" "${RESULTS_DIR}/typescript-live-transaction-contract.jsonl")"
+  else
+    status=$?
+    log_json \
+      "typescript-live-transaction-contract-failed" \
+      false \
+      "$(json_failure_details "${RESULTS_DIR}/typescript-live-transaction-contract.jsonl" "${status}")"
+    log_json \
+      "complete" \
+      false \
+      "$(printf '{"resultsDir":%s,"failed":"typescript-live-transaction-contract","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
     exit "${status}"
   fi
 
