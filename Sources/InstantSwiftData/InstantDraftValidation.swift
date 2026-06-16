@@ -388,15 +388,16 @@ public enum InstantSwiftDataDraftValidation {
       transactionID: "validation.typed-drafts.author",
       createdAt: relationTimestamp
     )
-    let postID = try await client.save(
-      DraftValidationPost.Draft(
+    let postSave = try await client.transact(
+      saving: DraftValidationPost.Draft(
         title: "Post from relation draft",
         author: authorID
       ),
       localIDName: "validation.typed-drafts.post",
-      transactionID: "validation.typed-drafts.post",
+      id: "validation.typed-drafts.post",
       createdAt: relationTimestamp
     )
+    let postID = postSave.id
     guard
       let savedPost = try await client.query(
         DraftValidationPost.query.order(DraftValidationPost.title)

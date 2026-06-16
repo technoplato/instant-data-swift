@@ -384,6 +384,26 @@ public protocol InstantEntityDraft: Sendable {
   init(_ entity: Entity)
 }
 
+public struct InstantPreparedDraftSave<Entity: InstantEntityModel>: Sendable {
+  public var id: Entity.ID
+  public var mutation: InstantMutation
+
+  public init(id: Entity.ID, mutation: InstantMutation) {
+    self.id = id
+    self.mutation = mutation
+  }
+}
+
+public struct InstantDraftSaveTransactionResult<Entity: InstantEntityModel>: Sendable {
+  public var id: Entity.ID
+  public var transaction: InstantStoreMutationResult
+
+  public init(id: Entity.ID, transaction: InstantStoreMutationResult) {
+    self.id = id
+    self.transaction = transaction
+  }
+}
+
 public struct InstantEntityLookup<Entity: InstantEntityModel>: Hashable, Sendable {
   public var name: String
   public var attributeID: String
@@ -2099,6 +2119,17 @@ extension InstantSwiftDataClient {
     transactionID: String? = nil,
     createdAt: InstantTimestamp? = nil
   ) async throws -> Draft.Entity.ID {
+    let prepared = try await prepareSave(draft, localIDName: localIDName)
+    try await transact(id: transactionID, createdAt: createdAt) {
+      prepared.mutation
+    }
+    return prepared.id
+  }
+
+  public func prepareSave<Draft: InstantEntityDraft>(
+    _ draft: Draft,
+    localIDName: String? = nil
+  ) async throws -> InstantPreparedDraftSave<Draft.Entity> {
     let entityID: Draft.Entity.ID
     let mutation: InstantMutation
     if let id = draft.id {
@@ -2118,10 +2149,40 @@ extension InstantSwiftDataClient {
       mutation = Draft.Entity.create(id: entityID, draft.instantAssignments)
     }
 
-    try await transact(id: transactionID, createdAt: createdAt) {
-      mutation
+    return InstantPreparedDraftSave(id: entityID, mutation: mutation)
+  }
+
+  @discardableResult
+  public func transact<Draft: InstantEntityDraft>(
+    saving draft: Draft,
+    localIDName: String? = nil,
+    id explicitID: String? = nil,
+    createdAt explicitCreatedAt: InstantTimestamp? = nil
+  ) async throws -> InstantDraftSaveTransactionResult<Draft.Entity> {
+    try await transact(
+      saving: draft,
+      localIDName: localIDName,
+      id: explicitID,
+      createdAt: explicitCreatedAt
+    ) { _ in }
+  }
+
+  @discardableResult
+  public func transact<Draft: InstantEntityDraft>(
+    saving draft: Draft,
+    localIDName: String? = nil,
+    id explicitID: String? = nil,
+    createdAt explicitCreatedAt: InstantTimestamp? = nil,
+    @InstantMutationBuilder _ build: @Sendable (Draft.Entity.ID) throws -> [InstantMutation]
+  ) async throws -> InstantDraftSaveTransactionResult<Draft.Entity> {
+    let prepared = try await prepareSave(draft, localIDName: localIDName)
+    let mutations = [prepared.mutation] + (try build(prepared.id))
+    let transaction = try await transact(id: explicitID, createdAt: explicitCreatedAt) {
+      for mutation in mutations {
+        mutation
+      }
     }
-    return entityID
+    return InstantDraftSaveTransactionResult(id: prepared.id, transaction: transaction)
   }
 
   @discardableResult

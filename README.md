@@ -573,7 +573,7 @@ local optimistic outbox untouched.
 draft whose `id` starts as `nil` and whose writable assignments omit the managed
 primary key, `Draft(existing)` edit, a writable relation draft with generated ref
 metadata, summarized pending mutation payload shape, and relaunch persistence
-through `InstantSwiftDataClient.save(_:)`.
+through `InstantSwiftDataClient.save(_:)` and `transact(saving:)`.
 `validation platform-adapters` emits terminal evidence that public wrapper
 adapters bind local client values for fetches, local IDs, auth, rooms, files,
 streams, and shares, that SwiftUI projected bindings cover fetches,
@@ -832,6 +832,23 @@ let todoID = try await db.save(draft, localIDName: "todos.compose")
 var editDraft = Todo.Draft(try await db.query(Todo.query).first!)
 editDraft.text = "Ship generated draft edits"
 try await db.save(editDraft)
+
+let composedDraft = Todo.Draft(
+  text: "Ship draft and comment together",
+  isCompleted: false,
+  createdAt: Date()
+)
+let save = try await db.transact(
+  saving: composedDraft,
+  localIDName: "todos.compose-with-comment"
+) { todoID in
+  Comment.create(
+    id: InstantID(rawValue: UUID().uuidString.lowercased()),
+    Comment.todo.set(todoID),
+    Comment.body.set("Created beside the draft")
+  )
+}
+print(save.id)
 ```
 
 Drafts do not conform to `Identifiable` automatically because multiple unsaved

@@ -1418,6 +1418,213 @@ struct TypedAPITests {
   }
 
   @Test
+  func generatedDraftSaveComposesRelatedMutationsInOneTransaction()
+    async throws
+  {
+    let recorder = TransactionRecorder()
+    let mock = InstantSwiftDataClient(
+      transact: { transaction in
+        await recorder.record(transaction)
+        return InstantStoreMutationResult(
+          transactionID: transaction.id,
+          changedEntityIDs: [],
+          tripleCount: transaction.operations.count,
+          emissions: []
+        )
+      },
+      query: { _ in [] },
+      observe: { _ in AsyncStream { continuation in continuation.finish() } },
+      pendingMutations: { [] },
+      localID: { name in "mock-\(name)" }
+    )
+
+    try await withDependencies {
+      $0.defaultInstantSwiftData = mock
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+
+      let createdAt = Date(timeIntervalSince1970: 1_700_000_028)
+      let composedID = "mock-typed.drafts.composed"
+      let composedCommentID = InstantID<DraftBackedComment>(rawValue: "comment-composed")
+      var draft = DraftBackedTodo.Draft(
+        title: "Create in a larger transaction",
+        isCompleted: false,
+        createdAt: createdAt
+      )
+      draft.notes = "Draft saved with related work"
+
+      let save = try await db.transact(
+        saving: draft,
+        localIDName: "typed.drafts.composed",
+        id: "tx-draft-compose",
+        createdAt: InstantTimestamp(milliseconds: 1_700_000_028_000)
+      ) { todoID in
+        DraftBackedComment.create(
+          id: composedCommentID,
+          DraftBackedComment.body.set("Related to the new draft"),
+          DraftBackedComment.todo.set(todoID)
+        )
+      }
+
+      expectNoDifference(save.id.rawValue, composedID)
+      expectNoDifference(save.transaction.transactionID, "tx-draft-compose")
+      expectNoDifference(save.transaction.tripleCount, 10)
+
+      let existingID = InstantID<DraftBackedTodo>(rawValue: "existing-draft-compose")
+      let existingCommentID = InstantID<DraftBackedComment>(
+        rawValue: "comment-existing-composed"
+      )
+      let editSave = try await db.transact(
+        saving: DraftBackedTodo.Draft(
+          id: existingID,
+          title: "Edit in a larger transaction",
+          isCompleted: true,
+          createdAt: createdAt.addingTimeInterval(1),
+          notes: nil
+        ),
+        id: "tx-draft-compose-edit",
+        createdAt: InstantTimestamp(milliseconds: 1_700_000_029_000)
+      ) { todoID in
+        DraftBackedComment.create(
+          id: existingCommentID,
+          DraftBackedComment.body.set("Related to the edited draft"),
+          DraftBackedComment.todo.set(todoID)
+        )
+      }
+
+      expectNoDifference(editSave.id, existingID)
+      expectNoDifference(editSave.transaction.transactionID, "tx-draft-compose-edit")
+      expectNoDifference(editSave.transaction.tripleCount, 9)
+    }
+
+    let transactions = await recorder.transactions
+    expectNoDifference(transactions.map(\.id), [
+      "tx-draft-compose",
+      "tx-draft-compose-edit",
+    ])
+    expectNoDifference(
+      transactions.first?.operations,
+      [
+        .requireEntityMissing(
+          entityID: "mock-typed.drafts.composed",
+          namespace: "draftBackedTodos"
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "mock-typed.drafts.composed",
+            attributeID: "draftBackedTodos/id",
+            value: .string("mock-typed.drafts.composed"),
+            txID: "tx-draft-compose",
+            txTime: InstantTimestamp(milliseconds: 1_700_000_028_000)
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "mock-typed.drafts.composed",
+            attributeID: "draftBackedTodos/body",
+            value: .string("Create in a larger transaction"),
+            txID: "tx-draft-compose",
+            txTime: InstantTimestamp(milliseconds: 1_700_000_028_000)
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "mock-typed.drafts.composed",
+            attributeID: "draftBackedTodos/isCompleted",
+            value: .bool(false),
+            txID: "tx-draft-compose",
+            txTime: InstantTimestamp(milliseconds: 1_700_000_028_000)
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "mock-typed.drafts.composed",
+            attributeID: "draftBackedTodos/createdAt",
+            value: .date(Date(timeIntervalSince1970: 1_700_000_028)),
+            txID: "tx-draft-compose",
+            txTime: InstantTimestamp(milliseconds: 1_700_000_028_000)
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "mock-typed.drafts.composed",
+            attributeID: "draftBackedTodos/notes",
+            value: .string("Draft saved with related work"),
+            txID: "tx-draft-compose",
+            txTime: InstantTimestamp(milliseconds: 1_700_000_028_000)
+          )
+        ),
+        .requireEntityMissing(
+          entityID: "comment-composed",
+          namespace: "draftBackedComments"
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "comment-composed",
+            attributeID: "draftBackedComments/id",
+            value: .string("comment-composed"),
+            txID: "tx-draft-compose",
+            txTime: InstantTimestamp(milliseconds: 1_700_000_028_000)
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "comment-composed",
+            attributeID: "draftBackedComments/body",
+            value: .string("Related to the new draft"),
+            txID: "tx-draft-compose",
+            txTime: InstantTimestamp(milliseconds: 1_700_000_028_000)
+          )
+        ),
+        .insert(
+          InstantTriple(
+            entityID: "comment-composed",
+            attributeID: "draftBackedComments/todo",
+            value: .ref("mock-typed.drafts.composed"),
+            txID: "tx-draft-compose",
+            txTime: InstantTimestamp(milliseconds: 1_700_000_028_000)
+          )
+        ),
+      ]
+    )
+    expectNoDifference(
+      transactions.last?.operations.map { operation in
+        switch operation {
+        case .requireEntityMissing:
+          "requireEntityMissing"
+        case .insert:
+          "insert"
+        default:
+          "other"
+        }
+      },
+      [
+        "insert",
+        "insert",
+        "insert",
+        "insert",
+        "insert",
+        "requireEntityMissing",
+        "insert",
+        "insert",
+        "insert",
+      ]
+    )
+    expectNoDifference(
+      transactions.last?.operations.last,
+      .insert(
+        InstantTriple(
+          entityID: "comment-existing-composed",
+          attributeID: "draftBackedComments/todo",
+          value: .ref("existing-draft-compose"),
+          txID: "tx-draft-compose-edit",
+          txTime: InstantTimestamp(milliseconds: 1_700_000_029_000)
+        )
+      )
+    )
+  }
+
+  @Test
   func generatedDraftExcludesUndeclaredStoredFieldsFromAssignments()
     async throws
   {
@@ -7229,6 +7436,53 @@ private struct DraftBackedTodo: Hashable, Codable, InstantEntityModel {
       localID: snapshot.id,
       message: "Expected \(expected) for draft-backed todo field '\(field)'.",
       recovery: "Check the Instant entity schema and server values for the draft-backed todo namespace."
+    )
+  }
+}
+
+@InstantEntity
+private struct DraftBackedComment: Hashable, Codable, InstantEntityModel {
+  var id: InstantID<DraftBackedComment>
+  var body: String
+
+  @InstantRelation(reverse: "comments")
+  var todo: InstantID<DraftBackedTodo>
+
+  init(
+    id: InstantID<DraftBackedComment>,
+    body: String,
+    todo: InstantID<DraftBackedTodo>
+  ) {
+    self.id = id
+    self.body = body
+    self.todo = todo
+  }
+
+  init(snapshot: InstantEntitySnapshot) throws {
+    guard case let .string(body) = snapshot.values["body"]?.first else {
+      throw Self.decodeError(snapshot: snapshot, field: "body", expected: "string")
+    }
+    guard case let .ref(todoID) = snapshot.values["todo"]?.first else {
+      throw Self.decodeError(snapshot: snapshot, field: "todo", expected: "ref")
+    }
+    self.id = InstantID(rawValue: snapshot.id)
+    self.body = body
+    self.todo = InstantID(rawValue: todoID)
+  }
+
+  private static func decodeError(
+    snapshot: InstantEntitySnapshot,
+    field: String,
+    expected: String
+  ) -> InstantError {
+    InstantError(
+      code: .decodeFailed,
+      operation: "decode draft-backed comment",
+      namespace: instantNamespace,
+      path: field,
+      localID: snapshot.id,
+      message: "Expected \(expected) for draft-backed comment field '\(field)'.",
+      recovery: "Check the Instant entity schema and server values for the draft-backed comment namespace."
     )
   }
 }
