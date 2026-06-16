@@ -159,13 +159,17 @@ struct InstantSwiftDataValidationRunner {
       }
 
     case .parityReport:
-      let run = try InstantSwiftDataTestHarness.runParityCoverageValidation()
+      let run = try InstantSwiftDataTestHarness.runParityCoverageValidation(
+        artifactsDirectory: validationCoverageArtifactsDirectory()
+      )
       for row in run.result.evidenceRows(appID: run.summary.appID ?? "local-validation") {
         try writeJSONLine(row)
       }
 
     case .coverage:
-      let run = try InstantSwiftDataTestHarness.runParityCoverageValidation()
+      let run = try InstantSwiftDataTestHarness.runParityCoverageValidation(
+        artifactsDirectory: validationCoverageArtifactsDirectory()
+      )
       let summary = InstantParityCoverageSummary(run.result)
       try writeJSONLine(
         ValidationEvidenceRow(
@@ -185,6 +189,23 @@ struct InstantSwiftDataValidationRunner {
         try writeJSONLine(row)
       }
     }
+  }
+
+  private static func validationCoverageArtifactsDirectory() -> URL? {
+    guard
+      let path = trimmedEnvironmentValue("INSTANT_SWIFT_DATA_COVERAGE_ARTIFACTS_DIR")
+        ?? trimmedEnvironmentValue("INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR")
+    else {
+      return nil
+    }
+    return URL(fileURLWithPath: path, isDirectory: true)
+  }
+
+  private static func trimmedEnvironmentValue(_ key: String) -> String? {
+    let value = ProcessInfo.processInfo.environment[key]?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let value, !value.isEmpty else { return nil }
+    return value
   }
 
   private static func emit(

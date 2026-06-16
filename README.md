@@ -576,6 +576,7 @@ INSTANT_SWIFT_DATA_NODE=/path/to/node validation/run-e2e.sh
 INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_REQUIRE_REMOTE_PREFLIGHT=1 validation/run-e2e.sh
 INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_LIVE_BOUNDARY=1 validation/run-e2e.sh
 INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_TYPESCRIPT_LIVE_BOUNDARY=1 validation/run-e2e.sh
+INSTANT_SWIFT_DATA_COVERAGE_ARTIFACTS_DIR=/tmp/instant-validation-results swift run instant-swift-data validation coverage --json
 validation/run-e2e.sh
 ```
 
@@ -671,6 +672,11 @@ Set `INSTANT_SWIFT_DATA_RUN_TYPESCRIPT_LIVE_BOUNDARY=1` or run
 `--boundary-typescript-live-observe` to open Swift's live WebSocket observer,
 write a unique todo through TypeScript admin HTTP, and require Swift to emit the
 matching external refresh.
+After both opt-in live boundary modes have written
+`typescript-swift-boundary.jsonl` and `swift-typescript-boundary.jsonl`, rerun
+`INSTANT_SWIFT_DATA_COVERAGE_ARTIFACTS_DIR=/tmp/instant-validation-results swift run instant-swift-data validation coverage --json`
+to let the compact coverage gate consume the credentialed artifacts and clear
+the two live-transport blockers.
 
 Run local core benchmarks:
 

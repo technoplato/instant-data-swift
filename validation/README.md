@@ -120,6 +120,7 @@ INSTANT_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DA
 INSTANT_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_LIVE_OBSERVE=1 swift run instant-swift-data validation live-observe --jsonl
 INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_LIVE_BOUNDARY=1 validation/run-e2e.sh
 INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_TYPESCRIPT_LIVE_BOUNDARY=1 validation/run-e2e.sh
+INSTANT_SWIFT_DATA_COVERAGE_ARTIFACTS_DIR=/tmp/instant-validation-results swift run instant-swift-data validation coverage --json
 ```
 
 When running from launchd or another sparse shell environment, point the harness
@@ -182,6 +183,11 @@ Set `INSTANT_SWIFT_DATA_RUN_TYPESCRIPT_LIVE_BOUNDARY=1` to add
 `--boundary-typescript-live-observe`: the TypeScript runner opens Swift's live
 WebSocket observer, writes a unique todo through admin HTTP, and requires Swift
 to observe that external refresh.
+When both opt-in live boundary modes have produced
+`typescript-swift-boundary.jsonl` and `swift-typescript-boundary.jsonl`, rerun
+`INSTANT_SWIFT_DATA_COVERAGE_ARTIFACTS_DIR=/tmp/instant-validation-results swift run instant-swift-data validation coverage --json`
+to promote the two live-transport parity records from blocked to adapted. The
+same fallback works with `INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR`.
 Set `INSTANT_SWIFT_DATA_LIVE_BOUNDARY_SWIFT_TIMEOUT_MS` if a cold SwiftPM build
 needs more than the default 30 seconds.
 Set
@@ -196,11 +202,11 @@ iteration count. The parity report command can succeed while individual blocked
 provenance rows intentionally carry `ok: false`; the orchestrator records the
 artifact command result, not an all-rows-passed summary. The coverage stream is
 the one-row gate to use when a caller needs blocked IDs and aggregate parity
-counts. The harness still records the real Instant boundary as blocked until
-ephemeral app creation, schema push, and cross-client Swift/TypeScript live
-transport subscriptions are implemented; the TypeScript admin HTTP/SSE smoke can
-already pass against an existing credentialed app, and the Swift-to-TypeScript
-live observe mode is available behind `INSTANT_SWIFT_DATA_RUN_LIVE_BOUNDARY=1`.
+counts. The static coverage stream still records the real Instant live transport
+boundary as blocked until credentialed artifacts are present, while
+`INSTANT_SWIFT_DATA_RUN_LIVE_BOUNDARY=1` and
+`INSTANT_SWIFT_DATA_RUN_TYPESCRIPT_LIVE_BOUNDARY=1` can capture those artifacts
+against an existing app.
 
 ## Required Cases
 

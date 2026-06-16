@@ -420,8 +420,12 @@ opens TypeScript-side admin SSE, runs Swift's live WebSocket transaction command
 and requires TypeScript to observe the Swift-authored row. The companion
 `--boundary-typescript-live-observe` mode opens Swift's live WebSocket observer,
 writes a unique todo through TypeScript admin HTTP, and requires Swift to
-observe the external refresh; both live boundary directions remain blocked until
-credentialed real-run artifacts are captured in the harness.
+observe the external refresh. When those opt-in modes produce
+`typescript-swift-boundary.jsonl` and `swift-typescript-boundary.jsonl` for a
+non-local app id, the coverage gate can consume the artifacts through
+`INSTANT_SWIFT_DATA_COVERAGE_ARTIFACTS_DIR` or
+`INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR` and promote both live-transport
+records from blocked to adapted.
 
 Current local progress: the CLI exposes non-captive local admin helpers:
 `instant-swift-data admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id]`
@@ -452,8 +456,10 @@ stream append/read/watch, and share create/list/accept/role/revoke commands with
 tests. Remote TypeScript admin query/transact/SSE smoke is available for an
 existing app through `validation/run-e2e.sh` required remote mode, and
 `INSTANT_SWIFT_DATA_RUN_LIVE_BOUNDARY=1` adds the Swift WebSocket write observed
-by TypeScript admin SSE proof; ephemeral app creation, schema push/pull, and
-TypeScript-authored writes observed by Swift remain future work.
+by TypeScript admin SSE proof, while
+`INSTANT_SWIFT_DATA_RUN_TYPESCRIPT_LIVE_BOUNDARY=1` adds the TypeScript admin
+HTTP write observed by Swift WebSocket proof. Ephemeral app creation and schema
+push/pull remain future work.
 The e2e harness resolves the TypeScript fixture runner through
 `INSTANT_SWIFT_DATA_NODE`, PATH, or the bundled Codex Node runtime, so launchd
 and other sparse environments can keep emitting TypeScript fixture evidence

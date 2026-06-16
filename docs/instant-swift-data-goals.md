@@ -589,6 +589,11 @@ Agent-oriented output modes are required:
   provenance is available through
   `instant-swift-data validation parity-report --jsonl`, while
   `instant-swift-data validation coverage --jsonl` emits a compact summary gate.
+  When `INSTANT_SWIFT_DATA_COVERAGE_ARTIFACTS_DIR` or
+  `INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR` points at credentialed
+  `typescript-swift-boundary.jsonl` and `swift-typescript-boundary.jsonl`
+  artifacts, that gate should promote the two real live-transport records from
+  blocked to adapted.
   The TypeScript runner should keep validating Swift-authored transport evidence,
   including `--swift-transport-contract`,
   `--swift-local-integrations-contract`, `--swift-live-session-contract`, and
@@ -854,7 +859,9 @@ Agent-oriented output modes are required:
   `--boundary-swift-live-observe` proves Swift's live WebSocket transaction is
   visible to TypeScript's admin SSE subscription on an existing app and
   `--boundary-typescript-live-observe` proves a TypeScript admin HTTP write is
-  visible to Swift's live WebSocket observer.
+  visible to Swift's live WebSocket observer. The coverage gate should only
+  clear the two live-transport blockers after those concrete JSONL artifacts are
+  present for a non-local app id.
 - run example business commands directly, such as todo/reminder/sync-up/chat/mobile-chat/microblog/reactions/stroopwafel
   create, list, update, delete, share, accept, upload, and stream operations.
 

@@ -120,9 +120,25 @@ public struct InstantParityCoverageSummary: Codable, Equatable, Sendable {
   }
 }
 
+private struct LiveBoundaryArtifactExpectation: Sendable {
+  var recordID: String
+  var fileName: String
+  var event: String
+  var proofLevel: String
+  var remoteBoundary: String
+  var note: String
+}
+
 public enum InstantSwiftDataParityCoverage {
   public static var current: InstantParityCoverageReport {
     InstantParityCoverageReport(records: records)
+  }
+
+  public static func current(artifactsDirectory: URL?) -> InstantParityCoverageReport {
+    guard let artifactsDirectory else { return current }
+    return InstantParityCoverageReport(
+      records: records.withLiveBoundaryArtifacts(in: artifactsDirectory)
+    )
   }
 
   public static let records: [InstantParityCoverageRecord] = [
@@ -2220,7 +2236,7 @@ public enum InstantSwiftDataParityCoverage {
       swiftTestName: "Swift/TypeScript real-run validation",
       surface: "live-transport",
       status: .blocked,
-      notes: "Local validation, credentialed TypeScript admin query/transact/SSE smoke, and an opt-in Swift WebSocket write observed by TypeScript admin SSE runner exist; this remains blocked until credentialed real-run evidence is captured in the validation harness."
+      notes: "Local validation, credentialed TypeScript admin query/transact/SSE smoke, and an opt-in Swift WebSocket write observed by TypeScript admin SSE runner exist; static coverage requires credentialed real-run evidence from the validation harness before this record is promoted."
     ),
     instant(
       id: "instant.live-transport.typescript-to-swift",
@@ -2230,7 +2246,7 @@ public enum InstantSwiftDataParityCoverage {
       swiftTestName: "Swift/TypeScript real-run validation",
       surface: "live-transport",
       status: .blocked,
-      notes: "Swift consumes a TypeScript-authored server transaction contract locally, required remote validation proves TypeScript admin HTTP/SSE, and an opt-in TypeScript admin HTTP write observed by Swift WebSocket runner exists; this remains blocked until credentialed real-run evidence is captured in the validation harness."
+      notes: "Swift consumes a TypeScript-authored server transaction contract locally, required remote validation proves TypeScript admin HTTP/SSE, and an opt-in TypeScript admin HTTP write observed by Swift WebSocket runner exists; static coverage requires credentialed real-run evidence from the validation harness before this record is promoted."
     ),
     instant(
       id: "instant.auth-extra-fields.magic-code",
@@ -2490,6 +2506,78 @@ public enum InstantSwiftDataParityCoverage {
     "Tests/InstantSwiftDataTests/TypedAPITests.swift"
   private static let platformAdapterValidationSwiftFile =
     "Tests/InstantSwiftDataTests/BootstrapTests.swift"
+
+  fileprivate static let liveBoundaryArtifactExpectations: [LiveBoundaryArtifactExpectation] = [
+    LiveBoundaryArtifactExpectation(
+      recordID: "instant.live-transport.swift-to-typescript",
+      fileName: "typescript-swift-boundary.jsonl",
+      event: "swift-to-typescript-boundary",
+      proofLevel: "real-swift-websocket-to-typescript-admin-sse",
+      remoteBoundary: "swift-websocket-to-typescript-admin-sse",
+      note: "Credentialed validation artifact proves a Swift live WebSocket write was observed by TypeScript admin SSE."
+    ),
+    LiveBoundaryArtifactExpectation(
+      recordID: "instant.live-transport.typescript-to-swift",
+      fileName: "swift-typescript-boundary.jsonl",
+      event: "typescript-to-swift-boundary",
+      proofLevel: "real-typescript-admin-http-to-swift-websocket",
+      remoteBoundary: "typescript-admin-http-to-swift-websocket",
+      note: "Credentialed validation artifact proves a TypeScript admin HTTP write was observed by Swift's live WebSocket observer."
+    ),
+  ]
+}
+
+private extension Array where Element == InstantParityCoverageRecord {
+  func withLiveBoundaryArtifacts(in directory: URL) -> Self {
+    var records = self
+    for expectation in InstantSwiftDataParityCoverage.liveBoundaryArtifactExpectations
+    where expectation.isSatisfied(in: directory) {
+      guard let index = records.firstIndex(where: { $0.id == expectation.recordID }) else {
+        continue
+      }
+      records[index].status = .adapted
+      if !records[index].notes.contains(expectation.note) {
+        records[index].notes += " \(expectation.note)"
+      }
+    }
+    return records
+  }
+}
+
+private extension LiveBoundaryArtifactExpectation {
+  func isSatisfied(in directory: URL) -> Bool {
+    let fileURL = directory.appendingPathComponent(fileName)
+    guard let contents = try? String(contentsOf: fileURL, encoding: .utf8) else {
+      return false
+    }
+    return contents.split(whereSeparator: \.isNewline).contains { line in
+      guard
+        let data = String(line).data(using: .utf8),
+        let json = try? JSONSerialization.jsonObject(with: data),
+        let row = json as? [String: Any]
+      else {
+        return false
+      }
+      return isSatisfied(by: row)
+    }
+  }
+
+  func isSatisfied(by row: [String: Any]) -> Bool {
+    guard
+      row["case"] as? String == "validation.typescript.boundary",
+      row["event"] as? String == event,
+      row["ok"] as? Bool == true,
+      let appID = row["appID"] as? String,
+      !appID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      appID.trimmingCharacters(in: .whitespacesAndNewlines) != "local-validation",
+      let details = row["details"] as? [String: Any],
+      details["proofLevel"] as? String == proofLevel,
+      details["remoteBoundary"] as? String == remoteBoundary
+    else {
+      return false
+    }
+    return true
+  }
 }
 
 extension Sequence where Element: Comparable & Hashable {

@@ -386,11 +386,12 @@ public enum InstantSwiftDataTestHarness {
 
   public static func runParityCoverageValidation(
     appID: String = "local-validation",
+    artifactsDirectory: URL? = nil,
     timestamp: @escaping @Sendable () -> InstantTimestamp = {
       InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
     }
   ) throws -> InstantParityCoverageValidationRun {
-    let result = InstantSwiftDataParityCoverage.current
+    let result = InstantSwiftDataParityCoverage.current(artifactsDirectory: artifactsDirectory)
     return InstantParityCoverageValidationRun(
       result: result,
       summary: summarize(result.evidenceRows(appID: appID, timestampMs: timestamp().milliseconds))

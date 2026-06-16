@@ -9898,6 +9898,68 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliValidationCoveragePromotesCredentialedLiveBoundaryArtifacts() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    let artifactsURL = homeURL.appendingPathComponent("artifacts", isDirectory: true)
+    try FileManager.default.createDirectory(at: artifactsURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    try """
+      {"case":"validation.typescript.boundary","side":"typescript","event":"swift-to-typescript-boundary","appID":"local-validation","timestampMs":1,"ok":true,"details":{"proofLevel":"real-swift-websocket-to-typescript-admin-sse","remoteBoundary":"swift-websocket-to-typescript-admin-sse"}}
+      {"case":"validation.typescript.boundary","side":"typescript","event":"swift-to-typescript-boundary","appID":"remote-app","timestampMs":2,"ok":true,"details":{"proofLevel":"real-swift-websocket-to-typescript-admin-sse","remoteBoundary":"swift-websocket-to-typescript-admin-sse"}}
+
+      """.write(
+        to: artifactsURL.appendingPathComponent("typescript-swift-boundary.jsonl"),
+        atomically: true,
+        encoding: .utf8
+      )
+
+    let environment = [
+      "INSTANT_SWIFT_DATA_COVERAGE_ARTIFACTS_DIR": artifactsURL.path
+    ]
+    let partialOutput = try JSONDecoder().decode(
+      CLIValidationCoverageOutput.self,
+      from: Data(
+        try runCLI(
+          ["validation", "coverage", "--json"],
+          homeURL: homeURL,
+          environment: environment
+        ).utf8
+      )
+    )
+    expectNoDifference(partialOutput.coverageComplete, false)
+    expectNoDifference(partialOutput.adaptedCount, 195)
+    expectNoDifference(partialOutput.blockedCount, 1)
+    expectNoDifference(partialOutput.blockedIDs, ["instant.live-transport.typescript-to-swift"])
+
+    try """
+      {"case":"validation.typescript.boundary","side":"typescript","event":"typescript-to-swift-boundary","appID":"remote-app","timestampMs":3,"ok":true,"details":{"proofLevel":"real-typescript-admin-http-to-swift-websocket","remoteBoundary":"typescript-admin-http-to-swift-websocket"}}
+
+      """.write(
+        to: artifactsURL.appendingPathComponent("swift-typescript-boundary.jsonl"),
+        atomically: true,
+        encoding: .utf8
+      )
+
+    let completeOutput = try JSONDecoder().decode(
+      CLIValidationCoverageOutput.self,
+      from: Data(
+        try runCLI(
+          ["validation", "coverage", "--json"],
+          homeURL: homeURL,
+          environment: environment
+        ).utf8
+      )
+    )
+    expectNoDifference(completeOutput.ok, true)
+    expectNoDifference(completeOutput.coverageComplete, true)
+    expectNoDifference(completeOutput.adaptedCount, 196)
+    expectNoDifference(completeOutput.blockedCount, 0)
+    expectNoDifference(completeOutput.blockedIDs, [])
+  }
+
+  @Test
   func cliBenchmarkLocalTodosEmitsJSONAndEvidence() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)

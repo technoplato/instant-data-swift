@@ -1735,6 +1735,60 @@ struct LocalTodoValidationTests {
   }
 
   @Test
+  func parityCoverageValidationHarnessAcceptsCredentialedLiveBoundaryArtifacts() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataValidationTests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    try """
+      {"case":"validation.typescript.boundary","side":"typescript","event":"swift-to-typescript-boundary","appID":"remote-app","timestampMs":1,"ok":true,"details":{"proofLevel":"real-swift-websocket-to-typescript-admin-sse","remoteBoundary":"swift-websocket-to-typescript-admin-sse"}}
+
+      """.write(
+        to: homeURL.appendingPathComponent("typescript-swift-boundary.jsonl"),
+        atomically: true,
+        encoding: .utf8
+      )
+    try """
+      {"case":"validation.typescript.boundary","side":"typescript","event":"typescript-to-swift-boundary","appID":"remote-app","timestampMs":2,"ok":true,"details":{"proofLevel":"real-typescript-admin-http-to-swift-websocket","remoteBoundary":"typescript-admin-http-to-swift-websocket"}}
+
+      """.write(
+        to: homeURL.appendingPathComponent("swift-typescript-boundary.jsonl"),
+        atomically: true,
+        encoding: .utf8
+      )
+
+    let run = try InstantSwiftDataTestHarness.runParityCoverageValidation(
+      appID: "validation-parity-test",
+      artifactsDirectory: homeURL,
+      timestamp: { InstantTimestamp(milliseconds: 1_700_003_000_000) }
+    )
+
+    expectNoDifference(run.result.coverageComplete, true)
+    expectNoDifference(run.result.adaptedCount, 196)
+    expectNoDifference(run.result.blockedCount, 0)
+    expectNoDifference(run.summary.ok, true)
+    let swiftToTypeScript = try #require(
+      run.result.records.first { $0.id == "instant.live-transport.swift-to-typescript" }
+    )
+    expectNoDifference(swiftToTypeScript.status, .adapted)
+    #expect(
+      swiftToTypeScript.notes.contains(
+        "Credentialed validation artifact proves a Swift live WebSocket write was observed by TypeScript admin SSE."
+      )
+    )
+    let typeScriptToSwift = try #require(
+      run.result.records.first { $0.id == "instant.live-transport.typescript-to-swift" }
+    )
+    expectNoDifference(typeScriptToSwift.status, .adapted)
+    #expect(
+      typeScriptToSwift.notes.contains(
+        "Credentialed validation artifact proves a TypeScript admin HTTP write was observed by Swift's live WebSocket observer."
+      )
+    )
+  }
+
+  @Test
   func validationRunnerParityReportCommandEmitsJSONL() throws {
     let result = try runValidationRunner(arguments: ["--parity-report"])
 
@@ -2090,7 +2144,8 @@ struct LocalTodoValidationTests {
     #expect(runnerSource.contains("InstantSwiftDataPlatformAdapterValidation.run"))
     #expect(runnerSource.contains("InstantSwiftDataRemindersValidation.run"))
     #expect(runnerSource.contains("runSyncUpsRecordingValidation()"))
-    #expect(runnerSource.contains("runParityCoverageValidation()"))
+    #expect(runnerSource.contains("runParityCoverageValidation("))
+    #expect(runnerSource.contains("validationCoverageArtifactsDirectory()"))
     #expect(runnerSource.contains("CLIValidationRunnerArguments.parse"))
     #expect(!runnerSource.contains("arguments == [\"--coverage\"]"))
 

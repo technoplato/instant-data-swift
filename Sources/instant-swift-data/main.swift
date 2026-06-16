@@ -412,7 +412,9 @@ struct InstantSwiftDataCLI {
     case .parityReport:
       let appID = validationAppID()
       try printParityCoverageReport(
-        result: InstantSwiftDataParityCoverage.current,
+        result: InstantSwiftDataParityCoverage.current(
+          artifactsDirectory: validationCoverageArtifactsDirectory()
+        ),
         appID: appID,
         output: output
       )
@@ -420,7 +422,9 @@ struct InstantSwiftDataCLI {
     case .coverage:
       let appID = validationAppID()
       try printValidationCoverageSummary(
-        result: InstantSwiftDataParityCoverage.current,
+        result: InstantSwiftDataParityCoverage.current(
+          artifactsDirectory: validationCoverageArtifactsDirectory()
+        ),
         appID: appID,
         output: output
       )
@@ -9706,6 +9710,16 @@ struct InstantSwiftDataCLI {
       return defaultAppID
     }
     return appID
+  }
+
+  private static func validationCoverageArtifactsDirectory() -> URL? {
+    guard
+      let path = trimmedValidationEnvironmentValue("INSTANT_SWIFT_DATA_COVERAGE_ARTIFACTS_DIR")
+        ?? trimmedValidationEnvironmentValue("INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR")
+    else {
+      return nil
+    }
+    return URL(fileURLWithPath: path, isDirectory: true)
   }
 
   private static func validationWebSocketURI() throws -> URL {
