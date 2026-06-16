@@ -1451,6 +1451,34 @@ private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
     return id
   }
 
+  func prepareActiveSubscriptionTask() -> Int {
+    let result = withLock {
+      _activeSubscriptionID += 1
+      let subscription = _activeSubscription?.subscription
+      _activeSubscription = nil
+      _isLoading = true
+      return (generation: _activeSubscriptionID, subscription: subscription)
+    }
+    result.subscription?.cancel()
+    return result.generation
+  }
+
+  func beginActiveSubscription(
+    _ subscription: FetchSubscription<Value>,
+    after generation: Int
+  ) -> Int? {
+    let result: (id: Int, previousSubscription: FetchSubscription<Value>?)? = withLock {
+      guard _activeSubscriptionID == generation else { return nil }
+      _activeSubscriptionID += 1
+      let id = _activeSubscriptionID
+      let previousSubscription = _activeSubscription?.subscription
+      _activeSubscription = (id, subscription)
+      return (id, previousSubscription)
+    }
+    result?.previousSubscription?.cancel()
+    return result?.id
+  }
+
   func isActiveSubscription(_ id: Int) -> Bool {
     withLock {
       _activeSubscription?.id == id
@@ -1465,10 +1493,105 @@ private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
     }
   }
 
+  func updateActiveSubscriptionValue(_ value: Value, id: Int) -> Bool {
+    withLock {
+      guard _activeSubscription?.id == id else { return false }
+      _wrappedValue = value
+      _loadError = nil
+      _isLoading = false
+      return true
+    }
+  }
+
+  func finishActiveOrPendingSubscriptionTask(
+    id: Int?,
+    generation: Int,
+    loadError: InstantError?
+  ) -> Bool {
+    withLock {
+      if let id {
+        guard _activeSubscription?.id == id else { return false }
+        _activeSubscription = nil
+      } else {
+        guard _activeSubscriptionID == generation else { return false }
+      }
+      _loadError = loadError
+      _isLoading = false
+      return true
+    }
+  }
+
   private func withLock<Result>(_ operation: () throws -> Result) rethrows -> Result {
     lock.lock()
     defer { lock.unlock() }
     return try operation()
+  }
+}
+
+private func runFetchStorageSubscriptionTask<Value: Sendable>(
+  storage: FetchStorage<Value>,
+  subscribe: @escaping @Sendable () async throws -> FetchSubscription<Value>,
+  operation: String,
+  recovery: String
+) async throws {
+  let generation = storage.prepareActiveSubscriptionTask()
+  var activeSubscriptionID: Int?
+  do {
+    let subscription = try await subscribe()
+    defer {
+      subscription.cancel()
+    }
+    try Task.checkCancellation()
+    guard let subscriptionID = storage.beginActiveSubscription(subscription, after: generation)
+    else {
+      throw CancellationError()
+    }
+    activeSubscriptionID = subscriptionID
+    for try await value in subscription {
+      try Task.checkCancellation()
+      guard storage.updateActiveSubscriptionValue(value, id: subscriptionID) else {
+        throw CancellationError()
+      }
+    }
+    try Task.checkCancellation()
+    guard storage.finishActiveOrPendingSubscriptionTask(
+      id: subscriptionID,
+      generation: generation,
+      loadError: nil
+    ) else {
+      throw CancellationError()
+    }
+  } catch let error as CancellationError {
+    _ = storage.finishActiveOrPendingSubscriptionTask(
+      id: activeSubscriptionID,
+      generation: generation,
+      loadError: nil
+    )
+    throw error
+  } catch let error as InstantError {
+    guard storage.finishActiveOrPendingSubscriptionTask(
+      id: activeSubscriptionID,
+      generation: generation,
+      loadError: error
+    ) else {
+      throw CancellationError()
+    }
+    throw error
+  } catch {
+    let error = InstantError(
+      code: .implementationFailed,
+      operation: operation,
+      message: String(describing: error),
+      recovery: recovery
+    )
+    guard storage.finishActiveOrPendingSubscriptionTask(
+      id: activeSubscriptionID,
+      generation: generation,
+      loadError: error
+    ) else {
+      throw CancellationError()
+    }
+    throw error
   }
 }
 
@@ -2706,18 +2829,33 @@ public struct FetchAll<Element: Sendable>: Sendable {
   public func subscribe(
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<[Element]> {
+    loadError = nil
+    do {
+      return try await makeSubscription(using: client)
+    } catch let error as CancellationError {
+      loadError = nil
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      throw error
+    } catch {
+      loadError = nil
+      throw error
+    }
+  }
+
+  private func makeSubscription(
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[Element]> {
     guard let subscribeOperation = operations.value.subscribe else {
-      let error = InstantError(
+      throw InstantError(
         code: .implementationFailed,
         operation: "subscribe FetchAll",
         message: "No Instant query has been configured for this fetch wrapper.",
         recovery: "Initialize @FetchAll with an InstantEntityQuery, or pass a query to subscribe(_:using:)."
       )
-      loadError = error
-      throw error
     }
 
-    loadError = nil
     return try await subscribeOperation(client)
   }
 
@@ -2760,38 +2898,12 @@ public struct FetchAll<Element: Sendable>: Sendable {
   }
 
   public func task(using client: InstantSwiftDataClient) async throws {
-    isLoading = true
-    do {
-      let subscription = try await subscribe(using: client)
-      defer { subscription.cancel() }
-      for try await value in subscription {
-        try Task.checkCancellation()
-        wrappedValue = value
-        loadError = nil
-        isLoading = false
-      }
-      try Task.checkCancellation()
-      loadError = nil
-      isLoading = false
-    } catch let error as CancellationError {
-      loadError = nil
-      isLoading = false
-      throw error
-    } catch let error as InstantError {
-      loadError = error
-      isLoading = false
-      throw error
-    } catch {
-      let error = InstantError(
-        code: .implementationFailed,
-        operation: "observe FetchAll",
-        message: String(describing: error),
-        recovery: "Inspect the configured InstantSwiftDataClient and query decoder."
-      )
-      loadError = error
-      isLoading = false
-      throw error
-    }
+    try await runFetchStorageSubscriptionTask(
+      storage: storage,
+      subscribe: { try await makeSubscription(using: client) },
+      operation: "observe FetchAll",
+      recovery: "Inspect the configured InstantSwiftDataClient and query decoder."
+    )
   }
 
   public func task(
@@ -2828,6 +2940,7 @@ public struct FetchAll<Element: Sendable>: Sendable {
   }
 
   private func clearQuery() {
+    storage.cancelActiveSubscription()
     operations.value = FetchOperations()
     wrappedValue = []
     loadError = nil
@@ -3412,18 +3525,33 @@ public struct FetchOne<Value: Sendable>: Sendable {
   public func subscribe(
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<Value> {
+    loadError = nil
+    do {
+      return try await makeSubscription(using: client)
+    } catch let error as CancellationError {
+      loadError = nil
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      throw error
+    } catch {
+      loadError = nil
+      throw error
+    }
+  }
+
+  private func makeSubscription(
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<Value> {
     guard let subscribeOperation = operations.value.subscribe else {
-      let error = InstantError(
+      throw InstantError(
         code: .implementationFailed,
         operation: "subscribe FetchOne",
         message: "No Instant query has been configured for this fetch wrapper.",
         recovery: "Initialize @FetchOne with an InstantEntityQuery, or pass a query to subscribe(_:using:)."
       )
-      loadError = error
-      throw error
     }
 
-    loadError = nil
     return try await subscribeOperation(client)
   }
 
@@ -3433,38 +3561,12 @@ public struct FetchOne<Value: Sendable>: Sendable {
   }
 
   public func task(using client: InstantSwiftDataClient) async throws {
-    isLoading = true
-    do {
-      let subscription = try await subscribe(using: client)
-      defer { subscription.cancel() }
-      for try await value in subscription {
-        try Task.checkCancellation()
-        wrappedValue = value
-        loadError = nil
-        isLoading = false
-      }
-      try Task.checkCancellation()
-      loadError = nil
-      isLoading = false
-    } catch let error as CancellationError {
-      loadError = nil
-      isLoading = false
-      throw error
-    } catch let error as InstantError {
-      loadError = error
-      isLoading = false
-      throw error
-    } catch {
-      let error = InstantError(
-        code: .implementationFailed,
-        operation: "observe FetchOne",
-        message: String(describing: error),
-        recovery: "Inspect the configured InstantSwiftDataClient and query decoder."
-      )
-      loadError = error
-      isLoading = false
-      throw error
-    }
+    try await runFetchStorageSubscriptionTask(
+      storage: storage,
+      subscribe: { try await makeSubscription(using: client) },
+      operation: "observe FetchOne",
+      recovery: "Inspect the configured InstantSwiftDataClient and query decoder."
+    )
   }
 
   fileprivate static func limitOne<Entity: InstantEntityModel>(
@@ -3735,6 +3837,7 @@ extension FetchOne {
   }
 
   private func clearOptionalQuery<Entity: InstantEntityModel>() where Value == Entity? {
+    storage.cancelActiveSubscription()
     operations.value = FetchOperations()
     wrappedValue = nil
     loadError = nil
@@ -4442,37 +4545,44 @@ public struct Fetch<Value: Sendable>: Sendable {
   public func subscribe(
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<Value> {
-    guard let subscribeOperation = operations.value.subscribe else {
-      let error = InstantError(
-        code: .implementationFailed,
-        operation: "subscribe Fetch",
-        message: "No Instant subscription operation has been configured for this fetch wrapper.",
-        recovery:
-          "Initialize @Fetch with a subscribe operation, or pass an operation to subscribe(_:using:)."
-      )
-      loadError = error
-      throw error
-    }
-
+    loadError = nil
     do {
-      let subscription = try await subscribeOperation(client)
-      loadError = nil
-      return subscription
+      return try await makeSubscription(using: client)
     } catch let error as CancellationError {
       loadError = nil
       throw error
     } catch let error as InstantError {
       loadError = error
       throw error
+    }
+  }
+
+  private func makeSubscription(
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<Value> {
+    guard let subscribeOperation = operations.value.subscribe else {
+      throw InstantError(
+        code: .implementationFailed,
+        operation: "subscribe Fetch",
+        message: "No Instant subscription operation has been configured for this fetch wrapper.",
+        recovery:
+          "Initialize @Fetch with a subscribe operation, or pass an operation to subscribe(_:using:)."
+      )
+    }
+
+    do {
+      return try await subscribeOperation(client)
+    } catch let error as CancellationError {
+      throw error
+    } catch let error as InstantError {
+      throw error
     } catch {
-      let error = InstantError(
+      throw InstantError(
         code: .implementationFailed,
         operation: "subscribe Fetch",
         message: String(describing: error),
         recovery: "Inspect the configured InstantSwiftDataClient and fetch subscription operation."
       )
-      loadError = error
-      throw error
     }
   }
 
@@ -4501,64 +4611,12 @@ public struct Fetch<Value: Sendable>: Sendable {
   }
 
   public func task(using client: InstantSwiftDataClient) async throws {
-    storage.cancelActiveSubscription()
-    isLoading = true
-    var activeSubscriptionID: Int?
-    do {
-      let subscription = try await subscribe(using: client)
-      let subscriptionID = storage.beginActiveSubscription(subscription)
-      activeSubscriptionID = subscriptionID
-      defer { subscription.cancel() }
-      for try await value in subscription {
-        try Task.checkCancellation()
-        guard storage.isActiveSubscription(subscriptionID) else {
-          throw CancellationError()
-        }
-        wrappedValue = value
-        loadError = nil
-        isLoading = false
-      }
-      try Task.checkCancellation()
-      guard storage.isActiveSubscription(subscriptionID) else {
-        throw CancellationError()
-      }
-      loadError = nil
-      isLoading = false
-      storage.endActiveSubscription(subscriptionID)
-    } catch let error as CancellationError {
-      if activeSubscriptionID.map(storage.isActiveSubscription) ?? true {
-        loadError = nil
-        isLoading = false
-      }
-      if let activeSubscriptionID {
-        storage.endActiveSubscription(activeSubscriptionID)
-      }
-      throw error
-    } catch let error as InstantError {
-      if activeSubscriptionID.map(storage.isActiveSubscription) ?? true {
-        loadError = error
-        isLoading = false
-      }
-      if let activeSubscriptionID {
-        storage.endActiveSubscription(activeSubscriptionID)
-      }
-      throw error
-    } catch {
-      let error = InstantError(
-        code: .implementationFailed,
-        operation: "observe Fetch",
-        message: String(describing: error),
-        recovery: "Inspect the configured InstantSwiftDataClient and fetch subscription operation."
-      )
-      if activeSubscriptionID.map(storage.isActiveSubscription) ?? true {
-        loadError = error
-        isLoading = false
-      }
-      if let activeSubscriptionID {
-        storage.endActiveSubscription(activeSubscriptionID)
-      }
-      throw error
-    }
+    try await runFetchStorageSubscriptionTask(
+      storage: storage,
+      subscribe: { try await makeSubscription(using: client) },
+      operation: "observe Fetch",
+      recovery: "Inspect the configured InstantSwiftDataClient and fetch subscription operation."
+    )
   }
 
   public func task(
@@ -4806,25 +4864,35 @@ public struct AuthSession: Sendable {
   public func subscribe(
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<InstantAuthSession?> {
+    loadError = nil
     do {
-      try Task.checkCancellation()
-      loadError = nil
-      return try await client.subscribeAuthSession()
+      return try await makeSubscription(using: client)
     } catch let error as CancellationError {
       loadError = nil
       throw error
     } catch let error as InstantError {
       loadError = error
       throw error
+    }
+  }
+
+  private func makeSubscription(
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<InstantAuthSession?> {
+    do {
+      try Task.checkCancellation()
+      return try await client.subscribeAuthSession()
+    } catch let error as CancellationError {
+      throw error
+    } catch let error as InstantError {
+      throw error
     } catch {
-      let error = InstantError(
+      throw InstantError(
         code: .implementationFailed,
         operation: "subscribe AuthSession",
         message: String(describing: error),
         recovery: "Inspect the configured InstantSwiftDataClient auth observation operation."
       )
-      loadError = error
-      throw error
     }
   }
 
@@ -4834,38 +4902,12 @@ public struct AuthSession: Sendable {
   }
 
   public func task(using client: InstantSwiftDataClient) async throws {
-    isLoading = true
-    do {
-      let subscription = try await subscribe(using: client)
-      defer { subscription.cancel() }
-      for try await value in subscription {
-        try Task.checkCancellation()
-        wrappedValue = value
-        loadError = nil
-        isLoading = false
-      }
-      try Task.checkCancellation()
-      loadError = nil
-      isLoading = false
-    } catch let error as CancellationError {
-      loadError = nil
-      isLoading = false
-      throw error
-    } catch let error as InstantError {
-      loadError = error
-      isLoading = false
-      throw error
-    } catch {
-      let error = InstantError(
-        code: .implementationFailed,
-        operation: "observe AuthSession",
-        message: String(describing: error),
-        recovery: "Inspect the configured InstantSwiftDataClient auth observation operation."
-      )
-      loadError = error
-      isLoading = false
-      throw error
-    }
+    try await runFetchStorageSubscriptionTask(
+      storage: storage,
+      subscribe: { try await makeSubscription(using: client) },
+      operation: "observe AuthSession",
+      recovery: "Inspect the configured InstantSwiftDataClient auth observation operation."
+    )
   }
 }
 
@@ -5013,17 +5055,30 @@ public struct RoomPresence: Sendable {
   public func subscribe(
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<[InstantRoomPresenceMember]> {
+    loadError = nil
+    do {
+      return try await makeSubscription(using: client)
+    } catch let error as CancellationError {
+      loadError = nil
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      throw error
+    }
+  }
+
+  private func makeSubscription(
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[InstantRoomPresenceMember]> {
     guard let room = room.value else {
-      let error = InstantError(
+      throw InstantError(
         code: .implementationFailed,
         operation: "subscribe RoomPresence",
         message: "No Instant room has been configured for this wrapper.",
         recovery: "Initialize @RoomPresence with a room, or pass a room to subscribe(_:_:using:)."
       )
-      loadError = error
-      throw error
     }
-    return try await subscribe(room: room, using: client)
+    return try await makeSubscription(room: room, using: client)
   }
 
   public func subscribe(
@@ -5054,25 +5109,36 @@ public struct RoomPresence: Sendable {
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<[InstantRoomPresenceMember]> {
     self.room.value = room
+    loadError = nil
     do {
-      try Task.checkCancellation()
-      loadError = nil
-      return try await client.subscribeRoomPresence(room: room)
+      return try await makeSubscription(room: room, using: client)
     } catch let error as CancellationError {
       loadError = nil
       throw error
     } catch let error as InstantError {
       loadError = error
       throw error
+    }
+  }
+
+  private func makeSubscription(
+    room: InstantRoomHandle,
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[InstantRoomPresenceMember]> {
+    do {
+      try Task.checkCancellation()
+      return try await client.subscribeRoomPresence(room: room)
+    } catch let error as CancellationError {
+      throw error
+    } catch let error as InstantError {
+      throw error
     } catch {
-      let error = InstantError(
+      throw InstantError(
         code: .implementationFailed,
         operation: "subscribe RoomPresence",
         message: String(describing: error),
         recovery: "Inspect the configured InstantSwiftDataClient room presence observer."
       )
-      loadError = error
-      throw error
     }
   }
 
@@ -5109,38 +5175,12 @@ public struct RoomPresence: Sendable {
   }
 
   public func task(using client: InstantSwiftDataClient) async throws {
-    isLoading = true
-    do {
-      let subscription = try await subscribe(using: client)
-      defer { subscription.cancel() }
-      for try await value in subscription {
-        try Task.checkCancellation()
-        wrappedValue = value
-        loadError = nil
-        isLoading = false
-      }
-      try Task.checkCancellation()
-      loadError = nil
-      isLoading = false
-    } catch let error as CancellationError {
-      loadError = nil
-      isLoading = false
-      throw error
-    } catch let error as InstantError {
-      loadError = error
-      isLoading = false
-      throw error
-    } catch {
-      let error = InstantError(
-        code: .implementationFailed,
-        operation: "observe RoomPresence",
-        message: String(describing: error),
-        recovery: "Inspect the configured InstantSwiftDataClient room presence observer."
-      )
-      loadError = error
-      isLoading = false
-      throw error
-    }
+    try await runFetchStorageSubscriptionTask(
+      storage: storage,
+      subscribe: { try await makeSubscription(using: client) },
+      operation: "observe RoomPresence",
+      recovery: "Inspect the configured InstantSwiftDataClient room presence observer."
+    )
   }
 }
 
@@ -5352,19 +5392,37 @@ public struct RoomTopicMessages: Sendable {
   public func subscribe(
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<[InstantRoomTopicMessage]> {
+    loadError = nil
+    do {
+      return try await makeSubscription(using: client)
+    } catch let error as CancellationError {
+      loadError = nil
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      throw error
+    }
+  }
+
+  private func makeSubscription(
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[InstantRoomTopicMessage]> {
     let configuration = configuration.value
     guard let room = configuration.room, let topic = configuration.topic else {
-      let error = InstantError(
+      throw InstantError(
         code: .implementationFailed,
         operation: "subscribe RoomTopicMessages",
         message: "No Instant room topic has been configured for this wrapper.",
         recovery:
           "Initialize @RoomTopicMessages with a room and topic, or pass them to subscribe(_:_:_:using:)."
       )
-      loadError = error
-      throw error
     }
-    return try await subscribe(room: room, topic: topic, limit: configuration.limit, using: client)
+    return try await makeSubscription(
+      room: room,
+      topic: topic,
+      limit: configuration.limit,
+      using: client
+    )
   }
 
   public func subscribe(
@@ -5412,30 +5470,43 @@ public struct RoomTopicMessages: Sendable {
       topic: topic,
       limit: limit
     )
+    loadError = nil
     do {
-      try Self.validateLimit(limit, operation: "subscribe RoomTopicMessages")
-      try Task.checkCancellation()
-      loadError = nil
-      return try await client.subscribeRoomTopicMessages(
-        room: room,
-        topic: topic,
-        limit: limit
-      )
+      return try await makeSubscription(room: room, topic: topic, limit: limit, using: client)
     } catch let error as CancellationError {
       loadError = nil
       throw error
     } catch let error as InstantError {
       loadError = error
       throw error
+    }
+  }
+
+  private func makeSubscription(
+    room: InstantRoomHandle,
+    topic: String,
+    limit: Int? = nil,
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[InstantRoomTopicMessage]> {
+    do {
+      try Self.validateLimit(limit, operation: "subscribe RoomTopicMessages")
+      try Task.checkCancellation()
+      return try await client.subscribeRoomTopicMessages(
+        room: room,
+        topic: topic,
+        limit: limit
+      )
+    } catch let error as CancellationError {
+      throw error
+    } catch let error as InstantError {
+      throw error
     } catch {
-      let error = InstantError(
+      throw InstantError(
         code: .implementationFailed,
         operation: "subscribe RoomTopicMessages",
         message: String(describing: error),
         recovery: "Inspect the configured InstantSwiftDataClient room topic observer."
       )
-      loadError = error
-      throw error
     }
   }
 
@@ -5493,38 +5564,12 @@ public struct RoomTopicMessages: Sendable {
   }
 
   public func task(using client: InstantSwiftDataClient) async throws {
-    isLoading = true
-    do {
-      let subscription = try await subscribe(using: client)
-      defer { subscription.cancel() }
-      for try await value in subscription {
-        try Task.checkCancellation()
-        wrappedValue = value
-        loadError = nil
-        isLoading = false
-      }
-      try Task.checkCancellation()
-      loadError = nil
-      isLoading = false
-    } catch let error as CancellationError {
-      loadError = nil
-      isLoading = false
-      throw error
-    } catch let error as InstantError {
-      loadError = error
-      isLoading = false
-      throw error
-    } catch {
-      let error = InstantError(
-        code: .implementationFailed,
-        operation: "observe RoomTopicMessages",
-        message: String(describing: error),
-        recovery: "Inspect the configured InstantSwiftDataClient room topic observer."
-      )
-      loadError = error
-      isLoading = false
-      throw error
-    }
+    try await runFetchStorageSubscriptionTask(
+      storage: storage,
+      subscribe: { try await makeSubscription(using: client) },
+      operation: "observe RoomTopicMessages",
+      recovery: "Inspect the configured InstantSwiftDataClient room topic observer."
+    )
   }
 
   private static func validateLimit(_ limit: Int?, operation: String) throws {
@@ -5623,25 +5668,35 @@ public struct StoredFiles: Sendable {
   public func subscribe(
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<[InstantStoredFile]> {
+    loadError = nil
     do {
-      try Task.checkCancellation()
-      loadError = nil
-      return try await client.subscribeStoredFiles()
+      return try await makeSubscription(using: client)
     } catch let error as CancellationError {
       loadError = nil
       throw error
     } catch let error as InstantError {
       loadError = error
       throw error
+    }
+  }
+
+  private func makeSubscription(
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[InstantStoredFile]> {
+    do {
+      try Task.checkCancellation()
+      return try await client.subscribeStoredFiles()
+    } catch let error as CancellationError {
+      throw error
+    } catch let error as InstantError {
+      throw error
     } catch {
-      let error = InstantError(
+      throw InstantError(
         code: .implementationFailed,
         operation: "subscribe StoredFiles",
         message: String(describing: error),
         recovery: "Inspect the configured InstantSwiftDataClient stored files observer."
       )
-      loadError = error
-      throw error
     }
   }
 
@@ -5651,38 +5706,12 @@ public struct StoredFiles: Sendable {
   }
 
   public func task(using client: InstantSwiftDataClient) async throws {
-    isLoading = true
-    do {
-      let subscription = try await subscribe(using: client)
-      defer { subscription.cancel() }
-      for try await value in subscription {
-        try Task.checkCancellation()
-        wrappedValue = value
-        loadError = nil
-        isLoading = false
-      }
-      try Task.checkCancellation()
-      loadError = nil
-      isLoading = false
-    } catch let error as CancellationError {
-      loadError = nil
-      isLoading = false
-      throw error
-    } catch let error as InstantError {
-      loadError = error
-      isLoading = false
-      throw error
-    } catch {
-      let error = InstantError(
-        code: .implementationFailed,
-        operation: "observe StoredFiles",
-        message: String(describing: error),
-        recovery: "Inspect the configured InstantSwiftDataClient stored files observer."
-      )
-      loadError = error
-      isLoading = false
-      throw error
-    }
+    try await runFetchStorageSubscriptionTask(
+      storage: storage,
+      subscribe: { try await makeSubscription(using: client) },
+      operation: "observe StoredFiles",
+      recovery: "Inspect the configured InstantSwiftDataClient stored files observer."
+    )
   }
 }
 
@@ -5841,18 +5870,31 @@ public struct StreamChunks: Sendable {
   public func subscribe(
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<[InstantStreamChunk]> {
+    loadError = nil
+    do {
+      return try await makeSubscription(using: client)
+    } catch let error as CancellationError {
+      loadError = nil
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      throw error
+    }
+  }
+
+  private func makeSubscription(
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[InstantStreamChunk]> {
     let configuration = configuration.value
     guard let streamID = configuration.streamID else {
-      let error = InstantError(
+      throw InstantError(
         code: .implementationFailed,
         operation: "subscribe StreamChunks",
         message: "No Instant stream id has been configured for this wrapper.",
         recovery: "Initialize @StreamChunks with a stream id, or pass one to subscribe(_:using:)."
       )
-      loadError = error
-      throw error
     }
-    return try await subscribe(streamID, limit: configuration.limit, using: client)
+    return try await makeSubscription(streamID, limit: configuration.limit, using: client)
   }
 
   public func subscribe(
@@ -5869,26 +5911,38 @@ public struct StreamChunks: Sendable {
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<[InstantStreamChunk]> {
     configuration.set(streamID: streamID, limit: limit)
+    loadError = nil
     do {
-      try Self.validateLimit(limit, operation: "subscribe StreamChunks")
-      try Task.checkCancellation()
-      loadError = nil
-      return try await client.subscribeStreamChunks(streamID: streamID, limit: limit)
+      return try await makeSubscription(streamID, limit: limit, using: client)
     } catch let error as CancellationError {
       loadError = nil
       throw error
     } catch let error as InstantError {
       loadError = error
       throw error
+    }
+  }
+
+  private func makeSubscription(
+    _ streamID: String,
+    limit: Int? = nil,
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[InstantStreamChunk]> {
+    do {
+      try Self.validateLimit(limit, operation: "subscribe StreamChunks")
+      try Task.checkCancellation()
+      return try await client.subscribeStreamChunks(streamID: streamID, limit: limit)
+    } catch let error as CancellationError {
+      throw error
+    } catch let error as InstantError {
+      throw error
     } catch {
-      let error = InstantError(
+      throw InstantError(
         code: .implementationFailed,
         operation: "subscribe StreamChunks",
         message: String(describing: error),
         recovery: "Inspect the configured InstantSwiftDataClient stream chunks observer."
       )
-      loadError = error
-      throw error
     }
   }
 
@@ -5912,38 +5966,12 @@ public struct StreamChunks: Sendable {
   }
 
   public func task(using client: InstantSwiftDataClient) async throws {
-    isLoading = true
-    do {
-      let subscription = try await subscribe(using: client)
-      defer { subscription.cancel() }
-      for try await value in subscription {
-        try Task.checkCancellation()
-        wrappedValue = value
-        loadError = nil
-        isLoading = false
-      }
-      try Task.checkCancellation()
-      loadError = nil
-      isLoading = false
-    } catch let error as CancellationError {
-      loadError = nil
-      isLoading = false
-      throw error
-    } catch let error as InstantError {
-      loadError = error
-      isLoading = false
-      throw error
-    } catch {
-      let error = InstantError(
-        code: .implementationFailed,
-        operation: "observe StreamChunks",
-        message: String(describing: error),
-        recovery: "Inspect the configured InstantSwiftDataClient stream chunks observer."
-      )
-      loadError = error
-      isLoading = false
-      throw error
-    }
+    try await runFetchStorageSubscriptionTask(
+      storage: storage,
+      subscribe: { try await makeSubscription(using: client) },
+      operation: "observe StreamChunks",
+      recovery: "Inspect the configured InstantSwiftDataClient stream chunks observer."
+    )
   }
 
   private static func validateLimit(_ limit: Int?, operation: String) throws {
@@ -6042,25 +6070,35 @@ public struct Shares: Sendable {
   public func subscribe(
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<[InstantShareSnapshot]> {
+    loadError = nil
     do {
-      try Task.checkCancellation()
-      loadError = nil
-      return try await client.subscribeShares()
+      return try await makeSubscription(using: client)
     } catch let error as CancellationError {
       loadError = nil
       throw error
     } catch let error as InstantError {
       loadError = error
       throw error
+    }
+  }
+
+  private func makeSubscription(
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<[InstantShareSnapshot]> {
+    do {
+      try Task.checkCancellation()
+      return try await client.subscribeShares()
+    } catch let error as CancellationError {
+      throw error
+    } catch let error as InstantError {
+      throw error
     } catch {
-      let error = InstantError(
+      throw InstantError(
         code: .implementationFailed,
         operation: "subscribe Shares",
         message: String(describing: error),
         recovery: "Inspect the configured InstantSwiftDataClient shares observer."
       )
-      loadError = error
-      throw error
     }
   }
 
@@ -6070,38 +6108,12 @@ public struct Shares: Sendable {
   }
 
   public func task(using client: InstantSwiftDataClient) async throws {
-    isLoading = true
-    do {
-      let subscription = try await subscribe(using: client)
-      defer { subscription.cancel() }
-      for try await value in subscription {
-        try Task.checkCancellation()
-        wrappedValue = value
-        loadError = nil
-        isLoading = false
-      }
-      try Task.checkCancellation()
-      loadError = nil
-      isLoading = false
-    } catch let error as CancellationError {
-      loadError = nil
-      isLoading = false
-      throw error
-    } catch let error as InstantError {
-      loadError = error
-      isLoading = false
-      throw error
-    } catch {
-      let error = InstantError(
-        code: .implementationFailed,
-        operation: "observe Shares",
-        message: String(describing: error),
-        recovery: "Inspect the configured InstantSwiftDataClient shares observer."
-      )
-      loadError = error
-      isLoading = false
-      throw error
-    }
+    try await runFetchStorageSubscriptionTask(
+      storage: storage,
+      subscribe: { try await makeSubscription(using: client) },
+      operation: "observe Shares",
+      recovery: "Inspect the configured InstantSwiftDataClient shares observer."
+    )
   }
 }
 

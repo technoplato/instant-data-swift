@@ -688,9 +688,10 @@ struct BootstrapTests {
       "fetch-all-cached-prior-error",
       "fetch-all-cancellation",
       "fetch-request-cancellation",
+      "live-wrapper-dynamic-cancellation",
     ])
-    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 21))
-    expectNoDifference(result.evidence.map(\.appID), Array(repeating: result.appID, count: 21))
+    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 22))
+    expectNoDifference(result.evidence.map(\.appID), Array(repeating: result.appID, count: 22))
     expectNoDifference(result.evidence.map(\.details.adapter), [
       "@FetchAll",
       "@FetchOne",
@@ -713,6 +714,7 @@ struct BootstrapTests {
       "@FetchAll(error)",
       "@FetchAll(cancellation)",
       "@Fetch(request cancellation)",
+      "@RoomPresence(dynamic cancellation)",
     ])
 
     let fetchAll = try #require(result.evidence.first?.details)
@@ -820,6 +822,14 @@ struct BootstrapTests {
     expectNoDifference(requestCancellation.queryCount, 0)
     expectNoDifference(requestCancellation.observationCount, 1)
     expectNoDifference(requestCancellation.cancellationTerminated, true)
+
+    let liveWrapperCancellation = try #require(
+      result.evidence.first { $0.event == "live-wrapper-dynamic-cancellation" }?.details
+    )
+    expectNoDifference(liveWrapperCancellation.roomMemberIDs, ["presence-second-live-room"])
+    expectNoDifference(liveWrapperCancellation.observationCount, 2)
+    expectNoDifference(liveWrapperCancellation.cancellationTerminated, true)
+    expectNoDifference(liveWrapperCancellation.isLoading, false)
 
     let stream = try #require(result.evidence.first { $0.event == "stream-chunks" }?.details)
     expectNoDifference(stream.streamChunkIDs, ["platform-adapter-validation-id"])
@@ -1886,6 +1896,51 @@ struct BootstrapTests {
     } catch {
       Issue.record("Expected CancellationError, got \(error).")
     }
+  }
+
+  @Test
+  func roomPresencePropertyWrapperTaskCancellationAfterObserveCancelsReturnedSubscription()
+    async throws
+  {
+    let gate = AuthSessionLoadGate()
+    let termination = RoomObservationTermination()
+    let client = roomClient(
+      observeRoomPresence: { room in
+        await gate.recordStarted()
+        await gate.waitUntilReleased()
+        return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield([mockRoomPresenceMember(room: room, userID: "user-1")])
+          continuation.onTermination = { @Sendable _ in
+            Task {
+              await termination.record()
+            }
+          }
+        }
+      }
+    )
+    let presence = RoomPresence("chat", "lobby")
+
+    let task = Task {
+      let presence = presence
+      try await presence.task(using: client)
+    }
+
+    await gate.waitUntilStarted()
+    task.cancel()
+    await gate.release()
+
+    do {
+      try await task.value
+      Issue.record("Expected @RoomPresence task cancellation to throw CancellationError.")
+    } catch is CancellationError {
+    } catch {
+      Issue.record("Expected CancellationError, got \(error).")
+    }
+
+    await termination.wait()
+    expectNoDifference(presence.wrappedValue, [])
+    expectNoDifference(presence.loadError, nil)
+    expectNoDifference(presence.isLoading, false)
   }
 
   @Test

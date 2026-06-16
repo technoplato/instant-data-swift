@@ -2070,7 +2070,7 @@ public enum InstantSwiftDataParityCoverage {
       swiftTestName: "platformAdapterValidationProvesWrappersBindLocalRuntime",
       surface: "adapter-bindings",
       status: .adapted,
-      notes: "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares."
+      notes: "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares, plus dynamic live wrapper replacement/cancellation evidence."
     ),
     sqlite(
       id: "sqlite.draft.macro-generation",

@@ -8568,9 +8568,9 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.event, "parity-report")
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 223)
+    expectNoDifference(jsonOutput.recordCount, 225)
     expectNoDifference(jsonOutput.exactCount, 28)
-    expectNoDifference(jsonOutput.adaptedCount, 191)
+    expectNoDifference(jsonOutput.adaptedCount, 193)
     expectNoDifference(jsonOutput.blockedCount, 3)
     expectNoDifference(jsonOutput.notApplicableCount, 1)
     #expect(
@@ -9328,7 +9328,7 @@ extension InstantStoreTests {
     expectNoDifference(platformAdapterBinding.status, "adapted")
     expectNoDifference(
       platformAdapterBinding.notes,
-      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares."
+      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares, plus dynamic live wrapper replacement/cancellation evidence."
     )
     #expect(
       jsonOutput.records.contains {
@@ -9404,7 +9404,7 @@ extension InstantStoreTests {
     expectNoDifference(platformAdapterBindingEvidence.details.status, "adapted")
     expectNoDifference(
       platformAdapterBindingEvidence.details.notes,
-      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares."
+      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares, plus dynamic live wrapper replacement/cancellation evidence."
     )
     let blockedEvidence = try JSONDecoder().decode(
       CLIParityCoverageEvidence.self,
@@ -9415,9 +9415,9 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "parity"], homeURL: homeURL)
     #expect(humanOutput.contains("parity coverage: incomplete"))
-    #expect(humanOutput.contains("records: 223"))
+    #expect(humanOutput.contains("records: 225"))
     #expect(humanOutput.contains("exact: 28"))
-    #expect(humanOutput.contains("adapted: 191"))
+    #expect(humanOutput.contains("adapted: 193"))
     #expect(humanOutput.contains("blocked: 3"))
     #expect(humanOutput.contains("not applicable: 1"))
   }
@@ -9438,13 +9438,13 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.event, "coverage")
     expectNoDifference(jsonOutput.ok, false)
     expectNoDifference(jsonOutput.coverageComplete, false)
-    expectNoDifference(jsonOutput.recordCount, 223)
+    expectNoDifference(jsonOutput.recordCount, 225)
     expectNoDifference(jsonOutput.exactCount, 28)
-    expectNoDifference(jsonOutput.adaptedCount, 191)
+    expectNoDifference(jsonOutput.adaptedCount, 193)
     expectNoDifference(jsonOutput.blockedCount, 3)
     expectNoDifference(jsonOutput.notApplicableCount, 1)
     #expect(jsonOutput.sourceFileCount > 0)
-    expectNoDifference(jsonOutput.swiftFileCount, 22)
+    expectNoDifference(jsonOutput.swiftFileCount, 23)
     expectNoDifference(
       jsonOutput.blockedIDs,
       [
@@ -9469,7 +9469,7 @@ extension InstantStoreTests {
 
     let humanOutput = try runCLI(["validation", "coverage"], homeURL: homeURL)
     #expect(humanOutput.contains("validation coverage: incomplete"))
-    #expect(humanOutput.contains("records: 223"))
+    #expect(humanOutput.contains("records: 225"))
     #expect(humanOutput.contains("blocked: 3"))
   }
 

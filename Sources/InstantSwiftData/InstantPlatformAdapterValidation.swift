@@ -581,6 +581,13 @@ public enum InstantSwiftDataPlatformAdapterValidation {
         timestamp: timestamp
       )
     )
+    evidence.append(
+      try await validateLiveWrapperDynamicCancellation(
+        appID: appID,
+        cacheURL: cacheURL,
+        timestamp: timestamp
+      )
+    )
 
     return PlatformAdapterValidationResult(appID: appID, cacheURL: cacheURL, evidence: evidence)
   }
@@ -1439,6 +1446,105 @@ public enum InstantSwiftDataPlatformAdapterValidation {
     )
   }
 
+  private static func validateLiveWrapperDynamicCancellation(
+    appID: String,
+    cacheURL: URL,
+    timestamp: @escaping @Sendable () -> InstantTimestamp
+  ) async throws -> ValidationEvidenceRow<PlatformAdapterValidationDetails> {
+    let firstRoom = InstantRoomHandle(type: "validation", id: "first-live-room")
+    let secondRoom = InstantRoomHandle(type: "validation", id: "second-live-room")
+    let recorder = PlatformAdapterLiveWrapperLifecycleRecorder(
+      appID: appID,
+      updatedAt: timestamp(),
+      delayFirstObservation: true
+    )
+    let client = liveWrapperLifecycleClient(recorder)
+    let presence = RoomPresence(room: firstRoom)
+    let firstTask = Task {
+      let presence = presence
+      try await presence.task(using: client)
+    }
+
+    try await waitForLifecycle(
+      operation: "wait for platform adapter live wrapper first observation"
+    ) {
+      let counts = await recorder.counts()
+      return counts.observationCount == 1
+    }
+
+    let secondTask = Task {
+      let presence = presence
+      try await presence.task(room: secondRoom, using: client)
+    }
+
+    try await waitForLifecycle(
+      operation: "wait for platform adapter live wrapper replacement"
+    ) {
+      let counts = await recorder.counts()
+      return counts.observationCount == 2
+        && presence.wrappedValue.map(\.userID) == ["presence-second-live-room"]
+    }
+
+    await recorder.releaseFirstObservation()
+    do {
+      try await firstTask.value
+      throw validationFailure(
+        operation: "validate platform adapter live wrapper replacement",
+        message: "Expected replacing an active live wrapper task to cancel the first subscription."
+      )
+    } catch is CancellationError {
+    }
+
+    secondTask.cancel()
+    do {
+      try await secondTask.value
+      throw validationFailure(
+        operation: "validate platform adapter live wrapper cancellation",
+        message: "Expected the replacement live wrapper task to surface cancellation."
+      )
+    } catch is CancellationError {
+    }
+
+    try await waitForLifecycle(
+      operation: "wait for platform adapter live wrapper final cancellation"
+    ) {
+      let counts = await recorder.counts()
+      return counts.terminationCount >= 2
+    }
+
+    let counts = await recorder.counts()
+    let observedRooms = await recorder.observedRooms()
+    let cancellationTerminated = counts.terminationCount >= 2
+    guard
+      observedRooms == [firstRoom, secondRoom],
+      counts.observationCount == 2,
+      cancellationTerminated,
+      presence.wrappedValue.map(\.userID) == ["presence-second-live-room"],
+      presence.loadError == nil,
+      presence.isLoading == false
+    else {
+      throw validationFailure(
+        operation: "validate platform adapter live wrapper lifecycle",
+        message:
+          "Expected a dynamic @RoomPresence task to replace its active subscription cleanly."
+      )
+    }
+
+    return evidenceRow(
+      event: "live-wrapper-dynamic-cancellation",
+      appID: appID,
+      timestamp: timestamp,
+      details: PlatformAdapterValidationDetails(
+        cachePath: cacheURL.path,
+        adapter: "@RoomPresence(dynamic cancellation)",
+        roomMemberIDs: presence.wrappedValue.map(\.userID),
+        observationCount: counts.observationCount,
+        isLoading: presence.isLoading,
+        cancellationTerminated: cancellationTerminated
+      )
+    )
+  }
+
   private static func evidenceRow(
     event: String,
     appID: String,
@@ -1497,6 +1603,31 @@ public enum InstantSwiftDataPlatformAdapterValidation {
       },
       pendingMutations: { [] },
       localID: { name in "adapter-lifecycle-\(name)" }
+    )
+  }
+
+  private static func liveWrapperLifecycleClient(
+    _ recorder: PlatformAdapterLiveWrapperLifecycleRecorder
+  ) -> InstantSwiftDataClient {
+    InstantSwiftDataClient(
+      transact: { transaction in
+        InstantStoreMutationResult(
+          transactionID: transaction.id,
+          changedEntityIDs: [],
+          tripleCount: transaction.operations.count,
+          emissions: []
+        )
+      },
+      query: { _ in [] },
+      observe: { _ in AsyncStream { continuation in continuation.finish() } },
+      pendingMutations: { [] },
+      localID: { name in "adapter-live-wrapper-\(name)" },
+      roomPresence: { room in
+        await recorder.roomPresence(room: room)
+      },
+      observeRoomPresence: { room in
+        await recorder.observeRoomPresence(room: room)
+      }
     )
   }
 
@@ -1624,6 +1755,86 @@ private actor PlatformAdapterLifecycleRecorder {
 
   private func recordTermination() {
     terminationCount += 1
+  }
+}
+
+private actor PlatformAdapterLiveWrapperLifecycleRecorder {
+  private let appID: String
+  private let updatedAt: InstantTimestamp
+  private let delayFirstObservation: Bool
+  private var observationCount = 0
+  private var terminationCount = 0
+  private var rooms: [InstantRoomHandle] = []
+  private var didReleaseFirstObservation = false
+  private var firstObservationContinuations: [CheckedContinuation<Void, Never>] = []
+
+  init(
+    appID: String,
+    updatedAt: InstantTimestamp,
+    delayFirstObservation: Bool = false
+  ) {
+    self.appID = appID
+    self.updatedAt = updatedAt
+    self.delayFirstObservation = delayFirstObservation
+  }
+
+  func roomPresence(room: InstantRoomHandle) -> [InstantRoomPresenceMember] {
+    [member(room: room)]
+  }
+
+  func observeRoomPresence(room: InstantRoomHandle) async -> AsyncStream<[InstantRoomPresenceMember]> {
+    observationCount += 1
+    rooms.append(room)
+    if delayFirstObservation, room.id == "first-live-room" {
+      await waitForFirstObservationRelease()
+    }
+    let members = [member(room: room)]
+    return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+      continuation.yield(members)
+      continuation.onTermination = { @Sendable _ in
+        Task {
+          await self.recordTermination()
+        }
+      }
+    }
+  }
+
+  func counts() -> (observationCount: Int, terminationCount: Int) {
+    (observationCount, terminationCount)
+  }
+
+  func observedRooms() -> [InstantRoomHandle] {
+    rooms
+  }
+
+  func releaseFirstObservation() {
+    didReleaseFirstObservation = true
+    let continuations = firstObservationContinuations
+    firstObservationContinuations.removeAll()
+    for continuation in continuations {
+      continuation.resume()
+    }
+  }
+
+  private func waitForFirstObservationRelease() async {
+    guard !didReleaseFirstObservation else { return }
+    await withCheckedContinuation { continuation in
+      firstObservationContinuations.append(continuation)
+    }
+  }
+
+  private func recordTermination() {
+    terminationCount += 1
+  }
+
+  private func member(room: InstantRoomHandle) -> InstantRoomPresenceMember {
+    InstantRoomPresenceMember(
+      appID: appID,
+      room: room,
+      userID: "presence-\(room.id)",
+      values: ["room": .string(room.id)],
+      updatedAt: updatedAt
+    )
   }
 }
 
