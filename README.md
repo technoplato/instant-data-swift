@@ -447,8 +447,14 @@ swift run instant-swift-data auth token local-refresh --user-id user-1 --json
 swift run instant-swift-data streams append chat/lobby --value '{"text":"hello"}' --json
 swift run instant-swift-data streams append chat/lobby --value '{"text":"again"}' --json
 swift run instant-swift-data streams read chat/lobby --limit 2 --json
+swift run instant-swift-data streams read chat/lobby --after-index 0 --json
 swift run instant-swift-data streams watch chat/lobby --events 1 --jsonl
+swift run instant-swift-data streams watch chat/lobby --after-index 0 --events 1 --jsonl
 ```
+
+`--after-index` resumes the local JSON chunk ledger after a previously emitted
+chunk index; upstream byte-offset stream transport remains a separate live
+transport slice.
 
 Create, accept, promote, demote, and revoke a local share with two users:
 
@@ -864,7 +870,7 @@ try await $messages.load()
 @StoredFiles var files: [InstantStoredFile]
 try await $files.load()
 
-@StreamChunks("chat/lobby", limit: 10) var chunks: [InstantStreamChunk]
+@StreamChunks("chat/lobby", limit: 10, afterIndex: 0) var chunks: [InstantStreamChunk]
 try await $chunks.load()
 
 @Shares var shares: [InstantShareSnapshot]

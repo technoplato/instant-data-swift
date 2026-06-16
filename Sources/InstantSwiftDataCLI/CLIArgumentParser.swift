@@ -2231,20 +2231,34 @@ public struct CLIStreamAppendInvocation: Equatable, Sendable {
 public struct CLIStreamReadInvocation: Equatable, Sendable {
   public var streamID: String
   public var limit: Int?
+  public var afterIndex: Int64?
 
-  public init(streamID: String, limit: Int? = nil) {
+  public init(streamID: String, limit: Int? = nil, afterIndex: Int64? = nil) {
     self.streamID = streamID
     self.limit = limit
+    self.afterIndex = afterIndex
+  }
+}
+
+public struct CLIStreamWatchOptionsInvocation: Equatable, Sendable {
+  public var eventCount: Int
+  public var afterIndex: Int64?
+
+  public init(eventCount: Int = 1, afterIndex: Int64? = nil) {
+    self.eventCount = eventCount
+    self.afterIndex = afterIndex
   }
 }
 
 public struct CLIStreamWatchInvocation: Equatable, Sendable {
   public var streamID: String
   public var eventCount: Int
+  public var afterIndex: Int64?
 
-  public init(streamID: String, eventCount: Int = 1) {
+  public init(streamID: String, eventCount: Int = 1, afterIndex: Int64? = nil) {
     self.streamID = streamID
     self.eventCount = eventCount
+    self.afterIndex = afterIndex
   }
 }
 
@@ -2252,16 +2266,16 @@ public enum CLIStreamsUsage {
   public static let streams = """
     Usage: instant-swift-data streams <append|read|watch>
       instant-swift-data streams append <stream-id> --value '{...}' [--json|--jsonl]
-      instant-swift-data streams read <stream-id> [--limit n] [--json|--jsonl]
-      instant-swift-data streams watch <stream-id> [--events 1] [--json|--jsonl]
+      instant-swift-data streams read <stream-id> [--limit n] [--after-index n] [--json|--jsonl]
+      instant-swift-data streams watch <stream-id> [--events 1] [--after-index n] [--json|--jsonl]
     """
 
   public static let append =
     "Usage: instant-swift-data streams append <stream-id> --value '{...}' [--json|--jsonl]"
   public static let read =
-    "Usage: instant-swift-data streams read <stream-id> [--limit n] [--json|--jsonl]"
+    "Usage: instant-swift-data streams read <stream-id> [--limit n] [--after-index n] [--json|--jsonl]"
   public static let watch =
-    "Usage: instant-swift-data streams watch <stream-id> [--events 1] [--json|--jsonl]"
+    "Usage: instant-swift-data streams watch <stream-id> [--events 1] [--after-index n] [--json|--jsonl]"
 }
 
 public enum CLIStreamsArgumentError: Error, Equatable, Sendable {
@@ -2271,6 +2285,7 @@ public enum CLIStreamsArgumentError: Error, Equatable, Sendable {
   case missingValue(option: String, usage: String)
   case missingRequiredOption(option: String, usage: String)
   case invalidLimit(String, usage: String)
+  case invalidAfterIndex(String, usage: String)
   case invalidEventCount(String, usageCommand: String)
   case unknownOption(domain: String, option: String, usage: String)
 
@@ -5803,6 +5818,7 @@ public struct CLIStreamReadParser: Parser {
   public func parse(_ input: inout ArraySlice<String>) throws -> CLIStreamReadInvocation {
     let streamID = try parseRequiredStreamArgument(from: &input, usage: CLIStreamsUsage.read)
     var limit: Int?
+    var afterIndex: Int64?
     while let option = input.first {
       input.removeFirst()
       switch option {
@@ -5817,6 +5833,17 @@ public struct CLIStreamReadParser: Parser {
         }
         limit = parsed
 
+      case "--after-index":
+        let value = try parseStreamOptionValue(
+          from: &input,
+          option: option,
+          usage: CLIStreamsUsage.read
+        )
+        guard let parsed = Int64(value), parsed >= 0 else {
+          throw CLIStreamsArgumentError.invalidAfterIndex(value, usage: CLIStreamsUsage.read)
+        }
+        afterIndex = parsed
+
       default:
         throw CLIStreamsArgumentError.unknownOption(
           domain: "streams read",
@@ -5825,7 +5852,7 @@ public struct CLIStreamReadParser: Parser {
         )
       }
     }
-    return CLIStreamReadInvocation(streamID: streamID, limit: limit)
+    return CLIStreamReadInvocation(streamID: streamID, limit: limit, afterIndex: afterIndex)
   }
 }
 
@@ -5834,8 +5861,12 @@ public struct CLIStreamWatchParser: Parser {
 
   public func parse(_ input: inout ArraySlice<String>) throws -> CLIStreamWatchInvocation {
     let streamID = try parseRequiredStreamArgument(from: &input, usage: CLIStreamsUsage.watch)
-    let eventCount = try CLIStreamWatchOptionsParser().parse(&input)
-    return CLIStreamWatchInvocation(streamID: streamID, eventCount: eventCount)
+    let options = try CLIStreamWatchInvocationOptionsParser().parse(&input)
+    return CLIStreamWatchInvocation(
+      streamID: streamID,
+      eventCount: options.eventCount,
+      afterIndex: options.afterIndex
+    )
   }
 }
 
@@ -5843,8 +5874,18 @@ public struct CLIStreamWatchOptionsParser: Parser {
   public init() {}
 
   public func parse(_ input: inout ArraySlice<String>) throws -> Int {
+    let options = try CLIStreamWatchInvocationOptionsParser().parse(&input)
+    return options.eventCount
+  }
+}
+
+public struct CLIStreamWatchInvocationOptionsParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIStreamWatchOptionsInvocation {
     let usageCommand = "instant-swift-data streams watch <stream-id>"
     var eventCount = 1
+    var afterIndex: Int64?
 
     while let option = input.first {
       input.removeFirst()
@@ -5860,6 +5901,17 @@ public struct CLIStreamWatchOptionsParser: Parser {
         }
         eventCount = parsed
 
+      case "--after-index":
+        let value = try parseStreamOptionValue(
+          from: &input,
+          option: option,
+          usage: CLIStreamsUsage.watch
+        )
+        guard let parsed = Int64(value), parsed >= 0 else {
+          throw CLIStreamsArgumentError.invalidAfterIndex(value, usage: CLIStreamsUsage.watch)
+        }
+        afterIndex = parsed
+
       default:
         throw CLIStreamsArgumentError.unknownOption(
           domain: "streams watch",
@@ -5869,7 +5921,7 @@ public struct CLIStreamWatchOptionsParser: Parser {
       }
     }
 
-    return eventCount
+    return CLIStreamWatchOptionsInvocation(eventCount: eventCount, afterIndex: afterIndex)
   }
 }
 
@@ -9003,6 +9055,9 @@ extension CLIStreamsArgumentError: CustomStringConvertible {
 
     case let .invalidLimit(value, usage):
       return "Invalid --limit value: \(value). \(usage)"
+
+    case let .invalidAfterIndex(value, usage):
+      return "Invalid --after-index value: \(value). \(usage)"
 
     case let .invalidEventCount(_, usageCommand):
       return "Usage: \(usageCommand) --events 1"

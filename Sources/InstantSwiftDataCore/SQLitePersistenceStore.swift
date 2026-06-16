@@ -889,7 +889,8 @@ public actor SQLitePersistenceStore {
   public func loadStreamChunks(
     appID: String,
     streamID: String,
-    limit: Int? = nil
+    limit: Int? = nil,
+    afterIndex: Int64? = nil
   ) throws -> [InstantStreamChunk] {
     var sql =
       """
@@ -898,6 +899,15 @@ public actor SQLitePersistenceStore {
       ORDER BY chunk_index, chunk_id
       """
     var bindings: [SQLiteBinding] = [.text(appID), .text(streamID)]
+    if let afterIndex {
+      sql =
+        """
+        SELECT json FROM instant_stream_chunks
+        WHERE app_id = ? AND stream_id = ? AND chunk_index > ?
+        ORDER BY chunk_index, chunk_id
+        """
+      bindings.append(.int(afterIndex))
+    }
     if let limit {
       sql.append("\nLIMIT ?")
       bindings.append(.int(Int64(limit)))

@@ -92,9 +92,9 @@ public struct InstantSwiftDataClient: Sendable {
   private var appendStreamChunkOperation:
     @Sendable (String, JSONValue) async throws -> InstantStreamChunk
   private var streamChunksOperation:
-    @Sendable (String, Int?) async throws -> [InstantStreamChunk]
+    @Sendable (String, Int?, Int64?) async throws -> [InstantStreamChunk]
   private var observeStreamChunksOperation:
-    @Sendable (String) async throws -> AsyncStream<[InstantStreamChunk]>
+    @Sendable (String, Int64?) async throws -> AsyncStream<[InstantStreamChunk]>
   private var createShareOperation:
     @Sendable (String, String) async throws -> InstantShareSnapshot
   private var acceptShareOperation: @Sendable (String) async throws -> InstantShareSnapshot
@@ -243,11 +243,11 @@ public struct InstantSwiftDataClient: Sendable {
     self.appendStreamChunkOperation = { streamID, payload in
       try await runtime.appendStreamChunk(streamID: streamID, payload: payload)
     }
-    self.streamChunksOperation = { streamID, limit in
-      try await runtime.streamChunks(streamID: streamID, limit: limit)
+    self.streamChunksOperation = { streamID, limit, afterIndex in
+      try await runtime.streamChunks(streamID: streamID, limit: limit, afterIndex: afterIndex)
     }
-    self.observeStreamChunksOperation = { streamID in
-      try await runtime.observeStreamChunks(streamID: streamID)
+    self.observeStreamChunksOperation = { streamID, afterIndex in
+      try await runtime.observeStreamChunks(streamID: streamID, afterIndex: afterIndex)
     }
     self.createShareOperation = { rootNamespace, rootID in
       try await runtime.createShare(rootNamespace: rootNamespace, rootID: rootID)
@@ -342,6 +342,10 @@ public struct InstantSwiftDataClient: Sendable {
       (@Sendable (String, Int?) async throws -> [InstantStreamChunk])? = nil,
     observeStreamChunks:
       (@Sendable (String) async throws -> AsyncStream<[InstantStreamChunk]>)? = nil,
+    streamChunksAfterIndex:
+      (@Sendable (String, Int?, Int64?) async throws -> [InstantStreamChunk])? = nil,
+    observeStreamChunksAfterIndex:
+      (@Sendable (String, Int64?) async throws -> AsyncStream<[InstantStreamChunk]>)? = nil,
     createShare:
       (@Sendable (String, String) async throws -> InstantShareSnapshot)? = nil,
     acceptShare:
@@ -400,6 +404,8 @@ public struct InstantSwiftDataClient: Sendable {
       appendStreamChunk: appendStreamChunk,
       streamChunks: streamChunks,
       observeStreamChunks: observeStreamChunks,
+      streamChunksAfterIndex: streamChunksAfterIndex,
+      observeStreamChunksAfterIndex: observeStreamChunksAfterIndex,
       createShare: createShare,
       acceptShare: acceptShare,
       shares: shares,
@@ -484,6 +490,10 @@ public struct InstantSwiftDataClient: Sendable {
       (@Sendable (String, Int?) async throws -> [InstantStreamChunk])? = nil,
     observeStreamChunks:
       (@Sendable (String) async throws -> AsyncStream<[InstantStreamChunk]>)? = nil,
+    streamChunksAfterIndex:
+      (@Sendable (String, Int?, Int64?) async throws -> [InstantStreamChunk])? = nil,
+    observeStreamChunksAfterIndex:
+      (@Sendable (String, Int64?) async throws -> AsyncStream<[InstantStreamChunk]>)? = nil,
     createShare:
       (@Sendable (String, String) async throws -> InstantShareSnapshot)? = nil,
     acceptShare:
@@ -640,8 +650,27 @@ public struct InstantSwiftDataClient: Sendable {
     self.storedFileContentsOperation = storedFileContents ?? { _ in throw filesError }
     self.deleteStoredFileOperation = deleteStoredFile ?? { _ in throw filesError }
     self.appendStreamChunkOperation = appendStreamChunk ?? { _, _ in throw streamsError }
-    self.streamChunksOperation = streamChunks ?? { _, _ in throw streamsError }
-    self.observeStreamChunksOperation = observeStreamChunks ?? { _ in throw streamsError }
+    if let streamChunksAfterIndex {
+      self.streamChunksOperation = streamChunksAfterIndex
+    } else if let streamChunks {
+      self.streamChunksOperation = { streamID, limit, afterIndex in
+        let chunks = try await streamChunks(streamID, afterIndex == nil ? limit : nil)
+        return Self.streamChunks(chunks, limit: limit, afterIndex: afterIndex)
+      }
+    } else {
+      self.streamChunksOperation = { _, _, _ in throw streamsError }
+    }
+    if let observeStreamChunksAfterIndex {
+      self.observeStreamChunksOperation = observeStreamChunksAfterIndex
+    } else if let observeStreamChunks {
+      self.observeStreamChunksOperation = { streamID, afterIndex in
+        let stream = try await observeStreamChunks(streamID)
+        guard let afterIndex else { return stream }
+        return Self.streamChunks(after: afterIndex, from: stream)
+      }
+    } else {
+      self.observeStreamChunksOperation = { _, _ in throw streamsError }
+    }
     self.createShareOperation = createShare ?? { _, _ in throw sharesError }
     self.acceptShareOperation = acceptShare ?? { _ in throw sharesError }
     self.sharesOperation = shares ?? { throw sharesError }
@@ -649,6 +678,37 @@ public struct InstantSwiftDataClient: Sendable {
     self.updateShareMembershipRoleOperation =
       updateShareMembershipRole ?? { _, _, _ in throw sharesError }
     self.revokeShareOperation = revokeShare ?? { _ in throw sharesError }
+  }
+
+  private static func streamChunks(
+    _ chunks: [InstantStreamChunk],
+    limit: Int?,
+    afterIndex: Int64?
+  ) -> [InstantStreamChunk] {
+    let resumed = afterIndex.map { index in
+      chunks.filter { $0.index > index }
+    } ?? chunks
+    if let limit {
+      return Array(resumed.prefix(limit))
+    }
+    return resumed
+  }
+
+  private static func streamChunks(
+    after afterIndex: Int64,
+    from stream: AsyncStream<[InstantStreamChunk]>
+  ) -> AsyncStream<[InstantStreamChunk]> {
+    let mapped = AsyncStream<[InstantStreamChunk]>.makeStream(bufferingPolicy: .bufferingNewest(1))
+    let task = Task {
+      for await chunks in stream {
+        mapped.continuation.yield(streamChunks(chunks, limit: nil, afterIndex: afterIndex))
+      }
+      mapped.continuation.finish()
+    }
+    mapped.continuation.onTermination = { @Sendable _ in
+      task.cancel()
+    }
+    return mapped.stream
   }
 
   public static func unimplemented(_ message: String) -> Self {
@@ -778,10 +838,10 @@ public struct InstantSwiftDataClient: Sendable {
       appendStreamChunk: { _, _ in
         throw error
       },
-      streamChunks: { _, _ in
+      streamChunksAfterIndex: { _, _, _ in
         throw error
       },
-      observeStreamChunks: { _ in
+      observeStreamChunksAfterIndex: { _, _ in
         throw error
       },
       createShare: { _, _ in
@@ -1120,27 +1180,45 @@ public struct InstantSwiftDataClient: Sendable {
 
   public func streamChunks(
     streamID: String,
-    limit: Int? = nil
+    limit: Int? = nil,
+    afterIndex: Int64? = nil
   ) async throws -> [InstantStreamChunk] {
-    try await streamChunksOperation(streamID, limit)
+    try validateNonNegativeIndex(
+      afterIndex,
+      operation: "read stream chunks",
+      subject: "Stream chunk"
+    )
+    return try await streamChunksOperation(streamID, limit, afterIndex)
   }
 
   public func observeStreamChunks(
-    streamID: String
+    streamID: String,
+    afterIndex: Int64? = nil
   ) async throws -> AsyncStream<[InstantStreamChunk]> {
-    try await observeStreamChunksOperation(streamID)
+    try validateNonNegativeIndex(
+      afterIndex,
+      operation: "observe stream chunks",
+      subject: "Stream chunk"
+    )
+    return try await observeStreamChunksOperation(streamID, afterIndex)
   }
 
   public func subscribeStreamChunks(
     streamID: String,
-    limit: Int? = nil
+    limit: Int? = nil,
+    afterIndex: Int64? = nil
   ) async throws -> FetchSubscription<[InstantStreamChunk]> {
     try validateNonNegativeLimit(
       limit,
       operation: "subscribe stream chunks",
       subject: "Stream chunk"
     )
-    let chunks = try await observeStreamChunks(streamID: streamID)
+    try validateNonNegativeIndex(
+      afterIndex,
+      operation: "subscribe stream chunks",
+      subject: "Stream chunk"
+    )
+    let chunks = try await observeStreamChunks(streamID: streamID, afterIndex: afterIndex)
     try Task.checkCancellation()
     let subscription = fetchSubscription(from: chunks)
     if let limit {
@@ -1418,6 +1496,20 @@ private func validateNonNegativeLimit(
     operation: operation,
     message: "\(subject) limit must be greater than or equal to 0.",
     recovery: "Pass a non-negative limit, or omit limit to observe every local value."
+  )
+}
+
+private func validateNonNegativeIndex(
+  _ index: Int64?,
+  operation: String,
+  subject: String
+) throws {
+  guard let index, index < 0 else { return }
+  throw InstantError(
+    code: .validationFailed,
+    operation: operation,
+    message: "\(subject) index must be greater than or equal to 0.",
+    recovery: "Pass a previously emitted index, or omit the cursor to observe every local value."
   )
 }
 
@@ -6091,6 +6183,7 @@ public struct StoredFiles: Sendable {
 private struct StreamChunksConfiguration: Sendable {
   var streamID: String?
   var limit: Int?
+  var afterIndex: Int64?
 }
 
 // SAFETY: stream chunk configuration is protected by `lock`.
@@ -6098,8 +6191,12 @@ private final class StreamChunksConfigurationStorage: @unchecked Sendable {
   private let lock = NSLock()
   private var configuration: StreamChunksConfiguration
 
-  init(streamID: String?, limit: Int?) {
-    self.configuration = StreamChunksConfiguration(streamID: streamID, limit: limit)
+  init(streamID: String?, limit: Int?, afterIndex: Int64?) {
+    self.configuration = StreamChunksConfiguration(
+      streamID: streamID,
+      limit: limit,
+      afterIndex: afterIndex
+    )
   }
 
   var value: StreamChunksConfiguration {
@@ -6114,8 +6211,8 @@ private final class StreamChunksConfigurationStorage: @unchecked Sendable {
     self.configuration = configuration
   }
 
-  func set(streamID: String, limit: Int?) {
-    set(StreamChunksConfiguration(streamID: streamID, limit: limit))
+  func set(streamID: String, limit: Int?, afterIndex: Int64?) {
+    set(StreamChunksConfiguration(streamID: streamID, limit: limit, afterIndex: afterIndex))
   }
 }
 
@@ -6150,17 +6247,34 @@ public struct StreamChunks: Sendable {
 
   public init(wrappedValue: [InstantStreamChunk] = []) {
     self.storage = FetchStorage(value: wrappedValue)
-    self.configuration = StreamChunksConfigurationStorage(streamID: nil, limit: nil)
+    self.configuration = StreamChunksConfigurationStorage(
+      streamID: nil,
+      limit: nil,
+      afterIndex: nil
+    )
   }
 
-  public init(_ streamID: String, limit: Int? = nil) {
+  public init(_ streamID: String, limit: Int? = nil, afterIndex: Int64? = nil) {
     self.storage = FetchStorage(value: [])
-    self.configuration = StreamChunksConfigurationStorage(streamID: streamID, limit: limit)
+    self.configuration = StreamChunksConfigurationStorage(
+      streamID: streamID,
+      limit: limit,
+      afterIndex: afterIndex
+    )
   }
 
-  public init(wrappedValue: [InstantStreamChunk], _ streamID: String, limit: Int? = nil) {
+  public init(
+    wrappedValue: [InstantStreamChunk],
+    _ streamID: String,
+    limit: Int? = nil,
+    afterIndex: Int64? = nil
+  ) {
     self.storage = FetchStorage(value: wrappedValue)
-    self.configuration = StreamChunksConfigurationStorage(streamID: streamID, limit: limit)
+    self.configuration = StreamChunksConfigurationStorage(
+      streamID: streamID,
+      limit: limit,
+      afterIndex: afterIndex
+    )
   }
 
   public var projectedValue: Self {
@@ -6190,24 +6304,35 @@ public struct StreamChunks: Sendable {
       loadError = error
       throw error
     }
-    try await load(streamID, limit: configuration.limit, using: client)
+    try await load(
+      streamID,
+      limit: configuration.limit,
+      afterIndex: configuration.afterIndex,
+      using: client
+    )
   }
 
-  public func load(_ streamID: String, limit: Int? = nil) async throws {
+  public func load(_ streamID: String, limit: Int? = nil, afterIndex: Int64? = nil) async throws {
     @Dependency(\.defaultInstantSwiftData) var client
-    try await load(streamID, limit: limit, using: client)
+    try await load(streamID, limit: limit, afterIndex: afterIndex, using: client)
   }
 
   public func load(
     _ streamID: String,
     limit: Int? = nil,
+    afterIndex: Int64? = nil,
     using client: InstantSwiftDataClient
   ) async throws {
-    configuration.set(streamID: streamID, limit: limit)
+    configuration.set(streamID: streamID, limit: limit, afterIndex: afterIndex)
     isLoading = true
     do {
       try Self.validateLimit(limit, operation: "load StreamChunks")
-      let chunks = try await client.streamChunks(streamID: streamID, limit: limit)
+      try Self.validateAfterIndex(afterIndex, operation: "load StreamChunks")
+      let chunks = try await client.streamChunks(
+        streamID: streamID,
+        limit: limit,
+        afterIndex: afterIndex
+      )
       try Task.checkCancellation()
       wrappedValue = chunks
       loadError = nil
@@ -6267,26 +6392,38 @@ public struct StreamChunks: Sendable {
         recovery: "Initialize @StreamChunks with a stream id, or pass one to subscribe(_:using:)."
       )
     }
-    return try await makeSubscription(streamID, limit: configuration.limit, using: client)
-  }
-
-  public func subscribe(
-    _ streamID: String,
-    limit: Int? = nil
-  ) async throws -> FetchSubscription<[InstantStreamChunk]> {
-    @Dependency(\.defaultInstantSwiftData) var client
-    return try await subscribe(streamID, limit: limit, using: client)
+    return try await makeSubscription(
+      streamID,
+      limit: configuration.limit,
+      afterIndex: configuration.afterIndex,
+      using: client
+    )
   }
 
   public func subscribe(
     _ streamID: String,
     limit: Int? = nil,
+    afterIndex: Int64? = nil
+  ) async throws -> FetchSubscription<[InstantStreamChunk]> {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(streamID, limit: limit, afterIndex: afterIndex, using: client)
+  }
+
+  public func subscribe(
+    _ streamID: String,
+    limit: Int? = nil,
+    afterIndex: Int64? = nil,
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<[InstantStreamChunk]> {
-    configuration.set(streamID: streamID, limit: limit)
+    configuration.set(streamID: streamID, limit: limit, afterIndex: afterIndex)
     loadError = nil
     do {
-      return try await makeSubscription(streamID, limit: limit, using: client)
+      return try await makeSubscription(
+        streamID,
+        limit: limit,
+        afterIndex: afterIndex,
+        using: client
+      )
     } catch let error as CancellationError {
       loadError = nil
       throw error
@@ -6299,12 +6436,18 @@ public struct StreamChunks: Sendable {
   private func makeSubscription(
     _ streamID: String,
     limit: Int? = nil,
+    afterIndex: Int64? = nil,
     using client: InstantSwiftDataClient
   ) async throws -> FetchSubscription<[InstantStreamChunk]> {
     do {
       try Self.validateLimit(limit, operation: "subscribe StreamChunks")
+      try Self.validateAfterIndex(afterIndex, operation: "subscribe StreamChunks")
       try Task.checkCancellation()
-      return try await client.subscribeStreamChunks(streamID: streamID, limit: limit)
+      return try await client.subscribeStreamChunks(
+        streamID: streamID,
+        limit: limit,
+        afterIndex: afterIndex
+      )
     } catch let error as CancellationError {
       throw error
     } catch let error as InstantError {
@@ -6324,17 +6467,18 @@ public struct StreamChunks: Sendable {
     try await task(using: client)
   }
 
-  public func task(_ streamID: String, limit: Int? = nil) async throws {
+  public func task(_ streamID: String, limit: Int? = nil, afterIndex: Int64? = nil) async throws {
     @Dependency(\.defaultInstantSwiftData) var client
-    try await task(streamID, limit: limit, using: client)
+    try await task(streamID, limit: limit, afterIndex: afterIndex, using: client)
   }
 
   public func task(
     _ streamID: String,
     limit: Int? = nil,
+    afterIndex: Int64? = nil,
     using client: InstantSwiftDataClient
   ) async throws {
-    configuration.set(streamID: streamID, limit: limit)
+    configuration.set(streamID: streamID, limit: limit, afterIndex: afterIndex)
     try await task(using: client)
   }
 
@@ -6354,6 +6498,16 @@ public struct StreamChunks: Sendable {
       operation: operation,
       message: "Stream chunk limit must be greater than or equal to 0.",
       recovery: "Pass a non-negative limit, or omit limit to observe every local chunk."
+    )
+  }
+
+  private static func validateAfterIndex(_ afterIndex: Int64?, operation: String) throws {
+    guard let afterIndex, afterIndex < 0 else { return }
+    throw InstantError(
+      code: .validationFailed,
+      operation: operation,
+      message: "Stream chunk after-index must be greater than or equal to 0.",
+      recovery: "Pass a previously emitted chunk index, or omit afterIndex to observe every local chunk."
     )
   }
 }

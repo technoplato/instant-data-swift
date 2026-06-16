@@ -2777,6 +2777,39 @@ struct BootstrapTests {
   }
 
   @Test
+  func streamClientCursorAwareInjectedClosuresReceiveAfterIndex() async throws {
+    let laterChunk = mockStreamChunk(id: "chunk-2", streamID: "chat/lobby", index: 1)
+    let client = integrationClient(
+      streamChunksAfterIndex: { streamID, limit, afterIndex in
+        expectNoDifference(streamID, "chat/lobby")
+        expectNoDifference(limit, 1)
+        expectNoDifference(afterIndex, 0)
+        return [laterChunk]
+      },
+      observeStreamChunksAfterIndex: { streamID, afterIndex in
+        expectNoDifference(streamID, "chat/lobby")
+        expectNoDifference(afterIndex, 0)
+        return AsyncStream { continuation in
+          continuation.yield([laterChunk])
+          continuation.finish()
+        }
+      }
+    )
+
+    let listedChunks = try await client.streamChunks(
+      streamID: "chat/lobby",
+      limit: 1,
+      afterIndex: 0
+    )
+    expectNoDifference(listedChunks, [laterChunk])
+
+    var iterator = try await client.observeStreamChunks(streamID: "chat/lobby", afterIndex: 0)
+      .makeAsyncIterator()
+    let observedChunks = await iterator.next()
+    expectNoDifference(observedChunks, [laterChunk])
+  }
+
+  @Test
   func storedFilesPropertyWrapperLoadsUsingDependencyClient() async throws {
     let file = mockStoredFile(id: "file-1")
     let client = integrationClient(
@@ -2934,6 +2967,7 @@ struct BootstrapTests {
   @Test
   func streamChunksPropertyWrapperLoadsUsingDependencyClient() async throws {
     let chunk = mockStreamChunk(streamID: "chat/lobby")
+    let laterChunk = mockStreamChunk(id: "chunk-2", streamID: "chat/lobby", index: 1)
     let client = integrationClient(
       streamChunks: { streamID, limit in
         expectNoDifference(streamID, "chat/lobby")
@@ -2950,6 +2984,27 @@ struct BootstrapTests {
       try await $chunks.load()
 
       expectNoDifference(chunks, [chunk])
+      expectNoDifference($chunks.loadError, nil)
+      expectNoDifference($chunks.isLoading, false)
+    }
+
+    let resumedClient = integrationClient(
+      streamChunks: { streamID, limit in
+        expectNoDifference(streamID, "chat/lobby")
+        expectNoDifference(limit, nil)
+        return [chunk, laterChunk]
+      }
+    )
+
+    try await withDependencies {
+      $0.defaultInstantSwiftData = resumedClient
+    } operation: {
+      @StreamChunks("chat/lobby", limit: 1, afterIndex: chunk.index)
+      var chunks: [InstantStreamChunk]
+
+      try await $chunks.load()
+
+      expectNoDifference(chunks, [laterChunk])
       expectNoDifference($chunks.loadError, nil)
       expectNoDifference($chunks.isLoading, false)
     }
@@ -2983,6 +3038,28 @@ struct BootstrapTests {
     } catch {
       Issue.record("Unexpected error: \(error).")
     }
+
+    do {
+      try await chunks.load("chat/lobby", afterIndex: -1, using: integrationClient())
+      Issue.record("Expected @StreamChunks negative load afterIndex to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "load StreamChunks")
+      expectNoDifference(chunks.loadError?.operation, "load StreamChunks")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+
+    do {
+      _ = try await chunks.subscribe("chat/lobby", afterIndex: -1, using: integrationClient())
+      Issue.record("Expected @StreamChunks negative subscribe afterIndex to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "subscribe StreamChunks")
+      expectNoDifference(chunks.loadError?.operation, "subscribe StreamChunks")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
   }
 
   @Test
@@ -3002,9 +3079,9 @@ struct BootstrapTests {
 
     @StreamChunks var chunks: [InstantStreamChunk]
 
-    try await $chunks.task("chat/lobby", limit: 1, using: client)
+    try await $chunks.task("chat/lobby", limit: 1, afterIndex: chunk.index, using: client)
 
-    expectNoDifference(chunks, [chunk])
+    expectNoDifference(chunks, [laterChunk])
     expectNoDifference($chunks.loadError, nil)
     expectNoDifference($chunks.isLoading, false)
   }
@@ -3061,9 +3138,28 @@ struct BootstrapTests {
     let firstEmission = try await iterator.next()
     expectNoDifference(firstEmission, [first])
 
+    let resumedSubscription = try await client.subscribeStreamChunks(
+      streamID: "chat/lobby",
+      limit: 1,
+      afterIndex: first.index
+    )
+    var resumedIterator = resumedSubscription.makeAsyncIterator()
+    let resumedEmission = try await resumedIterator.next()
+    expectNoDifference(resumedEmission, [second])
+
     do {
       _ = try await client.subscribeStreamChunks(streamID: "chat/lobby", limit: -1)
       Issue.record("Expected negative stream chunk subscription limit to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "subscribe stream chunks")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+
+    do {
+      _ = try await client.subscribeStreamChunks(streamID: "chat/lobby", afterIndex: -1)
+      Issue.record("Expected negative stream chunk subscription cursor to fail.")
     } catch let error as InstantError {
       expectNoDifference(error.code, .validationFailed)
       expectNoDifference(error.operation, "subscribe stream chunks")
@@ -4126,6 +4222,10 @@ private func integrationClient(
     -> AsyncStream<[InstantStreamChunk]> = { _ in
       AsyncStream { continuation in continuation.finish() }
     },
+  streamChunksAfterIndex:
+    (@Sendable (String, Int?, Int64?) async throws -> [InstantStreamChunk])? = nil,
+  observeStreamChunksAfterIndex:
+    (@Sendable (String, Int64?) async throws -> AsyncStream<[InstantStreamChunk]>)? = nil,
   createShare: @escaping @Sendable (String, String) async throws
     -> InstantShareSnapshot = { namespace, id in
       mockShareSnapshot(rootNamespace: namespace, rootID: id)
@@ -4174,6 +4274,8 @@ private func integrationClient(
     appendStreamChunk: appendStreamChunk,
     streamChunks: streamChunks,
     observeStreamChunks: observeStreamChunks,
+    streamChunksAfterIndex: streamChunksAfterIndex,
+    observeStreamChunksAfterIndex: observeStreamChunksAfterIndex,
     createShare: createShare,
     acceptShare: acceptShare,
     shares: shares,

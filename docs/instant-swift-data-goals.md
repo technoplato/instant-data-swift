@@ -657,8 +657,11 @@ Agent-oriented output modes are required:
   `instant-swift-data files watch --events 1 --jsonl`.
 - persist ordered local stream chunks after sign-in with commands such as
   `instant-swift-data streams append chat/lobby --value '{"text":"hello"}'`
-  and `instant-swift-data streams read chat/lobby --json`; prove local chunk
-  observation with `instant-swift-data streams watch chat/lobby --events 1 --jsonl`.
+  and `instant-swift-data streams read chat/lobby --after-index 0 --json`;
+  prove local chunk observation with
+  `instant-swift-data streams watch chat/lobby --after-index 0 --events 1 --jsonl`.
+  Treat `after-index` as a local JSON-chunk cursor; upstream byte-offset streams
+  still need dedicated metadata, done/abort, backpressure, and transport proof.
 - persist local share metadata, memberships, accept, and revoke flows after
   sign-in with commands such as
   `instant-swift-data shares create remindersLists list-1`,

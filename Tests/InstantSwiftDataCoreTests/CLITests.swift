@@ -4327,6 +4327,10 @@ extension InstantStoreTests {
       contains: "Invalid --limit value"
     )
     try expectMalformed(
+      ["streams", "read", "chat/lobby", "--after-index", "-1", "--json"],
+      contains: "Invalid --after-index value"
+    )
+    try expectMalformed(
       ["streams", "watch", "chat/lobby", "--events", "2", "--json"],
       contains: "instant-swift-data streams watch <stream-id> --events 1"
     )
@@ -6144,8 +6148,27 @@ extension InstantStoreTests {
     )
     expectNoDifference(limitedRead.event, "read")
     expectNoDifference(limitedRead.changedID, nil)
+    expectNoDifference(limitedRead.afterIndex, nil)
     expectNoDifference(limitedRead.chunkCount, 1)
     expectNoDifference(limitedRead.chunks, Array(secondAppend.chunks.prefix(1)))
+
+    let resumedRead = try JSONDecoder().decode(
+      CLIStreamsOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "streams", "read", "chat/lobby", "--after-index",
+            "\(try #require(firstAppend.chunks.first?.index))", "--json",
+          ],
+          homeURL: homeURL
+        )
+        .utf8
+      )
+    )
+    expectNoDifference(resumedRead.event, "read")
+    expectNoDifference(resumedRead.afterIndex, firstAppend.chunks.first?.index)
+    expectNoDifference(resumedRead.chunkCount, 1)
+    expectNoDifference(resumedRead.chunks, [try #require(secondAppend.chunks.last)])
 
     let jsonlOutput = try runCLI(["streams", "read", "chat/lobby", "--jsonl"], homeURL: homeURL)
     let lines = jsonlOutput.split(separator: "\n")
@@ -6165,11 +6188,14 @@ extension InstantStoreTests {
     expectNoDifference(chunkRows.map(\.details), secondAppend.chunks)
 
     let watchOutput = try runCLI(
-      ["streams", "watch", "chat/lobby", "--events", "1", "--jsonl"],
+      [
+        "streams", "watch", "chat/lobby", "--events", "1", "--after-index",
+        "\(try #require(firstAppend.chunks.first?.index))", "--jsonl",
+      ],
       homeURL: homeURL
     )
     let watchLines = watchOutput.split(separator: "\n")
-    expectNoDifference(watchLines.count, 3)
+    expectNoDifference(watchLines.count, 2)
     let watchEvidence = try JSONDecoder().decode(
       CLIStreamsEvidence.self,
       from: Data(try #require(watchLines.first).utf8)
@@ -6177,7 +6203,8 @@ extension InstantStoreTests {
     expectNoDifference(watchEvidence.caseID, "cli.streams")
     expectNoDifference(watchEvidence.event, "watch")
     expectNoDifference(watchEvidence.details.changedID, nil)
-    expectNoDifference(watchEvidence.details.chunks, secondAppend.chunks)
+    expectNoDifference(watchEvidence.details.afterIndex, firstAppend.chunks.first?.index)
+    expectNoDifference(watchEvidence.details.chunks, [try #require(secondAppend.chunks.last)])
 
     let invalidWatch = try runCLIResult(
       ["streams", "watch", "chat/lobby", "--events", "2", "--json"],
@@ -11672,6 +11699,7 @@ private struct CLIStreamsOutput: Decodable, Equatable {
   var changedID: String?
   var transport: String
   var streamID: String
+  var afterIndex: Int64?
   var chunkCount: Int
   var chunks: [InstantStreamChunk]
 }

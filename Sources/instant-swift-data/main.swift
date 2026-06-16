@@ -3337,6 +3337,7 @@ struct InstantSwiftDataCLI {
         context: context,
         event: "append",
         streamID: options.streamID,
+        afterIndex: nil,
         changedID: chunk.id,
         chunks: chunks,
         output: output
@@ -3345,12 +3346,14 @@ struct InstantSwiftDataCLI {
     case let .read(options):
       let chunks = try await context.runtime.streamChunks(
         streamID: options.streamID,
-        limit: options.limit
+        limit: options.limit,
+        afterIndex: options.afterIndex
       )
       try printStreamChunks(
         context: context,
         event: "read",
         streamID: options.streamID,
+        afterIndex: options.afterIndex,
         changedID: nil,
         chunks: chunks,
         output: output
@@ -3358,7 +3361,10 @@ struct InstantSwiftDataCLI {
 
     case let .watch(options):
       let chunks = try await firstWatchSnapshot(
-        from: context.runtime.observeStreamChunks(streamID: options.streamID),
+        from: context.runtime.observeStreamChunks(
+          streamID: options.streamID,
+          afterIndex: options.afterIndex
+        ),
         operation: "stream watch",
         eventCount: options.eventCount
       )
@@ -3366,6 +3372,7 @@ struct InstantSwiftDataCLI {
         context: context,
         event: "watch",
         streamID: options.streamID,
+        afterIndex: options.afterIndex,
         changedID: nil,
         chunks: chunks,
         output: output
@@ -4652,6 +4659,7 @@ struct InstantSwiftDataCLI {
     context: CLIContext,
     event: String,
     streamID: String,
+    afterIndex: Int64?,
     changedID: String?,
     chunks: [InstantStreamChunk],
     output: OutputMode
@@ -4663,6 +4671,7 @@ struct InstantSwiftDataCLI {
       changedID: changedID,
       transport: "not-implemented-local-cache-only",
       streamID: streamID,
+      afterIndex: afterIndex,
       chunkCount: chunks.count,
       chunks: chunks
     )
@@ -4670,6 +4679,9 @@ struct InstantSwiftDataCLI {
     switch output {
     case .human:
       print("stream: \(streamID)")
+      if let afterIndex {
+        print("after-index: \(afterIndex)")
+      }
       print("chunks: \(chunks.count)")
       for chunk in chunks {
         print("- \(chunk.index) \(chunk.id) user=\(chunk.userID)")
@@ -8710,7 +8722,8 @@ struct InstantSwiftDataCLI {
         files read <file-id> [--json|--jsonl]
         files delete <file-id> [--json|--jsonl]
         streams append <stream-id> --value '{...}' [--json|--jsonl]
-        streams read <stream-id> [--limit n] [--json|--jsonl]
+        streams read <stream-id> [--limit n] [--after-index n] [--json|--jsonl]
+        streams watch <stream-id> [--events 1] [--after-index n] [--json|--jsonl]
         shares create <namespace> <entity-id> [--json|--jsonl]
         shares list [--json|--jsonl]
         shares accept <token> [--json|--jsonl]
@@ -11681,6 +11694,7 @@ private struct StreamsOutput: Codable, Sendable {
   var changedID: String?
   var transport: String
   var streamID: String
+  var afterIndex: Int64?
   var chunkCount: Int
   var chunks: [InstantStreamChunk]
 }

@@ -9240,8 +9240,39 @@ struct InstantStoreTests {
     expectNoDifference(relaunchedChunks, [first, second])
     let limitedChunks = try await relaunchedRuntime.streamChunks(streamID: "chat/lobby", limit: 1)
     expectNoDifference(limitedChunks, [first])
+    let resumedChunks = try await relaunchedRuntime.streamChunks(
+      streamID: "chat/lobby",
+      afterIndex: first.index
+    )
+    expectNoDifference(resumedChunks, [second])
+    let limitedResumedChunks = try await relaunchedRuntime.streamChunks(
+      streamID: "chat/lobby",
+      limit: 1,
+      afterIndex: first.index
+    )
+    expectNoDifference(limitedResumedChunks, [second])
     let otherStreamChunks = try await relaunchedRuntime.streamChunks(streamID: "chat/side")
     expectNoDifference(otherStreamChunks, [otherStream])
+
+    do {
+      _ = try await relaunchedRuntime.streamChunks(streamID: "chat/lobby", afterIndex: -1)
+      Issue.record("Expected negative stream afterIndex read to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "read stream chunks")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+
+    do {
+      _ = try await relaunchedRuntime.observeStreamChunks(streamID: "chat/lobby", afterIndex: -1)
+      Issue.record("Expected negative stream afterIndex observation to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "observe stream chunks")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
 
     try await relaunchedRuntime.signOut()
     do {
@@ -9343,6 +9374,23 @@ struct InstantStoreTests {
     expectNoDifference(
       try #require(updatedChunks).map(\.id),
       [chunk.id]
+    )
+
+    var resumedStreamIterator = (try await runtime.observeStreamChunks(
+      streamID: "chat/lobby",
+      afterIndex: chunk.index
+    ))
+    .makeAsyncIterator()
+    let initialResumedChunks = await resumedStreamIterator.next()
+    expectNoDifference(try #require(initialResumedChunks), [])
+    let laterChunk = try await runtime.appendStreamChunk(
+      streamID: "chat/lobby",
+      payload: .object(["text": .string("again")])
+    )
+    let resumedUpdatedChunks = await resumedStreamIterator.next()
+    expectNoDifference(
+      try #require(resumedUpdatedChunks).map(\.id),
+      [laterChunk.id]
     )
   }
 

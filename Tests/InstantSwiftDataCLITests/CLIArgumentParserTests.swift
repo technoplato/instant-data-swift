@@ -4119,12 +4119,12 @@ struct CLIArgumentParserTests {
       .read(CLIStreamReadInvocation(streamID: "chat/lobby"))
     )
     expectNoDifference(
-      try parseStreams(["list", "chat/lobby", "--limit", "2"]),
-      .read(CLIStreamReadInvocation(streamID: "chat/lobby", limit: 2))
+      try parseStreams(["list", "chat/lobby", "--limit", "2", "--after-index", "4"]),
+      .read(CLIStreamReadInvocation(streamID: "chat/lobby", limit: 2, afterIndex: 4))
     )
     expectNoDifference(
-      try parseStreams(["watch", " chat/lobby ", "--events", "1"]),
-      .watch(CLIStreamWatchInvocation(streamID: "chat/lobby", eventCount: 1))
+      try parseStreams(["watch", " chat/lobby ", "--events", "1", "--after-index", "3"]),
+      .watch(CLIStreamWatchInvocation(streamID: "chat/lobby", eventCount: 1, afterIndex: 3))
     )
   }
 
@@ -4152,8 +4152,20 @@ struct CLIArgumentParserTests {
       contains: "Missing value for --limit."
     )
     try expectStreamsParseError(
+      ["read", "chat/lobby", "--after-index", "-1"],
+      contains: "Invalid --after-index value: -1."
+    )
+    try expectStreamsParseError(
+      ["read", "chat/lobby", "--after-index"],
+      contains: "Missing value for --after-index."
+    )
+    try expectStreamsParseError(
       ["watch", "chat/lobby", "--events", "2"],
       contains: "instant-swift-data streams watch <stream-id> --events 1"
+    )
+    try expectStreamsParseError(
+      ["watch", "chat/lobby", "--after-index", "-1"],
+      contains: "Invalid --after-index value: -1."
     )
     try expectStreamsParseError(
       ["watch", "chat/lobby", "--surprise"],
@@ -4173,6 +4185,14 @@ struct CLIArgumentParserTests {
   }
 
   @Test
+  func streamWatchInvocationOptionsParserConsumesCursor() throws {
+    expectNoDifference(
+      try parseStreamWatchInvocationOptions(["--events", "1", "--after-index", "2"]),
+      CLIStreamWatchOptionsInvocation(eventCount: 1, afterIndex: 2)
+    )
+  }
+
+  @Test
   func streamWatchOptionsParserReportsMalformedArguments() throws {
     try expectStreamWatchOptionsParseError(
       ["--events"],
@@ -4182,6 +4202,10 @@ struct CLIArgumentParserTests {
     try expectStreamWatchOptionsParseError(
       ["--events", "2"],
       description: "Usage: instant-swift-data streams watch <stream-id> --events 1"
+    )
+    try expectStreamWatchOptionsParseError(
+      ["--after-index", "-1"],
+      description: "Invalid --after-index value: -1. \(CLIStreamsUsage.watch)"
     )
     try expectStreamWatchOptionsParseError(
       ["--surprise"],
@@ -4689,6 +4713,15 @@ private func parseStreamWatchOptions(_ arguments: [String]) throws -> Int {
   let eventCount = try CLIStreamWatchOptionsParser().parse(&input)
   expectNoDifference(Array(input), [])
   return eventCount
+}
+
+private func parseStreamWatchInvocationOptions(
+  _ arguments: [String]
+) throws -> CLIStreamWatchOptionsInvocation {
+  var input = arguments[...]
+  let options = try CLIStreamWatchInvocationOptionsParser().parse(&input)
+  expectNoDifference(Array(input), [])
+  return options
 }
 
 private func expectAuthParseError(

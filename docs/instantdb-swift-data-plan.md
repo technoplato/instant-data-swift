@@ -365,11 +365,15 @@ future work.
 
 Current local progress: `InstantRuntime` can append ordered JSON chunks to a
 local stream, persist them in SQLite scoped by app id and stream id, and read
-them in order. It also exposes local snapshot subscriptions with termination
-cleanup. The CLI exposes stream append/read/watch command families, including
-`instant-swift-data streams watch chat/lobby --events 1 --jsonl`, for durable
-terminal proof. Real Instant stream transport, backpressure, transport-backed
-subscriptions, and Swift/TypeScript boundary proof remain future work.
+them in order. Local reads and snapshot observations accept an `afterIndex`
+chunk cursor so CLI and `@StreamChunks` clients can resume after a previously
+emitted local chunk index. The CLI exposes stream append/read/watch command
+families, including
+`instant-swift-data streams watch chat/lobby --after-index 0 --events 1 --jsonl`,
+for durable terminal proof. Upstream-compatible byte offsets, generated stream
+ids by client id, done/abort metadata, real Instant stream transport,
+backpressure, transport-backed subscriptions, and Swift/TypeScript boundary
+proof remain future work.
 
 ### Admin And Tooling
 

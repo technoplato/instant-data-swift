@@ -2258,7 +2258,8 @@ public final class InstantRuntime: Sendable {
       let chunks = try await persistence.loadStreamChunks(
         appID: configuration.appID,
         streamID: streamID,
-        limit: nil
+        limit: nil,
+        afterIndex: nil
       )
       await streamChunksObservers.publish(
         chunks,
@@ -2272,7 +2273,11 @@ public final class InstantRuntime: Sendable {
     }
   }
 
-  public func streamChunks(streamID rawStreamID: String, limit: Int? = nil) async throws
+  public func streamChunks(
+    streamID rawStreamID: String,
+    limit: Int? = nil,
+    afterIndex: Int64? = nil
+  ) async throws
     -> [InstantStreamChunk]
   {
     if let limit, limit < 0 {
@@ -2280,6 +2285,13 @@ public final class InstantRuntime: Sendable {
         operation: "read stream chunks",
         message: "Stream chunk limit must be greater than or equal to 0.",
         recovery: "Pass a non-negative --limit value, or omit --limit to read every local chunk."
+      )
+    }
+    if let afterIndex, afterIndex < 0 {
+      throw validationFailed(
+        operation: "read stream chunks",
+        message: "Stream chunk after-index must be greater than or equal to 0.",
+        recovery: "Pass a previously emitted chunk index, or omit afterIndex to read every local chunk."
       )
     }
     let streamID = try validatedNonEmpty(
@@ -2295,7 +2307,8 @@ public final class InstantRuntime: Sendable {
       let chunks = try await persistence.loadStreamChunks(
         appID: configuration.appID,
         streamID: streamID,
-        limit: limit
+        limit: limit,
+        afterIndex: afterIndex
       )
       await operationGate.leave()
       return chunks
@@ -2305,9 +2318,19 @@ public final class InstantRuntime: Sendable {
     }
   }
 
-  public func observeStreamChunks(streamID rawStreamID: String) async throws
+  public func observeStreamChunks(
+    streamID rawStreamID: String,
+    afterIndex: Int64? = nil
+  ) async throws
     -> AsyncStream<[InstantStreamChunk]>
   {
+    if let afterIndex, afterIndex < 0 {
+      throw validationFailed(
+        operation: "observe stream chunks",
+        message: "Stream chunk after-index must be greater than or equal to 0.",
+        recovery: "Pass a previously emitted chunk index, or omit afterIndex to observe every local chunk."
+      )
+    }
     let streamID = try validatedNonEmpty(
       rawStreamID,
       label: "Stream id",
@@ -2324,18 +2347,39 @@ public final class InstantRuntime: Sendable {
       let chunks = try await persistence.loadStreamChunks(
         appID: configuration.appID,
         streamID: streamID,
-        limit: nil
+        limit: nil,
+        afterIndex: nil
       )
       let stream = await streamChunksObservers.observe(
         key: streamChunksObservationKey(streamID: streamID),
         current: chunks
       )
       await operationGate.leave()
+      if let afterIndex {
+        return Self.streamChunks(after: afterIndex, from: stream)
+      }
       return stream
     } catch {
       await operationGate.leave()
       throw error
     }
+  }
+
+  private static func streamChunks(
+    after afterIndex: Int64,
+    from stream: AsyncStream<[InstantStreamChunk]>
+  ) -> AsyncStream<[InstantStreamChunk]> {
+    let mapped = AsyncStream<[InstantStreamChunk]>.makeStream(bufferingPolicy: .bufferingNewest(1))
+    let task = Task {
+      for await chunks in stream {
+        mapped.continuation.yield(chunks.filter { $0.index > afterIndex })
+      }
+      mapped.continuation.finish()
+    }
+    mapped.continuation.onTermination = { @Sendable _ in
+      task.cancel()
+    }
+    return mapped.stream
   }
 
   func activeStreamChunksObservationCount(streamID rawStreamID: String) async throws -> Int {
