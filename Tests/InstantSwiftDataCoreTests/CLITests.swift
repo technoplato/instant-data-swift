@@ -11748,6 +11748,14 @@ private struct CLILiveSessionValidationOutput: Decodable {
   var transactionID: String?
   var transactionISN: String?
   var observedEntityID: String?
+  var runtimeCachePath: String?
+  var appliedRefreshCount: Int
+  var appliedRefreshTransactionIDs: [String]
+  var appliedInsertedTripleCount: Int
+  var appliedMergedAttributeCount: Int
+  var cachedEntityIDs: [String]
+  var cachedTodoTexts: [String]
+  var pendingMutationCount: Int
   var proofLevel: String
   var remoteBoundary: String
 }
@@ -11781,6 +11789,14 @@ private struct CLILiveSessionValidationDetails: Decodable {
   var transactionID: String?
   var transactionISN: String?
   var observedEntityID: String?
+  var runtimeCachePath: String?
+  var appliedRefreshCount: Int
+  var appliedRefreshTransactionIDs: [String]
+  var appliedInsertedTripleCount: Int
+  var appliedMergedAttributeCount: Int
+  var cachedEntityIDs: [String]
+  var cachedTodoTexts: [String]
+  var pendingMutationCount: Int
   var proofLevel: String
   var remoteBoundary: String
   var errorMessage: String?

@@ -13,6 +13,14 @@ public struct LiveSessionValidationDetails: Codable, Equatable, Sendable {
   public var transactionID: String?
   public var transactionISN: String?
   public var observedEntityID: String?
+  public var runtimeCachePath: String?
+  public var appliedRefreshCount: Int
+  public var appliedRefreshTransactionIDs: [String]
+  public var appliedInsertedTripleCount: Int
+  public var appliedMergedAttributeCount: Int
+  public var cachedEntityIDs: [String]
+  public var cachedTodoTexts: [String]
+  public var pendingMutationCount: Int
   public var proofLevel: String
   public var remoteBoundary: String
   public var errorMessage: String?
@@ -30,6 +38,14 @@ public struct LiveSessionValidationDetails: Codable, Equatable, Sendable {
     transactionID: String? = nil,
     transactionISN: String? = nil,
     observedEntityID: String? = nil,
+    runtimeCachePath: String? = nil,
+    appliedRefreshCount: Int = 0,
+    appliedRefreshTransactionIDs: [String] = [],
+    appliedInsertedTripleCount: Int = 0,
+    appliedMergedAttributeCount: Int = 0,
+    cachedEntityIDs: [String] = [],
+    cachedTodoTexts: [String] = [],
+    pendingMutationCount: Int = 0,
     proofLevel: String,
     remoteBoundary: String = "pending-cross-client-sync",
     errorMessage: String? = nil
@@ -46,6 +62,14 @@ public struct LiveSessionValidationDetails: Codable, Equatable, Sendable {
     self.transactionID = transactionID
     self.transactionISN = transactionISN
     self.observedEntityID = observedEntityID
+    self.runtimeCachePath = runtimeCachePath
+    self.appliedRefreshCount = appliedRefreshCount
+    self.appliedRefreshTransactionIDs = appliedRefreshTransactionIDs
+    self.appliedInsertedTripleCount = appliedInsertedTripleCount
+    self.appliedMergedAttributeCount = appliedMergedAttributeCount
+    self.cachedEntityIDs = cachedEntityIDs
+    self.cachedTodoTexts = cachedTodoTexts
+    self.pendingMutationCount = pendingMutationCount
     self.proofLevel = proofLevel
     self.remoteBoundary = remoteBoundary
     self.errorMessage = errorMessage
@@ -120,6 +144,8 @@ public enum InstantSwiftDataLiveSessionValidation {
     transactionSteps: [InstantTransportStep] = Self.defaultTransactionSteps,
     resolveTransactionAttributeIDs: Bool = false,
     expectedExternalRefreshEntityID: String? = nil,
+    applyRefreshesToRuntime: Bool = false,
+    runtimePersistenceURL: URL? = nil,
     liveTransport: InstantLiveTransportClient = .local,
     proofLevel: String = "local-protocol",
     timestamp: @escaping @Sendable () -> InstantTimestamp = {
@@ -157,7 +183,16 @@ public enum InstantSwiftDataLiveSessionValidation {
     var transactionISN: String?
     var observedEntityID: String?
     var initAttrs: [InstantLiveJSONValue] = []
+    var runtimeCachePath: String?
+    var appliedRefreshCount = 0
+    var appliedRefreshTransactionIDs: [String] = []
+    var appliedInsertedTripleCount = 0
+    var appliedMergedAttributeCount = 0
+    var cachedEntityIDs: [String] = []
+    var cachedTodoTexts: [String] = []
+    var pendingMutationCount = 0
     var evidence: [ValidationEvidenceRow<LiveSessionValidationDetails>] = []
+    var runtime: InstantRuntime?
 
     func details(errorMessage: String? = nil) -> LiveSessionValidationDetails {
       LiveSessionValidationDetails(
@@ -173,6 +208,14 @@ public enum InstantSwiftDataLiveSessionValidation {
         transactionID: transactionID,
         transactionISN: transactionISN,
         observedEntityID: observedEntityID,
+        runtimeCachePath: runtimeCachePath,
+        appliedRefreshCount: appliedRefreshCount,
+        appliedRefreshTransactionIDs: appliedRefreshTransactionIDs,
+        appliedInsertedTripleCount: appliedInsertedTripleCount,
+        appliedMergedAttributeCount: appliedMergedAttributeCount,
+        cachedEntityIDs: cachedEntityIDs,
+        cachedTodoTexts: cachedTodoTexts,
+        pendingMutationCount: pendingMutationCount,
         proofLevel: proofLevel,
         errorMessage: errorMessage
       )
@@ -196,9 +239,47 @@ public enum InstantSwiftDataLiveSessionValidation {
       )
     }
 
+    func refreshWithRuntimeAttributes(_ refreshOK: InstantLiveRefreshOK) -> InstantLiveRefreshOK {
+      guard refreshOK.attrs.isEmpty, !initAttrs.isEmpty else { return refreshOK }
+      return InstantLiveRefreshOK(
+        clientEventID: refreshOK.clientEventID,
+        processedTransactionID: refreshOK.processedTransactionID,
+        attrs: initAttrs,
+        computations: refreshOK.computations
+      )
+    }
+
+    func applyRefreshToRuntime(_ refreshOK: InstantLiveRefreshOK) async throws {
+      guard let runtime else { return }
+      let applied = try await runtime.applyLiveRefresh(refreshWithRuntimeAttributes(refreshOK))
+      appliedRefreshCount += 1
+      appliedRefreshTransactionIDs.append(applied.transaction.id)
+      appliedInsertedTripleCount += applied.insertedTripleCount
+      appliedMergedAttributeCount += applied.mergedAttributeCount
+      let todos = try await TodoExample.decode(runtime.query(TodoExample.query))
+      cachedEntityIDs = todos.map(\.id)
+      cachedTodoTexts = todos.map(\.text)
+      pendingMutationCount = await runtime.pendingMutations().count
+    }
+
     var session: InstantLiveWebSocketSession?
     do {
       evidence.append(row(event: "session-url"))
+      if applyRefreshesToRuntime {
+        let cacheURL = try runtimePersistenceURL ?? Self.temporaryRuntimeCacheURL(
+          appID: appID,
+          caseID: caseID
+        )
+        runtimeCachePath = cacheURL.path
+        runtime = try await InstantRuntime.bootstrap(
+          configuration: InstantRuntimeConfiguration(
+            appID: appID,
+            persistenceURL: cacheURL,
+            initialAttributes: TodoExample.attributes
+          )
+        )
+      }
+
       let openedSession = try await liveTransport.connect(request)
       session = openedSession
 
@@ -324,6 +405,14 @@ public enum InstantSwiftDataLiveSessionValidation {
             refreshComputationCount = refreshOK.computations.count
             processedTransactionID = refreshOK.processedTransactionID
             if refreshOK.computations.containsResultEntityID(expectedExternalRefreshEntityID) {
+              try await applyRefreshToRuntime(refreshOK)
+              if runtime != nil, !cachedEntityIDs.contains(expectedExternalRefreshEntityID) {
+                throw validationError(
+                  operation: "validate Instant live external refresh",
+                  message:
+                    "Expected applied refresh-ok to cache entity id '\(expectedExternalRefreshEntityID)'."
+                )
+              }
               observedEntityID = expectedExternalRefreshEntityID
               evidence.append(
                 row(
@@ -481,6 +570,18 @@ public enum InstantSwiftDataLiveSessionValidation {
     )
   }
 
+  private static func temporaryRuntimeCacheURL(appID: String, caseID: String) throws -> URL {
+    let safeAppID = appID.replacingUnsafePathCharacters()
+    let safeCaseID = caseID.replacingUnsafePathCharacters()
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "InstantLiveSessionValidation-\(safeCaseID)-\(safeAppID)-\(UUID().uuidString)",
+        isDirectory: true
+      )
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    return directory.appendingPathComponent("state.sqlite")
+  }
+
   private static func resolveLiveTransactionAttributeIDs(
     _ steps: [InstantTransportStep],
     attrs: [InstantLiveJSONValue]
@@ -602,6 +703,16 @@ private struct InstantLiveAttributeIDResolver {
     case let .object(values):
       return .object(try values.mapValues(resolve))
     }
+  }
+}
+
+private extension String {
+  func replacingUnsafePathCharacters() -> String {
+    let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_."))
+    return unicodeScalars.map { scalar in
+      allowed.contains(scalar) ? String(scalar) : "-"
+    }
+    .joined()
   }
 }
 

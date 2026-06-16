@@ -601,6 +601,9 @@ Agent-oriented output modes are required:
   matching optimistic outbox mutation only after the server refresh has been
   committed locally, while replaying remaining local outbox writes so newer
   optimistic edits stay visible.
+  The TypeScript-to-Swift live observe validation must go past raw WebSocket
+  receipt: when the target `refresh-ok` arrives, it should apply the payload to
+  a Swift runtime cache and emit cached entity/text evidence in the JSONL row.
   The TypeScript runner should keep validating Swift-authored transport evidence,
   including `--swift-transport-contract`,
   `--swift-local-integrations-contract`, `--swift-live-session-contract`, and
@@ -866,9 +869,9 @@ Agent-oriented output modes are required:
   `--boundary-swift-live-observe` proves Swift's live WebSocket transaction is
   visible to TypeScript's admin SSE subscription on an existing app and
   `--boundary-typescript-live-observe` proves a TypeScript admin HTTP write is
-  visible to Swift's live WebSocket observer. The coverage gate should only
-  clear the two live-transport blockers after those concrete JSONL artifacts are
-  present for a non-local app id.
+  visible to Swift's live WebSocket observer and applied into the Swift cache.
+  The coverage gate should only clear the two live-transport blockers after
+  those concrete JSONL artifacts are present for a non-local app id.
 - run example business commands directly, such as todo/reminder/sync-up/chat/mobile-chat/microblog/reactions/stroopwafel
   create, list, update, delete, share, accept, upload, and stream operations.
 

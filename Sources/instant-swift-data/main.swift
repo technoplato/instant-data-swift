@@ -377,6 +377,7 @@ struct InstantSwiftDataCLI {
           adminToken: validationAdminToken(),
           query: validationLiveObserveQuery(entityID: entityID),
           expectedExternalRefreshEntityID: runsLive ? entityID : nil,
+          applyRefreshesToRuntime: runsLive,
           liveTransport: runsLive ? .live : .local,
           proofLevel: runsLive ? "live-websocket-observe" : "local-protocol",
           maxServerEvents: runsLive ? 8 : 4
@@ -9373,6 +9374,14 @@ struct InstantSwiftDataCLI {
       transactionID: finalDetails?.transactionID,
       transactionISN: finalDetails?.transactionISN,
       observedEntityID: finalDetails?.observedEntityID,
+      runtimeCachePath: finalDetails?.runtimeCachePath,
+      appliedRefreshCount: finalDetails?.appliedRefreshCount ?? 0,
+      appliedRefreshTransactionIDs: finalDetails?.appliedRefreshTransactionIDs ?? [],
+      appliedInsertedTripleCount: finalDetails?.appliedInsertedTripleCount ?? 0,
+      appliedMergedAttributeCount: finalDetails?.appliedMergedAttributeCount ?? 0,
+      cachedEntityIDs: finalDetails?.cachedEntityIDs ?? [],
+      cachedTodoTexts: finalDetails?.cachedTodoTexts ?? [],
+      pendingMutationCount: finalDetails?.pendingMutationCount ?? 0,
       proofLevel: finalDetails?.proofLevel ?? "local-protocol",
       remoteBoundary: finalDetails?.remoteBoundary ?? "pending-cross-client-sync"
     )
@@ -9397,6 +9406,14 @@ struct InstantSwiftDataCLI {
       }
       if let observedEntityID = summary.observedEntityID {
         print("observed entity: \(observedEntityID)")
+      }
+      if summary.appliedRefreshCount > 0 {
+        print("applied refreshes: \(summary.appliedRefreshCount)")
+        print("cached entity ids: \(summary.cachedEntityIDs.joined(separator: ", "))")
+        print("cached todo texts: \(summary.cachedTodoTexts.joined(separator: ", "))")
+      }
+      if let runtimeCachePath = summary.runtimeCachePath {
+        print("runtime cache: \(runtimeCachePath)")
       }
       print("websocket: \(summary.websocketURL)")
 
@@ -11813,6 +11830,14 @@ private struct LiveSessionValidationOutput: Codable, Sendable {
   var transactionID: String?
   var transactionISN: String?
   var observedEntityID: String?
+  var runtimeCachePath: String?
+  var appliedRefreshCount: Int
+  var appliedRefreshTransactionIDs: [String]
+  var appliedInsertedTripleCount: Int
+  var appliedMergedAttributeCount: Int
+  var cachedEntityIDs: [String]
+  var cachedTodoTexts: [String]
+  var pendingMutationCount: Int
   var proofLevel: String
   var remoteBoundary: String
 }

@@ -637,11 +637,12 @@ struct InstantLiveTransportTests {
   }
 
   @Test
-  func liveSessionValidationObservesExternalRefreshEntityID() async throws {
+  func liveSessionValidationAppliesExternalRefreshEntityIDToRuntime() async throws {
     let entityID = "typescript-live-boundary-test"
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_123)
     let ids = InstantLiveTransportTestIDSequence(["event-init", "event-query"])
     let session = InstantScriptedLiveSession(messages: [
-      .initOK(clientEventID: "event-init"),
+      .initOK(clientEventID: "event-init", attrs: .todoServerAttrs),
       .addQueryOK(clientEventID: "event-query"),
       .refreshOK(
         clientEventID: "event-query-only",
@@ -665,28 +666,17 @@ struct InstantLiveTransportTests {
         clientEventID: "event-external",
         processedTransactionID: "server-tx-1",
         computations: [
-          .object([
-            "instaql-query": .object([
-              TodoExample.namespace: .object([
-                "$": .object([
-                  "where": .object([
-                    "id": .string(entityID)
-                  ])
-                ])
-              ])
-            ]),
-            "instaql-result": .array([
-              .object([
-                "data": .object([
-                  "id": .string(entityID)
-                ]),
-                "child-nodes": .array([]),
-              ])
-            ]),
-          ])
+          .todoJoinRowsComputation(
+            entityID: entityID,
+            text: "Arrived from TypeScript boundary",
+            isCompleted: false,
+            createdAt: createdAt,
+            processedTransactionID: "server-tx-1"
+          )
         ]
       ),
     ])
+    let cacheURL = try temporaryLiveCacheURL()
 
     let result = try await InstantSwiftDataLiveSessionValidation.run(
       appID: "live-observe-test",
@@ -702,6 +692,8 @@ struct InstantLiveTransportTests {
         ])
       ]),
       expectedExternalRefreshEntityID: entityID,
+      applyRefreshesToRuntime: true,
+      runtimePersistenceURL: cacheURL,
       liveTransport: session.transport,
       proofLevel: "live-websocket-observe",
       timestamp: { InstantTimestamp(milliseconds: 1_700_000_000_000) },
@@ -728,6 +720,13 @@ struct InstantLiveTransportTests {
     expectNoDifference(finalDetails.processedTransactionID, "server-tx-1")
     expectNoDifference(finalDetails.refreshComputationCount, 1)
     expectNoDifference(finalDetails.observedEntityID, entityID)
+    expectNoDifference(finalDetails.runtimeCachePath, cacheURL.path)
+    expectNoDifference(finalDetails.appliedRefreshCount, 1)
+    expectNoDifference(finalDetails.appliedRefreshTransactionIDs, ["server-tx-1"])
+    expectNoDifference(finalDetails.appliedInsertedTripleCount, 4)
+    expectNoDifference(finalDetails.cachedEntityIDs, [entityID])
+    expectNoDifference(finalDetails.cachedTodoTexts, ["Arrived from TypeScript boundary"])
+    expectNoDifference(finalDetails.pendingMutationCount, 0)
     expectNoDifference(finalDetails.proofLevel, "live-websocket-observe")
   }
 

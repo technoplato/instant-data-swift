@@ -1013,6 +1013,15 @@ async function adminTransact(options, operations) {
   );
 }
 
+function boundaryTodoFields(entityID, text, createdAt = new Date()) {
+  return {
+    id: entityID,
+    text,
+    isCompleted: false,
+    createdAt,
+  };
+}
+
 async function openAdminSubscription(options, query, timeoutMs = 10000) {
   const controller = new AbortController();
   let timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -1665,11 +1674,10 @@ async function verifyBoundarySwiftLiveObserve(options) {
         "update",
         namespace,
         schemaSeedID,
-        {
-          id: schemaSeedID,
-          text: "TypeScript schema seed for Swift live validation",
-          isCompleted: false,
-        },
+        boundaryTodoFields(
+          schemaSeedID,
+          "TypeScript schema seed for Swift live validation",
+        ),
       ],
     ]);
     emit({
@@ -1865,11 +1873,10 @@ async function verifyBoundaryTypeScriptLiveObserve(options) {
         "update",
         namespace,
         schemaSeedID,
-        {
-          id: schemaSeedID,
-          text: "TypeScript schema seed for Swift live observe",
-          isCompleted: false,
-        },
+        boundaryTodoFields(
+          schemaSeedID,
+          "TypeScript schema seed for Swift live observe",
+        ),
       ],
     ]);
     emit({
@@ -1910,7 +1917,7 @@ async function verifyBoundaryTypeScriptLiveObserve(options) {
     });
 
     const operations = [
-      ["update", namespace, entityID, { id: entityID, text, isCompleted: false }],
+      ["update", namespace, entityID, boundaryTodoFields(entityID, text)],
     ];
     const transactPayload = await adminTransact(options, operations);
     emit({
@@ -1935,7 +1942,10 @@ async function verifyBoundaryTypeScriptLiveObserve(options) {
         row?.case === "validation.live.observe"
         && row.event === "receive-external-refresh"
         && row.ok === true
-        && (row.entityID === entityID || eventReferencesEntity(row, entityID)),
+        && (row.entityID === entityID || eventReferencesEntity(row, entityID))
+        && row.details?.appliedRefreshCount > 0
+        && row.details?.cachedEntityIDs?.includes(entityID)
+        && row.details?.cachedTodoTexts?.includes(text),
       "Swift live observe external refresh",
     );
     emit({
@@ -1949,6 +1959,11 @@ async function verifyBoundaryTypeScriptLiveObserve(options) {
         entityID,
         observedEvent: observedRow.event,
         swiftEvents: swiftObserve.rows.map((row) => row.event),
+        swiftAppliedRefreshCount: observedRow.details?.appliedRefreshCount ?? 0,
+        swiftAppliedRefreshTransactionIDs: observedRow.details?.appliedRefreshTransactionIDs ?? [],
+        swiftCachedEntityIDs: observedRow.details?.cachedEntityIDs ?? [],
+        swiftCachedTodoTexts: observedRow.details?.cachedTodoTexts ?? [],
+        swiftRuntimeCachePath: observedRow.details?.runtimeCachePath ?? null,
       },
     });
 

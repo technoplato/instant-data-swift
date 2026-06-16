@@ -94,12 +94,17 @@ TypeScript validation runner
 also consumes the Swift JSONL with `--swift-live-session-contract` so the
 protocol transcript stays readable from both sides, and
 `--swift-live-transaction-contract` validates the local transaction transcript
-from the TypeScript side while remote cross-client delivery remains future work.
+from the TypeScript side. In live observe mode the Swift command now applies the
+matching external `refresh-ok` into a temporary `InstantRuntime` cache and emits
+the cached Todo ids/texts as evidence, so
+`--boundary-typescript-live-observe` proves both WebSocket delivery and local
+runtime hydration from the TypeScript-authored admin write. Remote reconnect
+replay remains future work.
 `--swift-local-integrations-contract` validates the Swift-authored local room
 presence/topic evidence from TypeScript, including the room handle, topic name,
 presence value keys, topic payload keys, and relaunch persistence.
-Cross-client Swift/TypeScript mutation delivery,
-reconnect replay, and observer refresh application remain future transport work.
+Cross-client Swift/TypeScript mutation delivery now has opt-in validation
+coverage in both directions, but it is not yet an always-on runtime event pump.
 
 ### Schema
 
@@ -420,7 +425,8 @@ opens TypeScript-side admin SSE, runs Swift's live WebSocket transaction command
 and requires TypeScript to observe the Swift-authored row. The companion
 `--boundary-typescript-live-observe` mode opens Swift's live WebSocket observer,
 writes a unique todo through TypeScript admin HTTP, and requires Swift to
-observe the external refresh. When those opt-in modes produce
+observe the external refresh and decode it from the temporary Swift runtime
+cache. When those opt-in modes produce
 `typescript-swift-boundary.jsonl` and `swift-typescript-boundary.jsonl` for a
 non-local app id, the coverage gate can consume the artifacts through
 `INSTANT_SWIFT_DATA_COVERAGE_ARTIFACTS_DIR` or
@@ -432,7 +438,9 @@ post-boundary gate as `swift-coverage-final.jsonl`. The Swift runtime now has
 ids back onto declared Swift schema identities, publish query observers, advance
 the processed transaction checkpoint, and confirm a matching optimistic outbox
 mutation once the server refresh has been applied, while replaying remaining
-local outbox writes so newer optimistic edits stay visible.
+local outbox writes so newer optimistic edits stay visible. The live observe
+validation path uses that API for TypeScript-to-Swift boundary evidence rather
+than stopping at the raw WebSocket payload.
 
 Current local progress: the CLI exposes non-captive local admin helpers:
 `instant-swift-data admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id]`

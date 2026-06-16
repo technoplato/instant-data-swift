@@ -613,8 +613,10 @@ uses a deterministic local protocol client by default; add
 run the same smoke against Instant's WebSocket endpoint.
 `validation live-observe` uses the same deterministic local session by default,
 and in live mode waits for a `refresh-ok` containing
-`INSTANT_SWIFT_DATA_LIVE_OBSERVE_ENTITY_ID`. This is the Swift-side observer
-used by the reverse TypeScript-to-Swift boundary proof.
+`INSTANT_SWIFT_DATA_LIVE_OBSERVE_ENTITY_ID`, applies that refresh to a temporary
+Swift runtime cache, and emits the cached entity ids/texts in JSONL evidence.
+This is the Swift-side observer used by the reverse TypeScript-to-Swift
+boundary proof.
 `validation typed-drafts` emits terminal evidence for a macro-generated create
 draft whose `id` starts as `nil` and whose writable assignments omit the managed
 primary key, `Draft(existing)` edit, a writable relation draft with generated ref
@@ -670,7 +672,8 @@ WebSocket transaction command, and confirms TypeScript observed the Swift row.
 Set `INSTANT_SWIFT_DATA_RUN_TYPESCRIPT_LIVE_BOUNDARY=1` or run
 `--boundary-typescript-live-observe` to open Swift's live WebSocket observer,
 write a unique todo through TypeScript admin HTTP, and require Swift to emit the
-matching external refresh.
+matching external refresh plus cache-backed `swiftCachedEntityIDs` /
+`swiftCachedTodoTexts` evidence.
 After both opt-in live boundary modes have written
 `typescript-swift-boundary.jsonl` and `swift-typescript-boundary.jsonl`, rerun
 `INSTANT_SWIFT_DATA_COVERAGE_ARTIFACTS_DIR=/tmp/instant-validation-results swift run instant-swift-data validation coverage --json`
