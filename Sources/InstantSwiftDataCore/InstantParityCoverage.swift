@@ -2376,11 +2376,11 @@ public enum InstantSwiftDataParityCoverage {
       id: "sqlite.cloudkit-demo.remote-share",
       sourceFile: "upstream/sqlite-data/Examples/CloudKitDemo",
       sourceTestName: "CloudKit shared records and participants",
-      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
-      swiftTestName: "Instant share model local coverage",
+      swiftFile: "Sources/InstantSwiftDataCore/InstantCloudKitDemoValidation.swift",
+      swiftTestName: "cloudKitDemoValidationHarnessProvesSharedCounterRoles",
       surface: "sharing",
-      status: .blocked,
-      notes: "Local Instant share entities and the counter demo surface are covered; remote permission rejection and transport-backed CloudKitDemo-equivalent app proof remain future work."
+      status: .adapted,
+      notes: "The CloudKitDemo remote-share analogue is adapted as local Instant validation evidence: an owner creates and shares a counter root, an invitee accepts and sees shared metadata, reader writes are rejected before cache/outbox mutation, writer promotion allows mutation, and a fresh relaunch preserves the shared counter, role, members, and share ids. This remains local/mock-remote evidence; live Instant transport is still tracked by the dedicated live transport blockers."
     ),
   ]
 

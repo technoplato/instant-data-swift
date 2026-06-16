@@ -262,6 +262,24 @@ struct InstantSwiftDataCLI {
         throw error
       }
 
+    case .cloudKitDemo:
+      let appID = validationAppID(defaultAppID: "cloudkit-demo-validation")
+      do {
+        let result = try await InstantSwiftDataCloudKitDemoValidation.run(appID: appID)
+        try printCloudKitDemoValidation(result: result, output: output)
+      } catch {
+        if output == .jsonl {
+          try writeJSONLine(
+            validationFailureRow(
+              caseID: "validation.cloudkit.demo",
+              appID: appID,
+              error: error
+            )
+          )
+        }
+        throw error
+      }
+
     case .parityReport:
       let appID = validationAppID()
       try printParityCoverageReport(
@@ -8576,6 +8594,7 @@ struct InstantSwiftDataCLI {
         validation local-integrations [--json|--jsonl]
         validation reminders [--json|--jsonl]
         validation server-transaction-loopback [--json|--jsonl]
+        validation cloudkit-demo [--json|--jsonl]
         validation typed-drafts [--json|--jsonl]
         validation platform-adapters [--json|--jsonl]
         validation syncups-recording [--json|--jsonl]
@@ -9121,6 +9140,60 @@ struct InstantSwiftDataCLI {
       print("pending mutations: \(summary.pendingMutationCount)")
       print("revisions: store \(summary.storeRevision), outbox \(summary.outboxRevision)")
       print("todos: \(summary.todoIDs.joined(separator: ", "))")
+      print("cache: \(summary.cachePath)")
+
+    case .json:
+      try writeJSON(summary)
+
+    case .jsonl:
+      for row in result.evidence {
+        try writeJSONLine(row)
+      }
+    }
+  }
+
+  private static func printCloudKitDemoValidation(
+    result: CloudKitDemoValidationResult,
+    output: OutputMode
+  ) throws {
+    let finalDetails = result.evidence.last?.details
+    let summary = CloudKitDemoValidationOutput(
+      appID: result.appID,
+      cachePath: result.cacheURL.path,
+      event: "cloudkit-demo",
+      transport: "not-implemented-local-cache-only",
+      ok: result.evidence.allSatisfy { $0.ok },
+      evidenceCount: result.evidence.count,
+      events: result.evidence.map(\.event),
+      counterID: result.counterID,
+      shareID: result.shareID,
+      counterIDs: finalDetails?.counterIDs ?? [],
+      counterCounts: finalDetails?.counterCounts ?? [],
+      sharedCounterIDs: finalDetails?.sharedCounterIDs ?? [],
+      shareIDs: finalDetails?.shareIDs ?? [],
+      shareRoles: finalDetails?.shareRoles ?? [],
+      shareMemberCounts: finalDetails?.shareMemberCounts ?? [],
+      shareMemberUserIDs: finalDetails?.shareMemberUserIDs ?? [],
+      rejectedOperations: result.evidence.flatMap(\.details.rejectedOperations),
+      pendingMutationCount: finalDetails?.pendingMutationCount ?? 0,
+      storeRevision: finalDetails?.storeRevision ?? 0,
+      outboxRevision: finalDetails?.outboxRevision ?? 0
+    )
+
+    switch output {
+    case .human:
+      print("validation: \(summary.ok ? "ok" : "failed")")
+      print("case: validation.cloudkit.demo")
+      print("events: \(summary.events.joined(separator: ", "))")
+      print("evidence rows: \(summary.evidenceCount)")
+      print("counter: \(summary.counterID)")
+      print("share: \(summary.shareID)")
+      print("counts: \(summary.counterCounts.map(String.init).joined(separator: ", "))")
+      print("roles: \(summary.shareRoles.map(\.rawValue).joined(separator: ", "))")
+      print("members: \(summary.shareMemberUserIDs.joined(separator: ", "))")
+      print("rejections: \(summary.rejectedOperations.joined(separator: ", "))")
+      print("pending mutations: \(summary.pendingMutationCount)")
+      print("revisions: store \(summary.storeRevision), outbox \(summary.outboxRevision)")
       print("cache: \(summary.cachePath)")
 
     case .json:
@@ -11370,6 +11443,29 @@ private struct ServerTransactionLoopbackValidationOutput: Codable, Sendable {
   var mutationTransactionID: String?
   var changedEntityIDs: [String]
   var emissionQueryIDs: [String]
+  var pendingMutationCount: Int
+  var storeRevision: Int64
+  var outboxRevision: Int64
+}
+
+private struct CloudKitDemoValidationOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var transport: String
+  var ok: Bool
+  var evidenceCount: Int
+  var events: [String]
+  var counterID: String
+  var shareID: String
+  var counterIDs: [String]
+  var counterCounts: [Int]
+  var sharedCounterIDs: [String]
+  var shareIDs: [String]
+  var shareRoles: [InstantShareRole]
+  var shareMemberCounts: [Int]
+  var shareMemberUserIDs: [String]
+  var rejectedOperations: [String]
   var pendingMutationCount: Int
   var storeRevision: Int64
   var outboxRevision: Int64

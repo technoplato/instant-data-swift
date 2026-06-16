@@ -79,6 +79,14 @@ struct InstantSwiftDataValidationRunner {
         try writeJSONLine(row)
       }
 
+    case .cloudKitDemo:
+      let run = try await InstantSwiftDataTestHarness.runCloudKitDemoValidation(
+        appID: invocation.appID
+      )
+      for row in run.result.evidence {
+        try writeJSONLine(row)
+      }
+
     case .typedDrafts:
       let run = try await InstantSwiftDataTestHarness.runDraftValidation()
       for row in run.result.evidence {

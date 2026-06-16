@@ -1463,6 +1463,7 @@ public enum CLIValidationInvocation: Equatable, Sendable {
   case localIntegrations
   case reminders
   case serverTransactionLoopback
+  case cloudKitDemo
   case platformAdapters
   case parityReport
   case coverage
@@ -1475,6 +1476,7 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
   case localIntegrations
   case reminders
   case serverTransactionLoopback
+  case cloudKitDemo
   case typedDrafts
   case platformAdapters
   case syncUpsRecording
@@ -1491,6 +1493,8 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
       "validation.reminders"
     case .serverTransactionLoopback:
       "validation.server.transaction.loopback"
+    case .cloudKitDemo:
+      "validation.cloudkit.demo"
     case .typedDrafts:
       "validation.typed.drafts"
     case .platformAdapters:
@@ -1508,6 +1512,8 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
     switch self {
     case .serverTransactionLoopback:
       "server-transaction-loopback-validation"
+    case .cloudKitDemo:
+      "cloudkit-demo-validation"
     case .typedDrafts:
       "draft-validation"
     case .platformAdapters:
@@ -1522,11 +1528,12 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
 
 public enum CLIValidationUsage {
   public static let validation = """
-    Usage: instant-swift-data validation <local-todos|local-integrations|reminders|server-transaction-loopback|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>
+    Usage: instant-swift-data validation <local-todos|local-integrations|reminders|server-transaction-loopback|cloudkit-demo|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>
       instant-swift-data validation local-todos [--json|--jsonl]
       instant-swift-data validation local-integrations [--json|--jsonl]
       instant-swift-data validation reminders [--json|--jsonl]
       instant-swift-data validation server-transaction-loopback [--json|--jsonl]
+      instant-swift-data validation cloudkit-demo [--json|--jsonl]
       instant-swift-data validation typed-drafts [--json|--jsonl]
       instant-swift-data validation platform-adapters [--json|--jsonl]
       instant-swift-data validation syncups-recording [--json|--jsonl]
@@ -1537,7 +1544,7 @@ public enum CLIValidationUsage {
 
 public enum CLIValidationRunnerUsage {
   public static let validationRunner =
-    "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--reminders|--local-reminders|--server-transaction-loopback|--typed-drafts|--platform-adapters|--syncups-recording|--parity-report|--coverage]"
+    "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--reminders|--local-reminders|--server-transaction-loopback|--cloudkit-demo|--typed-drafts|--platform-adapters|--syncups-recording|--parity-report|--coverage]"
 }
 
 public enum CLIValidationArgumentError: Error, Equatable, Sendable {
@@ -4560,6 +4567,9 @@ public struct CLIValidationParser: Parser {
     case "server-transaction-loopback", "server-loopback", "transport-loopback", "inbound-loopback":
       return .serverTransactionLoopback
 
+    case "cloudkit-demo", "cloudkit", "shared-counters":
+      return .cloudKitDemo
+
     case "parity-report", "parity":
       return .parityReport
 
@@ -4605,6 +4615,9 @@ public struct CLIValidationRunnerParser: Parser {
 
     case "--server-transaction-loopback", "--server-loopback", "--transport-loopback":
       return .serverTransactionLoopback
+
+    case "--cloudkit-demo", "--cloudkit", "--shared-counters":
+      return .cloudKitDemo
 
     case "--typed-drafts":
       return .typedDrafts

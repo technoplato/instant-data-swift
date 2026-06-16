@@ -37,6 +37,7 @@ same evidence helpers are available to package tests and terminal validation:
 swift run instant-swift-data validation local-todos --jsonl
 swift run instant-swift-data validation local-integrations --jsonl
 swift run instant-swift-data validation reminders --jsonl
+swift run instant-swift-data validation cloudkit-demo --jsonl
 swift run instant-swift-data validation typed-drafts --jsonl
 swift run instant-swift-data validation platform-adapters --jsonl
 swift run instant-swift-data validation syncups-recording --jsonl
@@ -45,6 +46,7 @@ swift run instant-swift-data validation coverage --jsonl
 swift run instant-swift-data-validation-runner --local-todos
 swift run instant-swift-data-validation-runner --local-integrations
 swift run instant-swift-data-validation-runner --reminders
+swift run instant-swift-data-validation-runner --cloudkit-demo
 swift run instant-swift-data-validation-runner --typed-drafts
 swift run instant-swift-data-validation-runner --platform-adapters
 swift run instant-swift-data-validation-runner --syncups-recording

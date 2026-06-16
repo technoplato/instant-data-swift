@@ -262,6 +262,147 @@ struct LocalTodoValidationTests {
   }
 
   @Test
+  func cloudKitDemoValidationHarnessProvesSharedCounterRoles() async throws {
+    let cacheURL = temporaryCacheURL()
+    let idGenerator = ValidationIDGenerator(["cloudkit-demo-share", "cloudkit-demo-token"])
+
+    let run = try await InstantSwiftDataTestHarness.runCloudKitDemoValidation(
+      appID: "validation-cloudkit-demo-test",
+      cacheURL: cacheURL,
+      timestamp: { InstantTimestamp(milliseconds: 1_700_003_000_000) },
+      makeID: { idGenerator.next() }
+    )
+    let result = run.result
+
+    expectNoDifference(result.appID, "validation-cloudkit-demo-test")
+    expectNoDifference(result.cacheURL, cacheURL)
+    expectNoDifference(result.counterID, "validation-cloudkit-demo-counter")
+    expectNoDifference(result.shareID, "cloudkit-demo-share")
+    expectNoDifference(run.summary.caseID, "validation.cloudkit.demo")
+    expectNoDifference(run.summary.rowCount, 7)
+    expectNoDifference(run.summary.ok, true)
+    expectNoDifference(run.summary.events, [
+      "owner-create",
+      "share-create",
+      "reader-accept",
+      "reader-reject",
+      "writer-promote",
+      "writer-update",
+      "relaunch",
+    ])
+    expectNoDifference(result.evidence.map(\.event), run.summary.events)
+    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 7))
+
+    let ownerCreate = try #require(result.evidence.first { $0.event == "owner-create" }?.details)
+    expectNoDifference(ownerCreate.authUserID, "user-1")
+    expectNoDifference(ownerCreate.counterCounts, [2])
+    expectNoDifference(ownerCreate.sharedCounterIDs, [])
+
+    let readerAccept = try #require(result.evidence.first { $0.event == "reader-accept" }?.details)
+    expectNoDifference(readerAccept.authUserID, "user-2")
+    expectNoDifference(readerAccept.counterIDs, ["validation-cloudkit-demo-counter"])
+    expectNoDifference(readerAccept.counterCounts, [2])
+    expectNoDifference(readerAccept.sharedCounterIDs, ["validation-cloudkit-demo-counter"])
+    expectNoDifference(readerAccept.shareIDs, ["cloudkit-demo-share"])
+    expectNoDifference(readerAccept.shareRoles, [.reader])
+    expectNoDifference(readerAccept.shareMemberCounts, [2])
+    expectNoDifference(readerAccept.shareMemberUserIDs, ["user-1", "user-2"])
+
+    let readerReject = try #require(result.evidence.first { $0.event == "reader-reject" }?.details)
+    expectNoDifference(readerReject.rejectedOperations, ["reader-increment"])
+    expectNoDifference(readerReject.counterCounts, [2])
+    expectNoDifference(readerReject.pendingMutationIDs, readerAccept.pendingMutationIDs)
+
+    let writerPromote = try #require(result.evidence.first { $0.event == "writer-promote" }?.details)
+    expectNoDifference(writerPromote.authUserID, "user-1")
+    expectNoDifference(writerPromote.shareRoles, [.owner])
+    expectNoDifference(writerPromote.shareMemberUserIDs, ["user-1", "user-2"])
+
+    let writerUpdate = try #require(result.evidence.first { $0.event == "writer-update" }?.details)
+    expectNoDifference(writerUpdate.authUserID, "user-2")
+    expectNoDifference(writerUpdate.counterCounts, [3])
+    expectNoDifference(writerUpdate.shareRoles, [.writer])
+
+    let relaunch = try #require(result.evidence.last?.details)
+    expectNoDifference(relaunch.authUserID, "user-2")
+    expectNoDifference(relaunch.counterCounts, [3])
+    expectNoDifference(relaunch.shareIDs, ["cloudkit-demo-share"])
+    expectNoDifference(relaunch.shareRoles, [.writer])
+    expectNoDifference(relaunch.shareMemberCounts, [2])
+    expectNoDifference(relaunch.shareMemberUserIDs, ["user-1", "user-2"])
+  }
+
+  @Test
+  func validationRunnerCloudKitDemoCommandEmitsJSONL() throws {
+    let result = try runValidationRunner(arguments: ["--cloudkit-demo"])
+
+    #expect(
+      result.status == 0,
+      """
+      instant-swift-data-validation-runner --cloudkit-demo failed.
+      stdout:
+      \(result.stdout)
+      stderr:
+      \(result.stderr)
+      """
+    )
+
+    let rows = try parseJSONLines(result.stdout)
+    expectNoDifference(rows.count, 7)
+    expectNoDifference(
+      rows.map { $0["case"] as? String ?? "" },
+      Array(repeating: "validation.cloudkit.demo", count: 7)
+    )
+    expectNoDifference(
+      rows.map { $0["appID"] as? String ?? "" },
+      Array(repeating: "cloudkit-demo-validation", count: 7)
+    )
+    expectNoDifference(rows.map { $0["event"] as? String ?? "" }, [
+      "owner-create",
+      "share-create",
+      "reader-accept",
+      "reader-reject",
+      "writer-promote",
+      "writer-update",
+      "relaunch",
+    ])
+    expectNoDifference(rows.map { $0["ok"] as? Bool ?? false }, Array(repeating: true, count: 7))
+
+    let readerReject = try #require(
+      rows.first { $0["event"] as? String == "reader-reject" }?["details"] as? [String: Any]
+    )
+    expectNoDifference(readerReject["rejectedOperations"] as? [String], ["reader-increment"])
+    expectNoDifference((readerReject["counterCounts"] as? [NSNumber])?.map(\.intValue), [2])
+
+    let relaunch = try #require(
+      rows.first { $0["event"] as? String == "relaunch" }?["details"] as? [String: Any]
+    )
+    expectNoDifference(relaunch["authUserID"] as? String, "user-2")
+    expectNoDifference((relaunch["counterCounts"] as? [NSNumber])?.map(\.intValue), [3])
+    expectNoDifference(relaunch["shareRoles"] as? [String], ["writer"])
+    expectNoDifference((relaunch["shareMemberCounts"] as? [NSNumber])?.map(\.intValue), [2])
+    expectNoDifference(relaunch["shareMemberUserIDs"] as? [String], ["user-1", "user-2"])
+  }
+
+  @Test
+  func validationRunnerCloudKitDemoFailureEmitsMappedJSONL() throws {
+    let result = try runValidationRunner(
+      arguments: ["--cloudkit-demo"],
+      environment: [
+        "INSTANT_SWIFT_DATA_VALIDATION_RUNNER_FAIL_CASE": "validation.cloudkit.demo"
+      ]
+    )
+
+    #expect(result.status == 1)
+    let rows = try parseJSONLines(result.stdout)
+    let row = try #require(rows.first)
+    expectNoDifference(row["case"] as? String, "validation.cloudkit.demo")
+    expectNoDifference(row["appID"] as? String, "cloudkit-demo-validation")
+    expectNoDifference(row["event"] as? String, "failed")
+    expectNoDifference(row["ok"] as? Bool, false)
+  }
+
+  @Test
   func localIntegrationValidationProducesEvidenceAndPersistsLocalSurfaces() async throws {
     let cacheURL = temporaryCacheURL()
 
@@ -997,8 +1138,8 @@ struct LocalTodoValidationTests {
     expectNoDifference(run.result.coverageComplete, false)
     expectNoDifference(run.result.recordCount, 225)
     expectNoDifference(run.result.exactCount, 28)
-    expectNoDifference(run.result.adaptedCount, 193)
-    expectNoDifference(run.result.blockedCount, 3)
+    expectNoDifference(run.result.adaptedCount, 194)
+    expectNoDifference(run.result.blockedCount, 2)
     expectNoDifference(run.result.notApplicableCount, 1)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
     expectNoDifference(run.summary.appID, "validation-parity-test")
@@ -1008,7 +1149,7 @@ struct LocalTodoValidationTests {
       run.summary.events,
       Array(repeating: "parity-record", count: run.result.recordCount)
     )
-    expectNoDifference(run.summary.failedEvents, Array(repeating: "parity-record", count: 3))
+    expectNoDifference(run.summary.failedEvents, Array(repeating: "parity-record", count: 2))
     #expect(
       run.result.sourceFiles.contains(
         "upstream/instant/client/packages/core/__tests__/src/store.test.ts"
@@ -1082,6 +1223,11 @@ struct LocalTodoValidationTests {
     #expect(
       run.result.records.contains {
         $0.id == "sqlite.cloudkit-demo.local-counter-share" && $0.status == .adapted
+      }
+    )
+    #expect(
+      run.result.records.contains {
+        $0.id == "sqlite.cloudkit-demo.remote-share" && $0.status == .adapted
       }
     )
     #expect(
@@ -1405,7 +1551,7 @@ struct LocalTodoValidationTests {
     ]))
     expectNoDifference(Set(rows.map { $0["appID"] as? String ?? "" }), Set(["local-validation"]))
     expectNoDifference(Set(rows.map { $0["event"] as? String ?? "" }), Set(["parity-record"]))
-    expectNoDifference(rows.filter { ($0["ok"] as? Bool) == false }.count, 3)
+    expectNoDifference(rows.filter { ($0["ok"] as? Bool) == false }.count, 2)
     let platformAdapterBinding = try #require(rows.first { row in
       row["entityID"] as? String == "instant.react-common.platform-adapter-bindings"
     })
@@ -1474,16 +1620,15 @@ struct LocalTodoValidationTests {
     expectNoDifference(details["coverageComplete"] as? Bool, false)
     expectNoDifference((details["recordCount"] as? NSNumber)?.intValue, 225)
     expectNoDifference((details["exactCount"] as? NSNumber)?.intValue, 28)
-    expectNoDifference((details["adaptedCount"] as? NSNumber)?.intValue, 193)
-    expectNoDifference((details["blockedCount"] as? NSNumber)?.intValue, 3)
+    expectNoDifference((details["adaptedCount"] as? NSNumber)?.intValue, 194)
+    expectNoDifference((details["blockedCount"] as? NSNumber)?.intValue, 2)
     expectNoDifference((details["notApplicableCount"] as? NSNumber)?.intValue, 1)
-    expectNoDifference((details["swiftFileCount"] as? NSNumber)?.intValue, 23)
+    expectNoDifference((details["swiftFileCount"] as? NSNumber)?.intValue, 24)
     expectNoDifference(
       details["blockedIDs"] as? [String],
       [
         "instant.live-transport.swift-to-typescript",
         "instant.live-transport.typescript-to-swift",
-        "sqlite.cloudkit-demo.remote-share",
       ]
     )
   }
@@ -1536,6 +1681,7 @@ struct LocalTodoValidationTests {
     #expect(script.contains("swift run instant-swift-data-validation-runner --local-todos"))
     #expect(script.contains("swift run instant-swift-data-validation-runner --local-integrations"))
     #expect(script.contains("swift run instant-swift-data-validation-runner --server-transaction-loopback"))
+    #expect(script.contains("swift run instant-swift-data-validation-runner --cloudkit-demo"))
     #expect(script.contains("swift run instant-swift-data validation reminders --jsonl"))
     #expect(script.contains("swift run instant-swift-data validation typed-drafts --jsonl"))
     #expect(script.contains("swift run instant-swift-data validation platform-adapters --jsonl"))
@@ -1547,6 +1693,7 @@ struct LocalTodoValidationTests {
     #expect(script.contains("swift run instant-swift-data outbox transport --json"))
     #expect(script.contains("swift-local-integrations.jsonl"))
     #expect(script.contains("swift-server-transaction-loopback.jsonl"))
+    #expect(script.contains("swift-cloudkit-demo.jsonl"))
     #expect(script.contains("swift-reminders.jsonl"))
     #expect(script.contains("swift-typed-drafts.jsonl"))
     #expect(script.contains("swift-platform-adapters.jsonl"))
@@ -1579,6 +1726,7 @@ struct LocalTodoValidationTests {
       encoding: .utf8
     )
     #expect(runnerSource.contains("runDraftValidation()"))
+    #expect(runnerSource.contains("runCloudKitDemoValidation"))
     #expect(runnerSource.contains("InstantSwiftDataPlatformAdapterValidation.run"))
     #expect(runnerSource.contains("runRemindersValidation()"))
     #expect(runnerSource.contains("runSyncUpsRecordingValidation()"))
@@ -1594,6 +1742,7 @@ struct LocalTodoValidationTests {
     )
     #expect(parserSource.contains("CLIValidationRunnerParser"))
     #expect(parserSource.contains("--typed-drafts"))
+    #expect(parserSource.contains("--cloudkit-demo"))
     #expect(parserSource.contains("--platform-adapters"))
     #expect(parserSource.contains("--reminders\", \"--local-reminders"))
     #expect(parserSource.contains("--syncups-recording"))
@@ -1691,6 +1840,9 @@ struct LocalTodoValidationTests {
           ;;
         instant-swift-data-validation-runner:--server-transaction-loopback:)
           echo '{"case":"validation.server.transaction.loopback","side":"swift","event":"stub-server-loopback","appID":"local-validation","timestampMs":2,"ok":true,"details":{}}'
+          ;;
+        instant-swift-data-validation-runner:--cloudkit-demo:)
+          echo '{"case":"validation.cloudkit.demo","side":"swift","event":"stub-cloudkit-demo","appID":"cloudkit-demo-validation","timestampMs":3,"ok":true,"details":{}}'
           ;;
         instant-swift-data:validation:reminders)
           expected="run instant-swift-data validation reminders --jsonl"
@@ -1945,6 +2097,8 @@ struct LocalTodoValidationTests {
       "swift-local-integrations-complete",
       "swift-server-transaction-loopback-start",
       "swift-server-transaction-loopback-complete",
+      "swift-cloudkit-demo-start",
+      "swift-cloudkit-demo-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -1986,6 +2140,11 @@ struct LocalTodoValidationTests {
     #expect(
       FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("swift-server-transaction-loopback.jsonl").path
+      )
+    )
+    #expect(
+      FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-cloudkit-demo.jsonl").path
       )
     )
     #expect(
@@ -2311,6 +2470,8 @@ struct LocalTodoValidationTests {
       "swift-local-integrations-complete",
       "swift-server-transaction-loopback-start",
       "swift-server-transaction-loopback-complete",
+      "swift-cloudkit-demo-start",
+      "swift-cloudkit-demo-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -2372,6 +2533,11 @@ struct LocalTodoValidationTests {
     )
     try "stale server loopback\n".write(
       to: resultsURL.appendingPathComponent("swift-server-transaction-loopback.jsonl"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try "stale cloudkit demo\n".write(
+      to: resultsURL.appendingPathComponent("swift-cloudkit-demo.jsonl"),
       atomically: true,
       encoding: .utf8
     )
@@ -2497,6 +2663,11 @@ struct LocalTodoValidationTests {
     )
     #expect(
       !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-cloudkit-demo.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("swift-reminders.jsonl").path
       )
     )
@@ -2593,6 +2764,8 @@ struct LocalTodoValidationTests {
       "swift-local-integrations-complete",
       "swift-server-transaction-loopback-start",
       "swift-server-transaction-loopback-complete",
+      "swift-cloudkit-demo-start",
+      "swift-cloudkit-demo-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -2664,6 +2837,8 @@ struct LocalTodoValidationTests {
       "swift-local-integrations-complete",
       "swift-server-transaction-loopback-start",
       "swift-server-transaction-loopback-complete",
+      "swift-cloudkit-demo-start",
+      "swift-cloudkit-demo-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -2743,6 +2918,8 @@ struct LocalTodoValidationTests {
       "swift-local-integrations-complete",
       "swift-server-transaction-loopback-start",
       "swift-server-transaction-loopback-complete",
+      "swift-cloudkit-demo-start",
+      "swift-cloudkit-demo-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -2815,6 +2992,8 @@ struct LocalTodoValidationTests {
       "swift-local-integrations-complete",
       "swift-server-transaction-loopback-start",
       "swift-server-transaction-loopback-complete",
+      "swift-cloudkit-demo-start",
+      "swift-cloudkit-demo-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",

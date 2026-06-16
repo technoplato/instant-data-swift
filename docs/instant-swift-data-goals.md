@@ -118,7 +118,11 @@ Port the examples from `pointfreeco/sqlite-data/Examples`:
   `instant-swift-data examples counters add/list/increment/decrement/delete`
   and the `examples cloudkit-demo` alias. It proves local visible sharing
   metadata, current-user roles, member counts, reader rejection, and writer
-  promotion for shared counter roots.
+  promotion for shared counter roots. `instant-swift-data validation
+  cloudkit-demo --jsonl` promotes that proof to a terminal artifact covering
+  owner create/share, invitee accept, reader rejection without local/outbox
+  mutation, writer promotion/update, and relaunch persistence. This is
+  local/mock-remote Instant evidence; live transport remains separately tracked.
 
 ## Public API Goals
 
@@ -869,9 +873,9 @@ a reminders list, another user must accept it, permissions must govern writes,
 and both clients must observe the shared state through Instant.
 The CloudKitDemo concept must include shared counter-style records with visible
 share state. The current local CLI slice proves this shape through
-`instant-swift-data examples counters` and `examples cloudkit-demo`; the final
-acceptance bar still requires real Instant-backed sharing and Swift/TypeScript
-verification.
+`instant-swift-data examples counters`, `examples cloudkit-demo`, and
+`instant-swift-data validation cloudkit-demo --jsonl`; the final acceptance bar
+still requires real Instant-backed sharing and Swift/TypeScript verification.
 
 ## Testing And Validation
 

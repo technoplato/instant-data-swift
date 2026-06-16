@@ -3219,6 +3219,9 @@ struct CLIArgumentParserTests {
     expectNoDifference(try parseValidation(["server-loopback"]), .serverTransactionLoopback)
     expectNoDifference(try parseValidation(["transport-loopback"]), .serverTransactionLoopback)
     expectNoDifference(try parseValidation(["inbound-loopback"]), .serverTransactionLoopback)
+    expectNoDifference(try parseValidation(["cloudkit-demo"]), .cloudKitDemo)
+    expectNoDifference(try parseValidation(["cloudkit"]), .cloudKitDemo)
+    expectNoDifference(try parseValidation(["shared-counters"]), .cloudKitDemo)
     expectNoDifference(try parseValidation(["typed-drafts"]), .typedDrafts)
     expectNoDifference(try parseValidation(["drafts"]), .typedDrafts)
     expectNoDifference(try parseValidation(["platform-adapters"]), .platformAdapters)
@@ -3242,6 +3245,7 @@ struct CLIArgumentParserTests {
         "validation server-transaction-loopback [--json|--jsonl]"
       )
     )
+    #expect(CLIValidationUsage.validation.contains("validation cloudkit-demo [--json|--jsonl]"))
     #expect(CLIValidationUsage.validation.contains("validation coverage [--json|--jsonl]"))
     try expectValidationParseError([], description: CLIValidationUsage.validation)
     try expectValidationParseError(["remote"], description: CLIValidationUsage.validation)
@@ -3264,6 +3268,9 @@ struct CLIArgumentParserTests {
       try parseValidationRunner(["--transport-loopback"]),
       .serverTransactionLoopback
     )
+    expectNoDifference(try parseValidationRunner(["--cloudkit-demo"]), .cloudKitDemo)
+    expectNoDifference(try parseValidationRunner(["--cloudkit"]), .cloudKitDemo)
+    expectNoDifference(try parseValidationRunner(["--shared-counters"]), .cloudKitDemo)
     expectNoDifference(try parseValidationRunner(["--typed-drafts"]), .typedDrafts)
     expectNoDifference(try parseValidationRunner(["--platform-adapters"]), .platformAdapters)
     expectNoDifference(try parseValidationRunner(["--syncups-recording"]), .syncUpsRecording)
@@ -3279,12 +3286,15 @@ struct CLIArgumentParserTests {
       CLIValidationRunnerInvocation.syncUpsRecording.appID,
       "syncups-recording-validation"
     )
+    expectNoDifference(CLIValidationRunnerInvocation.cloudKitDemo.caseID, "validation.cloudkit.demo")
+    expectNoDifference(CLIValidationRunnerInvocation.cloudKitDemo.appID, "cloudkit-demo-validation")
     expectNoDifference(CLIValidationRunnerInvocation.coverage.appID, "local-validation")
   }
 
   @Test
   func validationRunnerParserReportsMalformedArguments() throws {
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--parity-report|--coverage"))
+    #expect(CLIValidationRunnerUsage.validationRunner.contains("--cloudkit-demo"))
     try expectValidationRunnerParseError(
       ["--remote"],
       description: CLIValidationRunnerUsage.validationRunner

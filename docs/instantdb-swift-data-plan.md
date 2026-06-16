@@ -456,7 +456,9 @@ The CloudKitDemo counter concept now has a local Instant CLI surface:
 `instant-swift-data examples counters add/list/increment/decrement/delete`
 and the `examples cloudkit-demo` alias expose count mutations plus visible
 share metadata, current-user role, member count, reader rejection, and writer
-promotion proof.
+promotion proof. `instant-swift-data validation cloudkit-demo --jsonl` records
+that same owner/invitee lifecycle as terminal evidence, including reader
+rejection without outbox mutation, writer update, and relaunch persistence.
 Real Instant sharing entities, generated permissions, Reminders UI sharing, and
 Swift/TypeScript boundary proof remain future work.
 
@@ -786,7 +788,8 @@ Create `validation/` with:
 - Sharing: local CloudKitDemo-style counters can be added, incremented,
   decremented, listed with visible share metadata, shared with a second user,
   rejected for reader writes, and mutated after writer promotion through
-  `instant-swift-data examples counters` and the `cloudkit-demo` alias.
+  `instant-swift-data examples counters`, the `cloudkit-demo` alias, and
+  `instant-swift-data validation cloudkit-demo --jsonl`.
 - Reminders: the first local Reminders port slice exposes durable
   `examples reminders add-list`, `add`, `update`, `complete`, and
   `list --refresh` commands over `remindersLists`/`reminders` namespaces; reminder

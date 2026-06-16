@@ -864,11 +864,11 @@ extension InstantStoreTests {
     )
     try expectMalformed(
       ["validation", "remote", "--json"],
-      contains: "validation <local-todos|local-integrations|reminders|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>"
+      contains: "validation <local-todos|local-integrations|reminders|server-transaction-loopback|cloudkit-demo|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>"
     )
     try expectMalformed(
       ["validation", "todos", "extra", "--json"],
-      contains: "validation <local-todos|local-integrations|reminders|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>"
+      contains: "validation <local-todos|local-integrations|reminders|server-transaction-loopback|cloudkit-demo|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>"
     )
 
     expectNoDifference(
@@ -7698,7 +7698,7 @@ extension InstantStoreTests {
     #expect(malformed.status == 64)
     #expect(
       malformed.error.contains(
-        "validation <local-todos|local-integrations|reminders|server-transaction-loopback|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>"
+        "validation <local-todos|local-integrations|reminders|server-transaction-loopback|cloudkit-demo|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>"
       )
     )
   }
@@ -7962,6 +7962,77 @@ extension InstantStoreTests {
     expectNoDifference(relaunchEvidence.details.processedTransactionID, "validation.typescript.processed")
     expectNoDifference(relaunchEvidence.details.mutationTransactionID, "validation.typescript.server.tx")
     expectNoDifference(relaunchEvidence.details.pendingMutationIDs, ["validation.loopback.local"])
+  }
+
+  @Test
+  func cliValidationCloudKitDemoEmitsEvidence() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let jsonOutput = try JSONDecoder().decode(
+      CLICloudKitDemoValidationOutput.self,
+      from: Data(
+        try runCLI(["validation", "cloudkit-demo", "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(jsonOutput.appID, "cli-cache-test")
+    expectNoDifference(jsonOutput.event, "cloudkit-demo")
+    expectNoDifference(jsonOutput.transport, "not-implemented-local-cache-only")
+    expectNoDifference(jsonOutput.ok, true)
+    expectNoDifference(jsonOutput.evidenceCount, 7)
+    expectNoDifference(jsonOutput.events, [
+      "owner-create",
+      "share-create",
+      "reader-accept",
+      "reader-reject",
+      "writer-promote",
+      "writer-update",
+      "relaunch",
+    ])
+    expectNoDifference(jsonOutput.counterID, "validation-cloudkit-demo-counter")
+    expectNoDifference(jsonOutput.counterIDs, ["validation-cloudkit-demo-counter"])
+    expectNoDifference(jsonOutput.counterCounts, [3])
+    expectNoDifference(jsonOutput.sharedCounterIDs, ["validation-cloudkit-demo-counter"])
+    expectNoDifference(jsonOutput.shareRoles, [.writer])
+    expectNoDifference(jsonOutput.shareMemberCounts, [2])
+    expectNoDifference(jsonOutput.shareMemberUserIDs, ["user-1", "user-2"])
+    expectNoDifference(jsonOutput.rejectedOperations, ["reader-increment"])
+
+    let jsonlOutput = try runCLI(["validation", "cloudkit", "--jsonl"], homeURL: homeURL)
+    let lines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(lines.count, 7)
+    let readerEvidence = try JSONDecoder().decode(
+      CLICloudKitDemoValidationEvidence.self,
+      from: Data(lines[3].utf8)
+    )
+    expectNoDifference(readerEvidence.caseID, "validation.cloudkit.demo")
+    expectNoDifference(readerEvidence.appID, "cli-cache-test")
+    expectNoDifference(readerEvidence.event, "reader-reject")
+    expectNoDifference(readerEvidence.entityID, "validation-cloudkit-demo-counter")
+    expectNoDifference(readerEvidence.details.authUserID, "user-2")
+    expectNoDifference(readerEvidence.details.counterCounts, [2])
+    expectNoDifference(readerEvidence.details.shareRoles, [.reader])
+    expectNoDifference(readerEvidence.details.rejectedOperations, ["reader-increment"])
+
+    let relaunchEvidence = try JSONDecoder().decode(
+      CLICloudKitDemoValidationEvidence.self,
+      from: Data(try #require(lines.last).utf8)
+    )
+    expectNoDifference(relaunchEvidence.event, "relaunch")
+    expectNoDifference(relaunchEvidence.details.authUserID, "user-2")
+    expectNoDifference(relaunchEvidence.details.counterCounts, [3])
+    expectNoDifference(relaunchEvidence.details.shareRoles, [.writer])
+    expectNoDifference(relaunchEvidence.details.shareMemberCounts, [2])
+    expectNoDifference(relaunchEvidence.details.shareMemberUserIDs, ["user-1", "user-2"])
+
+    let humanOutput = try runCLI(["validation", "shared-counters"], homeURL: homeURL)
+    #expect(humanOutput.contains("validation: ok"))
+    #expect(humanOutput.contains("case: validation.cloudkit.demo"))
+    #expect(humanOutput.contains("evidence rows: 7"))
+    #expect(humanOutput.contains("roles: writer"))
+    #expect(humanOutput.contains("rejections: reader-increment"))
   }
 
   @Test
@@ -8705,8 +8776,8 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.coverageComplete, false)
     expectNoDifference(jsonOutput.recordCount, 225)
     expectNoDifference(jsonOutput.exactCount, 28)
-    expectNoDifference(jsonOutput.adaptedCount, 193)
-    expectNoDifference(jsonOutput.blockedCount, 3)
+    expectNoDifference(jsonOutput.adaptedCount, 194)
+    expectNoDifference(jsonOutput.blockedCount, 2)
     expectNoDifference(jsonOutput.notApplicableCount, 1)
     #expect(
       jsonOutput.sourceFiles.contains(
@@ -8848,6 +8919,11 @@ extension InstantStoreTests {
     #expect(
       jsonOutput.records.contains {
         $0.id == "sqlite.cloudkit-demo.local-counter-share" && $0.status == "adapted"
+      }
+    )
+    #expect(
+      jsonOutput.records.contains {
+        $0.id == "sqlite.cloudkit-demo.remote-share" && $0.status == "adapted"
       }
     )
     #expect(
@@ -9552,8 +9628,8 @@ extension InstantStoreTests {
     #expect(humanOutput.contains("parity coverage: incomplete"))
     #expect(humanOutput.contains("records: 225"))
     #expect(humanOutput.contains("exact: 28"))
-    #expect(humanOutput.contains("adapted: 193"))
-    #expect(humanOutput.contains("blocked: 3"))
+    #expect(humanOutput.contains("adapted: 194"))
+    #expect(humanOutput.contains("blocked: 2"))
     #expect(humanOutput.contains("not applicable: 1"))
   }
 
@@ -9575,17 +9651,16 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.coverageComplete, false)
     expectNoDifference(jsonOutput.recordCount, 225)
     expectNoDifference(jsonOutput.exactCount, 28)
-    expectNoDifference(jsonOutput.adaptedCount, 193)
-    expectNoDifference(jsonOutput.blockedCount, 3)
+    expectNoDifference(jsonOutput.adaptedCount, 194)
+    expectNoDifference(jsonOutput.blockedCount, 2)
     expectNoDifference(jsonOutput.notApplicableCount, 1)
     #expect(jsonOutput.sourceFileCount > 0)
-    expectNoDifference(jsonOutput.swiftFileCount, 23)
+    expectNoDifference(jsonOutput.swiftFileCount, 24)
     expectNoDifference(
       jsonOutput.blockedIDs,
       [
         "instant.live-transport.swift-to-typescript",
         "instant.live-transport.typescript-to-swift",
-        "sqlite.cloudkit-demo.remote-share",
       ]
     )
 
@@ -9605,7 +9680,7 @@ extension InstantStoreTests {
     let humanOutput = try runCLI(["validation", "coverage"], homeURL: homeURL)
     #expect(humanOutput.contains("validation coverage: incomplete"))
     #expect(humanOutput.contains("records: 225"))
-    #expect(humanOutput.contains("blocked: 3"))
+    #expect(humanOutput.contains("blocked: 2"))
   }
 
   @Test
@@ -11309,6 +11384,60 @@ private struct CLIServerTransactionLoopbackValidationDetails: Decodable {
   var changedEntityIDs: [String]
   var emissionQueryIDs: [String]
   var observerTodoIDs: [String]
+  var pendingMutationCount: Int
+  var storeRevision: Int64
+  var outboxRevision: Int64
+}
+
+private struct CLICloudKitDemoValidationOutput: Decodable {
+  var appID: String
+  var event: String
+  var transport: String
+  var ok: Bool
+  var evidenceCount: Int
+  var events: [String]
+  var counterID: String
+  var shareID: String
+  var counterIDs: [String]
+  var counterCounts: [Int]
+  var sharedCounterIDs: [String]
+  var shareIDs: [String]
+  var shareRoles: [InstantShareRole]
+  var shareMemberCounts: [Int]
+  var shareMemberUserIDs: [String]
+  var rejectedOperations: [String]
+  var pendingMutationCount: Int
+  var storeRevision: Int64
+  var outboxRevision: Int64
+}
+
+private struct CLICloudKitDemoValidationEvidence: Decodable {
+  var caseID: String
+  var appID: String
+  var event: String
+  var entityID: String?
+  var details: CLICloudKitDemoValidationDetails
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case appID
+    case event
+    case entityID
+    case details
+  }
+}
+
+private struct CLICloudKitDemoValidationDetails: Decodable {
+  var authUserID: String?
+  var counterIDs: [String]
+  var counterCounts: [Int]
+  var sharedCounterIDs: [String]
+  var shareIDs: [String]
+  var shareRoles: [InstantShareRole]
+  var shareMemberCounts: [Int]
+  var shareMemberUserIDs: [String]
+  var rejectedOperations: [String]
+  var pendingMutationIDs: [String]
   var pendingMutationCount: Int
   var storeRevision: Int64
   var outboxRevision: Int64

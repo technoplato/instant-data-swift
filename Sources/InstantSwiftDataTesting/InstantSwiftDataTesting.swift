@@ -90,6 +90,19 @@ public struct InstantServerTransactionLoopbackValidationRun: Sendable {
   }
 }
 
+public struct InstantCloudKitDemoValidationRun: Sendable {
+  public var result: CloudKitDemoValidationResult
+  public var summary: InstantValidationEvidenceSummary
+
+  public init(
+    result: CloudKitDemoValidationResult,
+    summary: InstantValidationEvidenceSummary
+  ) {
+    self.result = result
+    self.summary = summary
+  }
+}
+
 public struct InstantDraftValidationRun: Sendable {
   public var result: DraftValidationResult
   public var summary: InstantValidationEvidenceSummary
@@ -245,6 +258,26 @@ public enum InstantSwiftDataTestHarness {
       makeID: makeID
     )
     return InstantServerTransactionLoopbackValidationRun(
+      result: result,
+      summary: try requireAllEvidenceOK(result.evidence)
+    )
+  }
+
+  public static func runCloudKitDemoValidation(
+    appID: String = "cloudkit-demo-validation",
+    cacheURL: URL? = nil,
+    timestamp: @escaping @Sendable () -> InstantTimestamp = {
+      InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
+    },
+    makeID: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() }
+  ) async throws -> InstantCloudKitDemoValidationRun {
+    let result = try await InstantSwiftDataCloudKitDemoValidation.run(
+      appID: appID,
+      cacheURL: cacheURL,
+      timestamp: timestamp,
+      makeID: makeID
+    )
+    return InstantCloudKitDemoValidationRun(
       result: result,
       summary: try requireAllEvidenceOK(result.evidence)
     )
