@@ -22,6 +22,7 @@ public struct AppBuilderBuildRecord: Hashable, Codable, Sendable, Identifiable {
   public var error: AppBuilderBuildError?
   public var isPreviewable: Bool?
   public var title: String?
+  public var fileID: String?
 
   public init(
     id: String,
@@ -32,7 +33,8 @@ public struct AppBuilderBuildRecord: Hashable, Codable, Sendable, Identifiable {
     slug: String? = nil,
     error: AppBuilderBuildError? = nil,
     isPreviewable: Bool? = nil,
-    title: String? = nil
+    title: String? = nil,
+    fileID: String? = nil
   ) {
     self.id = id
     self.instantAppID = instantAppID
@@ -43,6 +45,7 @@ public struct AppBuilderBuildRecord: Hashable, Codable, Sendable, Identifiable {
     self.error = error
     self.isPreviewable = isPreviewable
     self.title = title
+    self.fileID = fileID
   }
 }
 
@@ -117,6 +120,7 @@ public enum AppBuilderExample {
   public static let buildsNamespace = "builds"
 
   public static let defaultOrgID = "local-instant-swift-data"
+  public static let generatedCodeContentType = "text/typescript"
 
   public static let attributes: [InstantAttribute] = [
     .primaryKey(namespace: filesNamespace),
@@ -197,6 +201,17 @@ public enum AppBuilderExample {
       isRequired: false
     ),
     InstantAttribute(
+      id: "builds/file",
+      namespace: buildsNamespace,
+      name: "file",
+      valueType: .ref,
+      isRequired: false,
+      isIndexed: true,
+      forwardIdentity: "builds/file",
+      reverseIdentity: "$files/builds",
+      linkNamespace: filesNamespace
+    ),
+    InstantAttribute(
       id: "builds/owner",
       namespace: buildsNamespace,
       name: "owner",
@@ -234,6 +249,14 @@ public enum AppBuilderExample {
     let trimmed = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
     let title = trimmed.isEmpty ? "Untitled build" : String(trimmed.prefix(100))
     return title.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  public static func generatedCodeFileName(buildID: String) -> String {
+    let sanitized = buildID.map { character in
+      character == "/" || character == ":" || character == "\u{0}" ? "-" : character
+    }
+    let stem = String(sanitized).trimmingCharacters(in: .whitespacesAndNewlines)
+    return "\(stem.isEmpty ? "build" : stem)-App.tsx"
   }
 
   public static func localPreviewCode(title: String, instantAppID: String) -> String {
@@ -296,6 +319,7 @@ public enum AppBuilderExample {
     error: AppBuilderBuildError? = nil,
     isPreviewable: Bool? = nil,
     title: String? = nil,
+    fileID: String? = nil,
     updatedAt: InstantTimestamp,
     transactionID: String,
     requiresExistingBuild: Bool = true
@@ -331,6 +355,9 @@ public enum AppBuilderExample {
     }
     if let title {
       operations.append(insert(id: id, attributeID: "builds/title", value: .string(title), txID: transactionID, txTime: updatedAt))
+    }
+    if let fileID {
+      operations.append(insert(id: id, attributeID: "builds/file", value: .ref(fileID), txID: transactionID, txTime: updatedAt))
     }
 
     return operations
@@ -391,7 +418,8 @@ public enum AppBuilderExample {
       slug: stringValue(snapshot.values["slug"]?.first),
       error: buildError(snapshot.values["error"]?.first),
       isPreviewable: boolValue(snapshot.values["isPreviewable"]?.first),
-      title: stringValue(snapshot.values["title"]?.first)
+      title: stringValue(snapshot.values["title"]?.first),
+      fileID: refValue(snapshot.values["file"]?.first)
     )
   }
 
@@ -436,6 +464,11 @@ public enum AppBuilderExample {
   private static func boolValue(_ value: InstantValue?) -> Bool? {
     guard case let .bool(bool) = value else { return nil }
     return bool
+  }
+
+  private static func refValue(_ value: InstantValue?) -> String? {
+    guard case let .ref(ref) = value else { return nil }
+    return ref
   }
 
   private static func buildError(_ value: InstantValue?) -> AppBuilderBuildError? {

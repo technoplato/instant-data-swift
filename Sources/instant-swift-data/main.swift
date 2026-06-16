@@ -859,26 +859,38 @@ struct InstantSwiftDataCLI {
 
       let finishTransactionID = context.runtime.configuration.makeID()
       let finishedAt = context.runtime.configuration.now()
-      try await context.runtime.transact(
-        InstantStoreTransaction(
-          id: finishTransactionID,
-          operations: AppBuilderExample.updateBuildOperations(
-            id: buildID,
-            code: code,
-            reasoning: reasoning,
-            isPreviewable: true,
-            updatedAt: finishedAt,
-            transactionID: finishTransactionID
-          )
-        ),
-        createdAt: finishedAt,
-        source: "cli.examples.app-builder.finish"
+      let generatedFile = try await uploadAppBuilderGeneratedCode(
+        context: context,
+        buildID: buildID,
+        code: code
       )
+      do {
+        try await context.runtime.transact(
+          InstantStoreTransaction(
+            id: finishTransactionID,
+            operations: AppBuilderExample.updateBuildOperations(
+              id: buildID,
+              code: code,
+              reasoning: reasoning,
+              isPreviewable: true,
+              fileID: generatedFile.id,
+              updatedAt: finishedAt,
+              transactionID: finishTransactionID
+            )
+          ),
+          createdAt: finishedAt,
+          source: "cli.examples.app-builder.finish"
+        )
+      } catch {
+        try? await deleteAppBuilderGeneratedFiles(context: context, fileIDs: [generatedFile.id])
+        throw error
+      }
       generationEvents.append(
         AppBuilderGenerationEventOutput(
           event: "finish",
           kind: nil,
           text: nil,
+          fileID: generatedFile.id,
           codeLength: code.count,
           reasoningLength: reasoning.count,
           isPreviewable: true
@@ -919,23 +931,47 @@ struct InstantSwiftDataCLI {
       let build = try await requireAppBuilderBuild(context: context, id: options.buildID)
       let code = options.code.map { build.code + $0 }
       let reasoning = options.reasoning.map { (build.reasoning ?? "") + $0 }
+      let generatedFile: InstantStoredFile?
+      if let code {
+        generatedFile = try await uploadAppBuilderGeneratedCode(
+          context: context,
+          buildID: build.id,
+          code: code
+        )
+      } else {
+        generatedFile = nil
+      }
       let transactionID = context.runtime.configuration.makeID()
       let now = context.runtime.configuration.now()
-      try await context.runtime.transact(
-        InstantStoreTransaction(
-          id: transactionID,
-          operations: AppBuilderExample.updateBuildOperations(
-            id: build.id,
-            code: code,
-            reasoning: reasoning,
-            isPreviewable: options.isPreviewable,
-            updatedAt: now,
-            transactionID: transactionID
-          )
-        ),
-        createdAt: now,
-        source: "cli.examples.app-builder.append"
-      )
+      do {
+        try await context.runtime.transact(
+          InstantStoreTransaction(
+            id: transactionID,
+            operations: AppBuilderExample.updateBuildOperations(
+              id: build.id,
+              code: code,
+              reasoning: reasoning,
+              isPreviewable: options.isPreviewable,
+              fileID: generatedFile?.id,
+              updatedAt: now,
+              transactionID: transactionID
+            )
+          ),
+          createdAt: now,
+          source: "cli.examples.app-builder.append"
+        )
+      } catch {
+        if let generatedFile {
+          try? await deleteAppBuilderGeneratedFiles(context: context, fileIDs: [generatedFile.id])
+        }
+        throw error
+      }
+      if let generatedFile,
+        let oldFileID = build.fileID,
+        oldFileID != generatedFile.id
+      {
+        try await deleteAppBuilderGeneratedFiles(context: context, fileIDs: [oldFileID])
+      }
       try await printAppBuilder(
         context: context,
         output: output,
@@ -973,6 +1009,7 @@ struct InstantSwiftDataCLI {
     case .reset:
       let (session, _) = try await requireAppBuilderEmailSession(context: context)
       let builds = try await currentAppBuilderBuilds(context: context, ownerID: session.userID)
+      let fileIDs = builds.compactMap(\.fileID)
       if !builds.isEmpty {
         let transactionID = context.runtime.configuration.makeID()
         let now = context.runtime.configuration.now()
@@ -985,6 +1022,7 @@ struct InstantSwiftDataCLI {
           source: "cli.examples.app-builder.reset"
         )
       }
+      try await deleteAppBuilderGeneratedFiles(context: context, fileIDs: fileIDs)
       try await printAppBuilder(
         context: context,
         output: output,
@@ -5479,11 +5517,17 @@ struct InstantSwiftDataCLI {
     let session = try await context.runtime.authSession()
     let ownerID = explicitOwnerID ?? session?.userID
     let builds = try await currentAppBuilderBuilds(context: context, ownerID: ownerID)
+    let storedFiles = try await context.runtime.storedFiles()
     let selectedBuild: AppBuilderBuildRecord?
     if let selectedBuildID {
       selectedBuild = try await currentAppBuilderBuild(context: context, id: selectedBuildID)
     } else {
       selectedBuild = nil
+    }
+    let fileIDs = Set(builds.compactMap(\.fileID) + [selectedBuild?.fileID].compactMap { $0 })
+    let files = storedFiles.filter { fileIDs.contains($0.id) }
+    let selectedFile = selectedBuild?.fileID.flatMap { fileID in
+      storedFiles.first { $0.id == fileID }
     }
     let pending = await context.runtime.pendingMutations()
     let ownerQuery = ownerID.map(AppBuilderExample.buildsForOwnerQuery)
@@ -5504,6 +5548,9 @@ struct InstantSwiftDataCLI {
       pendingMutationCount: pending.count,
       buildCount: builds.count,
       previewableBuildCount: builds.filter { $0.isPreviewable == true }.count,
+      fileCount: files.count,
+      files: files,
+      selectedFile: selectedFile,
       builds: builds,
       selectedBuild: selectedBuild,
       generationEvents: generationEvents
@@ -5516,6 +5563,9 @@ struct InstantSwiftDataCLI {
         print("title: \(selectedBuild.title ?? "")")
         print("instant app: \(selectedBuild.instantAppID)")
         print("previewable: \(selectedBuild.isPreviewable == true)")
+        if let selectedFile {
+          print("file: \(selectedFile.id) \(selectedFile.name) bytes=\(selectedFile.byteCount)")
+        }
         if let reasoning = selectedBuild.reasoning, !reasoning.isEmpty {
           print("reasoning: \(reasoning)")
         }
@@ -5585,6 +5635,50 @@ struct InstantSwiftDataCLI {
           )
         )
       }
+      for file in files {
+        try writeJSONLine(
+          EvidenceRow(
+            caseID: "cli.examples.app-builder",
+            side: "swift",
+            event: "file",
+            appID: context.appID,
+            entityID: file.id,
+            ok: true,
+            details: file
+          )
+        )
+      }
+    }
+  }
+
+  private static func uploadAppBuilderGeneratedCode(
+    context: CLIContext,
+    buildID: String,
+    code: String
+  ) async throws -> InstantStoredFile {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataAppBuilder-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    let fileName = AppBuilderExample.generatedCodeFileName(buildID: buildID)
+    let sourceURL = directory.appendingPathComponent(fileName)
+    try code.write(to: sourceURL, atomically: true, encoding: .utf8)
+    return try await context.runtime.uploadFile(
+      from: sourceURL,
+      name: fileName,
+      contentType: AppBuilderExample.generatedCodeContentType
+    )
+  }
+
+  private static func deleteAppBuilderGeneratedFiles(
+    context: CLIContext,
+    fileIDs: [String]
+  ) async throws {
+    guard !fileIDs.isEmpty else { return }
+    let existing = Set(try await context.runtime.storedFiles().map(\.id))
+    for fileID in fileIDs where existing.contains(fileID) {
+      _ = try await context.runtime.deleteStoredFile(id: fileID)
     }
   }
 
@@ -11150,6 +11244,7 @@ private struct AppBuilderGenerationEventOutput: Codable, Sendable {
   var event: String
   var kind: String?
   var text: String?
+  var fileID: String? = nil
   var codeLength: Int
   var reasoningLength: Int
   var isPreviewable: Bool
@@ -11172,6 +11267,9 @@ private struct AppBuilderOutput: Codable, Sendable {
   var pendingMutationCount: Int
   var buildCount: Int
   var previewableBuildCount: Int
+  var fileCount: Int
+  var files: [InstantStoredFile]
+  var selectedFile: InstantStoredFile?
   var builds: [AppBuilderBuildRecord]
   var selectedBuild: AppBuilderBuildRecord?
   var generationEvents: [AppBuilderGenerationEventOutput]

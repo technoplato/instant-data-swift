@@ -3327,6 +3327,26 @@ extension InstantStoreTests {
     #expect(build.instantAppID.hasPrefix("local-platform-"))
     #expect(build.code.contains(build.instantAppID))
     #expect(build.reasoning?.contains("Create a compact Swift-friendly preview") == true)
+    let generatedFileID = try #require(build.fileID)
+    expectNoDifference(generated.fileCount, 1)
+    expectNoDifference(generated.files.map(\.id), [generatedFileID])
+    expectNoDifference(generated.selectedFile?.id, generatedFileID)
+    expectNoDifference(
+      generated.selectedFile?.name,
+      AppBuilderExample.generatedCodeFileName(buildID: build.id)
+    )
+    expectNoDifference(
+      generated.selectedFile?.contentType,
+      AppBuilderExample.generatedCodeContentType
+    )
+    expectNoDifference(generated.generationEvents.last?.fileID, generatedFileID)
+
+    let generatedFile = try JSONDecoder().decode(
+      CLIFileContentsOutput.self,
+      from: Data(try runCLI(["files", "read", generatedFileID, "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(generatedFile.file.id, generatedFileID)
+    expectNoDifference(generatedFile.base64Content, Data(build.code.utf8).base64EncodedString())
 
     let listed = try JSONDecoder().decode(
       CLIAppBuilderOutput.self,
@@ -3336,6 +3356,7 @@ extension InstantStoreTests {
     )
     expectNoDifference(listed.event, "list")
     expectNoDifference(listed.builds.map(\.id), [build.id])
+    expectNoDifference(listed.files.map(\.id), [generatedFileID])
     expectNoDifference(listed.selectedBuild, nil)
 
     let appended = try JSONDecoder().decode(
@@ -3354,6 +3375,18 @@ extension InstantStoreTests {
     #expect(appendedBuild.code.contains("// patched"))
     #expect(appendedBuild.reasoning?.contains("Polished after preview.") == true)
     expectNoDifference(appendedBuild.isPreviewable, false)
+    let appendedFileID = try #require(appendedBuild.fileID)
+    #expect(appendedFileID != generatedFileID)
+    expectNoDifference(appended.files.map(\.id), [appendedFileID])
+    expectNoDifference(appended.selectedFile?.id, appendedFileID)
+    let appendedFile = try JSONDecoder().decode(
+      CLIFileContentsOutput.self,
+      from: Data(try runCLI(["files", "read", appendedFileID, "--json"], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(
+      appendedFile.base64Content,
+      Data(appendedBuild.code.utf8).base64EncodedString()
+    )
 
     let finished = try JSONDecoder().decode(
       CLIAppBuilderOutput.self,
@@ -3363,6 +3396,8 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(finished.selectedBuild?.isPreviewable, true)
+    expectNoDifference(finished.selectedBuild?.fileID, appendedFileID)
+    expectNoDifference(finished.files.map(\.id), [appendedFileID])
 
     let shown = try JSONDecoder().decode(
       CLIAppBuilderOutput.self,
@@ -3374,13 +3409,14 @@ extension InstantStoreTests {
     expectNoDifference(shown.event, "show")
     expectNoDifference(shown.selectedBuild?.id, build.id)
     expectNoDifference(shown.selectedBuild?.isPreviewable, true)
+    expectNoDifference(shown.selectedFile?.id, appendedFileID)
 
     let jsonl = try runCLI(
       ["examples", "app-builder", "generate", "Build a notes app", "--jsonl"],
       homeURL: homeURL
     )
     let lines = jsonl.split(separator: "\n")
-    #expect(lines.count >= 5)
+    #expect(lines.count >= 6)
     let evidence = try JSONDecoder().decode(
       CLIAppBuilderEvidence.self,
       from: Data(try #require(lines.first).utf8)
@@ -3389,6 +3425,9 @@ extension InstantStoreTests {
     expectNoDifference(evidence.event, "generate")
     expectNoDifference(evidence.ok, true)
     expectNoDifference(evidence.details.generationEvents.map(\.event), ["create", "chunk", "chunk", "finish"])
+    #expect(evidence.details.selectedBuild?.fileID != nil)
+    expectNoDifference(evidence.details.fileCount, 2)
+    #expect(lines.contains { $0.contains(#""event":"file""#) })
 
     let reset = try JSONDecoder().decode(
       CLIAppBuilderOutput.self,
@@ -3399,6 +3438,7 @@ extension InstantStoreTests {
     expectNoDifference(reset.event, "reset")
     expectNoDifference(reset.builds, [])
     expectNoDifference(reset.buildCount, 0)
+    expectNoDifference(reset.fileCount, 0)
 
     let malformedAppend = try runCLIResult(
       ["examples", "app-builder", "append", "build-1", "--json"],
@@ -10879,6 +10919,7 @@ private struct CLIAppBuilderGenerationEventOutput: Decodable, Equatable {
   var event: String
   var kind: String?
   var text: String?
+  var fileID: String?
   var codeLength: Int
   var reasoningLength: Int
   var isPreviewable: Bool
@@ -10901,6 +10942,9 @@ private struct CLIAppBuilderOutput: Decodable, Equatable {
   var pendingMutationCount: Int
   var buildCount: Int
   var previewableBuildCount: Int
+  var fileCount: Int
+  var files: [InstantStoredFile]
+  var selectedFile: InstantStoredFile?
   var builds: [AppBuilderBuildRecord]
   var selectedBuild: AppBuilderBuildRecord?
   var generationEvents: [CLIAppBuilderGenerationEventOutput]

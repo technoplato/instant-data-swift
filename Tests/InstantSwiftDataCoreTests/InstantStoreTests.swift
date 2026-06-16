@@ -12910,6 +12910,14 @@ struct InstantStoreTests {
       )
     )
 
+    let fileAttribute = try #require(
+      AppBuilderExample.attributes.first { $0.id == "builds/file" }
+    )
+    expectNoDifference(fileAttribute.valueType, .ref)
+    expectNoDifference(fileAttribute.linkNamespace, AppBuilderExample.filesNamespace)
+    expectNoDifference(fileAttribute.forwardIdentity, "builds/file")
+    expectNoDifference(fileAttribute.reverseIdentity, "$files/builds")
+
     try await runtime.transact(
       InstantStoreTransaction(
         id: "tx-create",
@@ -12946,6 +12954,19 @@ struct InstantStoreTests {
       }
     }
 
+    _ = try await runtime.signInWithRefreshToken(
+      "builder-refresh",
+      userID: "email:user@example.com"
+    )
+    let codeSourceURL = cacheURL.deletingLastPathComponent()
+      .appendingPathComponent(AppBuilderExample.generatedCodeFileName(buildID: "build-1"))
+    try Data(code.utf8).write(to: codeSourceURL)
+    let uploadedFile = try await runtime.uploadFile(
+      from: codeSourceURL,
+      name: AppBuilderExample.generatedCodeFileName(buildID: "build-1"),
+      contentType: AppBuilderExample.generatedCodeContentType
+    )
+
     try await runtime.transact(
       InstantStoreTransaction(
         id: "tx-update",
@@ -12954,6 +12975,7 @@ struct InstantStoreTests {
           code: code,
           reasoning: reasoning,
           isPreviewable: true,
+          fileID: uploadedFile.id,
           updatedAt: now,
           transactionID: "tx-update"
         )
@@ -12977,8 +12999,14 @@ struct InstantStoreTests {
     expectNoDifference(build.ownerID, "email:user@example.com")
     expectNoDifference(build.title, "Build a workout tracker")
     expectNoDifference(build.isPreviewable, true)
+    expectNoDifference(build.fileID, uploadedFile.id)
     #expect(build.reasoning?.contains("Create a compact Swift-friendly preview") == true)
     #expect(build.code.contains("local-platform-build-1"))
+    let contents = try await runtime.storedFileContents(id: uploadedFile.id)
+    expectNoDifference(contents.file.name, AppBuilderExample.generatedCodeFileName(buildID: "build-1"))
+    expectNoDifference(contents.file.contentType, AppBuilderExample.generatedCodeContentType)
+    expectNoDifference(contents.file.ownerUserID, "email:user@example.com")
+    expectNoDifference(contents.data, Data(code.utf8))
 
     let detailBuilds = try AppBuilderExample.decodeBuilds(
       (try await runtime.queryOnce(AppBuilderExample.buildQuery("build-1"))).values

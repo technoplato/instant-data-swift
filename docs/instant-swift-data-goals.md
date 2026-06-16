@@ -767,9 +767,11 @@ Agent-oriented output modes are required:
   `instant-swift-data examples app-builder reset`; generation requires the
   email-backed magic-code auth session from `examples auth`, creates a local
   platform app through the reusable `InstantPlatformAppClient.local` Swift
-  Dependencies seam, streams local reasoning/code through
-  `AppBuilderCodeGeneratorClient.local`, preserves the upstream owner-linked
-  `builds` schema plus schema-visible `$files`, keeps list queries
+  Dependencies seam at `DependencyValues.instantPlatformAppClient`, streams
+  local reasoning/code through `AppBuilderCodeGeneratorClient.local` via
+  `DependencyValues.appBuilderCodeGenerator`, uploads the generated `App.tsx`
+  into local `$files` storage, links it from the build, preserves the upstream
+  owner-linked `builds` schema plus schema-visible `$files`, keeps list queries
   owner-filtered, and keeps `show` as an id-only route query.
 - run the local Instant website-style chat port with
   `instant-swift-data examples chat seed`,

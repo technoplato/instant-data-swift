@@ -2997,7 +2997,7 @@ public enum InstantSwiftDataParityCoverage {
       swiftTestName: "cliAppBuilderGeneratesListsUpdatesAndResetsBuildsAcrossLaunches + appBuilderExampleCreatesUpdatesAndQueriesOwnerBuilds",
       surface: "examples-app-builder",
       status: .adapted,
-      notes: "The Instant CLI ports the app-builder source into local $users/$files/builds namespaces, email-backed magic-code auth, injectable local platform-app and code-generator clients, owner-filtered build lists, id-only build detail lookup, stream-like code/reasoning updates, previewable finish state, append/edit ergonomics, and reset. The current local port records $files schema and platform metadata but does not upload generated files."
+      notes: "The Instant CLI ports the app-builder source into local $users/$files/builds namespaces, email-backed magic-code auth, injectable local platform-app and code-generator clients, owner-filtered build lists, id-only build detail lookup, stream-like code/reasoning updates, local $files upload/linking for generated App.tsx artifacts, previewable finish state, append/edit ergonomics, and reset cleanup."
     ),
     instant(
       id: "instant.website.chat.local-cli",

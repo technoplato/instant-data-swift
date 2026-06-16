@@ -96,6 +96,8 @@ MAGIC_CODE="$(printf '%s' "$MAGIC_CODE_JSON" | jq -r '.localVerificationCode')"
 swift run instant-swift-data examples auth verify-code builder@example.com "$MAGIC_CODE" --json
 BUILD_JSON="$(swift run instant-swift-data examples app-builder generate "Build a Tic Tac Toe game" --org-id local-org --json)"
 BUILD_ID="$(printf '%s' "$BUILD_JSON" | jq -r '.selectedBuild.id')"
+FILE_ID="$(printf '%s' "$BUILD_JSON" | jq -r '.selectedBuild.fileID')"
+swift run instant-swift-data files read "$FILE_ID" --json
 swift run instant-swift-data examples app-builder list --json
 swift run instant-swift-data examples app-builder append "$BUILD_ID" --code $'\n// local edit' --reasoning $'\nPolished after preview.' --previewable false --json
 swift run instant-swift-data examples app-builder finish "$BUILD_ID" --json
@@ -108,7 +110,8 @@ The app-builder port mirrors the upstream magic-code-protected generation flow:
 it creates a local platform app through `InstantPlatformAppClient.local`, writes
 a linked owner/build row, streams reasoning and code through
 `AppBuilderCodeGeneratorClient.local`, lists only the signed-in user's builds,
-and keeps `show` as an id-only detail lookup like the website route.
+uploads the generated `App.tsx` into local `$files` storage, links it from the
+build, and keeps `show` as an id-only detail lookup like the website route.
 
 Create a local Reminders list, add reminders, and prove two-user list sharing:
 
@@ -757,6 +760,8 @@ try await withDependencies {
   $0.instantOAuthExchange = .local
   $0.instantAuthTokenInvalidator = .local
   $0.instantMutationTransport = .local
+  $0.instantPlatformAppClient = .local
+  $0.appBuilderCodeGenerator = .local
   try await $0.bootstrapInstantSwiftData(
     appID: "local-demo",
     persistenceURL: cacheURL,
@@ -776,9 +781,10 @@ try await withDependencies {
 
 `instantMagicCodeExchange`, `instantRefreshTokenVerifier`,
 `instantIDTokenExchange`, `instantOAuthExchange`,
-`instantAuthTokenInvalidator`, and `instantMutationTransport` default to
-`.local`, and app/test entry points can override them before
-`bootstrapInstantSwiftData` to install live or fixture-backed auth/transport
+`instantAuthTokenInvalidator`, `instantMutationTransport`,
+`instantPlatformAppClient`, and `appBuilderCodeGenerator` default to `.local`,
+and app/test entry points can override them before `bootstrapInstantSwiftData`
+to install live or fixture-backed auth, transport, platform-app, or generator
 behavior. Local/demo clients should be reusable static instances on the client
 type, for example
 `extension InstantMagicCodeExchange { public static let local = Self(...) }`,
