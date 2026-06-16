@@ -2126,21 +2126,21 @@ public enum InstantSwiftDataParityCoverage {
       id: "sqlite.reminders.search-tags",
       sourceFile: "upstream/sqlite-data/Examples/RemindersTests/SearchRemindersTests.swift",
       sourceTestName: "basics / showCompleted / deleteCompleted",
-      swiftFile: "Tests/InstantSwiftDataTestingTests/LocalTodoValidationTests.swift",
-      swiftTestName: "remindersValidationProducesEvidenceAndPersistsLocalSurfaces",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "searchRemindersModelPortsBasicsShowCompletedAndDeleteCompleted",
       surface: "examples-reminders",
       status: .adapted,
-      notes: "The Instant Reminders validation emits local JSONL evidence for text search, tag filters, completed filtering, and durable reminder-tag links."
+      notes: "The Instant-native SearchRemindersModel ports the upstream search basics, completed-count/show toggle, highlighted title rows, and completed deletion against a local runtime-backed fixture."
     ),
     sqlite(
       id: "sqlite.reminders.detail-rich-fields",
       sourceFile: "upstream/sqlite-data/Examples/RemindersTests/RemindersDetailsTests.swift",
-      sourceTestName: "basics / ordering / showCompleted",
-      swiftFile: "Tests/InstantSwiftDataCoreTests/CLITests.swift",
-      swiftTestName: "cliValidationRemindersEmitsEvidence",
+      sourceTestName: "basics / ordering / showCompleted / move / all / completed / flagged / scheduled / today / tagged",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
+      swiftTestName: "remindersDetailModelPortsOrderingAndRichRows + remindersDetailModelPortsShowCompletedToggle + remindersDetailModelPortsMoveToManualOrdering + remindersDetailModelPortsSmartListsAndTags",
       surface: "examples-reminders",
       status: .adapted,
-      notes: "The Instant port proves notes, flagged state, due-date filters, priority filters, completion counts, and rich-field edits through terminal validation."
+      notes: "The Instant-native RemindersDetailModel ports upstream list detail rows, due-date/priority/title/manual ordering, past-due and notes projections, the show-completed toggle, smart-list detail filters, tag detail filters, and move-to-manual position persistence over the local runtime."
     ),
     sqlite(
       id: "sqlite.reminders.form-model",

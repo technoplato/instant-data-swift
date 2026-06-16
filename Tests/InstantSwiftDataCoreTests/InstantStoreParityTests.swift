@@ -695,6 +695,7 @@ struct InstantStoreParityTests {
     #expect(report.records.contains { $0.id == "sqlite.draft.transaction-composition" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "sqlite.integration.filtered-reload" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "sqlite.reminders.search-tags" && $0.status == .adapted })
+    #expect(report.records.contains { $0.id == "sqlite.reminders.detail-rich-fields" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "sqlite.reminders.form-model" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "sqlite.syncups.record-meeting" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "sqlite.cloudkit-demo.local-counter-share" && $0.status == .adapted })

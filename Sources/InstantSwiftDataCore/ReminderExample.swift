@@ -318,6 +318,267 @@ public struct RemindersStats: Hashable, Codable, Sendable {
   }
 }
 
+public struct SearchRemindersResults: Hashable, Codable, Sendable {
+  public var completedCount: Int
+  public var rows: [SearchRemindersRow]
+
+  public init(completedCount: Int = 0, rows: [SearchRemindersRow] = []) {
+    self.completedCount = completedCount
+    self.rows = rows
+  }
+}
+
+public struct SearchRemindersRow: Hashable, Codable, Sendable, Identifiable {
+  public var id: String { reminder.id }
+  public var isPastDue: Bool
+  public var notes: String
+  public var reminder: ReminderRecord
+  public var remindersList: RemindersListRecord
+  public var tags: String
+  public var title: String
+
+  public init(
+    isPastDue: Bool,
+    notes: String,
+    reminder: ReminderRecord,
+    remindersList: RemindersListRecord,
+    tags: String,
+    title: String
+  ) {
+    self.isPastDue = isPastDue
+    self.notes = notes
+    self.reminder = reminder
+    self.remindersList = remindersList
+    self.tags = tags
+    self.title = title
+  }
+}
+
+public struct SearchRemindersModel: Sendable {
+  public var searchText: String
+  public var showCompletedInSearchResults: Bool
+  public private(set) var searchResults: SearchRemindersResults
+
+  private let runtime: InstantRuntime
+  private let now: @Sendable () -> InstantTimestamp
+
+  public init(
+    runtime: InstantRuntime,
+    searchText: String = "",
+    showCompletedInSearchResults: Bool = false,
+    now: @escaping @Sendable () -> InstantTimestamp
+  ) {
+    self.runtime = runtime
+    self.searchText = searchText
+    self.showCompletedInSearchResults = showCompletedInSearchResults
+    self.searchResults = SearchRemindersResults()
+    self.now = now
+  }
+
+  public mutating func load() async throws {
+    let trimmedText = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedText.isEmpty else {
+      showCompletedInSearchResults = false
+      searchResults = SearchRemindersResults()
+      return
+    }
+
+    let context = try await ReminderExample.modelContext(runtime: runtime)
+    let matchingReminders = try ReminderExample.decodeReminders(
+      try await runtime.query(
+        ReminderExample.remindersSearchQuery(
+          text: trimmedText,
+          includeCompleted: true
+        )
+      )
+    )
+    let completedCount = matchingReminders.filter(\.isCompleted).count
+    let visibleReminders = matchingReminders
+      .filter { showCompletedInSearchResults || !$0.isCompleted }
+      .sorted { lhs, rhs in
+        ReminderExample.searchSortKey(lhs) < ReminderExample.searchSortKey(rhs)
+      }
+    searchResults = SearchRemindersResults(
+      completedCount: completedCount,
+      rows: visibleReminders.compactMap { reminder in
+        guard let list = context.listsByID[reminder.remindersListID] else { return nil }
+        return SearchRemindersRow(
+          isPastDue: ReminderExample.isPastDue(reminder, now: now()),
+          notes: ReminderExample.searchSnippet(reminder.notes, matching: trimmedText),
+          reminder: reminder,
+          remindersList: list,
+          tags: ReminderExample.highlightedTags(
+            context.tagsByReminderID[reminder.id] ?? [],
+            matching: trimmedText
+          ),
+          title: ReminderExample.highlight(reminder.title, matching: trimmedText)
+        )
+      }
+    )
+  }
+
+  public mutating func showCompletedButtonTapped() async throws {
+    showCompletedInSearchResults.toggle()
+    try await load()
+  }
+
+  public mutating func deleteCompletedReminders(
+    updatedAt: InstantTimestamp,
+    transactionID: String
+  ) async throws {
+    let trimmedText = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedText.isEmpty else { return }
+    let matchingReminders = try ReminderExample.decodeReminders(
+      try await runtime.query(
+        ReminderExample.remindersSearchQuery(
+          text: trimmedText,
+          includeCompleted: true
+        )
+      )
+    )
+    let completedReminders = matchingReminders
+      .filter(\.isCompleted)
+      .map { (id: $0.id, listID: $0.remindersListID) }
+    guard !completedReminders.isEmpty else {
+      try await load()
+      return
+    }
+    _ = try await runtime.transact(
+      InstantStoreTransaction(
+        id: transactionID,
+        operations: ReminderExample.deleteCompletedReminderOperations(
+          reminders: completedReminders,
+          updatedAt: updatedAt,
+          transactionID: transactionID
+        )
+      )
+    )
+    try await load()
+  }
+}
+
+public enum RemindersDetailOrdering: String, CaseIterable, Codable, Sendable {
+  case dueDate
+  case manual
+  case priority
+  case title
+}
+
+public enum RemindersDetailType: Hashable, Codable, Sendable {
+  case all
+  case completed
+  case flagged
+  case remindersList(RemindersListRecord)
+  case scheduled
+  case tags([ReminderTagRecord])
+  case today
+}
+
+public struct RemindersDetailRow: Hashable, Codable, Sendable, Identifiable {
+  public var id: String { reminder.id }
+  public var reminder: ReminderRecord
+  public var remindersList: RemindersListRecord
+  public var isPastDue: Bool
+  public var notes: String
+  public var tags: String
+
+  public init(
+    reminder: ReminderRecord,
+    remindersList: RemindersListRecord,
+    isPastDue: Bool,
+    notes: String,
+    tags: String
+  ) {
+    self.reminder = reminder
+    self.remindersList = remindersList
+    self.isPastDue = isPastDue
+    self.notes = notes
+    self.tags = tags
+  }
+}
+
+public struct RemindersDetailModel: Sendable {
+  public let detailType: RemindersDetailType
+  public var ordering: RemindersDetailOrdering
+  public var showCompleted: Bool
+  public private(set) var reminderRows: [RemindersDetailRow]
+
+  private let runtime: InstantRuntime
+  private let now: @Sendable () -> InstantTimestamp
+
+  public init(
+    detailType: RemindersDetailType,
+    runtime: InstantRuntime,
+    ordering: RemindersDetailOrdering = .dueDate,
+    now: @escaping @Sendable () -> InstantTimestamp
+  ) {
+    self.detailType = detailType
+    self.runtime = runtime
+    self.ordering = ordering
+    self.showCompleted = detailType == .completed
+    self.reminderRows = []
+    self.now = now
+  }
+
+  public mutating func load() async throws {
+    let context = try await ReminderExample.modelContext(runtime: runtime)
+    let reminders = context.reminders
+      .filter { ReminderExample.matchesDetailType($0, detailType, context: context, now: now()) }
+      .filter { showCompleted || !$0.isCompleted }
+      .sorted { lhs, rhs in
+        ReminderExample.detailSortKey(lhs, ordering: ordering) < ReminderExample.detailSortKey(rhs, ordering: ordering)
+      }
+    reminderRows = reminders.compactMap { reminder in
+      guard let list = context.listsByID[reminder.remindersListID] else { return nil }
+      return RemindersDetailRow(
+        reminder: reminder,
+        remindersList: list,
+        isPastDue: ReminderExample.isPastDue(reminder, now: now()),
+        notes: ReminderExample.inlineNotes(reminder.notes),
+        tags: ReminderExample.tagText(context.tagsByReminderID[reminder.id] ?? [])
+      )
+    }
+  }
+
+  public mutating func orderingButtonTapped(_ ordering: RemindersDetailOrdering) async throws {
+    self.ordering = ordering
+    try await load()
+  }
+
+  public mutating func move(
+    fromOffsets source: IndexSet,
+    toOffset destination: Int,
+    updatedAt: InstantTimestamp,
+    transactionID: String
+  ) async throws {
+    if reminderRows.isEmpty {
+      try await load()
+    }
+    var rows = reminderRows
+    ReminderExample.moveRows(&rows, fromOffsets: source, toOffset: destination)
+    let operations = rows.enumerated().flatMap { offset, row in
+      ReminderExample.updateReminderPositionOperations(
+        id: row.reminder.id,
+        listID: row.reminder.remindersListID,
+        position: offset,
+        updatedAt: updatedAt,
+        transactionID: transactionID
+      )
+    }
+    guard !operations.isEmpty else { return }
+    _ = try await runtime.transact(
+      InstantStoreTransaction(id: transactionID, operations: operations)
+    )
+    ordering = .manual
+    try await load()
+  }
+
+  public mutating func showCompletedButtonTapped() async throws {
+    showCompleted.toggle()
+    try await load()
+  }
+}
+
 public struct RemindersListSeedRecord: Hashable, Codable, Sendable {
   public var localIDName: String
   public var title: String
@@ -921,6 +1182,31 @@ public enum ReminderExample {
     ]
   }
 
+  public static func updateReminderPositionOperations(
+    id: String,
+    listID: String,
+    position: Int,
+    updatedAt: InstantTimestamp,
+    transactionID: String
+  ) -> [InstantTripleOperation] {
+    [
+      .requireEntityExists(entityID: listID, namespace: listsNamespace),
+      .requireEntityExists(entityID: id, namespace: remindersNamespace),
+      requireReminderInListOperation(reminderID: id, listID: listID),
+      reminderIdentityOperation(id: id, updatedAt: updatedAt, transactionID: transactionID),
+      listRefOperation(reminderID: id, listID: listID, updatedAt: updatedAt, transactionID: transactionID),
+      .insert(
+        InstantTriple(
+          entityID: id,
+          attributeID: "reminders/position",
+          value: .number(Double(position)),
+          txID: transactionID,
+          txTime: updatedAt
+        )
+      ),
+    ]
+  }
+
   public static func updateReminderDetailsOperations(
     id: String,
     listID: String,
@@ -1252,6 +1538,210 @@ public enum ReminderExample {
       }
       .sorted { $0.tagID < $1.tagID }
     }
+  }
+
+  fileprivate struct ModelContext: Sendable {
+    var reminders: [ReminderRecord]
+    var listsByID: [String: RemindersListRecord]
+    var tagsByID: [String: ReminderTagRecord]
+    var tagIDsByReminderID: [String: Set<String>]
+    var tagsByReminderID: [String: [ReminderTagRecord]]
+  }
+
+  fileprivate static func modelContext(runtime: InstantRuntime) async throws -> ModelContext {
+    let reminderSnapshots = try await runtime.query(remindersQuery)
+    let reminders = try decodeReminders(reminderSnapshots)
+    let lists = try decodeLists(try await runtime.query(listsQuery))
+    let tags = try decodeTags(try await runtime.query(tagsQuery))
+    let tagsByID = Dictionary(uniqueKeysWithValues: tags.map { ($0.id, $0) })
+    var tagIDsByReminderID: [String: Set<String>] = [:]
+    var tagsByReminderID: [String: [ReminderTagRecord]] = [:]
+    for link in try decodeReminderTagLinks(reminderSnapshots) {
+      tagIDsByReminderID[link.reminderID, default: []].insert(link.tagID)
+      if let tag = tagsByID[link.tagID] {
+        tagsByReminderID[link.reminderID, default: []].append(tag)
+      }
+    }
+    for reminderID in tagsByReminderID.keys {
+      tagsByReminderID[reminderID]?.sort {
+        tagSortKey($0) < tagSortKey($1)
+      }
+    }
+    return ModelContext(
+      reminders: reminders,
+      listsByID: Dictionary(uniqueKeysWithValues: lists.map { ($0.id, $0) }),
+      tagsByID: tagsByID,
+      tagIDsByReminderID: tagIDsByReminderID,
+      tagsByReminderID: tagsByReminderID
+    )
+  }
+
+  fileprivate static func searchSortKey(
+    _ reminder: ReminderRecord
+  ) -> (Int, Int64, Int64, String) {
+    (
+      reminder.isCompleted ? 1 : 0,
+      reminder.dueDate?.milliseconds ?? Int64.max,
+      Int64(reminder.position),
+      reminder.title
+    )
+  }
+
+  fileprivate static func detailSortKey(
+    _ reminder: ReminderRecord,
+    ordering: RemindersDetailOrdering
+  ) -> (Int, Int64, Int64, Int64, String) {
+    let completed = reminder.isCompleted ? 1 : 0
+    switch ordering {
+    case .dueDate:
+      return (
+        completed,
+        reminder.dueDate?.milliseconds ?? Int64.max,
+        0,
+        Int64(reminder.position),
+        reminder.title
+      )
+
+    case .manual:
+      return (
+        completed,
+        Int64(reminder.position),
+        0,
+        0,
+        reminder.title
+      )
+
+    case .priority:
+      return (
+        completed,
+        Int64(-(reminder.priority?.rank ?? 0)),
+        reminder.isFlagged ? -1 : 0,
+        Int64(reminder.position),
+        reminder.title
+      )
+
+    case .title:
+      return (
+        completed,
+        0,
+        0,
+        0,
+        reminder.title.lowercased()
+      )
+    }
+  }
+
+  fileprivate static func matchesDetailType(
+    _ reminder: ReminderRecord,
+    _ detailType: RemindersDetailType,
+    context: ModelContext,
+    now: InstantTimestamp
+  ) -> Bool {
+    switch detailType {
+    case .all:
+      return true
+    case .completed:
+      return reminder.isCompleted
+    case .flagged:
+      return reminder.isFlagged
+    case let .remindersList(list):
+      return reminder.remindersListID == list.id
+    case .scheduled:
+      return !reminder.isCompleted && reminder.dueDate != nil
+    case let .tags(tags):
+      let selectedTagIDs = Set(tags.map(\.id))
+      return !(context.tagIDsByReminderID[reminder.id, default: []].isDisjoint(with: selectedTagIDs))
+    case .today:
+      return isToday(reminder, now: now)
+    }
+  }
+
+  fileprivate static func isPastDue(
+    _ reminder: ReminderRecord,
+    now: InstantTimestamp
+  ) -> Bool {
+    guard !reminder.isCompleted, let dueDate = reminder.dueDate else { return false }
+    let today = dayRange(containing: now)
+    return dueDate.milliseconds < timestampMilliseconds(for: today.start)
+  }
+
+  fileprivate static func isToday(
+    _ reminder: ReminderRecord,
+    now: InstantTimestamp
+  ) -> Bool {
+    guard !reminder.isCompleted, let dueDate = reminder.dueDate else { return false }
+    let today = dayRange(containing: now)
+    let dueDateMilliseconds = dueDate.milliseconds
+    return timestampMilliseconds(for: today.start) <= dueDateMilliseconds
+      && dueDateMilliseconds < timestampMilliseconds(for: today.end)
+  }
+
+  fileprivate static func inlineNotes(_ notes: String) -> String {
+    notes
+      .split(whereSeparator: \.isWhitespace)
+      .joined(separator: " ")
+  }
+
+  fileprivate static func searchSnippet(
+    _ notes: String,
+    matching searchText: String
+  ) -> String {
+    highlight(inlineNotes(notes), matching: searchText)
+  }
+
+  fileprivate static func highlightedTags(
+    _ tags: [ReminderTagRecord],
+    matching searchText: String
+  ) -> String {
+    highlight(tagText(tags), matching: searchText)
+  }
+
+  fileprivate static func tagText(_ tags: [ReminderTagRecord]) -> String {
+    tags.map { "#\($0.title)" }.joined(separator: " ")
+  }
+
+  private static let upstreamExampleTagOrder: [String: Int] = [
+    "car": 0,
+    "kids": 1,
+    "someday": 2,
+    "optional": 3,
+    "social": 4,
+    "night": 5,
+    "adulting": 6,
+  ]
+
+  fileprivate static func tagSortKey(_ tag: ReminderTagRecord) -> (Int, String) {
+    (upstreamExampleTagOrder[tag.id] ?? Int.max, tag.title)
+  }
+
+  fileprivate static func moveRows<Row>(
+    _ rows: inout [Row],
+    fromOffsets source: IndexSet,
+    toOffset destination: Int
+  ) {
+    guard !source.isEmpty else { return }
+    let indexes = source.sorted()
+    guard indexes.allSatisfy({ rows.indices.contains($0) }) else { return }
+    let movingRows = indexes.map { rows[$0] }
+    let adjustedDestination = max(
+      0,
+      min(destination - indexes.filter { $0 < destination }.count, rows.count - indexes.count)
+    )
+    for index in indexes.reversed() {
+      rows.remove(at: index)
+    }
+    rows.insert(contentsOf: movingRows, at: adjustedDestination)
+  }
+
+  fileprivate static func highlight(
+    _ value: String,
+    matching searchText: String
+  ) -> String {
+    let searchText = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !searchText.isEmpty,
+      let range = value.range(of: searchText, options: [.caseInsensitive, .diacriticInsensitive])
+    else { return value }
+    return "\(value[..<range.lowerBound])**\(value[range])**\(value[range.upperBound...])"
   }
 
   private static func upsertReminderOperations(

@@ -10171,6 +10171,256 @@ struct InstantStoreTests {
   }
 
   @Test
+  func searchRemindersModelPortsBasicsShowCompletedAndDeleteCompleted() async throws {
+    let fixture = try await upstreamRemindersFixture()
+    var model = SearchRemindersModel(runtime: fixture.runtime, now: { fixture.now })
+
+    try await model.load()
+    expectNoDifference(model.searchResults.completedCount, 0)
+    expectNoDifference(model.searchResults.rows, [])
+
+    model.searchText = "Take"
+    try await model.load()
+    expectNoDifference(model.searchResults.completedCount, 1)
+    expectNoDifference(model.searchResults.rows.map(\.title), ["**Take** out trash"])
+    expectNoDifference(model.searchResults.rows.map(\.reminder.title), ["Take out trash"])
+    expectNoDifference(model.searchResults.rows.map(\.remindersList.title), ["Family"])
+    expectNoDifference(model.searchResults.rows.map(\.isPastDue), [false])
+
+    try await model.showCompletedButtonTapped()
+    expectNoDifference(model.showCompletedInSearchResults, true)
+    expectNoDifference(model.searchResults.completedCount, 1)
+    expectNoDifference(model.searchResults.rows.map(\.title), [
+      "**Take** out trash",
+      "**Take** a walk",
+    ])
+    expectNoDifference(model.searchResults.rows.map(\.reminder.isCompleted), [false, true])
+    expectNoDifference(model.searchResults.rows.map(\.tags), ["", "#car #kids #social"])
+
+    try await model.deleteCompletedReminders(
+      updatedAt: fixture.now,
+      transactionID: "tx-reminders-search-delete-completed"
+    )
+    expectNoDifference(model.searchResults.completedCount, 0)
+    expectNoDifference(model.searchResults.rows.map(\.title), ["**Take** out trash"])
+
+    let matchingAfterDelete = try ReminderExample.decodeReminders(
+      try await fixture.runtime.query(
+        ReminderExample.remindersSearchQuery(text: "Take", includeCompleted: true)
+      )
+    )
+    expectNoDifference(matchingAfterDelete.map(\.title), ["Take out trash"])
+  }
+
+  @Test
+  func remindersDetailModelPortsOrderingAndRichRows() async throws {
+    let fixture = try await upstreamRemindersFixture()
+    var model = RemindersDetailModel(
+      detailType: .remindersList(fixture.personalList),
+      runtime: fixture.runtime,
+      now: { fixture.now }
+    )
+
+    try await model.load()
+    expectNoDifference(model.ordering, .dueDate)
+    expectNoDifference(model.reminderRows.map(\.reminder.title), [
+      "Haircut",
+      "Doctor appointment",
+      "Buy concert tickets",
+      "Groceries",
+    ])
+    expectNoDifference(model.reminderRows.map(\.isPastDue), [true, false, false, false])
+    expectNoDifference(model.reminderRows.map(\.notes), [
+      "",
+      "Ask about diet",
+      "",
+      "Milk Eggs Apples Oatmeal Spinach",
+    ])
+    expectNoDifference(model.reminderRows.map(\.tags), [
+      "#someday #optional",
+      "#adulting",
+      "#social #night",
+      "#someday #optional #adulting",
+    ])
+
+    try await model.orderingButtonTapped(.priority)
+    expectNoDifference(model.ordering, .priority)
+    expectNoDifference(model.reminderRows.map(\.reminder.title), [
+      "Doctor appointment",
+      "Haircut",
+      "Groceries",
+      "Buy concert tickets",
+    ])
+
+    try await model.orderingButtonTapped(.title)
+    expectNoDifference(model.ordering, .title)
+    expectNoDifference(model.reminderRows.map(\.reminder.title), [
+      "Buy concert tickets",
+      "Doctor appointment",
+      "Groceries",
+      "Haircut",
+    ])
+  }
+
+  @Test
+  func remindersDetailModelPortsShowCompletedToggle() async throws {
+    let fixture = try await upstreamRemindersFixture()
+    var model = RemindersDetailModel(
+      detailType: .remindersList(fixture.personalList),
+      runtime: fixture.runtime,
+      now: { fixture.now }
+    )
+
+    try await model.load()
+    expectNoDifference(model.showCompleted, false)
+    expectNoDifference(model.reminderRows.map(\.reminder.title), [
+      "Haircut",
+      "Doctor appointment",
+      "Buy concert tickets",
+      "Groceries",
+    ])
+
+    try await model.showCompletedButtonTapped()
+    expectNoDifference(model.showCompleted, true)
+    expectNoDifference(model.reminderRows.map(\.reminder.title), [
+      "Haircut",
+      "Doctor appointment",
+      "Buy concert tickets",
+      "Groceries",
+      "Take a walk",
+    ])
+
+    try await model.showCompletedButtonTapped()
+    expectNoDifference(model.showCompleted, false)
+    expectNoDifference(model.reminderRows.map(\.reminder.title), [
+      "Haircut",
+      "Doctor appointment",
+      "Buy concert tickets",
+      "Groceries",
+    ])
+  }
+
+  @Test
+  func remindersDetailModelPortsMoveToManualOrdering() async throws {
+    let fixture = try await upstreamRemindersFixture()
+    var model = RemindersDetailModel(
+      detailType: .remindersList(fixture.personalList),
+      runtime: fixture.runtime,
+      now: { fixture.now }
+    )
+
+    try await model.load()
+    expectNoDifference(model.reminderRows.map(\.reminder.title), [
+      "Haircut",
+      "Doctor appointment",
+      "Buy concert tickets",
+      "Groceries",
+    ])
+
+    try await model.move(
+      fromOffsets: IndexSet(integer: 2),
+      toOffset: 0,
+      updatedAt: fixture.now,
+      transactionID: "tx-reminders-detail-move"
+    )
+    expectNoDifference(model.ordering, .manual)
+    expectNoDifference(model.reminderRows.map(\.reminder.title), [
+      "Buy concert tickets",
+      "Haircut",
+      "Doctor appointment",
+      "Groceries",
+    ])
+  }
+
+  @Test
+  func remindersDetailModelPortsSmartListsAndTags() async throws {
+    let fixture = try await upstreamRemindersFixture()
+    let someday = try #require(fixture.tags.first { $0.id == "someday" })
+
+    func titles(for detailType: RemindersDetailType) async throws -> [String] {
+      var model = RemindersDetailModel(
+        detailType: detailType,
+        runtime: fixture.runtime,
+        now: { fixture.now }
+      )
+      try await model.load()
+      return model.reminderRows.map(\.reminder.title)
+    }
+
+    let allTitles = try await titles(for: .all)
+    expectNoDifference(
+      allTitles,
+      [
+        "Haircut",
+        "Doctor appointment",
+        "Buy concert tickets",
+        "Pick up kids from school",
+        "Call accountant",
+        "Prepare for WWDC",
+        "Take out trash",
+        "Groceries",
+      ]
+    )
+    let completedTitles = try await titles(for: .completed)
+    expectNoDifference(
+      completedTitles,
+      [
+        "Take a walk",
+        "Get laundry",
+        "Send weekly emails",
+      ]
+    )
+    let flaggedTitles = try await titles(for: .flagged)
+    expectNoDifference(
+      flaggedTitles,
+      [
+        "Haircut",
+        "Pick up kids from school",
+      ]
+    )
+    let scheduledTitles = try await titles(for: .scheduled)
+    expectNoDifference(
+      scheduledTitles,
+      [
+        "Haircut",
+        "Doctor appointment",
+        "Buy concert tickets",
+        "Pick up kids from school",
+        "Call accountant",
+        "Prepare for WWDC",
+        "Take out trash",
+      ]
+    )
+    var scheduledModel = RemindersDetailModel(
+      detailType: .scheduled,
+      runtime: fixture.runtime,
+      now: { fixture.now }
+    )
+    try await scheduledModel.showCompletedButtonTapped()
+    expectNoDifference(
+      scheduledModel.reminderRows.map(\.reminder.title),
+      scheduledTitles
+    )
+
+    let todayTitles = try await titles(for: .today)
+    expectNoDifference(
+      todayTitles,
+      [
+        "Doctor appointment",
+        "Buy concert tickets",
+      ]
+    )
+    let somedayTitles = try await titles(for: .tags([someday]))
+    expectNoDifference(
+      somedayTitles,
+      [
+        "Haircut",
+        "Groceries",
+      ]
+    )
+  }
+
+  @Test
   func reminderFormModelEditsExistingDraftAndReplacesTags() async throws {
     let cacheURL = try temporaryCacheURL()
     let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
@@ -15941,6 +16191,276 @@ struct InstantStoreTests {
       .appendingPathComponent("InstantSwiftDataTests-\(UUID().uuidString)")
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     return directory.appendingPathComponent("state.sqlite")
+  }
+
+  private struct UpstreamRemindersFixture {
+    var runtime: InstantRuntime
+    var now: InstantTimestamp
+    var personalList: RemindersListRecord
+    var tags: [ReminderTagRecord]
+  }
+
+  private func upstreamRemindersFixture() async throws -> UpstreamRemindersFixture {
+    let cacheURL = try temporaryCacheURL()
+    let now = InstantTimestamp(milliseconds: 1_234_567_890_000)
+    let day: Int64 = 24 * 60 * 60 * 1000
+    let personalID = "00000000-0000-0000-0000-000000000000"
+    let familyID = "00000000-0000-0000-0000-000000000001"
+    let businessID = "00000000-0000-0000-0000-000000000002"
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reminders-upstream-fixture",
+        persistenceURL: cacheURL,
+        initialAttributes: ReminderExample.attributes,
+        now: { now },
+        makeID: { UUID().uuidString.lowercased() }
+      )
+    )
+
+    let lists: [(id: String, seed: RemindersListSeedRecord)] = [
+      (
+        personalID,
+        RemindersListSeedRecord(
+          localIDName: "upstream.reminders.personal",
+          title: "Personal",
+          color: "#4895ef",
+          position: 1,
+          createdAtOffsetMilliseconds: 0
+        )
+      ),
+      (
+        familyID,
+        RemindersListSeedRecord(
+          localIDName: "upstream.reminders.family",
+          title: "Family",
+          color: "#ed8935",
+          position: 2,
+          createdAtOffsetMilliseconds: 1
+        )
+      ),
+      (
+        businessID,
+        RemindersListSeedRecord(
+          localIDName: "upstream.reminders.business",
+          title: "Business",
+          color: "#b25dd3",
+          position: 3,
+          createdAtOffsetMilliseconds: 2
+        )
+      ),
+    ]
+    let reminders: [(id: String, listID: String, seed: ReminderSeedRecord)] = [
+      (
+        "00000000-0000-0000-0000-000000000003",
+        personalID,
+        ReminderSeedRecord(
+          localIDName: "upstream.reminders.groceries",
+          listLocalIDName: "upstream.reminders.personal",
+          title: "Groceries",
+          notes: "Milk\nEggs\nApples\nOatmeal\nSpinach",
+          isCompleted: false,
+          isFlagged: false,
+          position: 1,
+          createdAtOffsetMilliseconds: 3,
+          tagTitles: ["someday", "optional", "adulting"]
+        )
+      ),
+      (
+        "00000000-0000-0000-0000-000000000004",
+        personalID,
+        ReminderSeedRecord(
+          localIDName: "upstream.reminders.haircut",
+          listLocalIDName: "upstream.reminders.personal",
+          title: "Haircut",
+          notes: "",
+          isCompleted: false,
+          isFlagged: true,
+          dueDateOffsetMilliseconds: -2 * day,
+          position: 2,
+          createdAtOffsetMilliseconds: 4,
+          tagTitles: ["someday", "optional"]
+        )
+      ),
+      (
+        "00000000-0000-0000-0000-000000000005",
+        personalID,
+        ReminderSeedRecord(
+          localIDName: "upstream.reminders.doctor",
+          listLocalIDName: "upstream.reminders.personal",
+          title: "Doctor appointment",
+          notes: "Ask about diet",
+          isCompleted: false,
+          isFlagged: false,
+          dueDateOffsetMilliseconds: 0,
+          priority: .high,
+          position: 3,
+          createdAtOffsetMilliseconds: 5,
+          tagTitles: ["adulting"]
+        )
+      ),
+      (
+        "00000000-0000-0000-0000-000000000006",
+        personalID,
+        ReminderSeedRecord(
+          localIDName: "upstream.reminders.walk",
+          listLocalIDName: "upstream.reminders.personal",
+          title: "Take a walk",
+          notes: "",
+          isCompleted: true,
+          isFlagged: false,
+          dueDateOffsetMilliseconds: -190 * day,
+          position: 4,
+          createdAtOffsetMilliseconds: 6,
+          tagTitles: ["car", "kids", "social"]
+        )
+      ),
+      (
+        "00000000-0000-0000-0000-000000000007",
+        personalID,
+        ReminderSeedRecord(
+          localIDName: "upstream.reminders.concert",
+          listLocalIDName: "upstream.reminders.personal",
+          title: "Buy concert tickets",
+          notes: "",
+          isCompleted: false,
+          isFlagged: false,
+          dueDateOffsetMilliseconds: 0,
+          position: 5,
+          createdAtOffsetMilliseconds: 7,
+          tagTitles: ["social", "night"]
+        )
+      ),
+      (
+        "00000000-0000-0000-0000-000000000008",
+        familyID,
+        ReminderSeedRecord(
+          localIDName: "upstream.reminders.kids",
+          listLocalIDName: "upstream.reminders.family",
+          title: "Pick up kids from school",
+          notes: "",
+          isCompleted: false,
+          isFlagged: true,
+          dueDateOffsetMilliseconds: 2 * day,
+          priority: .high,
+          position: 6,
+          createdAtOffsetMilliseconds: 8
+        )
+      ),
+      (
+        "00000000-0000-0000-0000-000000000009",
+        familyID,
+        ReminderSeedRecord(
+          localIDName: "upstream.reminders.laundry",
+          listLocalIDName: "upstream.reminders.family",
+          title: "Get laundry",
+          notes: "",
+          isCompleted: true,
+          isFlagged: false,
+          dueDateOffsetMilliseconds: -2 * day,
+          priority: .low,
+          position: 7,
+          createdAtOffsetMilliseconds: 9
+        )
+      ),
+      (
+        "00000000-0000-0000-0000-00000000000A",
+        familyID,
+        ReminderSeedRecord(
+          localIDName: "upstream.reminders.trash",
+          listLocalIDName: "upstream.reminders.family",
+          title: "Take out trash",
+          notes: "",
+          isCompleted: false,
+          isFlagged: false,
+          dueDateOffsetMilliseconds: 4 * day,
+          priority: .high,
+          position: 8,
+          createdAtOffsetMilliseconds: 10
+        )
+      ),
+      (
+        "00000000-0000-0000-0000-00000000000B",
+        businessID,
+        ReminderSeedRecord(
+          localIDName: "upstream.reminders.accountant",
+          listLocalIDName: "upstream.reminders.business",
+          title: "Call accountant",
+          notes: "Status of tax return\nExpenses for next year\nChanging payroll company",
+          isCompleted: false,
+          isFlagged: false,
+          dueDateOffsetMilliseconds: 2 * day,
+          position: 9,
+          createdAtOffsetMilliseconds: 11
+        )
+      ),
+      (
+        "00000000-0000-0000-0000-00000000000C",
+        businessID,
+        ReminderSeedRecord(
+          localIDName: "upstream.reminders.emails",
+          listLocalIDName: "upstream.reminders.business",
+          title: "Send weekly emails",
+          notes: "",
+          isCompleted: true,
+          isFlagged: false,
+          dueDateOffsetMilliseconds: -2 * day,
+          priority: .medium,
+          position: 10,
+          createdAtOffsetMilliseconds: 12
+        )
+      ),
+      (
+        "00000000-0000-0000-0000-00000000000D",
+        businessID,
+        ReminderSeedRecord(
+          localIDName: "upstream.reminders.wwdc",
+          listLocalIDName: "upstream.reminders.business",
+          title: "Prepare for WWDC",
+          notes: "",
+          isCompleted: false,
+          isFlagged: false,
+          dueDateOffsetMilliseconds: 2 * day,
+          position: 11,
+          createdAtOffsetMilliseconds: 13,
+          tagTitles: ["social"]
+        )
+      ),
+    ]
+    let tagIDs = ["car", "kids", "someday", "optional", "social", "night", "adulting"]
+    let tags = tagIDs.map { id in
+      (id: id, seed: ReminderTagSeedRecord(title: id))
+    }
+    let reminderTags = reminders.flatMap { reminder in
+      reminder.seed.tagTitles.map { tagID in
+        (reminderID: reminder.id, tagID: tagID)
+      }
+    }
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-upstream-reminders-seed",
+        operations: ReminderExample.seedOperations(
+          lists: lists,
+          reminders: reminders,
+          tags: tags,
+          reminderTags: reminderTags,
+          baseCreatedAt: now,
+          transactionID: "tx-upstream-reminders-seed"
+        )
+      ),
+      createdAt: now
+    )
+
+    let personalList = try #require(
+      try ReminderExample.decodeLists(try await runtime.query(ReminderExample.listsQuery))
+        .first { $0.id == personalID }
+    )
+    let decodedTags = try ReminderExample.decodeTags(try await runtime.query(ReminderExample.tagsQuery))
+    return UpstreamRemindersFixture(
+      runtime: runtime,
+      now: now,
+      personalList: personalList,
+      tags: decodedTags
+    )
   }
 
   private func persistedObjectSource(_ testName: String) -> String {

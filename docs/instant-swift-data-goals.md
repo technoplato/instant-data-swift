@@ -677,6 +677,11 @@ Agent-oriented output modes are required:
   create drafts, `Draft(existing)`-style edit flows, due-date toggling,
   duplicate-safe selected tags, and full tag-link replacement for edit/create
   flows.
+- exercise runtime-backed Reminders search and detail models through core tests;
+  `SearchRemindersModel` ports upstream basics/show-completed/delete-completed,
+  and `RemindersDetailModel` ports list detail rows, due-date/priority/title
+  ordering, show-completed toggling, move-to-manual position persistence, and
+  upstream smart-list/tag detail filters.
 - run the first local SyncUps port slice with commands such as
   `instant-swift-data examples sync-ups add "Design" --seconds 900 --theme appOrange --attendee Blob`,
   `instant-swift-data examples sync-ups edit <sync-up-id> --title "Design Review" --attendee Blob`,

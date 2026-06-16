@@ -791,8 +791,10 @@ Create `validation/` with:
   slice with `examples reminders add-tag`, `remove-tag`, `tags --jsonl`, and
   `search "text" [--tag tag] [--include-completed]`. Tags are modeled as Instant
   entities with a many-ref `reminders/tags` relation, and JSON/JSONL output
-  derives visible reminder-tag rows. Full upstream FTS, highlighting, advanced
-  stats, and UI search models remain future work.
+  derives visible reminder-tag rows. A runtime-backed `SearchRemindersModel`
+  now ports the upstream basics/show-completed/delete-completed tests with
+  highlighted titles; full upstream FTS and SwiftUI search views remain future
+  work.
 - Reminders: local delete workflows now cover
   `examples reminders delete <reminder-id>`,
   `delete-completed [--list-id id]`, and `delete-list <list-id>`. Reminder
@@ -805,14 +807,16 @@ Create `validation/` with:
   `list --priority high` filters. Scheduled/today/flagged/priority filters
   default to incomplete reminders, matching the upstream Reminders predicates.
   Priority is stored in Instant triples as the upstream integer rank while the
-  CLI accepts and prints stable `low`/`medium`/`high` names; multi-column
-  priority/detail ordering, status states, FTS/highlighting, and SwiftUI detail
-  models remain future work.
+  CLI accepts and prints stable `low`/`medium`/`high` names. A runtime-backed
+  `RemindersDetailModel` now ports upstream due-date, priority, and title
+  ordering, show-completed toggling, move-to-manual position persistence, and
+  smart-list/tag detail filters; status transition states, FTS/highlighting
+  parity, and SwiftUI detail views remain future work.
 - Reminders: local smart-list stats now expose `examples reminders stats --json`
   with all incomplete, completed, flagged, scheduled, and today counts. The
   flagged/scheduled/today counts exclude completed reminders, matching the
-  upstream Reminders list model. Upstream-exact multi-column priority ordering,
-  status states, FTS/highlighting, and SwiftUI detail models remain future work.
+  upstream Reminders list model. Status states, FTS/highlighting, and SwiftUI
+  detail views remain future work.
 - Reminders: `validation reminders --jsonl` now records the local Reminders port
   as acceptance evidence, including search/tag filtering, rich-field edits,
   smart-list stats, local list-sharing reader rejection, writer updates,
