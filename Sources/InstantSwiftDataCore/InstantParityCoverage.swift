@@ -2113,6 +2113,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Manual Instant attributes constrain generated Draft assignments so local or server-managed stored fields stay out of create/edit payloads."
     ),
     sqlite(
+      id: "sqlite.draft.transaction-composition",
+      sourceFile: "upstream/sqlite-data/Examples/Reminders/ReminderForm.swift + upstream/sqlite-data/Examples/Reminders/RemindersListForm.swift",
+      sourceTestName: "save draft, use returned id, and write related rows in one database write",
+      swiftFile: typedAPISwiftFile,
+      swiftTestName: "generatedDraftSaveComposesRelatedMutationsInOneTransaction",
+      surface: "drafts",
+      status: .adapted,
+      notes: "InstantSwiftDataClient.transact(saving:) prepares the generated draft save, passes the allocated or existing typed id into related mutations, and commits every operation with one transaction id/time."
+    ),
+    sqlite(
       id: "sqlite.reminders.search-tags",
       sourceFile: "upstream/sqlite-data/Examples/RemindersTests/SearchRemindersTests.swift",
       sourceTestName: "basics / showCompleted / deleteCompleted",

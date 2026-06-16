@@ -276,7 +276,10 @@ transport objects into feature code.
   Saving a draft with an id should update/upsert that entity through existing
   mutation semantics; saving a draft without an id should allocate a durable
   client-scoped Instant id, create the entity, return the created id, and leave
-  strict `create`/`updateExisting` guarantees intact.
+  strict `create`/`updateExisting` guarantees intact. Draft saves should also
+  compose with related writes in one explicit transaction so create/edit forms
+  can save the draft, use the allocated typed id, and write links or child rows
+  with the same transaction id/time, matching SQLiteData form ergonomics.
 - Preserve `ruleParams` operations in the pending outbox for transport lowering.
   Rule params affect server-side permission evaluation and should not mutate
   local materialized entities optimistically.

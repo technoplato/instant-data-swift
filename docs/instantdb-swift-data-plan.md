@@ -527,10 +527,12 @@ materializes Swift values from those triples.
 primary-keyed entities. Draft ids are optional, new forms can omit the id,
 `Draft(existing)` supports edit flows, and saving a nil-id draft allocates a
 durable Instant id through the client/runtime rather than treating the id as a
-normal writable attribute. The `typed-drafts` validation now also saves a
-macro-generated draft with a writable `@InstantRelation` ref field and verifies
-the generated ref metadata and summarized pending mutation payload shape so
-relation form flows have terminal JSONL evidence.
+normal writable attribute. `InstantSwiftDataClient.transact(saving:)` mirrors
+SQLiteData form saves that upsert a draft, use the returned id, and write related
+rows inside the same database write. The `typed-drafts` validation now also
+saves a macro-generated draft with a writable `@InstantRelation` ref field and
+verifies the generated ref metadata and summarized pending mutation payload
+shape so relation form flows have terminal JSONL evidence.
 
 ## SQLiteData Audit Notes
 
