@@ -1341,9 +1341,9 @@ struct LocalTodoValidationTests {
 
     expectNoDifference(run.result.event, "parity-report")
     expectNoDifference(run.result.coverageComplete, false)
-    expectNoDifference(run.result.recordCount, 225)
+    expectNoDifference(run.result.recordCount, 226)
     expectNoDifference(run.result.exactCount, 28)
-    expectNoDifference(run.result.adaptedCount, 194)
+    expectNoDifference(run.result.adaptedCount, 195)
     expectNoDifference(run.result.blockedCount, 2)
     expectNoDifference(run.result.notApplicableCount, 1)
     expectNoDifference(run.summary.caseID, "validation.parity.report")
@@ -1498,6 +1498,11 @@ struct LocalTodoValidationTests {
     #expect(
       run.result.records.contains {
         $0.id == "instant.reactor.optimistic-refresh-preserves-local" && $0.status == .adapted
+      }
+    )
+    #expect(
+      run.result.records.contains {
+        $0.id == "instant.reactor.pending-cleanup-keeps-waiting" && $0.status == .adapted
       }
     )
     #expect(
@@ -1766,7 +1771,7 @@ struct LocalTodoValidationTests {
     )
 
     expectNoDifference(run.result.coverageComplete, true)
-    expectNoDifference(run.result.adaptedCount, 196)
+    expectNoDifference(run.result.adaptedCount, 197)
     expectNoDifference(run.result.blockedCount, 0)
     expectNoDifference(run.summary.ok, true)
     let swiftToTypeScript = try #require(
@@ -1805,7 +1810,7 @@ struct LocalTodoValidationTests {
     )
 
     let rows = try parseJSONLines(result.stdout)
-    expectNoDifference(rows.count, 225)
+    expectNoDifference(rows.count, 226)
     expectNoDifference(Set(rows.map { $0["case"] as? String ?? "" }), Set([
       "validation.parity.report"
     ]))
@@ -1878,9 +1883,9 @@ struct LocalTodoValidationTests {
     expectNoDifference(details["event"] as? String, "coverage")
     expectNoDifference(details["ok"] as? Bool, false)
     expectNoDifference(details["coverageComplete"] as? Bool, false)
-    expectNoDifference((details["recordCount"] as? NSNumber)?.intValue, 225)
+    expectNoDifference((details["recordCount"] as? NSNumber)?.intValue, 226)
     expectNoDifference((details["exactCount"] as? NSNumber)?.intValue, 28)
-    expectNoDifference((details["adaptedCount"] as? NSNumber)?.intValue, 194)
+    expectNoDifference((details["adaptedCount"] as? NSNumber)?.intValue, 195)
     expectNoDifference((details["blockedCount"] as? NSNumber)?.intValue, 2)
     expectNoDifference((details["notApplicableCount"] as? NSNumber)?.intValue, 1)
     expectNoDifference((details["swiftFileCount"] as? NSNumber)?.intValue, 24)

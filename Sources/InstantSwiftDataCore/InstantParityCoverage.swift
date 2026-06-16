@@ -558,6 +558,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift has no raw refresh-ok message, so the adaptation confirms the first pending mutation, runs queryOnce/cache refresh, relaunches, and proves the later optimistic write remains visible until and after it is confirmed."
     ),
     instant(
+      id: "instant.reactor.pending-cleanup-keeps-waiting",
+      sourceFile: reactorSource,
+      sourceTestName: "we don't cleanup mutations we're still waiting on",
+      swiftFile: reactorParitySwiftFile,
+      swiftTestName: "upstreamReactorDoesNotCleanupMutationsStillWaitingOn",
+      surface: "optimistic-mutations",
+      status: .adapted,
+      notes: "Swift adapts Reactor's timeout cleanup by sending both pending mutations through an injected transport, receiving confirmation for only the first, and leaving the still-unacknowledged optimistic mutation pending and visible across relaunch."
+    ),
+    instant(
       id: "instant.reactor.get-local-id-stability",
       sourceFile: reactorSource,
       sourceTestName: "getLocalId always returns the same id",
