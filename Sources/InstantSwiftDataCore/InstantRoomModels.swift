@@ -1,10 +1,17 @@
 import Foundation
 
 public struct InstantRoomHandle: Hashable, Codable, Sendable {
+  public static let defaultType = "_defaultRoomType"
+  public static let defaultID = "_defaultRoomId"
+  public static let `default` = Self()
+
   public var type: String
   public var id: String
 
-  public init(type: String, id: String) {
+  public init(
+    type: String = Self.defaultType,
+    id: String = Self.defaultID
+  ) {
     self.type = type
     self.id = id
   }

@@ -70,6 +70,26 @@ struct BootstrapTests {
     } catch {
       #expect(Bool(false), "Unexpected error: \(error)")
     }
+
+    do {
+      _ = try await client.joinRoom(.default)
+      #expect(Bool(false), "Expected the default client room join to fail before bootstrap.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .implementationFailed)
+      expectNoDifference(error.operation, "access default InstantSwiftData client")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      _ = try await client.leaveRoom(.default)
+      #expect(Bool(false), "Expected the default client room leave to fail before bootstrap.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .implementationFailed)
+      expectNoDifference(error.operation, "access default InstantSwiftData client")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
   }
 
   @Test
@@ -1959,6 +1979,14 @@ struct BootstrapTests {
     let member = mockRoomPresenceMember(room: room, userID: "user-1")
     let message = mockRoomTopicMessage(room: room, topic: "sendEmoji")
     let client = roomClient(
+      joinRoom: { room in
+        expectNoDifference(room, InstantRoomHandle(type: "chat", id: "lobby"))
+        return room
+      },
+      leaveRoom: { room in
+        expectNoDifference(room, InstantRoomHandle(type: "chat", id: "lobby"))
+        return room
+      },
       setPresence: { room, userID, values in
         expectNoDifference(room, InstantRoomHandle(type: "chat", id: "lobby"))
         expectNoDifference(userID, "user-1")
@@ -2004,6 +2032,8 @@ struct BootstrapTests {
       }
     )
 
+    let joinedRoom = try await client.joinRoom(room)
+    expectNoDifference(joinedRoom, room)
     let setMember = try await client.setRoomPresence(
       room: room,
       userID: "user-1",
@@ -2039,6 +2069,72 @@ struct BootstrapTests {
     ).makeAsyncIterator()
     let observedMessages = await topicIterator.next()
     expectNoDifference(observedMessages, [message])
+    let leftRoom = try await client.leaveRoom(room)
+    expectNoDifference(leftRoom, room)
+  }
+
+  @Test
+  func roomPublishTopicAdapterJoinsBeforePublishing() async throws {
+    let room = InstantRoomHandle(type: "chat", id: "r1")
+    let recorder = RoomLifecycleRecorder()
+    let client = roomClient(
+      joinRoom: { room in
+        expectNoDifference(room, InstantRoomHandle(type: "chat", id: "r1"))
+        await recorder.record("join:\(room.type):\(room.id)")
+        return room
+      },
+      publishTopicMessage: { room, topic, userID, payload in
+        expectNoDifference(room, InstantRoomHandle(type: "chat", id: "r1"))
+        expectNoDifference(topic, "emoji")
+        expectNoDifference(userID, nil)
+        expectNoDifference(payload, .object(["value": .string("fire")]))
+        await recorder.record("publish:\(topic)")
+        return mockRoomTopicMessage(room: room, topic: topic, payload: payload)
+      }
+    )
+
+    let joinedRoom = try await client.joinRoom(room)
+    let message = try await client.publishRoomTopicMessage(
+      room: joinedRoom,
+      topic: "emoji",
+      payload: .object(["value": .string("fire")])
+    )
+
+    expectNoDifference(joinedRoom, room)
+    expectNoDifference(message.room, room)
+    expectNoDifference(message.topic, "emoji")
+    expectNoDifference(message.payload, .object(["value": .string("fire")]))
+    let events = await recorder.events()
+    expectNoDifference(events, ["join:chat:r1", "publish:emoji"])
+  }
+
+  @Test
+  func roomHandleSupportsVueStyleDefaults() async throws {
+    let defaultRoom = InstantRoomHandle()
+    let explicitDefaultRoom = InstantRoomHandle(
+      type: InstantRoomHandle.defaultType,
+      id: InstantRoomHandle.defaultID
+    )
+
+    expectNoDifference(defaultRoom, explicitDefaultRoom)
+    expectNoDifference(InstantRoomHandle.default, explicitDefaultRoom)
+    expectNoDifference(defaultRoom.type, "_defaultRoomType")
+    expectNoDifference(defaultRoom.id, "_defaultRoomId")
+
+    let member = mockRoomPresenceMember(room: defaultRoom, userID: "default-user")
+    let client = roomClient(
+      roomPresence: { room in
+        expectNoDifference(room, defaultRoom)
+        return [member]
+      }
+    )
+    let presence = RoomPresence(room: defaultRoom)
+
+    try await presence.load(using: client)
+
+    expectNoDifference(presence.wrappedValue, [member])
+    expectNoDifference(presence.loadError, nil)
+    expectNoDifference(presence.isLoading, false)
   }
 
   @Test
@@ -3519,6 +3615,18 @@ private actor RoomObservationTermination {
   }
 }
 
+private actor RoomLifecycleRecorder {
+  private var recordedEvents: [String] = []
+
+  func record(_ event: String) {
+    recordedEvents.append(event)
+  }
+
+  func events() -> [String] {
+    recordedEvents
+  }
+}
+
 private actor LocalIDRecorder {
   private var names: [String] = []
 
@@ -3802,6 +3910,8 @@ private func localIDClient(_ recorder: LocalIDRecorder) -> InstantSwiftDataClien
 }
 
 private func roomClient(
+  joinRoom: @escaping @Sendable (InstantRoomHandle) async throws -> InstantRoomHandle = { $0 },
+  leaveRoom: @escaping @Sendable (InstantRoomHandle) async throws -> InstantRoomHandle = { $0 },
   setPresence: @escaping @Sendable (
     InstantRoomHandle,
     String?,
@@ -3845,6 +3955,8 @@ private func roomClient(
     observe: { _ in AsyncStream { continuation in continuation.finish() } },
     pendingMutations: { [] },
     localID: { name in "mock-\(name)" },
+    joinRoom: joinRoom,
+    leaveRoom: leaveRoom,
     setRoomPresence: setPresence,
     roomPresence: roomPresence,
     observeRoomPresence: observeRoomPresence,

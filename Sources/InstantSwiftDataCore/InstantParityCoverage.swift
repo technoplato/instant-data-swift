@@ -2599,6 +2599,94 @@ public enum InstantSwiftDataParityCoverage {
       notes:
         "Dynamic @LocalID loads preserve Vue ref-change semantics by replacing the requested local-id name and binding the newly resolved value."
     ),
+    instant(
+      id: "instant.svelte.room-handle-creates-handle",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "room creates a room handle",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName: "roomClientOperationsUseInjectedClosures",
+      surface: "adapter-room",
+      status: .adapted,
+      notes:
+        "Swift adapts Svelte's room handle object as the Sendable InstantRoomHandle value passed through public room presence/topic client operations."
+    ),
+    instant(
+      id: "instant.vue.room-handle-creates-handle",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "room creates a room handle",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName: "roomClientOperationsUseInjectedClosures",
+      surface: "adapter-room",
+      status: .adapted,
+      notes:
+        "Swift adapts Vue's reactive room handle as the Sendable InstantRoomHandle value passed through public room presence/topic client operations."
+    ),
+    instant(
+      id: "instant.vue.room-handle-defaults-when-omitted",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "room defaults type and id when omitted",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName: "roomHandleSupportsVueStyleDefaults",
+      surface: "adapter-room",
+      status: .adapted,
+      notes:
+        "InstantRoomHandle() and InstantRoomHandle.default preserve Vue's omitted-room defaults of _defaultRoomType and _defaultRoomId while remaining plain Swift values."
+    ),
+    instant(
+      id: "instant.vue.rooms-use-presence-subscribe-cleanup",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "rooms.usePresence subscribes to presence on mount and unsubscribes on scope stop",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName: "roomPresencePropertyWrapperTaskBindsObservedMembers + roomPresencePropertyWrapperSubscribeCancelsUnderlyingObservation",
+      surface: "adapter-room-presence",
+      status: .adapted,
+      notes:
+        "@RoomPresence turns a room's subscribable presence value into Swift wrapper/task state and deterministically cancels the underlying AsyncSequence subscription."
+    ),
+    instant(
+      id: "instant.vue.rooms-use-presence-publish",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "rooms.usePresence publishPresence delegates to core reactor",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName: "roomClientOperationsUseInjectedClosures",
+      surface: "adapter-room-presence",
+      status: .adapted,
+      notes:
+        "InstantSwiftDataClient.setRoomPresence is the Swift-native publishPresence adapter, preserving the room handle and typed JSON presence payload."
+    ),
+    instant(
+      id: "instant.vue.rooms-use-topic-effect-subscribe-cleanup",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "rooms.useTopicEffect subscribes to a topic and unsubscribes on scope stop",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName: "roomTopicMessagesPropertyWrapperTaskBindsObservedMessages + roomTopicMessagesPropertyWrapperSubscribeCancelsUnderlyingObservation",
+      surface: "adapter-room-topic",
+      status: .adapted,
+      notes:
+        "@RoomTopicMessages adapts room topic subscriptions into Swift wrapper/task state and cancels the underlying AsyncSequence subscription on cleanup."
+    ),
+    instant(
+      id: "instant.vue.rooms-use-publish-topic",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "rooms.usePublishTopic joins room and returns a publish function",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName: "roomPublishTopicAdapterJoinsBeforePublishing",
+      surface: "adapter-room-topic",
+      status: .adapted,
+      notes:
+        "Swift uses InstantSwiftDataClient.joinRoom followed by publishRoomTopicMessage as the idiomatic publish function, preserving room, topic, and typed JSON payload routing without leaking reactor callbacks."
+    ),
+    instant(
+      id: "instant.vue.rooms-use-typing-indicator-input-props",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "rooms.useTypingIndicator inputProps uses lowercase listener keys",
+      swiftFile: "not-applicable",
+      swiftTestName: "not-applicable",
+      surface: "adapter-vue-typing-indicator",
+      status: .notApplicable,
+      notes:
+        "The assertion is specific to Vue v-bind DOM listener prop casing. Swift's typing-indicator recipe uses presence values and native UI/CLI actions rather than JavaScript inputProps keys."
+    ),
     sqlite(
       id: "sqlite.draft.macro-generation",
       sourceFile: "upstream/sqlite-data/Sources/SQLiteData/Documentation.docc/Articles/AddingToGRDB.md",

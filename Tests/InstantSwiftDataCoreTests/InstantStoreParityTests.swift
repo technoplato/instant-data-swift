@@ -11,11 +11,11 @@ struct InstantStoreParityTests {
 
     expectNoDifference(report.event, "parity-report")
     expectNoDifference(report.coverageComplete, false)
-    expectNoDifference(report.recordCount, 268)
+    expectNoDifference(report.recordCount, 276)
     expectNoDifference(report.exactCount, 28)
-    expectNoDifference(report.adaptedCount, 237)
+    expectNoDifference(report.adaptedCount, 244)
     expectNoDifference(report.blockedCount, 2)
-    expectNoDifference(report.notApplicableCount, 1)
+    expectNoDifference(report.notApplicableCount, 2)
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/schema.test.ts"))
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/serializeSchema.test.ts"))
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/utils/object.test.ts"))
@@ -125,6 +125,26 @@ struct InstantStoreParityTests {
         "Expected adapted useLocalId parity record \(id)"
       )
     }
+    for id in [
+      "instant.svelte.room-handle-creates-handle",
+      "instant.vue.room-handle-creates-handle",
+      "instant.vue.room-handle-defaults-when-omitted",
+      "instant.vue.rooms-use-presence-subscribe-cleanup",
+      "instant.vue.rooms-use-presence-publish",
+      "instant.vue.rooms-use-topic-effect-subscribe-cleanup",
+      "instant.vue.rooms-use-publish-topic",
+    ] {
+      #expect(
+        report.records.contains { $0.id == id && $0.status == .adapted },
+        "Expected adapted room adapter parity record \(id)"
+      )
+    }
+    #expect(
+      report.records.contains {
+        $0.id == "instant.vue.rooms-use-typing-indicator-input-props"
+          && $0.status == .notApplicable
+      }
+    )
     #expect(report.records.contains { $0.id == "instant.infinite-query.initial-snapshot" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.infinite-query.no-order-field" && $0.status == .adapted })
     #expect(report.records.contains { $0.id == "instant.infinite-query.adding-new-numbers" && $0.status == .adapted })

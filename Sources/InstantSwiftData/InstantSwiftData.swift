@@ -55,6 +55,8 @@ public struct InstantSwiftDataClient: Sendable {
   private var oauthAuthorizationURLOperation: @Sendable (String, URL) throws -> URL
   private var issuerURIOperation: @Sendable () throws -> URL
   private var signOutOperation: @Sendable (Bool) async throws -> Void
+  private var joinRoomOperation: @Sendable (InstantRoomHandle) async throws -> InstantRoomHandle
+  private var leaveRoomOperation: @Sendable (InstantRoomHandle) async throws -> InstantRoomHandle
   private var setRoomPresenceOperation:
     @Sendable (InstantRoomHandle, String?, [String: JSONValue]) async throws
       -> InstantRoomPresenceMember
@@ -184,6 +186,12 @@ public struct InstantSwiftDataClient: Sendable {
     self.signOutOperation = { invalidateToken in
       try await runtime.signOut(invalidateToken: invalidateToken)
     }
+    self.joinRoomOperation = { room in
+      try await runtime.joinRoom(room)
+    }
+    self.leaveRoomOperation = { room in
+      try await runtime.leaveRoom(room)
+    }
     self.setRoomPresenceOperation = { room, userID, values in
       try await runtime.setPresence(room: room, userID: userID, values: values)
     }
@@ -292,6 +300,8 @@ public struct InstantSwiftDataClient: Sendable {
     signInWithOAuth:
       (@Sendable (String, String?) async throws -> InstantAuthSession)? = nil,
     signOutWithOptions: (@Sendable (Bool) async throws -> Void)? = nil,
+    joinRoom: (@Sendable (InstantRoomHandle) async throws -> InstantRoomHandle)? = nil,
+    leaveRoom: (@Sendable (InstantRoomHandle) async throws -> InstantRoomHandle)? = nil,
     setRoomPresence:
       (@Sendable (InstantRoomHandle, String?, [String: JSONValue]) async throws
         -> InstantRoomPresenceMember)? = nil,
@@ -368,6 +378,8 @@ public struct InstantSwiftDataClient: Sendable {
       signInWithIDToken: signInWithIDToken,
       signInWithOAuth: signInWithOAuth,
       signOutWithOptions: signOutWithOptions,
+      joinRoom: joinRoom,
+      leaveRoom: leaveRoom,
       setRoomPresence: setRoomPresence,
       roomPresence: roomPresence,
       observeRoomPresence: observeRoomPresence,
@@ -430,6 +442,8 @@ public struct InstantSwiftDataClient: Sendable {
     signInWithOAuth:
       (@Sendable (String, String?) async throws -> InstantAuthSession)? = nil,
     signOutWithOptions: (@Sendable (Bool) async throws -> Void)? = nil,
+    joinRoom: (@Sendable (InstantRoomHandle) async throws -> InstantRoomHandle)? = nil,
+    leaveRoom: (@Sendable (InstantRoomHandle) async throws -> InstantRoomHandle)? = nil,
     setRoomPresence:
       (@Sendable (InstantRoomHandle, String?, [String: JSONValue]) async throws
         -> InstantRoomPresenceMember)? = nil,
@@ -604,6 +618,8 @@ public struct InstantSwiftDataClient: Sendable {
           throw authError
         }
       }
+    self.joinRoomOperation = joinRoom ?? { _ in throw roomsError }
+    self.leaveRoomOperation = leaveRoom ?? { _ in throw roomsError }
     self.setRoomPresenceOperation = setRoomPresence ?? { _, _, _ in throw roomsError }
     self.roomPresenceOperation = roomPresence ?? { _ in throw roomsError }
     self.observeRoomPresenceOperation = observeRoomPresence ?? { _ in throw roomsError }
@@ -708,6 +724,12 @@ public struct InstantSwiftDataClient: Sendable {
         throw error
       },
       signOutWithOptions: { _ in
+        throw error
+      },
+      joinRoom: { _ in
+        throw error
+      },
+      leaveRoom: { _ in
         throw error
       },
       setRoomPresence: { _, _, _ in
@@ -951,6 +973,16 @@ public struct InstantSwiftDataClient: Sendable {
 
   public func signOut(invalidateToken: Bool = true) async throws {
     try await signOutOperation(invalidateToken)
+  }
+
+  @discardableResult
+  public func joinRoom(_ room: InstantRoomHandle = .default) async throws -> InstantRoomHandle {
+    try await joinRoomOperation(room)
+  }
+
+  @discardableResult
+  public func leaveRoom(_ room: InstantRoomHandle = .default) async throws -> InstantRoomHandle {
+    try await leaveRoomOperation(room)
   }
 
   @discardableResult

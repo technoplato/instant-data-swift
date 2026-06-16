@@ -1764,6 +1764,14 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  public func joinRoom(_ room: InstantRoomHandle = .default) async throws -> InstantRoomHandle {
+    try validatedRoom(room, operation: "join room")
+  }
+
+  public func leaveRoom(_ room: InstantRoomHandle = .default) async throws -> InstantRoomHandle {
+    try validatedRoom(room, operation: "leave room")
+  }
+
   @discardableResult
   public func setPresence(
     room: InstantRoomHandle,
