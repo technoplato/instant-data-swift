@@ -554,6 +554,7 @@ swift run instant-swift-data-validation-runner --coverage
 node validation/ts-runner/src/main.ts --fixtures
 INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR=/tmp/instant-validation-results validation/run-e2e.sh
 node validation/ts-runner/src/main.ts --swift-transport-contract /tmp/instant-validation-results/swift-transport-contract.json --app-id local-validation
+node validation/ts-runner/src/main.ts --swift-live-session-contract /tmp/instant-validation-results/swift-live-session.jsonl --app-id local-validation
 node validation/ts-runner/src/main.ts --typescript-server-transaction-contract /tmp/instant-validation-results/typescript-server-transaction-contract.json --app-id local-validation
 INSTANT_APP_ID=local-validation INSTANT_SWIFT_DATA_TYPESCRIPT_SERVER_TRANSACTION_CONTRACT=/tmp/instant-validation-results/typescript-server-transaction-contract.json swift run instant-swift-data validation server-transaction-loopback --jsonl
 node validation/ts-runner/src/main.ts --boundary-preflight
@@ -617,7 +618,9 @@ one-iteration `local-todos` benchmark JSONL artifact by default; set
 `INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS` to change that count. When
 Node is available it also writes `typescript-fixtures.jsonl` and
 `typescript-transport-contract.jsonl` after checking Swift's
-`swift-transport-contract.json` lowered outbox payload, then writes
+`swift-transport-contract.json` lowered outbox payload, validates Swift's
+live-session protocol evidence into `typescript-live-session-contract.jsonl`,
+then writes
 `typescript-server-transaction-contract.json` and proves Swift can consume that
 TypeScript-authored operation tuple contract through
 `swift-typescript-server-transaction-contract.jsonl`. This proves local

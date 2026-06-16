@@ -101,6 +101,7 @@ evidence without requiring an Instant app or admin token:
 node validation/ts-runner/src/main.ts --fixtures
 INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR=/tmp/instant-validation-results validation/run-e2e.sh
 node validation/ts-runner/src/main.ts --swift-transport-contract /tmp/instant-validation-results/swift-transport-contract.json --app-id local-validation
+node validation/ts-runner/src/main.ts --swift-live-session-contract /tmp/instant-validation-results/swift-live-session.jsonl --app-id local-validation
 node validation/ts-runner/src/main.ts --boundary-preflight
 INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token node validation/ts-runner/src/main.ts --boundary-preflight --require-boundary
 INSTANT_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_LIVE_SESSION=1 swift run instant-swift-data validation live-session --jsonl
@@ -120,6 +121,7 @@ nil-query, cached-prior-error, and cancellation-cleanup probes for `@FetchAll`,
 plus filtered active-row reloads through `@FetchAll` and `@Fetch`.
 `validation/run-e2e.sh` records all Swift local validation
 streams (`swift-local.jsonl`, `swift-local-integrations.jsonl`,
+`swift-server-transaction-loopback.jsonl`, `swift-cloudkit-demo.jsonl`,
 `swift-live-session.jsonl`, `swift-reminders.jsonl`, `swift-typed-drafts.jsonl`,
 `swift-platform-adapters.jsonl`, `swift-syncups-recording.jsonl`, and
 `swift-parity-report.jsonl`), records the compact coverage gate as
@@ -130,11 +132,19 @@ artifacts (`swift-schema-generate.json`,
 `swift-generated-perms-verify.json`), records the MacroTesting run as
 `swift-macro-tests.log`, records the local benchmark evidence, and then runs
 this fixture check, a TypeScript structural check of the Swift-produced
-`swift-transport-contract.json`, and the remote boundary preflight when Node is
-available. The transport-contract check writes
+`swift-transport-contract.json`, a TypeScript check of Swift live-session JSONL,
+a TypeScript-authored server transaction contract consumed back by Swift, and
+the remote boundary preflight when Node is available. The transport-contract
+check writes
 `typescript-transport-contract.jsonl` as contract-only evidence; it proves the
 local Swift outbox lowering can be consumed from TypeScript, not that Instant has
-accepted the mutation. The preflight writes `typescript-boundary.jsonl`; set
+accepted the mutation. The live-session contract check writes
+`typescript-live-session-contract.jsonl` after TypeScript validates Swift's
+WebSocket protocol evidence. The server transaction contract writes
+`typescript-server-transaction-contract.json` and
+`typescript-server-transaction-contract.jsonl`, then Swift consumes it into
+`swift-typescript-server-transaction-contract.jsonl`. The preflight writes
+`typescript-boundary.jsonl`; set
 `INSTANT_SWIFT_DATA_REMOTE_APP_ID` or `INSTANT_APP_ID`, plus
 `INSTANT_ADMIN_TOKEN` or `INSTANTDB_ADMIN_TOKEN`, and add
 `INSTANT_SWIFT_DATA_REQUIRE_REMOTE_PREFLIGHT=1` to make missing credentials fail

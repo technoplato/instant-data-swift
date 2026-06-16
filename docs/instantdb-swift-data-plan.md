@@ -85,9 +85,11 @@ WebSocket protocol shape; `instant-swift-data validation live-session --jsonl`
 builds `/runtime/session?app_id=...`, sends `init`, decodes `init-ok`, sends
 `add-query`, and decodes a query/refresh response. The command uses `.local` by
 default and switches to the real WebSocket when
-`INSTANT_SWIFT_DATA_RUN_LIVE_SESSION=1` is set. Cross-client Swift/TypeScript
-mutation delivery, reconnect replay, and observer refresh application remain
-future transport work.
+`INSTANT_SWIFT_DATA_RUN_LIVE_SESSION=1` is set. The TypeScript validation runner
+also consumes the Swift JSONL with `--swift-live-session-contract` so the
+protocol transcript stays readable from both sides while remote cross-client
+delivery remains future work. Cross-client Swift/TypeScript mutation delivery,
+reconnect replay, and observer refresh application remain future transport work.
 
 ### Schema
 
@@ -396,9 +398,10 @@ Reminders, typed draft, platform adapter, SyncUps recording, detailed parity
 report, and compact coverage summary evidence
 streams, Swift schema/perms fixture generation and verification artifacts, the
 Swift benchmark evidence, the TypeScript fixture check, Swift outbox payloads
-consumed by TypeScript, and TypeScript-authored server transaction operation
-tuples consumed by Swift through the local server transaction loopback. Real
-remote push/pull remains future transport work.
+consumed by TypeScript, Swift live-session protocol evidence consumed by
+TypeScript, and TypeScript-authored server transaction operation tuples consumed
+by Swift through the local server transaction loopback. Real remote push/pull
+remains future transport work.
 
 Current local progress: the CLI exposes non-captive local admin helpers:
 `instant-swift-data admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id]`

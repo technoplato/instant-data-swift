@@ -1752,6 +1752,84 @@ struct LocalTodoValidationTests {
   }
 
   @Test
+  func typeScriptLiveSessionContractVerifierConsumesSwiftEvidence() throws {
+    let packageURL = packageRootURL()
+    let tempURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataLiveSessionContract-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: tempURL, withIntermediateDirectories: true)
+
+    let appID = "remote-validation-test"
+    let artifactURL = tempURL.appendingPathComponent("swift-live-session.jsonl")
+    try """
+    {"case":"validation.live.session","side":"swift","event":"session-url","appID":"remote-validation-test","timestampMs":1,"ok":true,"details":{}}
+    {"case":"validation.live.session","side":"swift","event":"send-init","appID":"remote-validation-test","timestampMs":2,"ok":true,"details":{}}
+    {"case":"validation.live.session","side":"swift","event":"receive-init-ok","appID":"remote-validation-test","timestampMs":3,"ok":true,"details":{}}
+    {"case":"validation.live.session","side":"swift","event":"send-add-query","appID":"remote-validation-test","timestampMs":4,"ok":true,"details":{}}
+    {"case":"validation.live.session","side":"swift","event":"receive-query","appID":"remote-validation-test","timestampMs":5,"ok":true,"details":{"sentOps":["init","add-query"],"receivedOps":["init-ok","add-query-ok"],"proofLevel":"local-protocol","remoteBoundary":"pending-cross-client-sync","websocketURL":"wss://api.instantdb.com/runtime/session?app_id=remote-validation-test"}}
+
+    """.write(to: artifactURL, atomically: true, encoding: .utf8)
+
+    let result = try runTypeScriptValidationRunner(
+      arguments: ["--swift-live-session-contract", artifactURL.path, "--app-id", appID],
+      currentDirectory: packageURL
+    )
+
+    #expect(result.status == 0, "TypeScript live-session verifier failed: \(result.stderr)")
+    let rows = try parseJSONLines(result.stdout)
+    expectNoDifference(rows.count, 1)
+    let row = try #require(rows.first)
+    expectNoDifference(row["case"] as? String, "validation.typescript.live-session-contract")
+    expectNoDifference(row["event"] as? String, "swift-live-session-contract")
+    expectNoDifference(row["appID"] as? String, appID)
+    expectNoDifference(row["ok"] as? Bool, true)
+
+    let details = try #require(row["details"] as? [String: Any])
+    expectNoDifference(details["proofLevel"] as? String, "contract-only")
+    expectNoDifference(details["remoteBoundary"] as? String, "pending-cross-client-sync")
+    expectNoDifference(
+      details["actualEvents"] as? [String],
+      ["session-url", "send-init", "receive-init-ok", "send-add-query", "receive-query"]
+    )
+    expectNoDifference(details["sentOps"] as? [String], ["init", "add-query"])
+    expectNoDifference(details["receivedOps"] as? [String], ["init-ok", "add-query-ok"])
+    expectNoDifference(details["swiftProofLevel"] as? String, "local-protocol")
+
+    let refreshArtifactURL = tempURL.appendingPathComponent("swift-live-session-refresh.jsonl")
+    try """
+    {"case":"validation.live.session","side":"swift","event":"session-url","appID":"remote-validation-test","timestampMs":1,"ok":true,"details":{}}
+    {"case":"validation.live.session","side":"swift","event":"send-init","appID":"remote-validation-test","timestampMs":2,"ok":true,"details":{}}
+    {"case":"validation.live.session","side":"swift","event":"receive-init-ok","appID":"remote-validation-test","timestampMs":3,"ok":true,"details":{}}
+    {"case":"validation.live.session","side":"swift","event":"send-add-query","appID":"remote-validation-test","timestampMs":4,"ok":true,"details":{}}
+    {"case":"validation.live.session","side":"swift","event":"receive-refresh","appID":"remote-validation-test","timestampMs":5,"ok":true,"details":{"sentOps":["init","add-query"],"receivedOps":["init-ok","refresh-ok"],"proofLevel":"live-websocket-session","remoteBoundary":"pending-cross-client-sync","websocketURL":"wss://api.instantdb.com/runtime/session?app_id=remote-validation-test"}}
+
+    """.write(to: refreshArtifactURL, atomically: true, encoding: .utf8)
+
+    let refresh = try runTypeScriptValidationRunner(
+      arguments: ["--swift-live-session-contract", refreshArtifactURL.path, "--app-id", appID],
+      currentDirectory: packageURL
+    )
+    #expect(refresh.status == 0, "TypeScript refresh verifier failed: \(refresh.stderr)")
+    let refreshRows = try parseJSONLines(refresh.stdout)
+    let refreshDetails = try #require(refreshRows.first?["details"] as? [String: Any])
+    expectNoDifference(
+      refreshDetails["actualEvents"] as? [String],
+      ["session-url", "send-init", "receive-init-ok", "send-add-query", "receive-refresh"]
+    )
+    expectNoDifference(refreshDetails["receivedOps"] as? [String], ["init-ok", "refresh-ok"])
+    expectNoDifference(refreshDetails["swiftProofLevel"] as? String, "live-websocket-session")
+
+    let mismatch = try runTypeScriptValidationRunner(
+      arguments: ["--swift-live-session-contract", artifactURL.path, "--app-id", "wrong-app"],
+      currentDirectory: packageURL
+    )
+    #expect(mismatch.status == 1)
+    let mismatchRows = try parseJSONLines(mismatch.stdout)
+    let mismatchDetails = try #require(mismatchRows.first?["details"] as? [String: Any])
+    let issues = try #require(mismatchDetails["issues"] as? [[String: Any]])
+    #expect(issues.contains { ($0["path"] as? String) == "$[0].appID" })
+  }
+
+  @Test
   func validationRunE2EScriptOrchestratesLocalIntegrationEvidence() throws {
     let packageURL = packageRootURL()
     let scriptURL = packageURL.appendingPathComponent("validation/run-e2e.sh")
@@ -1790,6 +1868,7 @@ struct LocalTodoValidationTests {
     #expect(script.contains("INSTANT_SWIFT_DATA_NODE"))
     #expect(script.contains("validation/ts-runner/src/main.ts --fixtures"))
     #expect(script.contains("--swift-transport-contract"))
+    #expect(script.contains("--swift-live-session-contract"))
     #expect(script.contains("--typescript-server-transaction-contract"))
     #expect(script.contains("INSTANT_SWIFT_DATA_TYPESCRIPT_SERVER_TRANSACTION_CONTRACT"))
     #expect(script.contains("--boundary-preflight"))
@@ -1934,11 +2013,12 @@ struct LocalTodoValidationTests {
             echo "unexpected live session arguments: $*" >&2
             exit 65
           fi
-          if [ "${INSTANT_APP_ID:-}" != "local-validation" ]; then
+          remote_app_id="${INSTANT_SWIFT_DATA_REMOTE_APP_ID:-local-validation}"
+          if [ "${INSTANT_APP_ID:-}" != "$remote_app_id" ]; then
             echo "unexpected live session app id: ${INSTANT_APP_ID:-}" >&2
             exit 66
           fi
-          echo '{"case":"validation.live.session","side":"swift","event":"stub-live-session","appID":"local-validation","timestampMs":3,"ok":true,"details":{"sentOps":["init","add-query"],"receivedOps":["init-ok","add-query-ok"],"proofLevel":"local-protocol","remoteBoundary":"pending-cross-client-sync"}}'
+          echo '{"case":"validation.live.session","side":"swift","event":"stub-live-session","appID":"'"$remote_app_id"'","timestampMs":3,"ok":true,"details":{"sentOps":["init","add-query"],"receivedOps":["init-ok","add-query-ok"],"proofLevel":"local-protocol","remoteBoundary":"pending-cross-client-sync","websocketURL":"wss://api.instantdb.com/runtime/session?app_id='"$remote_app_id"'"}}'
           ;;
         instant-swift-data:validation:reminders)
           expected="run instant-swift-data validation reminders --jsonl"
@@ -2105,6 +2185,7 @@ struct LocalTodoValidationTests {
         echo "unexpected node script: $1" >&2
         exit 67
       fi
+      remote_app_id="${INSTANT_SWIFT_DATA_REMOTE_APP_ID:-local-validation}"
       case "$2" in
         --fixtures)
           if [ "$3:$4" != "--app-id:local-validation" ]; then
@@ -2124,6 +2205,17 @@ struct LocalTodoValidationTests {
           fi
           echo '{"case":"validation.typescript.transport-contract","side":"typescript","event":"swift-transport-contract","appID":"local-validation","timestampMs":9,"ok":true,"details":{"proofLevel":"contract-only","remoteBoundary":"pending"}}'
           ;;
+        --swift-live-session-contract)
+          if [ "$4:$5" != "--app-id:$remote_app_id" ]; then
+            echo "unexpected live session contract arguments: $*" >&2
+            exit 76
+          fi
+          if [ ! -s "$3" ]; then
+            echo "missing swift live session contract artifact: $3" >&2
+            exit 77
+          fi
+          echo '{"case":"validation.typescript.live-session-contract","side":"typescript","event":"swift-live-session-contract","appID":"'"$remote_app_id"'","timestampMs":9,"ok":true,"details":{"proofLevel":"contract-only","remoteBoundary":"pending-cross-client-sync"}}'
+          ;;
         --typescript-server-transaction-contract)
           if [ "$4:$5" != "--app-id:local-validation" ]; then
             echo "unexpected TypeScript server transaction contract arguments: $*" >&2
@@ -2134,7 +2226,7 @@ struct LocalTodoValidationTests {
           echo '{"case":"validation.typescript.server.transaction.contract","side":"typescript","event":"typescript-server-transaction-contract","appID":"local-validation","timestampMs":10,"ok":true,"details":{"proofLevel":"contract-only","remoteBoundary":"pending","transactionID":"validation.typescript.server.tx","processedTransactionID":"validation.typescript.server.processed","operationCount":5}}'
           ;;
         --boundary-preflight)
-          if [ "$3:$4" != "--app-id:local-validation" ]; then
+          if [ "$3:$4" != "--app-id:$remote_app_id" ]; then
             echo "unexpected boundary arguments: $*" >&2
             exit 69
           fi
@@ -2148,10 +2240,10 @@ struct LocalTodoValidationTests {
             exit 72
           fi
           if [ "${TS_STUB_FAIL_BOUNDARY:-}" = "1" ]; then
-            echo '{"case":"validation.typescript.boundary","side":"typescript","event":"preflight-skipped","appID":"local-validation","timestampMs":9,"ok":false,"details":{"missing":["INSTANT_SWIFT_DATA_REMOTE_APP_ID or INSTANT_APP_ID"]}}'
+            echo '{"case":"validation.typescript.boundary","side":"typescript","event":"preflight-skipped","appID":"'"$remote_app_id"'","timestampMs":9,"ok":false,"details":{"missing":["INSTANT_SWIFT_DATA_REMOTE_APP_ID or INSTANT_APP_ID"]}}'
             exit 47
           fi
-          echo '{"case":"validation.typescript.boundary","side":"typescript","event":"preflight-skipped","appID":"local-validation","timestampMs":9,"ok":false,"details":{"missing":["INSTANT_SWIFT_DATA_REMOTE_APP_ID or INSTANT_APP_ID"]}}'
+          echo '{"case":"validation.typescript.boundary","side":"typescript","event":"preflight-skipped","appID":"'"$remote_app_id"'","timestampMs":9,"ok":false,"details":{"missing":["INSTANT_SWIFT_DATA_REMOTE_APP_ID or INSTANT_APP_ID"]}}'
           ;;
         *)
           echo "unexpected node arguments: $*" >&2
@@ -2177,7 +2269,8 @@ struct LocalTodoValidationTests {
       resultsURL: resultsURL,
       binURL: binURL,
       extraEnvironment: [
-        "INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS": benchmarkIterations
+        "INSTANT_SWIFT_DATA_REMOTE_APP_ID": "remote-validation",
+        "INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS": benchmarkIterations,
       ]
     )
     #expect(firstRun.status == 0, "run-e2e.sh failed: \(firstRun.stderr)")
@@ -2218,6 +2311,8 @@ struct LocalTodoValidationTests {
       "typescript-fixtures-complete",
       "typescript-transport-contract-start",
       "typescript-transport-contract-complete",
+      "typescript-live-session-contract-start",
+      "typescript-live-session-contract-complete",
       "typescript-server-transaction-contract-start",
       "typescript-server-transaction-contract-complete",
       "swift-typescript-server-transaction-contract-start",
@@ -2302,6 +2397,11 @@ struct LocalTodoValidationTests {
     )
     #expect(
       FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-live-session-contract.jsonl").path
+      )
+    )
+    #expect(
+      FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("typescript-server-transaction-contract.json").path
       )
     )
@@ -2328,6 +2428,19 @@ struct LocalTodoValidationTests {
       ["swift-transport-contract"]
     )
     expectNoDifference(transportContractRows.first?["ok"] as? Bool, true)
+    let swiftLiveSessionRows = try readJSONLines(
+      resultsURL.appendingPathComponent("swift-live-session.jsonl")
+    )
+    expectNoDifference(swiftLiveSessionRows.first?["appID"] as? String, "remote-validation")
+    let liveSessionContractRows = try readJSONLines(
+      resultsURL.appendingPathComponent("typescript-live-session-contract.jsonl")
+    )
+    expectNoDifference(
+      liveSessionContractRows.map { $0["event"] as? String ?? "" },
+      ["swift-live-session-contract"]
+    )
+    expectNoDifference(liveSessionContractRows.first?["ok"] as? Bool, true)
+    expectNoDifference(liveSessionContractRows.first?["appID"] as? String, "remote-validation")
     let typeScriptServerContractRows = try readJSONLines(
       resultsURL.appendingPathComponent("typescript-server-transaction-contract.jsonl")
     )
@@ -2357,6 +2470,7 @@ struct LocalTodoValidationTests {
     )
     expectNoDifference(boundaryRows.map { $0["event"] as? String ?? "" }, ["preflight-skipped"])
     expectNoDifference(boundaryRows.first?["ok"] as? Bool, false)
+    expectNoDifference(boundaryRows.first?["appID"] as? String, "remote-validation")
 
     let overrideNodeURL = tempURL.appendingPathComponent("override-node")
     try writeExecutable(
@@ -2372,6 +2486,9 @@ struct LocalTodoValidationTests {
           ;;
         --swift-transport-contract)
           echo '{"case":"validation.typescript.transport-contract","side":"typescript","event":"transport-override","appID":"local-validation","timestampMs":10,"ok":true,"details":{}}'
+          ;;
+        --swift-live-session-contract)
+          echo '{"case":"validation.typescript.live-session-contract","side":"typescript","event":"live-session-override","appID":"local-validation","timestampMs":10,"ok":true,"details":{}}'
           ;;
         --typescript-server-transaction-contract)
           mkdir -p "$(dirname "$3")"
@@ -2411,6 +2528,13 @@ struct LocalTodoValidationTests {
     expectNoDifference(
       overrideTransportRows.map { $0["event"] as? String ?? "" },
       ["transport-override"]
+    )
+    let overrideLiveSessionRows = try readJSONLines(
+      resultsURL.appendingPathComponent("typescript-live-session-contract.jsonl")
+    )
+    expectNoDifference(
+      overrideLiveSessionRows.map { $0["event"] as? String ?? "" },
+      ["live-session-override"]
     )
     let overrideServerContractRows = try readJSONLines(
       resultsURL.appendingPathComponent("typescript-server-transaction-contract.jsonl")
@@ -2471,6 +2595,9 @@ struct LocalTodoValidationTests {
         --swift-transport-contract)
           echo '{"case":"validation.typescript.transport-contract","side":"typescript","event":"transport-bundled","appID":"local-validation","timestampMs":11,"ok":true,"details":{}}'
           ;;
+        --swift-live-session-contract)
+          echo '{"case":"validation.typescript.live-session-contract","side":"typescript","event":"live-session-bundled","appID":"local-validation","timestampMs":11,"ok":true,"details":{}}'
+          ;;
         --typescript-server-transaction-contract)
           mkdir -p "$(dirname "$3")"
           printf '%s\n' '{"case":"validation.typescript.server.transaction.contract","event":"typescript-server-transaction-contract","appID":"local-validation","transactionID":"validation.typescript.server.tx","processedTransactionID":"validation.typescript.server.processed","entityID":"validation-typescript-server","text":"TypeScript-authored server transaction","createdAtMs":4100002000003,"operations":[{"type":"requireEntityMissing","entityID":"validation-typescript-server","namespace":"todos"},{"type":"insert","entityID":"validation-typescript-server","attributeID":"todos/id","value":{"type":"string","string":"validation-typescript-server"},"txTimeMs":4100002000003},{"type":"insert","entityID":"validation-typescript-server","attributeID":"todos/text","value":{"type":"string","string":"TypeScript-authored server transaction"},"txTimeMs":4100002000003},{"type":"insert","entityID":"validation-typescript-server","attributeID":"todos/isCompleted","value":{"type":"bool","bool":false},"txTimeMs":4100002000003},{"type":"insert","entityID":"validation-typescript-server","attributeID":"todos/createdAt","value":{"type":"date","dateMs":4100002000003},"txTimeMs":4100002000003}]}' > "$3"
@@ -2516,6 +2643,13 @@ struct LocalTodoValidationTests {
     expectNoDifference(
       bundledTransportRows.map { $0["event"] as? String ?? "" },
       ["transport-bundled"]
+    )
+    let bundledLiveSessionRows = try readJSONLines(
+      resultsURL.appendingPathComponent("typescript-live-session-contract.jsonl")
+    )
+    expectNoDifference(
+      bundledLiveSessionRows.map { $0["event"] as? String ?? "" },
+      ["live-session-bundled"]
     )
     let bundledServerContractRows = try readJSONLines(
       resultsURL.appendingPathComponent("typescript-server-transaction-contract.jsonl")
@@ -2608,6 +2742,11 @@ struct LocalTodoValidationTests {
     #expect(
       !FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("typescript-transport-contract.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-live-session-contract.jsonl").path
       )
     )
     #expect(
@@ -2711,6 +2850,11 @@ struct LocalTodoValidationTests {
     )
     try "stale typescript transport contract\n".write(
       to: resultsURL.appendingPathComponent("typescript-transport-contract.jsonl"),
+      atomically: true,
+      encoding: .utf8
+    )
+    try "stale typescript live session contract\n".write(
+      to: resultsURL.appendingPathComponent("typescript-live-session-contract.jsonl"),
       atomically: true,
       encoding: .utf8
     )
@@ -2825,6 +2969,11 @@ struct LocalTodoValidationTests {
     #expect(
       !FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("typescript-transport-contract.jsonl").path
+      )
+    )
+    #expect(
+      !FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-live-session-contract.jsonl").path
       )
     )
     #expect(
@@ -3128,6 +3277,8 @@ struct LocalTodoValidationTests {
       "typescript-fixtures-complete",
       "typescript-transport-contract-start",
       "typescript-transport-contract-complete",
+      "typescript-live-session-contract-start",
+      "typescript-live-session-contract-complete",
       "typescript-server-transaction-contract-start",
       "typescript-server-transaction-contract-complete",
       "swift-typescript-server-transaction-contract-start",
@@ -3250,6 +3401,46 @@ private func packageRootURL(filePath: String = #filePath) -> URL {
     .deletingLastPathComponent()
     .deletingLastPathComponent()
     .deletingLastPathComponent()
+}
+
+@discardableResult
+private func runTypeScriptValidationRunner(
+  arguments: [String],
+  currentDirectory: URL,
+  environment: [String: String?] = [:]
+) throws -> (status: Int32, stdout: String, stderr: String) {
+  let process = Process()
+  process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+  process.arguments = ["node", "validation/ts-runner/src/main.ts"] + arguments
+  process.currentDirectoryURL = currentDirectory
+  var processEnvironment = ProcessInfo.processInfo.environment
+  for (key, value) in environment {
+    processEnvironment[key] = value
+  }
+  process.environment = processEnvironment
+
+  let outputPipe = Pipe()
+  let errorPipe = Pipe()
+  process.standardOutput = outputPipe
+  process.standardError = errorPipe
+  let outputCapture = ValidationPipeCapture()
+  let errorCapture = ValidationPipeCapture()
+  outputPipe.fileHandleForReading.readabilityHandler = { handle in
+    outputCapture.append(handle.availableData)
+  }
+  errorPipe.fileHandleForReading.readabilityHandler = { handle in
+    errorCapture.append(handle.availableData)
+  }
+  try process.run()
+  process.waitUntilExit()
+  outputPipe.fileHandleForReading.readabilityHandler = nil
+  errorPipe.fileHandleForReading.readabilityHandler = nil
+  outputCapture.append(outputPipe.fileHandleForReading.readDataToEndOfFile())
+  errorCapture.append(errorPipe.fileHandleForReading.readDataToEndOfFile())
+
+  let output = String(decoding: outputCapture.data(), as: UTF8.self)
+  let error = String(decoding: errorCapture.data(), as: UTF8.self)
+  return (process.terminationStatus, output, error)
 }
 
 @discardableResult

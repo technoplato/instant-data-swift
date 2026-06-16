@@ -588,6 +588,9 @@ Agent-oriented output modes are required:
   provenance is available through
   `instant-swift-data validation parity-report --jsonl`, while
   `instant-swift-data validation coverage --jsonl` emits a compact summary gate.
+  The TypeScript runner should keep validating Swift-authored transport evidence,
+  including `--swift-transport-contract` and `--swift-live-session-contract`, so
+  local protocol drift is visible before remote push/pull is complete.
   The platform adapter stream covers binding plus `@FetchAll` dynamic reload,
   nil-query, cached-prior-error, cancellation-cleanup, optional `@FetchOne`
   dynamic and nil-query reloads, `@Fetch` request dynamic reload, nil request
