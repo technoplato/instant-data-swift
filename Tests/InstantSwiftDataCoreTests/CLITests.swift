@@ -9942,6 +9942,109 @@ extension InstantStoreTests {
         encoding: .utf8
       )
 
+    let summaryOnlyOutput = try JSONDecoder().decode(
+      CLIValidationCoverageOutput.self,
+      from: Data(
+        try runCLI(
+          ["validation", "coverage", "--json"],
+          homeURL: homeURL,
+          environment: environment
+        ).utf8
+      )
+    )
+    expectNoDifference(summaryOnlyOutput.coverageComplete, false)
+    expectNoDifference(summaryOnlyOutput.adaptedCount, 195)
+    expectNoDifference(summaryOnlyOutput.blockedCount, 1)
+    expectNoDifference(summaryOnlyOutput.blockedIDs, ["instant.live-transport.typescript-to-swift"])
+
+    try """
+      {"case":"validation.typescript.boundary","side":"typescript","event":"swift-observe-refresh","appID":"other-remote-app","timestampMs":3,"ok":true,"details":{"entityID":"typescript-live-boundary-test","swiftAppliedRefreshCount":1,"swiftCachedEntityIDs":["typescript-live-boundary-test"],"swiftCachedTodoTexts":["TypeScript live boundary test"]}}
+      {"case":"validation.typescript.boundary","side":"typescript","event":"typescript-to-swift-boundary","appID":"remote-app","timestampMs":4,"ok":true,"details":{"proofLevel":"real-typescript-admin-http-to-swift-websocket","remoteBoundary":"typescript-admin-http-to-swift-websocket","entityID":"typescript-live-boundary-test"}}
+
+      """.write(
+        to: artifactsURL.appendingPathComponent("swift-typescript-boundary.jsonl"),
+        atomically: true,
+        encoding: .utf8
+      )
+
+    let mismatchedEvidenceOutput = try JSONDecoder().decode(
+      CLIValidationCoverageOutput.self,
+      from: Data(
+        try runCLI(
+          ["validation", "coverage", "--json"],
+          homeURL: homeURL,
+          environment: environment
+        ).utf8
+      )
+    )
+    expectNoDifference(mismatchedEvidenceOutput.coverageComplete, false)
+    expectNoDifference(mismatchedEvidenceOutput.adaptedCount, 195)
+    expectNoDifference(mismatchedEvidenceOutput.blockedCount, 1)
+    expectNoDifference(
+      mismatchedEvidenceOutput.blockedIDs,
+      ["instant.live-transport.typescript-to-swift"]
+    )
+
+    try """
+      {"case":"validation.typescript.boundary","side":"typescript","event":"swift-observe-refresh","appID":"remote-app","timestampMs":3,"ok":true,"details":{"entityID":"typescript-live-boundary-test","swiftAppliedRefreshCount":true,"swiftCachedEntityIDs":["typescript-live-boundary-test"],"swiftCachedTodoTexts":["TypeScript live boundary test"]}}
+      {"case":"validation.typescript.boundary","side":"typescript","event":"typescript-to-swift-boundary","appID":"remote-app","timestampMs":4,"ok":true,"details":{"proofLevel":"real-typescript-admin-http-to-swift-websocket","remoteBoundary":"typescript-admin-http-to-swift-websocket","entityID":"typescript-live-boundary-test"}}
+
+      """.write(
+        to: artifactsURL.appendingPathComponent("swift-typescript-boundary.jsonl"),
+        atomically: true,
+        encoding: .utf8
+      )
+
+    let malformedCountOutput = try JSONDecoder().decode(
+      CLIValidationCoverageOutput.self,
+      from: Data(
+        try runCLI(
+          ["validation", "coverage", "--json"],
+          homeURL: homeURL,
+          environment: environment
+        ).utf8
+      )
+    )
+    expectNoDifference(malformedCountOutput.coverageComplete, false)
+    expectNoDifference(malformedCountOutput.adaptedCount, 195)
+    expectNoDifference(malformedCountOutput.blockedCount, 1)
+    expectNoDifference(malformedCountOutput.blockedIDs, ["instant.live-transport.typescript-to-swift"])
+
+    try """
+      {"case":"validation.typescript.boundary","side":"typescript","event":"swift-observe-refresh","appID":"remote-app","timestampMs":3,"ok":true,"details":{"entityID":"typescript-live-boundary-test","swiftAppliedRefreshCount":1.5,"swiftCachedEntityIDs":["typescript-live-boundary-test"],"swiftCachedTodoTexts":["TypeScript live boundary test"]}}
+      {"case":"validation.typescript.boundary","side":"typescript","event":"typescript-to-swift-boundary","appID":"remote-app","timestampMs":4,"ok":true,"details":{"proofLevel":"real-typescript-admin-http-to-swift-websocket","remoteBoundary":"typescript-admin-http-to-swift-websocket","entityID":"typescript-live-boundary-test"}}
+
+      """.write(
+        to: artifactsURL.appendingPathComponent("swift-typescript-boundary.jsonl"),
+        atomically: true,
+        encoding: .utf8
+      )
+
+    let fractionalCountOutput = try JSONDecoder().decode(
+      CLIValidationCoverageOutput.self,
+      from: Data(
+        try runCLI(
+          ["validation", "coverage", "--json"],
+          homeURL: homeURL,
+          environment: environment
+        ).utf8
+      )
+    )
+    expectNoDifference(fractionalCountOutput.coverageComplete, false)
+    expectNoDifference(fractionalCountOutput.adaptedCount, 195)
+    expectNoDifference(fractionalCountOutput.blockedCount, 1)
+    expectNoDifference(fractionalCountOutput.blockedIDs, ["instant.live-transport.typescript-to-swift"])
+
+    try """
+      {"case":"validation.typescript.boundary","side":"typescript","event":"swift-observe-refresh","appID":"remote-app","timestampMs":3,"ok":true,"details":{"entityID":"typescript-live-boundary-test","swiftAppliedRefreshCount":1,"swiftCachedEntityIDs":["typescript-live-boundary-test"],"swiftCachedTodoTexts":["TypeScript live boundary test"]}}
+      {"case":"validation.typescript.boundary","side":"typescript","event":"typescript-to-swift-boundary","appID":"remote-app","timestampMs":4,"ok":true,"details":{"proofLevel":"real-typescript-admin-http-to-swift-websocket","remoteBoundary":"typescript-admin-http-to-swift-websocket","entityID":"typescript-live-boundary-test"}}
+
+      """.write(
+        to: artifactsURL.appendingPathComponent("swift-typescript-boundary.jsonl"),
+        atomically: true,
+        encoding: .utf8
+      )
+
     let completeOutput = try JSONDecoder().decode(
       CLIValidationCoverageOutput.self,
       from: Data(

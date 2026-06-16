@@ -1750,7 +1750,8 @@ struct LocalTodoValidationTests {
         encoding: .utf8
       )
     try """
-      {"case":"validation.typescript.boundary","side":"typescript","event":"typescript-to-swift-boundary","appID":"remote-app","timestampMs":2,"ok":true,"details":{"proofLevel":"real-typescript-admin-http-to-swift-websocket","remoteBoundary":"typescript-admin-http-to-swift-websocket"}}
+      {"case":"validation.typescript.boundary","side":"typescript","event":"swift-observe-refresh","appID":"remote-app","timestampMs":2,"ok":true,"details":{"entityID":"typescript-live-boundary-test","swiftAppliedRefreshCount":1,"swiftCachedEntityIDs":["typescript-live-boundary-test"],"swiftCachedTodoTexts":["TypeScript live boundary test"]}}
+      {"case":"validation.typescript.boundary","side":"typescript","event":"typescript-to-swift-boundary","appID":"remote-app","timestampMs":3,"ok":true,"details":{"proofLevel":"real-typescript-admin-http-to-swift-websocket","remoteBoundary":"typescript-admin-http-to-swift-websocket","entityID":"typescript-live-boundary-test"}}
 
       """.write(
         to: homeURL.appendingPathComponent("swift-typescript-boundary.jsonl"),
@@ -1783,7 +1784,7 @@ struct LocalTodoValidationTests {
     expectNoDifference(typeScriptToSwift.status, .adapted)
     #expect(
       typeScriptToSwift.notes.contains(
-        "Credentialed validation artifact proves a TypeScript admin HTTP write was observed by Swift's live WebSocket observer."
+        "Credentialed validation artifact proves a TypeScript admin HTTP write was observed by Swift's live WebSocket observer and applied into the Swift runtime cache."
       )
     )
   }
@@ -2593,7 +2594,8 @@ struct LocalTodoValidationTests {
             echo "unexpected TypeScript-to-Swift boundary arguments: $*" >&2
             exit 83
           fi
-          echo '{"case":"validation.typescript.boundary","side":"typescript","event":"typescript-to-swift-boundary","appID":"'"$remote_app_id"'","timestampMs":9,"ok":true,"details":{"proofLevel":"real-typescript-admin-http-to-swift-websocket","remoteBoundary":"typescript-admin-http-to-swift-websocket"}}'
+          echo '{"case":"validation.typescript.boundary","side":"typescript","event":"swift-observe-refresh","appID":"'"$remote_app_id"'","timestampMs":8,"ok":true,"details":{"entityID":"typescript-live-boundary-stub","swiftAppliedRefreshCount":1,"swiftCachedEntityIDs":["typescript-live-boundary-stub"],"swiftCachedTodoTexts":["TypeScript live boundary stub"]}}'
+          echo '{"case":"validation.typescript.boundary","side":"typescript","event":"typescript-to-swift-boundary","appID":"'"$remote_app_id"'","timestampMs":9,"ok":true,"details":{"proofLevel":"real-typescript-admin-http-to-swift-websocket","remoteBoundary":"typescript-admin-http-to-swift-websocket","entityID":"typescript-live-boundary-stub"}}'
           ;;
         *)
           echo "unexpected node arguments: $*" >&2
@@ -3183,7 +3185,10 @@ struct LocalTodoValidationTests {
     )
     expectNoDifference(
       liveTypeScriptToSwiftRows.map { $0["event"] as? String ?? "" },
-      ["typescript-to-swift-boundary"]
+      [
+        "swift-observe-refresh",
+        "typescript-to-swift-boundary",
+      ]
     )
 
     let missingNodeRun = try runValidationRunE2E(

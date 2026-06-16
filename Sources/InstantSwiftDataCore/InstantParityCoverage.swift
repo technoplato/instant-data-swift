@@ -126,7 +126,20 @@ private struct LiveBoundaryArtifactExpectation: Sendable {
   var event: String
   var proofLevel: String
   var remoteBoundary: String
+  var requiredEvidence: LiveBoundaryArtifactEvidenceRequirement?
   var note: String
+}
+
+private struct LiveBoundaryArtifactEvidenceRequirement: Sendable {
+  var event: String
+  var appliedRefreshCountKey: String
+  var cachedEntityIDsKey: String
+  var cachedTextsKey: String
+}
+
+private struct LiveBoundaryArtifactContext: Sendable {
+  var appID: String
+  var entityID: String?
 }
 
 public enum InstantSwiftDataParityCoverage {
@@ -2514,6 +2527,7 @@ public enum InstantSwiftDataParityCoverage {
       event: "swift-to-typescript-boundary",
       proofLevel: "real-swift-websocket-to-typescript-admin-sse",
       remoteBoundary: "swift-websocket-to-typescript-admin-sse",
+      requiredEvidence: nil,
       note: "Credentialed validation artifact proves a Swift live WebSocket write was observed by TypeScript admin SSE."
     ),
     LiveBoundaryArtifactExpectation(
@@ -2522,7 +2536,13 @@ public enum InstantSwiftDataParityCoverage {
       event: "typescript-to-swift-boundary",
       proofLevel: "real-typescript-admin-http-to-swift-websocket",
       remoteBoundary: "typescript-admin-http-to-swift-websocket",
-      note: "Credentialed validation artifact proves a TypeScript admin HTTP write was observed by Swift's live WebSocket observer."
+      requiredEvidence: LiveBoundaryArtifactEvidenceRequirement(
+        event: "swift-observe-refresh",
+        appliedRefreshCountKey: "swiftAppliedRefreshCount",
+        cachedEntityIDsKey: "swiftCachedEntityIDs",
+        cachedTextsKey: "swiftCachedTodoTexts"
+      ),
+      note: "Credentialed validation artifact proves a TypeScript admin HTTP write was observed by Swift's live WebSocket observer and applied into the Swift runtime cache."
     ),
   ]
 }
@@ -2550,19 +2570,27 @@ private extension LiveBoundaryArtifactExpectation {
     guard let contents = try? String(contentsOf: fileURL, encoding: .utf8) else {
       return false
     }
-    return contents.split(whereSeparator: \.isNewline).contains { line in
-      guard
-        let data = String(line).data(using: .utf8),
-        let json = try? JSONSerialization.jsonObject(with: data),
-        let row = json as? [String: Any]
-      else {
-        return false
-      }
-      return isSatisfied(by: row)
+    let rows = contents.split(whereSeparator: \.isNewline).compactMap { line -> [String: Any]? in
+      guard let data = String(line).data(using: .utf8),
+        let json = try? JSONSerialization.jsonObject(with: data)
+      else { return nil }
+      return json as? [String: Any]
     }
+    let contexts = rows.compactMap(satisfiedContext(by:))
+    guard !contexts.isEmpty else {
+      return false
+    }
+    if let requiredEvidence {
+      return contexts.contains { context in
+        rows.contains { row in
+          requiredEvidence.isSatisfied(by: row, context: context)
+        }
+      }
+    }
+    return true
   }
 
-  func isSatisfied(by row: [String: Any]) -> Bool {
+  func satisfiedContext(by row: [String: Any]) -> LiveBoundaryArtifactContext? {
     guard
       row["case"] as? String == "validation.typescript.boundary",
       row["event"] as? String == event,
@@ -2574,9 +2602,50 @@ private extension LiveBoundaryArtifactExpectation {
       details["proofLevel"] as? String == proofLevel,
       details["remoteBoundary"] as? String == remoteBoundary
     else {
+      return nil
+    }
+    let entityID = (details["entityID"] as? String)?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return LiveBoundaryArtifactContext(
+      appID: appID.trimmingCharacters(in: .whitespacesAndNewlines),
+      entityID: entityID?.isEmpty == false ? entityID : nil
+    )
+  }
+}
+
+private extension LiveBoundaryArtifactEvidenceRequirement {
+  func isSatisfied(by row: [String: Any], context: LiveBoundaryArtifactContext) -> Bool {
+    guard
+      row["case"] as? String == "validation.typescript.boundary",
+      row["event"] as? String == event,
+      row["ok"] as? Bool == true,
+      let appID = row["appID"] as? String,
+      appID.trimmingCharacters(in: .whitespacesAndNewlines) == context.appID,
+      let contextEntityID = context.entityID,
+      let details = row["details"] as? [String: Any],
+      let entityID = details["entityID"] as? String,
+      entityID.trimmingCharacters(in: .whitespacesAndNewlines) == contextEntityID,
+      let cachedEntityIDs = details[cachedEntityIDsKey] as? [String],
+      cachedEntityIDs.contains(contextEntityID),
+      let cachedTexts = details[cachedTextsKey] as? [String],
+      !cachedTexts.isEmpty,
+      isPositiveInteger(details[appliedRefreshCountKey])
+    else {
       return false
     }
     return true
+  }
+
+  private func isPositiveInteger(_ value: Any?) -> Bool {
+    guard let number = value as? NSNumber,
+      CFGetTypeID(number) != CFBooleanGetTypeID()
+    else {
+      return false
+    }
+    let double = number.doubleValue
+    return double.isFinite
+      && double > 0
+      && double.rounded(.towardZero) == double
   }
 }
 
