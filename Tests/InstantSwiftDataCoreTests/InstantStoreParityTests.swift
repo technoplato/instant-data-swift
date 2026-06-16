@@ -11,9 +11,9 @@ struct InstantStoreParityTests {
 
     expectNoDifference(report.event, "parity-report")
     expectNoDifference(report.coverageComplete, false)
-    expectNoDifference(report.recordCount, 276)
+    expectNoDifference(report.recordCount, 286)
     expectNoDifference(report.exactCount, 28)
-    expectNoDifference(report.adaptedCount, 244)
+    expectNoDifference(report.adaptedCount, 254)
     expectNoDifference(report.blockedCount, 2)
     expectNoDifference(report.notApplicableCount, 2)
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/schema.test.ts"))
@@ -111,6 +111,23 @@ struct InstantStoreParityTests {
       #expect(
         report.records.contains { $0.id == id && $0.status == .adapted },
         "Expected adapted useAuth parity record \(id)"
+      )
+    }
+    for id in [
+      "instant.vue.non-reactive-transact-delegates-to-core",
+      "instant.vue.non-reactive-get-auth-delegates-to-core",
+      "instant.vue.non-reactive-query-once-delegates-to-core",
+      "instant.vue.non-reactive-get-local-id-delegates-to-core",
+      "instant.svelte.non-reactive-transact-delegates-to-core",
+      "instant.svelte.non-reactive-get-auth-delegates-to-core",
+      "instant.svelte.non-reactive-query-once-delegates-to-core",
+      "instant.svelte.non-reactive-get-local-id-delegates-to-core",
+      "instant.vue.use-user-throws-when-signed-out",
+      "instant.vue.use-user-returns-signed-in-user",
+    ] {
+      #expect(
+        report.records.contains { $0.id == id && $0.status == .adapted },
+        "Expected adapted non-reactive/useUser parity record \(id)"
       )
     }
     for id in [

@@ -732,6 +732,116 @@ public enum InstantSwiftDataParityCoverage {
         "Swift cleanup is modeled by canceling the FetchSubscription returned by @AuthSession.subscribe, which terminates the underlying auth observation."
     ),
     instant(
+      id: "instant.vue.non-reactive-transact-delegates-to-core",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "transact delegates to core",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName: "nonReactiveAdapterMethodsDelegateToInjectedOperations",
+      surface: "adapter-non-reactive",
+      status: .adapted,
+      notes:
+        "InstantSwiftDataClient.transact preserves Vue's plain method forwarding by invoking the injected core transaction operation with the same structured transaction."
+    ),
+    instant(
+      id: "instant.vue.non-reactive-get-auth-delegates-to-core",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "getAuth delegates to core",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName: "nonReactiveAdapterMethodsDelegateToInjectedOperations",
+      surface: "adapter-non-reactive",
+      status: .adapted,
+      notes:
+        "InstantSwiftDataClient.authSession is the Swift getAuth adapter, forwarding directly to the injected auth-session operation and returning the current optional session."
+    ),
+    instant(
+      id: "instant.vue.non-reactive-query-once-delegates-to-core",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "queryOnce delegates to core",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName: "nonReactiveAdapterMethodsDelegateToInjectedOperations",
+      surface: "adapter-non-reactive",
+      status: .adapted,
+      notes:
+        "InstantSwiftDataClient.queryOnce forwards a Swift query plan to the injected queryOnce operation, preserving the adapter's one-off query boundary."
+    ),
+    instant(
+      id: "instant.vue.non-reactive-get-local-id-delegates-to-core",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "getLocalId delegates to core",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName: "nonReactiveAdapterMethodsDelegateToInjectedOperations",
+      surface: "adapter-non-reactive",
+      status: .adapted,
+      notes:
+        "InstantSwiftDataClient.localID(named:) forwards the requested local-id name to the injected core local-id operation and returns the resolved stable id."
+    ),
+    instant(
+      id: "instant.svelte.non-reactive-transact-delegates-to-core",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "transact delegates to core",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName: "nonReactiveAdapterMethodsDelegateToInjectedOperations",
+      surface: "adapter-non-reactive",
+      status: .adapted,
+      notes:
+        "InstantSwiftDataClient.transact adapts Svelte's plain method forwarding as a direct call into the injected Swift transaction operation."
+    ),
+    instant(
+      id: "instant.svelte.non-reactive-get-auth-delegates-to-core",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "getAuth delegates to core",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName: "nonReactiveAdapterMethodsDelegateToInjectedOperations",
+      surface: "adapter-non-reactive",
+      status: .adapted,
+      notes:
+        "InstantSwiftDataClient.authSession adapts Svelte's getAuth by returning the current optional Swift auth session from the injected client operation."
+    ),
+    instant(
+      id: "instant.svelte.non-reactive-query-once-delegates-to-core",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "queryOnce delegates to core",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName: "nonReactiveAdapterMethodsDelegateToInjectedOperations",
+      surface: "adapter-non-reactive",
+      status: .adapted,
+      notes:
+        "InstantSwiftDataClient.queryOnce adapts Svelte's non-reactive queryOnce as a direct forwarding method over the Swift query plan."
+    ),
+    instant(
+      id: "instant.svelte.non-reactive-get-local-id-delegates-to-core",
+      sourceFile: svelteAdapterSource,
+      sourceTestName: "getLocalId delegates to core",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName: "nonReactiveAdapterMethodsDelegateToInjectedOperations",
+      surface: "adapter-non-reactive",
+      status: .adapted,
+      notes:
+        "InstantSwiftDataClient.localID(named:) adapts Svelte's getLocalId by forwarding the requested name to the injected Swift local-id operation."
+    ),
+    instant(
+      id: "instant.vue.use-user-throws-when-signed-out",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "useUser throws when accessed and user is not signed in",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName: "authSessionRequiredUserThrowsUntilObserved",
+      surface: "adapter-auth-user",
+      status: .adapted,
+      notes:
+        "@AuthSession.requireUser mirrors Vue's computed useUser access: reading the required user while the optional session is nil throws the same auth-protected-route message as a typed InstantError."
+    ),
+    instant(
+      id: "instant.vue.use-user-returns-signed-in-user",
+      sourceFile: vueAdapterSource,
+      sourceTestName: "useUser returns the user once signed in",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName: "authSessionRequiredUserThrowsUntilObserved",
+      surface: "adapter-auth-user",
+      status: .adapted,
+      notes:
+        "@AuthSession.task binds observed auth-session updates into Swift wrapper state, after which requireUser returns the signed-in InstantAuthSession."
+    ),
+    instant(
       id: "instant.infinite-query.initial-snapshot",
       sourceFile: infiniteQuerySource,
       sourceTestName: "empty result",

@@ -5179,6 +5179,18 @@ public struct AuthSession: Sendable {
     }
   }
 
+  public func requireUser() throws -> InstantAuthSession {
+    guard let session = wrappedValue else {
+      throw InstantError(
+        code: .authFailed,
+        operation: "access AuthSession user",
+        message: "useUser must be used within an auth-protected route",
+        recovery: "Load or subscribe to @AuthSession in an auth-protected flow before requiring a user."
+      )
+    }
+    return session
+  }
+
   public func load() async throws {
     @Dependency(\.defaultInstantSwiftData) var client
     try await load(using: client)

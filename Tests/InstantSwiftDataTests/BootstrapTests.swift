@@ -1632,6 +1632,74 @@ struct BootstrapTests {
   }
 
   @Test
+  func nonReactiveAdapterMethodsDelegateToInjectedOperations() async throws {
+    let recorder = NonReactiveClientOperationRecorder()
+    let session = mockAuthSession(userID: "adapter-user")
+    let transaction = InstantStoreTransaction(id: "tx-adapter-forwarding", operations: [])
+    let plan = InstantQueryPlan(id: "adapter.once", namespace: TodoExample.namespace)
+    let client = InstantSwiftDataClient(
+      transact: { transaction in
+        await recorder.record("transact:\(transaction.id)")
+        return InstantStoreMutationResult(
+          transactionID: transaction.id,
+          changedEntityIDs: [],
+          tripleCount: transaction.operations.count,
+          emissions: []
+        )
+      },
+      queryOnce: { plan in
+        await recorder.record("queryOnce:\(plan.id):\(plan.namespace)")
+        return InstantQueryEmission(
+          queryID: plan.id,
+          sequence: 1,
+          values: [],
+          pageInfo: InstantQueryPageInfo(
+            startCursor: nil,
+            endCursor: nil,
+            hasPreviousPage: false,
+            hasNextPage: false
+          )
+        )
+      },
+      query: { _ in [] },
+      observe: { _ in AsyncStream { continuation in continuation.finish() } },
+      pendingMutations: { [] },
+      localID: { name in
+        await recorder.record("localID:\(name)")
+        return "local-id-\(name)"
+      },
+      authSession: {
+        await recorder.record("authSession")
+        return session
+      }
+    )
+
+    let result = try await client.transact(transaction)
+    expectNoDifference(result.transactionID, "tx-adapter-forwarding")
+
+    let auth = try await client.authSession()
+    expectNoDifference(auth, session)
+
+    let emission = try await client.queryOnce(plan)
+    expectNoDifference(emission.queryID, "adapter.once")
+    expectNoDifference(emission.pageInfo?.hasNextPage, false)
+
+    let localID = try await client.localID(named: "device")
+    expectNoDifference(localID, "local-id-device")
+
+    let events = await recorder.events()
+    expectNoDifference(
+      events,
+      [
+        "transact:tx-adapter-forwarding",
+        "authSession",
+        "queryOnce:adapter.once:todos",
+        "localID:device",
+      ]
+    )
+  }
+
+  @Test
   func connectionStatusPropertyWrapperStartsConnecting() {
     @ConnectionStatus var status: InstantConnectionStatus
 
@@ -1841,6 +1909,45 @@ struct BootstrapTests {
     try await $session.task(using: client)
 
     expectNoDifference(session, signedIn)
+    expectNoDifference($session.loadError, nil)
+    expectNoDifference($session.isLoading, false)
+  }
+
+  @Test
+  func authSessionRequiredUserThrowsUntilObserved() async throws {
+    let signedIn = mockAuthSession(userID: "u1")
+    let client = authSessionClient(
+      load: { nil },
+      observe: {
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield(nil)
+          continuation.yield(signedIn)
+          continuation.finish()
+        }
+      }
+    )
+
+    @AuthSession var session: InstantAuthSession?
+
+    do {
+      _ = try $session.requireUser()
+      #expect(Bool(false), "Expected @AuthSession required user to throw while signed out.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .authFailed)
+      expectNoDifference(error.operation, "access AuthSession user")
+      expectNoDifference(
+        error.message,
+        "useUser must be used within an auth-protected route"
+      )
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    try await $session.task(using: client)
+
+    let user = try $session.requireUser()
+    expectNoDifference(user, signedIn)
+    expectNoDifference(session?.userID, "u1")
     expectNoDifference($session.loadError, nil)
     expectNoDifference($session.isLoading, false)
   }
@@ -3535,6 +3642,18 @@ private actor SignOutOptionsRecorder {
 
   func values() -> [Bool] {
     recordedValues
+  }
+}
+
+private actor NonReactiveClientOperationRecorder {
+  private var recordedEvents: [String] = []
+
+  func record(_ event: String) {
+    recordedEvents.append(event)
+  }
+
+  func events() -> [String] {
+    recordedEvents
   }
 }
 
