@@ -848,7 +848,9 @@ Agent-oriented output modes are required:
 - run local admin write/query helpers such as
   `instant-swift-data admin transact notes note-1 --merge '{"title":"admin note"}' --transaction-id tx-admin-note-1`
   and `instant-swift-data admin query notes --json` for durable terminal
-  ground-truth checks until real Instant admin transport is available.
+  ground-truth checks; required remote validation additionally runs the
+  dependency-free TypeScript admin smoke against Instant's admin query,
+  transact, and SSE subscribe endpoints when credentials are supplied.
 - run example business commands directly, such as todo/reminder/sync-up/chat/mobile-chat/microblog/reactions/stroopwafel
   create, list, update, delete, share, accept, upload, and stream operations.
 

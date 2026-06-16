@@ -2060,6 +2060,7 @@ struct LocalTodoValidationTests {
     #expect(script.contains("--typescript-server-transaction-contract"))
     #expect(script.contains("INSTANT_SWIFT_DATA_TYPESCRIPT_SERVER_TRANSACTION_CONTRACT"))
     #expect(script.contains("--boundary-preflight"))
+    #expect(script.contains("--boundary-admin-smoke"))
     #expect(script.contains("INSTANT_SWIFT_DATA_REMOTE_APP_ID"))
     #expect(script.contains("INSTANT_SWIFT_DATA_REQUIRE_REMOTE_PREFLIGHT"))
     #expect(script.contains("rm -f"))
@@ -2464,16 +2465,23 @@ struct LocalTodoValidationTests {
           printf '%s\n' '{"case":"validation.typescript.server.transaction.contract","event":"typescript-server-transaction-contract","appID":"local-validation","transactionID":"validation.typescript.server.tx","processedTransactionID":"validation.typescript.server.processed","entityID":"validation-typescript-server","text":"TypeScript-authored server transaction","createdAtMs":4100002000003,"operations":[{"type":"requireEntityMissing","entityID":"validation-typescript-server","namespace":"todos"},{"type":"insert","entityID":"validation-typescript-server","attributeID":"todos/id","value":{"type":"string","string":"validation-typescript-server"},"txTimeMs":4100002000003},{"type":"insert","entityID":"validation-typescript-server","attributeID":"todos/text","value":{"type":"string","string":"TypeScript-authored server transaction"},"txTimeMs":4100002000003},{"type":"insert","entityID":"validation-typescript-server","attributeID":"todos/isCompleted","value":{"type":"bool","bool":false},"txTimeMs":4100002000003},{"type":"insert","entityID":"validation-typescript-server","attributeID":"todos/createdAt","value":{"type":"date","dateMs":4100002000003},"txTimeMs":4100002000003}]}' > "$3"
           echo '{"case":"validation.typescript.server.transaction.contract","side":"typescript","event":"typescript-server-transaction-contract","appID":"local-validation","timestampMs":10,"ok":true,"details":{"proofLevel":"contract-only","remoteBoundary":"pending","transactionID":"validation.typescript.server.tx","processedTransactionID":"validation.typescript.server.processed","operationCount":5}}'
           ;;
-        --boundary-preflight)
+        --boundary-preflight|--boundary-admin-smoke)
           if [ "$3:$4" != "--app-id:$remote_app_id" ]; then
             echo "unexpected boundary arguments: $*" >&2
             exit 69
           fi
           if [ "${EXPECT_TS_REQUIRE_BOUNDARY:-}" = "1" ]; then
+            if [ "$2" != "--boundary-admin-smoke" ]; then
+              echo "expected required boundary smoke: $*" >&2
+              exit 73
+            fi
             if [ "${5:-}" != "--require-boundary" ]; then
               echo "missing required boundary flag: $*" >&2
               exit 71
             fi
+          elif [ "$2" != "--boundary-preflight" ]; then
+            echo "unexpected required boundary smoke: $*" >&2
+            exit 74
           elif [ -n "${5:-}" ]; then
             echo "unexpected optional boundary flag: $*" >&2
             exit 72

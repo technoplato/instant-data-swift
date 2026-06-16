@@ -111,7 +111,7 @@ node validation/ts-runner/src/main.ts --swift-live-session-contract /tmp/instant
 swift run instant-swift-data validation live-transaction --jsonl
 node validation/ts-runner/src/main.ts --swift-live-transaction-contract /tmp/instant-validation-results/swift-live-transaction.jsonl --app-id local-validation
 node validation/ts-runner/src/main.ts --boundary-preflight
-INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token node validation/ts-runner/src/main.ts --boundary-preflight --require-boundary
+INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token node validation/ts-runner/src/main.ts --boundary-admin-smoke --require-boundary
 INSTANT_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_LIVE_SESSION=1 swift run instant-swift-data validation live-session --jsonl
 INSTANT_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_LIVE_TRANSACTION=1 swift run instant-swift-data validation live-transaction --jsonl
 ```
@@ -163,8 +163,10 @@ contract writes
 `INSTANT_SWIFT_DATA_REMOTE_APP_ID` or `INSTANT_APP_ID`, plus
 `INSTANT_ADMIN_TOKEN` or `INSTANTDB_ADMIN_TOKEN`, and add
 `INSTANT_SWIFT_DATA_REQUIRE_REMOTE_PREFLIGHT=1` to make missing credentials fail
-the orchestration run. This preflight checks credential-shaped inputs and
-endpoint syntax only; it does not contact Instant. Set
+the orchestration run. Optional preflight checks credential-shaped inputs and
+endpoint syntax only; required mode runs `--boundary-admin-smoke`, opens
+Instant's admin SSE subscription endpoint, writes through admin transact,
+observes the refresh, and confirms the row with admin query. Set
 `INSTANT_SWIFT_DATA_RUN_LIVE_SESSION=1` to make the Swift live-session smoke
 use Instant's real WebSocket endpoint instead of the deterministic local
 protocol client.
@@ -177,8 +179,9 @@ provenance rows intentionally carry `ok: false`; the orchestrator records the
 artifact command result, not an all-rows-passed summary. The coverage stream is
 the one-row gate to use when a caller needs blocked IDs and aggregate parity
 counts. The harness still records the real Instant boundary as blocked until
-ephemeral app creation, schema push, admin query/transact, and cross-client
-subscriptions are implemented.
+ephemeral app creation, schema push, and cross-client Swift/TypeScript live
+transport subscriptions are implemented; the TypeScript admin HTTP/SSE smoke can
+already pass against an existing credentialed app.
 
 ## Required Cases
 

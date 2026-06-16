@@ -781,7 +781,11 @@ if NODE_EXECUTABLE="$(resolve_node)"; then
     exit "${status}"
   fi
 
-  boundary_args=(--boundary-preflight --app-id "${REMOTE_VALIDATION_APP_ID}")
+  boundary_mode=--boundary-preflight
+  if [[ "${REQUIRE_REMOTE_PREFLIGHT}" == "1" ]]; then
+    boundary_mode=--boundary-admin-smoke
+  fi
+  boundary_args=("${boundary_mode}" --app-id "${REMOTE_VALIDATION_APP_ID}")
   if [[ "${REQUIRE_REMOTE_PREFLIGHT}" == "1" ]]; then
     boundary_args+=(--require-boundary)
   fi
@@ -792,7 +796,7 @@ if NODE_EXECUTABLE="$(resolve_node)"; then
   log_json \
     "typescript-boundary-preflight-start" \
     true \
-    "$(printf '{"remoteAppID":%s,"required":%s}' "$(json_string "${REMOTE_VALIDATION_APP_ID}")" "${required_remote_preflight_json}")"
+    "$(printf '{"remoteAppID":%s,"required":%s,"mode":%s}' "$(json_string "${REMOTE_VALIDATION_APP_ID}")" "${required_remote_preflight_json}" "$(json_string "${boundary_mode}")")"
   if (
     cd "${ROOT}"
     INSTANT_APP_ID="${REMOTE_VALIDATION_APP_ID}" "${NODE_EXECUTABLE}" validation/ts-runner/src/main.ts "${boundary_args[@]}"

@@ -411,8 +411,11 @@ streams, Swift schema/perms fixture generation and verification artifacts, the
 Swift benchmark evidence, the TypeScript fixture check, Swift outbox payloads
 consumed by TypeScript, Swift live-session protocol evidence consumed by
 TypeScript, and TypeScript-authored server transaction operation tuples consumed
-by Swift through the local server transaction loopback. Real remote push/pull
-remains future transport work.
+by Swift through the local server transaction loopback. In required remote mode
+the TypeScript boundary runner now opens Instant's admin SSE subscription
+endpoint, writes through admin transact, observes refresh, and confirms the row
+with admin query against a credentialed app. Real Swift/TypeScript cross-client
+push/pull remains future transport work.
 
 Current local progress: the CLI exposes non-captive local admin helpers:
 `instant-swift-data admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id]`
@@ -440,8 +443,9 @@ outbox inspect/transport/flush/confirm/fail/retry/drain, query todos,
 sync inspect/mark-processed, room presence/topics, benchmark options,
 validation local-todos/local-integrations, file upload/upload-progress/list/watch/read/delete,
 stream append/read/watch, and share create/list/accept/role/revoke commands with parser-level
-tests. Real
-Instant admin tokens, schema push/pull, and remote ground-truth transport remain
+tests. Remote TypeScript admin query/transact/SSE smoke is available for an
+existing app through `validation/run-e2e.sh` required remote mode; ephemeral app
+creation, schema push/pull, and Swift cross-client remote transport remain
 future work.
 The e2e harness resolves the TypeScript fixture runner through
 `INSTANT_SWIFT_DATA_NODE`, PATH, or the bundled Codex Node runtime, so launchd

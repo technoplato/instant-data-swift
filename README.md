@@ -563,7 +563,7 @@ node validation/ts-runner/src/main.ts --typescript-server-transaction-contract /
 INSTANT_APP_ID=local-validation INSTANT_SWIFT_DATA_TYPESCRIPT_SERVER_TRANSACTION_CONTRACT=/tmp/instant-validation-results/typescript-server-transaction-contract.json swift run instant-swift-data validation server-transaction-loopback --jsonl
 swift run instant-swift-data validation live-transaction --jsonl
 node validation/ts-runner/src/main.ts --boundary-preflight
-INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token node validation/ts-runner/src/main.ts --boundary-preflight --require-boundary
+INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token node validation/ts-runner/src/main.ts --boundary-admin-smoke --require-boundary
 INSTANT_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_LIVE_SESSION=1 swift run instant-swift-data validation live-session --jsonl
 INSTANT_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_LIVE_TRANSACTION=1 swift run instant-swift-data validation live-transaction --jsonl
 INSTANT_SWIFT_DATA_NODE=/path/to/node validation/run-e2e.sh
@@ -646,8 +646,11 @@ TypeScript-authored operation tuple contract through
 Swift/TypeScript contract exchange in both directions, but remains
 contract-only evidence. The boundary preflight writes `typescript-boundary.jsonl`
 and checks for a non-local app id value, a non-empty admin token, and
-syntactically valid API/WebSocket endpoints without contacting Instant or
-running the still blocked live transport round trip.
+syntactically valid API/WebSocket endpoints. Required remote mode
+(`--boundary-admin-smoke`, or
+`INSTANT_SWIFT_DATA_REQUIRE_REMOTE_PREFLIGHT=1 validation/run-e2e.sh`) uses those
+credentials to open Instant's admin SSE subscription endpoint, write through
+admin transact, observe the refresh, and query the row back.
 
 Run local core benchmarks:
 

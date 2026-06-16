@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const runnerDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(runnerDirectory, "../../..");
 const usage =
-  "Usage: node validation/ts-runner/src/main.ts [--fixtures|--boundary-preflight|--swift-transport-contract path|--swift-local-integrations-contract path|--swift-live-session-contract path|--swift-live-transaction-contract path|--typescript-server-transaction-contract path] [--require-boundary] [--app-id id] [--fixtures-dir path]";
+  "Usage: node validation/ts-runner/src/main.ts [--fixtures|--boundary-preflight|--boundary-admin-smoke|--swift-transport-contract path|--swift-local-integrations-contract path|--swift-live-session-contract path|--swift-live-transaction-contract path|--typescript-server-transaction-contract path] [--require-boundary] [--app-id id] [--fixtures-dir path]";
 const defaultAPIURI = "https://api.instantdb.com";
 const defaultWebSocketURI = "wss://api.instantdb.com/runtime/session";
 
@@ -70,6 +70,11 @@ function parseArguments(argv) {
 
       case "--boundary-preflight":
         options.mode = "boundary-preflight";
+        break;
+
+      case "--boundary-admin-smoke":
+        options.mode = "boundary-admin-smoke";
+        options.requireBoundary = true;
         break;
 
       case "--require-boundary":
@@ -154,7 +159,10 @@ function parseArguments(argv) {
     }
   }
 
-  if (options.mode === "boundary-preflight" && !appIDExplicit) {
+  if (
+    (options.mode === "boundary-preflight" || options.mode === "boundary-admin-smoke")
+    && !appIDExplicit
+  ) {
     options.appID =
       (process.env.INSTANT_SWIFT_DATA_REMOTE_APP_ID
         ?? process.env.INSTANT_APP_ID
@@ -810,7 +818,7 @@ function redactedEndpoint(value) {
   return `${url.protocol}//${host}${path}`;
 }
 
-function verifyBoundaryPreflight(options) {
+function boundaryPreflight(options) {
   const requiredEnvironment = [
     "INSTANT_SWIFT_DATA_REMOTE_APP_ID or INSTANT_APP_ID",
     "INSTANT_ADMIN_TOKEN or INSTANTDB_ADMIN_TOKEN",
@@ -847,30 +855,450 @@ function verifyBoundaryPreflight(options) {
   }
 
   const ok = missing.length === 0 && invalid.length === 0;
+  return {
+    requiredEnvironment,
+    optionalEnvironment,
+    missing,
+    invalid,
+    ok,
+  };
+}
+
+function emitBoundaryPreflight(options, preflight) {
   emit({
     case: "validation.typescript.boundary",
-    event: ok ? "preflight-ready" : "preflight-skipped",
+    event: preflight.ok ? "preflight-ready" : "preflight-skipped",
     appID: options.appID,
-    ok,
+    ok: preflight.ok,
     details: {
       required: options.requireBoundary,
-      requiredEnvironment,
-      optionalEnvironment,
-      missing,
-      invalid,
+      mode: options.mode,
+      requiredEnvironment: preflight.requiredEnvironment,
+      optionalEnvironment: preflight.optionalEnvironment,
+      missing: preflight.missing,
+      invalid: preflight.invalid,
       apiURI: redactedEndpoint(options.apiURI),
       websocketURI: redactedEndpoint(options.websocketURI),
       adminTokenPresent: Boolean(options.adminToken),
       adminTokenSource: options.adminTokenSource,
       implementation:
-        "Real Swift/TypeScript observe/write round trips remain blocked until live transport lands.",
+        options.mode === "boundary-admin-smoke"
+          ? "Required remote mode opens an Instant admin SSE subscription, writes with admin transact, and confirms with admin query."
+          : "Credential preflight only; pass --boundary-admin-smoke to contact Instant with the same dependency-free runner.",
       next:
-        "Use these credentials for ephemeral app setup, schema push, admin transact/query, and cross-client subscriptions.",
+        "Use Swift live-session/live-transaction validation plus this remote admin proof to close the remaining cross-client observe/write loop.",
     },
   });
+}
 
-  if (!ok && options.requireBoundary) {
+function verifyBoundaryPreflight(options) {
+  const preflight = boundaryPreflight(options);
+  emitBoundaryPreflight(options, preflight);
+
+  if (!preflight.ok && options.requireBoundary) {
     process.exitCode = 1;
+  }
+  return preflight;
+}
+
+function adminURL(apiURI, path) {
+  const url = new URL(apiURI);
+  const prefix = url.pathname.endsWith("/") ? url.pathname.slice(0, -1) : url.pathname;
+  const suffix = path.startsWith("/") ? path : `/${path}`;
+  url.pathname = `${prefix}${suffix}`.replace(/\/{2,}/g, "/");
+  url.search = "";
+  url.hash = "";
+  return url;
+}
+
+function adminHeaders(options) {
+  return {
+    "content-type": "application/json",
+    "app-id": options.appID,
+    authorization: `Bearer ${options.adminToken}`,
+  };
+}
+
+async function withTimeout(promise, label, timeoutMs) {
+  let timeout;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeout = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchJSON(url, init, label, timeoutMs = 10000) {
+  const controller = new AbortController();
+  let timeout;
+  try {
+    timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    const text = await response.text();
+    if (!response.ok) {
+      const summary = text.trim().slice(0, 500);
+      throw new Error(
+        `${label} failed with HTTP ${response.status}${summary ? `: ${summary}` : ""}`,
+      );
+    }
+    if (!text.trim()) {
+      return {};
+    }
+    try {
+      return JSON.parse(text);
+    } catch (error) {
+      throw new Error(`${label} returned non-JSON response: ${String(error)}`);
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function adminQuery(options, query) {
+  const url = adminURL(options.apiURI, "/admin/query");
+  url.searchParams.set("app_id", options.appID);
+  return await fetchJSON(
+    url,
+    {
+      method: "POST",
+      headers: adminHeaders(options),
+      body: JSON.stringify({
+        query,
+        "inference?": false,
+      }),
+    },
+    "Instant admin query",
+  );
+}
+
+async function adminTransact(options, operations) {
+  const url = adminURL(options.apiURI, "/admin/transact");
+  url.searchParams.set("app_id", options.appID);
+  return await fetchJSON(
+    url,
+    {
+      method: "POST",
+      headers: adminHeaders(options),
+      body: JSON.stringify({
+        steps: operations,
+        "throw-on-missing-attrs?": false,
+      }),
+    },
+    "Instant admin transact",
+  );
+}
+
+async function openAdminSubscription(options, query, timeoutMs = 10000) {
+  const controller = new AbortController();
+  let timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const url = adminURL(options.apiURI, "/admin/subscribe-query");
+  url.searchParams.set(
+    "local_connection_id",
+    `instant-swift-data-validation-${Date.now()}`,
+  );
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: adminHeaders(options),
+      body: JSON.stringify({
+        query,
+        "inference?": false,
+        versions: {
+          "instant-swift-data-validation-ts-runner": "0.1.0",
+        },
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      const summary = text.trim().slice(0, 500);
+      throw new Error(
+        `Instant admin subscribe failed with HTTP ${response.status}${summary ? `: ${summary}` : ""}`,
+      );
+    }
+    if (!response.body) {
+      throw new Error("Instant admin subscribe response did not include a readable body");
+    }
+
+    clearTimeout(timeout);
+    timeout = null;
+    return {
+      controller,
+      reader: createSSEJSONReader(response.body),
+    };
+  } catch (error) {
+    controller.abort();
+    if (error?.name === "AbortError") {
+      throw new Error(`Instant admin subscribe timed out after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+  }
+}
+
+function createSSEJSONReader(body) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  function shiftEvent() {
+    const separatorIndex = buffer.indexOf("\n\n");
+    if (separatorIndex === -1) {
+      return null;
+    }
+    const raw = buffer.slice(0, separatorIndex);
+    buffer = buffer.slice(separatorIndex + 2);
+    const data = raw
+      .split("\n")
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice("data:".length).trimStart())
+      .join("\n")
+      .trim();
+    if (!data) {
+      return { comment: raw.trim() };
+    }
+    try {
+      return JSON.parse(data);
+    } catch {
+      return { data };
+    }
+  }
+
+  return {
+    async next(timeoutMs) {
+      while (true) {
+        const event = shiftEvent();
+        if (event) {
+          return event;
+        }
+        const read = await withTimeout(reader.read(), "Instant admin SSE read", timeoutMs);
+        if (read.done) {
+          throw new Error("Instant admin subscription closed before the expected event arrived");
+        }
+        buffer += decoder.decode(read.value, { stream: true });
+        buffer = buffer.replace(/\r\n/g, "\n");
+      }
+    },
+    async cancel() {
+      await reader.cancel();
+    },
+  };
+}
+
+function eventOperation(event) {
+  return event?.op ?? event?.event ?? event?.type ?? null;
+}
+
+function eventSummary(event) {
+  if (!event || typeof event !== "object") {
+    return { value: event };
+  }
+  return {
+    op: eventOperation(event),
+    keys: Object.keys(event).slice(0, 8),
+  };
+}
+
+async function nextMatchingSSE(reader, predicate, label, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  const events = [];
+  while (Date.now() < deadline) {
+    const event = await reader.next(Math.max(1, deadline - Date.now()));
+    events.push(eventSummary(event));
+    if (predicate(event)) {
+      return { event, events };
+    }
+  }
+  throw new Error(`${label} was not received before ${timeoutMs}ms elapsed`);
+}
+
+function namespaceRows(payload, namespace) {
+  const containers = [payload, payload?.data, payload?.result];
+  for (const container of containers) {
+    if (container && typeof container === "object" && Array.isArray(container[namespace])) {
+      return container[namespace];
+    }
+  }
+  return [];
+}
+
+function errorDetails(error) {
+  return {
+    name: error?.name ?? "Error",
+    message: error?.message ?? String(error),
+  };
+}
+
+async function verifyBoundaryAdminSmoke(options) {
+  const preflight = verifyBoundaryPreflight(options);
+  if (!preflight.ok) {
+    process.exitCode = 1;
+    return;
+  }
+  if (typeof fetch !== "function") {
+    emit({
+      case: "validation.typescript.boundary",
+      event: "admin-smoke-failed",
+      appID: options.appID,
+      ok: false,
+      details: {
+        mode: options.mode,
+        issue: "Node.js global fetch is required for --boundary-admin-smoke.",
+      },
+    });
+    process.exitCode = 1;
+    return;
+  }
+
+  const namespace = "validationBoundary";
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const entityID = `typescript-boundary-${suffix}`;
+  const text = `TypeScript boundary ${suffix}`;
+  const query = {
+    [namespace]: {
+      $: {
+        where: {
+          id: entityID,
+        },
+      },
+    },
+  };
+  const operations = [
+    ["update", namespace, entityID, { id: entityID, text, done: false }],
+  ];
+
+  let subscription = null;
+  try {
+    subscription = await openAdminSubscription(options, query);
+    const open = await nextMatchingSSE(
+      subscription.reader,
+      (event) => eventOperation(event) === "add-query-ok",
+      "Instant admin add-query-ok",
+      10000,
+    );
+    emit({
+      case: "validation.typescript.boundary",
+      event: "admin-subscribe-open",
+      appID: options.appID,
+      ok: true,
+      details: {
+        mode: options.mode,
+        namespace,
+        entityID,
+        observedEvents: open.events,
+      },
+    });
+
+    const transactPayload = await adminTransact(options, operations);
+    emit({
+      case: "validation.typescript.boundary",
+      event: "admin-transact",
+      appID: options.appID,
+      ok: true,
+      details: {
+        mode: options.mode,
+        namespace,
+        entityID,
+        operationCount: operations.length,
+        responseKeys:
+          transactPayload && typeof transactPayload === "object"
+            ? Object.keys(transactPayload).slice(0, 8)
+            : [],
+      },
+    });
+
+    const refresh = await nextMatchingSSE(
+      subscription.reader,
+      (event) =>
+        eventOperation(event) === "refresh-ok"
+        || JSON.stringify(event).includes(entityID),
+      "Instant admin refresh-ok",
+      10000,
+    );
+    emit({
+      case: "validation.typescript.boundary",
+      event: "admin-subscribe-refresh",
+      appID: options.appID,
+      ok: true,
+      details: {
+        mode: options.mode,
+        namespace,
+        entityID,
+        observedEvents: refresh.events,
+      },
+    });
+
+    const queryPayload = await adminQuery(options, query);
+    const rows = namespaceRows(queryPayload, namespace);
+    const payloadText = JSON.stringify(queryPayload);
+    const rowFound =
+      rows.some((row) => row && row.id === entityID)
+      || payloadText.includes(entityID);
+    emit({
+      case: "validation.typescript.boundary",
+      event: "admin-query",
+      appID: options.appID,
+      ok: rowFound,
+      details: {
+        mode: options.mode,
+        namespace,
+        entityID,
+        rowCount: rows.length,
+        responseKeys:
+          queryPayload && typeof queryPayload === "object"
+            ? Object.keys(queryPayload).slice(0, 8)
+            : [],
+      },
+    });
+    if (!rowFound) {
+      process.exitCode = 1;
+      return;
+    }
+
+    emit({
+      case: "validation.typescript.boundary",
+      event: "remote-boundary",
+      appID: options.appID,
+      ok: true,
+      details: {
+        mode: options.mode,
+        proofLevel: "real-instant-admin-sse",
+        remoteBoundary: "typescript-admin-sse",
+        namespace,
+        entityID,
+        operationCount: operations.length,
+      },
+    });
+  } catch (error) {
+    emit({
+      case: "validation.typescript.boundary",
+      event: "admin-smoke-failed",
+      appID: options.appID,
+      ok: false,
+      details: {
+        mode: options.mode,
+        namespace,
+        entityID,
+        error: errorDetails(error),
+      },
+    });
+    process.exitCode = 1;
+  } finally {
+    if (subscription) {
+      try {
+        await subscription.reader.cancel();
+      } catch {}
+      subscription.controller.abort();
+    }
   }
 }
 
@@ -1671,11 +2099,15 @@ class UsageError extends Error {
   }
 }
 
-try {
+async function main() {
   const options = parseArguments(process.argv.slice(2));
   switch (options.mode) {
     case "boundary-preflight":
       verifyBoundaryPreflight(options);
+      break;
+
+    case "boundary-admin-smoke":
+      await verifyBoundaryAdminSmoke(options);
       break;
 
     case "swift-transport-contract":
@@ -1702,6 +2134,10 @@ try {
       verifyFixtures(options);
       break;
   }
+}
+
+try {
+  await main();
 } catch (error) {
   if (error instanceof UsageError) {
     if (error.exitCode === 0) {
