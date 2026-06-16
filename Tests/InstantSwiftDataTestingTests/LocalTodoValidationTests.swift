@@ -607,6 +607,20 @@ struct LocalTodoValidationTests {
     expectNoDifference(fileEvidence.fileByteCounts, [23])
     expectNoDifference(fileEvidence.fileContentDigests.count, 1)
 
+    let presenceEvidence = result.evidence[1].details
+    expectNoDifference(presenceEvidence.roomType, "chat")
+    expectNoDifference(presenceEvidence.roomID, "validation")
+    expectNoDifference(presenceEvidence.topic, "sendEmoji")
+    expectNoDifference(presenceEvidence.roomMemberIDs, ["user-1"])
+    expectNoDifference(presenceEvidence.roomPresenceValueKeys, ["name", "status"])
+
+    let topicEvidence = result.evidence[2].details
+    expectNoDifference(topicEvidence.roomType, "chat")
+    expectNoDifference(topicEvidence.roomID, "validation")
+    expectNoDifference(topicEvidence.topic, "sendEmoji")
+    expectNoDifference(topicEvidence.topicMessageIDs.count, 1)
+    expectNoDifference(topicEvidence.topicPayloadKeys, ["emoji"])
+
     let acceptEvidence = result.evidence[6].details
     expectNoDifference(acceptEvidence.activeShareIDs.count, 1)
     expectNoDifference(acceptEvidence.shareMemberUserIDs, ["user-1", "user-2"])
@@ -618,8 +632,13 @@ struct LocalTodoValidationTests {
 
     let relaunchEvidence = try #require(result.evidence.last?.details)
     expectNoDifference(relaunchEvidence.authUserID, "user-1")
+    expectNoDifference(relaunchEvidence.roomType, "chat")
+    expectNoDifference(relaunchEvidence.roomID, "validation")
+    expectNoDifference(relaunchEvidence.topic, "sendEmoji")
     expectNoDifference(relaunchEvidence.roomMemberIDs, ["user-1"])
+    expectNoDifference(relaunchEvidence.roomPresenceValueKeys, ["name", "status"])
     expectNoDifference(relaunchEvidence.topicMessageIDs.count, 1)
+    expectNoDifference(relaunchEvidence.topicPayloadKeys, ["emoji"])
     expectNoDifference(relaunchEvidence.fileIDs.count, 1)
     expectNoDifference(relaunchEvidence.fileContentDigests, fileEvidence.fileContentDigests)
     expectNoDifference(relaunchEvidence.streamChunkIDs.count, 1)
@@ -1920,6 +1939,70 @@ struct LocalTodoValidationTests {
   }
 
   @Test
+  func typeScriptLocalIntegrationsContractVerifierRequiresRelaunchRoomKeys() throws {
+    let packageURL = packageRootURL()
+    let tempURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataLocalIntegrationsContract-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: tempURL, withIntermediateDirectories: true)
+
+    let appID = "local-validation-test"
+    let artifactURL = tempURL.appendingPathComponent("swift-local-integrations.jsonl")
+
+    func jsonArray(_ strings: [String]) throws -> String {
+      String(decoding: try JSONEncoder().encode(strings), as: UTF8.self)
+    }
+
+    func artifact(
+      relaunchPresenceKeys: [String] = ["name", "status"],
+      relaunchPayloadKeys: [String] = ["emoji"]
+    ) throws -> String {
+      let relaunchPresenceKeys = try jsonArray(relaunchPresenceKeys)
+      let relaunchPayloadKeys = try jsonArray(relaunchPayloadKeys)
+      return """
+      {"case":"validation.local.integrations","side":"swift","event":"auth","appID":"\(appID)","timestampMs":1,"ok":true,"details":{}}
+      {"case":"validation.local.integrations","side":"swift","event":"room-presence","appID":"\(appID)","timestampMs":2,"ok":true,"details":{"authUserID":"user-1","roomType":"chat","roomID":"validation","topic":"sendEmoji","roomMemberIDs":["user-1"],"roomPresenceValueKeys":["name","status"]}}
+      {"case":"validation.local.integrations","side":"swift","event":"room-topic","appID":"\(appID)","timestampMs":3,"ok":true,"details":{"roomType":"chat","roomID":"validation","topic":"sendEmoji","topicMessageIDs":["topic-1"],"topicPayloadKeys":["emoji"]}}
+      {"case":"validation.local.integrations","side":"swift","event":"file","appID":"\(appID)","timestampMs":4,"ok":true,"details":{}}
+      {"case":"validation.local.integrations","side":"swift","event":"stream","appID":"\(appID)","timestampMs":5,"ok":true,"details":{}}
+      {"case":"validation.local.integrations","side":"swift","event":"share-create","appID":"\(appID)","timestampMs":6,"ok":true,"details":{}}
+      {"case":"validation.local.integrations","side":"swift","event":"share-accept","appID":"\(appID)","timestampMs":7,"ok":true,"details":{}}
+      {"case":"validation.local.integrations","side":"swift","event":"share-revoke","appID":"\(appID)","timestampMs":8,"ok":true,"details":{}}
+      {"case":"validation.local.integrations","side":"swift","event":"relaunch","appID":"\(appID)","timestampMs":9,"ok":true,"details":{"roomType":"chat","roomID":"validation","topic":"sendEmoji","roomMemberIDs":["user-1"],"roomPresenceValueKeys":\(relaunchPresenceKeys),"topicMessageIDs":["topic-1"],"topicPayloadKeys":\(relaunchPayloadKeys)}}
+
+      """
+    }
+
+    try artifact().write(to: artifactURL, atomically: true, encoding: .utf8)
+    let valid = try runTypeScriptValidationRunner(
+      arguments: ["--swift-local-integrations-contract", artifactURL.path, "--app-id", appID],
+      currentDirectory: packageURL
+    )
+    #expect(valid.status == 0, "TypeScript local-integrations verifier failed: \(valid.stderr)")
+    let validRows = try parseJSONLines(valid.stdout)
+    let validDetails = try #require(validRows.first?["details"] as? [String: Any])
+    expectNoDifference(validRows.first?["ok"] as? Bool, true)
+    expectNoDifference(validDetails["roomPresenceValueKeys"] as? [String], ["name", "status"])
+    expectNoDifference(validDetails["topicPayloadKeys"] as? [String], ["emoji"])
+
+    try artifact(
+      relaunchPresenceKeys: ["wrong"],
+      relaunchPayloadKeys: ["wrong"]
+    )
+    .write(to: artifactURL, atomically: true, encoding: .utf8)
+    let invalid = try runTypeScriptValidationRunner(
+      arguments: ["--swift-local-integrations-contract", artifactURL.path, "--app-id", appID],
+      currentDirectory: packageURL
+    )
+    #expect(invalid.status == 1)
+    let invalidRows = try parseJSONLines(invalid.stdout)
+    let invalidDetails = try #require(invalidRows.first?["details"] as? [String: Any])
+    expectNoDifference(invalidRows.first?["ok"] as? Bool, false)
+    let issues = try #require(invalidDetails["issues"] as? [[String: Any]])
+    #expect(issues.contains { ($0["path"] as? String) == "$.relaunch.details.roomPresenceValueKeys" })
+    #expect(issues.contains { ($0["path"] as? String) == "$.relaunch.details.topicPayloadKeys" })
+  }
+
+  @Test
   func validationRunE2EScriptOrchestratesLocalIntegrationEvidence() throws {
     let packageURL = packageRootURL()
     let scriptURL = packageURL.appendingPathComponent("validation/run-e2e.sh")
@@ -2089,7 +2172,16 @@ struct LocalTodoValidationTests {
           echo '{"case":"validation.local.todos","side":"swift","event":"stub-todos","appID":"local-validation","timestampMs":1,"ok":true,"details":{}}'
           ;;
         instant-swift-data-validation-runner:--local-integrations:)
-          echo '{"case":"validation.local.integrations","side":"swift","event":"stub-integrations","appID":"local-validation","timestampMs":2,"ok":true,"details":{}}'
+          integration_details_base='"cachePath":"/tmp/stub-local-integrations.sqlite","authUserID":"user-1","roomType":"chat","roomID":"validation","topic":"sendEmoji"'
+          echo '{"case":"validation.local.integrations","side":"swift","event":"auth","appID":"local-validation","timestampMs":2,"ok":true,"details":{'"$integration_details_base"',"roomMemberIDs":[],"roomPresenceValueKeys":[],"topicMessageIDs":[],"topicPayloadKeys":[],"fileIDs":[],"fileByteCounts":[],"fileContentDigests":[],"streamChunkIDs":[],"activeShareIDs":[],"revokedShareIDs":[],"shareMemberUserIDs":[]}}'
+          echo '{"case":"validation.local.integrations","side":"swift","event":"room-presence","appID":"local-validation","timestampMs":2,"ok":true,"details":{'"$integration_details_base"',"roomMemberIDs":["user-1"],"roomPresenceValueKeys":["name","status"],"topicMessageIDs":[],"topicPayloadKeys":[],"fileIDs":[],"fileByteCounts":[],"fileContentDigests":[],"streamChunkIDs":[],"activeShareIDs":[],"revokedShareIDs":[],"shareMemberUserIDs":[]}}'
+          echo '{"case":"validation.local.integrations","side":"swift","event":"room-topic","appID":"local-validation","timestampMs":2,"ok":true,"details":{'"$integration_details_base"',"roomMemberIDs":["user-1"],"roomPresenceValueKeys":["name","status"],"topicMessageIDs":["topic-stub"],"topicPayloadKeys":["emoji"],"fileIDs":[],"fileByteCounts":[],"fileContentDigests":[],"streamChunkIDs":[],"activeShareIDs":[],"revokedShareIDs":[],"shareMemberUserIDs":[]}}'
+          echo '{"case":"validation.local.integrations","side":"swift","event":"file","appID":"local-validation","timestampMs":2,"ok":true,"details":{'"$integration_details_base"',"roomMemberIDs":["user-1"],"roomPresenceValueKeys":["name","status"],"topicMessageIDs":["topic-stub"],"topicPayloadKeys":["emoji"],"fileIDs":["file-stub"],"fileByteCounts":[23],"fileContentDigests":["fnv1a64:stub"],"streamChunkIDs":[],"activeShareIDs":[],"revokedShareIDs":[],"shareMemberUserIDs":[]}}'
+          echo '{"case":"validation.local.integrations","side":"swift","event":"stream","appID":"local-validation","timestampMs":2,"ok":true,"details":{'"$integration_details_base"',"roomMemberIDs":["user-1"],"roomPresenceValueKeys":["name","status"],"topicMessageIDs":["topic-stub"],"topicPayloadKeys":["emoji"],"fileIDs":["file-stub"],"fileByteCounts":[23],"fileContentDigests":["fnv1a64:stub"],"streamChunkIDs":["chunk-stub"],"activeShareIDs":[],"revokedShareIDs":[],"shareMemberUserIDs":[]}}'
+          echo '{"case":"validation.local.integrations","side":"swift","event":"share-create","appID":"local-validation","timestampMs":2,"ok":true,"details":{'"$integration_details_base"',"roomMemberIDs":["user-1"],"roomPresenceValueKeys":["name","status"],"topicMessageIDs":["topic-stub"],"topicPayloadKeys":["emoji"],"fileIDs":["file-stub"],"fileByteCounts":[23],"fileContentDigests":["fnv1a64:stub"],"streamChunkIDs":["chunk-stub"],"activeShareIDs":["share-stub"],"revokedShareIDs":[],"shareMemberUserIDs":["user-1"]}}'
+          echo '{"case":"validation.local.integrations","side":"swift","event":"share-accept","appID":"local-validation","timestampMs":2,"ok":true,"details":{'"$integration_details_base"',"roomMemberIDs":["user-1"],"roomPresenceValueKeys":["name","status"],"topicMessageIDs":["topic-stub"],"topicPayloadKeys":["emoji"],"fileIDs":["file-stub"],"fileByteCounts":[23],"fileContentDigests":["fnv1a64:stub"],"streamChunkIDs":["chunk-stub"],"activeShareIDs":["share-stub"],"revokedShareIDs":[],"shareMemberUserIDs":["user-1","user-2"]}}'
+          echo '{"case":"validation.local.integrations","side":"swift","event":"share-revoke","appID":"local-validation","timestampMs":2,"ok":true,"details":{'"$integration_details_base"',"roomMemberIDs":["user-1"],"roomPresenceValueKeys":["name","status"],"topicMessageIDs":["topic-stub"],"topicPayloadKeys":["emoji"],"fileIDs":["file-stub"],"fileByteCounts":[23],"fileContentDigests":["fnv1a64:stub"],"streamChunkIDs":["chunk-stub"],"activeShareIDs":[],"revokedShareIDs":["share-stub"],"shareMemberUserIDs":["user-1","user-2"]}}'
+          echo '{"case":"validation.local.integrations","side":"swift","event":"relaunch","appID":"local-validation","timestampMs":2,"ok":true,"details":{'"$integration_details_base"',"roomMemberIDs":["user-1"],"roomPresenceValueKeys":["name","status"],"topicMessageIDs":["topic-stub"],"topicPayloadKeys":["emoji"],"fileIDs":["file-stub"],"fileByteCounts":[23],"fileContentDigests":["fnv1a64:stub"],"streamChunkIDs":["chunk-stub"],"activeShareIDs":[],"revokedShareIDs":[],"shareMemberUserIDs":[]}}'
           ;;
         instant-swift-data-validation-runner:--server-transaction-loopback:)
           echo '{"case":"validation.server.transaction.loopback","side":"swift","event":"stub-server-loopback","appID":"local-validation","timestampMs":2,"ok":true,"details":{}}'
@@ -2315,6 +2407,17 @@ struct LocalTodoValidationTests {
           fi
           echo '{"case":"validation.typescript.transport-contract","side":"typescript","event":"swift-transport-contract","appID":"local-validation","timestampMs":9,"ok":true,"details":{"proofLevel":"contract-only","remoteBoundary":"pending"}}'
           ;;
+        --swift-local-integrations-contract)
+          if [ "$4:$5" != "--app-id:local-validation" ]; then
+            echo "unexpected local integrations contract arguments: $*" >&2
+            exit 80
+          fi
+          if [ ! -s "$3" ]; then
+            echo "missing swift local integrations contract artifact: $3" >&2
+            exit 81
+          fi
+          echo '{"case":"validation.typescript.local-integrations-contract","side":"typescript","event":"swift-local-integrations-contract","appID":"local-validation","timestampMs":9,"ok":true,"details":{"proofLevel":"contract-only","remoteBoundary":"local-room-contract","room":{"type":"chat","id":"validation"},"topic":"sendEmoji","roomMemberIDs":["user-1"],"topicMessageIDs":["topic-stub"],"roomPresenceValueKeys":["name","status"],"topicPayloadKeys":["emoji"]}}'
+          ;;
         --swift-live-session-contract)
           if [ "$4:$5" != "--app-id:$remote_app_id" ]; then
             echo "unexpected live session contract arguments: $*" >&2
@@ -2434,6 +2537,8 @@ struct LocalTodoValidationTests {
       "typescript-fixtures-complete",
       "typescript-transport-contract-start",
       "typescript-transport-contract-complete",
+      "typescript-local-integrations-contract-start",
+      "typescript-local-integrations-contract-complete",
       "typescript-live-session-contract-start",
       "typescript-live-session-contract-complete",
       "typescript-live-transaction-contract-start",
@@ -2527,6 +2632,11 @@ struct LocalTodoValidationTests {
     )
     #expect(
       FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("typescript-local-integrations-contract.jsonl").path
+      )
+    )
+    #expect(
+      FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("typescript-live-session-contract.jsonl").path
       )
     )
@@ -2563,6 +2673,22 @@ struct LocalTodoValidationTests {
       ["swift-transport-contract"]
     )
     expectNoDifference(transportContractRows.first?["ok"] as? Bool, true)
+    let localIntegrationsContractRows = try readJSONLines(
+      resultsURL.appendingPathComponent("typescript-local-integrations-contract.jsonl")
+    )
+    expectNoDifference(
+      localIntegrationsContractRows.map { $0["event"] as? String ?? "" },
+      ["swift-local-integrations-contract"]
+    )
+    expectNoDifference(localIntegrationsContractRows.first?["ok"] as? Bool, true)
+    let localIntegrationsContractDetails = try #require(
+      localIntegrationsContractRows.first?["details"] as? [String: Any]
+    )
+    expectNoDifference(
+      localIntegrationsContractDetails["roomPresenceValueKeys"] as? [String],
+      ["name", "status"]
+    )
+    expectNoDifference(localIntegrationsContractDetails["topicPayloadKeys"] as? [String], ["emoji"])
     let swiftLiveSessionRows = try readJSONLines(
       resultsURL.appendingPathComponent("swift-live-session.jsonl")
     )
@@ -2635,6 +2761,9 @@ struct LocalTodoValidationTests {
         --swift-transport-contract)
           echo '{"case":"validation.typescript.transport-contract","side":"typescript","event":"transport-override","appID":"local-validation","timestampMs":10,"ok":true,"details":{}}'
           ;;
+        --swift-local-integrations-contract)
+          echo '{"case":"validation.typescript.local-integrations-contract","side":"typescript","event":"local-integrations-override","appID":"local-validation","timestampMs":10,"ok":true,"details":{}}'
+          ;;
         --swift-live-session-contract)
           echo '{"case":"validation.typescript.live-session-contract","side":"typescript","event":"live-session-override","appID":"local-validation","timestampMs":10,"ok":true,"details":{}}'
           ;;
@@ -2679,6 +2808,13 @@ struct LocalTodoValidationTests {
     expectNoDifference(
       overrideTransportRows.map { $0["event"] as? String ?? "" },
       ["transport-override"]
+    )
+    let overrideLocalIntegrationsRows = try readJSONLines(
+      resultsURL.appendingPathComponent("typescript-local-integrations-contract.jsonl")
+    )
+    expectNoDifference(
+      overrideLocalIntegrationsRows.map { $0["event"] as? String ?? "" },
+      ["local-integrations-override"]
     )
     let overrideLiveSessionRows = try readJSONLines(
       resultsURL.appendingPathComponent("typescript-live-session-contract.jsonl")
@@ -2753,8 +2889,14 @@ struct LocalTodoValidationTests {
         --swift-transport-contract)
           echo '{"case":"validation.typescript.transport-contract","side":"typescript","event":"transport-bundled","appID":"local-validation","timestampMs":11,"ok":true,"details":{}}'
           ;;
+        --swift-local-integrations-contract)
+          echo '{"case":"validation.typescript.local-integrations-contract","side":"typescript","event":"local-integrations-bundled","appID":"local-validation","timestampMs":11,"ok":true,"details":{}}'
+          ;;
         --swift-live-session-contract)
           echo '{"case":"validation.typescript.live-session-contract","side":"typescript","event":"live-session-bundled","appID":"local-validation","timestampMs":11,"ok":true,"details":{}}'
+          ;;
+        --swift-live-transaction-contract)
+          echo '{"case":"validation.typescript.live-transaction-contract","side":"typescript","event":"live-transaction-bundled","appID":"local-validation","timestampMs":11,"ok":true,"details":{}}'
           ;;
         --typescript-server-transaction-contract)
           mkdir -p "$(dirname "$3")"
@@ -2802,12 +2944,26 @@ struct LocalTodoValidationTests {
       bundledTransportRows.map { $0["event"] as? String ?? "" },
       ["transport-bundled"]
     )
+    let bundledLocalIntegrationsRows = try readJSONLines(
+      resultsURL.appendingPathComponent("typescript-local-integrations-contract.jsonl")
+    )
+    expectNoDifference(
+      bundledLocalIntegrationsRows.map { $0["event"] as? String ?? "" },
+      ["local-integrations-bundled"]
+    )
     let bundledLiveSessionRows = try readJSONLines(
       resultsURL.appendingPathComponent("typescript-live-session-contract.jsonl")
     )
     expectNoDifference(
       bundledLiveSessionRows.map { $0["event"] as? String ?? "" },
       ["live-session-bundled"]
+    )
+    let bundledLiveTransactionRows = try readJSONLines(
+      resultsURL.appendingPathComponent("typescript-live-transaction-contract.jsonl")
+    )
+    expectNoDifference(
+      bundledLiveTransactionRows.map { $0["event"] as? String ?? "" },
+      ["live-transaction-bundled"]
     )
     let bundledServerContractRows = try readJSONLines(
       resultsURL.appendingPathComponent("typescript-server-transaction-contract.jsonl")
@@ -2869,6 +3025,8 @@ struct LocalTodoValidationTests {
       "swift-cloudkit-demo-complete",
       "swift-live-session-start",
       "swift-live-session-complete",
+      "swift-live-transaction-start",
+      "swift-live-transaction-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -3180,6 +3338,8 @@ struct LocalTodoValidationTests {
       "swift-cloudkit-demo-complete",
       "swift-live-session-start",
       "swift-live-session-complete",
+      "swift-live-transaction-start",
+      "swift-live-transaction-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -3255,6 +3415,8 @@ struct LocalTodoValidationTests {
       "swift-cloudkit-demo-complete",
       "swift-live-session-start",
       "swift-live-session-complete",
+      "swift-live-transaction-start",
+      "swift-live-transaction-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -3338,6 +3500,8 @@ struct LocalTodoValidationTests {
       "swift-cloudkit-demo-complete",
       "swift-live-session-start",
       "swift-live-session-complete",
+      "swift-live-transaction-start",
+      "swift-live-transaction-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -3414,6 +3578,8 @@ struct LocalTodoValidationTests {
       "swift-cloudkit-demo-complete",
       "swift-live-session-start",
       "swift-live-session-complete",
+      "swift-live-transaction-start",
+      "swift-live-transaction-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -3435,8 +3601,12 @@ struct LocalTodoValidationTests {
       "typescript-fixtures-complete",
       "typescript-transport-contract-start",
       "typescript-transport-contract-complete",
+      "typescript-local-integrations-contract-start",
+      "typescript-local-integrations-contract-complete",
       "typescript-live-session-contract-start",
       "typescript-live-session-contract-complete",
+      "typescript-live-transaction-contract-start",
+      "typescript-live-transaction-contract-complete",
       "typescript-server-transaction-contract-start",
       "typescript-server-transaction-contract-complete",
       "swift-typescript-server-transaction-contract-start",

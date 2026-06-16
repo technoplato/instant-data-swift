@@ -3,8 +3,13 @@ import Foundation
 public struct LocalIntegrationValidationDetails: Codable, Equatable, Sendable {
   public var cachePath: String
   public var authUserID: String?
+  public var roomType: String?
+  public var roomID: String?
+  public var topic: String?
   public var roomMemberIDs: [String]
+  public var roomPresenceValueKeys: [String]
   public var topicMessageIDs: [String]
+  public var topicPayloadKeys: [String]
   public var fileIDs: [String]
   public var fileByteCounts: [Int64]
   public var fileContentDigests: [String]
@@ -16,8 +21,13 @@ public struct LocalIntegrationValidationDetails: Codable, Equatable, Sendable {
   public init(
     cachePath: String,
     authUserID: String?,
+    roomType: String? = nil,
+    roomID: String? = nil,
+    topic: String? = nil,
     roomMemberIDs: [String] = [],
+    roomPresenceValueKeys: [String] = [],
     topicMessageIDs: [String] = [],
+    topicPayloadKeys: [String] = [],
     fileIDs: [String] = [],
     fileByteCounts: [Int64] = [],
     fileContentDigests: [String] = [],
@@ -28,8 +38,13 @@ public struct LocalIntegrationValidationDetails: Codable, Equatable, Sendable {
   ) {
     self.cachePath = cachePath
     self.authUserID = authUserID
+    self.roomType = roomType
+    self.roomID = roomID
+    self.topic = topic
     self.roomMemberIDs = roomMemberIDs
+    self.roomPresenceValueKeys = roomPresenceValueKeys
     self.topicMessageIDs = topicMessageIDs
+    self.topicPayloadKeys = topicPayloadKeys
     self.fileIDs = fileIDs
     self.fileByteCounts = fileByteCounts
     self.fileContentDigests = fileContentDigests
@@ -325,8 +340,13 @@ public enum InstantSwiftDataLocalIntegrationValidation {
       details: LocalIntegrationValidationDetails(
         cachePath: cacheURL.path,
         authUserID: session?.userID,
+        roomType: room.type,
+        roomID: room.id,
+        topic: topic,
         roomMemberIDs: presence.map(\.userID).sorted(),
+        roomPresenceValueKeys: sortedObjectKeys(in: presence.map(\.values)),
         topicMessageIDs: topicMessages.map(\.id),
+        topicPayloadKeys: sortedObjectKeys(in: topicMessages.map(\.payload)),
         fileIDs: files.map(\.id),
         fileByteCounts: fileContents.map(\.byteCount),
         fileContentDigests: fileContents.map { contentDigest($0.data) },
@@ -336,6 +356,22 @@ public enum InstantSwiftDataLocalIntegrationValidation {
         shareMemberUserIDs: Array(Set(allShareMemberships.map(\.userID))).sorted()
       )
     )
+  }
+
+  private static func sortedObjectKeys(in objects: [[String: JSONValue]]) -> [String] {
+    Array(Set(objects.flatMap(\.keys))).sorted()
+  }
+
+  private static func sortedObjectKeys(in values: [JSONValue]) -> [String] {
+    Array(
+      Set(
+        values.flatMap { value -> [String] in
+          guard case let .object(object) = value else { return [] }
+          return Array(object.keys)
+        }
+      )
+    )
+    .sorted()
   }
 
   private static func contentDigest(_ data: Data) -> String {

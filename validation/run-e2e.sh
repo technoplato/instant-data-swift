@@ -37,6 +37,7 @@ rm -f \
   "${RESULTS_DIR}/swift-benchmark.jsonl" \
   "${RESULTS_DIR}/typescript-fixtures.jsonl" \
   "${RESULTS_DIR}/typescript-transport-contract.jsonl" \
+  "${RESULTS_DIR}/typescript-local-integrations-contract.jsonl" \
   "${RESULTS_DIR}/typescript-live-session-contract.jsonl" \
   "${RESULTS_DIR}/typescript-live-transaction-contract.jsonl" \
   "${RESULTS_DIR}/typescript-server-transaction-contract.json" \
@@ -672,6 +673,27 @@ if NODE_EXECUTABLE="$(resolve_node)"; then
       "complete" \
       false \
       "$(printf '{"resultsDir":%s,"failed":"typescript-transport-contract","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+    exit "${status}"
+  fi
+
+  log_json "typescript-local-integrations-contract-start" true "$(json_object "path" "${RESULTS_DIR}/swift-local-integrations.jsonl")"
+  if (
+    cd "${ROOT}"
+    VALIDATION_APP_ID="${VALIDATION_APP_ID}" "${NODE_EXECUTABLE}" validation/ts-runner/src/main.ts \
+      --swift-local-integrations-contract "${RESULTS_DIR}/swift-local-integrations.jsonl" \
+      --app-id "${VALIDATION_APP_ID}"
+  ) | tee "${RESULTS_DIR}/typescript-local-integrations-contract.jsonl"; then
+    log_json "typescript-local-integrations-contract-complete" true "$(json_object "path" "${RESULTS_DIR}/typescript-local-integrations-contract.jsonl")"
+  else
+    status=$?
+    log_json \
+      "typescript-local-integrations-contract-failed" \
+      false \
+      "$(json_failure_details "${RESULTS_DIR}/typescript-local-integrations-contract.jsonl" "${status}")"
+    log_json \
+      "complete" \
+      false \
+      "$(printf '{"resultsDir":%s,"failed":"typescript-local-integrations-contract","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
     exit "${status}"
   fi
 

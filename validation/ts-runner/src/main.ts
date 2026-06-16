@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 const runnerDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(runnerDirectory, "../../..");
 const usage =
-  "Usage: node validation/ts-runner/src/main.ts [--fixtures|--boundary-preflight|--swift-transport-contract path|--swift-live-session-contract path|--swift-live-transaction-contract path|--typescript-server-transaction-contract path] [--require-boundary] [--app-id id] [--fixtures-dir path]";
+  "Usage: node validation/ts-runner/src/main.ts [--fixtures|--boundary-preflight|--swift-transport-contract path|--swift-local-integrations-contract path|--swift-live-session-contract path|--swift-live-transaction-contract path|--typescript-server-transaction-contract path] [--require-boundary] [--app-id id] [--fixtures-dir path]";
 const defaultAPIURI = "https://api.instantdb.com";
 const defaultWebSocketURI = "wss://api.instantdb.com/runtime/session";
 
@@ -54,6 +54,7 @@ function parseArguments(argv) {
     adminToken: adminToken.value,
     adminTokenSource: adminToken.source,
     swiftTransportContractPath: null,
+    swiftLocalIntegrationsContractPath: null,
     swiftLiveSessionContractPath: null,
     swiftLiveTransactionContractPath: null,
     typeScriptServerTransactionContractPath: null,
@@ -82,6 +83,16 @@ function parseArguments(argv) {
         }
         options.mode = "swift-transport-contract";
         options.swiftTransportContractPath = resolve(value);
+        break;
+      }
+
+      case "--swift-local-integrations-contract": {
+        const value = args.shift();
+        if (!value) {
+          throw new UsageError(usage);
+        }
+        options.mode = "swift-local-integrations-contract";
+        options.swiftLocalIntegrationsContractPath = resolve(value);
         break;
       }
 
@@ -1015,6 +1026,180 @@ function sameArray(actual, expected) {
   return JSON.stringify(actual ?? null) === JSON.stringify(expected);
 }
 
+function verifySwiftLocalIntegrationsContract(options) {
+  const path = options.swiftLocalIntegrationsContractPath;
+  if (!path || !existsSync(path)) {
+    emit({
+      case: "validation.typescript.local-integrations-contract",
+      event: "swift-local-integrations-contract",
+      appID: options.appID,
+      ok: false,
+      details: {
+        path,
+        proofLevel: "contract-only",
+        remoteBoundary: "local-room-contract",
+        issues: [issue("$.path", "existing Swift local-integrations JSONL artifact", path)],
+      },
+    });
+    process.exitCode = 1;
+    return;
+  }
+
+  let rows;
+  try {
+    rows = readJSONLines(path);
+  } catch (error) {
+    emit({
+      case: "validation.typescript.local-integrations-contract",
+      event: "swift-local-integrations-contract",
+      appID: options.appID,
+      ok: false,
+      details: {
+        path,
+        proofLevel: "contract-only",
+        remoteBoundary: "local-room-contract",
+        issues: [issue("$.jsonl", "valid Swift local-integrations JSONL", String(error))],
+      },
+    });
+    process.exitCode = 1;
+    return;
+  }
+
+  const expectedEvents = [
+    "auth",
+    "room-presence",
+    "room-topic",
+    "file",
+    "stream",
+    "share-create",
+    "share-accept",
+    "share-revoke",
+    "relaunch",
+  ];
+  const actualEvents = rows.map((row) => row.event);
+  const issues = [];
+
+  if (!sameArray(actualEvents, expectedEvents)) {
+    issues.push(issue("$.events", expectedEvents, actualEvents));
+  }
+
+  for (const [index, row] of rows.entries()) {
+    if (row.case !== "validation.local.integrations") {
+      issues.push(issue(`$[${index}].case`, "validation.local.integrations", row.case));
+    }
+    if (row.side !== "swift") {
+      issues.push(issue(`$[${index}].side`, "swift", row.side));
+    }
+    if (row.appID !== options.appID) {
+      issues.push(issue(`$[${index}].appID`, options.appID, row.appID));
+    }
+    if (row.ok !== true) {
+      issues.push(issue(`$[${index}].ok`, true, row.ok));
+    }
+  }
+
+  const presenceRow = rows.find((row) => row.event === "room-presence");
+  const topicRow = rows.find((row) => row.event === "room-topic");
+  const relaunchRow = rows.find((row) => row.event === "relaunch");
+  const presenceDetails = presenceRow?.details ?? {};
+  const topicDetails = topicRow?.details ?? {};
+  const relaunchDetails = relaunchRow?.details ?? {};
+
+  for (const [pathPrefix, details] of [
+    ["$.room-presence.details", presenceDetails],
+    ["$.room-topic.details", topicDetails],
+    ["$.relaunch.details", relaunchDetails],
+  ]) {
+    if (details.roomType !== "chat") {
+      issues.push(issue(`${pathPrefix}.roomType`, "chat", details.roomType));
+    }
+    if (details.roomID !== "validation") {
+      issues.push(issue(`${pathPrefix}.roomID`, "validation", details.roomID));
+    }
+    if (details.topic !== "sendEmoji") {
+      issues.push(issue(`${pathPrefix}.topic`, "sendEmoji", details.topic));
+    }
+  }
+
+  if (presenceDetails.authUserID !== "user-1") {
+    issues.push(issue("$.room-presence.details.authUserID", "user-1", presenceDetails.authUserID));
+  }
+  if (!sameArray(presenceDetails.roomMemberIDs, ["user-1"])) {
+    issues.push(
+      issue("$.room-presence.details.roomMemberIDs", ["user-1"], presenceDetails.roomMemberIDs),
+    );
+  }
+  if (!sameArray(presenceDetails.roomPresenceValueKeys, ["name", "status"])) {
+    issues.push(
+      issue(
+        "$.room-presence.details.roomPresenceValueKeys",
+        ["name", "status"],
+        presenceDetails.roomPresenceValueKeys,
+      ),
+    );
+  }
+  if (!Array.isArray(topicDetails.topicMessageIDs) || topicDetails.topicMessageIDs.length !== 1) {
+    issues.push(
+      issue("$.room-topic.details.topicMessageIDs.length", 1, topicDetails.topicMessageIDs),
+    );
+  }
+  if (!sameArray(topicDetails.topicPayloadKeys, ["emoji"])) {
+    issues.push(issue("$.room-topic.details.topicPayloadKeys", ["emoji"], topicDetails.topicPayloadKeys));
+  }
+  if (!sameArray(relaunchDetails.roomMemberIDs, ["user-1"])) {
+    issues.push(issue("$.relaunch.details.roomMemberIDs", ["user-1"], relaunchDetails.roomMemberIDs));
+  }
+  if (!sameArray(relaunchDetails.roomPresenceValueKeys, ["name", "status"])) {
+    issues.push(
+      issue(
+        "$.relaunch.details.roomPresenceValueKeys",
+        ["name", "status"],
+        relaunchDetails.roomPresenceValueKeys,
+      ),
+    );
+  }
+  if (
+    !Array.isArray(relaunchDetails.topicMessageIDs)
+      || relaunchDetails.topicMessageIDs.length !== 1
+  ) {
+    issues.push(
+      issue("$.relaunch.details.topicMessageIDs.length", 1, relaunchDetails.topicMessageIDs),
+    );
+  }
+  if (!sameArray(relaunchDetails.topicPayloadKeys, ["emoji"])) {
+    issues.push(issue("$.relaunch.details.topicPayloadKeys", ["emoji"], relaunchDetails.topicPayloadKeys));
+  }
+
+  const ok = issues.length === 0;
+  emit({
+    case: "validation.typescript.local-integrations-contract",
+    event: "swift-local-integrations-contract",
+    appID: options.appID,
+    ok,
+    details: {
+      path,
+      proofLevel: "contract-only",
+      remoteBoundary: "local-room-contract",
+      expectedEvents,
+      actualEvents,
+      room: {
+        type: presenceDetails.roomType ?? null,
+        id: presenceDetails.roomID ?? null,
+      },
+      topic: topicDetails.topic ?? null,
+      roomMemberIDs: relaunchDetails.roomMemberIDs ?? [],
+      topicMessageIDs: relaunchDetails.topicMessageIDs ?? [],
+      roomPresenceValueKeys: relaunchDetails.roomPresenceValueKeys ?? [],
+      topicPayloadKeys: relaunchDetails.topicPayloadKeys ?? [],
+      issues,
+    },
+  });
+
+  if (!ok) {
+    process.exitCode = 1;
+  }
+}
+
 function verifySwiftLiveSessionContract(options) {
   const path = options.swiftLiveSessionContractPath;
   if (!path || !existsSync(path)) {
@@ -1495,6 +1680,10 @@ try {
 
     case "swift-transport-contract":
       verifySwiftTransportContract(options);
+      break;
+
+    case "swift-local-integrations-contract":
+      verifySwiftLocalIntegrationsContract(options);
       break;
 
     case "swift-live-session-contract":

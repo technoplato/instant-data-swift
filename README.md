@@ -555,6 +555,7 @@ swift run instant-swift-data-validation-runner --coverage
 node validation/ts-runner/src/main.ts --fixtures
 INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR=/tmp/instant-validation-results validation/run-e2e.sh
 node validation/ts-runner/src/main.ts --swift-transport-contract /tmp/instant-validation-results/swift-transport-contract.json --app-id local-validation
+node validation/ts-runner/src/main.ts --swift-local-integrations-contract /tmp/instant-validation-results/swift-local-integrations.jsonl --app-id local-validation
 node validation/ts-runner/src/main.ts --swift-live-session-contract /tmp/instant-validation-results/swift-live-session.jsonl --app-id local-validation
 node validation/ts-runner/src/main.ts --swift-live-transaction-contract /tmp/instant-validation-results/swift-live-transaction.jsonl --app-id local-validation
 node validation/ts-runner/src/main.ts --typescript-server-transaction-contract /tmp/instant-validation-results/typescript-server-transaction-contract.json --app-id local-validation
@@ -573,7 +574,15 @@ validation/run-e2e.sh
 closed-connection offline write, offline relaunch restore, and reconnect flush.
 `validation local-integrations` emits evidence for local auth, room
 presence/topic messages, file upload/read, stream chunks, and share
-create/accept/revoke. `validation reminders` emits terminal evidence for local
+create/accept/revoke. The TypeScript runner can validate that Swift-authored
+room artifact with:
+
+```bash
+INSTANT_APP_ID=local-validation swift run instant-swift-data validation local-integrations --jsonl > /tmp/instant-validation-results/swift-local-integrations.jsonl
+node validation/ts-runner/src/main.ts --swift-local-integrations-contract /tmp/instant-validation-results/swift-local-integrations.jsonl --app-id local-validation
+```
+
+`validation reminders` emits terminal evidence for local
 Reminders search, tags, rich fields, upstream-ranked numeric priority storage
 with named CLI filters, form-model edit saves, smart-list stats, list sharing
 roles, permission rejections, writer updates, and relaunch persistence.

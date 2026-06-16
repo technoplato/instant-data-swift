@@ -60,8 +60,10 @@ struct InstantSwiftDataValidationRunner {
 
     switch invocation {
     case .localIntegrations:
-      let run = try await InstantSwiftDataTestHarness.runLocalIntegrationValidation()
-      for row in run.result.evidence {
+      let result = try await InstantSwiftDataLocalIntegrationValidation.run(
+        appID: invocation.appID
+      )
+      for row in result.evidence {
         try writeJSONLine(row)
       }
 

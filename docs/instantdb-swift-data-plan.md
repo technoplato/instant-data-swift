@@ -95,6 +95,9 @@ also consumes the Swift JSONL with `--swift-live-session-contract` so the
 protocol transcript stays readable from both sides, and
 `--swift-live-transaction-contract` validates the local transaction transcript
 from the TypeScript side while remote cross-client delivery remains future work.
+`--swift-local-integrations-contract` validates the Swift-authored local room
+presence/topic evidence from TypeScript, including the room handle, topic name,
+presence value keys, topic payload keys, and relaunch persistence.
 Cross-client Swift/TypeScript mutation delivery,
 reconnect replay, and observer refresh application remain future transport work.
 
@@ -321,8 +324,9 @@ termination cleanup, and provides non-captive CLI commands:
 presence set/list/watch/leave and topic publish/list/watch, including
 `instant-swift-data rooms presence watch chat lobby --events 1 --jsonl` and
 `instant-swift-data rooms topics watch chat lobby sendEmoji --events 1 --jsonl`.
-Transport-backed subscriptions,
-reconnect rejoin, and Swift/TypeScript boundary proof remain future work.
+The TypeScript runner validates the Swift-authored local room evidence with
+`--swift-local-integrations-contract`; transport-backed subscriptions and
+reconnect rejoin remain future work.
 
 ### Storage And Files
 

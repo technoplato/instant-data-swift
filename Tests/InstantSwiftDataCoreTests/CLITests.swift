@@ -7747,6 +7747,28 @@ extension InstantStoreTests {
     expectNoDifference(firstEvidence.event, "auth")
     expectNoDifference(firstEvidence.details.authUserID, "user-1")
 
+    let presenceEvidence = try JSONDecoder().decode(
+      CLILocalIntegrationValidationEvidence.self,
+      from: Data(lines[1].utf8)
+    )
+    expectNoDifference(presenceEvidence.event, "room-presence")
+    expectNoDifference(presenceEvidence.details.roomType, "chat")
+    expectNoDifference(presenceEvidence.details.roomID, "validation")
+    expectNoDifference(presenceEvidence.details.topic, "sendEmoji")
+    expectNoDifference(presenceEvidence.details.roomMemberIDs, ["user-1"])
+    expectNoDifference(presenceEvidence.details.roomPresenceValueKeys, ["name", "status"])
+
+    let topicEvidence = try JSONDecoder().decode(
+      CLILocalIntegrationValidationEvidence.self,
+      from: Data(lines[2].utf8)
+    )
+    expectNoDifference(topicEvidence.event, "room-topic")
+    expectNoDifference(topicEvidence.details.roomType, "chat")
+    expectNoDifference(topicEvidence.details.roomID, "validation")
+    expectNoDifference(topicEvidence.details.topic, "sendEmoji")
+    expectNoDifference(topicEvidence.details.topicMessageIDs.count, 1)
+    expectNoDifference(topicEvidence.details.topicPayloadKeys, ["emoji"])
+
     let fileEvidence = try JSONDecoder().decode(
       CLILocalIntegrationValidationEvidence.self,
       from: Data(lines[3].utf8)
@@ -7770,6 +7792,13 @@ extension InstantStoreTests {
       from: Data(lines[8].utf8)
     )
     expectNoDifference(relaunchEvidence.event, "relaunch")
+    expectNoDifference(relaunchEvidence.details.roomType, "chat")
+    expectNoDifference(relaunchEvidence.details.roomID, "validation")
+    expectNoDifference(relaunchEvidence.details.topic, "sendEmoji")
+    expectNoDifference(relaunchEvidence.details.roomMemberIDs, ["user-1"])
+    expectNoDifference(relaunchEvidence.details.roomPresenceValueKeys, ["name", "status"])
+    expectNoDifference(relaunchEvidence.details.topicMessageIDs.count, 1)
+    expectNoDifference(relaunchEvidence.details.topicPayloadKeys, ["emoji"])
     expectNoDifference(relaunchEvidence.details.fileContentDigests, fileEvidence.details.fileContentDigests)
 
     let humanOutput = try runCLI(["validation", "local-integrations"], homeURL: homeURL)
@@ -11413,6 +11442,13 @@ private struct CLILocalIntegrationValidationEvidence: Decodable {
 
 private struct CLILocalIntegrationValidationDetails: Decodable {
   var authUserID: String?
+  var roomType: String?
+  var roomID: String?
+  var topic: String?
+  var roomMemberIDs: [String]
+  var roomPresenceValueKeys: [String]
+  var topicMessageIDs: [String]
+  var topicPayloadKeys: [String]
   var fileIDs: [String]
   var fileByteCounts: [Int64]
   var fileContentDigests: [String]
