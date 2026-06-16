@@ -2627,7 +2627,7 @@ public enum InstantSwiftDataParityCoverage {
       swiftTestName: "platformAdapterValidationProvesWrappersBindLocalRuntime",
       surface: "adapter-bindings",
       status: .adapted,
-      notes: "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, ConnectionStatus, room presence/topic messages, storage, streams, and shares, plus dynamic InfiniteQuery and live wrapper replacement/cancellation evidence."
+      notes: "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, ConnectionStatus, room presence/topic messages, storage, streams, and shares, plus dynamic InfiniteQuery, live wrapper replacement, and topic/file/stream/share cancellation cleanup evidence."
     ),
     instant(
       id: "instant.vue.connection-status-adapter",

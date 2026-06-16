@@ -612,6 +612,34 @@ public enum InstantSwiftDataPlatformAdapterValidation {
         timestamp: timestamp
       )
     )
+    evidence.append(
+      try await validateRoomTopicMessagesCancellation(
+        appID: appID,
+        cacheURL: cacheURL,
+        timestamp: timestamp
+      )
+    )
+    evidence.append(
+      try await validateStoredFilesCancellation(
+        appID: appID,
+        cacheURL: cacheURL,
+        timestamp: timestamp
+      )
+    )
+    evidence.append(
+      try await validateStreamChunksCancellation(
+        appID: appID,
+        cacheURL: cacheURL,
+        timestamp: timestamp
+      )
+    )
+    evidence.append(
+      try await validateSharesCancellation(
+        appID: appID,
+        cacheURL: cacheURL,
+        timestamp: timestamp
+      )
+    )
 
     let connectionStatus = ConnectionStatus()
     let initialConnectionState = connectionStatus.wrappedValue.state
@@ -1894,6 +1922,267 @@ public enum InstantSwiftDataPlatformAdapterValidation {
     )
   }
 
+  private static func validateRoomTopicMessagesCancellation(
+    appID: String,
+    cacheURL: URL,
+    timestamp: @escaping @Sendable () -> InstantTimestamp
+  ) async throws -> ValidationEvidenceRow<PlatformAdapterValidationDetails> {
+    let room = InstantRoomHandle(type: "validation", id: "topic-cancellation")
+    let recorder = PlatformAdapterResourceLifecycleRecorder(
+      appID: appID,
+      updatedAt: timestamp()
+    )
+    let topicMessages = RoomTopicMessages(room: room, topic: "sendEmoji", limit: 1)
+    let task = Task {
+      let topicMessages = topicMessages
+      try await topicMessages.task(using: resourceLifecycleClient(recorder))
+    }
+
+    try await waitForLifecycle(
+      operation: "wait for platform adapter RoomTopicMessages cancellation value"
+    ) {
+      !topicMessages.wrappedValue.isEmpty
+    }
+
+    task.cancel()
+    do {
+      try await task.value
+      throw validationFailure(
+        operation: "validate platform adapter RoomTopicMessages cancellation",
+        message: "Expected @RoomTopicMessages task cancellation to throw CancellationError."
+      )
+    } catch is CancellationError {
+    }
+
+    try await waitForResourceTermination(
+      recorder,
+      resource: .topicMessages,
+      operation: "wait for platform adapter RoomTopicMessages cancellation cleanup"
+    )
+    let counts = await recorder.counts(for: .topicMessages)
+    let cancellationTerminated = counts.terminationCount >= 1
+    guard
+      counts.observationCount == 1,
+      cancellationTerminated,
+      topicMessages.loadError == nil,
+      topicMessages.isLoading == false
+    else {
+      throw validationFailure(
+        operation: "validate platform adapter RoomTopicMessages cancellation cleanup",
+        message: "Expected @RoomTopicMessages cancellation to terminate its observer cleanly."
+      )
+    }
+
+    return evidenceRow(
+      event: "live-wrapper-topic-messages-cancellation",
+      appID: appID,
+      timestamp: timestamp,
+      details: PlatformAdapterValidationDetails(
+        cachePath: cacheURL.path,
+        adapter: "@RoomTopicMessages(cancellation)",
+        topicMessageIDs: topicMessages.wrappedValue.map(\.id),
+        observationCount: counts.observationCount,
+        isLoading: topicMessages.isLoading,
+        cancellationTerminated: cancellationTerminated
+      )
+    )
+  }
+
+  private static func validateStoredFilesCancellation(
+    appID: String,
+    cacheURL: URL,
+    timestamp: @escaping @Sendable () -> InstantTimestamp
+  ) async throws -> ValidationEvidenceRow<PlatformAdapterValidationDetails> {
+    let recorder = PlatformAdapterResourceLifecycleRecorder(
+      appID: appID,
+      updatedAt: timestamp()
+    )
+    let files = StoredFiles()
+    let task = Task {
+      let files = files
+      try await files.task(using: resourceLifecycleClient(recorder))
+    }
+
+    try await waitForLifecycle(
+      operation: "wait for platform adapter StoredFiles cancellation value"
+    ) {
+      !files.wrappedValue.isEmpty
+    }
+
+    task.cancel()
+    do {
+      try await task.value
+      throw validationFailure(
+        operation: "validate platform adapter StoredFiles cancellation",
+        message: "Expected @StoredFiles task cancellation to throw CancellationError."
+      )
+    } catch is CancellationError {
+    }
+
+    try await waitForResourceTermination(
+      recorder,
+      resource: .storedFiles,
+      operation: "wait for platform adapter StoredFiles cancellation cleanup"
+    )
+    let counts = await recorder.counts(for: .storedFiles)
+    let cancellationTerminated = counts.terminationCount >= 1
+    guard
+      counts.observationCount == 1,
+      cancellationTerminated,
+      files.loadError == nil,
+      files.isLoading == false
+    else {
+      throw validationFailure(
+        operation: "validate platform adapter StoredFiles cancellation cleanup",
+        message: "Expected @StoredFiles cancellation to terminate its observer cleanly."
+      )
+    }
+
+    return evidenceRow(
+      event: "live-wrapper-stored-files-cancellation",
+      appID: appID,
+      timestamp: timestamp,
+      details: PlatformAdapterValidationDetails(
+        cachePath: cacheURL.path,
+        adapter: "@StoredFiles(cancellation)",
+        fileIDs: files.wrappedValue.map(\.id),
+        observationCount: counts.observationCount,
+        isLoading: files.isLoading,
+        cancellationTerminated: cancellationTerminated
+      )
+    )
+  }
+
+  private static func validateStreamChunksCancellation(
+    appID: String,
+    cacheURL: URL,
+    timestamp: @escaping @Sendable () -> InstantTimestamp
+  ) async throws -> ValidationEvidenceRow<PlatformAdapterValidationDetails> {
+    let recorder = PlatformAdapterResourceLifecycleRecorder(
+      appID: appID,
+      updatedAt: timestamp()
+    )
+    let chunks = StreamChunks("validation/stream-cancellation", limit: 1, afterIndex: 0)
+    let task = Task {
+      let chunks = chunks
+      try await chunks.task(using: resourceLifecycleClient(recorder))
+    }
+
+    try await waitForLifecycle(
+      operation: "wait for platform adapter StreamChunks cancellation value"
+    ) {
+      !chunks.wrappedValue.isEmpty
+    }
+
+    task.cancel()
+    do {
+      try await task.value
+      throw validationFailure(
+        operation: "validate platform adapter StreamChunks cancellation",
+        message: "Expected @StreamChunks task cancellation to throw CancellationError."
+      )
+    } catch is CancellationError {
+    }
+
+    try await waitForResourceTermination(
+      recorder,
+      resource: .streamChunks,
+      operation: "wait for platform adapter StreamChunks cancellation cleanup"
+    )
+    let counts = await recorder.counts(for: .streamChunks)
+    let cancellationTerminated = counts.terminationCount >= 1
+    guard
+      counts.observationCount == 1,
+      cancellationTerminated,
+      chunks.loadError == nil,
+      chunks.isLoading == false
+    else {
+      throw validationFailure(
+        operation: "validate platform adapter StreamChunks cancellation cleanup",
+        message: "Expected @StreamChunks cancellation to terminate its observer cleanly."
+      )
+    }
+
+    return evidenceRow(
+      event: "live-wrapper-stream-chunks-cancellation",
+      appID: appID,
+      timestamp: timestamp,
+      details: PlatformAdapterValidationDetails(
+        cachePath: cacheURL.path,
+        adapter: "@StreamChunks(cancellation)",
+        streamChunkIDs: chunks.wrappedValue.map(\.id),
+        observationCount: counts.observationCount,
+        isLoading: chunks.isLoading,
+        cancellationTerminated: cancellationTerminated
+      )
+    )
+  }
+
+  private static func validateSharesCancellation(
+    appID: String,
+    cacheURL: URL,
+    timestamp: @escaping @Sendable () -> InstantTimestamp
+  ) async throws -> ValidationEvidenceRow<PlatformAdapterValidationDetails> {
+    let recorder = PlatformAdapterResourceLifecycleRecorder(
+      appID: appID,
+      updatedAt: timestamp()
+    )
+    let shares = Shares()
+    let task = Task {
+      let shares = shares
+      try await shares.task(using: resourceLifecycleClient(recorder))
+    }
+
+    try await waitForLifecycle(
+      operation: "wait for platform adapter Shares cancellation value"
+    ) {
+      !shares.wrappedValue.isEmpty
+    }
+
+    task.cancel()
+    do {
+      try await task.value
+      throw validationFailure(
+        operation: "validate platform adapter Shares cancellation",
+        message: "Expected @Shares task cancellation to throw CancellationError."
+      )
+    } catch is CancellationError {
+    }
+
+    try await waitForResourceTermination(
+      recorder,
+      resource: .shares,
+      operation: "wait for platform adapter Shares cancellation cleanup"
+    )
+    let counts = await recorder.counts(for: .shares)
+    let cancellationTerminated = counts.terminationCount >= 1
+    guard
+      counts.observationCount == 1,
+      cancellationTerminated,
+      shares.loadError == nil,
+      shares.isLoading == false
+    else {
+      throw validationFailure(
+        operation: "validate platform adapter Shares cancellation cleanup",
+        message: "Expected @Shares cancellation to terminate its observer cleanly."
+      )
+    }
+
+    return evidenceRow(
+      event: "live-wrapper-shares-cancellation",
+      appID: appID,
+      timestamp: timestamp,
+      details: PlatformAdapterValidationDetails(
+        cachePath: cacheURL.path,
+        adapter: "@Shares(cancellation)",
+        shareIDs: shares.wrappedValue.map(\.share.id),
+        observationCount: counts.observationCount,
+        isLoading: shares.isLoading,
+        cancellationTerminated: cancellationTerminated
+      )
+    )
+  }
+
   private static func evidenceRow(
     event: String,
     appID: String,
@@ -2024,6 +2313,37 @@ public enum InstantSwiftDataPlatformAdapterValidation {
     )
   }
 
+  private static func resourceLifecycleClient(
+    _ recorder: PlatformAdapterResourceLifecycleRecorder
+  ) -> InstantSwiftDataClient {
+    InstantSwiftDataClient(
+      transact: { transaction in
+        InstantStoreMutationResult(
+          transactionID: transaction.id,
+          changedEntityIDs: [],
+          tripleCount: transaction.operations.count,
+          emissions: []
+        )
+      },
+      query: { _ in [] },
+      observe: { _ in AsyncStream { continuation in continuation.finish() } },
+      pendingMutations: { [] },
+      localID: { name in "adapter-resource-\(name)" },
+      observeRoomTopicMessages: { room, topic in
+        await recorder.observeRoomTopicMessages(room: room, topic: topic)
+      },
+      observeStoredFiles: {
+        await recorder.observeStoredFiles()
+      },
+      observeStreamChunksAfterIndex: { streamID, afterIndex in
+        await recorder.observeStreamChunks(streamID: streamID, afterIndex: afterIndex)
+      },
+      observeShares: {
+        await recorder.observeShares()
+      }
+    )
+  }
+
   private static func waitForLifecycle(
     operation: String,
     until condition: @escaping @Sendable () async -> Bool
@@ -2038,6 +2358,16 @@ public enum InstantSwiftDataPlatformAdapterValidation {
       operation: operation,
       message: "Timed out waiting for platform adapter lifecycle evidence."
     )
+  }
+
+  private static func waitForResourceTermination(
+    _ recorder: PlatformAdapterResourceLifecycleRecorder,
+    resource: PlatformAdapterResource,
+    operation: String
+  ) async throws {
+    try await waitForLifecycle(operation: operation) {
+      await recorder.counts(for: resource).terminationCount >= 1
+    }
   }
 
   private static func validationFailure(
@@ -2378,6 +2708,138 @@ private actor PlatformAdapterLiveWrapperLifecycleRecorder {
       values: ["room": .string(room.id)],
       updatedAt: updatedAt
     )
+  }
+}
+
+private enum PlatformAdapterResource: Hashable, Sendable {
+  case topicMessages
+  case storedFiles
+  case streamChunks
+  case shares
+}
+
+private actor PlatformAdapterResourceLifecycleRecorder {
+  private let appID: String
+  private let updatedAt: InstantTimestamp
+  private var observationCounts: [PlatformAdapterResource: Int] = [:]
+  private var terminationCounts: [PlatformAdapterResource: Int] = [:]
+
+  init(appID: String, updatedAt: InstantTimestamp) {
+    self.appID = appID
+    self.updatedAt = updatedAt
+  }
+
+  func observeRoomTopicMessages(
+    room: InstantRoomHandle,
+    topic: String
+  ) -> AsyncStream<[InstantRoomTopicMessage]> {
+    recordObservation(.topicMessages)
+    let messages = [
+      InstantRoomTopicMessage(
+        id: "adapter-topic-\(room.id)-\(topic)",
+        appID: appID,
+        room: room,
+        topic: topic,
+        userID: "adapter-resource-user",
+        payload: .object(["emoji": .string("sparkles")]),
+        createdAt: updatedAt
+      )
+    ]
+    return stream(resource: .topicMessages, value: messages)
+  }
+
+  func observeStoredFiles() -> AsyncStream<[InstantStoredFile]> {
+    recordObservation(.storedFiles)
+    let files = [
+      InstantStoredFile(
+        id: "adapter-file-cancellation",
+        appID: appID,
+        name: "adapter-cancellation.txt",
+        contentType: "text/plain",
+        byteCount: 19,
+        localPath: "/tmp/adapter-cancellation.txt",
+        ownerUserID: "adapter-resource-user",
+        createdAt: updatedAt,
+        updatedAt: updatedAt
+      )
+    ]
+    return stream(resource: .storedFiles, value: files)
+  }
+
+  func observeStreamChunks(
+    streamID: String,
+    afterIndex: Int64?
+  ) -> AsyncStream<[InstantStreamChunk]> {
+    recordObservation(.streamChunks)
+    let index = max(afterIndex ?? -1, -1) + 1
+    let chunks = [
+      InstantStreamChunk(
+        id: "adapter-stream-chunk-\(index)",
+        appID: appID,
+        streamID: streamID,
+        index: index,
+        payload: .object(["text": .string("adapter cancellation chunk")]),
+        userID: "adapter-resource-user",
+        createdAt: updatedAt
+      )
+    ]
+    return stream(resource: .streamChunks, value: chunks)
+  }
+
+  func observeShares() -> AsyncStream<[InstantShareSnapshot]> {
+    recordObservation(.shares)
+    let share = InstantShare(
+      id: "adapter-share-cancellation",
+      appID: appID,
+      rootNamespace: PlatformAdapterTodo.instantNamespace,
+      rootID: "adapter-share-root",
+      ownerUserID: "adapter-resource-user",
+      token: "adapter-share-token",
+      createdAt: updatedAt,
+      updatedAt: updatedAt
+    )
+    let snapshot = InstantShareSnapshot(
+      share: share,
+      memberships: [
+        InstantShareMembership(
+          appID: appID,
+          shareID: share.id,
+          userID: "adapter-resource-user",
+          role: .owner,
+          acceptedAt: updatedAt
+        )
+      ]
+    )
+    return stream(resource: .shares, value: [snapshot])
+  }
+
+  func counts(for resource: PlatformAdapterResource) -> (
+    observationCount: Int,
+    terminationCount: Int
+  ) {
+    (observationCounts[resource, default: 0], terminationCounts[resource, default: 0])
+  }
+
+  private func stream<Value: Sendable>(
+    resource: PlatformAdapterResource,
+    value: Value
+  ) -> AsyncStream<Value> {
+    AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+      continuation.yield(value)
+      continuation.onTermination = { @Sendable _ in
+        Task {
+          await self.recordTermination(resource)
+        }
+      }
+    }
+  }
+
+  private func recordObservation(_ resource: PlatformAdapterResource) {
+    observationCounts[resource, default: 0] += 1
+  }
+
+  private func recordTermination(_ resource: PlatformAdapterResource) {
+    terminationCounts[resource, default: 0] += 1
   }
 }
 

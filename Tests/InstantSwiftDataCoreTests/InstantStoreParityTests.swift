@@ -825,7 +825,7 @@ struct InstantStoreParityTests {
     expectNoDifference(platformAdapterBinding.status, .adapted)
     expectNoDifference(
       platformAdapterBinding.notes,
-      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, ConnectionStatus, room presence/topic messages, storage, streams, and shares, plus dynamic InfiniteQuery and live wrapper replacement/cancellation evidence."
+      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, ConnectionStatus, room presence/topic messages, storage, streams, and shares, plus dynamic InfiniteQuery, live wrapper replacement, and topic/file/stream/share cancellation cleanup evidence."
     )
     #expect(report.records.contains { $0.id == "instant.live-transport.swift-to-typescript" && $0.status == .blocked })
 

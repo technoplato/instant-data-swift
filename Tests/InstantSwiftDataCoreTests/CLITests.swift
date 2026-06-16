@@ -8851,7 +8851,7 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.appID, "cli-cache-test")
     expectNoDifference(jsonOutput.event, "platform-adapters")
     expectNoDifference(jsonOutput.ok, true)
-    expectNoDifference(jsonOutput.evidenceCount, 24)
+    expectNoDifference(jsonOutput.evidenceCount, 29)
     expectNoDifference(jsonOutput.events, [
       "fetch-all",
       "fetch-one",
@@ -8877,6 +8877,11 @@ extension InstantStoreTests {
       "infinite-query-dynamic-cancellation",
       "infinite-query-dynamic-load",
       "live-wrapper-dynamic-cancellation",
+      "live-wrapper-topic-messages-cancellation",
+      "live-wrapper-stored-files-cancellation",
+      "live-wrapper-stream-chunks-cancellation",
+      "live-wrapper-shares-cancellation",
+      "connection-status",
     ])
     expectNoDifference(jsonOutput.adapters, [
       "@FetchAll",
@@ -8903,8 +8908,13 @@ extension InstantStoreTests {
       "@InfiniteQuery(dynamic cancellation)",
       "@InfiniteQuery(dynamic load)",
       "@RoomPresence(dynamic cancellation)",
+      "@RoomTopicMessages(cancellation)",
+      "@StoredFiles(cancellation)",
+      "@StreamChunks(cancellation)",
+      "@Shares(cancellation)",
+      "@ConnectionStatus",
     ])
-    expectNoDifference(jsonOutput.bindingAdapterCount, 11)
+    expectNoDifference(jsonOutput.bindingAdapterCount, 12)
     expectNoDifference(jsonOutput.bindingAdapters, [
       "@FetchAll",
       "@InfiniteQuery",
@@ -8912,6 +8922,7 @@ extension InstantStoreTests {
       "@Fetch",
       "@LocalID",
       "@AuthSession",
+      "@ConnectionStatus",
       "@RoomPresence",
       "@RoomTopicMessages",
       "@StoredFiles",
@@ -8921,13 +8932,13 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.todoCount, 1)
     expectNoDifference(jsonOutput.authUserID, "adapter-user")
     expectNoDifference(jsonOutput.roomMemberCount, 2)
-    expectNoDifference(jsonOutput.topicMessageCount, 1)
-    expectNoDifference(jsonOutput.fileCount, 1)
-    expectNoDifference(jsonOutput.streamChunkCount, 1)
-    expectNoDifference(jsonOutput.shareCount, 1)
-    expectNoDifference(jsonOutput.lifecycleEventCount, 13)
+    expectNoDifference(jsonOutput.topicMessageCount, 2)
+    expectNoDifference(jsonOutput.fileCount, 2)
+    expectNoDifference(jsonOutput.streamChunkCount, 2)
+    expectNoDifference(jsonOutput.shareCount, 2)
+    expectNoDifference(jsonOutput.lifecycleEventCount, 17)
     expectNoDifference(jsonOutput.queryProbeCount, 19)
-    expectNoDifference(jsonOutput.observationProbeCount, 6)
+    expectNoDifference(jsonOutput.observationProbeCount, 10)
     expectNoDifference(jsonOutput.loadErrorOperations, ["query dynamic FetchAll"])
     expectNoDifference(jsonOutput.cancellationTerminated, true)
     #expect(jsonOutput.selectedTodoID != nil)
@@ -8935,7 +8946,7 @@ extension InstantStoreTests {
 
     let jsonlOutput = try runCLI(["validation", "wrappers", "--jsonl"], homeURL: homeURL)
     let lines = jsonlOutput.split(separator: "\n")
-    expectNoDifference(lines.count, 24)
+    expectNoDifference(lines.count, 29)
     let fetchEvidence = try JSONDecoder().decode(
       CLIPlatformAdapterValidationEvidence.self,
       from: Data(try #require(lines.first).utf8)
@@ -8970,6 +8981,7 @@ extension InstantStoreTests {
       "@Fetch",
       "@LocalID",
       "@AuthSession",
+      "@ConnectionStatus",
       "@RoomPresence",
       "@RoomTopicMessages",
       "@StoredFiles",
@@ -9078,17 +9090,53 @@ extension InstantStoreTests {
     expectNoDifference(infiniteLoadEvidence.details.queryCount, 3)
     expectNoDifference(infiniteLoadEvidence.details.nilQueryCleared, true)
 
+    let topicCancellationEvidence = try #require(
+      evidenceRows.first { $0.event == "live-wrapper-topic-messages-cancellation" }
+    )
+    expectNoDifference(
+      topicCancellationEvidence.details.adapter,
+      "@RoomTopicMessages(cancellation)"
+    )
+    expectNoDifference(topicCancellationEvidence.details.topicMessageIDs.count, 1)
+    expectNoDifference(topicCancellationEvidence.details.observationCount, 1)
+    expectNoDifference(topicCancellationEvidence.details.cancellationTerminated, true)
+
+    let filesCancellationEvidence = try #require(
+      evidenceRows.first { $0.event == "live-wrapper-stored-files-cancellation" }
+    )
+    expectNoDifference(filesCancellationEvidence.details.adapter, "@StoredFiles(cancellation)")
+    expectNoDifference(filesCancellationEvidence.details.fileIDs.count, 1)
+    expectNoDifference(filesCancellationEvidence.details.observationCount, 1)
+    expectNoDifference(filesCancellationEvidence.details.cancellationTerminated, true)
+
+    let streamCancellationEvidence = try #require(
+      evidenceRows.first { $0.event == "live-wrapper-stream-chunks-cancellation" }
+    )
+    expectNoDifference(streamCancellationEvidence.details.adapter, "@StreamChunks(cancellation)")
+    expectNoDifference(streamCancellationEvidence.details.streamChunkIDs.count, 1)
+    expectNoDifference(streamCancellationEvidence.details.observationCount, 1)
+    expectNoDifference(streamCancellationEvidence.details.cancellationTerminated, true)
+
+    let sharesCancellationEvidence = try #require(
+      evidenceRows.first { $0.event == "live-wrapper-shares-cancellation" }
+    )
+    expectNoDifference(sharesCancellationEvidence.details.adapter, "@Shares(cancellation)")
+    expectNoDifference(sharesCancellationEvidence.details.shareIDs.count, 1)
+    expectNoDifference(sharesCancellationEvidence.details.observationCount, 1)
+    expectNoDifference(sharesCancellationEvidence.details.cancellationTerminated, true)
+
     let humanOutput = try runCLI(["validation", "adapters"], homeURL: homeURL)
     #expect(humanOutput.contains("validation: ok"))
     #expect(humanOutput.contains("case: validation.platform.adapters"))
-    #expect(humanOutput.contains("evidence rows: 24"))
+    #expect(humanOutput.contains("evidence rows: 29"))
     #expect(humanOutput.contains("binding adapters: @FetchAll, @InfiniteQuery, @FetchOne"))
-    #expect(humanOutput.contains("lifecycle probes: 13"))
+    #expect(humanOutput.contains("lifecycle probes: 17"))
     #expect(humanOutput.contains("cancellation terminated: true"))
     #expect(humanOutput.contains("@FetchAll"))
     #expect(humanOutput.contains("@InfiniteQuery(dynamic cancellation)"))
     #expect(humanOutput.contains("@Fetch(request dynamic)"))
     #expect(humanOutput.contains("@Shares"))
+    #expect(humanOutput.contains("@StoredFiles(cancellation)"))
   }
 
   @Test
@@ -10075,7 +10123,7 @@ extension InstantStoreTests {
     expectNoDifference(platformAdapterBinding.status, "adapted")
     expectNoDifference(
       platformAdapterBinding.notes,
-      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, ConnectionStatus, room presence/topic messages, storage, streams, and shares, plus dynamic InfiniteQuery and live wrapper replacement/cancellation evidence."
+      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, ConnectionStatus, room presence/topic messages, storage, streams, and shares, plus dynamic InfiniteQuery, live wrapper replacement, and topic/file/stream/share cancellation cleanup evidence."
     )
     #expect(
       jsonOutput.records.contains {
@@ -10156,7 +10204,7 @@ extension InstantStoreTests {
     expectNoDifference(platformAdapterBindingEvidence.details.status, "adapted")
     expectNoDifference(
       platformAdapterBindingEvidence.details.notes,
-      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, ConnectionStatus, room presence/topic messages, storage, streams, and shares, plus dynamic InfiniteQuery and live wrapper replacement/cancellation evidence."
+      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, ConnectionStatus, room presence/topic messages, storage, streams, and shares, plus dynamic InfiniteQuery, live wrapper replacement, and topic/file/stream/share cancellation cleanup evidence."
     )
     let blockedEvidence = try #require(
       evidenceRows.first { $0.entityID == "instant.live-transport.swift-to-typescript" }

@@ -618,8 +618,8 @@ Agent-oriented output modes are required:
   nil-query, cached-prior-error, cancellation-cleanup, optional `@FetchOne`
   dynamic and nil-query reloads, `@Fetch` request dynamic reload, nil request
   reset, cancellation cleanup, live wrapper dynamic replacement/cancellation,
-  `@ConnectionStatus` streaming state changes, and `@FetchAll`/`@Fetch`
-  filtered reload behavior.
+  topic/file/stream/share wrapper cancellation cleanup, `@ConnectionStatus`
+  streaming state changes, and `@FetchAll`/`@Fetch` filtered reload behavior.
 - run Swift/TypeScript parity suites.
 - run credential-free Swift/TypeScript transport-contract validation in both
   local directions: Swift outbox payloads consumed by TypeScript, and
@@ -984,8 +984,9 @@ paged/infinite-query helpers. Tests
 should verify loading/error state, dynamic nil queries, resubscription,
 cached-prior results, cleanup on cancellation, independent subscription
 lifetime, dynamic infinite-query subscription/load replacement, dynamic
-live-wrapper replacement, and task cancellation without reaching around to raw
-callbacks unless the test is explicitly about the core runtime.
+live-wrapper replacement, resource-wrapper task cancellation, and task
+cancellation without reaching around to raw callbacks unless the test is
+explicitly about the core runtime.
 
 Port SQLiteData core and example tests faithfully for the InstantDB version.
 This includes `FetchAll`, `FetchOne`, `Fetch`, `FetchSubscription`, observable

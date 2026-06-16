@@ -1047,6 +1047,38 @@ struct LocalTodoValidationTests {
     expectNoDifference(infiniteLoad.nilQueryCleared, true)
     expectNoDifference(infiniteLoad.isLoading, false)
     expectNoDifference(infiniteLoad.loadErrorOperation, nil)
+
+    let topicCancellation = try #require(
+      result.evidence.first { $0.event == "live-wrapper-topic-messages-cancellation" }?.details
+    )
+    expectNoDifference(topicCancellation.topicMessageIDs.count, 1)
+    expectNoDifference(topicCancellation.observationCount, 1)
+    expectNoDifference(topicCancellation.cancellationTerminated, true)
+    expectNoDifference(topicCancellation.isLoading, false)
+
+    let filesCancellation = try #require(
+      result.evidence.first { $0.event == "live-wrapper-stored-files-cancellation" }?.details
+    )
+    expectNoDifference(filesCancellation.fileIDs.count, 1)
+    expectNoDifference(filesCancellation.observationCount, 1)
+    expectNoDifference(filesCancellation.cancellationTerminated, true)
+    expectNoDifference(filesCancellation.isLoading, false)
+
+    let streamCancellation = try #require(
+      result.evidence.first { $0.event == "live-wrapper-stream-chunks-cancellation" }?.details
+    )
+    expectNoDifference(streamCancellation.streamChunkIDs.count, 1)
+    expectNoDifference(streamCancellation.observationCount, 1)
+    expectNoDifference(streamCancellation.cancellationTerminated, true)
+    expectNoDifference(streamCancellation.isLoading, false)
+
+    let sharesCancellation = try #require(
+      result.evidence.first { $0.event == "live-wrapper-shares-cancellation" }?.details
+    )
+    expectNoDifference(sharesCancellation.shareIDs.count, 1)
+    expectNoDifference(sharesCancellation.observationCount, 1)
+    expectNoDifference(sharesCancellation.cancellationTerminated, true)
+    expectNoDifference(sharesCancellation.isLoading, false)
   }
 
   @Test
@@ -1838,7 +1870,7 @@ struct LocalTodoValidationTests {
     expectNoDifference(platformAdapterBinding.status, .adapted)
     expectNoDifference(
       platformAdapterBinding.notes,
-      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, ConnectionStatus, room presence/topic messages, storage, streams, and shares, plus dynamic InfiniteQuery and live wrapper replacement/cancellation evidence."
+      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, ConnectionStatus, room presence/topic messages, storage, streams, and shares, plus dynamic InfiniteQuery, live wrapper replacement, and topic/file/stream/share cancellation cleanup evidence."
     )
     #expect(
       run.result.records.contains {
@@ -1954,7 +1986,7 @@ struct LocalTodoValidationTests {
     expectNoDifference(platformAdapterBindingDetails["status"] as? String, "adapted")
     expectNoDifference(
       platformAdapterBindingDetails["notes"] as? String,
-      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, ConnectionStatus, room presence/topic messages, storage, streams, and shares, plus dynamic InfiniteQuery and live wrapper replacement/cancellation evidence."
+      "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, ConnectionStatus, room presence/topic messages, storage, streams, and shares, plus dynamic InfiniteQuery, live wrapper replacement, and topic/file/stream/share cancellation cleanup evidence."
     )
 
     let first = try #require(rows.first)
@@ -4174,6 +4206,11 @@ private let platformAdapterValidationEvents = [
   "infinite-query-dynamic-cancellation",
   "infinite-query-dynamic-load",
   "live-wrapper-dynamic-cancellation",
+  "live-wrapper-topic-messages-cancellation",
+  "live-wrapper-stored-files-cancellation",
+  "live-wrapper-stream-chunks-cancellation",
+  "live-wrapper-shares-cancellation",
+  "connection-status",
 ]
 
 private let platformAdapterValidationAdapters = [
@@ -4201,6 +4238,11 @@ private let platformAdapterValidationAdapters = [
   "@InfiniteQuery(dynamic cancellation)",
   "@InfiniteQuery(dynamic load)",
   "@RoomPresence(dynamic cancellation)",
+  "@RoomTopicMessages(cancellation)",
+  "@StoredFiles(cancellation)",
+  "@StreamChunks(cancellation)",
+  "@Shares(cancellation)",
+  "@ConnectionStatus",
 ]
 
 private let projectedBindingAdapters = [
@@ -4210,6 +4252,7 @@ private let projectedBindingAdapters = [
   "@Fetch",
   "@LocalID",
   "@AuthSession",
+  "@ConnectionStatus",
   "@RoomPresence",
   "@RoomTopicMessages",
   "@StoredFiles",

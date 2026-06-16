@@ -411,8 +411,9 @@ including `@FetchAll` dynamic reload, nil-query, cached-prior-error, and
 cancellation cleanup evidence, optional `@FetchOne` dynamic and nil-query
 reload evidence, `@Fetch` request dynamic reload, nil request reset, and
 cancellation cleanup evidence, live wrapper dynamic replacement/cancellation
-evidence, `@ConnectionStatus` streaming state changes, plus
-`@FetchAll`/`@Fetch` filtered active-row reloads. Server-applied
+evidence, topic/file/stream/share wrapper cancellation cleanup,
+`@ConnectionStatus` streaming state changes, plus `@FetchAll`/`@Fetch` filtered
+active-row reloads. Server-applied
 transaction loopback can be proven with
 `instant-swift-data validation server-transaction-loopback --jsonl`, covering
 observer publication, checkpoint persistence, relaunch restore, and unchanged
@@ -678,13 +679,16 @@ public API into SQL:
   the same for room presence and topic streams, including dynamic room/topic
   replacement for SwiftUI task lifetimes; platform-adapter validation now
   proves replacement cancels the stale live subscription before the new room
-  writes wrapper state. `@StoredFiles` and `@StreamChunks` should adapt storage
+  writes wrapper state and proves topic-message task cancellation tears down the
+  underlying observation. `@StoredFiles` and `@StreamChunks` should adapt storage
   metadata and stream chunk observations into the same
-  loading/error/task/subscription shape. `@Shares` should adapt user-scoped share
-  snapshots into the same wrapper, projected binding, task, and cancellable
-  subscription shape; local share observers are session- and runtime-scoped at
-  subscription time, so auth-session or runtime-instance switches should
-  resubscribe.
+  loading/error/task/subscription shape, with cancellation cleanup proven from the
+  terminal validation stream. `@Shares` should adapt user-scoped share snapshots
+  into the same wrapper, projected binding, task, and cancellable subscription
+  shape; local share observers are session- and runtime-scoped at subscription
+  time, so auth-session or runtime-instance switches should resubscribe. Terminal
+  validation now proves share wrapper task cancellation also tears down the
+  underlying observation.
   Client adapters must transform subscribable/live Instant values into
   Swift-native wrappers, projected bindings, observable model state, and
   `AsyncSequence` streams rather than exposing raw subscription callbacks to app
