@@ -32,6 +32,8 @@ public struct InstantSwiftDataClient: Sendable {
   private var flushPendingMutationsOperation:
     @Sendable (Int?) async throws -> InstantMutationTransportFlushResult
   private var connectionStatusOperation: @Sendable () async throws -> InstantConnectionStatus
+  private var observeConnectionStatusOperation:
+    @Sendable () async throws -> AsyncStream<InstantConnectionStatus>
   private var connectOperation: @Sendable () async throws -> InstantConnectionStatus
   private var closeConnectionOperation: @Sendable () async throws -> InstantConnectionStatus
   private var localIDOperation: @Sendable (String) async throws -> String
@@ -125,6 +127,9 @@ public struct InstantSwiftDataClient: Sendable {
     }
     self.connectionStatusOperation = {
       try await runtime.connectionStatus()
+    }
+    self.observeConnectionStatusOperation = {
+      try await runtime.observeConnectionStatus()
     }
     self.connectOperation = {
       try await runtime.connect()
@@ -266,6 +271,8 @@ public struct InstantSwiftDataClient: Sendable {
     flushPendingMutations:
       (@Sendable (Int?) async throws -> InstantMutationTransportFlushResult)? = nil,
     connectionStatus: (@Sendable () async throws -> InstantConnectionStatus)? = nil,
+    observeConnectionStatus:
+      (@Sendable () async throws -> AsyncStream<InstantConnectionStatus>)? = nil,
     connect: (@Sendable () async throws -> InstantConnectionStatus)? = nil,
     closeConnection: (@Sendable () async throws -> InstantConnectionStatus)? = nil,
     localID: @escaping @Sendable (String) async throws -> String,
@@ -344,6 +351,7 @@ public struct InstantSwiftDataClient: Sendable {
       pendingMutations: pendingMutations,
       flushPendingMutations: flushPendingMutations,
       connectionStatus: connectionStatus,
+      observeConnectionStatus: observeConnectionStatus,
       connect: connect,
       closeConnection: closeConnection,
       localID: localID,
@@ -399,6 +407,8 @@ public struct InstantSwiftDataClient: Sendable {
     flushPendingMutations:
       (@Sendable (Int?) async throws -> InstantMutationTransportFlushResult)? = nil,
     connectionStatus: (@Sendable () async throws -> InstantConnectionStatus)? = nil,
+    observeConnectionStatus:
+      (@Sendable () async throws -> AsyncStream<InstantConnectionStatus>)? = nil,
     connect: (@Sendable () async throws -> InstantConnectionStatus)? = nil,
     closeConnection: (@Sendable () async throws -> InstantConnectionStatus)? = nil,
     localID: @escaping @Sendable (String) async throws -> String,
@@ -542,6 +552,7 @@ public struct InstantSwiftDataClient: Sendable {
     self.pendingMutationsOperation = pendingMutations
     self.flushPendingMutationsOperation = flushPendingMutations ?? { _ in throw transportError }
     self.connectionStatusOperation = connectionStatus ?? { throw runtimeStatusError }
+    self.observeConnectionStatusOperation = observeConnectionStatus ?? { throw runtimeStatusError }
     self.connectOperation = connect ?? { throw runtimeStatusError }
     self.closeConnectionOperation = closeConnection ?? { throw runtimeStatusError }
     self.localIDOperation = localID
@@ -649,6 +660,9 @@ public struct InstantSwiftDataClient: Sendable {
         throw error
       },
       connectionStatus: {
+        throw error
+      },
+      observeConnectionStatus: {
         throw error
       },
       connect: {
@@ -838,6 +852,16 @@ public struct InstantSwiftDataClient: Sendable {
 
   public func connectionStatus() async throws -> InstantConnectionStatus {
     try await connectionStatusOperation()
+  }
+
+  public func observeConnectionStatus() async throws -> AsyncStream<InstantConnectionStatus> {
+    try await observeConnectionStatusOperation()
+  }
+
+  public func subscribeConnectionStatus() async throws -> FetchSubscription<InstantConnectionStatus> {
+    let statuses = try await observeConnectionStatus()
+    try Task.checkCancellation()
+    return fetchSubscription(from: statuses)
   }
 
   @discardableResult
@@ -4930,6 +4954,154 @@ extension Fetch {
       subscribe: { client in
         try await request.subscribe(using: client)
       }
+    )
+  }
+}
+
+@propertyWrapper
+public struct ConnectionStatus: Sendable {
+  private let storage: FetchStorage<InstantConnectionStatus>
+
+  public var wrappedValue: InstantConnectionStatus {
+    get { storage.wrappedValue }
+    nonmutating set { storage.wrappedValue = newValue }
+  }
+
+  public var loadError: InstantError? {
+    get { storage.loadError }
+    nonmutating set { storage.loadError = newValue }
+  }
+
+  public var isLoading: Bool {
+    get { storage.isLoading }
+    nonmutating set { storage.isLoading = newValue }
+  }
+
+  #if canImport(SwiftUI)
+    public var binding: Binding<InstantConnectionStatus> {
+      Binding(
+        get: { storage.wrappedValue },
+        set: { storage.wrappedValue = $0 }
+      )
+    }
+  #endif
+
+  public init() {
+    self.storage = FetchStorage(value: Self.defaultConnectingStatus)
+  }
+
+  public init(wrappedValue: InstantConnectionStatus) {
+    self.storage = FetchStorage(value: wrappedValue)
+  }
+
+  public var projectedValue: Self {
+    get { self }
+    nonmutating set {
+      wrappedValue = newValue.wrappedValue
+      loadError = newValue.loadError
+      isLoading = newValue.isLoading
+    }
+  }
+
+  public func load() async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await load(using: client)
+  }
+
+  public func load(using client: InstantSwiftDataClient) async throws {
+    isLoading = true
+    do {
+      let status = try await client.connectionStatus()
+      try Task.checkCancellation()
+      wrappedValue = status
+      loadError = nil
+      isLoading = false
+    } catch let error as CancellationError {
+      loadError = nil
+      isLoading = false
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      isLoading = false
+      throw error
+    } catch {
+      let error = InstantError(
+        code: .implementationFailed,
+        operation: "load ConnectionStatus",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient connection status operation."
+      )
+      loadError = error
+      isLoading = false
+      throw error
+    }
+  }
+
+  public func subscribe() async throws -> FetchSubscription<InstantConnectionStatus> {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(using: client)
+  }
+
+  public func subscribe(
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<InstantConnectionStatus> {
+    loadError = nil
+    do {
+      return try await makeSubscription(using: client)
+    } catch let error as CancellationError {
+      loadError = nil
+      throw error
+    } catch let error as InstantError {
+      loadError = error
+      throw error
+    }
+  }
+
+  private func makeSubscription(
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<InstantConnectionStatus> {
+    do {
+      try Task.checkCancellation()
+      return try await client.subscribeConnectionStatus()
+    } catch let error as CancellationError {
+      throw error
+    } catch let error as InstantError {
+      throw error
+    } catch {
+      throw InstantError(
+        code: .implementationFailed,
+        operation: "subscribe ConnectionStatus",
+        message: String(describing: error),
+        recovery: "Inspect the configured InstantSwiftDataClient connection status observer."
+      )
+    }
+  }
+
+  public func task() async throws {
+    @Dependency(\.defaultInstantSwiftData) var client
+    try await task(using: client)
+  }
+
+  public func task(using client: InstantSwiftDataClient) async throws {
+    try await runFetchStorageSubscriptionTask(
+      storage: storage,
+      subscribe: { try await makeSubscription(using: client) },
+      operation: "task ConnectionStatus",
+      recovery: "Inspect the configured InstantSwiftDataClient connection status observer."
+    )
+  }
+
+  private static var defaultConnectingStatus: InstantConnectionStatus {
+    InstantConnectionStatus(
+      appID: "",
+      apiURI: InstantRuntimeConfiguration.defaultAPIURI,
+      websocketURI: InstantRuntimeConfiguration.defaultWebSocketURI,
+      transport: .localCacheOnly,
+      state: .connecting,
+      isAuthenticated: false,
+      userID: nil,
+      pendingMutationCount: 0,
+      processedTransactionID: nil
     )
   }
 }

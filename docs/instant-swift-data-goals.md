@@ -613,7 +613,8 @@ Agent-oriented output modes are required:
   nil-query, cached-prior-error, cancellation-cleanup, optional `@FetchOne`
   dynamic and nil-query reloads, `@Fetch` request dynamic reload, nil request
   reset, cancellation cleanup, live wrapper dynamic replacement/cancellation,
-  and `@FetchAll`/`@Fetch` filtered reload behavior.
+  `@ConnectionStatus` streaming state changes, and `@FetchAll`/`@Fetch`
+  filtered reload behavior.
 - run Swift/TypeScript parity suites.
 - run credential-free Swift/TypeScript transport-contract validation in both
   local directions: Swift outbox payloads consumed by TypeScript, and

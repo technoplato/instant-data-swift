@@ -18,6 +18,7 @@ public struct PlatformAdapterValidationDetails: Codable, Equatable, Sendable {
   public var selectedTodoTitle: String?
   public var localID: String?
   public var authUserID: String?
+  public var connectionStates: [InstantConnectionState]
   public var roomMemberIDs: [String]
   public var topicMessageIDs: [String]
   public var fileIDs: [String]
@@ -45,6 +46,7 @@ public struct PlatformAdapterValidationDetails: Codable, Equatable, Sendable {
     selectedTodoTitle: String? = nil,
     localID: String? = nil,
     authUserID: String? = nil,
+    connectionStates: [InstantConnectionState] = [],
     roomMemberIDs: [String] = [],
     topicMessageIDs: [String] = [],
     fileIDs: [String] = [],
@@ -71,6 +73,7 @@ public struct PlatformAdapterValidationDetails: Codable, Equatable, Sendable {
     self.selectedTodoTitle = selectedTodoTitle
     self.localID = localID
     self.authUserID = authUserID
+    self.connectionStates = connectionStates
     self.roomMemberIDs = roomMemberIDs
     self.topicMessageIDs = topicMessageIDs
     self.fileIDs = fileIDs
@@ -99,6 +102,7 @@ public struct PlatformAdapterValidationDetails: Codable, Equatable, Sendable {
     case selectedTodoTitle
     case localID
     case authUserID
+    case connectionStates
     case roomMemberIDs
     case topicMessageIDs
     case fileIDs
@@ -132,6 +136,10 @@ public struct PlatformAdapterValidationDetails: Codable, Equatable, Sendable {
       selectedTodoTitle: container.decodeIfPresent(String.self, forKey: .selectedTodoTitle),
       localID: container.decodeIfPresent(String.self, forKey: .localID),
       authUserID: container.decodeIfPresent(String.self, forKey: .authUserID),
+      connectionStates: container.decodeIfPresent(
+        [InstantConnectionState].self,
+        forKey: .connectionStates
+      ) ?? [],
       roomMemberIDs: container.decodeIfPresent([String].self, forKey: .roomMemberIDs) ?? [],
       topicMessageIDs: container.decodeIfPresent([String].self, forKey: .topicMessageIDs) ?? [],
       fileIDs: container.decodeIfPresent([String].self, forKey: .fileIDs) ?? [],
@@ -172,6 +180,7 @@ public enum InstantSwiftDataPlatformAdapterValidation {
     "@Fetch",
     "@LocalID",
     "@AuthSession",
+    "@ConnectionStatus",
     "@RoomPresence",
     "@RoomTopicMessages",
     "@StoredFiles",
@@ -501,6 +510,7 @@ public enum InstantSwiftDataPlatformAdapterValidation {
         ),
         localID: localID.wrappedValue,
         authSession: authSession.wrappedValue,
+        connectionStatus: try await client.connectionStatus(),
         room: room,
         member: member,
         topicMessage: topicMessage,
@@ -603,6 +613,53 @@ public enum InstantSwiftDataPlatformAdapterValidation {
       )
     )
 
+    let connectionStatus = ConnectionStatus()
+    let initialConnectionState = connectionStatus.wrappedValue.state
+    let connectionStatusTask = Task {
+      try await connectionStatus.task(using: client)
+    }
+    do {
+      try await waitUntil {
+        connectionStatus.wrappedValue.state == .authenticated
+      }
+      let authenticatedConnectionState = connectionStatus.wrappedValue.state
+      _ = try await client.closeConnection()
+      try await waitUntil {
+        connectionStatus.wrappedValue.state == .closed
+      }
+      let closedConnectionState = connectionStatus.wrappedValue.state
+      connectionStatusTask.cancel()
+      do {
+        _ = try await connectionStatusTask.value
+      } catch is CancellationError {
+      }
+      evidence.append(
+        evidenceRow(
+          event: "connection-status",
+          appID: appID,
+          timestamp: timestamp,
+          details: PlatformAdapterValidationDetails(
+            cachePath: cacheURL.path,
+            adapter: "@ConnectionStatus",
+            connectionStates: [
+              initialConnectionState,
+              authenticatedConnectionState,
+              closedConnectionState,
+            ],
+            isLoading: connectionStatus.isLoading
+          )
+        )
+      )
+    } catch {
+      connectionStatusTask.cancel()
+      do {
+        _ = try await connectionStatusTask.value
+      } catch is CancellationError {
+      } catch {
+      }
+      throw error
+    }
+
     return PlatformAdapterValidationResult(appID: appID, cacheURL: cacheURL, evidence: evidence)
   }
 
@@ -613,6 +670,7 @@ public enum InstantSwiftDataPlatformAdapterValidation {
     todo: PlatformAdapterTodo,
     localID: String?,
     authSession: InstantAuthSession?,
+    connectionStatus: InstantConnectionStatus,
     room: InstantRoomHandle,
     member: InstantRoomPresenceMember,
     topicMessage: InstantRoomTopicMessage,
@@ -639,6 +697,9 @@ public enum InstantSwiftDataPlatformAdapterValidation {
       @AuthSession var auth: InstantAuthSession?
       $auth.binding.wrappedValue = authSession
 
+      @ConnectionStatus var status: InstantConnectionStatus
+      $status.binding.wrappedValue = connectionStatus
+
       @RoomPresence(room: room) var presence: [InstantRoomPresenceMember]
       $presence.binding.wrappedValue = [member]
 
@@ -662,6 +723,7 @@ public enum InstantSwiftDataPlatformAdapterValidation {
         count == 1,
         local == localID,
         auth?.userID == authSession?.userID,
+        status.state == connectionStatus.state,
         presence.map(\.id) == [member.id],
         topicMessages.map(\.id) == [topicMessage.id],
         files.map(\.id) == [storedFile.id],
@@ -689,6 +751,7 @@ public enum InstantSwiftDataPlatformAdapterValidation {
           selectedTodoTitle: one?.title,
           localID: local,
           authUserID: auth?.userID,
+          connectionStates: [status.state],
           roomMemberIDs: presence.map(\.userID),
           topicMessageIDs: topicMessages.map(\.id),
           fileIDs: files.map(\.id),

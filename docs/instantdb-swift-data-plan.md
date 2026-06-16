@@ -401,7 +401,8 @@ including `@FetchAll` dynamic reload, nil-query, cached-prior-error, and
 cancellation cleanup evidence, optional `@FetchOne` dynamic and nil-query
 reload evidence, `@Fetch` request dynamic reload, nil request reset, and
 cancellation cleanup evidence, live wrapper dynamic replacement/cancellation
-evidence, plus `@FetchAll`/`@Fetch` filtered active-row reloads. Server-applied
+evidence, `@ConnectionStatus` streaming state changes, plus
+`@FetchAll`/`@Fetch` filtered active-row reloads. Server-applied
 transaction loopback can be proven with
 `instant-swift-data validation server-transaction-loopback --jsonl`, covering
 observer publication, checkpoint persistence, relaunch restore, and unchanged

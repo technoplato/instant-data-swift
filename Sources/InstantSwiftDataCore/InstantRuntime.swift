@@ -273,6 +273,8 @@ public final class InstantRuntime: Sendable {
   public let persistence: SQLitePersistenceStore
   let outbox: InstantOutbox
   private let authSessionObservers = InstantAuthSessionObservers()
+  private let connectionStatusObservers =
+    InstantSnapshotObservers<String, InstantConnectionStatus>()
   private let roomPresenceObservers =
     InstantSnapshotObservers<InstantRoomPresenceObservationKey, [InstantRoomPresenceMember]>()
   private let roomTopicObservers =
@@ -517,6 +519,7 @@ public final class InstantRuntime: Sendable {
         let committed = await store.commitAndPublish(prepared)
         recordActorHop(.outbox)
         await outbox.replace(with: outboxSnapshot)
+        _ = try? await publishConnectionStatusWithGateHeld()
         return committed.result
       }
     }
@@ -628,6 +631,7 @@ public final class InstantRuntime: Sendable {
           await store.replaceSnapshot(storeSnapshot)
           recordActorHop(.outbox)
           await outbox.replace(with: outboxSnapshot)
+          _ = try? await publishConnectionStatusWithGateHeld()
           let application = InstantStoreMutationResult(
             transactionID: transaction.id,
             changedEntityIDs: [],
@@ -678,6 +682,7 @@ public final class InstantRuntime: Sendable {
         let committed = await store.commitAndPublish(prepared)
         recordActorHop(.outbox)
         await outbox.replace(with: outboxSnapshot)
+        _ = try? await publishConnectionStatusWithGateHeld()
         let application = committed.result.serverApplicationResult(
           processedTransactionID: processedTransactionID,
           pendingMutations: outboxSnapshot
@@ -766,6 +771,7 @@ public final class InstantRuntime: Sendable {
       if didSave {
         recordActorHop(.outbox)
         await outbox.replace(with: update.mutations)
+        _ = try? await publishConnectionStatusWithGateHeld()
         return (
           mutation: update.mutation,
           pendingMutationCount: update.mutations.filter { $0.status == .pending }.count
@@ -1045,6 +1051,7 @@ public final class InstantRuntime: Sendable {
         key: processedTransactionIDMetadataKey,
         updatedAt: configuration.now()
       )
+      _ = try? await publishConnectionStatusWithGateHeld()
       await operationGate.leave()
       return InstantSyncState(processedTransactionID: transactionID)
     } catch {
@@ -1068,6 +1075,22 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  public func observeConnectionStatus() async throws -> AsyncStream<InstantConnectionStatus> {
+    await operationGate.enter()
+    do {
+      let status = try await connectionStatusWithGateHeld()
+      let stream = await connectionStatusObservers.observe(
+        key: configuration.appID,
+        current: status
+      )
+      await operationGate.leave()
+      return stream
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
   @discardableResult
   public func connect() async throws -> InstantConnectionStatus {
     await operationGate.enter()
@@ -1086,11 +1109,12 @@ public final class InstantRuntime: Sendable {
           )
         } catch {
           try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
+          _ = try? await publishConnectionStatusWithGateHeld()
           throw error
         }
       }
       try await saveOpenedConnectionMetadataWithGateHeld()
-      let status = try await connectionStatusWithGateHeld()
+      let status = try await publishConnectionStatusWithGateHeld()
       await operationGate.leave()
       return status
     } catch {
@@ -1109,7 +1133,7 @@ public final class InstantRuntime: Sendable {
         key: connectionStateMetadataKey,
         updatedAt: configuration.now()
       )
-      let status = try await connectionStatusWithGateHeld()
+      let status = try await publishConnectionStatusWithGateHeld()
       await operationGate.leave()
       return status
     } catch {
@@ -1145,6 +1169,13 @@ public final class InstantRuntime: Sendable {
       processedTransactionID: processedTransactionID,
       lastErrorMessage: lastErrorMessage
     )
+  }
+
+  @discardableResult
+  private func publishConnectionStatusWithGateHeld() async throws -> InstantConnectionStatus {
+    let status = try await connectionStatusWithGateHeld()
+    await connectionStatusObservers.publish(status, for: configuration.appID)
+    return status
   }
 
   private func persistedConnectionState() async throws -> InstantConnectionState {
@@ -1185,6 +1216,7 @@ public final class InstantRuntime: Sendable {
     await operationGate.enter()
     do {
       try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
+      _ = try? await publishConnectionStatusWithGateHeld()
       await operationGate.leave()
     } catch {
       await operationGate.leave()
@@ -1378,6 +1410,7 @@ public final class InstantRuntime: Sendable {
       try await persistence.saveAuthSession(session, key: authSessionKey)
       try await persistence.deleteMagicCodeChallenge(key: key)
       await authSessionObservers.yield(session)
+      _ = try? await publishConnectionStatusWithGateHeld()
       await operationGate.leave()
       _ = try? await syncUserCookieToEndpoint(session)
       return InstantMagicCodeSignInResult(session: session, created: created)
@@ -1713,6 +1746,7 @@ public final class InstantRuntime: Sendable {
       }
       try await persistence.deleteAuthSession(key: authSessionKey)
       await authSessionObservers.yield(nil)
+      _ = try? await publishConnectionStatusWithGateHeld()
       await operationGate.leave()
     } catch {
       await operationGate.leave()
@@ -3106,6 +3140,7 @@ public final class InstantRuntime: Sendable {
             {
               try await saveOpenedConnectionMetadataWithGateHeld()
             }
+            _ = try? await publishConnectionStatusWithGateHeld()
             let remainingPendingCount = update.mutations.filter { $0.status == .pending }.count
             await leaveOperationGate()
             await leaveMutationFlushGate()
@@ -3147,6 +3182,7 @@ public final class InstantRuntime: Sendable {
         )
         if didSave {
           await outbox.replace(with: update.mutations)
+          _ = try? await publishConnectionStatusWithGateHeld()
           await operationGate.leave()
           return update.mutation
         }
@@ -3180,6 +3216,7 @@ public final class InstantRuntime: Sendable {
         if didSave {
           await outbox.replace(with: update.mutations)
           try await saveErroredConnectionMetadataWithGateHeld(message: message)
+          _ = try? await publishConnectionStatusWithGateHeld()
           await operationGate.leave()
           return update.mutation
         }
@@ -3213,6 +3250,7 @@ public final class InstantRuntime: Sendable {
           {
             try await saveOpenedConnectionMetadataWithGateHeld()
           }
+          _ = try? await publishConnectionStatusWithGateHeld()
           await operationGate.leave()
           return update.mutation
         }
@@ -3255,6 +3293,7 @@ public final class InstantRuntime: Sendable {
         if didSave {
           recordActorHop(.outbox)
           await outbox.replace(with: update.mutations)
+          _ = try? await publishConnectionStatusWithGateHeld()
           await leaveOperationGate()
           return update.confirmed
         }
@@ -3280,6 +3319,7 @@ public final class InstantRuntime: Sendable {
     do {
       try await persistence.saveAuthSession(session, key: authSessionKey)
       await authSessionObservers.yield(session)
+      _ = try? await publishConnectionStatusWithGateHeld()
       await operationGate.leave()
     } catch {
       await operationGate.leave()

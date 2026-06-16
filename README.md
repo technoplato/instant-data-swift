@@ -625,14 +625,15 @@ through `InstantSwiftDataClient.save(_:)` and `transact(saving:)`.
 `validation platform-adapters` emits terminal evidence that public wrapper
 adapters bind local client values for fetches, local IDs, auth, rooms, files,
 streams, and shares, that SwiftUI projected bindings cover fetches,
-`@InfiniteQuery`, local IDs, auth, rooms, files, streams, and shares when
+`@InfiniteQuery`, local IDs, auth, `@ConnectionStatus`, rooms, files, streams, and shares when
 available, that `@FetchAll` handles dynamic reloads, nil queries, cached prior
 values on errors, and cancellation cleanup, that optional `@FetchOne` handles
 dynamic and nil-query reloads, that `@Fetch` request adapters handle dynamic
 request reloads, nil request resets, and cancellation cleanup, that
 `@InfiniteQuery` ignores stale pending subscriptions and initial loads, that
 live room-presence wrappers replace stale subscriptions on dynamic room changes,
-and that `@FetchAll` and `@Fetch` reload filtered active rows.
+that `@ConnectionStatus` streams authenticated/closed status changes, and that
+`@FetchAll` and `@Fetch` reload filtered active rows.
 `validation syncups-recording` emits terminal evidence for the SyncUps scripted
 speech recording flow, meeting persistence across relaunch, sound effect
 advancement, and denied speech open-settings dependency seam.

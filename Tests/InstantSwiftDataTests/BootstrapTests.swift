@@ -691,9 +691,10 @@ struct BootstrapTests {
       "infinite-query-dynamic-cancellation",
       "infinite-query-dynamic-load",
       "live-wrapper-dynamic-cancellation",
+      "connection-status",
     ])
-    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 24))
-    expectNoDifference(result.evidence.map(\.appID), Array(repeating: result.appID, count: 24))
+    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 25))
+    expectNoDifference(result.evidence.map(\.appID), Array(repeating: result.appID, count: 25))
     expectNoDifference(result.evidence.map(\.details.adapter), [
       "@FetchAll",
       "@FetchOne",
@@ -719,6 +720,7 @@ struct BootstrapTests {
       "@InfiniteQuery(dynamic cancellation)",
       "@InfiniteQuery(dynamic load)",
       "@RoomPresence(dynamic cancellation)",
+      "@ConnectionStatus",
     ])
 
     let fetchAll = try #require(result.evidence.first?.details)
@@ -872,6 +874,7 @@ struct BootstrapTests {
       "@Fetch",
       "@LocalID",
       "@AuthSession",
+      "@ConnectionStatus",
       "@RoomPresence",
       "@RoomTopicMessages",
       "@StoredFiles",
@@ -883,6 +886,16 @@ struct BootstrapTests {
     expectNoDifference(projectedBindings.selectedTodoID, "platform-adapter-validation-id")
     expectNoDifference(projectedBindings.localID, "platform-adapter-validation-id")
     expectNoDifference(projectedBindings.authUserID, "adapter-user")
+    expectNoDifference(projectedBindings.connectionStates, [.authenticated])
+
+    let connectionStatus = try #require(
+      result.evidence.first { $0.event == "connection-status" }?.details
+    )
+    expectNoDifference(
+      connectionStatus.connectionStates,
+      [.connecting, .authenticated, .closed]
+    )
+    expectNoDifference(connectionStatus.isLoading, false)
     expectNoDifference(projectedBindings.roomMemberIDs, ["adapter-user"])
     expectNoDifference(projectedBindings.topicMessageIDs, ["platform-adapter-validation-id"])
     expectNoDifference(projectedBindings.fileIDs, ["platform-adapter-validation-id"])
@@ -1596,6 +1609,87 @@ struct BootstrapTests {
       let recordedSignOutOptions = await signOutOptions.values()
       expectNoDifference(recordedSignOutOptions, [false])
     }
+  }
+
+  @Test
+  func connectionStatusPropertyWrapperStartsConnecting() {
+    @ConnectionStatus var status: InstantConnectionStatus
+
+    expectNoDifference(status.state, .connecting)
+    expectNoDifference($status.loadError, nil)
+    expectNoDifference($status.isLoading, false)
+  }
+
+  @Test
+  func connectionStatusPropertyWrapperLoadsUsingDependencyClient() async throws {
+    let loaded = mockConnectionStatus(state: .authenticated, userID: "cached-user")
+    let client = connectionStatusClient(
+      load: { loaded },
+      observe: { AsyncStream { continuation in continuation.finish() } }
+    )
+
+    try await withDependencies {
+      $0.defaultInstantSwiftData = client
+    } operation: {
+      @ConnectionStatus var status: InstantConnectionStatus
+
+      try await $status.load()
+
+      expectNoDifference(status, loaded)
+      expectNoDifference($status.loadError, nil)
+      expectNoDifference($status.isLoading, false)
+    }
+  }
+
+  @Test
+  func connectionStatusPropertyWrapperTaskBindsObservedStatuses() async throws {
+    let client = connectionStatusClient(
+      load: { mockConnectionStatus(state: .opened) },
+      observe: {
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield(mockConnectionStatus(state: .opened))
+          continuation.yield(mockConnectionStatus(state: .authenticated, userID: "observed-user"))
+          continuation.finish()
+        }
+      }
+    )
+
+    @ConnectionStatus var status: InstantConnectionStatus
+
+    try await $status.task(using: client)
+
+    expectNoDifference(status.state, .authenticated)
+    expectNoDifference(status.userID, "observed-user")
+    expectNoDifference($status.loadError, nil)
+    expectNoDifference($status.isLoading, false)
+  }
+
+  @Test
+  func connectionStatusPropertyWrapperSubscribeCancelsUnderlyingObservation() async throws {
+    let termination = AuthSessionTermination()
+    let client = connectionStatusClient(
+      load: { mockConnectionStatus(state: .opened) },
+      observe: {
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+          continuation.yield(mockConnectionStatus(state: .opened))
+          continuation.onTermination = { @Sendable _ in
+            Task {
+              await termination.record()
+            }
+          }
+        }
+      }
+    )
+
+    let status = ConnectionStatus()
+    let subscription = try await status.subscribe(using: client)
+    var iterator = subscription.makeAsyncIterator()
+    let initial = try #require(try await iterator.next())
+    expectNoDifference(initial.state, .opened)
+
+    subscription.cancel()
+    #expect(try await iterator.next() == nil)
+    await termination.wait()
   }
 
   @Test
@@ -2974,6 +3068,11 @@ struct BootstrapTests {
       auth.binding.wrappedValue = session
       expectNoDifference(auth.wrappedValue, session)
 
+      let status = ConnectionStatus()
+      status.binding.wrappedValue = mockConnectionStatus(state: .authenticated, userID: "binding-user")
+      expectNoDifference(status.wrappedValue.state, .authenticated)
+      expectNoDifference(status.wrappedValue.userID, "binding-user")
+
       let presence = RoomPresence(room: room)
       presence.binding.wrappedValue = [member]
       expectNoDifference(presence.wrappedValue, [member])
@@ -3088,6 +3187,16 @@ struct BootstrapTests {
     do {
       _ = try await mock.connectionStatus()
       #expect(Bool(false), "Expected old-shape mock client status to fail without status closure.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .implementationFailed)
+      expectNoDifference(error.operation, "inspect InstantSwiftData connection")
+    } catch {
+      #expect(Bool(false), "Unexpected error: \(error)")
+    }
+
+    do {
+      _ = try await mock.observeConnectionStatus()
+      #expect(Bool(false), "Expected old-shape mock client status observer to fail without status closure.")
     } catch let error as InstantError {
       expectNoDifference(error.code, .implementationFailed)
       expectNoDifference(error.operation, "inspect InstantSwiftData connection")
@@ -3387,6 +3496,23 @@ private func mockAuthSession(userID: String, isGuest: Bool = false) -> InstantAu
   )
 }
 
+private func mockConnectionStatus(
+  state: InstantConnectionState,
+  userID: String? = nil
+) -> InstantConnectionStatus {
+  InstantConnectionStatus(
+    appID: "mock-app",
+    apiURI: InstantRuntimeConfiguration.defaultAPIURI,
+    websocketURI: InstantRuntimeConfiguration.defaultWebSocketURI,
+    transport: .localCacheOnly,
+    state: state,
+    isAuthenticated: userID != nil,
+    userID: userID,
+    pendingMutationCount: 0,
+    processedTransactionID: nil
+  )
+}
+
 private func mockRoomPresenceMember(
   room: InstantRoomHandle,
   userID: String,
@@ -3521,6 +3647,28 @@ private func authSessionClient(
     localID: { name in "mock-\(name)" },
     authSession: load,
     observeAuthSession: observe
+  )
+}
+
+private func connectionStatusClient(
+  load: @escaping @Sendable () async throws -> InstantConnectionStatus,
+  observe: @escaping @Sendable () async throws -> AsyncStream<InstantConnectionStatus>
+) -> InstantSwiftDataClient {
+  InstantSwiftDataClient(
+    transact: { transaction in
+      InstantStoreMutationResult(
+        transactionID: transaction.id,
+        changedEntityIDs: [],
+        tripleCount: transaction.operations.count,
+        emissions: []
+      )
+    },
+    query: { _ in [] },
+    observe: { _ in AsyncStream { continuation in continuation.finish() } },
+    pendingMutations: { [] },
+    connectionStatus: load,
+    observeConnectionStatus: observe,
+    localID: { name in "mock-\(name)" }
   )
 }
 

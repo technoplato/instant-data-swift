@@ -2109,7 +2109,34 @@ public enum InstantSwiftDataParityCoverage {
       swiftTestName: "platformAdapterValidationProvesWrappersBindLocalRuntime",
       surface: "adapter-bindings",
       status: .adapted,
-      notes: "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, room presence/topic messages, storage, streams, and shares, plus dynamic InfiniteQuery and live wrapper replacement/cancellation evidence."
+      notes: "Terminal platform-adapter validation proves projected Swift bindings for FetchAll, InfiniteQuery, FetchOne, Fetch, LocalID, AuthSession, ConnectionStatus, room presence/topic messages, storage, streams, and shares, plus dynamic InfiniteQuery and live wrapper replacement/cancellation evidence."
+    ),
+    instant(
+      id: "instant.vue.connection-status-adapter",
+      sourceFile: "upstream/instant/client/packages/vue/src/tests/InstantVueDatabase.test.ts",
+      sourceTestName:
+        "useConnectionStatus returns initial status / updates when connection status changes",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName:
+        "connectionStatusPropertyWrapperStartsConnecting + connectionStatusPropertyWrapperTaskBindsObservedStatuses + platformAdapterValidationProvesWrappersBindLocalRuntime",
+      surface: "adapter-connection-status",
+      status: .adapted,
+      notes:
+        "Swift adapts Vue's useConnectionStatus hook as @ConnectionStatus plus InstantSwiftDataClient.observeConnectionStatus/subscribeConnectionStatus, proving the initial connecting state and live status updates through the idiomatic Swift wrapper surface."
+    ),
+    instant(
+      id: "instant.svelte.connection-status-adapter",
+      sourceFile:
+        "upstream/instant/client/packages/svelte/src/tests/InstantSvelteDatabase.svelte.test.ts",
+      sourceTestName:
+        "useConnectionStatus returns initial status / updates when connection status changes",
+      swiftFile: platformAdapterValidationSwiftFile,
+      swiftTestName:
+        "connectionStatusPropertyWrapperStartsConnecting + connectionStatusPropertyWrapperTaskBindsObservedStatuses + platformAdapterValidationProvesWrappersBindLocalRuntime",
+      surface: "adapter-connection-status",
+      status: .adapted,
+      notes:
+        "Swift adapts Svelte's useConnectionStatus store as @ConnectionStatus plus InstantSwiftDataClient.observeConnectionStatus/subscribeConnectionStatus, proving the initial connecting state and live status updates through the idiomatic Swift wrapper surface."
     ),
     sqlite(
       id: "sqlite.draft.macro-generation",

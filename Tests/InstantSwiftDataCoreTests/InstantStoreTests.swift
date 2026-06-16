@@ -13188,6 +13188,212 @@ struct InstantStoreTests {
   }
 
   @Test
+  func observeConnectionStatusPublishesRuntimeStatusChanges() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let baseTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "observed-status-app",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let recorder = ConnectionStatusRecorder()
+    let stream = try await runtime.observeConnectionStatus()
+    let observationTask = Task {
+      for await status in stream {
+        await recorder.append(status)
+      }
+    }
+    defer { observationTask.cancel() }
+    var statusCursor = 0
+
+    let initialResult = try await requireObservedConnectionStatus(
+      recorder,
+      after: statusCursor,
+      operation: "observe connection status initial value"
+    ) { $0.pendingMutationCount == 0 && $0.processedTransactionID == nil }
+    statusCursor = initialResult.nextIndex
+    let initial = initialResult.status
+    expectNoDifference(initial.state, .opened)
+    expectNoDifference(initial.pendingMutationCount, 0)
+    expectNoDifference(initial.processedTransactionID, nil)
+    expectNoDifference(initial.lastErrorMessage, nil)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-observed-status-1",
+        operations: TodoExample.createOperations(
+          id: "todo-observed-status-1",
+          text: "observe status 1",
+          createdAt: baseTime,
+          transactionID: "tx-observed-status-1"
+        )
+      ),
+      createdAt: baseTime
+    )
+    let pendingResult = try await requireObservedConnectionStatus(
+      recorder,
+      after: statusCursor,
+      operation: "observe connection status pending mutation"
+    ) { $0.pendingMutationCount == 1 && $0.processedTransactionID == nil }
+    statusCursor = pendingResult.nextIndex
+    let pending = pendingResult.status
+    expectNoDifference(pending.state, .opened)
+    expectNoDifference(pending.pendingMutationCount, 1)
+
+    _ = try await runtime.markProcessedTransaction(id: "tx-remote-observed")
+    let checkpointResult = try await requireObservedConnectionStatus(
+      recorder,
+      after: statusCursor,
+      operation: "observe connection status processed checkpoint"
+    ) { $0.processedTransactionID == "tx-remote-observed" }
+    statusCursor = checkpointResult.nextIndex
+    let checkpoint = checkpointResult.status
+    expectNoDifference(checkpoint.pendingMutationCount, 1)
+    expectNoDifference(checkpoint.processedTransactionID, "tx-remote-observed")
+
+    _ = try await runtime.failMutation(id: "tx-observed-status-1", message: "server rejected")
+    let failedResult = try await requireObservedConnectionStatus(
+      recorder,
+      after: statusCursor,
+      operation: "observe connection status failed mutation"
+    ) { $0.state == .errored && $0.lastErrorMessage == "server rejected" }
+    statusCursor = failedResult.nextIndex
+    let failed = failedResult.status
+    expectNoDifference(failed.state, .errored)
+    expectNoDifference(failed.pendingMutationCount, 0)
+    expectNoDifference(failed.lastErrorMessage, "server rejected")
+
+    _ = try await runtime.retryMutation(id: "tx-observed-status-1")
+    let retriedResult = try await requireObservedConnectionStatus(
+      recorder,
+      after: statusCursor,
+      operation: "observe connection status retried mutation"
+    ) { $0.state == .opened && $0.pendingMutationCount == 1 && $0.lastErrorMessage == nil }
+    statusCursor = retriedResult.nextIndex
+    let retried = retriedResult.status
+    expectNoDifference(retried.state, .opened)
+    expectNoDifference(retried.pendingMutationCount, 1)
+    expectNoDifference(retried.lastErrorMessage, nil)
+
+    _ = try await runtime.confirmMutation(id: "tx-observed-status-1")
+    let confirmedResult = try await requireObservedConnectionStatus(
+      recorder,
+      after: statusCursor,
+      operation: "observe connection status confirmed mutation"
+    ) { $0.pendingMutationCount == 0 && $0.processedTransactionID == "tx-remote-observed" }
+    statusCursor = confirmedResult.nextIndex
+    let confirmed = confirmedResult.status
+    expectNoDifference(confirmed.pendingMutationCount, 0)
+    expectNoDifference(confirmed.processedTransactionID, "tx-remote-observed")
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-observed-status-2",
+        operations: TodoExample.createOperations(
+          id: "todo-observed-status-2",
+          text: "observe status 2",
+          createdAt: InstantTimestamp(milliseconds: baseTime.milliseconds + 1),
+          transactionID: "tx-observed-status-2"
+        )
+      ),
+      createdAt: InstantTimestamp(milliseconds: baseTime.milliseconds + 1)
+    )
+    let secondPendingResult = try await requireObservedConnectionStatus(
+      recorder,
+      after: statusCursor,
+      operation: "observe connection status second pending mutation"
+    ) { $0.pendingMutationCount == 1 && $0.processedTransactionID == "tx-remote-observed" }
+    statusCursor = secondPendingResult.nextIndex
+    let secondPending = secondPendingResult.status
+    expectNoDifference(secondPending.pendingMutationCount, 1)
+
+    _ = try await runtime.drainPendingMutationsLocally(limit: 1)
+    let drainedResult = try await requireObservedConnectionStatus(
+      recorder,
+      after: statusCursor,
+      operation: "observe connection status local drain"
+    ) { $0.pendingMutationCount == 0 && $0.processedTransactionID == "tx-remote-observed" }
+    statusCursor = drainedResult.nextIndex
+    let drained = drainedResult.status
+    expectNoDifference(drained.pendingMutationCount, 0)
+
+    _ = try await runtime.applyServerTransaction(
+      InstantStoreTransaction(id: "tx-server-observed", operations: [])
+    )
+    let serverAppliedResult = try await requireObservedConnectionStatus(
+      recorder,
+      after: statusCursor,
+      operation: "observe connection status server apply"
+    ) { $0.processedTransactionID == "tx-server-observed" }
+    statusCursor = serverAppliedResult.nextIndex
+    let serverApplied = serverAppliedResult.status
+    expectNoDifference(serverApplied.processedTransactionID, "tx-server-observed")
+    expectNoDifference(serverApplied.pendingMutationCount, 0)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-observed-status-kept-failure",
+        operations: TodoExample.createOperations(
+          id: "todo-observed-status-kept-failure",
+          text: "kept failure",
+          createdAt: InstantTimestamp(milliseconds: baseTime.milliseconds + 2),
+          transactionID: "tx-observed-status-kept-failure"
+        )
+      ),
+      createdAt: InstantTimestamp(milliseconds: baseTime.milliseconds + 2)
+    )
+    let failingPendingResult = try await requireObservedConnectionStatus(
+      recorder,
+      after: statusCursor,
+      operation: "observe connection status pending mutation before kept failure"
+    ) { $0.pendingMutationCount == 1 && $0.processedTransactionID == "tx-server-observed" }
+    statusCursor = failingPendingResult.nextIndex
+    expectNoDifference(failingPendingResult.status.pendingMutationCount, 1)
+
+    _ = try await runtime.failMutation(
+      id: "tx-observed-status-kept-failure",
+      message: "kept failure"
+    )
+    let keptFailureResult = try await requireObservedConnectionStatus(
+      recorder,
+      after: statusCursor,
+      operation: "observe connection status kept failed mutation"
+    ) { $0.state == .errored && $0.lastErrorMessage == "kept failure" }
+    statusCursor = keptFailureResult.nextIndex
+    expectNoDifference(keptFailureResult.status.pendingMutationCount, 0)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-observed-status-flush",
+        operations: TodoExample.createOperations(
+          id: "todo-observed-status-flush",
+          text: "flush while failed remains",
+          createdAt: InstantTimestamp(milliseconds: baseTime.milliseconds + 3),
+          transactionID: "tx-observed-status-flush"
+        )
+      ),
+      createdAt: InstantTimestamp(milliseconds: baseTime.milliseconds + 3)
+    )
+    let flushPendingResult = try await requireObservedConnectionStatus(
+      recorder,
+      after: statusCursor,
+      operation: "observe connection status pending flush with kept failure"
+    ) { $0.state == .errored && $0.pendingMutationCount == 1 }
+    statusCursor = flushPendingResult.nextIndex
+    expectNoDifference(flushPendingResult.status.lastErrorMessage, "kept failure")
+
+    _ = try await runtime.flushPendingMutations()
+    let flushedResult = try await requireObservedConnectionStatus(
+      recorder,
+      after: statusCursor,
+      operation: "observe connection status flushed pending with kept failure"
+    ) { $0.state == .errored && $0.pendingMutationCount == 0 }
+    expectNoDifference(flushedResult.status.lastErrorMessage, "kept failure")
+  }
+
+  @Test
   func concurrentOutboxCleanupAndTransactionPersistAcrossLaunches() async throws {
     let cacheURL = try temporaryCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
@@ -17110,6 +17316,41 @@ private actor SyncUpOpenSettingsRecorder {
   func openCount() -> Int {
     count
   }
+}
+
+private actor ConnectionStatusRecorder {
+  private var statuses: [InstantConnectionStatus] = []
+
+  func append(_ status: InstantConnectionStatus) {
+    statuses.append(status)
+  }
+
+  func snapshot() -> [InstantConnectionStatus] {
+    statuses
+  }
+}
+
+private func requireObservedConnectionStatus(
+  _ recorder: ConnectionStatusRecorder,
+  after cursor: Int,
+  operation: String,
+  matching predicate: @escaping @Sendable (InstantConnectionStatus) -> Bool
+) async throws -> (nextIndex: Int, status: InstantConnectionStatus) {
+  for _ in 0..<100 {
+    let statuses = await recorder.snapshot()
+    if cursor < statuses.endIndex {
+      for index in cursor..<statuses.endIndex where predicate(statuses[index]) {
+        return (index + 1, statuses[index])
+      }
+    }
+    try await Task.sleep(nanoseconds: 10_000_000)
+  }
+  throw InstantError(
+    code: .validationFailed,
+    operation: operation,
+    message: "Timed out waiting for the next matching connection status observation.",
+    recovery: "Inspect InstantRuntime.observeConnectionStatus publication sites."
+  )
 }
 
 // SAFETY: mutable test state is protected by `lock`.
