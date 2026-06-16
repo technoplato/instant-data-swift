@@ -9294,6 +9294,209 @@ struct InstantStoreTests {
   }
 
   @Test
+  func byteStreamsPersistMetadataContentAndOffsetsAcrossLaunches() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let idSequence = LockIsolated(0)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        now: { timestamp },
+        makeID: {
+          let nextID = idSequence.withValue { value in
+            value += 1
+            return value
+          }
+          return "stream-id-\(nextID)"
+        }
+      )
+    )
+    _ = try await runtime.signInWithRefreshToken("refresh-token", userID: "user-1")
+
+    let metadata = try await runtime.createStream(clientID: " client-1 ")
+    expectNoDifference(metadata.id, "stream-id-1")
+    expectNoDifference(metadata.clientID, "client-1")
+    expectNoDifference(metadata.done, false)
+    expectNoDifference(metadata.size, nil)
+
+    do {
+      _ = try await runtime.createStream(clientID: "client-1")
+      Issue.record("Expected duplicate stream client id to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "create stream")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+
+    let first = try await runtime.appendStreamContent(
+      streamID: metadata.id,
+      content: "Hi ",
+      expectedOffset: 0
+    )
+    expectNoDifference(first.offset, 0)
+    expectNoDifference(first.chunk.byteCount, 3)
+    expectNoDifference(first.metadata.size, nil)
+
+    do {
+      _ = try await runtime.appendStreamContent(
+        streamID: metadata.id,
+        content: "wrong",
+        expectedOffset: 99
+      )
+      Issue.record("Expected stream offset mismatch to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "append stream content")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+
+    let second = try await runtime.appendStreamContent(
+      streamID: metadata.id,
+      content: "🍕",
+      expectedOffset: first.offset + first.chunk.byteCount
+    )
+    expectNoDifference(second.offset, 3)
+    expectNoDifference(second.chunk.byteCount, 4)
+
+    let fullRead = try await runtime.streamContent(streamID: metadata.id)
+    expectNoDifference(fullRead.content, "Hi 🍕")
+    expectNoDifference(fullRead.byteOffset, 0)
+    expectNoDifference(fullRead.byteCount, 7)
+    expectNoDifference(fullRead.done, false)
+    expectNoDifference(fullRead.metadata.size, nil)
+
+    let resumedRead = try await runtime.streamContent(streamID: metadata.id, byteOffset: 3)
+    expectNoDifference(resumedRead.content, "🍕")
+    expectNoDifference(resumedRead.byteCount, 4)
+
+    let clientRead = try await runtime.streamContent(clientID: "client-1")
+    expectNoDifference(clientRead, fullRead)
+
+    do {
+      _ = try await runtime.streamContent(streamID: metadata.id, byteOffset: 4)
+      Issue.record("Expected middle-of-character byte offset to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "read stream content")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+
+    let closed = try await runtime.closeStream(streamID: metadata.id, abortReason: " done ")
+    expectNoDifference(closed.done, true)
+    expectNoDifference(closed.size, 7)
+    expectNoDifference(closed.abortReason, "done")
+
+    let closedRead = try await runtime.streamContent(streamID: metadata.id)
+    expectNoDifference(closedRead.done, true)
+    expectNoDifference(closedRead.abortReason, "done")
+    expectNoDifference(closedRead.metadata.size, 7)
+
+    do {
+      _ = try await runtime.appendStreamContent(streamID: metadata.id, content: "blocked")
+      Issue.record("Expected append after stream close to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "append stream content")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "app-a", persistenceURL: cacheURL)
+    )
+    _ = try await relaunchedRuntime.signInWithRefreshToken("refresh-token", userID: "user-1")
+    let relaunchedMetadata = try await relaunchedRuntime.streamMetadata(clientID: "client-1")
+    let relaunchedRead = try await relaunchedRuntime.streamContent(clientID: "client-1")
+    expectNoDifference(relaunchedMetadata, closed)
+    expectNoDifference(relaunchedRead, closedRead)
+
+    do {
+      _ = try await relaunchedRuntime.streamContent(streamID: metadata.id, byteOffset: -1)
+      Issue.record("Expected negative stream byte offset to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "read stream content")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+  }
+
+  @Test
+  func byteStreamCreationRejectsGeneratedStreamIDCollisions() async throws {
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "stream-id-collisions",
+        persistenceURL: temporaryCacheURL(),
+        makeID: { "stream-id-1" }
+      )
+    )
+    _ = try await runtime.signInWithRefreshToken("refresh-token", userID: "user-1")
+
+    let first = try await runtime.createStream(clientID: "client-1")
+    expectNoDifference(first.id, "stream-id-1")
+
+    do {
+      _ = try await runtime.createStream(clientID: "client-2")
+      Issue.record("Expected generated stream id collision to fail.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "create stream")
+      expectNoDifference(error.localID, "stream-id-1")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+
+    let preserved = try await runtime.streamMetadata(streamID: "stream-id-1")
+    expectNoDifference(preserved, first)
+  }
+
+  @Test
+  func byteStreamContentObservationsBufferEveryUpdate() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let idSequence = LockIsolated(0)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "byte-stream-observations",
+        persistenceURL: cacheURL,
+        makeID: {
+          let nextID = idSequence.withValue { value in
+            value += 1
+            return value
+          }
+          return "stream-id-\(nextID)"
+        }
+      )
+    )
+    _ = try await runtime.signInWithRefreshToken("refresh-token", userID: "user-1")
+    let metadata = try await runtime.createStream(clientID: "client-1")
+
+    var iterator = (try await runtime.observeStreamContent(streamID: metadata.id))
+      .makeAsyncIterator()
+    let initialRead = try #require(await iterator.next())
+    expectNoDifference(initialRead.content, "")
+    expectNoDifference(initialRead.done, false)
+
+    _ = try await runtime.appendStreamContent(streamID: metadata.id, content: "A")
+    _ = try await runtime.appendStreamContent(streamID: metadata.id, content: "B")
+    _ = try await runtime.closeStream(streamID: metadata.id)
+
+    let firstUpdate = try #require(await iterator.next())
+    let secondUpdate = try #require(await iterator.next())
+    let closeUpdate = try #require(await iterator.next())
+    expectNoDifference(firstUpdate.content, "A")
+    expectNoDifference(firstUpdate.done, false)
+    expectNoDifference(secondUpdate.content, "AB")
+    expectNoDifference(secondUpdate.done, false)
+    expectNoDifference(closeUpdate.content, "AB")
+    expectNoDifference(closeUpdate.done, true)
+    expectNoDifference(closeUpdate.metadata.size, 2)
+  }
+
+  @Test
   func localSnapshotObservationsEmitPersistedUpdates() async throws {
     let cacheURL = try temporaryCacheURL()
     let sourceURL = cacheURL.deletingLastPathComponent().appendingPathComponent("observed-source.txt")

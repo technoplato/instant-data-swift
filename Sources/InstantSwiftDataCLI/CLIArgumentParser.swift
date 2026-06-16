@@ -2207,6 +2207,11 @@ public enum CLIStreamsInvocation: Equatable, Sendable {
   case append(CLIStreamAppendInvocation)
   case read(CLIStreamReadInvocation)
   case watch(CLIStreamWatchInvocation)
+  case create(CLIStreamCreateInvocation)
+  case appendContent(CLIStreamAppendContentInvocation)
+  case close(CLIStreamCloseInvocation)
+  case readContent(CLIStreamContentReadInvocation)
+  case watchContent(CLIStreamContentWatchInvocation)
 }
 
 public struct CLIStreamAppendInvocation: Equatable, Sendable {
@@ -2225,6 +2230,67 @@ public struct CLIStreamAppendInvocation: Equatable, Sendable {
   public init(streamID: String, values: [String]) {
     self.streamID = streamID
     self.values = values
+  }
+}
+
+public struct CLIStreamCreateInvocation: Equatable, Sendable {
+  public var clientID: String
+
+  public init(clientID: String) {
+    self.clientID = clientID
+  }
+}
+
+public struct CLIStreamAppendContentInvocation: Equatable, Sendable {
+  public var streamID: String
+  public var content: String
+  public var expectedOffset: Int64?
+
+  public init(streamID: String, content: String, expectedOffset: Int64? = nil) {
+    self.streamID = streamID
+    self.content = content
+    self.expectedOffset = expectedOffset
+  }
+}
+
+public struct CLIStreamCloseInvocation: Equatable, Sendable {
+  public var streamID: String
+  public var abortReason: String?
+
+  public init(streamID: String, abortReason: String? = nil) {
+    self.streamID = streamID
+    self.abortReason = abortReason
+  }
+}
+
+public enum CLIStreamContentSelector: Equatable, Sendable {
+  case streamID(String)
+  case clientID(String)
+}
+
+public struct CLIStreamContentReadInvocation: Equatable, Sendable {
+  public var selector: CLIStreamContentSelector
+  public var byteOffset: Int64
+
+  public init(selector: CLIStreamContentSelector, byteOffset: Int64 = 0) {
+    self.selector = selector
+    self.byteOffset = byteOffset
+  }
+}
+
+public struct CLIStreamContentWatchInvocation: Equatable, Sendable {
+  public var selector: CLIStreamContentSelector
+  public var byteOffset: Int64
+  public var eventCount: Int
+
+  public init(
+    selector: CLIStreamContentSelector,
+    byteOffset: Int64 = 0,
+    eventCount: Int = 1
+  ) {
+    self.selector = selector
+    self.byteOffset = byteOffset
+    self.eventCount = eventCount
   }
 }
 
@@ -2264,10 +2330,15 @@ public struct CLIStreamWatchInvocation: Equatable, Sendable {
 
 public enum CLIStreamsUsage {
   public static let streams = """
-    Usage: instant-swift-data streams <append|read|watch>
+    Usage: instant-swift-data streams <append|read|watch|create|append-content|close|read-content|watch-content>
       instant-swift-data streams append <stream-id> --value '{...}' [--json|--jsonl]
       instant-swift-data streams read <stream-id> [--limit n] [--after-index n] [--json|--jsonl]
       instant-swift-data streams watch <stream-id> [--events 1] [--after-index n] [--json|--jsonl]
+      instant-swift-data streams create <client-id> [--json|--jsonl]
+      instant-swift-data streams append-content <stream-id> --content 'text' [--offset n] [--json|--jsonl]
+      instant-swift-data streams close <stream-id> [--abort-reason text] [--json|--jsonl]
+      instant-swift-data streams read-content <stream-id>|--client-id <id> [--byte-offset n] [--json|--jsonl]
+      instant-swift-data streams watch-content <stream-id>|--client-id <id> [--byte-offset n] [--events 1] [--json|--jsonl]
     """
 
   public static let append =
@@ -2276,6 +2347,16 @@ public enum CLIStreamsUsage {
     "Usage: instant-swift-data streams read <stream-id> [--limit n] [--after-index n] [--json|--jsonl]"
   public static let watch =
     "Usage: instant-swift-data streams watch <stream-id> [--events 1] [--after-index n] [--json|--jsonl]"
+  public static let create =
+    "Usage: instant-swift-data streams create <client-id> [--json|--jsonl]"
+  public static let appendContent =
+    "Usage: instant-swift-data streams append-content <stream-id> --content 'text' [--offset n] [--json|--jsonl]"
+  public static let close =
+    "Usage: instant-swift-data streams close <stream-id> [--abort-reason text] [--json|--jsonl]"
+  public static let readContent =
+    "Usage: instant-swift-data streams read-content <stream-id>|--client-id <id> [--byte-offset n] [--json|--jsonl]"
+  public static let watchContent =
+    "Usage: instant-swift-data streams watch-content <stream-id>|--client-id <id> [--byte-offset n] [--events 1] [--json|--jsonl]"
 }
 
 public enum CLIStreamsArgumentError: Error, Equatable, Sendable {
@@ -2286,6 +2367,7 @@ public enum CLIStreamsArgumentError: Error, Equatable, Sendable {
   case missingRequiredOption(option: String, usage: String)
   case invalidLimit(String, usage: String)
   case invalidAfterIndex(String, usage: String)
+  case invalidOffset(option: String, value: String, usage: String)
   case invalidEventCount(String, usageCommand: String)
   case unknownOption(domain: String, option: String, usage: String)
 
@@ -5774,6 +5856,21 @@ public struct CLIStreamsParser: Parser {
     case "watch":
       return .watch(try CLIStreamWatchParser().parse(&input))
 
+    case "create":
+      return .create(try CLIStreamCreateParser().parse(&input))
+
+    case "append-content", "write-content":
+      return .appendContent(try CLIStreamAppendContentParser().parse(&input))
+
+    case "close", "finish", "abort":
+      return .close(try CLIStreamCloseParser().parse(&input))
+
+    case "read-content", "read-bytes":
+      return .readContent(try CLIStreamContentReadParser().parse(&input))
+
+    case "watch-content", "watch-bytes":
+      return .watchContent(try CLIStreamContentWatchParser().parse(&input))
+
     default:
       throw CLIStreamsArgumentError.unknownCommand(command)
     }
@@ -5809,6 +5906,152 @@ public struct CLIStreamAppendParser: Parser {
       )
     }
     return CLIStreamAppendInvocation(streamID: streamID, values: values)
+  }
+}
+
+public struct CLIStreamCreateParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIStreamCreateInvocation {
+    let clientID = try parseRequiredStreamArgument(from: &input, usage: CLIStreamsUsage.create)
+    try requireNoRemainingStreamArguments(&input, domain: "streams create", usage: CLIStreamsUsage.create)
+    return CLIStreamCreateInvocation(clientID: clientID)
+  }
+}
+
+public struct CLIStreamAppendContentParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIStreamAppendContentInvocation {
+    let streamID = try parseRequiredStreamArgument(from: &input, usage: CLIStreamsUsage.appendContent)
+    var content: String?
+    var expectedOffset: Int64?
+
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--content":
+        content = try parseStreamOptionValue(
+          from: &input,
+          option: option,
+          usage: CLIStreamsUsage.appendContent
+        )
+
+      case "--offset":
+        let value = try parseStreamOptionValue(
+          from: &input,
+          option: option,
+          usage: CLIStreamsUsage.appendContent
+        )
+        guard let parsed = Int64(value), parsed >= 0 else {
+          throw CLIStreamsArgumentError.invalidOffset(
+            option: option,
+            value: value,
+            usage: CLIStreamsUsage.appendContent
+          )
+        }
+        expectedOffset = parsed
+
+      default:
+        throw CLIStreamsArgumentError.unknownOption(
+          domain: "streams append-content",
+          option: option,
+          usage: CLIStreamsUsage.appendContent
+        )
+      }
+    }
+
+    guard let content else {
+      throw CLIStreamsArgumentError.missingRequiredOption(
+        option: "--content",
+        usage: CLIStreamsUsage.appendContent
+      )
+    }
+    return CLIStreamAppendContentInvocation(
+      streamID: streamID,
+      content: content,
+      expectedOffset: expectedOffset
+    )
+  }
+}
+
+public struct CLIStreamCloseParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIStreamCloseInvocation {
+    let streamID = try parseRequiredStreamArgument(from: &input, usage: CLIStreamsUsage.close)
+    var abortReason: String?
+
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--abort-reason":
+        abortReason = try parseStreamOptionValue(
+          from: &input,
+          option: option,
+          usage: CLIStreamsUsage.close
+        )
+
+      default:
+        throw CLIStreamsArgumentError.unknownOption(
+          domain: "streams close",
+          option: option,
+          usage: CLIStreamsUsage.close
+        )
+      }
+    }
+
+    return CLIStreamCloseInvocation(streamID: streamID, abortReason: abortReason)
+  }
+}
+
+public struct CLIStreamContentReadParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIStreamContentReadInvocation {
+    var selector: CLIStreamContentSelector?
+    var byteOffset: Int64 = 0
+    var eventCount: Int?
+    try parseStreamContentOptions(
+      from: &input,
+      selector: &selector,
+      byteOffset: &byteOffset,
+      eventCount: &eventCount,
+      domain: "streams read-content",
+      usage: CLIStreamsUsage.readContent,
+      eventUsageCommand: nil
+    )
+    guard let selector else {
+      throw CLIStreamsArgumentError.missingArguments(usage: CLIStreamsUsage.readContent)
+    }
+    return CLIStreamContentReadInvocation(selector: selector, byteOffset: byteOffset)
+  }
+}
+
+public struct CLIStreamContentWatchParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIStreamContentWatchInvocation {
+    var selector: CLIStreamContentSelector?
+    var byteOffset: Int64 = 0
+    var eventCount: Int? = 1
+    try parseStreamContentOptions(
+      from: &input,
+      selector: &selector,
+      byteOffset: &byteOffset,
+      eventCount: &eventCount,
+      domain: "streams watch-content",
+      usage: CLIStreamsUsage.watchContent,
+      eventUsageCommand: "instant-swift-data streams watch-content <stream-id>"
+    )
+    guard let selector else {
+      throw CLIStreamsArgumentError.missingArguments(usage: CLIStreamsUsage.watchContent)
+    }
+    return CLIStreamContentWatchInvocation(
+      selector: selector,
+      byteOffset: byteOffset,
+      eventCount: eventCount ?? 1
+    )
   }
 }
 
@@ -6473,6 +6716,117 @@ private func parseStreamOptionValue(
   }
   input.removeFirst()
   return value
+}
+
+private func parseStreamContentOptions(
+  from input: inout ArraySlice<String>,
+  selector: inout CLIStreamContentSelector?,
+  byteOffset: inout Int64,
+  eventCount: inout Int?,
+  domain: String,
+  usage: String,
+  eventUsageCommand: String?
+) throws {
+  while let argument = input.first {
+    input.removeFirst()
+    switch argument {
+    case "--stream-id":
+      let value = try parseNonEmptyStreamOptionValue(
+        from: &input,
+        option: argument,
+        usage: usage
+      )
+      try setStreamContentSelector(.streamID(value), selector: &selector, usage: usage)
+
+    case "--client-id":
+      let value = try parseNonEmptyStreamOptionValue(
+        from: &input,
+        option: argument,
+        usage: usage
+      )
+      try setStreamContentSelector(.clientID(value), selector: &selector, usage: usage)
+
+    case "--byte-offset":
+      let value = try parseStreamOptionValue(from: &input, option: argument, usage: usage)
+      guard let parsed = Int64(value), parsed >= 0 else {
+        throw CLIStreamsArgumentError.invalidOffset(
+          option: argument,
+          value: value,
+          usage: usage
+        )
+      }
+      byteOffset = parsed
+
+    case "--events":
+      guard eventCount != nil, let eventUsageCommand else {
+        throw CLIStreamsArgumentError.unknownOption(
+          domain: domain,
+          option: argument,
+          usage: usage
+        )
+      }
+      let value = try parseStreamOptionValue(
+        from: &input,
+        option: argument,
+        usage: "Usage: \(eventUsageCommand) --events 1"
+      )
+      guard let parsed = Int(value), parsed == 1 else {
+        throw CLIStreamsArgumentError.invalidEventCount(value, usageCommand: eventUsageCommand)
+      }
+      eventCount = parsed
+
+    default:
+      guard !argument.hasPrefix("-") else {
+        throw CLIStreamsArgumentError.unknownOption(
+          domain: domain,
+          option: argument,
+          usage: usage
+        )
+      }
+      let value = trimmed(argument)
+      guard !value.isEmpty else {
+        throw CLIStreamsArgumentError.missingArguments(usage: usage)
+      }
+      try setStreamContentSelector(.streamID(value), selector: &selector, usage: usage)
+    }
+  }
+}
+
+private func setStreamContentSelector(
+  _ nextSelector: CLIStreamContentSelector,
+  selector: inout CLIStreamContentSelector?,
+  usage: String
+) throws {
+  guard selector == nil else {
+    throw CLIStreamsArgumentError.missingArguments(usage: usage)
+  }
+  selector = nextSelector
+}
+
+private func parseNonEmptyStreamOptionValue(
+  from input: inout ArraySlice<String>,
+  option: String,
+  usage: String
+) throws -> String {
+  let value = trimmed(try parseStreamOptionValue(from: &input, option: option, usage: usage))
+  guard !value.isEmpty else {
+    throw CLIStreamsArgumentError.missingArguments(usage: usage)
+  }
+  return value
+}
+
+private func requireNoRemainingStreamArguments(
+  _ input: inout ArraySlice<String>,
+  domain: String,
+  usage: String
+) throws {
+  if let argument = input.first {
+    throw CLIStreamsArgumentError.unknownOption(
+      domain: domain,
+      option: argument,
+      usage: usage
+    )
+  }
 }
 
 private func parseSingleShareArgument(
@@ -9058,6 +9412,9 @@ extension CLIStreamsArgumentError: CustomStringConvertible {
 
     case let .invalidAfterIndex(value, usage):
       return "Invalid --after-index value: \(value). \(usage)"
+
+    case let .invalidOffset(option, value, usage):
+      return "Invalid \(option) value: \(value). \(usage)"
 
     case let .invalidEventCount(_, usageCommand):
       return "Usage: \(usageCommand) --events 1"

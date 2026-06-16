@@ -2810,6 +2810,131 @@ struct BootstrapTests {
   }
 
   @Test
+  func streamClientByteStreamInjectedClosuresReceiveOffsets() async throws {
+    let metadata = mockStreamMetadata(id: "stream-1", clientID: "client-1")
+    let chunk = mockStreamContentChunk(streamID: "stream-1", offset: 3, content: "🍕")
+    let append = InstantStreamContentAppend(metadata: metadata, chunk: chunk, offset: chunk.offset)
+    let read = mockStreamContentRead(metadata: metadata, byteOffset: 3, content: "🍕")
+    let closed = mockStreamMetadata(
+      id: "stream-1",
+      clientID: "client-1",
+      done: true,
+      size: 7,
+      abortReason: "done"
+    )
+    let client = integrationClient(
+      createStream: { clientID in
+        expectNoDifference(clientID, "client-1")
+        return metadata
+      },
+      streamMetadataByStreamID: { streamID in
+        expectNoDifference(streamID, "stream-1")
+        return metadata
+      },
+      streamMetadataByClientID: { clientID in
+        expectNoDifference(clientID, "client-1")
+        return metadata
+      },
+      appendStreamContent: { streamID, content, expectedOffset in
+        expectNoDifference(streamID, "stream-1")
+        expectNoDifference(content, "🍕")
+        expectNoDifference(expectedOffset, 3)
+        return append
+      },
+      closeStream: { streamID, abortReason in
+        expectNoDifference(streamID, "stream-1")
+        expectNoDifference(abortReason, "done")
+        return closed
+      },
+      streamContentByStreamID: { streamID, byteOffset in
+        expectNoDifference(streamID, "stream-1")
+        expectNoDifference(byteOffset, 3)
+        return read
+      },
+      streamContentByClientID: { clientID, byteOffset in
+        expectNoDifference(clientID, "client-1")
+        expectNoDifference(byteOffset, 3)
+        return read
+      },
+      observeStreamContentByStreamID: { streamID, byteOffset in
+        expectNoDifference(streamID, "stream-1")
+        expectNoDifference(byteOffset, 3)
+        return AsyncStream { continuation in
+          continuation.yield(read)
+          continuation.finish()
+        }
+      },
+      observeStreamContentByClientID: { clientID, byteOffset in
+        expectNoDifference(clientID, "client-1")
+        expectNoDifference(byteOffset, 3)
+        return AsyncStream { continuation in
+          continuation.yield(read)
+          continuation.finish()
+        }
+      }
+    )
+
+    let created = try await client.createStream(clientID: "client-1")
+    let streamMetadata = try await client.streamMetadata(streamID: "stream-1")
+    let clientMetadata = try await client.streamMetadata(clientID: "client-1")
+    let appended = try await client.appendStreamContent(
+      streamID: "stream-1",
+      content: "🍕",
+      expectedOffset: 3
+    )
+    let closedStream = try await client.closeStream(streamID: "stream-1", abortReason: "done")
+    let streamRead = try await client.streamContent(streamID: "stream-1", byteOffset: 3)
+    let clientRead = try await client.streamContent(clientID: "client-1", byteOffset: 3)
+    expectNoDifference(created, metadata)
+    expectNoDifference(streamMetadata, metadata)
+    expectNoDifference(clientMetadata, metadata)
+    expectNoDifference(appended, append)
+    expectNoDifference(closedStream, closed)
+    expectNoDifference(streamRead, read)
+    expectNoDifference(clientRead, read)
+
+    var streamIDIterator = try await client.observeStreamContent(
+      streamID: "stream-1",
+      byteOffset: 3
+    )
+    .makeAsyncIterator()
+    let observedByStreamID = await streamIDIterator.next()
+    expectNoDifference(observedByStreamID, read)
+
+    var clientIDIterator = try await client.observeStreamContent(
+      clientID: "client-1",
+      byteOffset: 3
+    )
+    .makeAsyncIterator()
+    let observedByClientID = await clientIDIterator.next()
+    expectNoDifference(observedByClientID, read)
+
+    do {
+      _ = try await client.streamContent(streamID: "stream-1", byteOffset: -1)
+      Issue.record("Expected negative byte offset to fail before injected stream read closure.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "read stream content")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+
+    do {
+      _ = try await client.appendStreamContent(
+        streamID: "stream-1",
+        content: "blocked",
+        expectedOffset: -1
+      )
+      Issue.record("Expected negative expected offset to fail before injected stream append closure.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.operation, "append stream content")
+    } catch {
+      Issue.record("Unexpected error: \(error).")
+    }
+  }
+
+  @Test
   func storedFilesPropertyWrapperLoadsUsingDependencyClient() async throws {
     let file = mockStoredFile(id: "file-1")
     let client = integrationClient(
@@ -4031,6 +4156,59 @@ private func mockStreamChunk(
   )
 }
 
+private func mockStreamMetadata(
+  id: String = "stream-1",
+  clientID: String = "client-1",
+  done: Bool = false,
+  size: Int64? = nil,
+  abortReason: String? = nil
+) -> InstantStreamMetadata {
+  InstantStreamMetadata(
+    id: id,
+    appID: "mock-app",
+    clientID: clientID,
+    done: done,
+    size: size,
+    abortReason: abortReason,
+    userID: "user-1",
+    createdAt: InstantTimestamp(milliseconds: 9),
+    updatedAt: InstantTimestamp(milliseconds: 10)
+  )
+}
+
+private func mockStreamContentChunk(
+  id: String = "content-chunk-1",
+  streamID: String = "stream-1",
+  offset: Int64 = 0,
+  content: String = "hello"
+) -> InstantStreamContentChunk {
+  InstantStreamContentChunk(
+    id: id,
+    appID: "mock-app",
+    streamID: streamID,
+    offset: offset,
+    byteCount: Int64(content.utf8.count),
+    content: content,
+    userID: "user-1",
+    createdAt: InstantTimestamp(milliseconds: 11)
+  )
+}
+
+private func mockStreamContentRead(
+  metadata: InstantStreamMetadata = mockStreamMetadata(),
+  byteOffset: Int64 = 0,
+  content: String = "hello"
+) -> InstantStreamContentRead {
+  InstantStreamContentRead(
+    metadata: metadata,
+    byteOffset: byteOffset,
+    byteCount: Int64(content.utf8.count),
+    content: content,
+    done: metadata.done,
+    abortReason: metadata.abortReason
+  )
+}
+
 private func mockShareSnapshot(
   id: String = "share-1",
   rootNamespace: String = "todos",
@@ -4226,6 +4404,60 @@ private func integrationClient(
     (@Sendable (String, Int?, Int64?) async throws -> [InstantStreamChunk])? = nil,
   observeStreamChunksAfterIndex:
     (@Sendable (String, Int64?) async throws -> AsyncStream<[InstantStreamChunk]>)? = nil,
+  createStream: @escaping @Sendable (String) async throws -> InstantStreamMetadata = { clientID in
+    mockStreamMetadata(clientID: clientID)
+  },
+  streamMetadataByStreamID: @escaping @Sendable (String) async throws
+    -> InstantStreamMetadata = { streamID in
+      mockStreamMetadata(id: streamID)
+    },
+  streamMetadataByClientID: @escaping @Sendable (String) async throws
+    -> InstantStreamMetadata = { clientID in
+      mockStreamMetadata(clientID: clientID)
+    },
+  appendStreamContent: @escaping @Sendable (String, String, Int64?) async throws
+    -> InstantStreamContentAppend = { streamID, content, expectedOffset in
+      let chunk = mockStreamContentChunk(
+        streamID: streamID,
+        offset: expectedOffset ?? 0,
+        content: content
+      )
+      return InstantStreamContentAppend(
+        metadata: mockStreamMetadata(id: streamID),
+        chunk: chunk,
+        offset: chunk.offset
+      )
+    },
+  closeStream: @escaping @Sendable (String, String?) async throws
+    -> InstantStreamMetadata = { streamID, abortReason in
+      mockStreamMetadata(id: streamID, done: true, size: 0, abortReason: abortReason)
+    },
+  streamContentByStreamID: @escaping @Sendable (String, Int64) async throws
+    -> InstantStreamContentRead = { streamID, byteOffset in
+      mockStreamContentRead(metadata: mockStreamMetadata(id: streamID), byteOffset: byteOffset)
+    },
+  streamContentByClientID: @escaping @Sendable (String, Int64) async throws
+    -> InstantStreamContentRead = { clientID, byteOffset in
+      mockStreamContentRead(metadata: mockStreamMetadata(clientID: clientID), byteOffset: byteOffset)
+    },
+  observeStreamContentByStreamID: @escaping @Sendable (String, Int64) async throws
+    -> AsyncStream<InstantStreamContentRead> = { streamID, byteOffset in
+      AsyncStream { continuation in
+        continuation.yield(
+          mockStreamContentRead(metadata: mockStreamMetadata(id: streamID), byteOffset: byteOffset)
+        )
+        continuation.finish()
+      }
+    },
+  observeStreamContentByClientID: @escaping @Sendable (String, Int64) async throws
+    -> AsyncStream<InstantStreamContentRead> = { clientID, byteOffset in
+      AsyncStream { continuation in
+        continuation.yield(
+          mockStreamContentRead(metadata: mockStreamMetadata(clientID: clientID), byteOffset: byteOffset)
+        )
+        continuation.finish()
+      }
+    },
   createShare: @escaping @Sendable (String, String) async throws
     -> InstantShareSnapshot = { namespace, id in
       mockShareSnapshot(rootNamespace: namespace, rootID: id)
@@ -4276,6 +4508,15 @@ private func integrationClient(
     observeStreamChunks: observeStreamChunks,
     streamChunksAfterIndex: streamChunksAfterIndex,
     observeStreamChunksAfterIndex: observeStreamChunksAfterIndex,
+    createStream: createStream,
+    streamMetadataByStreamID: streamMetadataByStreamID,
+    streamMetadataByClientID: streamMetadataByClientID,
+    appendStreamContent: appendStreamContent,
+    closeStream: closeStream,
+    streamContentByStreamID: streamContentByStreamID,
+    streamContentByClientID: streamContentByClientID,
+    observeStreamContentByStreamID: observeStreamContentByStreamID,
+    observeStreamContentByClientID: observeStreamContentByClientID,
     createShare: createShare,
     acceptShare: acceptShare,
     shares: shares,

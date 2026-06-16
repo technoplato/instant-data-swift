@@ -4126,6 +4126,44 @@ struct CLIArgumentParserTests {
       try parseStreams(["watch", " chat/lobby ", "--events", "1", "--after-index", "3"]),
       .watch(CLIStreamWatchInvocation(streamID: "chat/lobby", eventCount: 1, afterIndex: 3))
     )
+    expectNoDifference(
+      try parseStreams(["create", " client-1 "]),
+      .create(CLIStreamCreateInvocation(clientID: "client-1"))
+    )
+    expectNoDifference(
+      try parseStreams(["append-content", "stream-1", "--content", "Hi 🍕", "--offset", "0"]),
+      .appendContent(
+        CLIStreamAppendContentInvocation(streamID: "stream-1", content: "Hi 🍕", expectedOffset: 0)
+      )
+    )
+    expectNoDifference(
+      try parseStreams(["write-content", "stream-1", "--content", "again"]),
+      .appendContent(CLIStreamAppendContentInvocation(streamID: "stream-1", content: "again"))
+    )
+    expectNoDifference(
+      try parseStreams(["close", "stream-1", "--abort-reason", "cancelled"]),
+      .close(CLIStreamCloseInvocation(streamID: "stream-1", abortReason: "cancelled"))
+    )
+    expectNoDifference(
+      try parseStreams(["read-content", "stream-1", "--byte-offset", "3"]),
+      .readContent(
+        CLIStreamContentReadInvocation(selector: .streamID("stream-1"), byteOffset: 3)
+      )
+    )
+    expectNoDifference(
+      try parseStreams(["read-content", "--client-id", "client-1"]),
+      .readContent(CLIStreamContentReadInvocation(selector: .clientID("client-1")))
+    )
+    expectNoDifference(
+      try parseStreams(["watch-content", "--client-id", "client-1", "--byte-offset", "3", "--events", "1"]),
+      .watchContent(
+        CLIStreamContentWatchInvocation(
+          selector: .clientID("client-1"),
+          byteOffset: 3,
+          eventCount: 1
+        )
+      )
+    )
   }
 
   @Test
@@ -4174,6 +4212,34 @@ struct CLIArgumentParserTests {
     try expectStreamsParseError(
       ["dance"],
       contains: "Usage: instant-swift-data streams"
+    )
+    try expectStreamsParseError(
+      ["create", "client-1", "extra"],
+      contains: "Unknown streams create option: extra."
+    )
+    try expectStreamsParseError(
+      ["append-content", "stream-1"],
+      contains: "Missing required option --content."
+    )
+    try expectStreamsParseError(
+      ["append-content", "stream-1", "--content", "text", "--offset", "-1"],
+      contains: "Invalid --offset value: -1."
+    )
+    try expectStreamsParseError(
+      ["read-content"],
+      contains: CLIStreamsUsage.readContent
+    )
+    try expectStreamsParseError(
+      ["read-content", "stream-1", "--byte-offset", "-1"],
+      contains: "Invalid --byte-offset value: -1."
+    )
+    try expectStreamsParseError(
+      ["read-content", "stream-1", "--events", "1"],
+      contains: "Unknown streams read-content option: --events."
+    )
+    try expectStreamsParseError(
+      ["watch-content", "stream-1", "--events", "2"],
+      contains: "instant-swift-data streams watch-content <stream-id> --events 1"
     )
   }
 

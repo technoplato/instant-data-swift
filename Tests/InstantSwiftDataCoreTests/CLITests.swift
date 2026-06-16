@@ -6242,6 +6242,148 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliByteStreamsCreateAppendReadAndClosePersistAcrossLaunches() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    _ = try runCLI(
+      ["auth", "token", "refresh-token", "--user-id", "user-1", "--json"],
+      homeURL: homeURL
+    )
+
+    let created = try JSONDecoder().decode(
+      CLIStreamContentOutput.self,
+      from: Data(
+        try runCLI(["streams", "create", "chat-session", "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(created.event, "create")
+    expectNoDifference(created.transport, "local-byte-stream-cache")
+    expectNoDifference(created.clientID, "chat-session")
+    expectNoDifference(created.metadata.clientID, "chat-session")
+    expectNoDifference(created.done, false)
+    expectNoDifference(created.metadata.size, nil)
+
+    let firstAppend = try JSONDecoder().decode(
+      CLIStreamContentOutput.self,
+      from: Data(
+        try runCLI(
+          ["streams", "append-content", created.streamID, "--content", "Hi ", "--offset", "0", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(firstAppend.event, "append-content")
+    expectNoDifference(firstAppend.byteOffset, 0)
+    expectNoDifference(firstAppend.byteCount, 3)
+    expectNoDifference(firstAppend.content, "Hi ")
+    expectNoDifference(firstAppend.chunk?.byteCount, 3)
+    expectNoDifference(firstAppend.metadata.size, nil)
+
+    let secondAppend = try JSONDecoder().decode(
+      CLIStreamContentOutput.self,
+      from: Data(
+        try runCLI(
+          ["streams", "append-content", created.streamID, "--content", "🍕", "--offset", "3", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(secondAppend.byteOffset, 3)
+    expectNoDifference(secondAppend.byteCount, 4)
+    expectNoDifference(secondAppend.content, "🍕")
+
+    let resumedRead = try JSONDecoder().decode(
+      CLIStreamContentOutput.self,
+      from: Data(
+        try runCLI(
+          ["streams", "read-content", created.streamID, "--byte-offset", "3", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(resumedRead.event, "read-content")
+    expectNoDifference(resumedRead.content, "🍕")
+    expectNoDifference(resumedRead.byteOffset, 3)
+    expectNoDifference(resumedRead.byteCount, 4)
+
+    let clientRead = try JSONDecoder().decode(
+      CLIStreamContentOutput.self,
+      from: Data(
+        try runCLI(
+          ["streams", "read-content", "--client-id", "chat-session", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(clientRead.content, "Hi 🍕")
+    expectNoDifference(clientRead.byteCount, 7)
+    expectNoDifference(clientRead.metadata.done, false)
+
+    let watchOutput = try runCLI(
+      [
+        "streams", "watch-content", "--client-id", "chat-session", "--byte-offset", "3",
+        "--events", "1", "--jsonl",
+      ],
+      homeURL: homeURL
+    )
+    let watchLines = watchOutput.split(separator: "\n")
+    expectNoDifference(watchLines.count, 1)
+    let watchEvidence = try JSONDecoder().decode(
+      CLIStreamContentEvidence.self,
+      from: Data(try #require(watchLines.first).utf8)
+    )
+    expectNoDifference(watchEvidence.caseID, "cli.streams.content")
+    expectNoDifference(watchEvidence.event, "watch-content")
+    expectNoDifference(watchEvidence.details.content, "🍕")
+
+    let closed = try JSONDecoder().decode(
+      CLIStreamContentOutput.self,
+      from: Data(
+        try runCLI(
+          ["streams", "close", created.streamID, "--abort-reason", "done", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(closed.event, "close")
+    expectNoDifference(closed.done, true)
+    expectNoDifference(closed.abortReason, "done")
+    expectNoDifference(closed.metadata.size, 7)
+
+    let closedRead = try JSONDecoder().decode(
+      CLIStreamContentOutput.self,
+      from: Data(
+        try runCLI(
+          ["streams", "read-content", "--client-id", "chat-session", "--json"],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(closedRead.content, "Hi 🍕")
+    expectNoDifference(closedRead.done, true)
+    expectNoDifference(closedRead.abortReason, "done")
+    expectNoDifference(closedRead.metadata.size, 7)
+
+    let invalidOffset = try runCLIResult(
+      ["streams", "append-content", created.streamID, "--content", "blocked", "--offset", "3", "--json"],
+      homeURL: homeURL
+    )
+    #expect(invalidOffset.status == 66)
+    #expect(invalidOffset.error.contains("already closed"))
+
+    _ = try runCLI(["auth", "sign-out", "--json"], homeURL: homeURL)
+    let signedOutRead = try runCLIResult(
+      ["streams", "read-content", created.streamID, "--json"],
+      homeURL: homeURL
+    )
+    #expect(signedOutRead.status == 65)
+    #expect(signedOutRead.error.contains("Stream operations require a signed-in user"))
+  }
+
+  @Test
   func cliSharesCreateAcceptListAndRevokePersistAcrossLaunches() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -11720,6 +11862,33 @@ private struct CLIStreamChunkEvidence: Decodable {
   var caseID: String
   var event: String
   var details: InstantStreamChunk
+
+  enum CodingKeys: String, CodingKey {
+    case caseID = "case"
+    case event
+    case details
+  }
+}
+
+private struct CLIStreamContentOutput: Decodable, Equatable {
+  var event: String
+  var changedID: String?
+  var transport: String
+  var streamID: String
+  var clientID: String
+  var byteOffset: Int64
+  var byteCount: Int64
+  var content: String?
+  var done: Bool
+  var abortReason: String?
+  var metadata: InstantStreamMetadata
+  var chunk: InstantStreamContentChunk?
+}
+
+private struct CLIStreamContentEvidence: Decodable {
+  var caseID: String
+  var event: String
+  var details: CLIStreamContentOutput
 
   enum CodingKeys: String, CodingKey {
     case caseID = "case"

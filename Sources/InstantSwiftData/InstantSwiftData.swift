@@ -95,6 +95,24 @@ public struct InstantSwiftDataClient: Sendable {
     @Sendable (String, Int?, Int64?) async throws -> [InstantStreamChunk]
   private var observeStreamChunksOperation:
     @Sendable (String, Int64?) async throws -> AsyncStream<[InstantStreamChunk]>
+  private var createStreamOperation:
+    @Sendable (String) async throws -> InstantStreamMetadata
+  private var streamMetadataByStreamIDOperation:
+    @Sendable (String) async throws -> InstantStreamMetadata
+  private var streamMetadataByClientIDOperation:
+    @Sendable (String) async throws -> InstantStreamMetadata
+  private var appendStreamContentOperation:
+    @Sendable (String, String, Int64?) async throws -> InstantStreamContentAppend
+  private var closeStreamOperation:
+    @Sendable (String, String?) async throws -> InstantStreamMetadata
+  private var streamContentByStreamIDOperation:
+    @Sendable (String, Int64) async throws -> InstantStreamContentRead
+  private var streamContentByClientIDOperation:
+    @Sendable (String, Int64) async throws -> InstantStreamContentRead
+  private var observeStreamContentByStreamIDOperation:
+    @Sendable (String, Int64) async throws -> AsyncStream<InstantStreamContentRead>
+  private var observeStreamContentByClientIDOperation:
+    @Sendable (String, Int64) async throws -> AsyncStream<InstantStreamContentRead>
   private var createShareOperation:
     @Sendable (String, String) async throws -> InstantShareSnapshot
   private var acceptShareOperation: @Sendable (String) async throws -> InstantShareSnapshot
@@ -249,6 +267,37 @@ public struct InstantSwiftDataClient: Sendable {
     self.observeStreamChunksOperation = { streamID, afterIndex in
       try await runtime.observeStreamChunks(streamID: streamID, afterIndex: afterIndex)
     }
+    self.createStreamOperation = { clientID in
+      try await runtime.createStream(clientID: clientID)
+    }
+    self.streamMetadataByStreamIDOperation = { streamID in
+      try await runtime.streamMetadata(streamID: streamID)
+    }
+    self.streamMetadataByClientIDOperation = { clientID in
+      try await runtime.streamMetadata(clientID: clientID)
+    }
+    self.appendStreamContentOperation = { streamID, content, expectedOffset in
+      try await runtime.appendStreamContent(
+        streamID: streamID,
+        content: content,
+        expectedOffset: expectedOffset
+      )
+    }
+    self.closeStreamOperation = { streamID, abortReason in
+      try await runtime.closeStream(streamID: streamID, abortReason: abortReason)
+    }
+    self.streamContentByStreamIDOperation = { streamID, byteOffset in
+      try await runtime.streamContent(streamID: streamID, byteOffset: byteOffset)
+    }
+    self.streamContentByClientIDOperation = { clientID, byteOffset in
+      try await runtime.streamContent(clientID: clientID, byteOffset: byteOffset)
+    }
+    self.observeStreamContentByStreamIDOperation = { streamID, byteOffset in
+      try await runtime.observeStreamContent(streamID: streamID, byteOffset: byteOffset)
+    }
+    self.observeStreamContentByClientIDOperation = { clientID, byteOffset in
+      try await runtime.observeStreamContent(clientID: clientID, byteOffset: byteOffset)
+    }
     self.createShareOperation = { rootNamespace, rootID in
       try await runtime.createShare(rootNamespace: rootNamespace, rootID: rootID)
     }
@@ -346,6 +395,24 @@ public struct InstantSwiftDataClient: Sendable {
       (@Sendable (String, Int?, Int64?) async throws -> [InstantStreamChunk])? = nil,
     observeStreamChunksAfterIndex:
       (@Sendable (String, Int64?) async throws -> AsyncStream<[InstantStreamChunk]>)? = nil,
+    createStream:
+      (@Sendable (String) async throws -> InstantStreamMetadata)? = nil,
+    streamMetadataByStreamID:
+      (@Sendable (String) async throws -> InstantStreamMetadata)? = nil,
+    streamMetadataByClientID:
+      (@Sendable (String) async throws -> InstantStreamMetadata)? = nil,
+    appendStreamContent:
+      (@Sendable (String, String, Int64?) async throws -> InstantStreamContentAppend)? = nil,
+    closeStream:
+      (@Sendable (String, String?) async throws -> InstantStreamMetadata)? = nil,
+    streamContentByStreamID:
+      (@Sendable (String, Int64) async throws -> InstantStreamContentRead)? = nil,
+    streamContentByClientID:
+      (@Sendable (String, Int64) async throws -> InstantStreamContentRead)? = nil,
+    observeStreamContentByStreamID:
+      (@Sendable (String, Int64) async throws -> AsyncStream<InstantStreamContentRead>)? = nil,
+    observeStreamContentByClientID:
+      (@Sendable (String, Int64) async throws -> AsyncStream<InstantStreamContentRead>)? = nil,
     createShare:
       (@Sendable (String, String) async throws -> InstantShareSnapshot)? = nil,
     acceptShare:
@@ -406,6 +473,15 @@ public struct InstantSwiftDataClient: Sendable {
       observeStreamChunks: observeStreamChunks,
       streamChunksAfterIndex: streamChunksAfterIndex,
       observeStreamChunksAfterIndex: observeStreamChunksAfterIndex,
+      createStream: createStream,
+      streamMetadataByStreamID: streamMetadataByStreamID,
+      streamMetadataByClientID: streamMetadataByClientID,
+      appendStreamContent: appendStreamContent,
+      closeStream: closeStream,
+      streamContentByStreamID: streamContentByStreamID,
+      streamContentByClientID: streamContentByClientID,
+      observeStreamContentByStreamID: observeStreamContentByStreamID,
+      observeStreamContentByClientID: observeStreamContentByClientID,
       createShare: createShare,
       acceptShare: acceptShare,
       shares: shares,
@@ -494,6 +570,24 @@ public struct InstantSwiftDataClient: Sendable {
       (@Sendable (String, Int?, Int64?) async throws -> [InstantStreamChunk])? = nil,
     observeStreamChunksAfterIndex:
       (@Sendable (String, Int64?) async throws -> AsyncStream<[InstantStreamChunk]>)? = nil,
+    createStream:
+      (@Sendable (String) async throws -> InstantStreamMetadata)? = nil,
+    streamMetadataByStreamID:
+      (@Sendable (String) async throws -> InstantStreamMetadata)? = nil,
+    streamMetadataByClientID:
+      (@Sendable (String) async throws -> InstantStreamMetadata)? = nil,
+    appendStreamContent:
+      (@Sendable (String, String, Int64?) async throws -> InstantStreamContentAppend)? = nil,
+    closeStream:
+      (@Sendable (String, String?) async throws -> InstantStreamMetadata)? = nil,
+    streamContentByStreamID:
+      (@Sendable (String, Int64) async throws -> InstantStreamContentRead)? = nil,
+    streamContentByClientID:
+      (@Sendable (String, Int64) async throws -> InstantStreamContentRead)? = nil,
+    observeStreamContentByStreamID:
+      (@Sendable (String, Int64) async throws -> AsyncStream<InstantStreamContentRead>)? = nil,
+    observeStreamContentByClientID:
+      (@Sendable (String, Int64) async throws -> AsyncStream<InstantStreamContentRead>)? = nil,
     createShare:
       (@Sendable (String, String) async throws -> InstantShareSnapshot)? = nil,
     acceptShare:
@@ -671,6 +765,17 @@ public struct InstantSwiftDataClient: Sendable {
     } else {
       self.observeStreamChunksOperation = { _, _ in throw streamsError }
     }
+    self.createStreamOperation = createStream ?? { _ in throw streamsError }
+    self.streamMetadataByStreamIDOperation = streamMetadataByStreamID ?? { _ in throw streamsError }
+    self.streamMetadataByClientIDOperation = streamMetadataByClientID ?? { _ in throw streamsError }
+    self.appendStreamContentOperation = appendStreamContent ?? { _, _, _ in throw streamsError }
+    self.closeStreamOperation = closeStream ?? { _, _ in throw streamsError }
+    self.streamContentByStreamIDOperation = streamContentByStreamID ?? { _, _ in throw streamsError }
+    self.streamContentByClientIDOperation = streamContentByClientID ?? { _, _ in throw streamsError }
+    self.observeStreamContentByStreamIDOperation =
+      observeStreamContentByStreamID ?? { _, _ in throw streamsError }
+    self.observeStreamContentByClientIDOperation =
+      observeStreamContentByClientID ?? { _, _ in throw streamsError }
     self.createShareOperation = createShare ?? { _, _ in throw sharesError }
     self.acceptShareOperation = acceptShare ?? { _ in throw sharesError }
     self.sharesOperation = shares ?? { throw sharesError }
@@ -842,6 +947,33 @@ public struct InstantSwiftDataClient: Sendable {
         throw error
       },
       observeStreamChunksAfterIndex: { _, _ in
+        throw error
+      },
+      createStream: { _ in
+        throw error
+      },
+      streamMetadataByStreamID: { _ in
+        throw error
+      },
+      streamMetadataByClientID: { _ in
+        throw error
+      },
+      appendStreamContent: { _, _, _ in
+        throw error
+      },
+      closeStream: { _, _ in
+        throw error
+      },
+      streamContentByStreamID: { _, _ in
+        throw error
+      },
+      streamContentByClientID: { _, _ in
+        throw error
+      },
+      observeStreamContentByStreamID: { _, _ in
+        throw error
+      },
+      observeStreamContentByClientID: { _, _ in
         throw error
       },
       createShare: { _, _ in
@@ -1228,6 +1360,92 @@ public struct InstantSwiftDataClient: Sendable {
   }
 
   @discardableResult
+  public func createStream(clientID: String) async throws -> InstantStreamMetadata {
+    try await createStreamOperation(clientID)
+  }
+
+  public func streamMetadata(streamID: String) async throws -> InstantStreamMetadata {
+    try await streamMetadataByStreamIDOperation(streamID)
+  }
+
+  public func streamMetadata(clientID: String) async throws -> InstantStreamMetadata {
+    try await streamMetadataByClientIDOperation(clientID)
+  }
+
+  @discardableResult
+  public func appendStreamContent(
+    streamID: String,
+    content: String,
+    expectedOffset: Int64? = nil
+  ) async throws -> InstantStreamContentAppend {
+    try validateNonNegativeByteOffset(
+      expectedOffset,
+      operation: "append stream content"
+    )
+    return try await appendStreamContentOperation(streamID, content, expectedOffset)
+  }
+
+  @discardableResult
+  public func closeStream(
+    streamID: String,
+    abortReason: String? = nil
+  ) async throws -> InstantStreamMetadata {
+    try await closeStreamOperation(streamID, abortReason)
+  }
+
+  public func streamContent(
+    streamID: String,
+    byteOffset: Int64 = 0
+  ) async throws -> InstantStreamContentRead {
+    try validateNonNegativeByteOffset(byteOffset, operation: "read stream content")
+    return try await streamContentByStreamIDOperation(streamID, byteOffset)
+  }
+
+  public func streamContent(
+    clientID: String,
+    byteOffset: Int64 = 0
+  ) async throws -> InstantStreamContentRead {
+    try validateNonNegativeByteOffset(byteOffset, operation: "read stream content")
+    return try await streamContentByClientIDOperation(clientID, byteOffset)
+  }
+
+  public func observeStreamContent(
+    streamID: String,
+    byteOffset: Int64 = 0
+  ) async throws -> AsyncStream<InstantStreamContentRead> {
+    try validateNonNegativeByteOffset(byteOffset, operation: "observe stream content")
+    return try await observeStreamContentByStreamIDOperation(streamID, byteOffset)
+  }
+
+  public func observeStreamContent(
+    clientID: String,
+    byteOffset: Int64 = 0
+  ) async throws -> AsyncStream<InstantStreamContentRead> {
+    try validateNonNegativeByteOffset(byteOffset, operation: "observe stream content")
+    return try await observeStreamContentByClientIDOperation(clientID, byteOffset)
+  }
+
+  public func subscribeStreamContent(
+    streamID: String,
+    byteOffset: Int64 = 0
+  ) async throws -> FetchSubscription<InstantStreamContentRead> {
+    try validateNonNegativeByteOffset(byteOffset, operation: "subscribe stream content")
+    let content = try await observeStreamContent(streamID: streamID, byteOffset: byteOffset)
+    try Task.checkCancellation()
+    return fetchSubscription(from: content)
+  }
+
+  public func subscribeStreamContent(
+    clientID: String,
+    byteOffset: Int64 = 0
+  ) async throws -> FetchSubscription<InstantStreamContentRead> {
+    try validateNonNegativeByteOffset(byteOffset, operation: "subscribe stream content")
+    let content = try await observeStreamContent(clientID: clientID, byteOffset: byteOffset)
+    try Task.checkCancellation()
+    return fetchSubscription(from: content)
+  }
+
+  @discardableResult
   public func createShare(
     rootNamespace: String,
     rootID: String
@@ -1510,6 +1728,19 @@ private func validateNonNegativeIndex(
     operation: operation,
     message: "\(subject) index must be greater than or equal to 0.",
     recovery: "Pass a previously emitted index, or omit the cursor to observe every local value."
+  )
+}
+
+private func validateNonNegativeByteOffset(
+  _ byteOffset: Int64?,
+  operation: String
+) throws {
+  guard let byteOffset, byteOffset < 0 else { return }
+  throw InstantError(
+    code: .validationFailed,
+    operation: operation,
+    message: "Stream byte offset must be greater than or equal to 0.",
+    recovery: "Pass a non-negative byte offset, or omit it to start at the beginning."
   )
 }
 

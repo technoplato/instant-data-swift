@@ -3320,6 +3320,20 @@ struct InstantSwiftDataCLI {
     let context = try await CLIContext.bootstrap(initialAttributes: [])
 
     switch invocation {
+    case let .create(options):
+      let metadata = try await context.runtime.createStream(clientID: options.clientID)
+      try printStreamContent(
+        context: context,
+        event: "create",
+        changedID: metadata.id,
+        metadata: metadata,
+        byteOffset: 0,
+        byteCount: 0,
+        content: nil,
+        chunk: nil,
+        output: output
+      )
+
     case let .append(options):
       var payload: JSONValue?
       for value in options.values {
@@ -3340,6 +3354,81 @@ struct InstantSwiftDataCLI {
         afterIndex: nil,
         changedID: chunk.id,
         chunks: chunks,
+        output: output
+      )
+
+    case let .appendContent(options):
+      let append = try await context.runtime.appendStreamContent(
+        streamID: options.streamID,
+        content: options.content,
+        expectedOffset: options.expectedOffset
+      )
+      try printStreamContent(
+        context: context,
+        event: "append-content",
+        changedID: append.chunk.id,
+        metadata: append.metadata,
+        byteOffset: append.chunk.offset,
+        byteCount: append.chunk.byteCount,
+        content: append.chunk.content,
+        chunk: append.chunk,
+        output: output
+      )
+
+    case let .close(options):
+      let metadata = try await context.runtime.closeStream(
+        streamID: options.streamID,
+        abortReason: options.abortReason
+      )
+      try printStreamContent(
+        context: context,
+        event: "close",
+        changedID: metadata.id,
+        metadata: metadata,
+        byteOffset: metadata.size ?? 0,
+        byteCount: 0,
+        content: nil,
+        chunk: nil,
+        output: output
+      )
+
+    case let .readContent(options):
+      let read = try await readStreamContent(
+        runtime: context.runtime,
+        selector: options.selector,
+        byteOffset: options.byteOffset
+      )
+      try printStreamContent(
+        context: context,
+        event: "read-content",
+        changedID: read.metadata.id,
+        metadata: read.metadata,
+        byteOffset: read.byteOffset,
+        byteCount: read.byteCount,
+        content: read.content,
+        chunk: nil,
+        output: output
+      )
+
+    case let .watchContent(options):
+      let read = try await firstWatchValue(
+        from: observeStreamContent(
+          runtime: context.runtime,
+          selector: options.selector,
+          byteOffset: options.byteOffset
+        ),
+        operation: "stream content watch",
+        eventCount: options.eventCount
+      )
+      try printStreamContent(
+        context: context,
+        event: "watch-content",
+        changedID: read.metadata.id,
+        metadata: read.metadata,
+        byteOffset: read.byteOffset,
+        byteCount: read.byteCount,
+        content: read.content,
+        chunk: nil,
         output: output
       )
 
@@ -3380,6 +3469,32 @@ struct InstantSwiftDataCLI {
     }
   }
 
+  private static func readStreamContent(
+    runtime: InstantRuntime,
+    selector: CLIStreamContentSelector,
+    byteOffset: Int64
+  ) async throws -> InstantStreamContentRead {
+    switch selector {
+    case let .streamID(streamID):
+      return try await runtime.streamContent(streamID: streamID, byteOffset: byteOffset)
+    case let .clientID(clientID):
+      return try await runtime.streamContent(clientID: clientID, byteOffset: byteOffset)
+    }
+  }
+
+  private static func observeStreamContent(
+    runtime: InstantRuntime,
+    selector: CLIStreamContentSelector,
+    byteOffset: Int64
+  ) async throws -> AsyncStream<InstantStreamContentRead> {
+    switch selector {
+    case let .streamID(streamID):
+      return try await runtime.observeStreamContent(streamID: streamID, byteOffset: byteOffset)
+    case let .clientID(clientID):
+      return try await runtime.observeStreamContent(clientID: clientID, byteOffset: byteOffset)
+    }
+  }
+
   private static func firstWatchSnapshot<Value: Sendable>(
     from stream: AsyncStream<[Value]>,
     operation: String,
@@ -3393,6 +3508,21 @@ struct InstantSwiftDataCLI {
       throw CLIError("Expected \(operation) to emit an initial snapshot.", exitCode: 70)
     }
     return snapshot
+  }
+
+  private static func firstWatchValue<Value: Sendable>(
+    from stream: AsyncStream<Value>,
+    operation: String,
+    eventCount: Int
+  ) async throws -> Value {
+    guard eventCount == 1 else {
+      throw CLIError("Only --events 1 is supported for \(operation).", exitCode: 64)
+    }
+    var iterator = stream.makeAsyncIterator()
+    guard let value = await iterator.next() else {
+      throw CLIError("Expected \(operation) to emit an initial value.", exitCode: 70)
+    }
+    return value
   }
 
   private static func runShares(arguments: [String], output: OutputMode) async throws {
@@ -4717,6 +4847,71 @@ struct InstantSwiftDataCLI {
           )
         )
       }
+    }
+  }
+
+  private static func printStreamContent(
+    context: CLIContext,
+    event: String,
+    changedID: String?,
+    metadata: InstantStreamMetadata,
+    byteOffset: Int64,
+    byteCount: Int64,
+    content: String?,
+    chunk: InstantStreamContentChunk?,
+    output: OutputMode
+  ) throws {
+    let payload = StreamContentOutput(
+      appID: context.appID,
+      cachePath: context.cacheURL.path,
+      event: event,
+      changedID: changedID,
+      transport: "local-byte-stream-cache",
+      streamID: metadata.id,
+      clientID: metadata.clientID,
+      byteOffset: byteOffset,
+      byteCount: byteCount,
+      content: content,
+      done: metadata.done,
+      abortReason: metadata.abortReason,
+      metadata: metadata,
+      chunk: chunk
+    )
+
+    switch output {
+    case .human:
+      print("stream: \(metadata.id)")
+      print("client-id: \(metadata.clientID)")
+      print("byte-offset: \(byteOffset)")
+      print("bytes: \(byteCount)")
+      print("done: \(metadata.done)")
+      if let size = metadata.size {
+        print("size: \(size)")
+      }
+      if let abortReason = metadata.abortReason {
+        print("abort-reason: \(abortReason)")
+      }
+      if let content {
+        print(content)
+      }
+      print("transport: \(payload.transport)")
+      print("cache: \(context.cacheURL.path)")
+
+    case .json:
+      try writeJSON(payload)
+
+    case .jsonl:
+      try writeJSONLine(
+        EvidenceRow(
+          caseID: "cli.streams.content",
+          side: "swift",
+          event: event,
+          appID: context.appID,
+          entityID: changedID,
+          ok: true,
+          details: payload
+        )
+      )
     }
   }
 
@@ -11697,6 +11892,23 @@ private struct StreamsOutput: Codable, Sendable {
   var afterIndex: Int64?
   var chunkCount: Int
   var chunks: [InstantStreamChunk]
+}
+
+private struct StreamContentOutput: Codable, Sendable {
+  var appID: String
+  var cachePath: String
+  var event: String
+  var changedID: String?
+  var transport: String
+  var streamID: String
+  var clientID: String
+  var byteOffset: Int64
+  var byteCount: Int64
+  var content: String?
+  var done: Bool
+  var abortReason: String?
+  var metadata: InstantStreamMetadata
+  var chunk: InstantStreamContentChunk?
 }
 
 private struct SharesOutput: Codable, Sendable {

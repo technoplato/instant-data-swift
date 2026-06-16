@@ -283,6 +283,7 @@ public final class InstantRuntime: Sendable {
     InstantSnapshotObservers<InstantStoredFilesObservationKey, [InstantStoredFile]>()
   private let streamChunksObservers =
     InstantSnapshotObservers<InstantStreamChunksObservationKey, [InstantStreamChunk]>()
+  private let streamContentObservers = InstantStreamContentObservers()
   private let sharesObservers =
     InstantSnapshotObservers<InstantSharesObservationKey, [InstantShareSnapshot]>()
   private let operationGate = AsyncSerialGate()
@@ -2382,6 +2383,317 @@ public final class InstantRuntime: Sendable {
     return mapped.stream
   }
 
+  public func createStream(clientID rawClientID: String) async throws -> InstantStreamMetadata {
+    let clientID = try validatedNonEmpty(
+      rawClientID,
+      label: "Stream client id",
+      operation: "create stream",
+      recovery: "Pass a stable, unique client id for the writer."
+    )
+
+    await operationGate.enter()
+    do {
+      let userID = try await resolvedAuthenticatedUserID(operation: "create stream", noun: "Stream")
+      let metadata = try await persistence.createStream(
+        appID: configuration.appID,
+        streamID: configuration.makeID(),
+        clientID: clientID,
+        userID: userID,
+        createdAt: configuration.now()
+      )
+      await operationGate.leave()
+      return metadata
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  public func streamMetadata(streamID rawStreamID: String) async throws -> InstantStreamMetadata {
+    let streamID = try validatedNonEmpty(
+      rawStreamID,
+      label: "Stream id",
+      operation: "read stream metadata",
+      recovery: "Pass the persistent stream id returned by createStream(clientID:)."
+    )
+
+    await operationGate.enter()
+    do {
+      _ = try await resolvedAuthenticatedUserID(operation: "read stream metadata", noun: "Stream")
+      guard let metadata = try await persistence.loadStreamMetadata(
+        appID: configuration.appID,
+        streamID: streamID
+      ) else {
+        throw streamNotFound(
+          operation: "read stream metadata",
+          localID: streamID,
+          recovery: "Create the stream first, or read by the matching client id."
+        )
+      }
+      await operationGate.leave()
+      return metadata
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  public func streamMetadata(clientID rawClientID: String) async throws -> InstantStreamMetadata {
+    let clientID = try validatedNonEmpty(
+      rawClientID,
+      label: "Stream client id",
+      operation: "read stream metadata",
+      recovery: "Pass the client id used when creating the stream."
+    )
+
+    await operationGate.enter()
+    do {
+      _ = try await resolvedAuthenticatedUserID(operation: "read stream metadata", noun: "Stream")
+      guard let metadata = try await persistence.loadStreamMetadata(
+        appID: configuration.appID,
+        clientID: clientID
+      ) else {
+        throw streamNotFound(
+          operation: "read stream metadata",
+          localID: clientID,
+          recovery: "Create the stream first, or read by the persistent stream id."
+        )
+      }
+      await operationGate.leave()
+      return metadata
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  public func appendStreamContent(
+    streamID rawStreamID: String,
+    content: String,
+    expectedOffset: Int64? = nil
+  ) async throws -> InstantStreamContentAppend {
+    let streamID = try validatedNonEmpty(
+      rawStreamID,
+      label: "Stream id",
+      operation: "append stream content",
+      recovery: "Pass the persistent stream id returned by createStream(clientID:)."
+    )
+    try validateStreamByteOffset(expectedOffset, operation: "append stream content")
+
+    await operationGate.enter()
+    do {
+      let userID = try await resolvedAuthenticatedUserID(
+        operation: "append stream content",
+        noun: "Stream"
+      )
+      guard let append = try await persistence.appendStreamContent(
+        appID: configuration.appID,
+        streamID: streamID,
+        chunkID: configuration.makeID(),
+        content: content,
+        expectedOffset: expectedOffset,
+        userID: userID,
+        createdAt: configuration.now()
+      ) else {
+        throw streamNotFound(
+          operation: "append stream content",
+          localID: streamID,
+          recovery: "Create the stream before appending content."
+        )
+      }
+      try await publishStreamContentUpdates(streamID: streamID)
+      await operationGate.leave()
+      return append
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  public func closeStream(
+    streamID rawStreamID: String,
+    abortReason rawAbortReason: String? = nil
+  ) async throws -> InstantStreamMetadata {
+    let streamID = try validatedNonEmpty(
+      rawStreamID,
+      label: "Stream id",
+      operation: "close stream",
+      recovery: "Pass the persistent stream id returned by createStream(clientID:)."
+    )
+    let abortReason = rawAbortReason?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let normalizedAbortReason = abortReason?.isEmpty == true ? nil : abortReason
+
+    await operationGate.enter()
+    do {
+      _ = try await resolvedAuthenticatedUserID(operation: "close stream", noun: "Stream")
+      guard let metadata = try await persistence.closeStream(
+        appID: configuration.appID,
+        streamID: streamID,
+        abortReason: normalizedAbortReason,
+        updatedAt: configuration.now()
+      ) else {
+        throw streamNotFound(
+          operation: "close stream",
+          localID: streamID,
+          recovery: "Create the stream before closing it."
+        )
+      }
+      try await publishStreamContentUpdates(streamID: streamID)
+      await operationGate.leave()
+      return metadata
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  public func streamContent(
+    streamID rawStreamID: String,
+    byteOffset: Int64 = 0
+  ) async throws -> InstantStreamContentRead {
+    let streamID = try validatedNonEmpty(
+      rawStreamID,
+      label: "Stream id",
+      operation: "read stream content",
+      recovery: "Pass a persistent stream id."
+    )
+    try validateStreamByteOffset(byteOffset, operation: "read stream content")
+
+    await operationGate.enter()
+    do {
+      _ = try await resolvedAuthenticatedUserID(operation: "read stream content", noun: "Stream")
+      guard let read = try await persistence.loadStreamContent(
+        appID: configuration.appID,
+        streamID: streamID,
+        byteOffset: byteOffset
+      ) else {
+        throw streamNotFound(
+          operation: "read stream content",
+          localID: streamID,
+          recovery: "Create the stream first, or read by the matching client id."
+        )
+      }
+      await operationGate.leave()
+      return read
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  public func streamContent(
+    clientID rawClientID: String,
+    byteOffset: Int64 = 0
+  ) async throws -> InstantStreamContentRead {
+    let clientID = try validatedNonEmpty(
+      rawClientID,
+      label: "Stream client id",
+      operation: "read stream content",
+      recovery: "Pass the client id used when creating the stream."
+    )
+    try validateStreamByteOffset(byteOffset, operation: "read stream content")
+
+    await operationGate.enter()
+    do {
+      _ = try await resolvedAuthenticatedUserID(operation: "read stream content", noun: "Stream")
+      guard let read = try await persistence.loadStreamContent(
+        appID: configuration.appID,
+        clientID: clientID,
+        byteOffset: byteOffset
+      ) else {
+        throw streamNotFound(
+          operation: "read stream content",
+          localID: clientID,
+          recovery: "Create the stream first, or read by the persistent stream id."
+        )
+      }
+      await operationGate.leave()
+      return read
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  public func observeStreamContent(
+    streamID rawStreamID: String,
+    byteOffset: Int64 = 0
+  ) async throws -> AsyncStream<InstantStreamContentRead> {
+    let streamID = try validatedNonEmpty(
+      rawStreamID,
+      label: "Stream id",
+      operation: "observe stream content",
+      recovery: "Pass a persistent stream id."
+    )
+    try validateStreamByteOffset(byteOffset, operation: "observe stream content")
+
+    await operationGate.enter()
+    do {
+      _ = try await resolvedAuthenticatedUserID(operation: "observe stream content", noun: "Stream")
+      guard let read = try await persistence.loadStreamContent(
+        appID: configuration.appID,
+        streamID: streamID,
+        byteOffset: byteOffset
+      ) else {
+        throw streamNotFound(
+          operation: "observe stream content",
+          localID: streamID,
+          recovery: "Create the stream first, or observe by the matching client id."
+        )
+      }
+      let stream = await streamContentObservers.observe(
+        key: streamContentObservationKey(streamID: read.metadata.id),
+        byteOffset: byteOffset,
+        current: read
+      )
+      await operationGate.leave()
+      return stream
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
+  public func observeStreamContent(
+    clientID rawClientID: String,
+    byteOffset: Int64 = 0
+  ) async throws -> AsyncStream<InstantStreamContentRead> {
+    let clientID = try validatedNonEmpty(
+      rawClientID,
+      label: "Stream client id",
+      operation: "observe stream content",
+      recovery: "Pass the client id used when creating the stream."
+    )
+    try validateStreamByteOffset(byteOffset, operation: "observe stream content")
+
+    await operationGate.enter()
+    do {
+      _ = try await resolvedAuthenticatedUserID(operation: "observe stream content", noun: "Stream")
+      guard let read = try await persistence.loadStreamContent(
+        appID: configuration.appID,
+        clientID: clientID,
+        byteOffset: byteOffset
+      ) else {
+        throw streamNotFound(
+          operation: "observe stream content",
+          localID: clientID,
+          recovery: "Create the stream first, or observe by the persistent stream id."
+        )
+      }
+      let stream = await streamContentObservers.observe(
+        key: streamContentObservationKey(streamID: read.metadata.id),
+        byteOffset: byteOffset,
+        current: read
+      )
+      await operationGate.leave()
+      return stream
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
   func activeStreamChunksObservationCount(streamID rawStreamID: String) async throws -> Int {
     let streamID = try validatedNonEmpty(
       rawStreamID,
@@ -2391,6 +2703,18 @@ public final class InstantRuntime: Sendable {
     )
     return await streamChunksObservers.activeCount(
       for: streamChunksObservationKey(streamID: streamID)
+    )
+  }
+
+  func activeStreamContentObservationCount(streamID rawStreamID: String) async throws -> Int {
+    let streamID = try validatedNonEmpty(
+      rawStreamID,
+      label: "Stream id",
+      operation: "inspect stream content observers",
+      recovery: "Pass a stream id to inspect."
+    )
+    return await streamContentObservers.activeCount(
+      for: streamContentObservationKey(streamID: streamID)
     )
   }
 
@@ -3515,6 +3839,32 @@ public final class InstantRuntime: Sendable {
     )
   }
 
+  private func streamNotFound(
+    operation: String,
+    localID: String,
+    recovery: String
+  ) -> InstantError {
+    validationFailed(
+      operation: operation,
+      localID: localID,
+      message: "Stream '\(localID)' was not found.",
+      recovery: recovery
+    )
+  }
+
+  private func validateStreamByteOffset(
+    _ byteOffset: Int64?,
+    operation: String
+  ) throws {
+    if let byteOffset, byteOffset < 0 {
+      throw validationFailed(
+        operation: operation,
+        message: "Stream byte offset must be greater than or equal to 0.",
+        recovery: "Pass a non-negative byte offset, or omit it to start at the beginning."
+      )
+    }
+  }
+
   private func shareMembershipNotFound(
     operation: String,
     shareID: String,
@@ -3765,8 +4115,26 @@ public final class InstantRuntime: Sendable {
     InstantStreamChunksObservationKey(appID: configuration.appID, streamID: streamID)
   }
 
+  private func streamContentObservationKey(streamID: String) -> InstantStreamContentObservationKey {
+    InstantStreamContentObservationKey(appID: configuration.appID, streamID: streamID)
+  }
+
   private func sharesObservationKey(userID: String) -> InstantSharesObservationKey {
     InstantSharesObservationKey(appID: configuration.appID, userID: userID)
+  }
+
+  private func publishStreamContentUpdates(streamID: String) async throws {
+    let key = streamContentObservationKey(streamID: streamID)
+    let byteOffsets = await streamContentObservers.byteOffsets(for: key)
+    for byteOffset in byteOffsets {
+      if let read = try await persistence.loadStreamContent(
+        appID: configuration.appID,
+        streamID: streamID,
+        byteOffset: byteOffset
+      ) {
+        await streamContentObservers.publish(read, for: key, byteOffset: byteOffset)
+      }
+    }
   }
 
   private func publishShares(for userID: String) async throws {

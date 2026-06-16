@@ -370,10 +370,16 @@ chunk cursor so CLI and `@StreamChunks` clients can resume after a previously
 emitted local chunk index. The CLI exposes stream append/read/watch command
 families, including
 `instant-swift-data streams watch chat/lobby --after-index 0 --events 1 --jsonl`,
-for durable terminal proof. Upstream-compatible byte offsets, generated stream
-ids by client id, done/abort metadata, real Instant stream transport,
-backpressure, transport-backed subscriptions, and Swift/TypeScript boundary
-proof remain future work.
+for durable terminal proof. `InstantRuntime` also persists local byte-offset
+streams with generated stream ids by unique client id, UTF-8 byte offset
+validation, `$streams`-style `clientID`/`done`/`size`/`abortReason` metadata,
+read-by-stream-id and read-by-client-id, unbounded local content observations,
+and CLI commands such as
+`instant-swift-data streams append-content <stream-id> --content 'Hi ' --offset 0`
+and `instant-swift-data streams read-content --client-id chat-session --byte-offset 3`.
+Real Instant stream transport, reconnect behavior, transport backpressure,
+transport-backed subscriptions, and Swift/TypeScript boundary proof remain
+future work.
 
 ### Admin And Tooling
 

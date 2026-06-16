@@ -453,8 +453,24 @@ swift run instant-swift-data streams watch chat/lobby --after-index 0 --events 1
 ```
 
 `--after-index` resumes the local JSON chunk ledger after a previously emitted
-chunk index; upstream byte-offset stream transport remains a separate live
-transport slice.
+chunk index. For local byte-offset stream metadata/content, create a stream by
+client id, append UTF-8 content at expected byte offsets, resume reads from a
+byte offset, and close with optional abort metadata:
+
+```bash
+swift run instant-swift-data auth token local-refresh --user-id user-1 --json
+STREAM_JSON="$(swift run instant-swift-data streams create chat-session --json)"
+STREAM_ID="$(printf '%s' "$STREAM_JSON" | jq -r '.streamID')"
+swift run instant-swift-data streams append-content "$STREAM_ID" --content 'Hi ' --offset 0 --json
+swift run instant-swift-data streams append-content "$STREAM_ID" --content '🍕' --offset 3 --json
+swift run instant-swift-data streams read-content --client-id chat-session --byte-offset 3 --json
+swift run instant-swift-data streams watch-content "$STREAM_ID" --byte-offset 3 --events 1 --jsonl
+swift run instant-swift-data streams close "$STREAM_ID" --abort-reason done --json
+```
+
+These byte-stream commands persist local `$streams`-style metadata (`clientID`,
+`done`, `size`, and `abortReason`) and UTF-8 byte content in SQLite. Live
+Instant stream transport remains a separate slice.
 
 Create, accept, promote, demote, and revoke a local share with two users:
 

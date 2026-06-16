@@ -660,8 +660,15 @@ Agent-oriented output modes are required:
   and `instant-swift-data streams read chat/lobby --after-index 0 --json`;
   prove local chunk observation with
   `instant-swift-data streams watch chat/lobby --after-index 0 --events 1 --jsonl`.
-  Treat `after-index` as a local JSON-chunk cursor; upstream byte-offset streams
-  still need dedicated metadata, done/abort, backpressure, and transport proof.
+  Treat `after-index` as a local JSON-chunk cursor.
+- persist local byte-offset stream metadata and UTF-8 content after sign-in with
+  commands such as `instant-swift-data streams create chat-session`,
+  `instant-swift-data streams append-content <stream-id> --content 'Hi ' --offset 0`,
+  `instant-swift-data streams read-content --client-id chat-session --byte-offset 3`,
+  and `instant-swift-data streams close <stream-id> --abort-reason done`.
+  This proves local `$streams`-style `clientID`, `done`, `size`, and
+  `abortReason` metadata plus offset validation; live Instant stream transport,
+  reconnect, and transport backpressure remain a dedicated follow-up slice.
 - persist local share metadata, memberships, accept, and revoke flows after
   sign-in with commands such as
   `instant-swift-data shares create remindersLists list-1`,

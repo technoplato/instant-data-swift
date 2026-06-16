@@ -436,6 +436,56 @@ public actor SQLitePersistenceStore {
         )
       }
     }
+    try withSQLiteBusyRetry {
+      try migrate(name: "0010_local_byte_streams") {
+        try execute(
+          """
+          CREATE TABLE IF NOT EXISTS instant_streams (
+            app_id TEXT NOT NULL,
+            stream_id TEXT NOT NULL,
+            client_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            done INTEGER NOT NULL,
+            size INTEGER,
+            abort_reason TEXT,
+            created_at_ms INTEGER NOT NULL,
+            updated_at_ms INTEGER NOT NULL,
+            json TEXT NOT NULL,
+            PRIMARY KEY (app_id, stream_id),
+            UNIQUE (app_id, client_id)
+          )
+          """
+        )
+        try execute(
+          """
+          CREATE INDEX IF NOT EXISTS instant_streams_client_idx
+          ON instant_streams (app_id, client_id)
+          """
+        )
+        try execute(
+          """
+          CREATE TABLE IF NOT EXISTS instant_stream_content_chunks (
+            app_id TEXT NOT NULL,
+            stream_id TEXT NOT NULL,
+            chunk_id TEXT NOT NULL,
+            offset INTEGER NOT NULL,
+            byte_count INTEGER NOT NULL,
+            created_at_ms INTEGER NOT NULL,
+            json TEXT NOT NULL,
+            PRIMARY KEY (app_id, stream_id, chunk_id),
+            FOREIGN KEY (app_id, stream_id) REFERENCES instant_streams (app_id, stream_id)
+              ON DELETE CASCADE
+          )
+          """
+        )
+        try execute(
+          """
+          CREATE INDEX IF NOT EXISTS instant_stream_content_chunks_stream_idx
+          ON instant_stream_content_chunks (app_id, stream_id, offset, chunk_id)
+          """
+        )
+      }
+    }
   }
 
   func simulateUnexpectedConnectionCloseForTesting() {
@@ -913,6 +963,183 @@ public actor SQLitePersistenceStore {
       bindings.append(.int(Int64(limit)))
     }
     return try selectJSON(sql, bindings)
+  }
+
+  public func createStream(
+    appID: String,
+    streamID: String,
+    clientID: String,
+    userID: String,
+    createdAt: InstantTimestamp
+  ) throws -> InstantStreamMetadata {
+    try transaction {
+      if let existing = try streamMetadataWithoutTransaction(appID: appID, clientID: clientID) {
+        throw streamValidationError(
+          operation: "create stream",
+          localID: clientID,
+          message:
+            "Stream client id '\(clientID)' already belongs to stream '\(existing.id)'.",
+          recovery: "Choose a unique client id before creating another stream."
+        )
+      }
+      if try streamMetadataWithoutTransaction(appID: appID, streamID: streamID) != nil {
+        throw streamValidationError(
+          operation: "create stream",
+          localID: streamID,
+          message: "Stream id '\(streamID)' already exists.",
+          recovery: "Retry stream creation with a freshly generated stream id."
+        )
+      }
+      let metadata = InstantStreamMetadata(
+        id: streamID,
+        appID: appID,
+        clientID: clientID,
+        userID: userID,
+        createdAt: createdAt,
+        updatedAt: createdAt
+      )
+      try insertStreamMetadataWithoutTransaction(metadata)
+      return metadata
+    }
+  }
+
+  public func loadStreamMetadata(
+    appID: String,
+    streamID: String
+  ) throws -> InstantStreamMetadata? {
+    try readTransaction {
+      try streamMetadataWithoutTransaction(appID: appID, streamID: streamID)
+    }
+  }
+
+  public func loadStreamMetadata(
+    appID: String,
+    clientID: String
+  ) throws -> InstantStreamMetadata? {
+    try readTransaction {
+      try streamMetadataWithoutTransaction(appID: appID, clientID: clientID)
+    }
+  }
+
+  public func loadStreamMetadata(appID: String) throws -> [InstantStreamMetadata] {
+    try readTransaction {
+      try selectJSON(
+        """
+        SELECT json FROM instant_streams
+        WHERE app_id = ?
+        ORDER BY created_at_ms, stream_id
+        """,
+        [.text(appID)]
+      )
+    }
+  }
+
+  public func appendStreamContent(
+    appID: String,
+    streamID: String,
+    chunkID: String,
+    content: String,
+    expectedOffset: Int64?,
+    userID: String,
+    createdAt: InstantTimestamp
+  ) throws -> InstantStreamContentAppend? {
+    try transaction {
+      guard var metadata = try streamMetadataWithoutTransaction(appID: appID, streamID: streamID)
+      else { return nil }
+      guard metadata.done == false else {
+        throw streamValidationError(
+          operation: "append stream content",
+          localID: streamID,
+          message: "Stream '\(streamID)' is already closed.",
+          recovery: "Create a new stream before appending more content."
+        )
+      }
+
+      let offset = try streamContentSizeWithoutTransaction(appID: appID, streamID: streamID)
+      if let expectedOffset, expectedOffset != offset {
+        throw streamValidationError(
+          operation: "append stream content",
+          localID: streamID,
+          message:
+            "Stream '\(streamID)' is at byte offset \(offset), not expected offset \(expectedOffset).",
+          recovery: "Read the stream metadata and retry with the current offset."
+        )
+      }
+
+      let chunk = InstantStreamContentChunk(
+        id: chunkID,
+        appID: appID,
+        streamID: streamID,
+        offset: offset,
+        byteCount: Int64(content.utf8.count),
+        content: content,
+        userID: userID,
+        createdAt: createdAt
+      )
+      try execute(
+        """
+        INSERT INTO instant_stream_content_chunks
+          (app_id, stream_id, chunk_id, offset, byte_count, created_at_ms, json)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+          .text(chunk.appID),
+          .text(chunk.streamID),
+          .text(chunk.id),
+          .int(chunk.offset),
+          .int(chunk.byteCount),
+          .int(chunk.createdAt.milliseconds),
+          .text(try encode(chunk)),
+        ]
+      )
+
+      metadata.updatedAt = createdAt
+      try saveStreamMetadataWithoutTransaction(metadata)
+      return InstantStreamContentAppend(metadata: metadata, chunk: chunk, offset: offset)
+    }
+  }
+
+  public func closeStream(
+    appID: String,
+    streamID: String,
+    abortReason: String?,
+    updatedAt: InstantTimestamp
+  ) throws -> InstantStreamMetadata? {
+    try transaction {
+      guard var metadata = try streamMetadataWithoutTransaction(appID: appID, streamID: streamID)
+      else { return nil }
+      guard metadata.done == false else { return metadata }
+      metadata.done = true
+      metadata.size = try streamContentSizeWithoutTransaction(appID: appID, streamID: streamID)
+      metadata.abortReason = abortReason
+      metadata.updatedAt = updatedAt
+      try saveStreamMetadataWithoutTransaction(metadata)
+      return metadata
+    }
+  }
+
+  public func loadStreamContent(
+    appID: String,
+    streamID: String,
+    byteOffset: Int64
+  ) throws -> InstantStreamContentRead? {
+    try readTransaction {
+      guard let metadata = try streamMetadataWithoutTransaction(appID: appID, streamID: streamID)
+      else { return nil }
+      return try streamContentReadWithoutTransaction(metadata: metadata, byteOffset: byteOffset)
+    }
+  }
+
+  public func loadStreamContent(
+    appID: String,
+    clientID: String,
+    byteOffset: Int64
+  ) throws -> InstantStreamContentRead? {
+    try readTransaction {
+      guard let metadata = try streamMetadataWithoutTransaction(appID: appID, clientID: clientID)
+      else { return nil }
+      return try streamContentReadWithoutTransaction(metadata: metadata, byteOffset: byteOffset)
+    }
   }
 
   public func createShare(
@@ -1613,6 +1840,159 @@ public actor SQLitePersistenceStore {
     return value.flatMap(Int64.init) ?? 0
   }
 
+  private func streamMetadataWithoutTransaction(
+    appID: String,
+    streamID: String
+  ) throws -> InstantStreamMetadata? {
+    let rows: [InstantStreamMetadata] = try selectJSON(
+      """
+      SELECT json FROM instant_streams
+      WHERE app_id = ? AND stream_id = ?
+      LIMIT 1
+      """,
+      [.text(appID), .text(streamID)]
+    )
+    return rows.first
+  }
+
+  private func streamMetadataWithoutTransaction(
+    appID: String,
+    clientID: String
+  ) throws -> InstantStreamMetadata? {
+    let rows: [InstantStreamMetadata] = try selectJSON(
+      """
+      SELECT json FROM instant_streams
+      WHERE app_id = ? AND client_id = ?
+      LIMIT 1
+      """,
+      [.text(appID), .text(clientID)]
+    )
+    return rows.first
+  }
+
+  private func insertStreamMetadataWithoutTransaction(_ metadata: InstantStreamMetadata) throws {
+    try execute(
+      """
+      INSERT INTO instant_streams
+        (app_id, stream_id, client_id, user_id, done, size, abort_reason,
+         created_at_ms, updated_at_ms, json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      """,
+      [
+        .text(metadata.appID),
+        .text(metadata.id),
+        .text(metadata.clientID),
+        .text(metadata.userID),
+        .int(metadata.done ? Int64(1) : Int64(0)),
+        metadata.size.map { .int($0) } ?? .null,
+        metadata.abortReason.map { .text($0) } ?? .null,
+        .int(metadata.createdAt.milliseconds),
+        .int(metadata.updatedAt.milliseconds),
+        .text(try encode(metadata)),
+      ]
+    )
+  }
+
+  private func saveStreamMetadataWithoutTransaction(_ metadata: InstantStreamMetadata) throws {
+    try execute(
+      """
+      INSERT INTO instant_streams
+        (app_id, stream_id, client_id, user_id, done, size, abort_reason,
+         created_at_ms, updated_at_ms, json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(app_id, stream_id) DO UPDATE SET
+        client_id = excluded.client_id,
+        user_id = excluded.user_id,
+        done = excluded.done,
+        size = excluded.size,
+        abort_reason = excluded.abort_reason,
+        created_at_ms = excluded.created_at_ms,
+        updated_at_ms = excluded.updated_at_ms,
+        json = excluded.json
+      """,
+      [
+        .text(metadata.appID),
+        .text(metadata.id),
+        .text(metadata.clientID),
+        .text(metadata.userID),
+        .int(metadata.done ? Int64(1) : Int64(0)),
+        metadata.size.map { .int($0) } ?? .null,
+        metadata.abortReason.map { .text($0) } ?? .null,
+        .int(metadata.createdAt.milliseconds),
+        .int(metadata.updatedAt.milliseconds),
+        .text(try encode(metadata)),
+      ]
+    )
+  }
+
+  private func streamContentSizeWithoutTransaction(appID: String, streamID: String) throws -> Int64 {
+    let value: String? = try selectScalar(
+      """
+      SELECT CAST(COALESCE(SUM(byte_count), 0) AS TEXT)
+      FROM instant_stream_content_chunks
+      WHERE app_id = ? AND stream_id = ?
+      """,
+      [.text(appID), .text(streamID)]
+    )
+    return value.flatMap(Int64.init) ?? 0
+  }
+
+  private func streamContentReadWithoutTransaction(
+    metadata: InstantStreamMetadata,
+    byteOffset: Int64
+  ) throws -> InstantStreamContentRead {
+    let currentSize = try streamContentSizeWithoutTransaction(
+      appID: metadata.appID,
+      streamID: metadata.id
+    )
+    guard byteOffset <= currentSize else {
+      throw streamValidationError(
+        operation: "read stream content",
+        localID: metadata.id,
+        message:
+          "Stream '\(metadata.id)' contains \(currentSize) bytes, so byte offset \(byteOffset) is out of range.",
+        recovery: "Read from an offset less than or equal to the stream byte count."
+      )
+    }
+
+    let chunks: [InstantStreamContentChunk] = try selectJSON(
+      """
+      SELECT json FROM instant_stream_content_chunks
+      WHERE app_id = ? AND stream_id = ? AND offset + byte_count > ?
+      ORDER BY offset, chunk_id
+      """,
+      [.text(metadata.appID), .text(metadata.id), .int(byteOffset)]
+    )
+
+    var data = Data()
+    for chunk in chunks {
+      data.append(contentsOf: chunk.content.utf8)
+    }
+    if let firstChunk = chunks.first {
+      let droppedByteCount = byteOffset - firstChunk.offset
+      if droppedByteCount > 0 {
+        data.removeFirst(Int(droppedByteCount))
+      }
+    }
+    guard let content = String(data: data, encoding: .utf8) else {
+      throw streamValidationError(
+        operation: "read stream content",
+        localID: metadata.id,
+        message:
+          "Stream '\(metadata.id)' cannot be decoded from byte offset \(byteOffset) as UTF-8.",
+        recovery: "Resume from a UTF-8 character boundary when using Swift string streams."
+      )
+    }
+    return InstantStreamContentRead(
+      metadata: metadata,
+      byteOffset: byteOffset,
+      byteCount: Int64(data.count),
+      content: content,
+      done: metadata.done,
+      abortReason: metadata.abortReason
+    )
+  }
+
   private func saveShareWithoutTransaction(_ share: InstantShare) throws {
     try execute(
       """
@@ -1788,6 +2168,21 @@ public actor SQLitePersistenceStore {
   private func lastErrorMessage() -> String {
     connection.raw.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) }
       ?? "Unknown SQLite error."
+  }
+
+  private func streamValidationError(
+    operation: String,
+    localID: String,
+    message: String,
+    recovery: String
+  ) -> InstantError {
+    InstantError(
+      code: .validationFailed,
+      operation: operation,
+      localID: localID,
+      message: message,
+      recovery: recovery
+    )
   }
 
   private func persistenceError(operation: String, message: String) -> InstantError {
