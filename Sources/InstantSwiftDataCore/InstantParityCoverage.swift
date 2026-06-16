@@ -2220,7 +2220,7 @@ public enum InstantSwiftDataParityCoverage {
       swiftTestName: "Swift/TypeScript real-run validation",
       surface: "live-transport",
       status: .blocked,
-      notes: "Local validation and credentialed TypeScript admin query/transact/SSE smoke exist, but a real Swift WebSocket write observed by TypeScript remains future cross-client transport work."
+      notes: "Local validation, credentialed TypeScript admin query/transact/SSE smoke, and an opt-in Swift WebSocket write observed by TypeScript admin SSE runner exist; this remains blocked until credentialed real-run evidence is captured in the validation harness."
     ),
     instant(
       id: "instant.live-transport.typescript-to-swift",

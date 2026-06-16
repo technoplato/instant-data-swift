@@ -320,6 +320,7 @@ struct InstantSwiftDataCLI {
       let appID = validationAppID(defaultAppID: "live-transaction-validation")
       do {
         let runsLive = validationRunsLiveTransaction()
+        let transactionEntityID = validationLiveTransactionEntityID()
         let result = try await InstantSwiftDataLiveSessionValidation.run(
           appID: appID,
           caseID: "validation.live.transaction",
@@ -327,6 +328,10 @@ struct InstantSwiftDataCLI {
           refreshToken: validationRefreshToken(),
           adminToken: validationAdminToken(),
           includeTransaction: true,
+          transactionSteps: validationLiveTransactionSteps(
+            entityID: transactionEntityID,
+            text: validationLiveTransactionText(entityID: transactionEntityID)
+          ),
           resolveTransactionAttributeIDs: runsLive,
           liveTransport: runsLive ? .live : .local,
           proofLevel: runsLive ? "live-websocket-transaction" : "local-protocol"
@@ -9694,6 +9699,41 @@ struct InstantSwiftDataCLI {
   private static func validationAdminToken() -> String? {
     trimmedValidationEnvironmentValue("INSTANT_ADMIN_TOKEN")
       ?? trimmedValidationEnvironmentValue("INSTANTDB_ADMIN_TOKEN")
+  }
+
+  private static func validationLiveTransactionEntityID() -> String {
+    trimmedValidationEnvironmentValue("INSTANT_SWIFT_DATA_LIVE_TRANSACTION_ENTITY_ID")
+      ?? "live-transaction-note"
+  }
+
+  private static func validationLiveTransactionText(entityID: String) -> String {
+    trimmedValidationEnvironmentValue("INSTANT_SWIFT_DATA_LIVE_TRANSACTION_TEXT")
+      ?? (entityID == "live-transaction-note"
+        ? "Swift live transaction"
+        : "Swift live transaction \(entityID)")
+  }
+
+  private static func validationLiveTransactionSteps(
+    entityID: String,
+    text: String
+  ) -> [InstantTransportStep] {
+    [
+      .addTriple(
+        entity: .id(entityID),
+        attributeID: "\(TodoExample.namespace)/id",
+        value: .string(entityID)
+      ),
+      .addTriple(
+        entity: .id(entityID),
+        attributeID: "\(TodoExample.namespace)/text",
+        value: .string(text)
+      ),
+      .addTriple(
+        entity: .id(entityID),
+        attributeID: "\(TodoExample.namespace)/isCompleted",
+        value: .bool(false)
+      ),
+    ]
   }
 
   private static func trimmedValidationEnvironmentValue(_ key: String) -> String? {

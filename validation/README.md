@@ -112,8 +112,10 @@ swift run instant-swift-data validation live-transaction --jsonl
 node validation/ts-runner/src/main.ts --swift-live-transaction-contract /tmp/instant-validation-results/swift-live-transaction.jsonl --app-id local-validation
 node validation/ts-runner/src/main.ts --boundary-preflight
 INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token node validation/ts-runner/src/main.ts --boundary-admin-smoke --require-boundary
+INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token node validation/ts-runner/src/main.ts --boundary-swift-live-observe --require-boundary
 INSTANT_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_LIVE_SESSION=1 swift run instant-swift-data validation live-session --jsonl
 INSTANT_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_LIVE_TRANSACTION=1 swift run instant-swift-data validation live-transaction --jsonl
+INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_LIVE_BOUNDARY=1 validation/run-e2e.sh
 ```
 
 When running from launchd or another sparse shell environment, point the harness
@@ -167,6 +169,13 @@ the orchestration run. Optional preflight checks credential-shaped inputs and
 endpoint syntax only; required mode runs `--boundary-admin-smoke`, opens
 Instant's admin SSE subscription endpoint, writes through admin transact,
 observes the refresh, and confirms the row with admin query. Set
+`INSTANT_SWIFT_DATA_RUN_LIVE_BOUNDARY=1` to add
+`--boundary-swift-live-observe`: the TypeScript runner seeds the `todos` attrs,
+opens admin SSE for a unique Swift validation row, runs Swift's live WebSocket
+transaction command, and confirms TypeScript observed the Swift-authored row.
+Set `INSTANT_SWIFT_DATA_LIVE_BOUNDARY_SWIFT_TIMEOUT_MS` if a cold SwiftPM build
+needs more than the default 30 seconds.
+Set
 `INSTANT_SWIFT_DATA_RUN_LIVE_SESSION=1` to make the Swift live-session smoke
 use Instant's real WebSocket endpoint instead of the deterministic local
 protocol client.
@@ -181,7 +190,8 @@ the one-row gate to use when a caller needs blocked IDs and aggregate parity
 counts. The harness still records the real Instant boundary as blocked until
 ephemeral app creation, schema push, and cross-client Swift/TypeScript live
 transport subscriptions are implemented; the TypeScript admin HTTP/SSE smoke can
-already pass against an existing credentialed app.
+already pass against an existing credentialed app, and the Swift-to-TypeScript
+live observe mode is available behind `INSTANT_SWIFT_DATA_RUN_LIVE_BOUNDARY=1`.
 
 ## Required Cases
 
