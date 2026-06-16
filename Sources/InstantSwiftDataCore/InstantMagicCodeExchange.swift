@@ -51,6 +51,16 @@ public struct InstantMagicCodeVerification: Hashable, Codable, Sendable {
   }
 }
 
+public struct InstantMagicCodeSignInResult: Hashable, Codable, Sendable {
+  public var session: InstantAuthSession
+  public var created: Bool
+
+  public init(session: InstantAuthSession, created: Bool) {
+    self.session = session
+    self.created = created
+  }
+}
+
 public struct InstantMagicCodeExchange: Sendable {
   public var send:
     @Sendable (InstantMagicCodeSendRequest) async throws -> InstantMagicCodeChallenge

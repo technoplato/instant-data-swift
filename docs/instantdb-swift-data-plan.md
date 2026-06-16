@@ -572,10 +572,12 @@ public API into SQL:
   `bootstrapInstantSwiftData` resolves those values before constructing the
   runtime configuration. The public dependency client also exposes durable auth
   operations directly, including guest, token, id-token, OAuth, magic-code
-  send/verify, session lookup, auth-state observation, and
-  `signOut(invalidateToken:)`, plus outbox flush over the injected mutation
-  transport. Future transport/auth clients should preserve
-  the same Sendable value-client boundary and local static-instance convention.
+  send/verify, `signInWithMagicCodeResult(email:code:extraFields:)` with local
+  `$users` persistence and Instant-compatible `created` flag semantics, session
+  lookup, auth-state observation, and `signOut(invalidateToken:)`, plus outbox
+  flush over the injected mutation transport. Future transport/auth clients
+  should preserve the same Sendable value-client boundary and local
+  static-instance convention.
 - **Typed models above explicit migrations.** SQLiteData combines `@Table`,
   `Draft`, `@Selection`, typed expressions, and generated update helpers with
   named migrations that use strict SQL, foreign keys, indexes, FTS tables, and
@@ -998,7 +1000,8 @@ must emit the same metrics on day one so regressions become visible.
 4. Bootstrap and persistence foundation: implement `bootstrapInstantSwiftData`
    through `prepareDependencies`; provision context-aware live, preview, test,
    and CLI stores; register Swift Dependencies values for magic-code exchange
-   and future auth/transport seams; create named SQLite migrations for
+   and future auth/transport seams, using reusable local static instances such
+   as `InstantMagicCodeExchange.local`; create named SQLite migrations for
    attributes, triples, query cache, sync metadata, local IDs, auth/session, and
    outbox tables.
 5. Core local store: port triple store, attrs store, query materialization,

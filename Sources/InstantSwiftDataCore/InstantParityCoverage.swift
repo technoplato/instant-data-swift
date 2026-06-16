@@ -2233,6 +2233,16 @@ public enum InstantSwiftDataParityCoverage {
       notes: "Swift now has a local server-applied transaction loopback that persists inbound triples, publishes observers, advances the processed checkpoint, and preserves the optimistic outbox; real TypeScript-to-Swift WebSocket delivery against an Instant app remains incomplete."
     ),
     instant(
+      id: "instant.auth-extra-fields.magic-code",
+      sourceFile: "upstream/instant/client/packages/core/__tests__/src/auth-extra-fields.e2e.test.ts",
+      sourceTestName: "magic-code sign-in creates $users extra fields, returns created flag, and reports returning users",
+      swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift + Tests/InstantSwiftDataTests/BootstrapTests.swift",
+      swiftTestName: "magicCodeSignInResultPersistsExtraFieldsAndCreatedFlag + bootstrapMagicCodeSignInResultPersistsExtraFields",
+      surface: "auth-extra-fields",
+      status: .adapted,
+      notes: "Swift exposes signInWithMagicCodeResult(email:code:extraFields:) on the runtime and dependency client. Local magic-code auth persists $users/id, $users/email, and declared extra fields through the server-transaction path so auth writes are queryable without becoming pending client mutations; live admin magic-code verification remains future transport work."
+    ),
+    instant(
       id: "instant.recipe.auth.local-cli",
       sourceFile: "upstream/instant/client/www/lib/recipes/auth.tsx",
       sourceTestName: "magic-code auth SignedOut/Login and SignedIn/Dashboard flow",

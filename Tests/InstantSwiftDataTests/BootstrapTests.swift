@@ -228,6 +228,95 @@ struct BootstrapTests {
   }
 
   @Test
+  func bootstrapMagicCodeSignInResultPersistsExtraFields() async throws {
+    let appID = "local-magic-code-result-\(UUID().uuidString)"
+    let fixedDate = Date(timeIntervalSince1970: 1_700_000_009)
+    let fixedTimestamp = InstantTimestamp(milliseconds: 1_700_000_009_000)
+    let fixedUUID = UUID(uuidString: "98765432-0000-0000-0000-000000000000")!
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "InstantSwiftDataLocalMagicCodeResult-\(UUID().uuidString)",
+        isDirectory: true
+      )
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+
+    try await withDependencies {
+      $0.date.now = fixedDate
+      $0.uuid = .constant(fixedUUID)
+      try await $0.bootstrapInstantSwiftData(
+        appID: appID,
+        persistenceURL: directory.appendingPathComponent("cache.sqlite"),
+        context: .test,
+        initialAttributes: [
+          InstantAttribute(
+            id: "$users/email",
+            namespace: "$users",
+            name: "email",
+            valueType: .string,
+            isRequired: false,
+            isIndexed: true,
+            isUnique: true
+          ),
+          InstantAttribute(
+            id: "$users/username",
+            namespace: "$users",
+            name: "username",
+            valueType: .string,
+            isRequired: false,
+            isIndexed: true,
+            isUnique: true
+          ),
+        ]
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var client
+
+      let challenge = try await client.sendMagicCode(email: " New@Example.COM ")
+      expectNoDifference(challenge.code, "987654")
+
+      let result = try await client.signInWithMagicCodeResult(
+        email: "new@example.com",
+        code: " 987654 ",
+        extraFields: [
+          "username": .string("cool_user")
+        ]
+      )
+      expectNoDifference(
+        result,
+        InstantMagicCodeSignInResult(
+          session: InstantAuthSession(
+            appID: appID,
+            userID: "email:new@example.com",
+            refreshToken: "local-magic:\(appID):new@example.com",
+            isGuest: false,
+            createdAt: fixedTimestamp,
+            updatedAt: fixedTimestamp
+          ),
+          created: true
+        )
+      )
+
+      let user = try #require(
+        try await client.query(
+          InstantQueryPlan(id: "bootstrap.auth-extra-fields.users", namespace: "$users")
+        )
+        .first { $0.id == "email:new@example.com" }
+      )
+      expectNoDifference(
+        user.values,
+        [
+          "id": .one(.string("email:new@example.com")),
+          "email": .one(.string("new@example.com")),
+          "username": .one(.string("cool_user")),
+        ]
+      )
+      let pendingMutations = await client.pendingMutations()
+      expectNoDifference(pendingMutations, [])
+    }
+  }
+
+  @Test
   func runtimeBackedClientForwardsShareOperations() async throws {
     let appID = "share-forwarding-\(UUID().uuidString)"
     let directory = FileManager.default.temporaryDirectory
@@ -1391,6 +1480,23 @@ struct BootstrapTests {
         code: "135790"
       )
       expectNoDifference(mockMagicSession.userID, "mock@example.com:135790")
+      let mockMagicResult = try await client.signInWithMagicCodeResult(
+        email: "mock@example.com",
+        code: "135790"
+      )
+      expectNoDifference(mockMagicResult.session.userID, "mock@example.com:135790")
+      expectNoDifference(mockMagicResult.created, false)
+      do {
+        _ = try await client.signInWithMagicCodeResult(
+          email: "mock@example.com",
+          code: "135790",
+          extraFields: ["username": .string("cool_user")]
+        )
+        Issue.record("Expected old magic-code overrides to reject extra fields.")
+      } catch let error as InstantError {
+        expectNoDifference(error.code, .implementationFailed)
+        expectNoDifference(error.operation, "sign in with magic code")
+      }
       let mockTokenSession = try await client.signInWithRefreshToken("mock-token", userID: nil)
       expectNoDifference(mockTokenSession.userID, "mock-token-user")
       let mockAuthorizationURL = try client.oauthAuthorizationURL(

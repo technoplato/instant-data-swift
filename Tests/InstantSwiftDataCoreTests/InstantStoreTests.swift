@@ -7917,6 +7917,163 @@ struct InstantStoreTests {
   }
 
   @Test
+  func magicCodeSignInResultPersistsExtraFieldsAndCreatedFlag() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_031_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "auth-extra-fields",
+        persistenceURL: cacheURL,
+        initialAttributes: [
+          InstantAttribute(
+            id: "$users/email",
+            namespace: "$users",
+            name: "email",
+            valueType: .string,
+            isRequired: false,
+            isIndexed: true,
+            isUnique: true
+          ),
+          InstantAttribute(
+            id: "$users/username",
+            namespace: "$users",
+            name: "username",
+            valueType: .string,
+            isRequired: false,
+            isIndexed: true,
+            isUnique: true
+          ),
+          InstantAttribute(
+            id: "$users/displayName",
+            namespace: "$users",
+            name: "displayName",
+            valueType: .string,
+            isRequired: false
+          ),
+        ],
+        now: { timestamp },
+        makeID: { "123456" }
+      )
+    )
+
+    let firstChallenge = try await runtime.sendMagicCode(email: "New@Example.com")
+    let firstSignIn = try await runtime.signInWithMagicCodeResult(
+      email: "new@example.com",
+      code: firstChallenge.code,
+      extraFields: [
+        "username": .string("cool_user"),
+        "displayName": .string("Cool User"),
+      ]
+    )
+    expectNoDifference(firstSignIn.created, true)
+    expectNoDifference(firstSignIn.session.userID, "email:new@example.com")
+
+    let users = try await runtime.query(
+      InstantQueryPlan(id: "auth-extra-fields.users", namespace: "$users")
+    )
+    let user = try #require(users.first { $0.id == "email:new@example.com" })
+    expectNoDifference(
+      user.values,
+      [
+        "id": .one(.string("email:new@example.com")),
+        "email": .one(.string("new@example.com")),
+        "username": .one(.string("cool_user")),
+        "displayName": .one(.string("Cool User")),
+      ]
+    )
+    let pendingMutations = await runtime.pendingMutations()
+    expectNoDifference(pendingMutations, [])
+
+    let secondChallenge = try await runtime.sendMagicCode(email: "new@example.com")
+    let secondSignIn = try await runtime.signInWithMagicCodeResult(
+      email: "new@example.com",
+      code: secondChallenge.code,
+      extraFields: [
+        "username": .string("should-not-overwrite"),
+        "displayName": .string("Should Not Overwrite"),
+      ]
+    )
+    expectNoDifference(secondSignIn.created, false)
+    expectNoDifference(secondSignIn.session.userID, "email:new@example.com")
+    let returningUser = try #require(
+      try await runtime.query(
+        InstantQueryPlan(id: "auth-extra-fields.returning-user", namespace: "$users")
+      )
+      .first { $0.id == "email:new@example.com" }
+    )
+    expectNoDifference(returningUser.values, user.values)
+
+    let compatChallenge = try await runtime.sendMagicCode(email: "compat@example.com")
+    let compatSignIn = try await runtime.signInWithMagicCodeResult(
+      email: "compat@example.com",
+      code: compatChallenge.code
+    )
+    expectNoDifference(compatSignIn.created, true)
+    expectNoDifference(compatSignIn.session.userID, "email:compat@example.com")
+    let compatUser = try #require(
+      try await runtime.query(
+        InstantQueryPlan(id: "auth-extra-fields.compat-user", namespace: "$users")
+      )
+      .first { $0.id == "email:compat@example.com" }
+    )
+    expectNoDifference(
+      compatUser.values,
+      [
+        "id": .one(.string("email:compat@example.com")),
+        "email": .one(.string("compat@example.com")),
+      ]
+    )
+  }
+
+  @Test
+  func magicCodeExtraFieldsRequireUsersSchemaWhenSchemaIsDeclared() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_032_000)
+    let verifyCount = LockIsolated(0)
+    let exchange = InstantMagicCodeExchange(
+      send: InstantMagicCodeExchange.local.send,
+      verify: { request in
+        verifyCount.withValue { $0 += 1 }
+        return try await InstantMagicCodeExchange.local.verify(request)
+      }
+    )
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "auth-extra-fields-schema",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        now: { timestamp },
+        makeID: { "654321" },
+        magicCodeExchange: exchange
+      )
+    )
+
+    let challenge = try await runtime.sendMagicCode(email: "user@example.com")
+    do {
+      _ = try await runtime.signInWithMagicCodeResult(
+        email: "user@example.com",
+        code: challenge.code,
+        extraFields: ["username": .string("cool_user")]
+      )
+      Issue.record("Expected magic-code extra fields to require a $users schema.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.namespace, "$users")
+      expectNoDifference(
+        error.message,
+        "Cannot write magic-code extra fields because the '$users' namespace is not declared in the local schema."
+      )
+    }
+    expectNoDifference(verifyCount.withValue { $0 }, 0)
+
+    let session = try await runtime.signInWithMagicCode(
+      email: "user@example.com",
+      code: challenge.code
+    )
+    expectNoDifference(session.userID, "email:user@example.com")
+  }
+
+  @Test
   func roomPresenceAndTopicsPersistByAppIDAcrossLaunches() async throws {
     let cacheURL = try temporaryCacheURL()
     let room = InstantRoomHandle(type: "chat", id: "lobby")

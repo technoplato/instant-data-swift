@@ -42,6 +42,8 @@ public struct InstantSwiftDataClient: Sendable {
   private var sendMagicCodeOperation: @Sendable (String) async throws -> InstantMagicCodeChallenge
   private var signInWithMagicCodeOperation:
     @Sendable (String, String) async throws -> InstantAuthSession
+  private var signInWithMagicCodeResultOperation:
+    @Sendable (String, String, [String: InstantValue]) async throws -> InstantMagicCodeSignInResult
   private var signInWithRefreshTokenOperation:
     @Sendable (String, String?) async throws -> InstantAuthSession
   private var signInWithIDTokenOperation:
@@ -147,6 +149,13 @@ public struct InstantSwiftDataClient: Sendable {
     }
     self.signInWithMagicCodeOperation = { email, code in
       try await runtime.signInWithMagicCode(email: email, code: code)
+    }
+    self.signInWithMagicCodeResultOperation = { email, code, extraFields in
+      try await runtime.signInWithMagicCodeResult(
+        email: email,
+        code: code,
+        extraFields: extraFields
+      )
     }
     self.signInWithRefreshTokenOperation = { refreshToken, userID in
       try await runtime.signInWithRefreshToken(refreshToken, userID: userID)
@@ -265,6 +274,9 @@ public struct InstantSwiftDataClient: Sendable {
     signInAsGuest: (@Sendable () async throws -> InstantAuthSession)? = nil,
     sendMagicCode: (@Sendable (String) async throws -> InstantMagicCodeChallenge)? = nil,
     signInWithMagicCode: (@Sendable (String, String) async throws -> InstantAuthSession)? = nil,
+    signInWithMagicCodeResult:
+      (@Sendable (String, String, [String: InstantValue]) async throws
+        -> InstantMagicCodeSignInResult)? = nil,
     signInWithRefreshToken:
       (@Sendable (String, String?) async throws -> InstantAuthSession)? = nil,
     signOut: (@Sendable () async throws -> Void)? = nil,
@@ -340,6 +352,7 @@ public struct InstantSwiftDataClient: Sendable {
       signInAsGuest: signInAsGuest,
       sendMagicCode: sendMagicCode,
       signInWithMagicCode: signInWithMagicCode,
+      signInWithMagicCodeResult: signInWithMagicCodeResult,
       signInWithRefreshToken: signInWithRefreshToken,
       oauthAuthorizationURL: nil,
       issuerURI: nil,
@@ -394,6 +407,9 @@ public struct InstantSwiftDataClient: Sendable {
     signInAsGuest: (@Sendable () async throws -> InstantAuthSession)? = nil,
     sendMagicCode: (@Sendable (String) async throws -> InstantMagicCodeChallenge)? = nil,
     signInWithMagicCode: (@Sendable (String, String) async throws -> InstantAuthSession)? = nil,
+    signInWithMagicCodeResult:
+      (@Sendable (String, String, [String: InstantValue]) async throws
+        -> InstantMagicCodeSignInResult)? = nil,
     signInWithRefreshToken:
       (@Sendable (String, String?) async throws -> InstantAuthSession)? = nil,
     oauthAuthorizationURL: (@Sendable (String, URL) throws -> URL)? = nil,
@@ -533,7 +549,37 @@ public struct InstantSwiftDataClient: Sendable {
     self.observeAuthSessionOperation = observeAuthSession ?? { throw authError }
     self.signInAsGuestOperation = signInAsGuest ?? { throw authError }
     self.sendMagicCodeOperation = sendMagicCode ?? { _ in throw authError }
-    self.signInWithMagicCodeOperation = signInWithMagicCode ?? { _, _ in throw authError }
+    if let signInWithMagicCode {
+      self.signInWithMagicCodeOperation = signInWithMagicCode
+    } else if let signInWithMagicCodeResult {
+      self.signInWithMagicCodeOperation = { email, code in
+        try await signInWithMagicCodeResult(email, code, [:]).session
+      }
+    } else {
+      self.signInWithMagicCodeOperation = { _, _ in throw authError }
+    }
+    if let signInWithMagicCodeResult {
+      self.signInWithMagicCodeResultOperation = signInWithMagicCodeResult
+    } else if let signInWithMagicCode {
+      self.signInWithMagicCodeResultOperation = { email, code, extraFields in
+        guard extraFields.isEmpty else {
+          throw InstantError(
+            code: .implementationFailed,
+            operation: "sign in with magic code",
+            message:
+              "The configured InstantSwiftData client does not support magic-code extra fields.",
+            recovery:
+              "Override signInWithMagicCodeResult in tests or bootstrap a runtime-backed client before passing extra fields."
+          )
+        }
+        return InstantMagicCodeSignInResult(
+          session: try await signInWithMagicCode(email, code),
+          created: false
+        )
+      }
+    } else {
+      self.signInWithMagicCodeResultOperation = { _, _, _ in throw authError }
+    }
     self.signInWithRefreshTokenOperation = signInWithRefreshToken ?? { _, _ in throw authError }
     self.signInWithIDTokenOperation = signInWithIDToken ?? { _, _, _ in throw authError }
     self.signInWithOAuthOperation = signInWithOAuth ?? { _, _ in throw authError }
@@ -832,6 +878,14 @@ public struct InstantSwiftDataClient: Sendable {
 
   public func signInWithMagicCode(email: String, code: String) async throws -> InstantAuthSession {
     try await signInWithMagicCodeOperation(email, code)
+  }
+
+  public func signInWithMagicCodeResult(
+    email: String,
+    code: String,
+    extraFields: [String: InstantValue] = [:]
+  ) async throws -> InstantMagicCodeSignInResult {
+    try await signInWithMagicCodeResultOperation(email, code, extraFields)
   }
 
   public func signInWithRefreshToken(

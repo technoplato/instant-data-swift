@@ -679,10 +679,25 @@ type, for example
 `extension InstantMagicCodeExchange { public static let local = Self(...) }`,
 while dependency keys remain computed `static var` `liveValue`, `testValue`, and
 `previewValue` properties.
+When the app declares `$users` attributes, use the result-returning magic-code
+API to mirror Instant's auth extra-fields flow:
+
+```swift
+let result = try await db.signInWithMagicCodeResult(
+  email: challenge.email,
+  code: challenge.code,
+  extraFields: ["username": .string("cool_user")]
+)
+print(result.created)
+```
+
+This stores `$users/id`, `$users/email`, and declared extra fields locally
+without adding a pending client mutation.
 The dependency client exposes durable auth directly with `authSession`,
 `observeAuthSession`, `signInAsGuest`, `sendMagicCode`,
-`signInWithMagicCode`, `signInWithRefreshToken`, `signInWithIDToken`, and
-`signInWithOAuth`, `oauthAuthorizationURL`, `issuerURI`, and
+`signInWithMagicCode`, `signInWithMagicCodeResult`,
+`signInWithRefreshToken`, `signInWithIDToken`, and `signInWithOAuth`,
+`oauthAuthorizationURL`, `issuerURI`, and
 `signOut(invalidateToken:)`, so app code does not need to reach through to the
 core runtime.
 

@@ -177,6 +177,7 @@ public final class InstantRuntime: Sendable {
   public static let selectedAppIDMetadataKey = "cli.selected_app_id"
   public static let cookieSyncLastUpdatedMetadataKey = "lastSyncedUserCookie"
   public static let cookieSyncIntervalMilliseconds: Int64 = 24 * 60 * 60 * 1000
+  private static let authUsersNamespace = "$users"
 
   public let configuration: InstantRuntimeConfiguration
   public let store: InstantStore
@@ -1002,6 +1003,14 @@ public final class InstantRuntime: Sendable {
     email rawEmail: String,
     code rawCode: String
   ) async throws -> InstantAuthSession {
+    try await signInWithMagicCodeResult(email: rawEmail, code: rawCode).session
+  }
+
+  public func signInWithMagicCodeResult(
+    email rawEmail: String,
+    code rawCode: String,
+    extraFields: [String: InstantValue] = [:]
+  ) async throws -> InstantMagicCodeSignInResult {
     let email = try normalizedEmail(rawEmail, operation: "sign in with magic code")
     let code = rawCode.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !code.isEmpty else {
@@ -1011,6 +1020,7 @@ public final class InstantRuntime: Sendable {
         recovery: "Run 'instant-swift-data auth magic-code send <email>' and enter the returned local verification code."
       )
     }
+    let extraFields = try validatedMagicCodeExtraFields(extraFields)
 
     await operationGate.enter()
     do {
@@ -1022,6 +1032,12 @@ public final class InstantRuntime: Sendable {
           recovery: "Run 'instant-swift-data auth magic-code send \(email)' before verifying."
         )
       }
+      recordActorHop(.persistence)
+      let stateBeforeVerification = try await persistence.loadState()
+      try validateMagicCodeExtraFieldsSchema(
+        extraFields,
+        state: stateBeforeVerification
+      )
       let now = configuration.now()
       let verification = try await configuration.magicCodeExchange.verify(
         InstantMagicCodeVerifyRequest(
@@ -1040,16 +1056,161 @@ public final class InstantRuntime: Sendable {
         createdAt: now,
         updatedAt: now
       )
+      let created = try await saveMagicCodeUserFields(
+        userID: session.userID,
+        email: email,
+        extraFields: extraFields,
+        verifiedAt: now
+      )
       try await persistence.saveAuthSession(session, key: authSessionKey)
       try await persistence.deleteMagicCodeChallenge(key: key)
       await authSessionObservers.yield(session)
       await operationGate.leave()
       _ = try? await syncUserCookieToEndpoint(session)
-      return session
+      return InstantMagicCodeSignInResult(session: session, created: created)
     } catch {
       await operationGate.leave()
       throw error
     }
+  }
+
+  private func saveMagicCodeUserFields(
+    userID: String,
+    email: String,
+    extraFields: [String: InstantValue],
+    verifiedAt: InstantTimestamp
+  ) async throws -> Bool {
+    recordActorHop(.persistence)
+    let state = try await persistence.loadState()
+    let attributes = AttributeStore(attributes: state.snapshot.store.attributes)
+    let canWriteUsers =
+      attributes.namespaces.isEmpty || attributes.namespaces.contains(Self.authUsersNamespace)
+    guard canWriteUsers else {
+      guard extraFields.isEmpty else {
+        throw validationFailed(
+          operation: "sign in with magic code",
+          namespace: Self.authUsersNamespace,
+          message:
+            "Cannot write magic-code extra fields because the '$users' namespace is not declared in the local schema.",
+          recovery:
+            "Declare '$users' attributes before signing in with magic-code extra fields, or omit extra fields for this schema."
+        )
+      }
+      return false
+    }
+
+    let userExists = state.snapshot.store.triples.contains { triple in
+      triple.entityID == userID && triple.attributeID.hasPrefix(Self.authUsersNamespace + "/")
+    }
+    guard !userExists else { return false }
+
+    let transactionID = "auth.magic-code.\(configuration.makeID())"
+    var operations: [InstantTripleOperation] = [
+      .requireEntityMissing(entityID: userID, namespace: Self.authUsersNamespace),
+      .insert(
+        InstantTriple(
+          entityID: userID,
+          attributeID: InstantAttribute.primaryKeyID(namespace: Self.authUsersNamespace),
+          value: .string(userID),
+          txID: transactionID,
+          txTime: verifiedAt
+        )
+      ),
+      .insert(
+        InstantTriple(
+          entityID: userID,
+          attributeID: "\(Self.authUsersNamespace)/email",
+          value: .string(email),
+          txID: transactionID,
+          txTime: verifiedAt
+        )
+      ),
+    ]
+    for (field, value) in extraFields.sorted(by: { $0.key < $1.key }) {
+      operations.append(
+        .insert(
+          InstantTriple(
+            entityID: userID,
+            attributeID: "\(Self.authUsersNamespace)/\(field)",
+            value: value,
+            txID: transactionID,
+            txTime: verifiedAt
+          )
+        )
+      )
+    }
+
+    _ = try await performApplyServerTransaction(
+      InstantStoreTransaction(id: transactionID, operations: operations),
+      processedTransactionID: transactionID,
+      receivedAt: verifiedAt
+    )
+    return !userExists
+  }
+
+  private func validateMagicCodeExtraFieldsSchema(
+    _ extraFields: [String: InstantValue],
+    state: InstantPersistenceState
+  ) throws {
+    guard !extraFields.isEmpty else { return }
+    let attributes = AttributeStore(attributes: state.snapshot.store.attributes)
+    guard
+      attributes.namespaces.isEmpty
+        || attributes.namespaces.contains(Self.authUsersNamespace)
+    else {
+      throw validationFailed(
+        operation: "sign in with magic code",
+        namespace: Self.authUsersNamespace,
+        message:
+          "Cannot write magic-code extra fields because the '$users' namespace is not declared in the local schema.",
+        recovery:
+          "Declare '$users' attributes before signing in with magic-code extra fields, or omit extra fields for this schema."
+      )
+    }
+  }
+
+  private func validatedMagicCodeExtraFields(
+    _ extraFields: [String: InstantValue]
+  ) throws -> [String: InstantValue] {
+    var validated: [String: InstantValue] = [:]
+    for (rawField, value) in extraFields {
+      let field = rawField.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !field.isEmpty else {
+        throw validationFailed(
+          operation: "sign in with magic code",
+          message: "Magic-code extra field names must not be empty.",
+          recovery: "Remove empty extra-field names before signing in."
+        )
+      }
+      guard !field.contains("/") else {
+        throw validationFailed(
+          operation: "sign in with magic code",
+          path: field,
+          message: "Magic-code extra field names must not contain '/'.",
+          recovery: "Pass field names such as 'username' or 'displayName', not attribute ids."
+        )
+      }
+      guard field != "id", field != "email" else {
+        throw validationFailed(
+          operation: "sign in with magic code",
+          path: field,
+          message: "Magic-code extra fields cannot override the managed '\(field)' field.",
+          recovery: "Let Instant Swift Data derive the user id and verified email from the auth response."
+        )
+      }
+      switch value {
+      case .ref, .lookupRef:
+        throw validationFailed(
+          operation: "sign in with magic code",
+          path: field,
+          message: "Magic-code extra fields cannot contain ref values.",
+          recovery: "Use JSON-compatible scalar, date, null, or object values for auth extra fields."
+        )
+      case .null, .string, .number, .bool, .date, .json:
+        validated[field] = value
+      }
+    }
+    return validated
   }
 
   public func signInWithRefreshToken(

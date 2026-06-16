@@ -517,7 +517,11 @@ implementation. Required auth flows:
   replacing it when real Instant auth transport lands. App and test code should
   override `DependencyValues.instantMagicCodeExchange` before
   `bootstrapInstantSwiftData`; the CLI may use the same `.local` instance for
-  non-captive proof until transport-backed auth is implemented.
+  non-captive proof until transport-backed auth is implemented. The app-facing
+  dependency client should also expose
+  `signInWithMagicCodeResult(email:code:extraFields:)` so `$users` extra fields
+  can be persisted locally with Instant's `created` flag semantics while the
+  legacy session-returning API remains source compatible.
 - app-facing auth should be available directly on the `InstantSwiftDataClient`
   dependency, not by reaching through to private runtime internals. This
   includes `observeAuthSession` for auth-state subscriptions and
