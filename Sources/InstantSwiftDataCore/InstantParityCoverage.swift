@@ -2230,7 +2230,7 @@ public enum InstantSwiftDataParityCoverage {
       swiftTestName: "Swift/TypeScript real-run validation",
       surface: "live-transport",
       status: .blocked,
-      notes: "Swift now consumes a TypeScript-authored server transaction contract with operation tuples, while required remote validation proves TypeScript can write/query through Instant admin HTTP and observe refresh through admin SSE; real TypeScript-to-Swift WebSocket delivery against an Instant app remains incomplete."
+      notes: "Swift consumes a TypeScript-authored server transaction contract locally, required remote validation proves TypeScript admin HTTP/SSE, and an opt-in TypeScript admin HTTP write observed by Swift WebSocket runner exists; this remains blocked until credentialed real-run evidence is captured in the validation harness."
     ),
     instant(
       id: "instant.auth-extra-fields.magic-code",

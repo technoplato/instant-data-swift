@@ -534,6 +534,8 @@ swift run instant-swift-data validation reminders --jsonl
 swift run instant-swift-data validation server-transaction-loopback --jsonl
 swift run instant-swift-data validation cloudkit-demo --jsonl
 swift run instant-swift-data validation live-session --jsonl
+swift run instant-swift-data validation live-transaction --jsonl
+swift run instant-swift-data validation live-observe --jsonl
 swift run instant-swift-data validation typed-drafts --jsonl
 swift run instant-swift-data validation platform-adapters --jsonl
 swift run instant-swift-data validation syncups-recording --jsonl
@@ -546,6 +548,7 @@ swift run instant-swift-data-validation-runner --server-transaction-loopback
 swift run instant-swift-data-validation-runner --cloudkit-demo
 swift run instant-swift-data-validation-runner --live-session
 swift run instant-swift-data-validation-runner --live-transaction
+swift run instant-swift-data-validation-runner --live-observe
 swift run instant-swift-data validation reminders --jsonl | jq 'select(.event == "search-token-model") | .details.searchTokens'
 swift run instant-swift-data validation reminders --jsonl | jq 'select(.event == "rich-filters") | .details.priorityRanksByReminderID'
 swift run instant-swift-data-validation-runner --typed-drafts
@@ -565,11 +568,14 @@ swift run instant-swift-data validation live-transaction --jsonl
 node validation/ts-runner/src/main.ts --boundary-preflight
 INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token node validation/ts-runner/src/main.ts --boundary-admin-smoke --require-boundary
 INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token node validation/ts-runner/src/main.ts --boundary-swift-live-observe --require-boundary
+INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token node validation/ts-runner/src/main.ts --boundary-typescript-live-observe --require-boundary
 INSTANT_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_LIVE_SESSION=1 swift run instant-swift-data validation live-session --jsonl
 INSTANT_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_LIVE_TRANSACTION=1 swift run instant-swift-data validation live-transaction --jsonl
+INSTANT_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_LIVE_OBSERVE=1 swift run instant-swift-data validation live-observe --jsonl
 INSTANT_SWIFT_DATA_NODE=/path/to/node validation/run-e2e.sh
 INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_REQUIRE_REMOTE_PREFLIGHT=1 validation/run-e2e.sh
 INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_LIVE_BOUNDARY=1 validation/run-e2e.sh
+INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_TYPESCRIPT_LIVE_BOUNDARY=1 validation/run-e2e.sh
 validation/run-e2e.sh
 ```
 
@@ -605,6 +611,10 @@ decodes `init-ok`, sends `add-query`, and decodes a query/refresh response. It
 uses a deterministic local protocol client by default; add
 `INSTANT_SWIFT_DATA_RUN_LIVE_SESSION=1` with `INSTANT_APP_ID` and credentials to
 run the same smoke against Instant's WebSocket endpoint.
+`validation live-observe` uses the same deterministic local session by default,
+and in live mode waits for a `refresh-ok` containing
+`INSTANT_SWIFT_DATA_LIVE_OBSERVE_ENTITY_ID`. This is the Swift-side observer
+used by the reverse TypeScript-to-Swift boundary proof.
 `validation typed-drafts` emits terminal evidence for a macro-generated create
 draft whose `id` starts as `nil` and whose writable assignments omit the managed
 primary key, `Draft(existing)` edit, a writable relation draft with generated ref
@@ -631,7 +641,8 @@ coverage gate as a compact summary with blocked record ids.
 `validation/run-e2e.sh` records those Swift validation streams, the Swift
 schema/perms fixture generation and verification artifacts, the live-session
 protocol smoke as `swift-live-session.jsonl`, the local live transaction proof
-as `swift-live-transaction.jsonl`, the MacroTesting log, and a one-iteration
+as `swift-live-transaction.jsonl`, the local live observer proof as
+`swift-live-observe.jsonl`, the MacroTesting log, and a one-iteration
 `local-todos` benchmark JSONL artifact by default; set
 `INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS` to change that count. When
 Node is available it also writes `typescript-fixtures.jsonl` and
@@ -656,6 +667,10 @@ admin transact, observe the refresh, and query the row back. The explicit
 `--boundary-swift-live-observe` mode seeds the `todos` attrs through admin
 HTTP, opens a TypeScript-side admin SSE subscription, runs Swift's live
 WebSocket transaction command, and confirms TypeScript observed the Swift row.
+Set `INSTANT_SWIFT_DATA_RUN_TYPESCRIPT_LIVE_BOUNDARY=1` or run
+`--boundary-typescript-live-observe` to open Swift's live WebSocket observer,
+write a unique todo through TypeScript admin HTTP, and require Swift to emit the
+matching external refresh.
 
 Run local core benchmarks:
 

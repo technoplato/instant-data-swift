@@ -122,6 +122,22 @@ struct InstantSwiftDataValidationRunner {
         throw failure
       }
 
+    case .liveObserve:
+      do {
+        let run = try await InstantSwiftDataTestHarness.runLiveSessionValidation(
+          appID: invocation.appID,
+          caseID: invocation.caseID
+        )
+        for row in run.result.evidence {
+          try writeJSONLine(row)
+        }
+      } catch let failure as LiveSessionValidationFailure {
+        for row in failure.evidence {
+          try writeJSONLine(row)
+        }
+        throw failure
+      }
+
     case .typedDrafts:
       let run = try await InstantSwiftDataTestHarness.runDraftValidation()
       for row in run.result.evidence {

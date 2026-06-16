@@ -852,7 +852,9 @@ Agent-oriented output modes are required:
   dependency-free TypeScript admin smoke against Instant's admin query,
   transact, and SSE subscribe endpoints when credentials are supplied, while
   `--boundary-swift-live-observe` proves Swift's live WebSocket transaction is
-  visible to TypeScript's admin SSE subscription on an existing app.
+  visible to TypeScript's admin SSE subscription on an existing app and
+  `--boundary-typescript-live-observe` proves a TypeScript admin HTTP write is
+  visible to Swift's live WebSocket observer.
 - run example business commands directly, such as todo/reminder/sync-up/chat/mobile-chat/microblog/reactions/stroopwafel
   create, list, update, delete, share, accept, upload, and stream operations.
 

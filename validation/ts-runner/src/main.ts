@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 const runnerDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(runnerDirectory, "../../..");
 const usage =
-  "Usage: node validation/ts-runner/src/main.ts [--fixtures|--boundary-preflight|--boundary-admin-smoke|--boundary-swift-live-observe|--swift-transport-contract path|--swift-local-integrations-contract path|--swift-live-session-contract path|--swift-live-transaction-contract path|--typescript-server-transaction-contract path] [--require-boundary] [--app-id id] [--fixtures-dir path]";
+  "Usage: node validation/ts-runner/src/main.ts [--fixtures|--boundary-preflight|--boundary-admin-smoke|--boundary-swift-live-observe|--boundary-typescript-live-observe|--swift-transport-contract path|--swift-local-integrations-contract path|--swift-live-session-contract path|--swift-live-transaction-contract path|--typescript-server-transaction-contract path] [--require-boundary] [--app-id id] [--fixtures-dir path]";
 const defaultAPIURI = "https://api.instantdb.com";
 const defaultWebSocketURI = "wss://api.instantdb.com/runtime/session";
 
@@ -80,6 +80,11 @@ function parseArguments(argv) {
 
       case "--boundary-swift-live-observe":
         options.mode = "boundary-swift-live-observe";
+        options.requireBoundary = true;
+        break;
+
+      case "--boundary-typescript-live-observe":
+        options.mode = "boundary-typescript-live-observe";
         options.requireBoundary = true;
         break;
 
@@ -170,6 +175,7 @@ function parseArguments(argv) {
       options.mode === "boundary-preflight"
       || options.mode === "boundary-admin-smoke"
       || options.mode === "boundary-swift-live-observe"
+      || options.mode === "boundary-typescript-live-observe"
     )
     && !appIDExplicit
   ) {
@@ -896,7 +902,9 @@ function emitBoundaryPreflight(options, preflight) {
           ? "Required remote mode opens an Instant admin SSE subscription, writes with admin transact, and confirms with admin query."
           : options.mode === "boundary-swift-live-observe"
             ? "Required Swift live boundary mode seeds attrs with admin transact, runs Swift's live WebSocket transaction, and observes it through TypeScript admin SSE."
-            : "Credential preflight only; pass --boundary-admin-smoke to contact Instant with the same dependency-free runner.",
+            : options.mode === "boundary-typescript-live-observe"
+              ? "Required TypeScript live boundary mode opens Swift's live WebSocket observer, writes with admin transact, and requires Swift to observe the refresh."
+              : "Credential preflight only; pass --boundary-admin-smoke to contact Instant with the same dependency-free runner.",
       next:
         "Use Swift live-session/live-transaction validation plus this remote admin proof to close the remaining cross-client observe/write loop.",
     },
@@ -1257,6 +1265,179 @@ function startSwiftLiveTransaction(options, transaction, timeoutMs = 30000) {
     swiftExecutable,
       args,
       timeoutMs: effectiveTimeoutMs,
+  };
+}
+
+function swiftBoundaryTimeout(timeoutMs = 30000) {
+  const configuredTimeout = Number(
+    process.env.INSTANT_SWIFT_DATA_LIVE_BOUNDARY_SWIFT_TIMEOUT_MS ?? timeoutMs,
+  );
+  return Number.isFinite(configuredTimeout) && configuredTimeout > 0
+    ? configuredTimeout
+    : timeoutMs;
+}
+
+function startSwiftLiveObserve(options, observe, timeoutMs = 30000) {
+  const effectiveTimeoutMs = swiftBoundaryTimeout(timeoutMs);
+  const swiftExecutable =
+    process.env.INSTANT_SWIFT_DATA_SWIFT_EXECUTABLE?.trim() || "swift";
+  const args = [
+    "run",
+    "instant-swift-data",
+    "validation",
+    "live-observe",
+    "--jsonl",
+  ];
+  let stdout = "";
+  let stderr = "";
+  let lineBuffer = "";
+  let closed = false;
+  let closeStatus = null;
+  let timedOut = false;
+  let processTimeout = null;
+  const rows = [];
+  const waiters = [];
+  const child = spawn(swiftExecutable, args, {
+    cwd: repositoryRoot,
+    env: {
+      ...process.env,
+      INSTANT_APP_ID: options.appID,
+      INSTANT_ADMIN_TOKEN: options.adminToken,
+      INSTANTDB_ADMIN_TOKEN: options.adminToken,
+      INSTANT_WEBSOCKET_URI: options.websocketURI,
+      INSTANT_SWIFT_DATA_RUN_LIVE_OBSERVE: "1",
+      INSTANT_SWIFT_DATA_LIVE_OBSERVE_ENTITY_ID: observe.entityID,
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+
+  function armProcessTimeout() {
+    if (processTimeout) {
+      clearTimeout(processTimeout);
+    }
+    processTimeout = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    }, effectiveTimeoutMs);
+  }
+
+  function settleWaiters() {
+    for (let index = waiters.length - 1; index >= 0; index -= 1) {
+      const waiter = waiters[index];
+      const match = rows.find(waiter.predicate);
+      if (match) {
+        waiters.splice(index, 1);
+        clearTimeout(waiter.timeout);
+        if (!closed) {
+          armProcessTimeout();
+        }
+        waiter.resolve(match);
+      } else if (closed) {
+        waiters.splice(index, 1);
+        clearTimeout(waiter.timeout);
+        waiter.reject(
+          new Error(`Swift live observe process exited before ${waiter.label}: ${JSON.stringify(closeStatus)}`),
+        );
+      }
+    }
+  }
+
+  function appendLine(line) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("{")) {
+      return;
+    }
+    try {
+      rows.push(JSON.parse(trimmed));
+      settleWaiters();
+    } catch {}
+  }
+
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => {
+    stdout += chunk;
+    lineBuffer += chunk;
+    while (lineBuffer.includes("\n")) {
+      const index = lineBuffer.indexOf("\n");
+      appendLine(lineBuffer.slice(0, index));
+      lineBuffer = lineBuffer.slice(index + 1);
+    }
+  });
+  child.stderr.on("data", (chunk) => {
+    stderr += chunk;
+  });
+  armProcessTimeout();
+  const done = new Promise((resolve) => {
+    child.on("error", (error) => {
+      closed = true;
+      closeStatus = { status: 1, signal: null, timedOut, error: errorDetails(error) };
+      if (processTimeout) {
+        clearTimeout(processTimeout);
+      }
+      settleWaiters();
+      resolve({
+        ...closeStatus,
+        stdout,
+        stderr,
+        rows,
+      });
+    });
+    child.on("close", (code, signal) => {
+      if (lineBuffer.trim()) {
+        appendLine(lineBuffer);
+        lineBuffer = "";
+      }
+      closed = true;
+      closeStatus = { status: code ?? 1, signal, timedOut };
+      if (processTimeout) {
+        clearTimeout(processTimeout);
+      }
+      settleWaiters();
+      resolve({
+        ...closeStatus,
+        stdout,
+        stderr,
+        rows,
+      });
+    });
+  });
+
+  return {
+    swiftExecutable,
+    args,
+    timeoutMs: effectiveTimeoutMs,
+    rows,
+    stderr() {
+      return stderr;
+    },
+    waitForRow(predicate, label) {
+      const match = rows.find(predicate);
+      if (match) {
+        return Promise.resolve(match);
+      }
+      if (closed) {
+        return Promise.reject(
+          new Error(`Swift live observe process exited before ${label}: ${JSON.stringify(closeStatus)}`),
+        );
+      }
+      return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+          const index = waiters.findIndex((waiter) => waiter.resolve === resolve);
+          if (index >= 0) {
+            waiters.splice(index, 1);
+          }
+          reject(new Error(`Timed out waiting for ${label} after ${effectiveTimeoutMs}ms`));
+        }, effectiveTimeoutMs);
+        waiters.push({ predicate, label, resolve, reject, timeout });
+      });
+    },
+    async done() {
+      return await done;
+    },
+    kill() {
+      child.kill("SIGKILL");
+    },
   };
 }
 
@@ -1638,6 +1819,223 @@ async function verifyBoundarySwiftLiveObserve(options) {
       } catch {}
       subscription.controller.abort();
     }
+  }
+}
+
+async function verifyBoundaryTypeScriptLiveObserve(options) {
+  const preflight = verifyBoundaryPreflight(options);
+  if (!preflight.ok) {
+    process.exitCode = 1;
+    return;
+  }
+  if (typeof fetch !== "function") {
+    emit({
+      case: "validation.typescript.boundary",
+      event: "typescript-live-observe-failed",
+      appID: options.appID,
+      ok: false,
+      details: {
+        mode: options.mode,
+        issue: "Node.js global fetch is required for --boundary-typescript-live-observe.",
+      },
+    });
+    process.exitCode = 1;
+    return;
+  }
+
+  const namespace = "todos";
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const entityID = `typescript-live-boundary-${suffix}`;
+  const text = `TypeScript live boundary ${suffix}`;
+  const schemaSeedID = `typescript-live-observe-schema-${Date.now()}`;
+  const query = {
+    [namespace]: {
+      $: {
+        where: {
+          id: entityID,
+        },
+      },
+    },
+  };
+
+  let swiftObserve = null;
+  try {
+    await adminTransact(options, [
+      [
+        "update",
+        namespace,
+        schemaSeedID,
+        {
+          id: schemaSeedID,
+          text: "TypeScript schema seed for Swift live observe",
+          isCompleted: false,
+        },
+      ],
+    ]);
+    emit({
+      case: "validation.typescript.boundary",
+      event: "typescript-live-schema-seed",
+      appID: options.appID,
+      ok: true,
+      details: {
+        mode: options.mode,
+        namespace,
+        entityID: schemaSeedID,
+        operationCount: 1,
+      },
+    });
+
+    swiftObserve = startSwiftLiveObserve(options, { entityID });
+    const readyRow = await swiftObserve.waitForRow(
+      (row) =>
+        row?.case === "validation.live.observe"
+        && row.ok === true
+        && (row.event === "receive-query" || row.event === "receive-refresh"),
+      "Swift live observe query readiness",
+    );
+    emit({
+      case: "validation.typescript.boundary",
+      event: "swift-observe-ready",
+      appID: options.appID,
+      ok: true,
+      details: {
+        mode: options.mode,
+        namespace,
+        entityID,
+        readyEvent: readyRow.event,
+        command: [swiftObserve.swiftExecutable, ...swiftObserve.args],
+        timeoutMs: swiftObserve.timeoutMs,
+        swiftEvents: swiftObserve.rows.map((row) => row.event),
+      },
+    });
+
+    const operations = [
+      ["update", namespace, entityID, { id: entityID, text, isCompleted: false }],
+    ];
+    const transactPayload = await adminTransact(options, operations);
+    emit({
+      case: "validation.typescript.boundary",
+      event: "typescript-live-transact",
+      appID: options.appID,
+      ok: true,
+      details: {
+        mode: options.mode,
+        namespace,
+        entityID,
+        operationCount: operations.length,
+        responseKeys:
+          transactPayload && typeof transactPayload === "object"
+            ? Object.keys(transactPayload).slice(0, 8)
+            : [],
+      },
+    });
+
+    const observedRow = await swiftObserve.waitForRow(
+      (row) =>
+        row?.case === "validation.live.observe"
+        && row.event === "receive-external-refresh"
+        && row.ok === true
+        && (row.entityID === entityID || eventReferencesEntity(row, entityID)),
+      "Swift live observe external refresh",
+    );
+    emit({
+      case: "validation.typescript.boundary",
+      event: "swift-observe-refresh",
+      appID: options.appID,
+      ok: true,
+      details: {
+        mode: options.mode,
+        namespace,
+        entityID,
+        observedEvent: observedRow.event,
+        swiftEvents: swiftObserve.rows.map((row) => row.event),
+      },
+    });
+
+    const swiftResult = await swiftObserve.done();
+    const swiftOK = swiftResult.status === 0;
+    emit({
+      case: "validation.typescript.boundary",
+      event: "swift-observe-command",
+      appID: options.appID,
+      ok: swiftOK,
+      details: {
+        mode: options.mode,
+        namespace,
+        entityID,
+        command: [swiftObserve.swiftExecutable, ...swiftObserve.args],
+        timeoutMs: swiftObserve.timeoutMs,
+        status: swiftResult.status,
+        signal: swiftResult.signal,
+        timedOut: swiftResult.timedOut,
+        swiftEvents: swiftResult.rows.map((row) => row.event),
+        stderrTail: tailText(swiftResult.stderr),
+      },
+    });
+    if (!swiftOK) {
+      process.exitCode = 1;
+      return;
+    }
+
+    const queryPayload = await adminQuery(options, query);
+    const rows = namespaceRows(queryPayload, namespace);
+    const payloadText = JSON.stringify(queryPayload);
+    const rowFound =
+      rows.some((row) => row && row.id === entityID)
+      || payloadText.includes(entityID);
+    emit({
+      case: "validation.typescript.boundary",
+      event: "typescript-live-query",
+      appID: options.appID,
+      ok: rowFound,
+      details: {
+        mode: options.mode,
+        namespace,
+        entityID,
+        rowCount: rows.length,
+        responseKeys:
+          queryPayload && typeof queryPayload === "object"
+            ? Object.keys(queryPayload).slice(0, 8)
+            : [],
+      },
+    });
+    if (!rowFound) {
+      process.exitCode = 1;
+      return;
+    }
+
+    emit({
+      case: "validation.typescript.boundary",
+      event: "typescript-to-swift-boundary",
+      appID: options.appID,
+      ok: true,
+      details: {
+        mode: options.mode,
+        proofLevel: "real-typescript-admin-http-to-swift-websocket",
+        remoteBoundary: "typescript-admin-http-to-swift-websocket",
+        namespace,
+        entityID,
+      },
+    });
+  } catch (error) {
+    if (swiftObserve) {
+      swiftObserve.kill();
+    }
+    emit({
+      case: "validation.typescript.boundary",
+      event: "typescript-live-observe-failed",
+      appID: options.appID,
+      ok: false,
+      details: {
+        mode: options.mode,
+        namespace,
+        entityID,
+        error: errorDetails(error),
+        swiftEvents: swiftObserve?.rows?.map((row) => row.event) ?? [],
+        stderrTail: swiftObserve ? tailText(swiftObserve.stderr()) : "",
+      },
+    });
+    process.exitCode = 1;
   }
 }
 
@@ -2451,6 +2849,10 @@ async function main() {
 
     case "boundary-swift-live-observe":
       await verifyBoundarySwiftLiveObserve(options);
+      break;
+
+    case "boundary-typescript-live-observe":
+      await verifyBoundaryTypeScriptLiveObserve(options);
       break;
 
     case "swift-transport-contract":

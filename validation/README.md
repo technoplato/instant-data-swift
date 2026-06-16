@@ -110,12 +110,16 @@ node validation/ts-runner/src/main.ts --swift-local-integrations-contract /tmp/i
 node validation/ts-runner/src/main.ts --swift-live-session-contract /tmp/instant-validation-results/swift-live-session.jsonl --app-id local-validation
 swift run instant-swift-data validation live-transaction --jsonl
 node validation/ts-runner/src/main.ts --swift-live-transaction-contract /tmp/instant-validation-results/swift-live-transaction.jsonl --app-id local-validation
+swift run instant-swift-data validation live-observe --jsonl
 node validation/ts-runner/src/main.ts --boundary-preflight
 INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token node validation/ts-runner/src/main.ts --boundary-admin-smoke --require-boundary
 INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token node validation/ts-runner/src/main.ts --boundary-swift-live-observe --require-boundary
+INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token node validation/ts-runner/src/main.ts --boundary-typescript-live-observe --require-boundary
 INSTANT_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_LIVE_SESSION=1 swift run instant-swift-data validation live-session --jsonl
 INSTANT_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_LIVE_TRANSACTION=1 swift run instant-swift-data validation live-transaction --jsonl
+INSTANT_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_LIVE_OBSERVE=1 swift run instant-swift-data validation live-observe --jsonl
 INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_LIVE_BOUNDARY=1 validation/run-e2e.sh
+INSTANT_SWIFT_DATA_REMOTE_APP_ID=your-app-id INSTANT_ADMIN_TOKEN=your-admin-token INSTANT_SWIFT_DATA_RUN_TYPESCRIPT_LIVE_BOUNDARY=1 validation/run-e2e.sh
 ```
 
 When running from launchd or another sparse shell environment, point the harness
@@ -134,6 +138,7 @@ plus filtered active-row reloads through `@FetchAll` and `@Fetch`.
 streams (`swift-local.jsonl`, `swift-local-integrations.jsonl`,
 `swift-server-transaction-loopback.jsonl`, `swift-cloudkit-demo.jsonl`,
 `swift-live-session.jsonl`, `swift-live-transaction.jsonl`,
+`swift-live-observe.jsonl`,
 `swift-reminders.jsonl`, `swift-typed-drafts.jsonl`, `swift-platform-adapters.jsonl`,
 `swift-syncups-recording.jsonl`, and `swift-parity-report.jsonl`), records the
 compact coverage gate as
@@ -173,6 +178,10 @@ observes the refresh, and confirms the row with admin query. Set
 `--boundary-swift-live-observe`: the TypeScript runner seeds the `todos` attrs,
 opens admin SSE for a unique Swift validation row, runs Swift's live WebSocket
 transaction command, and confirms TypeScript observed the Swift-authored row.
+Set `INSTANT_SWIFT_DATA_RUN_TYPESCRIPT_LIVE_BOUNDARY=1` to add
+`--boundary-typescript-live-observe`: the TypeScript runner opens Swift's live
+WebSocket observer, writes a unique todo through admin HTTP, and requires Swift
+to observe that external refresh.
 Set `INSTANT_SWIFT_DATA_LIVE_BOUNDARY_SWIFT_TIMEOUT_MS` if a cold SwiftPM build
 needs more than the default 30 seconds.
 Set

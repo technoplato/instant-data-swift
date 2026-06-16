@@ -3228,6 +3228,9 @@ struct CLIArgumentParserTests {
     expectNoDifference(try parseValidation(["live-transaction"]), .liveTransaction)
     expectNoDifference(try parseValidation(["websocket-transaction"]), .liveTransaction)
     expectNoDifference(try parseValidation(["ws-transaction"]), .liveTransaction)
+    expectNoDifference(try parseValidation(["live-observe"]), .liveObserve)
+    expectNoDifference(try parseValidation(["websocket-observe"]), .liveObserve)
+    expectNoDifference(try parseValidation(["ws-observe"]), .liveObserve)
     expectNoDifference(try parseValidation(["typed-drafts"]), .typedDrafts)
     expectNoDifference(try parseValidation(["drafts"]), .typedDrafts)
     expectNoDifference(try parseValidation(["platform-adapters"]), .platformAdapters)
@@ -3254,6 +3257,7 @@ struct CLIArgumentParserTests {
     #expect(CLIValidationUsage.validation.contains("validation cloudkit-demo [--json|--jsonl]"))
     #expect(CLIValidationUsage.validation.contains("validation live-session [--json|--jsonl]"))
     #expect(CLIValidationUsage.validation.contains("validation live-transaction [--json|--jsonl]"))
+    #expect(CLIValidationUsage.validation.contains("validation live-observe [--json|--jsonl]"))
     #expect(CLIValidationUsage.validation.contains("validation coverage [--json|--jsonl]"))
     try expectValidationParseError([], description: CLIValidationUsage.validation)
     try expectValidationParseError(["remote"], description: CLIValidationUsage.validation)
@@ -3285,6 +3289,9 @@ struct CLIArgumentParserTests {
     expectNoDifference(try parseValidationRunner(["--live-transaction"]), .liveTransaction)
     expectNoDifference(try parseValidationRunner(["--websocket-transaction"]), .liveTransaction)
     expectNoDifference(try parseValidationRunner(["--ws-transaction"]), .liveTransaction)
+    expectNoDifference(try parseValidationRunner(["--live-observe"]), .liveObserve)
+    expectNoDifference(try parseValidationRunner(["--websocket-observe"]), .liveObserve)
+    expectNoDifference(try parseValidationRunner(["--ws-observe"]), .liveObserve)
     expectNoDifference(try parseValidationRunner(["--typed-drafts"]), .typedDrafts)
     expectNoDifference(try parseValidationRunner(["--platform-adapters"]), .platformAdapters)
     expectNoDifference(try parseValidationRunner(["--syncups-recording"]), .syncUpsRecording)
@@ -3312,6 +3319,14 @@ struct CLIArgumentParserTests {
       CLIValidationRunnerInvocation.liveTransaction.appID,
       "live-transaction-validation"
     )
+    expectNoDifference(
+      CLIValidationRunnerInvocation.liveObserve.caseID,
+      "validation.live.observe"
+    )
+    expectNoDifference(
+      CLIValidationRunnerInvocation.liveObserve.appID,
+      "live-observe-validation"
+    )
     expectNoDifference(CLIValidationRunnerInvocation.coverage.appID, "local-validation")
   }
 
@@ -3321,6 +3336,7 @@ struct CLIArgumentParserTests {
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--cloudkit-demo"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-session"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-transaction"))
+    #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-observe"))
     try expectValidationRunnerParseError(
       ["--remote"],
       description: CLIValidationRunnerUsage.validationRunner

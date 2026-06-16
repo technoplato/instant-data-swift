@@ -364,6 +364,51 @@ struct InstantSwiftDataCLI {
         throw error
       }
 
+    case .liveObserve:
+      let appID = validationAppID(defaultAppID: "live-observe-validation")
+      do {
+        let runsLive = validationRunsLiveObserve()
+        let entityID = validationLiveObserveEntityID()
+        let result = try await InstantSwiftDataLiveSessionValidation.run(
+          appID: appID,
+          caseID: "validation.live.observe",
+          websocketURI: try validationWebSocketURI(),
+          refreshToken: validationRefreshToken(),
+          adminToken: validationAdminToken(),
+          query: validationLiveObserveQuery(entityID: entityID),
+          expectedExternalRefreshEntityID: runsLive ? entityID : nil,
+          liveTransport: runsLive ? .live : .local,
+          proofLevel: runsLive ? "live-websocket-observe" : "local-protocol",
+          maxServerEvents: runsLive ? 8 : 4
+        )
+        try printLiveSessionValidation(
+          result: result,
+          output: output,
+          event: "live-observe"
+        )
+      } catch let failure as LiveSessionValidationFailure {
+        if output == .jsonl {
+          for row in failure.evidence {
+            try writeJSONLine(row)
+          }
+        }
+        if let instantError = failure.instantError {
+          throw instantError
+        }
+        throw failure
+      } catch {
+        if output == .jsonl {
+          try writeJSONLine(
+            validationFailureRow(
+              caseID: "validation.live.observe",
+              appID: appID,
+              error: error
+            )
+          )
+        }
+        throw error
+      }
+
     case .parityReport:
       let appID = validationAppID()
       try printParityCoverageReport(
@@ -9299,7 +9344,7 @@ struct InstantSwiftDataCLI {
     let caseID = result.evidence.first?.caseID ?? "validation.live.session"
     let transport: String
     switch finalDetails?.proofLevel {
-    case "live-websocket-session", "live-websocket-transaction":
+    case "live-websocket-session", "live-websocket-transaction", "live-websocket-observe":
       transport = "websocket"
     default:
       transport = "local-protocol"
@@ -9323,6 +9368,7 @@ struct InstantSwiftDataCLI {
       processedTransactionID: finalDetails?.processedTransactionID,
       transactionID: finalDetails?.transactionID,
       transactionISN: finalDetails?.transactionISN,
+      observedEntityID: finalDetails?.observedEntityID,
       proofLevel: finalDetails?.proofLevel ?? "local-protocol",
       remoteBoundary: finalDetails?.remoteBoundary ?? "pending-cross-client-sync"
     )
@@ -9344,6 +9390,9 @@ struct InstantSwiftDataCLI {
       }
       if let transactionISN = summary.transactionISN {
         print("transaction isn: \(transactionISN)")
+      }
+      if let observedEntityID = summary.observedEntityID {
+        print("observed entity: \(observedEntityID)")
       }
       print("websocket: \(summary.websocketURL)")
 
@@ -9692,6 +9741,13 @@ struct InstantSwiftDataCLI {
     return value == "1" || value == "true" || value == "yes"
   }
 
+  private static func validationRunsLiveObserve() -> Bool {
+    let value = ProcessInfo.processInfo.environment["INSTANT_SWIFT_DATA_RUN_LIVE_OBSERVE"]?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+    return value == "1" || value == "true" || value == "yes"
+  }
+
   private static func validationRefreshToken() -> String? {
     trimmedValidationEnvironmentValue("INSTANT_REFRESH_TOKEN")
   }
@@ -9734,6 +9790,23 @@ struct InstantSwiftDataCLI {
         value: .bool(false)
       ),
     ]
+  }
+
+  private static func validationLiveObserveEntityID() -> String {
+    trimmedValidationEnvironmentValue("INSTANT_SWIFT_DATA_LIVE_OBSERVE_ENTITY_ID")
+      ?? "live-observe-note"
+  }
+
+  private static func validationLiveObserveQuery(entityID: String) -> InstantLiveJSONValue {
+    .object([
+      TodoExample.namespace: .object([
+        "$": .object([
+          "where": .object([
+            "id": .string(entityID)
+          ])
+        ])
+      ])
+    ])
   }
 
   private static func trimmedValidationEnvironmentValue(_ key: String) -> String? {
@@ -11725,6 +11798,7 @@ private struct LiveSessionValidationOutput: Codable, Sendable {
   var processedTransactionID: String?
   var transactionID: String?
   var transactionISN: String?
+  var observedEntityID: String?
   var proofLevel: String
   var remoteBoundary: String
 }

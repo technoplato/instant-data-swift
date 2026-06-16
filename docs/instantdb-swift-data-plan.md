@@ -417,8 +417,11 @@ endpoint, writes through admin transact, observes refresh, and confirms the row
 with admin query against a credentialed app. The explicit
 `--boundary-swift-live-observe` mode seeds the `todos` attrs through admin HTTP,
 opens TypeScript-side admin SSE, runs Swift's live WebSocket transaction command,
-and requires TypeScript to observe the Swift-authored row. TypeScript-authored
-remote writes observed by Swift remain future cross-client transport work.
+and requires TypeScript to observe the Swift-authored row. The companion
+`--boundary-typescript-live-observe` mode opens Swift's live WebSocket observer,
+writes a unique todo through TypeScript admin HTTP, and requires Swift to
+observe the external refresh; both live boundary directions remain blocked until
+credentialed real-run artifacts are captured in the harness.
 
 Current local progress: the CLI exposes non-captive local admin helpers:
 `instant-swift-data admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id]`

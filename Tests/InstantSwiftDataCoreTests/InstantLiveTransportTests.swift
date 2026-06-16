@@ -251,6 +251,101 @@ struct InstantLiveTransportTests {
   }
 
   @Test
+  func liveSessionValidationObservesExternalRefreshEntityID() async throws {
+    let entityID = "typescript-live-boundary-test"
+    let ids = InstantLiveTransportTestIDSequence(["event-init", "event-query"])
+    let session = InstantScriptedLiveSession(messages: [
+      .initOK(clientEventID: "event-init"),
+      .addQueryOK(clientEventID: "event-query"),
+      .refreshOK(
+        clientEventID: "event-query-only",
+        processedTransactionID: "server-tx-query-only",
+        computations: [
+          .object([
+            "instaql-query": .object([
+              TodoExample.namespace: .object([
+                "$": .object([
+                  "where": .object([
+                    "id": .string(entityID)
+                  ])
+                ])
+              ])
+            ]),
+            "instaql-result": .array([]),
+          ])
+        ]
+      ),
+      .refreshOK(
+        clientEventID: "event-external",
+        processedTransactionID: "server-tx-1",
+        computations: [
+          .object([
+            "instaql-query": .object([
+              TodoExample.namespace: .object([
+                "$": .object([
+                  "where": .object([
+                    "id": .string(entityID)
+                  ])
+                ])
+              ])
+            ]),
+            "instaql-result": .array([
+              .object([
+                "data": .object([
+                  "id": .string(entityID)
+                ]),
+                "child-nodes": .array([]),
+              ])
+            ]),
+          ])
+        ]
+      ),
+    ])
+
+    let result = try await InstantSwiftDataLiveSessionValidation.run(
+      appID: "live-observe-test",
+      caseID: "validation.live.observe",
+      websocketURI: try #require(URL(string: "wss://ws.example.test/runtime/session")),
+      query: .object([
+        TodoExample.namespace: .object([
+          "$": .object([
+            "where": .object([
+              "id": .string(entityID)
+            ])
+          ])
+        ])
+      ]),
+      expectedExternalRefreshEntityID: entityID,
+      liveTransport: session.transport,
+      proofLevel: "live-websocket-observe",
+      timestamp: { InstantTimestamp(milliseconds: 1_700_000_000_000) },
+      makeID: { ids.next() },
+      maxServerEvents: 1
+    )
+
+    expectNoDifference(result.evidence.map(\.event), [
+      "session-url",
+      "send-init",
+      "receive-init-ok",
+      "send-add-query",
+      "receive-query",
+      "receive-external-refresh",
+    ])
+    expectNoDifference(result.evidence.last?.entityID, entityID)
+
+    let finalDetails = try #require(result.evidence.last?.details)
+    expectNoDifference(finalDetails.sentOps, ["init", "add-query"])
+    expectNoDifference(
+      finalDetails.receivedOps,
+      ["init-ok", "add-query-ok", "refresh-ok", "refresh-ok"]
+    )
+    expectNoDifference(finalDetails.processedTransactionID, "server-tx-1")
+    expectNoDifference(finalDetails.refreshComputationCount, 1)
+    expectNoDifference(finalDetails.observedEntityID, entityID)
+    expectNoDifference(finalDetails.proofLevel, "live-websocket-observe")
+  }
+
+  @Test
   func liveTransactionResolvesServerAttributeIDsFromInitAttrs() async throws {
     let ids = InstantLiveTransportTestIDSequence(["event-init", "event-query", "event-tx"])
     let session = InstantScriptedLiveSession(messages: [
@@ -467,14 +562,15 @@ private extension InstantLiveMessage {
 
   static func refreshOK(
     clientEventID: String,
-    processedTransactionID: String
+    processedTransactionID: String,
+    computations: [InstantLiveJSONValue] = []
   ) -> Self {
     Self(
       op: "refresh-ok",
       clientEventID: clientEventID,
       fields: [
         "attrs": .array([]),
-        "computations": .array([]),
+        "computations": .array(computations),
         "processed-tx-id": .string(processedTransactionID),
       ]
     )

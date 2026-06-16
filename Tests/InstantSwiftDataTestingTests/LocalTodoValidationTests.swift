@@ -2030,6 +2030,7 @@ struct LocalTodoValidationTests {
     #expect(script.contains("swift run instant-swift-data-validation-runner --server-transaction-loopback"))
     #expect(script.contains("swift run instant-swift-data-validation-runner --cloudkit-demo"))
     #expect(script.contains("swift run instant-swift-data validation live-session --jsonl"))
+    #expect(script.contains("swift run instant-swift-data validation live-observe --jsonl"))
     #expect(script.contains("swift run instant-swift-data validation reminders --jsonl"))
     #expect(script.contains("swift run instant-swift-data validation typed-drafts --jsonl"))
     #expect(script.contains("swift run instant-swift-data validation platform-adapters --jsonl"))
@@ -2043,6 +2044,7 @@ struct LocalTodoValidationTests {
     #expect(script.contains("swift-server-transaction-loopback.jsonl"))
     #expect(script.contains("swift-cloudkit-demo.jsonl"))
     #expect(script.contains("swift-live-session.jsonl"))
+    #expect(script.contains("swift-live-observe.jsonl"))
     #expect(script.contains("swift-reminders.jsonl"))
     #expect(script.contains("swift-typed-drafts.jsonl"))
     #expect(script.contains("swift-platform-adapters.jsonl"))
@@ -2062,10 +2064,13 @@ struct LocalTodoValidationTests {
     #expect(script.contains("--boundary-preflight"))
     #expect(script.contains("--boundary-admin-smoke"))
     #expect(script.contains("--boundary-swift-live-observe"))
+    #expect(script.contains("--boundary-typescript-live-observe"))
     #expect(script.contains("INSTANT_SWIFT_DATA_REMOTE_APP_ID"))
     #expect(script.contains("INSTANT_SWIFT_DATA_REQUIRE_REMOTE_PREFLIGHT"))
     #expect(script.contains("INSTANT_SWIFT_DATA_RUN_LIVE_BOUNDARY"))
+    #expect(script.contains("INSTANT_SWIFT_DATA_RUN_TYPESCRIPT_LIVE_BOUNDARY"))
     #expect(script.contains("typescript-swift-boundary.jsonl"))
+    #expect(script.contains("swift-typescript-boundary.jsonl"))
     #expect(script.contains("rm -f"))
     #expect(script.contains(": > \"${RESULTS_DIR}/orchestrator.jsonl\""))
     #expect(script.contains("\"failed\":\"missing-required-file\""))
@@ -2240,6 +2245,23 @@ struct LocalTodoValidationTests {
           echo '{"case":"validation.live.transaction","side":"swift","event":"send-transact","appID":"'"$remote_app_id"'","timestampMs":3,"ok":true,"details":{"sentOps":["init","add-query","transact"],"receivedOps":["init-ok","add-query-ok"],"proofLevel":"local-protocol","remoteBoundary":"pending-cross-client-sync","websocketURL":"wss://api.instantdb.com/runtime/session?app_id='"$remote_app_id"'"}}'
           echo '{"case":"validation.live.transaction","side":"swift","event":"receive-transact-ok","appID":"'"$remote_app_id"'","timestampMs":3,"ok":true,"details":{"sentOps":["init","add-query","transact"],"receivedOps":["init-ok","add-query-ok","transact-ok"],"transactionID":"local-stub-tx","transactionISN":"local-isn-stub-tx","proofLevel":"local-protocol","remoteBoundary":"pending-cross-client-sync","websocketURL":"wss://api.instantdb.com/runtime/session?app_id='"$remote_app_id"'"}}'
           echo '{"case":"validation.live.transaction","side":"swift","event":"receive-transaction-refresh","appID":"'"$remote_app_id"'","timestampMs":3,"ok":true,"details":{"sentOps":["init","add-query","transact"],"receivedOps":["init-ok","add-query-ok","transact-ok","refresh-ok"],"transactionID":"local-stub-tx","transactionISN":"local-isn-stub-tx","processedTransactionID":"local-stub-tx","proofLevel":"local-protocol","remoteBoundary":"pending-cross-client-sync","websocketURL":"wss://api.instantdb.com/runtime/session?app_id='"$remote_app_id"'"}}'
+          ;;
+        instant-swift-data:validation:live-observe)
+          expected="run instant-swift-data validation live-observe --jsonl"
+          if [ "$*" != "$expected" ]; then
+            echo "unexpected live observe arguments: $*" >&2
+            exit 65
+          fi
+          remote_app_id="${INSTANT_SWIFT_DATA_REMOTE_APP_ID:-local-validation}"
+          if [ "${INSTANT_APP_ID:-}" != "$remote_app_id" ]; then
+            echo "unexpected live observe app id: ${INSTANT_APP_ID:-}" >&2
+            exit 66
+          fi
+          echo '{"case":"validation.live.observe","side":"swift","event":"session-url","appID":"'"$remote_app_id"'","timestampMs":3,"ok":true,"details":{"sentOps":[],"receivedOps":[],"proofLevel":"local-protocol","remoteBoundary":"pending-cross-client-sync","websocketURL":"wss://api.instantdb.com/runtime/session?app_id='"$remote_app_id"'"}}'
+          echo '{"case":"validation.live.observe","side":"swift","event":"send-init","appID":"'"$remote_app_id"'","timestampMs":3,"ok":true,"details":{"sentOps":["init"],"receivedOps":[],"proofLevel":"local-protocol","remoteBoundary":"pending-cross-client-sync","websocketURL":"wss://api.instantdb.com/runtime/session?app_id='"$remote_app_id"'"}}'
+          echo '{"case":"validation.live.observe","side":"swift","event":"receive-init-ok","appID":"'"$remote_app_id"'","timestampMs":3,"ok":true,"details":{"sentOps":["init"],"receivedOps":["init-ok"],"proofLevel":"local-protocol","remoteBoundary":"pending-cross-client-sync","websocketURL":"wss://api.instantdb.com/runtime/session?app_id='"$remote_app_id"'"}}'
+          echo '{"case":"validation.live.observe","side":"swift","event":"send-add-query","appID":"'"$remote_app_id"'","timestampMs":3,"ok":true,"details":{"sentOps":["init","add-query"],"receivedOps":["init-ok"],"proofLevel":"local-protocol","remoteBoundary":"pending-cross-client-sync","websocketURL":"wss://api.instantdb.com/runtime/session?app_id='"$remote_app_id"'"}}'
+          echo '{"case":"validation.live.observe","side":"swift","event":"receive-query","appID":"'"$remote_app_id"'","timestampMs":3,"ok":true,"details":{"sentOps":["init","add-query"],"receivedOps":["init-ok","add-query-ok"],"proofLevel":"local-protocol","remoteBoundary":"pending-cross-client-sync","websocketURL":"wss://api.instantdb.com/runtime/session?app_id='"$remote_app_id"'"}}'
           ;;
         instant-swift-data:validation:reminders)
           expected="run instant-swift-data validation reminders --jsonl"
@@ -2542,6 +2564,8 @@ struct LocalTodoValidationTests {
       "swift-live-session-complete",
       "swift-live-transaction-start",
       "swift-live-transaction-complete",
+      "swift-live-observe-start",
+      "swift-live-observe-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -2604,6 +2628,11 @@ struct LocalTodoValidationTests {
     #expect(
       FileManager.default.fileExists(
         atPath: resultsURL.appendingPathComponent("swift-live-transaction.jsonl").path
+      )
+    )
+    #expect(
+      FileManager.default.fileExists(
+        atPath: resultsURL.appendingPathComponent("swift-live-observe.jsonl").path
       )
     )
     #expect(
@@ -2732,6 +2761,10 @@ struct LocalTodoValidationTests {
       resultsURL.appendingPathComponent("swift-live-transaction.jsonl")
     )
     expectNoDifference(swiftLiveTransactionRows.first?["appID"] as? String, "remote-validation")
+    let swiftLiveObserveRows = try readJSONLines(
+      resultsURL.appendingPathComponent("swift-live-observe.jsonl")
+    )
+    expectNoDifference(swiftLiveObserveRows.first?["appID"] as? String, "remote-validation")
     let liveTransactionContractRows = try readJSONLines(
       resultsURL.appendingPathComponent("typescript-live-transaction-contract.jsonl")
     )
@@ -3053,6 +3086,8 @@ struct LocalTodoValidationTests {
       "swift-live-session-complete",
       "swift-live-transaction-start",
       "swift-live-transaction-complete",
+      "swift-live-observe-start",
+      "swift-live-observe-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -3366,6 +3401,8 @@ struct LocalTodoValidationTests {
       "swift-live-session-complete",
       "swift-live-transaction-start",
       "swift-live-transaction-complete",
+      "swift-live-observe-start",
+      "swift-live-observe-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -3443,6 +3480,8 @@ struct LocalTodoValidationTests {
       "swift-live-session-complete",
       "swift-live-transaction-start",
       "swift-live-transaction-complete",
+      "swift-live-observe-start",
+      "swift-live-observe-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -3528,6 +3567,8 @@ struct LocalTodoValidationTests {
       "swift-live-session-complete",
       "swift-live-transaction-start",
       "swift-live-transaction-complete",
+      "swift-live-observe-start",
+      "swift-live-observe-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",
@@ -3606,6 +3647,8 @@ struct LocalTodoValidationTests {
       "swift-live-session-complete",
       "swift-live-transaction-start",
       "swift-live-transaction-complete",
+      "swift-live-observe-start",
+      "swift-live-observe-complete",
       "swift-reminders-start",
       "swift-reminders-complete",
       "swift-typed-drafts-start",

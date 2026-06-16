@@ -864,11 +864,11 @@ extension InstantStoreTests {
     )
     try expectMalformed(
       ["validation", "remote", "--json"],
-      contains: "validation <local-todos|local-integrations|reminders|server-transaction-loopback|cloudkit-demo|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>"
+      contains: "validation <local-todos|local-integrations|reminders|server-transaction-loopback|cloudkit-demo|live-session|live-transaction|live-observe|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>"
     )
     try expectMalformed(
       ["validation", "todos", "extra", "--json"],
-      contains: "validation <local-todos|local-integrations|reminders|server-transaction-loopback|cloudkit-demo|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>"
+      contains: "validation <local-todos|local-integrations|reminders|server-transaction-loopback|cloudkit-demo|live-session|live-transaction|live-observe|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>"
     )
 
     expectNoDifference(
@@ -7698,7 +7698,7 @@ extension InstantStoreTests {
     #expect(malformed.status == 64)
     #expect(
       malformed.error.contains(
-        "validation <local-todos|local-integrations|reminders|server-transaction-loopback|cloudkit-demo|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>"
+        "validation <local-todos|local-integrations|reminders|server-transaction-loopback|cloudkit-demo|live-session|live-transaction|live-observe|typed-drafts|platform-adapters|syncups-recording|parity-report|coverage>"
       )
     )
   }
@@ -8184,6 +8184,55 @@ extension InstantStoreTests {
     #expect(humanOutput.contains("received ops: init-ok, add-query-ok, transact-ok, refresh-ok"))
     #expect(humanOutput.contains("transaction: local-"))
     #expect(humanOutput.contains("transaction isn: local-isn-"))
+  }
+
+  @Test
+  func cliValidationLiveObserveEmitsLocalQueryEvidence() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let jsonOutput = try JSONDecoder().decode(
+      CLILiveSessionValidationOutput.self,
+      from: Data(
+        try runCLI(["validation", "live-observe", "--json"], homeURL: homeURL).utf8
+      )
+    )
+    expectNoDifference(jsonOutput.appID, "cli-cache-test")
+    expectNoDifference(jsonOutput.event, "live-observe")
+    expectNoDifference(jsonOutput.transport, "local-protocol")
+    expectNoDifference(jsonOutput.ok, true)
+    expectNoDifference(jsonOutput.evidenceCount, 5)
+    expectNoDifference(jsonOutput.events, [
+      "session-url",
+      "send-init",
+      "receive-init-ok",
+      "send-add-query",
+      "receive-query",
+    ])
+    expectNoDifference(jsonOutput.sentOps, ["init", "add-query"])
+    expectNoDifference(jsonOutput.receivedOps, ["init-ok", "add-query-ok"])
+    expectNoDifference(jsonOutput.proofLevel, "local-protocol")
+    expectNoDifference(jsonOutput.observedEntityID, nil)
+
+    let jsonlOutput = try runCLI(["validation", "ws-observe", "--jsonl"], homeURL: homeURL)
+    let lines = jsonlOutput.split(separator: "\n")
+    expectNoDifference(lines.count, 5)
+    let finalEvidence = try JSONDecoder().decode(
+      CLILiveSessionValidationEvidence.self,
+      from: Data(try #require(lines.last).utf8)
+    )
+    expectNoDifference(finalEvidence.caseID, "validation.live.observe")
+    expectNoDifference(finalEvidence.event, "receive-query")
+    expectNoDifference(finalEvidence.details.sentOps, ["init", "add-query"])
+    expectNoDifference(finalEvidence.details.receivedOps, ["init-ok", "add-query-ok"])
+    expectNoDifference(finalEvidence.details.observedEntityID, nil)
+
+    let humanOutput = try runCLI(["validation", "websocket-observe"], homeURL: homeURL)
+    #expect(humanOutput.contains("validation: ok"))
+    #expect(humanOutput.contains("case: validation.live.observe"))
+    #expect(humanOutput.contains("received ops: init-ok, add-query-ok"))
   }
 
   @Test
@@ -11636,6 +11685,7 @@ private struct CLILiveSessionValidationOutput: Decodable {
   var processedTransactionID: String?
   var transactionID: String?
   var transactionISN: String?
+  var observedEntityID: String?
   var proofLevel: String
   var remoteBoundary: String
 }
@@ -11668,6 +11718,7 @@ private struct CLILiveSessionValidationDetails: Decodable {
   var processedTransactionID: String?
   var transactionID: String?
   var transactionISN: String?
+  var observedEntityID: String?
   var proofLevel: String
   var remoteBoundary: String
   var errorMessage: String?

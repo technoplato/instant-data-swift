@@ -11,6 +11,7 @@ REMOTE_VALIDATION_APP_ID="${INSTANT_SWIFT_DATA_REMOTE_APP_ID:-${INSTANT_APP_ID:-
 BENCHMARK_ITERATIONS="${INSTANT_SWIFT_DATA_VALIDATION_BENCHMARK_ITERATIONS:-1}"
 REQUIRE_REMOTE_PREFLIGHT="${INSTANT_SWIFT_DATA_REQUIRE_REMOTE_PREFLIGHT:-0}"
 RUN_LIVE_BOUNDARY="${INSTANT_SWIFT_DATA_RUN_LIVE_BOUNDARY:-0}"
+RUN_TYPESCRIPT_LIVE_BOUNDARY="${INSTANT_SWIFT_DATA_RUN_TYPESCRIPT_LIVE_BOUNDARY:-0}"
 
 mkdir -p "${RESULTS_DIR}"
 rm -f \
@@ -20,6 +21,7 @@ rm -f \
   "${RESULTS_DIR}/swift-cloudkit-demo.jsonl" \
   "${RESULTS_DIR}/swift-live-session.jsonl" \
   "${RESULTS_DIR}/swift-live-transaction.jsonl" \
+  "${RESULTS_DIR}/swift-live-observe.jsonl" \
   "${RESULTS_DIR}/swift-reminders.jsonl" \
   "${RESULTS_DIR}/swift-typed-drafts.jsonl" \
   "${RESULTS_DIR}/swift-platform-adapters.jsonl" \
@@ -46,6 +48,7 @@ rm -f \
   "${RESULTS_DIR}/swift-typescript-server-transaction-contract.jsonl" \
   "${RESULTS_DIR}/typescript-boundary.jsonl" \
   "${RESULTS_DIR}/typescript-swift-boundary.jsonl" \
+  "${RESULTS_DIR}/swift-typescript-boundary.jsonl" \
   "${RESULTS_DIR}/generated.instant.schema.ts" \
   "${RESULTS_DIR}/generated.instant.perms.ts"
 rm -rf "${RESULTS_DIR}/transport-contract-home"
@@ -454,6 +457,25 @@ else
   exit "${status}"
 fi
 
+log_json "swift-live-observe-start" true
+if (
+  cd "${ROOT}"
+  INSTANT_APP_ID="${REMOTE_VALIDATION_APP_ID}" swift run instant-swift-data validation live-observe --jsonl
+) | tee "${RESULTS_DIR}/swift-live-observe.jsonl"; then
+  log_json "swift-live-observe-complete" true "$(json_object "path" "${RESULTS_DIR}/swift-live-observe.jsonl")"
+else
+  status=$?
+  log_json \
+    "swift-live-observe-failed" \
+    false \
+    "$(json_failure_details "${RESULTS_DIR}/swift-live-observe.jsonl" "${status}")"
+  log_json \
+    "complete" \
+    false \
+    "$(printf '{"resultsDir":%s,"failed":"swift-live-observe","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+  exit "${status}"
+fi
+
 log_json "swift-reminders-start" true
 if (
   cd "${ROOT}"
@@ -843,6 +865,33 @@ if NODE_EXECUTABLE="$(resolve_node)"; then
       exit "${status}"
     fi
   fi
+
+  if [[ "${RUN_TYPESCRIPT_LIVE_BOUNDARY}" == "1" ]]; then
+    log_json \
+      "swift-typescript-boundary-start" \
+      true \
+      "$(json_object "remoteAppID" "${REMOTE_VALIDATION_APP_ID}")"
+    if (
+      cd "${ROOT}"
+      INSTANT_APP_ID="${REMOTE_VALIDATION_APP_ID}" "${NODE_EXECUTABLE}" validation/ts-runner/src/main.ts \
+        --boundary-typescript-live-observe \
+        --app-id "${REMOTE_VALIDATION_APP_ID}" \
+        --require-boundary
+    ) | tee "${RESULTS_DIR}/swift-typescript-boundary.jsonl"; then
+      log_json "swift-typescript-boundary-complete" true "$(json_object "path" "${RESULTS_DIR}/swift-typescript-boundary.jsonl")"
+    else
+      status=$?
+      log_json \
+        "swift-typescript-boundary-failed" \
+        false \
+        "$(json_failure_details "${RESULTS_DIR}/swift-typescript-boundary.jsonl" "${status}")"
+      log_json \
+        "complete" \
+        false \
+        "$(printf '{"resultsDir":%s,"failed":"swift-typescript-boundary","exitCode":%s}' "$(json_string "${RESULTS_DIR}")" "${status}")"
+      exit "${status}"
+    fi
+  fi
 elif [[ -n "${INSTANT_SWIFT_DATA_NODE:-}" ]]; then
   log_json "missing-node" false "$(json_object "path" "${INSTANT_SWIFT_DATA_NODE}")"
   log_json \
@@ -852,13 +901,13 @@ elif [[ -n "${INSTANT_SWIFT_DATA_NODE:-}" ]]; then
   echo "INSTANT_SWIFT_DATA_NODE must point to an executable Node.js binary." >&2
   exit 1
 else
-  if [[ "${RUN_LIVE_BOUNDARY}" == "1" ]]; then
-    log_json "missing-node" false "$(json_object "reason" "INSTANT_SWIFT_DATA_RUN_LIVE_BOUNDARY=1 requires Node.js for TypeScript boundary observation")"
+  if [[ "${RUN_LIVE_BOUNDARY}" == "1" || "${RUN_TYPESCRIPT_LIVE_BOUNDARY}" == "1" ]]; then
+    log_json "missing-node" false "$(json_object "reason" "Requested live TypeScript boundary validation requires Node.js")"
     log_json \
       "complete" \
       false \
       "$(printf '{"resultsDir":%s,"failed":"missing-node"}' "$(json_string "${RESULTS_DIR}")")"
-    echo "INSTANT_SWIFT_DATA_RUN_LIVE_BOUNDARY=1 requires Node.js; set INSTANT_SWIFT_DATA_NODE or add node to PATH." >&2
+    echo "Live TypeScript boundary validation requires Node.js; set INSTANT_SWIFT_DATA_NODE or add node to PATH." >&2
     exit 1
   fi
   log_json "typescript-boundary-skipped" true "$(json_object "reason" "node is not available; set INSTANT_SWIFT_DATA_NODE to run TypeScript fixture validation")"

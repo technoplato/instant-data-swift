@@ -12,6 +12,7 @@ public struct LiveSessionValidationDetails: Codable, Equatable, Sendable {
   public var processedTransactionID: String?
   public var transactionID: String?
   public var transactionISN: String?
+  public var observedEntityID: String?
   public var proofLevel: String
   public var remoteBoundary: String
   public var errorMessage: String?
@@ -28,6 +29,7 @@ public struct LiveSessionValidationDetails: Codable, Equatable, Sendable {
     processedTransactionID: String? = nil,
     transactionID: String? = nil,
     transactionISN: String? = nil,
+    observedEntityID: String? = nil,
     proofLevel: String,
     remoteBoundary: String = "pending-cross-client-sync",
     errorMessage: String? = nil
@@ -43,6 +45,7 @@ public struct LiveSessionValidationDetails: Codable, Equatable, Sendable {
     self.processedTransactionID = processedTransactionID
     self.transactionID = transactionID
     self.transactionISN = transactionISN
+    self.observedEntityID = observedEntityID
     self.proofLevel = proofLevel
     self.remoteBoundary = remoteBoundary
     self.errorMessage = errorMessage
@@ -116,6 +119,7 @@ public enum InstantSwiftDataLiveSessionValidation {
     includeTransaction: Bool = false,
     transactionSteps: [InstantTransportStep] = Self.defaultTransactionSteps,
     resolveTransactionAttributeIDs: Bool = false,
+    expectedExternalRefreshEntityID: String? = nil,
     liveTransport: InstantLiveTransportClient = .local,
     proofLevel: String = "local-protocol",
     timestamp: @escaping @Sendable () -> InstantTimestamp = {
@@ -151,6 +155,7 @@ public enum InstantSwiftDataLiveSessionValidation {
     var processedTransactionID: String?
     var transactionID: String?
     var transactionISN: String?
+    var observedEntityID: String?
     var initAttrs: [InstantLiveJSONValue] = []
     var evidence: [ValidationEvidenceRow<LiveSessionValidationDetails>] = []
 
@@ -167,6 +172,7 @@ public enum InstantSwiftDataLiveSessionValidation {
         processedTransactionID: processedTransactionID,
         transactionID: transactionID,
         transactionISN: transactionISN,
+        observedEntityID: observedEntityID,
         proofLevel: proofLevel,
         errorMessage: errorMessage
       )
@@ -175,6 +181,7 @@ public enum InstantSwiftDataLiveSessionValidation {
     func row(
       event: String,
       ok: Bool = true,
+      entityID: String? = nil,
       errorMessage: String? = nil
     ) -> ValidationEvidenceRow<LiveSessionValidationDetails> {
       ValidationEvidenceRow(
@@ -182,6 +189,7 @@ public enum InstantSwiftDataLiveSessionValidation {
         side: "swift",
         event: event,
         appID: appID,
+        entityID: entityID,
         timestampMs: timestamp().milliseconds,
         ok: ok,
         details: details(errorMessage: errorMessage)
@@ -298,6 +306,57 @@ public enum InstantSwiftDataLiveSessionValidation {
           message:
             "Expected add-query-ok, add-query-exists, or refresh-ok within \(maxServerEvents) server event(s)."
         )
+      }
+
+      if let expectedExternalRefreshEntityID {
+        var receivedExternalRefresh = false
+        for _ in 0..<(maxServerEvents * 4) {
+          let envelope = try await instantLiveWithTimeout(
+            operation: "validate Instant live external refresh",
+            timeoutMilliseconds: eventTimeoutMilliseconds
+          ) {
+            try await openedSession.receive()
+          }
+          let event = InstantLiveServerEvent(message: envelope)
+          receivedOps.append(event.op)
+          switch event {
+          case let .refreshOK(refreshOK):
+            refreshComputationCount = refreshOK.computations.count
+            processedTransactionID = refreshOK.processedTransactionID
+            if refreshOK.computations.containsResultEntityID(expectedExternalRefreshEntityID) {
+              observedEntityID = expectedExternalRefreshEntityID
+              evidence.append(
+                row(
+                  event: "receive-external-refresh",
+                  entityID: expectedExternalRefreshEntityID
+                )
+              )
+              receivedExternalRefresh = true
+            }
+
+          case let .error(error):
+            evidence.append(row(event: "receive-error", ok: false, errorMessage: error.message))
+            throw validationError(
+              operation: "validate Instant live external refresh",
+              message: "Instant live external refresh returned an error: \(error.message)"
+            )
+
+          default:
+            continue
+          }
+
+          if receivedExternalRefresh {
+            break
+          }
+        }
+
+        guard receivedExternalRefresh else {
+          throw validationError(
+            operation: "validate Instant live external refresh",
+            message:
+              "Expected refresh-ok containing entity id '\(expectedExternalRefreshEntityID)' within \(maxServerEvents * 4) server event(s)."
+          )
+        }
       }
 
       if includeTransaction {
@@ -542,6 +601,38 @@ private struct InstantLiveAttributeIDResolver {
 
     case let .object(values):
       return .object(try values.mapValues(resolve))
+    }
+  }
+}
+
+private extension Array where Element == InstantLiveJSONValue {
+  func containsResultEntityID(_ entityID: String) -> Bool {
+    contains { computation in
+      guard let object = computation.objectValue else { return false }
+      for key in ["instaql-result", "result", "data"] {
+        if object[key]?.containsEntityID(entityID) == true {
+          return true
+        }
+      }
+      return false
+    }
+  }
+}
+
+private extension InstantLiveJSONValue {
+  func containsEntityID(_ entityID: String) -> Bool {
+    switch self {
+    case .null, .bool, .number:
+      false
+
+    case let .string(value):
+      value == entityID
+
+    case let .array(values):
+      values.contains { $0.containsEntityID(entityID) }
+
+    case let .object(values):
+      values.values.contains { $0.containsEntityID(entityID) }
     }
   }
 }
