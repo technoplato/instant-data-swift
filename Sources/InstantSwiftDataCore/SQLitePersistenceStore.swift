@@ -1162,6 +1162,58 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  public func saveSnapshot(
+    _ snapshot: InstantPersistenceSnapshot,
+    metadataKey: String,
+    metadataValue: String,
+    metadataUpdatedAt: InstantTimestamp,
+    expectedStoreRevision: Int64,
+    expectedOutboxRevision: Int64
+  ) throws -> Bool {
+    try transaction {
+      guard try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
+        try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision
+      else {
+        return false
+      }
+      try saveStoreSnapshotWithoutTransaction(snapshot.store)
+      try saveOutboxWithoutTransaction(snapshot.outbox)
+      try saveMetadataValueWithoutTransaction(
+        metadataValue,
+        key: metadataKey,
+        updatedAt: metadataUpdatedAt
+      )
+      _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
+      _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+      return true
+    }
+  }
+
+  public func saveOutbox(
+    _ mutations: [PendingMutation],
+    metadataKey: String,
+    metadataValue: String,
+    metadataUpdatedAt: InstantTimestamp,
+    expectedStoreRevision: Int64,
+    expectedOutboxRevision: Int64
+  ) throws -> Bool {
+    try transaction {
+      guard try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
+        try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision
+      else {
+        return false
+      }
+      try saveOutboxWithoutTransaction(mutations)
+      try saveMetadataValueWithoutTransaction(
+        metadataValue,
+        key: metadataKey,
+        updatedAt: metadataUpdatedAt
+      )
+      _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+      return true
+    }
+  }
+
   public func saveStoreSnapshot(
     _ snapshot: InstantStoreSnapshot,
     metadataKey: String,

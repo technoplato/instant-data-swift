@@ -211,6 +211,392 @@ struct InstantLiveTransportTests {
   }
 
   @Test
+  func liveRefreshAppliesCanonicalJoinRowsThroughRuntimeObservers() async throws {
+    let cacheURL = try temporaryLiveCacheURL()
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "live-refresh-application",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let stream = await runtime.observe(TodoExample.query)
+    var iterator = stream.makeAsyncIterator()
+    let initial = try #require(await iterator.next())
+    expectNoDifference(initial.values, [])
+
+    let serverCreatedAt = InstantTimestamp(milliseconds: 1_700_000_000_123)
+    let refresh = InstantLiveRefreshOK(
+      clientEventID: "event-refresh",
+      processedTransactionID: "server-tx-100",
+      attrs: .todoServerAttrs,
+      computations: [
+        .todoJoinRowsComputation(
+          entityID: "remote-todo",
+          text: "Arrived through refresh-ok",
+          isCompleted: true,
+          createdAt: serverCreatedAt,
+          processedTransactionID: "server-tx-100"
+        )
+      ]
+    )
+
+    let result = try await runtime.applyLiveRefresh(
+      refresh,
+      receivedAt: InstantTimestamp(milliseconds: serverCreatedAt.milliseconds + 1)
+    )
+
+    expectNoDifference(result.insertedTripleCount, 4)
+    expectNoDifference(result.mergedAttributeCount, 0)
+    expectNoDifference(result.confirmedMutation?.id, nil)
+    expectNoDifference(result.application.syncState.processedTransactionID, "server-tx-100")
+    expectNoDifference(result.application.mutation.changedEntityIDs, Set(["remote-todo"]))
+    expectNoDifference(
+      result.transaction.operations.compactMap(\.insertedAttributeID),
+      ["todos/id", "todos/text", "todos/isCompleted", "todos/createdAt"]
+    )
+
+    let update = try #require(await iterator.next())
+    expectNoDifference(
+      try TodoExample.decode(update.values),
+      [
+        TodoRecord(
+          id: "remote-todo",
+          text: "Arrived through refresh-ok",
+          isCompleted: true,
+          createdAt: serverCreatedAt
+        )
+      ]
+    )
+    let syncState = try await runtime.syncState()
+    expectNoDifference(syncState.processedTransactionID, "server-tx-100")
+  }
+
+  @Test
+  func liveRefreshConfirmsMatchingLocalMutationAfterApplyingServerState() async throws {
+    let cacheURL = try temporaryLiveCacheURL()
+    let localCreatedAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let serverCreatedAt = InstantTimestamp(milliseconds: localCreatedAt.milliseconds + 50)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "live-refresh-confirmation",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "server-tx-local",
+        operations: TodoExample.createOperations(
+          id: "local-todo",
+          text: "Local optimistic text",
+          createdAt: localCreatedAt,
+          transactionID: "server-tx-local"
+        )
+      ),
+      createdAt: localCreatedAt
+    )
+    let initialPendingMutationIDs = await runtime.pendingMutations().map(\.id)
+    expectNoDifference(initialPendingMutationIDs, ["server-tx-local"])
+
+    let refresh = InstantLiveRefreshOK(
+      clientEventID: "event-refresh-local",
+      processedTransactionID: "server-tx-local",
+      attrs: .todoServerAttrs,
+      computations: [
+        .todoJoinRowsComputation(
+          entityID: "local-todo",
+          text: "Server confirmed text",
+          isCompleted: true,
+          createdAt: serverCreatedAt,
+          processedTransactionID: "server-tx-local"
+        )
+      ]
+    )
+
+    let result = try await runtime.applyLiveRefresh(
+      refresh,
+      receivedAt: InstantTimestamp(milliseconds: serverCreatedAt.milliseconds + 1)
+    )
+
+    expectNoDifference(result.confirmedMutation?.id, "server-tx-local")
+    expectNoDifference(result.application.pendingMutationCount, 0)
+    let finalPendingMutations = await runtime.pendingMutations()
+    expectNoDifference(finalPendingMutations, [])
+    let finalTodos = try await runtime.query(TodoExample.query)
+    expectNoDifference(
+      try TodoExample.decode(finalTodos),
+      [
+        TodoRecord(
+          id: "local-todo",
+          text: "Server confirmed text",
+          isCompleted: true,
+          createdAt: serverCreatedAt
+        )
+      ]
+    )
+  }
+
+  @Test
+  func liveRefreshRebasesRemainingOptimisticMutationAfterConfirmation() async throws {
+    let cacheURL = try temporaryLiveCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let updatedAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 10)
+    let serverCreatedAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 20)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "live-refresh-rebase",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-create",
+        operations: TodoExample.createOperations(
+          id: "rebase-todo",
+          text: "First optimistic text",
+          createdAt: createdAt,
+          transactionID: "tx-create"
+        )
+      ),
+      createdAt: createdAt
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-update",
+        operations: TodoExample.updateTextOperations(
+          id: "rebase-todo",
+          text: "Second optimistic text",
+          updatedAt: updatedAt,
+          transactionID: "tx-update"
+        )
+      ),
+      createdAt: updatedAt
+    )
+
+    let refresh = InstantLiveRefreshOK(
+      clientEventID: "event-refresh-rebase",
+      processedTransactionID: "tx-create",
+      attrs: .todoServerAttrs,
+      computations: [
+        .todoJoinRowsComputation(
+          entityID: "rebase-todo",
+          text: "Server confirmed first text",
+          isCompleted: true,
+          createdAt: serverCreatedAt,
+          processedTransactionID: "tx-create"
+        )
+      ]
+    )
+
+    let result = try await runtime.applyLiveRefresh(refresh)
+
+    expectNoDifference(result.confirmedMutation?.id, "tx-create")
+    expectNoDifference(result.application.pendingMutationCount, 1)
+    let pendingMutationIDs = await runtime.pendingMutations().map(\.id)
+    expectNoDifference(pendingMutationIDs, ["tx-update"])
+    let todoSnapshots = try await runtime.query(TodoExample.query)
+    let todos = try TodoExample.decode(todoSnapshots)
+    expectNoDifference(todos.map(\.text), ["Second optimistic text"])
+    expectNoDifference(todos.map(\.isCompleted), [true])
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "live-refresh-rebase",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let relaunchedSnapshots = try await relaunchedRuntime.query(TodoExample.query)
+    let relaunchedTodos = try TodoExample.decode(relaunchedSnapshots)
+    expectNoDifference(relaunchedTodos.map(\.text), ["Second optimistic text"])
+    let relaunchedPendingMutationIDs = await relaunchedRuntime.pendingMutations().map(\.id)
+    expectNoDifference(relaunchedPendingMutationIDs, ["tx-update"])
+  }
+
+  @Test
+  func emptyLiveRefreshConfirmsMatchingMutationWithoutDroppingOptimisticRows() async throws {
+    let cacheURL = try temporaryLiveCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "live-refresh-empty-confirm",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-empty-confirm",
+        operations: TodoExample.createOperations(
+          id: "empty-confirm-todo",
+          text: "Optimistic row survives",
+          createdAt: createdAt,
+          transactionID: "tx-empty-confirm"
+        )
+      ),
+      createdAt: createdAt
+    )
+
+    let result = try await runtime.applyLiveRefresh(
+      InstantLiveRefreshOK(
+        clientEventID: "event-empty-confirm",
+        processedTransactionID: "tx-empty-confirm",
+        attrs: [],
+        computations: []
+      )
+    )
+
+    expectNoDifference(result.insertedTripleCount, 0)
+    expectNoDifference(result.confirmedMutation?.id, "tx-empty-confirm")
+    expectNoDifference(result.application.pendingMutationCount, 0)
+    let pendingMutations = await runtime.pendingMutations()
+    expectNoDifference(pendingMutations, [])
+    let syncState = try await runtime.syncState()
+    expectNoDifference(syncState.processedTransactionID, "tx-empty-confirm")
+    let todoSnapshots = try await runtime.query(TodoExample.query)
+    let todos = try TodoExample.decode(todoSnapshots)
+    expectNoDifference(todos.map(\.text), ["Optimistic row survives"])
+  }
+
+  @Test
+  func decodedRefreshOKJSONAppliesCanonicalJoinRows() async throws {
+    let cacheURL = try temporaryLiveCacheURL()
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "live-refresh-json-fixture",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let data = Data(
+      """
+      {
+        "op": "refresh-ok",
+        "client-event-id": "event-json-refresh",
+        "processed-tx-id": "server-json-tx",
+        "attrs": [
+          {
+            "id": "server-todos-id",
+            "forward-identity": ["server-todos-id", "todos", "id"],
+            "value-type": "string",
+            "cardinality": "one"
+          },
+          {
+            "id": "server-todos-text",
+            "forward-identity": ["server-todos-text", "todos", "text"],
+            "value-type": "string",
+            "cardinality": "one"
+          },
+          {
+            "id": "server-todos-is-completed",
+            "forward-identity": ["server-todos-is-completed", "todos", "isCompleted"],
+            "value-type": "boolean",
+            "cardinality": "one"
+          },
+          {
+            "id": "server-todos-created-at",
+            "forward-identity": ["server-todos-created-at", "todos", "createdAt"],
+            "value-type": "date",
+            "cardinality": "one"
+          }
+        ],
+        "computations": [
+          {
+            "instaql-query": {"todos": {}},
+            "instaql-result": [
+              {
+                "data": {
+                  "datalog-result": {
+                    "join-rows": [
+                      [
+                        ["json-todo", "server-todos-id", "json-todo", 1700000000123],
+                        ["json-todo", "server-todos-text", "Decoded refresh", 1700000000123],
+                        ["json-todo", "server-todos-is-completed", true, 1700000000123],
+                        ["json-todo", "server-todos-created-at", 1700000000123, 1700000000123]
+                      ]
+                    ]
+                  }
+                },
+                "child-nodes": []
+              }
+            ]
+          }
+        ]
+      }
+      """.utf8
+    )
+    let event = InstantLiveServerEvent(
+      message: try JSONDecoder().decode(InstantLiveMessage.self, from: data)
+    )
+    guard case let .refreshOK(refreshOK) = event else {
+      Issue.record("Expected decoded refresh-ok.")
+      return
+    }
+
+    let result = try await runtime.applyLiveRefresh(refreshOK)
+
+    expectNoDifference(result.insertedTripleCount, 4)
+    expectNoDifference(result.application.syncState.processedTransactionID, "server-json-tx")
+    let todoSnapshots = try await runtime.query(TodoExample.query)
+    let todos = try TodoExample.decode(todoSnapshots)
+    expectNoDifference(todos.map(\.text), ["Decoded refresh"])
+  }
+
+  @Test
+  func malformedLiveRefreshDoesNotCheckpointOrConfirmMutation() async throws {
+    let cacheURL = try temporaryLiveCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "live-refresh-malformed",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-malformed",
+        operations: TodoExample.createOperations(
+          id: "malformed-todo",
+          text: "Still pending",
+          createdAt: createdAt,
+          transactionID: "tx-malformed"
+        )
+      ),
+      createdAt: createdAt
+    )
+
+    do {
+      _ = try await runtime.applyLiveRefresh(
+        InstantLiveRefreshOK(
+          clientEventID: "event-malformed",
+          processedTransactionID: "tx-malformed",
+          attrs: .todoServerAttrs,
+          computations: [
+            .object([
+              "instaql-query": .object([TodoExample.namespace: .object([:])]),
+              "instaql-result": .object([:]),
+            ])
+          ]
+        )
+      )
+      Issue.record("Expected malformed refresh-ok to fail before checkpointing.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .decodeFailed)
+    }
+
+    let pendingMutationIDs = await runtime.pendingMutations().map(\.id)
+    expectNoDifference(pendingMutationIDs, ["tx-malformed"])
+    let syncState = try await runtime.syncState()
+    expectNoDifference(syncState.processedTransactionID, nil)
+    let todoSnapshots = try await runtime.query(TodoExample.query)
+    let todos = try TodoExample.decode(todoSnapshots)
+    expectNoDifference(todos.map(\.text), ["Still pending"])
+  }
+
+  @Test
   func liveSessionValidationCanIncludeLocalTransaction() async throws {
     let ids = InstantLiveTransportTestIDSequence(["event-init", "event-query", "event-tx"])
     let result = try await InstantSwiftDataLiveSessionValidation.run(
@@ -476,6 +862,13 @@ private final class InstantLiveTransportTestIDSequence: @unchecked Sendable {
   }
 }
 
+private func temporaryLiveCacheURL() throws -> URL {
+  let directory = FileManager.default.temporaryDirectory
+    .appendingPathComponent("InstantLiveTransportTests-\(UUID().uuidString)")
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  return directory.appendingPathComponent("state.sqlite")
+}
+
 private actor InstantScriptedLiveSession {
   private var messages: [InstantLiveMessage]
   private var sent: [InstantLiveMessage] = []
@@ -577,7 +970,77 @@ private extension InstantLiveMessage {
   }
 }
 
+private extension InstantTripleOperation {
+  var insertedAttributeID: String? {
+    guard case let .insert(triple) = self else { return nil }
+    return triple.attributeID
+  }
+}
+
+private extension Array where Element == InstantLiveJSONValue {
+  static var todoServerAttrs: [InstantLiveJSONValue] {
+    [
+      .serverAttr(id: "server-todos-id", namespace: "todos", name: "id"),
+      .serverAttr(id: "server-todos-text", namespace: "todos", name: "text"),
+      .serverAttr(id: "server-todos-is-completed", namespace: "todos", name: "isCompleted"),
+      .serverAttr(id: "server-todos-created-at", namespace: "todos", name: "createdAt"),
+    ]
+  }
+}
+
 private extension InstantLiveJSONValue {
+  static func todoJoinRowsComputation(
+    entityID: String,
+    text: String,
+    isCompleted: Bool,
+    createdAt: InstantTimestamp,
+    processedTransactionID: String
+  ) -> Self {
+    .object([
+      "instaql-query": .object([
+        TodoExample.namespace: .object([:])
+      ]),
+      "instaql-result": .array([
+        .object([
+          "data": .object([
+            "datalog-result": .object([
+              "join-rows": .array([
+                .array([
+                  .array([
+                    .string(entityID),
+                    .string("server-todos-id"),
+                    .string(entityID),
+                    .number(Double(createdAt.milliseconds)),
+                  ]),
+                  .array([
+                    .string(entityID),
+                    .string("server-todos-text"),
+                    .string(text),
+                    .number(Double(createdAt.milliseconds)),
+                  ]),
+                  .array([
+                    .string(entityID),
+                    .string("server-todos-is-completed"),
+                    .bool(isCompleted),
+                    .number(Double(createdAt.milliseconds)),
+                  ]),
+                  .array([
+                    .string(entityID),
+                    .string("server-todos-created-at"),
+                    .number(Double(createdAt.milliseconds)),
+                    .number(Double(createdAt.milliseconds)),
+                  ]),
+                ])
+              ])
+            ])
+          ]),
+          "child-nodes": .array([]),
+        ])
+      ]),
+      "processed-tx-id": .string(processedTransactionID),
+    ])
+  }
+
   static func serverAttr(id: String, namespace: String, name: String) -> Self {
     .object([
       "forward-identity": .array([

@@ -256,6 +256,12 @@ private struct InstantSharedRootWriteTarget: Hashable, Sendable {
   var id: String
 }
 
+private struct InstantAppliedServerTransaction: Sendable {
+  var application: InstantServerTransactionApplicationResult
+  var confirmedMutation: PendingMutation?
+  var mergedAttributeCount: Int
+}
+
 public final class InstantRuntime: Sendable {
   public static let selectedAppIDMetadataKey = "cli.selected_app_id"
   public static let cookieSyncLastUpdatedMetadataKey = "lastSyncedUserCookie"
@@ -532,7 +538,7 @@ public final class InstantRuntime: Sendable {
         receivedAt: receivedAt
       )
       await leaveOperationGate()
-      return result
+      return result.application
     } catch {
       await leaveOperationGate()
       throw error
@@ -542,8 +548,10 @@ public final class InstantRuntime: Sendable {
   private func performApplyServerTransaction(
     _ transaction: InstantStoreTransaction,
     processedTransactionID: String?,
-    receivedAt: InstantTimestamp?
-  ) async throws -> InstantServerTransactionApplicationResult {
+    receivedAt: InstantTimestamp?,
+    confirmingMutationID: String? = nil,
+    mergingAttributes attributesToMerge: [InstantAttribute] = []
+  ) async throws -> InstantAppliedServerTransaction {
     let processedTransactionID = (processedTransactionID ?? transaction.id)
       .trimmingCharacters(in: .whitespacesAndNewlines)
     guard !processedTransactionID.isEmpty else {
@@ -558,61 +566,252 @@ public final class InstantRuntime: Sendable {
     var transaction = transaction
     transaction.id = transactionID.isEmpty ? processedTransactionID : transactionID
     let metadataUpdatedAt = receivedAt ?? configuration.now()
+    let confirmingMutationID = confirmingMutationID?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .nilIfEmpty
 
     for _ in 0..<5 {
       recordActorHop(.persistence)
       let state = try await persistence.loadState()
+      let confirmation = confirmingMutationID.flatMap {
+        InstantOutbox.confirming(id: $0, in: state.snapshot.outbox)
+      }
+      let outboxSnapshot = confirmation?.mutations ?? state.snapshot.outbox
+      let outboxChanged = outboxSnapshot != state.snapshot.outbox
+      var storeSnapshot = state.snapshot.store
+      let mergedAttributeCount = mergeLiveRefreshAttributes(
+        attributesToMerge,
+        into: &storeSnapshot
+      )
+      let storeAttributesChanged = mergedAttributeCount > 0
       if transaction.operations.isEmpty {
         recordActorHop(.persistence)
-        let didSave = try await persistence.saveMetadataValue(
-          processedTransactionID,
-          key: processedTransactionIDMetadataKey,
-          updatedAt: metadataUpdatedAt,
-          expectedStoreRevision: state.storeRevision,
-          expectedOutboxRevision: state.outboxRevision
-        )
+        let didSave =
+          if storeAttributesChanged, outboxChanged {
+            try await persistence.saveSnapshot(
+              InstantPersistenceSnapshot(store: storeSnapshot, outbox: outboxSnapshot),
+              metadataKey: processedTransactionIDMetadataKey,
+              metadataValue: processedTransactionID,
+              metadataUpdatedAt: metadataUpdatedAt,
+              expectedStoreRevision: state.storeRevision,
+              expectedOutboxRevision: state.outboxRevision
+            )
+          } else if storeAttributesChanged {
+            try await persistence.saveStoreSnapshot(
+              storeSnapshot,
+              metadataKey: processedTransactionIDMetadataKey,
+              metadataValue: processedTransactionID,
+              metadataUpdatedAt: metadataUpdatedAt,
+              expectedStoreRevision: state.storeRevision,
+              expectedOutboxRevision: state.outboxRevision
+            )
+          } else if outboxChanged {
+            try await persistence.saveOutbox(
+              outboxSnapshot,
+              metadataKey: processedTransactionIDMetadataKey,
+              metadataValue: processedTransactionID,
+              metadataUpdatedAt: metadataUpdatedAt,
+              expectedStoreRevision: state.storeRevision,
+              expectedOutboxRevision: state.outboxRevision
+            )
+          } else {
+            try await persistence.saveMetadataValue(
+              processedTransactionID,
+              key: processedTransactionIDMetadataKey,
+              updatedAt: metadataUpdatedAt,
+              expectedStoreRevision: state.storeRevision,
+              expectedOutboxRevision: state.outboxRevision
+            )
+        }
         if didSave {
           recordActorHop(.store)
-          await store.replaceSnapshot(state.snapshot.store)
+          await store.replaceSnapshot(storeSnapshot)
           recordActorHop(.outbox)
-          await outbox.replace(with: state.snapshot.outbox)
-          return InstantStoreMutationResult(
+          await outbox.replace(with: outboxSnapshot)
+          let application = InstantStoreMutationResult(
             transactionID: transaction.id,
             changedEntityIDs: [],
-            tripleCount: state.snapshot.store.triples.count,
+            tripleCount: storeSnapshot.triples.count,
             emissions: []
           ).serverApplicationResult(
             processedTransactionID: processedTransactionID,
-            pendingMutations: state.snapshot.outbox
+            pendingMutations: outboxSnapshot
+          )
+          return InstantAppliedServerTransaction(
+            application: application,
+            confirmedMutation: confirmation?.mutation,
+            mergedAttributeCount: mergedAttributeCount
           )
         }
         continue
       }
 
       recordActorHop(.store)
-      let prepared = try await store.prepare(transaction, applyingTo: state.snapshot.store)
-      recordActorHop(.persistence)
-      let didSave = try await persistence.saveStoreSnapshot(
-        prepared.snapshot,
-        metadataKey: processedTransactionIDMetadataKey,
-        metadataValue: processedTransactionID,
-        metadataUpdatedAt: metadataUpdatedAt,
-        expectedStoreRevision: state.storeRevision,
-        expectedOutboxRevision: state.outboxRevision
+      let preparedServer = try await store.prepare(transaction, applyingTo: storeSnapshot)
+      let prepared = try await rebaseLocalMutations(
+        outboxSnapshot,
+        over: preparedServer
       )
+      recordActorHop(.persistence)
+      let didSave =
+        if outboxChanged {
+          try await persistence.saveSnapshot(
+            InstantPersistenceSnapshot(store: prepared.snapshot, outbox: outboxSnapshot),
+            metadataKey: processedTransactionIDMetadataKey,
+            metadataValue: processedTransactionID,
+            metadataUpdatedAt: metadataUpdatedAt,
+            expectedStoreRevision: state.storeRevision,
+            expectedOutboxRevision: state.outboxRevision
+          )
+        } else {
+          try await persistence.saveStoreSnapshot(
+            prepared.snapshot,
+            metadataKey: processedTransactionIDMetadataKey,
+            metadataValue: processedTransactionID,
+            metadataUpdatedAt: metadataUpdatedAt,
+            expectedStoreRevision: state.storeRevision,
+            expectedOutboxRevision: state.outboxRevision
+          )
+        }
       if didSave {
         recordActorHop(.store)
         let committed = await store.commitAndPublish(prepared)
         recordActorHop(.outbox)
-        await outbox.replace(with: state.snapshot.outbox)
-        return committed.result.serverApplicationResult(
+        await outbox.replace(with: outboxSnapshot)
+        let application = committed.result.serverApplicationResult(
           processedTransactionID: processedTransactionID,
-          pendingMutations: state.snapshot.outbox
+          pendingMutations: outboxSnapshot
+        )
+        return InstantAppliedServerTransaction(
+          application: application,
+          confirmedMutation: confirmation?.mutation,
+          mergedAttributeCount: mergedAttributeCount
         )
       }
     }
 
     throw serverTransactionChangedDuringPersistence(id: processedTransactionID)
+  }
+
+  @discardableResult
+  public func applyLiveRefresh(
+    _ refreshOK: InstantLiveRefreshOK,
+    receivedAt: InstantTimestamp? = nil
+  ) async throws -> InstantLiveRefreshApplicationResult {
+    let receivedAt = receivedAt ?? configuration.now()
+    await enterOperationGate()
+    do {
+      recordActorHop(.persistence)
+      let state = try await persistence.loadState()
+      let translated = try InstantLiveRefreshTranslator.translate(
+        refreshOK,
+        existingAttributes: state.snapshot.store.attributes,
+        receivedAt: receivedAt
+      )
+
+      let applied = try await performApplyServerTransaction(
+        translated.transaction,
+        processedTransactionID: translated.processedTransactionID,
+        receivedAt: receivedAt,
+        confirmingMutationID: translated.confirmationMutationID,
+        mergingAttributes: translated.attributesToMerge
+      )
+
+      await leaveOperationGate()
+      return InstantLiveRefreshApplicationResult(
+        transaction: translated.transaction,
+        application: applied.application,
+        confirmedMutation: applied.confirmedMutation,
+        insertedTripleCount: translated.transaction.operations.count,
+        mergedAttributeCount: applied.mergedAttributeCount
+      )
+    } catch {
+      await leaveOperationGate()
+      throw error
+    }
+  }
+
+  @discardableResult
+  public func confirmMutationIfPresent(id: String) async throws -> PendingMutation? {
+    await enterOperationGate()
+    do {
+      let result = try await performConfirmMutationIfPresent(id: id)
+      await leaveOperationGate()
+      return result.mutation
+    } catch {
+      await leaveOperationGate()
+      throw error
+    }
+  }
+
+  private func performConfirmMutationIfPresent(
+    id: String
+  ) async throws -> (mutation: PendingMutation?, pendingMutationCount: Int) {
+    for _ in 0..<5 {
+      recordActorHop(.persistence)
+      let state = try await persistence.loadState()
+      guard let update = InstantOutbox.confirming(id: id, in: state.snapshot.outbox) else {
+        recordActorHop(.outbox)
+        await outbox.replace(with: state.snapshot.outbox)
+        return (
+          mutation: nil,
+          pendingMutationCount: state.snapshot.outbox.filter { $0.status == .pending }.count
+        )
+      }
+      recordActorHop(.persistence)
+      let didSave = try await persistence.saveOutbox(
+        update.mutations,
+        expectedOutboxRevision: state.outboxRevision
+      )
+      if didSave {
+        recordActorHop(.outbox)
+        await outbox.replace(with: update.mutations)
+        return (
+          mutation: update.mutation,
+          pendingMutationCount: update.mutations.filter { $0.status == .pending }.count
+        )
+      }
+    }
+
+    throw outboxChangedDuringStatusUpdate(id: id)
+  }
+
+  private func rebaseLocalMutations(
+    _ mutations: [PendingMutation],
+    over preparedServer: PreparedStoreMutation
+  ) async throws -> PreparedStoreMutation {
+    var snapshot = preparedServer.snapshot
+    for mutation in mutations.sorted(by: PendingMutation.creationOrder)
+    where mutation.status != .confirmed {
+      let operations = mutation.transaction.operations.filter(\.isRebasedLocalWrite)
+      guard !operations.isEmpty else { continue }
+      let preparedLocal = try await store.prepare(
+        InstantStoreTransaction(id: mutation.transaction.id, operations: operations),
+        applyingTo: snapshot
+      )
+      snapshot = preparedLocal.snapshot
+    }
+    var result = preparedServer.result
+    result.tripleCount = snapshot.triples.count
+    return PreparedStoreMutation(
+      result: result,
+      snapshot: snapshot,
+      sequence: preparedServer.sequence
+    )
+  }
+
+  private func mergeLiveRefreshAttributes(
+    _ attributes: [InstantAttribute],
+    into snapshot: inout InstantStoreSnapshot
+  ) -> Int {
+    guard !attributes.isEmpty else { return 0 }
+    let previousAttributes = Dictionary(
+      uniqueKeysWithValues: snapshot.attributes.map { ($0.id, $0) }
+    )
+    var attributeStore = AttributeStore(attributes: snapshot.attributes)
+    attributeStore.merge(attributes)
+    snapshot.attributes = attributeStore.attributes
+    return snapshot.attributes.filter { previousAttributes[$0.id] != $0 }.count
   }
 
   @discardableResult
@@ -3528,6 +3727,22 @@ private extension InstantStoreMutationResult {
       syncState: InstantSyncState(processedTransactionID: processedTransactionID),
       pendingMutationCount: pendingMutations.filter { $0.status == .pending }.count
     )
+  }
+}
+
+private extension InstantTripleOperation {
+  var isRebasedLocalWrite: Bool {
+    switch self {
+    case .merge, .mergeByLookup, .insert, .insertByLookup, .retract, .retractByLookup,
+      .deleteEntity, .deleteEntityInNamespace, .deleteEntityByLookup:
+      return true
+
+    case .requireEntityMissing, .requireEntityMissingByLookup,
+      .requireEntityExists, .requireEntityExistsByLookup,
+      .requireTripleExists,
+      .ruleParams, .ruleParamsByLookup:
+      return false
+    }
   }
 }
 

@@ -594,7 +594,13 @@ Agent-oriented output modes are required:
   `typescript-swift-boundary.jsonl` and `swift-typescript-boundary.jsonl`
   artifacts, that gate should promote the two real live-transport records from
   blocked to adapted. The e2e harness should archive that post-boundary gate as
-  `swift-coverage-final.jsonl`.
+  `swift-coverage-final.jsonl`. Swift runtime code should apply live
+  `refresh-ok` payloads through `InstantRuntime.applyLiveRefresh(_:)`, mapping
+  server attribute ids onto declared local schema identities, publishing query
+  observers, advancing the processed transaction checkpoint, and confirming a
+  matching optimistic outbox mutation only after the server refresh has been
+  committed locally, while replaying remaining local outbox writes so newer
+  optimistic edits stay visible.
   The TypeScript runner should keep validating Swift-authored transport evidence,
   including `--swift-transport-contract`,
   `--swift-local-integrations-contract`, `--swift-live-session-contract`, and

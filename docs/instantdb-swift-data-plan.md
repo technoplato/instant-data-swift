@@ -426,7 +426,13 @@ non-local app id, the coverage gate can consume the artifacts through
 `INSTANT_SWIFT_DATA_COVERAGE_ARTIFACTS_DIR` or
 `INSTANT_SWIFT_DATA_VALIDATION_RESULTS_DIR` and promote both live-transport
 records from blocked to adapted; `validation/run-e2e.sh` now archives that
-post-boundary gate as `swift-coverage-final.jsonl`.
+post-boundary gate as `swift-coverage-final.jsonl`. The Swift runtime now has
+`InstantRuntime.applyLiveRefresh(_:)` to translate live `refresh-ok`
+`instaql-result` join rows into local store transactions, map server attribute
+ids back onto declared Swift schema identities, publish query observers, advance
+the processed transaction checkpoint, and confirm a matching optimistic outbox
+mutation once the server refresh has been applied, while replaying remaining
+local outbox writes so newer optimistic edits stay visible.
 
 Current local progress: the CLI exposes non-captive local admin helpers:
 `instant-swift-data admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id]`
