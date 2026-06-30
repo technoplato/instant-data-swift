@@ -731,6 +731,30 @@ struct InstantLiveTransportTests {
   }
 
   @Test
+  func liveSessionValidationStreamsEvidenceRowsWhenRecorded() async throws {
+    let ids = InstantLiveTransportTestIDSequence(["event-init", "event-query"])
+    let recorder = InstantLiveEvidenceRecorder()
+
+    let result = try await InstantSwiftDataLiveSessionValidation.run(
+      appID: "live-streaming-test",
+      websocketURI: try #require(URL(string: "wss://ws.example.test/runtime/session")),
+      timestamp: { InstantTimestamp(milliseconds: 1_700_000_000_000) },
+      makeID: { ids.next() },
+      onEvidence: { row in
+        recorder.append(row)
+      }
+    )
+
+    let streamedRows = recorder.rows()
+    expectNoDifference(streamedRows.map(\.event), result.evidence.map(\.event))
+    expectNoDifference(streamedRows.map(\.details.sentOps), result.evidence.map(\.details.sentOps))
+    expectNoDifference(
+      streamedRows.map(\.details.receivedOps),
+      result.evidence.map(\.details.receivedOps)
+    )
+  }
+
+  @Test
   func liveTransactionResolvesServerAttributeIDsFromInitAttrs() async throws {
     let ids = InstantLiveTransportTestIDSequence(["event-init", "event-query", "event-tx"])
     let session = InstantScriptedLiveSession(messages: [
@@ -858,6 +882,23 @@ private final class InstantLiveTransportTestIDSequence: @unchecked Sendable {
     defer { lock.unlock() }
     guard !ids.isEmpty else { return UUID().uuidString.lowercased() }
     return ids.removeFirst()
+  }
+}
+
+private final class InstantLiveEvidenceRecorder: @unchecked Sendable {
+  private let lock = NSLock()
+  private var recordedRows: [ValidationEvidenceRow<LiveSessionValidationDetails>] = []
+
+  func append(_ row: ValidationEvidenceRow<LiveSessionValidationDetails>) {
+    lock.lock()
+    defer { lock.unlock() }
+    recordedRows.append(row)
+  }
+
+  func rows() -> [ValidationEvidenceRow<LiveSessionValidationDetails>] {
+    lock.lock()
+    defer { lock.unlock() }
+    return recordedRows
   }
 }
 

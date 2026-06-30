@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1465,6 +1466,10 @@ function eventReferencesEntity(event, entityID) {
   return JSON.stringify(event).includes(entityID);
 }
 
+function boundaryEntityID() {
+  return randomUUID();
+}
+
 function swiftLiveTransactionSucceeded(result) {
   return (
     result.status === 0
@@ -1500,7 +1505,7 @@ async function verifyBoundaryAdminSmoke(options) {
 
   const namespace = "validationBoundary";
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const entityID = `typescript-boundary-${suffix}`;
+  const entityID = boundaryEntityID();
   const text = `TypeScript boundary ${suffix}`;
   const query = {
     [namespace]: {
@@ -1664,9 +1669,9 @@ async function verifyBoundarySwiftLiveObserve(options) {
 
   const namespace = "todos";
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const entityID = `swift-live-boundary-${suffix}`;
+  const entityID = boundaryEntityID();
   const text = `Swift live boundary ${suffix}`;
-  const schemaSeedID = `typescript-boundary-schema-${Date.now()}`;
+  const schemaSeedID = boundaryEntityID();
   const query = {
     [namespace]: {
       $: {
@@ -1864,9 +1869,9 @@ async function verifyBoundaryTypeScriptLiveObserve(options) {
 
   const namespace = "todos";
   const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-  const entityID = `typescript-live-boundary-${suffix}`;
+  const entityID = boundaryEntityID();
   const text = `TypeScript live boundary ${suffix}`;
-  const schemaSeedID = `typescript-live-observe-schema-${Date.now()}`;
+  const schemaSeedID = boundaryEntityID();
   const query = {
     [namespace]: {
       $: {

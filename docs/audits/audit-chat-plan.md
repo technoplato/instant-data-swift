@@ -1,5 +1,10 @@
 # Audit chat plan
 
+Historical note: this transcript captures the audit that ran before the repo was
+moved to `/Users/server/Development/swift-instant-data-container/repo` and before
+the `InstantSwiftData` scaffold fixes landed. Treat it as provenance, not current
+implementation guidance.
+
 > Cloned the private repo into:
 > /Users/server/Documents/Playground/container/repo
 > Verified it’s on main, tracking origin/main, with remote:

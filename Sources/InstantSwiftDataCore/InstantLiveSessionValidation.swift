@@ -152,6 +152,7 @@ public enum InstantSwiftDataLiveSessionValidation {
       InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
     },
     makeID: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() },
+    onEvidence: (@Sendable (ValidationEvidenceRow<LiveSessionValidationDetails>) throws -> Void)? = nil,
     eventTimeoutMilliseconds: UInt64 = 10_000,
     maxServerEvents: Int = 4
   ) async throws -> LiveSessionValidationResult {
@@ -239,6 +240,22 @@ public enum InstantSwiftDataLiveSessionValidation {
       )
     }
 
+    func record(
+      event: String,
+      ok: Bool = true,
+      entityID: String? = nil,
+      errorMessage: String? = nil
+    ) throws {
+      let evidenceRow = row(
+        event: event,
+        ok: ok,
+        entityID: entityID,
+        errorMessage: errorMessage
+      )
+      evidence.append(evidenceRow)
+      try onEvidence?(evidenceRow)
+    }
+
     func refreshWithRuntimeAttributes(_ refreshOK: InstantLiveRefreshOK) -> InstantLiveRefreshOK {
       guard refreshOK.attrs.isEmpty, !initAttrs.isEmpty else { return refreshOK }
       return InstantLiveRefreshOK(
@@ -264,7 +281,7 @@ public enum InstantSwiftDataLiveSessionValidation {
 
     var session: InstantLiveWebSocketSession?
     do {
-      evidence.append(row(event: "session-url"))
+      try record(event: "session-url")
       if applyRefreshesToRuntime {
         let cacheURL = try runtimePersistenceURL ?? Self.temporaryRuntimeCacheURL(
           appID: appID,
@@ -293,7 +310,7 @@ public enum InstantSwiftDataLiveSessionValidation {
         try await openedSession.send(initMessage)
       }
       sentOps.append(initMessage.op)
-      evidence.append(row(event: "send-init"))
+      try record(event: "send-init")
 
       let initEnvelope = try await instantLiveWithTimeout(
         operation: "validate Instant live init",
@@ -314,10 +331,10 @@ public enum InstantSwiftDataLiveSessionValidation {
         sessionID = initOK.sessionID
         attrCount = initOK.attrs.count
         initAttrs = initOK.attrs
-        evidence.append(row(event: "receive-init-ok"))
+        try record(event: "receive-init-ok")
 
       case let .error(error):
-        evidence.append(row(event: "receive-error", ok: false, errorMessage: error.message))
+        try record(event: "receive-error", ok: false, errorMessage: error.message)
         throw validationError(
           operation: "validate Instant live init",
           message: "Instant live init returned an error: \(error.message)"
@@ -340,7 +357,7 @@ public enum InstantSwiftDataLiveSessionValidation {
         try await openedSession.send(addQuery)
       }
       sentOps.append(addQuery.op)
-      evidence.append(row(event: "send-add-query"))
+      try record(event: "send-add-query")
 
       var receivedQueryEvent = false
       for _ in 0..<maxServerEvents {
@@ -356,17 +373,17 @@ public enum InstantSwiftDataLiveSessionValidation {
         case let .addQueryOK(queryOK), let .addQueryExists(queryOK):
           queryResultCount = queryOK.result.count
           processedTransactionID = queryOK.processedTransactionID
-          evidence.append(row(event: "receive-query"))
+          try record(event: "receive-query")
           receivedQueryEvent = true
 
         case let .refreshOK(refreshOK):
           refreshComputationCount = refreshOK.computations.count
           processedTransactionID = refreshOK.processedTransactionID
-          evidence.append(row(event: "receive-refresh"))
+          try record(event: "receive-refresh")
           receivedQueryEvent = true
 
         case let .error(error):
-          evidence.append(row(event: "receive-error", ok: false, errorMessage: error.message))
+          try record(event: "receive-error", ok: false, errorMessage: error.message)
           throw validationError(
             operation: "validate Instant live query",
             message: "Instant live query returned an error: \(error.message)"
@@ -414,17 +431,15 @@ public enum InstantSwiftDataLiveSessionValidation {
                 )
               }
               observedEntityID = expectedExternalRefreshEntityID
-              evidence.append(
-                row(
-                  event: "receive-external-refresh",
-                  entityID: expectedExternalRefreshEntityID
-                )
+              try record(
+                event: "receive-external-refresh",
+                entityID: expectedExternalRefreshEntityID
               )
               receivedExternalRefresh = true
             }
 
           case let .error(error):
-            evidence.append(row(event: "receive-error", ok: false, errorMessage: error.message))
+            try record(event: "receive-error", ok: false, errorMessage: error.message)
             throw validationError(
               operation: "validate Instant live external refresh",
               message: "Instant live external refresh returned an error: \(error.message)"
@@ -468,13 +483,13 @@ public enum InstantSwiftDataLiveSessionValidation {
           try await openedSession.send(transact)
         }
         sentOps.append(transact.op)
-        evidence.append(row(event: "send-transact"))
+        try record(event: "send-transact")
 
         var receivedTransactOK = false
         var receivedTransactionRefresh = false
         var pendingRefreshOK: InstantLiveRefreshOK?
 
-        func acceptRefresh(_ refreshOK: InstantLiveRefreshOK) -> Bool {
+        func acceptRefresh(_ refreshOK: InstantLiveRefreshOK) throws -> Bool {
           guard let transactionID,
             refreshOK.processedTransactionID == transactionID
           else {
@@ -482,7 +497,7 @@ public enum InstantSwiftDataLiveSessionValidation {
           }
           refreshComputationCount = refreshOK.computations.count
           processedTransactionID = refreshOK.processedTransactionID
-          evidence.append(row(event: "receive-transaction-refresh"))
+          try record(event: "receive-transaction-refresh")
           receivedTransactionRefresh = true
           return true
         }
@@ -500,19 +515,19 @@ public enum InstantSwiftDataLiveSessionValidation {
           case let .transactOK(transactOK):
             transactionID = transactOK.transactionID
             transactionISN = transactOK.isn
-            evidence.append(row(event: "receive-transact-ok"))
+            try record(event: "receive-transact-ok")
             receivedTransactOK = true
             if let pendingRefreshOK {
-              _ = acceptRefresh(pendingRefreshOK)
+              _ = try acceptRefresh(pendingRefreshOK)
             }
 
           case let .refreshOK(refreshOK):
-            if !acceptRefresh(refreshOK) {
+            if !(try acceptRefresh(refreshOK)) {
               pendingRefreshOK = refreshOK
             }
 
           case let .error(error):
-            evidence.append(row(event: "receive-error", ok: false, errorMessage: error.message))
+            try record(event: "receive-error", ok: false, errorMessage: error.message)
             throw validationError(
               operation: "validate Instant live transaction",
               message: "Instant live transaction returned an error: \(error.message)"
@@ -555,7 +570,7 @@ public enum InstantSwiftDataLiveSessionValidation {
         await session.close()
       }
       if !evidence.contains(where: { !$0.ok }) {
-        evidence.append(row(event: "failed", ok: false, errorMessage: String(describing: error)))
+        try? record(event: "failed", ok: false, errorMessage: String(describing: error))
       }
       throw LiveSessionValidationFailure(error: error, evidence: evidence)
     }

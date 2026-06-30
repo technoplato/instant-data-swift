@@ -2,6 +2,7 @@
 .build/
 .build-macrotesting*/
 .swiftpm/
+validation/results/
 validation/ts-runner/node_modules/
 validation/ts-runner/package-lock.json
 validation/ts-runner/pnpm-lock.yaml

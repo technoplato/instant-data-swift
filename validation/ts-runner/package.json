@@ -1,5 +1,5 @@
 {
-  "name": "instantdata-validation-ts-runner",
+  "name": "instant-swift-data-validation-ts-runner",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,4 +12,3 @@
     "typescript": "latest"
   }
 }
-

@@ -366,6 +366,16 @@ struct InstantSwiftDataCLI {
 
     case .liveObserve:
       let appID = validationAppID(defaultAppID: "live-observe-validation")
+      let streamsJSONLines = output == .jsonl
+      let evidenceSink:
+        (@Sendable (ValidationEvidenceRow<LiveSessionValidationDetails>) throws -> Void)?
+      if streamsJSONLines {
+        evidenceSink = { (row: ValidationEvidenceRow<LiveSessionValidationDetails>) in
+          try writeJSONLine(row)
+        }
+      } else {
+        evidenceSink = nil
+      }
       do {
         let runsLive = validationRunsLiveObserve()
         let entityID = validationLiveObserveEntityID()
@@ -380,15 +390,18 @@ struct InstantSwiftDataCLI {
           applyRefreshesToRuntime: runsLive,
           liveTransport: runsLive ? .live : .local,
           proofLevel: runsLive ? "live-websocket-observe" : "local-protocol",
+          onEvidence: evidenceSink,
           maxServerEvents: runsLive ? 8 : 4
         )
-        try printLiveSessionValidation(
-          result: result,
-          output: output,
-          event: "live-observe"
-        )
+        if !streamsJSONLines {
+          try printLiveSessionValidation(
+            result: result,
+            output: output,
+            event: "live-observe"
+          )
+        }
       } catch let failure as LiveSessionValidationFailure {
-        if output == .jsonl {
+        if output == .jsonl, !streamsJSONLines {
           for row in failure.evidence {
             try writeJSONLine(row)
           }
