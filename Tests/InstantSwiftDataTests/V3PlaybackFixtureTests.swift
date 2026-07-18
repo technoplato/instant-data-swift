@@ -127,6 +127,106 @@ import Testing
       expectNoDifference(left, [first.handle, second.handle].compactMap { $0 })
     }
 
+    @Test @MainActor
+    func presenceWrapperPublishesObservesDecodesAndCancels() async throws {
+      let recorder = V3PlaybackPresenceRecorder()
+      let client = v3PlaybackPresenceClient(recorder)
+      let room = V3PlaybackRooms.activeRecording("recording-presence")
+      let presence = Presence<V3PlaybackPresence>()
+      let current = V3PlaybackPresence(
+        userID: "current-user",
+        displayName: "Current Listener",
+        isPlaying: true,
+        offsetSeconds: 12.5
+      )
+
+      let observationTask = Task { @MainActor in
+        try await presence.task(in: room, using: client)
+      }
+      try await waitForV3PlaybackRoomCondition(
+        operation: "wait for typed presence observation"
+      ) {
+        await recorder.observedRooms().count == 1
+      }
+
+      try await presence.publish(current, in: room, using: client)
+      let published = await recorder.publishedValues()
+      expectNoDifference(
+        published,
+        [
+          [
+            "displayName": .string("Current Listener"),
+            "isPlaying": .bool(true),
+            "offsetSeconds": .number(12.5),
+            "userID": .string("current-user"),
+          ]
+        ]
+      )
+
+      await recorder.yield(
+        [
+          InstantRoomPresenceMember(
+            appID: "playback-test",
+            room: try #require(room.handle),
+            userID: "remote-user",
+            values: [
+              "displayName": .string("Remote Listener"),
+              "isPlaying": .bool(false),
+              "offsetSeconds": .number(3.25),
+            ],
+            updatedAt: InstantTimestamp(milliseconds: 1_000)
+          )
+        ]
+      )
+      try await waitForV3PlaybackRoomCondition(
+        operation: "wait for typed presence decode"
+      ) {
+        await MainActor.run {
+          presence.loadError != nil
+            || presence.wrappedValue
+              == [
+              V3PlaybackPresence(
+                userID: "remote-user",
+                displayName: "Remote Listener",
+                isPlaying: false,
+                offsetSeconds: 3.25
+              )
+            ]
+        }
+      }
+      expectNoDifference(
+        presence.wrappedValue,
+        [
+          V3PlaybackPresence(
+            userID: "remote-user",
+            displayName: "Remote Listener",
+            isPlaying: false,
+            offsetSeconds: 3.25
+          )
+        ]
+      )
+      expectNoDifference(presence.loadError, nil)
+      expectNoDifference(presence.isLoading, false)
+
+      try await presence.publish(nil, in: room, using: client)
+      let leaveCount = await recorder.leaveCount()
+      expectNoDifference(leaveCount, 1)
+
+      observationTask.cancel()
+      do {
+        try await observationTask.value
+        Issue.record("Expected the typed presence observation to cancel.")
+      } catch is CancellationError {
+      } catch {
+        Issue.record("Expected CancellationError, got \(error).")
+      }
+      try await waitForV3PlaybackRoomCondition(
+        operation: "wait for typed presence observation cleanup"
+      ) {
+        await recorder.terminationCount() == 1
+      }
+    }
+
     #if os(macOS)
       @Test @MainActor
       func joinedRoomStateInvalidatesAHostedSwiftUIView() async throws {
@@ -172,11 +272,24 @@ import Testing
     @Room
     private var room: InstantRoom<V3PlaybackRoomSchema>
 
+    @Presence
+    private var listeners: [V3PlaybackPresence]
+
     var body: some View {
-      Text(room.id ?? "Joining")
+      Text("\(room.id ?? "Joining"): \(listeners.count)")
         .instantRoom(
           $room,
           V3PlaybackRooms.activeRecording(recordingID)
+        )
+        .presence(
+          $listeners,
+          in: room,
+          publishing: V3PlaybackPresence(
+            userID: "current-user",
+            displayName: "Current Listener",
+            isPlaying: false,
+            offsetSeconds: 0
+          )
         )
     }
   }
@@ -216,14 +329,19 @@ import Testing
   }
 
   private struct V3PlaybackRoomSchema: InstantRoomSchema {
-    struct Presence: Codable, Sendable {
-      var displayName: String
-    }
+    typealias Presence = V3PlaybackPresence
 
     enum Topic: String, InstantRoomTopic {
       case reaction
       case commentDraft
     }
+  }
+
+  private struct V3PlaybackPresence: Codable, Equatable, Sendable {
+    var userID: String
+    var displayName: String
+    var isPlaying: Bool
+    var offsetSeconds: Double
   }
 
   private actor V3PlaybackRoomRecorder {
@@ -247,6 +365,63 @@ import Testing
     }
   }
 
+  private actor V3PlaybackPresenceRecorder {
+    private var rooms: [InstantRoomHandle] = []
+    private var values: [[String: JSONValue]] = []
+    private var leaves = 0
+    private var terminations = 0
+    private var continuation:
+      AsyncStream<[InstantRoomPresenceMember]>.Continuation?
+
+    func observe(
+      room: InstantRoomHandle
+    ) -> AsyncStream<[InstantRoomPresenceMember]> {
+      rooms.append(room)
+      let stream = AsyncStream<[InstantRoomPresenceMember]>.makeStream(
+        bufferingPolicy: .bufferingNewest(1)
+      )
+      continuation = stream.continuation
+      stream.continuation.onTermination = { @Sendable _ in
+        Task {
+          await self.recordTermination()
+        }
+      }
+      return stream.stream
+    }
+
+    func recordPublished(_ value: [String: JSONValue]) {
+      values.append(value)
+    }
+
+    func recordLeave() {
+      leaves += 1
+    }
+
+    func recordTermination() {
+      terminations += 1
+    }
+
+    func yield(_ members: [InstantRoomPresenceMember]) {
+      continuation?.yield(members)
+    }
+
+    func observedRooms() -> [InstantRoomHandle] {
+      rooms
+    }
+
+    func publishedValues() -> [[String: JSONValue]] {
+      values
+    }
+
+    func leaveCount() -> Int {
+      leaves
+    }
+
+    func terminationCount() -> Int {
+      terminations
+    }
+  }
+
   private func v3PlaybackRoomClient(
     _ recorder: V3PlaybackRoomRecorder
   ) -> InstantSwiftDataClient {
@@ -263,6 +438,35 @@ import Testing
       leaveRoom: { room in
         await recorder.recordLeave(room)
         return room
+      }
+    )
+  }
+
+  private func v3PlaybackPresenceClient(
+    _ recorder: V3PlaybackPresenceRecorder
+  ) -> InstantSwiftDataClient {
+    InstantSwiftDataClient(
+      transact: { _ in fatalError("Unused playback presence transaction") },
+      query: { _ in [] },
+      observe: { _ in AsyncStream { $0.finish() } },
+      pendingMutations: { [] },
+      localID: { $0 },
+      setRoomPresence: { room, _, values in
+        await recorder.recordPublished(values)
+        return InstantRoomPresenceMember(
+          appID: "playback-test",
+          room: room,
+          userID: "current-user",
+          values: values,
+          updatedAt: InstantTimestamp(milliseconds: 500)
+        )
+      },
+      observeRoomPresence: { room in
+        await recorder.observe(room: room)
+      },
+      leaveRoomPresence: { _, _ in
+        await recorder.recordLeave()
+        return "current-user"
       }
     )
   }
