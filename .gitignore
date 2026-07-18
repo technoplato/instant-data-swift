@@ -7,3 +7,4 @@ validation/ts-runner/node_modules/
 validation/ts-runner/package-lock.json
 validation/ts-runner/yarn.lock
 validation/ts-runner/.generated/
+validation/ts-runner/.generated-contract.*/

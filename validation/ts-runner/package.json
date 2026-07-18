@@ -3,6 +3,10 @@
   "private": true,
   "type": "module",
   "packageManager": "pnpm@9.15.0",
+  "instantContract": {
+    "selection": "latest stable SDK release published before the pinned upstream revision",
+    "upstreamRevision": "e71017612aed4031710a35e2fcace30d38d557ac"
+  },
   "scripts": {
     "fixtures": "tsx src/main.ts --fixtures",
     "test": "pnpm run typecheck && pnpm run fixtures",
