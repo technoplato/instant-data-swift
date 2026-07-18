@@ -59,14 +59,14 @@ As of 2026-07-18:
   schema and permissions verification, and the local Swift/TypeScript E2E
   orchestrator. Its evidence directory was
   `/tmp/instant-swift-data-packet0-20260718T1106`.
-- The current room/stream runtime passed 836 Swift Testing tests across 20
-  suites plus 28 macro tests. The final inline-stream focused rerun was
+- The current runtime and V3 recordings fixture passed 842 Swift Testing tests
+  across 22 suites plus 28 macro tests. The final focused rerun was
   warning-free. The core reconnect packet's earlier explicit E2E evidence is
   `/tmp/instant-swift-data-reconnect-20260718T161703Z`.
 - Credentialed remote preflight and both real Swift/TypeScript boundary
-  directions passed from the clean current stream-inline milestone. The
+  directions passed from the typed-message milestone. The
   evidence directory is
-  `/tmp/instant-swift-data-stream-inline-e2e-20260718T1333`. That run recorded
+  `/tmp/instant-swift-data-v3-message-e2e-20260718T180003Z`. That run recorded
   295 cases, 28 exact, 265 adapted, 2 not applicable, and 0 blocked, including
   generated schema/permissions verification and both Swift-to-TypeScript and
   TypeScript-to-Swift live boundaries.
@@ -309,9 +309,14 @@ cancellation, and error preservation.
 
 Commit target: `Compile V3 recordings list fetch lifecycle`.
 
-### Packet 2: Add typed message sends and change envelopes
+### Packet 2: Add typed message sends and change envelopes — complete
 
 Purpose: make V3 mutations compile and preserve optimistic/server semantics.
+
+Commits `4e5fea1`, `524028f`, and `2fbcb29` add durable transaction-specific
+lifecycle events, the public `InstantMessage`/`db.send` surface, and the
+VoiceTrail rename fixture. The tests prove optimistic and accepted callbacks
+once, failure once, passive-refresh isolation, and retry without replay.
 
 - Add `db.send(message, onOptimisticCommit:onServerAccepted:onFailure:)` over
   the existing transaction/outbox core.
@@ -472,12 +477,11 @@ The release harness must prove each applicable row in both directions:
 
 ## Immediate Next Step
 
-Implement Packet 2's typed message send for the recordings-list rename action:
-`db.send(message, onOptimisticCommit:onServerAccepted:onFailure:)`. Keep the
-change envelope minimal, invoke each action callback once for its corresponding
-phase, and prove that passive remote refreshes do not replay local callbacks.
-Compile the rename flow in the same VoiceTrail fixture and preserve the existing
-durable outbox/reconnect semantics underneath it.
+Compile the V3 auth-login screen against public package APIs. Introduce the
+smallest `@InstantAuth` state owner over the existing durable auth session and
+magic-code/OAuth primitives, keep action callbacks at each call site, and prove
+loading, success, failure, cancellation, and relaunch behavior. Update the auth
+sketch and V3 decision log in the same packet.
 
 File-backed `stream-append` fetching and remote stream metadata bootstrap remain
 important live-stream work, but they do not block the recordings-list fetch

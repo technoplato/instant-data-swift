@@ -227,7 +227,11 @@ Implementation status, 2026-07-18: this direct-wrapper syntax compiles against
 the public package in
 `Tests/InstantSwiftDataTests/V3RecordingsListFixtureTests.swift`. The modifier
 keys replacement by `InstantQuery` identity and delegates lifecycle ownership to
-the projected `FetchAll` value.
+the projected `FetchAll` value. The same fixture proves the rename action's
+optimistic and accepted callbacks once, server failure once, retry without
+callback replay, and passive refresh without action-callback replay. Callback
+parameters borrow the change; the current generic envelope remains Copyable due
+to the Swift 6.2 associated-type limitation recorded in the V3 design document.
 
 ## Composite Request Variant
 
