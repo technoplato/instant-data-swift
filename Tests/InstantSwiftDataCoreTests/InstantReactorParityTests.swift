@@ -341,6 +341,327 @@ struct InstantReactorParityTests {
   }
 
   @Test
+  func upstreamPythonSubscriptionPostInitFailureSilentlyRetriesAndResubscribes() async throws {
+    let cacheURL = try temporaryReactorParityCacheURL()
+    let query: InstantLiveJSONValue = .object([TodoExample.namespace: .object([:])])
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_060_000)
+    let firstSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-before-drop"),
+      liveReactorAddQueryOK(
+        query: query,
+        processedTransactionID: "server-tx-before-drop",
+        result: liveReactorTodoQueryResult(
+          id: "todo-reconnect",
+          text: "before reconnect",
+          createdAt: createdAt
+        )
+      ),
+    ])
+    let secondSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-after-drop"),
+      liveReactorAddQueryOK(
+        query: query,
+        processedTransactionID: "server-tx-after-drop",
+        result: liveReactorTodoQueryResult(
+          id: "todo-reconnect",
+          text: "post-reconnect",
+          createdAt: createdAt
+        )
+      ),
+    ])
+    let transport = LiveReactorParityTransport(sessions: [firstSession, secondSession])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "python-subscription-reconnect-parity",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        liveTransport: transport.transport
+      )
+    )
+    let statuses = try await runtime.observeConnectionStatus()
+    let observedStates = Task { () -> [InstantConnectionState] in
+      var states: [InstantConnectionState] = []
+      for await status in statuses {
+        states.append(status.state)
+        if Task.isCancelled {
+          break
+        }
+      }
+      return states
+    }
+    let stream = await runtime.observe(TodoExample.query)
+    var iterator = stream.makeAsyncIterator()
+    let initial = try #require(await iterator.next())
+    expectNoDifference(initial.values, [], pythonSubscriptionReconnectSource)
+
+    _ = try await runtime.connect()
+    let beforeDrop = try #require(await iterator.next())
+    expectNoDifference(
+      try TodoExample.decode(beforeDrop.values).map(\.text),
+      ["before reconnect"],
+      pythonSubscriptionReconnectSource
+    )
+
+    await firstSession.failReceive(
+      InstantError(
+        code: .networkFailed,
+        operation: "receive Reactor parity live event",
+        message: "transient drop after init",
+        recovery: "Reconnect the established live subscription."
+      )
+    )
+    try await Task.sleep(nanoseconds: 50_000_000)
+    let requestsAfterDrop = await transport.connectionRequests()
+    try #require(
+      requestsAfterDrop.count == 2,
+      "\(pythonSubscriptionReconnectSource) Expected one initial connection and one silent reconnect, got \(requestsAfterDrop.count)."
+    )
+    await secondSession.waitForSentMessageCount(2)
+
+    let postReconnect = try #require(await iterator.next())
+    expectNoDifference(
+      try TodoExample.decode(postReconnect.values).map(\.text),
+      ["post-reconnect"],
+      pythonSubscriptionReconnectSource
+    )
+    expectNoDifference(requestsAfterDrop.map(\.appID), [
+      "python-subscription-reconnect-parity",
+      "python-subscription-reconnect-parity",
+    ], pythonSubscriptionReconnectSource)
+    let postReconnectSentOps = await secondSession.sentMessages().map(\.op)
+    expectNoDifference(
+      postReconnectSentOps,
+      ["init", "add-query"],
+      pythonSubscriptionReconnectSource
+    )
+    let status = try await runtime.connectionStatus()
+    expectNoDifference(status.state, .opened, pythonSubscriptionReconnectSource)
+    expectNoDifference(status.lastErrorMessage, nil, pythonSubscriptionReconnectSource)
+    observedStates.cancel()
+    let states = await observedStates.value
+    #expect(states.contains(.closed), "\(pythonSubscriptionReconnectSource)")
+    #expect(!states.contains(.errored), "\(pythonSubscriptionReconnectSource)")
+    expectNoDifference(states.last, .opened, pythonSubscriptionReconnectSource)
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func runtimeReconnectBacksOffAndFlushesOnlyUnacknowledgedWork() async throws {
+    let cacheURL = try temporaryReactorParityCacheURL()
+    let query: InstantLiveJSONValue = .object([TodoExample.namespace: .object([:])])
+    let firstCreatedAt = InstantTimestamp(milliseconds: 1_700_000_070_000)
+    let secondCreatedAt = InstantTimestamp(milliseconds: firstCreatedAt.milliseconds + 1)
+    let firstSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "flush-before-drop")
+    ])
+    let secondSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "flush-after-drop"),
+      liveReactorAddQueryOK(
+        query: query,
+        processedTransactionID: "server-tx-after-flush-reconnect",
+        result: liveReactorTodoQueryResult(
+          id: "todo-reconnect-pending",
+          text: "still pending after reconnect",
+          createdAt: secondCreatedAt
+        )
+      ),
+    ])
+    let reconnectFailures: [LiveReactorParityTransportAttempt] = (1...12).map { attempt in
+      .failure(
+        InstantError(
+          code: .networkFailed,
+          operation: "Reactor parity reconnect attempt \(attempt)",
+          message: "temporary reconnect failure \(attempt)",
+          recovery: "Retry with bounded backoff."
+        )
+      )
+    }
+    let transport = LiveReactorParityTransport(
+      attempts: [.session(firstSession)] + reconnectFailures + [.session(secondSession)]
+    )
+    let reconnectSleep = LiveReactorParityReconnectSleep()
+    var configuration = InstantRuntimeConfiguration(
+      appID: "reactor-reconnect-flush-parity",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      liveTransport: transport.transport
+    )
+    configuration.liveReconnectSleep = { milliseconds in
+      try await reconnectSleep.sleep(milliseconds: milliseconds)
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let stream = await runtime.observe(TodoExample.query)
+    var iterator = stream.makeAsyncIterator()
+    let initial = try #require(await iterator.next())
+    expectNoDifference(initial.values, [], reactorReconnectFlushSource)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-reconnect-acknowledged",
+        operations: TodoExample.createOperations(
+          id: "todo-reconnect-acknowledged",
+          text: "acknowledged before reconnect",
+          createdAt: firstCreatedAt,
+          transactionID: "tx-reconnect-acknowledged"
+        )
+      ),
+      createdAt: firstCreatedAt
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-reconnect-pending",
+        operations: TodoExample.createOperations(
+          id: "todo-reconnect-pending",
+          text: "still pending after reconnect",
+          createdAt: secondCreatedAt,
+          transactionID: "tx-reconnect-pending"
+        )
+      ),
+      createdAt: secondCreatedAt
+    )
+    _ = try await runtime.connect()
+    await firstSession.waitForSentMessageCount(4)
+    let initiallySentOps = await firstSession.sentMessages().map(\.op)
+    expectNoDifference(
+      initiallySentOps,
+      ["init", "add-query", "transact", "transact"],
+      reactorReconnectFlushSource
+    )
+
+    await firstSession.enqueue(
+      InstantLiveMessage(
+        op: "transact-ok",
+        clientEventID: "tx-reconnect-acknowledged",
+        fields: ["tx-id": .string("server-tx-reconnect-acknowledged")]
+      )
+    )
+    _ = try #require(
+      try await instantLiveWithTimeout(
+        operation: "wait for acknowledged reconnect mutation cleanup",
+        timeoutMilliseconds: 500
+      ) {
+        try await runtime.observeConnectionStatus().first { $0.pendingMutationCount == 1 }
+      }
+    )
+    await firstSession.failReceive(
+      InstantError(
+        code: .networkFailed,
+        operation: "drop Reactor parity flush session",
+        message: "transient drop after one acknowledgement",
+        recovery: "Reconnect and send only unacknowledged work."
+      )
+    )
+    try await instantLiveWithTimeout(
+      operation: "wait for failed and successful reconnect attempts",
+      timeoutMilliseconds: 500
+    ) {
+      await transport.waitForConnectionCount(14)
+    }
+    await secondSession.waitForSentMessageCount(3)
+
+    let reconnectDelays = await reconnectSleep.delays()
+    expectNoDifference(
+      reconnectDelays,
+      [
+        0, 1_000, 2_000, 3_000, 4_000, 5_000, 6_000,
+        7_000, 8_000, 9_000, 10_000, 10_000, 10_000,
+      ],
+      reactorReconnectFlushSource
+    )
+    let reconnectedMessages = await secondSession.sentMessages()
+    expectNoDifference(
+      reconnectedMessages.map(\.op),
+      ["init", "add-query", "transact"],
+      reactorReconnectFlushSource
+    )
+    expectNoDifference(
+      reconnectedMessages.last?.clientEventID,
+      "tx-reconnect-pending",
+      reactorReconnectFlushSource
+    )
+    let postReconnect = try #require(await iterator.next())
+    expectNoDifference(
+      try TodoExample.decode(postReconnect.values).map(\.text),
+      ["acknowledged before reconnect", "still pending after reconnect"],
+      reactorReconnectFlushSource
+    )
+    let pendingAfterReconnect = await runtime.pendingMutations().map(\.id)
+    expectNoDifference(
+      pendingAfterReconnect,
+      ["tx-reconnect-pending"],
+      reactorReconnectFlushSource
+    )
+
+    await secondSession.enqueue(
+      InstantLiveMessage(
+        op: "transact-ok",
+        clientEventID: "tx-reconnect-pending",
+        fields: ["tx-id": .string("server-tx-reconnect-pending")]
+      )
+    )
+    _ = try #require(
+      try await instantLiveWithTimeout(
+        operation: "wait for reconnected mutation acknowledgement",
+        timeoutMilliseconds: 500
+      ) {
+        try await runtime.observeConnectionStatus().first { $0.pendingMutationCount == 0 }
+      }
+    )
+    let pendingAfterAcknowledgement = await runtime.pendingMutations()
+    expectNoDifference(pendingAfterAcknowledgement, [], reactorReconnectFlushSource)
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func upstreamPythonConnectionCloseCancelsInflightReconnectTask() async throws {
+    let firstSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs)
+    ])
+    let secondSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "unexpected-reconnect")
+    ])
+    let transport = LiveReactorParityTransport(sessions: [firstSession, secondSession])
+    let reconnectSleeper = LiveReactorParityReconnectSleep(suspendsUntilCancelled: true)
+    var configuration = InstantRuntimeConfiguration(
+      appID: "python-connection-close-reconnect-parity",
+      persistenceURL: try temporaryReactorParityCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: transport.transport
+    )
+    configuration.liveReconnectSleep = { milliseconds in
+      try await reconnectSleeper.sleep(milliseconds: milliseconds)
+    }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.connect()
+
+    await firstSession.failReceive(
+      InstantError(
+        code: .networkFailed,
+        operation: "receive Reactor parity live event",
+        message: "transient drop before explicit close",
+        recovery: "Cancel the pending reconnect when the runtime closes."
+      )
+    )
+    await reconnectSleeper.waitForDelayCount(1)
+    _ = try await runtime.closeConnection()
+    try await instantLiveWithTimeout(
+      operation: "wait for explicit close to cancel reconnect sleep",
+      timeoutMilliseconds: 500
+    ) {
+      await reconnectSleeper.waitForCancellationCount(1)
+    }
+
+    let delays = await reconnectSleeper.delays()
+    let requests = await transport.connectionRequests()
+    expectNoDifference(delays, [0], pythonConnectionCloseReconnectSource)
+    expectNoDifference(requests.map(\.appID), [
+      "python-connection-close-reconnect-parity"
+    ], pythonConnectionCloseReconnectSource)
+    let status = try await runtime.connectionStatus()
+    expectNoDifference(status.state, .closed, pythonConnectionCloseReconnectSource)
+  }
+
+  @Test
   func upstreamReactorRewriteMutationsKeepsPendingTransportStable() async throws {
     let cacheURL = try temporaryReactorParityCacheURL()
     let seedTime = InstantTimestamp(milliseconds: 1_700_000_010_000)
@@ -469,6 +790,15 @@ private let reactorOptimisticRefreshSource =
 
 private let reactorPendingCleanupSource =
   "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts we don't cleanup mutations we're still waiting on [adapted: Swift sends both durable pending mutations through the owned live session, applies transact-ok for only the first, and proves the still-unacknowledged optimistic mutation remains pending and visible across relaunch.]"
+
+private let pythonSubscriptionReconnectSource =
+  "upstream/instant/client/packages/python/tests/test_subscription_state.py test_post_init_failure_silently_retries [adapted: Swift's owned WebSocket session establishes init and a query result, receives a transient post-init failure, reconnects without publishing a terminal error, reinstalls the active query, and emits the post-reconnect result. This also pins upstream/instant/client/packages/core/src/Reactor.js _transportOnClose and _scheduleReconnect behavior.]"
+
+private let reactorReconnectFlushSource =
+  "upstream/instant/client/packages/core/src/Reactor.js _scheduleReconnect and _flushPendingMessages [adapted: Swift records the same immediate, one-second progression, and ten-second retry cap, reinstalls the active query, and resends only the durable mutation that did not receive transact-ok before the drop.]"
+
+private let pythonConnectionCloseReconnectSource =
+  "upstream/instant/client/packages/python/tests/test_streams_state.py test_connection_aclose_cancels_inflight_reconnect_task [adapted: Swift blocks the reconnect backoff task after a post-init transport failure, explicitly closes the runtime, and proves cancellation prevents a second live transport connection. This also pins upstream/instant/client/packages/core/src/Reactor.js shutdown branch in _transportOnClose.]"
 
 private let reactorRewriteSource =
   "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts rewrite mutations [adapted: Swift pending mutations store typed transactions and lower them to stable transport steps over declared server attributes instead of rewriting cached JavaScript tx-steps.]"

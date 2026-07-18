@@ -11,6 +11,7 @@ actor LiveReactorParitySession {
   private var sent: [InstantLiveMessage] = []
   private var sentWaiters: [SentWaiter] = []
   private var receiveContinuation: CheckedContinuation<InstantLiveMessage, Error>?
+  private var receiveFailure: InstantError?
   private var isClosed = false
 
   init(messages: [InstantLiveMessage]) {
@@ -19,12 +20,16 @@ actor LiveReactorParitySession {
 
   nonisolated var transport: InstantLiveTransportClient {
     InstantLiveTransportClient { _ in
-      InstantLiveWebSocketSession(
-        send: { message in await self.send(message) },
-        receive: { try await self.receive() },
-        close: { await self.close() }
-      )
+      self.webSocketSession
     }
+  }
+
+  nonisolated var webSocketSession: InstantLiveWebSocketSession {
+    InstantLiveWebSocketSession(
+      send: { message in await self.send(message) },
+      receive: { try await self.receive() },
+      close: { await self.close() }
+    )
   }
 
   func sentMessages() -> [InstantLiveMessage] {
@@ -47,6 +52,15 @@ actor LiveReactorParitySession {
     }
   }
 
+  func failReceive(_ error: InstantError) {
+    if let receiveContinuation {
+      self.receiveContinuation = nil
+      receiveContinuation.resume(throwing: error)
+    } else if !isClosed {
+      receiveFailure = error
+    }
+  }
+
   private func send(_ message: InstantLiveMessage) {
     sent.append(message)
     var pending: [SentWaiter] = []
@@ -64,6 +78,10 @@ actor LiveReactorParitySession {
     if !messages.isEmpty {
       return messages.removeFirst()
     }
+    if let receiveFailure {
+      self.receiveFailure = nil
+      throw receiveFailure
+    }
     if isClosed {
       throw CancellationError()
     }
@@ -79,6 +97,157 @@ actor LiveReactorParitySession {
   }
 }
 
+actor LiveReactorParityTransport {
+  private struct ConnectionWaiter {
+    var count: Int
+    var continuation: CheckedContinuation<Void, Never>
+  }
+
+  private var attempts: [LiveReactorParityTransportAttempt]
+  private var requests: [InstantLiveSessionRequest] = []
+  private var waiters: [ConnectionWaiter] = []
+
+  init(sessions: [LiveReactorParitySession]) {
+    self.attempts = sessions.map(LiveReactorParityTransportAttempt.session)
+  }
+
+  init(attempts: [LiveReactorParityTransportAttempt]) {
+    self.attempts = attempts
+  }
+
+  nonisolated var transport: InstantLiveTransportClient {
+    InstantLiveTransportClient { request in
+      try await self.connect(request)
+    }
+  }
+
+  func connectionRequests() -> [InstantLiveSessionRequest] {
+    requests
+  }
+
+  func waitForConnectionCount(_ count: Int) async {
+    guard requests.count < count else { return }
+    await withCheckedContinuation { continuation in
+      waiters.append(ConnectionWaiter(count: count, continuation: continuation))
+    }
+  }
+
+  private func connect(_ request: InstantLiveSessionRequest) throws
+    -> InstantLiveWebSocketSession
+  {
+    requests.append(request)
+    resumeConnectionWaiters()
+    guard !attempts.isEmpty else {
+      throw InstantError(
+        code: .networkFailed,
+        operation: "connect Reactor parity live transport",
+        message: "No scripted live session remains.",
+        recovery: "Add one scripted session for every expected connection attempt."
+      )
+    }
+    switch attempts.removeFirst() {
+    case let .session(session):
+      return session.webSocketSession
+    case let .failure(error):
+      throw error
+    }
+  }
+
+  private func resumeConnectionWaiters() {
+    var pending: [ConnectionWaiter] = []
+    for waiter in waiters {
+      if requests.count >= waiter.count {
+        waiter.continuation.resume()
+      } else {
+        pending.append(waiter)
+      }
+    }
+    waiters = pending
+  }
+}
+
+enum LiveReactorParityTransportAttempt: Sendable {
+  case session(LiveReactorParitySession)
+  case failure(InstantError)
+}
+
+actor LiveReactorParityReconnectSleep {
+  private struct DelayWaiter {
+    var count: Int
+    var continuation: CheckedContinuation<Void, Never>
+  }
+
+  private struct CancellationWaiter {
+    var count: Int
+    var continuation: CheckedContinuation<Void, Never>
+  }
+
+  private let suspendsUntilCancelled: Bool
+  private var recordedDelays: [UInt64] = []
+  private var cancellationCount = 0
+  private var delayWaiters: [DelayWaiter] = []
+  private var cancellationWaiters: [CancellationWaiter] = []
+
+  init(suspendsUntilCancelled: Bool = false) {
+    self.suspendsUntilCancelled = suspendsUntilCancelled
+  }
+
+  func sleep(milliseconds: UInt64) async throws {
+    recordedDelays.append(milliseconds)
+    resumeDelayWaiters()
+    guard suspendsUntilCancelled else { return }
+    do {
+      try await Task.sleep(nanoseconds: 60_000_000_000)
+    } catch is CancellationError {
+      cancellationCount += 1
+      resumeCancellationWaiters()
+      throw CancellationError()
+    }
+  }
+
+  func delays() -> [UInt64] {
+    recordedDelays
+  }
+
+  func waitForDelayCount(_ count: Int) async {
+    guard recordedDelays.count < count else { return }
+    await withCheckedContinuation { continuation in
+      delayWaiters.append(DelayWaiter(count: count, continuation: continuation))
+    }
+  }
+
+  func waitForCancellationCount(_ count: Int) async {
+    guard cancellationCount < count else { return }
+    await withCheckedContinuation { continuation in
+      cancellationWaiters.append(CancellationWaiter(count: count, continuation: continuation))
+    }
+  }
+
+  private func resumeDelayWaiters() {
+    var pending: [DelayWaiter] = []
+    for waiter in delayWaiters {
+      if recordedDelays.count >= waiter.count {
+        waiter.continuation.resume()
+      } else {
+        pending.append(waiter)
+      }
+    }
+    delayWaiters = pending
+  }
+
+  private func resumeCancellationWaiters() {
+    var pending: [CancellationWaiter] = []
+    for waiter in cancellationWaiters {
+      if cancellationCount >= waiter.count {
+        waiter.continuation.resume()
+      } else {
+        pending.append(waiter)
+      }
+    }
+    cancellationWaiters = pending
+  }
+}
+
 let liveReactorTodoServerAttrs: [InstantLiveJSONValue] = [
   liveReactorServerAttr(id: "server-todos-id", name: "id"),
   liveReactorServerAttr(id: "server-todos-text", name: "text"),
@@ -86,14 +255,17 @@ let liveReactorTodoServerAttrs: [InstantLiveJSONValue] = [
   liveReactorServerAttr(id: "server-todos-created-at", name: "createdAt"),
 ]
 
-func liveReactorInitOK(attrs: [InstantLiveJSONValue]) -> InstantLiveMessage {
+func liveReactorInitOK(
+  attrs: [InstantLiveJSONValue],
+  sessionID: String = "reactor-parity-session"
+) -> InstantLiveMessage {
   InstantLiveMessage(
     op: "init-ok",
     clientEventID: "event-init",
     fields: [
       "attrs": .array(attrs),
       "auth": .null,
-      "session-id": .string("reactor-parity-session"),
+      "session-id": .string(sessionID),
     ]
   )
 }

@@ -1,6 +1,7 @@
 import Foundation
 
 public enum InstantParityCoverageSourceKind: String, Codable, Hashable, Sendable {
+  case instantPython = "instant-python"
   case instantTypeScript = "instant-typescript"
   case sqliteData = "sqlite-data"
 }
@@ -1082,6 +1083,40 @@ public enum InstantSwiftDataParityCoverage {
       surface: "optimistic-mutations",
       status: .adapted,
       notes: "Swift adapts Reactor's timeout cleanup by sending both durable pending mutations through the owned live session, applying transact-ok for only the first, and leaving the still-unacknowledged optimistic mutation pending and visible across relaunch."
+    ),
+    instantPython(
+      id: "instant.python.subscription.post-init-reconnect",
+      sourceFile: pythonSubscriptionSource,
+      sourceTestName: "test_post_init_failure_silently_retries",
+      swiftFile: reactorParitySwiftFile,
+      swiftTestName:
+        "upstreamPythonSubscriptionPostInitFailureSilentlyRetriesAndResubscribes",
+      surface: "live-reconnect",
+      status: .adapted,
+      notes:
+        "Swift establishes a live query, treats a post-init receive failure as transient, publishes closed rather than errored, reconnects immediately, reinstalls the active query, and emits the post-reconnect result. The reconnect mechanics also follow Reactor.js _transportOnClose and _scheduleReconnect."
+    ),
+    instantPython(
+      id: "instant.python.connection.close-cancels-reconnect",
+      sourceFile: pythonStreamsStateSource,
+      sourceTestName: "test_connection_aclose_cancels_inflight_reconnect_task",
+      swiftFile: reactorParitySwiftFile,
+      swiftTestName: "upstreamPythonConnectionCloseCancelsInflightReconnectTask",
+      surface: "live-reconnect",
+      status: .adapted,
+      notes:
+        "Swift blocks the reconnect backoff task after a post-init failure, explicitly closes the runtime, and proves cancellation prevents a second transport connection, matching the Reactor.js shutdown branch."
+    ),
+    instant(
+      id: "instant.reactor.reconnect-flush-pending-only",
+      sourceFile: reactorImplementationSource,
+      sourceTestName: "source-derived lifecycle: _scheduleReconnect and _flushPendingMessages",
+      swiftFile: reactorParitySwiftFile,
+      swiftTestName: "runtimeReconnectBacksOffAndFlushesOnlyUnacknowledgedWork",
+      surface: "live-reconnect",
+      status: .adapted,
+      notes:
+        "Swift proves the immediate, one-second progression, and ten-second cap across twelve failed reconnect attempts, then reinstalls the active query, preserves acknowledged local data, and resends only the durable mutation that did not receive transact-ok before the drop."
     ),
     instant(
       id: "instant.reactor.get-local-id-stability",
@@ -3167,6 +3202,29 @@ public enum InstantSwiftDataParityCoverage {
     )
   }
 
+  private static func instantPython(
+    id: String,
+    sourceFile: String,
+    sourceTestName: String,
+    swiftFile: String,
+    swiftTestName: String,
+    surface: String,
+    status: InstantParityCoverageStatus,
+    notes: String
+  ) -> InstantParityCoverageRecord {
+    InstantParityCoverageRecord(
+      id: id,
+      sourceKind: .instantPython,
+      sourceFile: sourceFile,
+      sourceTestName: sourceTestName,
+      swiftFile: swiftFile,
+      swiftTestName: swiftTestName,
+      surface: surface,
+      status: status,
+      notes: notes
+    )
+  }
+
   private static let storeSource =
     "upstream/instant/client/packages/core/__tests__/src/store.test.ts"
   private static let instaQLSource =
@@ -3187,6 +3245,12 @@ public enum InstantSwiftDataParityCoverage {
     "upstream/instant/client/packages/vue/src/tests/InstantVueDatabase.test.ts"
   private static let reactorSource =
     "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts"
+  private static let reactorImplementationSource =
+    "upstream/instant/client/packages/core/src/Reactor.js"
+  private static let pythonSubscriptionSource =
+    "upstream/instant/client/packages/python/tests/test_subscription_state.py"
+  private static let pythonStreamsStateSource =
+    "upstream/instant/client/packages/python/tests/test_streams_state.py"
   private static let instamlSource =
     "upstream/instant/client/packages/core/__tests__/src/instaml.test.ts"
   private static let datalogSource =

@@ -25,6 +25,9 @@ public struct InstantRuntimeConfiguration: Sendable {
   public var platformAppClient: InstantPlatformAppClient
   public var appBuilderCodeGenerator: AppBuilderCodeGeneratorClient
   var actorHopRecorder: InstantActorHopRecorder?
+  var liveReconnectSleep: @Sendable (UInt64) async throws -> Void = { milliseconds in
+    try await Task.sleep(nanoseconds: milliseconds * 1_000_000)
+  }
 
   public init(
     appID: String,
@@ -430,6 +433,73 @@ private actor InstantRuntimeLiveSession {
   }
 }
 
+private actor InstantRuntimeReconnectController {
+  private var task: Task<Void, Never>?
+  private var generation = 0
+  private var restartRequested = false
+
+  func start(
+    sleep: @escaping @Sendable (UInt64) async throws -> Void,
+    reconnect: @escaping @Sendable () async throws -> Void
+  ) {
+    guard task == nil else {
+      restartRequested = true
+      return
+    }
+
+    generation += 1
+    let generation = generation
+    task = Task { [weak self] in
+      var attempt: UInt64 = 0
+      while !Task.isCancelled {
+        let delay = min(attempt * 1_000, 10_000)
+        do {
+          try await sleep(delay)
+          try Task.checkCancellation()
+          try await reconnect()
+          await self?.finish(
+            generation: generation,
+            sleep: sleep,
+            reconnect: reconnect
+          )
+          return
+        } catch is CancellationError {
+          await self?.cancelled(generation: generation)
+          return
+        } catch {
+          attempt += 1
+        }
+      }
+      await self?.cancelled(generation: generation)
+    }
+  }
+
+  func cancel() {
+    generation += 1
+    restartRequested = false
+    task?.cancel()
+    task = nil
+  }
+
+  private func finish(
+    generation: Int,
+    sleep: @escaping @Sendable (UInt64) async throws -> Void,
+    reconnect: @escaping @Sendable () async throws -> Void
+  ) {
+    guard generation == self.generation else { return }
+    task = nil
+    guard restartRequested else { return }
+    restartRequested = false
+    start(sleep: sleep, reconnect: reconnect)
+  }
+
+  private func cancelled(generation: Int) {
+    guard generation == self.generation else { return }
+    task = nil
+    restartRequested = false
+  }
+}
+
 private struct InstantSharedRootWriteTarget: Hashable, Sendable {
   var namespace: String?
   var id: String
@@ -468,6 +538,7 @@ public final class InstantRuntime: Sendable {
   private let operationGate = AsyncSerialGate()
   private let mutationFlushGate = AsyncSerialGate()
   private let liveSession = InstantRuntimeLiveSession()
+  private let reconnectController = InstantRuntimeReconnectController()
 
   private init(
     configuration: InstantRuntimeConfiguration,
@@ -1305,6 +1376,11 @@ public final class InstantRuntime: Sendable {
 
   @discardableResult
   public func connect() async throws -> InstantConnectionStatus {
+    await reconnectController.cancel()
+    return try await connectLiveSession(reportsFailure: true)
+  }
+
+  private func connectLiveSession(reportsFailure: Bool) async throws -> InstantConnectionStatus {
     await operationGate.enter()
     do {
       if let liveTransport = configuration.liveTransport {
@@ -1324,7 +1400,11 @@ public final class InstantRuntime: Sendable {
           )
         } catch {
           await liveSession.close()
-          try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
+          if reportsFailure {
+            try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
+          } else {
+            try await saveClosedConnectionMetadataWithGateHeld()
+          }
           _ = try? await publishConnectionStatusWithGateHeld()
           throw error
         }
@@ -1340,7 +1420,7 @@ public final class InstantRuntime: Sendable {
           },
           onFailure: { [weak self] error in
             guard let self else { return }
-            await self.recordConnectionError(error)
+            await self.handleLiveSessionFailure(error)
           }
         )
       }
@@ -1353,6 +1433,7 @@ public final class InstantRuntime: Sendable {
 
   @discardableResult
   public func closeConnection() async throws -> InstantConnectionStatus {
+    await reconnectController.cancel()
     await operationGate.enter()
     do {
       await liveSession.close()
@@ -1424,6 +1505,17 @@ public final class InstantRuntime: Sendable {
     try await persistence.deleteMetadataValue(key: connectionLastErrorMetadataKey)
   }
 
+  private func saveClosedConnectionMetadataWithGateHeld() async throws {
+    recordActorHop(.persistence)
+    try await persistence.saveMetadataValue(
+      InstantConnectionState.closed.rawValue,
+      key: connectionStateMetadataKey,
+      updatedAt: configuration.now()
+    )
+    recordActorHop(.persistence)
+    try await persistence.deleteMetadataValue(key: connectionLastErrorMetadataKey)
+  }
+
   private func saveErroredConnectionMetadataWithGateHeld(message: String) async throws {
     let now = configuration.now()
     recordActorHop(.persistence)
@@ -1449,6 +1541,24 @@ public final class InstantRuntime: Sendable {
     } catch {
       await operationGate.leave()
     }
+  }
+
+  private func handleLiveSessionFailure(_: Error) async {
+    await operationGate.enter()
+    do {
+      try await saveClosedConnectionMetadataWithGateHeld()
+      _ = try? await publishConnectionStatusWithGateHeld()
+      await operationGate.leave()
+    } catch {
+      await operationGate.leave()
+    }
+    await reconnectController.start(
+      sleep: configuration.liveReconnectSleep,
+      reconnect: { [weak self] in
+        guard let self else { throw CancellationError() }
+        _ = try await self.connectLiveSession(reportsFailure: false)
+      }
+    )
   }
 
   private func handleLiveServerEvent(
