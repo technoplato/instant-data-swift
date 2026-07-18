@@ -1131,6 +1131,18 @@ public enum InstantSwiftDataParityCoverage {
         "Swift idempotently joins a room, queues presence and topic data until join-room-ok, rejoins with current presence after a transient drop, flushes only the newer queued data once, and sends leave-room on explicit cleanup."
     ),
     instant(
+      id: "instant.reactor.room-presence-and-broadcast-events",
+      sourceFile: reactorRoomEventsSource,
+      sourceTestName:
+        "refresh-presence, patch-presence, and server-broadcast receive branches + patch-presence-works + broadcast-works",
+      swiftFile: reactorParitySwiftFile,
+      swiftTestName: "runtimeAppliesLivePresencePatchesAndEphemeralServerBroadcasts",
+      surface: "live-room-events",
+      status: .adapted,
+      notes:
+        "Swift replaces peer presence, applies canonical add/replace/remove edits, excludes the current session from presence, delivers peer and current-session server broadcasts through public topic observers, and proves ephemeral room events are not persisted across relaunch."
+    ),
+    instant(
       id: "instant.reactor.get-local-id-stability",
       sourceFile: reactorSource,
       sourceTestName: "getLocalId always returns the same id",
@@ -3259,6 +3271,8 @@ public enum InstantSwiftDataParityCoverage {
     "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts"
   private static let reactorImplementationSource =
     "upstream/instant/client/packages/core/src/Reactor.js"
+  private static let reactorRoomEventsSource =
+    "upstream/instant/client/packages/core/src/Reactor.js + upstream/instant/server/test/instant/reactive/session_test.clj"
   private static let pythonSubscriptionSource =
     "upstream/instant/client/packages/python/tests/test_subscription_state.py"
   private static let pythonStreamsStateSource =
