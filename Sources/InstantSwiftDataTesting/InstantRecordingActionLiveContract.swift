@@ -22,6 +22,80 @@ public struct InstantRecordingActionLiveIDs: Equatable, Sendable {
   }
 }
 
+public struct InstantRecordingActionObservedSnapshot: Equatable, Sendable {
+  public var recordingID: String
+  public var title: String
+  public var ownerID: String
+  public var deviceID: String
+  public var recordingState: String
+  public var durationMilliseconds: Int
+  public var transcriptionID: String
+  public var transcriptionState: String
+
+  public init(
+    recordingID: String,
+    title: String,
+    ownerID: String,
+    deviceID: String,
+    recordingState: String,
+    durationMilliseconds: Int,
+    transcriptionID: String,
+    transcriptionState: String
+  ) {
+    self.recordingID = recordingID
+    self.title = title
+    self.ownerID = ownerID
+    self.deviceID = deviceID
+    self.recordingState = recordingState
+    self.durationMilliseconds = durationMilliseconds
+    self.transcriptionID = transcriptionID
+    self.transcriptionState = transcriptionState
+  }
+
+  public static func decode(
+    recordingSnapshots: [InstantEntitySnapshot],
+    ids: InstantRecordingActionLiveIDs
+  ) throws -> Self {
+    guard recordingSnapshots.count == 1,
+      let recording = recordingSnapshots.first,
+      recording.id == ids.recordingID,
+      case let .string(title) = recording.values["title"]?.first,
+      case let .string(deviceID) = recording.values["deviceID"]?.first,
+      case let .string(recordingState) = recording.values["state"]?.first,
+      case let .number(duration) = recording.values["durationMilliseconds"]?.first,
+      duration.isFinite,
+      duration.rounded() == duration,
+      let owners = recording.links?["owner"],
+      owners.count == 1,
+      owners.first?.id == ids.ownerID,
+      let transcriptions = recording.links?["transcriptions"],
+      transcriptions.count == 1,
+      let transcription = transcriptions.first,
+      transcription.id == ids.transcriptionID,
+      case let .string(transcriptionState) = transcription.values["state"]?.first
+    else {
+      throw InstantError(
+        code: .decodeFailed,
+        operation: "decode recording action live observation",
+        namespace: "v3_capture_recordings",
+        localID: ids.recordingID,
+        message: "Expected the canonical recording and transcription update projection.",
+        recovery: "Keep the Swift observer aligned with the canonical TypeScript SDK update."
+      )
+    }
+    return Self(
+      recordingID: recording.id,
+      title: title,
+      ownerID: ids.ownerID,
+      deviceID: deviceID,
+      recordingState: recordingState,
+      durationMilliseconds: Int(duration),
+      transcriptionID: transcription.id,
+      transcriptionState: transcriptionState
+    )
+  }
+}
+
 public enum InstantRecordingActionLiveContract {
   public static func localQuery(recordingID: String) -> InstantQueryPlan {
     InstantQueryPlan(

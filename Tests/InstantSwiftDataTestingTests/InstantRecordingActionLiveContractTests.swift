@@ -197,6 +197,55 @@ struct InstantRecordingActionLiveContractTests {
     )
   }
 
+  @Test
+  func observedSnapshotDecodesCanonicalTypeScriptUpdate() throws {
+    let snapshot = try InstantRecordingActionObservedSnapshot.decode(
+      recordingSnapshots: [
+        InstantEntitySnapshot(
+          id: ids.recordingID,
+          namespace: "v3_capture_recordings",
+          values: [
+            "title": .one(.string("Canonical recording")),
+            "deviceID": .one(.string("swift-e2e")),
+            "state": .one(.string("finished")),
+            "durationMilliseconds": .one(.number(42_000)),
+          ],
+          links: [
+            "owner": [
+              InstantLinkedEntitySnapshot(
+                id: ids.ownerID,
+                namespace: "$users",
+                values: [:]
+              )
+            ],
+            "transcriptions": [
+              InstantLinkedEntitySnapshot(
+                id: ids.transcriptionID,
+                namespace: "v3_capture_transcriptions",
+                values: ["state": .one(.string("complete"))]
+              )
+            ],
+          ]
+        )
+      ],
+      ids: ids
+    )
+
+    expectNoDifference(
+      snapshot,
+      InstantRecordingActionObservedSnapshot(
+        recordingID: ids.recordingID,
+        title: "Canonical recording",
+        ownerID: ids.ownerID,
+        deviceID: "swift-e2e",
+        recordingState: "finished",
+        durationMilliseconds: 42_000,
+        transcriptionID: ids.transcriptionID,
+        transcriptionState: "complete"
+      )
+    )
+  }
+
   private func add(
     _ entityID: String,
     _ attributeID: String,
