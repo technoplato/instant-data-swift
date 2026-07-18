@@ -1274,12 +1274,16 @@ public final class InstantRuntime: Sendable {
       let outboxSnapshot = confirmation?.mutations ?? state.snapshot.outbox
       let outboxChanged = outboxSnapshot != state.snapshot.outbox
       var storeSnapshot = state.snapshot.store
+      let tripleCountBeforeFailedWriteCleanup = storeSnapshot.triples.count
+      storeSnapshot.removeTriplesWrittenByFailedMutations(outboxSnapshot)
+      let removedFailedWriteTriples =
+        tripleCountBeforeFailedWriteCleanup - storeSnapshot.triples.count
       let mergedAttributeCount = mergeLiveRefreshAttributes(
         attributesToMerge,
         into: &storeSnapshot
       )
       let storeAttributesChanged = mergedAttributeCount > 0
-      if transaction.operations.isEmpty {
+      if transaction.operations.isEmpty, removedFailedWriteTriples == 0 {
         recordActorHop(.persistence)
         let didSave =
           if storeAttributesChanged, outboxChanged {
@@ -5360,6 +5364,25 @@ private extension InstantStoreMutationResult {
 }
 
 private extension InstantTripleOperation {
+  var localWriteTransactionIDs: [String] {
+    switch self {
+    case let .merge(triple), let .insert(triple), let .retract(triple):
+      return [triple.txID]
+
+    case let .mergeByLookup(_, _, _, txID, _),
+      let .insertByLookup(_, _, _, txID, _),
+      let .retractByLookup(_, _, _, txID, _):
+      return [txID]
+
+    case .requireEntityMissing, .requireEntityMissingByLookup,
+      .requireEntityExists, .requireEntityExistsByLookup,
+      .requireTripleExists,
+      .deleteEntity, .deleteEntityInNamespace, .deleteEntityByLookup,
+      .ruleParams, .ruleParamsByLookup:
+      return []
+    }
+  }
+
   var isRebasedLocalWrite: Bool {
     switch self {
     case .merge, .mergeByLookup, .insert, .insertByLookup, .retract, .retractByLookup,
@@ -5372,6 +5395,22 @@ private extension InstantTripleOperation {
       .ruleParams, .ruleParamsByLookup:
       return false
     }
+  }
+}
+
+private extension InstantStoreSnapshot {
+  mutating func removeTriplesWrittenByFailedMutations(_ mutations: [PendingMutation]) {
+    let failedTransactionIDs = Set(
+      mutations
+        .filter { $0.status == .failed }
+        .flatMap { mutation in
+          [mutation.id, mutation.transaction.id]
+            + mutation.transaction.operations.flatMap(\.localWriteTransactionIDs)
+        }
+        .filter { !$0.isEmpty }
+    )
+    guard !failedTransactionIDs.isEmpty else { return }
+    triples.removeAll { failedTransactionIDs.contains($0.txID) }
   }
 }
 

@@ -219,7 +219,70 @@ struct InstantReactorParityTests {
     expectNoDifference(pendingAfterSecondConfirm, [], reactorOptimisticRefreshSource)
   }
 
-  @Test
+  @Test("SQLiteData SharingPermissionsTests.createRecordWhenLocalHasPermissionsButCloudKitDoesNot")
+  func rejectedOptimisticCreateIsRemovedByAuthoritativeRefresh() async throws {
+    let cacheURL = try temporaryReactorParityCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_044_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reactor-rejected-optimistic-create",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-rejected-create",
+        operations: TodoExample.createOperations(
+          id: "todo-rejected-create",
+          text: "Get milk",
+          createdAt: createdAt,
+          transactionID: "tx-rejected-create"
+        )
+      ),
+      createdAt: createdAt
+    )
+    let optimisticTexts = try await reactorOptimisticTextsFromQueryOnce(runtime)
+    expectNoDifference(optimisticTexts, ["Get milk"])
+
+    _ = try await runtime.failMutation(
+      id: "tx-rejected-create",
+      message: "permission denied"
+    )
+    _ = try await runtime.applyLiveRefresh(
+      InstantLiveRefreshOK(
+        clientEventID: nil,
+        processedTransactionID: "server-tx-rejected-create-refresh",
+        attrs: liveReactorTodoServerAttrs,
+        computations: []
+      )
+    )
+
+    let refreshedTexts = try await reactorOptimisticTextsFromQueryOnce(runtime)
+    let pending = await runtime.pendingMutations()
+    expectNoDifference(refreshedTexts, [])
+    expectNoDifference(pending, [])
+    let failed = try #require(await runtime.outboxMutations().first)
+    expectNoDifference(failed.status, .failed)
+    expectNoDifference(failed.failureMessage, "permission denied")
+
+    let relaunched = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reactor-rejected-optimistic-create",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let relaunchedTexts = try await reactorOptimisticTextsFromQueryOnce(relaunched)
+    let relaunchedPending = await relaunched.pendingMutations()
+    let relaunchedStatuses = await relaunched.outboxMutations().map(\.status)
+    expectNoDifference(relaunchedTexts, [])
+    expectNoDifference(relaunchedPending, [])
+    expectNoDifference(relaunchedStatuses, [.failed])
+  }
+
+  @Test("SQLiteData SharingPermissionsTests.editRecordWhenLocalHasPermissionsButCloudKitDoesNot")
   func rejectedOptimisticTransactionIsNotRebasedOverAuthoritativeRefresh() async throws {
     let cacheURL = try temporaryReactorParityCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_045_000)
