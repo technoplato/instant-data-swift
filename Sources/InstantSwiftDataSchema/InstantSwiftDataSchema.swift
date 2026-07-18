@@ -820,6 +820,19 @@ public enum InstantSchemaExamples {
   public static let sharingPermissions = InstantPermissionsDocument(
     namespaces: [
       InstantNamespacePermissions(
+        namespace: "v3_share_memberships",
+        allow: [
+          .view: "isSelf || isShareOwner",
+          .create: "isSelf || isShareOwner",
+          .update: "isShareOwner",
+          .delete: "isShareOwner",
+        ],
+        bind: [
+          InstantPermissionBinding("isSelf", "auth.id in data.ref('user.id')"),
+          InstantPermissionBinding("isShareOwner", "auth.id in data.ref('share.owner.id')"),
+        ]
+      ),
+      InstantNamespacePermissions(
         namespace: "v3_shared_lists",
         allow: [
           .view: "isOwner || isWriter || isReader",
@@ -844,19 +857,6 @@ public enum InstantSchemaExamples {
         bind: [
           InstantPermissionBinding("isOwner", "auth.id in data.ref('owner.id')"),
           InstantPermissionBinding("isMember", "auth.id in data.ref('memberships.user.id')"),
-        ]
-      ),
-      InstantNamespacePermissions(
-        namespace: "v3_share_memberships",
-        allow: [
-          .view: "isSelf || isShareOwner",
-          .create: "isSelf || isShareOwner",
-          .update: "isShareOwner",
-          .delete: "isShareOwner",
-        ],
-        bind: [
-          InstantPermissionBinding("isSelf", "auth.id in data.ref('user.id')"),
-          InstantPermissionBinding("isShareOwner", "auth.id in data.ref('share.owner.id')"),
         ]
       ),
     ]

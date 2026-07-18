@@ -320,7 +320,7 @@ extension InstantStoreTests {
       homeURL: homeURL
     )
     expectNoDifference(unsupported.status, 64)
-    #expect(unsupported.error.contains("Available examples: todos, validation, recording-action"))
+    #expect(unsupported.error.contains("Available examples: todos, validation, recording-action, sharing"))
   }
 
   @Test
@@ -455,6 +455,88 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliGeneratesAndVerifiesCanonicalSharingContract() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    let schemaURL = homeURL.appendingPathComponent("sharing.schema.ts")
+    let permissionsURL = homeURL.appendingPathComponent("sharing.perms.ts")
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let generatedSchema = try JSONDecoder().decode(
+      CLIGeneratedArtifactOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "schema", "generate", "--example", "sharing",
+            "--to", schemaURL.path,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(generatedSchema.example, "sharing")
+    let schemaSource = try String(contentsOf: schemaURL, encoding: .utf8)
+    #expect(schemaSource.contains("v3_shared_listsReaders"))
+    #expect(schemaSource.contains("v3_shared_listsWriters"))
+    #expect(schemaSource.contains("v3_share_membershipsShare"))
+
+    let schemaVerify = try JSONDecoder().decode(
+      CLISchemaVerifyOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "schema", "verify", "--example", "sharing",
+            "--from", schemaURL.path,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(schemaVerify.example, "sharing")
+    expectNoDifference(schemaVerify.entityCount, 4)
+    expectNoDifference(schemaVerify.linkCount, 7)
+    expectNoDifference(schemaVerify.warnings, [])
+
+    let generatedPermissions = try JSONDecoder().decode(
+      CLIGeneratedArtifactOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "perms", "generate", "--example", "sharing",
+            "--to", permissionsURL.path,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(generatedPermissions.example, "sharing")
+    let permissionsSource = try String(contentsOf: permissionsURL, encoding: .utf8)
+    #expect(permissionsSource.contains("isOwner || isWriter || isReader"))
+    #expect(permissionsSource.contains("auth.id in data.ref('share.owner.id')"))
+
+    let permissionsVerify = try JSONDecoder().decode(
+      CLIPermissionsVerifyOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "perms", "verify", "--example", "sharing",
+            "--from", permissionsURL.path,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(permissionsVerify.example, "sharing")
+    expectNoDifference(permissionsVerify.namespaceCount, 3)
+    expectNoDifference(permissionsVerify.allowRuleCount, 12)
+  }
+
+  @Test
   func cliTopLevelHelpListsValidationSchemaExample() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -465,10 +547,10 @@ extension InstantStoreTests {
 
     expectNoDifference(help.status, 0)
     expectNoDifference(help.error, "")
-    #expect(help.output.contains("schema generate --example todos|validation|recording-action"))
-    #expect(help.output.contains("schema verify --example todos|validation|recording-action"))
-    #expect(help.output.contains("perms generate --example todos|validation|recording-action"))
-    #expect(help.output.contains("perms verify --example todos|validation|recording-action"))
+    #expect(help.output.contains("schema generate --example todos|validation|recording-action|sharing"))
+    #expect(help.output.contains("schema verify --example todos|validation|recording-action|sharing"))
+    #expect(help.output.contains("perms generate --example todos|validation|recording-action|sharing"))
+    #expect(help.output.contains("perms verify --example todos|validation|recording-action|sharing"))
   }
 
   @Test
@@ -497,11 +579,11 @@ extension InstantStoreTests {
     )
     try expectMalformed(
       ["schema", "generate", "--to", schemaURL.path, "--json"],
-      contains: "schema generate --example todos|validation|recording-action"
+      contains: "schema generate --example todos|validation|recording-action|sharing"
     )
     try expectMalformed(
       ["schema", "dance", "--to", schemaURL.path, "--json"],
-      contains: "schema generate --example todos|validation|recording-action"
+      contains: "schema generate --example todos|validation|recording-action|sharing"
     )
     try expectMalformed(
       ["schema", "verify", "--example", "todos", "--unknown", "--json"],
@@ -513,7 +595,7 @@ extension InstantStoreTests {
     )
     try expectMalformed(
       ["perms", "verify", "--example", "todos", "--from", "--json"],
-      contains: "perms verify --example todos|validation|recording-action --from instant.perms.ts"
+      contains: "perms verify --example todos|validation|recording-action|sharing --from instant.perms.ts"
     )
 
     expectNoDifference(
