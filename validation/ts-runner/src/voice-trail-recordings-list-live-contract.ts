@@ -93,8 +93,8 @@ try {
   );
   assertRecording(ownerBefore, {
     ownerID: users.owner.id,
-    memberID: users.member.id,
-    role: "reader",
+    memberID: users.owner.id,
+    role: "owner",
   });
   const memberBefore = await memberDB.query(
     recordingQuery(ids.recordingID, users.member.id),
@@ -200,7 +200,11 @@ type RecordingResult = InstaQLResponse<AppSchema, RecordingQuery, true>;
 
 function assertRecording(
   result: RecordingResult,
-  expected: { ownerID: string; memberID: string; role: "reader" | "writer" },
+  expected: {
+    ownerID: string;
+    memberID: string;
+    role: "owner" | "reader" | "writer";
+  },
 ): void {
   const recording = result.v3_capture_recordings[0];
   assert.ok(recording);
