@@ -329,6 +329,101 @@ import Testing
       expectNoDifference(durableAttachments.map(\.recordingID), [prepared.recordingID])
       expectNoDifference(durableAttachments.map(\.offsetMilliseconds), [2_500])
     }
+
+    @Test @MainActor
+    func attachmentAndFinishRejectionsDoNotReplayCallbacksAfterRetry() async throws {
+      let cacheURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("v3-recording-action-rejections-\(UUID().uuidString).sqlite")
+      let runtime = try await v3RecordingActionRuntime(
+        appID: "v3-recording-action-rejections",
+        cacheURL: cacheURL
+      )
+      let client = InstantSwiftDataClient(runtime: runtime)
+      let prepared = V3PreparedRecording(
+        recordingID: "recording-action-rejections",
+        ownerID: InstantID(rawValue: "user-action-rejections"),
+        deviceID: "device-action-rejections"
+      )
+
+      let createTask = client.send(
+        V3CreateRecordingSession(prepared: prepared, title: "Rejected actions")
+      )
+      let createMutationID = try await waitForV3RecordingActionMutation(runtime)
+      _ = try await runtime.confirmMutation(id: createMutationID)
+      await createTask.value
+
+      let attachmentCallbacks = V3RecordingAttachmentCallbacks()
+      let attachmentTask = client.send(
+        V3CreateRecordingAttachment(
+          id: InstantID(rawValue: "attachment-rejected"),
+          recordingID: prepared.recordingID,
+          kind: "text",
+          contents: "Rejected clipboard text",
+          offsetMilliseconds: 4_000
+        ),
+        onOptimisticCommit: { change in
+          attachmentCallbacks.optimistic.append(change.summary())
+        },
+        onServerAccepted: { change in
+          attachmentCallbacks.accepted.append(change.summary())
+        },
+        onFailure: { attachmentCallbacks.failures.append($0) }
+      )
+      let attachmentMutationID = try await waitForV3RecordingActionMutation(runtime)
+      _ = try await runtime.failMutation(
+        id: attachmentMutationID,
+        message: "attachment creation denied"
+      )
+      await attachmentTask.value
+
+      expectNoDifference(attachmentCallbacks.optimistic.count, 1)
+      expectNoDifference(attachmentCallbacks.accepted, [])
+      expectNoDifference(
+        attachmentCallbacks.failures.map(\.message),
+        ["attachment creation denied"]
+      )
+      _ = try await runtime.retryMutation(id: attachmentMutationID)
+      _ = try await runtime.confirmMutation(id: attachmentMutationID)
+      try await Task.sleep(nanoseconds: 10_000_000)
+      expectNoDifference(attachmentCallbacks.optimistic.count, 1)
+      expectNoDifference(attachmentCallbacks.accepted, [])
+      expectNoDifference(attachmentCallbacks.failures.count, 1)
+
+      let finishCallbacks = V3RecordingFinishCallbacks()
+      let finishTask = client.send(
+        V3FinishRecording(
+          recordingID: prepared.recordingID,
+          transcriptionID: prepared.transcriptionID,
+          durationMilliseconds: 14_250
+        ),
+        onOptimisticCommit: { change in
+          finishCallbacks.optimistic.append(change.summary())
+        },
+        onServerAccepted: { change in
+          finishCallbacks.accepted.append(change.summary())
+        },
+        onFailure: { finishCallbacks.failures.append($0) }
+      )
+      let finishMutationID = try await waitForV3RecordingActionMutation(runtime)
+      _ = try await runtime.failMutation(
+        id: finishMutationID,
+        message: "recording finish denied"
+      )
+      await finishTask.value
+
+      expectNoDifference(finishCallbacks.optimistic.count, 1)
+      expectNoDifference(finishCallbacks.accepted, [])
+      expectNoDifference(
+        finishCallbacks.failures.map(\.message),
+        ["recording finish denied"]
+      )
+      _ = try await runtime.retryMutation(id: finishMutationID)
+      _ = try await runtime.confirmMutation(id: finishMutationID)
+      try await Task.sleep(nanoseconds: 10_000_000)
+      expectNoDifference(finishCallbacks.optimistic.count, 1)
+      expectNoDifference(finishCallbacks.accepted, [])
+      expectNoDifference(finishCallbacks.failures.count, 1)
+    }
   }
 
   @MainActor
