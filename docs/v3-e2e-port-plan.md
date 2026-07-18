@@ -34,8 +34,12 @@ As of 2026-07-18:
   canonical immediate-then-bounded backoff progression, publishes transient
   drops as closed rather than terminal errors, reinstalls active queries,
   resends only unacknowledged durable mutations, and cancels reconnect work on
-  explicit close. Room, presence, topic, storage, and stream state restoration
-  remains.
+  explicit close.
+- Commits `4138549` and `44c11b1` encode the canonical room wire messages,
+  idempotently join active rooms, queue presence and topic data until
+  `join-room-ok`, rejoin with current presence after reconnect, flush newer
+  queued data once, and send `leave-room` on cleanup. Applying incoming
+  `refresh-presence`, `patch-presence`, and `server-broadcast` events remains.
 - The V3 API direction is documented in
   `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` and `screens/v3/`.
 - The prior screen syntax is preserved under `screens/v2/` in commit `d11b1cf`.
@@ -45,11 +49,12 @@ As of 2026-07-18:
   schema and permissions verification, and the local Swift/TypeScript E2E
   orchestrator. Its evidence directory was
   `/tmp/instant-swift-data-packet0-20260718T1106`.
-- The live receive, query-subscription, durable-outbox, and reconnect slices
-  passed their focused canonical parity tests and the full 822-test Swift
-  package suite. The reconnect packet's local Swift/TypeScript E2E evidence is
+- The live receive, query-subscription, durable-outbox, reconnect, and outgoing
+  room-restoration slices passed their focused canonical parity tests and the
+  full 824-test Swift package suite, including the nested local Swift/TypeScript
+  E2E orchestrator. The core reconnect packet's explicit E2E evidence is
   `/tmp/instant-swift-data-reconnect-20260718T161703Z`.
-- The compact parity gate records 290 cases: 28 exact, 258 adapted, 2 not
+- The compact parity gate records 291 cases: 28 exact, 259 adapted, 2 not
   applicable, and 2 blocked. The only blocked ids are
   `instant.live-transport.swift-to-typescript` and
   `instant.live-transport.typescript-to-swift` until credentialed live evidence
@@ -300,8 +305,9 @@ Commit targets, split if needed:
    `af88570` and `ecf2145`.
 3. `Drain durable outbox through live session` — implemented in `378b76f`.
 4. `Reconnect and restore live runtime state` — query and durable-outbox
-   restoration implemented in `abe63c5`; room, presence, topic, storage, and
-   stream restoration remains.
+   restoration implemented in `abe63c5`; outgoing room/presence/topic
+   restoration implemented in `4138549` and `44c11b1`; incoming ephemeral
+   events plus storage and stream restoration remain.
 
 Each commit must have its own boundary case and pass the existing local suite.
 
@@ -424,8 +430,8 @@ The release harness must prove each applicable row in both directions:
 
 ## Immediate Next Step
 
-Inventory and port the canonical upstream room, presence, topic, storage, and
-stream reconnect lifecycle tests before extending the runtime. Use those ports
-to restore live room-related state without duplicate callbacks or leaked tasks.
-Then implement Packet 1's compiling V3 fetch fixture over the now-reconnecting
-live subscription path.
+Decode and apply canonical `refresh-presence`, `patch-presence`, and
+`server-broadcast` events through public room observers without persisting or
+replaying duplicate ephemeral callbacks. Then port storage and stream reconnect
+lifecycle before implementing Packet 1's compiling V3 fetch fixture over the
+now-reconnecting live subscription path.
