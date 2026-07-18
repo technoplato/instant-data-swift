@@ -3,6 +3,12 @@ import Foundation
 @testable import InstantSwiftDataCore
 import Testing
 
+private let reactorIncomingRoomEventSource =
+  "upstream/instant/client/packages/core/src/Reactor.js _onMessage join-room-ok, "
+  + "refresh-presence, patch-presence, and server-broadcast branches "
+  + "[source-derived: upstream has no dedicated transport decoder unit; this pins the exact "
+  + "hyphenated operation names and room/data/edits/topic envelopes before Swift applies them]"
+
 @Suite
 struct InstantLiveTransportTests {
   @Test
@@ -165,7 +171,7 @@ struct InstantLiveTransportTests {
   }
 
   @Test
-  func serverEventsDecodeCanonicalRoomPresenceAndBroadcastShapes() throws {
+  func reactorIncomingRoomEventsDecodeCanonicalShapes() throws {
     let join = InstantLiveServerEvent(
       message: InstantLiveMessage(
         op: "join-room-ok",
@@ -177,8 +183,8 @@ struct InstantLiveTransportTests {
       Issue.record("Expected join-room-ok, got \(join.op).")
       return
     }
-    expectNoDifference(joinOK.roomID, "room-1")
-    expectNoDifference(joinOK.clientEventID, "event-join")
+    expectNoDifference(joinOK.roomID, "room-1", reactorIncomingRoomEventSource)
+    expectNoDifference(joinOK.clientEventID, "event-join", reactorIncomingRoomEventSource)
 
     let sessions: [String: InstantLiveJSONValue] = [
       "session-peer": .object([
@@ -200,8 +206,8 @@ struct InstantLiveTransportTests {
       Issue.record("Expected refresh-presence, got \(refresh.op).")
       return
     }
-    expectNoDifference(presence.roomID, "room-1")
-    expectNoDifference(presence.sessions, sessions)
+    expectNoDifference(presence.roomID, "room-1", reactorIncomingRoomEventSource)
+    expectNoDifference(presence.sessions, sessions, reactorIncomingRoomEventSource)
 
     let edits: [InstantLiveJSONValue] = [
       .array([
@@ -223,7 +229,7 @@ struct InstantLiveTransportTests {
       Issue.record("Expected patch-presence, got \(patch.op).")
       return
     }
-    expectNoDifference(presencePatch.edits, edits)
+    expectNoDifference(presencePatch.edits, edits, reactorIncomingRoomEventSource)
 
     let envelope: InstantLiveJSONValue = .object([
       "data": .object(["emoji": .string("🔥")]),
@@ -244,9 +250,9 @@ struct InstantLiveTransportTests {
       Issue.record("Expected server-broadcast, got \(broadcast.op).")
       return
     }
-    expectNoDifference(message.roomID, "room-1")
-    expectNoDifference(message.topic, "reaction")
-    expectNoDifference(message.envelope, envelope)
+    expectNoDifference(message.roomID, "room-1", reactorIncomingRoomEventSource)
+    expectNoDifference(message.topic, "reaction", reactorIncomingRoomEventSource)
+    expectNoDifference(message.envelope, envelope, reactorIncomingRoomEventSource)
   }
 
   @Test
