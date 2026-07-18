@@ -7,6 +7,7 @@ import {
   recordingActionQuery,
   recordingActionResultIsReady,
   recordingActionSnapshot,
+  recordingActionFinishTransaction,
   recordingActionTransaction,
   type RecordingActionQueryResult,
   waitForRecordingActionResult,
@@ -148,6 +149,30 @@ test("recording action transaction uses the typed canonical SDK graph", () => {
       "v3_capture_transcriptions",
       "transcription-e2e",
       { recording: "recording-e2e" },
+    ],
+  ]);
+});
+
+test("recording action finish transaction uses the typed canonical SDK update", () => {
+  const chunks = recordingActionFinishTransaction(txInit<AppSchema>(), {
+    recordingID: "recording-e2e",
+    transcriptionID: "transcription-e2e",
+    durationMilliseconds: 42_000,
+  });
+
+  assert.equal(chunks.length, 2);
+  assert.deepStrictEqual(chunks.flatMap(getOps), [
+    [
+      "update",
+      "v3_capture_recordings",
+      "recording-e2e",
+      { state: "finished", durationMilliseconds: 42_000 },
+    ],
+    [
+      "update",
+      "v3_capture_transcriptions",
+      "transcription-e2e",
+      { state: "complete" },
     ],
   ]);
 });

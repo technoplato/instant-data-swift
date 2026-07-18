@@ -64,6 +64,27 @@ export function recordingActionTransaction(
   ];
 }
 
+export interface RecordingActionFinishTransactionInput {
+  recordingID: string;
+  transcriptionID: string;
+  durationMilliseconds: number;
+}
+
+export function recordingActionFinishTransaction(
+  tx: TxChunk<AppSchema>,
+  input: RecordingActionFinishTransactionInput,
+) {
+  return [
+    tx.v3_capture_recordings[input.recordingID].update({
+      state: "finished",
+      durationMilliseconds: input.durationMilliseconds,
+    }),
+    tx.v3_capture_transcriptions[input.transcriptionID].update({
+      state: "complete",
+    }),
+  ];
+}
+
 export interface RecordingActionSnapshot {
   recording: {
     id: string;
