@@ -27,6 +27,13 @@ for example in validation recording-action; do
     --json >/dev/null
 done
 
+cp \
+  "${ROOT}/validation/fixtures/recording-action.server.schema.ts" \
+  "${GENERATED}/recording-action.server.schema.ts"
+cp \
+  "${ROOT}/validation/fixtures/recording-action.server.perms.ts" \
+  "${GENERATED}/recording-action.server.perms.ts"
+
 pnpm --dir "${RUNNER}" exec tsc --noEmit --project tsconfig.json
 
 sha256() {
@@ -41,7 +48,7 @@ CORE_VERSION="$(cd "${RUNNER}" && node -p "require('./package.json').dependencie
 ADMIN_VERSION="$(cd "${RUNNER}" && node -p "require('./package.json').dependencies['@instantdb/admin']")"
 TYPESCRIPT_VERSION="$(cd "${RUNNER}" && node -p "require('./package.json').devDependencies.typescript")"
 
-printf '{"case":"validation.typescript.generated-contract","event":"typecheck","ok":true,"details":{"upstreamRevision":"%s","coreVersion":"%s","adminVersion":"%s","typescriptVersion":"%s","compilerWarningCount":0,"artifacts":{"validationSchemaSHA256":"%s","validationPermissionsSHA256":"%s","recordingActionSchemaSHA256":"%s","recordingActionPermissionsSHA256":"%s"}}}\n' \
+printf '{"case":"validation.typescript.generated-contract","event":"typecheck","ok":true,"details":{"upstreamRevision":"%s","coreVersion":"%s","adminVersion":"%s","typescriptVersion":"%s","compilerWarningCount":0,"artifacts":{"validationSchemaSHA256":"%s","validationPermissionsSHA256":"%s","recordingActionSchemaSHA256":"%s","recordingActionPermissionsSHA256":"%s","serverRecordingActionSchemaSHA256":"%s","serverRecordingActionPermissionsSHA256":"%s"}}}\n' \
   "${UPSTREAM_REVISION}" \
   "${CORE_VERSION}" \
   "${ADMIN_VERSION}" \
@@ -49,4 +56,6 @@ printf '{"case":"validation.typescript.generated-contract","event":"typecheck","
   "$(sha256 "${GENERATED}/validation.schema.ts")" \
   "$(sha256 "${GENERATED}/validation.perms.ts")" \
   "$(sha256 "${GENERATED}/recording-action.schema.ts")" \
-  "$(sha256 "${GENERATED}/recording-action.perms.ts")"
+  "$(sha256 "${GENERATED}/recording-action.perms.ts")" \
+  "$(sha256 "${GENERATED}/recording-action.server.schema.ts")" \
+  "$(sha256 "${GENERATED}/recording-action.server.perms.ts")"

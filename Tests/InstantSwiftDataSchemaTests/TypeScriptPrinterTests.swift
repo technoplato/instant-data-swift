@@ -1748,6 +1748,18 @@ struct TypeScriptPrinterTests {
   }
 
   @Test
+  func permissionsParserMatchesServerNormalizedRecordingActionRules() throws {
+    let parsed = try TypeScriptPermissionsParser().parse(
+      Self.validationFixture(named: "recording-action.server.perms.ts")
+    )
+
+    expectNoDifference(
+      parsed,
+      InstantSchemaExamples.recordingActionValidationPermissions
+    )
+  }
+
+  @Test
   func permissionsParserRoundTripsTodoExample() throws {
     let printed = try TypeScriptPermissionsPrinter()
       .printPermissions(InstantSchemaExamples.todoPermissions)

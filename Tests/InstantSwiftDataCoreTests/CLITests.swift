@@ -431,6 +431,27 @@ extension InstantStoreTests {
     expectNoDifference(permissionsVerify.example, "recording-action")
     expectNoDifference(permissionsVerify.namespaceCount, 4)
     expectNoDifference(permissionsVerify.allowRuleCount, 16)
+
+    let serverPermissionsURL = packageRootURL()
+      .appendingPathComponent(
+        "validation/fixtures/recording-action.server.perms.ts"
+      )
+    let serverPermissionsVerify = try JSONDecoder().decode(
+      CLIPermissionsVerifyOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "perms", "verify", "--example", "recording-action",
+            "--from", serverPermissionsURL.path,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(serverPermissionsVerify.example, "recording-action")
+    expectNoDifference(serverPermissionsVerify.namespaceCount, 4)
+    expectNoDifference(serverPermissionsVerify.allowRuleCount, 16)
   }
 
   @Test
