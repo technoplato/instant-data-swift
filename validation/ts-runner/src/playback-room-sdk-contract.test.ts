@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { playbackRoomContract } from "./playback-room-sdk-contract.ts";
+import { playbackRoomContract } from "./playback-room-sdk-contract.js";
 
 test("playback room contract preserves exact payloads before and after reconnect", () => {
   const contract = playbackRoomContract({

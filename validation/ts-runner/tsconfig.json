@@ -23,6 +23,8 @@
     "src/recording-action-sdk-contract.ts",
     "src/recording-action-sdk-contract.test.ts",
     "src/auth-live-contract.ts",
+    "src/playback-room-sdk-contract.ts",
+    "src/playback-room-sdk-contract.test.ts",
     "src/playback-room-live-contract.ts",
     "src/sharing-sdk-contract.ts",
     "src/sharing-sdk-contract.test.ts",

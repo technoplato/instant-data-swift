@@ -9,6 +9,7 @@ import {
   StoreInterface,
   type StoreInterfaceStoreName,
 } from "@instantdb/core";
+import { playbackRoomContract } from "./playback-room-sdk-contract.js";
 
 const appId = requiredEnvironment("INSTANT_APP_ID");
 const adminToken = requiredEnvironment("INSTANT_ADMIN_TOKEN");
@@ -22,31 +23,6 @@ const roomID = `playback-${suffix}`;
 const warnings: string[] = [];
 const originalWarn = console.warn;
 console.warn = (...values) => warnings.push(values.map(String).join(" "));
-
-const swiftPresence = {
-  userID: "",
-  displayName: "Swift Listener",
-  isPlaying: true,
-  offsetSeconds: 12.5,
-  focusedSegmentID: "segment-swift",
-};
-const typeScriptPresence = {
-  userID: "",
-  displayName: "TypeScript Listener",
-  isPlaying: false,
-  offsetSeconds: 4.25,
-  focusedSegmentID: "segment-typescript",
-};
-const swiftTopics = {
-  reaction: { emoji: "swift-wave", offsetSeconds: 12.5 },
-  commentDraft: { text: "Swift draft", offsetSeconds: 12.5 },
-  commentCommitted: { commentID: "comment-swift" },
-};
-const typeScriptTopics = {
-  reaction: { emoji: "typescript-wave", offsetSeconds: 4.25 },
-  commentDraft: { text: "TypeScript draft", offsetSeconds: 4.25 },
-  commentCommitted: { commentID: "comment-typescript" },
-};
 
 class MemoryStore extends StoreInterface {
   private readonly values = new Map<string, unknown>();
@@ -94,8 +70,18 @@ try {
   const typeScriptUser = await admin.auth.verifyToken(typeScriptToken);
   assert.ok(swiftUser?.id, "Expected a canonical Swift room user.");
   assert.ok(typeScriptUser?.id, "Expected a canonical TypeScript room user.");
-  swiftPresence.userID = swiftUser.id;
-  typeScriptPresence.userID = typeScriptUser.id;
+  const contract = playbackRoomContract({
+    swiftUserID: swiftUser.id,
+    typeScriptUserID: typeScriptUser.id,
+  });
+  const swiftPresence = contract.initial.swift.presence;
+  const swiftTopics = contract.initial.swift.topics;
+  const typeScriptPresence = contract.initial.typeScript.presence;
+  const typeScriptTopics = contract.initial.typeScript.topics;
+  const reconnectedSwiftPresence = contract.reconnect.swift.presence;
+  const reconnectedSwiftTopics = contract.reconnect.swift.topics;
+  const reconnectedTypeScriptPresence = contract.reconnect.typeScript.presence;
+  const reconnectedTypeScriptTopics = contract.reconnect.typeScript.topics;
 
   const schemaModule = await import(pathToFileURL(schemaPath).href);
   const schema = unwrapSchema(schemaModule);
@@ -120,19 +106,37 @@ try {
   const observedReaction = deferred<typeof swiftTopics.reaction>();
   const observedDraft = deferred<typeof swiftTopics.commentDraft>();
   const observedCommitted = deferred<typeof swiftTopics.commentCommitted>();
+  const observedReconnectedPresence = deferred<typeof reconnectedSwiftPresence>();
+  const observedReconnectedReaction = deferred<typeof reconnectedSwiftTopics.reaction>();
+  const observedReconnectedDraft = deferred<typeof reconnectedSwiftTopics.commentDraft>();
+  const observedReconnectedCommitted = deferred<
+    typeof reconnectedSwiftTopics.commentCommitted
+  >();
   const unsubscribePresence = room.subscribePresence({}, (presence: any) => {
     for (const peer of Object.values(presence.peers ?? {})) {
       if (matches(peer, swiftPresence)) observedPresence.resolve(swiftPresence);
+      if (matches(peer, reconnectedSwiftPresence)) {
+        observedReconnectedPresence.resolve(reconnectedSwiftPresence);
+      }
     }
   });
   const unsubscribeReaction = room.subscribeTopic("reaction", (value: any) => {
     if (matches(value, swiftTopics.reaction)) observedReaction.resolve(value);
+    if (matches(value, reconnectedSwiftTopics.reaction)) {
+      observedReconnectedReaction.resolve(value);
+    }
   });
   const unsubscribeDraft = room.subscribeTopic("commentDraft", (value: any) => {
     if (matches(value, swiftTopics.commentDraft)) observedDraft.resolve(value);
+    if (matches(value, reconnectedSwiftTopics.commentDraft)) {
+      observedReconnectedDraft.resolve(value);
+    }
   });
   const unsubscribeCommitted = room.subscribeTopic("commentCommitted", (value: any) => {
     if (matches(value, swiftTopics.commentCommitted)) observedCommitted.resolve(value);
+    if (matches(value, reconnectedSwiftTopics.commentCommitted)) {
+      observedReconnectedCommitted.resolve(value);
+    }
   });
 
   try {
@@ -160,6 +164,25 @@ try {
     room.publishTopic("commentDraft", typeScriptTopics.commentDraft);
     room.publishTopic("commentCommitted", typeScriptTopics.commentCommitted);
 
+    const [
+      reconnectedPresence,
+      reconnectedReaction,
+      reconnectedCommentDraft,
+      reconnectedCommentCommitted,
+    ] = await withTimeout(
+      Promise.all([
+        observedReconnectedPresence.promise,
+        observedReconnectedReaction.promise,
+        observedReconnectedDraft.promise,
+        observedReconnectedCommitted.promise,
+      ]),
+      "observe exact Swift playback room payloads after reconnect",
+    );
+    room.publishPresence(reconnectedTypeScriptPresence);
+    room.publishTopic("reaction", reconnectedTypeScriptTopics.reaction);
+    room.publishTopic("commentDraft", reconnectedTypeScriptTopics.commentDraft);
+    room.publishTopic("commentCommitted", reconnectedTypeScriptTopics.commentCommitted);
+
     const swiftEvidence = await swift;
     assert.equal(swiftEvidence.ok, true);
     assert.equal(swiftEvidence.details.connectionState, "authenticated");
@@ -167,6 +190,24 @@ try {
     assert.deepStrictEqual(swiftEvidence.details.receivedPresence, typeScriptPresence);
     assert.deepStrictEqual(swiftEvidence.details.publishedTopics, swiftTopics);
     assert.deepStrictEqual(swiftEvidence.details.receivedTopics, typeScriptTopics);
+    assert.equal(swiftEvidence.details.reconnect.connectionCount, 2);
+    assert.equal(swiftEvidence.details.reconnect.connectionState, "authenticated");
+    assert.deepStrictEqual(
+      swiftEvidence.details.reconnect.publishedPresence,
+      reconnectedSwiftPresence,
+    );
+    assert.deepStrictEqual(
+      swiftEvidence.details.reconnect.receivedPresence,
+      reconnectedTypeScriptPresence,
+    );
+    assert.deepStrictEqual(
+      swiftEvidence.details.reconnect.publishedTopics,
+      reconnectedSwiftTopics,
+    );
+    assert.deepStrictEqual(
+      swiftEvidence.details.reconnect.receivedTopics,
+      reconnectedTypeScriptTopics,
+    );
 
     process.stdout.write(`${JSON.stringify({
       case: "validation.typescript.playback-room-live-contract",
@@ -183,6 +224,14 @@ try {
         observedSwiftTopics: { reaction, commentDraft, commentCommitted },
         publishedTypeScriptPresence: typeScriptPresence,
         publishedTypeScriptTopics: typeScriptTopics,
+        observedReconnectedSwiftPresence: reconnectedPresence,
+        observedReconnectedSwiftTopics: {
+          reaction: reconnectedReaction,
+          commentDraft: reconnectedCommentDraft,
+          commentCommitted: reconnectedCommentCommitted,
+        },
+        publishedReconnectedTypeScriptPresence: reconnectedTypeScriptPresence,
+        publishedReconnectedTypeScriptTopics: reconnectedTypeScriptTopics,
         swift: swiftEvidence.details,
         compilerWarningCount: warnings.length,
         warnings,
