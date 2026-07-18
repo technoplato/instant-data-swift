@@ -1052,6 +1052,86 @@ struct InstantReactorParityTests {
       reactorRoomReconnectSource
     )
 
+    var reconnectedPresence = (try await runtime.observeRoomPresence(room: room))
+      .makeAsyncIterator()
+    let initialReconnectedPresence = try #require(await reconnectedPresence.next())
+    expectNoDifference(
+      initialReconnectedPresence.map(\.userID),
+      ["user-1"],
+      reactorRoomReconnectSource
+    )
+    var reconnectedTopics = (try await runtime.observeRoomTopicMessages(
+      room: room,
+      topic: "reaction"
+    )).makeAsyncIterator()
+    let initialReconnectedTopics = try #require(await reconnectedTopics.next())
+    expectNoDifference(
+      initialReconnectedTopics.map(\.payload),
+      [
+        .object(["emoji": .string("👋")]),
+        .object(["emoji": .string("✅")]),
+      ],
+      reactorRoomReconnectSource
+    )
+    await secondSession.enqueue(
+      InstantLiveMessage(
+        op: "refresh-presence",
+        fields: [
+          "data": .object([
+            "room-after-drop": livePresenceSession(
+              peerID: "room-after-drop",
+              userID: "user-self",
+              values: ["status": .string("self")]
+            ),
+            "room-peer-after-drop": livePresenceSession(
+              peerID: "room-peer-after-drop",
+              userID: "user-peer",
+              values: ["status": .string("reconnected")]
+            ),
+          ]),
+          "room-id": .string(room.id),
+        ]
+      )
+    )
+    let peerPresence = try #require(await reconnectedPresence.next())
+    let reconnectedPeer = try #require(
+      peerPresence.first(where: { $0.userID == "user-peer" })
+    )
+    expectNoDifference(
+      peerPresence.map(\.userID),
+      ["user-1", "user-peer"],
+      reactorRoomReconnectSource
+    )
+    expectNoDifference(
+      reconnectedPeer.values,
+      ["status": .string("reconnected")],
+      reactorRoomReconnectSource
+    )
+    await secondSession.enqueue(
+      InstantLiveMessage(
+        op: "server-broadcast",
+        clientEventID: "event-peer-after-drop",
+        fields: [
+          "data": .object([
+            "data": .object(["emoji": .string("🔁")]),
+            "peer-id": .string("room-peer-after-drop"),
+            "user": .object(["id": .string("user-peer")]),
+          ]),
+          "room-id": .string(room.id),
+          "topic": .string("reaction"),
+        ]
+      )
+    )
+    let peerTopics = try #require(await reconnectedTopics.next())
+    let reconnectedTopic = try #require(
+      peerTopics.first(where: { $0.id == "event-peer-after-drop" })
+    )
+    expectNoDifference(
+      reconnectedTopic.payload,
+      .object(["emoji": .string("🔁")]),
+      reactorRoomReconnectSource
+    )
+
     _ = try await runtime.leaveRoom(room)
     await secondSession.waitForSentMessageCount(5)
     let leaveOp = await secondSession.sentMessages().last?.op
@@ -1706,7 +1786,7 @@ private let pythonConnectionCloseReconnectSource =
   "upstream/instant/client/packages/python/tests/test_streams_state.py test_connection_aclose_cancels_inflight_reconnect_task [adapted: Swift blocks the reconnect backoff task after a post-init transport failure, explicitly closes the runtime, and proves cancellation prevents a second live transport connection. This also pins upstream/instant/client/packages/core/src/Reactor.js shutdown branch in _transportOnClose.]"
 
 private let reactorRoomReconnectSource =
-  "upstream/instant/client/packages/core/src/Reactor.js init-ok room loop, joinRoom, _flushEnqueuedRoomData, publishPresence, and publishTopic [adapted: Swift rejoins an active room with current presence, queues newer presence/topic data until join-room-ok, flushes it once, and sends leave-room on explicit cleanup.]"
+  "upstream/instant/client/packages/core/src/Reactor.js init-ok room loop, joinRoom, _flushEnqueuedRoomData, publishPresence, publishTopic, refresh-presence, and server-broadcast branches [adapted: Swift rejoins an active room with current presence, queues newer presence/topic data until join-room-ok, flushes it once, receives fresh peer presence and topics after rejoin, and sends leave-room on explicit cleanup.]"
 
 private let pythonStreamReaderReconnectSource =
   "upstream/instant/client/packages/python/tests/test_streams_state.py test_reader_on_reconnect_resubscribes_with_current_offset and upstream/instant/client/packages/core/src/Stream.ts onConnectionStatusChange [adapted: Swift registers a public stream-content observer with the owned live session at the end of its local read, restores that subscription at the same byte offset after reconnect, and unsubscribes with the reconnected subscription event id when observation is cancelled.]"
