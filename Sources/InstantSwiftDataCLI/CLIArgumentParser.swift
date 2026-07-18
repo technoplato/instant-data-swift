@@ -1485,6 +1485,7 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
   case liveObserve
   case liveSharing
   case liveSharingWriter
+  case liveVoiceTrailRecordingsList
   case liveAuthInvalidation
   case livePlaybackRoom
   case typedDrafts
@@ -1513,6 +1514,8 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
       "validation.live.observe"
     case .liveSharing, .liveSharingWriter:
       "validation.live.sharing"
+    case .liveVoiceTrailRecordingsList:
+      "validation.live.voice-trail-recordings-list"
     case .liveAuthInvalidation:
       "validation.live.auth-invalidation"
     case .livePlaybackRoom:
@@ -1544,6 +1547,8 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
       "live-observe-validation"
     case .liveSharing, .liveSharingWriter:
       "live-sharing-validation"
+    case .liveVoiceTrailRecordingsList:
+      "live-voice-trail-recordings-list"
     case .liveAuthInvalidation:
       "live-auth-invalidation"
     case .livePlaybackRoom:
@@ -1581,7 +1586,7 @@ public enum CLIValidationUsage {
 
 public enum CLIValidationRunnerUsage {
   public static let validationRunner =
-    "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--reminders|--local-reminders|--server-transaction-loopback|--cloudkit-demo|--live-session|--live-transaction|--live-observe|--live-sharing|--live-sharing-writer|--live-auth-invalidation|--live-playback-room|--typed-drafts|--platform-adapters|--syncups-recording|--parity-report|--coverage]"
+    "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--reminders|--local-reminders|--server-transaction-loopback|--cloudkit-demo|--live-session|--live-transaction|--live-observe|--live-sharing|--live-sharing-writer|--live-voice-trail-recordings-list|--live-auth-invalidation|--live-playback-room|--typed-drafts|--platform-adapters|--syncups-recording|--parity-report|--coverage]"
 }
 
 public enum CLIValidationArgumentError: Error, Equatable, Sendable {
@@ -4776,6 +4781,9 @@ public struct CLIValidationRunnerParser: Parser {
 
     case "--live-sharing-writer":
       return .liveSharingWriter
+
+    case "--live-voice-trail-recordings-list":
+      return .liveVoiceTrailRecordingsList
 
     case "--live-auth-invalidation":
       return .liveAuthInvalidation

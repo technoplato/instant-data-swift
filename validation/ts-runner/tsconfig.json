@@ -19,6 +19,7 @@
     ".generated-contract.*/*.ts",
     "../fixtures/recording-action.server.schema.ts",
     "../fixtures/sharing.schema.ts",
+    "../fixtures/voice-trail.schema.ts",
     "src/recording-action-sdk-contract.ts",
     "src/recording-action-sdk-contract.test.ts",
     "src/auth-live-contract.ts",
@@ -26,6 +27,9 @@
     "src/sharing-sdk-contract.ts",
     "src/sharing-sdk-contract.test.ts",
     "src/sharing-runtime-schema.ts",
-    "src/sharing-live-contract.ts"
+    "src/sharing-live-contract.ts",
+    "src/voice-trail-sdk-contract.ts",
+    "src/voice-trail-sdk-contract.test.ts",
+    "src/voice-trail-recordings-list-live-contract.ts"
   ]
 }

@@ -214,6 +214,56 @@ struct InstantSwiftDataValidationRunner {
       )
       try writeJSONLine(row)
 
+    case .liveVoiceTrailRecordingsList:
+      let environment = ProcessInfo.processInfo.environment
+      let appID = try requiredEnvironment(
+        "INSTANT_APP_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let refreshToken = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_RECORDINGS_REFRESH_TOKEN",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let viewerUserID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_RECORDINGS_VIEWER_USER_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let recordingID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_RECORDINGS_RECORDING_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let rawMode = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_RECORDINGS_MODE",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      guard let mode = InstantVoiceTrailRecordingsListValidationMode(rawValue: rawMode) else {
+        throw ValidationFailure(
+          caseID: invocation.caseID,
+          appID: appID,
+          message: "Expected INSTANT_SWIFT_DATA_RECORDINGS_MODE to be owner or member."
+        )
+      }
+      let websocketURI = URL(
+        string: environment["INSTANT_WEBSOCKET_URI"]
+          ?? InstantRuntimeConfiguration.defaultWebSocketURI.absoluteString
+      ) ?? InstantRuntimeConfiguration.defaultWebSocketURI
+      let rows = InstantVoiceTrailRecordingsListLiveValidation.run(
+        appID: appID,
+        websocketURI: websocketURI,
+        refreshToken: refreshToken,
+        viewerUserID: viewerUserID,
+        recordingID: recordingID,
+        mode: mode
+      )
+      for try await row in rows {
+        try writeJSONLine(row)
+      }
+
     case .liveAuthInvalidation:
       let environment = ProcessInfo.processInfo.environment
       let appID = try requiredEnvironment("INSTANT_APP_ID", environment: environment)
@@ -347,13 +397,14 @@ struct InstantSwiftDataValidationRunner {
 
   private static func requiredEnvironment(
     _ key: String,
-    environment: [String: String]
+    environment: [String: String],
+    caseID: String = "validation.live.sharing"
   ) throws -> String {
     guard let value = environment[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
       !value.isEmpty
     else {
       throw ValidationFailure(
-        caseID: "validation.live.sharing",
+        caseID: caseID,
         appID: environment["INSTANT_APP_ID"] ?? "live-sharing-validation",
         message: "Missing \(key)."
       )
