@@ -608,6 +608,260 @@ public enum InstantSchemaExamples {
     ]
   )
 
+  public static let sharingLists = InstantEntitySchema(
+    typeName: "V3SharedList",
+    namespace: "v3_shared_lists",
+    attributes: [
+      InstantAttribute(
+        id: "v3_shared_lists/title",
+        namespace: "v3_shared_lists",
+        name: "title",
+        valueType: .string,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "v3_shared_lists/value",
+        namespace: "v3_shared_lists",
+        name: "value",
+        valueType: .number,
+        isIndexed: true
+      ),
+    ]
+  )
+
+  public static let sharingShares = InstantEntitySchema(
+    typeName: "InstantShare",
+    namespace: "v3_shares",
+    attributes: [
+      InstantAttribute(
+        id: "v3_shares/token",
+        namespace: "v3_shares",
+        name: "token",
+        valueType: .string,
+        isIndexed: true,
+        isUnique: true
+      ),
+      InstantAttribute(
+        id: "v3_shares/rootNamespace",
+        namespace: "v3_shares",
+        name: "rootNamespace",
+        valueType: .string,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "v3_shares/rootID",
+        namespace: "v3_shares",
+        name: "rootID",
+        valueType: .string,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "v3_shares/createdAt",
+        namespace: "v3_shares",
+        name: "createdAt",
+        valueType: .date,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "v3_shares/updatedAt",
+        namespace: "v3_shares",
+        name: "updatedAt",
+        valueType: .date,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "v3_shares/revokedAt",
+        namespace: "v3_shares",
+        name: "revokedAt",
+        valueType: .date,
+        isRequired: false,
+        isIndexed: true
+      ),
+    ]
+  )
+
+  public static let sharingMemberships = InstantEntitySchema(
+    typeName: "InstantShareMembership",
+    namespace: "v3_share_memberships",
+    attributes: [
+      InstantAttribute(
+        id: "v3_share_memberships/role",
+        namespace: "v3_share_memberships",
+        name: "role",
+        valueType: .string,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "v3_share_memberships/acceptedAt",
+        namespace: "v3_share_memberships",
+        name: "acceptedAt",
+        valueType: .date,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "v3_share_memberships/revokedAt",
+        namespace: "v3_share_memberships",
+        name: "revokedAt",
+        valueType: .date,
+        isRequired: false,
+        isIndexed: true
+      ),
+    ]
+  )
+
+  public static let sharingDocument = InstantSchemaDocument(
+    entities: [
+      recordingActionUsers,
+      sharingMemberships,
+      sharingLists,
+      sharingShares,
+    ],
+    links: [
+      InstantLinkSchema(
+        name: "v3_share_membershipsShare",
+        forward: InstantLinkEndpoint(
+          namespace: "v3_share_memberships",
+          cardinality: .one,
+          label: "share",
+          onDelete: .cascade
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "v3_shares",
+          cardinality: .many,
+          label: "memberships"
+        ),
+        isRequired: true
+      ),
+      InstantLinkSchema(
+        name: "v3_share_membershipsUser",
+        forward: InstantLinkEndpoint(
+          namespace: "v3_share_memberships",
+          cardinality: .one,
+          label: "user"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "$users",
+          cardinality: .many,
+          label: "shareMemberships"
+        ),
+        isRequired: true
+      ),
+      InstantLinkSchema(
+        name: "v3_shared_listsOwner",
+        forward: InstantLinkEndpoint(
+          namespace: "v3_shared_lists",
+          cardinality: .one,
+          label: "owner"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "$users",
+          cardinality: .many,
+          label: "ownedSharedLists"
+        ),
+        isRequired: true
+      ),
+      InstantLinkSchema(
+        name: "v3_shared_listsReaders",
+        forward: InstantLinkEndpoint(
+          namespace: "v3_shared_lists",
+          cardinality: .many,
+          label: "readers"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "$users",
+          cardinality: .many,
+          label: "readableSharedLists"
+        )
+      ),
+      InstantLinkSchema(
+        name: "v3_shared_listsWriters",
+        forward: InstantLinkEndpoint(
+          namespace: "v3_shared_lists",
+          cardinality: .many,
+          label: "writers"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "$users",
+          cardinality: .many,
+          label: "writableSharedLists"
+        )
+      ),
+      InstantLinkSchema(
+        name: "v3_sharesOwner",
+        forward: InstantLinkEndpoint(
+          namespace: "v3_shares",
+          cardinality: .one,
+          label: "owner"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "$users",
+          cardinality: .many,
+          label: "ownedShares"
+        ),
+        isRequired: true
+      ),
+      InstantLinkSchema(
+        name: "v3_sharesRoot",
+        forward: InstantLinkEndpoint(
+          namespace: "v3_shares",
+          cardinality: .one,
+          label: "root"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "v3_shared_lists",
+          cardinality: .one,
+          label: "share"
+        ),
+        isRequired: true
+      ),
+    ]
+  )
+
+  public static let sharingPermissions = InstantPermissionsDocument(
+    namespaces: [
+      InstantNamespacePermissions(
+        namespace: "v3_shared_lists",
+        allow: [
+          .view: "isOwner || isWriter || isReader",
+          .create: "isOwner",
+          .update: "isOwner || isWriter",
+          .delete: "isOwner",
+        ],
+        bind: [
+          InstantPermissionBinding("isOwner", "auth.id in data.ref('owner.id')"),
+          InstantPermissionBinding("isWriter", "auth.id in data.ref('writers.id')"),
+          InstantPermissionBinding("isReader", "auth.id in data.ref('readers.id')"),
+        ]
+      ),
+      InstantNamespacePermissions(
+        namespace: "v3_shares",
+        allow: [
+          .view: "isOwner || isMember",
+          .create: "isOwner",
+          .update: "isOwner",
+          .delete: "isOwner",
+        ],
+        bind: [
+          InstantPermissionBinding("isOwner", "auth.id in data.ref('owner.id')"),
+          InstantPermissionBinding("isMember", "auth.id in data.ref('memberships.user.id')"),
+        ]
+      ),
+      InstantNamespacePermissions(
+        namespace: "v3_share_memberships",
+        allow: [
+          .view: "isSelf || isShareOwner",
+          .create: "isSelf || isShareOwner",
+          .update: "isShareOwner",
+          .delete: "isShareOwner",
+        ],
+        bind: [
+          InstantPermissionBinding("isSelf", "auth.id in data.ref('user.id')"),
+          InstantPermissionBinding("isShareOwner", "auth.id in data.ref('share.owner.id')"),
+        ]
+      ),
+    ]
+  )
+
   public static let validationDocument = InstantSchemaDocument(
     entities: [
       validationProfiles,
