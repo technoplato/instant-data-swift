@@ -1107,6 +1107,18 @@ public enum InstantSwiftDataParityCoverage {
       notes:
         "Swift blocks the reconnect backoff task after a post-init failure, explicitly closes the runtime, and proves cancellation prevents a second transport connection, matching the Reactor.js shutdown branch."
     ),
+    instantPython(
+      id: "instant.python.stream-reader-reconnect",
+      sourceFile: pythonStreamsStateSource,
+      sourceTestName: "test_reader_on_reconnect_resubscribes_with_current_offset",
+      swiftFile: reactorParitySwiftFile,
+      swiftTestName:
+        "runtimeReconnectRestoresActiveStreamReaderAndUnsubscribesOnCancellation",
+      surface: "live-stream-reconnect",
+      status: .adapted,
+      notes:
+        "Swift registers a public stream-content observer with the owned live session at the end of its local read, restores that subscription at the same byte offset after reconnect, and unsubscribes with the reconnected subscription event id when observation is cancelled. The reconnect lifecycle also follows Stream.ts onConnectionStatusChange."
+    ),
     instant(
       id: "instant.reactor.reconnect-flush-pending-only",
       sourceFile: reactorImplementationSource,
