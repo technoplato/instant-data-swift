@@ -138,6 +138,44 @@ struct InstantSwiftDataValidationRunner {
         throw failure
       }
 
+    case .liveSharing:
+      let environment = ProcessInfo.processInfo.environment
+      let appID = try requiredEnvironment("INSTANT_APP_ID", environment: environment)
+      let refreshToken = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_SHARING_REFRESH_TOKEN",
+        environment: environment
+      )
+      let readerUserID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_SHARING_USER_ID",
+        environment: environment
+      )
+      let listID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_SHARING_LIST_ID",
+        environment: environment
+      )
+      let expectedValue = try requiredDoubleEnvironment(
+        "INSTANT_SWIFT_DATA_SHARING_EXPECTED_VALUE",
+        environment: environment
+      )
+      let rejectedValue = try requiredDoubleEnvironment(
+        "INSTANT_SWIFT_DATA_SHARING_REJECTED_VALUE",
+        environment: environment
+      )
+      let websocketURI = URL(
+        string: environment["INSTANT_WEBSOCKET_URI"]
+          ?? InstantRuntimeConfiguration.defaultWebSocketURI.absoluteString
+      ) ?? InstantRuntimeConfiguration.defaultWebSocketURI
+      let row = try await InstantSharingLiveValidation.run(
+        appID: appID,
+        websocketURI: websocketURI,
+        refreshToken: refreshToken,
+        readerUserID: readerUserID,
+        listID: listID,
+        expectedServerValue: expectedValue,
+        rejectedOptimisticValue: rejectedValue
+      )
+      try writeJSONLine(row)
+
     case .typedDrafts:
       let run = try await InstantSwiftDataTestHarness.runDraftValidation()
       for row in run.result.evidence {
@@ -206,6 +244,37 @@ struct InstantSwiftDataValidationRunner {
       .trimmingCharacters(in: .whitespacesAndNewlines)
     guard let value, !value.isEmpty else { return nil }
     return value
+  }
+
+  private static func requiredEnvironment(
+    _ key: String,
+    environment: [String: String]
+  ) throws -> String {
+    guard let value = environment[key]?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !value.isEmpty
+    else {
+      throw ValidationFailure(
+        caseID: "validation.live.sharing",
+        appID: environment["INSTANT_APP_ID"] ?? "live-sharing-validation",
+        message: "Missing \(key)."
+      )
+    }
+    return value
+  }
+
+  private static func requiredDoubleEnvironment(
+    _ key: String,
+    environment: [String: String]
+  ) throws -> Double {
+    let value = try requiredEnvironment(key, environment: environment)
+    guard let number = Double(value), number.isFinite else {
+      throw ValidationFailure(
+        caseID: "validation.live.sharing",
+        appID: environment["INSTANT_APP_ID"] ?? "live-sharing-validation",
+        message: "Expected \(key) to be a finite number."
+      )
+    }
+    return number
   }
 
   private static func emit(

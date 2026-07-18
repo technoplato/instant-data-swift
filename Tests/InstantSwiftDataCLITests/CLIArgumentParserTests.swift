@@ -3292,6 +3292,7 @@ struct CLIArgumentParserTests {
     expectNoDifference(try parseValidationRunner(["--live-observe"]), .liveObserve)
     expectNoDifference(try parseValidationRunner(["--websocket-observe"]), .liveObserve)
     expectNoDifference(try parseValidationRunner(["--ws-observe"]), .liveObserve)
+    expectNoDifference(try parseValidationRunner(["--live-sharing"]), .liveSharing)
     expectNoDifference(try parseValidationRunner(["--typed-drafts"]), .typedDrafts)
     expectNoDifference(try parseValidationRunner(["--platform-adapters"]), .platformAdapters)
     expectNoDifference(try parseValidationRunner(["--syncups-recording"]), .syncUpsRecording)
@@ -3327,6 +3328,14 @@ struct CLIArgumentParserTests {
       CLIValidationRunnerInvocation.liveObserve.appID,
       "live-observe-validation"
     )
+    expectNoDifference(
+      CLIValidationRunnerInvocation.liveSharing.caseID,
+      "validation.live.sharing"
+    )
+    expectNoDifference(
+      CLIValidationRunnerInvocation.liveSharing.appID,
+      "live-sharing-validation"
+    )
     expectNoDifference(CLIValidationRunnerInvocation.coverage.appID, "local-validation")
   }
 
@@ -3337,6 +3346,7 @@ struct CLIArgumentParserTests {
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-session"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-transaction"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-observe"))
+    #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-sharing"))
     try expectValidationRunnerParseError(
       ["--remote"],
       description: CLIValidationRunnerUsage.validationRunner

@@ -1483,6 +1483,7 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
   case liveSession
   case liveTransaction
   case liveObserve
+  case liveSharing
   case typedDrafts
   case platformAdapters
   case syncUpsRecording
@@ -1507,6 +1508,8 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
       "validation.live.transaction"
     case .liveObserve:
       "validation.live.observe"
+    case .liveSharing:
+      "validation.live.sharing"
     case .typedDrafts:
       "validation.typed.drafts"
     case .platformAdapters:
@@ -1532,6 +1535,8 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
       "live-transaction-validation"
     case .liveObserve:
       "live-observe-validation"
+    case .liveSharing:
+      "live-sharing-validation"
     case .typedDrafts:
       "draft-validation"
     case .platformAdapters:
@@ -1565,7 +1570,7 @@ public enum CLIValidationUsage {
 
 public enum CLIValidationRunnerUsage {
   public static let validationRunner =
-    "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--reminders|--local-reminders|--server-transaction-loopback|--cloudkit-demo|--live-session|--live-transaction|--live-observe|--typed-drafts|--platform-adapters|--syncups-recording|--parity-report|--coverage]"
+    "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--reminders|--local-reminders|--server-transaction-loopback|--cloudkit-demo|--live-session|--live-transaction|--live-observe|--live-sharing|--typed-drafts|--platform-adapters|--syncups-recording|--parity-report|--coverage]"
 }
 
 public enum CLIValidationArgumentError: Error, Equatable, Sendable {
@@ -4754,6 +4759,9 @@ public struct CLIValidationRunnerParser: Parser {
 
     case "--live-observe", "--websocket-observe", "--ws-observe":
       return .liveObserve
+
+    case "--live-sharing":
+      return .liveSharing
 
     case "--typed-drafts":
       return .typedDrafts
