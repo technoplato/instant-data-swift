@@ -2,15 +2,18 @@ import Foundation
 
 public struct InstantAuthTokenInvalidationRequest: Sendable {
   public var appID: String
+  public var apiURI: URL
   public var refreshToken: String
   public var signedOutAt: InstantTimestamp
 
   public init(
     appID: String,
+    apiURI: URL = InstantRuntimeConfiguration.defaultAPIURI,
     refreshToken: String,
     signedOutAt: InstantTimestamp
   ) {
     self.appID = appID
+    self.apiURI = apiURI
     self.refreshToken = refreshToken
     self.signedOutAt = signedOutAt
   }
@@ -32,13 +35,14 @@ extension InstantAuthTokenInvalidator {
     invalidate: { _ in }
   )
 
+  public static let live = live()
+
   public static func live(
-    apiURI: URL = InstantRuntimeConfiguration.defaultAPIURI,
     httpClient: InstantAuthHTTPClient = .live
   ) -> Self {
     Self { request in
       let urlRequest = try instantAuthRequest(
-        apiURI: apiURI,
+        apiURI: request.apiURI,
         path: ["runtime", "signout"],
         body: InstantSignOutBody(
           appID: request.appID,

@@ -2,6 +2,7 @@ import Foundation
 
 public struct InstantRefreshTokenVerificationRequest: Sendable {
   public var appID: String
+  public var apiURI: URL
   public var refreshToken: String
   public var userID: String?
   public var signedInAt: InstantTimestamp
@@ -9,12 +10,14 @@ public struct InstantRefreshTokenVerificationRequest: Sendable {
 
   public init(
     appID: String,
+    apiURI: URL = InstantRuntimeConfiguration.defaultAPIURI,
     refreshToken: String,
     userID: String? = nil,
     signedInAt: InstantTimestamp,
     makeID: @escaping @Sendable () -> String
   ) {
     self.appID = appID
+    self.apiURI = apiURI
     self.refreshToken = refreshToken
     self.userID = userID
     self.signedInAt = signedInAt
@@ -55,13 +58,14 @@ extension InstantRefreshTokenVerifier {
     }
   )
 
+  public static let live = live()
+
   public static func live(
-    apiURI: URL = InstantRuntimeConfiguration.defaultAPIURI,
     httpClient: InstantAuthHTTPClient = .live
   ) -> Self {
     Self { request in
       let urlRequest = try instantAuthRequest(
-        apiURI: apiURI,
+        apiURI: request.apiURI,
         path: ["runtime", "auth", "verify_refresh_token"],
         body: InstantVerifyRefreshTokenBody(
           appID: request.appID,

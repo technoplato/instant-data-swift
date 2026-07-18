@@ -37,8 +37,8 @@ public enum InstantAuthLiveValidation {
     let persistenceURL = persistenceURL ?? FileManager.default.temporaryDirectory
       .appendingPathComponent("instant-auth-live-\(UUID().uuidString).sqlite")
     let now = InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
-    let verifier = InstantRefreshTokenVerifier.live(apiURI: apiURI)
-    let invalidator = InstantAuthTokenInvalidator.live(apiURI: apiURI)
+    let verifier = InstantRefreshTokenVerifier.live
+    let invalidator = InstantAuthTokenInvalidator.live
     func configuration() -> InstantRuntimeConfiguration {
       InstantRuntimeConfiguration(
         appID: appID,
@@ -103,6 +103,7 @@ public enum InstantAuthLiveValidation {
       _ = try await verifier.verify(
         InstantRefreshTokenVerificationRequest(
           appID: appID,
+          apiURI: apiURI,
           refreshToken: refreshToken,
           signedInAt: now,
           makeID: { "unused-live-auth-id" }

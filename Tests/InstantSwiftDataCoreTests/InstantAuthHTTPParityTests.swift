@@ -17,14 +17,12 @@ struct InstantAuthHTTPParityTests {
         )
       )
     }
-    let verifier = InstantRefreshTokenVerifier.live(
-      apiURI: try #require(URL(string: "https://api.example.test/custom")),
-      httpClient: client
-    )
+    let verifier = InstantRefreshTokenVerifier.live(httpClient: client)
 
     let verification = try await verifier.verify(
       InstantRefreshTokenVerificationRequest(
         appID: "app-1",
+        apiURI: try #require(URL(string: "https://api.example.test/custom")),
         refreshToken: "refresh-token",
         userID: "untrusted-local-user",
         signedInAt: InstantTimestamp(milliseconds: 1_700_000_000_000),
@@ -56,14 +54,12 @@ struct InstantAuthHTTPParityTests {
       await recorder.record(request)
       return InstantAuthHTTPResponse(statusCode: 200, data: Data(#"{}"#.utf8))
     }
-    let invalidator = InstantAuthTokenInvalidator.live(
-      apiURI: try #require(URL(string: "https://api.example.test/custom")),
-      httpClient: client
-    )
+    let invalidator = InstantAuthTokenInvalidator.live(httpClient: client)
 
     try await invalidator.invalidate(
       InstantAuthTokenInvalidationRequest(
         appID: "app-1",
+        apiURI: try #require(URL(string: "https://api.example.test/custom")),
         refreshToken: "refresh-token",
         signedOutAt: InstantTimestamp(milliseconds: 1_700_000_000_000)
       )

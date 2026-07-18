@@ -2628,6 +2628,7 @@ public final class InstantRuntime: Sendable {
     let verification = try await configuration.refreshTokenVerifier.verify(
       InstantRefreshTokenVerificationRequest(
         appID: configuration.appID,
+        apiURI: configuration.apiURI,
         refreshToken: token,
         userID: normalizedUserID,
         signedInAt: now,
@@ -2785,6 +2786,7 @@ public final class InstantRuntime: Sendable {
       if invalidateToken, let refreshToken = session?.refreshToken {
         invalidationRequest = InstantAuthTokenInvalidationRequest(
           appID: configuration.appID,
+          apiURI: configuration.apiURI,
           refreshToken: refreshToken,
           signedOutAt: signedOutAt
         )

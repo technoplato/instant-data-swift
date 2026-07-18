@@ -2488,7 +2488,7 @@ private enum InstantRefreshTokenVerifierKey: TestDependencyKey {
 
 extension InstantRefreshTokenVerifierKey: DependencyKey {
   static var liveValue: InstantRefreshTokenVerifier {
-    .local
+    .live
   }
 }
 
@@ -2536,7 +2536,7 @@ private enum InstantAuthTokenInvalidatorKey: TestDependencyKey {
 
 extension InstantAuthTokenInvalidatorKey: DependencyKey {
   static var liveValue: InstantAuthTokenInvalidator {
-    .local
+    .live
   }
 }
 
