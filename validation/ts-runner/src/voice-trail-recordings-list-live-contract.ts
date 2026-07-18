@@ -7,10 +7,13 @@ import { fileURLToPath } from "node:url";
 import { init } from "@instantdb/admin";
 import type { InstaQLParams, InstaQLResponse } from "@instantdb/core";
 
-import {
+import schemaModule, {
   type AppSchema,
-  voiceTrailSchema,
 } from "../../fixtures/voice-trail.schema.js";
+
+// The fixture is outside this package's ESM boundary, so tsx exposes its
+// default value directly while NodeNext types the import as the module object.
+const voiceTrailSchema = schemaModule as unknown as AppSchema;
 
 const appId = requiredEnvironment("INSTANT_APP_ID");
 const adminToken = requiredEnvironment("INSTANT_ADMIN_TOKEN");
