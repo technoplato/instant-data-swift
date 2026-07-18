@@ -68,19 +68,15 @@ struct VoiceTrailRecordingScreen: View {
     .instantFetch(
       $segments,
       TranscriptionSegment.liveTimeline(
-        transcription:
-          .session(
-            \.recorder.transcriptionID
-          )
+        transcriptionID:
+          recorder.transcriptionID
       )
     )
     .instantFetch(
       $attachments,
       RecordingAttachment.liveTimeline(
-        recording:
-          .session(
-            \.recorder.recordingID
-          )
+        recordingID:
+          recorder.recordingID
       )
     )
     .onAppear {
@@ -361,3 +357,18 @@ struct VoiceTrailRecordingScreen: View {
 `@VoiceTrailRecordingSession` is intentionally not an Instant core
 wrapper. It is product code composed from audio capture, local IDs,
 storage upload, typed mutations, and live queries.
+
+Decision, 2026-07-18: dynamic timeline queries receive the recorder's current
+concrete IDs. An `InstantQuery` is a value whose identity includes those
+filters, so `.instantFetch` replaces the observation whenever either ID
+changes. A view-root key path such as
+`.session(\.recorder.transcriptionID)` cannot express that dependency as a
+reusable Swift API without coupling the entity query to this concrete screen.
+
+Bare `@LocalID("device")` owns its SwiftUI lifecycle. The wrapper resolves the
+stable canonical local ID once for the view identity and invalidates the view
+when the value or renderable status changes. The canonical concurrency and
+relaunch guarantee remains covered by
+`InstantReactorParityTests.upstreamReactorGetLocalIDAlwaysReturnsSameID`; the
+screen lifecycle and rendering proof is
+`V3RecordingFixtureTests.localIDResolutionInvalidatesAHostedSwiftUIView`.

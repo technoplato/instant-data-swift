@@ -226,6 +226,12 @@ state but never replays call-site callbacks. Native and browser credential
 acquisition stays injectable through `InstantAuthProviderAuthorizer`, so the
 core does not pretend to own platform UI.
 
+`@InstantAuth(User.self, ...)` also exposes `auth.user` as an
+`InstantAuthUser<User>`. It derives a typed entity ID from the durable auth
+session, which lets product mutations use `auth.user?.id` without stringly
+typed conversion. It is deliberately an authenticated identity plus session,
+not a claim that the complete `$users` entity snapshot has been queried.
+
 ## Provider Configuration
 
 Provider IDs, client names, and presentation style should be centralized
@@ -319,6 +325,36 @@ cancellation, and renderable errors. The compiling fixture is
 `Tests/InstantSwiftDataTests/V3RecordingsListFixtureTests.swift`; the dynamic
 lifecycle proof remains
 `TypedAPITests.fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription`.
+
+## Recording Capture
+
+The recording screen keeps audio, speech, clipboard, screenshot, and location
+ownership in the product's `@VoiceTrailRecordingSession` wrapper. Instant owns
+stable local IDs, live entity queries, and typed mutation delivery.
+
+Decision, 2026-07-18: a dynamic recording query receives the recorder's current
+concrete identifier:
+
+```swift
+.instantFetch(
+  $segments,
+  TranscriptionSegment.liveTimeline(
+    transcriptionID: recorder.transcriptionID
+  )
+)
+```
+
+The identifier participates in `InstantQuery` identity, so a changed recording
+or transcription ID replaces the stale observation. The earlier
+`.session(\.recorder.transcriptionID)` sketch is not a reusable Swift query API:
+the key path's root is the concrete view, which would couple a reusable entity
+query to one product screen.
+
+`@LocalID("device")` is a SwiftUI `DynamicProperty`. It starts one canonical
+local-ID resolution for the view identity, preserves the runtime's concurrent
+and relaunch stability guarantee, and publishes value, loading, and error
+changes so the screen recomputes. Manual `load` and `task` methods remain public
+for non-SwiftUI and advanced use.
 
 ## Request Objects
 
