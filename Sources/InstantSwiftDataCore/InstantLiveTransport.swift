@@ -193,6 +193,65 @@ extension InstantLiveMessage {
       fields: ["tx-steps": try InstantLiveJSONValue(jsonObject: jsonObject)]
     )
   }
+
+  public static func joinRoom(
+    _ room: InstantRoomHandle,
+    presence: [String: JSONValue]? = nil,
+    clientEventID: String
+  ) -> Self {
+    var fields: [String: InstantLiveJSONValue] = [
+      "room-id": .string(room.id),
+      "room-type": .string(room.type),
+    ]
+    if let presence {
+      fields["data"] = .object(presence.mapValues(InstantLiveJSONValue.init))
+    }
+    return Self(op: "join-room", clientEventID: clientEventID, fields: fields)
+  }
+
+  public static func leaveRoom(
+    _ room: InstantRoomHandle,
+    clientEventID: String
+  ) -> Self {
+    Self(
+      op: "leave-room",
+      clientEventID: clientEventID,
+      fields: ["room-id": .string(room.id)]
+    )
+  }
+
+  public static func setPresence(
+    room: InstantRoomHandle,
+    values: [String: JSONValue],
+    clientEventID: String
+  ) -> Self {
+    Self(
+      op: "set-presence",
+      clientEventID: clientEventID,
+      fields: [
+        "data": .object(values.mapValues(InstantLiveJSONValue.init)),
+        "room-id": .string(room.id),
+      ]
+    )
+  }
+
+  public static func clientBroadcast(
+    room: InstantRoomHandle,
+    topic: String,
+    payload: JSONValue,
+    clientEventID: String
+  ) -> Self {
+    Self(
+      op: "client-broadcast",
+      clientEventID: clientEventID,
+      fields: [
+        "data": InstantLiveJSONValue(payload),
+        "room-id": .string(room.id),
+        "roomType": .string(room.type),
+        "topic": .string(topic),
+      ]
+    )
+  }
 }
 
 public struct InstantLiveInitOK: Hashable, Sendable {
@@ -557,6 +616,23 @@ private struct InstantLiveDynamicCodingKey: CodingKey {
 }
 
 private extension InstantLiveJSONValue {
+  init(_ value: JSONValue) {
+    switch value {
+    case .null:
+      self = .null
+    case let .bool(value):
+      self = .bool(value)
+    case let .number(value):
+      self = .number(value)
+    case let .string(value):
+      self = .string(value)
+    case let .array(values):
+      self = .array(values.map(Self.init))
+    case let .object(values):
+      self = .object(values.mapValues(Self.init))
+    }
+  }
+
   init(jsonObject: Any) throws {
     switch jsonObject {
     case _ as NSNull:

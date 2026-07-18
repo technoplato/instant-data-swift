@@ -78,6 +78,67 @@ struct InstantLiveTransportTests {
   }
 
   @Test
+  func roomMessagesEncodeCanonicalReactorShapes() throws {
+    let room = InstantRoomHandle(type: "chat", id: "room-1")
+    let presence: [String: JSONValue] = [
+      "cursor": .object([
+        "x": .number(12),
+        "y": .number(34),
+      ]),
+      "name": .string("Ada"),
+    ]
+
+    let join = InstantLiveMessage.joinRoom(
+      room,
+      presence: presence,
+      clientEventID: "event-join"
+    )
+    expectNoDifference(join.op, "join-room")
+    expectNoDifference(join.clientEventID, "event-join")
+    expectNoDifference(join.fields, [
+      "data": .object([
+        "cursor": .object([
+          "x": .number(12),
+          "y": .number(34),
+        ]),
+        "name": .string("Ada"),
+      ]),
+      "room-id": .string("room-1"),
+      "room-type": .string("chat"),
+    ])
+
+    let setPresence = InstantLiveMessage.setPresence(
+      room: room,
+      values: presence,
+      clientEventID: "event-presence"
+    )
+    let livePresence = try #require(join.fields["data"])
+    expectNoDifference(setPresence.op, "set-presence")
+    expectNoDifference(setPresence.fields, [
+      "data": livePresence,
+      "room-id": .string("room-1"),
+    ])
+
+    let broadcast = InstantLiveMessage.clientBroadcast(
+      room: room,
+      topic: "reaction",
+      payload: .object(["emoji": .string("🔥")]),
+      clientEventID: "event-broadcast"
+    )
+    expectNoDifference(broadcast.op, "client-broadcast")
+    expectNoDifference(broadcast.fields, [
+      "data": .object(["emoji": .string("🔥")]),
+      "room-id": .string("room-1"),
+      "roomType": .string("chat"),
+      "topic": .string("reaction"),
+    ])
+
+    let leave = InstantLiveMessage.leaveRoom(room, clientEventID: "event-leave")
+    expectNoDifference(leave.op, "leave-room")
+    expectNoDifference(leave.fields, ["room-id": .string("room-1")])
+  }
+
+  @Test
   func serverEventDecodesDynamicHyphenatedMessages() throws {
     let data = Data(
       """
