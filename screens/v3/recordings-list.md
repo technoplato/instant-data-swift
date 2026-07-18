@@ -223,6 +223,12 @@ struct VoiceTrailRecordingsListScreen: View {
 }
 ```
 
+Implementation status, 2026-07-18: this direct-wrapper syntax compiles against
+the public package in
+`Tests/InstantSwiftDataTests/V3RecordingsListFixtureTests.swift`. The modifier
+keys replacement by `InstantQuery` identity and delegates lifecycle ownership to
+the projected `FetchAll` value.
+
 ## Composite Request Variant
 
 A request is justified when the wrapper should vend one composite value.

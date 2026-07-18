@@ -3497,6 +3497,24 @@ public struct FetchAll<Element: Sendable>: Sendable {
   }
 }
 
+#if canImport(SwiftUI)
+  extension View {
+    public func instantFetch<Element>(
+      _ fetch: FetchAll<Element>,
+      _ query: InstantQuery<Element>
+    ) -> some View where Element: InstantEntityModel {
+      task(id: query) {
+        do {
+          try await fetch.task(query)
+        } catch is CancellationError {
+        } catch {
+          // FetchAll records renderable failures in loadError.
+        }
+      }
+    }
+  }
+#endif
+
 extension FetchAll where Element: InstantValueDecodable & InstantValueRepresentable {
   public init<Entity: InstantEntityModel>(
     wrappedValue: [Element] = [],

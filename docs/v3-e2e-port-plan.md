@@ -118,6 +118,9 @@ These decisions are sufficient to continue implementation:
 - `@FetchOne` is for one value or scalar result.
 - `@Fetch` and request objects are for one wrapper-owned composite value, not
   merely for dynamic input.
+- Direct SwiftUI wrappers attach with `.instantFetch($rows, query)`; query
+  identity drives SwiftUI task replacement and the wrapper owns the underlying
+  subscription lifecycle.
 - Property wrappers own loading, observation, cancellation, stale-work
   replacement, and renderable status.
 - SwiftUI button closures remain synchronous. They send typed messages; views
@@ -136,22 +139,13 @@ Do not pause the whole port for these. Resolve each in the first compiling
 slice that needs it, record the answer in the V3 design document, and add a
 compile/runtime test:
 
-- Dynamic wrapper attachment spelling: `.instantFetch($rows, query)` versus a
-  projected-value lifecycle API.
 - Whether `@InstantFetchBuilder` is handwritten, generated, or both.
 - How much of a mutation change envelope is macro-generated.
 - Whether room presence uses a wrapper, a modifier, or both.
 - Whether auth-provider catalogs are generated from app configuration.
 
-The first item is the only immediate recordings-list syntax decision. The
-others can wait for their vertical slice.
-
-The sketches are the desired syntax target, not an unresolved brainstorming
-phase. Packet 1 should begin with the `.instantFetch($recordings, query)` shape
-already shown in `screens/v3/recordings-list.md`. The compiler/lifecycle test
-will decide whether that exact modifier remains or is replaced by a
-projected-value lifecycle API. Code, test, V3 decision log, and sketch must be
-updated together in that packet; no separate design phase is required before
+The recordings-list attachment decision is resolved. The remaining items can
+wait for their vertical slice; no separate design phase is required before
 continuing the port.
 
 ## Commit and Version Discipline
@@ -295,9 +289,14 @@ Purpose: remove uncertainty before changing the public API or transport.
 
 Commit target: `Restore deterministic validation baseline`.
 
-### Packet 1: Freeze and compile the direct fetch lifecycle
+### Packet 1: Freeze and compile the direct fetch lifecycle — complete
 
 Purpose: turn the recordings-list sketch into the first executable V3 slice.
+
+The public `InstantQuery` spelling, `.instantFetch($rows, query)` modifier, and
+VoiceTrail-shaped compile fixture are implemented. Existing dynamic `FetchAll`
+tests prove cached initial state, query replacement, stale-subscription
+cancellation, and error preservation.
 
 - Add a small VoiceTrail fixture target or compile-test fixture.
 - Implement the chosen dynamic attachment spelling for `@FetchAll`.
@@ -473,12 +472,12 @@ The release harness must prove each applicable row in both directions:
 
 ## Immediate Next Step
 
-Compile Packet 1's recordings-list fixture against public package APIs. Start
-with the `.instantFetch($recordings, query)` spelling already present in the V3
-sketch, prove cached initial state plus search/scope replacement and
-cancellation, and let that compiling lifecycle test settle the one remaining
-recordings-list spelling decision. Update the implementation, test, V3 decision
-log, and sketch in the same small commit.
+Implement Packet 2's typed message send for the recordings-list rename action:
+`db.send(message, onOptimisticCommit:onServerAccepted:onFailure:)`. Keep the
+change envelope minimal, invoke each action callback once for its corresponding
+phase, and prove that passive remote refreshes do not replay local callbacks.
+Compile the rename flow in the same VoiceTrail fixture and preserve the existing
+durable outbox/reconnect semantics underneath it.
 
 File-backed `stream-append` fetching and remote stream metadata bootstrap remain
 important live-stream work, but they do not block the recordings-list fetch

@@ -2030,6 +2030,8 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
   }
 }
 
+public typealias InstantQuery<Entity: InstantEntityModel> = InstantEntityQuery<Entity>
+
 private struct QueryIDPayload: Encodable {
   var namespace: String
   var filters: [InstantQueryFilter]
