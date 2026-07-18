@@ -946,6 +946,8 @@ public final class InstantRuntime: Sendable {
   private let authSessionObservers = InstantAuthSessionObservers()
   private let connectionStatusObservers =
     InstantSnapshotObservers<String, InstantConnectionStatus>()
+  private let mutationLifecycleObservers =
+    InstantSnapshotObservers<String, InstantMutationLifecycleEvent>()
   private let roomPresenceObservers =
     InstantSnapshotObservers<InstantRoomPresenceObservationKey, [InstantRoomPresenceMember]>()
   private let roomTopicObservers =
@@ -1316,6 +1318,9 @@ public final class InstantRuntime: Sendable {
             processedTransactionID: processedTransactionID,
             pendingMutations: outboxSnapshot
           )
+          if let mutation = confirmation?.mutation {
+            await publishMutationLifecycle(mutation)
+          }
           return InstantAppliedServerTransaction(
             application: application,
             confirmedMutation: confirmation?.mutation,
@@ -1362,6 +1367,9 @@ public final class InstantRuntime: Sendable {
           processedTransactionID: processedTransactionID,
           pendingMutations: outboxSnapshot
         )
+        if let mutation = confirmation?.mutation {
+          await publishMutationLifecycle(mutation)
+        }
         return InstantAppliedServerTransaction(
           application: application,
           confirmedMutation: confirmation?.mutation,
@@ -1447,6 +1455,7 @@ public final class InstantRuntime: Sendable {
         recordActorHop(.outbox)
         await outbox.replace(with: update.mutations)
         _ = try? await publishConnectionStatusWithGateHeld()
+        await publishMutationLifecycle(update.mutation)
         return (
           mutation: update.mutation,
           pendingMutationCount: update.mutations.filter { $0.status == .pending }.count
@@ -1908,6 +1917,19 @@ public final class InstantRuntime: Sendable {
     let status = try await connectionStatusWithGateHeld()
     await connectionStatusObservers.publish(status, for: configuration.appID)
     return status
+  }
+
+  private func publishMutationLifecycle(_ mutation: PendingMutation) async {
+    let event: InstantMutationLifecycleEvent
+    switch mutation.status {
+    case .confirmed:
+      event = .serverAccepted(mutation)
+    case .failed:
+      event = .failed(mutation)
+    case .pending:
+      return
+    }
+    await mutationLifecycleObservers.publish(event, for: mutation.id)
   }
 
   private func persistedConnectionState() async throws -> InstantConnectionState {
@@ -4471,6 +4493,27 @@ public final class InstantRuntime: Sendable {
     return await outbox.pending()
   }
 
+  public func observeMutationLifecycle(
+    id rawID: String
+  ) async throws -> AsyncStream<InstantMutationLifecycleEvent> {
+    let id = try validatedNonEmpty(
+      rawID,
+      label: "Mutation id",
+      operation: "observe mutation lifecycle",
+      recovery: "Pass the transaction id used to submit the mutation."
+    )
+    let state = try await persistence.loadState()
+    let current: InstantMutationLifecycleEvent =
+      if let mutation = state.snapshot.outbox.first(where: { $0.id == id }),
+        mutation.status == .failed
+      {
+        .failed(mutation)
+      } else {
+        .waiting
+      }
+    return await mutationLifecycleObservers.observe(key: id, current: current)
+  }
+
   public func outboxMutations() async -> [PendingMutation] {
     await outbox.all()
   }
@@ -4592,6 +4635,9 @@ public final class InstantRuntime: Sendable {
               try await saveOpenedConnectionMetadataWithGateHeld()
             }
             _ = try? await publishConnectionStatusWithGateHeld()
+            for mutation in update.confirmed + update.failed {
+              await publishMutationLifecycle(mutation)
+            }
             let remainingPendingCount = update.mutations.filter { $0.status == .pending }.count
             await leaveOperationGate()
             await leaveMutationFlushGate()
@@ -4634,6 +4680,7 @@ public final class InstantRuntime: Sendable {
         if didSave {
           await outbox.replace(with: update.mutations)
           _ = try? await publishConnectionStatusWithGateHeld()
+          await publishMutationLifecycle(update.mutation)
           await operationGate.leave()
           return update.mutation
         }
@@ -4668,6 +4715,7 @@ public final class InstantRuntime: Sendable {
           await outbox.replace(with: update.mutations)
           try await saveErroredConnectionMetadataWithGateHeld(message: message)
           _ = try? await publishConnectionStatusWithGateHeld()
+          await publishMutationLifecycle(update.mutation)
           await operationGate.leave()
           return update.mutation
         }
@@ -4746,6 +4794,9 @@ public final class InstantRuntime: Sendable {
           recordActorHop(.outbox)
           await outbox.replace(with: update.mutations)
           _ = try? await publishConnectionStatusWithGateHeld()
+          for mutation in update.confirmed {
+            await publishMutationLifecycle(mutation)
+          }
           await leaveOperationGate()
           return update.confirmed
         }
