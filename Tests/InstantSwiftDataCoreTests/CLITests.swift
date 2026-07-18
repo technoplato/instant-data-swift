@@ -8527,6 +8527,44 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliValidationLiveTransactionSelectsCanonicalRecordingActionContract() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let output = try runCLI(
+      ["validation", "live-transaction", "--jsonl"],
+      homeURL: homeURL,
+      environment: [
+        "INSTANT_SWIFT_DATA_LIVE_TRANSACTION_CONTRACT": "recording-action",
+        "INSTANT_SWIFT_DATA_RECORDING_ID": "recording-cli-e2e",
+        "INSTANT_SWIFT_DATA_TRANSCRIPTION_ID": "transcription-cli-e2e",
+        "INSTANT_SWIFT_DATA_MEMBER_ID": "member-cli-e2e",
+        "INSTANT_SWIFT_DATA_ATTACHMENT_ID": "attachment-cli-e2e",
+        "INSTANT_SWIFT_DATA_OWNER_ID": "owner-cli-e2e",
+        "INSTANT_SWIFT_DATA_RECORDING_TITLE": "Canonical recording",
+        "INSTANT_SWIFT_DATA_RECORDING_DEVICE_ID": "swift-cli-e2e",
+        "INSTANT_SWIFT_DATA_ATTACHMENT_CONTENTS": "Cross-SDK notes",
+      ]
+    )
+    let lines = output.split(separator: "\n")
+    expectNoDifference(lines.count, 8)
+    let finalEvidence = try JSONDecoder().decode(
+      CLILiveSessionValidationEvidence.self,
+      from: Data(try #require(lines.last).utf8)
+    )
+
+    expectNoDifference(finalEvidence.caseID, "validation.live.recording-action")
+    expectNoDifference(finalEvidence.event, "receive-transaction-refresh")
+    expectNoDifference(finalEvidence.details.sentOps, ["init", "add-query", "transact"])
+    expectNoDifference(finalEvidence.details.receivedOps, [
+      "init-ok", "add-query-ok", "transact-ok", "refresh-ok",
+    ])
+    expectNoDifference(finalEvidence.details.proofLevel, "local-recording-action-contract")
+  }
+
+  @Test
   func cliValidationLiveObserveEmitsLocalQueryEvidence() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)

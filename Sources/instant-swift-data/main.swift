@@ -3,6 +3,7 @@ import InstantSwiftDataCLIParsing
 import InstantSwiftData
 import InstantSwiftDataCore
 import InstantSwiftDataSchema
+import InstantSwiftDataTesting
 
 @main
 struct InstantSwiftDataCLI {
@@ -320,21 +321,41 @@ struct InstantSwiftDataCLI {
       let appID = validationAppID(defaultAppID: "live-transaction-validation")
       do {
         let runsLive = validationRunsLiveTransaction()
+        let recordingAction = validationRecordingActionLiveInput()
         let transactionEntityID = validationLiveTransactionEntityID()
+        let caseID = recordingAction == nil
+          ? "validation.live.transaction"
+          : "validation.live.recording-action"
+        let query = recordingAction.map {
+          InstantRecordingActionLiveContract.query(recordingID: $0.ids.recordingID)
+        } ?? InstantSwiftDataLiveSessionValidation.defaultQuery
+        let transactionSteps = recordingAction.map {
+          InstantRecordingActionLiveContract.createSteps(
+            ids: $0.ids,
+            title: $0.title,
+            deviceID: $0.deviceID,
+            attachmentContents: $0.attachmentContents
+          )
+        } ?? validationLiveTransactionSteps(
+          entityID: transactionEntityID,
+          text: validationLiveTransactionText(entityID: transactionEntityID)
+        )
         let result = try await InstantSwiftDataLiveSessionValidation.run(
           appID: appID,
-          caseID: "validation.live.transaction",
+          caseID: caseID,
           websocketURI: try validationWebSocketURI(),
           refreshToken: validationRefreshToken(),
           adminToken: validationAdminToken(),
+          query: query,
           includeTransaction: true,
-          transactionSteps: validationLiveTransactionSteps(
-            entityID: transactionEntityID,
-            text: validationLiveTransactionText(entityID: transactionEntityID)
-          ),
+          transactionSteps: transactionSteps,
           resolveTransactionAttributeIDs: runsLive,
           liveTransport: runsLive ? .live : .local,
-          proofLevel: runsLive ? "live-websocket-transaction" : "local-protocol"
+          proofLevel: recordingAction == nil
+            ? (runsLive ? "live-websocket-transaction" : "local-protocol")
+            : (runsLive
+              ? "live-websocket-recording-action-contract"
+              : "local-recording-action-contract")
         )
         try printLiveSessionValidation(
           result: result,
@@ -10136,6 +10157,47 @@ struct InstantSwiftDataCLI {
       ?? (entityID == "live-transaction-note"
         ? "Swift live transaction"
         : "Swift live transaction \(entityID)")
+  }
+
+  private struct ValidationRecordingActionLiveInput {
+    var ids: InstantRecordingActionLiveIDs
+    var title: String
+    var deviceID: String
+    var attachmentContents: String
+  }
+
+  private static func validationRecordingActionLiveInput()
+    -> ValidationRecordingActionLiveInput?
+  {
+    guard
+      trimmedValidationEnvironmentValue("INSTANT_SWIFT_DATA_LIVE_TRANSACTION_CONTRACT")?
+        .lowercased() == "recording-action"
+    else {
+      return nil
+    }
+
+    return ValidationRecordingActionLiveInput(
+      ids: InstantRecordingActionLiveIDs(
+        recordingID: trimmedValidationEnvironmentValue("INSTANT_SWIFT_DATA_RECORDING_ID")
+          ?? "recording-live-action",
+        transcriptionID: trimmedValidationEnvironmentValue(
+          "INSTANT_SWIFT_DATA_TRANSCRIPTION_ID"
+        ) ?? "transcription-live-action",
+        memberID: trimmedValidationEnvironmentValue("INSTANT_SWIFT_DATA_MEMBER_ID")
+          ?? "member-live-action",
+        attachmentID: trimmedValidationEnvironmentValue("INSTANT_SWIFT_DATA_ATTACHMENT_ID")
+          ?? "attachment-live-action",
+        ownerID: trimmedValidationEnvironmentValue("INSTANT_SWIFT_DATA_OWNER_ID")
+          ?? "owner-live-action"
+      ),
+      title: trimmedValidationEnvironmentValue("INSTANT_SWIFT_DATA_RECORDING_TITLE")
+        ?? "Canonical recording",
+      deviceID: trimmedValidationEnvironmentValue("INSTANT_SWIFT_DATA_RECORDING_DEVICE_ID")
+        ?? "swift-live-e2e",
+      attachmentContents: trimmedValidationEnvironmentValue(
+        "INSTANT_SWIFT_DATA_ATTACHMENT_CONTENTS"
+      ) ?? "Cross-SDK notes"
+    )
   }
 
   private static func validationLiveTransactionSteps(

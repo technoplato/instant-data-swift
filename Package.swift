@@ -98,6 +98,7 @@ let package = Package(
         "InstantSwiftData",
         "InstantSwiftDataCore",
         "InstantSwiftDataSchema",
+        "InstantSwiftDataTesting",
       ],
       swiftSettings: strictConcurrencySettings
     ),
