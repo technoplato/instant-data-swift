@@ -139,6 +139,10 @@ assert.deepStrictEqual(live.details.visibility, {
 assert.equal(live.details.finalValue, 3);
 assert.equal(live.details.compilerWarningCount, 0);
 assert.deepStrictEqual(live.details.warnings, []);
+assert.deepStrictEqual(live.details.swiftReaderRejection.observedValues, [1, 2, 1]);
+assert.equal(live.details.swiftReaderRejection.pendingMutationCount, 0);
+assert.equal(live.details.swiftReaderRejection.failedMutationCount, 1);
+assert.match(live.details.swiftReaderRejection.failureMessage, /Permission denied/);
 for (const key of ["readerUpdate", "readerDelete", "writerDelete"]) {
   assert.match(live.details.rejected[key], /Permission denied/);
 }

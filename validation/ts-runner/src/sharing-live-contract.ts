@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { init } from "@instantdb/admin";
 
 import {
@@ -12,6 +15,7 @@ import { sharingRuntimeSchema } from "./sharing-runtime-schema.js";
 const appId = requiredEnvironment("INSTANT_APP_ID");
 const adminToken = requiredEnvironment("INSTANT_ADMIN_TOKEN");
 const apiURI = process.env.INSTANT_API_URI ?? "https://api.instantdb.com";
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const suffix = randomUUID();
 const ids = {
   listID: randomUUID(),
@@ -67,6 +71,7 @@ try {
       now: createdAt,
     }),
   );
+
   await ownerDB.transact(
     sharingGrantTransaction(ownerDB.tx, {
       listID: ids.listID,
@@ -87,6 +92,20 @@ try {
       acceptedAt: new Date("2026-07-18T20:02:00.000Z"),
     }),
   );
+
+  const swiftReaderRejection = await runSwiftReaderRejection({
+    appId,
+    refreshToken: users.reader.token,
+    readerUserID: users.reader.id,
+    listID: ids.listID,
+    expectedValue: 1,
+    rejectedValue: 2,
+  });
+  assert.equal(swiftReaderRejection.ok, true);
+  assert.deepStrictEqual(swiftReaderRejection.details.observedValues, [1, 2, 1]);
+  assert.equal(swiftReaderRejection.details.pendingMutationCount, 0);
+  assert.equal(swiftReaderRejection.details.failedMutationCount, 1);
+  assert.match(swiftReaderRejection.details.failureMessage, /permission/i);
 
   const ownerResult = await ownerDB.query(sharingQuery(ids.listID));
   const readerResult = await readerDB.query(sharingQuery(ids.listID));
@@ -158,6 +177,7 @@ try {
         writerDelete,
       },
       finalValue: finalSnapshot.value,
+      swiftReaderRejection: swiftReaderRejection.details,
       compilerWarningCount: warnings.length,
       warnings,
     },
@@ -179,6 +199,68 @@ function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`Missing ${name}.`);
   return value;
+}
+
+async function runSwiftReaderRejection(input: {
+  appId: string;
+  refreshToken: string;
+  readerUserID: string;
+  listID: string;
+  expectedValue: number;
+  rejectedValue: number;
+}): Promise<{
+  ok: boolean;
+  details: {
+    observedValues: number[];
+    pendingMutationCount: number;
+    failedMutationCount: number;
+    failureMessage: string;
+    connectionState: string;
+  };
+}> {
+  const child = spawn(
+    "swift",
+    [
+      "run",
+      "--package-path",
+      repositoryRoot,
+      "instant-swift-data-validation-runner",
+      "--live-sharing",
+    ],
+    {
+      cwd: repositoryRoot,
+      env: {
+        ...process.env,
+        INSTANT_APP_ID: input.appId,
+        INSTANT_SWIFT_DATA_SHARING_REFRESH_TOKEN: input.refreshToken,
+        INSTANT_SWIFT_DATA_SHARING_USER_ID: input.readerUserID,
+        INSTANT_SWIFT_DATA_SHARING_LIST_ID: input.listID,
+        INSTANT_SWIFT_DATA_SHARING_EXPECTED_VALUE: String(input.expectedValue),
+        INSTANT_SWIFT_DATA_SHARING_REJECTED_VALUE: String(input.rejectedValue),
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  let stdout = "";
+  let stderr = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => { stdout += chunk; });
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  const status = await new Promise<number>((resolveStatus, reject) => {
+    child.once("error", reject);
+    child.once("close", (code) => resolveStatus(code ?? 1));
+  });
+  if (status !== 0) {
+    throw new Error(
+      `Swift live sharing validation failed with status ${status}: ${stdout.trim()} ${stderr.trim()}`,
+    );
+  }
+  const lines = stdout.trim().split("\n").filter(Boolean);
+  if (lines.length !== 1) {
+    throw new Error(`Expected one Swift sharing evidence row, received ${lines.length}.`);
+  }
+  return JSON.parse(lines[0]);
 }
 
 function sharingSnapshot(value: unknown): {
