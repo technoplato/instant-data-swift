@@ -99,6 +99,11 @@ actor InstantLiveStreamReaderState {
     receivedAppends
   }
 
+  func takeDeliveredAppend() -> InstantLiveStreamAppend? {
+    guard !receivedAppends.isEmpty else { return nil }
+    return receivedAppends.removeFirst()
+  }
+
   func recordSeenOffset(_ offset: Int64) {
     guard offset >= seenOffset else { return }
     seenOffset = offset
@@ -164,7 +169,52 @@ actor InstantLiveStreamReaderState {
       pendingFailure = failure
       return .failure(failure)
     }
-    receivedAppends.append(append)
-    return .deliver(append)
+    guard append.offset <= seenOffset else {
+      let failure = InstantError(
+        code: .decodeFailed,
+        operation: "materialize Instant stream append",
+        path: "offset",
+        serverEventID: append.clientEventID,
+        message:
+          "Instant stream append starts at byte offset \(append.offset), after the reader's "
+          + "seen offset \(seenOffset).",
+        recovery: "Reconnect the stream reader from its last seen byte offset."
+      )
+      pendingFailure = failure
+      return .failure(failure)
+    }
+
+    var delivery = append
+    if let content = append.content {
+      let bytes = Data(content.utf8)
+      let discardByteCount = seenOffset - append.offset
+      guard discardByteCount <= Int64(bytes.count) else {
+        return .ignored
+      }
+      let remaining = bytes.dropFirst(Int(discardByteCount))
+      guard remaining.isEmpty || String(data: remaining, encoding: .utf8) != nil else {
+        let failure = InstantError(
+          code: .decodeFailed,
+          operation: "materialize Instant stream append",
+          path: "content",
+          serverEventID: append.clientEventID,
+          message: "Instant stream overlap ended inside a UTF-8 scalar.",
+          recovery: "Reconnect from a server-confirmed byte boundary."
+        )
+        pendingFailure = failure
+        return .failure(failure)
+      }
+      delivery.offset = seenOffset
+      delivery.content = remaining.isEmpty ? nil : String(decoding: remaining, as: UTF8.self)
+      if remaining.isEmpty,
+        delivery.files.isEmpty,
+        !delivery.done,
+        delivery.abortReason == nil
+      {
+        return .ignored
+      }
+    }
+    receivedAppends.append(delivery)
+    return .deliver(delivery)
   }
 }

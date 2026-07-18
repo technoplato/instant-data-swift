@@ -28,6 +28,14 @@ private let pythonStreamAppendRetrySource =
   + "does not deliver the failed append; upstream/instant/client/packages/core/src/Stream.ts "
   + "onStreamAppend confirms the TypeScript behavior]"
 
+private let pythonStreamAppendMaterializationSource =
+  "upstream/instant/client/packages/python/src/instantdb/_async/streams/reader.py "
+  + "_process_append plus tests/test_streams_state.py "
+  + "test_reader_holds_partial_utf8_across_chunk_boundary "
+  + "[adapted: Swift applies overlap and resume math in UTF-8 bytes, preserves a complete "
+  + "multi-byte scalar, and delivers only bytes not already seen; upstream/instant/client/"
+  + "packages/core/src/Stream.ts createReadStream uses the same seenOffset/discardLen rules]"
+
 @Suite
 struct InstantLiveTransportTests {
   @Test
@@ -312,6 +320,81 @@ struct InstantLiveTransportTests {
     expectNoDifference(disposition, .requestReconnect, pythonStreamAppendRetrySource)
     let deliveredAppends = await reader.deliveredAppends
     expectNoDifference(deliveredAppends, [], pythonStreamAppendRetrySource)
+  }
+
+  @Test
+  func streamAppendDiscardsAlreadySeenUTF8Prefix() async throws {
+    let reader = try InstantLiveStreamReaderState(clientID: "c", initialByteOffset: 5)
+    await reader.recordSubscriptionEventID("evt-1")
+    let append = InstantLiveStreamAppend(
+      clientEventID: "evt-1",
+      streamID: "s-1",
+      clientID: "c",
+      offset: 3,
+      content: "lo 🚀"
+    )
+
+    let disposition = await reader.receive(append)
+    let delivered = await reader.takeDeliveredAppend()
+
+    expectNoDifference(
+      disposition,
+      .deliver(
+        InstantLiveStreamAppend(
+          clientEventID: "evt-1",
+          streamID: "s-1",
+          clientID: "c",
+          offset: 5,
+          content: " 🚀"
+        )
+      ),
+      pythonStreamAppendMaterializationSource
+    )
+    expectNoDifference(
+      delivered,
+      InstantLiveStreamAppend(
+        clientEventID: "evt-1",
+        streamID: "s-1",
+        clientID: "c",
+        offset: 5,
+        content: " 🚀"
+      ),
+      pythonStreamAppendMaterializationSource
+    )
+
+    await reader.recordSeenOffset(10)
+    let nextDisposition = await reader.receive(
+      InstantLiveStreamAppend(
+        clientEventID: "evt-1",
+        streamID: "s-1",
+        clientID: "c",
+        offset: 10,
+        content: "!"
+      )
+    )
+    expectNoDifference(
+      nextDisposition,
+      .deliver(
+        InstantLiveStreamAppend(
+          clientEventID: "evt-1",
+          streamID: "s-1",
+          clientID: "c",
+          offset: 10,
+          content: "!"
+        )
+      ),
+      pythonStreamAppendMaterializationSource
+    )
+    await reader.recordSeenOffset(11)
+    let resume = try await reader.subscribeMessage(clientEventID: "evt-resume")
+    expectNoDifference(
+      resume.fields,
+      [
+        "client-id": .string("c"),
+        "offset": .number(11),
+      ],
+      pythonStreamAppendMaterializationSource
+    )
   }
 
   @Test

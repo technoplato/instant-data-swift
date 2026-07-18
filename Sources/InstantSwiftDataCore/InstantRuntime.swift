@@ -578,6 +578,37 @@ private actor InstantRuntimeLiveSession {
     )
   }
 
+  func takeDeliveredStreamAppend(clientEventID: String?) async
+    -> InstantLiveStreamAppend?
+  {
+    guard let clientEventID else { return nil }
+    for key in registeredStreamReaders.keys.sorted() {
+      guard let registration = registeredStreamReaders[key],
+        await registration.reader.subscriptionEventID == clientEventID,
+        let append = await registration.reader.takeDeliveredAppend()
+      else {
+        continue
+      }
+      return append
+    }
+    return nil
+  }
+
+  func recordDeliveredStreamAppend(_ append: InstantLiveStreamAppend) async {
+    guard let clientEventID = append.clientEventID else { return }
+    let deliveredByteCount = Int64(append.content?.utf8.count ?? 0)
+      + append.files.reduce(Int64(0)) { $0 + $1.size }
+    for key in registeredStreamReaders.keys.sorted() {
+      guard let registration = registeredStreamReaders[key],
+        await registration.reader.subscriptionEventID == clientEventID
+      else {
+        continue
+      }
+      await registration.reader.recordSeenOffset(append.offset + deliveredByteCount)
+      return
+    }
+  }
+
   func sendMutations(_ mutations: [InstantTransportMutation]) async throws {
     guard let session, isOpened else { return }
     for mutation in mutations.sorted(by: Self.mutationOrder) where mutation.status == .pending {
@@ -2016,8 +2047,14 @@ public final class InstantRuntime: Sendable {
     case let .serverBroadcast(broadcast):
       try await applyLiveServerBroadcast(broadcast)
 
-    case .streamAppend:
-      break
+    case let .streamAppend(append):
+      guard let delivery = await liveSession.takeDeliveredStreamAppend(
+        clientEventID: append.clientEventID
+      ) else {
+        return
+      }
+      try await applyLiveStreamAppend(delivery)
+      await liveSession.recordDeliveredStreamAppend(delivery)
 
     case let .error(error):
       if let clientEventID = error.clientEventID?.nilIfEmpty,
@@ -2036,6 +2073,31 @@ public final class InstantRuntime: Sendable {
 
     case .initOK, .addQueryExists, .joinRoomOK, .leaveRoomOK, .other:
       break
+    }
+  }
+
+  private func applyLiveStreamAppend(_ append: InstantLiveStreamAppend) async throws {
+    if !append.files.isEmpty {
+      throw InstantError(
+        code: .implementationFailed,
+        operation: "apply Instant live stream append",
+        serverEventID: append.clientEventID,
+        message: "File-backed live stream appends are not implemented yet.",
+        recovery: "Use inline stream content until the canonical file-fetch packet is ported."
+      )
+    }
+    if let content = append.content, !content.isEmpty {
+      _ = try await appendStreamContent(
+        streamID: append.streamID,
+        content: content,
+        expectedOffset: append.offset
+      )
+    }
+    if append.done {
+      _ = try await closeStream(
+        streamID: append.streamID,
+        abortReason: append.abortReason
+      )
     }
   }
 

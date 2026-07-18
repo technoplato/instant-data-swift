@@ -945,7 +945,7 @@ struct InstantReactorParityTests {
     await firstSession.enqueue(
       InstantLiveMessage(
         op: "stream-append",
-        clientEventID: try #require(subscribe.clientEventID),
+        clientEventID: subscribe.clientEventID,
         fields: [
           "client-id": .string("stream-append-retry"),
           "error": .string("transient"),
@@ -982,6 +982,103 @@ struct InstantReactorParityTests {
     observerTask.cancel()
     let initial = try #require(await observerTask.value)
     expectNoDifference(initial.content, "hello", pythonStreamAppendRetrySource)
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func runtimeInlineStreamAppendPublishesAndAdvancesReconnectOffset() async throws {
+    let firstSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "stream-inline-before")
+    ])
+    let secondSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "stream-inline-after")
+    ])
+    let transport = LiveReactorParityTransport(sessions: [firstSession, secondSession])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "python-stream-inline-append-parity",
+        persistenceURL: try temporaryReactorParityCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: transport.transport
+      )
+    )
+    _ = try await runtime.signInAsGuest()
+    let metadata = try await runtime.createStream(clientID: "stream-inline-append")
+    _ = try await runtime.appendStreamContent(streamID: metadata.id, content: "hello")
+    _ = try await runtime.connect()
+
+    let observation = try await runtime.observeStreamContent(streamID: metadata.id)
+    let observerTask = Task { () -> [InstantStreamContentRead] in
+      var iterator = observation.makeAsyncIterator()
+      var values: [InstantStreamContentRead] = []
+      if let initial = await iterator.next() { values.append(initial) }
+      if let updated = await iterator.next() { values.append(updated) }
+      return values
+    }
+    defer { observerTask.cancel() }
+
+    try await instantLiveWithTimeout(
+      operation: "wait for inline stream subscription",
+      timeoutMilliseconds: 500
+    ) {
+      await firstSession.waitForSentMessageCount(2)
+    }
+    let subscribe = try #require(await firstSession.sentMessages().last)
+    await firstSession.enqueue(
+      InstantLiveMessage(
+        op: "stream-append",
+        clientEventID: subscribe.clientEventID,
+        fields: [
+          "client-id": .string("stream-inline-append"),
+          "content": .string(" 🚀"),
+          "offset": .number(5),
+          "retry": .bool(false),
+          "stream-id": .string(metadata.id),
+        ]
+      )
+    )
+
+    let values = try await instantLiveWithTimeout(
+      operation: "wait for inline stream append publication",
+      timeoutMilliseconds: 500
+    ) {
+      await observerTask.value
+    }
+    expectNoDifference(
+      values.map(\.content),
+      ["hello", "hello 🚀"],
+      pythonStreamAppendMaterializationSource
+    )
+
+    await firstSession.failReceive(
+      InstantError(
+        code: .networkFailed,
+        operation: "drop inline stream session",
+        message: "verify advanced resume offset",
+        recovery: "Reconnect the stream reader."
+      )
+    )
+    try await instantLiveWithTimeout(
+      operation: "wait for inline stream reconnect",
+      timeoutMilliseconds: 500
+    ) {
+      await transport.waitForConnectionCount(2)
+    }
+    try await instantLiveWithTimeout(
+      operation: "wait for inline stream resubscription",
+      timeoutMilliseconds: 500
+    ) {
+      await secondSession.waitForSentMessageCount(2)
+    }
+    let resubscribe = try #require(await secondSession.sentMessages().last)
+    expectNoDifference(
+      resubscribe.fields,
+      [
+        "offset": .number(10),
+        "stream-id": .string(metadata.id),
+      ],
+      pythonStreamAppendMaterializationSource
+    )
     _ = try await runtime.closeConnection()
   }
 
@@ -1343,6 +1440,9 @@ private let pythonStreamReaderReconnectSource =
 
 private let pythonStreamAppendRetrySource =
   "upstream/instant/client/packages/python/tests/test_streams_state.py test_reader_stream_append_with_retry_triggers_force_reconnect and upstream/instant/client/packages/core/src/Stream.ts onStreamAppend [adapted: Swift correlates a retryable stream-append error to the active subscription, reconnects the owned live session without publishing the failed append, and resubscribes from the last seen byte offset.]"
+
+private let pythonStreamAppendMaterializationSource =
+  "upstream/instant/client/packages/python/src/instantdb/_async/streams/reader.py _process_append plus tests/test_streams_state.py test_reader_holds_partial_utf8_across_chunk_boundary and upstream/instant/client/packages/core/src/Stream.ts createReadStream [adapted: Swift persists an inline stream-append through the public observer, preserves the multi-byte scalar, publishes the full content snapshot, and advances the next reconnect subscription by UTF-8 byte count.]"
 
 private let reactorRoomEventsSource =
   "upstream/instant/client/packages/core/src/Reactor.js refresh-presence, patch-presence, and server-broadcast receive branches plus upstream/instant/server/test/instant/reactive/session_test.clj patch-presence-works and broadcast-works [adapted: Swift excludes its own live session from peer presence, applies canonical +/r/- edits in memory, publishes typed peer state, and emits remote broadcasts without adding them to durable topic history.]"
