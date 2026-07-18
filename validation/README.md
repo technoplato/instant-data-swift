@@ -185,6 +185,35 @@ one retained failed mutation, and the server permission error. The admin token
 and user refresh tokens are consumed from the environment and are not written
 to evidence.
 
+The aggregate v0.3 gate runs the sharing and auth contracts together and
+requires one clean Swift revision, zero compiler warnings, exact reader/writer
+sequences, durable auth restoration, and rejection of the invalidated token by
+both SDKs:
+
+```bash
+set -a
+source /tmp/instant-data-swift-ephemeral-20260718.env
+set +a
+INSTANT_SWIFT_DATA_ALLOW_EPHEMERAL_APP_MUTATION=1 \
+  validation/verify-v0.3-schema-auth-sharing.sh
+```
+
+The playback room contract generates the Swift-owned typed room schema, checks
+it with the pinned TypeScript compiler, creates two authenticated peers, and
+requires exact bidirectional presence plus `reaction`, `commentDraft`, and
+`commentCommitted` payloads:
+
+```bash
+set -a
+source /tmp/instant-data-swift-ephemeral-20260718.env
+set +a
+validation/verify-playback-room-contract-live.sh
+```
+
+Both aggregate verifiers refuse dirty worktrees for acceptance evidence and
+record the Swift revision, pinned upstream revision, SDK versions, schema hash,
+warning count, and exact non-secret values.
+
 Instant-managed `$files`, `$streams`, `$users` attributes, and system links are
 reported with stable `system-entity`, `system-attribute`, and `system-link`
 warning codes. Unexpected application entities, attributes, link semantics,

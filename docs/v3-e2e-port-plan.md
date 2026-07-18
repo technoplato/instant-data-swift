@@ -96,8 +96,10 @@ As of 2026-07-18:
   TypeScript-to-Swift child process exhausted the harness's 30-second cold
   build timeout; its documented 90-second rerun passed, and the regenerated
   final coverage reports 295 records, 28 exact, 265 adapted, 2 not applicable,
-  and 0 blocked. This verifies the current head's cross-SDK transport baseline;
-  provider-specific remote auth invalidation remains Packet 6 work.
+  and 0 blocked. This verifies that head's cross-SDK transport baseline. Real
+  refresh-token verification, durable restoration, sign-out invalidation, and
+  rejection by both Swift and the canonical TypeScript SDK are now covered by
+  the later Packet 6 acceptance gate.
 - Commit `eb35a31` makes the recording contract install reproducible from a
   clean checkout using the pinned Instant CLI. The clean-head run at `b711a7b`
   created ephemeral app `a5dfcd81-6392-4f81-afda-6f2b59756a56`, pushed the
@@ -132,8 +134,14 @@ As of 2026-07-18:
   schema remains the room type authority. The clean existing recording-data
   contract rerun passed in both directions at
   `/private/tmp/instant-data-swift-playback-schema-clean-8b979c0-20260718/evidence.json`.
-  That run revalidates the shared data plane; it does not replace the pending
-  live presence/topic boundary.
+  That run revalidates the shared data plane; it does not replace the live
+  presence/topic boundary.
+- Commit `2390aa0` proves that live presence/topic boundary in both directions.
+  Authenticated Swift and canonical TypeScript 1.0.49 peers join the same typed
+  `recording.playback` room and observe exact presence plus `reaction`,
+  `commentDraft`, and `commentCommitted` payloads with zero compiler/runtime
+  warnings. Clean evidence is in
+  `/tmp/instant-data-swift-playback-room-clean-2390aa0-20260718/evidence.json`.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -251,7 +259,7 @@ tags; the targets below establish the first version line.
 | --- | --- | --- |
 | `v0.1.0-v3-syntax` | Pending | Five V3 screens compile against public APIs |
 | `v0.2.0-live-sync` | Pending | Normal runtime passes two-way live boundary |
-| `v0.3.0-schema-auth-sharing` | Pending | Deployed schema/perms and two-user proof |
+| `v0.3.0-schema-auth-sharing` | Validated; tag pending | Bind the passing gate to this documentation revision |
 | `v0.4.0-apps-e2e` | Pending | Required apps run through live public APIs |
 | `v1.0.0` | Pending | Full goals definition of done |
 
@@ -304,11 +312,15 @@ Current evidence: commits `81890b2`, `952255c`, `7e68005`, `875ca2d`,
 `1bf2914`, and `c4c9a26` port the SQLiteData sharing tests first, define the
 Swift-owned sharing schema and permissions, round-trip and type-check the
 generated TypeScript, and prove real owner/reader/writer/outsider behavior on
-an ephemeral Instant app. The live canonical Admin SDK proof observes one
-shared root for owner, reader, and writer, zero for an outsider, rejects reader
-update/delete and writer delete, accepts writer update, finishes at exact value
-`3`, and emits zero SDK warnings. The milestone remains Pending until live auth
-invalidation and Swift optimistic-rejection/outbox reconciliation are proven.
+an ephemeral Instant app. Commits `cd6c066` through `072fd05` then prove the
+remaining runtime boundary: rejected Swift reader optimism reconciles through
+`[1, 2, 1]` with no pending mutation, the Swift writer observes `[1, 3]` with
+no failure, and real auth survives relaunch before Swift sign-out invalidates
+the token for both SDKs. The clean aggregate gate at `072fd05` passed with zero
+compiler warnings; evidence is in
+`/tmp/instant-data-swift-v0.3-clean-worktree-072fd05-final-20260718/evidence.json`.
+The annotated tag remains pending until the same gate passes on the revision
+containing this updated milestone record.
 
 ### `v0.4.0-apps-e2e`
 
@@ -494,8 +506,8 @@ Purpose: make permissions meaningful end to end.
 - Implement the V3 `@InstantAuth` state machine over real transport. The public
   state owner, provider contract, executable syntax fixture, local lifecycle,
   and durable relaunch proof are implemented in `c82b3ca` through `2e7c9d5`.
-  The remaining Packet 6 work is credentialed auth invalidation plus the
-  two-user sharing and permission boundary.
+  Credentialed server verification, restoration, sign-out invalidation, and
+  rejection by both SDKs are implemented through `c2847fa`.
 - Prove session restoration and sign-out invalidation.
 - Create owner/reader/writer identities and a share link.
 - Prove allowed and rejected reads/writes from both SDKs.
@@ -515,8 +527,10 @@ reader, writer, and outsider identities, launches the normal Swift WebSocket
 runtime as the reader, and writes non-secret aggregate evidence. The Swift
 reader must observe server value `1`, optimistic rejected value `2`, and
 refetched server value `1`, with zero pending mutations and one retained failed
-mutation. Remaining Packet 6 work is real auth invalidation and the Swift-side
-allowed writer path.
+mutation. Commit `fd52385` adds the Swift-side allowed writer path, and the
+aggregate `validation/verify-v0.3-schema-auth-sharing.sh` gate now requires all
+schema, permission, reader, writer, restoration, sign-out, and invalidation
+assertions together on one clean revision.
 
 Commit targets:
 
@@ -598,14 +612,19 @@ The release harness must prove each applicable row in both directions:
 
 ## Immediate Next Step
 
-Run the compiled playback room contract against the canonical TypeScript SDK.
-The local Swift slice now proves typed join/leave, dynamic replacement,
-presence publication/observation, topic publication/observation, callbacks,
-view invalidation, and cancellation. The next boundary must prove Swift room
-presence and topic payloads are observed with exact shapes in TypeScript, then
-reverse the direction and require Swift's normal live room observers to decode
-the canonical payloads. Include disconnect cleanup, reconnect/rejoin, warning,
-and exact expected/actual evidence.
+Wire the canonical live share graph projection from `InstantLiveShareContract`
+into the public `@Shares` observation path. The query/projection shape and the
+live schema/auth/permission boundary are already proven; the app-facing wrapper
+must now observe that graph instead of relying on local-only share persistence.
+Port the source-of-truth observation cases first, including initial empty data,
+remote replacement, role changes, revocation, and cancellation, then run the
+same owner/reader/writer graph through the V3 recordings-list screen.
+
+The playback payload boundary is complete at `2390aa0`: Swift and TypeScript
+observe exact presence and all three topic payloads in both directions with
+zero warnings. Live disconnect/rejoin extension remains a separate follow-up
+inside the apps-E2E milestone; it should reuse the existing canonical reconnect
+tests rather than reopening the public playback syntax.
 
 The product-payload mismatch is resolved: playback presence stores and encodes
 `offsetSeconds: Double`, offers `Duration` as a computed product convenience,
