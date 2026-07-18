@@ -232,6 +232,10 @@ optimistic and accepted callbacks once, server failure once, retry without
 callback replay, and passive refresh without action-callback replay. Callback
 parameters borrow the change; the current generic envelope remains Copyable due
 to the Swift 6.2 associated-type limitation recorded in the V3 design document.
+The next implementation packet keeps this syntax and replaces the fixture's
+synthetic `isShared` row with the canonical owner/member sharing graph already
+proven through public `@Shares`; it is a data-contract integration task, not a
+new wrapper-syntax decision.
 
 ## Composite Request Variant
 

@@ -612,13 +612,20 @@ The release harness must prove each applicable row in both directions:
 
 ## Immediate Next Step
 
-Wire the canonical live share graph projection from `InstantLiveShareContract`
-into the public `@Shares` observation path. The query/projection shape and the
-live schema/auth/permission boundary are already proven; the app-facing wrapper
-must now observe that graph instead of relying on local-only share persistence.
-Port the source-of-truth observation cases first, including initial empty data,
-remote replacement, role changes, revocation, and cancellation, then run the
-same owner/reader/writer graph through the V3 recordings-list screen.
+The canonical live share graph is now wired through the public `@Shares`
+observation path. Commit `db5973e` connects `InstantLiveShareContract` to the
+runtime and public wrapper; commit `e3b2b33` proves the wrapper against the
+credentialed TypeScript-created graph, including reader-scoped membership,
+permission rollback, and clean cancellation. The clean evidence is at
+`/private/tmp/instant-data-swift-public-shares-clean-e3b2b33-190206/evidence.json`.
+
+Next, run that owner/reader/writer/revocation graph through the V3
+recordings-list fixture. This does not require another screen-syntax decision:
+keep the recorded `@FetchAll` plus `.instantFetch($rows, rowsQuery)` shape and
+the row's current-viewer membership projection. Replace the fixture-only
+`isShared` flag and synthetic `v3_recording_list_rows` namespace with the
+canonical shared-root/member graph, then prove owner, reader, writer,
+revocation-to-empty, and wrapper cancellation through the screen model.
 
 The playback payload boundary is complete at `2390aa0`: Swift and TypeScript
 observe exact presence and all three topic payloads in both directions with
