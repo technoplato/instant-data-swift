@@ -68,4 +68,80 @@ struct SharingContractTests {
       ]
     )
   }
+
+  @Test("VoiceTrail uses the canonical share graph with recording roots")
+  func voiceTrailSchemaTargetsCaptureRecordings() {
+    let document = InstantSchemaExamples.voiceTrailDocument
+
+    expectNoDifference(
+      document.entities.map(\.namespace).sorted(),
+      [
+        "$users",
+        "v3_capture_attachments",
+        "v3_capture_recordings",
+        "v3_capture_transcriptions",
+        "v3_share_memberships",
+        "v3_shares",
+      ]
+    )
+    expectNoDifference(
+      document.links.map(\.name).sorted(),
+      [
+        "v3_capture_attachmentsRecording",
+        "v3_capture_recordingsOwner",
+        "v3_capture_recordingsReaders",
+        "v3_capture_recordingsWriters",
+        "v3_capture_transcriptionsRecording",
+        "v3_share_membershipsShare",
+        "v3_share_membershipsUser",
+        "v3_sharesOwner",
+        "v3_sharesRecordingRoot",
+      ]
+    )
+    expectNoDifference(document.rooms.map(\.name), ["recording.playback"])
+    let root = document.links.first { $0.name == "v3_sharesRecordingRoot" }
+    expectNoDifference(root?.forward.namespace, "v3_shares")
+    expectNoDifference(root?.forward.label, "root")
+    expectNoDifference(root?.reverse.namespace, "v3_capture_recordings")
+    expectNoDifference(root?.reverse.label, "share")
+  }
+
+  @Test("VoiceTrail permissions preserve owner reader and writer capabilities")
+  func voiceTrailPermissionsSeparateRoles() {
+    let namespaces = Dictionary(
+      uniqueKeysWithValues: InstantSchemaExamples.voiceTrailPermissions.namespaces.map {
+        ($0.namespace, $0.allow)
+      }
+    )
+
+    expectNoDifference(
+      namespaces["v3_capture_recordings"],
+      [
+        .view: "isOwner || isWriter || isReader",
+        .create: "isOwner",
+        .update: "isOwner || isWriter",
+        .delete: "isOwner",
+      ]
+    )
+    for namespace in ["v3_capture_attachments", "v3_capture_transcriptions"] {
+      expectNoDifference(
+        namespaces[namespace],
+        [
+          .view: "isOwner || isWriter || isReader",
+          .create: "isOwner || isWriter",
+          .update: "isOwner || isWriter",
+          .delete: "isOwner || isWriter",
+        ]
+      )
+    }
+    expectNoDifference(
+      namespaces["v3_shares"],
+      [
+        .view: "isOwner || isMember",
+        .create: "isOwner",
+        .update: "isOwner",
+        .delete: "isOwner",
+      ]
+    )
+  }
 }

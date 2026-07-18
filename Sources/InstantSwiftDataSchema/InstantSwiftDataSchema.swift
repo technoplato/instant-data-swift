@@ -910,6 +910,228 @@ public enum InstantSchemaExamples {
     ]
   )
 
+  public static let voiceTrailDocument = InstantSchemaDocument(
+    entities: [
+      recordingActionUsers,
+      recordingActionAttachments,
+      recordingActionRecordings,
+      recordingActionTranscriptions,
+      sharingMemberships,
+      sharingShares,
+    ],
+    links: [
+      InstantLinkSchema(
+        name: "v3_capture_attachmentsRecording",
+        forward: InstantLinkEndpoint(
+          namespace: "v3_capture_attachments",
+          cardinality: .one,
+          label: "recording",
+          onDelete: .cascade
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "v3_capture_recordings",
+          cardinality: .many,
+          label: "attachments"
+        ),
+        isRequired: true
+      ),
+      InstantLinkSchema(
+        name: "v3_capture_recordingsOwner",
+        forward: InstantLinkEndpoint(
+          namespace: "v3_capture_recordings",
+          cardinality: .one,
+          label: "owner"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "$users",
+          cardinality: .many,
+          label: "recordings"
+        ),
+        isRequired: true
+      ),
+      InstantLinkSchema(
+        name: "v3_capture_recordingsReaders",
+        forward: InstantLinkEndpoint(
+          namespace: "v3_capture_recordings",
+          cardinality: .many,
+          label: "readers"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "$users",
+          cardinality: .many,
+          label: "readableRecordings"
+        )
+      ),
+      InstantLinkSchema(
+        name: "v3_capture_recordingsWriters",
+        forward: InstantLinkEndpoint(
+          namespace: "v3_capture_recordings",
+          cardinality: .many,
+          label: "writers"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "$users",
+          cardinality: .many,
+          label: "writableRecordings"
+        )
+      ),
+      InstantLinkSchema(
+        name: "v3_capture_transcriptionsRecording",
+        forward: InstantLinkEndpoint(
+          namespace: "v3_capture_transcriptions",
+          cardinality: .one,
+          label: "recording",
+          onDelete: .cascade
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "v3_capture_recordings",
+          cardinality: .many,
+          label: "transcriptions"
+        ),
+        isRequired: true
+      ),
+      InstantLinkSchema(
+        name: "v3_share_membershipsShare",
+        forward: InstantLinkEndpoint(
+          namespace: "v3_share_memberships",
+          cardinality: .one,
+          label: "share",
+          onDelete: .cascade
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "v3_shares",
+          cardinality: .many,
+          label: "memberships"
+        ),
+        isRequired: true
+      ),
+      InstantLinkSchema(
+        name: "v3_share_membershipsUser",
+        forward: InstantLinkEndpoint(
+          namespace: "v3_share_memberships",
+          cardinality: .one,
+          label: "user"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "$users",
+          cardinality: .many,
+          label: "shareMemberships"
+        ),
+        isRequired: true
+      ),
+      InstantLinkSchema(
+        name: "v3_sharesOwner",
+        forward: InstantLinkEndpoint(
+          namespace: "v3_shares",
+          cardinality: .one,
+          label: "owner"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "$users",
+          cardinality: .many,
+          label: "ownedShares"
+        ),
+        isRequired: true
+      ),
+      InstantLinkSchema(
+        name: "v3_sharesRecordingRoot",
+        forward: InstantLinkEndpoint(
+          namespace: "v3_shares",
+          cardinality: .one,
+          label: "root"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "v3_capture_recordings",
+          cardinality: .one,
+          label: "share"
+        ),
+        isRequired: true
+      ),
+    ],
+    rooms: [recordingActionPlaybackRoom]
+  )
+
+  public static let voiceTrailPermissions = InstantPermissionsDocument(
+    namespaces: [
+      InstantNamespacePermissions(
+        namespace: "$users",
+        allow: [.view: "auth.id != null"]
+      ),
+      recordingChildPermissions(namespace: "v3_capture_attachments"),
+      InstantNamespacePermissions(
+        namespace: "v3_capture_recordings",
+        allow: [
+          .view: "isOwner || isWriter || isReader",
+          .create: "isOwner",
+          .update: "isOwner || isWriter",
+          .delete: "isOwner",
+        ],
+        bind: recordingRoleBindings
+      ),
+      recordingChildPermissions(namespace: "v3_capture_transcriptions"),
+      InstantNamespacePermissions(
+        namespace: "v3_share_memberships",
+        allow: [
+          .view: "isSelf || isShareOwner",
+          .create: "isSelf || isShareOwner",
+          .update: "isShareOwner",
+          .delete: "isShareOwner",
+        ],
+        bind: [
+          InstantPermissionBinding("isSelf", "auth.id in data.ref('user.id')"),
+          InstantPermissionBinding("isShareOwner", "auth.id in data.ref('share.owner.id')"),
+        ]
+      ),
+      InstantNamespacePermissions(
+        namespace: "v3_shares",
+        allow: [
+          .view: "isOwner || isMember",
+          .create: "isOwner",
+          .update: "isOwner",
+          .delete: "isOwner",
+        ],
+        bind: [
+          InstantPermissionBinding("isOwner", "auth.id in data.ref('owner.id')"),
+          InstantPermissionBinding("isMember", "auth.id in data.ref('memberships.user.id')"),
+        ]
+      ),
+    ]
+  )
+
+  private static let recordingRoleBindings = [
+    InstantPermissionBinding("isOwner", "auth.id in data.ref('owner.id')"),
+    InstantPermissionBinding("isWriter", "auth.id in data.ref('writers.id')"),
+    InstantPermissionBinding("isReader", "auth.id in data.ref('readers.id')"),
+  ]
+
+  private static func recordingChildPermissions(
+    namespace: String
+  ) -> InstantNamespacePermissions {
+    InstantNamespacePermissions(
+      namespace: namespace,
+      allow: [
+        .view: "isOwner || isWriter || isReader",
+        .create: "isOwner || isWriter",
+        .update: "isOwner || isWriter",
+        .delete: "isOwner || isWriter",
+      ],
+      bind: [
+        InstantPermissionBinding(
+          "isOwner",
+          "auth.id in data.ref('recording.owner.id')"
+        ),
+        InstantPermissionBinding(
+          "isWriter",
+          "auth.id in data.ref('recording.writers.id')"
+        ),
+        InstantPermissionBinding(
+          "isReader",
+          "auth.id in data.ref('recording.readers.id')"
+        ),
+      ]
+    )
+  }
+
   public static let sharingPermissions = InstantPermissionsDocument(
     namespaces: [
       InstantNamespacePermissions(

@@ -145,11 +145,11 @@ struct InstantLiveShareContractTests {
 
     expectNoDifference(contract.queryPlan.namespace, "v3_capture_recordings")
     expectNoDifference(contract.queryPlan.includes?.map(\.name), [
-      "owner", "share",
+      "owner", "readers", "writers", "share",
     ])
     expectNoDifference(
       contract.queryPlan.includes?.map(\.direction),
-      [.forward, .reverse]
+      [.forward, .forward, .forward, .reverse]
     )
     expectNoDifference(
       contract.queryPlan.includes?.last?.query?.includes?.map(\.name),

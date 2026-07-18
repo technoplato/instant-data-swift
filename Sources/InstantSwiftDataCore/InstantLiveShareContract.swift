@@ -14,7 +14,7 @@ public struct InstantLiveShareContract: Hashable, Codable, Sendable {
 
   public static let v3CaptureRecordings = v3(
     rootNamespace: "v3_capture_recordings",
-    rootIncludes: ["owner"]
+    rootIncludes: ["owner", "readers", "writers"]
   )
 
   private static func v3(
