@@ -73,6 +73,14 @@ As of 2026-07-18:
   295 cases, 28 exact, 265 adapted, 2 not applicable, and 0 blocked, including
   generated schema/permissions verification and both Swift-to-TypeScript and
   TypeScript-to-Swift live boundaries.
+- The auth-enabled head was revalidated in
+  `/tmp/instant-swift-data-v3-auth-e2e-20260718T181947Z`. The full local,
+  generated-contract, macro, and Swift-to-TypeScript gates passed. The first
+  TypeScript-to-Swift child process exhausted the harness's 30-second cold
+  build timeout; its documented 90-second rerun passed, and the regenerated
+  final coverage reports 295 records, 28 exact, 265 adapted, 2 not applicable,
+  and 0 blocked. This verifies the current head's cross-SDK transport baseline;
+  provider-specific remote auth invalidation remains Packet 6 work.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
