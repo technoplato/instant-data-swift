@@ -320,7 +320,84 @@ extension InstantStoreTests {
       homeURL: homeURL
     )
     expectNoDifference(unsupported.status, 64)
-    #expect(unsupported.error.contains("Available examples: todos, validation"))
+    #expect(unsupported.error.contains("Available examples: todos, validation, recording-action"))
+  }
+
+  @Test
+  func cliGeneratesAndVerifiesCanonicalRecordingActionContract() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    let schemaURL = homeURL.appendingPathComponent("recording-action.schema.ts")
+    let permissionsURL = homeURL.appendingPathComponent("recording-action.perms.ts")
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let generatedSchema = try JSONDecoder().decode(
+      CLIGeneratedArtifactOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "schema", "generate", "--example", "recording-action",
+            "--to", schemaURL.path,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(generatedSchema.example, "recording-action")
+    let schemaSource = try String(contentsOf: schemaURL, encoding: .utf8)
+    #expect(schemaSource.contains("v3CaptureRecordingOwner"))
+    #expect(schemaSource.contains("recordingMemberships"))
+
+    let schemaVerify = try JSONDecoder().decode(
+      CLISchemaVerifyOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "schema", "verify", "--example", "recording-action",
+            "--from", schemaURL.path,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(schemaVerify.example, "recording-action")
+    expectNoDifference(schemaVerify.entityCount, 4)
+    expectNoDifference(schemaVerify.linkCount, 5)
+
+    let generatedPermissions = try JSONDecoder().decode(
+      CLIGeneratedArtifactOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "perms", "generate", "--example", "recording-action",
+            "--to", permissionsURL.path,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(generatedPermissions.example, "recording-action")
+
+    let permissionsVerify = try JSONDecoder().decode(
+      CLIPermissionsVerifyOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "perms", "verify", "--example", "recording-action",
+            "--from", permissionsURL.path,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(permissionsVerify.example, "recording-action")
+    expectNoDifference(permissionsVerify.namespaceCount, 4)
+    expectNoDifference(permissionsVerify.allowRuleCount, 16)
   }
 
   @Test
@@ -334,10 +411,10 @@ extension InstantStoreTests {
 
     expectNoDifference(help.status, 0)
     expectNoDifference(help.error, "")
-    #expect(help.output.contains("schema generate --example todos|validation"))
-    #expect(help.output.contains("schema verify --example todos|validation"))
-    #expect(help.output.contains("perms generate --example todos|validation"))
-    #expect(help.output.contains("perms verify --example todos|validation"))
+    #expect(help.output.contains("schema generate --example todos|validation|recording-action"))
+    #expect(help.output.contains("schema verify --example todos|validation|recording-action"))
+    #expect(help.output.contains("perms generate --example todos|validation|recording-action"))
+    #expect(help.output.contains("perms verify --example todos|validation|recording-action"))
   }
 
   @Test
@@ -366,11 +443,11 @@ extension InstantStoreTests {
     )
     try expectMalformed(
       ["schema", "generate", "--to", schemaURL.path, "--json"],
-      contains: "schema generate --example todos|validation"
+      contains: "schema generate --example todos|validation|recording-action"
     )
     try expectMalformed(
       ["schema", "dance", "--to", schemaURL.path, "--json"],
-      contains: "schema generate --example todos|validation"
+      contains: "schema generate --example todos|validation|recording-action"
     )
     try expectMalformed(
       ["schema", "verify", "--example", "todos", "--unknown", "--json"],
@@ -382,7 +459,7 @@ extension InstantStoreTests {
     )
     try expectMalformed(
       ["perms", "verify", "--example", "todos", "--from", "--json"],
-      contains: "perms verify --example todos|validation --from instant.perms.ts"
+      contains: "perms verify --example todos|validation|recording-action --from instant.perms.ts"
     )
 
     expectNoDifference(

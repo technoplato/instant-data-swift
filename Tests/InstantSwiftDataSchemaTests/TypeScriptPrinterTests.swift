@@ -298,6 +298,109 @@ struct TypeScriptPrinterTests {
   }
 
   @Test
+  func schemaPrinterEmitsCanonicalRecordingActionGraph() throws {
+    expectNoDifference(
+      try TypeScriptSchemaPrinter().printSchema(InstantSchemaExamples.recordingActionDocument),
+      """
+      import { i } from '@instantdb/core';
+
+      export default i.schema({
+        entities: {
+          v3_capture_attachments: i.entity({
+            contents: i.string(),
+            kind: i.string().indexed(),
+            offsetMilliseconds: i.number().indexed(),
+          }),
+          v3_capture_members: i.entity({
+            role: i.string().indexed(),
+          }),
+          v3_capture_recordings: i.entity({
+            deviceID: i.string().indexed(),
+            durationMilliseconds: i.number().indexed(),
+            state: i.string().indexed(),
+            title: i.string().indexed(),
+          }),
+          v3_capture_transcriptions: i.entity({
+            state: i.string().indexed(),
+          }),
+        },
+        links: {
+          v3CaptureAttachmentRecording: {
+            forward: {
+              on: "v3_capture_attachments",
+              has: "one",
+              label: "recording",
+              required: true,
+              onDelete: "cascade",
+            },
+            reverse: {
+              on: "v3_capture_recordings",
+              has: "many",
+              label: "attachments",
+            },
+          },
+          v3CaptureMemberRecording: {
+            forward: {
+              on: "v3_capture_members",
+              has: "one",
+              label: "recording",
+              required: true,
+              onDelete: "cascade",
+            },
+            reverse: {
+              on: "v3_capture_recordings",
+              has: "many",
+              label: "members",
+            },
+          },
+          v3CaptureMemberUser: {
+            forward: {
+              on: "v3_capture_members",
+              has: "one",
+              label: "user",
+              required: true,
+            },
+            reverse: {
+              on: "$users",
+              has: "many",
+              label: "recordingMemberships",
+            },
+          },
+          v3CaptureRecordingOwner: {
+            forward: {
+              on: "v3_capture_recordings",
+              has: "one",
+              label: "owner",
+              required: true,
+            },
+            reverse: {
+              on: "$users",
+              has: "many",
+              label: "recordings",
+            },
+          },
+          v3CaptureTranscriptionRecording: {
+            forward: {
+              on: "v3_capture_transcriptions",
+              has: "one",
+              label: "recording",
+              required: true,
+              onDelete: "cascade",
+            },
+            reverse: {
+              on: "v3_capture_recordings",
+              has: "many",
+              label: "transcriptions",
+            },
+          },
+        },
+      });
+
+      """
+    )
+  }
+
+  @Test
   func schemaPrinterEmitsLinks() throws {
     expectNoDifference(
       try TypeScriptSchemaPrinter().printSchema(Self.linkedTodoDocument),
@@ -1486,6 +1589,57 @@ struct TypeScriptPrinterTests {
           },
         },
         profiles: {
+          allow: {
+            view: "true",
+            create: "true",
+            update: "true",
+            delete: "true",
+          },
+        },
+      } satisfies InstantRules;
+
+      export default rules;
+
+      """
+    )
+  }
+
+  @Test
+  func permissionsPrinterEmitsRecordingActionAcceptanceRules() throws {
+    expectNoDifference(
+      try TypeScriptPermissionsPrinter()
+        .printPermissions(InstantSchemaExamples.recordingActionValidationPermissions),
+      """
+      // Docs: https://www.instantdb.com/docs/permissions
+
+      import type { InstantRules } from "@instantdb/core";
+
+      const rules = {
+        v3_capture_attachments: {
+          allow: {
+            view: "true",
+            create: "true",
+            update: "true",
+            delete: "true",
+          },
+        },
+        v3_capture_members: {
+          allow: {
+            view: "true",
+            create: "true",
+            update: "true",
+            delete: "true",
+          },
+        },
+        v3_capture_recordings: {
+          allow: {
+            view: "true",
+            create: "true",
+            update: "true",
+            delete: "true",
+          },
+        },
+        v3_capture_transcriptions: {
           allow: {
             view: "true",
             create: "true",

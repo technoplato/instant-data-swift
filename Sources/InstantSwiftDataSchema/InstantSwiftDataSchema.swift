@@ -417,6 +417,180 @@ public enum InstantSchemaExamples {
     ]
   )
 
+  public static let recordingActionAttachments = InstantEntitySchema(
+    typeName: "V3CaptureAttachment",
+    namespace: "v3_capture_attachments",
+    attributes: [
+      InstantAttribute(
+        id: "v3_capture_attachments/kind",
+        namespace: "v3_capture_attachments",
+        name: "kind",
+        valueType: .string,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "v3_capture_attachments/contents",
+        namespace: "v3_capture_attachments",
+        name: "contents",
+        valueType: .string
+      ),
+      InstantAttribute(
+        id: "v3_capture_attachments/offsetMilliseconds",
+        namespace: "v3_capture_attachments",
+        name: "offsetMilliseconds",
+        valueType: .number,
+        isIndexed: true
+      ),
+    ]
+  )
+
+  public static let recordingActionMembers = InstantEntitySchema(
+    typeName: "V3CaptureMember",
+    namespace: "v3_capture_members",
+    attributes: [
+      InstantAttribute(
+        id: "v3_capture_members/role",
+        namespace: "v3_capture_members",
+        name: "role",
+        valueType: .string,
+        isIndexed: true
+      )
+    ]
+  )
+
+  public static let recordingActionRecordings = InstantEntitySchema(
+    typeName: "V3CaptureRecording",
+    namespace: "v3_capture_recordings",
+    attributes: [
+      InstantAttribute(
+        id: "v3_capture_recordings/title",
+        namespace: "v3_capture_recordings",
+        name: "title",
+        valueType: .string,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "v3_capture_recordings/deviceID",
+        namespace: "v3_capture_recordings",
+        name: "deviceID",
+        valueType: .string,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "v3_capture_recordings/state",
+        namespace: "v3_capture_recordings",
+        name: "state",
+        valueType: .string,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "v3_capture_recordings/durationMilliseconds",
+        namespace: "v3_capture_recordings",
+        name: "durationMilliseconds",
+        valueType: .number,
+        isIndexed: true
+      ),
+    ]
+  )
+
+  public static let recordingActionTranscriptions = InstantEntitySchema(
+    typeName: "V3CaptureTranscription",
+    namespace: "v3_capture_transcriptions",
+    attributes: [
+      InstantAttribute(
+        id: "v3_capture_transcriptions/state",
+        namespace: "v3_capture_transcriptions",
+        name: "state",
+        valueType: .string,
+        isIndexed: true
+      )
+    ]
+  )
+
+  public static let recordingActionDocument = InstantSchemaDocument(
+    entities: [
+      recordingActionAttachments,
+      recordingActionMembers,
+      recordingActionRecordings,
+      recordingActionTranscriptions,
+    ],
+    links: [
+      InstantLinkSchema(
+        name: "v3CaptureAttachmentRecording",
+        forward: InstantLinkEndpoint(
+          namespace: "v3_capture_attachments",
+          cardinality: .one,
+          label: "recording",
+          onDelete: .cascade
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "v3_capture_recordings",
+          cardinality: .many,
+          label: "attachments"
+        ),
+        isRequired: true
+      ),
+      InstantLinkSchema(
+        name: "v3CaptureMemberRecording",
+        forward: InstantLinkEndpoint(
+          namespace: "v3_capture_members",
+          cardinality: .one,
+          label: "recording",
+          onDelete: .cascade
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "v3_capture_recordings",
+          cardinality: .many,
+          label: "members"
+        ),
+        isRequired: true
+      ),
+      InstantLinkSchema(
+        name: "v3CaptureMemberUser",
+        forward: InstantLinkEndpoint(
+          namespace: "v3_capture_members",
+          cardinality: .one,
+          label: "user"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "$users",
+          cardinality: .many,
+          label: "recordingMemberships"
+        ),
+        isRequired: true
+      ),
+      InstantLinkSchema(
+        name: "v3CaptureRecordingOwner",
+        forward: InstantLinkEndpoint(
+          namespace: "v3_capture_recordings",
+          cardinality: .one,
+          label: "owner"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "$users",
+          cardinality: .many,
+          label: "recordings"
+        ),
+        isRequired: true
+      ),
+      InstantLinkSchema(
+        name: "v3CaptureTranscriptionRecording",
+        forward: InstantLinkEndpoint(
+          namespace: "v3_capture_transcriptions",
+          cardinality: .one,
+          label: "recording",
+          onDelete: .cascade
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "v3_capture_recordings",
+          cardinality: .many,
+          label: "transcriptions"
+        ),
+        isRequired: true
+      ),
+    ]
+  )
+
   public static let validationDocument = InstantSchemaDocument(
     entities: [
       validationProfiles,
@@ -494,6 +668,15 @@ public enum InstantSchemaExamples {
       .allowAll(namespace: "$files"),
       .allowAll(namespace: "posts"),
       .allowAll(namespace: "profiles"),
+    ]
+  )
+
+  public static let recordingActionValidationPermissions = InstantPermissionsDocument(
+    namespaces: [
+      .allowAll(namespace: "v3_capture_attachments"),
+      .allowAll(namespace: "v3_capture_members"),
+      .allowAll(namespace: "v3_capture_recordings"),
+      .allowAll(namespace: "v3_capture_transcriptions"),
     ]
   )
 }
