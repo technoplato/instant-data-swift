@@ -18,6 +18,11 @@ if [[ -n "$(git -C "${ROOT}" status --porcelain)" ]]; then
 fi
 export WORKTREE_DIRTY
 
+if [[ ! -d "${RUNNER}/node_modules" ]]; then
+  echo "Missing pinned TypeScript dependencies. Run: pnpm --dir validation/ts-runner install --frozen-lockfile" >&2
+  exit 1
+fi
+
 EXPECTED_UPSTREAM_REVISION="$(
   cd "${RUNNER}"
   node -p "require('./package.json').instantContract.upstreamRevision"
@@ -61,8 +66,9 @@ assert.equal(live.details.swift.durableRelaunch, true);
 assert.equal(live.details.swift.localSessionCleared, true);
 assert.equal(live.details.swift.invalidatedTokenRejected, true);
 assert.equal(live.details.swift.rejectionCode, "authFailed");
-assert.equal(live.details.typescriptInvalidatedTokenRejected, true);
-assert.match(live.details.typescriptRejection, /record not found|app-user|400|auth/i);
+assert.match(live.details.typeScriptRejection, /record not found|app-user|400|auth/i);
+assert.equal(live.details.compilerWarningCount, 0);
+assert.deepStrictEqual(live.details.warnings, []);
 
 const evidence = {
   case: "validation.auth.live-contract",
@@ -78,6 +84,7 @@ const evidence = {
     coreVersion: manifest.dependencies["@instantdb/core"],
     adminVersion: manifest.dependencies["@instantdb/admin"],
     typescriptVersion: manifest.devDependencies.typescript,
+    compilerWarningCount: 0,
     live: live.details,
   },
 };

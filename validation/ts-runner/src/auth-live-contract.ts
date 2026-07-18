@@ -9,42 +9,51 @@ const appId = requiredEnvironment("INSTANT_APP_ID");
 const adminToken = requiredEnvironment("INSTANT_ADMIN_TOKEN");
 const apiURI = process.env.INSTANT_API_URI ?? "https://api.instantdb.com";
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-const db = init({ appId, adminToken, apiURI });
-const email = `swift-auth-invalidation-${randomUUID()}@example.com`;
-const refreshToken = await db.auth.createToken({ email });
-const user = await db.auth.verifyToken(refreshToken);
-assert.ok(user?.id, "Expected the canonical TypeScript SDK to verify the fresh token.");
+const warnings: string[] = [];
+const originalWarn = console.warn;
+console.warn = (...values) => warnings.push(values.map(String).join(" "));
 
-const swift = await runSwiftAuthInvalidation({
-  appId,
-  apiURI,
-  refreshToken,
-  userID: user.id,
-});
-assert.equal(swift.ok, true);
-assert.equal(swift.details.userID, user.id);
-assert.equal(swift.details.serverVerifiedSignIn, true);
-assert.equal(swift.details.durableRelaunch, true);
-assert.equal(swift.details.localSessionCleared, true);
-assert.equal(swift.details.invalidatedTokenRejected, true);
-assert.equal(swift.details.rejectionCode, "authFailed");
+try {
+  const db = init({ appId, adminToken, apiURI });
+  const email = `auth-invalidation-${randomUUID()}@example.com`;
+  const refreshToken = await db.auth.createToken({ email });
+  const user = await db.auth.verifyToken(refreshToken);
+  assert.ok(user?.id, "Expected canonical TypeScript verification to return a user.");
 
-const typescriptRejection = await rejected(db.auth.verifyToken(refreshToken));
-assert.match(typescriptRejection, /400|refresh token|auth|record not found|app-user/i);
+  const swift = await runSwiftAuthInvalidation({
+    appId,
+    apiURI,
+    refreshToken,
+    userID: user.id,
+  });
+  assert.equal(swift.ok, true);
+  assert.equal(swift.details.userID, user.id);
+  assert.equal(swift.details.serverVerifiedSignIn, true);
+  assert.equal(swift.details.durableRelaunch, true);
+  assert.equal(swift.details.localSessionCleared, true);
+  assert.equal(swift.details.invalidatedTokenRejected, true);
+  assert.equal(swift.details.rejectionCode, "authFailed");
 
-process.stdout.write(`${JSON.stringify({
-  case: "validation.typescript.auth-live-contract",
-  event: "summary",
-  side: "typescript",
-  appID: appId,
-  ok: true,
-  details: {
-    user: { id: user.id, email },
-    swift: swift.details,
-    typescriptInvalidatedTokenRejected: true,
-    typescriptRejection,
-  },
-}, null, 2)}\n`);
+  const typeScriptRejection = await rejected(db.auth.verifyToken(refreshToken));
+
+  process.stdout.write(`${JSON.stringify({
+    case: "validation.typescript.auth-live-contract",
+    event: "refresh-token-invalidated",
+    side: "typescript",
+    appID: appId,
+    ok: true,
+    details: {
+      userID: user.id,
+      email,
+      swift: swift.details,
+      typeScriptRejection,
+      compilerWarningCount: warnings.length,
+      warnings,
+    },
+  }, null, 2)}\n`);
+} finally {
+  console.warn = originalWarn;
+}
 
 async function runSwiftAuthInvalidation(input: {
   appId: string;
@@ -89,13 +98,13 @@ async function runSwiftAuthInvalidation(input: {
   child.stderr.setEncoding("utf8");
   child.stdout.on("data", (chunk) => { stdout += chunk; });
   child.stderr.on("data", (chunk) => { stderr += chunk; });
-  const status = await new Promise<number>((resolveStatus, rejectChild) => {
-    child.once("error", rejectChild);
+  const status = await new Promise<number>((resolveStatus, rejectProcess) => {
+    child.once("error", rejectProcess);
     child.once("close", (code) => resolveStatus(code ?? 1));
   });
   if (status !== 0) {
     throw new Error(
-      `Swift live auth invalidation failed with status ${status}: ${stdout.trim()} ${stderr.trim()}`,
+      `Swift live auth validation failed with status ${status}: ${stdout.trim()} ${stderr.trim()}`,
     );
   }
   const lines = stdout.trim().split("\n").filter(Boolean);
@@ -111,7 +120,7 @@ async function rejected(promise: Promise<unknown>): Promise<string> {
   } catch (error) {
     return error instanceof Error ? `${error.name}: ${error.message}` : String(error);
   }
-  throw new Error("Expected the invalidated refresh token to be rejected.");
+  throw new Error("Expected the canonical TypeScript SDK to reject the invalidated token.");
 }
 
 function requiredEnvironment(name: string): string {
