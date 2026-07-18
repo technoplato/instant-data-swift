@@ -1154,6 +1154,115 @@ struct InstantLiveTransportTests {
   }
 
   @Test
+  func runtimeLiveMutationErrorRefetchesActiveQueriesAndDropsRejectedOptimism() async throws {
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_891)
+    let query: InstantLiveJSONValue = .object([
+      TodoExample.namespace: .object([
+        "$": .object([
+          "order": .object(["createdAt": .string("asc")])
+        ])
+      ])
+    ])
+    let serverComputation = InstantLiveJSONValue.todoJoinRowsComputation(
+      entityID: "runtime-live-rejected-todo",
+      text: "Server value",
+      isCompleted: false,
+      createdAt: createdAt,
+      processedTransactionID: "server-tx-before-rejection"
+    )
+    let serverResult = try #require(
+      serverComputation.objectValue?["instaql-result"]?.arrayValue
+    )
+    let session = InstantRuntimeScriptedLiveSession(messages: [
+      .initOK(clientEventID: "event-init", attrs: .todoServerAttrs)
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "runtime-live-rejected-query-refresh",
+        persistenceURL: temporaryLiveCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: session.transport
+      )
+    )
+    let stream = await runtime.observe(TodoExample.query)
+    var iterator = stream.makeAsyncIterator()
+    _ = try #require(await iterator.next())
+    _ = try await runtime.connect()
+    await session.waitForSentMessageCount(2)
+    await session.enqueue(
+      .addQueryOK(
+        clientEventID: "event-query-initial",
+        query: query,
+        result: serverResult,
+        processedTransactionID: "server-tx-before-rejection"
+      )
+    )
+    let serverEmission = try #require(await iterator.next())
+    expectNoDifference(try TodoExample.decode(serverEmission.values).map(\.text), ["Server value"])
+
+    let rejectedAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-runtime-live-rejected-refresh",
+        operations: TodoExample.updateTextOperations(
+          id: "runtime-live-rejected-todo",
+          text: "Rejected value",
+          updatedAt: rejectedAt,
+          transactionID: "tx-runtime-live-rejected-refresh"
+        )
+      ),
+      createdAt: rejectedAt
+    )
+    let optimisticEmission = try #require(await iterator.next())
+    expectNoDifference(
+      try TodoExample.decode(optimisticEmission.values).map(\.text),
+      ["Rejected value"]
+    )
+
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "error",
+        clientEventID: "tx-runtime-live-rejected-refresh",
+        fields: [
+          "message": .string("permission denied"),
+          "status": .number(403),
+          "type": .string("permission-denied"),
+        ]
+      )
+    )
+    _ = try #require(
+      await runtime.observeConnectionStatus().first { $0.state == .errored }
+    )
+
+    await session.waitForSentMessageCount(5)
+    let sentOps = await session.sentMessages().map(\.op)
+    expectNoDifference(
+      sentOps,
+      ["init", "add-query", "transact", "remove-query", "add-query"]
+    )
+
+    await session.enqueue(
+      .addQueryOK(
+        clientEventID: "event-query-after-rejection",
+        query: query,
+        result: serverResult,
+        processedTransactionID: "server-tx-after-rejection"
+      )
+    )
+    let reconciledEmission = try #require(await iterator.next())
+    expectNoDifference(
+      try TodoExample.decode(reconciledEmission.values).map(\.text),
+      ["Server value"]
+    )
+    let pending = await runtime.pendingMutations()
+    expectNoDifference(pending, [])
+    let failedMutation = try #require(await runtime.outboxMutations().first)
+    expectNoDifference(failedMutation.status, .failed)
+    expectNoDifference(failedMutation.failureMessage, "permission denied")
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
   func liveRefreshAppliesCanonicalJoinRowsThroughRuntimeObservers() async throws {
     let cacheURL = try temporaryLiveCacheURL()
     let runtime = try await InstantRuntime.bootstrap(

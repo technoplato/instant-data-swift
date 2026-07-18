@@ -529,6 +529,21 @@ private actor InstantRuntimeLiveSession {
     )
   }
 
+  func refreshRegisteredQueries() async throws {
+    guard let session, isOpened, let makeID else { return }
+    for key in registeredQueries.keys.sorted() {
+      guard let registration = registeredQueries[key] else { continue }
+      try await send(
+        .removeQuery(registration.query, clientEventID: makeID()),
+        through: session
+      )
+      try await send(
+        .addQuery(registration.query, clientEventID: makeID()),
+        through: session
+      )
+    }
+  }
+
   func registerStreamReader(
     key: String,
     clientID: String? = nil,
@@ -2083,6 +2098,7 @@ public final class InstantRuntime: Sendable {
         await pendingMutations().contains(where: { $0.id == clientEventID })
       {
         _ = try await failMutation(id: clientEventID, message: error.message)
+        try await liveSession.refreshRegisteredQueries()
         return
       }
       throw InstantError(
