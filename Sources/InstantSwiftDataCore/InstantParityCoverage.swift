@@ -1130,6 +1130,17 @@ public enum InstantSwiftDataParityCoverage {
       notes:
         "Swift correlates a retryable stream-append error to the active subscription, reconnects the owned live session without publishing the failed append, and resubscribes from the last seen byte offset. The receive behavior also follows Stream.ts onStreamAppend."
     ),
+    instantPython(
+      id: "instant.python.stream-append-materialization",
+      sourceFile: pythonStreamsStateSource,
+      sourceTestName: "test_reader_holds_partial_utf8_across_chunk_boundary + _process_append",
+      swiftFile: reactorParitySwiftFile,
+      swiftTestName: "runtimeInlineStreamAppendPublishesAndAdvancesReconnectOffset",
+      surface: "live-stream-materialization",
+      status: .adapted,
+      notes:
+        "Swift applies inline stream overlap in UTF-8 bytes, persists and publishes only unseen content through the public observer, and advances the next reconnect subscription after persistence succeeds. File-backed appends remain a separate packet."
+    ),
     instant(
       id: "instant.reactor.reconnect-flush-pending-only",
       sourceFile: reactorImplementationSource,
