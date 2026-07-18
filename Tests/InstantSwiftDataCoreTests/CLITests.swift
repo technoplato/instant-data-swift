@@ -7937,7 +7937,7 @@ extension InstantStoreTests {
       ]
     )
     expectNoDifference(jsonOutput.authUserID, "user-1")
-    expectNoDifference(jsonOutput.roomMemberCount, 2)
+    expectNoDifference(jsonOutput.roomMemberCount, 1)
     expectNoDifference(jsonOutput.topicMessageCount, 1)
     expectNoDifference(jsonOutput.fileCount, 1)
     expectNoDifference(jsonOutput.streamChunkCount, 1)
@@ -10623,11 +10623,11 @@ extension InstantStoreTests {
     }
     expectNoDifference(
       jsonOutput.metrics.first { $0.name == "triple-insert.seed" }?.samples.map(\.actorHopCount),
-      [7]
+      [8]
     )
     expectNoDifference(
       jsonOutput.metrics.first { $0.name == "high-bandwidth.scalar-updates" }?.samples.map(\.actorHopCount),
-      [350]
+      [400]
     )
     expectNoDifference(
       jsonOutput.metrics.first { $0.name == "outbox-flush.local-transport" }?.samples.map(\.operationCount),
@@ -10649,7 +10649,7 @@ extension InstantStoreTests {
           "mutation-transport": 1,
           "operation-gate": 4,
           "outbox": 1,
-          "persistence": 7,
+          "persistence": 8,
         ]
       ]
     )

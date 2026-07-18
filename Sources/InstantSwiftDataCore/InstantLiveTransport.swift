@@ -721,7 +721,7 @@ private actor InstantLocalLiveSession {
   }
 }
 
-private final class InstantURLSessionLiveWebSocket: @unchecked Sendable {
+private actor InstantURLSessionLiveWebSocket {
   private let urlSession: URLSession
   private let task: URLSessionWebSocketTask
 

@@ -711,10 +711,14 @@ struct BootstrapTests {
       "infinite-query-dynamic-cancellation",
       "infinite-query-dynamic-load",
       "live-wrapper-dynamic-cancellation",
+      "live-wrapper-topic-messages-cancellation",
+      "live-wrapper-stored-files-cancellation",
+      "live-wrapper-stream-chunks-cancellation",
+      "live-wrapper-shares-cancellation",
       "connection-status",
     ])
-    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 25))
-    expectNoDifference(result.evidence.map(\.appID), Array(repeating: result.appID, count: 25))
+    expectNoDifference(result.evidence.map(\.ok), Array(repeating: true, count: 29))
+    expectNoDifference(result.evidence.map(\.appID), Array(repeating: result.appID, count: 29))
     expectNoDifference(result.evidence.map(\.details.adapter), [
       "@FetchAll",
       "@FetchOne",
@@ -740,6 +744,10 @@ struct BootstrapTests {
       "@InfiniteQuery(dynamic cancellation)",
       "@InfiniteQuery(dynamic load)",
       "@RoomPresence(dynamic cancellation)",
+      "@RoomTopicMessages(cancellation)",
+      "@StoredFiles(cancellation)",
+      "@StreamChunks(cancellation)",
+      "@Shares(cancellation)",
       "@ConnectionStatus",
     ])
 
