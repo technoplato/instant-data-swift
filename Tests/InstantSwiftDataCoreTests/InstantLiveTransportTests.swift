@@ -9,6 +9,17 @@ private let reactorIncomingRoomEventSource =
   + "[source-derived: upstream has no dedicated transport decoder unit; this pins the exact "
   + "hyphenated operation names and room/data/edits/topic envelopes before Swift applies them]"
 
+private let pythonStreamReaderResumeSource =
+  "upstream/instant/client/packages/python/tests/test_streams_state.py "
+  + "test_subscribe_msg_uses_current_seen_offset_not_initial_byte_offset, "
+  + "test_subscribe_msg_omits_offset_when_zero, "
+  + "test_reader_on_reconnect_resubscribes_with_current_offset, and "
+  + "test_reader_on_reconnect_surfaces_resubscribe_error "
+  + "[adapted: Swift's reader state carries the same canonical subscribe-stream envelope "
+  + "and latest byte offset across a reconnect callback; upstream/instant/client/packages/"
+  + "core/src/Stream.ts confirms the TypeScript wire keys, while owned runtime registration "
+  + "is covered by its separate integration slice]"
+
 @Suite
 struct InstantLiveTransportTests {
   @Test
@@ -142,6 +153,128 @@ struct InstantLiveTransportTests {
     let leave = InstantLiveMessage.leaveRoom(room, clientEventID: "event-leave")
     expectNoDifference(leave.op, "leave-room")
     expectNoDifference(leave.fields, ["room-id": .string("room-1")])
+  }
+
+  @Test
+  func streamSubscribeUsesCurrentSeenOffsetNotInitialByteOffset() async throws {
+    let reader = try InstantLiveStreamReaderState(clientID: "c", initialByteOffset: 5)
+    await reader.recordSeenOffset(12)
+
+    let message = try await reader.subscribeMessage(clientEventID: "evt-current")
+
+    expectNoDifference(message.op, "subscribe-stream", pythonStreamReaderResumeSource)
+    expectNoDifference(message.clientEventID, "evt-current", pythonStreamReaderResumeSource)
+    expectNoDifference(
+      message.fields,
+      [
+        "client-id": .string("c"),
+        "offset": .number(12),
+      ],
+      pythonStreamReaderResumeSource
+    )
+  }
+
+  @Test
+  func streamSubscribeOmitsOffsetWhenZero() async throws {
+    let reader = try InstantLiveStreamReaderState(clientID: "c")
+
+    let message = try await reader.subscribeMessage(clientEventID: "evt-zero")
+
+    expectNoDifference(message.op, "subscribe-stream", pythonStreamReaderResumeSource)
+    expectNoDifference(
+      message.fields,
+      ["client-id": .string("c")],
+      pythonStreamReaderResumeSource
+    )
+  }
+
+  @Test
+  func streamSubscribeAndUnsubscribeEncodeCanonicalTypeScriptShapes() throws {
+    let subscribe = try InstantLiveMessage.subscribeStream(
+      streamID: "stream-1",
+      offset: 12,
+      ruleParams: .object(["workspace": .string("shared")]),
+      clientEventID: "evt-subscribe"
+    )
+    expectNoDifference(subscribe.op, "subscribe-stream", pythonStreamReaderResumeSource)
+    expectNoDifference(subscribe.clientEventID, "evt-subscribe", pythonStreamReaderResumeSource)
+    expectNoDifference(
+      subscribe.fields,
+      [
+        "offset": .number(12),
+        "rule-params": .object(["workspace": .string("shared")]),
+        "stream-id": .string("stream-1"),
+      ],
+      pythonStreamReaderResumeSource
+    )
+
+    let unsubscribe = InstantLiveMessage.unsubscribeStream(
+      subscriptionEventID: "evt-subscribe",
+      clientEventID: "evt-unsubscribe"
+    )
+    expectNoDifference(unsubscribe.op, "unsubscribe-stream", pythonStreamReaderResumeSource)
+    expectNoDifference(unsubscribe.clientEventID, "evt-unsubscribe", pythonStreamReaderResumeSource)
+    expectNoDifference(
+      unsubscribe.fields,
+      ["subscribe-event-id": .string("evt-subscribe")],
+      pythonStreamReaderResumeSource
+    )
+  }
+
+  @Test
+  func streamReaderReconnectResubscribesWithCurrentOffset() async throws {
+    let reader = try InstantLiveStreamReaderState(clientID: "c")
+    let recorder = InstantLiveStreamMessageRecorder()
+    await reader.recordSeenOffset(12)
+    await reader.recordSubscriptionEventID("evt-original")
+
+    try await reader.reconnect(clientEventID: "evt-after-reconnect") { message in
+      await recorder.append(message)
+    }
+
+    let recordedMessages = await recorder.messages()
+    expectNoDifference(
+      recordedMessages,
+      [
+        InstantLiveMessage(
+          op: "subscribe-stream",
+          clientEventID: "evt-after-reconnect",
+          fields: [
+            "client-id": .string("c"),
+            "offset": .number(12),
+          ]
+        )
+      ],
+      pythonStreamReaderResumeSource
+    )
+    let subscriptionEventID = await reader.subscriptionEventID
+    expectNoDifference(
+      subscriptionEventID,
+      "evt-after-reconnect",
+      pythonStreamReaderResumeSource
+    )
+  }
+
+  @Test
+  func streamReaderReconnectSurfacesResubscribeError() async throws {
+    let reader = try InstantLiveStreamReaderState(clientID: "c")
+    await reader.recordSubscriptionEventID("evt-original")
+
+    do {
+      try await reader.reconnect(clientEventID: "evt-after-reconnect") { _ in
+        throw InstantLiveStreamTestError.pushFailed
+      }
+      Issue.record("Expected stream reconnect to surface the resubscribe failure.")
+    } catch let error as InstantError {
+      #expect(error.message.contains("push failed"), Comment(rawValue: pythonStreamReaderResumeSource))
+    }
+
+    do {
+      try await reader.checkForFailure()
+      Issue.record("Expected the stream reader to retain the resubscribe failure.")
+    } catch let error as InstantError {
+      #expect(error.message.contains("push failed"), Comment(rawValue: pythonStreamReaderResumeSource))
+    }
   }
 
   @Test
@@ -1831,5 +1964,25 @@ private extension InstantLiveJSONValue {
       ]),
       "id": .string(id),
     ])
+  }
+}
+
+private actor InstantLiveStreamMessageRecorder {
+  private var recordedMessages: [InstantLiveMessage] = []
+
+  func append(_ message: InstantLiveMessage) {
+    recordedMessages.append(message)
+  }
+
+  func messages() -> [InstantLiveMessage] {
+    recordedMessages
+  }
+}
+
+private enum InstantLiveStreamTestError: LocalizedError {
+  case pushFailed
+
+  var errorDescription: String? {
+    "push failed"
   }
 }
