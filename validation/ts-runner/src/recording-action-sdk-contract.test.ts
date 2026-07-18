@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { getOps, txInit } from "@instantdb/core";
 
 import { recordingActionRuntimeSchema } from "./recording-action-runtime-schema.js";
 import {
   recordingActionQuery,
   recordingActionResultIsReady,
   recordingActionSnapshot,
+  recordingActionTransaction,
   type RecordingActionQueryResult,
   waitForRecordingActionResult,
 } from "./recording-action-sdk-contract.js";
+import type { AppSchema } from "../../fixtures/recording-action.server.schema.js";
 
 test("recording action server schema loads as a runtime SDK schema", () => {
   assert.ok(recordingActionRuntimeSchema.entities.v3_capture_recordings);
@@ -83,6 +86,70 @@ test("recording action query requests the entire canonical graph", () => {
       transcriptions: {},
     },
   });
+});
+
+test("recording action transaction uses the typed canonical SDK graph", () => {
+  const chunks = recordingActionTransaction(txInit<AppSchema>(), {
+    recordingID: "recording-e2e",
+    transcriptionID: "transcription-e2e",
+    memberID: "member-e2e",
+    attachmentID: "attachment-e2e",
+    ownerID: "owner-e2e",
+    title: "Canonical recording",
+    deviceID: "typescript-e2e",
+    attachmentContents: "Cross-SDK notes",
+  });
+
+  assert.equal(chunks.length, 4);
+  assert.deepStrictEqual(chunks.flatMap(getOps), [
+    [
+      "update",
+      "v3_capture_recordings",
+      "recording-e2e",
+      {
+        title: "Canonical recording",
+        deviceID: "typescript-e2e",
+        state: "recording",
+        durationMilliseconds: 0,
+      },
+    ],
+    ["link", "v3_capture_recordings", "recording-e2e", { owner: "owner-e2e" }],
+    [
+      "update",
+      "v3_capture_attachments",
+      "attachment-e2e",
+      {
+        kind: "text",
+        contents: "Cross-SDK notes",
+        offsetMilliseconds: 2_500,
+      },
+    ],
+    [
+      "link",
+      "v3_capture_attachments",
+      "attachment-e2e",
+      { recording: "recording-e2e" },
+    ],
+    ["update", "v3_capture_members", "member-e2e", { role: "owner" }],
+    [
+      "link",
+      "v3_capture_members",
+      "member-e2e",
+      { recording: "recording-e2e", user: "owner-e2e" },
+    ],
+    [
+      "update",
+      "v3_capture_transcriptions",
+      "transcription-e2e",
+      { state: "processing" },
+    ],
+    [
+      "link",
+      "v3_capture_transcriptions",
+      "transcription-e2e",
+      { recording: "recording-e2e" },
+    ],
+  ]);
 });
 
 test("recording action result projects the exact cross-SDK data shape", () => {

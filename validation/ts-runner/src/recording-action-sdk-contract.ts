@@ -1,4 +1,4 @@
-import type { InstaQLParams, InstaQLResponse } from "@instantdb/core";
+import type { InstaQLParams, InstaQLResponse, TxChunk } from "@instantdb/core";
 
 import type { AppSchema } from "../../fixtures/recording-action.server.schema.js";
 
@@ -20,6 +20,49 @@ export type RecordingActionQueryResult = InstaQLResponse<
   RecordingActionQuery,
   true
 >;
+
+export interface RecordingActionTransactionInput {
+  recordingID: string;
+  transcriptionID: string;
+  memberID: string;
+  attachmentID: string;
+  ownerID: string;
+  title: string;
+  deviceID: string;
+  attachmentContents: string;
+}
+
+export function recordingActionTransaction(
+  tx: TxChunk<AppSchema>,
+  input: RecordingActionTransactionInput,
+) {
+  return [
+    tx.v3_capture_recordings[input.recordingID]
+      .update({
+        title: input.title,
+        deviceID: input.deviceID,
+        state: "recording",
+        durationMilliseconds: 0,
+      })
+      .link({ owner: input.ownerID }),
+    tx.v3_capture_attachments[input.attachmentID]
+      .update({
+        kind: "text",
+        contents: input.attachmentContents,
+        offsetMilliseconds: 2_500,
+      })
+      .link({ recording: input.recordingID }),
+    tx.v3_capture_members[input.memberID]
+      .update({ role: "owner" })
+      .link({
+        recording: input.recordingID,
+        user: input.ownerID,
+      }),
+    tx.v3_capture_transcriptions[input.transcriptionID]
+      .update({ state: "processing" })
+      .link({ recording: input.recordingID }),
+  ];
+}
 
 export interface RecordingActionSnapshot {
   recording: {
