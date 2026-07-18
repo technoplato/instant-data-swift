@@ -226,6 +226,18 @@ struct TypedAPITests {
     #expect(nestedIncludedQuery.plan.cacheKey != reverseIncludedQuery.plan.cacheKey)
   }
 
+  /// Canonical source:
+  /// upstream/instant/client/packages/vue/src/InstantVueDatabase.ts:151
+  @Test
+  func relationPredicatesUseCanonicalDottedIDPaths() {
+    let authorID = InstantID<TypedUser>(rawValue: "user-author")
+
+    expectNoDifference(
+      TypedPost.query.where(TypedPost.author == authorID).plan.filters,
+      [.equals(field: "author.id", value: .string("user-author"))]
+    )
+  }
+
   @Test
   func instantEntityMacroGeneratedSchemaHelpersDriveTypedAPI() async throws {
     let dueAt = Date(timeIntervalSince1970: 1_700_000_123)

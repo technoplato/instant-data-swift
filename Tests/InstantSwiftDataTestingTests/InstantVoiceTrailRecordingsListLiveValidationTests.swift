@@ -23,14 +23,14 @@ struct InstantVoiceTrailRecordingsListLiveValidationTests {
 
     expectNoDifference(
       owner.filters,
-      [.equals(field: "owner", value: .ref("user-viewer"))]
+      [.equals(field: "owner.id", value: .string("user-viewer"))]
     )
     expectNoDifference(
       member.filters,
       [
         .or([
-          .equals(field: "readers", value: .ref("user-viewer")),
-          .equals(field: "writers", value: .ref("user-viewer")),
+          .equals(field: "readers.id", value: .string("user-viewer")),
+          .equals(field: "writers.id", value: .string("user-viewer")),
         ])
       ]
     )
@@ -47,7 +47,7 @@ struct InstantVoiceTrailRecordingsListLiveValidationTests {
     )
     expectNoDifference(
       member.includes?.last?.query?.includes?.last?.query?.filters,
-      [.equals(field: "user", value: .ref("user-viewer"))]
+      [.equals(field: "user.id", value: .string("user-viewer"))]
     )
     expectNoDifference(
       member.includes?.last?.query?.includes?.last?.query?.includes?.map(\.name),

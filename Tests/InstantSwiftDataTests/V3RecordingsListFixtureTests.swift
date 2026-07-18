@@ -45,7 +45,7 @@ import Testing
       expectNoDifference(
         mine.plan.filters,
         [
-          .equals(field: "owner", value: .ref("user-viewer")),
+          .equals(field: "owner.id", value: .string("user-viewer")),
           .iLike(field: "title", pattern: "%walk%"),
         ]
       )
@@ -53,8 +53,8 @@ import Testing
         shared.plan.filters,
         [
           .or([
-            .equals(field: "readers", value: .ref("user-viewer")),
-            .equals(field: "writers", value: .ref("user-viewer")),
+            .equals(field: "readers.id", value: .string("user-viewer")),
+            .equals(field: "writers.id", value: .string("user-viewer")),
           ]),
           .iLike(field: "title", pattern: "%walk%"),
         ]
@@ -65,7 +65,7 @@ import Testing
       )
       expectNoDifference(
         shared.plan.includes?.last?.query?.includes?.last?.query?.filters,
-        [.equals(field: "user", value: .ref("user-viewer"))]
+        [.equals(field: "user.id", value: .string("user-viewer"))]
       )
       expectNoDifference(
         sourceReferences,
@@ -237,11 +237,11 @@ import Testing
       expectNoDifference(
         plans.map(\.filters),
         [
-          [.equals(field: "owner", value: .ref("user-viewer"))],
+          [.equals(field: "owner.id", value: .string("user-viewer"))],
           [
             .or([
-              .equals(field: "readers", value: .ref("user-viewer")),
-              .equals(field: "writers", value: .ref("user-viewer")),
+              .equals(field: "readers.id", value: .string("user-viewer")),
+              .equals(field: "writers.id", value: .string("user-viewer")),
             ])
           ],
         ]
@@ -901,8 +901,8 @@ import Testing
     private static func request(for plan: InstantQueryPlan) -> Request {
       plan.filters.contains {
         if case let .or(filters) = $0 {
-          return filters.contains(.equals(field: "readers", value: .ref("user-viewer")))
-            || filters.contains(.equals(field: "writers", value: .ref("user-viewer")))
+          return filters.contains(.equals(field: "readers.id", value: .string("user-viewer")))
+            || filters.contains(.equals(field: "writers.id", value: .string("user-viewer")))
         }
         return false
       }

@@ -1669,11 +1669,25 @@ public func == <Entity, Value>(
   InstantPredicate(.equals(field: lhs.name, value: rhs.instantValue))
 }
 
+public func == <Entity, Target>(
+  lhs: InstantAttributePath<Entity, InstantID<Target>>,
+  rhs: InstantID<Target>
+) -> InstantPredicate<Entity> {
+  InstantPredicate(.equals(field: "\(lhs.name).id", value: .string(rhs.rawValue)))
+}
+
 public func != <Entity, Value>(
   lhs: InstantAttributePath<Entity, Value>,
   rhs: Value
 ) -> InstantPredicate<Entity> {
   InstantPredicate(.notEquals(field: lhs.name, value: rhs.instantValue))
+}
+
+public func != <Entity, Target>(
+  lhs: InstantAttributePath<Entity, InstantID<Target>>,
+  rhs: InstantID<Target>
+) -> InstantPredicate<Entity> {
+  InstantPredicate(.notEquals(field: "\(lhs.name).id", value: .string(rhs.rawValue)))
 }
 
 public func > <Entity, Value: InstantComparableValue>(
