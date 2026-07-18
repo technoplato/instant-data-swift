@@ -10,6 +10,26 @@ public struct InstantID<Entity>: Hashable, Codable, Sendable, CustomStringConver
   public var description: String {
     rawValue
   }
+
+  private enum CodingKeys: String, CodingKey {
+    case rawValue
+  }
+
+  public init(from decoder: Decoder) throws {
+    if let container = try? decoder.singleValueContainer(),
+      let rawValue = try? container.decode(String.self)
+    {
+      self.rawValue = rawValue
+      return
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    rawValue = try container.decode(String.self, forKey: .rawValue)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
+  }
 }
 
 public struct AnyInstantID: Hashable, Codable, Sendable, CustomStringConvertible {
@@ -21,6 +41,26 @@ public struct AnyInstantID: Hashable, Codable, Sendable, CustomStringConvertible
 
   public var description: String {
     rawValue
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case rawValue
+  }
+
+  public init(from decoder: Decoder) throws {
+    if let container = try? decoder.singleValueContainer(),
+      let rawValue = try? container.decode(String.self)
+    {
+      self.rawValue = rawValue
+      return
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    rawValue = try container.decode(String.self, forKey: .rawValue)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    try container.encode(rawValue)
   }
 }
 
