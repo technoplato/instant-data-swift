@@ -4,6 +4,7 @@ import Foundation
 import IssueReporting
 
 #if canImport(SwiftUI)
+  import Combine
   public import SwiftUI
 #endif
 
@@ -6893,53 +6894,137 @@ public struct Shares: Sendable {
   }
 }
 
+// SAFETY: lifecycle task access is serialized by `lock`; value access delegates
+// to the wrapper's already thread-safe fetch storage.
+private final class LocalIDLifecycleStorage: @unchecked Sendable {
+  private let lock = NSLock()
+  private var didStart = false
+  private var task: Task<Void, Never>?
+  fileprivate let storage: FetchStorage<String?>
+  fileprivate let name: LockedValueStorage<String?>
+
+  #if canImport(SwiftUI)
+    let objectWillChange = ObservableObjectPublisher()
+  #endif
+
+  init(value: String?, name: String?) {
+    self.storage = FetchStorage(value: value)
+    self.name = LockedValueStorage(name)
+  }
+
+  func start(_ operation: @escaping @Sendable () async -> Void) {
+    let shouldStart = withLock {
+      guard !didStart else { return false }
+      didStart = true
+      return true
+    }
+    guard shouldStart else { return }
+
+    let task = Task {
+      await operation()
+    }
+    withLock {
+      self.task = task
+    }
+  }
+
+  func publishChange() {
+    #if canImport(SwiftUI)
+      if Thread.isMainThread {
+        objectWillChange.send()
+      } else {
+        DispatchQueue.main.async { [weak self] in
+          self?.objectWillChange.send()
+        }
+      }
+    #endif
+  }
+
+  deinit {
+    task?.cancel()
+  }
+
+  private func withLock<Result>(_ operation: () throws -> Result) rethrows -> Result {
+    lock.lock()
+    defer { lock.unlock() }
+    return try operation()
+  }
+}
+
+#if canImport(SwiftUI)
+  extension LocalIDLifecycleStorage: ObservableObject {}
+#endif
+
 @propertyWrapper
-public struct LocalID: Sendable {
-  private let storage: FetchStorage<String?>
-  private let name: LockedValueStorage<String?>
+public struct LocalID: @unchecked Sendable {
+  private let lifecycleReference: LockedValueStorage<LocalIDLifecycleStorage>
+
+  #if canImport(SwiftUI)
+    @StateObject private var lifecycleObserver: LocalIDLifecycleStorage
+  #endif
+
+  private var lifecycle: LocalIDLifecycleStorage {
+    lifecycleReference.value
+  }
 
   public var wrappedValue: String? {
-    get { storage.wrappedValue }
-    nonmutating set { storage.wrappedValue = newValue }
+    get { lifecycle.storage.wrappedValue }
+    nonmutating set {
+      lifecycle.publishChange()
+      lifecycle.storage.wrappedValue = newValue
+    }
   }
 
   public var loadError: InstantError? {
-    get { storage.loadError }
-    nonmutating set { storage.loadError = newValue }
+    get { lifecycle.storage.loadError }
+    nonmutating set {
+      lifecycle.publishChange()
+      lifecycle.storage.loadError = newValue
+    }
   }
 
   public var isLoading: Bool {
-    get { storage.isLoading }
-    nonmutating set { storage.isLoading = newValue }
+    get { lifecycle.storage.isLoading }
+    nonmutating set {
+      lifecycle.publishChange()
+      lifecycle.storage.isLoading = newValue
+    }
   }
 
   #if canImport(SwiftUI)
     public var binding: Binding<String?> {
       Binding(
-        get: { storage.wrappedValue },
-        set: { storage.wrappedValue = $0 }
+        get: { lifecycle.storage.wrappedValue },
+        set: {
+          lifecycle.publishChange()
+          lifecycle.storage.wrappedValue = $0
+        }
       )
     }
   #endif
 
   public init(wrappedValue: String? = nil) {
-    self.storage = FetchStorage(value: wrappedValue)
-    self.name = LockedValueStorage(nil)
+    self.init(initialValue: wrappedValue, name: nil)
   }
 
   public init(_ name: String) {
-    self.storage = FetchStorage(value: nil)
-    self.name = LockedValueStorage(name)
+    self.init(initialValue: nil, name: name)
   }
 
   public init(wrappedValue: String?, _ name: String) {
-    self.storage = FetchStorage(value: wrappedValue)
-    self.name = LockedValueStorage(name)
+    self.init(initialValue: wrappedValue, name: name)
   }
 
   public init(wrappedValue: String? = nil, name: String) {
-    self.storage = FetchStorage(value: wrappedValue)
-    self.name = LockedValueStorage(name)
+    self.init(initialValue: wrappedValue, name: name)
+  }
+
+  private init(initialValue: String?, name: String?) {
+    let lifecycle = LocalIDLifecycleStorage(value: initialValue, name: name)
+    self.lifecycleReference = LockedValueStorage(lifecycle)
+    #if canImport(SwiftUI)
+      self._lifecycleObserver = StateObject(wrappedValue: lifecycle)
+    #endif
   }
 
   public var projectedValue: Self {
@@ -6948,7 +7033,7 @@ public struct LocalID: Sendable {
       wrappedValue = newValue.wrappedValue
       loadError = newValue.loadError
       isLoading = newValue.isLoading
-      name.value = newValue.name.value
+      lifecycle.name.value = newValue.lifecycle.name.value
     }
   }
 
@@ -6958,7 +7043,7 @@ public struct LocalID: Sendable {
   }
 
   public func load(using client: InstantSwiftDataClient) async throws {
-    guard let name = name.value else {
+    guard let name = lifecycle.name.value else {
       let error = InstantError(
         code: .implementationFailed,
         operation: "load LocalID",
@@ -6977,7 +7062,7 @@ public struct LocalID: Sendable {
   }
 
   public func load(_ name: String, using client: InstantSwiftDataClient) async throws {
-    self.name.value = name
+    lifecycle.name.value = name
     isLoading = true
     do {
       let value = try await client.localID(named: name)
@@ -7023,3 +7108,22 @@ public struct LocalID: Sendable {
     try await load(name, using: client)
   }
 }
+
+#if canImport(SwiftUI)
+  @MainActor
+  extension LocalID: DynamicProperty {
+    public mutating func update() {
+      lifecycleReference.value = lifecycleObserver
+      guard wrappedValue == nil, loadError == nil else { return }
+      let localID = self
+      lifecycle.start {
+        do {
+          try await localID.load()
+        } catch is CancellationError {
+        } catch {
+          // LocalID records renderable failures in loadError.
+        }
+      }
+    }
+  }
+#endif
