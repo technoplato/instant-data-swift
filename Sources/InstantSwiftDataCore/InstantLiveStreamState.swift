@@ -56,6 +56,13 @@ extension InstantLiveMessage {
   }
 }
 
+enum InstantLiveStreamReaderDisposition: Hashable, Sendable {
+  case ignored
+  case requestReconnect
+  case deliver(InstantLiveStreamAppend)
+  case failure(InstantError)
+}
+
 actor InstantLiveStreamReaderState {
   private let clientID: String?
   private let streamID: String?
@@ -63,6 +70,7 @@ actor InstantLiveStreamReaderState {
   private var seenOffset: Int64
   private var currentSubscriptionEventID: String?
   private var pendingFailure: InstantError?
+  private var receivedAppends: [InstantLiveStreamAppend] = []
 
   init(
     clientID: String? = nil,
@@ -85,6 +93,10 @@ actor InstantLiveStreamReaderState {
 
   var subscriptionEventID: String? {
     currentSubscriptionEventID
+  }
+
+  var deliveredAppends: [InstantLiveStreamAppend] {
+    receivedAppends
   }
 
   func recordSeenOffset(_ offset: Int64) {
@@ -132,5 +144,27 @@ actor InstantLiveStreamReaderState {
     if let pendingFailure {
       throw pendingFailure
     }
+  }
+
+  func receive(_ append: InstantLiveStreamAppend) -> InstantLiveStreamReaderDisposition {
+    guard append.clientEventID == currentSubscriptionEventID else {
+      return .ignored
+    }
+    if let message = append.error {
+      if append.retry {
+        return .requestReconnect
+      }
+      let failure = InstantError(
+        code: .networkFailed,
+        operation: "read Instant stream append",
+        serverEventID: append.clientEventID,
+        message: message,
+        recovery: "Inspect the stream server error and create a new reader if needed."
+      )
+      pendingFailure = failure
+      return .failure(failure)
+    }
+    receivedAppends.append(append)
+    return .deliver(append)
   }
 }

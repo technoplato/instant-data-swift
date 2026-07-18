@@ -905,6 +905,87 @@ struct InstantReactorParityTests {
   }
 
   @Test
+  func runtimeStreamAppendRetryReconnectsWithoutPublishingAppend() async throws {
+    let firstSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "stream-retry-before")
+    ])
+    let secondSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "stream-retry-after")
+    ])
+    let transport = LiveReactorParityTransport(sessions: [firstSession, secondSession])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "python-stream-append-retry-parity",
+        persistenceURL: try temporaryReactorParityCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: transport.transport
+      )
+    )
+    _ = try await runtime.signInAsGuest()
+    let metadata = try await runtime.createStream(clientID: "stream-append-retry")
+    _ = try await runtime.appendStreamContent(streamID: metadata.id, content: "hello")
+    _ = try await runtime.connect()
+
+    let observation = try await runtime.observeStreamContent(streamID: metadata.id)
+    let observerTask = Task { () -> InstantStreamContentRead? in
+      var iterator = observation.makeAsyncIterator()
+      let initial = await iterator.next()
+      _ = await iterator.next()
+      return initial
+    }
+    defer { observerTask.cancel() }
+
+    try await instantLiveWithTimeout(
+      operation: "wait for retry stream subscription",
+      timeoutMilliseconds: 500
+    ) {
+      await firstSession.waitForSentMessageCount(2)
+    }
+    let subscribe = try #require(await firstSession.sentMessages().last)
+    await firstSession.enqueue(
+      InstantLiveMessage(
+        op: "stream-append",
+        clientEventID: try #require(subscribe.clientEventID),
+        fields: [
+          "client-id": .string("stream-append-retry"),
+          "error": .string("transient"),
+          "offset": .number(5),
+          "retry": .bool(true),
+          "stream-id": .string(metadata.id),
+        ]
+      )
+    )
+
+    try await instantLiveWithTimeout(
+      operation: "wait for retryable stream append reconnect",
+      timeoutMilliseconds: 500
+    ) {
+      await transport.waitForConnectionCount(2)
+    }
+    try await instantLiveWithTimeout(
+      operation: "wait for retry stream resubscription",
+      timeoutMilliseconds: 500
+    ) {
+      await secondSession.waitForSentMessageCount(2)
+    }
+    let resubscribe = try #require(await secondSession.sentMessages().last)
+    expectNoDifference(resubscribe.op, "subscribe-stream", pythonStreamAppendRetrySource)
+    expectNoDifference(
+      resubscribe.fields,
+      [
+        "offset": .number(5),
+        "stream-id": .string(metadata.id),
+      ],
+      pythonStreamAppendRetrySource
+    )
+
+    observerTask.cancel()
+    let initial = try #require(await observerTask.value)
+    expectNoDifference(initial.content, "hello", pythonStreamAppendRetrySource)
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
   func runtimeAppliesLivePresencePatchesAndEphemeralServerBroadcasts() async throws {
     let room = InstantRoomHandle(type: "chat", id: "room-events")
     let now = InstantTimestamp(milliseconds: 1_700_000_080_000)
@@ -1259,6 +1340,9 @@ private let reactorRoomReconnectSource =
 
 private let pythonStreamReaderReconnectSource =
   "upstream/instant/client/packages/python/tests/test_streams_state.py test_reader_on_reconnect_resubscribes_with_current_offset and upstream/instant/client/packages/core/src/Stream.ts onConnectionStatusChange [adapted: Swift registers a public stream-content observer with the owned live session at the end of its local read, restores that subscription at the same byte offset after reconnect, and unsubscribes with the reconnected subscription event id when observation is cancelled.]"
+
+private let pythonStreamAppendRetrySource =
+  "upstream/instant/client/packages/python/tests/test_streams_state.py test_reader_stream_append_with_retry_triggers_force_reconnect and upstream/instant/client/packages/core/src/Stream.ts onStreamAppend [adapted: Swift correlates a retryable stream-append error to the active subscription, reconnects the owned live session without publishing the failed append, and resubscribes from the last seen byte offset.]"
 
 private let reactorRoomEventsSource =
   "upstream/instant/client/packages/core/src/Reactor.js refresh-presence, patch-presence, and server-broadcast receive branches plus upstream/instant/server/test/instant/reactive/session_test.clj patch-presence-works and broadcast-works [adapted: Swift excludes its own live session from peer presence, applies canonical +/r/- edits in memory, publishes typed peer state, and emits remote broadcasts without adding them to durable topic history.]"

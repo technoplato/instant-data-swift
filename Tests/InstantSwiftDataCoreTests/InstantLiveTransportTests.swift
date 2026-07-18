@@ -20,6 +20,14 @@ private let pythonStreamReaderResumeSource =
   + "core/src/Stream.ts confirms the TypeScript wire keys, while owned runtime registration "
   + "is covered by its separate integration slice]"
 
+private let pythonStreamAppendRetrySource =
+  "upstream/instant/client/packages/python/tests/test_streams_state.py "
+  + "test_reader_stream_append_with_retry_triggers_force_reconnect "
+  + "[adapted: Swift decodes the canonical stream-append envelope, correlates it to the "
+  + "active subscribe-stream event id, requests reconnect for retryable server errors, and "
+  + "does not deliver the failed append; upstream/instant/client/packages/core/src/Stream.ts "
+  + "onStreamAppend confirms the TypeScript behavior]"
+
 @Suite
 struct InstantLiveTransportTests {
   @Test
@@ -275,6 +283,35 @@ struct InstantLiveTransportTests {
     } catch let error as InstantError {
       #expect(error.message.contains("push failed"), Comment(rawValue: pythonStreamReaderResumeSource))
     }
+  }
+
+  @Test
+  func streamAppendRetryRequestsReconnectWithoutDeliveringAppend() async throws {
+    let reader = try InstantLiveStreamReaderState(clientID: "c")
+    await reader.recordSubscriptionEventID("evt-1")
+    let event = InstantLiveServerEvent(
+      message: InstantLiveMessage(
+        op: "stream-append",
+        clientEventID: "evt-1",
+        fields: [
+          "client-id": .string("c"),
+          "error": .string("transient"),
+          "offset": .number(12),
+          "retry": .bool(true),
+          "stream-id": .string("s-1"),
+        ]
+      )
+    )
+    guard case let .streamAppend(append) = event else {
+      Issue.record("Expected canonical stream-append decoding.")
+      return
+    }
+
+    let disposition = await reader.receive(append)
+
+    expectNoDifference(disposition, .requestReconnect, pythonStreamAppendRetrySource)
+    let deliveredAppends = await reader.deliveredAppends
+    expectNoDifference(deliveredAppends, [], pythonStreamAppendRetrySource)
   }
 
   @Test

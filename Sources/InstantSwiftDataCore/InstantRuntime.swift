@@ -687,6 +687,24 @@ private actor InstantRuntimeLiveSession {
       try await recordRoomEvent(op: "patch-presence", roomID: patch.roomID)
     case let .serverBroadcast(broadcast):
       try await recordRoomEvent(op: "server-broadcast", roomID: broadcast.roomID)
+    case let .streamAppend(append):
+      for key in registeredStreamReaders.keys.sorted() {
+        guard let registration = registeredStreamReaders[key] else { continue }
+        switch await registration.reader.receive(append) {
+        case .ignored:
+          continue
+        case .requestReconnect:
+          throw InstantError(
+            code: .networkFailed,
+            operation: "retry Instant live stream append",
+            serverEventID: append.clientEventID,
+            message: append.error ?? "Instant requested a stream reconnect.",
+            recovery: "Reconnect the live session and resubscribe from the last seen byte offset."
+          )
+        case .deliver, .failure:
+          break
+        }
+      }
     default:
       break
     }
@@ -1997,6 +2015,9 @@ public final class InstantRuntime: Sendable {
 
     case let .serverBroadcast(broadcast):
       try await applyLiveServerBroadcast(broadcast)
+
+    case .streamAppend:
+      break
 
     case let .error(error):
       if let clientEventID = error.clientEventID?.nilIfEmpty,

@@ -411,6 +411,53 @@ public struct InstantLiveServerBroadcast: Hashable, Sendable {
   }
 }
 
+public struct InstantLiveStreamFile: Hashable, Sendable {
+  public var url: String
+  public var size: Int64
+
+  public init(url: String, size: Int64) {
+    self.url = url
+    self.size = size
+  }
+}
+
+public struct InstantLiveStreamAppend: Hashable, Sendable {
+  public var clientEventID: String?
+  public var streamID: String
+  public var clientID: String?
+  public var files: [InstantLiveStreamFile]
+  public var done: Bool
+  public var abortReason: String?
+  public var offset: Int64
+  public var error: String?
+  public var retry: Bool
+  public var content: String?
+
+  public init(
+    clientEventID: String?,
+    streamID: String,
+    clientID: String? = nil,
+    files: [InstantLiveStreamFile] = [],
+    done: Bool = false,
+    abortReason: String? = nil,
+    offset: Int64,
+    error: String? = nil,
+    retry: Bool = false,
+    content: String? = nil
+  ) {
+    self.clientEventID = clientEventID
+    self.streamID = streamID
+    self.clientID = clientID
+    self.files = files
+    self.done = done
+    self.abortReason = abortReason
+    self.offset = offset
+    self.error = error
+    self.retry = retry
+    self.content = content
+  }
+}
+
 public enum InstantLiveServerEvent: Hashable, Sendable {
   case initOK(InstantLiveInitOK)
   case addQueryOK(InstantLiveQueryOK)
@@ -422,6 +469,7 @@ public enum InstantLiveServerEvent: Hashable, Sendable {
   case refreshPresence(InstantLivePresenceRefresh)
   case patchPresence(InstantLivePresencePatch)
   case serverBroadcast(InstantLiveServerBroadcast)
+  case streamAppend(InstantLiveStreamAppend)
   case error(InstantLiveErrorMessage)
   case other(InstantLiveMessage)
 
@@ -514,6 +562,32 @@ public enum InstantLiveServerEvent: Hashable, Sendable {
         )
       )
 
+    case "stream-append":
+      let files: [InstantLiveStreamFile] =
+        (message.fields["files"]?.arrayValue ?? []).compactMap { value in
+        guard let object = value.objectValue,
+          let url = object["url"]?.stringValue,
+          let size = object["size"]?.intValue
+        else {
+          return nil
+        }
+          return InstantLiveStreamFile(url: url, size: Int64(size))
+        }
+      self = .streamAppend(
+        InstantLiveStreamAppend(
+          clientEventID: message.clientEventID,
+          streamID: message.fields["stream-id"]?.stringValue ?? "",
+          clientID: message.fields["client-id"]?.stringValue,
+          files: files,
+          done: message.fields["done"] == .bool(true),
+          abortReason: message.fields["abort-reason"]?.stringValue,
+          offset: Int64(message.fields["offset"]?.intValue ?? 0),
+          error: message.fields["error"]?.stringValue,
+          retry: message.fields["retry"] == .bool(true),
+          content: message.fields["content"]?.stringValue
+        )
+      )
+
     case "error":
       self = .error(
         InstantLiveErrorMessage(
@@ -552,6 +626,8 @@ public enum InstantLiveServerEvent: Hashable, Sendable {
       return "patch-presence"
     case .serverBroadcast:
       return "server-broadcast"
+    case .streamAppend:
+      return "stream-append"
     case .error:
       return "error"
     case let .other(message):
