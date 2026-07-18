@@ -35,6 +35,37 @@ public struct InstantSharingLiveValidationDetails: Codable, Equatable, Sendable 
   }
 }
 
+public struct InstantSharingWriterLiveValidationDetails: Codable, Equatable, Sendable {
+  public var listID: String
+  public var writerUserID: String
+  public var expectedServerValue: Double
+  public var acceptedValue: Double
+  public var observedValues: [Double]
+  public var pendingMutationCount: Int
+  public var failedMutationCount: Int
+  public var connectionState: String
+
+  public init(
+    listID: String,
+    writerUserID: String,
+    expectedServerValue: Double,
+    acceptedValue: Double,
+    observedValues: [Double],
+    pendingMutationCount: Int,
+    failedMutationCount: Int,
+    connectionState: String
+  ) {
+    self.listID = listID
+    self.writerUserID = writerUserID
+    self.expectedServerValue = expectedServerValue
+    self.acceptedValue = acceptedValue
+    self.observedValues = observedValues
+    self.pendingMutationCount = pendingMutationCount
+    self.failedMutationCount = failedMutationCount
+    self.connectionState = connectionState
+  }
+}
+
 public enum InstantSharingLiveValidation {
   public static func run(
     appID: String,
@@ -169,6 +200,128 @@ public enum InstantSharingLiveValidation {
     )
   }
 
+  public static func runWriter(
+    appID: String,
+    websocketURI: URL,
+    refreshToken: String,
+    writerUserID: String,
+    listID: String,
+    expectedServerValue: Double,
+    acceptedValue: Double,
+    persistenceURL: URL? = nil
+  ) async throws -> ValidationEvidenceRow<InstantSharingWriterLiveValidationDetails> {
+    let persistenceURL = persistenceURL ?? FileManager.default.temporaryDirectory
+      .appendingPathComponent("instant-sharing-writer-live-\(UUID().uuidString).sqlite")
+    let trace = SharingLiveTrace()
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: appID,
+        websocketURI: websocketURI,
+        persistenceURL: persistenceURL,
+        initialAttributes: sharingAttributes,
+        liveTransport: trace.transport
+      )
+    )
+    _ = try await runtime.signInWithRefreshToken(refreshToken, userID: writerUserID)
+    let plan = InstantQueryPlan(
+      id: "validation.live.sharing.writer",
+      namespace: "v3_shared_lists",
+      filters: [.equals(field: "id", value: .string(listID))]
+    )
+    let recorder = SharingValueRecorder()
+    let observation = await runtime.observe(plan)
+    let observationTask = Task {
+      for await emission in observation {
+        if let value = sharingValue(emission.values, listID: listID) {
+          await recorder.append(value)
+        }
+      }
+    }
+    defer { observationTask.cancel() }
+
+    _ = try await runtime.connect()
+    do {
+      try await waitForValue(
+        expectedServerValue,
+        recorder: recorder,
+        operation: "wait for writer shared-list server value"
+      )
+    } catch {
+      let status = try await runtime.connectionStatus()
+      let values = await recorder.values()
+      let lastError = status.lastErrorMessage ?? "none"
+      let traceSummary = await trace.summary()
+      throw InstantError(
+        code: .networkFailed,
+        operation: "wait for writer shared-list server value",
+        message: "Observed \(values); connection=\(status.state.rawValue); lastError=\(lastError); trace=\(traceSummary).",
+        recovery: "Inspect the live sharing writer query and permission contract."
+      )
+    }
+
+    let transactionID = "validation-sharing-writer-accepted-\(UUID().uuidString.lowercased())"
+    let now = InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: transactionID,
+        operations: [
+          .requireEntityExists(entityID: listID, namespace: "v3_shared_lists"),
+          .insert(
+            InstantTriple(
+              entityID: listID,
+              attributeID: "v3_shared_lists/value",
+              value: .number(acceptedValue),
+              txID: transactionID,
+              txTime: now
+            )
+          ),
+        ]
+      ),
+      createdAt: now
+    )
+    try await waitForValue(
+      acceptedValue,
+      recorder: recorder,
+      operation: "wait for writer accepted optimistic value"
+    )
+    try await waitForMutationRemoval(runtime, id: transactionID)
+
+    let mutations = await runtime.outboxMutations()
+    let pendingMutationCount = mutations.filter { $0.status == .pending }.count
+    let failedMutationCount = mutations.filter { $0.status == .failed }.count
+    guard pendingMutationCount == 0, failedMutationCount == 0 else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "validate live sharing writer outbox",
+        message: "Expected the accepted writer mutation to leave no pending or failed mutations.",
+        recovery: "Confirm writer permissions and transact-ok handling."
+      )
+    }
+    let status = try await runtime.connectionStatus()
+    let values = await recorder.values()
+    _ = try await runtime.closeConnection()
+
+    return ValidationEvidenceRow(
+      caseID: "validation.live.sharing",
+      side: "swift",
+      event: "writer-update-confirmed",
+      appID: appID,
+      entityID: listID,
+      timestampMs: now.milliseconds,
+      ok: true,
+      details: InstantSharingWriterLiveValidationDetails(
+        listID: listID,
+        writerUserID: writerUserID,
+        expectedServerValue: expectedServerValue,
+        acceptedValue: acceptedValue,
+        observedValues: values,
+        pendingMutationCount: pendingMutationCount,
+        failedMutationCount: failedMutationCount,
+        connectionState: status.state.rawValue
+      )
+    )
+  }
+
   private static let sharingAttributes: [InstantAttribute] = [
     .primaryKey(namespace: "v3_shared_lists"),
     InstantAttribute(
@@ -238,6 +391,19 @@ public enum InstantSharingLiveValidation {
       try await Task.sleep(for: .milliseconds(25))
     }
     throw timeout("wait for reader sharing permission failure")
+  }
+
+  private static func waitForMutationRemoval(
+    _ runtime: InstantRuntime,
+    id: String
+  ) async throws {
+    for _ in 0..<400 {
+      if !(await runtime.outboxMutations()).contains(where: { $0.id == id }) {
+        return
+      }
+      try await Task.sleep(for: .milliseconds(25))
+    }
+    throw timeout("wait for writer sharing transaction confirmation")
   }
 
   private static func timeout(_ operation: String) -> InstantError {

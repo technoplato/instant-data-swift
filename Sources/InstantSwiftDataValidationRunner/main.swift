@@ -176,6 +176,44 @@ struct InstantSwiftDataValidationRunner {
       )
       try writeJSONLine(row)
 
+    case .liveSharingWriter:
+      let environment = ProcessInfo.processInfo.environment
+      let appID = try requiredEnvironment("INSTANT_APP_ID", environment: environment)
+      let refreshToken = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_SHARING_REFRESH_TOKEN",
+        environment: environment
+      )
+      let writerUserID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_SHARING_USER_ID",
+        environment: environment
+      )
+      let listID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_SHARING_LIST_ID",
+        environment: environment
+      )
+      let expectedValue = try requiredDoubleEnvironment(
+        "INSTANT_SWIFT_DATA_SHARING_EXPECTED_VALUE",
+        environment: environment
+      )
+      let acceptedValue = try requiredDoubleEnvironment(
+        "INSTANT_SWIFT_DATA_SHARING_ACCEPTED_VALUE",
+        environment: environment
+      )
+      let websocketURI = URL(
+        string: environment["INSTANT_WEBSOCKET_URI"]
+          ?? InstantRuntimeConfiguration.defaultWebSocketURI.absoluteString
+      ) ?? InstantRuntimeConfiguration.defaultWebSocketURI
+      let row = try await InstantSharingLiveValidation.runWriter(
+        appID: appID,
+        websocketURI: websocketURI,
+        refreshToken: refreshToken,
+        writerUserID: writerUserID,
+        listID: listID,
+        expectedServerValue: expectedValue,
+        acceptedValue: acceptedValue
+      )
+      try writeJSONLine(row)
+
     case .typedDrafts:
       let run = try await InstantSwiftDataTestHarness.runDraftValidation()
       for row in run.result.evidence {
