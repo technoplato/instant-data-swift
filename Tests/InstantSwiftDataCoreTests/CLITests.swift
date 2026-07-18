@@ -349,6 +349,8 @@ extension InstantStoreTests {
     let schemaSource = try String(contentsOf: schemaURL, encoding: .utf8)
     #expect(schemaSource.contains("v3_capture_recordingsOwner"))
     #expect(schemaSource.contains("recordingMemberships"))
+    #expect(schemaSource.contains("\"recording.playback\""))
+    #expect(schemaSource.contains("commentCommitted"))
 
     let schemaVerify = try JSONDecoder().decode(
       CLISchemaVerifyOutput.self,

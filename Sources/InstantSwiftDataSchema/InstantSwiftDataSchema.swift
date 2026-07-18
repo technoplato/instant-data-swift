@@ -523,6 +523,91 @@ public enum InstantSchemaExamples {
     ]
   )
 
+  public static let recordingActionPlaybackRoom = InstantRoomSchema(
+    name: "recording.playback",
+    presence: InstantRoomPayloadSchema(
+      attributes: [
+        InstantAttribute(
+          id: "rooms/recording.playback/presence/userID",
+          namespace: "rooms/recording.playback/presence",
+          name: "userID",
+          valueType: .string
+        ),
+        InstantAttribute(
+          id: "rooms/recording.playback/presence/displayName",
+          namespace: "rooms/recording.playback/presence",
+          name: "displayName",
+          valueType: .string
+        ),
+        InstantAttribute(
+          id: "rooms/recording.playback/presence/isPlaying",
+          namespace: "rooms/recording.playback/presence",
+          name: "isPlaying",
+          valueType: .boolean
+        ),
+        InstantAttribute(
+          id: "rooms/recording.playback/presence/offsetSeconds",
+          namespace: "rooms/recording.playback/presence",
+          name: "offsetSeconds",
+          valueType: .number
+        ),
+      ]
+    ),
+    topics: [
+      InstantRoomTopicSchema(
+        name: "reaction",
+        payload: InstantRoomPayloadSchema(
+          attributes: [
+            InstantAttribute(
+              id: "rooms/recording.playback/topics/reaction/emoji",
+              namespace: "rooms/recording.playback/topics/reaction",
+              name: "emoji",
+              valueType: .string
+            ),
+            InstantAttribute(
+              id: "rooms/recording.playback/topics/reaction/offsetSeconds",
+              namespace: "rooms/recording.playback/topics/reaction",
+              name: "offsetSeconds",
+              valueType: .number
+            ),
+          ]
+        )
+      ),
+      InstantRoomTopicSchema(
+        name: "commentDraft",
+        payload: InstantRoomPayloadSchema(
+          attributes: [
+            InstantAttribute(
+              id: "rooms/recording.playback/topics/commentDraft/text",
+              namespace: "rooms/recording.playback/topics/commentDraft",
+              name: "text",
+              valueType: .string
+            ),
+            InstantAttribute(
+              id: "rooms/recording.playback/topics/commentDraft/offsetSeconds",
+              namespace: "rooms/recording.playback/topics/commentDraft",
+              name: "offsetSeconds",
+              valueType: .number
+            ),
+          ]
+        )
+      ),
+      InstantRoomTopicSchema(
+        name: "commentCommitted",
+        payload: InstantRoomPayloadSchema(
+          attributes: [
+            InstantAttribute(
+              id: "rooms/recording.playback/topics/commentCommitted/commentID",
+              namespace: "rooms/recording.playback/topics/commentCommitted",
+              name: "commentID",
+              valueType: .string
+            )
+          ]
+        )
+      ),
+    ]
+  )
+
   public static let recordingActionDocument = InstantSchemaDocument(
     entities: [
       recordingActionUsers,
@@ -605,7 +690,8 @@ public enum InstantSchemaExamples {
         ),
         isRequired: true
       ),
-    ]
+    ],
+    rooms: [recordingActionPlaybackRoom]
   )
 
   public static let sharingLists = InstantEntitySchema(

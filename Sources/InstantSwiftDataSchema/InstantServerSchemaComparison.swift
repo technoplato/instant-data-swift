@@ -150,7 +150,11 @@ extension ParsedInstantSchemaDocument {
       warnings.append(.init(code: .systemLink, path: actualLink.name))
     }
 
-    guard rooms == expected.rooms else {
+    // Instant room declarations are client-side type metadata. The canonical
+    // CLI accepts them in a local schema but does not persist them in the
+    // server schema, so a fresh pull reports `rooms: {}`. If a server artifact
+    // does contain rooms, continue requiring their exact contract shape.
+    guard rooms.isEmpty || rooms == expected.rooms else {
       throw InstantServerSchemaComparisonError.mismatchedRooms
     }
 

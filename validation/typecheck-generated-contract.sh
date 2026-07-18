@@ -38,6 +38,9 @@ cp \
 cp \
   "${ROOT}/validation/fixtures/recording-action.server.perms.ts" \
   "${GENERATED}/recording-action.server.perms.ts"
+cp \
+  "${RUNNER}/src/recording-action-playback-room-contract.ts" \
+  "${GENERATED}/recording-action-playback-room-contract.ts"
 
 pnpm --dir "${RUNNER}" exec tsc --noEmit --project tsconfig.json
 

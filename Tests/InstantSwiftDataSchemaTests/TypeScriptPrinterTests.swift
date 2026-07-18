@@ -397,6 +397,29 @@ struct TypeScriptPrinterTests {
             },
           },
         },
+        rooms: {
+          "recording.playback": {
+            presence: i.entity({
+              displayName: i.string(),
+              isPlaying: i.boolean(),
+              offsetSeconds: i.number(),
+              userID: i.string(),
+            }),
+            topics: {
+              commentCommitted: i.entity({
+                commentID: i.string(),
+              }),
+              commentDraft: i.entity({
+                offsetSeconds: i.number(),
+                text: i.string(),
+              }),
+              reaction: i.entity({
+                emoji: i.string(),
+                offsetSeconds: i.number(),
+              }),
+            },
+          },
+        },
       });
 
       """
@@ -572,6 +595,44 @@ struct TypeScriptPrinterTests {
         InstantServerSchemaWarning(code: .systemLink, path: "$usersLinkedPrimaryUser"),
       ]
     )
+  }
+
+  @Test
+  func recordingActionSchemaDeclaresTypedPlaybackRoom() {
+    let room = InstantSchemaExamples.recordingActionPlaybackRoom
+
+    expectNoDifference(room.name, "recording.playback")
+    expectNoDifference(
+      room.presence.attributes.map(\.name),
+      ["userID", "displayName", "isPlaying", "offsetSeconds"]
+    )
+    expectNoDifference(
+      room.topics.map(\.name),
+      ["reaction", "commentDraft", "commentCommitted"]
+    )
+    expectNoDifference(
+      room.topics[0].payload.attributes.map(\.name),
+      ["emoji", "offsetSeconds"]
+    )
+  }
+
+  @Test
+  func serverNormalizedSchemaRejectsNonemptyMismatchedRooms() throws {
+    var serverDocument = try TypeScriptSchemaParser().parseDocument(
+      Self.validationFixture(named: "recording-action.server.schema.ts")
+    )
+    serverDocument.rooms = [
+      InstantRoomSchema(
+        name: "unexpected",
+        presence: InstantRoomPayloadSchema(attributes: [])
+      )
+    ]
+
+    #expect(throws: InstantServerSchemaComparisonError.mismatchedRooms) {
+      try serverDocument.comparingServerNormalized(
+        to: ParsedInstantSchemaDocument(InstantSchemaExamples.recordingActionDocument)
+      )
+    }
   }
 
   @Test

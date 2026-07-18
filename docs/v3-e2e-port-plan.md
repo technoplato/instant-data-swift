@@ -459,7 +459,10 @@ Purpose: prove generation against the server, not only fixture text.
 - Type-check generated TypeScript against the pinned SDK.
 - Create/reset an ephemeral validation app and install the generated contract.
 - Read the server schema back and compare normalized entities, attributes,
-  links, rooms, and permissions.
+  links, and permissions. Room declarations are local SDK type metadata: prove
+  their generated shape with strict TypeScript compilation because the
+  canonical schema migration omits them and a fresh server pull returns
+  `rooms: {}`. Prove their behavior separately through live room traffic.
 - Fail on generated drift or manual fixture edits.
 
 Commit targets:

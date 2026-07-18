@@ -135,6 +135,14 @@ commands succeed, the worktree is clean, and the warning lists are empty. A
 clean passing example for commit `771ed4c` is
 `/private/tmp/instant-data-swift-recording-bidirectional-clean-771ed4c-20260718/evidence.json`.
 
+Room declarations are client-side type metadata in the canonical Instant SDK:
+the schema migration ignores them and a fresh server pull reports `rooms: {}`.
+The recording-action generated-contract gate therefore compiles the local
+`recording.playback` declaration through `db.joinRoom`, typed presence, and all
+three topic payloads. Server-normalized verification accepts omitted rooms but
+still rejects a nonempty server room shape that disagrees with the Swift
+contract. Live presence/topic traffic remains a separate runtime boundary gate.
+
 The sharing contract has a separate guarded verifier for an already-created
 ephemeral app. Source credentials first, then explicitly allow schema/perms
 replacement:
