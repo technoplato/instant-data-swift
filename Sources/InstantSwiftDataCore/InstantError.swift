@@ -65,4 +65,8 @@ public struct InstantError: Error, Hashable, Codable, Sendable, CustomStringConv
     parts.append("fix: \(recovery)")
     return parts.joined(separator: "; ")
   }
+
+  public var recoveryMessage: String {
+    recovery
+  }
 }
