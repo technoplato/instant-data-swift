@@ -122,7 +122,9 @@ Port the examples from `pointfreeco/sqlite-data/Examples`:
   cloudkit-demo --jsonl` promotes that proof to a terminal artifact covering
   owner create/share, invitee accept, reader rejection without local/outbox
   mutation, writer promotion/update, and relaunch persistence. This is
-  local/mock-remote Instant evidence; live transport remains separately tracked.
+  local/mock-remote Instant evidence. The separate live sharing contract now
+  proves the normal Swift WebSocket reader path against canonical TypeScript
+  setup, including rejected optimistic-write refetch and retained failure state.
 
 ## Public API Goals
 
