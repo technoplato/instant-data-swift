@@ -1037,7 +1037,7 @@ struct BootstrapTests {
       verify: { request in
         InstantRefreshTokenVerification(
           userID:
-            "dependency:\(request.appID):\(request.refreshToken):\(request.userID ?? "nil"):\(request.signedInAt.milliseconds)",
+            "dependency:\(request.appID):\(request.apiURI.absoluteString):\(request.refreshToken):\(request.userID ?? "nil"):\(request.signedInAt.milliseconds)",
           refreshToken: "dependency-refresh:\(request.refreshToken)"
         )
       }
@@ -1060,7 +1060,7 @@ struct BootstrapTests {
       )
       expectNoDifference(
         session.userID,
-        "dependency:\(appID):refresh-token:token-user:1700000000000"
+        "dependency:\(appID):https://api.instantdb.com:refresh-token:token-user:1700000000000"
       )
       expectNoDifference(session.refreshToken, "dependency-refresh:refresh-token")
       let persistedSession = try await client.authSession()
@@ -1200,6 +1200,10 @@ struct BootstrapTests {
       let defaultRequests = await recorder.requests()
       expectNoDifference(defaultRequests.count, 1)
       expectNoDifference(defaultRequests.first?.appID, appID)
+      expectNoDifference(
+        defaultRequests.first?.apiURI.absoluteString,
+        "https://api.instantdb.com"
+      )
       expectNoDifference(defaultRequests.first?.refreshToken, "refresh-token")
       expectNoDifference(defaultRequests.first?.signedOutAt.milliseconds, 1_700_000_000_000)
 
