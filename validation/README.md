@@ -131,8 +131,9 @@ live transaction path and the canonical TypeScript SDK queries the exact nested
 values. The canonical TypeScript SDK then writes and finishes a second graph
 while Swift's normal live observer decodes and projects the exact refreshed
 values. The aggregate evidence fails unless both shapes match, both child
-commands succeed, the worktree is clean, and the warning lists are empty. A
-clean passing example for commit `771ed4c` is
+commands succeed, the worktree is clean, and there are no unexpected warnings.
+The six recognized Instant-managed schema-normalization warnings remain
+explicit in the evidence. A clean passing example for commit `771ed4c` is
 `/private/tmp/instant-data-swift-recording-bidirectional-clean-771ed4c-20260718/evidence.json`.
 
 Room declarations are client-side type metadata in the canonical Instant SDK:
@@ -142,6 +143,9 @@ The recording-action generated-contract gate therefore compiles the local
 three topic payloads. Server-normalized verification accepts omitted rooms but
 still rejects a nonempty server room shape that disagrees with the Swift
 contract. Live presence/topic traffic remains a separate runtime boundary gate.
+The clean generated-room milestone at commit `8b979c0` also reran the existing
+bidirectional recording data contract successfully; its evidence is
+`/private/tmp/instant-data-swift-playback-schema-clean-8b979c0-20260718/evidence.json`.
 
 The sharing contract has a separate guarded verifier for an already-created
 ephemeral app. Source credentials first, then explicitly allow schema/perms

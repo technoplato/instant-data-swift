@@ -60,7 +60,7 @@ As of 2026-07-18:
   orchestrator. Its evidence directory was
   `/tmp/instant-swift-data-packet0-20260718T1106`.
 - The current runtime and V3 recordings-list, auth-login, recording, and
-  playback room fixtures passed 885 Swift Testing tests across 30 suites; the
+  playback room fixtures passed 886 Swift Testing tests across 30 suites; the
   prior syntax gate also passed 28 dedicated macro tests.
   The auth slice includes wrapper-owned magic-code, guest, and provider
   actions; exact call-site callbacks; typed authenticated-user identity;
@@ -123,6 +123,17 @@ As of 2026-07-18:
   topic constraints passed 885 Swift tests across 30 suites. Presence is
   resolved as wrapper-owned state plus explicit dynamic room/publication input
   from `.presence(_:in:publishing:)`.
+- Commit `8b979c0` adds the typed `recording.playback` presence and topic
+  declaration to the Swift-owned recording schema and strictly compiles valid
+  plus deliberately invalid `joinRoom`, presence, and topic calls against the
+  pinned canonical TypeScript SDK. The canonical schema migration does not
+  persist room declarations and a fresh pull returns `rooms: {}`, so server
+  readback verifies entities, links, and permissions while the generated local
+  schema remains the room type authority. The clean existing recording-data
+  contract rerun passed in both directions at
+  `/private/tmp/instant-data-swift-playback-schema-clean-8b979c0-20260718/evidence.json`.
+  That run revalidates the shared data plane; it does not replace the pending
+  live presence/topic boundary.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -154,7 +165,7 @@ When sources disagree, use this order:
 | Current execution state, packet order, gates, and tag targets | `docs/v3-e2e-port-plan.md` |
 | Product contract and full definition of done | `docs/instant-swift-data-goals.md` |
 | Desired V3 API rules and decision log | `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` |
-| Next compiling syntax target | `screens/v3/playback.md` room, presence, and topic lifecycle |
+| Next live boundary target | `screens/v3/playback.md` room, presence, and topic lifecycle |
 | Current generated recording contract | `InstantSchemaExamples.recordingActionDocument`, `recordingActionValidationPermissions`, and `--example recording-action` |
 | TypeScript contract pin/type-check gate | `validation/ts-runner/package.json`, its committed `pnpm-lock.yaml`, and `validation/typecheck-generated-contract.sh` |
 | Reproducible live schema/perms install and readback | `validation/verify-recording-contract-live.sh` and `validation/fixtures/recording-action.server.*.ts` |
@@ -202,11 +213,11 @@ compile/runtime test:
 
 - Whether `@InstantFetchBuilder` is handwritten, generated, or both.
 - How much of a mutation change envelope is macro-generated.
-- Whether room presence uses a wrapper, a modifier, or both.
 
-The recordings-list attachment, auth-provider catalog, local-ID, and recording
-action decisions are resolved. The remaining items can wait for their vertical
-slice; no separate design phase is required before continuing the port.
+The recordings-list attachment, auth-provider catalog, local-ID, recording
+action, and room-presence ownership decisions are resolved. The remaining
+items can wait for their vertical slice; no separate design phase is required
+before continuing the port.
 
 ## Commit and Version Discipline
 
@@ -516,7 +527,8 @@ Implement in independently gated commits:
 - `@InstantSyncStatus`
 - queryable `$files` and upload/delete progress
 - `@Room`, `@Presence`, and `@Topic` — compiling and lifecycle-tested through
-  `a7c1ad3`, `9fe9c25`, and `031e4fe`; canonical cross-SDK boundary pending
+  `a7c1ad3`, `9fe9c25`, `031e4fe`, and generated-schema typechecking in
+  `8b979c0`; canonical cross-SDK boundary pending
 - `@LocalID` — compiling and lifecycle-tested through `709b58d`
 - composite `@Fetch` and `@InstantFetchBuilder`
 - recording-specific message flows — start, finish, attachment, canonical refs,
@@ -591,6 +603,13 @@ presence and topic payloads are observed with exact shapes in TypeScript, then
 reverse the direction and require Swift's normal live room observers to decode
 the canonical payloads. Include disconnect cleanup, reconnect/rejoin, warning,
 and exact expected/actual evidence.
+
+At the start of that slice, normalize the remaining product-payload mismatch:
+the compiled/generated contract uses `offsetSeconds: Double`, while the fuller
+screen sketch still says `offset: Duration` and includes `focusedSegmentID`.
+Choose one explicit Codable wire representation and update both sources before
+claiming an exact cross-SDK playback shape. This is a narrow payload decision,
+not a reason to reopen the settled wrapper/modifier syntax.
 
 File-backed `stream-append` fetching and remote stream metadata bootstrap remain
 important live-stream work, but they do not block the recording-screen fixture
