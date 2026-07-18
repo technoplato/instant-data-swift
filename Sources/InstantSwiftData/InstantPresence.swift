@@ -257,10 +257,17 @@
       _ type: Value.Type,
       from object: [String: JSONValue]
     ) throws -> Value {
-      let foundationObject = foundationValue(from: .object(object))
+      try decode(type, from: .object(object))
+    }
+
+    static func decode<Value: Decodable>(
+      _ type: Value.Type,
+      from value: JSONValue
+    ) throws -> Value {
+      let foundationObject = foundationValue(from: value)
       let data = try JSONSerialization.data(
         withJSONObject: foundationObject,
-        options: [.sortedKeys]
+        options: [.fragmentsAllowed, .sortedKeys]
       )
       return try JSONDecoder().decode(type, from: data)
     }

@@ -6,7 +6,9 @@ import Foundation
 #endif
 
 public protocol InstantRoomTopic: RawRepresentable, Hashable, Sendable
-where RawValue == String {}
+where RawValue == String, RoomSchema.Topic == Self {
+  associatedtype RoomSchema: InstantRoomSchema
+}
 
 public protocol InstantRoomSchema: Sendable {
   associatedtype Presence: Codable & Sendable

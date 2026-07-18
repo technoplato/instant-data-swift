@@ -227,6 +227,99 @@ import Testing
       }
     }
 
+    @Test @MainActor
+    func topicWrapperPublishesObservesDecodesAndCancels() async throws {
+      let recorder = V3PlaybackTopicRecorder()
+      let callbacks = V3PlaybackTopicCallbacks()
+      let client = v3PlaybackTopicClient(recorder)
+      let room = V3PlaybackRooms.activeRecording("recording-topic")
+      let topic = Topic<V3PlaybackReaction, V3PlaybackRoomSchema.Topic>(.reaction)
+      let reaction = V3PlaybackReaction(emoji: "heart", offsetSeconds: 8.5)
+
+      let observationTask = Task { @MainActor in
+        try await topic.task(in: room, using: client)
+      }
+      try await waitForV3PlaybackRoomCondition(
+        operation: "wait for typed topic observation"
+      ) {
+        await recorder.observed().count == 1
+      }
+
+      let publishTask = topic.wrappedValue.publish(
+        reaction,
+        using: client,
+        onPublished: { event in
+          callbacks.published.append(event.topicID)
+        },
+        onFailure: { error in
+          callbacks.failures.append(error)
+        }
+      )
+      await publishTask.value
+
+      let published = await recorder.published()
+      expectNoDifference(
+        published,
+        [
+          V3PublishedTopic(
+            room: try #require(room.handle),
+            topic: "reaction",
+            payload: .object(
+              [
+                "emoji": .string("heart"),
+                "offsetSeconds": .number(8.5),
+              ]
+            )
+          )
+        ]
+      )
+      expectNoDifference(callbacks.published, ["topic-message-1"])
+      expectNoDifference(callbacks.failures, [])
+
+      await recorder.yield(
+        [
+          InstantRoomTopicMessage(
+            id: "topic-message-remote",
+            appID: "playback-test",
+            room: try #require(room.handle),
+            topic: "reaction",
+            userID: "remote-user",
+            payload: .object(
+              [
+                "emoji": .string("sparkles"),
+                "offsetSeconds": .number(4.25),
+              ]
+            ),
+            createdAt: InstantTimestamp(milliseconds: 2_000)
+          )
+        ]
+      )
+      try await waitForV3PlaybackRoomCondition(
+        operation: "wait for typed topic decode"
+      ) {
+        await MainActor.run {
+          topic.wrappedValue.messages
+            == [V3PlaybackReaction(emoji: "sparkles", offsetSeconds: 4.25)]
+        }
+      }
+      expectNoDifference(topic.wrappedValue.loadError, nil)
+      expectNoDifference(topic.wrappedValue.isLoading, false)
+
+      observationTask.cancel()
+      do {
+        try await observationTask.value
+        Issue.record("Expected the typed topic observation to cancel.")
+      } catch is CancellationError {
+      } catch {
+        Issue.record("Expected CancellationError, got \(error).")
+      }
+      try await waitForV3PlaybackRoomCondition(
+        operation: "wait for typed topic observation cleanup"
+      ) {
+        await recorder.terminationCount() == 1
+      }
+    }
+
     #if os(macOS)
       @Test @MainActor
       func joinedRoomStateInvalidatesAHostedSwiftUIView() async throws {
@@ -275,8 +368,11 @@ import Testing
     @Presence
     private var listeners: [V3PlaybackPresence]
 
+    @Topic(V3PlaybackRoomSchema.Topic.reaction)
+    private var reactions: InstantTopic<V3PlaybackReaction>
+
     var body: some View {
-      Text("\(room.id ?? "Joining"): \(listeners.count)")
+      Text("\(room.id ?? "Joining"): \(listeners.count): \(reactions.messages.count)")
         .instantRoom(
           $room,
           V3PlaybackRooms.activeRecording(recordingID)
@@ -291,6 +387,7 @@ import Testing
             offsetSeconds: 0
           )
         )
+        .instantTopic($reactions, in: room)
     }
   }
 
@@ -332,6 +429,8 @@ import Testing
     typealias Presence = V3PlaybackPresence
 
     enum Topic: String, InstantRoomTopic {
+      typealias RoomSchema = V3PlaybackRoomSchema
+
       case reaction
       case commentDraft
     }
@@ -341,6 +440,11 @@ import Testing
     var userID: String
     var displayName: String
     var isPlaying: Bool
+    var offsetSeconds: Double
+  }
+
+  private struct V3PlaybackReaction: Codable, Equatable, Sendable {
+    var emoji: String
     var offsetSeconds: Double
   }
 
@@ -422,6 +526,67 @@ import Testing
     }
   }
 
+  private struct V3PublishedTopic: Equatable, Sendable {
+    var room: InstantRoomHandle
+    var topic: String
+    var payload: JSONValue
+  }
+
+  @MainActor
+  private final class V3PlaybackTopicCallbacks {
+    var published: [String] = []
+    var failures: [InstantError] = []
+  }
+
+  private actor V3PlaybackTopicRecorder {
+    private var observations: [(InstantRoomHandle, String)] = []
+    private var publications: [V3PublishedTopic] = []
+    private var terminations = 0
+    private var continuation:
+      AsyncStream<[InstantRoomTopicMessage]>.Continuation?
+
+    func observe(
+      room: InstantRoomHandle,
+      topic: String
+    ) -> AsyncStream<[InstantRoomTopicMessage]> {
+      observations.append((room, topic))
+      let stream = AsyncStream<[InstantRoomTopicMessage]>.makeStream(
+        bufferingPolicy: .bufferingNewest(1)
+      )
+      continuation = stream.continuation
+      stream.continuation.onTermination = { @Sendable _ in
+        Task {
+          await self.recordTermination()
+        }
+      }
+      return stream.stream
+    }
+
+    func recordPublished(_ publication: V3PublishedTopic) {
+      publications.append(publication)
+    }
+
+    func recordTermination() {
+      terminations += 1
+    }
+
+    func yield(_ messages: [InstantRoomTopicMessage]) {
+      continuation?.yield(messages)
+    }
+
+    func observed() -> [(InstantRoomHandle, String)] {
+      observations
+    }
+
+    func published() -> [V3PublishedTopic] {
+      publications
+    }
+
+    func terminationCount() -> Int {
+      terminations
+    }
+  }
+
   private func v3PlaybackRoomClient(
     _ recorder: V3PlaybackRoomRecorder
   ) -> InstantSwiftDataClient {
@@ -467,6 +632,35 @@ import Testing
       leaveRoomPresence: { _, _ in
         await recorder.recordLeave()
         return "current-user"
+      }
+    )
+  }
+
+  private func v3PlaybackTopicClient(
+    _ recorder: V3PlaybackTopicRecorder
+  ) -> InstantSwiftDataClient {
+    InstantSwiftDataClient(
+      transact: { _ in fatalError("Unused playback topic transaction") },
+      query: { _ in [] },
+      observe: { _ in AsyncStream { $0.finish() } },
+      pendingMutations: { [] },
+      localID: { $0 },
+      publishRoomTopicMessage: { room, topic, _, payload in
+        await recorder.recordPublished(
+          V3PublishedTopic(room: room, topic: topic, payload: payload)
+        )
+        return InstantRoomTopicMessage(
+          id: "topic-message-1",
+          appID: "playback-test",
+          room: room,
+          topic: topic,
+          userID: "current-user",
+          payload: payload,
+          createdAt: InstantTimestamp(milliseconds: 1_500)
+        )
+      },
+      observeRoomTopicMessages: { room, topic in
+        await recorder.observe(room: room, topic: topic)
       }
     )
   }
