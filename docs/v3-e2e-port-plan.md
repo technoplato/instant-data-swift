@@ -18,9 +18,14 @@ As of 2026-07-18:
   streams, sharing, CLI examples, validation fixtures, and benchmarks.
 - The live WebSocket protocol can be exercised in opt-in validation commands,
   including one Swift-to-TypeScript and one TypeScript-to-Swift boundary proof.
-- The normal runtime is still local-cache-only. It does not yet own a long-lived
-  authenticated event pump that reconnects, resubscribes, drains the outbox,
-  applies refreshes, and handles server rejection.
+- The normal runtime now owns an authenticated live session and a continuous
+  server-event receiver. Commit `af88570` routes `refresh-ok` through the normal
+  runtime, persists canonical join rows and the transaction checkpoint, and
+  publishes the result to public query observers.
+- The runtime does not yet install and remove active queries, send its durable
+  outbox, correlate transaction acceptance or rejection, or reconnect and
+  restore live state. Until active queries are installed, the new receiver can
+  only apply refreshes the server sends without a runtime-managed query.
 - The V3 API direction is documented in
   `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` and `screens/v3/`.
 - The prior screen syntax is preserved under `screens/v2/` in commit `d11b1cf`.
@@ -30,6 +35,8 @@ As of 2026-07-18:
   schema and permissions verification, and the local Swift/TypeScript E2E
   orchestrator. Its evidence directory was
   `/tmp/instant-swift-data-packet0-20260718T1106`.
+- The first normal-runtime receive slice passed the focused transport boundary
+  tests and the full 812-test Swift package suite.
 - The compact parity gate records 287 cases: 28 exact, 255 adapted, 2 not
   applicable, and 2 blocked. The only blocked ids are
   `instant.live-transport.swift-to-typescript` and
@@ -258,8 +265,10 @@ Purpose: reach real bidirectional sync as quickly as possible.
 
 Commit targets, split if needed:
 
-1. `Own authenticated live session in runtime`
-2. `Apply live refreshes through public subscriptions`
+1. `Own authenticated live session in runtime` — implemented in `1c627e8`.
+2. `Apply live refreshes through public subscriptions` — receiver and refresh
+   application implemented in `af88570`; active query add/remove lifecycle is
+   the remaining half.
 3. `Drain durable outbox through live session`
 4. `Reconnect and restore live runtime state`
 
@@ -384,7 +393,8 @@ The release harness must prove each applicable row in both directions:
 
 ## Immediate Next Step
 
-Implement Packet 1 as the first compiling V3 API slice. In parallel with the
-public surface, prioritize Packet 3 over broadening more local-only examples:
-the largest remaining product risk is the missing normal-runtime live event
-pump.
+Finish Packet 3's public subscription slice: encode `InstantQueryPlan` into the
+canonical Instant query object, install and reference-count active queries on
+the owned live session, send `remove-query` on cancellation, and prove a
+TypeScript-originated write reaches a normal Swift observer. Then implement
+Packet 1 as the first compiling V3 API slice over that real subscription path.
