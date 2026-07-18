@@ -8614,6 +8614,38 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliValidationLiveObserveSelectsCanonicalRecordingActionContract() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let output = try runCLI(
+      ["validation", "live-observe", "--jsonl"],
+      homeURL: homeURL,
+      environment: [
+        "INSTANT_SWIFT_DATA_LIVE_OBSERVE_CONTRACT": "recording-action",
+        "INSTANT_SWIFT_DATA_RECORDING_ID": "recording-observe-e2e",
+      ]
+    )
+    let lines = output.split(separator: "\n")
+    expectNoDifference(lines.count, 5)
+    let finalEvidence = try JSONDecoder().decode(
+      CLILiveSessionValidationEvidence.self,
+      from: Data(try #require(lines.last).utf8)
+    )
+    expectNoDifference(
+      finalEvidence.caseID,
+      "validation.live.recording-action-observe"
+    )
+    expectNoDifference(finalEvidence.event, "receive-query")
+    expectNoDifference(
+      finalEvidence.details.proofLevel,
+      "local-recording-action-observe-contract"
+    )
+  }
+
+  @Test
   func cliValidationRemindersEmitsEvidence() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)

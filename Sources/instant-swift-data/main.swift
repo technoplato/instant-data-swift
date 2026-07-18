@@ -399,19 +399,49 @@ struct InstantSwiftDataCLI {
       }
       do {
         let runsLive = validationRunsLiveObserve()
-        let entityID = validationLiveObserveEntityID()
+        let recordingActionID = validationRecordingActionLiveObserveID()
+        let entityID = recordingActionID ?? validationLiveObserveEntityID()
+        let caseID = recordingActionID == nil
+          ? "validation.live.observe"
+          : "validation.live.recording-action-observe"
+        let query = recordingActionID.map {
+          InstantRecordingActionLiveContract.query(recordingID: $0)
+        } ?? validationLiveObserveQuery(entityID: entityID)
+        let runtimeProjection:
+          (@Sendable (InstantRuntime) async throws -> LiveSessionRuntimeProjection)?
+        if let recordingActionID {
+          let localQuery = InstantRecordingActionLiveContract.localQuery(
+            recordingID: recordingActionID
+          )
+          runtimeProjection = { runtime in
+            let recordings = try await runtime.query(localQuery)
+            return LiveSessionRuntimeProjection(
+              cachedEntityIDs: recordings.map(\.id),
+              observedSnapshot: try InstantRecordingActionLiveContract.snapshot(
+                from: recordings
+              )
+            )
+          }
+        } else {
+          runtimeProjection = nil
+        }
         let result = try await InstantSwiftDataLiveSessionValidation.run(
           appID: appID,
-          caseID: "validation.live.observe",
+          caseID: caseID,
           websocketURI: try validationWebSocketURI(),
           refreshToken: validationRefreshToken(),
           adminToken: validationAdminToken(),
-          query: validationLiveObserveQuery(entityID: entityID),
+          query: query,
           expectedExternalRefreshEntityID: runsLive ? entityID : nil,
           applyRefreshesToRuntime: runsLive,
           liveTransport: runsLive ? .live : .local,
-          proofLevel: runsLive ? "live-websocket-observe" : "local-protocol",
+          proofLevel: recordingActionID == nil
+            ? (runsLive ? "live-websocket-observe" : "local-protocol")
+            : (runsLive
+              ? "live-websocket-recording-action-observe"
+              : "local-recording-action-observe-contract"),
           onEvidence: evidenceSink,
+          runtimeProjection: runtimeProjection,
           maxServerEvents: runsLive ? 8 : 4
         )
         if !streamsJSONLines {
@@ -10226,6 +10256,17 @@ struct InstantSwiftDataCLI {
   private static func validationLiveObserveEntityID() -> String {
     trimmedValidationEnvironmentValue("INSTANT_SWIFT_DATA_LIVE_OBSERVE_ENTITY_ID")
       ?? "live-observe-note"
+  }
+
+  private static func validationRecordingActionLiveObserveID() -> String? {
+    guard
+      trimmedValidationEnvironmentValue("INSTANT_SWIFT_DATA_LIVE_OBSERVE_CONTRACT")?
+        .lowercased() == "recording-action"
+    else {
+      return nil
+    }
+    return trimmedValidationEnvironmentValue("INSTANT_SWIFT_DATA_RECORDING_ID")
+      ?? "recording-live-observe"
   }
 
   private static func validationLiveObserveQuery(entityID: String) -> InstantLiveJSONValue {
