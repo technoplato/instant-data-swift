@@ -223,21 +223,15 @@ struct InstantReactorParityTests {
   func upstreamReactorDoesNotCleanupMutationsStillWaitingOn() async throws {
     let cacheURL = try temporaryReactorParityCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_050_000)
+    let liveSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs)
+    ])
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
         appID: "reactor-pending-cleanup-parity",
         persistenceURL: cacheURL,
         initialAttributes: TodoExample.attributes,
-        mutationTransport: InstantMutationTransportClient { request in
-          InstantMutationTransportResponse(
-            results: request.mutations.prefix(1).map { mutation in
-              InstantMutationTransportResult(
-                mutationID: mutation.mutationID,
-                outcome: .confirmed
-              )
-            }
-          )
-        }
+        liveTransport: liveSession.transport
       )
     )
     try await runtime.transact(
@@ -253,6 +247,7 @@ struct InstantReactorParityTests {
       createdAt: createdAt
     )
     try await runtime.confirmMutation(id: "tx-reactor-cleanup-seed")
+    _ = try await runtime.connect()
 
     let joe2At = InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
     try await runtime.transact(
@@ -287,23 +282,36 @@ struct InstantReactorParityTests {
       ["tx-reactor-cleanup-joe2", "tx-reactor-cleanup-joe3"],
       reactorPendingCleanupSource
     )
-    let flush = try await runtime.flushPendingMutations()
+    await liveSession.waitForSentMessageCount(3)
+    let sentMessages = await liveSession.sentMessages()
     expectNoDifference(
-      flush.request.mutations.map(\.mutationID),
+      sentMessages.map(\.op),
+      ["init", "transact", "transact"],
+      reactorPendingCleanupSource
+    )
+    expectNoDifference(
+      sentMessages.dropFirst().compactMap(\.clientEventID),
       ["tx-reactor-cleanup-joe2", "tx-reactor-cleanup-joe3"],
       reactorPendingCleanupSource
     )
+
+    let statuses = try await runtime.observeConnectionStatus()
+    var statusIterator = statuses.makeAsyncIterator()
+    let beforeConfirmation = try #require(await statusIterator.next())
+    expectNoDifference(beforeConfirmation.pendingMutationCount, 2, reactorPendingCleanupSource)
+    await liveSession.enqueue(
+      InstantLiveMessage(
+        op: "transact-ok",
+        clientEventID: "tx-reactor-cleanup-joe2",
+        fields: ["tx-id": .string("server-tx-reactor-cleanup-joe2")]
+      )
+    )
+    let afterConfirmation = try #require(await statusIterator.next())
     expectNoDifference(
-      flush.results.map(\.mutationID),
-      ["tx-reactor-cleanup-joe2"],
+      afterConfirmation.pendingMutationCount,
+      1,
       reactorPendingCleanupSource
     )
-    expectNoDifference(
-      flush.confirmed.map(\.id),
-      ["tx-reactor-cleanup-joe2"],
-      reactorPendingCleanupSource
-    )
-    expectNoDifference(flush.pendingMutationCount, 1, reactorPendingCleanupSource)
 
     let pendingAfterCleanup = await runtime.pendingMutations().map(\.id)
     let visibleTexts = try await reactorOptimisticTextsFromQueryOnce(runtime)
@@ -329,6 +337,7 @@ struct InstantReactorParityTests {
       reactorPendingCleanupSource
     )
     expectNoDifference(relaunchedTexts, ["joe3"], reactorPendingCleanupSource)
+    _ = try await runtime.closeConnection()
   }
 
   @Test
@@ -459,7 +468,7 @@ private let reactorOptimisticRefreshSource =
   "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts optimisticTx is not overwritten by refresh-ok [adapted: Swift applies the raw refresh-ok payload after confirming the earlier mutation and proves the later optimistic write remains visible and persisted.]"
 
 private let reactorPendingCleanupSource =
-  "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts we don't cleanup mutations we're still waiting on [adapted: Swift sends both pending mutations through an injected transport, receives confirmation for only the first, and proves the still-unacknowledged optimistic mutation remains pending and visible across relaunch.]"
+  "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts we don't cleanup mutations we're still waiting on [adapted: Swift sends both durable pending mutations through the owned live session, applies transact-ok for only the first, and proves the still-unacknowledged optimistic mutation remains pending and visible across relaunch.]"
 
 private let reactorRewriteSource =
   "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts rewrite mutations [adapted: Swift pending mutations store typed transactions and lower them to stable transport steps over declared server attributes instead of rewriting cached JavaScript tx-steps.]"

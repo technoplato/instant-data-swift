@@ -182,6 +182,7 @@ private actor InstantRuntimeLiveSession {
   private var receiverTask: Task<Void, Never>?
   private var registeredQueries: [String: RegisteredQuery] = [:]
   private var serverAttributes: [InstantLiveJSONValue] = []
+  private var inFlightMutationIDs: Set<String> = []
   private var isOpened = false
   private var generation = 0
 
@@ -202,6 +203,7 @@ private actor InstantRuntimeLiveSession {
     }
     session = nil
     serverAttributes = []
+    inFlightMutationIDs.removeAll()
     isOpened = false
     let opened = try await transport.connect(request)
     do {
@@ -332,15 +334,56 @@ private actor InstantRuntimeLiveSession {
     )
   }
 
+  func sendMutations(_ mutations: [InstantTransportMutation]) async throws {
+    guard let session, isOpened else { return }
+    for mutation in mutations.sorted(by: Self.mutationOrder) where mutation.status == .pending {
+      guard inFlightMutationIDs.insert(mutation.mutationID).inserted else { continue }
+      do {
+        let txSteps = try InstantLiveMutationEncoder.resolveAttributeIDs(
+          in: mutation.txSteps,
+          attrs: serverAttributes
+        )
+        try await send(
+          try .transact(txSteps, clientEventID: mutation.mutationID),
+          through: session
+        )
+      } catch {
+        inFlightMutationIDs.remove(mutation.mutationID)
+        throw error
+      }
+    }
+  }
+
   private func record(
     _ event: InstantLiveServerEvent,
     generation: Int
   ) -> [InstantLiveJSONValue]? {
     guard generation == self.generation else { return nil }
-    if case let .refreshOK(refreshOK) = event, !refreshOK.attrs.isEmpty {
+    switch event {
+    case let .refreshOK(refreshOK) where !refreshOK.attrs.isEmpty:
       serverAttributes = refreshOK.attrs
+    case let .transactOK(transactOK):
+      if let clientEventID = transactOK.clientEventID {
+        inFlightMutationIDs.remove(clientEventID)
+      }
+    case let .error(error):
+      if let clientEventID = error.clientEventID {
+        inFlightMutationIDs.remove(clientEventID)
+      }
+    default:
+      break
     }
     return serverAttributes
+  }
+
+  private static func mutationOrder(
+    _ lhs: InstantTransportMutation,
+    _ rhs: InstantTransportMutation
+  ) -> Bool {
+    if lhs.createdAt == rhs.createdAt {
+      return lhs.mutationID < rhs.mutationID
+    }
+    return lhs.createdAt < rhs.createdAt
   }
 
   private func send(
@@ -378,6 +421,7 @@ private actor InstantRuntimeLiveSession {
     self.session = nil
     self.receiverTask = nil
     serverAttributes = []
+    inFlightMutationIDs.removeAll()
     isOpened = false
     receiverTask?.cancel()
     if let session {
@@ -566,6 +610,7 @@ public final class InstantRuntime: Sendable {
     do {
       let result = try await performTransact(transaction, createdAt: createdAt, source: source)
       await leaveOperationGate()
+      await sendPendingMutationsToLiveSession()
       return result
     } catch {
       await leaveOperationGate()
@@ -1274,7 +1319,11 @@ public final class InstantRuntime: Sendable {
             transport: liveTransport,
             makeID: configuration.makeID
           )
+          try await liveSession.sendMutations(
+            await outboxTransportMutations().filter { $0.status == .pending }
+          )
         } catch {
+          await liveSession.close()
           try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
           _ = try? await publishConnectionStatusWithGateHeld()
           throw error
@@ -1443,7 +1492,26 @@ public final class InstantRuntime: Sendable {
         )
       )
 
+    case let .transactOK(transactOK):
+      guard let clientEventID = transactOK.clientEventID?.nilIfEmpty,
+        transactOK.transactionID?.nilIfEmpty != nil
+      else {
+        throw InstantError(
+          code: .decodeFailed,
+          operation: "confirm Instant live transaction",
+          message: "transact-ok must include client-event-id and tx-id.",
+          recovery: "Inspect the canonical Instant transact-ok payload."
+        )
+      }
+      _ = try await confirmMutationIfPresent(id: clientEventID)
+
     case let .error(error):
+      if let clientEventID = error.clientEventID?.nilIfEmpty,
+        await pendingMutations().contains(where: { $0.id == clientEventID })
+      {
+        _ = try await failMutation(id: clientEventID, message: error.message)
+        return
+      }
       throw InstantError(
         code: .networkFailed,
         operation: "receive Instant live server event",
@@ -1452,8 +1520,19 @@ public final class InstantRuntime: Sendable {
         recovery: "Inspect the Instant runtime WebSocket event and reconnect."
       )
 
-    case .initOK, .addQueryExists, .transactOK, .other:
+    case .initOK, .addQueryExists, .other:
       break
+    }
+  }
+
+  private func sendPendingMutationsToLiveSession() async {
+    guard configuration.liveTransport != nil else { return }
+    do {
+      try await liveSession.sendMutations(
+        await outboxTransportMutations().filter { $0.status == .pending }
+      )
+    } catch {
+      await recordConnectionError(error)
     }
   }
 
@@ -3883,6 +3962,7 @@ public final class InstantRuntime: Sendable {
           }
           _ = try? await publishConnectionStatusWithGateHeld()
           await operationGate.leave()
+          await sendPendingMutationsToLiveSession()
           return update.mutation
         }
       }

@@ -1,6 +1,6 @@
 import CustomDump
 import Foundation
-import InstantSwiftDataCore
+@testable import InstantSwiftDataCore
 import Testing
 
 @Suite
@@ -459,6 +459,250 @@ struct InstantLiveTransportTests {
     #expect(status.lastErrorMessage?.contains("opaque four-element tuples") == true)
     #expect(status.lastErrorMessage?.contains("path: after") == true)
     #expect(status.lastErrorMessage?.contains("canonical Instant SDK") == true)
+  }
+
+  @Test
+  func runtimeLiveSessionSendsAndConfirmsDurableOutboxMutation() async throws {
+    let session = InstantRuntimeScriptedLiveSession(messages: [
+      .initOK(clientEventID: "event-init", attrs: .todoServerAttrs)
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "runtime-live-outbox-confirm",
+        persistenceURL: temporaryLiveCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: session.transport
+      )
+    )
+    let statuses = try await runtime.observeConnectionStatus()
+    var statusIterator = statuses.makeAsyncIterator()
+    let initialStatus = try #require(await statusIterator.next())
+    expectNoDifference(initialStatus.state, .closed)
+    let connectedStatus = try await runtime.connect()
+    expectNoDifference(connectedStatus.state, .opened)
+    let observedConnectedStatus = try #require(await statusIterator.next())
+    expectNoDifference(observedConnectedStatus.state, .opened)
+
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_789)
+    let transaction = InstantStoreTransaction(
+      id: "tx-runtime-live-confirm",
+      operations: TodoExample.createOperations(
+        id: "runtime-live-confirm-todo",
+        text: "Send through owned live session",
+        createdAt: createdAt,
+        transactionID: "tx-runtime-live-confirm"
+      )
+    )
+    _ = try await runtime.transact(transaction, createdAt: createdAt)
+    let pendingStatus = try #require(await statusIterator.next())
+    expectNoDifference(pendingStatus.pendingMutationCount, 1)
+    await session.waitForSentMessageCount(2)
+
+    let pending = try #require(await runtime.pendingMutations().first)
+    let sentMessages = await session.sentMessages()
+    let expectedSteps = try InstantLiveMutationEncoder.resolveAttributeIDs(
+      in: InstantTransportMutation(pending).txSteps,
+      attrs: .todoServerAttrs
+    )
+    let expectedMessage = try InstantLiveMessage.transact(
+      expectedSteps,
+      clientEventID: pending.id
+    )
+    expectNoDifference(sentMessages.map(\.op), ["init", "transact"])
+    expectNoDifference(sentMessages.last, expectedMessage)
+    let sentSteps = try #require(sentMessages.last?.fields["tx-steps"]?.arrayValue)
+    expectNoDifference(
+      sentSteps.compactMap { $0.arrayValue?[2].stringValue },
+      [
+        "server-todos-id",
+        "server-todos-text",
+        "server-todos-is-completed",
+        "server-todos-created-at",
+      ]
+    )
+
+    await session.enqueue(
+      .transactOK(
+        clientEventID: pending.id,
+        transactionID: "server-tx-runtime-confirm"
+      )
+    )
+    let confirmedStatus = try #require(await statusIterator.next())
+    expectNoDifference(confirmedStatus.pendingMutationCount, 0)
+    let remainingPending = await runtime.pendingMutations()
+    let remainingOutbox = await runtime.outboxMutations()
+    expectNoDifference(remainingPending, [])
+    expectNoDifference(remainingOutbox, [])
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func runtimeLiveMutationKeepsPendingAndReportsMissingServerAttribute() async throws {
+    let incompleteAttrs = Array(Array<InstantLiveJSONValue>.todoServerAttrs.dropLast())
+    let session = InstantRuntimeScriptedLiveSession(messages: [
+      .initOK(clientEventID: "event-init", attrs: incompleteAttrs)
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "runtime-live-outbox-schema-error",
+        persistenceURL: temporaryLiveCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: session.transport
+      )
+    )
+    _ = try await runtime.connect()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_790)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-runtime-live-schema-error",
+        operations: TodoExample.createOperations(
+          id: "runtime-live-schema-error-todo",
+          text: "Keep pending until schema matches",
+          createdAt: createdAt,
+          transactionID: "tx-runtime-live-schema-error"
+        )
+      ),
+      createdAt: createdAt
+    )
+
+    let status = try await runtime.connectionStatus()
+    expectNoDifference(status.state, .errored)
+    #expect(status.lastErrorMessage?.contains("todos/createdAt") == true)
+    #expect(status.lastErrorMessage?.contains("Deploy a schema") == true)
+    let sentOps = await session.sentMessages().map(\.op)
+    expectNoDifference(sentOps, ["init"])
+    let pending = await runtime.pendingMutations()
+    expectNoDifference(pending.map(\.id), ["tx-runtime-live-schema-error"])
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func runtimeLiveConnectResendsPersistedPendingMutation() async throws {
+    let cacheURL = try temporaryLiveCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_800)
+    let writer = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "runtime-live-outbox-relaunch",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await writer.transact(
+      InstantStoreTransaction(
+        id: "tx-runtime-live-relaunch",
+        operations: TodoExample.createOperations(
+          id: "runtime-live-relaunch-todo",
+          text: "Resume durable pending mutation",
+          createdAt: createdAt,
+          transactionID: "tx-runtime-live-relaunch"
+        )
+      ),
+      createdAt: createdAt
+    )
+
+    let session = InstantRuntimeScriptedLiveSession(messages: [
+      .initOK(clientEventID: "event-init")
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "runtime-live-outbox-relaunch",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        liveTransport: session.transport
+      )
+    )
+    let connected = try await runtime.connect()
+    expectNoDifference(connected.pendingMutationCount, 1)
+    let pending = try #require(await runtime.pendingMutations().first)
+    let sentMessages = await session.sentMessages()
+    expectNoDifference(sentMessages.map(\.op), ["init", "transact"])
+    expectNoDifference(sentMessages.last?.clientEventID, pending.id)
+
+    let statuses = try await runtime.observeConnectionStatus()
+    var iterator = statuses.makeAsyncIterator()
+    let pendingStatus = try #require(await iterator.next())
+    expectNoDifference(pendingStatus.pendingMutationCount, 1)
+    await session.enqueue(
+      .transactOK(
+        clientEventID: pending.id,
+        transactionID: "server-tx-runtime-relaunch"
+      )
+    )
+    let confirmedStatus = try #require(await iterator.next())
+    expectNoDifference(confirmedStatus.pendingMutationCount, 0)
+    let remaining = await runtime.outboxMutations()
+    expectNoDifference(remaining, [])
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func runtimeLiveMutationErrorPersistsFailureAndRetryResends() async throws {
+    let session = InstantRuntimeScriptedLiveSession(messages: [
+      .initOK(clientEventID: "event-init")
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "runtime-live-outbox-retry",
+        persistenceURL: temporaryLiveCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: session.transport
+      )
+    )
+    _ = try await runtime.connect()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_890)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-runtime-live-retry",
+        operations: TodoExample.createOperations(
+          id: "runtime-live-retry-todo",
+          text: "Retry after permission error",
+          createdAt: createdAt,
+          transactionID: "tx-runtime-live-retry"
+        )
+      ),
+      createdAt: createdAt
+    )
+    await session.waitForSentMessageCount(2)
+
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "error",
+        clientEventID: "tx-runtime-live-retry",
+        fields: [
+          "message": .string("permission denied"),
+          "status": .number(403),
+          "type": .string("permission-denied"),
+        ]
+      )
+    )
+    let failed = try #require(
+      await runtime.observeConnectionStatus().first { $0.state == .errored }
+    )
+    expectNoDifference(failed.lastErrorMessage, "permission denied")
+    let failedMutation = try #require(await runtime.outboxMutations().first)
+    expectNoDifference(failedMutation.status, .failed)
+    expectNoDifference(failedMutation.failureMessage, "permission denied")
+
+    _ = try await runtime.retryMutation(id: failedMutation.id)
+    await session.waitForSentMessageCount(3)
+    let sentOps = await session.sentMessages().map(\.op)
+    expectNoDifference(
+      sentOps,
+      ["init", "transact", "transact"]
+    )
+    await session.enqueue(
+      .transactOK(
+        clientEventID: failedMutation.id,
+        transactionID: "server-tx-runtime-retry"
+      )
+    )
+    let confirmed = try #require(
+      await runtime.observeConnectionStatus().first { $0.pendingMutationCount == 0 }
+    )
+    expectNoDifference(confirmed.state, .opened)
+    let remainingOutbox = await runtime.outboxMutations()
+    expectNoDifference(remainingOutbox, [])
+    _ = try await runtime.closeConnection()
   }
 
   @Test
@@ -1243,6 +1487,15 @@ private actor InstantRuntimeScriptedLiveSession {
     guard sent.count < count else { return }
     await withCheckedContinuation { continuation in
       sentWaiters.append(SentWaiter(count: count, continuation: continuation))
+    }
+  }
+
+  func enqueue(_ message: InstantLiveMessage) {
+    if let receiveContinuation {
+      self.receiveContinuation = nil
+      receiveContinuation.resume(returning: message)
+    } else if !isClosed {
+      messages.append(message)
     }
   }
 

@@ -2,8 +2,14 @@ import Foundation
 @testable import InstantSwiftDataCore
 
 actor LiveReactorParitySession {
+  private struct SentWaiter {
+    var count: Int
+    var continuation: CheckedContinuation<Void, Never>
+  }
+
   private var messages: [InstantLiveMessage]
   private var sent: [InstantLiveMessage] = []
+  private var sentWaiters: [SentWaiter] = []
   private var receiveContinuation: CheckedContinuation<InstantLiveMessage, Error>?
   private var isClosed = false
 
@@ -25,8 +31,33 @@ actor LiveReactorParitySession {
     sent
   }
 
+  func waitForSentMessageCount(_ count: Int) async {
+    guard sent.count < count else { return }
+    await withCheckedContinuation { continuation in
+      sentWaiters.append(SentWaiter(count: count, continuation: continuation))
+    }
+  }
+
+  func enqueue(_ message: InstantLiveMessage) {
+    if let receiveContinuation {
+      self.receiveContinuation = nil
+      receiveContinuation.resume(returning: message)
+    } else if !isClosed {
+      messages.append(message)
+    }
+  }
+
   private func send(_ message: InstantLiveMessage) {
     sent.append(message)
+    var pending: [SentWaiter] = []
+    for waiter in sentWaiters {
+      if sent.count >= waiter.count {
+        waiter.continuation.resume()
+      } else {
+        pending.append(waiter)
+      }
+    }
+    sentWaiters = pending
   }
 
   private func receive() async throws -> InstantLiveMessage {

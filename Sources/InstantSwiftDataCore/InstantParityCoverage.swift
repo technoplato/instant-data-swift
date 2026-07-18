@@ -1081,7 +1081,7 @@ public enum InstantSwiftDataParityCoverage {
       swiftTestName: "upstreamReactorDoesNotCleanupMutationsStillWaitingOn",
       surface: "optimistic-mutations",
       status: .adapted,
-      notes: "Swift adapts Reactor's timeout cleanup by sending both pending mutations through an injected transport, receiving confirmation for only the first, and leaving the still-unacknowledged optimistic mutation pending and visible across relaunch."
+      notes: "Swift adapts Reactor's timeout cleanup by sending both durable pending mutations through the owned live session, applying transact-ok for only the first, and leaving the still-unacknowledged optimistic mutation pending and visible across relaunch."
     ),
     instant(
       id: "instant.reactor.get-local-id-stability",
