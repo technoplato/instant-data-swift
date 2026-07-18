@@ -8,14 +8,6 @@ RESULTS_DIR="${INSTANT_SWIFT_DATA_VOICE_TRAIL_RESULTS_DIR:-/tmp/instant-data-swi
 PUSH_DIR="${RESULTS_DIR}/push"
 PULL_DIR="${RESULTS_DIR}/pull"
 
-: "${INSTANT_APP_ID:?Source ephemeral Instant credentials before running this verifier.}"
-: "${INSTANT_ADMIN_TOKEN:?Source ephemeral Instant credentials before running this verifier.}"
-
-if [[ "${INSTANT_SWIFT_DATA_ALLOW_EPHEMERAL_APP_MUTATION:-0}" != "1" ]]; then
-  echo "Refusing to replace schema/perms without INSTANT_SWIFT_DATA_ALLOW_EPHEMERAL_APP_MUTATION=1." >&2
-  exit 64
-fi
-
 WORKTREE_DIRTY=false
 if [[ -n "$(git -C "${ROOT}" status --porcelain)" ]]; then
   WORKTREE_DIRTY=true
@@ -43,10 +35,8 @@ fi
 
 export CI=1
 export NO_COLOR=1
-export INSTANT_CLI_AUTH_TOKEN="${INSTANT_ADMIN_TOKEN}"
-
 mkdir -p "${PUSH_DIR}" "${PULL_DIR}"
-trap 'unlink "${PUSH_DIR}/node_modules" 2>/dev/null || true; unlink "${PULL_DIR}/node_modules" 2>/dev/null || true' EXIT
+trap 'unlink "${PUSH_DIR}/.instant.env" 2>/dev/null || true; unlink "${PUSH_DIR}/node_modules" 2>/dev/null || true; unlink "${PULL_DIR}/node_modules" 2>/dev/null || true' EXIT
 cp "${RUNNER}/package.json" "${PUSH_DIR}/package.json"
 cp "${RUNNER}/package.json" "${PULL_DIR}/package.json"
 ln -s "${RUNNER}/node_modules" "${PUSH_DIR}/node_modules"
@@ -63,14 +53,34 @@ swift run --package-path "${ROOT}" instant-swift-data perms generate \
 
 (
   cd "${PUSH_DIR}"
-  "${CLI}" push schema --app "${INSTANT_APP_ID}" --yes
-  "${CLI}" push perms --app "${INSTANT_APP_ID}" --yes
+  "${CLI}" init \
+    --temp \
+    --title "instant-data-swift-voice-trail-recordings" \
+    --yes \
+    --env .instant.env
+) | tee "${RESULTS_DIR}/instant-cli-init.log"
+
+set -a
+# shellcheck disable=SC1090
+source "${PUSH_DIR}/.instant.env"
+set +a
+
+APP_ID="${INSTANT_APP_ID:?Instant CLI did not write INSTANT_APP_ID}"
+ADMIN_TOKEN="${INSTANT_APP_ADMIN_TOKEN:?Instant CLI did not write INSTANT_APP_ADMIN_TOKEN}"
+export INSTANT_APP_ID="${APP_ID}"
+export INSTANT_ADMIN_TOKEN="${ADMIN_TOKEN}"
+export INSTANT_CLI_AUTH_TOKEN="${ADMIN_TOKEN}"
+
+(
+  cd "${PUSH_DIR}"
+  "${CLI}" push schema --yes
+  "${CLI}" push perms --yes
 ) | tee "${RESULTS_DIR}/instant-cli-push.log"
 
 (
   cd "${PULL_DIR}"
-  "${CLI}" pull schema --app "${INSTANT_APP_ID}" --yes
-  "${CLI}" pull perms --app "${INSTANT_APP_ID}" --yes
+  "${CLI}" pull schema --yes
+  "${CLI}" pull perms --yes
 ) | tee "${RESULTS_DIR}/instant-cli-pull.log"
 
 swift run --package-path "${ROOT}" instant-swift-data schema verify \
@@ -97,7 +107,7 @@ pnpm --dir "${RUNNER}" run live:voice-trail-recordings-list \
 ROOT="${ROOT}" \
 RUNNER="${RUNNER}" \
 RESULTS_DIR="${RESULTS_DIR}" \
-APP_ID="${INSTANT_APP_ID}" \
+APP_ID="${APP_ID}" \
 UPSTREAM_REVISION="${UPSTREAM_REVISION}" \
 node --input-type=module <<'NODE' | tee "${RESULTS_DIR}/evidence.json"
 import assert from "node:assert/strict";
