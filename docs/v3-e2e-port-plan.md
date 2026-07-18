@@ -38,8 +38,18 @@ As of 2026-07-18:
 - Commits `4138549` and `44c11b1` encode the canonical room wire messages,
   idempotently join active rooms, queue presence and topic data until
   `join-room-ok`, rejoin with current presence after reconnect, flush newer
-  queued data once, and send `leave-room` on cleanup. Applying incoming
-  `refresh-presence`, `patch-presence`, and `server-broadcast` events remains.
+  queued data once, and send `leave-room` on cleanup. Commits `a98fe60` and
+  `1ab3b99` apply and record incoming `refresh-presence`, `patch-presence`, and
+  `server-broadcast` events through public ephemeral observers.
+- Commit `ef00fc8` encodes canonical stream subscribe/unsubscribe and reader
+  resume state. Commits `121cf3d` and `dd59d2f` register public stream-content
+  observers with the owned live session, restore them after reconnect, and
+  unsubscribe with the active subscription event id.
+- Commits `f362b38` and `02ad087` reconnect on retryable `stream-append`
+  failures without publishing failed content. Commits `029a3db` and `677398e`
+  materialize inline appends with UTF-8 byte overlap, persist and publish the
+  resulting snapshot, and advance reconnect state only after persistence.
+  Canonical file-backed append fetching remains a separate stream packet.
 - The V3 API direction is documented in
   `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` and `screens/v3/`.
 - The prior screen syntax is preserved under `screens/v2/` in commit `d11b1cf`.
@@ -49,16 +59,22 @@ As of 2026-07-18:
   schema and permissions verification, and the local Swift/TypeScript E2E
   orchestrator. Its evidence directory was
   `/tmp/instant-swift-data-packet0-20260718T1106`.
-- The live receive, query-subscription, durable-outbox, reconnect, and outgoing
-  room-restoration slices passed their focused canonical parity tests and the
-  full 824-test Swift package suite, including the nested local Swift/TypeScript
-  E2E orchestrator. The core reconnect packet's explicit E2E evidence is
+- The current room/stream runtime passed 836 Swift Testing tests across 20
+  suites plus 28 macro tests. The final inline-stream focused rerun was
+  warning-free. The core reconnect packet's earlier explicit E2E evidence is
   `/tmp/instant-swift-data-reconnect-20260718T161703Z`.
-- The compact parity gate records 291 cases: 28 exact, 259 adapted, 2 not
-  applicable, and 2 blocked. The only blocked ids are
+- Credentialed remote preflight and both real Swift/TypeScript boundary
+  directions passed at commit `f362b38`; the evidence directory is
+  `/tmp/instant-swift-data-stream-reconnect-e2e-20260718T171900Z`. That run
+  recorded 293 cases, 28 exact, 263 adapted, 2 not applicable, and 0 blocked.
+  It predates the later inline-materialization and parity-only commits, so it is
+  milestone evidence, not clean-HEAD tag evidence.
+- The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
+  applicable, and 2 blocked when no credentialed artifacts are supplied. The
+  only blocked ids are
   `instant.live-transport.swift-to-typescript` and
-  `instant.live-transport.typescript-to-swift` until credentialed live evidence
-  artifacts are supplied.
+  `instant.live-transport.typescript-to-swift`; valid credentialed artifacts
+  promote those two records instead of changing the static source ledger.
 - No version tag should be created yet. The `v0.1.0-v3-syntax` compile and
   lifecycle gate remains pending.
 
@@ -76,6 +92,22 @@ When sources disagree, use this order:
 6. `validation/README.md`: evidence format and harness operation.
 7. Canonical upstream source pinned under `upstream/`: behavior and exact wire
    contract.
+
+## Important Working References
+
+| Need | Reference |
+| --- | --- |
+| Current execution state, packet order, gates, and tag targets | `docs/v3-e2e-port-plan.md` |
+| Product contract and full definition of done | `docs/instant-swift-data-goals.md` |
+| Desired V3 API rules and decision log | `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` |
+| First compiling syntax target | `screens/v3/recordings-list.md` |
+| All five desired VoiceTrail screen probes | `screens/v3/README.md` and sibling Markdown files |
+| Existing public wrapper implementation | `Sources/InstantSwiftData/InstantSwiftData.swift` |
+| Owned live runtime and persistence integration | `Sources/InstantSwiftDataCore/InstantRuntime.swift` |
+| Canonical stream lifecycle | `upstream/instant/client/packages/core/src/Stream.ts` and `upstream/instant/client/packages/python/src/instantdb/_async/streams/reader.py` |
+| Canonical stream state tests | `upstream/instant/client/packages/python/tests/test_streams_state.py` |
+| Source-to-Swift parity ledger | `Sources/InstantSwiftDataCore/InstantParityCoverage.swift` |
+| Reproducible Swift/TypeScript harness | `validation/run-e2e.sh` and `validation/README.md` |
 
 ## Decisions Already Made
 
@@ -112,6 +144,14 @@ compile/runtime test:
 
 The first item is the only immediate recordings-list syntax decision. The
 others can wait for their vertical slice.
+
+The sketches are the desired syntax target, not an unresolved brainstorming
+phase. Packet 1 should begin with the `.instantFetch($recordings, query)` shape
+already shown in `screens/v3/recordings-list.md`. The compiler/lifecycle test
+will decide whether that exact modifier remains or is replaced by a
+projected-value lifecycle API. Code, test, V3 decision log, and sketch must be
+updated together in that packet; no separate design phase is required before
+continuing the port.
 
 ## Commit and Version Discipline
 
@@ -307,7 +347,9 @@ Commit targets, split if needed:
 4. `Reconnect and restore live runtime state` — query and durable-outbox
    restoration implemented in `abe63c5`; outgoing room/presence/topic
    restoration implemented in `4138549` and `44c11b1`; incoming ephemeral
-   events plus storage and stream restoration remain.
+   room events implemented in `a98fe60`; stream reader restore, retry, and
+   inline materialization implemented through `029a3db`. File-backed stream
+   fetching and remaining storage transport are still open.
 
 Each commit must have its own boundary case and pass the existing local suite.
 
@@ -430,8 +472,13 @@ The release harness must prove each applicable row in both directions:
 
 ## Immediate Next Step
 
-Decode and apply canonical `refresh-presence`, `patch-presence`, and
-`server-broadcast` events through public room observers without persisting or
-replaying duplicate ephemeral callbacks. Then port storage and stream reconnect
-lifecycle before implementing Packet 1's compiling V3 fetch fixture over the
-now-reconnecting live subscription path.
+Compile Packet 1's recordings-list fixture against public package APIs. Start
+with the `.instantFetch($recordings, query)` spelling already present in the V3
+sketch, prove cached initial state plus search/scope replacement and
+cancellation, and let that compiling lifecycle test settle the one remaining
+recordings-list spelling decision. Update the implementation, test, V3 decision
+log, and sketch in the same small commit.
+
+File-backed `stream-append` fetching and remote stream metadata bootstrap remain
+important live-stream work, but they do not block the recordings-list fetch
+fixture and should stay in their own packet.
