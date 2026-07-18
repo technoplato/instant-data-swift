@@ -174,7 +174,9 @@ private final class InstantFileUploadProgressCancellation: @unchecked Sendable {
 
 private actor InstantRuntimeLiveSession {
   private var session: InstantLiveWebSocketSession?
+  private var receiverTask: Task<Void, Never>?
   private var isOpened = false
+  private var generation = 0
 
   var isOpen: Bool {
     isOpened
@@ -185,6 +187,9 @@ private actor InstantRuntimeLiveSession {
     transport: InstantLiveTransportClient,
     clientEventID: String
   ) async throws {
+    generation += 1
+    receiverTask?.cancel()
+    receiverTask = nil
     if let session {
       await session.close()
     }
@@ -242,12 +247,64 @@ private actor InstantRuntimeLiveSession {
     }
   }
 
+  func startReceiving(
+    onEvent: @escaping @Sendable (InstantLiveServerEvent) async throws -> Void,
+    onFailure: @escaping @Sendable (Error) async -> Void
+  ) {
+    guard receiverTask == nil, let session, isOpened else { return }
+    let generation = generation
+    receiverTask = Task { [weak self] in
+      do {
+        while !Task.isCancelled {
+          let message = try await session.receive()
+          try Task.checkCancellation()
+          try await onEvent(InstantLiveServerEvent(message: message))
+        }
+      } catch is CancellationError {
+        await self?.receiverEnded(
+          generation: generation,
+          session: session,
+          failure: nil,
+          onFailure: onFailure
+        )
+      } catch {
+        await self?.receiverEnded(
+          generation: generation,
+          session: session,
+          failure: error,
+          onFailure: onFailure
+        )
+      }
+    }
+  }
+
+  private func receiverEnded(
+    generation: Int,
+    session: InstantLiveWebSocketSession,
+    failure: Error?,
+    onFailure: @escaping @Sendable (Error) async -> Void
+  ) async {
+    guard generation == self.generation else { return }
+    self.session = nil
+    receiverTask = nil
+    isOpened = false
+    await session.close()
+    if let failure {
+      await onFailure(failure)
+    }
+  }
+
   func close() async {
+    generation += 1
+    let session = session
+    let receiverTask = receiverTask
+    self.session = nil
+    self.receiverTask = nil
+    isOpened = false
+    receiverTask?.cancel()
     if let session {
       await session.close()
     }
-    session = nil
-    isOpened = false
   }
 }
 
@@ -1117,6 +1174,18 @@ public final class InstantRuntime: Sendable {
       try await saveOpenedConnectionMetadataWithGateHeld()
       let status = try await publishConnectionStatusWithGateHeld()
       await operationGate.leave()
+      if configuration.liveTransport != nil {
+        await liveSession.startReceiving(
+          onEvent: { [weak self] event in
+            guard let self else { return }
+            try await self.handleLiveServerEvent(event)
+          },
+          onFailure: { [weak self] error in
+            guard let self else { return }
+            await self.recordConnectionError(error)
+          }
+        )
+      }
       return status
     } catch {
       await operationGate.leave()
@@ -1221,6 +1290,25 @@ public final class InstantRuntime: Sendable {
       await operationGate.leave()
     } catch {
       await operationGate.leave()
+    }
+  }
+
+  private func handleLiveServerEvent(_ event: InstantLiveServerEvent) async throws {
+    switch event {
+    case let .refreshOK(refreshOK):
+      try await applyLiveRefresh(refreshOK)
+
+    case let .error(error):
+      throw InstantError(
+        code: .networkFailed,
+        operation: "receive Instant live server event",
+        serverEventID: error.clientEventID,
+        message: error.message,
+        recovery: "Inspect the Instant runtime WebSocket event and reconnect."
+      )
+
+    case .initOK, .addQueryOK, .addQueryExists, .transactOK, .other:
+      break
     }
   }
 

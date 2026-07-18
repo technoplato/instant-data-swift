@@ -211,6 +211,64 @@ struct InstantLiveTransportTests {
   }
 
   @Test
+  func runtimeLiveSessionAppliesRefreshesThroughPublicObservers() async throws {
+    let serverCreatedAt = InstantTimestamp(milliseconds: 1_700_000_000_123)
+    let session = InstantRuntimeScriptedLiveSession(messages: [
+      .initOK(clientEventID: "event-init"),
+      .refreshOK(
+        clientEventID: "event-refresh",
+        processedTransactionID: "server-tx-runtime",
+        attrs: .todoServerAttrs,
+        computations: [
+          .todoJoinRowsComputation(
+            entityID: "runtime-live-todo",
+            text: "Arrived through the runtime event pump",
+            isCompleted: true,
+            createdAt: serverCreatedAt,
+            processedTransactionID: "server-tx-runtime"
+          )
+        ]
+      ),
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "runtime-live-refresh",
+        websocketURI: try #require(URL(string: "wss://ws.example.test/runtime/session")),
+        persistenceURL: temporaryLiveCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: session.transport
+      )
+    )
+    let stream = await runtime.observe(TodoExample.query)
+    var iterator = stream.makeAsyncIterator()
+    let initial = try #require(await iterator.next())
+    expectNoDifference(initial.values, [])
+
+    let connected = try await runtime.connect()
+    expectNoDifference(connected.state, .opened)
+
+    let update = try #require(await iterator.next())
+    expectNoDifference(
+      try TodoExample.decode(update.values),
+      [
+        TodoRecord(
+          id: "runtime-live-todo",
+          text: "Arrived through the runtime event pump",
+          isCompleted: true,
+          createdAt: serverCreatedAt
+        )
+      ]
+    )
+    let syncState = try await runtime.syncState()
+    expectNoDifference(syncState.processedTransactionID, "server-tx-runtime")
+    let sentMessages = await session.sentMessages()
+    expectNoDifference(sentMessages.map(\.op), ["init"])
+
+    let closed = try await runtime.closeConnection()
+    expectNoDifference(closed.state, .closed)
+  }
+
+  @Test
   func liveRefreshAppliesCanonicalJoinRowsThroughRuntimeObservers() async throws {
     let cacheURL = try temporaryLiveCacheURL()
     let runtime = try await InstantRuntime.bootstrap(
@@ -952,6 +1010,59 @@ private actor InstantScriptedLiveSession {
   }
 }
 
+private actor InstantRuntimeScriptedLiveSession {
+  private var messages: [InstantLiveMessage]
+  private var sent: [InstantLiveMessage] = []
+  private var receiveContinuation: CheckedContinuation<InstantLiveMessage, Error>?
+  private var isClosed = false
+
+  init(messages: [InstantLiveMessage]) {
+    self.messages = messages
+  }
+
+  nonisolated var transport: InstantLiveTransportClient {
+    InstantLiveTransportClient { _ in
+      InstantLiveWebSocketSession(
+        send: { message in
+          await self.send(message)
+        },
+        receive: {
+          try await self.receive()
+        },
+        close: {
+          await self.close()
+        }
+      )
+    }
+  }
+
+  func sentMessages() -> [InstantLiveMessage] {
+    sent
+  }
+
+  private func send(_ message: InstantLiveMessage) {
+    sent.append(message)
+  }
+
+  private func receive() async throws -> InstantLiveMessage {
+    if !messages.isEmpty {
+      return messages.removeFirst()
+    }
+    if isClosed {
+      throw CancellationError()
+    }
+    return try await withCheckedThrowingContinuation { continuation in
+      receiveContinuation = continuation
+    }
+  }
+
+  private func close() {
+    isClosed = true
+    receiveContinuation?.resume(throwing: CancellationError())
+    receiveContinuation = nil
+  }
+}
+
 private extension InstantLiveMessage {
   static func initOK(
     clientEventID: String,
@@ -996,13 +1107,14 @@ private extension InstantLiveMessage {
   static func refreshOK(
     clientEventID: String,
     processedTransactionID: String,
+    attrs: [InstantLiveJSONValue] = [],
     computations: [InstantLiveJSONValue] = []
   ) -> Self {
     Self(
       op: "refresh-ok",
       clientEventID: clientEventID,
       fields: [
-        "attrs": .array([]),
+        "attrs": .array(attrs),
         "computations": .array(computations),
         "processed-tx-id": .string(processedTransactionID),
       ]
