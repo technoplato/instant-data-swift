@@ -7,37 +7,47 @@ public struct InstantLiveShareContract: Hashable, Codable, Sendable {
     self.queryPlan = queryPlan
   }
 
-  public static let v3SharedLists = Self(
-    queryPlan: InstantQueryPlan(
-      id: "instant.live-shares.v3-shared-lists",
-      namespace: "v3_shared_lists",
-      includes: [
-        InstantQueryInclude("owner"),
-        InstantQueryInclude("readers"),
-        InstantQueryInclude("writers"),
-        InstantQueryInclude(
-          "share",
-          direction: .reverse,
-          query: InstantQueryIncludePlan(
-            id: "instant.live-shares.v3-shares",
-            namespace: "v3_shares",
-            includes: [
-              InstantQueryInclude("owner"),
-              InstantQueryInclude(
-                "memberships",
-                direction: .reverse,
-                query: InstantQueryIncludePlan(
-                  id: "instant.live-shares.v3-share-memberships",
-                  namespace: "v3_share_memberships",
-                  includes: [InstantQueryInclude("user")]
-                )
-              ),
-            ]
-          )
-        ),
-      ]
-    )
+  public static let v3SharedLists = v3(
+    rootNamespace: "v3_shared_lists",
+    rootIncludes: ["owner", "readers", "writers"]
   )
+
+  public static let v3CaptureRecordings = v3(
+    rootNamespace: "v3_capture_recordings",
+    rootIncludes: ["owner"]
+  )
+
+  private static func v3(
+    rootNamespace: String,
+    rootIncludes: [String]
+  ) -> Self {
+    let memberships = InstantQueryInclude(
+      "memberships",
+      direction: .reverse,
+      query: InstantQueryIncludePlan(
+        id: "instant.live-shares.v3-share-memberships",
+        namespace: "v3_share_memberships",
+        includes: [InstantQueryInclude("user")]
+      )
+    )
+    let share = InstantQueryInclude(
+      "share",
+      direction: .reverse,
+      query: InstantQueryIncludePlan(
+        id: "instant.live-shares.v3-shares",
+        namespace: "v3_shares",
+        includes: [InstantQueryInclude("owner"), memberships]
+      )
+    )
+    let includes = rootIncludes.map { InstantQueryInclude($0) } + [share]
+    return Self(
+      queryPlan: InstantQueryPlan(
+        id: "instant.live-shares.\(rootNamespace)",
+        namespace: rootNamespace,
+        includes: includes
+      )
+    )
+  }
 
   public func snapshots(
     appID: String,

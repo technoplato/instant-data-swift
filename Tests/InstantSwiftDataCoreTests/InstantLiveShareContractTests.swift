@@ -139,6 +139,32 @@ struct InstantLiveShareContractTests {
     )
   }
 
+  @Test("Canonical live share graph can target the VoiceTrail recording root")
+  func canonicalSharingGraphTargetsV3CaptureRecordings() {
+    let contract = InstantLiveShareContract.v3CaptureRecordings
+
+    expectNoDifference(contract.queryPlan.namespace, "v3_capture_recordings")
+    expectNoDifference(contract.queryPlan.includes?.map(\.name), [
+      "owner", "share",
+    ])
+    expectNoDifference(
+      contract.queryPlan.includes?.map(\.direction),
+      [.forward, .reverse]
+    )
+    expectNoDifference(
+      contract.queryPlan.includes?.last?.query?.includes?.map(\.name),
+      ["owner", "memberships"]
+    )
+    expectNoDifference(
+      contract.queryPlan.includes?.last?.query?.includes?.map(\.direction),
+      [.forward, .reverse]
+    )
+    expectNoDifference(
+      contract.queryPlan.includes?.last?.query?.includes?.last?.query?.includes?.map(\.name),
+      ["user"]
+    )
+  }
+
   @Test("Live share emissions replace roles, revoke snapshots, and preserve cancellation")
   func liveShareEmissionStreamProjectsReplacementAndRevocation() async throws {
     let contract = InstantLiveShareContract.v3SharedLists
