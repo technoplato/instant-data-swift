@@ -6956,6 +6956,8 @@ private final class LocalIDLifecycleStorage: @unchecked Sendable {
 #endif
 
 @propertyWrapper
+// SAFETY: cross-actor value access is routed through lock-protected storage;
+// SwiftUI's lifecycle observer is accessed only by the main-actor update hook.
 public struct LocalID: @unchecked Sendable {
   private let lifecycleReference: LockedValueStorage<LocalIDLifecycleStorage>
 
