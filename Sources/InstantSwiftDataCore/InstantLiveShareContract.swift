@@ -17,6 +17,7 @@ public struct InstantLiveShareContract: Hashable, Codable, Sendable {
         InstantQueryInclude("writers"),
         InstantQueryInclude(
           "share",
+          direction: .reverse,
           query: InstantQueryIncludePlan(
             id: "instant.live-shares.v3-shares",
             namespace: "v3_shares",
@@ -24,6 +25,7 @@ public struct InstantLiveShareContract: Hashable, Codable, Sendable {
               InstantQueryInclude("owner"),
               InstantQueryInclude(
                 "memberships",
+                direction: .reverse,
                 query: InstantQueryIncludePlan(
                   id: "instant.live-shares.v3-share-memberships",
                   namespace: "v3_share_memberships",
@@ -83,6 +85,41 @@ public struct InstantLiveShareContract: Hashable, Codable, Sendable {
       )
     }
     .sorted { lhs, rhs in lhs.share.id < rhs.share.id }
+  }
+
+  func observe(
+    appID: String,
+    emissions: AsyncStream<InstantQueryEmission>,
+    onFailure: @escaping @Sendable (InstantError) async -> Void
+  ) -> AsyncStream<[InstantShareSnapshot]> {
+    AsyncStream { continuation in
+      let task = Task {
+        for await emission in emissions {
+          guard !Task.isCancelled else { break }
+          do {
+            continuation.yield(
+              try snapshots(appID: appID, roots: emission.values)
+            )
+          } catch let error as InstantError {
+            await onFailure(error)
+            break
+          } catch {
+            await onFailure(
+              InstantError(
+                code: .decodeFailed,
+                operation: "decode live share graph",
+                message: String(describing: error),
+                recovery:
+                  "Keep the Swift live-share contract aligned with canonical sharingQuery output."
+              )
+            )
+            break
+          }
+        }
+        continuation.finish()
+      }
+      continuation.onTermination = { _ in task.cancel() }
+    }
   }
 
   private func onlyLink(

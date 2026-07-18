@@ -21,6 +21,7 @@ public struct InstantRuntimeConfiguration: Sendable {
   public var authTokenInvalidator: InstantAuthTokenInvalidator
   public var mutationTransport: InstantMutationTransportClient
   public var liveTransport: InstantLiveTransportClient?
+  public var liveShareContract: InstantLiveShareContract?
   public var userCookieSyncClient: InstantUserCookieSyncClient
   public var platformAppClient: InstantPlatformAppClient
   public var appBuilderCodeGenerator: AppBuilderCodeGeneratorClient
@@ -60,6 +61,45 @@ public struct InstantRuntimeConfiguration: Sendable {
       authTokenInvalidator: authTokenInvalidator,
       mutationTransport: .local,
       liveTransport: nil,
+      liveShareContract: nil,
+      platformAppClient: platformAppClient,
+      appBuilderCodeGenerator: appBuilderCodeGenerator
+    )
+  }
+
+  public init(
+    appID: String,
+    persistenceURL: URL,
+    initialAttributes: [InstantAttribute] = [],
+    now: @escaping @Sendable () -> InstantTimestamp = {
+      InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1_000).rounded()))
+    },
+    makeID: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() },
+    refreshTokenVerifier: InstantRefreshTokenVerifier = .local,
+    magicCodeExchange: InstantMagicCodeExchange = .local,
+    idTokenExchange: InstantIDTokenExchange = .local,
+    oauthExchange: InstantOAuthExchange = .local,
+    authTokenInvalidator: InstantAuthTokenInvalidator = .local,
+    liveShareContract: InstantLiveShareContract?,
+    platformAppClient: InstantPlatformAppClient = .local,
+    appBuilderCodeGenerator: AppBuilderCodeGeneratorClient = .local
+  ) {
+    self.init(
+      appID: appID,
+      apiURI: Self.defaultAPIURI,
+      websocketURI: Self.defaultWebSocketURI,
+      persistenceURL: persistenceURL,
+      initialAttributes: initialAttributes,
+      now: now,
+      makeID: makeID,
+      refreshTokenVerifier: refreshTokenVerifier,
+      magicCodeExchange: magicCodeExchange,
+      idTokenExchange: idTokenExchange,
+      oauthExchange: oauthExchange,
+      authTokenInvalidator: authTokenInvalidator,
+      mutationTransport: .local,
+      liveTransport: nil,
+      liveShareContract: liveShareContract,
       platformAppClient: platformAppClient,
       appBuilderCodeGenerator: appBuilderCodeGenerator
     )
@@ -83,6 +123,7 @@ public struct InstantRuntimeConfiguration: Sendable {
     authTokenInvalidator: InstantAuthTokenInvalidator = .local,
     mutationTransport: InstantMutationTransportClient = .local,
     liveTransport: InstantLiveTransportClient? = nil,
+    liveShareContract: InstantLiveShareContract? = nil,
     userCookieSyncClient: InstantUserCookieSyncClient = .live,
     platformAppClient: InstantPlatformAppClient = .local,
     appBuilderCodeGenerator: AppBuilderCodeGeneratorClient = .local
@@ -102,6 +143,7 @@ public struct InstantRuntimeConfiguration: Sendable {
     self.authTokenInvalidator = authTokenInvalidator
     self.mutationTransport = mutationTransport
     self.liveTransport = liveTransport
+    self.liveShareContract = liveShareContract
     self.userCookieSyncClient = userCookieSyncClient
     self.platformAppClient = platformAppClient
     self.appBuilderCodeGenerator = appBuilderCodeGenerator
@@ -3933,8 +3975,17 @@ public final class InstantRuntime: Sendable {
 
   public func shares() async throws -> [InstantShareSnapshot] {
     await operationGate.enter()
+    var gateIsHeld = true
     do {
       let userID = try await resolvedAuthenticatedUserID(operation: "list shares", noun: "Share")
+      if let contract = configuration.liveShareContract {
+        await operationGate.leave()
+        gateIsHeld = false
+        return try contract.snapshots(
+          appID: configuration.appID,
+          roots: try await query(contract.queryPlan)
+        )
+      }
       let snapshots = try await persistence.loadShareSnapshots(
         appID: configuration.appID,
         userID: userID
@@ -3942,15 +3993,22 @@ public final class InstantRuntime: Sendable {
       await operationGate.leave()
       return snapshots
     } catch {
-      await operationGate.leave()
+      if gateIsHeld { await operationGate.leave() }
       throw error
     }
   }
 
   public func observeShares() async throws -> AsyncStream<[InstantShareSnapshot]> {
     await operationGate.enter()
+    var gateIsHeld = true
     do {
       let userID = try await resolvedAuthenticatedUserID(operation: "observe shares", noun: "Share")
+      if let contract = configuration.liveShareContract {
+        await operationGate.leave()
+        gateIsHeld = false
+        let emissions = await observe(contract.queryPlan)
+        return liveShareObservation(contract: contract, emissions: emissions)
+      }
       let snapshots = try await persistence.loadShareSnapshots(
         appID: configuration.appID,
         userID: userID
@@ -3962,8 +4020,20 @@ public final class InstantRuntime: Sendable {
       await operationGate.leave()
       return stream
     } catch {
-      await operationGate.leave()
+      if gateIsHeld { await operationGate.leave() }
       throw error
+    }
+  }
+
+  private func liveShareObservation(
+    contract: InstantLiveShareContract,
+    emissions: AsyncStream<InstantQueryEmission>
+  ) -> AsyncStream<[InstantShareSnapshot]> {
+    contract.observe(
+      appID: configuration.appID,
+      emissions: emissions
+    ) { [weak self] error in
+      await self?.recordConnectionError(error)
     }
   }
 

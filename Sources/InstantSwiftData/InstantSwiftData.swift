@@ -2744,7 +2744,8 @@ extension DependencyValues {
     persistenceURL: URL? = nil,
     firstPartyURL: URL? = nil,
     context: InstantSwiftDataBootstrapContext = .live,
-    initialAttributes: [InstantAttribute] = []
+    initialAttributes: [InstantAttribute] = [],
+    liveShareContract: InstantLiveShareContract? = nil
   ) async throws {
     try await self.bootstrapInstantSwiftData(
       appID: appID,
@@ -2753,7 +2754,8 @@ extension DependencyValues {
       persistenceURL: persistenceURL,
       firstPartyURL: firstPartyURL,
       context: context,
-      initialAttributes: initialAttributes
+      initialAttributes: initialAttributes,
+      liveShareContract: liveShareContract
     )
   }
 
@@ -2764,7 +2766,8 @@ extension DependencyValues {
     persistenceURL: URL? = nil,
     firstPartyURL: URL? = nil,
     context: InstantSwiftDataBootstrapContext = .live,
-    initialAttributes: [InstantAttribute] = []
+    initialAttributes: [InstantAttribute] = [],
+    liveShareContract: InstantLiveShareContract? = nil
   ) async throws {
     let date = self.date
     let uuid = self.uuid
@@ -2807,6 +2810,7 @@ extension DependencyValues {
         authTokenInvalidator: authTokenInvalidator,
         mutationTransport: mutationTransport,
         liveTransport: liveTransport,
+        liveShareContract: liveShareContract,
         userCookieSyncClient: userCookieSyncClient,
         platformAppClient: platformAppClient,
         appBuilderCodeGenerator: appBuilderCodeGenerator
