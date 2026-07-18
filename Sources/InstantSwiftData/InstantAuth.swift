@@ -26,11 +26,21 @@ public struct InstantAuthSignedInEvent: Hashable, Sendable {
   }
 }
 
+public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
+  public var id: InstantID<Entity>
+  public var session: InstantAuthSession
+
+  public init(id: InstantID<Entity>, session: InstantAuthSession) {
+    self.id = id
+    self.session = session
+  }
+}
+
 #if canImport(SwiftUI)
   import SwiftUI
 
   @MainActor
-  public final class InstantAuthState: ObservableObject {
+  public final class InstantAuthState<User: InstantEntityModel>: ObservableObject {
     @Published public var email = ""
     @Published public var magicCode = ""
     @Published public private(set) var mode: InstantAuthMode = .enteringEmail
@@ -38,6 +48,15 @@ public struct InstantAuthSignedInEvent: Hashable, Sendable {
     @Published public private(set) var session: InstantAuthSession?
 
     public let providers: [AuthProvider]
+
+    public var user: InstantAuthUser<User>? {
+      session.map {
+        InstantAuthUser(
+          id: InstantID(rawValue: $0.userID),
+          session: $0
+        )
+      }
+    }
 
     public var isBusy: Bool {
       status == .working
@@ -394,11 +413,11 @@ public struct InstantAuthSignedInEvent: Hashable, Sendable {
 
   @dynamicMemberLookup
   @MainActor
-  public struct InstantAuthProjection {
-    fileprivate let state: InstantAuthState
+  public struct InstantAuthProjection<User: InstantEntityModel> {
+    fileprivate let state: InstantAuthState<User>
 
     public subscript<Value>(
-      dynamicMember keyPath: ReferenceWritableKeyPath<InstantAuthState, Value>
+      dynamicMember keyPath: ReferenceWritableKeyPath<InstantAuthState<User>, Value>
     ) -> Binding<Value> {
       Binding(
         get: { state[keyPath: keyPath] },
@@ -412,18 +431,20 @@ public struct InstantAuthSignedInEvent: Hashable, Sendable {
   public struct InstantAuth<User: InstantEntityModel, Providers: InstantAuthProviderCatalog>:
     DynamicProperty
   {
-    @StateObject private var state: InstantAuthState
+    @StateObject private var state: InstantAuthState<User>
 
     public init(_ user: User.Type, providers: Providers.Type) {
       _ = user
-      _state = StateObject(wrappedValue: InstantAuthState(providers: providers.all))
+      _state = StateObject(
+        wrappedValue: InstantAuthState<User>(providers: providers.all)
+      )
     }
 
-    public var wrappedValue: InstantAuthState {
+    public var wrappedValue: InstantAuthState<User> {
       state
     }
 
-    public var projectedValue: InstantAuthProjection {
+    public var projectedValue: InstantAuthProjection<User> {
       InstantAuthProjection(state: state)
     }
 

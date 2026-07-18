@@ -43,7 +43,9 @@ import Testing
       let appID = "v3-auth-magic-code"
       let runtime = try await v3AuthRuntime(appID: appID, cacheURL: cacheURL)
       let client = InstantSwiftDataClient(runtime: runtime)
-      let state = InstantAuthState(providers: V3VoiceTrailAuthProviders.all)
+      let state = InstantAuthState<V3VoiceTrailUser>(
+        providers: V3VoiceTrailAuthProviders.all
+      )
       let callbacks = V3AuthCallbackRecorder()
       state.email = "person@example.com"
 
@@ -68,13 +70,17 @@ import Testing
       let signedIn = try #require(callbacks.signedIn.first)
       expectNoDifference(signedIn.providerID, .magicCode)
       expectNoDifference(state.session, signedIn.session)
+      expectNoDifference(state.user?.id.rawValue, signedIn.session.userID)
+      expectNoDifference(state.user?.session, signedIn.session)
       expectNoDifference(state.status, .signedIn(signedIn.session))
       expectNoDifference(callbacks.challenges.count, 1)
       expectNoDifference(callbacks.signedIn.count, 1)
       expectNoDifference(callbacks.failures, [])
 
       let relaunchedRuntime = try await v3AuthRuntime(appID: appID, cacheURL: cacheURL)
-      let relaunchedState = InstantAuthState(providers: V3VoiceTrailAuthProviders.all)
+      let relaunchedState = InstantAuthState<V3VoiceTrailUser>(
+        providers: V3VoiceTrailAuthProviders.all
+      )
       relaunchedState.startObservationIfNeeded(
         using: InstantSwiftDataClient(runtime: relaunchedRuntime)
       )
@@ -82,6 +88,7 @@ import Testing
         relaunchedState.session == signedIn.session
       }
       expectNoDifference(relaunchedState.status, .signedIn(signedIn.session))
+      expectNoDifference(relaunchedState.user?.id.rawValue, signedIn.session.userID)
       expectNoDifference(callbacks.signedIn.count, 1)
       relaunchedState.stopObservation()
     }
@@ -93,7 +100,9 @@ import Testing
         cacheURL: v3AuthCacheURL("invalid-code")
       )
       let client = InstantSwiftDataClient(runtime: runtime)
-      let state = InstantAuthState(providers: V3VoiceTrailAuthProviders.all)
+      let state = InstantAuthState<V3VoiceTrailUser>(
+        providers: V3VoiceTrailAuthProviders.all
+      )
       let callbacks = V3AuthCallbackRecorder()
       state.email = "retry@example.com"
 
@@ -145,7 +154,9 @@ import Testing
           return v3AuthChallenge(email: email)
         }
       )
-      let state = InstantAuthState(providers: V3VoiceTrailAuthProviders.all)
+      let state = InstantAuthState<V3VoiceTrailUser>(
+        providers: V3VoiceTrailAuthProviders.all
+      )
       let callbacks = V3AuthCallbackRecorder()
       state.email = "cancel@example.com"
 
@@ -186,7 +197,9 @@ import Testing
           return session
         }
       )
-      let state = InstantAuthState(providers: V3VoiceTrailAuthProviders.all)
+      let state = InstantAuthState<V3VoiceTrailUser>(
+        providers: V3VoiceTrailAuthProviders.all
+      )
       let callbacks = V3AuthCallbackRecorder()
       let task = state.signIn(
         provider,
