@@ -107,6 +107,19 @@ try {
   assert.equal(swiftReaderRejection.details.failedMutationCount, 1);
   assert.match(swiftReaderRejection.details.failureMessage, /permission/i);
 
+  const swiftWriterAcceptance = await runSwiftWriterAcceptance({
+    appId,
+    refreshToken: users.writer.token,
+    writerUserID: users.writer.id,
+    listID: ids.listID,
+    expectedValue: 1,
+    acceptedValue: 3,
+  });
+  assert.equal(swiftWriterAcceptance.ok, true);
+  assert.deepStrictEqual(swiftWriterAcceptance.details.observedValues, [1, 3]);
+  assert.equal(swiftWriterAcceptance.details.pendingMutationCount, 0);
+  assert.equal(swiftWriterAcceptance.details.failedMutationCount, 0);
+
   const ownerResult = await ownerDB.query(sharingQuery(ids.listID));
   const readerResult = await readerDB.query(sharingQuery(ids.listID));
   const writerResult = await writerDB.query(sharingQuery(ids.listID));
@@ -178,6 +191,7 @@ try {
       },
       finalValue: finalSnapshot.value,
       swiftReaderRejection: swiftReaderRejection.details,
+      swiftWriterAcceptance: swiftWriterAcceptance.details,
       compilerWarningCount: warnings.length,
       warnings,
     },
@@ -259,6 +273,67 @@ async function runSwiftReaderRejection(input: {
   const lines = stdout.trim().split("\n").filter(Boolean);
   if (lines.length !== 1) {
     throw new Error(`Expected one Swift sharing evidence row, received ${lines.length}.`);
+  }
+  return JSON.parse(lines[0]);
+}
+
+async function runSwiftWriterAcceptance(input: {
+  appId: string;
+  refreshToken: string;
+  writerUserID: string;
+  listID: string;
+  expectedValue: number;
+  acceptedValue: number;
+}): Promise<{
+  ok: boolean;
+  details: {
+    observedValues: number[];
+    pendingMutationCount: number;
+    failedMutationCount: number;
+    connectionState: string;
+  };
+}> {
+  const child = spawn(
+    "swift",
+    [
+      "run",
+      "--package-path",
+      repositoryRoot,
+      "instant-swift-data-validation-runner",
+      "--live-sharing-writer",
+    ],
+    {
+      cwd: repositoryRoot,
+      env: {
+        ...process.env,
+        INSTANT_APP_ID: input.appId,
+        INSTANT_SWIFT_DATA_SHARING_REFRESH_TOKEN: input.refreshToken,
+        INSTANT_SWIFT_DATA_SHARING_USER_ID: input.writerUserID,
+        INSTANT_SWIFT_DATA_SHARING_LIST_ID: input.listID,
+        INSTANT_SWIFT_DATA_SHARING_EXPECTED_VALUE: String(input.expectedValue),
+        INSTANT_SWIFT_DATA_SHARING_ACCEPTED_VALUE: String(input.acceptedValue),
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+  let stdout = "";
+  let stderr = "";
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  child.stdout.on("data", (chunk) => { stdout += chunk; });
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  const status = await new Promise<number>((resolveStatus, reject) => {
+    child.once("error", reject);
+    child.once("close", (code) => resolveStatus(code ?? 1));
+  });
+  if (status !== 0) {
+    throw new Error(
+      `Swift live sharing writer validation failed with status ${status}: ${stdout.trim()} ${stderr.trim()}`,
+    );
+  }
+  const lines = stdout.trim().split("\n").filter(Boolean);
+  if (lines.length !== 1) {
+    throw new Error(`Expected one Swift sharing writer evidence row, received ${lines.length}.`);
   }
   return JSON.parse(lines[0]);
 }

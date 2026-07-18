@@ -143,6 +143,10 @@ assert.deepStrictEqual(live.details.swiftReaderRejection.observedValues, [1, 2, 
 assert.equal(live.details.swiftReaderRejection.pendingMutationCount, 0);
 assert.equal(live.details.swiftReaderRejection.failedMutationCount, 1);
 assert.match(live.details.swiftReaderRejection.failureMessage, /Permission denied/);
+assert.deepStrictEqual(live.details.swiftWriterAcceptance.observedValues, [1, 3]);
+assert.equal(live.details.swiftWriterAcceptance.pendingMutationCount, 0);
+assert.equal(live.details.swiftWriterAcceptance.failedMutationCount, 0);
+assert.equal(live.details.swiftWriterAcceptance.connectionState, "authenticated");
 for (const key of ["readerUpdate", "readerDelete", "writerDelete"]) {
   assert.match(live.details.rejected[key], /Permission denied/);
 }
