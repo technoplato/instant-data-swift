@@ -356,6 +356,15 @@ and relaunch stability guarantee, and publishes value, loading, and error
 changes so the screen recomputes. Manual `load` and `task` methods remain public
 for non-SwiftUI and advanced use.
 
+The executable start-action fixture now also fixes the ownership boundary:
+product recording preparation owns task replacement and drops stale callbacks;
+`InstantMessage` owns the durable optimistic mutation lifecycle. The fixture
+proves optimistic and accepted callbacks fire once, rejection produces
+actionable recovery once, a later outbox retry does not replay call-site
+effects, and accepted state survives runtime relaunch. Canonical ref-shaped
+recording/member/transcription creation plus finish and attachment actions are
+the next recording slice.
+
 ## Request Objects
 
 Request objects should remain available. They are not the default shape

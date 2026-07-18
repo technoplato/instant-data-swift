@@ -60,14 +60,16 @@ As of 2026-07-18:
   orchestrator. Its evidence directory was
   `/tmp/instant-swift-data-packet0-20260718T1106`.
 - The current runtime and V3 recordings-list, auth-login, and recording
-  fixtures passed 852 Swift Testing tests across 25 suites plus 28 macro tests.
+  fixtures passed 856 Swift Testing tests across 26 suites plus 28 macro tests.
   The auth slice includes wrapper-owned magic-code, guest, and provider
   actions; exact call-site callbacks; typed authenticated-user identity;
   stale-action cancellation; failure/retry; and durable session restoration
   after runtime relaunch. The recording slice now proves concrete-ID timeline
   query identity plus one-shot, view-invalidating `@LocalID` resolution in a
-  hosted SwiftUI view. The core reconnect packet's earlier explicit E2E
-  evidence is
+  hosted SwiftUI view. The recording start action additionally proves product
+  preparation replacement, typed optimistic and accepted callbacks, rejected
+  mutation recovery without callback replay, and durable relaunch state. The
+  core reconnect packet's earlier explicit E2E evidence is
   `/tmp/instant-swift-data-reconnect-20260718T161703Z`.
 - Credentialed remote preflight and both real Swift/TypeScript boundary
   directions passed from the typed-message milestone. The
@@ -115,7 +117,7 @@ When sources disagree, use this order:
 | Current execution state, packet order, gates, and tag targets | `docs/v3-e2e-port-plan.md` |
 | Product contract and full definition of done | `docs/instant-swift-data-goals.md` |
 | Desired V3 API rules and decision log | `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` |
-| Next compiling syntax target | `screens/v3/recording.md` action lifecycle |
+| Next compiling syntax target | `screens/v3/recording.md` finish and attachment lifecycle |
 | All five desired VoiceTrail screen probes | `screens/v3/README.md` and sibling Markdown files |
 | Existing public wrapper implementation | `Sources/InstantSwiftData/InstantSwiftData.swift` |
 | Owned live runtime and persistence integration | `Sources/InstantSwiftDataCore/InstantRuntime.swift` |
@@ -498,13 +500,15 @@ The release harness must prove each applicable row in both directions:
 
 ## Immediate Next Step
 
-Complete the V3 recording screen action lifecycle as the next executable
-vertical slice. The source-derived compile fixture now proves automatic
-`@LocalID` ownership and concrete-ID dynamic timeline query identity. Keep
-`@VoiceTrailRecordingSession` in product-fixture code and extend the fixture
-through the public typed `db.send` surface. Cover preparation, optimistic
-commit, server acceptance, failure, stale-work cancellation, and relaunch
-behavior without moving audio or speech ownership into Instant core.
+Complete the V3 recording finish and attachment lifecycle as the next
+executable vertical slice. The source-derived fixtures now prove automatic
+`@LocalID`, concrete-ID timeline queries, product preparation replacement,
+typed start-message optimism and acceptance, rejection without callback replay,
+and relaunch persistence. Next, make create/finish/attachment messages use the
+canonical ref-shaped owner, member, recording, and transcription graph; prove
+finish and attachment optimism, server acceptance, rejection, and relaunch;
+and keep audio, speech, screenshot, and clipboard ownership in product-fixture
+code rather than Instant core.
 
 File-backed `stream-append` fetching and remote stream metadata bootstrap remain
 important live-stream work, but they do not block the recording-screen fixture

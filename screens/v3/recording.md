@@ -372,3 +372,12 @@ relaunch guarantee remains covered by
 `InstantReactorParityTests.upstreamReactorGetLocalIDAlwaysReturnsSameID`; the
 screen lifecycle and rendering proof is
 `V3RecordingFixtureTests.localIDResolutionInvalidatesAHostedSwiftUIView`.
+
+Implementation status (2026-07-18):
+`V3RecordingActionFixtureTests` compiles the `auth.user` + `@LocalID` + product
+preparation + typed `db.send` start path. It proves stale preparation is
+cancelled, optimistic and server-accepted callbacks each run once, rejected
+creation reports recovery once, retry does not replay action callbacks, and
+accepted local state survives runtime relaunch. Finish and attachment actions,
+and the canonical ref-shaped owner/member/transcription graph, remain the next
+executable slice.
