@@ -78,6 +78,7 @@ public struct InstantPlaybackRoomLiveValidationDetails: Codable, Equatable, Send
   public var publishedTopics: InstantPlaybackRoomTopicValues
   public var receivedTopics: InstantPlaybackRoomTopicValues
   public var connectionState: String
+  public var reconnect: InstantPlaybackRoomReconnectDetails
 
   public init(
     roomType: String,
@@ -88,12 +89,39 @@ public struct InstantPlaybackRoomLiveValidationDetails: Codable, Equatable, Send
     receivedPresence: InstantPlaybackRoomPresenceValue,
     publishedTopics: InstantPlaybackRoomTopicValues,
     receivedTopics: InstantPlaybackRoomTopicValues,
-    connectionState: String
+    connectionState: String,
+    reconnect: InstantPlaybackRoomReconnectDetails
   ) {
     self.roomType = roomType
     self.roomID = roomID
     self.swiftUserID = swiftUserID
     self.typeScriptUserID = typeScriptUserID
+    self.publishedPresence = publishedPresence
+    self.receivedPresence = receivedPresence
+    self.publishedTopics = publishedTopics
+    self.receivedTopics = receivedTopics
+    self.connectionState = connectionState
+    self.reconnect = reconnect
+  }
+}
+
+public struct InstantPlaybackRoomReconnectDetails: Codable, Equatable, Sendable {
+  public var connectionCount: Int
+  public var publishedPresence: InstantPlaybackRoomPresenceValue
+  public var receivedPresence: InstantPlaybackRoomPresenceValue
+  public var publishedTopics: InstantPlaybackRoomTopicValues
+  public var receivedTopics: InstantPlaybackRoomTopicValues
+  public var connectionState: String
+
+  public init(
+    connectionCount: Int,
+    publishedPresence: InstantPlaybackRoomPresenceValue,
+    receivedPresence: InstantPlaybackRoomPresenceValue,
+    publishedTopics: InstantPlaybackRoomTopicValues,
+    receivedTopics: InstantPlaybackRoomTopicValues,
+    connectionState: String
+  ) {
+    self.connectionCount = connectionCount
     self.publishedPresence = publishedPresence
     self.receivedPresence = receivedPresence
     self.publishedTopics = publishedTopics
@@ -115,9 +143,10 @@ public enum InstantPlaybackRoomLiveValidation {
   ) async throws -> ValidationEvidenceRow<InstantPlaybackRoomLiveValidationDetails> {
     let persistenceURL = persistenceURL ?? FileManager.default.temporaryDirectory
       .appendingPathComponent("instant-playback-room-live-\(UUID().uuidString).sqlite")
+    let reconnectTransport = PlaybackReconnectTransport(base: .live)
     let client = try await withDependencies {
       $0.context = .live
-      $0.instantLiveTransport = .live
+      $0.instantLiveTransport = reconnectTransport.transport
       try await $0.bootstrapInstantSwiftData(
         appID: appID,
         apiURI: apiURI,
@@ -227,8 +256,90 @@ public enum InstantPlaybackRoomLiveValidation {
     }
 
     let observed = try await remoteObservation.value
+    let reconnectedTypeScriptPresence = PlaybackPresence(
+      userID: InstantID(rawValue: typeScriptUserID),
+      displayName: "TypeScript Listener Rejoined",
+      isPlaying: true,
+      offsetSeconds: 9.5,
+      focusedSegmentID: InstantID(rawValue: "segment-typescript-rejoined")
+    )
+    let reconnectedTypeScriptTopics = PlaybackTopics(
+      reaction: PlaybackReaction(emoji: "typescript-rejoined", offsetSeconds: 9.5),
+      commentDraft: PlaybackCommentDraft(
+        text: "TypeScript draft after reconnect",
+        offsetSeconds: 9.5
+      ),
+      commentCommitted: PlaybackCommentCommitted(
+        commentID: "comment-typescript-rejoined"
+      )
+    )
+    let reconnectObservation = Task {
+      try await withTimeout(operation: "observe TypeScript playback payloads after reconnect") {
+        async let presence = matchingPresence(
+          reconnectedTypeScriptPresence,
+          in: presenceStream
+        )
+        async let reaction = matchingTopic(
+          reconnectedTypeScriptTopics.reaction,
+          in: reactionStream
+        )
+        async let draft = matchingTopic(
+          reconnectedTypeScriptTopics.commentDraft,
+          in: draftStream
+        )
+        async let committed = matchingTopic(
+          reconnectedTypeScriptTopics.commentCommitted,
+          in: committedStream
+        )
+        return try await PlaybackObservation(
+          presence: presence,
+          topics: PlaybackTopics(
+            reaction: reaction,
+            commentDraft: draft,
+            commentCommitted: committed
+          )
+        )
+      }
+    }
+    defer { reconnectObservation.cancel() }
+
+    try await reconnectTransport.disconnectCurrentSession()
+    try await waitForReconnect(client: client, transport: reconnectTransport)
+
+    let reconnectedSwiftPresence = PlaybackPresence(
+      userID: InstantID(rawValue: swiftUserID),
+      displayName: "Swift Listener Rejoined",
+      isPlaying: false,
+      offsetSeconds: 18.75,
+      focusedSegmentID: InstantID(rawValue: "segment-swift-rejoined")
+    )
+    let reconnectedSwiftTopics = PlaybackTopics(
+      reaction: PlaybackReaction(emoji: "swift-rejoined", offsetSeconds: 18.75),
+      commentDraft: PlaybackCommentDraft(
+        text: "Swift draft after reconnect",
+        offsetSeconds: 18.75
+      ),
+      commentCommitted: PlaybackCommentCommitted(commentID: "comment-swift-rejoined")
+    )
+    _ = try await client.setRoomPresence(
+      room: room,
+      values: try encodeObject(reconnectedSwiftPresence)
+    )
+    let reconnectedPublishedTopics = try encodeTopics(reconnectedSwiftTopics)
+    for topic in reconnectedPublishedTopics.keys.sorted() {
+      guard let payload = reconnectedPublishedTopics[topic] else { continue }
+      _ = try await client.publishRoomTopicMessage(
+        room: room,
+        topic: topic,
+        payload: payload
+      )
+    }
+
+    let reconnectedObserved = try await reconnectObservation.value
     let status = try await client.connectionStatus()
+    let connectionCount = await reconnectTransport.connectionCount
     _ = try await client.leaveRoom(room)
+    _ = try await client.closeConnection()
 
     return ValidationEvidenceRow(
       caseID: "validation.live.playback-room",
@@ -247,9 +358,33 @@ public enum InstantPlaybackRoomLiveValidation {
         receivedPresence: observed.presence.evidence,
         publishedTopics: swiftTopics.evidence,
         receivedTopics: observed.topics.evidence,
-        connectionState: status.state.rawValue
+        connectionState: status.state.rawValue,
+        reconnect: InstantPlaybackRoomReconnectDetails(
+          connectionCount: connectionCount,
+          publishedPresence: reconnectedSwiftPresence.evidence,
+          receivedPresence: reconnectedObserved.presence.evidence,
+          publishedTopics: reconnectedSwiftTopics.evidence,
+          receivedTopics: reconnectedObserved.topics.evidence,
+          connectionState: status.state.rawValue
+        )
       )
     )
+  }
+
+  private static func waitForReconnect(
+    client: InstantSwiftDataClient,
+    transport: PlaybackReconnectTransport
+  ) async throws {
+    try await withTimeout(operation: "wait for playback room reconnect") {
+      while true {
+        let connectionCount = await transport.connectionCount
+        let status = try await client.connectionStatus()
+        if connectionCount >= 2, status.state == .authenticated {
+          return
+        }
+        try await Task.sleep(for: .milliseconds(25))
+      }
+    }
   }
 
   private static func matchingPresence(
@@ -393,6 +528,82 @@ public enum InstantPlaybackRoomLiveValidation {
       message: message,
       recovery: "Keep the Swift and canonical TypeScript playback room contracts exact."
     )
+  }
+}
+
+private actor PlaybackReconnectTransport {
+  private struct ConnectedSession: Sendable {
+    var id: Int
+    var session: InstantLiveWebSocketSession
+  }
+
+  private let base: InstantLiveTransportClient
+  private var currentSession: ConnectedSession?
+  private var forcedDisconnectSessionIDs: Set<Int> = []
+  private(set) var connectionCount = 0
+
+  init(base: InstantLiveTransportClient) {
+    self.base = base
+  }
+
+  nonisolated var transport: InstantLiveTransportClient {
+    InstantLiveTransportClient { request in
+      let session = try await self.base.connect(request)
+      return await self.install(session)
+    }
+  }
+
+  func disconnectCurrentSession() async throws {
+    guard let currentSession else {
+      throw InstantError(
+        code: .networkFailed,
+        operation: "disconnect playback room validation transport",
+        message: "No live playback session was connected.",
+        recovery: "Connect the Swift playback peer before forcing a reconnect."
+      )
+    }
+    forcedDisconnectSessionIDs.insert(currentSession.id)
+    await currentSession.session.close()
+  }
+
+  private func install(
+    _ session: InstantLiveWebSocketSession
+  ) -> InstantLiveWebSocketSession {
+    connectionCount += 1
+    let id = connectionCount
+    currentSession = ConnectedSession(id: id, session: session)
+    return InstantLiveWebSocketSession(
+      send: session.send,
+      receive: {
+        do {
+          return try await session.receive()
+        } catch {
+          if await self.consumeForcedDisconnect(id: id) {
+            throw InstantError(
+              code: .networkFailed,
+              operation: "force playback room reconnect",
+              message: "The validation transport intentionally closed the live session.",
+              recovery: "Reconnect and rejoin the active playback room."
+            )
+          }
+          throw error
+        }
+      },
+      close: {
+        await session.close()
+        await self.clearSession(id: id)
+      }
+    )
+  }
+
+  private func clearSession(id: Int) {
+    forcedDisconnectSessionIDs.remove(id)
+    guard currentSession?.id == id else { return }
+    currentSession = nil
+  }
+
+  private func consumeForcedDisconnect(id: Int) -> Bool {
+    forcedDisconnectSessionIDs.remove(id) != nil
   }
 }
 
