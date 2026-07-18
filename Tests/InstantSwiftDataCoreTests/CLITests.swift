@@ -552,8 +552,8 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(permissionsVerify.example, "sharing")
-    expectNoDifference(permissionsVerify.namespaceCount, 3)
-    expectNoDifference(permissionsVerify.allowRuleCount, 12)
+    expectNoDifference(permissionsVerify.namespaceCount, 4)
+    expectNoDifference(permissionsVerify.allowRuleCount, 13)
   }
 
   @Test

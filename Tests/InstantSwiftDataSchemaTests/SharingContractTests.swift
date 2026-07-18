@@ -35,6 +35,12 @@ struct SharingContractTests {
     )
 
     expectNoDifference(
+      namespaces["$users"],
+      [
+        .view: "auth.id != null",
+      ]
+    )
+    expectNoDifference(
       namespaces["v3_shared_lists"],
       [
         .view: "isOwner || isWriter || isReader",

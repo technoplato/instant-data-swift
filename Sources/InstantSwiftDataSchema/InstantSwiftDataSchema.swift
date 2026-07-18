@@ -820,6 +820,12 @@ public enum InstantSchemaExamples {
   public static let sharingPermissions = InstantPermissionsDocument(
     namespaces: [
       InstantNamespacePermissions(
+        namespace: "$users",
+        allow: [
+          .view: "auth.id != null",
+        ]
+      ),
+      InstantNamespacePermissions(
         namespace: "v3_share_memberships",
         allow: [
           .view: "isSelf || isShareOwner",
