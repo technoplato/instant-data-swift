@@ -175,6 +175,149 @@ private final class InstantFileUploadProgressCancellation: @unchecked Sendable {
   }
 }
 
+private actor InstantRuntimeLiveRoomPresenceState {
+  private var sessionsByRoom: [InstantRoomHandle: JSONValue] = [:]
+
+  func replace(
+    room: InstantRoomHandle,
+    sessions: [String: InstantLiveJSONValue],
+    excludingSessionID: String?,
+    appID: String,
+    updatedAt: InstantTimestamp
+  ) -> [InstantRoomPresenceMember] {
+    var value = JSONValue.object(sessions.mapValues(\.jsonValue))
+    if let excludingSessionID {
+      value.dissocIn([.key(excludingSessionID)])
+    }
+    sessionsByRoom[room] = value
+    return members(
+      room: room,
+      sessions: value,
+      excludingSessionID: excludingSessionID,
+      appID: appID,
+      updatedAt: updatedAt
+    )
+  }
+
+  func patch(
+    room: InstantRoomHandle,
+    edits: [InstantLiveJSONValue],
+    excludingSessionID: String?,
+    appID: String,
+    updatedAt: InstantTimestamp
+  ) throws -> [InstantRoomPresenceMember] {
+    var sessions = sessionsByRoom[room] ?? .object([:])
+    for (index, edit) in edits.enumerated() {
+      guard case let .array(parts) = edit,
+        parts.count >= 2,
+        case let .array(rawPath) = parts[0],
+        let operation = parts[1].stringValue
+      else {
+        throw malformedPatch(index: index)
+      }
+      let path = try rawPath.map { component -> JSONValuePathComponent in
+        guard let key = component.stringValue else {
+          throw malformedPatch(index: index)
+        }
+        return .key(key)
+      }
+      switch operation {
+      case "+":
+        guard parts.count == 3 else { throw malformedPatch(index: index) }
+        sessions.insertIn(path, parts[2].jsonValue)
+      case "r":
+        guard parts.count == 3 else { throw malformedPatch(index: index) }
+        sessions.assocIn(path, parts[2].jsonValue)
+      case "-":
+        guard parts.count == 2 else { throw malformedPatch(index: index) }
+        sessions.dissocIn(path)
+      default:
+        throw malformedPatch(index: index)
+      }
+    }
+    if let excludingSessionID {
+      sessions.dissocIn([.key(excludingSessionID)])
+    }
+    sessionsByRoom[room] = sessions
+    return members(
+      room: room,
+      sessions: sessions,
+      excludingSessionID: excludingSessionID,
+      appID: appID,
+      updatedAt: updatedAt
+    )
+  }
+
+  func current(
+    room: InstantRoomHandle,
+    excludingSessionID: String?,
+    appID: String,
+    updatedAt: InstantTimestamp
+  ) -> [InstantRoomPresenceMember] {
+    members(
+      room: room,
+      sessions: sessionsByRoom[room] ?? .object([:]),
+      excludingSessionID: excludingSessionID,
+      appID: appID,
+      updatedAt: updatedAt
+    )
+  }
+
+  func remove(room: InstantRoomHandle) {
+    sessionsByRoom[room] = nil
+  }
+
+  private func members(
+    room: InstantRoomHandle,
+    sessions: JSONValue,
+    excludingSessionID: String?,
+    appID: String,
+    updatedAt: InstantTimestamp
+  ) -> [InstantRoomPresenceMember] {
+    guard case let .object(sessionValues) = sessions else { return [] }
+    return sessionValues.compactMap { sessionID, rawEnvelope in
+      guard sessionID != excludingSessionID,
+        case let .object(envelope) = rawEnvelope,
+        case let .object(values)? = envelope["data"]
+      else {
+        return nil
+      }
+      let peerID: String
+      if case let .string(value)? = envelope["peer-id"] {
+        peerID = value
+      } else {
+        peerID = sessionID
+      }
+      let userID: String
+      if case let .object(user)? = envelope["user"],
+        case let .string(value)? = user["id"]
+      {
+        userID = value
+      } else {
+        userID = peerID
+      }
+      return InstantRoomPresenceMember(
+        appID: appID,
+        room: room,
+        userID: userID,
+        values: values,
+        updatedAt: updatedAt
+      )
+    }
+    .sorted { $0.id < $1.id }
+  }
+
+  private func malformedPatch(index: Int) -> InstantError {
+    InstantError(
+      code: .decodeFailed,
+      operation: "apply Instant live presence patch",
+      path: "edits[\(index)]",
+      message: "Instant patch-presence contained a malformed edit.",
+      recovery: "Inspect the canonical Instant patch-presence payload."
+    )
+  }
+}
+
 private actor InstantRuntimeLiveSession {
   private struct RegisteredQuery: Sendable {
     var query: InstantLiveJSONValue
@@ -200,11 +343,16 @@ private actor InstantRuntimeLiveSession {
   private var inFlightMutationIDs: Set<String> = []
   private var registeredRooms: [InstantRoomHandle: RegisteredRoom] = [:]
   private var makeID: (@Sendable () -> String)?
+  private var sessionID: String?
   private var isOpened = false
   private var generation = 0
 
   var isOpen: Bool {
     isOpened
+  }
+
+  var currentSessionID: String? {
+    sessionID
   }
 
   func open(
@@ -219,6 +367,7 @@ private actor InstantRuntimeLiveSession {
       await session.close()
     }
     session = nil
+    sessionID = nil
     serverAttributes = []
     inFlightMutationIDs.removeAll()
     for room in Array(registeredRooms.keys) {
@@ -252,6 +401,7 @@ private actor InstantRuntimeLiveSession {
         self.session = opened
         self.serverAttributes = initOK.attrs
         self.makeID = makeID
+        self.sessionID = initOK.sessionID
         self.isOpened = true
 
       case let .error(error):
@@ -292,6 +442,7 @@ private actor InstantRuntimeLiveSession {
     } catch {
       await opened.close()
       session = nil
+      sessionID = nil
       serverAttributes = []
       isOpened = false
       throw error
@@ -445,6 +596,10 @@ private actor InstantRuntimeLiveSession {
     )
   }
 
+  func roomHandle(id: String) -> InstantRoomHandle? {
+    registeredRooms.keys.first { $0.id == id }
+  }
+
   private func record(
     _ event: InstantLiveServerEvent,
     generation: Int
@@ -507,6 +662,7 @@ private actor InstantRuntimeLiveSession {
   ) async {
     guard generation == self.generation else { return }
     self.session = nil
+    sessionID = nil
     receiverTask = nil
     isOpened = false
     for room in Array(registeredRooms.keys) {
@@ -523,6 +679,7 @@ private actor InstantRuntimeLiveSession {
     let session = session
     let receiverTask = receiverTask
     self.session = nil
+    sessionID = nil
     self.receiverTask = nil
     serverAttributes = []
     inFlightMutationIDs.removeAll()
@@ -693,6 +850,7 @@ public final class InstantRuntime: Sendable {
   private let operationGate = AsyncSerialGate()
   private let mutationFlushGate = AsyncSerialGate()
   private let liveSession = InstantRuntimeLiveSession()
+  private let liveRoomPresenceState = InstantRuntimeLiveRoomPresenceState()
   private let reconnectController = InstantRuntimeReconnectController()
 
   private init(
@@ -1770,6 +1928,15 @@ public final class InstantRuntime: Sendable {
       }
       _ = try await confirmMutationIfPresent(id: clientEventID)
 
+    case let .refreshPresence(refresh):
+      try await applyLivePresenceRefresh(refresh)
+
+    case let .patchPresence(patch):
+      try await applyLivePresencePatch(patch)
+
+    case let .serverBroadcast(broadcast):
+      try await applyLiveServerBroadcast(broadcast)
+
     case let .error(error):
       if let clientEventID = error.clientEventID?.nilIfEmpty,
         await pendingMutations().contains(where: { $0.id == clientEventID })
@@ -1785,10 +1952,101 @@ public final class InstantRuntime: Sendable {
         recovery: "Inspect the Instant runtime WebSocket event and reconnect."
       )
 
-    case .initOK, .addQueryExists, .joinRoomOK, .leaveRoomOK,
-      .refreshPresence, .patchPresence, .serverBroadcast, .other:
+    case .initOK, .addQueryExists, .joinRoomOK, .leaveRoomOK, .other:
       break
     }
+  }
+
+  private func applyLivePresenceRefresh(
+    _ refresh: InstantLivePresenceRefresh
+  ) async throws {
+    guard let room = await liveSession.roomHandle(id: refresh.roomID) else { return }
+    let remoteMembers = await liveRoomPresenceState.replace(
+      room: room,
+      sessions: refresh.sessions,
+      excludingSessionID: await liveSession.currentSessionID,
+      appID: configuration.appID,
+      updatedAt: configuration.now()
+    )
+    let localMembers = try await persistence.loadRoomPresence(
+      appID: configuration.appID,
+      room: room
+    )
+    await roomPresenceObservers.publish(
+      mergedRoomPresence(local: localMembers, remote: remoteMembers),
+      for: roomPresenceObservationKey(room)
+    )
+  }
+
+  private func applyLivePresencePatch(
+    _ patch: InstantLivePresencePatch
+  ) async throws {
+    guard let room = await liveSession.roomHandle(id: patch.roomID) else { return }
+    let remoteMembers = try await liveRoomPresenceState.patch(
+      room: room,
+      edits: patch.edits,
+      excludingSessionID: await liveSession.currentSessionID,
+      appID: configuration.appID,
+      updatedAt: configuration.now()
+    )
+    let localMembers = try await persistence.loadRoomPresence(
+      appID: configuration.appID,
+      room: room
+    )
+    await roomPresenceObservers.publish(
+      mergedRoomPresence(local: localMembers, remote: remoteMembers),
+      for: roomPresenceObservationKey(room)
+    )
+  }
+
+  private func applyLiveServerBroadcast(
+    _ broadcast: InstantLiveServerBroadcast
+  ) async throws {
+    guard let room = await liveSession.roomHandle(id: broadcast.roomID) else { return }
+    guard !broadcast.topic.isEmpty,
+      case let .object(envelope)? = broadcast.envelope,
+      let rawPayload = envelope["data"]
+    else {
+      throw InstantError(
+        code: .decodeFailed,
+        operation: "apply Instant live server broadcast",
+        message: "server-broadcast must include room-id, topic, and data.data.",
+        recovery: "Inspect the canonical Instant server-broadcast payload."
+      )
+    }
+    let peerID: String
+    if case let .string(value)? = envelope["peer-id"] {
+      peerID = value
+    } else {
+      peerID = "unknown-peer"
+    }
+    let userID: String
+    if case let .object(user)? = envelope["user"],
+      case let .string(value)? = user["id"]
+    {
+      userID = value
+    } else {
+      userID = peerID
+    }
+    let message = InstantRoomTopicMessage(
+      id: broadcast.clientEventID?.nilIfEmpty ?? configuration.makeID(),
+      appID: configuration.appID,
+      room: room,
+      topic: broadcast.topic,
+      userID: userID,
+      payload: rawPayload.jsonValue,
+      createdAt: configuration.now()
+    )
+    let durableMessages = try await persistence.loadRoomTopicMessages(
+      appID: configuration.appID,
+      room: room,
+      topic: broadcast.topic,
+      limit: nil
+    )
+    await roomTopicObservers.publish(
+      durableMessages + [message],
+      for: roomTopicObservationKey(room: room, topic: broadcast.topic)
+    )
   }
 
   private func sendPendingMutationsToLiveSession() async {
@@ -2377,6 +2635,7 @@ public final class InstantRuntime: Sendable {
     let room = try validatedRoom(room, operation: "leave room")
     if configuration.liveTransport != nil {
       try await liveSession.leaveRoom(room, clientEventID: configuration.makeID())
+      await liveRoomPresenceState.remove(room: room)
     }
     return room
   }
@@ -2401,10 +2660,11 @@ public final class InstantRuntime: Sendable {
         updatedAt: now
       )
       try await persistence.saveRoomPresence(member)
-      let members = try await persistence.loadRoomPresence(
+      let localMembers = try await persistence.loadRoomPresence(
         appID: configuration.appID,
         room: room
       )
+      let members = await combinedRoomPresence(localMembers, room: room)
       await roomPresenceObservers.publish(
         members,
         for: roomPresenceObservationKey(room)
@@ -2426,7 +2686,11 @@ public final class InstantRuntime: Sendable {
 
   public func roomPresence(room: InstantRoomHandle) async throws -> [InstantRoomPresenceMember] {
     let room = try validatedRoom(room, operation: "list room presence")
-    return try await persistence.loadRoomPresence(appID: configuration.appID, room: room)
+    let localMembers = try await persistence.loadRoomPresence(
+      appID: configuration.appID,
+      room: room
+    )
+    return await combinedRoomPresence(localMembers, room: room)
   }
 
   public func observeRoomPresence(room: InstantRoomHandle) async throws
@@ -2436,10 +2700,11 @@ public final class InstantRuntime: Sendable {
 
     await operationGate.enter()
     do {
-      let members = try await persistence.loadRoomPresence(
+      let localMembers = try await persistence.loadRoomPresence(
         appID: configuration.appID,
         room: room
       )
+      let members = await combinedRoomPresence(localMembers, room: room)
       let stream = await roomPresenceObservers.observe(
         key: roomPresenceObservationKey(room),
         current: members
@@ -2463,10 +2728,11 @@ public final class InstantRuntime: Sendable {
         room: room,
         userID: userID
       )
-      let members = try await persistence.loadRoomPresence(
+      let localMembers = try await persistence.loadRoomPresence(
         appID: configuration.appID,
         room: room
       )
+      let members = await combinedRoomPresence(localMembers, room: room)
       await roomPresenceObservers.publish(
         members,
         for: roomPresenceObservationKey(room)
@@ -4718,6 +4984,32 @@ public final class InstantRuntime: Sendable {
 
   private func roomPresenceObservationKey(_ room: InstantRoomHandle) -> InstantRoomPresenceObservationKey {
     InstantRoomPresenceObservationKey(appID: configuration.appID, room: room)
+  }
+
+  private func combinedRoomPresence(
+    _ localMembers: [InstantRoomPresenceMember],
+    room: InstantRoomHandle
+  ) async -> [InstantRoomPresenceMember] {
+    guard configuration.liveTransport != nil else { return localMembers }
+    let currentSessionID = await liveSession.currentSessionID
+    let remoteMembers = await liveRoomPresenceState.current(
+      room: room,
+      excludingSessionID: currentSessionID,
+      appID: configuration.appID,
+      updatedAt: configuration.now()
+    )
+    return mergedRoomPresence(local: localMembers, remote: remoteMembers)
+  }
+
+  private func mergedRoomPresence(
+    local: [InstantRoomPresenceMember],
+    remote: [InstantRoomPresenceMember]
+  ) -> [InstantRoomPresenceMember] {
+    var membersByID = Dictionary(uniqueKeysWithValues: local.map { ($0.id, $0) })
+    for member in remote {
+      membersByID[member.id] = member
+    }
+    return membersByID.values.sorted { $0.id < $1.id }
   }
 
   private func roomTopicObservationKey(

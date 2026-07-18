@@ -794,6 +794,217 @@ struct InstantReactorParityTests {
   }
 
   @Test
+  func runtimeAppliesLivePresencePatchesAndEphemeralServerBroadcasts() async throws {
+    let room = InstantRoomHandle(type: "chat", id: "room-events")
+    let now = InstantTimestamp(milliseconds: 1_700_000_080_000)
+    let cacheURL = try temporaryReactorParityCacheURL()
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "session-self")
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reactor-room-events-parity",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        now: { now },
+        liveTransport: session.transport
+      )
+    )
+    _ = try await runtime.connect()
+    _ = try await runtime.joinRoom(room)
+
+    var presence = (try await runtime.observeRoomPresence(room: room)).makeAsyncIterator()
+    let initialPresence = await presence.next()
+    expectNoDifference(initialPresence, [], reactorRoomEventsSource)
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "join-room-ok",
+        fields: ["room-id": .string(room.id)]
+      )
+    )
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "refresh-presence",
+        fields: [
+          "data": .object([
+            "session-self": livePresenceSession(
+              peerID: "session-self",
+              userID: "user-self",
+              values: ["status": .string("self")]
+            ),
+            "session-peer": livePresenceSession(
+              peerID: "session-peer",
+              userID: "user-peer",
+              values: ["status": .string("online")]
+            ),
+          ]),
+          "room-id": .string(room.id),
+        ]
+      )
+    )
+    let refreshed = try #require(await presence.next())
+    expectNoDifference(refreshed.map(\.userID), ["user-peer"], reactorRoomEventsSource)
+    expectNoDifference(
+      refreshed.first?.values,
+      ["status": .string("online")],
+      reactorRoomEventsSource
+    )
+
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "patch-presence",
+        fields: [
+          "edits": .array([
+            livePresenceEdit(
+              path: ["session-peer", "data", "status"],
+              operation: "r",
+              value: .string("away")
+            ),
+            livePresenceEdit(
+              path: ["session-peer", "data", "typing"],
+              operation: "+",
+              value: .bool(true)
+            ),
+          ]),
+          "room-id": .string(room.id),
+        ]
+      )
+    )
+    let patched = try #require(await presence.next())
+    expectNoDifference(
+      patched.first?.values,
+      ["status": .string("away"), "typing": .bool(true)],
+      reactorRoomEventsSource
+    )
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "patch-presence",
+        fields: [
+          "edits": .array([
+            livePresenceEdit(
+              path: ["session-peer", "data", "typing"],
+              operation: "-"
+            )
+          ]),
+          "room-id": .string(room.id),
+        ]
+      )
+    )
+    let removed = try #require(await presence.next())
+    expectNoDifference(
+      removed.first?.values,
+      ["status": .string("away")],
+      reactorRoomEventsSource
+    )
+    var topics = (try await runtime.observeRoomTopicMessages(
+      room: room,
+      topic: "reaction"
+    )).makeAsyncIterator()
+    let initialTopics = await topics.next()
+    expectNoDifference(initialTopics, [], reactorRoomEventsSource)
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "server-broadcast",
+        clientEventID: "event-peer-reaction",
+        fields: [
+          "data": .object([
+            "data": .object(["emoji": .string("🔥")]),
+            "peer-id": .string("session-peer"),
+            "user": .object(["id": .string("user-peer")]),
+          ]),
+          "room-id": .string(room.id),
+          "topic": .string("reaction"),
+        ]
+      )
+    )
+    let topicMessages = try #require(await topics.next())
+    expectNoDifference(topicMessages.map(\.id), ["event-peer-reaction"], reactorRoomEventsSource)
+    expectNoDifference(topicMessages.map(\.userID), ["user-peer"], reactorRoomEventsSource)
+    expectNoDifference(
+      topicMessages.map(\.payload),
+      [.object(["emoji": .string("🔥")])],
+      reactorRoomEventsSource
+    )
+
+    let selfTopicStream = try await runtime.observeRoomTopicMessages(
+      room: room,
+      topic: "reaction"
+    )
+    let selfTopicTask = Task {
+      var iterator = selfTopicStream.makeAsyncIterator()
+      _ = await iterator.next()
+      return await iterator.next()
+    }
+    defer { selfTopicTask.cancel() }
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "server-broadcast",
+        clientEventID: "event-self-reaction",
+        fields: [
+          "data": .object([
+            "data": .object(["emoji": .string("✅")]),
+            "peer-id": .string("session-self"),
+            "user": .object(["id": .string("user-self")]),
+          ]),
+          "room-id": .string(room.id),
+          "topic": .string("reaction"),
+        ]
+      )
+    )
+    let selfTopicMessages = try await instantLiveWithTimeout(
+      operation: "wait for Reactor current-session server-broadcast",
+      timeoutMilliseconds: 500
+    ) {
+      try #require(await selfTopicTask.value)
+    }
+    expectNoDifference(
+      selfTopicMessages.map(\.id),
+      ["event-self-reaction"],
+      reactorRoomEventsSource
+    )
+    expectNoDifference(
+      selfTopicMessages.map(\.userID),
+      ["user-self"],
+      reactorRoomEventsSource
+    )
+    expectNoDifference(
+      selfTopicMessages.map(\.payload),
+      [.object(["emoji": .string("✅")])],
+      reactorRoomEventsSource
+    )
+    let durableMessages = try await runtime.roomTopicMessages(room: room, topic: "reaction")
+    expectNoDifference(durableMessages, [], reactorRoomEventsSource)
+    _ = try await runtime.closeConnection()
+    let disconnectedPresence = try await runtime.roomPresence(room: room)
+    expectNoDifference(
+      disconnectedPresence.map(\.userID),
+      ["user-peer"],
+      reactorRoomEventsSource
+    )
+    expectNoDifference(
+      disconnectedPresence.map(\.values),
+      [["status": .string("away")]],
+      reactorRoomEventsSource
+    )
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reactor-room-events-parity",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        now: { now }
+      )
+    )
+    let relaunchedPresence = try await relaunchedRuntime.roomPresence(room: room)
+    let relaunchedTopics = try await relaunchedRuntime.roomTopicMessages(
+      room: room,
+      topic: "reaction"
+    )
+    expectNoDifference(relaunchedPresence, [], reactorRoomEventsSource)
+    expectNoDifference(relaunchedTopics, [], reactorRoomEventsSource)
+  }
+
+  @Test
   func upstreamReactorRewriteMutationsKeepsPendingTransportStable() async throws {
     let cacheURL = try temporaryReactorParityCacheURL()
     let seedTime = InstantTimestamp(milliseconds: 1_700_000_010_000)
@@ -935,11 +1146,41 @@ private let pythonConnectionCloseReconnectSource =
 private let reactorRoomReconnectSource =
   "upstream/instant/client/packages/core/src/Reactor.js init-ok room loop, joinRoom, _flushEnqueuedRoomData, publishPresence, and publishTopic [adapted: Swift rejoins an active room with current presence, queues newer presence/topic data until join-room-ok, flushes it once, and sends leave-room on explicit cleanup.]"
 
+private let reactorRoomEventsSource =
+  "upstream/instant/client/packages/core/src/Reactor.js refresh-presence, patch-presence, and server-broadcast receive branches plus upstream/instant/server/test/instant/reactive/session_test.clj patch-presence-works and broadcast-works [adapted: Swift excludes its own live session from peer presence, applies canonical +/r/- edits in memory, publishes typed peer state, and emits remote broadcasts without adding them to durable topic history.]"
+
 private let reactorRewriteSource =
   "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts rewrite mutations [adapted: Swift pending mutations store typed transactions and lower them to stable transport steps over declared server attributes instead of rewriting cached JavaScript tx-steps.]"
 
 private let reactorRewriteMultipleSource =
   "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts rewrite mutations works with multiple transactions [adapted: Swift re-lowers every pending typed transaction to the same transport steps after persistence instead of rewriting a JavaScript pendingMutations map.]"
+
+private func livePresenceSession(
+  peerID: String,
+  userID: String,
+  values: [String: InstantLiveJSONValue]
+) -> InstantLiveJSONValue {
+  .object([
+    "data": .object(values),
+    "peer-id": .string(peerID),
+    "user": .object(["id": .string(userID)]),
+  ])
+}
+
+private func livePresenceEdit(
+  path: [String],
+  operation: String,
+  value: InstantLiveJSONValue? = nil
+) -> InstantLiveJSONValue {
+  var parts: [InstantLiveJSONValue] = [
+    .array(path.map(InstantLiveJSONValue.string)),
+    .string(operation),
+  ]
+  if let value {
+    parts.append(value)
+  }
+  return .array(parts)
+}
 
 private func temporaryReactorParityCacheURL() throws -> URL {
   let directory = FileManager.default.temporaryDirectory

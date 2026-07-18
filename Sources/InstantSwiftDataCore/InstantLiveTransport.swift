@@ -817,6 +817,25 @@ private extension InstantLiveJSONValue {
   }
 }
 
+extension InstantLiveJSONValue {
+  var jsonValue: JSONValue {
+    switch self {
+    case .null:
+      return .null
+    case let .bool(value):
+      return .bool(value)
+    case let .number(value):
+      return .number(value)
+    case let .string(value):
+      return .string(value)
+    case let .array(values):
+      return .array(values.map(\.jsonValue))
+    case let .object(values):
+      return .object(values.mapValues(\.jsonValue))
+    }
+  }
+}
+
 private actor InstantLocalLiveSession {
   private let appID: String
   private var pending: [InstantLiveMessage] = []
