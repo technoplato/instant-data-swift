@@ -3301,6 +3301,10 @@ struct CLIArgumentParserTests {
       try parseValidationRunner(["--live-auth-invalidation"]),
       .liveAuthInvalidation
     )
+    expectNoDifference(
+      try parseValidationRunner(["--live-playback-room"]),
+      .livePlaybackRoom
+    )
     expectNoDifference(try parseValidationRunner(["--typed-drafts"]), .typedDrafts)
     expectNoDifference(try parseValidationRunner(["--platform-adapters"]), .platformAdapters)
     expectNoDifference(try parseValidationRunner(["--syncups-recording"]), .syncUpsRecording)
@@ -3344,6 +3348,14 @@ struct CLIArgumentParserTests {
       CLIValidationRunnerInvocation.liveSharing.appID,
       "live-sharing-validation"
     )
+    expectNoDifference(
+      CLIValidationRunnerInvocation.livePlaybackRoom.caseID,
+      "validation.live.playback-room"
+    )
+    expectNoDifference(
+      CLIValidationRunnerInvocation.livePlaybackRoom.appID,
+      "live-playback-room"
+    )
     expectNoDifference(CLIValidationRunnerInvocation.coverage.appID, "local-validation")
   }
 
@@ -3357,6 +3369,7 @@ struct CLIArgumentParserTests {
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-sharing"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-sharing-writer"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-auth-invalidation"))
+    #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-playback-room"))
     try expectValidationRunnerParseError(
       ["--remote"],
       description: CLIValidationRunnerUsage.validationRunner

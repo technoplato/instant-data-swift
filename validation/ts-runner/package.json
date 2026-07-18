@@ -13,6 +13,7 @@
     "test:recording-action": "tsx --test src/recording-action-sdk-contract.test.ts",
     "test:sharing": "tsx --test src/sharing-sdk-contract.test.ts",
     "live:sharing": "tsx src/sharing-live-contract.ts",
+    "live:playback-room": "tsx src/playback-room-live-contract.ts",
     "typecheck": "../typecheck-generated-contract.sh",
     "validate": "tsx src/main.ts"
   },
