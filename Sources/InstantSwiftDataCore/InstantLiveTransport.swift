@@ -828,17 +828,12 @@ private extension InstantLiveJSONValue {
     case _ as NSNull:
       self = .null
 
-    case let value as Bool:
-      self = .bool(value)
-
-    case let value as Int:
-      self = .number(Double(value))
-
-    case let value as Int64:
-      self = .number(Double(value))
-
-    case let value as Double:
-      self = .number(value)
+    case let value as NSNumber:
+      if CFGetTypeID(value) == CFBooleanGetTypeID() {
+        self = .bool(value.boolValue)
+      } else {
+        self = .number(value.doubleValue)
+      }
 
     case let value as String:
       self = .string(value)
@@ -848,9 +843,6 @@ private extension InstantLiveJSONValue {
 
     case let values as [String: Any]:
       self = .object(try values.mapValues(Self.init(jsonObject:)))
-
-    case let value as NSNumber:
-      self = .number(value.doubleValue)
 
     default:
       throw InstantError(

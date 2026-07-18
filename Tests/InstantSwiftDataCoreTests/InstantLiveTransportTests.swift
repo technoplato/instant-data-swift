@@ -111,6 +111,49 @@ struct InstantLiveTransportTests {
   }
 
   @Test
+  func transactMessagePreservesZeroAndOneAsNumbers() throws {
+    let message = try InstantLiveMessage.transact(
+      [
+        .addTriple(
+          entity: .id("recording-1"),
+          attributeID: "recordings/durationMilliseconds",
+          value: .number(0)
+        ),
+        .addTriple(
+          entity: .id("attachment-1"),
+          attributeID: "attachments/offsetMilliseconds",
+          value: .number(1)
+        ),
+      ],
+      clientEventID: "event-numeric-transact"
+    )
+
+    guard case let .array(steps) = message.fields["tx-steps"] else {
+      Issue.record("Expected tx-steps array.")
+      return
+    }
+    guard case let .array(zeroStep) = steps[0],
+      case let .array(oneStep) = steps[1]
+    else {
+      Issue.record("Expected transaction step arrays.")
+      return
+    }
+    expectNoDifference(zeroStep[3], .number(0))
+    expectNoDifference(oneStep[3], .number(1))
+
+    let object = try #require(
+      JSONSerialization.jsonObject(with: JSONEncoder().encode(message)) as? [String: Any]
+    )
+    let encodedSteps = try #require(object["tx-steps"] as? [[Any]])
+    let encodedZero = try #require(encodedSteps[0][3] as? NSNumber)
+    let encodedOne = try #require(encodedSteps[1][3] as? NSNumber)
+    #expect(CFGetTypeID(encodedZero) != CFBooleanGetTypeID())
+    #expect(CFGetTypeID(encodedOne) != CFBooleanGetTypeID())
+    expectNoDifference(encodedZero.doubleValue, 0)
+    expectNoDifference(encodedOne.doubleValue, 1)
+  }
+
+  @Test
   func roomMessagesEncodeCanonicalReactorShapes() throws {
     let room = InstantRoomHandle(type: "chat", id: "room-1")
     let presence: [String: JSONValue] = [
