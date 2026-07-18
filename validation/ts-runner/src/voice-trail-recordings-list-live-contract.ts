@@ -9,6 +9,7 @@ import type { InstaQLParams, InstaQLResponse } from "@instantdb/core";
 
 import type { AppSchema } from "../../fixtures/voice-trail.schema.js";
 import { voiceTrailRuntimeSchema } from "./voice-trail-runtime-schema.js";
+import { voiceTrailRecordingsQuery } from "./voice-trail-sdk-contract.js";
 
 const appId = requiredEnvironment("INSTANT_APP_ID");
 const adminToken = requiredEnvironment("INSTANT_ADMIN_TOKEN");
@@ -92,6 +93,20 @@ try {
     memberID: users.member.id,
     role: "reader",
   });
+  const ownerList = await ownerDB.query(voiceTrailRecordingsQuery({
+    viewerID: users.owner.id,
+    scope: "mine",
+    searchText: "",
+  }));
+  assert.equal(ownerList.v3_capture_recordings.length, 1);
+  assert.equal(ownerList.v3_capture_recordings[0]?.id, ids.recordingID);
+  const memberList = await memberDB.query(voiceTrailRecordingsQuery({
+    viewerID: users.member.id,
+    scope: "shared",
+    searchText: "",
+  }));
+  assert.equal(memberList.v3_capture_recordings.length, 1);
+  assert.equal(memberList.v3_capture_recordings[0]?.id, ids.recordingID);
 
   const ownerRows = await runSwift("owner", users.owner.token, users.owner.id);
   assert.deepStrictEqual(ownerRows.map((row) => row.details.stage), ["owner", "cancelled"]);
