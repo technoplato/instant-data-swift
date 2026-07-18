@@ -461,18 +461,49 @@ struct ActiveRecordingPresence:
     InstantID<VoiceTrailUser>
   var displayName: String
   var isPlaying: Bool
-  var offset: Duration
+  /// Canonical Instant wire value. Product code reads `offset` as `Duration`.
+  var offsetSeconds: Double
   var focusedSegmentID:
     InstantID<TranscriptionSegment>?
+
+  var offset: Duration {
+    .seconds(offsetSeconds)
+  }
+
+  init(
+    userID: InstantID<VoiceTrailUser>,
+    displayName: String,
+    isPlaying: Bool,
+    offset: Duration,
+    focusedSegmentID: InstantID<TranscriptionSegment>?
+  ) {
+    self.userID = userID
+    self.displayName = displayName
+    self.isPlaying = isPlaying
+    let components = offset.components
+    offsetSeconds =
+      Double(components.seconds)
+      + Double(components.attoseconds) / 1e18
+    self.focusedSegmentID = focusedSegmentID
+  }
 
   static func patch(
     offset: Duration,
     isPlaying: Bool
   ) -> InstantPresencePatch<Self> {
+    let components = offset.components
+    let offsetSeconds =
+      Double(components.seconds)
+      + Double(components.attoseconds) / 1e18
     InstantPresencePatch {
-      Set(\.offset, offset)
+      Set(\.offsetSeconds, offsetSeconds)
       Set(\.isPlaying, isPlaying)
     }
   }
 }
 ```
+
+`ActiveRecordingPresence` therefore keeps the product-facing `Duration`
+convenience without sending Foundation's synthesized duration shape. Its exact
+room payload is `userID: string`, `displayName: string`, `isPlaying: boolean`,
+`offsetSeconds: number`, and optional `focusedSegmentID: string`.

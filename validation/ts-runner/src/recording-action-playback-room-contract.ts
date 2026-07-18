@@ -10,15 +10,25 @@ room.publishPresence({
   displayName: "Ada",
   isPlaying: true,
   offsetSeconds: 12.5,
+  focusedSegmentID: "segment-typecheck",
 });
 room.publishTopic("reaction", { emoji: "wave", offsetSeconds: 12.5 });
 room.publishTopic("commentDraft", { text: "Draft", offsetSeconds: 12.5 });
 room.publishTopic("commentCommitted", { commentID: "comment-typecheck" });
 
 room.subscribePresence(
-  { keys: ["userID", "displayName", "isPlaying", "offsetSeconds"] },
+  {
+    keys: [
+      "userID",
+      "displayName",
+      "isPlaying",
+      "offsetSeconds",
+      "focusedSegmentID",
+    ],
+  },
   (presence) => {
     presence.user?.offsetSeconds.toFixed();
+    presence.user?.focusedSegmentID?.toUpperCase();
   },
 );
 room.subscribeTopic("reaction", (event) => {

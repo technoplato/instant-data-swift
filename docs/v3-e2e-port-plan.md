@@ -607,12 +607,11 @@ reverse the direction and require Swift's normal live room observers to decode
 the canonical payloads. Include disconnect cleanup, reconnect/rejoin, warning,
 and exact expected/actual evidence.
 
-At the start of that slice, normalize the remaining product-payload mismatch:
-the compiled/generated contract uses `offsetSeconds: Double`, while the fuller
-screen sketch still says `offset: Duration` and includes `focusedSegmentID`.
-Choose one explicit Codable wire representation and update both sources before
-claiming an exact cross-SDK playback shape. This is a narrow payload decision,
-not a reason to reopen the settled wrapper/modifier syntax.
+The product-payload mismatch is resolved: playback presence stores and encodes
+`offsetSeconds: Double`, offers `Duration` as a computed product convenience,
+and includes optional `focusedSegmentID`. Typed `InstantID` values encode as
+canonical strings while retaining legacy keyed-shape decoding. The live room
+gate must assert this exact presence shape.
 
 File-backed `stream-append` fetching and remote stream metadata bootstrap remain
 important live-stream work, but they do not block the recording-screen fixture

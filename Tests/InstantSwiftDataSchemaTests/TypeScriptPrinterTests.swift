@@ -401,6 +401,7 @@ struct TypeScriptPrinterTests {
           "recording.playback": {
             presence: i.entity({
               displayName: i.string(),
+              focusedSegmentID: i.string().optional(),
               isPlaying: i.boolean(),
               offsetSeconds: i.number(),
               userID: i.string(),
@@ -604,7 +605,7 @@ struct TypeScriptPrinterTests {
     expectNoDifference(room.name, "recording.playback")
     expectNoDifference(
       room.presence.attributes.map(\.name),
-      ["userID", "displayName", "isPlaying", "offsetSeconds"]
+      ["userID", "displayName", "isPlaying", "offsetSeconds", "focusedSegmentID"]
     )
     expectNoDifference(
       room.topics.map(\.name),

@@ -134,10 +134,11 @@ import Testing
       let room = V3PlaybackRooms.activeRecording("recording-presence")
       let presence = Presence<V3PlaybackPresence>()
       let current = V3PlaybackPresence(
-        userID: "current-user",
+        userID: InstantID(rawValue: "current-user"),
         displayName: "Current Listener",
         isPlaying: true,
-        offsetSeconds: 12.5
+        offsetSeconds: 12.5,
+        focusedSegmentID: InstantID(rawValue: "segment-current")
       )
 
       let observationTask = Task { @MainActor in
@@ -156,6 +157,7 @@ import Testing
         [
           [
             "displayName": .string("Current Listener"),
+            "focusedSegmentID": .string("segment-current"),
             "isPlaying": .bool(true),
             "offsetSeconds": .number(12.5),
             "userID": .string("current-user"),
@@ -171,6 +173,7 @@ import Testing
             userID: "remote-user",
             values: [
               "displayName": .string("Remote Listener"),
+              "focusedSegmentID": .string("segment-remote"),
               "isPlaying": .bool(false),
               "offsetSeconds": .number(3.25),
             ],
@@ -186,10 +189,11 @@ import Testing
             || presence.wrappedValue
               == [
               V3PlaybackPresence(
-                userID: "remote-user",
+                userID: InstantID(rawValue: "remote-user"),
                 displayName: "Remote Listener",
                 isPlaying: false,
-                offsetSeconds: 3.25
+                offsetSeconds: 3.25,
+                focusedSegmentID: InstantID(rawValue: "segment-remote")
               )
             ]
         }
@@ -198,10 +202,11 @@ import Testing
         presence.wrappedValue,
         [
           V3PlaybackPresence(
-            userID: "remote-user",
+            userID: InstantID(rawValue: "remote-user"),
             displayName: "Remote Listener",
             isPlaying: false,
-            offsetSeconds: 3.25
+            offsetSeconds: 3.25,
+            focusedSegmentID: InstantID(rawValue: "segment-remote")
           )
         ]
       )
@@ -381,10 +386,11 @@ import Testing
           $listeners,
           in: room,
           publishing: V3PlaybackPresence(
-            userID: "current-user",
+            userID: InstantID(rawValue: "current-user"),
             displayName: "Current Listener",
             isPlaying: false,
-            offsetSeconds: 0
+            offsetSeconds: 0,
+            focusedSegmentID: nil
           )
         )
         .instantTopic($reactions, in: room)
@@ -433,20 +439,25 @@ import Testing
 
       case reaction
       case commentDraft
+      case commentCommitted
     }
   }
 
   private struct V3PlaybackPresence: Codable, Equatable, Sendable {
-    var userID: String
+    var userID: InstantID<V3PlaybackUser>
     var displayName: String
     var isPlaying: Bool
     var offsetSeconds: Double
+    var focusedSegmentID: InstantID<V3PlaybackSegment>?
   }
 
   private struct V3PlaybackReaction: Codable, Equatable, Sendable {
     var emoji: String
     var offsetSeconds: Double
   }
+
+  private enum V3PlaybackUser {}
+  private enum V3PlaybackSegment {}
 
   private actor V3PlaybackRoomRecorder {
     private var joinedRooms: [InstantRoomHandle] = []

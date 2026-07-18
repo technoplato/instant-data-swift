@@ -714,6 +714,12 @@ call-site publication callbacks; `.instantTopic(_:in:)` attaches it to the
 matching room schema. Commits `a7c1ad3`, `9fe9c25`, and `031e4fe` are the
 compiling and lifecycle-tested baseline.
 
+Decision, 2026-07-18: playback time crosses the room boundary as
+`offsetSeconds: Double`; `Duration` is a product convenience computed from that
+stored value. Typed `InstantID` values encode as canonical strings, so presence
+uses string `userID` and optional string `focusedSegmentID` without giving up
+typed IDs in Swift.
+
 ## Local ID
 
 Local IDs should be first-class because products need stable device,

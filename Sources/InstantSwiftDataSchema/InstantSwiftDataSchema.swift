@@ -551,6 +551,13 @@ public enum InstantSchemaExamples {
           name: "offsetSeconds",
           valueType: .number
         ),
+        InstantAttribute(
+          id: "rooms/recording.playback/presence/focusedSegmentID",
+          namespace: "rooms/recording.playback/presence",
+          name: "focusedSegmentID",
+          valueType: .string,
+          isRequired: false
+        ),
       ]
     ),
     topics: [
