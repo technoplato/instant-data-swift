@@ -1,6 +1,7 @@
 {
   "compilerOptions": {
     "allowSyntheticDefaultImports": true,
+    "baseUrl": ".",
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
     "module": "NodeNext",
@@ -8,9 +9,15 @@
     "noEmit": true,
     "noImplicitAny": false,
     "strict": true,
-    "target": "ES2022"
+    "target": "ES2022",
+    "paths": {
+      "@instantdb/core": ["node_modules/@instantdb/core"]
+    }
   },
   "include": [
-    ".generated-contract.*/*.ts"
+    ".generated-contract.*/*.ts",
+    "../fixtures/recording-action.server.schema.ts",
+    "src/recording-action-sdk-contract.ts",
+    "src/recording-action-sdk-contract.test.ts"
   ]
 }
