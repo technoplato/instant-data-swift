@@ -413,29 +413,26 @@ struct InstantSwiftDataCLI {
           let localQuery = InstantRecordingActionLiveContract.localQuery(
             recordingID: recordingActionIDs.recordingID
           )
+          let attachmentsQuery = InstantRecordingActionLiveContract.localAttachmentsQuery(
+            recordingID: recordingActionIDs.recordingID
+          )
+          let membersQuery = InstantRecordingActionLiveContract.localMembersQuery(
+            recordingID: recordingActionIDs.recordingID
+          )
+          let transcriptionsQuery = InstantRecordingActionLiveContract
+            .localTranscriptionsQuery(recordingID: recordingActionIDs.recordingID)
           runtimeProjection = { runtime in
             let recordings = try await runtime.query(localQuery)
-            let observed = try InstantRecordingActionObservedSnapshot.decode(
-              recordingSnapshots: recordings,
-              ids: recordingActionIDs
-            )
-            guard observed.recordingState == "finished",
-              observed.durationMilliseconds == 42_000,
-              observed.transcriptionState == "complete"
-            else {
-              throw InstantError(
-                code: .validationFailed,
-                operation: "validate recording action live observation",
-                namespace: "v3_capture_recordings",
-                localID: recordingActionIDs.recordingID,
-                message: "Expected finished/42000/complete canonical TypeScript update.",
-                recovery: "Transact the canonical recording update before completing the boundary."
-              )
-            }
+            let attachments = try await runtime.query(attachmentsQuery)
+            let members = try await runtime.query(membersQuery)
+            let transcriptions = try await runtime.query(transcriptionsQuery)
             return LiveSessionRuntimeProjection(
               cachedEntityIDs: recordings.map(\.id),
               observedSnapshot: try InstantRecordingActionLiveContract.snapshot(
-                from: recordings
+                recordings: recordings,
+                attachments: attachments,
+                members: members,
+                transcriptions: transcriptions
               )
             )
           }

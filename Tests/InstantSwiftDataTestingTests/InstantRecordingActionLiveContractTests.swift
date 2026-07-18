@@ -108,16 +108,21 @@ struct InstantRecordingActionLiveContractTests {
       localQuery.filters,
       [.equals(field: "id", value: .string(ids.recordingID))]
     )
-    expectNoDifference(
-      localQuery.includes?.map { [$0.name, $0.direction.rawValue] },
-      [
-        ["owner", "forward"],
-        ["attachments", "reverse"],
-        ["members", "reverse"],
-        ["transcriptions", "reverse"],
-      ]
-    )
-    expectNoDifference(localQuery.includes?[2].query?.includes?.map(\.name), ["user"])
+    expectNoDifference(localQuery.includes, nil)
+    for query in [
+      InstantRecordingActionLiveContract.localAttachmentsQuery(
+        recordingID: ids.recordingID
+      ),
+      InstantRecordingActionLiveContract.localMembersQuery(recordingID: ids.recordingID),
+      InstantRecordingActionLiveContract.localTranscriptionsQuery(
+        recordingID: ids.recordingID
+      ),
+    ] {
+      expectNoDifference(
+        query.filters,
+        [.equals(field: "recording", value: .ref(ids.recordingID))]
+      )
+    }
 
     let owner = InstantLinkedEntitySnapshot(
       id: ids.ownerID,
@@ -131,18 +136,26 @@ struct InstantRecordingActionLiveContractTests {
         "kind": .one(.string("text")),
         "contents": .one(.string("Cross-SDK notes")),
         "offsetMilliseconds": .one(.number(2_500)),
+        "recording": .one(.ref(ids.recordingID)),
       ]
     )
     let member = InstantLinkedEntitySnapshot(
       id: ids.memberID,
       namespace: "v3_capture_members",
-      values: ["role": .one(.string("owner"))],
+      values: [
+        "role": .one(.string("owner")),
+        "recording": .one(.ref(ids.recordingID)),
+        "user": .one(.ref(ids.ownerID)),
+      ],
       links: ["user": [owner]]
     )
     let transcription = InstantLinkedEntitySnapshot(
       id: ids.transcriptionID,
       namespace: "v3_capture_transcriptions",
-      values: ["state": .one(.string("processing"))]
+      values: [
+        "state": .one(.string("processing")),
+        "recording": .one(.ref(ids.recordingID)),
+      ]
     )
     let recording = InstantEntitySnapshot(
       id: ids.recordingID,
@@ -152,6 +165,7 @@ struct InstantRecordingActionLiveContractTests {
         "deviceID": .one(.string("typescript-e2e")),
         "state": .one(.string("recording")),
         "durationMilliseconds": .one(.number(0)),
+        "owner": .one(.ref(ids.ownerID)),
       ],
       links: [
         "owner": [owner],
@@ -194,6 +208,39 @@ struct InstantRecordingActionLiveContractTests {
           ])
         ]),
       ])
+    )
+    expectNoDifference(
+      try InstantRecordingActionLiveContract.snapshot(
+        recordings: [
+          InstantEntitySnapshot(
+            id: recording.id,
+            namespace: recording.namespace,
+            values: recording.values
+          )
+        ],
+        attachments: [
+          InstantEntitySnapshot(
+            id: attachment.id,
+            namespace: attachment.namespace,
+            values: attachment.values
+          )
+        ],
+        members: [
+          InstantEntitySnapshot(
+            id: member.id,
+            namespace: member.namespace,
+            values: member.values
+          )
+        ],
+        transcriptions: [
+          InstantEntitySnapshot(
+            id: transcription.id,
+            namespace: transcription.namespace,
+            values: transcription.values
+          )
+        ]
+      ),
+      try InstantRecordingActionLiveContract.snapshot(from: [recording])
     )
   }
 

@@ -101,21 +101,31 @@ public enum InstantRecordingActionLiveContract {
     InstantQueryPlan(
       id: "validation.live.recording-action.snapshot",
       namespace: "v3_capture_recordings",
-      filters: [.equals(field: "id", value: .string(recordingID))],
-      includes: [
-        InstantQueryInclude("owner"),
-        InstantQueryInclude("attachments", direction: .reverse),
-        InstantQueryInclude(
-          "members",
-          direction: .reverse,
-          query: InstantQueryIncludePlan(
-            id: "validation.live.recording-action.members",
-            namespace: "v3_capture_members",
-            includes: [InstantQueryInclude("user")]
-          )
-        ),
-        InstantQueryInclude("transcriptions", direction: .reverse),
-      ]
+      filters: [.equals(field: "id", value: .string(recordingID))]
+    )
+  }
+
+  public static func localAttachmentsQuery(recordingID: String) -> InstantQueryPlan {
+    childQuery(
+      id: "validation.live.recording-action.attachments",
+      namespace: "v3_capture_attachments",
+      recordingID: recordingID
+    )
+  }
+
+  public static func localMembersQuery(recordingID: String) -> InstantQueryPlan {
+    childQuery(
+      id: "validation.live.recording-action.members",
+      namespace: "v3_capture_members",
+      recordingID: recordingID
+    )
+  }
+
+  public static func localTranscriptionsQuery(recordingID: String) -> InstantQueryPlan {
+    childQuery(
+      id: "validation.live.recording-action.transcriptions",
+      namespace: "v3_capture_transcriptions",
+      recordingID: recordingID
     )
   }
 
@@ -265,6 +275,43 @@ public enum InstantRecordingActionLiveContract {
     ])
   }
 
+  public static func snapshot(
+    recordings: [InstantEntitySnapshot],
+    attachments: [InstantEntitySnapshot],
+    members: [InstantEntitySnapshot],
+    transcriptions: [InstantEntitySnapshot]
+  ) throws -> InstantLiveJSONValue {
+    guard recordings.count == 1, var recording = recordings.first else {
+      throw snapshotError(
+        path: "v3_capture_recordings",
+        message: "Expected exactly one recording, received \(recordings.count)."
+      )
+    }
+    let ownerID = try ref(recording.values, "owner", "recording.owner")
+    let linkedMembers = try members.map { member -> InstantLinkedEntitySnapshot in
+      let userID = try ref(member.values, "user", "member.user")
+      return InstantLinkedEntitySnapshot(
+        id: member.id,
+        namespace: member.namespace,
+        values: member.values,
+        links: [
+          "user": [
+            InstantLinkedEntitySnapshot(id: userID, namespace: "$users", values: [:])
+          ]
+        ]
+      )
+    }
+    recording.links = [
+      "owner": [
+        InstantLinkedEntitySnapshot(id: ownerID, namespace: "$users", values: [:])
+      ],
+      "attachments": attachments.map(InstantLinkedEntitySnapshot.init),
+      "members": linkedMembers,
+      "transcriptions": transcriptions.map(InstantLinkedEntitySnapshot.init),
+    ]
+    return try snapshot(from: [recording])
+  }
+
   private static func add(
     _ entityID: String,
     _ attributeID: String,
@@ -274,6 +321,18 @@ public enum InstantRecordingActionLiveContract {
       entity: .id(entityID),
       attributeID: attributeID,
       value: value
+    )
+  }
+
+  private static func childQuery(
+    id: String,
+    namespace: String,
+    recordingID: String
+  ) -> InstantQueryPlan {
+    InstantQueryPlan(
+      id: id,
+      namespace: namespace,
+      filters: [.equals(field: "recording", value: .ref(recordingID))]
     )
   }
 
@@ -321,6 +380,17 @@ public enum InstantRecordingActionLiveContract {
   ) throws -> Double {
     guard case let .number(value) = values[field]?.first, value.isFinite else {
       throw snapshotError(path: path, message: "Expected a finite number value.")
+    }
+    return value
+  }
+
+  private static func ref(
+    _ values: [String: InstantMaterializedValue],
+    _ field: String,
+    _ path: String
+  ) throws -> String {
+    guard case let .ref(value) = values[field]?.first else {
+      throw snapshotError(path: path, message: "Expected a reference value.")
     }
     return value
   }
