@@ -263,7 +263,9 @@ async function runSwift(
     if (!line.trim()) continue;
     const row = JSON.parse(line) as SwiftEvidence;
     rows.push(row);
-    assert.equal(row.ok, true);
+    if (!row.ok) {
+      throw new Error(`Swift VoiceTrail evidence failed: ${line}`);
+    }
     await onStage(row.details.stage);
   }
   const status = await close;
