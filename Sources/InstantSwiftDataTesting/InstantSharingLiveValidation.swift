@@ -420,6 +420,7 @@ private actor SharingValueRecorder {
   private var recordedValues: [Double] = []
 
   func append(_ value: Double) {
+    guard recordedValues.last != value else { return }
     recordedValues.append(value)
   }
 
