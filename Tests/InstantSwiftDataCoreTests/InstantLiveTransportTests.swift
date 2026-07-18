@@ -165,6 +165,91 @@ struct InstantLiveTransportTests {
   }
 
   @Test
+  func serverEventsDecodeCanonicalRoomPresenceAndBroadcastShapes() throws {
+    let join = InstantLiveServerEvent(
+      message: InstantLiveMessage(
+        op: "join-room-ok",
+        clientEventID: "event-join",
+        fields: ["room-id": .string("room-1")]
+      )
+    )
+    guard case let .joinRoomOK(joinOK) = join else {
+      Issue.record("Expected join-room-ok, got \(join.op).")
+      return
+    }
+    expectNoDifference(joinOK.roomID, "room-1")
+    expectNoDifference(joinOK.clientEventID, "event-join")
+
+    let sessions: [String: InstantLiveJSONValue] = [
+      "session-peer": .object([
+        "data": .object(["status": .string("online")]),
+        "peer-id": .string("session-peer"),
+        "user": .null,
+      ])
+    ]
+    let refresh = InstantLiveServerEvent(
+      message: InstantLiveMessage(
+        op: "refresh-presence",
+        fields: [
+          "data": .object(sessions),
+          "room-id": .string("room-1"),
+        ]
+      )
+    )
+    guard case let .refreshPresence(presence) = refresh else {
+      Issue.record("Expected refresh-presence, got \(refresh.op).")
+      return
+    }
+    expectNoDifference(presence.roomID, "room-1")
+    expectNoDifference(presence.sessions, sessions)
+
+    let edits: [InstantLiveJSONValue] = [
+      .array([
+        .array([.string("session-peer"), .string("data"), .string("status")]),
+        .string("r"),
+        .string("away"),
+      ])
+    ]
+    let patch = InstantLiveServerEvent(
+      message: InstantLiveMessage(
+        op: "patch-presence",
+        fields: [
+          "edits": .array(edits),
+          "room-id": .string("room-1"),
+        ]
+      )
+    )
+    guard case let .patchPresence(presencePatch) = patch else {
+      Issue.record("Expected patch-presence, got \(patch.op).")
+      return
+    }
+    expectNoDifference(presencePatch.edits, edits)
+
+    let envelope: InstantLiveJSONValue = .object([
+      "data": .object(["emoji": .string("🔥")]),
+      "peer-id": .string("session-peer"),
+      "user": .null,
+    ])
+    let broadcast = InstantLiveServerEvent(
+      message: InstantLiveMessage(
+        op: "server-broadcast",
+        fields: [
+          "data": envelope,
+          "room-id": .string("room-1"),
+          "topic": .string("reaction"),
+        ]
+      )
+    )
+    guard case let .serverBroadcast(message) = broadcast else {
+      Issue.record("Expected server-broadcast, got \(broadcast.op).")
+      return
+    }
+    expectNoDifference(message.roomID, "room-1")
+    expectNoDifference(message.topic, "reaction")
+    expectNoDifference(message.envelope, envelope)
+  }
+
+  @Test
   func serverEventPreservesNumericProcessedTransactionIDs() throws {
     let queryData = Data(
       """

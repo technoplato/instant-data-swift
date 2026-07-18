@@ -348,12 +348,80 @@ public struct InstantLiveErrorMessage: Hashable, Sendable {
   }
 }
 
+public struct InstantLiveRoomOK: Hashable, Sendable {
+  public var op: String
+  public var clientEventID: String?
+  public var roomID: String
+
+  public init(op: String, clientEventID: String?, roomID: String) {
+    self.op = op
+    self.clientEventID = clientEventID
+    self.roomID = roomID
+  }
+}
+
+public struct InstantLivePresenceRefresh: Hashable, Sendable {
+  public var clientEventID: String?
+  public var roomID: String
+  public var sessions: [String: InstantLiveJSONValue]
+
+  public init(
+    clientEventID: String?,
+    roomID: String,
+    sessions: [String: InstantLiveJSONValue]
+  ) {
+    self.clientEventID = clientEventID
+    self.roomID = roomID
+    self.sessions = sessions
+  }
+}
+
+public struct InstantLivePresencePatch: Hashable, Sendable {
+  public var clientEventID: String?
+  public var roomID: String
+  public var edits: [InstantLiveJSONValue]
+
+  public init(
+    clientEventID: String?,
+    roomID: String,
+    edits: [InstantLiveJSONValue]
+  ) {
+    self.clientEventID = clientEventID
+    self.roomID = roomID
+    self.edits = edits
+  }
+}
+
+public struct InstantLiveServerBroadcast: Hashable, Sendable {
+  public var clientEventID: String?
+  public var roomID: String
+  public var topic: String
+  public var envelope: InstantLiveJSONValue?
+
+  public init(
+    clientEventID: String?,
+    roomID: String,
+    topic: String,
+    envelope: InstantLiveJSONValue?
+  ) {
+    self.clientEventID = clientEventID
+    self.roomID = roomID
+    self.topic = topic
+    self.envelope = envelope
+  }
+}
+
 public enum InstantLiveServerEvent: Hashable, Sendable {
   case initOK(InstantLiveInitOK)
   case addQueryOK(InstantLiveQueryOK)
   case addQueryExists(InstantLiveQueryOK)
   case refreshOK(InstantLiveRefreshOK)
   case transactOK(InstantLiveTransactOK)
+  case joinRoomOK(InstantLiveRoomOK)
+  case leaveRoomOK(InstantLiveRoomOK)
+  case refreshPresence(InstantLivePresenceRefresh)
+  case patchPresence(InstantLivePresencePatch)
+  case serverBroadcast(InstantLiveServerBroadcast)
   case error(InstantLiveErrorMessage)
   case other(InstantLiveMessage)
 
@@ -410,6 +478,42 @@ public enum InstantLiveServerEvent: Hashable, Sendable {
         )
       )
 
+    case "join-room-ok", "leave-room-ok":
+      let room = InstantLiveRoomOK(
+        op: message.op,
+        clientEventID: message.clientEventID,
+        roomID: message.fields["room-id"]?.stringValue ?? ""
+      )
+      self = message.op == "join-room-ok" ? .joinRoomOK(room) : .leaveRoomOK(room)
+
+    case "refresh-presence":
+      self = .refreshPresence(
+        InstantLivePresenceRefresh(
+          clientEventID: message.clientEventID,
+          roomID: message.fields["room-id"]?.stringValue ?? "",
+          sessions: message.fields["data"]?.objectValue ?? [:]
+        )
+      )
+
+    case "patch-presence":
+      self = .patchPresence(
+        InstantLivePresencePatch(
+          clientEventID: message.clientEventID,
+          roomID: message.fields["room-id"]?.stringValue ?? "",
+          edits: message.fields["edits"]?.arrayValue ?? []
+        )
+      )
+
+    case "server-broadcast":
+      self = .serverBroadcast(
+        InstantLiveServerBroadcast(
+          clientEventID: message.clientEventID,
+          roomID: message.fields["room-id"]?.stringValue ?? "",
+          topic: message.fields["topic"]?.stringValue ?? "",
+          envelope: message.fields["data"]
+        )
+      )
+
     case "error":
       self = .error(
         InstantLiveErrorMessage(
@@ -438,6 +542,16 @@ public enum InstantLiveServerEvent: Hashable, Sendable {
       return "refresh-ok"
     case .transactOK:
       return "transact-ok"
+    case let .joinRoomOK(message):
+      return message.op
+    case let .leaveRoomOK(message):
+      return message.op
+    case .refreshPresence:
+      return "refresh-presence"
+    case .patchPresence:
+      return "patch-presence"
+    case .serverBroadcast:
+      return "server-broadcast"
     case .error:
       return "error"
     case let .other(message):

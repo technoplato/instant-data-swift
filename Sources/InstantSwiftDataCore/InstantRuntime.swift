@@ -461,8 +461,16 @@ private actor InstantRuntimeLiveSession {
       if let clientEventID = error.clientEventID {
         inFlightMutationIDs.remove(clientEventID)
       }
-    case let .other(message):
-      try await recordRoomEvent(message)
+    case let .joinRoomOK(room):
+      try await recordRoomEvent(op: room.op, roomID: room.roomID)
+    case let .leaveRoomOK(room):
+      try await recordRoomEvent(op: room.op, roomID: room.roomID)
+    case let .refreshPresence(refresh):
+      try await recordRoomEvent(op: "refresh-presence", roomID: refresh.roomID)
+    case let .patchPresence(patch):
+      try await recordRoomEvent(op: "patch-presence", roomID: patch.roomID)
+    case let .serverBroadcast(broadcast):
+      try await recordRoomEvent(op: "server-broadcast", roomID: broadcast.roomID)
     default:
       break
     }
@@ -528,14 +536,13 @@ private actor InstantRuntimeLiveSession {
     }
   }
 
-  private func recordRoomEvent(_ message: InstantLiveMessage) async throws {
-    guard let roomID = message.fields["room-id"]?.stringValue,
-      let room = registeredRooms.keys.first(where: { $0.id == roomID }),
+  private func recordRoomEvent(op: String, roomID: String) async throws {
+    guard let room = registeredRooms.keys.first(where: { $0.id == roomID }),
       var registration = registeredRooms[room]
     else {
       return
     }
-    switch message.op {
+    switch op {
     case "join-room-ok":
       registration.isConnected = true
       let queuedBroadcasts = registration.queuedBroadcasts
@@ -1778,7 +1785,8 @@ public final class InstantRuntime: Sendable {
         recovery: "Inspect the Instant runtime WebSocket event and reconnect."
       )
 
-    case .initOK, .addQueryExists, .other:
+    case .initOK, .addQueryExists, .joinRoomOK, .leaveRoomOK,
+      .refreshPresence, .patchPresence, .serverBroadcast, .other:
       break
     }
   }
