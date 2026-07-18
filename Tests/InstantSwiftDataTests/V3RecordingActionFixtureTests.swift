@@ -18,7 +18,7 @@ import Testing
     ]
 
     @Test @MainActor
-    func recordingStartActionSyntaxCompilesAgainstPublicAuthLocalIDAndMessageAPIs() {
+    func recordingActionSyntaxCompilesAgainstPublicAuthLocalIDAndMessageAPIs() {
       let screen = V3RecordingStartActionFixture()
       let view: any View = screen
       _ = view
@@ -183,6 +183,103 @@ import Testing
       expectNoDifference(callbacks.accepted, [])
       expectNoDifference(callbacks.failures.count, 1)
     }
+
+    @Test @MainActor
+    func attachmentAndFinishMessagesAreOptimisticAcceptedAndDurable() async throws {
+      let cacheURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("v3-recording-finish-\(UUID().uuidString).sqlite")
+      let appID = "v3-recording-finish"
+      let runtime = try await v3RecordingActionRuntime(appID: appID, cacheURL: cacheURL)
+      let client = InstantSwiftDataClient(runtime: runtime)
+      let prepared = V3PreparedRecording(
+        recordingID: "recording-finish",
+        ownerID: InstantID(rawValue: "user-finish"),
+        deviceID: "device-finish"
+      )
+
+      let createTask = client.send(
+        V3CreateRecordingSession(prepared: prepared, title: "Finish notes")
+      )
+      let createMutationID = try await waitForV3RecordingActionMutation(runtime)
+      _ = try await runtime.confirmMutation(id: createMutationID)
+      await createTask.value
+
+      let attachmentCallbacks = V3RecordingAttachmentCallbacks()
+      let attachmentTask = client.send(
+        V3CreateRecordingAttachment(
+          id: InstantID(rawValue: "attachment-screenshot"),
+          recordingID: InstantID(rawValue: prepared.recordingID),
+          kind: "screenshot",
+          contents: "capture.png",
+          offsetMilliseconds: 2_500
+        ),
+        onOptimisticCommit: { change in
+          attachmentCallbacks.optimistic.append(change.summary())
+        },
+        onServerAccepted: { change in
+          attachmentCallbacks.accepted.append(change.summary())
+        },
+        onFailure: { error in
+          attachmentCallbacks.failures.append(error)
+        }
+      )
+
+      let attachmentMutationID = try await waitForV3RecordingActionMutation(runtime)
+      let optimisticAttachments = try await client.query(V3CaptureAttachment.query)
+      expectNoDifference(optimisticAttachments.map(\.kind), ["screenshot"])
+      expectNoDifference(optimisticAttachments.map(\.contents), ["capture.png"])
+      expectNoDifference(attachmentCallbacks.optimistic.map(\.attachmentID), [
+        "attachment-screenshot"
+      ])
+      expectNoDifference(attachmentCallbacks.accepted, [])
+      expectNoDifference(attachmentCallbacks.failures, [])
+
+      _ = try await runtime.confirmMutation(id: attachmentMutationID)
+      await attachmentTask.value
+      expectNoDifference(attachmentCallbacks.optimistic.count, 1)
+      expectNoDifference(attachmentCallbacks.accepted.map(\.attachmentID), [
+        "attachment-screenshot"
+      ])
+
+      let finishCallbacks = V3RecordingFinishCallbacks()
+      let finishTask = client.send(
+        V3FinishRecording(
+          recordingID: InstantID(rawValue: prepared.recordingID),
+          durationMilliseconds: 12_750
+        ),
+        onOptimisticCommit: { change in
+          finishCallbacks.optimistic.append(change.summary())
+        },
+        onServerAccepted: { change in
+          finishCallbacks.accepted.append(change.summary())
+        },
+        onFailure: { error in
+          finishCallbacks.failures.append(error)
+        }
+      )
+
+      let finishMutationID = try await waitForV3RecordingActionMutation(runtime)
+      let optimisticRecordings = try await client.query(V3CaptureRecording.query)
+      expectNoDifference(optimisticRecordings.map(\.state), ["finished"])
+      expectNoDifference(optimisticRecordings.map(\.durationMilliseconds), [12_750])
+      expectNoDifference(finishCallbacks.optimistic.map(\.durationMilliseconds), [12_750])
+      expectNoDifference(finishCallbacks.accepted, [])
+      expectNoDifference(finishCallbacks.failures, [])
+
+      _ = try await runtime.confirmMutation(id: finishMutationID)
+      await finishTask.value
+      expectNoDifference(finishCallbacks.optimistic.count, 1)
+      expectNoDifference(finishCallbacks.accepted.map(\.durationMilliseconds), [12_750])
+
+      let relaunched = try await v3RecordingActionRuntime(appID: appID, cacheURL: cacheURL)
+      let relaunchedClient = InstantSwiftDataClient(runtime: relaunched)
+      let durableRecordings = try await relaunchedClient.query(V3CaptureRecording.query)
+      let durableAttachments = try await relaunchedClient.query(V3CaptureAttachment.query)
+      expectNoDifference(durableRecordings.map(\.state), ["finished"])
+      expectNoDifference(durableRecordings.map(\.durationMilliseconds), [12_750])
+      expectNoDifference(durableAttachments.map(\.recordingID), [prepared.recordingID])
+      expectNoDifference(durableAttachments.map(\.offsetMilliseconds), [2_500])
+    }
   }
 
   @MainActor
@@ -200,10 +297,21 @@ import Testing
     private var db
 
     var body: some View {
-      Text(recorder.title)
-        .onAppear {
-          appeared()
+      VStack {
+        Text(recorder.title)
+        Button("Screenshot") {
+          screenshotButtonTapped()
         }
+        Button("Copy text") {
+          copiedTextButtonTapped()
+        }
+        Button("Stop") {
+          stopButtonTapped()
+        }
+      }
+      .onAppear {
+        appeared()
+      }
     }
 
     private func appeared() {
@@ -221,6 +329,63 @@ import Testing
             V3CreateRecordingSession(prepared: prepared, title: recorder.title),
             onOptimisticCommit: { (_: borrowing V3RecordingSessionCreatedChange) in },
             onServerAccepted: { (_: borrowing V3RecordingSessionCreatedChange) in },
+            onFailure: { _ in }
+          )
+        },
+        onFailure: { _ in }
+      )
+    }
+
+    private func screenshotButtonTapped() {
+      recorder.captureScreenshot(
+        onCaptured: { screenshot in
+          db.send(
+            V3CreateRecordingAttachment(
+              id: InstantID(rawValue: screenshot.attachmentID),
+              recordingID: InstantID(rawValue: recorder.recordingID),
+              kind: "screenshot",
+              contents: screenshot.fileName,
+              offsetMilliseconds: screenshot.offsetMilliseconds
+            ),
+            onOptimisticCommit: { (_: borrowing V3RecordingAttachmentCreatedChange) in },
+            onServerAccepted: { (_: borrowing V3RecordingAttachmentCreatedChange) in },
+            onFailure: { _ in }
+          )
+        },
+        onFailure: { _ in }
+      )
+    }
+
+    private func copiedTextButtonTapped() {
+      recorder.readClipboardText(
+        onRead: { copiedText in
+          db.send(
+            V3CreateRecordingAttachment(
+              id: InstantID(rawValue: copiedText.attachmentID),
+              recordingID: InstantID(rawValue: recorder.recordingID),
+              kind: "text",
+              contents: copiedText.text,
+              offsetMilliseconds: copiedText.offsetMilliseconds
+            ),
+            onOptimisticCommit: { (_: borrowing V3RecordingAttachmentCreatedChange) in },
+            onServerAccepted: { (_: borrowing V3RecordingAttachmentCreatedChange) in },
+            onFailure: { _ in }
+          )
+        },
+        onFailure: { _ in }
+      )
+    }
+
+    private func stopButtonTapped() {
+      recorder.stop(
+        onFinished: { finished in
+          db.send(
+            V3FinishRecording(
+              recordingID: InstantID(rawValue: recorder.recordingID),
+              durationMilliseconds: finished.durationMilliseconds
+            ),
+            onOptimisticCommit: { (_: borrowing V3RecordingFinishedChange) in },
+            onServerAccepted: { (_: borrowing V3RecordingFinishedChange) in },
             onFailure: { _ in }
           )
         },
@@ -298,6 +463,42 @@ import Testing
       }
     }
 
+    func captureScreenshot(
+      onCaptured: @escaping @MainActor @Sendable (V3CapturedScreenshot) -> Void,
+      onFailure: @escaping @MainActor @Sendable (InstantError) -> Void
+    ) {
+      _ = onFailure
+      onCaptured(
+        V3CapturedScreenshot(
+          attachmentID: "attachment-screenshot",
+          fileName: "capture.png",
+          offsetMilliseconds: 2_500
+        )
+      )
+    }
+
+    func readClipboardText(
+      onRead: @escaping @MainActor @Sendable (V3CopiedText) -> Void,
+      onFailure: @escaping @MainActor @Sendable (InstantError) -> Void
+    ) {
+      _ = onFailure
+      onRead(
+        V3CopiedText(
+          attachmentID: "attachment-text",
+          text: "Copied notes",
+          offsetMilliseconds: 3_000
+        )
+      )
+    }
+
+    func stop(
+      onFinished: @escaping @MainActor @Sendable (V3FinishedRecording) -> Void,
+      onFailure: @escaping @MainActor @Sendable (InstantError) -> Void
+    ) {
+      _ = onFailure
+      onFinished(V3FinishedRecording(durationMilliseconds: 12_750))
+    }
+
     deinit {
       activeTask?.cancel()
     }
@@ -321,6 +522,22 @@ import Testing
     var deviceID: String
   }
 
+  private struct V3CapturedScreenshot: Sendable {
+    var attachmentID: String
+    var fileName: String
+    var offsetMilliseconds: Int
+  }
+
+  private struct V3CopiedText: Sendable {
+    var attachmentID: String
+    var text: String
+    var offsetMilliseconds: Int
+  }
+
+  private struct V3FinishedRecording: Sendable {
+    var durationMilliseconds: Int
+  }
+
   private enum V3CaptureAuthProviders: InstantAuthProviderCatalog {
     static let all: [AuthProvider] = []
   }
@@ -342,12 +559,14 @@ import Testing
     var ownerID: String
     var deviceID: String
     var state: String
+    var durationMilliseconds: Int
 
     static let instantNamespace = "v3_capture_recordings"
     static let title = InstantAttributePath<Self, String>("title")
     static let ownerID = InstantAttributePath<Self, String>("ownerID")
     static let deviceID = InstantAttributePath<Self, String>("deviceID")
     static let state = InstantAttributePath<Self, String>("state")
+    static let durationMilliseconds = InstantAttributePath<Self, Int>("durationMilliseconds")
     static let instantAttributes = [
       InstantAttribute.primaryKey(namespace: instantNamespace),
       InstantAttribute(
@@ -378,20 +597,29 @@ import Testing
         valueType: .string,
         isIndexed: true
       ),
+      InstantAttribute(
+        id: "v3_capture_recordings/durationMilliseconds",
+        namespace: instantNamespace,
+        name: "durationMilliseconds",
+        valueType: .number,
+        isIndexed: true
+      ),
     ]
 
     init(snapshot: InstantEntitySnapshot) throws {
       guard case let .string(title) = snapshot.values["title"]?.first,
         case let .string(ownerID) = snapshot.values["ownerID"]?.first,
         case let .string(deviceID) = snapshot.values["deviceID"]?.first,
-        case let .string(state) = snapshot.values["state"]?.first
+        case let .string(state) = snapshot.values["state"]?.first,
+        case let .number(durationMilliseconds) =
+          snapshot.values["durationMilliseconds"]?.first
       else {
         throw InstantError(
           code: .decodeFailed,
           operation: "decode V3 capture recording fixture",
           namespace: Self.instantNamespace,
           localID: snapshot.id,
-          message: "Expected title, ownerID, deviceID, and state values.",
+          message: "Expected title, ownerID, deviceID, state, and duration values.",
           recovery: "Keep the recording action fixture aligned with its attributes."
         )
       }
@@ -400,6 +628,74 @@ import Testing
       self.ownerID = ownerID
       self.deviceID = deviceID
       self.state = state
+      self.durationMilliseconds = Int(durationMilliseconds)
+    }
+  }
+
+  private struct V3CaptureAttachment: Hashable, Codable, InstantEntityModel {
+    var id: InstantID<Self>
+    var recordingID: String
+    var kind: String
+    var contents: String
+    var offsetMilliseconds: Int
+
+    static let instantNamespace = "v3_capture_attachments"
+    static let recordingID = InstantAttributePath<Self, String>("recordingID")
+    static let kind = InstantAttributePath<Self, String>("kind")
+    static let contents = InstantAttributePath<Self, String>("contents")
+    static let offsetMilliseconds = InstantAttributePath<Self, Int>("offsetMilliseconds")
+    static let instantAttributes = [
+      InstantAttribute.primaryKey(namespace: instantNamespace),
+      InstantAttribute(
+        id: "v3_capture_attachments/recordingID",
+        namespace: instantNamespace,
+        name: "recordingID",
+        valueType: .string,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "v3_capture_attachments/kind",
+        namespace: instantNamespace,
+        name: "kind",
+        valueType: .string,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "v3_capture_attachments/contents",
+        namespace: instantNamespace,
+        name: "contents",
+        valueType: .string
+      ),
+      InstantAttribute(
+        id: "v3_capture_attachments/offsetMilliseconds",
+        namespace: instantNamespace,
+        name: "offsetMilliseconds",
+        valueType: .number,
+        isIndexed: true
+      ),
+    ]
+
+    init(snapshot: InstantEntitySnapshot) throws {
+      guard case let .string(recordingID) = snapshot.values["recordingID"]?.first,
+        case let .string(kind) = snapshot.values["kind"]?.first,
+        case let .string(contents) = snapshot.values["contents"]?.first,
+        case let .number(offsetMilliseconds) =
+          snapshot.values["offsetMilliseconds"]?.first
+      else {
+        throw InstantError(
+          code: .decodeFailed,
+          operation: "decode V3 capture attachment fixture",
+          namespace: Self.instantNamespace,
+          localID: snapshot.id,
+          message: "Expected recordingID, kind, contents, and offset values.",
+          recovery: "Keep the recording attachment fixture aligned with its attributes."
+        )
+      }
+      id = InstantID(rawValue: snapshot.id)
+      self.recordingID = recordingID
+      self.kind = kind
+      self.contents = contents
+      self.offsetMilliseconds = Int(offsetMilliseconds)
     }
   }
 
@@ -418,7 +714,54 @@ import Testing
           V3CaptureRecording.title.set(title),
           V3CaptureRecording.ownerID.set(prepared.ownerID.rawValue),
           V3CaptureRecording.deviceID.set(prepared.deviceID),
-          V3CaptureRecording.state.set("recording")
+          V3CaptureRecording.state.set("recording"),
+          V3CaptureRecording.durationMilliseconds.set(0)
+        )
+      }
+    }
+  }
+
+  private struct V3CreateRecordingAttachment: InstantMessage {
+    var id: InstantID<V3CaptureAttachment>
+    var recordingID: InstantID<V3CaptureRecording>
+    var kind: String
+    var contents: String
+    var offsetMilliseconds: Int
+
+    func prepare(using client: InstantSwiftDataClient) async throws
+      -> InstantPreparedMessage<V3RecordingAttachmentCreatedChange>
+    {
+      _ = client
+      let change = V3RecordingAttachmentCreatedChange(attachmentID: id.rawValue)
+      return InstantPreparedMessage(change: change) {
+        V3CaptureAttachment.create(
+          id: id,
+          V3CaptureAttachment.recordingID.set(recordingID.rawValue),
+          V3CaptureAttachment.kind.set(kind),
+          V3CaptureAttachment.contents.set(contents),
+          V3CaptureAttachment.offsetMilliseconds.set(offsetMilliseconds)
+        )
+      }
+    }
+  }
+
+  private struct V3FinishRecording: InstantMessage {
+    var recordingID: InstantID<V3CaptureRecording>
+    var durationMilliseconds: Int
+
+    func prepare(using client: InstantSwiftDataClient) async throws
+      -> InstantPreparedMessage<V3RecordingFinishedChange>
+    {
+      _ = client
+      let change = V3RecordingFinishedChange(
+        recordingID: recordingID.rawValue,
+        durationMilliseconds: durationMilliseconds
+      )
+      return InstantPreparedMessage(change: change) {
+        V3CaptureRecording.update(
+          id: recordingID,
+          V3CaptureRecording.state.set("finished"),
+          V3CaptureRecording.durationMilliseconds.set(durationMilliseconds)
         )
       }
     }
@@ -436,10 +779,53 @@ import Testing
     var recordingID: String
   }
 
+  private struct V3RecordingAttachmentCreatedChange: Sendable {
+    var attachmentID: String
+
+    borrowing func summary() -> V3RecordingAttachmentCreatedSummary {
+      V3RecordingAttachmentCreatedSummary(attachmentID: attachmentID)
+    }
+  }
+
+  private struct V3RecordingAttachmentCreatedSummary: Equatable, Sendable {
+    var attachmentID: String
+  }
+
+  private struct V3RecordingFinishedChange: Sendable {
+    var recordingID: String
+    var durationMilliseconds: Int
+
+    borrowing func summary() -> V3RecordingFinishedSummary {
+      V3RecordingFinishedSummary(
+        recordingID: recordingID,
+        durationMilliseconds: durationMilliseconds
+      )
+    }
+  }
+
+  private struct V3RecordingFinishedSummary: Equatable, Sendable {
+    var recordingID: String
+    var durationMilliseconds: Int
+  }
+
   @MainActor
   private final class V3RecordingMessageCallbacks {
     var optimistic: [V3RecordingSessionCreatedSummary] = []
     var accepted: [V3RecordingSessionCreatedSummary] = []
+    var failures: [InstantError] = []
+  }
+
+  @MainActor
+  private final class V3RecordingAttachmentCallbacks {
+    var optimistic: [V3RecordingAttachmentCreatedSummary] = []
+    var accepted: [V3RecordingAttachmentCreatedSummary] = []
+    var failures: [InstantError] = []
+  }
+
+  @MainActor
+  private final class V3RecordingFinishCallbacks {
+    var optimistic: [V3RecordingFinishedSummary] = []
+    var accepted: [V3RecordingFinishedSummary] = []
     var failures: [InstantError] = []
   }
 
@@ -486,7 +872,9 @@ import Testing
       configuration: InstantRuntimeConfiguration(
         appID: appID,
         persistenceURL: cacheURL,
-        initialAttributes: V3CaptureRecording.instantAttributes
+        initialAttributes:
+          V3CaptureRecording.instantAttributes
+          + V3CaptureAttachment.instantAttributes
       )
     )
   }
