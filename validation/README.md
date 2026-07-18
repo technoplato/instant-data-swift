@@ -135,6 +135,23 @@ commands succeed, the worktree is clean, and the warning lists are empty. A
 clean passing example for commit `771ed4c` is
 `/private/tmp/instant-data-swift-recording-bidirectional-clean-771ed4c-20260718/evidence.json`.
 
+The sharing contract has a separate guarded verifier for an already-created
+ephemeral app. Source credentials first, then explicitly allow schema/perms
+replacement:
+
+```bash
+set -a
+source /tmp/instant-data-swift-ephemeral-20260718.env
+set +a
+INSTANT_SWIFT_DATA_ALLOW_EPHEMERAL_APP_MUTATION=1 \
+  validation/verify-sharing-contract-live.sh
+```
+
+It records server-normalized schema/perms, strict pulled-artifact typechecking,
+fresh owner/reader/writer/outsider identities, allowed writer mutation,
+rejected reader/writer operations, exact final data, and warning counts. The
+admin token is consumed from the environment and is not written to evidence.
+
 Instant-managed `$files`, `$streams`, `$users` attributes, and system links are
 reported with stable `system-entity`, `system-attribute`, and `system-link`
 warning codes. Unexpected application entities, attributes, link semantics,

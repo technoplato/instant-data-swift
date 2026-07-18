@@ -281,6 +281,16 @@ Gate:
 - `$users`, `$files`, forward/reverse links, required/optional values, and share
   metadata match canonical TypeScript shapes.
 
+Current evidence: commits `81890b2`, `952255c`, `7e68005`, `875ca2d`,
+`1bf2914`, and `c4c9a26` port the SQLiteData sharing tests first, define the
+Swift-owned sharing schema and permissions, round-trip and type-check the
+generated TypeScript, and prove real owner/reader/writer/outsider behavior on
+an ephemeral Instant app. The live canonical Admin SDK proof observes one
+shared root for owner, reader, and writer, zero for an outsider, rejects reader
+update/delete and writer delete, accepts writer update, finishes at exact value
+`3`, and emits zero SDK warnings. The milestone remains Pending until live auth
+invalidation and Swift optimistic-rejection/outbox reconciliation are proven.
+
 ### `v0.4.0-apps-e2e`
 
 Target: required example apps run end to end through the public V3 API.
@@ -468,6 +478,20 @@ Purpose: make permissions meaningful end to end.
 - Create owner/reader/writer identities and a share link.
 - Prove allowed and rejected reads/writes from both SDKs.
 - Reconcile rejected optimistic writes and expose actionable recovery text.
+
+The canonical TypeScript half of the sharing boundary is complete through
+`c4c9a26`. Run the guarded verifier against sourced ephemeral credentials:
+
+```bash
+INSTANT_SWIFT_DATA_ALLOW_EPHEMERAL_APP_MUTATION=1 \
+  validation/verify-sharing-contract-live.sh
+```
+
+It generates from Swift, pushes and pulls schema/perms, verifies server
+normalization, strictly type-checks the pulled artifacts, creates fresh owner,
+reader, writer, and outsider identities, and writes non-secret aggregate
+evidence. Remaining Packet 6 work is real auth invalidation plus the Swift-side
+allowed/rejected sharing path and optimistic outbox reconciliation.
 
 Commit targets:
 
