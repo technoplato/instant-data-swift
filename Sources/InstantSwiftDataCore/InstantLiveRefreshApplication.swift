@@ -263,8 +263,8 @@ enum InstantLiveRefreshTranslator {
       cardinality: cardinality(from: object["cardinality"]?.scalarStringValue),
       isIndexed: object["index?"]?.boolValue ?? object["indexed?"]?.boolValue ?? false,
       isUnique: object["unique?"]?.boolValue ?? false,
-      forwardIdentity: forwardIdentity?.id,
-      reverseIdentity: reverseIdentity?.id,
+      forwardIdentity: forwardIdentity.map { "\($0.namespace)/\($0.name)" },
+      reverseIdentity: reverseIdentity.map { "\($0.namespace)/\($0.name)" },
       primaryKey: false,
       linkNamespace: valueType == .ref ? reverseIdentity?.namespace : nil
     )

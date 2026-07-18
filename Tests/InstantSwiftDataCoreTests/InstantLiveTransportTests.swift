@@ -1216,6 +1216,53 @@ struct InstantLiveTransportTests {
   }
 
   @Test
+  func liveRefreshTranslatesCanonicalRelationIdentityPaths() throws {
+    let translation = try InstantLiveRefreshTranslator.translate(
+      InstantLiveRefreshOK(
+        clientEventID: "event-recording-relation",
+        processedTransactionID: "server-tx-recording-relation",
+        attrs: [
+          .serverAttr(
+            id: "server-recording-title",
+            namespace: "v3_capture_recordings",
+            name: "title"
+          ),
+          .serverRefAttr(
+            id: "server-attachment-recording",
+            namespace: "v3_capture_attachments",
+            name: "recording",
+            reverseNamespace: "v3_capture_recordings",
+            reverseName: "attachments"
+          )
+        ],
+        computations: []
+      ),
+      existingAttributes: [],
+      receivedAt: InstantTimestamp(milliseconds: 1_700_000_000_000)
+    )
+
+    let relation = try #require(
+      translation.attributesToMerge.first {
+        $0.id == "server-attachment-recording"
+      }
+    )
+    expectNoDifference(relation.forwardIdentity, "v3_capture_attachments/recording")
+    expectNoDifference(relation.reverseIdentity, "v3_capture_recordings/attachments")
+    expectNoDifference(relation.linkNamespace, "v3_capture_recordings")
+    expectNoDifference(
+      TripleIndexes.validate(
+        InstantQueryPlan(
+          id: "recording-with-attachments",
+          namespace: "v3_capture_recordings",
+          includes: [InstantQueryInclude("attachments", direction: .reverse)]
+        ),
+        attributes: AttributeStore(attributes: translation.attributesToMerge)
+      ),
+      nil
+    )
+  }
+
+  @Test
   func liveRefreshConfirmsMatchingLocalMutationAfterApplyingServerState() async throws {
     let cacheURL = try temporaryLiveCacheURL()
     let localCreatedAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
@@ -2144,6 +2191,30 @@ private extension InstantLiveJSONValue {
         .string(name),
       ]),
       "id": .string(id),
+    ])
+  }
+
+  static func serverRefAttr(
+    id: String,
+    namespace: String,
+    name: String,
+    reverseNamespace: String,
+    reverseName: String
+  ) -> Self {
+    .object([
+      "id": .string(id),
+      "value-type": .string("ref"),
+      "cardinality": .string("one"),
+      "forward-identity": .array([
+        .string("forward-identity-\(id)"),
+        .string(namespace),
+        .string(name),
+      ]),
+      "reverse-identity": .array([
+        .string("reverse-identity-\(id)"),
+        .string(reverseNamespace),
+        .string(reverseName),
+      ]),
     ])
   }
 }
