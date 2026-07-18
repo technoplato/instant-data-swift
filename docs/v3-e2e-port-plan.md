@@ -59,9 +59,12 @@ As of 2026-07-18:
   schema and permissions verification, and the local Swift/TypeScript E2E
   orchestrator. Its evidence directory was
   `/tmp/instant-swift-data-packet0-20260718T1106`.
-- The current runtime and V3 recordings fixture passed 842 Swift Testing tests
-  across 22 suites plus 28 macro tests. The final focused rerun was
-  warning-free. The core reconnect packet's earlier explicit E2E evidence is
+- The current runtime, V3 recordings fixture, and V3 auth-login fixture passed
+  849 Swift Testing tests across 24 suites plus 28 macro tests. The auth slice
+  includes wrapper-owned magic-code, guest, and provider actions; exact
+  call-site callbacks; stale-action cancellation; failure/retry; and durable
+  session restoration after runtime relaunch. The core reconnect packet's
+  earlier explicit E2E evidence is
   `/tmp/instant-swift-data-reconnect-20260718T161703Z`.
 - Credentialed remote preflight and both real Swift/TypeScript boundary
   directions passed from the typed-message milestone. The
@@ -101,7 +104,7 @@ When sources disagree, use this order:
 | Current execution state, packet order, gates, and tag targets | `docs/v3-e2e-port-plan.md` |
 | Product contract and full definition of done | `docs/instant-swift-data-goals.md` |
 | Desired V3 API rules and decision log | `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` |
-| First compiling syntax target | `screens/v3/recordings-list.md` |
+| Next compiling syntax target | `screens/v3/recording.md` |
 | All five desired VoiceTrail screen probes | `screens/v3/README.md` and sibling Markdown files |
 | Existing public wrapper implementation | `Sources/InstantSwiftData/InstantSwiftData.swift` |
 | Owned live runtime and persistence integration | `Sources/InstantSwiftDataCore/InstantRuntime.swift` |
@@ -132,6 +135,10 @@ These decisions are sufficient to continue implementation:
   primitives remain public for non-SwiftUI code, tests, and advanced use.
 - VoiceTrail-specific types and convenience wrappers stay outside the reusable
   Instant core.
+- Auth-provider catalogs are handwritten app configuration for V3. Credential
+  acquisition is an injected platform seam; the reusable auth wrapper owns
+  exchange, session state, cancellation, and action callbacks. Catalog
+  generation can be added later without changing the public catalog protocol.
 
 ## Decisions To Resolve Through Compiling Slices
 
@@ -142,11 +149,10 @@ compile/runtime test:
 - Whether `@InstantFetchBuilder` is handwritten, generated, or both.
 - How much of a mutation change envelope is macro-generated.
 - Whether room presence uses a wrapper, a modifier, or both.
-- Whether auth-provider catalogs are generated from app configuration.
 
-The recordings-list attachment decision is resolved. The remaining items can
-wait for their vertical slice; no separate design phase is required before
-continuing the port.
+The recordings-list attachment and auth-provider catalog decisions are
+resolved. The remaining items can wait for their vertical slice; no separate
+design phase is required before continuing the port.
 
 ## Commit and Version Discipline
 
@@ -396,7 +402,11 @@ Commit targets:
 
 Purpose: make permissions meaningful end to end.
 
-- Implement the V3 `@InstantAuth` state machine over real transport.
+- Implement the V3 `@InstantAuth` state machine over real transport. The public
+  state owner, provider contract, executable syntax fixture, local lifecycle,
+  and durable relaunch proof are implemented in `c82b3ca` through `2e7c9d5`.
+  The remaining Packet 6 work is credentialed auth invalidation plus the
+  two-user sharing and permission boundary.
 - Prove session restoration and sign-out invalidation.
 - Create owner/reader/writer identities and a share link.
 - Prove allowed and rejected reads/writes from both SDKs.
@@ -477,12 +487,14 @@ The release harness must prove each applicable row in both directions:
 
 ## Immediate Next Step
 
-Compile the V3 auth-login screen against public package APIs. Introduce the
-smallest `@InstantAuth` state owner over the existing durable auth session and
-magic-code/OAuth primitives, keep action callbacks at each call site, and prove
-loading, success, failure, cancellation, and relaunch behavior. Update the auth
-sketch and V3 decision log in the same packet.
+Compile the V3 recording screen as the next executable vertical slice. Keep
+`@VoiceTrailRecordingSession` in product-fixture code, exercise the public
+`@LocalID`, dynamic timeline fetches, and typed `db.send` surface, and add only
+the reusable Instant primitives the compiling fixture proves are missing.
+Cover preparation, optimistic commit, server acceptance, failure, stale-work
+cancellation, and relaunch behavior without moving audio or speech ownership
+into Instant core.
 
 File-backed `stream-append` fetching and remote stream metadata bootstrap remain
-important live-stream work, but they do not block the recordings-list fetch
-fixture and should stay in their own packet.
+important live-stream work, but they do not block the recording-screen fixture
+and should stay in their own packet.

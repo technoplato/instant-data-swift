@@ -23,6 +23,9 @@ These files all follow the call-site callback direction.
 ## Status
 
 - These APIs are design targets.
+- The recordings-list and auth-login public seams now have compiling fixtures
+  and lifecycle tests. Their recorded syntax is the implementation baseline,
+  not an open-ended sketch.
 - The examples are intentionally narrow-column.
 - VoiceTrail types are product code.
 - Instant core should expose reusable primitives.
@@ -193,27 +196,40 @@ Why this shape:
 - The app shell can observe `auth.status` to switch between signed-out,
   authenticating, failed, and signed-in states.
 
-The auth wrapper should expose state similar to:
+The implemented auth wrapper exposes durable session status separately from
+the form/action mode:
 
 ```swift
 enum InstantAuthStatus:
-  Equatable,
+  Hashable,
   Sendable {
   case signedOut
-  case authenticating(InstantAuthOperation)
-  case challengeSent(MagicCodeChallenge.ID)
-  case failed(InstantAuthFailure)
-  case signedIn(InstantSession)
+  case working
+  case signedIn(InstantAuthSession)
+  case failed(InstantError)
+}
+
+enum InstantAuthMode:
+  Hashable,
+  Sendable {
+  case enteringEmail
+  case sendingMagicCode(email: String)
+  case magicCodeSent(email: String)
+  case verifyingMagicCode(email: String)
+  case signingIn(providerID: InstantAuthProviderID)
 }
 ```
 
-The exact cases can change. The important part is that status is
-renderable state, while callbacks are per-message side effects.
+`InstantAuthState` owns task replacement, cancellation, session observation,
+and magic-code/provider exchange. Passive session restoration updates the
+state but never replays call-site callbacks. Native and browser credential
+acquisition stays injectable through `InstantAuthProviderAuthorizer`, so the
+core does not pretend to own platform UI.
 
 ## Provider Configuration
 
 Provider IDs, client names, and presentation style should be centralized
-or generated:
+in a handwritten catalog for V3:
 
 ```swift
 enum VoiceTrailAuthProviders:
@@ -243,6 +259,9 @@ enum VoiceTrailAuthProviders:
   ]
 }
 ```
+
+Catalog generation is a possible later convenience. It is not required to
+continue the port and must preserve this public catalog protocol if added.
 
 The screen can still sketch available providers with an enum, but the
 real API should avoid duplicating provider IDs and client names across

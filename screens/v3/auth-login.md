@@ -7,6 +7,16 @@ the call site. That makes each button show the side effects caused by
 that particular user action without making callbacks another source of
 state.
 
+Implementation status (2026-07-18): the reusable `@InstantAuth` state owner
+and provider contract are implemented in
+`Sources/InstantSwiftData/InstantAuth.swift` and
+`Sources/InstantSwiftData/InstantAuthProvider.swift`. The public syntax below
+is compiled by `Tests/InstantSwiftDataTests/V3AuthLoginFixtureTests.swift`,
+which also proves magic-code success, invalid-code retry, stale-action
+cancellation, typed provider exchange, callback cardinality, and durable
+session restoration after relaunch. Platform-native/browser credential UI is
+intentionally supplied by the injected `InstantAuthProviderAuthorizer`.
+
 ```swift
 import SwiftUI
 import Dependencies
