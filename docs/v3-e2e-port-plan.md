@@ -106,6 +106,15 @@ As of 2026-07-18:
   `/tmp/instant-data-swift-recording-contract-live-20260718T1557/evidence.json`;
   the temporary app expires automatically and its admin token was removed from
   the retained artifacts.
+- Commits `0144185` through `771ed4c` close the recording-action data-plane
+  acceptance case in both directions. The clean-head run at `771ed4c` created
+  an ephemeral app, installed and read back the generated schema and
+  permissions, wrote the exact linked graph through Swift and queried it with
+  the pinned TypeScript SDK, then wrote and finished the graph through
+  TypeScript while the normal Swift live observer decoded the exact refresh.
+  Both comparisons passed with zero compiler or runtime warnings. Non-secret
+  evidence is in
+  `/private/tmp/instant-data-swift-recording-bidirectional-clean-771ed4c-20260718/evidence.json`.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -141,7 +150,7 @@ When sources disagree, use this order:
 | Current generated recording contract | `InstantSchemaExamples.recordingActionDocument`, `recordingActionValidationPermissions`, and `--example recording-action` |
 | TypeScript contract pin/type-check gate | `validation/ts-runner/package.json`, its committed `pnpm-lock.yaml`, and `validation/typecheck-generated-contract.sh` |
 | Reproducible live schema/perms install and readback | `validation/verify-recording-contract-live.sh` and `validation/fixtures/recording-action.server.*.ts` |
-| Next exact data-plane contract | `InstantRecordingActionLiveContract` in `Sources/InstantSwiftDataTesting/` |
+| Completed recording data-plane contract | `InstantRecordingActionLiveContract` in `Sources/InstantSwiftDataTesting/` and `validation/verify-recording-contract-live.sh` |
 | All five desired VoiceTrail screen probes | `screens/v3/README.md` and sibling Markdown files |
 | Existing public wrapper implementation | `Sources/InstantSwiftData/InstantSwiftData.swift` |
 | Owned live runtime and persistence integration | `Sources/InstantSwiftDataCore/InstantRuntime.swift` |
@@ -475,7 +484,8 @@ Implement in independently gated commits:
 - `@LocalID` — compiling and lifecycle-tested through `709b58d`
 - composite `@Fetch` and `@InstantFetchBuilder`
 - recording-specific message flows — start, finish, attachment, canonical refs,
-  rejection, and relaunch covered through `4a9b7eb` and `33028f6`
+  rejection, relaunch, and exact bidirectional live SDK projection covered
+  through `4a9b7eb`, `33028f6`, and `771ed4c`
 - playback-specific room/presence/topic flows
 
 Every wrapper must have local lifecycle tests and a canonical TypeScript
@@ -537,20 +547,13 @@ The release harness must prove each applicable row in both directions:
 
 ## Immediate Next Step
 
-Run the recording graph itself across both SDKs. `InstantRecordingActionLiveContract`
-now defines the exact Swift query and 18-step owner/member/recording/
-transcription/attachment mutation. The next commit should create a real owner,
-send that graph through Swift's live transaction path, and require the pinned
-TypeScript admin SDK to query the exact nested values. Then reverse the
-direction: write the canonical graph through TypeScript and require Swift's
-live observer to decode the same linked shape, with rejection and warning
-evidence kept explicit.
-
-After that bidirectional data-plane gate, start the playback vertical slice from
-`screens/v3/playback.md`. Resolve the remaining wrapper-versus-modifier presence
-question inside that compiling slice, record the chosen spelling in the V3
-design document, and prove join/presence/topic publication, observation,
-cancellation, and reconnect behavior. A separate up-front design phase is not
+Start the playback vertical slice from `screens/v3/playback.md`. The recording
+data-plane prerequisite passed from clean commit `771ed4c` with exact shapes in
+both SDK directions and zero warnings. Resolve the remaining
+wrapper-versus-modifier presence question inside the playback compiling slice,
+record the chosen spelling in the V3 design document, and prove
+join/presence/topic publication, observation, cancellation, dynamic room
+replacement, and reconnect behavior. A separate up-front design phase is not
 required.
 
 File-backed `stream-append` fetching and remote stream metadata bootstrap remain

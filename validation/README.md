@@ -125,6 +125,16 @@ file, and writes non-secret evidence:
 validation/verify-recording-contract-live.sh
 ```
 
+The same command runs the recording graph in both SDK directions. Swift writes
+the owner/member/recording/transcription/attachment graph through its normal
+live transaction path and the canonical TypeScript SDK queries the exact nested
+values. The canonical TypeScript SDK then writes and finishes a second graph
+while Swift's normal live observer decodes and projects the exact refreshed
+values. The aggregate evidence fails unless both shapes match, both child
+commands succeed, the worktree is clean, and the warning lists are empty. A
+clean passing example for commit `771ed4c` is
+`/private/tmp/instant-data-swift-recording-bidirectional-clean-771ed4c-20260718/evidence.json`.
+
 Instant-managed `$files`, `$streams`, `$users` attributes, and system links are
 reported with stable `system-entity`, `system-attribute`, and `system-link`
 warning codes. Unexpected application entities, attributes, link semantics,
