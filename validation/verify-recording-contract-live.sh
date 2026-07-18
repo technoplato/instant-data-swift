@@ -8,10 +8,15 @@ RESULTS_DIR="${INSTANT_SWIFT_DATA_CONTRACT_RESULTS_DIR:-/tmp/instant-swift-data-
 PUSH_DIR="${RESULTS_DIR}/push"
 PULL_DIR="${RESULTS_DIR}/pull"
 
+WORKTREE_DIRTY=false
 if [[ -n "$(git -C "${ROOT}" status --porcelain)" ]]; then
-  echo "Live contract verification requires a clean worktree so evidence names an exact Swift revision." >&2
-  exit 1
+  WORKTREE_DIRTY=true
+  if [[ "${INSTANT_SWIFT_DATA_ALLOW_DIRTY_CONTRACT_RUN:-0}" != "1" ]]; then
+    echo "Live contract verification requires a clean worktree so evidence names an exact Swift revision." >&2
+    exit 1
+  fi
 fi
+export WORKTREE_DIRTY
 
 if [[ ! -x "${CLI}" ]]; then
   echo "Missing pinned Instant CLI. Run: pnpm --dir validation/ts-runner install --frozen-lockfile" >&2
@@ -99,6 +104,14 @@ pnpm --dir "${RUNNER}" exec tsc \
   "${PULL_DIR}/instant.schema.ts" \
   "${PULL_DIR}/instant.perms.ts"
 
+export INSTANT_ADMIN_TOKEN="${ADMIN_TOKEN}"
+export INSTANT_SWIFT_DATA_REMOTE_APP_ID="${APP_ID}"
+export INSTANT_SWIFT_DATA_LIVE_BOUNDARY_SWIFT_TIMEOUT_MS="${INSTANT_SWIFT_DATA_LIVE_BOUNDARY_SWIFT_TIMEOUT_MS:-90000}"
+pnpm --dir "${RUNNER}" exec tsx src/main.ts \
+  --boundary-recording-sdk-e2e \
+  --app-id "${APP_ID}" \
+  | tee "${RESULTS_DIR}/typescript-recording-sdk-e2e.jsonl"
+
 ROOT="${ROOT}" \
 RUNNER="${RUNNER}" \
 RESULTS_DIR="${RESULTS_DIR}" \
@@ -119,18 +132,39 @@ const schemaVerification = JSON.parse(
 const permissionsVerification = JSON.parse(
   readFileSync(resolve(results, "swift-server-perms-verify.json"), "utf8"),
 );
+const recordingSDKRows = readFileSync(
+  resolve(results, "typescript-recording-sdk-e2e.jsonl"),
+  "utf8",
+)
+  .split("\n")
+  .filter(Boolean)
+  .map((line) => JSON.parse(line));
+const ownerRow = recordingSDKRows.find(
+  (row) => row.event === "canonical-sdk-owner-created",
+);
+const swiftRow = recordingSDKRows.find(
+  (row) => row.event === "swift-recording-transaction",
+);
+const queryRow = recordingSDKRows.find(
+  (row) => row.event === "canonical-sdk-query",
+);
+const recordingBoundaryOK =
+  ownerRow?.ok === true
+  && swiftRow?.ok === true
+  && queryRow?.ok === true;
 const sha256 = (path) =>
   createHash("sha256").update(readFileSync(path)).digest("hex");
 
 const evidence = {
   case: "validation.instant.recording-contract",
-  event: "install-pull-verify",
-  ok: true,
+  event: "install-pull-verify-swift-write",
+  ok: recordingBoundaryOK,
   appID: process.env.APP_ID,
   details: {
     swiftRevision: execFileSync("git", ["-C", root, "rev-parse", "HEAD"], {
       encoding: "utf8",
     }).trim(),
+    swiftWorktreeDirty: process.env.WORKTREE_DIRTY === "true",
     upstreamRevision: execFileSync(
       "git",
       ["-C", resolve(root, "upstream/instant"), "rev-parse", "HEAD"],
@@ -153,6 +187,15 @@ const evidence = {
       allowRuleCount: permissionsVerification.allowRuleCount,
       rateLimitCount: permissionsVerification.rateLimitCount,
       sha256: sha256(resolve(results, "pull/instant.perms.ts")),
+    },
+    swiftToTypeScript: {
+      ownerID: ownerRow?.details.ownerID ?? null,
+      swiftEvents: swiftRow?.details.swiftEvents ?? [],
+      queryAttemptCount: queryRow?.details.queryAttemptCount ?? null,
+      exactShape: queryRow?.details.exactShape ?? false,
+      actual: queryRow?.details.actual ?? null,
+      expected: queryRow?.details.expected ?? null,
+      warnings: queryRow?.details.warnings ?? [],
     },
   },
 };

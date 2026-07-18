@@ -3,11 +3,13 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isDeepStrictEqual } from "node:util";
+import { init } from "@instantdb/admin";
 
 const runnerDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(runnerDirectory, "../../..");
 const usage =
-  "Usage: node validation/ts-runner/src/main.ts [--fixtures|--boundary-preflight|--boundary-admin-smoke|--boundary-swift-live-observe|--boundary-typescript-live-observe|--swift-transport-contract path|--swift-local-integrations-contract path|--swift-typed-drafts-contract path|--swift-live-session-contract path|--swift-live-transaction-contract path|--typescript-server-transaction-contract path] [--require-boundary] [--app-id id] [--fixtures-dir path]";
+  "Usage: node validation/ts-runner/src/main.ts [--fixtures|--boundary-preflight|--boundary-admin-smoke|--boundary-recording-sdk-e2e|--boundary-swift-live-observe|--boundary-typescript-live-observe|--swift-transport-contract path|--swift-local-integrations-contract path|--swift-typed-drafts-contract path|--swift-live-session-contract path|--swift-live-transaction-contract path|--typescript-server-transaction-contract path] [--require-boundary] [--app-id id] [--fixtures-dir path]";
 const defaultAPIURI = "https://api.instantdb.com";
 const defaultWebSocketURI = "wss://api.instantdb.com/runtime/session";
 
@@ -77,6 +79,11 @@ function parseArguments(argv) {
 
       case "--boundary-admin-smoke":
         options.mode = "boundary-admin-smoke";
+        options.requireBoundary = true;
+        break;
+
+      case "--boundary-recording-sdk-e2e":
+        options.mode = "boundary-recording-sdk-e2e";
         options.requireBoundary = true;
         break;
 
@@ -186,6 +193,7 @@ function parseArguments(argv) {
     (
       options.mode === "boundary-preflight"
       || options.mode === "boundary-admin-smoke"
+      || options.mode === "boundary-recording-sdk-e2e"
       || options.mode === "boundary-swift-live-observe"
       || options.mode === "boundary-typescript-live-observe"
     )
@@ -912,6 +920,8 @@ function emitBoundaryPreflight(options, preflight) {
       implementation:
         options.mode === "boundary-admin-smoke"
           ? "Required remote mode opens an Instant admin SSE subscription, writes with admin transact, and confirms with admin query."
+          : options.mode === "boundary-recording-sdk-e2e"
+            ? "Required recording mode creates a canonical owner, writes the exact linked graph through Swift's live WebSocket transaction path, and queries it through the pinned TypeScript admin SDK."
           : options.mode === "boundary-swift-live-observe"
             ? "Required Swift live boundary mode seeds attrs with admin transact, runs Swift's live WebSocket transaction, and observes it through TypeScript admin SSE."
             : options.mode === "boundary-typescript-live-observe"
@@ -1230,6 +1240,7 @@ function startSwiftLiveTransaction(options, transaction, timeoutMs = 30000) {
       INSTANT_SWIFT_DATA_RUN_LIVE_TRANSACTION: "1",
       INSTANT_SWIFT_DATA_LIVE_TRANSACTION_ENTITY_ID: transaction.entityID,
       INSTANT_SWIFT_DATA_LIVE_TRANSACTION_TEXT: transaction.text,
+      ...(transaction.environment ?? {}),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -1284,8 +1295,8 @@ function startSwiftLiveTransaction(options, transaction, timeoutMs = 30000) {
       child.kill("SIGKILL");
     },
     swiftExecutable,
-      args,
-      timeoutMs: effectiveTimeoutMs,
+    args,
+    timeoutMs: effectiveTimeoutMs,
   };
 }
 
@@ -1470,16 +1481,241 @@ function boundaryEntityID() {
   return randomUUID();
 }
 
-function swiftLiveTransactionSucceeded(result) {
+function swiftLiveTransactionSucceeded(
+  result,
+  caseID = "validation.live.transaction",
+) {
   return (
     result.status === 0
     && !result.error
     && result.rows.some((row) =>
-      row.case === "validation.live.transaction"
+      row.case === caseID
       && row.event === "receive-transaction-refresh"
       && row.ok === true
     )
   );
+}
+
+async function verifyBoundaryRecordingSDKE2E(options) {
+  const preflight = verifyBoundaryPreflight(options);
+  if (!preflight.ok) {
+    process.exitCode = 1;
+    return;
+  }
+
+  const [runtimeSchemaModule, sdkContractModule] = await Promise.all([
+    import("./recording-action-runtime-schema.ts"),
+    import("./recording-action-sdk-contract.ts"),
+  ]);
+  const { recordingActionRuntimeSchema } = runtimeSchemaModule;
+  const {
+    recordingActionQuery,
+    recordingActionSnapshot,
+    waitForRecordingActionResult,
+  } = sdkContractModule;
+
+  const ids = {
+    recordingID: randomUUID(),
+    transcriptionID: randomUUID(),
+    memberID: randomUUID(),
+    attachmentID: randomUUID(),
+  };
+  const title = `Canonical Swift recording ${ids.recordingID}`;
+  const deviceID = "swift-canonical-sdk-e2e";
+  const attachmentContents = "Exact Swift to TypeScript SDK graph";
+  const email = `recording-sdk-e2e-${ids.recordingID}@example.com`;
+  const warnings = [];
+  const originalWarn = console.warn;
+  let swiftRun = null;
+
+  console.warn = (...values) => {
+    warnings.push(values.map((value) => String(value)).join(" "));
+  };
+
+  try {
+    const db = init({
+      appId: options.appID,
+      adminToken: options.adminToken,
+      apiURI: options.apiURI,
+      schema: recordingActionRuntimeSchema,
+      useDateObjects: true,
+    });
+    const refreshToken = await db.auth.createToken({ email });
+    const owner = await db.auth.verifyToken(refreshToken);
+
+    emit({
+      case: "validation.typescript.recording-sdk-e2e",
+      event: "canonical-sdk-owner-created",
+      appID: options.appID,
+      ok: Boolean(owner?.id),
+      details: {
+        mode: options.mode,
+        ownerID: owner?.id ?? null,
+        email,
+      },
+    });
+    if (!owner?.id) {
+      throw new Error("Canonical Instant admin SDK did not return an owner id.");
+    }
+
+    swiftRun = startSwiftLiveTransaction(options, {
+      entityID: ids.recordingID,
+      text: title,
+      environment: {
+        INSTANT_SWIFT_DATA_LIVE_TRANSACTION_CONTRACT: "recording-action",
+        INSTANT_SWIFT_DATA_RECORDING_ID: ids.recordingID,
+        INSTANT_SWIFT_DATA_TRANSCRIPTION_ID: ids.transcriptionID,
+        INSTANT_SWIFT_DATA_MEMBER_ID: ids.memberID,
+        INSTANT_SWIFT_DATA_ATTACHMENT_ID: ids.attachmentID,
+        INSTANT_SWIFT_DATA_OWNER_ID: owner.id,
+        INSTANT_SWIFT_DATA_RECORDING_TITLE: title,
+        INSTANT_SWIFT_DATA_RECORDING_DEVICE_ID: deviceID,
+        INSTANT_SWIFT_DATA_ATTACHMENT_CONTENTS: attachmentContents,
+      },
+    });
+    const swiftResult = await swiftRun.promise;
+    const swiftOK = swiftLiveTransactionSucceeded(
+      swiftResult,
+      "validation.live.recording-action",
+    );
+    emit({
+      case: "validation.typescript.recording-sdk-e2e",
+      event: "swift-recording-transaction",
+      appID: options.appID,
+      ok: swiftOK,
+      details: {
+        mode: options.mode,
+        recordingID: ids.recordingID,
+        status: swiftResult.status,
+        signal: swiftResult.signal,
+        timedOut: swiftResult.timedOut,
+        swiftEvents: swiftResult.rows.map((row) => row.event),
+        error: swiftResult.error,
+        stderr: tailText(swiftResult.stderr),
+      },
+    });
+    if (!swiftOK) {
+      throw new Error("Swift recording graph transaction did not complete successfully.");
+    }
+
+    const queryDB = init({
+      appId: options.appID,
+      adminToken: options.adminToken,
+      apiURI: options.apiURI,
+      schema: recordingActionRuntimeSchema,
+      useDateObjects: true,
+    });
+    const query = recordingActionQuery(ids.recordingID);
+    let result;
+    let attemptCount;
+    let queryErrors;
+    try {
+      const observed = await waitForRecordingActionResult(
+        () => queryDB.query(query),
+      );
+      result = observed.value;
+      attemptCount = observed.attemptCount;
+      queryErrors = observed.queryErrors;
+    } catch (error) {
+      const diagnostic = await queryDB.query({
+        v3_capture_attachments: {},
+        v3_capture_members: {},
+        v3_capture_recordings: {},
+        v3_capture_transcriptions: {},
+      });
+      emit({
+        case: "validation.typescript.recording-sdk-e2e",
+        event: "canonical-sdk-query-diagnostic",
+        appID: options.appID,
+        ok: false,
+        details: {
+          mode: options.mode,
+          recordingID: ids.recordingID,
+          query,
+          error: errorDetails(error),
+          namespaceCounts: Object.fromEntries(
+            Object.entries(diagnostic).map(([namespace, rows]) => [
+              namespace,
+              Array.isArray(rows) ? rows.length : null,
+            ]),
+          ),
+          diagnostic,
+        },
+      });
+      throw error;
+    }
+    const actual = recordingActionSnapshot(result);
+    const expected = {
+      recording: {
+        id: ids.recordingID,
+        title,
+        deviceID,
+        state: "recording",
+        durationMilliseconds: 0,
+        ownerID: owner.id,
+      },
+      attachments: [
+        {
+          id: ids.attachmentID,
+          kind: "text",
+          contents: attachmentContents,
+          offsetMilliseconds: 2_500,
+        },
+      ],
+      members: [
+        {
+          id: ids.memberID,
+          role: "owner",
+          userID: owner.id,
+        },
+      ],
+      transcriptions: [
+        {
+          id: ids.transcriptionID,
+          state: "processing",
+        },
+      ],
+    };
+    const exactShape = isDeepStrictEqual(actual, expected);
+    const ok = exactShape && warnings.length === 0;
+
+    emit({
+      case: "validation.typescript.recording-sdk-e2e",
+      event: "canonical-sdk-query",
+      appID: options.appID,
+      ok,
+      details: {
+        mode: options.mode,
+        proofLevel: "swift-websocket-to-canonical-typescript-admin-sdk",
+        recordingID: ids.recordingID,
+        exactShape,
+        queryAttemptCount: attemptCount,
+        queryErrors,
+        expected,
+        actual,
+        warnings,
+        compilerWarningCount: 0,
+      },
+    });
+    if (!ok) {
+      process.exitCode = 1;
+    }
+  } catch (error) {
+    emit({
+      case: "validation.typescript.recording-sdk-e2e",
+      event: "recording-sdk-e2e-failed",
+      appID: options.appID,
+      ok: false,
+      details: {
+        mode: options.mode,
+        error: errorDetails(error),
+      },
+    });
+    process.exitCode = 1;
+  } finally {
+    console.warn = originalWarn;
+    swiftRun?.kill();
+  }
 }
 
 async function verifyBoundaryAdminSmoke(options) {
@@ -3280,6 +3516,10 @@ async function main() {
 
     case "boundary-admin-smoke":
       await verifyBoundaryAdminSmoke(options);
+      break;
+
+    case "boundary-recording-sdk-e2e":
+      await verifyBoundaryRecordingSDKE2E(options);
       break;
 
     case "boundary-swift-live-observe":
