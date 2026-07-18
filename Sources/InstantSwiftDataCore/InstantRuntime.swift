@@ -181,11 +181,25 @@ private actor InstantRuntimeLiveSession {
     var observerCount: Int
   }
 
+  private struct QueuedBroadcast: Sendable {
+    var topic: String
+    var payload: JSONValue
+  }
+
+  private struct RegisteredRoom: Sendable {
+    var room: InstantRoomHandle
+    var presence: [String: JSONValue]?
+    var queuedBroadcasts: [QueuedBroadcast] = []
+    var isConnected = false
+  }
+
   private var session: InstantLiveWebSocketSession?
   private var receiverTask: Task<Void, Never>?
   private var registeredQueries: [String: RegisteredQuery] = [:]
   private var serverAttributes: [InstantLiveJSONValue] = []
   private var inFlightMutationIDs: Set<String> = []
+  private var registeredRooms: [InstantRoomHandle: RegisteredRoom] = [:]
+  private var makeID: (@Sendable () -> String)?
   private var isOpened = false
   private var generation = 0
 
@@ -207,6 +221,9 @@ private actor InstantRuntimeLiveSession {
     session = nil
     serverAttributes = []
     inFlightMutationIDs.removeAll()
+    for room in Array(registeredRooms.keys) {
+      registeredRooms[room]?.isConnected = false
+    }
     isOpened = false
     let opened = try await transport.connect(request)
     do {
@@ -234,6 +251,7 @@ private actor InstantRuntimeLiveSession {
         }
         self.session = opened
         self.serverAttributes = initOK.attrs
+        self.makeID = makeID
         self.isOpened = true
 
       case let .error(error):
@@ -251,6 +269,17 @@ private actor InstantRuntimeLiveSession {
           operation: "open Instant live session",
           message: "Expected init-ok from Instant live transport, received \(event.op).",
           recovery: "Inspect the Instant runtime WebSocket protocol handling."
+        )
+      }
+      for room in registeredRooms.keys.sorted(by: Self.roomOrder) {
+        guard let registration = registeredRooms[room] else { continue }
+        try await send(
+          .joinRoom(
+            registration.room,
+            presence: registration.presence,
+            clientEventID: makeID()
+          ),
+          through: opened
         )
       }
       for key in registeredQueries.keys.sorted() {
@@ -284,7 +313,7 @@ private actor InstantRuntimeLiveSession {
           let message = try await session.receive()
           try Task.checkCancellation()
           let event = InstantLiveServerEvent(message: message)
-          guard let attributes = await self?.record(event, generation: generation) else {
+          guard let attributes = try await self?.record(event, generation: generation) else {
             return
           }
           try await onEvent(event, attributes)
@@ -357,10 +386,69 @@ private actor InstantRuntimeLiveSession {
     }
   }
 
+  func joinRoom(
+    _ room: InstantRoomHandle,
+    clientEventID: String
+  ) async throws {
+    guard registeredRooms[room] == nil else { return }
+    registeredRooms[room] = RegisteredRoom(room: room)
+    guard let session, isOpened else { return }
+    try await send(.joinRoom(room, clientEventID: clientEventID), through: session)
+  }
+
+  func leaveRoom(
+    _ room: InstantRoomHandle,
+    clientEventID: String
+  ) async throws {
+    guard registeredRooms.removeValue(forKey: room) != nil else { return }
+    guard let session, isOpened else { return }
+    try await send(.leaveRoom(room, clientEventID: clientEventID), through: session)
+  }
+
+  func setPresence(
+    room: InstantRoomHandle,
+    values: [String: JSONValue],
+    clientEventID: String
+  ) async throws {
+    guard var registration = registeredRooms[room] else { return }
+    registration.presence = values
+    registeredRooms[room] = registration
+    guard registration.isConnected, let session, isOpened else { return }
+    try await send(
+      .setPresence(room: room, values: values, clientEventID: clientEventID),
+      through: session
+    )
+  }
+
+  func publishTopic(
+    room: InstantRoomHandle,
+    topic: String,
+    payload: JSONValue,
+    clientEventID: String
+  ) async throws {
+    guard var registration = registeredRooms[room] else { return }
+    guard registration.isConnected, let session, isOpened else {
+      registration.queuedBroadcasts.append(
+        QueuedBroadcast(topic: topic, payload: payload)
+      )
+      registeredRooms[room] = registration
+      return
+    }
+    try await send(
+      .clientBroadcast(
+        room: room,
+        topic: topic,
+        payload: payload,
+        clientEventID: clientEventID
+      ),
+      through: session
+    )
+  }
+
   private func record(
     _ event: InstantLiveServerEvent,
     generation: Int
-  ) -> [InstantLiveJSONValue]? {
+  ) async throws -> [InstantLiveJSONValue]? {
     guard generation == self.generation else { return nil }
     switch event {
     case let .refreshOK(refreshOK) where !refreshOK.attrs.isEmpty:
@@ -373,6 +461,8 @@ private actor InstantRuntimeLiveSession {
       if let clientEventID = error.clientEventID {
         inFlightMutationIDs.remove(clientEventID)
       }
+    case let .other(message):
+      try await recordRoomEvent(message)
     default:
       break
     }
@@ -411,6 +501,9 @@ private actor InstantRuntimeLiveSession {
     self.session = nil
     receiverTask = nil
     isOpened = false
+    for room in Array(registeredRooms.keys) {
+      registeredRooms[room]?.isConnected = false
+    }
     await session.close()
     if let failure {
       await onFailure(failure)
@@ -425,11 +518,66 @@ private actor InstantRuntimeLiveSession {
     self.receiverTask = nil
     serverAttributes = []
     inFlightMutationIDs.removeAll()
+    for room in Array(registeredRooms.keys) {
+      registeredRooms[room]?.isConnected = false
+    }
     isOpened = false
     receiverTask?.cancel()
     if let session {
       await session.close()
     }
+  }
+
+  private func recordRoomEvent(_ message: InstantLiveMessage) async throws {
+    guard let roomID = message.fields["room-id"]?.stringValue,
+      let room = registeredRooms.keys.first(where: { $0.id == roomID }),
+      var registration = registeredRooms[room]
+    else {
+      return
+    }
+    switch message.op {
+    case "join-room-ok":
+      registration.isConnected = true
+      let queuedBroadcasts = registration.queuedBroadcasts
+      registration.queuedBroadcasts = []
+      registeredRooms[room] = registration
+      guard let session, isOpened, let makeID else { return }
+      if let presence = registration.presence {
+        try await send(
+          .setPresence(room: room, values: presence, clientEventID: makeID()),
+          through: session
+        )
+      }
+      for broadcast in queuedBroadcasts {
+        try await send(
+          .clientBroadcast(
+            room: room,
+            topic: broadcast.topic,
+            payload: broadcast.payload,
+            clientEventID: makeID()
+          ),
+          through: session
+        )
+      }
+
+    case "refresh-presence", "patch-presence", "server-broadcast":
+      registration.isConnected = true
+      registeredRooms[room] = registration
+
+    case "leave-room-ok":
+      registration.isConnected = false
+      registeredRooms[room] = registration
+
+    default:
+      break
+    }
+  }
+
+  private static func roomOrder(_ lhs: InstantRoomHandle, _ rhs: InstantRoomHandle) -> Bool {
+    if lhs.type == rhs.type {
+      return lhs.id < rhs.id
+    }
+    return lhs.type < rhs.type
   }
 }
 
@@ -2210,11 +2358,19 @@ public final class InstantRuntime: Sendable {
   }
 
   public func joinRoom(_ room: InstantRoomHandle = .default) async throws -> InstantRoomHandle {
-    try validatedRoom(room, operation: "join room")
+    let room = try validatedRoom(room, operation: "join room")
+    if configuration.liveTransport != nil {
+      try await liveSession.joinRoom(room, clientEventID: configuration.makeID())
+    }
+    return room
   }
 
   public func leaveRoom(_ room: InstantRoomHandle = .default) async throws -> InstantRoomHandle {
-    try validatedRoom(room, operation: "leave room")
+    let room = try validatedRoom(room, operation: "leave room")
+    if configuration.liveTransport != nil {
+      try await liveSession.leaveRoom(room, clientEventID: configuration.makeID())
+    }
+    return room
   }
 
   @discardableResult
@@ -2245,6 +2401,13 @@ public final class InstantRuntime: Sendable {
         members,
         for: roomPresenceObservationKey(room)
       )
+      if configuration.liveTransport != nil {
+        try await liveSession.setPresence(
+          room: room,
+          values: values,
+          clientEventID: configuration.makeID()
+        )
+      }
       await operationGate.leave()
       return member
     } catch {
@@ -2351,6 +2514,14 @@ public final class InstantRuntime: Sendable {
         messages,
         for: roomTopicObservationKey(room: room, topic: topic)
       )
+      if configuration.liveTransport != nil {
+        try await liveSession.publishTopic(
+          room: room,
+          topic: topic,
+          payload: payload,
+          clientEventID: configuration.makeID()
+        )
+      }
       await operationGate.leave()
       return message
     } catch {

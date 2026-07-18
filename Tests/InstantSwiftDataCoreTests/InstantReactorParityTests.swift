@@ -662,6 +662,138 @@ struct InstantReactorParityTests {
   }
 
   @Test
+  func runtimeReconnectRejoinsRoomAndFlushesLatestPresenceAndTopic() async throws {
+    let room = InstantRoomHandle(type: "chat", id: "room-reconnect")
+    let firstSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "room-before-drop")
+    ])
+    let secondSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "room-after-drop")
+    ])
+    let transport = LiveReactorParityTransport(sessions: [firstSession, secondSession])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reactor-room-reconnect-parity",
+        persistenceURL: try temporaryReactorParityCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: transport.transport
+      )
+    )
+    _ = try await runtime.connect()
+    _ = try await runtime.joinRoom(room)
+    _ = try await runtime.joinRoom(room)
+    _ = try await runtime.setPresence(
+      room: room,
+      userID: "user-1",
+      values: ["status": .string("before reconnect")]
+    )
+    _ = try await runtime.publishTopicMessage(
+      room: room,
+      topic: "reaction",
+      userID: "user-1",
+      payload: .object(["emoji": .string("👋")])
+    )
+    await firstSession.waitForSentMessageCount(2)
+    let firstOpsBeforeJoinOK = await firstSession.sentMessages().map(\.op)
+    expectNoDifference(
+      firstOpsBeforeJoinOK,
+      ["init", "join-room"],
+      reactorRoomReconnectSource
+    )
+    await firstSession.enqueue(
+      InstantLiveMessage(
+        op: "join-room-ok",
+        fields: ["room-id": .string(room.id)]
+      )
+    )
+    await firstSession.waitForSentMessageCount(4)
+    let firstSent = await firstSession.sentMessages()
+    expectNoDifference(
+      firstSent.map(\.op),
+      ["init", "join-room", "set-presence", "client-broadcast"],
+      reactorRoomReconnectSource
+    )
+
+    await firstSession.failReceive(
+      InstantError(
+        code: .networkFailed,
+        operation: "drop Reactor room parity session",
+        message: "transient room drop",
+        recovery: "Rejoin the active room and flush queued ephemeral state."
+      )
+    )
+    try await instantLiveWithTimeout(
+      operation: "wait for room reconnect",
+      timeoutMilliseconds: 500
+    ) {
+      await transport.waitForConnectionCount(2)
+    }
+    await secondSession.waitForSentMessageCount(2)
+    let rejoinMessages = await secondSession.sentMessages()
+    expectNoDifference(
+      rejoinMessages.map(\.op),
+      ["init", "join-room"],
+      reactorRoomReconnectSource
+    )
+    expectNoDifference(
+      rejoinMessages[1].fields["data"],
+      .object(["status": .string("before reconnect")]),
+      reactorRoomReconnectSource
+    )
+
+    _ = try await runtime.setPresence(
+      room: room,
+      userID: "user-1",
+      values: ["status": .string("after reconnect")]
+    )
+    _ = try await runtime.publishTopicMessage(
+      room: room,
+      topic: "reaction",
+      userID: "user-1",
+      payload: .object(["emoji": .string("✅")])
+    )
+    let queuedReconnectMessageCount = await secondSession.sentMessages().count
+    expectNoDifference(
+      queuedReconnectMessageCount,
+      2,
+      reactorRoomReconnectSource
+    )
+    await secondSession.enqueue(
+      InstantLiveMessage(
+        op: "join-room-ok",
+        fields: ["room-id": .string(room.id)]
+      )
+    )
+    await secondSession.waitForSentMessageCount(4)
+    let flushedMessages = await secondSession.sentMessages()
+    expectNoDifference(
+      flushedMessages.map(\.op),
+      ["init", "join-room", "set-presence", "client-broadcast"],
+      reactorRoomReconnectSource
+    )
+    expectNoDifference(
+      flushedMessages[2].fields["data"],
+      .object(["status": .string("after reconnect")]),
+      reactorRoomReconnectSource
+    )
+    expectNoDifference(
+      flushedMessages[3].fields["data"],
+      .object(["emoji": .string("✅")]),
+      reactorRoomReconnectSource
+    )
+
+    _ = try await runtime.leaveRoom(room)
+    await secondSession.waitForSentMessageCount(5)
+    let leaveOp = await secondSession.sentMessages().last?.op
+    expectNoDifference(
+      leaveOp,
+      "leave-room",
+      reactorRoomReconnectSource
+    )
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
   func upstreamReactorRewriteMutationsKeepsPendingTransportStable() async throws {
     let cacheURL = try temporaryReactorParityCacheURL()
     let seedTime = InstantTimestamp(milliseconds: 1_700_000_010_000)
@@ -799,6 +931,9 @@ private let reactorReconnectFlushSource =
 
 private let pythonConnectionCloseReconnectSource =
   "upstream/instant/client/packages/python/tests/test_streams_state.py test_connection_aclose_cancels_inflight_reconnect_task [adapted: Swift blocks the reconnect backoff task after a post-init transport failure, explicitly closes the runtime, and proves cancellation prevents a second live transport connection. This also pins upstream/instant/client/packages/core/src/Reactor.js shutdown branch in _transportOnClose.]"
+
+private let reactorRoomReconnectSource =
+  "upstream/instant/client/packages/core/src/Reactor.js init-ok room loop, joinRoom, _flushEnqueuedRoomData, publishPresence, and publishTopic [adapted: Swift rejoins an active room with current presence, queues newer presence/topic data until join-room-ok, flushes it once, and sends leave-room on explicit cleanup.]"
 
 private let reactorRewriteSource =
   "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts rewrite mutations [adapted: Swift pending mutations store typed transactions and lower them to stable transport steps over declared server attributes instead of rewriting cached JavaScript tx-steps.]"

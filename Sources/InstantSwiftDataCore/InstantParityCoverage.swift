@@ -1119,6 +1119,18 @@ public enum InstantSwiftDataParityCoverage {
         "Swift proves the immediate, one-second progression, and ten-second cap across twelve failed reconnect attempts, then reinstalls the active query, preserves acknowledged local data, and resends only the durable mutation that did not receive transact-ok before the drop."
     ),
     instant(
+      id: "instant.reactor.room-reconnect-flush",
+      sourceFile: reactorImplementationSource,
+      sourceTestName:
+        "source-derived lifecycle: init-ok room loop, joinRoom, and _flushEnqueuedRoomData",
+      swiftFile: reactorParitySwiftFile,
+      swiftTestName: "runtimeReconnectRejoinsRoomAndFlushesLatestPresenceAndTopic",
+      surface: "live-room-reconnect",
+      status: .adapted,
+      notes:
+        "Swift idempotently joins a room, queues presence and topic data until join-room-ok, rejoins with current presence after a transient drop, flushes only the newer queued data once, and sends leave-room on explicit cleanup."
+    ),
+    instant(
       id: "instant.reactor.get-local-id-stability",
       sourceFile: reactorSource,
       sourceTestName: "getLocalId always returns the same id",
