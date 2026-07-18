@@ -10,9 +10,9 @@ Status:
 - The API is hypothetical unless explicitly called out as already present.
 - The examples are intentionally "kitchen sink" examples so we can react to the
   feel of the API before implementation hardens around the wrong shape.
-- Screen-level sketches now live in `screens/`. Each screen names a typed URI,
-  includes an ASCII sketch, and shows a full SwiftUI example using this V2 API
-  direction.
+- Screen-level sketches now live in `screens/v2/`. Each screen names a typed
+  URI, includes an ASCII sketch, and shows a full SwiftUI example using this V2
+  API direction.
 - Official Instant auth docs checked on 2026-06-30:
   - `https://www.instantdb.com/docs/auth`
   - `https://www.instantdb.com/docs/auth/magic-codes`
@@ -48,11 +48,11 @@ That means:
 
 The current screen sketches are:
 
-- `screens/auth-login.md` for `auth.login`.
-- `screens/recordings-list.md` for `recordings.index`.
-- `screens/recording.md` for `recordings.capture`.
-- `screens/playback.md` for `recordings.playback`.
-- `screens/preferences.md` for `settings.preferences`.
+- `screens/v2/auth-login.md` for `auth.login`.
+- `screens/v2/recordings-list.md` for `recordings.index`.
+- `screens/v2/recording.md` for `recordings.capture`.
+- `screens/v2/playback.md` for `recordings.playback`.
+- `screens/v2/preferences.md` for `settings.preferences`.
 
 These files are not implementation requirements yet. They are syntax probes for
 the end-state app code we want to make possible.
@@ -2686,7 +2686,7 @@ Recommendation:
 
 Recommendation:
 
-- Keep `screens/` as the place for concrete UI syntax probes.
+- Keep `screens/v2/` as the place for V2 concrete UI syntax probes.
 - Each screen should name its URI, show an ASCII sketch, and provide one full
   Swift block.
 - Login/authentication screens should bind to `@InstantAuth` fields such as
