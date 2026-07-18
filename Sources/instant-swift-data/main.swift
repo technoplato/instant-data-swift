@@ -399,22 +399,39 @@ struct InstantSwiftDataCLI {
       }
       do {
         let runsLive = validationRunsLiveObserve()
-        let recordingActionID = validationRecordingActionLiveObserveID()
-        let entityID = recordingActionID ?? validationLiveObserveEntityID()
-        let caseID = recordingActionID == nil
+        let recordingActionIDs = validationRecordingActionLiveObserveIDs()
+        let entityID = recordingActionIDs?.recordingID ?? validationLiveObserveEntityID()
+        let caseID = recordingActionIDs == nil
           ? "validation.live.observe"
           : "validation.live.recording-action-observe"
-        let query = recordingActionID.map {
-          InstantRecordingActionLiveContract.query(recordingID: $0)
+        let query = recordingActionIDs.map {
+          InstantRecordingActionLiveContract.query(recordingID: $0.recordingID)
         } ?? validationLiveObserveQuery(entityID: entityID)
         let runtimeProjection:
           (@Sendable (InstantRuntime) async throws -> LiveSessionRuntimeProjection)?
-        if let recordingActionID {
+        if let recordingActionIDs {
           let localQuery = InstantRecordingActionLiveContract.localQuery(
-            recordingID: recordingActionID
+            recordingID: recordingActionIDs.recordingID
           )
           runtimeProjection = { runtime in
             let recordings = try await runtime.query(localQuery)
+            let observed = try InstantRecordingActionObservedSnapshot.decode(
+              recordingSnapshots: recordings,
+              ids: recordingActionIDs
+            )
+            guard observed.recordingState == "finished",
+              observed.durationMilliseconds == 42_000,
+              observed.transcriptionState == "complete"
+            else {
+              throw InstantError(
+                code: .validationFailed,
+                operation: "validate recording action live observation",
+                namespace: "v3_capture_recordings",
+                localID: recordingActionIDs.recordingID,
+                message: "Expected finished/42000/complete canonical TypeScript update.",
+                recovery: "Transact the canonical recording update before completing the boundary."
+              )
+            }
             return LiveSessionRuntimeProjection(
               cachedEntityIDs: recordings.map(\.id),
               observedSnapshot: try InstantRecordingActionLiveContract.snapshot(
@@ -435,7 +452,7 @@ struct InstantSwiftDataCLI {
           expectedExternalRefreshEntityID: runsLive ? entityID : nil,
           applyRefreshesToRuntime: runsLive,
           liveTransport: runsLive ? .live : .local,
-          proofLevel: recordingActionID == nil
+          proofLevel: recordingActionIDs == nil
             ? (runsLive ? "live-websocket-observe" : "local-protocol")
             : (runsLive
               ? "live-websocket-recording-action-observe"
@@ -10258,15 +10275,28 @@ struct InstantSwiftDataCLI {
       ?? "live-observe-note"
   }
 
-  private static func validationRecordingActionLiveObserveID() -> String? {
+  private static func validationRecordingActionLiveObserveIDs()
+    -> InstantRecordingActionLiveIDs?
+  {
     guard
       trimmedValidationEnvironmentValue("INSTANT_SWIFT_DATA_LIVE_OBSERVE_CONTRACT")?
         .lowercased() == "recording-action"
     else {
       return nil
     }
-    return trimmedValidationEnvironmentValue("INSTANT_SWIFT_DATA_RECORDING_ID")
-      ?? "recording-live-observe"
+    return InstantRecordingActionLiveIDs(
+      recordingID: trimmedValidationEnvironmentValue("INSTANT_SWIFT_DATA_RECORDING_ID")
+        ?? "recording-live-observe",
+      transcriptionID: trimmedValidationEnvironmentValue(
+        "INSTANT_SWIFT_DATA_TRANSCRIPTION_ID"
+      ) ?? "transcription-live-observe",
+      memberID: trimmedValidationEnvironmentValue("INSTANT_SWIFT_DATA_MEMBER_ID")
+        ?? "member-live-observe",
+      attachmentID: trimmedValidationEnvironmentValue("INSTANT_SWIFT_DATA_ATTACHMENT_ID")
+        ?? "attachment-live-observe",
+      ownerID: trimmedValidationEnvironmentValue("INSTANT_SWIFT_DATA_OWNER_ID")
+        ?? "owner-live-observe"
+    )
   }
 
   private static func validationLiveObserveQuery(entityID: String) -> InstantLiveJSONValue {
