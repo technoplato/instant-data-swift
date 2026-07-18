@@ -1119,6 +1119,17 @@ public enum InstantSwiftDataParityCoverage {
       notes:
         "Swift registers a public stream-content observer with the owned live session at the end of its local read, restores that subscription at the same byte offset after reconnect, and unsubscribes with the reconnected subscription event id when observation is cancelled. The reconnect lifecycle also follows Stream.ts onConnectionStatusChange."
     ),
+    instantPython(
+      id: "instant.python.stream-append-retry-reconnect",
+      sourceFile: pythonStreamsStateSource,
+      sourceTestName: "test_reader_stream_append_with_retry_triggers_force_reconnect",
+      swiftFile: reactorParitySwiftFile,
+      swiftTestName: "runtimeStreamAppendRetryReconnectsWithoutPublishingAppend",
+      surface: "live-stream-reconnect",
+      status: .adapted,
+      notes:
+        "Swift correlates a retryable stream-append error to the active subscription, reconnects the owned live session without publishing the failed append, and resubscribes from the last seen byte offset. The receive behavior also follows Stream.ts onStreamAppend."
+    ),
     instant(
       id: "instant.reactor.reconnect-flush-pending-only",
       sourceFile: reactorImplementationSource,

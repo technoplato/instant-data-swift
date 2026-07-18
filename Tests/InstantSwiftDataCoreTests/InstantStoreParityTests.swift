@@ -11,9 +11,9 @@ struct InstantStoreParityTests {
 
     expectNoDifference(report.event, "parity-report")
     expectNoDifference(report.coverageComplete, false)
-    expectNoDifference(report.recordCount, 293)
+    expectNoDifference(report.recordCount, 294)
     expectNoDifference(report.exactCount, 28)
-    expectNoDifference(report.adaptedCount, 261)
+    expectNoDifference(report.adaptedCount, 262)
     expectNoDifference(report.blockedCount, 2)
     expectNoDifference(report.notApplicableCount, 2)
     #expect(report.sourceFiles.contains("upstream/instant/client/packages/core/__tests__/src/schema.test.ts"))
