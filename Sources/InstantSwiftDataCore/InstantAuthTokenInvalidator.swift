@@ -31,4 +31,22 @@ extension InstantAuthTokenInvalidator {
   public static let local = Self(
     invalidate: { _ in }
   )
+
+  public static func live(
+    apiURI: URL = InstantRuntimeConfiguration.defaultAPIURI,
+    httpClient: InstantAuthHTTPClient = .live
+  ) -> Self {
+    Self { request in
+      let urlRequest = try instantAuthRequest(
+        apiURI: apiURI,
+        path: ["runtime", "signout"],
+        body: InstantSignOutBody(
+          appID: request.appID,
+          refreshToken: request.refreshToken
+        )
+      )
+      let response = try await httpClient.send(urlRequest)
+      try validateInstantAuthResponse(response, operation: "invalidate refresh token")
+    }
+  }
 }

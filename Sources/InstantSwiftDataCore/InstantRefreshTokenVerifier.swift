@@ -54,4 +54,41 @@ extension InstantRefreshTokenVerifier {
       )
     }
   )
+
+  public static func live(
+    apiURI: URL = InstantRuntimeConfiguration.defaultAPIURI,
+    httpClient: InstantAuthHTTPClient = .live
+  ) -> Self {
+    Self { request in
+      let urlRequest = try instantAuthRequest(
+        apiURI: apiURI,
+        path: ["runtime", "auth", "verify_refresh_token"],
+        body: InstantVerifyRefreshTokenBody(
+          appID: request.appID,
+          refreshToken: request.refreshToken
+        )
+      )
+      let response = try await httpClient.send(urlRequest)
+      try validateInstantAuthResponse(response, operation: "verify refresh token")
+      do {
+        let decoded = try JSONDecoder().decode(
+          InstantVerifyRefreshTokenResponse.self,
+          from: response.data
+        )
+        return InstantRefreshTokenVerification(
+          userID: decoded.user.id,
+          refreshToken: decoded.user.refreshToken
+        )
+      } catch let error as InstantError {
+        throw error
+      } catch {
+        throw InstantError(
+          code: .decodeFailed,
+          operation: "verify refresh token",
+          message: "Instant auth returned an invalid verification response.",
+          recovery: "Inspect the canonical verify_refresh_token response shape."
+        )
+      }
+    }
+  }
 }
