@@ -1,5 +1,6 @@
+import Dependencies
 import Foundation
-import InstantSwiftDataCore
+import InstantSwiftData
 
 public struct InstantAuthLiveValidationDetails: Codable, Equatable, Sendable {
   public var userID: String
@@ -37,20 +38,23 @@ public enum InstantAuthLiveValidation {
     let persistenceURL = persistenceURL ?? FileManager.default.temporaryDirectory
       .appendingPathComponent("instant-auth-live-\(UUID().uuidString).sqlite")
     let now = InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
-    let verifier = InstantRefreshTokenVerifier.live
-    let invalidator = InstantAuthTokenInvalidator.live
-    func configuration() -> InstantRuntimeConfiguration {
-      InstantRuntimeConfiguration(
-        appID: appID,
-        apiURI: apiURI,
-        persistenceURL: persistenceURL,
-        refreshTokenVerifier: verifier,
-        authTokenInvalidator: invalidator
-      )
+    func client() async throws -> InstantSwiftDataClient {
+      try await withDependencies {
+        $0.context = .live
+        try await $0.bootstrapInstantSwiftData(
+          appID: appID,
+          apiURI: apiURI,
+          persistenceURL: persistenceURL,
+          context: .live
+        )
+      } operation: {
+        @Dependency(\.defaultInstantSwiftData) var client
+        return client
+      }
     }
 
-    let runtime = try await InstantRuntime.bootstrap(configuration: configuration())
-    let signedIn = try await runtime.signInWithRefreshToken(
+    let initialClient = try await client()
+    let signedIn = try await initialClient.signInWithRefreshToken(
       refreshToken,
       userID: "untrusted-swift-user-id"
     )
@@ -66,7 +70,7 @@ public enum InstantAuthLiveValidation {
       )
     }
 
-    let relaunched = try await InstantRuntime.bootstrap(configuration: configuration())
+    let relaunched = try await client()
     let persisted = try await relaunched.authSession()
     guard persisted == signedIn else {
       throw InstantError(
@@ -88,7 +92,7 @@ public enum InstantAuthLiveValidation {
       )
     }
 
-    let afterSignOut = try await InstantRuntime.bootstrap(configuration: configuration())
+    let afterSignOut = try await client()
     guard try await afterSignOut.authSession() == nil else {
       throw InstantError(
         code: .validationFailed,
@@ -100,7 +104,7 @@ public enum InstantAuthLiveValidation {
 
     let rejectionCode: String
     do {
-      _ = try await verifier.verify(
+      _ = try await InstantRefreshTokenVerifier.live.verify(
         InstantRefreshTokenVerificationRequest(
           appID: appID,
           apiURI: apiURI,
