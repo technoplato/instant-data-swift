@@ -1641,6 +1641,17 @@ struct InstantLiveTransportTests {
       proofLevel: "live-websocket-observe",
       timestamp: { InstantTimestamp(milliseconds: 1_700_000_000_000) },
       makeID: { ids.next() },
+      runtimeProjection: { runtime in
+        let todos = try await TodoExample.decode(runtime.query(TodoExample.query))
+        return LiveSessionRuntimeProjection(
+          cachedEntityIDs: todos.map(\.id),
+          cachedTodoTexts: todos.map(\.text),
+          observedSnapshot: .object([
+            "id": .string(entityID),
+            "text": .string("Arrived from TypeScript boundary"),
+          ])
+        )
+      },
       maxServerEvents: 1
     )
 
@@ -1669,6 +1680,13 @@ struct InstantLiveTransportTests {
     expectNoDifference(finalDetails.appliedInsertedTripleCount, 4)
     expectNoDifference(finalDetails.cachedEntityIDs, [entityID])
     expectNoDifference(finalDetails.cachedTodoTexts, ["Arrived from TypeScript boundary"])
+    expectNoDifference(
+      finalDetails.observedSnapshot,
+      .object([
+        "id": .string(entityID),
+        "text": .string("Arrived from TypeScript boundary"),
+      ])
+    )
     expectNoDifference(finalDetails.pendingMutationCount, 0)
     expectNoDifference(finalDetails.proofLevel, "live-websocket-observe")
   }

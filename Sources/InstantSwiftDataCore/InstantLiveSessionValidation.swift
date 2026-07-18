@@ -1,5 +1,21 @@
 import Foundation
 
+public struct LiveSessionRuntimeProjection: Sendable {
+  public var cachedEntityIDs: [String]
+  public var cachedTodoTexts: [String]
+  public var observedSnapshot: InstantLiveJSONValue?
+
+  public init(
+    cachedEntityIDs: [String],
+    cachedTodoTexts: [String] = [],
+    observedSnapshot: InstantLiveJSONValue? = nil
+  ) {
+    self.cachedEntityIDs = cachedEntityIDs
+    self.cachedTodoTexts = cachedTodoTexts
+    self.observedSnapshot = observedSnapshot
+  }
+}
+
 public struct LiveSessionValidationDetails: Codable, Equatable, Sendable {
   public var websocketURL: String
   public var sentOps: [String]
@@ -20,6 +36,7 @@ public struct LiveSessionValidationDetails: Codable, Equatable, Sendable {
   public var appliedMergedAttributeCount: Int
   public var cachedEntityIDs: [String]
   public var cachedTodoTexts: [String]
+  public var observedSnapshot: InstantLiveJSONValue?
   public var pendingMutationCount: Int
   public var proofLevel: String
   public var remoteBoundary: String
@@ -45,6 +62,7 @@ public struct LiveSessionValidationDetails: Codable, Equatable, Sendable {
     appliedMergedAttributeCount: Int = 0,
     cachedEntityIDs: [String] = [],
     cachedTodoTexts: [String] = [],
+    observedSnapshot: InstantLiveJSONValue? = nil,
     pendingMutationCount: Int = 0,
     proofLevel: String,
     remoteBoundary: String = "pending-cross-client-sync",
@@ -69,6 +87,7 @@ public struct LiveSessionValidationDetails: Codable, Equatable, Sendable {
     self.appliedMergedAttributeCount = appliedMergedAttributeCount
     self.cachedEntityIDs = cachedEntityIDs
     self.cachedTodoTexts = cachedTodoTexts
+    self.observedSnapshot = observedSnapshot
     self.pendingMutationCount = pendingMutationCount
     self.proofLevel = proofLevel
     self.remoteBoundary = remoteBoundary
@@ -153,6 +172,8 @@ public enum InstantSwiftDataLiveSessionValidation {
     },
     makeID: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() },
     onEvidence: (@Sendable (ValidationEvidenceRow<LiveSessionValidationDetails>) throws -> Void)? = nil,
+    runtimeProjection:
+      (@Sendable (InstantRuntime) async throws -> LiveSessionRuntimeProjection)? = nil,
     eventTimeoutMilliseconds: UInt64 = 10_000,
     maxServerEvents: Int = 4
   ) async throws -> LiveSessionValidationResult {
@@ -191,6 +212,7 @@ public enum InstantSwiftDataLiveSessionValidation {
     var appliedMergedAttributeCount = 0
     var cachedEntityIDs: [String] = []
     var cachedTodoTexts: [String] = []
+    var observedSnapshot: InstantLiveJSONValue?
     var pendingMutationCount = 0
     var evidence: [ValidationEvidenceRow<LiveSessionValidationDetails>] = []
     var runtime: InstantRuntime?
@@ -216,6 +238,7 @@ public enum InstantSwiftDataLiveSessionValidation {
         appliedMergedAttributeCount: appliedMergedAttributeCount,
         cachedEntityIDs: cachedEntityIDs,
         cachedTodoTexts: cachedTodoTexts,
+        observedSnapshot: observedSnapshot,
         pendingMutationCount: pendingMutationCount,
         proofLevel: proofLevel,
         errorMessage: errorMessage
@@ -273,9 +296,16 @@ public enum InstantSwiftDataLiveSessionValidation {
       appliedRefreshTransactionIDs.append(applied.transaction.id)
       appliedInsertedTripleCount += applied.insertedTripleCount
       appliedMergedAttributeCount += applied.mergedAttributeCount
-      let todos = try await TodoExample.decode(runtime.query(TodoExample.query))
-      cachedEntityIDs = todos.map(\.id)
-      cachedTodoTexts = todos.map(\.text)
+      if let runtimeProjection {
+        let projection = try await runtimeProjection(runtime)
+        cachedEntityIDs = projection.cachedEntityIDs
+        cachedTodoTexts = projection.cachedTodoTexts
+        observedSnapshot = projection.observedSnapshot
+      } else {
+        let todos = try await TodoExample.decode(runtime.query(TodoExample.query))
+        cachedEntityIDs = todos.map(\.id)
+        cachedTodoTexts = todos.map(\.text)
+      }
       pendingMutationCount = await runtime.pendingMutations().count
     }
 
