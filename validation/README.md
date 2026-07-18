@@ -161,8 +161,12 @@ INSTANT_SWIFT_DATA_ALLOW_EPHEMERAL_APP_MUTATION=1 \
 
 It records server-normalized schema/perms, strict pulled-artifact typechecking,
 fresh owner/reader/writer/outsider identities, allowed writer mutation,
-rejected reader/writer operations, exact final data, and warning counts. The
-admin token is consumed from the environment and is not written to evidence.
+rejected reader/writer operations, exact final data, and warning counts. It
+also launches the normal Swift WebSocket runtime as the reader and requires the
+server/optimistic/refetched value sequence `[1, 2, 1]`, zero pending mutations,
+one retained failed mutation, and the server permission error. The admin token
+and user refresh tokens are consumed from the environment and are not written
+to evidence.
 
 Instant-managed `$files`, `$streams`, `$users` attributes, and system links are
 reported with stable `system-entity`, `system-attribute`, and `system-link`

@@ -501,8 +501,8 @@ Purpose: make permissions meaningful end to end.
 - Prove allowed and rejected reads/writes from both SDKs.
 - Reconcile rejected optimistic writes and expose actionable recovery text.
 
-The canonical TypeScript half of the sharing boundary is complete through
-`c4c9a26`. Run the guarded verifier against sourced ephemeral credentials:
+The sharing boundary now runs across both SDKs. Run the guarded verifier
+against sourced ephemeral credentials:
 
 ```bash
 INSTANT_SWIFT_DATA_ALLOW_EPHEMERAL_APP_MUTATION=1 \
@@ -511,9 +511,12 @@ INSTANT_SWIFT_DATA_ALLOW_EPHEMERAL_APP_MUTATION=1 \
 
 It generates from Swift, pushes and pulls schema/perms, verifies server
 normalization, strictly type-checks the pulled artifacts, creates fresh owner,
-reader, writer, and outsider identities, and writes non-secret aggregate
-evidence. Remaining Packet 6 work is real auth invalidation plus the Swift-side
-allowed/rejected sharing path and optimistic outbox reconciliation.
+reader, writer, and outsider identities, launches the normal Swift WebSocket
+runtime as the reader, and writes non-secret aggregate evidence. The Swift
+reader must observe server value `1`, optimistic rejected value `2`, and
+refetched server value `1`, with zero pending mutations and one retained failed
+mutation. Remaining Packet 6 work is real auth invalidation and the Swift-side
+allowed writer path.
 
 Commit targets:
 

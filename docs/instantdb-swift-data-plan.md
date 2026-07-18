@@ -529,8 +529,11 @@ share metadata, current-user role, member count, reader rejection, and writer
 promotion proof. `instant-swift-data validation cloudkit-demo --jsonl` records
 that same owner/invitee lifecycle as terminal evidence, including reader
 rejection without outbox mutation, writer update, and relaunch persistence.
-Real Instant sharing entities, generated permissions, Reminders UI sharing, and
-Swift/TypeScript boundary proof remain future work.
+Real Instant sharing entities and generated permissions now run on an ephemeral
+app, and the Swift/TypeScript boundary proves reader visibility, rejected
+optimistic write reconciliation, writer mutation, outsider isolation, and
+owner-only deletion. Reminders UI sharing and the Swift writer path remain
+future work.
 
 ## Proposed Package Architecture
 
