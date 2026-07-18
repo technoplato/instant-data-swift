@@ -7,20 +7,8 @@ import { fileURLToPath } from "node:url";
 import { init } from "@instantdb/admin";
 import type { InstaQLParams, InstaQLResponse } from "@instantdb/core";
 
-import schemaModule, {
-  type AppSchema,
-} from "../../fixtures/voice-trail.schema.js";
-
-// The fixture is outside this package's ESM boundary. Depending on whether
-// tsx enters through ESM or CJS, the default import is either the schema or
-// the transpiled module object.
-const runtimeSchemaModule = schemaModule as unknown as {
-  default?: AppSchema;
-  voiceTrailSchema?: AppSchema;
-};
-const voiceTrailSchema = runtimeSchemaModule.voiceTrailSchema
-  ?? runtimeSchemaModule.default
-  ?? schemaModule as unknown as AppSchema;
+import type { AppSchema } from "../../fixtures/voice-trail.schema.js";
+import { voiceTrailRuntimeSchema } from "./voice-trail-runtime-schema.js";
 
 const appId = requiredEnvironment("INSTANT_APP_ID");
 const adminToken = requiredEnvironment("INSTANT_ADMIN_TOKEN");
@@ -42,7 +30,7 @@ try {
     appId,
     adminToken,
     apiURI,
-    schema: voiceTrailSchema,
+    schema: voiceTrailRuntimeSchema,
     useDateObjects: true,
   });
   const users = Object.fromEntries(
