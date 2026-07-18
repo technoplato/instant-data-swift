@@ -30,8 +30,12 @@ As of 2026-07-18:
   rewrites local attribute identities to the server UUIDs from `init-ok`,
   correlates `transact-ok` and server errors, persists retryable failures, and
   resumes pending sends after relaunch.
-- The runtime does not yet reconnect automatically with bounded backoff or
-  restore room, presence, topic, storage, and stream state after reconnect.
+- Commit `abe63c5` reconnects established live sessions automatically with the
+  canonical immediate-then-bounded backoff progression, publishes transient
+  drops as closed rather than terminal errors, reinstalls active queries,
+  resends only unacknowledged durable mutations, and cancels reconnect work on
+  explicit close. Room, presence, topic, storage, and stream state restoration
+  remains.
 - The V3 API direction is documented in
   `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` and `screens/v3/`.
 - The prior screen syntax is preserved under `screens/v2/` in commit `d11b1cf`.
@@ -41,10 +45,11 @@ As of 2026-07-18:
   schema and permissions verification, and the local Swift/TypeScript E2E
   orchestrator. Its evidence directory was
   `/tmp/instant-swift-data-packet0-20260718T1106`.
-- The live receive, query-subscription, and durable-outbox slices passed their
-  focused transport and Reactor parity tests and the full 819-test Swift
-  package suite.
-- The compact parity gate records 287 cases: 28 exact, 255 adapted, 2 not
+- The live receive, query-subscription, durable-outbox, and reconnect slices
+  passed their focused canonical parity tests and the full 822-test Swift
+  package suite. The reconnect packet's local Swift/TypeScript E2E evidence is
+  `/tmp/instant-swift-data-reconnect-20260718T161703Z`.
+- The compact parity gate records 290 cases: 28 exact, 258 adapted, 2 not
   applicable, and 2 blocked. The only blocked ids are
   `instant.live-transport.swift-to-typescript` and
   `instant.live-transport.typescript-to-swift` until credentialed live evidence
@@ -294,7 +299,9 @@ Commit targets, split if needed:
 2. `Apply live refreshes through public subscriptions` — implemented in
    `af88570` and `ecf2145`.
 3. `Drain durable outbox through live session` — implemented in `378b76f`.
-4. `Reconnect and restore live runtime state`
+4. `Reconnect and restore live runtime state` — query and durable-outbox
+   restoration implemented in `abe63c5`; room, presence, topic, storage, and
+   stream restoration remains.
 
 Each commit must have its own boundary case and pass the existing local suite.
 
@@ -417,8 +424,8 @@ The release harness must prove each applicable row in both directions:
 
 ## Immediate Next Step
 
-Implement Packet 3's reconnect slice from pinned Reactor tests: reconnect with
-bounded backoff, reinstall active queries, resend only unacknowledged durable
-mutations, and restore room-related live state without duplicate callbacks.
-Then implement Packet 1's compiling V3 fetch fixture over the live subscription
-path.
+Inventory and port the canonical upstream room, presence, topic, storage, and
+stream reconnect lifecycle tests before extending the runtime. Use those ports
+to restore live room-related state without duplicate callbacks or leaked tasks.
+Then implement Packet 1's compiling V3 fetch fixture over the now-reconnecting
+live subscription path.
