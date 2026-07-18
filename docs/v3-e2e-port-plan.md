@@ -64,11 +64,12 @@ As of 2026-07-18:
   warning-free. The core reconnect packet's earlier explicit E2E evidence is
   `/tmp/instant-swift-data-reconnect-20260718T161703Z`.
 - Credentialed remote preflight and both real Swift/TypeScript boundary
-  directions passed at commit `f362b38`; the evidence directory is
-  `/tmp/instant-swift-data-stream-reconnect-e2e-20260718T171900Z`. That run
-  recorded 293 cases, 28 exact, 263 adapted, 2 not applicable, and 0 blocked.
-  It predates the later inline-materialization and parity-only commits, so it is
-  milestone evidence, not clean-HEAD tag evidence.
+  directions passed from the clean current stream-inline milestone. The
+  evidence directory is
+  `/tmp/instant-swift-data-stream-inline-e2e-20260718T1333`. That run recorded
+  295 cases, 28 exact, 265 adapted, 2 not applicable, and 0 blocked, including
+  generated schema/permissions verification and both Swift-to-TypeScript and
+  TypeScript-to-Swift live boundaries.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
