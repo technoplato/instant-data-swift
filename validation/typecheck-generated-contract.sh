@@ -16,7 +16,7 @@ if [[ "${UPSTREAM_REVISION}" != "${EXPECTED_UPSTREAM_REVISION}" ]]; then
   exit 1
 fi
 
-for example in validation recording-action sharing; do
+for example in validation recording-action sharing voice-trail; do
   swift run --package-path "${ROOT}" instant-swift-data schema generate \
     --example "${example}" \
     --to "${GENERATED}/${example}.schema.ts" \
@@ -56,7 +56,7 @@ CORE_VERSION="$(cd "${RUNNER}" && node -p "require('./package.json').dependencie
 ADMIN_VERSION="$(cd "${RUNNER}" && node -p "require('./package.json').dependencies['@instantdb/admin']")"
 TYPESCRIPT_VERSION="$(cd "${RUNNER}" && node -p "require('./package.json').devDependencies.typescript")"
 
-printf '{"case":"validation.typescript.generated-contract","event":"typecheck","ok":true,"details":{"upstreamRevision":"%s","coreVersion":"%s","adminVersion":"%s","typescriptVersion":"%s","compilerWarningCount":0,"artifacts":{"validationSchemaSHA256":"%s","validationPermissionsSHA256":"%s","recordingActionSchemaSHA256":"%s","recordingActionPermissionsSHA256":"%s","sharingSchemaSHA256":"%s","sharingPermissionsSHA256":"%s","serverRecordingActionSchemaSHA256":"%s","serverRecordingActionPermissionsSHA256":"%s"}}}\n' \
+printf '{"case":"validation.typescript.generated-contract","event":"typecheck","ok":true,"details":{"upstreamRevision":"%s","coreVersion":"%s","adminVersion":"%s","typescriptVersion":"%s","compilerWarningCount":0,"artifacts":{"validationSchemaSHA256":"%s","validationPermissionsSHA256":"%s","recordingActionSchemaSHA256":"%s","recordingActionPermissionsSHA256":"%s","sharingSchemaSHA256":"%s","sharingPermissionsSHA256":"%s","voiceTrailSchemaSHA256":"%s","voiceTrailPermissionsSHA256":"%s","serverRecordingActionSchemaSHA256":"%s","serverRecordingActionPermissionsSHA256":"%s"}}}\n' \
   "${UPSTREAM_REVISION}" \
   "${CORE_VERSION}" \
   "${ADMIN_VERSION}" \
@@ -67,5 +67,7 @@ printf '{"case":"validation.typescript.generated-contract","event":"typecheck","
   "$(sha256 "${GENERATED}/recording-action.perms.ts")" \
   "$(sha256 "${GENERATED}/sharing.schema.ts")" \
   "$(sha256 "${GENERATED}/sharing.perms.ts")" \
+  "$(sha256 "${GENERATED}/voice-trail.schema.ts")" \
+  "$(sha256 "${GENERATED}/voice-trail.perms.ts")" \
   "$(sha256 "${GENERATED}/recording-action.server.schema.ts")" \
   "$(sha256 "${GENERATED}/recording-action.server.perms.ts")"

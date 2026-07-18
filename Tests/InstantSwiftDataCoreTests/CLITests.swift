@@ -320,7 +320,7 @@ extension InstantStoreTests {
       homeURL: homeURL
     )
     expectNoDifference(unsupported.status, 64)
-    #expect(unsupported.error.contains("Available examples: todos, validation, recording-action, sharing"))
+    #expect(unsupported.error.contains("Available examples: todos, validation, recording-action, sharing, voice-trail"))
   }
 
   @Test
@@ -559,6 +559,88 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliGeneratesAndVerifiesVoiceTrailContract() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    let schemaURL = homeURL.appendingPathComponent("voice-trail.schema.ts")
+    let permissionsURL = homeURL.appendingPathComponent("voice-trail.perms.ts")
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let generatedSchema = try JSONDecoder().decode(
+      CLIGeneratedArtifactOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "schema", "generate", "--example", "voice-trail",
+            "--to", schemaURL.path,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(generatedSchema.example, "voice-trail")
+    let schemaSource = try String(contentsOf: schemaURL, encoding: .utf8)
+    #expect(schemaSource.contains("v3_capture_recordingsReaders"))
+    #expect(schemaSource.contains("v3_capture_recordingsWriters"))
+    #expect(schemaSource.contains("v3_sharesRecordingRoot"))
+
+    let schemaVerify = try JSONDecoder().decode(
+      CLISchemaVerifyOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "schema", "verify", "--example", "voice-trail",
+            "--from", schemaURL.path,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(schemaVerify.example, "voice-trail")
+    expectNoDifference(schemaVerify.entityCount, 6)
+    expectNoDifference(schemaVerify.linkCount, 9)
+    expectNoDifference(schemaVerify.warnings, [])
+
+    let generatedPermissions = try JSONDecoder().decode(
+      CLIGeneratedArtifactOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "perms", "generate", "--example", "voice-trail",
+            "--to", permissionsURL.path,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(generatedPermissions.example, "voice-trail")
+    let permissionsSource = try String(contentsOf: permissionsURL, encoding: .utf8)
+    #expect(permissionsSource.contains("auth.id in data.ref('recording.writers.id')"))
+    #expect(permissionsSource.contains("auth.id in data.ref('share.owner.id')"))
+
+    let permissionsVerify = try JSONDecoder().decode(
+      CLIPermissionsVerifyOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "perms", "verify", "--example", "voice-trail",
+            "--from", permissionsURL.path,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(permissionsVerify.example, "voice-trail")
+    expectNoDifference(permissionsVerify.namespaceCount, 6)
+    expectNoDifference(permissionsVerify.allowRuleCount, 21)
+  }
+
+  @Test
   func cliTopLevelHelpListsValidationSchemaExample() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -569,10 +651,10 @@ extension InstantStoreTests {
 
     expectNoDifference(help.status, 0)
     expectNoDifference(help.error, "")
-    #expect(help.output.contains("schema generate --example todos|validation|recording-action|sharing"))
-    #expect(help.output.contains("schema verify --example todos|validation|recording-action|sharing"))
-    #expect(help.output.contains("perms generate --example todos|validation|recording-action|sharing"))
-    #expect(help.output.contains("perms verify --example todos|validation|recording-action|sharing"))
+    #expect(help.output.contains("schema generate --example todos|validation|recording-action|sharing|voice-trail"))
+    #expect(help.output.contains("schema verify --example todos|validation|recording-action|sharing|voice-trail"))
+    #expect(help.output.contains("perms generate --example todos|validation|recording-action|sharing|voice-trail"))
+    #expect(help.output.contains("perms verify --example todos|validation|recording-action|sharing|voice-trail"))
   }
 
   @Test
@@ -601,11 +683,11 @@ extension InstantStoreTests {
     )
     try expectMalformed(
       ["schema", "generate", "--to", schemaURL.path, "--json"],
-      contains: "schema generate --example todos|validation|recording-action|sharing"
+      contains: "schema generate --example todos|validation|recording-action|sharing|voice-trail"
     )
     try expectMalformed(
       ["schema", "dance", "--to", schemaURL.path, "--json"],
-      contains: "schema generate --example todos|validation|recording-action|sharing"
+      contains: "schema generate --example todos|validation|recording-action|sharing|voice-trail"
     )
     try expectMalformed(
       ["schema", "verify", "--example", "todos", "--unknown", "--json"],
@@ -617,7 +699,7 @@ extension InstantStoreTests {
     )
     try expectMalformed(
       ["perms", "verify", "--example", "todos", "--from", "--json"],
-      contains: "perms verify --example todos|validation|recording-action|sharing --from instant.perms.ts"
+      contains: "perms verify --example todos|validation|recording-action|sharing|voice-trail --from instant.perms.ts"
     )
 
     expectNoDifference(

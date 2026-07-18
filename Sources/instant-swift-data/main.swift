@@ -9024,10 +9024,10 @@ struct InstantSwiftDataCLI {
 
       Commands:
         init --example todos --to <directory> [--force] [--json|--jsonl]
-        schema generate --example todos|validation|recording-action|sharing [--to instant.schema.ts] [--json|--jsonl]
-        schema verify --example todos|validation|recording-action|sharing --from instant.schema.ts [--json|--jsonl]
-        perms generate --example todos|validation|recording-action|sharing [--to instant.perms.ts] [--json|--jsonl]
-        perms verify --example todos|validation|recording-action|sharing --from instant.perms.ts [--json|--jsonl]
+        schema generate --example todos|validation|recording-action|sharing|voice-trail [--to instant.schema.ts] [--json|--jsonl]
+        schema verify --example todos|validation|recording-action|sharing|voice-trail --from instant.schema.ts [--json|--jsonl]
+        perms generate --example todos|validation|recording-action|sharing|voice-trail [--to instant.perms.ts] [--json|--jsonl]
+        perms verify --example todos|validation|recording-action|sharing|voice-trail --from instant.perms.ts [--json|--jsonl]
         query todos [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt] [--raw] [--select field[,field]] [--json|--jsonl]
         admin query <namespace> [--limit n] [--json|--jsonl]
         admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id] [--json|--jsonl]
@@ -9162,9 +9162,16 @@ struct InstantSwiftDataCLI {
         permissions: InstantSchemaExamples.sharingPermissions
       )
 
+    case "voice-trail":
+      return CLISchemaExample(
+        name: "voice-trail",
+        schema: InstantSchemaExamples.voiceTrailDocument,
+        permissions: InstantSchemaExamples.voiceTrailPermissions
+      )
+
     default:
       throw CLIError(
-        "Unsupported --example '\(rawName)'. Available examples: todos, validation, recording-action, sharing.",
+        "Unsupported --example '\(rawName)'. Available examples: todos, validation, recording-action, sharing, voice-trail.",
         exitCode: 64
       )
     }
