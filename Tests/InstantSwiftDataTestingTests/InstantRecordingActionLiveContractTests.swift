@@ -98,6 +98,105 @@ struct InstantRecordingActionLiveContractTests {
     )
   }
 
+  @Test
+  func localQueryAndSnapshotProjectCanonicalRecordingGraph() throws {
+    let localQuery = InstantRecordingActionLiveContract.localQuery(
+      recordingID: ids.recordingID
+    )
+    expectNoDifference(localQuery.namespace, "v3_capture_recordings")
+    expectNoDifference(
+      localQuery.filters,
+      [.equals(field: "id", value: .string(ids.recordingID))]
+    )
+    expectNoDifference(
+      localQuery.includes?.map { [$0.name, $0.direction.rawValue] },
+      [
+        ["owner", "forward"],
+        ["attachments", "reverse"],
+        ["members", "reverse"],
+        ["transcriptions", "reverse"],
+      ]
+    )
+    expectNoDifference(localQuery.includes?[2].query?.includes?.map(\.name), ["user"])
+
+    let owner = InstantLinkedEntitySnapshot(
+      id: ids.ownerID,
+      namespace: "$users",
+      values: [:]
+    )
+    let attachment = InstantLinkedEntitySnapshot(
+      id: ids.attachmentID,
+      namespace: "v3_capture_attachments",
+      values: [
+        "kind": .one(.string("text")),
+        "contents": .one(.string("Cross-SDK notes")),
+        "offsetMilliseconds": .one(.number(2_500)),
+      ]
+    )
+    let member = InstantLinkedEntitySnapshot(
+      id: ids.memberID,
+      namespace: "v3_capture_members",
+      values: ["role": .one(.string("owner"))],
+      links: ["user": [owner]]
+    )
+    let transcription = InstantLinkedEntitySnapshot(
+      id: ids.transcriptionID,
+      namespace: "v3_capture_transcriptions",
+      values: ["state": .one(.string("processing"))]
+    )
+    let recording = InstantEntitySnapshot(
+      id: ids.recordingID,
+      namespace: "v3_capture_recordings",
+      values: [
+        "title": .one(.string("Canonical recording")),
+        "deviceID": .one(.string("typescript-e2e")),
+        "state": .one(.string("recording")),
+        "durationMilliseconds": .one(.number(0)),
+      ],
+      links: [
+        "owner": [owner],
+        "attachments": [attachment],
+        "members": [member],
+        "transcriptions": [transcription],
+      ]
+    )
+
+    expectNoDifference(
+      try InstantRecordingActionLiveContract.snapshot(from: [recording]),
+      .object([
+        "recording": .object([
+          "id": .string(ids.recordingID),
+          "title": .string("Canonical recording"),
+          "deviceID": .string("typescript-e2e"),
+          "state": .string("recording"),
+          "durationMilliseconds": .number(0),
+          "ownerID": .string(ids.ownerID),
+        ]),
+        "attachments": .array([
+          .object([
+            "id": .string(ids.attachmentID),
+            "kind": .string("text"),
+            "contents": .string("Cross-SDK notes"),
+            "offsetMilliseconds": .number(2_500),
+          ])
+        ]),
+        "members": .array([
+          .object([
+            "id": .string(ids.memberID),
+            "role": .string("owner"),
+            "userID": .string(ids.ownerID),
+          ])
+        ]),
+        "transcriptions": .array([
+          .object([
+            "id": .string(ids.transcriptionID),
+            "state": .string("processing"),
+          ])
+        ]),
+      ])
+    )
+  }
+
   private func add(
     _ entityID: String,
     _ attributeID: String,
