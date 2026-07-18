@@ -201,6 +201,29 @@ struct TypedAPITests {
     )
     #expect(reverseIncludedQuery.plan.id != TypedUser.query.plan.id)
     #expect(reverseIncludedQuery.plan.cacheKey != TypedUser.query.plan.cacheKey)
+
+    let nestedIncludedQuery = TypedUser.query.include(
+      TypedUser.posts,
+      TypedPost.query.include(
+        TypedPost.author,
+        TypedUser.query.select(TypedUser.name)
+      )
+    )
+    expectNoDifference(
+      nestedIncludedQuery.plan.includes?.first?.query?.includes,
+      [
+        InstantQueryInclude(
+          "author",
+          query: InstantQueryIncludePlan(
+            id: TypedUser.query.select(TypedUser.name).plan.id,
+            namespace: TypedUser.instantNamespace,
+            selectedFields: ["name"]
+          )
+        )
+      ]
+    )
+    #expect(nestedIncludedQuery.plan.id != reverseIncludedQuery.plan.id)
+    #expect(nestedIncludedQuery.plan.cacheKey != reverseIncludedQuery.plan.cacheKey)
   }
 
   @Test

@@ -1920,9 +1920,8 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
         && includePlan.first == nil
         && includePlan.after == nil
         && includePlan.last == nil
-        && includePlan.before == nil
-        && (includePlan.includes == nil || includePlan.includes?.isEmpty == true),
-      "InstantEntityQuery.include does not support nested includes or pagination."
+        && includePlan.before == nil,
+      "InstantEntityQuery.include does not support nested pagination."
     )
 
     var includes = (plan.includes ?? []).filter { $0.name != name }
@@ -1935,7 +1934,8 @@ public struct InstantEntityQuery<Entity: InstantEntityModel>: Hashable, Sendable
           namespace: includePlan.namespace,
           filters: includePlan.filters,
           order: includePlan.order,
-          selectedFields: includePlan.selectedFields
+          selectedFields: includePlan.selectedFields,
+          includes: includePlan.includes ?? []
         )
       )
     )
