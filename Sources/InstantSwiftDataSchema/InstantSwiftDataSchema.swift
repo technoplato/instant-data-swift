@@ -533,7 +533,7 @@ public enum InstantSchemaExamples {
     ],
     links: [
       InstantLinkSchema(
-        name: "v3CaptureAttachmentRecording",
+        name: "v3_capture_attachmentsRecording",
         forward: InstantLinkEndpoint(
           namespace: "v3_capture_attachments",
           cardinality: .one,
@@ -548,7 +548,7 @@ public enum InstantSchemaExamples {
         isRequired: true
       ),
       InstantLinkSchema(
-        name: "v3CaptureMemberRecording",
+        name: "v3_capture_membersRecording",
         forward: InstantLinkEndpoint(
           namespace: "v3_capture_members",
           cardinality: .one,
@@ -563,7 +563,7 @@ public enum InstantSchemaExamples {
         isRequired: true
       ),
       InstantLinkSchema(
-        name: "v3CaptureMemberUser",
+        name: "v3_capture_membersUser",
         forward: InstantLinkEndpoint(
           namespace: "v3_capture_members",
           cardinality: .one,
@@ -577,7 +577,7 @@ public enum InstantSchemaExamples {
         isRequired: true
       ),
       InstantLinkSchema(
-        name: "v3CaptureRecordingOwner",
+        name: "v3_capture_recordingsOwner",
         forward: InstantLinkEndpoint(
           namespace: "v3_capture_recordings",
           cardinality: .one,
@@ -591,7 +591,7 @@ public enum InstantSchemaExamples {
         isRequired: true
       ),
       InstantLinkSchema(
-        name: "v3CaptureTranscriptionRecording",
+        name: "v3_capture_transcriptionsRecording",
         forward: InstantLinkEndpoint(
           namespace: "v3_capture_transcriptions",
           cardinality: .one,

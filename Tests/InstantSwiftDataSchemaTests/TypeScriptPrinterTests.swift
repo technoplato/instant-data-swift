@@ -328,7 +328,7 @@ struct TypeScriptPrinterTests {
           }),
         },
         links: {
-          v3CaptureAttachmentRecording: {
+          v3_capture_attachmentsRecording: {
             forward: {
               on: "v3_capture_attachments",
               has: "one",
@@ -342,7 +342,7 @@ struct TypeScriptPrinterTests {
               label: "attachments",
             },
           },
-          v3CaptureMemberRecording: {
+          v3_capture_membersRecording: {
             forward: {
               on: "v3_capture_members",
               has: "one",
@@ -356,7 +356,7 @@ struct TypeScriptPrinterTests {
               label: "members",
             },
           },
-          v3CaptureMemberUser: {
+          v3_capture_membersUser: {
             forward: {
               on: "v3_capture_members",
               has: "one",
@@ -369,7 +369,7 @@ struct TypeScriptPrinterTests {
               label: "recordingMemberships",
             },
           },
-          v3CaptureRecordingOwner: {
+          v3_capture_recordingsOwner: {
             forward: {
               on: "v3_capture_recordings",
               has: "one",
@@ -382,7 +382,7 @@ struct TypeScriptPrinterTests {
               label: "recordings",
             },
           },
-          v3CaptureTranscriptionRecording: {
+          v3_capture_transcriptionsRecording: {
             forward: {
               on: "v3_capture_transcriptions",
               has: "one",
@@ -549,6 +549,95 @@ struct TypeScriptPrinterTests {
       parsed,
       ParsedInstantSchemaDocument(InstantSchemaExamples.validationDocument)
     )
+  }
+
+  @Test
+  func serverNormalizedRecordingSchemaMatchesCanonicalSwiftContractWithWarnings() throws {
+    let serverDocument = try TypeScriptSchemaParser().parseDocument(
+      Self.validationFixture(named: "recording-action.server.schema.ts")
+    )
+    let expected = ParsedInstantSchemaDocument(InstantSchemaExamples.recordingActionDocument)
+
+    let comparison = try serverDocument.comparingServerNormalized(to: expected)
+
+    expectNoDifference(comparison.normalizedDocument, expected)
+    expectNoDifference(
+      comparison.warnings,
+      [
+        InstantServerSchemaWarning(code: .systemEntity, path: "$files"),
+        InstantServerSchemaWarning(code: .systemEntity, path: "$streams"),
+        InstantServerSchemaWarning(code: .systemAttribute, path: "$users.imageURL"),
+        InstantServerSchemaWarning(code: .systemAttribute, path: "$users.type"),
+        InstantServerSchemaWarning(code: .systemLink, path: "$streams$files"),
+        InstantServerSchemaWarning(code: .systemLink, path: "$usersLinkedPrimaryUser"),
+      ]
+    )
+  }
+
+  @Test
+  func serverNormalizedSchemaRejectsUnexpectedApplicationEntity() throws {
+    var serverDocument = try TypeScriptSchemaParser().parseDocument(
+      Self.validationFixture(named: "recording-action.server.schema.ts")
+    )
+    serverDocument.entities.append(
+      ParsedInstantEntitySchema(namespace: "unexpected_app_data", attributes: [])
+    )
+
+    #expect(
+      throws: InstantServerSchemaComparisonError.unexpectedEntity("unexpected_app_data")
+    ) {
+      try serverDocument.comparingServerNormalized(
+        to: ParsedInstantSchemaDocument(InstantSchemaExamples.recordingActionDocument)
+      )
+    }
+  }
+
+  @Test
+  func serverNormalizedSchemaRejectsUnexpectedApplicationAttribute() throws {
+    var serverDocument = try TypeScriptSchemaParser().parseDocument(
+      Self.validationFixture(named: "recording-action.server.schema.ts")
+    )
+    let recordingIndex = try #require(
+      serverDocument.entities.firstIndex { $0.namespace == "v3_capture_recordings" }
+    )
+    serverDocument.entities[recordingIndex].attributes.append(
+      InstantAttribute(
+        id: "v3_capture_recordings/unexpected",
+        namespace: "v3_capture_recordings",
+        name: "unexpected",
+        valueType: .string
+      )
+    )
+
+    #expect(
+      throws: InstantServerSchemaComparisonError.unexpectedAttribute(
+        "v3_capture_recordings.unexpected"
+      )
+    ) {
+      try serverDocument.comparingServerNormalized(
+        to: ParsedInstantSchemaDocument(InstantSchemaExamples.recordingActionDocument)
+      )
+    }
+  }
+
+  @Test
+  func serverNormalizedSchemaRejectsMismatchedApplicationLink() throws {
+    var serverDocument = try TypeScriptSchemaParser().parseDocument(
+      Self.validationFixture(named: "recording-action.server.schema.ts")
+    )
+    let linkName = "v3_capture_recordingsOwner"
+    let linkIndex = try #require(
+      serverDocument.links.firstIndex { $0.name == linkName }
+    )
+    serverDocument.links[linkIndex].forward.label = "unexpectedOwner"
+
+    #expect(
+      throws: InstantServerSchemaComparisonError.mismatchedLink(linkName)
+    ) {
+      try serverDocument.comparingServerNormalized(
+        to: ParsedInstantSchemaDocument(InstantSchemaExamples.recordingActionDocument)
+      )
+    }
   }
 
   @Test

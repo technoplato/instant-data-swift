@@ -347,7 +347,7 @@ extension InstantStoreTests {
     )
     expectNoDifference(generatedSchema.example, "recording-action")
     let schemaSource = try String(contentsOf: schemaURL, encoding: .utf8)
-    #expect(schemaSource.contains("v3CaptureRecordingOwner"))
+    #expect(schemaSource.contains("v3_capture_recordingsOwner"))
     #expect(schemaSource.contains("recordingMemberships"))
 
     let schemaVerify = try JSONDecoder().decode(
@@ -366,6 +366,39 @@ extension InstantStoreTests {
     expectNoDifference(schemaVerify.example, "recording-action")
     expectNoDifference(schemaVerify.entityCount, 5)
     expectNoDifference(schemaVerify.linkCount, 5)
+    expectNoDifference(schemaVerify.warnings, [])
+
+    let serverSchemaURL = packageRootURL()
+      .appendingPathComponent(
+        "validation/fixtures/recording-action.server.schema.ts"
+      )
+    let serverSchemaVerify = try JSONDecoder().decode(
+      CLISchemaVerifyOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "schema", "verify", "--example", "recording-action",
+            "--from", serverSchemaURL.path,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(serverSchemaVerify.example, "recording-action")
+    expectNoDifference(serverSchemaVerify.entityCount, 5)
+    expectNoDifference(serverSchemaVerify.linkCount, 5)
+    expectNoDifference(
+      serverSchemaVerify.warnings,
+      [
+        CLISchemaWarning(code: "system-entity", path: "$files"),
+        CLISchemaWarning(code: "system-entity", path: "$streams"),
+        CLISchemaWarning(code: "system-attribute", path: "$users.imageURL"),
+        CLISchemaWarning(code: "system-attribute", path: "$users.type"),
+        CLISchemaWarning(code: "system-link", path: "$streams$files"),
+        CLISchemaWarning(code: "system-link", path: "$usersLinkedPrimaryUser"),
+      ]
+    )
 
     let generatedPermissions = try JSONDecoder().decode(
       CLIGeneratedArtifactOutput.self,
@@ -10975,6 +11008,12 @@ private struct CLISchemaVerifyOutput: Decodable {
   var entityCount: Int
   var attributeCount: Int
   var linkCount: Int
+  var warnings: [CLISchemaWarning]
+}
+
+private struct CLISchemaWarning: Decodable, Equatable {
+  var code: String
+  var path: String
 }
 
 private struct CLIPermissionsVerifyOutput: Decodable {

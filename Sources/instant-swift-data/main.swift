@@ -9340,16 +9340,24 @@ struct InstantSwiftDataCLI {
     }
 
     let expected = ParsedInstantSchemaDocument(example.schema)
-    guard parsed == expected else {
-      throw CLIError("Schema does not match --example \(example.name).", exitCode: 66)
+    let comparison: InstantServerSchemaComparison
+    do {
+      comparison = try parsed.comparingServerNormalized(to: expected)
+    } catch let error as InstantServerSchemaComparisonError {
+      throw CLIError(
+        "Schema does not match --example \(example.name): \(error).",
+        exitCode: 66
+      )
     }
+    let normalized = comparison.normalizedDocument
 
     let summary = SchemaVerifyOutput(
       example: example.name,
       path: url.path,
-      entityCount: parsed.entities.count,
-      attributeCount: parsed.entities.reduce(0) { $0 + $1.attributes.count },
-      linkCount: parsed.links.count
+      entityCount: normalized.entities.count,
+      attributeCount: normalized.entities.reduce(0) { $0 + $1.attributes.count },
+      linkCount: normalized.links.count,
+      warnings: comparison.warnings
     )
 
     switch output {
@@ -9359,6 +9367,10 @@ struct InstantSwiftDataCLI {
       print("entities: \(summary.entityCount)")
       print("attributes: \(summary.attributeCount)")
       print("links: \(summary.linkCount)")
+      print("warnings: \(summary.warnings.count)")
+      for warning in summary.warnings {
+        print("warning [\(warning.code.rawValue)]: \(warning.path)")
+      }
       print("path: \(summary.path)")
 
     case .json:
@@ -12049,6 +12061,7 @@ private struct SchemaVerifyOutput: Codable, Sendable {
   var entityCount: Int
   var attributeCount: Int
   var linkCount: Int
+  var warnings: [InstantServerSchemaWarning]
 }
 
 private struct PermissionsVerifyOutput: Codable, Sendable {
