@@ -69,12 +69,14 @@ public enum InstantVoiceTrailRecordingsListLiveValidation {
             .appendingPathComponent(
               "instant-voice-trail-recordings-live-\(UUID().uuidString).sqlite"
             )
+          let trace = VoiceTrailRecordingsLiveTrace()
           let runtime = try await InstantRuntime.bootstrap(
             configuration: InstantRuntimeConfiguration(
               appID: appID,
               websocketURI: websocketURI,
               persistenceURL: persistenceURL,
               initialAttributes: voiceTrailAttributes,
+              liveTransport: trace.transport,
               liveShareContract: .v3CaptureRecordings
             )
           )
@@ -97,7 +99,8 @@ public enum InstantVoiceTrailRecordingsListLiveValidation {
               .owner,
               recordingID: recordingID,
               rows: rows,
-              operation: "wait for owner recordings-list row"
+              operation: "wait for owner recordings-list row",
+              trace: trace
             )
             continuation.yield(
               try await evidence(
@@ -113,7 +116,8 @@ public enum InstantVoiceTrailRecordingsListLiveValidation {
               .reader,
               recordingID: recordingID,
               rows: rows,
-              operation: "wait for reader recordings-list row"
+              operation: "wait for reader recordings-list row",
+              trace: trace
             )
             continuation.yield(
               try await evidence(
@@ -127,7 +131,8 @@ public enum InstantVoiceTrailRecordingsListLiveValidation {
               .writer,
               recordingID: recordingID,
               rows: rows,
-              operation: "wait for writer recordings-list role replacement"
+              operation: "wait for writer recordings-list role replacement",
+              trace: trace
             )
             continuation.yield(
               try await evidence(
@@ -139,7 +144,8 @@ public enum InstantVoiceTrailRecordingsListLiveValidation {
             )
             let revoked = try await waitForRevocation(
               recordingID: recordingID,
-              rows: rows
+              rows: rows,
+              trace: trace
             )
             continuation.yield(
               try await evidence(
@@ -222,7 +228,8 @@ public enum InstantVoiceTrailRecordingsListLiveValidation {
     _ role: InstantShareRole,
     recordingID: String,
     rows: FetchAll<LiveRecordingRow>,
-    operation: String
+    operation: String,
+    trace: VoiceTrailRecordingsLiveTrace
   ) async throws -> [LiveRecordingRow] {
     for _ in 0..<800 {
       let values = rows.wrappedValue
@@ -232,12 +239,13 @@ public enum InstantVoiceTrailRecordingsListLiveValidation {
       if let error = rows.loadError { throw error }
       try await Task.sleep(for: .milliseconds(25))
     }
-    throw timeout(operation, rows: rows.wrappedValue)
+    throw await timeout(operation, rows: rows.wrappedValue, trace: trace)
   }
 
   private static func waitForRevocation(
     recordingID: String,
-    rows: FetchAll<LiveRecordingRow>
+    rows: FetchAll<LiveRecordingRow>,
+    trace: VoiceTrailRecordingsLiveTrace
   ) async throws -> [LiveRecordingRow] {
     for _ in 0..<800 {
       let values = rows.wrappedValue
@@ -247,7 +255,11 @@ public enum InstantVoiceTrailRecordingsListLiveValidation {
       if let error = rows.loadError { throw error }
       try await Task.sleep(for: .milliseconds(25))
     }
-    throw timeout("wait for recordings-list revocation", rows: rows.wrappedValue)
+    throw await timeout(
+      "wait for recordings-list revocation",
+      rows: rows.wrappedValue,
+      trace: trace
+    )
   }
 
   private static func evidence(
@@ -283,15 +295,16 @@ public enum InstantVoiceTrailRecordingsListLiveValidation {
 
   private static func timeout(
     _ operation: String,
-    rows: [LiveRecordingRow]
-  ) -> InstantError {
+    rows: [LiveRecordingRow],
+    trace: VoiceTrailRecordingsLiveTrace
+  ) async -> InstantError {
     let summary = rows.map {
       "\($0.id.rawValue):\($0.viewerRole?.rawValue ?? "none")"
     }
     return InstantError(
       code: .networkFailed,
       operation: operation,
-      message: "Timed out with rows \(summary).",
+      message: "Timed out with rows \(summary); \(await trace.summary()).",
       recovery: "Inspect the VoiceTrail live query, role links, and nested membership graph."
     )
   }
@@ -305,6 +318,50 @@ public enum InstantVoiceTrailRecordingsListLiveValidation {
     + LiveRecordingRow.instantAttributes
     + LiveShare.instantAttributes
     + LiveMembership.instantAttributes
+}
+
+private actor VoiceTrailRecordingsLiveTrace {
+  private var sentOps: [String] = []
+  private var receivedOps: [String] = []
+  private var addQueries: [String] = []
+  private var queryResults: [String] = []
+
+  nonisolated var transport: InstantLiveTransportClient {
+    let live = InstantLiveTransportClient.live
+    return InstantLiveTransportClient { request in
+      let session = try await live.connect(request)
+      return InstantLiveWebSocketSession(
+        send: { message in
+          await self.recordSent(message)
+          try await session.send(message)
+        },
+        receive: {
+          let message = try await session.receive()
+          await self.recordReceived(message)
+          return message
+        },
+        close: { await session.close() }
+      )
+    }
+  }
+
+  func summary() -> String {
+    "sent=\(sentOps), received=\(receivedOps), queries=\(addQueries), results=\(queryResults)"
+  }
+
+  private func recordSent(_ message: InstantLiveMessage) {
+    sentOps.append(message.op)
+    if message.op == "add-query" {
+      addQueries.append(String(describing: message.fields["q"]))
+    }
+  }
+
+  private func recordReceived(_ message: InstantLiveMessage) {
+    receivedOps.append(message.op)
+    if message.op == "add-query-ok" || message.op == "add-query-exists" {
+      queryResults.append(String(describing: message.fields["result"]))
+    }
+  }
 }
 
 private struct LiveRecordingRow: Hashable, Codable, InstantEntityModel {
