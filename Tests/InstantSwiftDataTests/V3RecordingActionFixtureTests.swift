@@ -130,6 +130,59 @@ import Testing
       expectNoDifference(durable.map(\.deviceID), ["device-created"])
       expectNoDifference(durable.map(\.state), ["recording"])
     }
+
+    @Test @MainActor
+    func createRecordingRejectionDoesNotReplayCallbacksAfterRetry() async throws {
+      let cacheURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("v3-recording-rejected-\(UUID().uuidString).sqlite")
+      let runtime = try await v3RecordingActionRuntime(
+        appID: "v3-recording-rejected",
+        cacheURL: cacheURL
+      )
+      let client = InstantSwiftDataClient(runtime: runtime)
+      let callbacks = V3RecordingMessageCallbacks()
+      let prepared = V3PreparedRecording(
+        recordingID: "recording-rejected",
+        ownerID: InstantID(rawValue: "user-rejected"),
+        deviceID: "device-rejected"
+      )
+
+      let task = client.send(
+        V3CreateRecordingSession(prepared: prepared, title: "Rejected notes"),
+        onOptimisticCommit: { change in
+          callbacks.optimistic.append(change.summary())
+        },
+        onServerAccepted: { change in
+          callbacks.accepted.append(change.summary())
+        },
+        onFailure: { error in
+          callbacks.failures.append(error)
+        }
+      )
+
+      let mutationID = try await waitForV3RecordingActionMutation(runtime)
+      _ = try await runtime.failMutation(
+        id: mutationID,
+        message: "recording creation denied"
+      )
+      await task.value
+
+      expectNoDifference(callbacks.optimistic.count, 1)
+      expectNoDifference(callbacks.accepted, [])
+      expectNoDifference(callbacks.failures.map(\.message), ["recording creation denied"])
+      expectNoDifference(
+        callbacks.failures.map(\.recoveryMessage),
+        ["Inspect the deployed schema and permissions, then retry the action."]
+      )
+
+      _ = try await runtime.retryMutation(id: mutationID)
+      _ = try await runtime.confirmMutation(id: mutationID)
+      try await Task.sleep(nanoseconds: 10_000_000)
+
+      expectNoDifference(callbacks.optimistic.count, 1)
+      expectNoDifference(callbacks.accepted, [])
+      expectNoDifference(callbacks.failures.count, 1)
+    }
   }
 
   @MainActor
