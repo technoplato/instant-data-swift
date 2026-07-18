@@ -9,7 +9,7 @@ import { init } from "@instantdb/admin";
 const runnerDirectory = dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = resolve(runnerDirectory, "../../..");
 const usage =
-  "Usage: node validation/ts-runner/src/main.ts [--fixtures|--boundary-preflight|--boundary-admin-smoke|--boundary-recording-sdk-e2e|--boundary-swift-live-observe|--boundary-typescript-live-observe|--swift-transport-contract path|--swift-local-integrations-contract path|--swift-typed-drafts-contract path|--swift-live-session-contract path|--swift-live-transaction-contract path|--typescript-server-transaction-contract path] [--require-boundary] [--app-id id] [--fixtures-dir path]";
+  "Usage: node validation/ts-runner/src/main.ts [--fixtures|--boundary-preflight|--boundary-admin-smoke|--boundary-recording-sdk-e2e|--boundary-recording-sdk-reverse-e2e|--boundary-swift-live-observe|--boundary-typescript-live-observe|--swift-transport-contract path|--swift-local-integrations-contract path|--swift-typed-drafts-contract path|--swift-live-session-contract path|--swift-live-transaction-contract path|--typescript-server-transaction-contract path] [--require-boundary] [--app-id id] [--fixtures-dir path]";
 const defaultAPIURI = "https://api.instantdb.com";
 const defaultWebSocketURI = "wss://api.instantdb.com/runtime/session";
 
@@ -84,6 +84,11 @@ function parseArguments(argv) {
 
       case "--boundary-recording-sdk-e2e":
         options.mode = "boundary-recording-sdk-e2e";
+        options.requireBoundary = true;
+        break;
+
+      case "--boundary-recording-sdk-reverse-e2e":
+        options.mode = "boundary-recording-sdk-reverse-e2e";
         options.requireBoundary = true;
         break;
 
@@ -194,6 +199,7 @@ function parseArguments(argv) {
       options.mode === "boundary-preflight"
       || options.mode === "boundary-admin-smoke"
       || options.mode === "boundary-recording-sdk-e2e"
+      || options.mode === "boundary-recording-sdk-reverse-e2e"
       || options.mode === "boundary-swift-live-observe"
       || options.mode === "boundary-typescript-live-observe"
     )
@@ -922,6 +928,8 @@ function emitBoundaryPreflight(options, preflight) {
           ? "Required remote mode opens an Instant admin SSE subscription, writes with admin transact, and confirms with admin query."
           : options.mode === "boundary-recording-sdk-e2e"
             ? "Required recording mode creates a canonical owner, writes the exact linked graph through Swift's live WebSocket transaction path, and queries it through the pinned TypeScript admin SDK."
+          : options.mode === "boundary-recording-sdk-reverse-e2e"
+            ? "Required reverse recording mode observes through Swift's live runtime while the pinned TypeScript admin SDK writes the exact linked graph."
           : options.mode === "boundary-swift-live-observe"
             ? "Required Swift live boundary mode seeds attrs with admin transact, runs Swift's live WebSocket transaction, and observes it through TypeScript admin SSE."
             : options.mode === "boundary-typescript-live-observe"
@@ -1339,6 +1347,7 @@ function startSwiftLiveObserve(options, observe, timeoutMs = 30000) {
       INSTANT_WEBSOCKET_URI: options.websocketURI,
       INSTANT_SWIFT_DATA_RUN_LIVE_OBSERVE: "1",
       INSTANT_SWIFT_DATA_LIVE_OBSERVE_ENTITY_ID: observe.entityID,
+      ...(observe.environment ?? {}),
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -1715,6 +1724,259 @@ async function verifyBoundaryRecordingSDKE2E(options) {
   } finally {
     console.warn = originalWarn;
     swiftRun?.kill();
+  }
+}
+
+async function verifyBoundaryRecordingSDKReverseE2E(options) {
+  const preflight = verifyBoundaryPreflight(options);
+  if (!preflight.ok) {
+    process.exitCode = 1;
+    return;
+  }
+
+  const [runtimeSchemaModule, sdkContractModule] = await Promise.all([
+    import("./recording-action-runtime-schema.ts"),
+    import("./recording-action-sdk-contract.ts"),
+  ]);
+  const { recordingActionRuntimeSchema } = runtimeSchemaModule;
+  const {
+    recordingActionFinishTransaction,
+    recordingActionQuery,
+    recordingActionSnapshot,
+    recordingActionTransaction,
+    waitForRecordingActionResult,
+  } = sdkContractModule;
+  const ids = {
+    recordingID: randomUUID(),
+    transcriptionID: randomUUID(),
+    memberID: randomUUID(),
+    attachmentID: randomUUID(),
+  };
+  const title = `Canonical TypeScript recording ${ids.recordingID}`;
+  const deviceID = "typescript-canonical-sdk-e2e";
+  const attachmentContents = "Exact TypeScript to Swift graph";
+  const email = `recording-sdk-reverse-e2e-${ids.recordingID}@example.com`;
+  const warnings = [];
+  const originalWarn = console.warn;
+  let swiftObserve = null;
+
+  console.warn = (...values) => {
+    warnings.push(values.map((value) => String(value)).join(" "));
+  };
+
+  try {
+    const db = init({
+      appId: options.appID,
+      adminToken: options.adminToken,
+      apiURI: options.apiURI,
+      schema: recordingActionRuntimeSchema,
+      useDateObjects: true,
+    });
+    const refreshToken = await db.auth.createToken({ email });
+    const owner = await db.auth.verifyToken(refreshToken);
+    if (!owner?.id) {
+      throw new Error("Canonical Instant admin SDK did not return a reverse-boundary owner id.");
+    }
+    emit({
+      case: "validation.typescript.recording-sdk-reverse-e2e",
+      event: "canonical-sdk-owner-created",
+      appID: options.appID,
+      ok: true,
+      details: { mode: options.mode, ownerID: owner.id, email },
+    });
+
+    const initialExpected = {
+      recording: {
+        id: ids.recordingID,
+        title,
+        deviceID,
+        state: "recording",
+        durationMilliseconds: 0,
+        ownerID: owner.id,
+      },
+      attachments: [
+        {
+          id: ids.attachmentID,
+          kind: "text",
+          contents: attachmentContents,
+          offsetMilliseconds: 2_500,
+        },
+      ],
+      members: [
+        { id: ids.memberID, role: "owner", userID: owner.id },
+      ],
+      transcriptions: [
+        { id: ids.transcriptionID, state: "processing" },
+      ],
+    };
+
+    const initialChunks = recordingActionTransaction(db.tx, {
+      ...ids,
+      ownerID: owner.id,
+      title,
+      deviceID,
+      attachmentContents,
+    });
+    const initialTransaction = await db.transact(initialChunks);
+    const initialObserved = await waitForRecordingActionResult(
+      () => db.query(recordingActionQuery(ids.recordingID)),
+    );
+    const initialActual = recordingActionSnapshot(initialObserved.value);
+    const initialExactShape = isDeepStrictEqual(initialActual, initialExpected);
+    emit({
+      case: "validation.typescript.recording-sdk-reverse-e2e",
+      event: "canonical-sdk-initial-transaction",
+      appID: options.appID,
+      ok: initialExactShape,
+      details: {
+        mode: options.mode,
+        recordingID: ids.recordingID,
+        chunkCount: initialChunks.length,
+        queryAttemptCount: initialObserved.attemptCount,
+        queryErrors: initialObserved.queryErrors,
+        expected: initialExpected,
+        actual: initialActual,
+        transaction: initialTransaction,
+      },
+    });
+    if (!initialExactShape) {
+      throw new Error("Canonical TypeScript SDK initial recording graph did not match.");
+    }
+
+    const expected = {
+      ...initialExpected,
+      recording: {
+        ...initialExpected.recording,
+        state: "finished",
+        durationMilliseconds: 42_000,
+      },
+      transcriptions: [
+        { id: ids.transcriptionID, state: "complete" },
+      ],
+    };
+
+    swiftObserve = startSwiftLiveObserve(options, {
+      entityID: ids.recordingID,
+      environment: {
+        INSTANT_SWIFT_DATA_LIVE_OBSERVE_CONTRACT: "recording-action",
+        INSTANT_SWIFT_DATA_RECORDING_ID: ids.recordingID,
+        INSTANT_SWIFT_DATA_TRANSCRIPTION_ID: ids.transcriptionID,
+        INSTANT_SWIFT_DATA_MEMBER_ID: ids.memberID,
+        INSTANT_SWIFT_DATA_ATTACHMENT_ID: ids.attachmentID,
+        INSTANT_SWIFT_DATA_OWNER_ID: owner.id,
+      },
+    });
+    const readyRow = await swiftObserve.waitForRow(
+      (row) =>
+        row?.case === "validation.live.recording-action-observe"
+        && row.ok === true
+        && (row.event === "receive-query" || row.event === "receive-refresh"),
+      "Swift recording graph observer readiness",
+    );
+    emit({
+      case: "validation.typescript.recording-sdk-reverse-e2e",
+      event: "swift-recording-observer-ready",
+      appID: options.appID,
+      ok: true,
+      details: {
+        mode: options.mode,
+        recordingID: ids.recordingID,
+        readyEvent: readyRow.event,
+        command: [swiftObserve.swiftExecutable, ...swiftObserve.args],
+      },
+    });
+
+    const chunks = recordingActionFinishTransaction(db.tx, {
+      recordingID: ids.recordingID,
+      transcriptionID: ids.transcriptionID,
+      durationMilliseconds: 42_000,
+    });
+    const transaction = await db.transact(chunks);
+    emit({
+      case: "validation.typescript.recording-sdk-reverse-e2e",
+      event: "canonical-sdk-finish-transaction",
+      appID: options.appID,
+      ok: true,
+      details: {
+        mode: options.mode,
+        recordingID: ids.recordingID,
+        chunkCount: chunks.length,
+        transaction,
+      },
+    });
+
+    const observedRow = await swiftObserve.waitForRow(
+      (row) =>
+        row?.case === "validation.live.recording-action-observe"
+        && row.event === "receive-external-refresh"
+        && row.ok === true
+        && row.entityID === ids.recordingID
+        && row.details?.appliedRefreshCount > 0
+        && row.details?.observedSnapshot,
+      "Swift exact recording graph snapshot",
+    );
+    const actual = observedRow.details.observedSnapshot;
+    const exactShape = isDeepStrictEqual(actual, expected);
+    const ok = exactShape && warnings.length === 0;
+    emit({
+      case: "validation.typescript.recording-sdk-reverse-e2e",
+      event: "swift-recording-snapshot",
+      appID: options.appID,
+      ok,
+      details: {
+        mode: options.mode,
+        proofLevel: "canonical-typescript-admin-sdk-to-swift-live-runtime",
+        recordingID: ids.recordingID,
+        exactShape,
+        expected,
+        actual,
+        warnings,
+        compilerWarningCount: 0,
+        appliedRefreshCount: observedRow.details.appliedRefreshCount,
+        appliedRefreshTransactionIDs:
+          observedRow.details.appliedRefreshTransactionIDs ?? [],
+        runtimeCachePath: observedRow.details.runtimeCachePath ?? null,
+      },
+    });
+
+    const swiftResult = await swiftObserve.done();
+    const swiftOK = swiftResult.status === 0 && !swiftResult.error;
+    emit({
+      case: "validation.typescript.recording-sdk-reverse-e2e",
+      event: "swift-recording-observer-command",
+      appID: options.appID,
+      ok: swiftOK,
+      details: {
+        mode: options.mode,
+        recordingID: ids.recordingID,
+        status: swiftResult.status,
+        signal: swiftResult.signal,
+        timedOut: swiftResult.timedOut,
+        swiftEvents: swiftResult.rows.map((row) => row.event),
+        error: swiftResult.error,
+        stderr: tailText(swiftResult.stderr),
+      },
+    });
+    if (!ok || !swiftOK) {
+      process.exitCode = 1;
+    }
+  } catch (error) {
+    swiftObserve?.kill();
+    emit({
+      case: "validation.typescript.recording-sdk-reverse-e2e",
+      event: "recording-sdk-reverse-e2e-failed",
+      appID: options.appID,
+      ok: false,
+      details: {
+        mode: options.mode,
+        error: errorDetails(error),
+        swiftEvents: swiftObserve?.rows?.map((row) => row.event) ?? [],
+        stderr: swiftObserve ? tailText(swiftObserve.stderr()) : "",
+      },
+    });
+    process.exitCode = 1;
+  } finally {
+    console.warn = originalWarn;
   }
 }
 
@@ -3520,6 +3782,10 @@ async function main() {
 
     case "boundary-recording-sdk-e2e":
       await verifyBoundaryRecordingSDKE2E(options);
+      break;
+
+    case "boundary-recording-sdk-reverse-e2e":
+      await verifyBoundaryRecordingSDKReverseE2E(options);
       break;
 
     case "boundary-swift-live-observe":

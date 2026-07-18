@@ -111,6 +111,10 @@ pnpm --dir "${RUNNER}" exec tsx src/main.ts \
   --boundary-recording-sdk-e2e \
   --app-id "${APP_ID}" \
   | tee "${RESULTS_DIR}/typescript-recording-sdk-e2e.jsonl"
+pnpm --dir "${RUNNER}" exec tsx src/main.ts \
+  --boundary-recording-sdk-reverse-e2e \
+  --app-id "${APP_ID}" \
+  | tee "${RESULTS_DIR}/typescript-recording-sdk-reverse-e2e.jsonl"
 
 ROOT="${ROOT}" \
 RUNNER="${RUNNER}" \
@@ -152,13 +156,41 @@ const recordingBoundaryOK =
   ownerRow?.ok === true
   && swiftRow?.ok === true
   && queryRow?.ok === true;
+const reverseSDKRows = readFileSync(
+  resolve(results, "typescript-recording-sdk-reverse-e2e.jsonl"),
+  "utf8",
+)
+  .split("\n")
+  .filter(Boolean)
+  .map((line) => JSON.parse(line));
+const reverseOwnerRow = reverseSDKRows.find(
+  (row) => row.event === "canonical-sdk-owner-created",
+);
+const reverseInitialTransactionRow = reverseSDKRows.find(
+  (row) => row.event === "canonical-sdk-initial-transaction",
+);
+const reverseFinishTransactionRow = reverseSDKRows.find(
+  (row) => row.event === "canonical-sdk-finish-transaction",
+);
+const reverseSnapshotRow = reverseSDKRows.find(
+  (row) => row.event === "swift-recording-snapshot",
+);
+const reverseCommandRow = reverseSDKRows.find(
+  (row) => row.event === "swift-recording-observer-command",
+);
+const reverseBoundaryOK =
+  reverseOwnerRow?.ok === true
+  && reverseInitialTransactionRow?.ok === true
+  && reverseFinishTransactionRow?.ok === true
+  && reverseSnapshotRow?.ok === true
+  && reverseCommandRow?.ok === true;
 const sha256 = (path) =>
   createHash("sha256").update(readFileSync(path)).digest("hex");
 
 const evidence = {
   case: "validation.instant.recording-contract",
-  event: "install-pull-verify-swift-write",
-  ok: recordingBoundaryOK,
+  event: "install-pull-verify-bidirectional-data",
+  ok: recordingBoundaryOK && reverseBoundaryOK,
   appID: process.env.APP_ID,
   details: {
     swiftRevision: execFileSync("git", ["-C", root, "rev-parse", "HEAD"], {
@@ -197,10 +229,24 @@ const evidence = {
       expected: queryRow?.details.expected ?? null,
       warnings: queryRow?.details.warnings ?? [],
     },
+    typeScriptToSwift: {
+      ownerID: reverseOwnerRow?.details.ownerID ?? null,
+      initialTransactionChunkCount:
+        reverseInitialTransactionRow?.details.chunkCount ?? null,
+      finishTransactionChunkCount:
+        reverseFinishTransactionRow?.details.chunkCount ?? null,
+      swiftEvents: reverseCommandRow?.details.swiftEvents ?? [],
+      appliedRefreshCount: reverseSnapshotRow?.details.appliedRefreshCount ?? 0,
+      exactShape: reverseSnapshotRow?.details.exactShape ?? false,
+      actual: reverseSnapshotRow?.details.actual ?? null,
+      expected: reverseSnapshotRow?.details.expected ?? null,
+      warnings: reverseSnapshotRow?.details.warnings ?? [],
+    },
   },
 };
 
 process.stdout.write(`${JSON.stringify(evidence, null, 2)}\n`);
+if (!evidence.ok) process.exitCode = 1;
 NODE
 
 echo "Live recording contract evidence: ${RESULTS_DIR}/evidence.json"
