@@ -211,23 +211,32 @@ struct InstantLiveTransportTests {
   }
 
   @Test
-  func runtimeLiveSessionAppliesRefreshesThroughPublicObservers() async throws {
+  func runtimeLiveSessionInstallsQueryAndAppliesInitialResult() async throws {
     let serverCreatedAt = InstantTimestamp(milliseconds: 1_700_000_000_123)
+    let query: InstantLiveJSONValue = .object([
+      TodoExample.namespace: .object([
+        "$": .object([
+          "order": .object(["createdAt": .string("asc")])
+        ])
+      ])
+    ])
+    let computation = InstantLiveJSONValue.todoJoinRowsComputation(
+      entityID: "runtime-live-todo",
+      text: "Arrived through the runtime event pump",
+      isCompleted: true,
+      createdAt: serverCreatedAt,
+      processedTransactionID: "server-tx-runtime"
+    )
+    let initialResult = try #require(
+      computation.objectValue?["instaql-result"]?.arrayValue
+    )
     let session = InstantRuntimeScriptedLiveSession(messages: [
-      .initOK(clientEventID: "event-init"),
-      .refreshOK(
-        clientEventID: "event-refresh",
+      .initOK(clientEventID: "event-init", attrs: .todoServerAttrs),
+      .addQueryOK(
+        clientEventID: "event-query",
+        query: query,
+        result: initialResult,
         processedTransactionID: "server-tx-runtime",
-        attrs: .todoServerAttrs,
-        computations: [
-          .todoJoinRowsComputation(
-            entityID: "runtime-live-todo",
-            text: "Arrived through the runtime event pump",
-            isCompleted: true,
-            createdAt: serverCreatedAt,
-            processedTransactionID: "server-tx-runtime"
-          )
-        ]
       ),
     ])
     let runtime = try await InstantRuntime.bootstrap(
@@ -262,10 +271,194 @@ struct InstantLiveTransportTests {
     let syncState = try await runtime.syncState()
     expectNoDifference(syncState.processedTransactionID, "server-tx-runtime")
     let sentMessages = await session.sentMessages()
-    expectNoDifference(sentMessages.map(\.op), ["init"])
+    expectNoDifference(sentMessages.map(\.op), ["init", "add-query"])
+    expectNoDifference(sentMessages.last?.fields["q"], query)
 
     let closed = try await runtime.closeConnection()
     expectNoDifference(closed.state, .closed)
+  }
+
+  @Test
+  func runtimeLiveRefreshReusesInitAttributesWhenPayloadOmitsThem() async throws {
+    let serverCreatedAt = InstantTimestamp(milliseconds: 1_700_000_000_456)
+    let session = InstantRuntimeScriptedLiveSession(messages: [
+      .initOK(clientEventID: "event-init", attrs: .todoServerAttrs),
+      .addQueryOK(clientEventID: "event-query"),
+      .refreshOK(
+        clientEventID: "event-refresh",
+        processedTransactionID: "server-tx-refresh",
+        computations: [
+          .todoJoinRowsComputation(
+            entityID: "runtime-refresh-todo",
+            text: "Translated with init attributes",
+            isCompleted: false,
+            createdAt: serverCreatedAt,
+            processedTransactionID: "server-tx-refresh"
+          )
+        ]
+      ),
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "runtime-live-refresh-attrs",
+        persistenceURL: temporaryLiveCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: session.transport
+      )
+    )
+    let stream = await runtime.observe(TodoExample.query)
+    var iterator = stream.makeAsyncIterator()
+    let initial = try #require(await iterator.next())
+    expectNoDifference(initial.values, [])
+
+    _ = try await runtime.connect()
+    let update = try #require(await iterator.next())
+    expectNoDifference(
+      try TodoExample.decode(update.values),
+      [
+        TodoRecord(
+          id: "runtime-refresh-todo",
+          text: "Translated with init attributes",
+          isCompleted: false,
+          createdAt: serverCreatedAt
+        )
+      ]
+    )
+    let syncState = try await runtime.syncState()
+    expectNoDifference(syncState.processedTransactionID, "server-tx-refresh")
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func runtimeLiveSessionUsesCanonicalQueryShapeAndReferenceCountsObservers() async throws {
+    let session = InstantRuntimeScriptedLiveSession(messages: [
+      .initOK(clientEventID: "event-init"),
+      .addQueryOK(clientEventID: "event-query"),
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "runtime-live-query-shape",
+        websocketURI: try #require(URL(string: "wss://ws.example.test/runtime/session")),
+        persistenceURL: temporaryLiveCacheURL(),
+        initialAttributes: TodoProjectExample.attributes,
+        liveTransport: session.transport
+      )
+    )
+    let plan = InstantQueryPlan(
+      id: "runtime-live-query-shape-a",
+      namespace: TodoExample.namespace,
+      filters: [
+        .equals(field: "isCompleted", value: .bool(false)),
+        .or([
+          .like(field: "text", pattern: "A%"),
+          .isNull(field: "project"),
+        ]),
+      ],
+      order: InstantQueryOrder("createdAt", .descending),
+      limit: 25,
+      selectedFields: ["isCompleted", "text"],
+      includes: [
+        InstantQueryInclude(
+          "project",
+          query: InstantQueryIncludePlan(
+            id: "runtime-live-query-project",
+            namespace: TodoProjectExample.namespace,
+            order: InstantQueryOrder("title"),
+            selectedFields: ["title"]
+          )
+        )
+      ]
+    )
+    let equivalentPlan = InstantQueryPlan(
+      id: "runtime-live-query-shape-b",
+      namespace: plan.namespace,
+      filters: plan.filters,
+      order: plan.order,
+      limit: plan.limit,
+      selectedFields: plan.selectedFields,
+      includes: plan.includes ?? []
+    )
+    let firstObservation = await runtime.observe(plan)
+    let secondObservation = await runtime.observe(equivalentPlan)
+    let firstConsumer = Task {
+      for await _ in firstObservation {}
+    }
+    let secondConsumer = Task {
+      for await _ in secondObservation {}
+    }
+
+    _ = try await runtime.connect()
+    let query: InstantLiveJSONValue = .object([
+      TodoExample.namespace: .object([
+        "$": .object([
+          "fields": .array([.string("isCompleted"), .string("text")]),
+          "limit": .number(25),
+          "order": .object(["createdAt": .string("desc")]),
+          "where": .object([
+            "and": .array([
+              .object(["isCompleted": .bool(false)]),
+              .object([
+                "or": .array([
+                  .object(["text": .object(["$like": .string("A%")])]),
+                  .object(["project": .object(["$isNull": .bool(true)])]),
+                ])
+              ]),
+            ])
+          ]),
+        ]),
+        "project": .object([
+          "$": .object([
+            "fields": .array([.string("title")]),
+            "order": .object(["title": .string("asc")]),
+          ])
+        ]),
+      ])
+    ])
+    var sentMessages = await session.sentMessages()
+    expectNoDifference(sentMessages.map(\.op), ["init", "add-query"])
+    expectNoDifference(sentMessages.last?.fields["q"], query)
+
+    firstConsumer.cancel()
+    secondConsumer.cancel()
+    await firstConsumer.value
+    await secondConsumer.value
+    await session.waitForSentMessageCount(3)
+
+    sentMessages = await session.sentMessages()
+    expectNoDifference(sentMessages.map(\.op), ["init", "add-query", "remove-query"])
+    expectNoDifference(sentMessages.last?.fields["q"], query)
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func runtimeLiveCursorMismatchRecordsActionableConnectionError() async throws {
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "runtime-live-cursor-error",
+        persistenceURL: temporaryLiveCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: .local
+      )
+    )
+    let plan = InstantQueryPlan(
+      id: "runtime-live-cursor-error",
+      namespace: TodoExample.namespace,
+      order: InstantQueryOrder("createdAt"),
+      after: InstantQueryCursor(
+        entityID: "todo-cursor",
+        sortValue: .date(Date(timeIntervalSince1970: 1_700_000_000))
+      )
+    )
+
+    let observation = await runtime.observe(plan)
+    var iterator = observation.makeAsyncIterator()
+    _ = await iterator.next()
+
+    let status = try await runtime.connectionStatus()
+    expectNoDifference(status.state, .errored)
+    #expect(status.lastErrorMessage?.contains("opaque four-element tuples") == true)
+    #expect(status.lastErrorMessage?.contains("path: after") == true)
+    #expect(status.lastErrorMessage?.contains("canonical Instant SDK") == true)
   }
 
   @Test
@@ -1011,8 +1204,14 @@ private actor InstantScriptedLiveSession {
 }
 
 private actor InstantRuntimeScriptedLiveSession {
+  private struct SentWaiter {
+    var count: Int
+    var continuation: CheckedContinuation<Void, Never>
+  }
+
   private var messages: [InstantLiveMessage]
   private var sent: [InstantLiveMessage] = []
+  private var sentWaiters: [SentWaiter] = []
   private var receiveContinuation: CheckedContinuation<InstantLiveMessage, Error>?
   private var isClosed = false
 
@@ -1040,8 +1239,24 @@ private actor InstantRuntimeScriptedLiveSession {
     sent
   }
 
+  func waitForSentMessageCount(_ count: Int) async {
+    guard sent.count < count else { return }
+    await withCheckedContinuation { continuation in
+      sentWaiters.append(SentWaiter(count: count, continuation: continuation))
+    }
+  }
+
   private func send(_ message: InstantLiveMessage) {
     sent.append(message)
+    var pending: [SentWaiter] = []
+    for waiter in sentWaiters {
+      if sent.count >= waiter.count {
+        waiter.continuation.resume()
+      } else {
+        pending.append(waiter)
+      }
+    }
+    sentWaiters = pending
   }
 
   private func receive() async throws -> InstantLiveMessage {
@@ -1079,14 +1294,23 @@ private extension InstantLiveMessage {
     )
   }
 
-  static func addQueryOK(clientEventID: String) -> Self {
-    Self(
+  static func addQueryOK(
+    clientEventID: String,
+    query: InstantLiveJSONValue = .object([TodoExample.namespace: .object([:])]),
+    result: [InstantLiveJSONValue] = [],
+    processedTransactionID: String? = nil
+  ) -> Self {
+    var fields: [String: InstantLiveJSONValue] = [
+      "q": query,
+      "result": .array(result),
+    ]
+    if let processedTransactionID {
+      fields["processed-tx-id"] = .string(processedTransactionID)
+    }
+    return Self(
       op: "add-query-ok",
       clientEventID: clientEventID,
-      fields: [
-        "q": .object([TodoExample.namespace: .object([:])]),
-        "result": .array([]),
-      ]
+      fields: fields
     )
   }
 

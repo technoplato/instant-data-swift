@@ -170,6 +170,17 @@ extension InstantLiveMessage {
     )
   }
 
+  public static func removeQuery(
+    _ query: InstantLiveJSONValue,
+    clientEventID: String
+  ) -> Self {
+    Self(
+      op: "remove-query",
+      clientEventID: clientEventID,
+      fields: ["q": query]
+    )
+  }
+
   public static func transact(
     _ txSteps: [InstantTransportStep],
     clientEventID: String
@@ -654,6 +665,9 @@ private actor InstantLocalLiveSession {
           ]
         )
       )
+
+    case "remove-query":
+      hasQuery = false
 
     case "transact":
       let transactionID = "local-\(message.clientEventID ?? "transaction")"

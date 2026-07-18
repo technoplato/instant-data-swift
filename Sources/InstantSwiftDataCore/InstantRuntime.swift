@@ -173,8 +173,15 @@ private final class InstantFileUploadProgressCancellation: @unchecked Sendable {
 }
 
 private actor InstantRuntimeLiveSession {
+  private struct RegisteredQuery: Sendable {
+    var query: InstantLiveJSONValue
+    var observerCount: Int
+  }
+
   private var session: InstantLiveWebSocketSession?
   private var receiverTask: Task<Void, Never>?
+  private var registeredQueries: [String: RegisteredQuery] = [:]
+  private var serverAttributes: [InstantLiveJSONValue] = []
   private var isOpened = false
   private var generation = 0
 
@@ -185,7 +192,7 @@ private actor InstantRuntimeLiveSession {
   func open(
     request: InstantLiveSessionRequest,
     transport: InstantLiveTransportClient,
-    clientEventID: String
+    makeID: @escaping @Sendable () -> String
   ) async throws {
     generation += 1
     receiverTask?.cancel()
@@ -194,6 +201,7 @@ private actor InstantRuntimeLiveSession {
       await session.close()
     }
     session = nil
+    serverAttributes = []
     isOpened = false
     let opened = try await transport.connect(request)
     do {
@@ -201,7 +209,7 @@ private actor InstantRuntimeLiveSession {
         operation: "open Instant live session",
         timeoutMilliseconds: 10_000
       ) {
-        try await opened.send(request.initMessage(clientEventID: clientEventID))
+        try await opened.send(request.initMessage(clientEventID: makeID()))
       }
       let event = try await instantLiveWithTimeout(
         operation: "open Instant live session",
@@ -220,6 +228,7 @@ private actor InstantRuntimeLiveSession {
           )
         }
         self.session = opened
+        self.serverAttributes = initOK.attrs
         self.isOpened = true
 
       case let .error(error):
@@ -239,16 +248,27 @@ private actor InstantRuntimeLiveSession {
           recovery: "Inspect the Instant runtime WebSocket protocol handling."
         )
       }
+      for key in registeredQueries.keys.sorted() {
+        guard let registration = registeredQueries[key] else { continue }
+        try await send(
+          .addQuery(registration.query, clientEventID: makeID()),
+          through: opened
+        )
+      }
     } catch {
       await opened.close()
       session = nil
+      serverAttributes = []
       isOpened = false
       throw error
     }
   }
 
   func startReceiving(
-    onEvent: @escaping @Sendable (InstantLiveServerEvent) async throws -> Void,
+    onEvent: @escaping @Sendable (
+      InstantLiveServerEvent,
+      [InstantLiveJSONValue]
+    ) async throws -> Void,
     onFailure: @escaping @Sendable (Error) async -> Void
   ) {
     guard receiverTask == nil, let session, isOpened else { return }
@@ -258,7 +278,11 @@ private actor InstantRuntimeLiveSession {
         while !Task.isCancelled {
           let message = try await session.receive()
           try Task.checkCancellation()
-          try await onEvent(InstantLiveServerEvent(message: message))
+          let event = InstantLiveServerEvent(message: message)
+          guard let attributes = await self?.record(event, generation: generation) else {
+            return
+          }
+          try await onEvent(event, attributes)
         }
       } catch is CancellationError {
         await self?.receiverEnded(
@@ -275,6 +299,59 @@ private actor InstantRuntimeLiveSession {
           onFailure: onFailure
         )
       }
+    }
+  }
+
+  func registerQuery(
+    _ query: InstantLiveJSONValue,
+    key: String,
+    clientEventID: String
+  ) async throws {
+    if var registration = registeredQueries[key] {
+      registration.observerCount += 1
+      registeredQueries[key] = registration
+      return
+    }
+    registeredQueries[key] = RegisteredQuery(query: query, observerCount: 1)
+    guard let session, isOpened else { return }
+    try await send(.addQuery(query, clientEventID: clientEventID), through: session)
+  }
+
+  func unregisterQuery(key: String, clientEventID: String) async throws {
+    guard var registration = registeredQueries[key] else { return }
+    if registration.observerCount > 1 {
+      registration.observerCount -= 1
+      registeredQueries[key] = registration
+      return
+    }
+    registeredQueries[key] = nil
+    guard let session, isOpened else { return }
+    try await send(
+      .removeQuery(registration.query, clientEventID: clientEventID),
+      through: session
+    )
+  }
+
+  private func record(
+    _ event: InstantLiveServerEvent,
+    generation: Int
+  ) -> [InstantLiveJSONValue]? {
+    guard generation == self.generation else { return nil }
+    if case let .refreshOK(refreshOK) = event, !refreshOK.attrs.isEmpty {
+      serverAttributes = refreshOK.attrs
+    }
+    return serverAttributes
+  }
+
+  private func send(
+    _ message: InstantLiveMessage,
+    through session: InstantLiveWebSocketSession
+  ) async throws {
+    try await instantLiveWithTimeout(
+      operation: "send Instant live session message",
+      timeoutMilliseconds: 10_000
+    ) {
+      try await session.send(message)
     }
   }
 
@@ -300,6 +377,7 @@ private actor InstantRuntimeLiveSession {
     let receiverTask = receiverTask
     self.session = nil
     self.receiverTask = nil
+    serverAttributes = []
     isOpened = false
     receiverTask?.cancel()
     if let session {
@@ -942,7 +1020,38 @@ public final class InstantRuntime: Sendable {
     recordActorHop(.store)
     let stream = await store.observe(plan, remotePageInfo: remotePageInfo)
     await leaveOperationGate()
-    return stream
+    guard configuration.liveTransport != nil else { return stream }
+
+    let query: InstantLiveJSONValue
+    let registrationKey: String
+    do {
+      query = try InstantLiveQueryEncoder.encode(plan)
+      registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
+    } catch {
+      await recordConnectionError(error)
+      return stream
+    }
+
+    do {
+      try await liveSession.registerQuery(
+        query,
+        key: registrationKey,
+        clientEventID: configuration.makeID()
+      )
+    } catch {
+      await recordConnectionError(error)
+    }
+    return Self.liveObservation(stream) { [weak self] in
+      guard let self else { return }
+      do {
+        try await self.liveSession.unregisterQuery(
+          key: registrationKey,
+          clientEventID: self.configuration.makeID()
+        )
+      } catch {
+        await self.recordConnectionError(error)
+      }
+    }
   }
 
   public func query(_ plan: InstantQueryPlan) async throws -> [InstantEntitySnapshot] {
@@ -1163,7 +1272,7 @@ public final class InstantRuntime: Sendable {
               refreshToken: session?.refreshToken
             ),
             transport: liveTransport,
-            clientEventID: configuration.makeID()
+            makeID: configuration.makeID
           )
         } catch {
           try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
@@ -1176,9 +1285,9 @@ public final class InstantRuntime: Sendable {
       await operationGate.leave()
       if configuration.liveTransport != nil {
         await liveSession.startReceiving(
-          onEvent: { [weak self] event in
+          onEvent: { [weak self] event, attributes in
             guard let self else { return }
-            try await self.handleLiveServerEvent(event)
+            try await self.handleLiveServerEvent(event, serverAttributes: attributes)
           },
           onFailure: { [weak self] error in
             guard let self else { return }
@@ -1293,10 +1402,46 @@ public final class InstantRuntime: Sendable {
     }
   }
 
-  private func handleLiveServerEvent(_ event: InstantLiveServerEvent) async throws {
+  private func handleLiveServerEvent(
+    _ event: InstantLiveServerEvent,
+    serverAttributes: [InstantLiveJSONValue]
+  ) async throws {
     switch event {
+    case let .addQueryOK(queryOK):
+      guard !queryOK.result.isEmpty else { return }
+      guard let query = queryOK.query,
+        let processedTransactionID = queryOK.processedTransactionID?.nilIfEmpty
+      else {
+        throw InstantError(
+          code: .decodeFailed,
+          operation: "apply Instant live query result",
+          message: "A non-empty add-query-ok must include q and processed-tx-id.",
+          recovery: "Inspect the canonical Instant add-query-ok payload."
+        )
+      }
+      try await applyLiveRefresh(
+        InstantLiveRefreshOK(
+          clientEventID: nil,
+          processedTransactionID: processedTransactionID,
+          attrs: serverAttributes,
+          computations: [
+            .object([
+              "instaql-query": query,
+              "instaql-result": .array(queryOK.result),
+            ])
+          ]
+        )
+      )
+
     case let .refreshOK(refreshOK):
-      try await applyLiveRefresh(refreshOK)
+      try await applyLiveRefresh(
+        InstantLiveRefreshOK(
+          clientEventID: refreshOK.clientEventID,
+          processedTransactionID: refreshOK.processedTransactionID,
+          attrs: refreshOK.attrs.isEmpty ? serverAttributes : refreshOK.attrs,
+          computations: refreshOK.computations
+        )
+      )
 
     case let .error(error):
       throw InstantError(
@@ -1307,9 +1452,31 @@ public final class InstantRuntime: Sendable {
         recovery: "Inspect the Instant runtime WebSocket event and reconnect."
       )
 
-    case .initOK, .addQueryOK, .addQueryExists, .transactOK, .other:
+    case .initOK, .addQueryExists, .transactOK, .other:
       break
     }
+  }
+
+  private static func liveObservation(
+    _ source: AsyncStream<InstantQueryEmission>,
+    onTermination: @escaping @Sendable () async -> Void
+  ) -> AsyncStream<InstantQueryEmission> {
+    let output = AsyncStream<InstantQueryEmission>.makeStream(
+      bufferingPolicy: .bufferingNewest(1)
+    )
+    let task = Task {
+      for await emission in source {
+        output.continuation.yield(emission)
+      }
+      output.continuation.finish()
+    }
+    output.continuation.onTermination = { @Sendable _ in
+      task.cancel()
+      Task {
+        await onTermination()
+      }
+    }
+    return output.stream
   }
 
   private func connectionState(
