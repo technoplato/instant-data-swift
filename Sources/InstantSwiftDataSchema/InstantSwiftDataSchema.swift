@@ -444,6 +444,22 @@ public enum InstantSchemaExamples {
     ]
   )
 
+  public static let recordingActionUsers = InstantEntitySchema(
+    typeName: "InstantUser",
+    namespace: "$users",
+    attributes: [
+      InstantAttribute(
+        id: "$users/email",
+        namespace: "$users",
+        name: "email",
+        valueType: .string,
+        isRequired: false,
+        isIndexed: true,
+        isUnique: true
+      )
+    ]
+  )
+
   public static let recordingActionMembers = InstantEntitySchema(
     typeName: "V3CaptureMember",
     namespace: "v3_capture_members",
@@ -509,6 +525,7 @@ public enum InstantSchemaExamples {
 
   public static let recordingActionDocument = InstantSchemaDocument(
     entities: [
+      recordingActionUsers,
       recordingActionAttachments,
       recordingActionMembers,
       recordingActionRecordings,

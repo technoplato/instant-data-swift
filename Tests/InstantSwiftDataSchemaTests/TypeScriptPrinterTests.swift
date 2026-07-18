@@ -306,6 +306,9 @@ struct TypeScriptPrinterTests {
 
       export default i.schema({
         entities: {
+          "$users": i.entity({
+            email: i.string().optional().indexed().unique(),
+          }),
           v3_capture_attachments: i.entity({
             contents: i.string(),
             kind: i.string().indexed(),

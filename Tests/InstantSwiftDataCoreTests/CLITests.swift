@@ -364,7 +364,7 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(schemaVerify.example, "recording-action")
-    expectNoDifference(schemaVerify.entityCount, 4)
+    expectNoDifference(schemaVerify.entityCount, 5)
     expectNoDifference(schemaVerify.linkCount, 5)
 
     let generatedPermissions = try JSONDecoder().decode(
