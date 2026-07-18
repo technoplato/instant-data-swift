@@ -43,7 +43,8 @@ public struct InstantLiveShareContract: Hashable, Codable, Sendable {
     appID: String,
     roots: [InstantEntitySnapshot]
   ) throws -> [InstantShareSnapshot] {
-    try roots.map { root in
+    try roots.compactMap { root -> InstantShareSnapshot? in
+      guard root.links?["share"]?.isEmpty == false else { return nil }
       let shareNode = try onlyLink("share", in: root, path: "\(root.namespace).share")
       let owner = try onlyLink("owner", in: shareNode, path: "v3_shares.owner")
       let shareID = shareNode.id

@@ -143,6 +143,9 @@ assert.deepStrictEqual(live.details.swiftReaderRejection.observedValues, [1, 2, 
 assert.equal(live.details.swiftReaderRejection.pendingMutationCount, 0);
 assert.equal(live.details.swiftReaderRejection.failedMutationCount, 1);
 assert.match(live.details.swiftReaderRejection.failureMessage, /Permission denied/);
+assert.deepStrictEqual(live.details.swiftReaderRejection.publicShareIDs, [live.details.ids.shareID]);
+assert.deepStrictEqual(live.details.swiftReaderRejection.publicShareRoles, ["reader"]);
+assert.equal(live.details.swiftReaderRejection.publicSharesCancellationClean, true);
 assert.deepStrictEqual(live.details.swiftWriterAcceptance.observedValues, [1, 3]);
 assert.equal(live.details.swiftWriterAcceptance.pendingMutationCount, 0);
 assert.equal(live.details.swiftWriterAcceptance.failedMutationCount, 0);

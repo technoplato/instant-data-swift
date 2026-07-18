@@ -106,6 +106,12 @@ try {
   assert.equal(swiftReaderRejection.details.pendingMutationCount, 0);
   assert.equal(swiftReaderRejection.details.failedMutationCount, 1);
   assert.match(swiftReaderRejection.details.failureMessage, /permission/i);
+  assert.deepStrictEqual(swiftReaderRejection.details.publicShareIDs, [ids.shareID]);
+  assert.deepStrictEqual(
+    swiftReaderRejection.details.publicShareRoles,
+    ["reader"],
+  );
+  assert.equal(swiftReaderRejection.details.publicSharesCancellationClean, true);
 
   const swiftWriterAcceptance = await runSwiftWriterAcceptance({
     appId,
@@ -144,6 +150,8 @@ try {
       ["writer", users.writer.id],
     ].sort(),
   );
+  assert.deepStrictEqual(readerSnapshot.memberships, [["reader", users.reader.id]]);
+  assert.deepStrictEqual(writerSnapshot.memberships, [["writer", users.writer.id]]);
 
   const readerUpdate = await rejected(
     readerDB.transact(
@@ -230,6 +238,9 @@ async function runSwiftReaderRejection(input: {
     failedMutationCount: number;
     failureMessage: string;
     connectionState: string;
+    publicShareIDs: string[];
+    publicShareRoles: string[];
+    publicSharesCancellationClean: boolean;
   };
 }> {
   const child = spawn(

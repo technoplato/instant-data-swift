@@ -1,5 +1,5 @@
 import Foundation
-import InstantSwiftDataCore
+import InstantSwiftData
 
 public struct InstantSharingLiveValidationDetails: Codable, Equatable, Sendable {
   public var listID: String
@@ -11,6 +11,9 @@ public struct InstantSharingLiveValidationDetails: Codable, Equatable, Sendable 
   public var failedMutationCount: Int
   public var failureMessage: String
   public var connectionState: String
+  public var publicShareIDs: [String]
+  public var publicShareRoles: [String]
+  public var publicSharesCancellationClean: Bool
 
   public init(
     listID: String,
@@ -21,7 +24,10 @@ public struct InstantSharingLiveValidationDetails: Codable, Equatable, Sendable 
     pendingMutationCount: Int,
     failedMutationCount: Int,
     failureMessage: String,
-    connectionState: String
+    connectionState: String,
+    publicShareIDs: [String],
+    publicShareRoles: [String],
+    publicSharesCancellationClean: Bool
   ) {
     self.listID = listID
     self.readerUserID = readerUserID
@@ -32,6 +38,9 @@ public struct InstantSharingLiveValidationDetails: Codable, Equatable, Sendable 
     self.failedMutationCount = failedMutationCount
     self.failureMessage = failureMessage
     self.connectionState = connectionState
+    self.publicShareIDs = publicShareIDs
+    self.publicShareRoles = publicShareRoles
+    self.publicSharesCancellationClean = publicSharesCancellationClean
   }
 }
 
@@ -86,7 +95,8 @@ public enum InstantSharingLiveValidation {
         websocketURI: websocketURI,
         persistenceURL: persistenceURL,
         initialAttributes: sharingAttributes,
-        liveTransport: trace.transport
+        liveTransport: trace.transport,
+        liveShareContract: .v3SharedLists
       )
     )
     _ = try await runtime.signInWithRefreshToken(refreshToken, userID: readerUserID)
@@ -123,6 +133,39 @@ public enum InstantSharingLiveValidation {
         operation: "wait for reader shared-list server value",
         message: "Observed \(values); connection=\(status.state.rawValue); lastError=\(lastError); trace=\(traceSummary).",
         recovery: "Inspect the live sharing query, permission error, and refetch sequence."
+      )
+    }
+
+    let publicShares = Shares()
+    let publicSharesTask = Task {
+      try await publicShares.task(using: InstantSwiftDataClient(runtime: runtime))
+    }
+    defer { publicSharesTask.cancel() }
+    let publicSnapshot: InstantShareSnapshot
+    do {
+      publicSnapshot = try await waitForPublicShare(
+        listID: listID,
+        shares: publicShares
+      )
+    } catch {
+      let status = try await runtime.connectionStatus()
+      let projected = publicShares.wrappedValue.map {
+        "\($0.share.id):\($0.share.rootNamespace):\($0.share.rootID)"
+      }
+      let oneShot = try? await runtime.shares().map {
+        "\($0.share.id):\($0.share.rootNamespace):\($0.share.rootID)"
+      }
+      let traceSummary = await trace.summary()
+      let lastError = status.lastErrorMessage ?? "none"
+      throw InstantError(
+        code: .networkFailed,
+        operation: "wait for public @Shares live graph",
+        message:
+          "Projected \(projected); oneShot=\(String(describing: oneShot)); "
+          + "loadError=\(String(describing: publicShares.loadError)); "
+          + "connection=\(status.state.rawValue); lastError="
+          + "\(lastError); trace=\(traceSummary).",
+        recovery: "Inspect the live @Shares query registration and projection sequence."
       )
     }
 
@@ -176,6 +219,14 @@ public enum InstantSharingLiveValidation {
     }
     let status = try await runtime.connectionStatus()
     let values = await recorder.values()
+    publicSharesTask.cancel()
+    let publicSharesCancellationClean: Bool
+    do {
+      try await publicSharesTask.value
+      publicSharesCancellationClean = false
+    } catch is CancellationError {
+      publicSharesCancellationClean = true
+    }
     _ = try await runtime.closeConnection()
 
     return ValidationEvidenceRow(
@@ -195,7 +246,10 @@ public enum InstantSharingLiveValidation {
         pendingMutationCount: pendingMutationCount,
         failedMutationCount: failed.count,
         failureMessage: failureMessage,
-        connectionState: status.state.rawValue
+        connectionState: status.state.rawValue,
+        publicShareIDs: [publicSnapshot.share.id],
+        publicShareRoles: publicSnapshot.memberships.map { $0.role.rawValue },
+        publicSharesCancellationClean: publicSharesCancellationClean
       )
     )
   }
@@ -391,6 +445,20 @@ public enum InstantSharingLiveValidation {
       try await Task.sleep(for: .milliseconds(25))
     }
     throw timeout("wait for reader sharing permission failure")
+  }
+
+  private static func waitForPublicShare(
+    listID: String,
+    shares: Shares
+  ) async throws -> InstantShareSnapshot {
+    for _ in 0..<400 {
+      if let snapshot = shares.wrappedValue.first(where: { $0.share.rootID == listID }) {
+        return snapshot
+      }
+      if let error = shares.loadError { throw error }
+      try await Task.sleep(for: .milliseconds(25))
+    }
+    throw timeout("wait for public @Shares live graph")
   }
 
   private static func waitForMutationRemoval(

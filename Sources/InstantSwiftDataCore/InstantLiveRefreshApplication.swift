@@ -253,7 +253,12 @@ enum InstantLiveRefreshTranslator {
     let reverseIdentity = identity(object["reverse-identity"])
     let namespace = forwardIdentity?.namespace ?? namespace(in: id) ?? ""
     let name = forwardIdentity?.name ?? name(in: id) ?? id
-    let valueType = valueType(from: object["value-type"]?.scalarStringValue)
+    let wireValueType = object["value-type"]?.scalarStringValue
+    let valueType = wireValueType == "ref"
+      ? .ref
+      : valueType(
+        from: object["checked-data-type"]?.scalarStringValue ?? wireValueType
+      )
     return InstantAttribute(
       id: id,
       namespace: namespace,
@@ -275,6 +280,7 @@ enum InstantLiveRefreshTranslator {
     attribute: InstantAttribute?
   ) throws -> InstantValue {
     let rawValue = try rawInstantValue(from: value)
+    if case .null = rawValue { return .null }
     guard let attribute else { return rawValue }
     switch attribute.valueType {
     case .ref:

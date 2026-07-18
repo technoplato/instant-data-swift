@@ -88,7 +88,17 @@ struct InstantLiveShareContractTests {
     )
 
     expectNoDifference(
-      try contract.snapshots(appID: "app-1", roots: [root]),
+      try contract.snapshots(
+        appID: "app-1",
+        roots: [
+          InstantEntitySnapshot(
+            id: "cached-unshared-list",
+            namespace: "v3_shared_lists",
+            values: ["title": .one(.string("Not a share"))]
+          ),
+          root,
+        ]
+      ),
       [
         InstantShareSnapshot(
           share: InstantShare(
@@ -138,9 +148,21 @@ struct InstantLiveShareContractTests {
     let source = AsyncStream<InstantQueryEmission>(bufferingPolicy: .unbounded) {
       continuation in
       continuation.yield(emission(sequence: 0, roots: []))
-      continuation.yield(emission(sequence: 1, roots: [shareRoot(memberRole: "reader")]))
-      continuation.yield(emission(sequence: 2, roots: [shareRoot(memberRole: "writer")]))
-      continuation.yield(emission(sequence: 3, roots: []))
+      continuation.yield(
+        emission(
+          sequence: 1,
+          roots: [
+            InstantEntitySnapshot(
+              id: "list-1",
+              namespace: "v3_shared_lists",
+              values: ["title": .one(.string("Cached before nested query result"))]
+            )
+          ]
+        )
+      )
+      continuation.yield(emission(sequence: 2, roots: [shareRoot(memberRole: "reader")]))
+      continuation.yield(emission(sequence: 3, roots: [shareRoot(memberRole: "writer")]))
+      continuation.yield(emission(sequence: 4, roots: []))
       continuation.onTermination = { @Sendable _ in
         Task { await termination.record() }
       }
@@ -153,7 +175,7 @@ struct InstantLiveShareContractTests {
         await recorder.record(value)
       }
     }
-    await recorder.waitForCount(4)
+    await recorder.waitForCount(5)
     observation.cancel()
     await observation.value
     await termination.wait()
@@ -162,15 +184,16 @@ struct InstantLiveShareContractTests {
     let recordedFailures = await failures.values()
     expectNoDifference(recordedFailures, [])
     expectNoDifference(values[0], [])
+    expectNoDifference(values[1], [])
     expectNoDifference(
-      values[1].first?.memberships.map(\.role),
+      values[2].first?.memberships.map(\.role),
       [InstantShareRole.owner, .reader]
     )
     expectNoDifference(
-      values[2].first?.memberships.map(\.role),
+      values[3].first?.memberships.map(\.role),
       [InstantShareRole.owner, .writer]
     )
-    expectNoDifference(values[3], [])
+    expectNoDifference(values[4], [])
   }
 
   @Test("Runtime shares and observation use the configured live share contract")

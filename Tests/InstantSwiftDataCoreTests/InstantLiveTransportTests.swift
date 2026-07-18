@@ -1579,26 +1579,38 @@ struct InstantLiveTransportTests {
           {
             "id": "server-todos-id",
             "forward-identity": ["server-todos-id", "todos", "id"],
-            "value-type": "string",
+            "value-type": "blob",
+            "checked-data-type": "string",
             "cardinality": "one"
           },
           {
             "id": "server-todos-text",
             "forward-identity": ["server-todos-text", "todos", "text"],
-            "value-type": "string",
+            "value-type": "blob",
+            "checked-data-type": "string",
             "cardinality": "one"
           },
           {
             "id": "server-todos-is-completed",
             "forward-identity": ["server-todos-is-completed", "todos", "isCompleted"],
-            "value-type": "boolean",
+            "value-type": "blob",
+            "checked-data-type": "boolean",
             "cardinality": "one"
           },
           {
             "id": "server-todos-created-at",
             "forward-identity": ["server-todos-created-at", "todos", "createdAt"],
-            "value-type": "date",
+            "value-type": "blob",
+            "checked-data-type": "date",
             "cardinality": "one"
+          },
+          {
+            "id": "server-todos-completed-at",
+            "forward-identity": ["server-todos-completed-at", "todos", "completedAt"],
+            "value-type": "blob",
+            "checked-data-type": "date",
+            "cardinality": "one",
+            "optional?": true
           }
         ],
         "computations": [
@@ -1613,7 +1625,8 @@ struct InstantLiveTransportTests {
                         ["json-todo", "server-todos-id", "json-todo", 1700000000123],
                         ["json-todo", "server-todos-text", "Decoded refresh", 1700000000123],
                         ["json-todo", "server-todos-is-completed", true, 1700000000123],
-                        ["json-todo", "server-todos-created-at", 1700000000123, 1700000000123]
+                        ["json-todo", "server-todos-created-at", 1700000000123, 1700000000123],
+                        ["json-todo", "server-todos-completed-at", null, 1700000000123]
                       ]
                     ]
                   }
@@ -1636,9 +1649,10 @@ struct InstantLiveTransportTests {
 
     let result = try await runtime.applyLiveRefresh(refreshOK)
 
-    expectNoDifference(result.insertedTripleCount, 4)
+    expectNoDifference(result.insertedTripleCount, 5)
     expectNoDifference(result.application.syncState.processedTransactionID, "server-json-tx")
     let todoSnapshots = try await runtime.query(TodoExample.query)
+    expectNoDifference(todoSnapshots.first?.values["completedAt"], .one(.null))
     let todos = try TodoExample.decode(todoSnapshots)
     expectNoDifference(todos.map(\.text), ["Decoded refresh"])
   }
