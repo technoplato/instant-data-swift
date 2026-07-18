@@ -612,20 +612,32 @@ The release harness must prove each applicable row in both directions:
 
 ## Immediate Next Step
 
-The canonical live share graph is now wired through the public `@Shares`
-observation path. Commit `db5973e` connects `InstantLiveShareContract` to the
-runtime and public wrapper; commit `e3b2b33` proves the wrapper against the
-credentialed TypeScript-created graph, including reader-scoped membership,
-permission rollback, and clean cancellation. The clean evidence is at
-`/private/tmp/instant-data-swift-public-shares-clean-e3b2b33-190206/evidence.json`.
+The V3 recordings-list boundary is complete through `ea978d0`, `99ab8a0`,
+`4bba77f`, `d7f92ce`, and `6fa8019`. The fixture now uses canonical
+`v3_capture_recordings` owner/readers/writers links plus the share and
+viewer-filtered membership graph; the public syntax remains `@FetchAll` plus
+`.instantFetch($rows, rowsQuery)`. The live gate creates a fresh app, installs
+the Swift-generated VoiceTrail schema and permissions, type-checks the exact
+TypeScript graph, and proves owner, reader, reader-to-writer replacement,
+revocation-to-empty, and cancellation through the normal Swift WebSocket
+runtime. Clean evidence for revision `6fa8019` is at
+`/tmp/instant-data-swift-voice-trail-recordings-20260718T234408Z/evidence.json`.
 
-Next, run that owner/reader/writer/revocation graph through the V3
-recordings-list fixture. This does not require another screen-syntax decision:
-keep the recorded `@FetchAll` plus `.instantFetch($rows, rowsQuery)` shape and
-the row's current-viewer membership projection. Replace the fixture-only
-`isShared` flag and synthetic `v3_recording_list_rows` namespace with the
-canonical shared-root/member graph, then prove owner, reader, writer,
-revocation-to-empty, and wrapper cancellation through the screen model.
+That gate also closed two cross-SDK runtime gaps: typed relation predicates now
+encode canonical dotted ID paths such as `owner.id`, and `refresh-ok` replaces
+each query's authoritative triple set while retaining triples still owned by
+another active query. Full verification is green at 907 Swift tests in 35
+suites plus the generated-contract and TypeScript fixture suites.
+
+Next, extend the existing playback live boundary through disconnect and
+automatic rejoin. Keep the recorded `@Room`, `@Presence`, and `@Topic` syntax;
+drive a transport loss after the exact presence and three topic payloads have
+been observed, require the room to rejoin without call-site socket management,
+then prove post-reconnect presence and topic delivery in both directions. Use
+`screens/v3/playback.md`, `validation/verify-playback-room-contract-live.sh`,
+and the canonical reconnect tests as the source chain. After that gate, move to
+the preferences screen to exercise `@InstantSyncStatus` and storage status
+through the public app surface.
 
 The playback payload boundary is complete at `2390aa0`: Swift and TypeScript
 observe exact presence and all three topic payloads in both directions with

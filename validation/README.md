@@ -185,6 +185,21 @@ one retained failed mutation, and the server permission error. The admin token
 and user refresh tokens are consumed from the environment and are not written
 to evidence.
 
+The VoiceTrail recordings-list verifier creates its own fresh temporary app,
+installs the Swift-generated six-entity recording/share contract, and runs the
+canonical TypeScript-created owner/member graph through the public Swift
+`@FetchAll` lifecycle:
+
+```bash
+validation/verify-voice-trail-recordings-list-live.sh
+```
+
+It requires a clean worktree and proves owner visibility, reader visibility,
+reader-to-writer replacement, revocation-to-empty, and clean cancellation. It
+also verifies the pulled server schema and permissions, pinned SDK versions,
+and zero compiler warnings. Temporary app credentials are removed by the
+verifier and are never written to the aggregate evidence.
+
 The aggregate v0.3 gate runs the sharing and auth contracts together and
 requires one clean Swift revision, zero compiler warnings, exact reader/writer
 sequences, durable auth restoration, and rejection of the invalidated token by

@@ -232,10 +232,13 @@ optimistic and accepted callbacks once, server failure once, retry without
 callback replay, and passive refresh without action-callback replay. Callback
 parameters borrow the change; the current generic envelope remains Copyable due
 to the Swift 6.2 associated-type limitation recorded in the V3 design document.
-The next implementation packet keeps this syntax and replaces the fixture's
-synthetic `isShared` row with the canonical owner/member sharing graph already
-proven through public `@Shares`; it is a data-contract integration task, not a
-new wrapper-syntax decision.
+The data-contract packet is complete. The fixture and credentialed live gate
+now use `v3_capture_recordings` with canonical owner/readers/writers links,
+the recording-root share, and a viewer-filtered membership projection. The
+gate proves owner, reader, reader-to-writer replacement, revocation-to-empty,
+and wrapper cancellation without changing this public screen syntax. See
+`validation/verify-voice-trail-recordings-list-live.sh` and the clean evidence
+at `/tmp/instant-data-swift-voice-trail-recordings-20260718T234408Z/evidence.json`.
 
 ## Composite Request Variant
 
