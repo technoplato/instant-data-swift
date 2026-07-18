@@ -22,10 +22,13 @@ As of 2026-07-18:
   server-event receiver. Commit `af88570` routes `refresh-ok` through the normal
   runtime, persists canonical join rows and the transaction checkpoint, and
   publishes the result to public query observers.
-- The runtime does not yet install and remove active queries, send its durable
-  outbox, correlate transaction acceptance or rejection, or reconnect and
-  restore live state. Until active queries are installed, the new receiver can
-  only apply refreshes the server sends without a runtime-managed query.
+- Commit `ecf2145` encodes canonical Instant query objects, installs and
+  reference-counts active queries, applies initial `add-query-ok` results, sends
+  `remove-query` on cancellation, and restores active queries when a session is
+  opened again.
+- The runtime does not yet send its durable outbox, correlate transaction
+  acceptance or rejection, or reconnect automatically and restore all live
+  state.
 - The V3 API direction is documented in
   `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` and `screens/v3/`.
 - The prior screen syntax is preserved under `screens/v2/` in commit `d11b1cf`.
@@ -35,8 +38,8 @@ As of 2026-07-18:
   schema and permissions verification, and the local Swift/TypeScript E2E
   orchestrator. Its evidence directory was
   `/tmp/instant-swift-data-packet0-20260718T1106`.
-- The first normal-runtime receive slice passed the focused transport boundary
-  tests and the full 812-test Swift package suite.
+- The live receive and query-subscription slices passed their focused transport
+  and Reactor parity tests and the full 815-test Swift package suite.
 - The compact parity gate records 287 cases: 28 exact, 255 adapted, 2 not
   applicable, and 2 blocked. The only blocked ids are
   `instant.live-transport.swift-to-typescript` and
@@ -197,6 +200,24 @@ Target: the complete definition of done in
 `docs/instant-swift-data-goals.md` passes from a clean checkout with reproducible
 Swift/TypeScript evidence and benchmark artifacts.
 
+## Porting Discipline
+
+For every canonical Instant behavior, port the upstream source-of-truth test
+before implementing or extending the Swift behavior:
+
+1. Name the pinned upstream test file and test case in the Swift test.
+2. Preserve the upstream inputs, event order, and assertions where the SDK
+   architecture permits an exact port; document every necessary adaptation.
+3. Run the ported test red before changing production code whenever the
+   behavior is not already implemented.
+4. Implement only enough production behavior to satisfy the ported contract,
+   then add narrow Swift-specific lifecycle or concurrency boundary tests.
+5. Update `InstantParityCoverage` when the port becomes more exact or an old
+   adaptation note is no longer true.
+
+Local design probes and convenience tests do not replace the pinned upstream
+test ports.
+
 ## Execution Packets
 
 ### Packet 0: Restore a trustworthy green baseline — complete
@@ -266,9 +287,8 @@ Purpose: reach real bidirectional sync as quickly as possible.
 Commit targets, split if needed:
 
 1. `Own authenticated live session in runtime` — implemented in `1c627e8`.
-2. `Apply live refreshes through public subscriptions` — receiver and refresh
-   application implemented in `af88570`; active query add/remove lifecycle is
-   the remaining half.
+2. `Apply live refreshes through public subscriptions` — implemented in
+   `af88570` and `ecf2145`.
 3. `Drain durable outbox through live session`
 4. `Reconnect and restore live runtime state`
 
@@ -393,8 +413,8 @@ The release harness must prove each applicable row in both directions:
 
 ## Immediate Next Step
 
-Finish Packet 3's public subscription slice: encode `InstantQueryPlan` into the
-canonical Instant query object, install and reference-count active queries on
-the owned live session, send `remove-query` on cancellation, and prove a
-TypeScript-originated write reaches a normal Swift observer. Then implement
-Packet 1 as the first compiling V3 API slice over that real subscription path.
+Implement Packet 3's durable outbox slice from pinned Reactor tests: send
+canonical `transact` messages through the owned live session, correlate
+`transact-ok`, `refresh-ok`, and server errors with pending mutations, and
+prove acceptance and rejection through normal public clients. Then implement
+Packet 1's compiling V3 fetch fixture over the live subscription path.

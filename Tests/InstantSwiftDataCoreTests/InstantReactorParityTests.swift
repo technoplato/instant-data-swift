@@ -12,32 +12,57 @@ struct InstantReactorParityTests {
     let cachedAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 10)
     let plan = InstantQueryPlan(
       id: "reactor.query-subs.todos",
-      namespace: TodoExample.namespace,
-      order: InstantQueryOrder("createdAt", .ascending)
+      namespace: TodoExample.namespace
     )
+    let query: InstantLiveJSONValue = .object([TodoExample.namespace: .object([:])])
+    let liveSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs),
+      liveReactorAddQueryOK(
+        query: query,
+        processedTransactionID: "0",
+        result: liveReactorTodoQueryResult(
+          id: "todo-reactor-query-subs",
+          text: "restore cached querySub",
+          createdAt: createdAt
+        )
+      ),
+    ])
     let runtime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
         appID: "reactor-query-subs-parity",
         persistenceURL: cacheURL,
         initialAttributes: TodoExample.attributes,
-        now: { cachedAt }
+        now: { cachedAt },
+        liveTransport: liveSession.transport
       )
     )
-    try await runtime.transact(
-      InstantStoreTransaction(
-        id: "tx-reactor-query-subs-seed",
-        operations: TodoExample.createOperations(
+    let stream = await runtime.observe(plan)
+    var iterator = stream.makeAsyncIterator()
+    let initial = try #require(await iterator.next())
+    expectNoDifference(initial.values, [], reactorQuerySubsSource)
+    _ = try await runtime.connect()
+
+    let emission = try #require(await iterator.next())
+    let liveTodos = try TodoExample.decode(emission.values)
+    expectNoDifference(
+      liveTodos,
+      [
+        TodoRecord(
           id: "todo-reactor-query-subs",
           text: "restore cached querySub",
-          createdAt: createdAt,
-          transactionID: "tx-reactor-query-subs-seed"
+          isCompleted: false,
+          createdAt: createdAt
         )
-      ),
-      createdAt: createdAt
+      ],
+      reactorQuerySubsSource
     )
+    let sentMessages = await liveSession.sentMessages()
+    expectNoDifference(sentMessages.map(\.op), ["init", "add-query"], reactorQuerySubsSource)
+    expectNoDifference(sentMessages.last?.fields["q"], query, reactorQuerySubsSource)
 
-    let emission = try await runtime.queryOnce(plan)
-    let cachedQuery = try #require(try await runtime.cachedQuery(plan))
+    _ = try await runtime.queryOnce(plan)
+    let loadedCachedQuery = try await runtime.cachedQuery(plan)
+    let cachedQuery = try #require(loadedCachedQuery)
     expectNoDifference(emission.queryID, "reactor.query-subs.todos", reactorQuerySubsSource)
     expectNoDifference(cachedQuery.queryID, plan.id, reactorQuerySubsSource)
     expectNoDifference(cachedQuery.cacheKey, plan.cacheKey, reactorQuerySubsSource)
@@ -142,6 +167,22 @@ struct InstantReactorParityTests {
     expectNoDifference(visibleTexts, ["joe3"], reactorOptimisticRefreshSource)
 
     try await runtime.confirmMutation(id: "tx-reactor-optimistic-joe2")
+    _ = try await runtime.applyLiveRefresh(
+      InstantLiveRefreshOK(
+        clientEventID: nil,
+        processedTransactionID: "server-tx-100",
+        attrs: liveReactorTodoServerAttrs,
+        computations: [
+          liveReactorTodoComputation(
+            query: .object([TodoExample.namespace: .object([:])]),
+            id: "todo-reactor-optimistic",
+            text: "joe",
+            createdAt: createdAt,
+            processedTransactionID: "server-tx-100"
+          )
+        ]
+      )
+    )
     let refreshEmission = try await runtime.queryOnce(TodoExample.query)
     visibleTexts = try TodoExample.decode(refreshEmission.values).map(\.text)
     let refreshedCache = try #require(try await runtime.cachedQuery(TodoExample.query))
@@ -412,10 +453,10 @@ private let reactorGetLocalIDSource =
   "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts getLocalId always returns the same id [adapted: Swift uses InstantRuntime.localID over the local SQLite cache instead of the IndexedDB-backed Reactor harness.]"
 
 private let reactorQuerySubsSource =
-  "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts querySubs round-trips [adapted: Swift writes queryOnce results to the SQLite query cache and relaunches cachedQuery/queryOnce fallback instead of IndexedDB querySubs callbacks.]"
+  "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts querySubs round-trips [adapted: Swift installs the query on the runtime live session, applies add-query-ok through the public observer, persists the resulting store and query cache in SQLite, and proves relaunch and closed-query fallback.]"
 
 private let reactorOptimisticRefreshSource =
-  "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts optimisticTx is not overwritten by refresh-ok [adapted: Swift has no raw refresh-ok handler; it confirms earlier outbox mutations and runs queryOnce/cache refresh without replacing the later optimistic local write.]"
+  "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts optimisticTx is not overwritten by refresh-ok [adapted: Swift applies the raw refresh-ok payload after confirming the earlier mutation and proves the later optimistic write remains visible and persisted.]"
 
 private let reactorPendingCleanupSource =
   "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts we don't cleanup mutations we're still waiting on [adapted: Swift sends both pending mutations through an injected transport, receives confirmation for only the first, and proves the still-unacknowledged optimistic mutation remains pending and visible across relaunch.]"
