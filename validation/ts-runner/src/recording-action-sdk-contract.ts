@@ -47,6 +47,83 @@ export interface RecordingActionSnapshot {
   }>;
 }
 
+export function recordingActionResultIsReady(
+  result: unknown,
+): result is RecordingActionQueryResult {
+  if (!result || typeof result !== "object") {
+    return false;
+  }
+  const recordings = (result as Record<string, unknown>).v3_capture_recordings;
+  if (!Array.isArray(recordings) || recordings.length !== 1) {
+    return false;
+  }
+  const recording = objectValue(recordings[0]);
+  if (!recording || !hasStringID(recording.owner)) {
+    return false;
+  }
+  const attachments = recording.attachments;
+  const members = recording.members;
+  const transcriptions = recording.transcriptions;
+  if (
+    !Array.isArray(attachments)
+    || attachments.length !== 1
+    || !hasStringID(attachments[0])
+    || !Array.isArray(members)
+    || members.length !== 1
+    || !hasStringID(members[0])
+    || !hasStringID(objectValue(members[0])?.user)
+    || !Array.isArray(transcriptions)
+    || transcriptions.length !== 1
+    || !hasStringID(transcriptions[0])
+  ) {
+    return false;
+  }
+  return true;
+}
+
+export async function waitForRecordingActionResult(
+  query: () => Promise<unknown>,
+  options: { maxAttempts?: number; delayMilliseconds?: number } = {},
+): Promise<{
+  value: RecordingActionQueryResult;
+  attemptCount: number;
+  queryErrors: string[];
+}> {
+  const maxAttempts = options.maxAttempts ?? 20;
+  const delayMilliseconds = options.delayMilliseconds ?? 250;
+  if (!Number.isInteger(maxAttempts) || maxAttempts <= 0) {
+    throw new Error("maxAttempts must be a positive integer.");
+  }
+  if (!Number.isFinite(delayMilliseconds) || delayMilliseconds < 0) {
+    throw new Error("delayMilliseconds must be a non-negative number.");
+  }
+
+  const queryErrors: string[] = [];
+  let lastError: unknown;
+  for (let attemptCount = 1; attemptCount <= maxAttempts; attemptCount += 1) {
+    try {
+      const value = await query();
+      if (recordingActionResultIsReady(value)) {
+        return { value, attemptCount, queryErrors };
+      }
+    } catch (error) {
+      lastError = error;
+      queryErrors.push(errorSummary(error));
+    }
+    if (attemptCount < maxAttempts && delayMilliseconds > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMilliseconds));
+    }
+  }
+
+  const message = `Recording action query was not visible after ${maxAttempts} attempt(s).`;
+  if (lastError !== undefined) {
+    throw new Error(`${message} Last query error: ${errorSummary(lastError)}`, {
+      cause: lastError,
+    });
+  }
+  throw new Error(message);
+}
+
 export function recordingActionSnapshot(
   result: RecordingActionQueryResult,
 ): RecordingActionSnapshot {
@@ -120,4 +197,21 @@ function requiredNumber(value: unknown, path: string): number {
     throw new Error(`Expected ${path} to be a finite number.`);
   }
   return value;
+}
+
+function errorSummary(error: unknown): string {
+  if (error instanceof Error) {
+    return `${error.name}: ${error.message}`;
+  }
+  return String(error);
+}
+
+function objectValue(value: unknown): Record<string, unknown> | undefined {
+  return value && typeof value === "object"
+    ? value as Record<string, unknown>
+    : undefined;
+}
+
+function hasStringID(value: unknown): boolean {
+  return typeof objectValue(value)?.id === "string";
 }
