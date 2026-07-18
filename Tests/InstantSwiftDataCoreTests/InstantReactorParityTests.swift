@@ -220,6 +220,91 @@ struct InstantReactorParityTests {
   }
 
   @Test
+  func rejectedOptimisticTransactionIsNotRebasedOverAuthoritativeRefresh() async throws {
+    let cacheURL = try temporaryReactorParityCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_045_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reactor-rejected-optimistic-refresh",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-rejected-seed",
+        operations: TodoExample.createOperations(
+          id: "todo-rejected-optimistic",
+          text: "server value",
+          createdAt: createdAt,
+          transactionID: "tx-rejected-seed"
+        )
+      ),
+      createdAt: createdAt
+    )
+    _ = try await runtime.confirmMutation(id: "tx-rejected-seed")
+
+    let rejectedAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-rejected-update",
+        operations: TodoExample.updateTextOperations(
+          id: "todo-rejected-optimistic",
+          text: "rejected value",
+          updatedAt: rejectedAt,
+          transactionID: "tx-rejected-update"
+        )
+      ),
+      createdAt: rejectedAt
+    )
+    let optimisticTexts = try await reactorOptimisticTextsFromQueryOnce(runtime)
+    expectNoDifference(optimisticTexts, ["rejected value"])
+
+    _ = try await runtime.failMutation(
+      id: "tx-rejected-update",
+      message: "permission denied"
+    )
+    _ = try await runtime.applyLiveRefresh(
+      InstantLiveRefreshOK(
+        clientEventID: nil,
+        processedTransactionID: "server-tx-rejected-refresh",
+        attrs: liveReactorTodoServerAttrs,
+        computations: [
+          liveReactorTodoComputation(
+            query: .object([TodoExample.namespace: .object([:])]),
+            id: "todo-rejected-optimistic",
+            text: "server value",
+            createdAt: createdAt,
+            processedTransactionID: "server-tx-rejected-refresh"
+          )
+        ]
+      )
+    )
+
+    let refreshedTexts = try await reactorOptimisticTextsFromQueryOnce(runtime)
+    let pending = await runtime.pendingMutations()
+    expectNoDifference(refreshedTexts, ["server value"])
+    expectNoDifference(pending, [])
+    let failed = try #require(await runtime.outboxMutations().first)
+    expectNoDifference(failed.status, .failed)
+    expectNoDifference(failed.failureMessage, "permission denied")
+
+    let relaunched = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reactor-rejected-optimistic-refresh",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let relaunchedTexts = try await reactorOptimisticTextsFromQueryOnce(relaunched)
+    let relaunchedPending = await relaunched.pendingMutations()
+    let relaunchedStatuses = await relaunched.outboxMutations().map(\.status)
+    expectNoDifference(relaunchedTexts, ["server value"])
+    expectNoDifference(relaunchedPending, [])
+    expectNoDifference(relaunchedStatuses, [.failed])
+  }
+
+  @Test
   func upstreamReactorDoesNotCleanupMutationsStillWaitingOn() async throws {
     let cacheURL = try temporaryReactorParityCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_050_000)

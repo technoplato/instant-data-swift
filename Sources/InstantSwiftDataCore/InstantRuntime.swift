@@ -1472,7 +1472,7 @@ public final class InstantRuntime: Sendable {
   ) async throws -> PreparedStoreMutation {
     var snapshot = preparedServer.snapshot
     for mutation in mutations.sorted(by: PendingMutation.creationOrder)
-    where mutation.status != .confirmed {
+    where mutation.status == .pending {
       let operations = mutation.transaction.operations.filter(\.isRebasedLocalWrite)
       guard !operations.isEmpty else { continue }
       let preparedLocal = try await store.prepare(
