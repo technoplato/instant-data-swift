@@ -2,6 +2,9 @@
 
 This is the V3 working draft for the SwiftUI-facing Instant API.
 
+The implementation order, test gates, and Git version targets live in
+`docs/v3-e2e-port-plan.md`.
+
 It supersedes the earlier callback experiment. Auth and user-triggered
 mutations should keep callbacks at the call site.
 Property wrappers should own async work, loading state, cancellation,

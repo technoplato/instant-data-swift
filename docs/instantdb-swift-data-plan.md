@@ -5,6 +5,10 @@ This plan is reconciled with
 project. When the two documents differ, the goals document wins and this plan
 should be updated rather than treated as a competing source of truth.
 
+The active, version-gated execution sequence for the V3 public syntax and real
+Swift/TypeScript synchronization is `docs/v3-e2e-port-plan.md`. This document
+remains the full feature inventory and progress record.
+
 ## Goal
 
 Build a single Swift package that feels like SQLiteData/SwiftData at the app
