@@ -23,9 +23,9 @@ These files all follow the call-site callback direction.
 ## Status
 
 - These APIs are design targets.
-- The recordings-list, auth-login, and recording public seams now have
-  compiling fixtures and lifecycle tests. Their recorded syntax is the
-  implementation baseline, not an open-ended sketch.
+- The recordings-list, auth-login, recording, and playback room/presence/topic
+  public seams now have compiling fixtures and lifecycle tests. Their recorded
+  syntax is the implementation baseline, not an open-ended sketch.
 - The examples are intentionally narrow-column.
 - VoiceTrail types are product code.
 - Instant core should expose reusable primitives.
@@ -612,17 +612,24 @@ envelope when the language supports noncopyable associated types.
 
 ## Rooms, Presence, And Topics
 
-The playback screen should be able to model people currently listening
-to the active recording:
+The playback screen models room identity, people currently listening, and
+typed room messages with one schema:
 
 ```swift
-struct RecordingListeningRoom:
-  InstantRoomTopic {
-  var recordingID:
-    InstantID<Recording>
+struct ActiveRecordingRoom:
+  InstantRoomSchema {
+  typealias Presence =
+    ActiveRecordingPresence
 
-  static var namespace =
-    "recording.playback"
+  enum Topic:
+    String,
+    InstantRoomTopic {
+    typealias RoomSchema =
+      ActiveRecordingRoom
+
+    case reaction
+    case commentDraft
+  }
 }
 ```
 
@@ -635,13 +642,15 @@ struct VoiceTrailPlaybackScreen: View {
 
   @Room
   private var room:
-    RecordingListeningRoom
+    InstantRoom<ActiveRecordingRoom>
 
   @Presence
   private var listeners:
     [ListenerPresence]
 
-  @Topic("reactions")
+  @Topic(
+    ActiveRecordingRoom.Topic.reaction
+  )
   private var reactions:
     InstantTopic<RecordingReaction>
 
@@ -669,15 +678,23 @@ struct VoiceTrailPlaybackScreen: View {
     }
     .instantRoom(
       $room,
-      RecordingListeningRoom(
-        recordingID: recordingID
+      InstantRoom(
+        type: "recording.playback",
+        id: recordingID.rawValue
       )
     )
     .presence(
+      $listeners,
+      in: room,
+      publishing:
       ListeningPresence(
         recordingID: recordingID,
         playbackTime: currentPlaybackTime
       )
+    )
+    .instantTopic(
+      $reactions,
+      in: room
     )
   }
 }
@@ -686,6 +703,16 @@ struct VoiceTrailPlaybackScreen: View {
 Presence is ephemeral: who is here and what they are doing now. Topics
 are room-scoped messages: reactions, comments, cursor moves, playback
 markers, and other collaborative events.
+
+Decision, 2026-07-18: room presence uses both a wrapper and a modifier.
+`@Presence` owns decoded listener state, loading/error state, observation, and
+cancellation. `.presence(_:in:publishing:)` supplies the dynamic typed room and
+current user's value. Observation is keyed only by room identity, while current
+presence has its own encoded task identity, so playback updates publish without
+restarting the listener subscription. `@Topic` owns typed topic state and
+call-site publication callbacks; `.instantTopic(_:in:)` attaches it to the
+matching room schema. Commits `a7c1ad3`, `9fe9c25`, and `031e4fe` are the
+compiling and lifecycle-tested baseline.
 
 ## Local ID
 
@@ -742,5 +769,4 @@ implementation detail of storage resolution.
 - When the Swift toolchain supports noncopyable associated types, should
   `InstantMessage.Change` require `~Copyable`?
 - Should borrowed change envelopes always expose sendable summaries?
-- Should room presence be a wrapper, a modifier, or both?
 - Should provider catalogs be generated from app configuration?

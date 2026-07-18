@@ -57,11 +57,15 @@ struct VoiceTrailPlaybackScreen: View {
   private var listeners:
     [ActiveRecordingPresence]
 
-  @Topic(.reaction)
+  @Topic(
+    ActiveRecordingRoom.Topic.reaction
+  )
   private var reactions:
     InstantTopic<RecordingReaction>
 
-  @Topic(.commentDraft)
+  @Topic(
+    ActiveRecordingRoom.Topic.commentDraft
+  )
   private var commentDrafts:
     InstantTopic<RecordingCommentDraft>
 
@@ -102,15 +106,16 @@ struct VoiceTrailPlaybackScreen: View {
     )
     .presence(
       $listeners,
-      currentPresence
+      in: room,
+      publishing: currentPresence
     )
     .instantTopic(
       $reactions,
-      .reaction
+      in: room
     )
     .instantTopic(
       $commentDrafts,
-      .commentDraft
+      in: room
     )
     .instantInfiniteQuery(
       $comments,
@@ -119,11 +124,6 @@ struct VoiceTrailPlaybackScreen: View {
         limit: 40
       )
     )
-    .onChange(
-      of: player.currentTime
-    ) { _, time in
-      playbackTimeChanged(time)
-    }
   }
 
   private var currentPresence:
@@ -317,30 +317,7 @@ struct VoiceTrailPlaybackScreen: View {
 
   private func playButtonTapped() {
     player.togglePlayback()
-
-    room.presence.publish(
-      ActiveRecordingPresence.patch(
-        offset: player.currentTime,
-        isPlaying: player.isPlaying
-      ),
-      onPublished: { _ in
-        haptics.selectionChanged()
-      },
-      onFailure: { error in
-        toast.show(error.recoveryMessage)
-      }
-    )
-  }
-
-  private func playbackTimeChanged(
-    _ time: Duration
-  ) {
-    room.presence.publish(
-      ActiveRecordingPresence.patch(
-        offset: time,
-        isPlaying: player.isPlaying
-      )
-    )
+    haptics.selectionChanged()
   }
 
   private func reactionButtonTapped(
@@ -461,6 +438,9 @@ struct ActiveRecordingRoom:
   enum Topic:
     String,
     InstantRoomTopic {
+    typealias RoomSchema =
+      ActiveRecordingRoom
+
     case reaction
     case commentDraft
     case commentCommitted

@@ -59,8 +59,9 @@ As of 2026-07-18:
   schema and permissions verification, and the local Swift/TypeScript E2E
   orchestrator. Its evidence directory was
   `/tmp/instant-swift-data-packet0-20260718T1106`.
-- The current runtime and V3 recordings-list, auth-login, and recording
-  fixtures passed 869 Swift Testing tests across 27 suites plus 28 macro tests.
+- The current runtime and V3 recordings-list, auth-login, recording, and
+  playback room fixtures passed 885 Swift Testing tests across 30 suites; the
+  prior syntax gate also passed 28 dedicated macro tests.
   The auth slice includes wrapper-owned magic-code, guest, and provider
   actions; exact call-site callbacks; typed authenticated-user identity;
   stale-action cancellation; failure/retry; and durable session restoration
@@ -115,6 +116,13 @@ As of 2026-07-18:
   Both comparisons passed with zero compiler or runtime warnings. Non-secret
   evidence is in
   `/private/tmp/instant-data-swift-recording-bidirectional-clean-771ed4c-20260718/evidence.json`.
+- Commits `a7c1ad3`, `9fe9c25`, and `031e4fe` compile the playback room seam.
+  Typed room identity, join/leave, dynamic replacement, hosted SwiftUI
+  invalidation, exact Codable presence publication and decoding, typed topic
+  publication callbacks and observation, cancellation cleanup, and room-schema
+  topic constraints passed 885 Swift tests across 30 suites. Presence is
+  resolved as wrapper-owned state plus explicit dynamic room/publication input
+  from `.presence(_:in:publishing:)`.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -504,7 +512,8 @@ Implement in independently gated commits:
 
 - `@InstantSyncStatus`
 - queryable `$files` and upload/delete progress
-- `@Room`, `@Presence`, and `@Topic`
+- `@Room`, `@Presence`, and `@Topic` — compiling and lifecycle-tested through
+  `a7c1ad3`, `9fe9c25`, and `031e4fe`; canonical cross-SDK boundary pending
 - `@LocalID` — compiling and lifecycle-tested through `709b58d`
 - composite `@Fetch` and `@InstantFetchBuilder`
 - recording-specific message flows — start, finish, attachment, canonical refs,
@@ -571,14 +580,14 @@ The release harness must prove each applicable row in both directions:
 
 ## Immediate Next Step
 
-Start the playback vertical slice from `screens/v3/playback.md`. The recording
-data-plane prerequisite passed from clean commit `771ed4c` with exact shapes in
-both SDK directions and zero warnings. Resolve the remaining
-wrapper-versus-modifier presence question inside the playback compiling slice,
-record the chosen spelling in the V3 design document, and prove
-join/presence/topic publication, observation, cancellation, dynamic room
-replacement, and reconnect behavior. A separate up-front design phase is not
-required.
+Run the compiled playback room contract against the canonical TypeScript SDK.
+The local Swift slice now proves typed join/leave, dynamic replacement,
+presence publication/observation, topic publication/observation, callbacks,
+view invalidation, and cancellation. The next boundary must prove Swift room
+presence and topic payloads are observed with exact shapes in TypeScript, then
+reverse the direction and require Swift's normal live room observers to decode
+the canonical payloads. Include disconnect cleanup, reconnect/rejoin, warning,
+and exact expected/actual evidence.
 
 File-backed `stream-append` fetching and remote stream metadata bootstrap remain
 important live-stream work, but they do not block the recording-screen fixture
