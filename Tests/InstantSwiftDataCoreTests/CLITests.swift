@@ -500,6 +500,26 @@ extension InstantStoreTests {
     expectNoDifference(schemaVerify.linkCount, 7)
     expectNoDifference(schemaVerify.warnings, [])
 
+    let fixtureSchemaURL = packageRootURL()
+      .appendingPathComponent("validation/fixtures/sharing.schema.ts")
+    let fixtureSchemaVerify = try JSONDecoder().decode(
+      CLISchemaVerifyOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "schema", "verify", "--example", "sharing",
+            "--from", fixtureSchemaURL.path,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(fixtureSchemaVerify.example, "sharing")
+    expectNoDifference(fixtureSchemaVerify.entityCount, 4)
+    expectNoDifference(fixtureSchemaVerify.linkCount, 7)
+    expectNoDifference(fixtureSchemaVerify.warnings, [])
+
     let generatedPermissions = try JSONDecoder().decode(
       CLIGeneratedArtifactOutput.self,
       from: Data(
