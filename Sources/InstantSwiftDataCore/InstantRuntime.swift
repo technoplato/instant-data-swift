@@ -336,12 +336,18 @@ private actor InstantRuntimeLiveSession {
     var isConnected = false
   }
 
+  private struct RegisteredStreamReader: Sendable {
+    var reader: InstantLiveStreamReaderState
+    var observerCount: Int
+  }
+
   private var session: InstantLiveWebSocketSession?
   private var receiverTask: Task<Void, Never>?
   private var registeredQueries: [String: RegisteredQuery] = [:]
   private var serverAttributes: [InstantLiveJSONValue] = []
   private var inFlightMutationIDs: Set<String> = []
   private var registeredRooms: [InstantRoomHandle: RegisteredRoom] = [:]
+  private var registeredStreamReaders: [String: RegisteredStreamReader] = [:]
   private var makeID: (@Sendable () -> String)?
   private var sessionID: String?
   private var isOpened = false
@@ -439,6 +445,12 @@ private actor InstantRuntimeLiveSession {
           through: opened
         )
       }
+      for key in registeredStreamReaders.keys.sorted() {
+        guard let registration = registeredStreamReaders[key] else { continue }
+        try await registration.reader.reconnect(clientEventID: makeID()) { message in
+          try await self.send(message, through: opened)
+        }
+      }
     } catch {
       await opened.close()
       session = nil
@@ -513,6 +525,55 @@ private actor InstantRuntimeLiveSession {
     guard let session, isOpened else { return }
     try await send(
       .removeQuery(registration.query, clientEventID: clientEventID),
+      through: session
+    )
+  }
+
+  func registerStreamReader(
+    key: String,
+    clientID: String? = nil,
+    streamID: String? = nil,
+    initialByteOffset: Int64,
+    ruleParams: InstantLiveJSONValue? = nil,
+    clientEventID: String
+  ) async throws {
+    if var registration = registeredStreamReaders[key] {
+      registration.observerCount += 1
+      registeredStreamReaders[key] = registration
+      return
+    }
+    let reader = try InstantLiveStreamReaderState(
+      clientID: clientID,
+      streamID: streamID,
+      initialByteOffset: initialByteOffset,
+      ruleParams: ruleParams
+    )
+    registeredStreamReaders[key] = RegisteredStreamReader(reader: reader, observerCount: 1)
+    guard let session, isOpened else { return }
+    let message = try await reader.subscribeMessage(clientEventID: clientEventID)
+    try await send(message, through: session)
+    await reader.recordSubscriptionEventID(clientEventID)
+  }
+
+  func unregisterStreamReader(key: String, clientEventID: String) async throws {
+    guard var registration = registeredStreamReaders[key] else { return }
+    if registration.observerCount > 1 {
+      registration.observerCount -= 1
+      registeredStreamReaders[key] = registration
+      return
+    }
+    registeredStreamReaders[key] = nil
+    guard let subscriptionEventID = await registration.reader.subscriptionEventID,
+      let session,
+      isOpened
+    else {
+      return
+    }
+    try await send(
+      .unsubscribeStream(
+        subscriptionEventID: subscriptionEventID,
+        clientEventID: clientEventID
+      ),
       through: session
     )
   }
@@ -2060,11 +2121,11 @@ public final class InstantRuntime: Sendable {
     }
   }
 
-  private static func liveObservation(
-    _ source: AsyncStream<InstantQueryEmission>,
+  private static func liveObservation<Element: Sendable>(
+    _ source: AsyncStream<Element>,
     onTermination: @escaping @Sendable () async -> Void
-  ) -> AsyncStream<InstantQueryEmission> {
-    let output = AsyncStream<InstantQueryEmission>.makeStream(
+  ) -> AsyncStream<Element> {
+    let output = AsyncStream<Element>.makeStream(
       bufferingPolicy: .bufferingNewest(1)
     )
     let task = Task {
@@ -3537,7 +3598,12 @@ public final class InstantRuntime: Sendable {
         current: read
       )
       await operationGate.leave()
-      return stream
+      return await liveStreamContentObservation(
+        stream,
+        key: "stream-id:\(read.metadata.id):\(byteOffset)",
+        streamID: read.metadata.id,
+        initialByteOffset: read.byteOffset + read.byteCount
+      )
     } catch {
       await operationGate.leave()
       throw error
@@ -3576,10 +3642,47 @@ public final class InstantRuntime: Sendable {
         current: read
       )
       await operationGate.leave()
-      return stream
+      return await liveStreamContentObservation(
+        stream,
+        key: "client-id:\(clientID):\(byteOffset)",
+        clientID: clientID,
+        initialByteOffset: read.byteOffset + read.byteCount
+      )
     } catch {
       await operationGate.leave()
       throw error
+    }
+  }
+
+  private func liveStreamContentObservation(
+    _ stream: AsyncStream<InstantStreamContentRead>,
+    key: String,
+    clientID: String? = nil,
+    streamID: String? = nil,
+    initialByteOffset: Int64
+  ) async -> AsyncStream<InstantStreamContentRead> {
+    guard configuration.liveTransport != nil else { return stream }
+    do {
+      try await liveSession.registerStreamReader(
+        key: key,
+        clientID: clientID,
+        streamID: streamID,
+        initialByteOffset: initialByteOffset,
+        clientEventID: configuration.makeID()
+      )
+    } catch {
+      await recordConnectionError(error)
+    }
+    return Self.liveObservation(stream) { [weak self] in
+      guard let self else { return }
+      do {
+        try await self.liveSession.unregisterStreamReader(
+          key: key,
+          clientEventID: self.configuration.makeID()
+        )
+      } catch {
+        await self.recordConnectionError(error)
+      }
     }
   }
 

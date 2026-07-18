@@ -794,6 +794,117 @@ struct InstantReactorParityTests {
   }
 
   @Test
+  func runtimeReconnectRestoresActiveStreamReaderAndUnsubscribesOnCancellation() async throws {
+    let firstSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "stream-before-drop")
+    ])
+    let secondSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "stream-after-drop")
+    ])
+    let transport = LiveReactorParityTransport(sessions: [firstSession, secondSession])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "python-stream-reader-reconnect-parity",
+        persistenceURL: try temporaryReactorParityCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: transport.transport
+      )
+    )
+    _ = try await runtime.signInAsGuest()
+    let metadata = try await runtime.createStream(clientID: "stream-reader-reconnect")
+    _ = try await runtime.appendStreamContent(streamID: metadata.id, content: "hello")
+    _ = try await runtime.connect()
+
+    let observation = try await runtime.observeStreamContent(
+      streamID: metadata.id,
+      byteOffset: 2
+    )
+    let observerTask = Task { () -> InstantStreamContentRead? in
+      var iterator = observation.makeAsyncIterator()
+      let initial = await iterator.next()
+      _ = await iterator.next()
+      return initial
+    }
+    defer { observerTask.cancel() }
+
+    try await instantLiveWithTimeout(
+      operation: "wait for initial live stream subscription",
+      timeoutMilliseconds: 500
+    ) {
+      await firstSession.waitForSentMessageCount(2)
+    }
+    let firstMessages = await firstSession.sentMessages()
+    expectNoDifference(
+      firstMessages.map(\.op),
+      ["init", "subscribe-stream"],
+      pythonStreamReaderReconnectSource
+    )
+    expectNoDifference(
+      firstMessages[1].fields,
+      [
+        "offset": .number(5),
+        "stream-id": .string(metadata.id),
+      ],
+      pythonStreamReaderReconnectSource
+    )
+
+    await firstSession.failReceive(
+      InstantError(
+        code: .networkFailed,
+        operation: "drop stream reader parity session",
+        message: "transient stream reader drop",
+        recovery: "Reconnect the active stream reader."
+      )
+    )
+    try await instantLiveWithTimeout(
+      operation: "wait for stream reader reconnect",
+      timeoutMilliseconds: 500
+    ) {
+      await transport.waitForConnectionCount(2)
+    }
+    try await instantLiveWithTimeout(
+      operation: "wait for restored live stream subscription",
+      timeoutMilliseconds: 500
+    ) {
+      await secondSession.waitForSentMessageCount(2)
+    }
+    let secondMessages = await secondSession.sentMessages()
+    expectNoDifference(
+      secondMessages.map(\.op),
+      ["init", "subscribe-stream"],
+      pythonStreamReaderReconnectSource
+    )
+    expectNoDifference(
+      secondMessages[1].fields,
+      [
+        "offset": .number(5),
+        "stream-id": .string(metadata.id),
+      ],
+      pythonStreamReaderReconnectSource
+    )
+
+    observerTask.cancel()
+    let initialRead = try #require(await observerTask.value)
+    expectNoDifference(initialRead.byteOffset, 2, pythonStreamReaderReconnectSource)
+    expectNoDifference(initialRead.byteCount, 3, pythonStreamReaderReconnectSource)
+    expectNoDifference(initialRead.content, "llo", pythonStreamReaderReconnectSource)
+    try await instantLiveWithTimeout(
+      operation: "wait for live stream unsubscription",
+      timeoutMilliseconds: 500
+    ) {
+      await secondSession.waitForSentMessageCount(3)
+    }
+    let unsubscribe = try #require(await secondSession.sentMessages().last)
+    expectNoDifference(unsubscribe.op, "unsubscribe-stream", pythonStreamReaderReconnectSource)
+    expectNoDifference(
+      unsubscribe.fields,
+      ["subscribe-event-id": .string(try #require(secondMessages[1].clientEventID))],
+      pythonStreamReaderReconnectSource
+    )
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
   func runtimeAppliesLivePresencePatchesAndEphemeralServerBroadcasts() async throws {
     let room = InstantRoomHandle(type: "chat", id: "room-events")
     let now = InstantTimestamp(milliseconds: 1_700_000_080_000)
@@ -1145,6 +1256,9 @@ private let pythonConnectionCloseReconnectSource =
 
 private let reactorRoomReconnectSource =
   "upstream/instant/client/packages/core/src/Reactor.js init-ok room loop, joinRoom, _flushEnqueuedRoomData, publishPresence, and publishTopic [adapted: Swift rejoins an active room with current presence, queues newer presence/topic data until join-room-ok, flushes it once, and sends leave-room on explicit cleanup.]"
+
+private let pythonStreamReaderReconnectSource =
+  "upstream/instant/client/packages/python/tests/test_streams_state.py test_reader_on_reconnect_resubscribes_with_current_offset and upstream/instant/client/packages/core/src/Stream.ts onConnectionStatusChange [adapted: Swift registers a public stream-content observer with the owned live session at the end of its local read, restores that subscription at the same byte offset after reconnect, and unsubscribes with the reconnected subscription event id when observation is cancelled.]"
 
 private let reactorRoomEventsSource =
   "upstream/instant/client/packages/core/src/Reactor.js refresh-presence, patch-presence, and server-broadcast receive branches plus upstream/instant/server/test/instant/reactive/session_test.clj patch-presence-works and broadcast-works [adapted: Swift excludes its own live session from peer presence, applies canonical +/r/- edits in memory, publishes typed peer state, and emits remote broadcasts without adding them to durable topic history.]"
