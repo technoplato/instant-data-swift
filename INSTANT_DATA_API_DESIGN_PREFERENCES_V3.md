@@ -23,9 +23,9 @@ These files all follow the call-site callback direction.
 ## Status
 
 - These APIs are design targets.
-- The recordings-list and auth-login public seams now have compiling fixtures
-  and lifecycle tests. Their recorded syntax is the implementation baseline,
-  not an open-ended sketch.
+- The recordings-list, auth-login, and recording public seams now have
+  compiling fixtures and lifecycle tests. Their recorded syntax is the
+  implementation baseline, not an open-ended sketch.
 - The examples are intentionally narrow-column.
 - VoiceTrail types are product code.
 - Instant core should expose reusable primitives.
@@ -356,14 +356,19 @@ and relaunch stability guarantee, and publishes value, loading, and error
 changes so the screen recomputes. Manual `load` and `task` methods remain public
 for non-SwiftUI and advanced use.
 
-The executable start-action fixture now also fixes the ownership boundary:
+The executable recording-action fixture also fixes the ownership boundary:
 product recording preparation owns task replacement and drops stale callbacks;
 `InstantMessage` owns the durable optimistic mutation lifecycle. The fixture
 proves optimistic and accepted callbacks fire once, rejection produces
 actionable recovery once, a later outbox retry does not replay call-site
-effects, and accepted state survives runtime relaunch. Canonical ref-shaped
-recording/member/transcription creation plus finish and attachment actions are
-the next recording slice.
+effects, and accepted state survives runtime relaunch. Start creates the
+canonical owner/member/recording/transcription ref graph in one message; finish
+updates the recording and transcription together; attachments link through a
+required recording ref. Their exact mutation and precondition shapes are
+covered in `V3RecordingActionFixtureTests`, and the matching Swift-owned schema
+and validation permissions are generated with `--example recording-action`.
+Pinned TypeScript type-check and server installation are contract gates, not
+open public-syntax questions.
 
 ## Request Objects
 

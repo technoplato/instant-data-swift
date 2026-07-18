@@ -60,16 +60,21 @@ As of 2026-07-18:
   orchestrator. Its evidence directory was
   `/tmp/instant-swift-data-packet0-20260718T1106`.
 - The current runtime and V3 recordings-list, auth-login, and recording
-  fixtures passed 856 Swift Testing tests across 26 suites plus 28 macro tests.
+  fixtures passed 861 Swift Testing tests across 26 suites plus 28 macro tests.
   The auth slice includes wrapper-owned magic-code, guest, and provider
   actions; exact call-site callbacks; typed authenticated-user identity;
   stale-action cancellation; failure/retry; and durable session restoration
   after runtime relaunch. The recording slice now proves concrete-ID timeline
   query identity plus one-shot, view-invalidating `@LocalID` resolution in a
-  hosted SwiftUI view. The recording start action additionally proves product
-  preparation replacement, typed optimistic and accepted callbacks, rejected
-  mutation recovery without callback replay, and durable relaunch state. The
-  core reconnect packet's earlier explicit E2E evidence is
+  hosted SwiftUI view. The recording action fixture now proves product
+  preparation replacement; canonical owner/member/recording/transcription
+  refs; start, finish, and attachment mutations; typed optimistic and accepted
+  callbacks; rejection recovery without callback replay; exact transport
+  mutation/precondition shapes; and durable relaunch state. Commit `33028f6`
+  adds the same four-entity, five-link contract as a Swift-owned schema and
+  permissions example with CLI generation and verification. Type-checking that
+  generated artifact against pinned TypeScript packages remains Packet 4/5
+  work. The core reconnect packet's earlier explicit E2E evidence is
   `/tmp/instant-swift-data-reconnect-20260718T161703Z`.
 - Credentialed remote preflight and both real Swift/TypeScript boundary
   directions passed from the typed-message milestone. The
@@ -117,7 +122,9 @@ When sources disagree, use this order:
 | Current execution state, packet order, gates, and tag targets | `docs/v3-e2e-port-plan.md` |
 | Product contract and full definition of done | `docs/instant-swift-data-goals.md` |
 | Desired V3 API rules and decision log | `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` |
-| Next compiling syntax target | `screens/v3/recording.md` finish and attachment lifecycle |
+| Next compiling syntax target | `screens/v3/playback.md` room, presence, and topic lifecycle |
+| Current generated recording contract | `InstantSchemaExamples.recordingActionDocument`, `recordingActionValidationPermissions`, and `--example recording-action` |
+| TypeScript contract pin/type-check gate | `validation/ts-runner/package.json`, `upstream/instant/client/pnpm-lock.yaml`, and Packet 4 below |
 | All five desired VoiceTrail screen probes | `screens/v3/README.md` and sibling Markdown files |
 | Existing public wrapper implementation | `Sources/InstantSwiftData/InstantSwiftData.swift` |
 | Owned live runtime and persistence integration | `Sources/InstantSwiftDataCore/InstantRuntime.swift` |
@@ -163,9 +170,9 @@ compile/runtime test:
 - How much of a mutation change envelope is macro-generated.
 - Whether room presence uses a wrapper, a modifier, or both.
 
-The recordings-list attachment and auth-provider catalog decisions are
-resolved. The remaining items can wait for their vertical slice; no separate
-design phase is required before continuing the port.
+The recordings-list attachment, auth-provider catalog, local-ID, and recording
+action decisions are resolved. The remaining items can wait for their vertical
+slice; no separate design phase is required before continuing the port.
 
 ## Commit and Version Discipline
 
@@ -395,6 +402,12 @@ Purpose: make “exact shape” reproducible.
 
 Commit target: `Pin canonical TypeScript shape contract`.
 
+This is the immediate contract gate. The recording-action schema and
+permissions can now be generated and round-tripped by the Swift CLI, but the
+validation runner still declares `latest` dependencies and has no committed
+lockfile. Do not call that artifact pinned or type-checked until this packet is
+complete.
+
 ### Packet 5: Make schema and permissions deployable acceptance inputs
 
 Purpose: prove generation against the server, not only fixture text.
@@ -437,9 +450,11 @@ Implement in independently gated commits:
 - `@InstantSyncStatus`
 - queryable `$files` and upload/delete progress
 - `@Room`, `@Presence`, and `@Topic`
-- `@LocalID`
+- `@LocalID` — compiling and lifecycle-tested through `709b58d`
 - composite `@Fetch` and `@InstantFetchBuilder`
-- recording/playback-specific message flows
+- recording-specific message flows — start, finish, attachment, canonical refs,
+  rejection, and relaunch covered through `4a9b7eb` and `33028f6`
+- playback-specific room/presence/topic flows
 
 Every wrapper must have local lifecycle tests and a canonical TypeScript
 boundary case when it represents remote data.
@@ -500,15 +515,19 @@ The release harness must prove each applicable row in both directions:
 
 ## Immediate Next Step
 
-Complete the V3 recording finish and attachment lifecycle as the next
-executable vertical slice. The source-derived fixtures now prove automatic
-`@LocalID`, concrete-ID timeline queries, product preparation replacement,
-typed start-message optimism and acceptance, rejection without callback replay,
-and relaunch persistence. Next, make create/finish/attachment messages use the
-canonical ref-shaped owner, member, recording, and transcription graph; prove
-finish and attachment optimism, server acceptance, rejection, and relaunch;
-and keep audio, speech, screenshot, and clipboard ownership in product-fixture
-code rather than Instant core.
+Pin the validation runner's TypeScript dependencies to the canonical Instant
+checkout, commit its lockfile, add a real `typecheck` script, and type-check the
+CLI-generated `recording-action` schema and permissions. The Swift side already
+generates and verifies the canonical four-entity, five-link graph, and the full
+suite is green; the missing evidence is acceptance by pinned
+`@instantdb/core` types rather than another public-syntax decision.
+
+After that contract gate, start the playback vertical slice from
+`screens/v3/playback.md`. Resolve the remaining wrapper-versus-modifier presence
+question inside that compiling slice, record the chosen spelling in the V3
+design document, and prove join/presence/topic publication, observation,
+cancellation, and reconnect behavior. A separate up-front design phase is not
+required.
 
 File-backed `stream-append` fetching and remote stream metadata bootstrap remain
 important live-stream work, but they do not block the recording-screen fixture
