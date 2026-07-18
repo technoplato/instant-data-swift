@@ -109,6 +109,21 @@ import Testing
       )
 
       let mutationID = try await waitForV3RecordingActionMutation(runtime)
+      let pendingCreate = try #require(
+        await runtime.pendingMutations().first(where: { $0.id == mutationID })
+      )
+      let createTransport = try v3RecordingTransportShape(pendingCreate)
+      expectNoDifference(createTransport.preconditions, [
+        "entity-missing",
+        "entity-missing",
+        "entity-missing",
+      ])
+      expectNoDifference(createTransport.refValues, [
+        "v3_capture_members/recording": prepared.recordingID.rawValue,
+        "v3_capture_members/user": prepared.ownerID.rawValue,
+        "v3_capture_recordings/owner": prepared.ownerID.rawValue,
+        "v3_capture_transcriptions/recording": prepared.recordingID.rawValue,
+      ])
       let optimistic = try await client.query(V3CaptureRecording.query)
       expectNoDifference(optimistic.map(\.title), ["Morning notes"])
       expectNoDifference(callbacks.optimistic.map(\.recordingID), ["recording-created"])
@@ -126,9 +141,21 @@ import Testing
         V3CaptureRecording.query
       )
       expectNoDifference(durable.map(\.title), ["Morning notes"])
-      expectNoDifference(durable.map(\.ownerID), ["user-created"])
+      expectNoDifference(durable.map(\.ownerID.rawValue), ["user-created"])
       expectNoDifference(durable.map(\.deviceID), ["device-created"])
       expectNoDifference(durable.map(\.state), ["recording"])
+
+      let durableTranscriptions = try await InstantSwiftDataClient(runtime: relaunched).query(
+        V3CaptureTranscription.query
+      )
+      let durableMembers = try await InstantSwiftDataClient(runtime: relaunched).query(
+        V3CaptureMember.query
+      )
+      expectNoDifference(durableTranscriptions.map(\.recordingID), [prepared.recordingID])
+      expectNoDifference(durableTranscriptions.map(\.state), ["processing"])
+      expectNoDifference(durableMembers.map(\.recordingID), [prepared.recordingID])
+      expectNoDifference(durableMembers.map(\.userID), [prepared.ownerID])
+      expectNoDifference(durableMembers.map(\.role), ["owner"])
     }
 
     @Test @MainActor
@@ -208,7 +235,7 @@ import Testing
       let attachmentTask = client.send(
         V3CreateRecordingAttachment(
           id: InstantID(rawValue: "attachment-screenshot"),
-          recordingID: InstantID(rawValue: prepared.recordingID),
+          recordingID: prepared.recordingID,
           kind: "screenshot",
           contents: "capture.png",
           offsetMilliseconds: 2_500
@@ -225,6 +252,14 @@ import Testing
       )
 
       let attachmentMutationID = try await waitForV3RecordingActionMutation(runtime)
+      let pendingAttachment = try #require(
+        await runtime.pendingMutations().first(where: { $0.id == attachmentMutationID })
+      )
+      let attachmentTransport = try v3RecordingTransportShape(pendingAttachment)
+      expectNoDifference(attachmentTransport.preconditions, ["entity-missing"])
+      expectNoDifference(attachmentTransport.refValues, [
+        "v3_capture_attachments/recording": prepared.recordingID.rawValue
+      ])
       let optimisticAttachments = try await client.query(V3CaptureAttachment.query)
       expectNoDifference(optimisticAttachments.map(\.kind), ["screenshot"])
       expectNoDifference(optimisticAttachments.map(\.contents), ["capture.png"])
@@ -244,7 +279,8 @@ import Testing
       let finishCallbacks = V3RecordingFinishCallbacks()
       let finishTask = client.send(
         V3FinishRecording(
-          recordingID: InstantID(rawValue: prepared.recordingID),
+          recordingID: prepared.recordingID,
+          transcriptionID: prepared.transcriptionID,
           durationMilliseconds: 12_750
         ),
         onOptimisticCommit: { change in
@@ -259,9 +295,20 @@ import Testing
       )
 
       let finishMutationID = try await waitForV3RecordingActionMutation(runtime)
+      let pendingFinish = try #require(
+        await runtime.pendingMutations().first(where: { $0.id == finishMutationID })
+      )
+      let finishTransport = try v3RecordingTransportShape(pendingFinish)
+      expectNoDifference(finishTransport.preconditions, [
+        "entity-exists",
+        "entity-exists",
+      ])
+      expectNoDifference(finishTransport.refValues, [:])
       let optimisticRecordings = try await client.query(V3CaptureRecording.query)
+      let optimisticTranscriptions = try await client.query(V3CaptureTranscription.query)
       expectNoDifference(optimisticRecordings.map(\.state), ["finished"])
       expectNoDifference(optimisticRecordings.map(\.durationMilliseconds), [12_750])
+      expectNoDifference(optimisticTranscriptions.map(\.state), ["ready"])
       expectNoDifference(finishCallbacks.optimistic.map(\.durationMilliseconds), [12_750])
       expectNoDifference(finishCallbacks.accepted, [])
       expectNoDifference(finishCallbacks.failures, [])
@@ -274,9 +321,11 @@ import Testing
       let relaunched = try await v3RecordingActionRuntime(appID: appID, cacheURL: cacheURL)
       let relaunchedClient = InstantSwiftDataClient(runtime: relaunched)
       let durableRecordings = try await relaunchedClient.query(V3CaptureRecording.query)
+      let durableTranscriptions = try await relaunchedClient.query(V3CaptureTranscription.query)
       let durableAttachments = try await relaunchedClient.query(V3CaptureAttachment.query)
       expectNoDifference(durableRecordings.map(\.state), ["finished"])
       expectNoDifference(durableRecordings.map(\.durationMilliseconds), [12_750])
+      expectNoDifference(durableTranscriptions.map(\.state), ["ready"])
       expectNoDifference(durableAttachments.map(\.recordingID), [prepared.recordingID])
       expectNoDifference(durableAttachments.map(\.offsetMilliseconds), [2_500])
     }
@@ -382,6 +431,7 @@ import Testing
           db.send(
             V3FinishRecording(
               recordingID: InstantID(rawValue: recorder.recordingID),
+              transcriptionID: InstantID(rawValue: recorder.transcriptionID),
               durationMilliseconds: finished.durationMilliseconds
             ),
             onOptimisticCommit: { (_: borrowing V3RecordingFinishedChange) in },
@@ -412,6 +462,7 @@ import Testing
     @Published var title = "New recording"
     @Published private(set) var phase = V3RecordingPreparationPhase.idle
     @Published private(set) var recordingID = "recording-session"
+    @Published private(set) var transcriptionID = "transcription-recording-session"
 
     private let prepare: Prepare
     private var activeTask: Task<Void, Never>?
@@ -442,7 +493,8 @@ import Testing
           let prepared = try await prepare(request)
           try Task.checkCancellation()
           guard let self else { return }
-          recordingID = prepared.recordingID
+          recordingID = prepared.recordingID.rawValue
+          transcriptionID = prepared.transcriptionID.rawValue
           phase = .prepared
           onPrepared(prepared)
         } catch is CancellationError {
@@ -517,9 +569,23 @@ import Testing
   }
 
   private struct V3PreparedRecording: Sendable {
-    var recordingID: String
+    var recordingID: InstantID<V3CaptureRecording>
+    var transcriptionID: InstantID<V3CaptureTranscription>
+    var memberID: InstantID<V3CaptureMember>
     var ownerID: InstantID<V3CaptureUser>
     var deviceID: String
+
+    init(
+      recordingID: String,
+      ownerID: InstantID<V3CaptureUser>,
+      deviceID: String
+    ) {
+      self.recordingID = InstantID(rawValue: recordingID)
+      self.transcriptionID = InstantID(rawValue: "transcription-\(recordingID)")
+      self.memberID = InstantID(rawValue: "member-\(recordingID)")
+      self.ownerID = ownerID
+      self.deviceID = deviceID
+    }
   }
 
   private struct V3CapturedScreenshot: Sendable {
@@ -556,14 +622,14 @@ import Testing
   private struct V3CaptureRecording: Hashable, Codable, InstantEntityModel {
     var id: InstantID<Self>
     var title: String
-    var ownerID: String
+    var ownerID: InstantID<V3CaptureUser>
     var deviceID: String
     var state: String
     var durationMilliseconds: Int
 
     static let instantNamespace = "v3_capture_recordings"
     static let title = InstantAttributePath<Self, String>("title")
-    static let ownerID = InstantAttributePath<Self, String>("ownerID")
+    static let owner = InstantAttributePath<Self, InstantID<V3CaptureUser>>("owner")
     static let deviceID = InstantAttributePath<Self, String>("deviceID")
     static let state = InstantAttributePath<Self, String>("state")
     static let durationMilliseconds = InstantAttributePath<Self, Int>("durationMilliseconds")
@@ -577,11 +643,14 @@ import Testing
         isIndexed: true
       ),
       InstantAttribute(
-        id: "v3_capture_recordings/ownerID",
+        id: "v3_capture_recordings/owner",
         namespace: instantNamespace,
-        name: "ownerID",
-        valueType: .string,
-        isIndexed: true
+        name: "owner",
+        valueType: .ref,
+        isIndexed: true,
+        forwardIdentity: "v3_capture_recordings/owner",
+        reverseIdentity: "$users/recordings",
+        linkNamespace: V3CaptureUser.instantNamespace
       ),
       InstantAttribute(
         id: "v3_capture_recordings/deviceID",
@@ -608,7 +677,7 @@ import Testing
 
     init(snapshot: InstantEntitySnapshot) throws {
       guard case let .string(title) = snapshot.values["title"]?.first,
-        case let .string(ownerID) = snapshot.values["ownerID"]?.first,
+        case let .ref(ownerID) = snapshot.values["owner"]?.first,
         case let .string(deviceID) = snapshot.values["deviceID"]?.first,
         case let .string(state) = snapshot.values["state"]?.first,
         case let .number(durationMilliseconds) =
@@ -619,39 +688,155 @@ import Testing
           operation: "decode V3 capture recording fixture",
           namespace: Self.instantNamespace,
           localID: snapshot.id,
-          message: "Expected title, ownerID, deviceID, state, and duration values.",
+          message: "Expected title, owner ref, deviceID, state, and duration values.",
           recovery: "Keep the recording action fixture aligned with its attributes."
         )
       }
       id = InstantID(rawValue: snapshot.id)
       self.title = title
-      self.ownerID = ownerID
+      self.ownerID = InstantID(rawValue: ownerID)
       self.deviceID = deviceID
       self.state = state
       self.durationMilliseconds = Int(durationMilliseconds)
     }
   }
 
+  private struct V3CaptureTranscription: Hashable, Codable, InstantEntityModel {
+    var id: InstantID<Self>
+    var recordingID: InstantID<V3CaptureRecording>
+    var state: String
+
+    static let instantNamespace = "v3_capture_transcriptions"
+    static let recording =
+      InstantAttributePath<Self, InstantID<V3CaptureRecording>>("recording")
+    static let state = InstantAttributePath<Self, String>("state")
+    static let instantAttributes = [
+      InstantAttribute.primaryKey(namespace: instantNamespace),
+      InstantAttribute(
+        id: "v3_capture_transcriptions/recording",
+        namespace: instantNamespace,
+        name: "recording",
+        valueType: .ref,
+        isIndexed: true,
+        forwardIdentity: "v3_capture_transcriptions/recording",
+        reverseIdentity: "v3_capture_recordings/transcriptions",
+        linkNamespace: V3CaptureRecording.instantNamespace
+      ),
+      InstantAttribute(
+        id: "v3_capture_transcriptions/state",
+        namespace: instantNamespace,
+        name: "state",
+        valueType: .string,
+        isIndexed: true
+      ),
+    ]
+
+    init(snapshot: InstantEntitySnapshot) throws {
+      guard case let .ref(recordingID) = snapshot.values["recording"]?.first,
+        case let .string(state) = snapshot.values["state"]?.first
+      else {
+        throw InstantError(
+          code: .decodeFailed,
+          operation: "decode V3 capture transcription fixture",
+          namespace: Self.instantNamespace,
+          localID: snapshot.id,
+          message: "Expected recording ref and state values.",
+          recovery: "Keep the recording transcription fixture aligned with its attributes."
+        )
+      }
+      id = InstantID(rawValue: snapshot.id)
+      self.recordingID = InstantID(rawValue: recordingID)
+      self.state = state
+    }
+  }
+
+  private struct V3CaptureMember: Hashable, Codable, InstantEntityModel {
+    var id: InstantID<Self>
+    var recordingID: InstantID<V3CaptureRecording>
+    var userID: InstantID<V3CaptureUser>
+    var role: String
+
+    static let instantNamespace = "v3_capture_members"
+    static let recording =
+      InstantAttributePath<Self, InstantID<V3CaptureRecording>>("recording")
+    static let user = InstantAttributePath<Self, InstantID<V3CaptureUser>>("user")
+    static let role = InstantAttributePath<Self, String>("role")
+    static let instantAttributes = [
+      InstantAttribute.primaryKey(namespace: instantNamespace),
+      InstantAttribute(
+        id: "v3_capture_members/recording",
+        namespace: instantNamespace,
+        name: "recording",
+        valueType: .ref,
+        isIndexed: true,
+        forwardIdentity: "v3_capture_members/recording",
+        reverseIdentity: "v3_capture_recordings/members",
+        linkNamespace: V3CaptureRecording.instantNamespace
+      ),
+      InstantAttribute(
+        id: "v3_capture_members/user",
+        namespace: instantNamespace,
+        name: "user",
+        valueType: .ref,
+        isIndexed: true,
+        forwardIdentity: "v3_capture_members/user",
+        reverseIdentity: "$users/recordingMemberships",
+        linkNamespace: V3CaptureUser.instantNamespace
+      ),
+      InstantAttribute(
+        id: "v3_capture_members/role",
+        namespace: instantNamespace,
+        name: "role",
+        valueType: .string,
+        isIndexed: true
+      ),
+    ]
+
+    init(snapshot: InstantEntitySnapshot) throws {
+      guard case let .ref(recordingID) = snapshot.values["recording"]?.first,
+        case let .ref(userID) = snapshot.values["user"]?.first,
+        case let .string(role) = snapshot.values["role"]?.first
+      else {
+        throw InstantError(
+          code: .decodeFailed,
+          operation: "decode V3 capture member fixture",
+          namespace: Self.instantNamespace,
+          localID: snapshot.id,
+          message: "Expected recording ref, user ref, and role values.",
+          recovery: "Keep the recording member fixture aligned with its attributes."
+        )
+      }
+      id = InstantID(rawValue: snapshot.id)
+      self.recordingID = InstantID(rawValue: recordingID)
+      self.userID = InstantID(rawValue: userID)
+      self.role = role
+    }
+  }
+
   private struct V3CaptureAttachment: Hashable, Codable, InstantEntityModel {
     var id: InstantID<Self>
-    var recordingID: String
+    var recordingID: InstantID<V3CaptureRecording>
     var kind: String
     var contents: String
     var offsetMilliseconds: Int
 
     static let instantNamespace = "v3_capture_attachments"
-    static let recordingID = InstantAttributePath<Self, String>("recordingID")
+    static let recording =
+      InstantAttributePath<Self, InstantID<V3CaptureRecording>>("recording")
     static let kind = InstantAttributePath<Self, String>("kind")
     static let contents = InstantAttributePath<Self, String>("contents")
     static let offsetMilliseconds = InstantAttributePath<Self, Int>("offsetMilliseconds")
     static let instantAttributes = [
       InstantAttribute.primaryKey(namespace: instantNamespace),
       InstantAttribute(
-        id: "v3_capture_attachments/recordingID",
+        id: "v3_capture_attachments/recording",
         namespace: instantNamespace,
-        name: "recordingID",
-        valueType: .string,
-        isIndexed: true
+        name: "recording",
+        valueType: .ref,
+        isIndexed: true,
+        forwardIdentity: "v3_capture_attachments/recording",
+        reverseIdentity: "v3_capture_recordings/attachments",
+        linkNamespace: V3CaptureRecording.instantNamespace
       ),
       InstantAttribute(
         id: "v3_capture_attachments/kind",
@@ -676,7 +861,7 @@ import Testing
     ]
 
     init(snapshot: InstantEntitySnapshot) throws {
-      guard case let .string(recordingID) = snapshot.values["recordingID"]?.first,
+      guard case let .ref(recordingID) = snapshot.values["recording"]?.first,
         case let .string(kind) = snapshot.values["kind"]?.first,
         case let .string(contents) = snapshot.values["contents"]?.first,
         case let .number(offsetMilliseconds) =
@@ -687,12 +872,12 @@ import Testing
           operation: "decode V3 capture attachment fixture",
           namespace: Self.instantNamespace,
           localID: snapshot.id,
-          message: "Expected recordingID, kind, contents, and offset values.",
+          message: "Expected recording ref, kind, contents, and offset values.",
           recovery: "Keep the recording attachment fixture aligned with its attributes."
         )
       }
       id = InstantID(rawValue: snapshot.id)
-      self.recordingID = recordingID
+      self.recordingID = InstantID(rawValue: recordingID)
       self.kind = kind
       self.contents = contents
       self.offsetMilliseconds = Int(offsetMilliseconds)
@@ -707,15 +892,28 @@ import Testing
       -> InstantPreparedMessage<V3RecordingSessionCreatedChange>
     {
       _ = client
-      let change = V3RecordingSessionCreatedChange(recordingID: prepared.recordingID)
+      let change = V3RecordingSessionCreatedChange(
+        recordingID: prepared.recordingID.rawValue
+      )
       return InstantPreparedMessage(change: change) {
         V3CaptureRecording.create(
-          id: InstantID(rawValue: prepared.recordingID),
+          id: prepared.recordingID,
           V3CaptureRecording.title.set(title),
-          V3CaptureRecording.ownerID.set(prepared.ownerID.rawValue),
+          V3CaptureRecording.owner.set(prepared.ownerID),
           V3CaptureRecording.deviceID.set(prepared.deviceID),
           V3CaptureRecording.state.set("recording"),
           V3CaptureRecording.durationMilliseconds.set(0)
+        )
+        V3CaptureTranscription.create(
+          id: prepared.transcriptionID,
+          V3CaptureTranscription.recording.set(prepared.recordingID),
+          V3CaptureTranscription.state.set("processing")
+        )
+        V3CaptureMember.create(
+          id: prepared.memberID,
+          V3CaptureMember.recording.set(prepared.recordingID),
+          V3CaptureMember.user.set(prepared.ownerID),
+          V3CaptureMember.role.set("owner")
         )
       }
     }
@@ -736,7 +934,7 @@ import Testing
       return InstantPreparedMessage(change: change) {
         V3CaptureAttachment.create(
           id: id,
-          V3CaptureAttachment.recordingID.set(recordingID.rawValue),
+          V3CaptureAttachment.recording.set(recordingID),
           V3CaptureAttachment.kind.set(kind),
           V3CaptureAttachment.contents.set(contents),
           V3CaptureAttachment.offsetMilliseconds.set(offsetMilliseconds)
@@ -747,6 +945,7 @@ import Testing
 
   private struct V3FinishRecording: InstantMessage {
     var recordingID: InstantID<V3CaptureRecording>
+    var transcriptionID: InstantID<V3CaptureTranscription>
     var durationMilliseconds: Int
 
     func prepare(using client: InstantSwiftDataClient) async throws
@@ -758,10 +957,14 @@ import Testing
         durationMilliseconds: durationMilliseconds
       )
       return InstantPreparedMessage(change: change) {
-        V3CaptureRecording.update(
+        V3CaptureRecording.updateExisting(
           id: recordingID,
           V3CaptureRecording.state.set("finished"),
           V3CaptureRecording.durationMilliseconds.set(durationMilliseconds)
+        )
+        V3CaptureTranscription.updateExisting(
+          id: transcriptionID,
+          V3CaptureTranscription.state.set("ready")
         )
       }
     }
@@ -865,6 +1068,36 @@ import Testing
     }
   }
 
+  private struct V3RecordingTransportShape: Equatable, Sendable {
+    var preconditions: [String]
+    var refValues: [String: String]
+  }
+
+  private func v3RecordingTransportShape(
+    _ mutation: PendingMutation
+  ) throws -> V3RecordingTransportShape {
+    let transport = InstantTransportMutation(mutation)
+    let refAttributeIDs: Set<String> = [
+      "v3_capture_attachments/recording",
+      "v3_capture_members/recording",
+      "v3_capture_members/user",
+      "v3_capture_recordings/owner",
+      "v3_capture_transcriptions/recording",
+    ]
+    var refValues: [String: String] = [:]
+    for step in transport.txSteps {
+      guard case let .addTriple(_, attributeID, value, _) = step,
+        refAttributeIDs.contains(attributeID),
+        case let .string(rawValue) = value
+      else { continue }
+      refValues[attributeID] = rawValue
+    }
+    return V3RecordingTransportShape(
+      preconditions: transport.preconditions.map(\.kind.rawValue),
+      refValues: refValues
+    )
+  }
+
   private func v3RecordingActionRuntime(appID: String, cacheURL: URL) async throws
     -> InstantRuntime
   {
@@ -874,6 +1107,8 @@ import Testing
         persistenceURL: cacheURL,
         initialAttributes:
           V3CaptureRecording.instantAttributes
+          + V3CaptureTranscription.instantAttributes
+          + V3CaptureMember.instantAttributes
           + V3CaptureAttachment.instantAttributes
       )
     )
