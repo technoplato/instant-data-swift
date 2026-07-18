@@ -139,7 +139,7 @@ export const voiceTrailSchema = i.schema({
         label: "ownedShares",
       },
     },
-    v3_sharesRecordingRoot: {
+    v3_sharesRoot: {
       forward: {
         on: "v3_shares",
         has: "one",
@@ -163,7 +163,9 @@ export const voiceTrailSchema = i.schema({
         userID: i.string(),
       }),
       topics: {
-        commentCommitted: i.entity({ commentID: i.string() }),
+        commentCommitted: i.entity({
+          commentID: i.string(),
+        }),
         commentDraft: i.entity({
           offsetSeconds: i.number(),
           text: i.string(),

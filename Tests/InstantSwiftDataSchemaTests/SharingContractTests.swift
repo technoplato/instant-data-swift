@@ -95,11 +95,11 @@ struct SharingContractTests {
         "v3_share_membershipsShare",
         "v3_share_membershipsUser",
         "v3_sharesOwner",
-        "v3_sharesRecordingRoot",
+        "v3_sharesRoot",
       ]
     )
     expectNoDifference(document.rooms.map(\.name), ["recording.playback"])
-    let root = document.links.first { $0.name == "v3_sharesRecordingRoot" }
+    let root = document.links.first { $0.name == "v3_sharesRoot" }
     expectNoDifference(root?.forward.namespace, "v3_shares")
     expectNoDifference(root?.forward.label, "root")
     expectNoDifference(root?.reverse.namespace, "v3_capture_recordings")

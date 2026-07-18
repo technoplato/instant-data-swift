@@ -133,7 +133,7 @@ const expectedWarnings = [
 ];
 
 assert.equal(schema.entityCount, 6);
-assert.equal(schema.attributeCount, 18);
+assert.equal(schema.attributeCount, 24);
 assert.equal(schema.linkCount, 9);
 assert.deepStrictEqual(schema.warnings, expectedWarnings);
 assert.equal(permissions.namespaceCount, 6);

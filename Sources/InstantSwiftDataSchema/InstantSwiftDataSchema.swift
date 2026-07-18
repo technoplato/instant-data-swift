@@ -1034,7 +1034,7 @@ public enum InstantSchemaExamples {
         isRequired: true
       ),
       InstantLinkSchema(
-        name: "v3_sharesRecordingRoot",
+        name: "v3_sharesRoot",
         forward: InstantLinkEndpoint(
           namespace: "v3_shares",
           cardinality: .one,
