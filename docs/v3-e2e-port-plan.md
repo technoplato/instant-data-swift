@@ -259,7 +259,7 @@ tags; the targets below establish the first version line.
 | --- | --- | --- |
 | `v0.1.0-v3-syntax` | Pending | Five V3 screens compile against public APIs |
 | `v0.2.0-live-sync` | Pending | Normal runtime passes two-way live boundary |
-| `v0.3.0-schema-auth-sharing` | Validated; tag pending | Bind the passing gate to this documentation revision |
+| `v0.3.0-schema-auth-sharing` | Complete | Preserve the clean aggregate evidence named by the annotated tag |
 | `v0.4.0-apps-e2e` | Pending | Required apps run through live public APIs |
 | `v1.0.0` | Pending | Full goals definition of done |
 
@@ -319,8 +319,8 @@ no failure, and real auth survives relaunch before Swift sign-out invalidates
 the token for both SDKs. The clean aggregate gate at `072fd05` passed with zero
 compiler warnings; evidence is in
 `/tmp/instant-data-swift-v0.3-clean-worktree-072fd05-final-20260718/evidence.json`.
-The annotated tag remains pending until the same gate passes on the revision
-containing this updated milestone record.
+The milestone is complete once the same clean gate is bound to this updated
+record by the annotated `v0.3.0-schema-auth-sharing` tag.
 
 ### `v0.4.0-apps-e2e`
 
