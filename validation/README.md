@@ -11,6 +11,10 @@ prove this library.
 - `fixtures/schema.swift`: Swift source-of-truth schema declaration.
 - `fixtures/instant.schema.ts`: expected generated TypeScript schema.
 - `fixtures/instant.perms.ts`: expected generated TypeScript permissions.
+- `fixtures/recording-action.server.schema.ts`: captured server-normalized
+  recording schema, including known Instant-managed additions.
+- `fixtures/recording-action.server.perms.ts`: captured server-normalized
+  recording permissions.
 - `instant-swift-data`: Swift CLI validation commands built by the package.
 - `instant-swift-data-validation-runner`: legacy Swift validation executable
   built by the package.
@@ -96,6 +100,35 @@ swift run instant-swift-data perms verify --example validation --from validation
 ```
 
 ## Local TypeScript Fixture Evidence
+
+The TypeScript contract uses a committed pnpm lockfile and exact versions tied
+to pinned upstream revision `e71017612aed4031710a35e2fcace30d38d557ac`:
+`@instantdb/core` 1.0.49, `@instantdb/admin` 1.0.49, `instant-cli` 1.0.49,
+and TypeScript 5.9.3. Install and run the generated/pulled artifact compiler
+gate with:
+
+```bash
+pnpm --dir validation/ts-runner install --frozen-lockfile
+pnpm --dir validation/ts-runner test
+```
+
+The type-check row contains the pinned revisions, zero compiler-warning count,
+and SHA-256 hashes for generated and server-readback schema and permissions.
+
+From a clean worktree, the live contract command creates a temporary Instant
+app, pushes the Swift-generated `recording-action` schema and permissions,
+pulls both through the pinned canonical CLI, verifies the normalized Swift
+documents, type-checks the pulled TypeScript, removes the retained admin-token
+file, and writes non-secret evidence:
+
+```bash
+validation/verify-recording-contract-live.sh
+```
+
+Instant-managed `$files`, `$streams`, `$users` attributes, and system links are
+reported with stable `system-entity`, `system-attribute`, and `system-link`
+warning codes. Unexpected application entities, attributes, link semantics,
+or rooms fail verification.
 
 The TypeScript runner parses and compares the committed `instant.schema.ts` and
 `instant.perms.ts` fixture shapes from the TypeScript side and emits JSONL

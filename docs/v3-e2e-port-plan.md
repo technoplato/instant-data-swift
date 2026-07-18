@@ -60,7 +60,7 @@ As of 2026-07-18:
   orchestrator. Its evidence directory was
   `/tmp/instant-swift-data-packet0-20260718T1106`.
 - The current runtime and V3 recordings-list, auth-login, and recording
-  fixtures passed 861 Swift Testing tests across 26 suites plus 28 macro tests.
+  fixtures passed 869 Swift Testing tests across 27 suites plus 28 macro tests.
   The auth slice includes wrapper-owned magic-code, guest, and provider
   actions; exact call-site callbacks; typed authenticated-user identity;
   stale-action cancellation; failure/retry; and durable session restoration
@@ -71,10 +71,16 @@ As of 2026-07-18:
   refs; start, finish, and attachment mutations; typed optimistic and accepted
   callbacks; rejection recovery without callback replay; exact transport
   mutation/precondition shapes; and durable relaunch state. Commit `33028f6`
-  adds the same four-entity, five-link contract as a Swift-owned schema and
-  permissions example with CLI generation and verification. Type-checking that
-  generated artifact against pinned TypeScript packages remains Packet 4/5
-  work. The core reconnect packet's earlier explicit E2E evidence is
+  adds the same five-entity, five-link contract as a Swift-owned schema and
+  permissions example with CLI generation and verification. Commits `8ebc352`
+  and `9c8a338` pin the TypeScript SDK/compiler/lockfile and type-check generated
+  and server-readback artifacts with hashes. Commits `c0a70d1` and `e27c446`
+  verify server-normalized schema and permissions while reporting Instant's
+  six known system-schema additions as stable warnings. Commits `b711a7b`,
+  `baaaf39`, `e7bde06`, and `8b88488` define the exact 18-step Swift recording
+  graph, route it through the live-transaction validator, and type-check/test
+  the matching nested query and projection against the canonical TypeScript
+  SDK. The core reconnect packet's earlier explicit E2E evidence is
   `/tmp/instant-swift-data-reconnect-20260718T161703Z`.
 - Credentialed remote preflight and both real Swift/TypeScript boundary
   directions passed from the typed-message milestone. The
@@ -91,6 +97,15 @@ As of 2026-07-18:
   final coverage reports 295 records, 28 exact, 265 adapted, 2 not applicable,
   and 0 blocked. This verifies the current head's cross-SDK transport baseline;
   provider-specific remote auth invalidation remains Packet 6 work.
+- Commit `eb35a31` makes the recording contract install reproducible from a
+  clean checkout using the pinned Instant CLI. The clean-head run at `b711a7b`
+  created ephemeral app `a5dfcd81-6392-4f81-afda-6f2b59756a56`, pushed the
+  Swift-generated schema and permissions, pulled both back, verified their
+  normalized Swift shapes, and type-checked the pulled files. Non-secret
+  evidence is in
+  `/tmp/instant-data-swift-recording-contract-live-20260718T1557/evidence.json`;
+  the temporary app expires automatically and its admin token was removed from
+  the retained artifacts.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -124,7 +139,9 @@ When sources disagree, use this order:
 | Desired V3 API rules and decision log | `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` |
 | Next compiling syntax target | `screens/v3/playback.md` room, presence, and topic lifecycle |
 | Current generated recording contract | `InstantSchemaExamples.recordingActionDocument`, `recordingActionValidationPermissions`, and `--example recording-action` |
-| TypeScript contract pin/type-check gate | `validation/ts-runner/package.json`, `upstream/instant/client/pnpm-lock.yaml`, and Packet 4 below |
+| TypeScript contract pin/type-check gate | `validation/ts-runner/package.json`, its committed `pnpm-lock.yaml`, and `validation/typecheck-generated-contract.sh` |
+| Reproducible live schema/perms install and readback | `validation/verify-recording-contract-live.sh` and `validation/fixtures/recording-action.server.*.ts` |
+| Next exact data-plane contract | `InstantRecordingActionLiveContract` in `Sources/InstantSwiftDataTesting/` |
 | All five desired VoiceTrail screen probes | `screens/v3/README.md` and sibling Markdown files |
 | Existing public wrapper implementation | `Sources/InstantSwiftData/InstantSwiftData.swift` |
 | Owned live runtime and persistence integration | `Sources/InstantSwiftDataCore/InstantRuntime.swift` |
@@ -400,13 +417,12 @@ Purpose: make “exact shape” reproducible.
 - Treat unknown fields, lossy number/date conversion, missing required fields,
   and enum decode failures as explicit warnings or errors with stable codes.
 
-Commit target: `Pin canonical TypeScript shape contract`.
-
-This is the immediate contract gate. The recording-action schema and
-permissions can now be generated and round-tripped by the Swift CLI, but the
-validation runner still declares `latest` dependencies and has no committed
-lockfile. Do not call that artifact pinned or type-checked until this packet is
-complete.
+The dependency and generated-contract subgate is complete through `8ebc352`,
+`9c8a338`, and `510f5e5`: no `latest` dependencies remain, the pnpm lockfile is
+committed, generated and pulled recording artifacts type-check against
+`@instantdb/core`/`admin`/`instant-cli` 1.0.49 and TypeScript 5.9.3, and evidence
+records the upstream revision and artifact hashes. The remaining Packet 4 work
+is the full normalized value/error matrix across actual cross-SDK data.
 
 ### Packet 5: Make schema and permissions deployable acceptance inputs
 
@@ -423,6 +439,12 @@ Commit targets:
 
 1. `Type-check generated Instant schema and permissions`
 2. `Install and verify generated contract on ephemeral app`
+
+The recording-action acceptance instance of both targets is complete through
+`8ebc352`–`e27c446` and `eb35a31`. The checked-in live command creates a fresh
+ephemeral app, pushes, pulls, verifies, type-checks, emits non-secret evidence,
+and refuses dirty-worktree or upstream-revision drift. Broader app schemas and
+permission sets remain future Packet 5 inputs.
 
 ### Packet 6: Auth and two-user sharing
 
@@ -515,14 +537,16 @@ The release harness must prove each applicable row in both directions:
 
 ## Immediate Next Step
 
-Pin the validation runner's TypeScript dependencies to the canonical Instant
-checkout, commit its lockfile, add a real `typecheck` script, and type-check the
-CLI-generated `recording-action` schema and permissions. The Swift side already
-generates and verifies the canonical four-entity, five-link graph, and the full
-suite is green; the missing evidence is acceptance by pinned
-`@instantdb/core` types rather than another public-syntax decision.
+Run the recording graph itself across both SDKs. `InstantRecordingActionLiveContract`
+now defines the exact Swift query and 18-step owner/member/recording/
+transcription/attachment mutation. The next commit should create a real owner,
+send that graph through Swift's live transaction path, and require the pinned
+TypeScript admin SDK to query the exact nested values. Then reverse the
+direction: write the canonical graph through TypeScript and require Swift's
+live observer to decode the same linked shape, with rejection and warning
+evidence kept explicit.
 
-After that contract gate, start the playback vertical slice from
+After that bidirectional data-plane gate, start the playback vertical slice from
 `screens/v3/playback.md`. Resolve the remaining wrapper-versus-modifier presence
 question inside that compiling slice, record the chosen spelling in the V3
 design document, and prove join/presence/topic publication, observation,
