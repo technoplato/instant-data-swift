@@ -147,6 +147,23 @@ The clean generated-room milestone at commit `8b979c0` also reran the existing
 bidirectional recording data contract successfully; its evidence is
 `/private/tmp/instant-data-swift-playback-schema-clean-8b979c0-20260718/evidence.json`.
 
+The auth contract has a guarded verifier that creates a fresh disposable user
+and refresh token through the canonical TypeScript Admin SDK, then runs the
+normal V3 Swift app bootstrap through server verification, durable relaunch,
+and sign-out:
+
+```bash
+set -a
+source /tmp/instant-data-swift-ephemeral-20260718.env
+set +a
+validation/verify-auth-contract-live.sh
+```
+
+The verifier requires both Swift and TypeScript to reject the token after
+Swift sign-out. Evidence includes only the app/user identifiers, lifecycle
+booleans, SDK versions, warning count, and rejection text; refresh tokens and
+the admin token are never written to the artifact.
+
 The sharing contract has a separate guarded verifier for an already-created
 ephemeral app. Source credentials first, then explicitly allow schema/perms
 replacement:
