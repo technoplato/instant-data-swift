@@ -101,7 +101,7 @@ pnpm --dir "${RUNNER}" exec tsc \
   "${PULL_DIR}/instant.schema.ts" \
   "${PULL_DIR}/instant.perms.ts"
 
-pnpm --dir "${RUNNER}" run live:voice-trail-recordings-list \
+pnpm --dir "${RUNNER}" exec tsx src/voice-trail-recordings-list-live-contract.ts \
   >"${RESULTS_DIR}/typescript-voice-trail-recordings-live-contract.json"
 
 ROOT="${ROOT}" \
