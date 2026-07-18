@@ -1485,6 +1485,7 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
   case liveObserve
   case liveSharing
   case liveSharingWriter
+  case liveAuthInvalidation
   case typedDrafts
   case platformAdapters
   case syncUpsRecording
@@ -1511,6 +1512,8 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
       "validation.live.observe"
     case .liveSharing, .liveSharingWriter:
       "validation.live.sharing"
+    case .liveAuthInvalidation:
+      "validation.live.auth-invalidation"
     case .typedDrafts:
       "validation.typed.drafts"
     case .platformAdapters:
@@ -1538,6 +1541,8 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
       "live-observe-validation"
     case .liveSharing, .liveSharingWriter:
       "live-sharing-validation"
+    case .liveAuthInvalidation:
+      "live-auth-invalidation"
     case .typedDrafts:
       "draft-validation"
     case .platformAdapters:
@@ -1571,7 +1576,7 @@ public enum CLIValidationUsage {
 
 public enum CLIValidationRunnerUsage {
   public static let validationRunner =
-    "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--reminders|--local-reminders|--server-transaction-loopback|--cloudkit-demo|--live-session|--live-transaction|--live-observe|--live-sharing|--live-sharing-writer|--typed-drafts|--platform-adapters|--syncups-recording|--parity-report|--coverage]"
+    "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--reminders|--local-reminders|--server-transaction-loopback|--cloudkit-demo|--live-session|--live-transaction|--live-observe|--live-sharing|--live-sharing-writer|--live-auth-invalidation|--typed-drafts|--platform-adapters|--syncups-recording|--parity-report|--coverage]"
 }
 
 public enum CLIValidationArgumentError: Error, Equatable, Sendable {
@@ -4766,6 +4771,9 @@ public struct CLIValidationRunnerParser: Parser {
 
     case "--live-sharing-writer":
       return .liveSharingWriter
+
+    case "--live-auth-invalidation":
+      return .liveAuthInvalidation
 
     case "--typed-drafts":
       return .typedDrafts

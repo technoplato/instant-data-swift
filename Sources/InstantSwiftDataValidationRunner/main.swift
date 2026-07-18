@@ -214,6 +214,29 @@ struct InstantSwiftDataValidationRunner {
       )
       try writeJSONLine(row)
 
+    case .liveAuthInvalidation:
+      let environment = ProcessInfo.processInfo.environment
+      let appID = try requiredEnvironment("INSTANT_APP_ID", environment: environment)
+      let refreshToken = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_AUTH_REFRESH_TOKEN",
+        environment: environment
+      )
+      let userID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_AUTH_USER_ID",
+        environment: environment
+      )
+      let apiURI = URL(
+        string: environment["INSTANT_API_URI"]
+          ?? InstantRuntimeConfiguration.defaultAPIURI.absoluteString
+      ) ?? InstantRuntimeConfiguration.defaultAPIURI
+      let row = try await InstantAuthLiveValidation.run(
+        appID: appID,
+        apiURI: apiURI,
+        refreshToken: refreshToken,
+        expectedUserID: userID
+      )
+      try writeJSONLine(row)
+
     case .typedDrafts:
       let run = try await InstantSwiftDataTestHarness.runDraftValidation()
       for row in run.result.evidence {

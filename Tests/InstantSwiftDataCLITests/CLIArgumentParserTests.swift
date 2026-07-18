@@ -3297,6 +3297,10 @@ struct CLIArgumentParserTests {
       try parseValidationRunner(["--live-sharing-writer"]),
       .liveSharingWriter
     )
+    expectNoDifference(
+      try parseValidationRunner(["--live-auth-invalidation"]),
+      .liveAuthInvalidation
+    )
     expectNoDifference(try parseValidationRunner(["--typed-drafts"]), .typedDrafts)
     expectNoDifference(try parseValidationRunner(["--platform-adapters"]), .platformAdapters)
     expectNoDifference(try parseValidationRunner(["--syncups-recording"]), .syncUpsRecording)
@@ -3352,6 +3356,7 @@ struct CLIArgumentParserTests {
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-observe"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-sharing"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-sharing-writer"))
+    #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-auth-invalidation"))
     try expectValidationRunnerParseError(
       ["--remote"],
       description: CLIValidationRunnerUsage.validationRunner
