@@ -142,6 +142,18 @@ As of 2026-07-18:
   `commentDraft`, and `commentCommitted` payloads with zero compiler/runtime
   warnings. Clean evidence is in
   `/tmp/instant-data-swift-playback-room-clean-2390aa0-20260718/evidence.json`.
+- Commits `45daf84` through `ece3022` extend that boundary through an injected
+  transport loss and automatic room rejoin. The source port first proves the
+  pinned Reactor room loop accepts fresh peer presence and broadcasts after
+  rejoin. The live gate then creates a fresh getadb app, pushes the
+  Swift-generated recording schema, forces the normal Swift WebSocket session
+  to fail, and proves a second authenticated session republishes and receives
+  exact presence plus all three topic payloads without call-site reconnect
+  management. The shared TypeScript contract type-checks under the pinned SDK,
+  compiler/runtime warnings are zero, and all 907 Swift tests in 35 suites plus
+  the complete TypeScript contract/fixture suite pass. Clean evidence for
+  revision `ece3022` is in
+  `/tmp/instant-data-swift-playback-room-reconnect-clean-ece3022-20260718T1957Z/evidence.json`.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -629,21 +641,22 @@ each query's authoritative triple set while retaining triples still owned by
 another active query. Full verification is green at 907 Swift tests in 35
 suites plus the generated-contract and TypeScript fixture suites.
 
-Next, extend the existing playback live boundary through disconnect and
-automatic rejoin. Keep the recorded `@Room`, `@Presence`, and `@Topic` syntax;
-drive a transport loss after the exact presence and three topic payloads have
-been observed, require the room to rejoin without call-site socket management,
-then prove post-reconnect presence and topic delivery in both directions. Use
-`screens/v3/playback.md`, `validation/verify-playback-room-contract-live.sh`,
-and the canonical reconnect tests as the source chain. After that gate, move to
-the preferences screen to exercise `@InstantSyncStatus` and storage status
-through the public app surface.
+The playback disconnect/rejoin boundary is complete through `45daf84`,
+`2faa5bf`, `3f916f6`, `66049f5`, and `ece3022`. The recorded `@Room`,
+`@Presence`, and `@Topic` syntax did not need to change. The source chain is
+the pinned Reactor room loop, the Swift parity test, the shared TypeScript
+payload contract, and `validation/verify-playback-room-contract-live.sh`.
+Clean evidence for revision `ece3022` is at
+`/tmp/instant-data-swift-playback-room-reconnect-clean-ece3022-20260718T1957Z/evidence.json`.
 
-The playback payload boundary is complete at `2390aa0`: Swift and TypeScript
-observe exact presence and all three topic payloads in both directions with
-zero warnings. Live disconnect/rejoin extension remains a separate follow-up
-inside the apps-E2E milestone; it should reuse the existing canonical reconnect
-tests rather than reopening the public playback syntax.
+Next, port the preferences-screen source contracts before implementing its
+remaining public app behavior. Start from `screens/v3/preferences.md` and the
+canonical connection/storage state tests. Require `@InstantSyncStatus` to
+render cached, connecting, authenticated, reconnecting, offline, and error
+states without exposing socket management to the view. Then prove file/storage
+status through the public screen surface and fold the five VoiceTrail fixtures
+into one runnable app target. Do not create the `v0.4.0-apps-e2e` tag until
+those remaining screen flows and the integrated app pass the clean live gate.
 
 The product-payload mismatch is resolved: playback presence stores and encodes
 `offsetSeconds: Double`, offers `Duration` as a computed product convenience,
