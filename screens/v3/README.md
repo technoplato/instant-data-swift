@@ -21,3 +21,6 @@ Screens:
 
 - `auth.login`: `screens/v3/auth-login.md`
 - `recordings.index`: `screens/v3/recordings-list.md`
+- `recordings.capture`: `screens/v3/recording.md`
+- `recordings.playback`: `screens/v3/playback.md`
+- `settings.preferences`: `screens/v3/preferences.md`

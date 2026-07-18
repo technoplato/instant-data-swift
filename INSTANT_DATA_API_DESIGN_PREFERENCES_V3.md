@@ -11,6 +11,9 @@ The current full-file sketches are:
 
 - `screens/v3/auth-login.md`
 - `screens/v3/recordings-list.md`
+- `screens/v3/recording.md`
+- `screens/v3/playback.md`
+- `screens/v3/preferences.md`
 
 These files all follow the call-site callback direction.
 
