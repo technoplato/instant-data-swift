@@ -9,7 +9,8 @@
   },
   "scripts": {
     "fixtures": "tsx src/main.ts --fixtures",
-    "test": "pnpm run typecheck && pnpm run fixtures",
+    "test": "pnpm run typecheck && pnpm run test:recording-action && pnpm run fixtures",
+    "test:recording-action": "tsx --test src/recording-action-sdk-contract.test.ts",
     "typecheck": "../typecheck-generated-contract.sh",
     "validate": "tsx src/main.ts"
   },
