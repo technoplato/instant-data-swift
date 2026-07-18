@@ -219,6 +219,128 @@ struct InstantReactorParityTests {
     expectNoDifference(pendingAfterSecondConfirm, [], reactorOptimisticRefreshSource)
   }
 
+  /// Canonical source:
+  /// upstream/instant/client/packages/core/src/Reactor.js refresh-ok branch,
+  /// which creates a new store from each computation's returned triples.
+  @Test
+  func upstreamReactorRefreshReplacesRowsMissingFromAuthoritativeResult() async throws {
+    let cacheURL = try temporaryReactorParityCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_042_000)
+    let query: InstantLiveJSONValue = .object([TodoExample.namespace: .object([:])])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reactor-authoritative-refresh-removal",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+
+    _ = try await runtime.applyLiveRefresh(
+      InstantLiveRefreshOK(
+        clientEventID: nil,
+        processedTransactionID: "server-refresh-present",
+        attrs: liveReactorTodoServerAttrs,
+        computations: [
+          liveReactorTodoComputation(
+            query: query,
+            id: "todo-authoritative-refresh",
+            text: "present",
+            createdAt: createdAt,
+            processedTransactionID: "server-refresh-present"
+          )
+        ]
+      )
+    )
+    let presentTexts = try await reactorOptimisticTextsFromQueryOnce(runtime)
+    expectNoDifference(presentTexts, ["present"], reactorAuthoritativeRefreshSource)
+
+    _ = try await runtime.applyLiveRefresh(
+      InstantLiveRefreshOK(
+        clientEventID: nil,
+        processedTransactionID: "server-refresh-empty",
+        attrs: liveReactorTodoServerAttrs,
+        computations: [
+          .object([
+            "instaql-query": query,
+            "instaql-result": .array([]),
+          ])
+        ]
+      )
+    )
+    let removedTexts = try await reactorOptimisticTextsFromQueryOnce(runtime)
+    expectNoDifference(removedTexts, [], reactorAuthoritativeRefreshSource)
+  }
+
+  @Test
+  func authoritativeRefreshRetainsTriplesOwnedByAnotherLiveQuery() async throws {
+    let cacheURL = try temporaryReactorParityCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_043_000)
+    let allQuery: InstantLiveJSONValue = .object([TodoExample.namespace: .object([:])])
+    let filteredQuery: InstantLiveJSONValue = .object([
+      TodoExample.namespace: .object([
+        "$": .object([
+          "where": .object(["id": .string("todo-shared-refresh")])
+        ])
+      ])
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reactor-overlapping-live-query-refresh",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+
+    let present = { (query: InstantLiveJSONValue, transactionID: String) in
+      liveReactorTodoComputation(
+        query: query,
+        id: "todo-shared-refresh",
+        text: "shared",
+        createdAt: createdAt,
+        processedTransactionID: transactionID
+      )
+    }
+    let empty = { (query: InstantLiveJSONValue) in
+      InstantLiveJSONValue.object([
+        "instaql-query": query,
+        "instaql-result": .array([]),
+      ])
+    }
+
+    _ = try await runtime.applyLiveRefresh(
+      InstantLiveRefreshOK(
+        clientEventID: nil,
+        processedTransactionID: "server-overlap-present",
+        attrs: liveReactorTodoServerAttrs,
+        computations: [
+          present(allQuery, "server-overlap-present"),
+          present(filteredQuery, "server-overlap-present"),
+        ]
+      )
+    )
+    _ = try await runtime.applyLiveRefresh(
+      InstantLiveRefreshOK(
+        clientEventID: nil,
+        processedTransactionID: "server-overlap-all-empty",
+        attrs: liveReactorTodoServerAttrs,
+        computations: [empty(allQuery)]
+      )
+    )
+    let retainedTexts = try await reactorOptimisticTextsFromQueryOnce(runtime)
+    expectNoDifference(retainedTexts, ["shared"], reactorAuthoritativeRefreshSource)
+
+    _ = try await runtime.applyLiveRefresh(
+      InstantLiveRefreshOK(
+        clientEventID: nil,
+        processedTransactionID: "server-overlap-filtered-empty",
+        attrs: liveReactorTodoServerAttrs,
+        computations: [empty(filteredQuery)]
+      )
+    )
+    let removedTexts = try await reactorOptimisticTextsFromQueryOnce(runtime)
+    expectNoDifference(removedTexts, [], reactorAuthoritativeRefreshSource)
+  }
+
   @Test("SQLiteData SharingPermissionsTests.createRecordWhenLocalHasPermissionsButCloudKitDoesNot")
   func rejectedOptimisticCreateIsRemovedByAuthoritativeRefresh() async throws {
     let cacheURL = try temporaryReactorParityCacheURL()
@@ -1567,6 +1689,9 @@ private let reactorQuerySubsSource =
 
 private let reactorOptimisticRefreshSource =
   "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts optimisticTx is not overwritten by refresh-ok [adapted: Swift applies the raw refresh-ok payload after confirming the earlier mutation and proves the later optimistic write remains visible and persisted.]"
+
+private let reactorAuthoritativeRefreshSource =
+  "upstream/instant/client/packages/core/src/Reactor.js refresh-ok branch [adapted: Swift must replace each computation's server triples so rows absent from the authoritative result are removed.]"
 
 private let reactorPendingCleanupSource =
   "upstream/instant/client/packages/core/__tests__/src/Reactor.test.ts we don't cleanup mutations we're still waiting on [adapted: Swift sends both durable pending mutations through the owned live session, applies transact-ok for only the first, and proves the still-unacknowledged optimistic mutation remains pending and visible across relaunch.]"

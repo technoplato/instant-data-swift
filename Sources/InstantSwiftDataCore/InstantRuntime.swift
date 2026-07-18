@@ -1019,6 +1019,7 @@ public final class InstantRuntime: Sendable {
   private let operationGate = AsyncSerialGate()
   private let mutationFlushGate = AsyncSerialGate()
   private let liveSession = InstantRuntimeLiveSession()
+  private let liveQueryResultState = InstantLiveQueryResultState()
   private let liveRoomPresenceState = InstantRuntimeLiveRoomPresenceState()
   private let reconnectController = InstantRuntimeReconnectController()
 
@@ -1457,18 +1458,24 @@ public final class InstantRuntime: Sendable {
         existingAttributes: state.snapshot.store.attributes,
         receivedAt: receivedAt
       )
+      let retractions = await liveQueryResultState.replacementRetractions(
+        for: translated.queryResultReplacements
+      )
+      var transaction = translated.transaction
+      transaction.operations.insert(contentsOf: retractions, at: 0)
 
       let applied = try await performApplyServerTransaction(
-        translated.transaction,
+        transaction,
         processedTransactionID: translated.processedTransactionID,
         receivedAt: receivedAt,
         confirmingMutationID: translated.confirmationMutationID,
         mergingAttributes: translated.attributesToMerge
       )
+      await liveQueryResultState.record(translated.queryResultReplacements)
 
       await leaveOperationGate()
       return InstantLiveRefreshApplicationResult(
-        transaction: translated.transaction,
+        transaction: transaction,
         application: applied.application,
         confirmedMutation: applied.confirmedMutation,
         insertedTripleCount: translated.transaction.operations.count,

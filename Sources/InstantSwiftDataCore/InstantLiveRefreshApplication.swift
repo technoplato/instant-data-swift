@@ -27,6 +27,68 @@ struct InstantLiveRefreshTranslation: Sendable {
   var processedTransactionID: String
   var confirmationMutationID: String?
   var attributesToMerge: [InstantAttribute]
+  var queryResultReplacements: [InstantLiveQueryResultReplacement]
+}
+
+struct InstantLiveQueryResultReplacement: Sendable {
+  var key: String
+  var triples: [InstantTriple]
+}
+
+private struct InstantLiveTripleIdentity: Hashable, Sendable {
+  var entityID: String
+  var attributeID: String
+  var value: InstantValue
+
+  init(_ triple: InstantTriple) {
+    entityID = triple.entityID
+    attributeID = triple.attributeID
+    value = triple.value
+  }
+}
+
+actor InstantLiveQueryResultState {
+  private var triplesByQuery: [String: [InstantLiveTripleIdentity: InstantTriple]] = [:]
+
+  func replacementRetractions(
+    for replacements: [InstantLiveQueryResultReplacement]
+  ) -> [InstantTripleOperation] {
+    var prospective = triplesByQuery
+    var removed: [InstantLiveTripleIdentity: InstantTriple] = [:]
+    for replacement in replacements {
+      let next = Self.index(replacement.triples)
+      let previous = prospective[replacement.key] ?? [:]
+      for (identity, triple) in previous where next[identity] == nil {
+        removed[identity] = triple
+      }
+      prospective[replacement.key] = next
+    }
+
+    let retained = Set(prospective.values.flatMap(\.keys))
+    return removed.keys
+      .filter { !retained.contains($0) }
+      .sorted {
+        ($0.entityID, $0.attributeID, String(describing: $0.value))
+          < ($1.entityID, $1.attributeID, String(describing: $1.value))
+      }
+      .compactMap { removed[$0] }
+      .map(InstantTripleOperation.retract)
+  }
+
+  func record(_ replacements: [InstantLiveQueryResultReplacement]) {
+    for replacement in replacements {
+      triplesByQuery[replacement.key] = Self.index(replacement.triples)
+    }
+  }
+
+  private static func index(
+    _ triples: [InstantTriple]
+  ) -> [InstantLiveTripleIdentity: InstantTriple] {
+    Dictionary(
+      triples.map { (InstantLiveTripleIdentity($0), $0) },
+      uniquingKeysWith: { _, latest in latest }
+    )
+  }
 }
 
 enum InstantLiveRefreshTranslator {
@@ -44,20 +106,36 @@ enum InstantLiveRefreshTranslator {
       existingAttributes: existingAttributes,
       serverAttributes: serverAttributes
     )
-    let translatedOperations = try refreshOK.computations.flatMap { computation in
-      try operations(
+    var translatedOperations: [InstantTripleOperation] = []
+    var queryResultReplacements: [InstantLiveQueryResultReplacement] = []
+    for computation in refreshOK.computations {
+      let computationOperations = try operations(
         from: computation,
         processedTransactionID: processedTransactionID,
         defaultTxTime: receivedAt,
         attributes: attributeContext
       )
+      translatedOperations.append(contentsOf: computationOperations)
+      if let query = computation.objectValue?["instaql-query"] {
+        let key = try InstantLiveQueryEncoder.registrationKey(for: query)
+        queryResultReplacements.append(
+          InstantLiveQueryResultReplacement(
+            key: key,
+            triples: computationOperations.compactMap {
+              guard case let .insert(triple) = $0 else { return nil }
+              return triple
+            }
+          )
+        )
+      }
     }
 
     return InstantLiveRefreshTranslation(
       transaction: InstantStoreTransaction(id: processedTransactionID, operations: translatedOperations),
       processedTransactionID: processedTransactionID,
       confirmationMutationID: confirmationMutationID,
-      attributesToMerge: attributeContext.attributesToMerge
+      attributesToMerge: attributeContext.attributesToMerge,
+      queryResultReplacements: queryResultReplacements
     )
   }
 
