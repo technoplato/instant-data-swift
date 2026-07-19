@@ -352,8 +352,21 @@ As of 2026-07-19:
   bytes only after persistence, and stops after the upstream ten-retry budget.
   Client-id and stream-id readers can start from an empty cache; the first
   canonical append persists its server-resolved metadata and publishes
-  identical snapshots to both selector forms. The post-packet local gate passes
-  1,092 Swift Testing cases across 91 suites plus 28 macro tests.
+  identical snapshots to both selector forms.
+- Commits `3499955`, `806780a`, `468637d`, and `972e12a` add the canonical
+  writer half: exact `start-stream`/`append-stream` shapes, correlated
+  server-issued ids, unflushed UTF-8 buffering, reconnect with the original
+  token, resend after the server-confirmed byte offset, and terminal
+  `stream-flushed` acknowledgement before socket teardown. Commit `dc2e3da`
+  adds the runnable `streams-v3` app and its app-owned async reader/writer
+  model. Commits `ebc0994` through `2ec8a17` add the fresh-app contract gate.
+  The clean run proves exact 24-byte content in both Swift-to-TypeScript and
+  TypeScript-to-Swift directions, distinct server-issued stream ids,
+  authenticated Swift state, two `$streams` allow rules, five expected system
+  schema warnings, and zero compiler/runtime warnings at
+  `/tmp/instant-data-swift-streams-v3-20260719T091619Z/evidence.json`. The
+  post-port aggregate passes 1,096 Swift Testing cases across 92 suites plus 28
+  macro tests, the `streams-v3` build, and the complete TypeScript typecheck.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -387,7 +400,8 @@ When sources disagree, use this order:
 | Current execution state, packet order, gates, and tag targets | `docs/v3-e2e-port-plan.md` |
 | Product contract and full definition of done | `docs/instant-swift-data-goals.md` |
 | Desired V3 API rules and decision log | `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` |
-| Next app target | Streams: port the pinned AI-chat/resumable reader shape and prove fresh-app Swift-to-TypeScript plus TypeScript-to-Swift stream data, reconnect, cancellation, file-backed append, and metadata; then CloudKitDemo-equivalent sharing |
+| Next app target | CloudKitDemo-equivalent shared counters: app-owned public syntax, owner/read-only/read-write roles, exact cross-SDK increments, denial and revocation, relaunch, and fresh-app evidence |
+| Completed Streams live gate | `validation/verify-streams-v3-app-live.sh`, `Sources/InstantSwiftDataTesting/InstantStreamsV3LiveValidation.swift`, and `validation/ts-runner/src/streams-v3-live-contract.ts` |
 | Completed SyncUps live gate | `validation/verify-syncups-v3-app-live.sh`, `Sources/InstantSwiftDataTesting/InstantSyncUpsV3LiveValidation.swift`, and `validation/ts-runner/src/syncups-v3-*.ts` |
 | Completed App Builder and Storage live gate | `validation/verify-app-builder-v3-app-live.sh`, `Sources/InstantSwiftDataTesting/InstantAppBuilderV3LiveValidation.swift`, `Sources/InstantSwiftDataCore/InstantStorageTransport.swift`, and `validation/ts-runner/src/app-builder-v3-*.ts` |
 | Current generated recording contract | `InstantSchemaExamples.recordingActionDocument`, `recordingActionValidationPermissions`, and `--example recording-action` |
@@ -1071,22 +1085,22 @@ unsupported non-indexed server order.
 The post-port aggregate passes 1,083 Swift Testing cases across 90 suites, 28
 macro tests, the runnable app build, and the complete TypeScript matrix.
 
-The local stream runtime packet is complete through `217c4a7`. It includes
-file-backed append fetching, cross-segment byte overlap, split UTF-8 handling,
-next-file prefetch, cancellation cleanup, the canonical ten-retry budget,
-post-persistence reconnect offsets, and remote metadata bootstrap for both
-client-id and stream-id readers. The complete local gate passes 1,092 Swift
-Testing cases across 91 suites plus 28 macro tests.
+The Streams V3 boundary is complete through `2ec8a17`. The clean fresh-app
+gate proves exact ordered UTF-8 content and server-issued identities in both
+SDK directions using the pinned AI-chat and resumable-stream sources. The
+runtime packet also covers file-backed reads, cancellation, bounded retries,
+reader and writer reconnect, metadata bootstrap, and terminal flush
+acknowledgement. Evidence is at
+`/tmp/instant-data-swift-streams-v3-20260719T091619Z/evidence.json`; the
+post-port aggregate passes 1,096 Swift Testing cases across 92 suites plus 28
+macro tests.
 
-Next, add the Packet 8 stream app/live gate from the pinned
-`upstream/instant/examples/ai-chat` and `client/packages/resumable-stream`
-contracts. The fresh app must prove Swift-to-TypeScript and
-TypeScript-to-Swift ordered UTF-8 content, server-resolved stream ids and
-metadata, reconnect from the exact fetched-byte offset, file-backed append
-consumption, cancellation cleanup, and a bounded failure case with zero
-compiler/runtime warnings. Then continue to the CloudKitDemo-equivalent
-sharing boundary. Do not create the `v0.4.0-apps-e2e` tag until the full
-required app matrix passes.
+Next, complete the remaining Packet 8 CloudKitDemo-equivalent shared-counter
+app and fresh-app boundary. It must use the settled public sharing surface and
+prove owner, read-only, read-write, denial, role replacement, revocation,
+cross-SDK increments, and relaunch without introducing a parallel sharing
+model. Do not create the `v0.4.0-apps-e2e` tag until that final required app
+boundary and the complete matrix pass.
 
 The product-payload mismatch is resolved: playback presence stores and encodes
 `offsetSeconds: Double`, offers `Duration` as a computed product convenience,
