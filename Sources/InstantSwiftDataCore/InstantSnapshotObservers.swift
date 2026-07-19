@@ -66,7 +66,7 @@ actor InstantStreamContentObservers {
   func observe(
     key: InstantStreamContentObservationKey,
     byteOffset: Int64,
-    current value: InstantStreamContentRead
+    current value: InstantStreamContentRead? = nil
   ) -> AsyncStream<InstantStreamContentRead> {
     let id = UUID()
     let stream = AsyncStream<InstantStreamContentRead>.makeStream(bufferingPolicy: .unbounded)
@@ -75,7 +75,9 @@ actor InstantStreamContentObservers {
       byteOffset: byteOffset,
       continuation: stream.continuation
     )
-    stream.continuation.yield(value)
+    if let value {
+      stream.continuation.yield(value)
+    }
     stream.continuation.onTermination = { @Sendable _ in
       Task { await self.cancel(id: id) }
     }
@@ -107,7 +109,12 @@ actor InstantStreamContentObservers {
 
 struct InstantStreamContentObservationKey: Hashable, Sendable {
   var appID: String
-  var streamID: String
+  var selector: InstantStreamContentSelector
+}
+
+enum InstantStreamContentSelector: Hashable, Sendable {
+  case streamID(String)
+  case clientID(String)
 }
 
 struct InstantSharesObservationKey: Hashable, Sendable {

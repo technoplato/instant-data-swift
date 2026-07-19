@@ -2200,17 +2200,36 @@ public final class InstantRuntime: Sendable {
   }
 
   private func applyLiveStreamAppend(_ append: InstantLiveStreamAppend) async throws -> Int64 {
-    guard let current = try await persistence.loadStreamContent(
+    var current = try await persistence.loadStreamContent(
       appID: configuration.appID,
       streamID: append.streamID,
       byteOffset: 0
-    ) else {
+    )
+    if current == nil {
+      let userID = try await resolvedAuthenticatedUserID(
+        operation: "bootstrap stream metadata",
+        noun: "Stream"
+      )
+      _ = try await persistence.ensureStreamMetadata(
+        appID: configuration.appID,
+        streamID: append.streamID,
+        clientID: append.clientID?.nilIfEmpty ?? append.streamID,
+        userID: userID,
+        createdAt: configuration.now()
+      )
+      current = try await persistence.loadStreamContent(
+        appID: configuration.appID,
+        streamID: append.streamID,
+        byteOffset: 0
+      )
+    }
+    guard let current else {
       throw InstantError(
-        code: .implementationFailed,
-        operation: "apply Instant live stream append",
+        code: .persistenceFailed,
+        operation: "bootstrap stream metadata",
         serverEventID: append.clientEventID,
-        message: "Instant stream '\(append.streamID)' has no local metadata.",
-        recovery: "Bootstrap remote stream metadata before materializing the append."
+        message: "Instant stream '\(append.streamID)' was not readable after metadata bootstrap.",
+        recovery: "Inspect the local stream persistence transaction and retry the subscription."
       )
     }
     let seenOffset = current.byteOffset + current.byteCount
@@ -3891,11 +3910,12 @@ public final class InstantRuntime: Sendable {
     await operationGate.enter()
     do {
       _ = try await resolvedAuthenticatedUserID(operation: "observe stream content", noun: "Stream")
-      guard let read = try await persistence.loadStreamContent(
+      let read = try await persistence.loadStreamContent(
         appID: configuration.appID,
         streamID: streamID,
         byteOffset: byteOffset
-      ) else {
+      )
+      if read == nil, configuration.liveTransport == nil {
         throw streamNotFound(
           operation: "observe stream content",
           localID: streamID,
@@ -3903,16 +3923,16 @@ public final class InstantRuntime: Sendable {
         )
       }
       let stream = await streamContentObservers.observe(
-        key: streamContentObservationKey(streamID: read.metadata.id),
+        key: streamContentObservationKey(streamID: streamID),
         byteOffset: byteOffset,
         current: read
       )
       await operationGate.leave()
       return await liveStreamContentObservation(
         stream,
-        key: "stream-id:\(read.metadata.id):\(byteOffset)",
-        streamID: read.metadata.id,
-        initialByteOffset: read.byteOffset + read.byteCount
+        key: "stream-id:\(streamID):\(byteOffset)",
+        streamID: streamID,
+        initialByteOffset: read.map { $0.byteOffset + $0.byteCount } ?? byteOffset
       )
     } catch {
       await operationGate.leave()
@@ -3935,11 +3955,12 @@ public final class InstantRuntime: Sendable {
     await operationGate.enter()
     do {
       _ = try await resolvedAuthenticatedUserID(operation: "observe stream content", noun: "Stream")
-      guard let read = try await persistence.loadStreamContent(
+      let read = try await persistence.loadStreamContent(
         appID: configuration.appID,
         clientID: clientID,
         byteOffset: byteOffset
-      ) else {
+      )
+      if read == nil, configuration.liveTransport == nil {
         throw streamNotFound(
           operation: "observe stream content",
           localID: clientID,
@@ -3947,7 +3968,7 @@ public final class InstantRuntime: Sendable {
         )
       }
       let stream = await streamContentObservers.observe(
-        key: streamContentObservationKey(streamID: read.metadata.id),
+        key: streamContentObservationKey(clientID: clientID),
         byteOffset: byteOffset,
         current: read
       )
@@ -3956,7 +3977,7 @@ public final class InstantRuntime: Sendable {
         stream,
         key: "client-id:\(clientID):\(byteOffset)",
         clientID: clientID,
-        initialByteOffset: read.byteOffset + read.byteCount
+        initialByteOffset: read.map { $0.byteOffset + $0.byteCount } ?? byteOffset
       )
     } catch {
       await operationGate.leave()
@@ -5502,7 +5523,17 @@ public final class InstantRuntime: Sendable {
   }
 
   private func streamContentObservationKey(streamID: String) -> InstantStreamContentObservationKey {
-    InstantStreamContentObservationKey(appID: configuration.appID, streamID: streamID)
+    InstantStreamContentObservationKey(
+      appID: configuration.appID,
+      selector: .streamID(streamID)
+    )
+  }
+
+  private func streamContentObservationKey(clientID: String) -> InstantStreamContentObservationKey {
+    InstantStreamContentObservationKey(
+      appID: configuration.appID,
+      selector: .clientID(clientID)
+    )
   }
 
   private func sharesObservationKey(userID: String) -> InstantSharesObservationKey {
@@ -5510,15 +5541,24 @@ public final class InstantRuntime: Sendable {
   }
 
   private func publishStreamContentUpdates(streamID: String) async throws {
-    let key = streamContentObservationKey(streamID: streamID)
-    let byteOffsets = await streamContentObservers.byteOffsets(for: key)
-    for byteOffset in byteOffsets {
-      if let read = try await persistence.loadStreamContent(
-        appID: configuration.appID,
-        streamID: streamID,
-        byteOffset: byteOffset
-      ) {
-        await streamContentObservers.publish(read, for: key, byteOffset: byteOffset)
+    guard let metadata = try await persistence.loadStreamMetadata(
+      appID: configuration.appID,
+      streamID: streamID
+    ) else { return }
+    let keys = [
+      streamContentObservationKey(streamID: streamID),
+      streamContentObservationKey(clientID: metadata.clientID),
+    ]
+    for key in keys {
+      let byteOffsets = await streamContentObservers.byteOffsets(for: key)
+      for byteOffset in byteOffsets {
+        if let read = try await persistence.loadStreamContent(
+          appID: configuration.appID,
+          streamID: streamID,
+          byteOffset: byteOffset
+        ) {
+          await streamContentObservers.publish(read, for: key, byteOffset: byteOffset)
+        }
       }
     }
   }

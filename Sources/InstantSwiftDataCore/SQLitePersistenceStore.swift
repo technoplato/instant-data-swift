@@ -1052,6 +1052,48 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  public func ensureStreamMetadata(
+    appID: String,
+    streamID: String,
+    clientID: String,
+    userID: String,
+    createdAt: InstantTimestamp
+  ) throws -> InstantStreamMetadata {
+    try transaction {
+      if let existing = try streamMetadataWithoutTransaction(appID: appID, streamID: streamID) {
+        guard existing.clientID == clientID else {
+          throw streamValidationError(
+            operation: "bootstrap stream metadata",
+            localID: streamID,
+            message:
+              "Stream '\(streamID)' is already associated with client id '\(existing.clientID)', not '\(clientID)'.",
+            recovery: "Reconnect using the client id returned by the canonical stream append."
+          )
+        }
+        return existing
+      }
+      if let existing = try streamMetadataWithoutTransaction(appID: appID, clientID: clientID) {
+        throw streamValidationError(
+          operation: "bootstrap stream metadata",
+          localID: clientID,
+          message:
+            "Stream client id '\(clientID)' already belongs to stream '\(existing.id)', not '\(streamID)'.",
+          recovery: "Reconnect the client-id reader and inspect the canonical stream id."
+        )
+      }
+      let metadata = InstantStreamMetadata(
+        id: streamID,
+        appID: appID,
+        clientID: clientID,
+        userID: userID,
+        createdAt: createdAt,
+        updatedAt: createdAt
+      )
+      try insertStreamMetadataWithoutTransaction(metadata)
+      return metadata
+    }
+  }
+
   public func appendStreamContent(
     appID: String,
     streamID: String,

@@ -1136,11 +1136,11 @@ public enum InstantSwiftDataParityCoverage {
       sourceTestName: "test_reader_holds_partial_utf8_across_chunk_boundary + _process_append",
       swiftFile: reactorParitySwiftFile,
       swiftTestName:
-        "runtimeInlineStreamAppendPublishesAndAdvancesReconnectOffset + runtimeFileStreamAppendPublishesAndAdvancesByFetchedBytes + runtimeFileStreamFailureReconnectsWithoutAdvancingOffset",
+        "runtimeInlineStreamAppendPublishesAndAdvancesReconnectOffset + runtimeFileStreamAppendPublishesAndAdvancesByFetchedBytes + runtimeFileStreamFailureReconnectsWithoutAdvancingOffset + runtimeClientIDReaderBootstrapsRemoteStreamMetadata",
       surface: "live-stream-materialization",
       status: .adapted,
       notes:
-        "Swift applies inline and file-backed overlap in UTF-8 bytes, pipelines ordered signed-file fetches, persists and publishes only unseen content, advances reconnect state by fetched bytes only after persistence, and retries a failed fetch from the unchanged offset."
+        "Swift applies inline and file-backed overlap in UTF-8 bytes, pipelines ordered signed-file fetches, persists and publishes only unseen content, advances reconnect state by fetched bytes only after persistence, retries a failed fetch from the unchanged offset, and bootstraps server-resolved metadata for empty-cache client-id and stream-id readers."
     ),
     instant(
       id: "instant.reactor.reconnect-flush-pending-only",

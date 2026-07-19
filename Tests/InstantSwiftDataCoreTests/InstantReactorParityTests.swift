@@ -1639,6 +1639,110 @@ struct InstantReactorParityTests {
   }
 
   @Test
+  func runtimeClientIDReaderBootstrapsRemoteStreamMetadata() async throws {
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "remote-stream-reader")
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "typescript-remote-stream-bootstrap-parity",
+        persistenceURL: try temporaryReactorParityCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: session.transport
+      )
+    )
+    let auth = try await runtime.signInAsGuest()
+    _ = try await runtime.connect()
+
+    let clientObservation = try await runtime.observeStreamContent(clientID: "remote-client")
+    let streamObservation = try await runtime.observeStreamContent(streamID: "remote-stream")
+    let clientObserverTask = Task { () -> [InstantStreamContentRead] in
+      var iterator = clientObservation.makeAsyncIterator()
+      var values: [InstantStreamContentRead] = []
+      if let content = await iterator.next() { values.append(content) }
+      if let closed = await iterator.next() { values.append(closed) }
+      return values
+    }
+    let streamObserverTask = Task { () -> [InstantStreamContentRead] in
+      var iterator = streamObservation.makeAsyncIterator()
+      var values: [InstantStreamContentRead] = []
+      if let content = await iterator.next() { values.append(content) }
+      if let closed = await iterator.next() { values.append(closed) }
+      return values
+    }
+    defer {
+      clientObserverTask.cancel()
+      streamObserverTask.cancel()
+    }
+
+    try await instantLiveWithTimeout(
+      operation: "wait for remote client-id stream subscription",
+      timeoutMilliseconds: 500
+    ) {
+      await session.waitForSentMessageCount(3)
+    }
+    let subscriptions = await session.sentMessages().filter { $0.op == "subscribe-stream" }
+    let clientSubscribe = try #require(
+      subscriptions.first { $0.fields["client-id"] == .string("remote-client") }
+    )
+    let streamSubscribe = try #require(
+      subscriptions.first { $0.fields["stream-id"] == .string("remote-stream") }
+    )
+    expectNoDifference(
+      clientSubscribe.fields,
+      ["client-id": .string("remote-client")],
+      typescriptStreamSource
+    )
+    expectNoDifference(
+      streamSubscribe.fields,
+      ["stream-id": .string("remote-stream")],
+      typescriptStreamSource
+    )
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "stream-append",
+        clientEventID: clientSubscribe.clientEventID,
+        fields: [
+          "client-id": .string("remote-client"),
+          "content": .string("hello 🚀"),
+          "done": .bool(true),
+          "offset": .number(0),
+          "retry": .bool(false),
+          "stream-id": .string("remote-stream"),
+        ]
+      )
+    )
+
+    let clientValues = try await instantLiveWithTimeout(
+      operation: "wait for remote stream metadata bootstrap",
+      timeoutMilliseconds: 500
+    ) {
+      await clientObserverTask.value
+    }
+    let streamValues = try await instantLiveWithTimeout(
+      operation: "wait for remote stream-id publication",
+      timeoutMilliseconds: 500
+    ) {
+      await streamObserverTask.value
+    }
+    expectNoDifference(
+      clientValues.map(\.content),
+      ["hello 🚀", "hello 🚀"],
+      typescriptStreamSource
+    )
+    expectNoDifference(clientValues.map(\.done), [false, true], typescriptStreamSource)
+    expectNoDifference(clientValues.map(\.byteCount), [10, 10], typescriptStreamSource)
+    expectNoDifference(streamValues, clientValues, typescriptStreamSource)
+    let byClientID = try await runtime.streamMetadata(clientID: "remote-client")
+    let byStreamID = try await runtime.streamMetadata(streamID: "remote-stream")
+    expectNoDifference(byClientID, byStreamID, typescriptStreamSource)
+    expectNoDifference(byClientID.clientID, "remote-client", typescriptStreamSource)
+    expectNoDifference(byClientID.userID, auth.userID, typescriptStreamSource)
+    expectNoDifference(byClientID.size, 10, typescriptStreamSource)
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
   func runtimeAppliesLivePresencePatchesAndEphemeralServerBroadcasts() async throws {
     let room = InstantRoomHandle(type: "chat", id: "room-events")
     let now = InstantTimestamp(milliseconds: 1_700_000_080_000)
@@ -2002,6 +2106,9 @@ private let pythonStreamAppendRetrySource =
 
 private let pythonStreamAppendMaterializationSource =
   "upstream/instant/client/packages/python/src/instantdb/_async/streams/reader.py _process_append plus tests/test_streams_state.py test_reader_holds_partial_utf8_across_chunk_boundary and upstream/instant/client/packages/core/src/Stream.ts createReadStream [adapted: Swift persists an inline stream-append through the public observer, preserves the multi-byte scalar, publishes the full content snapshot, and advances the next reconnect subscription by UTF-8 byte count.]"
+
+private let typescriptStreamSource =
+  "upstream/instant/client/packages/core/src/Stream.ts createReadStream and upstream/instant/server/src/instant/reactive/session.clj handle-subscribe-stream! [adapted: Swift starts a reader from a client id before local metadata exists, accepts the canonical server-resolved stream and client ids, persists the remote metadata and UTF-8 content, and publishes the open then closed snapshots.]"
 
 private let reactorRoomEventsSource =
   "upstream/instant/client/packages/core/src/Reactor.js refresh-presence, patch-presence, and server-broadcast receive branches plus upstream/instant/server/test/instant/reactive/session_test.clj patch-presence-works and broadcast-works [adapted: Swift excludes its own live session from peer presence, applies canonical +/r/- edits in memory, publishes typed peer state, and emits remote broadcasts without adding them to durable topic history.]"
