@@ -783,6 +783,107 @@ public enum InstantSchemaExamples {
     ]
   )
 
+  public static let syncUpsV3SyncUps = InstantEntitySchema(
+    typeName: "SyncUpsV3SyncUp",
+    namespace: SyncUpsExample.syncUpsNamespace,
+    attributes: [
+      .primaryKey(namespace: SyncUpsExample.syncUpsNamespace),
+      InstantAttribute(
+        id: "syncUps/seconds",
+        namespace: SyncUpsExample.syncUpsNamespace,
+        name: "seconds",
+        valueType: .number,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "syncUps/theme",
+        namespace: SyncUpsExample.syncUpsNamespace,
+        name: "theme",
+        valueType: .string,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "syncUps/title",
+        namespace: SyncUpsExample.syncUpsNamespace,
+        name: "title",
+        valueType: .string,
+        isIndexed: true
+      ),
+    ]
+  )
+
+  public static let syncUpsV3Attendees = InstantEntitySchema(
+    typeName: "SyncUpsV3Attendee",
+    namespace: SyncUpsExample.attendeesNamespace,
+    attributes: [
+      .primaryKey(namespace: SyncUpsExample.attendeesNamespace),
+      InstantAttribute(
+        id: "attendees/name",
+        namespace: SyncUpsExample.attendeesNamespace,
+        name: "name",
+        valueType: .string,
+        isIndexed: true
+      ),
+    ]
+  )
+
+  public static let syncUpsV3Meetings = InstantEntitySchema(
+    typeName: "SyncUpsV3Meeting",
+    namespace: SyncUpsExample.meetingsNamespace,
+    attributes: [
+      .primaryKey(namespace: SyncUpsExample.meetingsNamespace),
+      InstantAttribute(
+        id: "meetings/date",
+        namespace: SyncUpsExample.meetingsNamespace,
+        name: "date",
+        valueType: .date,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "meetings/transcript",
+        namespace: SyncUpsExample.meetingsNamespace,
+        name: "transcript",
+        valueType: .string
+      ),
+    ]
+  )
+
+  public static let syncUpsV3Document = InstantSchemaDocument(
+    entities: [syncUpsV3SyncUps, syncUpsV3Attendees, syncUpsV3Meetings],
+    links: [
+      InstantLinkSchema(
+        name: "syncUpsAttendees",
+        forward: InstantLinkEndpoint(
+          namespace: SyncUpsExample.attendeesNamespace,
+          cardinality: .one,
+          label: "syncUp",
+          onDelete: .cascade
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: SyncUpsExample.syncUpsNamespace,
+          cardinality: .many,
+          label: "attendees"
+        ),
+        isRequired: true
+      ),
+      InstantLinkSchema(
+        name: "syncUpsMeetings",
+        forward: InstantLinkEndpoint(
+          namespace: SyncUpsExample.meetingsNamespace,
+          cardinality: .one,
+          label: "syncUp",
+          onDelete: .cascade
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: SyncUpsExample.syncUpsNamespace,
+          cardinality: .many,
+          label: "meetings"
+        ),
+        isRequired: true
+      ),
+    ]
+  )
+
   public static let remindersV3Lists = InstantEntitySchema(
     typeName: "RemindersV3List",
     namespace: ReminderExample.listsNamespace,

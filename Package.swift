@@ -28,6 +28,7 @@ let package = Package(
     .library(name: "PresenceRecipesV3App", targets: ["PresenceRecipesV3App"]),
     .library(name: "RemindersV3App", targets: ["RemindersV3App"]),
     .library(name: "StroopwafelV3App", targets: ["StroopwafelV3App"]),
+    .library(name: "SyncUpsV3App", targets: ["SyncUpsV3App"]),
     .library(name: "TodosV3App", targets: ["TodosV3App"]),
     .library(name: "VoiceTrailV3App", targets: ["VoiceTrailV3App"]),
     .executable(name: "instant-swift-data", targets: ["instant-swift-data"]),
@@ -142,6 +143,15 @@ let package = Package(
       name: "StroopwafelV3App",
       dependencies: [
         "InstantSwiftData",
+        .product(name: "Dependencies", package: "swift-dependencies"),
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .target(
+      name: "SyncUpsV3App",
+      dependencies: [
+        "InstantSwiftData",
+        "InstantSwiftDataSchema",
         .product(name: "Dependencies", package: "swift-dependencies"),
       ],
       swiftSettings: strictConcurrencySettings
@@ -331,6 +341,14 @@ let package = Package(
       name: "StroopwafelV3AppTests",
       dependencies: [
         "StroopwafelV3App",
+        .product(name: "CustomDump", package: "swift-custom-dump"),
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .testTarget(
+      name: "SyncUpsV3AppTests",
+      dependencies: [
+        "SyncUpsV3App",
         .product(name: "CustomDump", package: "swift-custom-dump"),
       ],
       swiftSettings: strictConcurrencySettings
