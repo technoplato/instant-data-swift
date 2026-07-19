@@ -381,16 +381,13 @@ As of 2026-07-19:
   The post-port aggregate passes 1,100 Swift Testing cases across 94 suites,
   28 isolated macro tests, the `cloudkit-demo-v3` build, and the complete
   TypeScript typecheck, contract, live-support, and fixture matrix.
-- The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
-  applicable, and 2 blocked when no credentialed artifacts are supplied. The
-  only blocked ids are
-  `instant.live-transport.swift-to-typescript` and
-  `instant.live-transport.typescript-to-swift`; valid credentialed artifacts
-  promote those two records instead of changing the static source ledger.
-- The required app matrix and its final CloudKitDemo boundary are green, so
-  `v0.4.0-apps-e2e` is ready to bind to this clean evidence record. The next
-  execution phase is a `v1.0.0` goals audit, not another V3 syntax-design
-  phase.
+- The artifact-aware parity gate records 295 cases: 28 exact, 265 adapted, 2
+  not applicable, and zero blocked. The fresh CloudKitDemo gate carries the
+  credentialed live-boundary artifacts without changing the static source
+  ledger.
+- The required app matrix is bound to `v0.4.0-apps-e2e`, and the complete
+  clean release gate is bound to `v1.0.0`. The next phase is the measured
+  performance-optimization backlog, not another V3 syntax-design phase.
 
 ## Authority Order
 
@@ -1175,8 +1172,9 @@ relaunch. Evidence is at
 `/tmp/instant-data-swift-cloudkit-demo-v3-20260719T093505Z/evidence.json`; the
 post-port aggregate passes 1,100 Swift Testing cases across 94 suites, 28
 isolated macro tests, the runnable app build, and the complete TypeScript
-matrix. Next, audit the full `v1.0.0` goals definition against the accumulated
-evidence and schedule only the remaining gaps.
+matrix. The V1 audit is now complete; `v1.0.0` is tagged, and the active
+follow-up is the quantified performance backlog recorded in the checked V1
+baseline.
 
 The product-payload mismatch is resolved: playback presence stores and encodes
 `offsetSeconds: Double`, offers `Duration` as a computed product convenience,
