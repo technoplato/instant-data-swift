@@ -1053,7 +1053,22 @@ public enum InstantSchemaExamples {
           .update: "isOwner || isWriter",
           .delete: "isOwner",
         ],
-        bind: remindersV3RootRoleBindings
+        link: [
+          "owner": "isNewList ? linkingSelf : isOwner",
+          "readers": "isOwner",
+          "writers": "isOwner",
+          "share": "isOwner",
+        ],
+        unlink: [
+          "owner": "isOwner",
+          "readers": "isOwner",
+          "writers": "isOwner",
+          "share": "isOwner",
+        ],
+        bind: remindersV3RootRoleBindings + [
+          InstantPermissionBinding("isNewList", "actions.data == 'create'"),
+          InstantPermissionBinding("linkingSelf", "linkedData.id == auth.id"),
+        ]
       ),
       InstantNamespacePermissions(
         namespace: ReminderExample.remindersNamespace,
@@ -1079,13 +1094,19 @@ public enum InstantSchemaExamples {
         namespace: "v3_share_memberships",
         allow: [
           .view: "isSelf || isShareOwner",
-          .create: "isSelf || isShareOwner",
+          .create: "auth.id != null",
           .update: "isShareOwner",
           .delete: "isShareOwner",
         ],
+        link: [
+          "share": "isNewMembership || isShareOwner",
+          "user": "isNewMembership || isShareOwner",
+        ],
+        unlink: ["share": "isShareOwner", "user": "isShareOwner"],
         bind: [
           InstantPermissionBinding("isSelf", "auth.id in data.ref('user.id')"),
           InstantPermissionBinding("isShareOwner", "auth.id in data.ref('share.owner.id')"),
+          InstantPermissionBinding("isNewMembership", "actions.data == 'create'"),
         ]
       ),
       InstantNamespacePermissions(
@@ -1096,9 +1117,17 @@ public enum InstantSchemaExamples {
           .update: "isOwner",
           .delete: "isOwner",
         ],
+        link: [
+          "owner": "isNewShare ? linkingSelf : isOwner",
+          "root": "isNewShare",
+          "memberships": "isOwner",
+        ],
+        unlink: ["owner": "isOwner", "root": "isOwner", "memberships": "isOwner"],
         bind: [
           InstantPermissionBinding("isOwner", "auth.id in data.ref('owner.id')"),
           InstantPermissionBinding("isMember", "auth.id in data.ref('memberships.user.id')"),
+          InstantPermissionBinding("isNewShare", "actions.data == 'create'"),
+          InstantPermissionBinding("linkingSelf", "linkedData.id == auth.id"),
         ]
       ),
     ]

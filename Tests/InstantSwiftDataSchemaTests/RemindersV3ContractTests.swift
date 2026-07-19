@@ -145,7 +145,22 @@ struct RemindersV3ContractTests {
         InstantPermissionBinding("isOwner", "auth.id in data.ref('owner.id')"),
         InstantPermissionBinding("isWriter", "auth.id in data.ref('writers.id')"),
         InstantPermissionBinding("isReader", "auth.id in data.ref('readers.id')"),
+        InstantPermissionBinding("isNewList", "actions.data == 'create'"),
+        InstantPermissionBinding("linkingSelf", "linkedData.id == auth.id"),
       ]
+    )
+    expectNoDifference(
+      lists.link,
+      [
+        "owner": "isNewList ? linkingSelf : isOwner",
+        "readers": "isOwner",
+        "writers": "isOwner",
+        "share": "isOwner",
+      ]
+    )
+    expectNoDifference(
+      lists.unlink,
+      ["owner": "isOwner", "readers": "isOwner", "writers": "isOwner", "share": "isOwner"]
     )
 
     let reminders = try #require(namespaces["reminders"])
@@ -208,12 +223,12 @@ struct RemindersV3ContractTests {
   func permissionsPreserveAcceptAndRevokeMetadata() throws {
     let namespaces = Dictionary(
       uniqueKeysWithValues: InstantSchemaExamples.remindersV3Permissions.namespaces.map {
-        ($0.namespace, $0.allow)
+        ($0.namespace, $0)
       }
     )
 
     expectNoDifference(
-      namespaces["v3_shares"],
+      namespaces["v3_shares"]?.allow,
       [
         .view: "isOwner || isMember",
         .create: "auth.id != null",
@@ -222,13 +237,21 @@ struct RemindersV3ContractTests {
       ]
     )
     expectNoDifference(
-      namespaces["v3_share_memberships"],
+      namespaces["v3_shares"]?.link,
+      ["owner": "isNewShare ? linkingSelf : isOwner", "root": "isNewShare", "memberships": "isOwner"]
+    )
+    expectNoDifference(
+      namespaces["v3_share_memberships"]?.allow,
       [
         .view: "isSelf || isShareOwner",
-        .create: "isSelf || isShareOwner",
+        .create: "auth.id != null",
         .update: "isShareOwner",
         .delete: "isShareOwner",
       ]
+    )
+    expectNoDifference(
+      namespaces["v3_share_memberships"]?.link,
+      ["share": "isNewMembership || isShareOwner", "user": "isNewMembership || isShareOwner"]
     )
   }
 }
