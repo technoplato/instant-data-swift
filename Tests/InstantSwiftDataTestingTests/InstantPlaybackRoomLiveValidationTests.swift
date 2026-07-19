@@ -2,9 +2,27 @@ import CustomDump
 import Foundation
 import InstantSwiftDataTesting
 import Testing
+import VoiceTrailV3App
 
 @Suite
 struct InstantPlaybackRoomLiveValidationTests {
+  @Test
+  func appOwnsTheCompletePlaybackRoomContract() {
+    expectNoDifference(VoiceTrailPlaybackRoom.roomType, "recording.playback")
+    expectNoDifference(
+      VoiceTrailPlaybackRoom.Topic.allCases.map(\.rawValue),
+      ["reaction", "commentDraft", "commentCommitted"]
+    )
+    expectNoDifference(
+      VoiceTrailCommentDraft(text: "Swift draft", offsetSeconds: 12.5),
+      VoiceTrailCommentDraft(text: "Swift draft", offsetSeconds: 12.5)
+    )
+    expectNoDifference(
+      VoiceTrailCommentCommitted(commentID: "comment-swift"),
+      VoiceTrailCommentCommitted(commentID: "comment-swift")
+    )
+  }
+
   @Test
   func evidenceEncodesCanonicalPlainJSONPayloads() throws {
     let canonicalJSON = Data(
