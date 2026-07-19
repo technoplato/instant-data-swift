@@ -286,6 +286,19 @@ As of 2026-07-19:
   removes the remote peer on disconnect. Server readback preserves the Swift
   JSON contract through the explicit `server-json-as-any` warning. Evidence is
   in `/tmp/instant-data-swift-merge-tile-game-v3-20260719T045650Z/evidence.json`.
+- The canonical Stroopwafel boundary is complete through `3584c15`. The
+  source-first Swift and TypeScript contracts pin
+  `jsventures/stroopwafel@7f5e2379464d932c0e4681655cbf022f8d9c2614`, its
+  four-entity/four-link durable graph, 17 allow rules, wrapper-owned
+  `@FetchOne`/`@FetchAll` screens, typed messages, and exact multiplayer score
+  lifecycle. The fresh getadb gate pushes schema and permissions twice without
+  drift, pulls and strict-typechecks both artifacts, then proves Swift room and
+  game creation, TypeScript join/readiness and owned point update, Swift
+  observation and completion at 13, and cleared `currentGameId`. The gate also
+  caught and fixed a core transport ambiguity by keeping lookup references
+  distinct from ordinary two-element JSON arrays. Evidence is in
+  `/tmp/instant-data-swift-stroopwafel-v3-20260719T054331Z/evidence.json` with
+  zero compiler/runtime warnings.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -319,7 +332,7 @@ When sources disagree, use this order:
 | Current execution state, packet order, gates, and tag targets | `docs/v3-e2e-port-plan.md` |
 | Product contract and full definition of done | `docs/instant-swift-data-goals.md` |
 | Desired V3 API rules and decision log | `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` |
-| Next app target | Stroopwafel, beginning source-first from the pinned multiplayer demo and its durable plus ephemeral collaboration contract |
+| Next app target | Reminders sharing, beginning source-first from the pinned SQLiteData tests and existing local model/CLI proof |
 | Current generated recording contract | `InstantSchemaExamples.recordingActionDocument`, `recordingActionValidationPermissions`, and `--example recording-action` |
 | TypeScript contract pin/type-check gate | `validation/ts-runner/package.json`, its committed `pnpm-lock.yaml`, and `validation/typecheck-generated-contract.sh` |
 | Reproducible live schema/perms install and readback | `validation/verify-recording-contract-live.sh` and `validation/fixtures/recording-action.server.*.ts` |
@@ -347,6 +360,9 @@ When sources disagree, use this order:
 | Custom Cursors reproducible cross-SDK gate | `validation/verify-custom-cursors-v3-app-live.sh`, `validation/ts-runner/src/custom-cursors-v3-live-contract.ts`, and `/tmp/instant-data-swift-custom-cursors-v3-20260719T042442Z/evidence.json` |
 | Merge Tile Game app-owned syntax and typed board messages | `Sources/PresenceRecipesV3App/MergeTileGameV3Screen.swift`, `Tests/PresenceRecipesV3AppTests/MergeTileGameV3Tests.swift`, and `Tests/InstantSwiftDataSchemaTests/MergeTileGameContractTests.swift` |
 | Merge Tile Game reproducible cross-SDK gate | `validation/verify-merge-tile-game-v3-app-live.sh`, `validation/ts-runner/src/merge-tile-game-v3-live-contract.ts`, and `/tmp/instant-data-swift-merge-tile-game-v3-20260719T045650Z/evidence.json` |
+| Stroopwafel app-owned syntax and typed lifecycle | `Sources/StroopwafelV3App/`, `Sources/StroopwafelV3Executable/`, `Tests/StroopwafelV3AppTests/`, and `Tests/InstantSwiftDataSchemaTests/StroopwafelContractTests.swift` |
+| Stroopwafel source/live contracts | `Tests/InstantSwiftDataTestingTests/InstantStroopwafelV3LiveValidationTests.swift` and `validation/ts-runner/src/stroopwafel-v3-*.ts` |
+| Stroopwafel reproducible cross-SDK gate | `validation/verify-stroopwafel-v3-app-live.sh` and `/tmp/instant-data-swift-stroopwafel-v3-20260719T054331Z/evidence.json` |
 | Reactions app-owned syntax and behavior | `Sources/PresenceRecipesV3App/ReactionsV3Screen.swift`, `Sources/PresenceRecipesV3App/PresenceRecipesV3App.swift`, and `Tests/PresenceRecipesV3AppTests/ReactionsV3Tests.swift` |
 | Reactions source/schema/live contracts | `Tests/InstantSwiftDataSchemaTests/ReactionsContractTests.swift`, `Tests/InstantSwiftDataTestingTests/InstantReactionsV3LiveValidationTests.swift`, and `validation/ts-runner/src/reactions-v3-*.ts` |
 | Reactions reproducible cross-SDK gate | `validation/verify-reactions-v3-app-live.sh` and `/tmp/instant-data-swift-reactions-v3-20260719T032236Z/evidence.json` |
@@ -950,7 +966,19 @@ Full verification is green at 1,007 Swift Testing cases across 66 suites, the
 `presence-recipes-v3` build, and the complete TypeScript typecheck, contract,
 live-support, and fixture matrix.
 
-Next, port Stroopwafel source-first from its pinned multiplayer demo and
+The canonical Stroopwafel app is complete through `3584c15`. Its pinned source
+tests define the desired syntax and exact durable graph before implementation;
+the runnable SwiftUI host, generated schema/permissions, canonical TypeScript
+contract, and fresh-app verifier now pass together. The final gate records four
+entities, 21 attributes, four links, 17 allow rules, exact normalized server
+warnings, schema SHA-256
+`fc1bbbe52ed594dc72dd46501c2fb14e419b0974b6db946176cfe08c600f0813`,
+permissions SHA-256
+`e693f551cf212c8b8d5425aadcf4cebae590119cf9663f9b09b956d553ef356b`,
+and zero compiler/runtime warnings at
+`/tmp/instant-data-swift-stroopwafel-v3-20260719T054331Z/evidence.json`.
+
+Next, port Reminders sharing source-first from its pinned SQLiteData tests and
 existing local model/CLI proof. Do not create the `v0.4.0-apps-e2e` tag until
 the full required app matrix passes.
 

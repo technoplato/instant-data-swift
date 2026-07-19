@@ -244,6 +244,27 @@ contract and records the exact `server-json-as-any` warning. Clean evidence
 for revision `59a5e2d` is in
 `/tmp/instant-data-swift-merge-tile-game-v3-20260719T045650Z/evidence.json`.
 
+The Stroopwafel V3 verifier ports the pinned multiplayer demo through the
+public Swift entity, query-wrapper, typed-message, schema, and permissions
+surfaces, then proves its exact durable graph against canonical TypeScript SDK
+1.0.49:
+
+```bash
+validation/verify-stroopwafel-v3-app-live.sh
+```
+
+It provisions a fresh getadb app, pushes schema and permissions twice without
+drift, pulls and strict-typechecks the server artifacts, creates two
+authenticated users, and runs the room/readiness/game/point/completion lifecycle
+across both SDKs. Swift creates the room and game, TypeScript joins and updates
+its owned point to 1, Swift observes that update and wins at 13, and both sides
+observe `GAME_COMPLETED` with the room's `currentGameId` cleared. The verifier
+records normalized system, canonical-link-name, JSON-as-any, and managed-email
+warnings explicitly, rejects any other warning class, emits no credentials, and
+removes its temporary credential file. Clean evidence for revision `3584c15`
+is in
+`/tmp/instant-data-swift-stroopwafel-v3-20260719T054331Z/evidence.json`.
+
 The preferences contract also creates its own fresh temporary app and drives
 the public `@InstantSyncStatus` and `@InstantStorageStatus` behavior through the
 Swift validation runner:
