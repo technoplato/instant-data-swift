@@ -1030,10 +1030,20 @@ public struct InstantSwiftDataClient: Sendable {
     )
   }
 
+  public static func bootstrap(configuration: InstantRuntimeConfiguration) async throws -> Self {
+    try await bootstrap(configuration: configuration, storageTransport: nil)
+  }
+
   public static func bootstrap(
-    configuration: InstantRuntimeConfiguration
+    configuration: InstantRuntimeConfiguration,
+    storageTransport: InstantStorageTransportClient?
   ) async throws -> Self {
-    try await Self(runtime: InstantRuntime.bootstrap(configuration: configuration))
+    try await Self(
+      runtime: InstantRuntime.bootstrap(
+        configuration: configuration,
+        storageTransport: storageTransport
+      )
+    )
   }
 
   @discardableResult
@@ -2568,6 +2578,22 @@ extension InstantMutationTransportKey: DependencyKey {
   }
 }
 
+private enum InstantStorageTransportKey: TestDependencyKey {
+  static var testValue: InstantStorageTransportClient? {
+    nil
+  }
+
+  static var previewValue: InstantStorageTransportClient? {
+    nil
+  }
+}
+
+extension InstantStorageTransportKey: DependencyKey {
+  static var liveValue: InstantStorageTransportClient? {
+    .live()
+  }
+}
+
 private enum InstantLiveTransportKey: TestDependencyKey {
   static var testValue: InstantLiveTransportClient? {
     nil
@@ -2716,6 +2742,11 @@ extension DependencyValues {
     set { self[InstantMutationTransportKey.self] = newValue }
   }
 
+  public var instantStorageTransport: InstantStorageTransportClient? {
+    get { self[InstantStorageTransportKey.self] }
+    set { self[InstantStorageTransportKey.self] = newValue }
+  }
+
   public var instantLiveTransport: InstantLiveTransportClient? {
     get { self[InstantLiveTransportKey.self] }
     set { self[InstantLiveTransportKey.self] = newValue }
@@ -2789,6 +2820,7 @@ extension DependencyValues {
     let oauthExchange = self.instantOAuthExchange
     let authTokenInvalidator = self.instantAuthTokenInvalidator
     let mutationTransport = self.instantMutationTransport
+    let storageTransport = self.instantStorageTransport
     let liveTransport = self.instantLiveTransport
     let userCookieSyncClient = self.instantUserCookieSyncClient
     let platformAppClient = self.instantPlatformAppClient
@@ -2826,7 +2858,8 @@ extension DependencyValues {
         userCookieSyncClient: userCookieSyncClient,
         platformAppClient: platformAppClient,
         appBuilderCodeGenerator: appBuilderCodeGenerator
-      )
+      ),
+      storageTransport: storageTransport
     )
   }
 

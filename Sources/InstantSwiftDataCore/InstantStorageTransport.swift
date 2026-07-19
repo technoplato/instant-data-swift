@@ -58,10 +58,10 @@ public struct InstantStorageDeleteResponse: Hashable, Codable, Sendable {
   }
 }
 
-public struct InstantStorageTransportClient: Sendable {
-  public var upload:
+public final class InstantStorageTransportClient: Sendable {
+  public let upload:
     @Sendable (InstantStorageUploadRequest) async throws -> InstantStorageUploadResponse
-  public var delete:
+  public let delete:
     @Sendable (InstantStorageDeleteRequest) async throws -> InstantStorageDeleteResponse
 
   public init(

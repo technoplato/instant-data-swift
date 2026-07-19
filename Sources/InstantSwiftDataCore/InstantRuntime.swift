@@ -1011,6 +1011,7 @@ public final class InstantRuntime: Sendable {
     InstantSnapshotObservers<InstantRoomTopicObservationKey, [InstantRoomTopicMessage]>()
   private let storedFilesObservers =
     InstantSnapshotObservers<InstantStoredFilesObservationKey, [InstantStoredFile]>()
+  private let storageTransport: InstantStorageTransportClient?
   private let streamChunksObservers =
     InstantSnapshotObservers<InstantStreamChunksObservationKey, [InstantStreamChunk]>()
   private let streamContentObservers = InstantStreamContentObservers()
@@ -1027,15 +1028,24 @@ public final class InstantRuntime: Sendable {
     configuration: InstantRuntimeConfiguration,
     store: InstantStore,
     outbox: InstantOutbox,
-    persistence: SQLitePersistenceStore
+    persistence: SQLitePersistenceStore,
+    storageTransport: InstantStorageTransportClient?
   ) {
     self.configuration = configuration
     self.store = store
     self.outbox = outbox
     self.persistence = persistence
+    self.storageTransport = storageTransport
   }
 
   public static func bootstrap(configuration: InstantRuntimeConfiguration) async throws -> Self {
+    try await bootstrap(configuration: configuration, storageTransport: nil)
+  }
+
+  public static func bootstrap(
+    configuration: InstantRuntimeConfiguration,
+    storageTransport: InstantStorageTransportClient?
+  ) async throws -> Self {
     try validateEndpoints(configuration)
     try validateInitialAttributes(configuration.initialAttributes)
 
@@ -1050,7 +1060,8 @@ public final class InstantRuntime: Sendable {
       configuration: configuration,
       store: store,
       outbox: outbox,
-      persistence: persistence
+      persistence: persistence,
+      storageTransport: storageTransport
     )
 
     if !configuration.initialAttributes.isEmpty {
@@ -3216,6 +3227,25 @@ public final class InstantRuntime: Sendable {
     contentsOf sourceURL: URL
   ) async throws -> InstantStoredFile {
     try Task.checkCancellation()
+    var file = file
+    var uploadedPath: String?
+    var uploadedRefreshToken: String?
+    if let storageTransport {
+      let refreshToken = try await storageRefreshToken(operation: "upload file")
+      let response = try await storageTransport.upload(
+        InstantStorageUploadRequest(
+          appID: configuration.appID,
+          apiURI: configuration.apiURI,
+          path: file.name,
+          data: try Data(contentsOf: sourceURL),
+          refreshToken: refreshToken,
+          contentType: file.contentType
+        )
+      )
+      file.id = response.id
+      uploadedPath = file.name
+      uploadedRefreshToken = refreshToken
+    }
     await operationGate.enter()
     do {
       let savedFile = try await persistence.saveStoredFile(file, contentsOf: sourceURL)
@@ -3228,6 +3258,19 @@ public final class InstantRuntime: Sendable {
       return savedFile
     } catch {
       await operationGate.leave()
+      if let storageTransport,
+        let uploadedPath,
+        let uploadedRefreshToken
+      {
+        _ = try? await storageTransport.delete(
+          InstantStorageDeleteRequest(
+            appID: configuration.appID,
+            apiURI: configuration.apiURI,
+            path: uploadedPath,
+            refreshToken: uploadedRefreshToken
+          )
+        )
+      }
       throw error
     }
   }
@@ -3341,10 +3384,31 @@ public final class InstantRuntime: Sendable {
     await operationGate.enter()
     do {
       _ = try await resolvedFileUserID(operation: "delete file")
-      guard let file = try await persistence.deleteStoredFile(
+      guard let file = try await persistence.loadStoredFiles(appID: configuration.appID)
+        .first(where: { $0.id == id })
+      else {
+        throw validationFailed(
+          operation: "delete file",
+          localID: id,
+          message: "No local file exists for id '\(id)'.",
+          recovery: "Run 'instant-swift-data files list' to inspect local file ids."
+        )
+      }
+      if let storageTransport {
+        let refreshToken = try await storageRefreshToken(operation: "delete file")
+        _ = try await storageTransport.delete(
+          InstantStorageDeleteRequest(
+            appID: configuration.appID,
+            apiURI: configuration.apiURI,
+            path: file.name,
+            refreshToken: refreshToken
+          )
+        )
+      }
+      guard try await persistence.deleteStoredFile(
         appID: configuration.appID,
         fileID: id
-      ) else {
+      ) != nil else {
         throw validationFailed(
           operation: "delete file",
           localID: id,
@@ -3367,6 +3431,21 @@ public final class InstantRuntime: Sendable {
 
   func activeStoredFilesObservationCount() async -> Int {
     await storedFilesObservers.activeCount(for: storedFilesObservationKey)
+  }
+
+  private func storageRefreshToken(operation: String) async throws -> String {
+    guard let refreshToken = try await persistence.loadAuthSession(key: authSessionKey)?
+      .refreshToken?.trimmingCharacters(in: .whitespacesAndNewlines),
+      !refreshToken.isEmpty
+    else {
+      throw InstantError(
+        code: .authFailed,
+        operation: operation,
+        message: "Instant storage requires an authenticated refresh token.",
+        recovery: "Sign in before uploading or deleting files."
+      )
+    }
+    return refreshToken
   }
 
   public func appendStreamChunk(
