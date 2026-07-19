@@ -138,6 +138,12 @@ assert.deepStrictEqual(live.details.swift.observedPayload, typeScriptPayload);
 assert.equal(live.details.swift.ignoredInvalidName, "sparkle");
 assert.deepStrictEqual(live.details.typeScriptPublishedPayload, typeScriptPayload);
 assert.deepStrictEqual(live.details.typeScriptObservedSwiftPayload, swiftPayload);
+assert.deepStrictEqual(live.details.subscriptionCleanup, {
+  cleanupProbePayload: { name: "fire", directionAngle: 225, rotationAngle: 135 },
+  witnessObserved: true,
+  callbackCountBeforeProbe: 1,
+  callbackCountAfterProbe: 1,
+});
 assert.equal(schema.entityCount, 0);
 assert.equal(schema.attributeCount, 0);
 assert.equal(schema.linkCount, 0);
