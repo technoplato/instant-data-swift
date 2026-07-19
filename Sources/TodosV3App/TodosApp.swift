@@ -1,0 +1,158 @@
+import Dependencies
+import Foundation
+import InstantSwiftData
+
+public struct TodosAppConfiguration: Hashable, Sendable {
+  public var appID: String
+  public var persistenceURL: URL?
+  public var enablesLiveSync: Bool
+
+  public init(appID: String, persistenceURL: URL? = nil, enablesLiveSync: Bool) {
+    self.appID = appID
+    self.persistenceURL = persistenceURL
+    self.enablesLiveSync = enablesLiveSync
+  }
+
+  public static func environment(
+    _ environment: [String: String] = ProcessInfo.processInfo.environment
+  ) -> Self {
+    let configuredAppID = environment["INSTANT_APP_ID"]?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let appID = configuredAppID.flatMap { $0.isEmpty ? nil : $0 } ?? "todos-v3-local"
+    return Self(
+      appID: appID,
+      persistenceURL: environment["INSTANT_PERSISTENCE_PATH"].map(URL.init(fileURLWithPath:)),
+      enablesLiveSync: configuredAppID?.isEmpty == false
+    )
+  }
+}
+
+#if canImport(SwiftUI)
+  import SwiftUI
+
+  @MainActor
+  public final class TodosBootstrapModel: ObservableObject {
+    @Published public private(set) var client: InstantSwiftDataClient?
+    @Published public private(set) var errorMessage: String?
+
+    public let configuration: TodosAppConfiguration
+    private var task: Task<Void, Never>?
+
+    public init(configuration: TodosAppConfiguration) {
+      self.configuration = configuration
+    }
+
+    public func startIfNeeded() {
+      guard client == nil, task == nil else { return }
+      task = Task { @MainActor [weak self, configuration] in
+        do {
+          var dependencies = DependencyValues()
+          if configuration.enablesLiveSync {
+            dependencies.instantLiveTransport = .live
+          }
+          try await dependencies.bootstrapInstantSwiftData(
+            appID: configuration.appID,
+            persistenceURL: configuration.persistenceURL,
+            initialAttributes: Todo.instantAttributes
+          )
+          let client = dependencies.defaultInstantSwiftData
+          prepareDependencies { $0.defaultInstantSwiftData = client }
+          self?.client = client
+          self?.task = nil
+        } catch {
+          self?.errorMessage = String(describing: error)
+          self?.task = nil
+        }
+      }
+    }
+  }
+
+  @MainActor
+  public struct TodosBootstrapScreen: View {
+    @StateObject private var model: TodosBootstrapModel
+
+    public init(model: TodosBootstrapModel) {
+      _model = StateObject(wrappedValue: model)
+    }
+
+    public var body: some View {
+      Group {
+        if model.client != nil {
+          TodosScreen()
+        } else if let errorMessage = model.errorMessage {
+          Text(errorMessage)
+        } else {
+          ProgressView("Opening Todos")
+        }
+      }
+      .task { model.startIfNeeded() }
+    }
+  }
+
+  @MainActor
+  public struct TodosScreen: View {
+    @FetchAll(Todo.query.order(.serverCreatedAt, .descending)) private var todos: [Todo]
+    @Room private var room: InstantRoom<TodosRoom>
+    @Presence private var peers: [TodoViewerPresence]
+    @Dependency(\.defaultInstantSwiftData) private var db
+    @Dependency(\.date.now) private var now
+    @Dependency(\.uuid) private var uuid
+
+    @State private var text = ""
+    @State private var message = ""
+
+    public init() {}
+
+    public var body: some View {
+      NavigationStack {
+        List {
+          Section("\(peers.count + 1) viewing") {
+            TextField("What needs doing?", text: $text)
+            Button("Add todo", action: addTodoButtonTapped)
+              .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+          }
+          ForEach(todos) { todo in
+            Button(action: { todoButtonTapped(todo) }) {
+              Label(
+                todo.text,
+                systemImage: todo.isCompleted ? "checkmark.circle.fill" : "circle"
+              )
+            }
+          }
+          if !message.isEmpty {
+            Text(message)
+          }
+        }
+        .navigationTitle("Todos")
+      }
+      .instantRoom(
+        $room,
+        InstantRoom<TodosRoom>(type: TodosRoom.roomType, id: "main")
+      )
+      .presence($peers, in: room, publishing: TodoViewerPresence())
+    }
+
+    private func addTodoButtonTapped() {
+      let value = text.trimmingCharacters(in: .whitespacesAndNewlines)
+      guard !value.isEmpty else { return }
+      db.send(
+        CreateTodo(
+          id: InstantID(rawValue: uuid().uuidString.lowercased()),
+          text: value,
+          createdAt: now
+        ),
+        onOptimisticCommit: { _ in text = "" },
+        onServerAccepted: { _ in message = "Todo synced" },
+        onFailure: { error in message = error.recoveryMessage }
+      )
+    }
+
+    private func todoButtonTapped(_ todo: Todo) {
+      db.send(
+        SetTodoCompletion(id: todo.id, isCompleted: !todo.isCompleted),
+        onServerAccepted: { _ in message = "Todo updated" },
+        onFailure: { error in message = error.recoveryMessage }
+      )
+    }
+  }
+#endif
