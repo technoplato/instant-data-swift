@@ -3414,6 +3414,10 @@ struct CLIArgumentParserTests {
       .liveRemindersV3
     )
     expectNoDifference(
+      try parseValidationRunner(["--live-syncups-v3"]),
+      .liveSyncUpsV3
+    )
+    expectNoDifference(
       try parseValidationRunner(["--live-preferences"]),
       .livePreferences
     )
@@ -3626,6 +3630,7 @@ struct CLIArgumentParserTests {
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-merge-tile-game-v3"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-stroopwafel-v3"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-reminders-v3"))
+    #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-syncups-v3"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-preferences"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-voice-trail-v3-capture"))
     try expectValidationRunnerParseError(

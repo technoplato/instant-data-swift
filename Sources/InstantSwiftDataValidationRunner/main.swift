@@ -1098,6 +1098,58 @@ struct InstantSwiftDataValidationRunner {
       )
       try writeJSONLine(row)
 
+    case .liveSyncUpsV3:
+      let environment = ProcessInfo.processInfo.environment
+      let appID = try requiredEnvironment(
+        "INSTANT_APP_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let refreshToken = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_SYNCUPS_REFRESH_TOKEN",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let userID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_SYNCUPS_USER_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let apiURI = URL(
+        string: environment["INSTANT_API_URI"]
+          ?? InstantRuntimeConfiguration.defaultAPIURI.absoluteString
+      ) ?? InstantRuntimeConfiguration.defaultAPIURI
+      let websocketURI = URL(
+        string: environment["INSTANT_WEBSOCKET_URI"]
+          ?? InstantRuntimeConfiguration.defaultWebSocketURI.absoluteString
+      ) ?? InstantRuntimeConfiguration.defaultWebSocketURI
+      let row = try await InstantSyncUpsV3LiveValidation.run(
+        appID: appID,
+        apiURI: apiURI,
+        websocketURI: websocketURI,
+        refreshToken: refreshToken,
+        expectedUserID: userID,
+        onSwiftGraphReady: {
+          emit(
+            caseID: "validation.live.syncups-v3",
+            event: "swift-graph-ready",
+            ok: true,
+            appID: appID,
+            details: ["syncUpID": InstantSyncUpsV3LiveValidation.syncUpID]
+          )
+        },
+        onTypeScriptGraphObserved: {
+          emit(
+            caseID: "validation.live.syncups-v3",
+            event: "typescript-graph-observed",
+            ok: true,
+            appID: appID,
+            details: ["syncUpID": InstantSyncUpsV3LiveValidation.syncUpID]
+          )
+        }
+      )
+      try writeJSONLine(row)
+
     case .livePreferences:
       let environment = ProcessInfo.processInfo.environment
       let appID = try requiredEnvironment(

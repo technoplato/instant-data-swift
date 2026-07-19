@@ -100,6 +100,7 @@ let package = Package(
         "PresenceRecipesV3App",
         "RemindersV3App",
         "StroopwafelV3App",
+        "SyncUpsV3App",
         "TodosV3App",
         "VoiceTrailV3App",
       ],
