@@ -55,7 +55,8 @@ public enum InstantTypingIndicatorV3LiveValidation {
     swiftUserID: String,
     typeScriptUserID: String,
     roomID: String,
-    persistenceURL: URL? = nil
+    persistenceURL: URL? = nil,
+    onFramesObserved: @escaping @Sendable () -> Void = {}
   ) async throws -> ValidationEvidenceRow<InstantTypingIndicatorV3LiveValidationDetails> {
     let persistenceURL = persistenceURL ?? FileManager.default.temporaryDirectory
       .appendingPathComponent("instant-typing-indicator-live-\(UUID().uuidString).sqlite")
@@ -111,6 +112,7 @@ public enum InstantTypingIndicatorV3LiveValidation {
       else { return nil }
       return peerID
     }
+    onFramesObserved()
     let peerCountAfterDisconnect = try await withTimeout(
       operation: "observe TypeScript typing peer disconnect"
     ) {

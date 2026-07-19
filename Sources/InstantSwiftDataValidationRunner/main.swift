@@ -681,7 +681,16 @@ struct InstantSwiftDataValidationRunner {
         refreshToken: refreshToken,
         swiftUserID: swiftUserID,
         typeScriptUserID: typeScriptUserID,
-        roomID: roomID
+        roomID: roomID,
+        onFramesObserved: {
+          emit(
+            caseID: "validation.live.typing-indicator-v3",
+            event: "typescript-frames-observed",
+            ok: true,
+            appID: appID,
+            details: ["roomID": roomID]
+          )
+        }
       )
       try writeJSONLine(row)
 
