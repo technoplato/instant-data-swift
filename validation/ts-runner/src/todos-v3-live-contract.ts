@@ -31,6 +31,12 @@ const typeScriptTodo: TodoShape = {
   ...todosV3AppContract.typeScriptCreated,
   id: randomUUID(),
 };
+const offlineTodo: TodoShape = {
+  id: randomUUID(),
+  text: "Swift offline todo",
+  isCompleted: false,
+  createdAtMilliseconds: 1_700_000_002_000,
+};
 const warnings: string[] = [];
 const originalWarn = console.warn;
 console.warn = (...values) => warnings.push(values.map(String).join(" "));
@@ -94,6 +100,8 @@ try {
     AlwaysOnline,
   );
   await db.auth.signInWithToken(refreshToken);
+  const room: any = db.joinRoom(todosV3AppContract.roomType, "main");
+  room.publishPresence({});
 
   const swift = await runSwiftWrite({
     appId,
@@ -102,14 +110,27 @@ try {
     refreshToken,
     userID: user.id,
     todo: swiftTodo,
+    offlineTodo,
   });
   assert.equal(swift.ok, true);
-  assert.equal(swift.event, "app-todo-completed");
+  assert.equal(swift.event, "viewer-and-offline-replay-observed");
   assert.deepEqual(swift.details, {
-    direction: "swift-to-typescript",
-    ...swiftTodo,
-    connectionState: "authenticated",
-    pendingMutationCount: 0,
+    roomType: todosV3AppContract.roomType,
+    roomID: "main",
+    peerCount: 1,
+    pendingWhileOffline: 1,
+    online: {
+      direction: "swift-to-typescript",
+      ...swiftTodo,
+      connectionState: "authenticated",
+      pendingMutationCount: 0,
+    },
+    offline: {
+      direction: "swift-offline-to-typescript",
+      ...offlineTodo,
+      connectionState: "authenticated",
+      pendingMutationCount: 0,
+    },
   });
 
   const observedByTypeScript = await waitForTodo(
@@ -117,6 +138,8 @@ try {
     swiftTodo,
   );
   assert.deepEqual(observedByTypeScript, swiftTodo);
+  const observedOfflineByTypeScript = await waitForTodo(db, offlineTodo);
+  assert.deepEqual(observedOfflineByTypeScript, offlineTodo);
 
   const observer = spawnSwift("--live-todos-v3-observe", {
     appId,
@@ -165,7 +188,17 @@ try {
     ok: true,
     details: {
       user: { id: user.id, email: user.email },
-      swift: swift.details,
+      swift: swift.details.online,
+      room: {
+        roomType: swift.details.roomType,
+        roomID: swift.details.roomID,
+        peerCount: swift.details.peerCount,
+      },
+      offline: {
+        pendingWhileOffline: swift.details.pendingWhileOffline,
+        swift: swift.details.offline,
+        typeScriptObserved: observedOfflineByTypeScript,
+      },
       typeScriptObserved: observedByTypeScript,
       typeScriptCreated: tsTodo,
       swiftObserved: observedBySwift.details,
@@ -173,6 +206,7 @@ try {
       warnings,
     },
   }, null, 2)}\n`);
+  room.leaveRoom();
   db.shutdown();
 } finally {
   console.warn = originalWarn;
@@ -211,6 +245,7 @@ interface SwiftInput {
   refreshToken: string;
   userID: string;
   todo: TodoShape;
+  offlineTodo?: TodoShape;
 }
 
 function spawnSwift(mode: string, input: SwiftInput): SwiftProcess {
@@ -236,6 +271,10 @@ function spawnSwift(mode: string, input: SwiftInput): SwiftProcess {
         INSTANT_SWIFT_DATA_TODOS_V3_TEXT: input.todo.text,
         INSTANT_SWIFT_DATA_TODOS_V3_CREATED_AT_MILLISECONDS:
           String(input.todo.createdAtMilliseconds),
+        INSTANT_SWIFT_DATA_TODOS_V3_OFFLINE_ID: input.offlineTodo?.id ?? "",
+        INSTANT_SWIFT_DATA_TODOS_V3_OFFLINE_TEXT: input.offlineTodo?.text ?? "",
+        INSTANT_SWIFT_DATA_TODOS_V3_OFFLINE_CREATED_AT_MILLISECONDS:
+          input.offlineTodo ? String(input.offlineTodo.createdAtMilliseconds) : "",
       },
       stdio: ["ignore", "pipe", "pipe"],
     },

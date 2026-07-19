@@ -163,6 +163,31 @@ assert.deepStrictEqual(todos.details.swiftObserved, {
   connectionState: "authenticated",
   pendingMutationCount: 0,
 });
+assert.deepStrictEqual(todos.details.room, {
+  roomType: "todos",
+  roomID: "main",
+  peerCount: 1,
+});
+assert.equal(todos.details.offline.pendingWhileOffline, 1);
+assert.match(
+  todos.details.offline.swift.id,
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+);
+assert.deepStrictEqual(todos.details.offline.swift, {
+  direction: "swift-offline-to-typescript",
+  id: todos.details.offline.swift.id,
+  text: "Swift offline todo",
+  isCompleted: false,
+  createdAtMilliseconds: 1_700_000_002_000,
+  connectionState: "authenticated",
+  pendingMutationCount: 0,
+});
+assert.deepStrictEqual(todos.details.offline.typeScriptObserved, {
+  id: todos.details.offline.swift.id,
+  text: "Swift offline todo",
+  isCompleted: false,
+  createdAtMilliseconds: 1_700_000_002_000,
+});
 assert.equal(todos.details.compilerWarningCount, 0);
 assert.deepStrictEqual(todos.details.warnings, []);
 assert.equal(schema.entityCount, 1);

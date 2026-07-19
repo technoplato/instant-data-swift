@@ -402,6 +402,21 @@ struct InstantSwiftDataValidationRunner {
 
       switch invocation {
       case .liveTodosV3Write:
+        let offlineID = try requiredEnvironment(
+          "INSTANT_SWIFT_DATA_TODOS_V3_OFFLINE_ID",
+          environment: environment,
+          caseID: invocation.caseID
+        )
+        let offlineText = try requiredEnvironment(
+          "INSTANT_SWIFT_DATA_TODOS_V3_OFFLINE_TEXT",
+          environment: environment,
+          caseID: invocation.caseID
+        )
+        let offlineCreatedAtMilliseconds = try requiredIntEnvironment(
+          "INSTANT_SWIFT_DATA_TODOS_V3_OFFLINE_CREATED_AT_MILLISECONDS",
+          environment: environment,
+          caseID: invocation.caseID
+        )
         let row = try await InstantTodosV3LiveValidation.write(
           appID: appID,
           apiURI: apiURI,
@@ -410,7 +425,10 @@ struct InstantSwiftDataValidationRunner {
           expectedUserID: userID,
           id: id,
           text: text,
-          createdAtMilliseconds: Int64(createdAtMilliseconds)
+          createdAtMilliseconds: Int64(createdAtMilliseconds),
+          offlineID: offlineID,
+          offlineText: offlineText,
+          offlineCreatedAtMilliseconds: Int64(offlineCreatedAtMilliseconds)
         )
         try writeJSONLine(row)
 

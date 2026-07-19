@@ -72,8 +72,12 @@ public enum InstantTodosV3LiveValidation {
     id: String,
     text: String,
     createdAtMilliseconds: Int64,
+    offlineID: String,
+    offlineText: String,
+    offlineCreatedAtMilliseconds: Int64,
+    roomID: String = "main",
     persistenceURL: URL? = nil
-  ) async throws -> ValidationEvidenceRow<InstantTodosV3LiveValidationDetails> {
+  ) async throws -> ValidationEvidenceRow<InstantTodosV3SessionValidationDetails> {
     let client = try await liveClient(
       appID: appID,
       apiURI: apiURI,
@@ -85,6 +89,12 @@ public enum InstantTodosV3LiveValidation {
       refreshToken: refreshToken,
       expectedUserID: expectedUserID
     )
+
+    let room = InstantRoomHandle(type: TodosRoom.roomType, id: roomID)
+    let presence = try await client.observeRoomPresence(room: room)
+    _ = try await client.joinRoom(room)
+    _ = try await client.setRoomPresence(room: room, values: [:])
+    let peerCount = try await waitForPeer(in: presence)
 
     let todoID = InstantID<Todo>(rawValue: id)
     try await sendAndRequireServerAcceptance(
@@ -102,7 +112,7 @@ public enum InstantTodosV3LiveValidation {
       operation: "complete Todos V3 todo"
     )
 
-    return try await evidence(
+    let online = try await evidence(
       direction: "swift-to-typescript",
       id: id,
       text: text,
@@ -111,6 +121,48 @@ public enum InstantTodosV3LiveValidation {
       appID: appID,
       client: client,
       event: "app-todo-completed"
+    )
+
+    _ = try await client.closeConnection()
+    let pendingWhileOffline = try await sendWhileDisconnectedThenReconnect(
+      CreateTodo(
+        id: InstantID(rawValue: offlineID),
+        text: offlineText,
+        createdAt: Date(
+          timeIntervalSince1970: Double(offlineCreatedAtMilliseconds) / 1_000
+        )
+      ),
+      using: client
+    )
+    let offline = try await evidence(
+      direction: "swift-offline-to-typescript",
+      id: offlineID,
+      text: offlineText,
+      isCompleted: false,
+      createdAtMilliseconds: offlineCreatedAtMilliseconds,
+      appID: appID,
+      client: client,
+      event: "offline-todo-replayed"
+    )
+    _ = try await client.leaveRoom(room)
+    _ = try await client.closeConnection()
+
+    return ValidationEvidenceRow(
+      caseID: "validation.live.todos-v3",
+      side: "swift",
+      event: "viewer-and-offline-replay-observed",
+      appID: appID,
+      entityID: offlineID,
+      timestampMs: milliseconds(Date()),
+      ok: true,
+      details: InstantTodosV3SessionValidationDetails(
+        roomType: room.type,
+        roomID: room.id,
+        peerCount: peerCount,
+        pendingWhileOffline: pendingWhileOffline,
+        online: online.details,
+        offline: offline.details
+      )
     )
   }
 
@@ -282,6 +334,101 @@ public enum InstantTodosV3LiveValidation {
         message: "The message completed without server acceptance."
       )
     }
+  }
+
+  private static func sendWhileDisconnectedThenReconnect<Message: InstantMessage>(
+    _ message: Message,
+    using client: InstantSwiftDataClient
+  ) async throws -> Int {
+    let outcome = await MainActor.run { TodosV3MessageOutcome() }
+    let task = client.send(
+      message,
+      onServerAccepted: { _ in outcome.accepted = true },
+      onFailure: { outcome.failure = $0 }
+    )
+    defer { task.cancel() }
+
+    let deadline = ContinuousClock.now + .seconds(10)
+    var pendingCount = 0
+    while ContinuousClock.now < deadline {
+      pendingCount = await client.pendingMutations().filter { $0.status == .pending }.count
+      if pendingCount == 1 { break }
+      try await Task.sleep(for: .milliseconds(25))
+    }
+    guard pendingCount == 1 else {
+      throw validationFailure(
+        operation: "queue disconnected Todos V3 write",
+        message: "Expected exactly one pending mutation while disconnected."
+      )
+    }
+
+    _ = try await client.connect()
+    try await waitForAuthenticated(client)
+    try await withThrowingTaskGroup(of: Void.self) { group in
+      group.addTask { await task.value }
+      group.addTask {
+        try await Task.sleep(for: .seconds(15))
+        throw validationFailure(
+          operation: "replay disconnected Todos V3 write",
+          message: "Timed out waiting for server acceptance after reconnect."
+        )
+      }
+      _ = try await group.next()
+      group.cancelAll()
+    }
+
+    let result = await MainActor.run { (outcome.accepted, outcome.failure) }
+    if let failure = result.1 { throw failure }
+    guard result.0 else {
+      throw validationFailure(
+        operation: "replay disconnected Todos V3 write",
+        message: "The queued message completed without server acceptance."
+      )
+    }
+    return pendingCount
+  }
+
+  private static func waitForPeer(
+    in stream: AsyncStream<[InstantRoomPresenceMember]>
+  ) async throws -> Int {
+    try await withThrowingTaskGroup(of: Int.self) { group in
+      group.addTask {
+        for await members in stream where !members.isEmpty {
+          return members.count
+        }
+        throw validationFailure(
+          operation: "observe Todos V3 viewer",
+          message: "The room presence stream ended before another peer arrived."
+        )
+      }
+      group.addTask {
+        try await Task.sleep(for: .seconds(20))
+        throw validationFailure(
+          operation: "observe Todos V3 viewer",
+          message: "Timed out waiting for another Todos viewer."
+        )
+      }
+      guard let value = try await group.next() else {
+        throw validationFailure(
+          operation: "observe Todos V3 viewer",
+          message: "No presence task completed."
+        )
+      }
+      group.cancelAll()
+      return value
+    }
+  }
+
+  private static func waitForAuthenticated(_ client: InstantSwiftDataClient) async throws {
+    let deadline = ContinuousClock.now + .seconds(15)
+    while ContinuousClock.now < deadline {
+      if try await client.connectionStatus().state == .authenticated { return }
+      try await Task.sleep(for: .milliseconds(25))
+    }
+    throw validationFailure(
+      operation: "wait for Todos V3 reconnect",
+      message: "The live client did not return to authenticated state."
+    )
   }
 
   private static func waitForTodo(
