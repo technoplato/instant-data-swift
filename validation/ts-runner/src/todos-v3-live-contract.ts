@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { dirname, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import type { Readable } from "node:stream";
@@ -22,6 +23,14 @@ const apiURI = process.env.INSTANT_API_URI ?? "https://api.instantdb.com";
 const websocketURI = process.env.INSTANT_WEBSOCKET_URI
   ?? "wss://api.instantdb.com/runtime/session";
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+const swiftTodo: TodoShape = {
+  ...todosV3AppContract.swiftCreated,
+  id: randomUUID(),
+};
+const typeScriptTodo: TodoShape = {
+  ...todosV3AppContract.typeScriptCreated,
+  id: randomUUID(),
+};
 const warnings: string[] = [];
 const originalWarn = console.warn;
 console.warn = (...values) => warnings.push(values.map(String).join(" "));
@@ -92,22 +101,22 @@ try {
     websocketURI,
     refreshToken,
     userID: user.id,
-    todo: todosV3AppContract.swiftCreated,
+    todo: swiftTodo,
   });
   assert.equal(swift.ok, true);
   assert.equal(swift.event, "app-todo-completed");
   assert.deepEqual(swift.details, {
     direction: "swift-to-typescript",
-    ...todosV3AppContract.swiftCreated,
+    ...swiftTodo,
     connectionState: "authenticated",
     pendingMutationCount: 0,
   });
 
   const observedByTypeScript = await waitForTodo(
     db,
-    todosV3AppContract.swiftCreated,
+    swiftTodo,
   );
-  assert.deepEqual(observedByTypeScript, todosV3AppContract.swiftCreated);
+  assert.deepEqual(observedByTypeScript, swiftTodo);
 
   const observer = spawnSwift("--live-todos-v3-observe", {
     appId,
@@ -115,7 +124,7 @@ try {
     websocketURI,
     refreshToken,
     userID: user.id,
-    todo: todosV3AppContract.typeScriptCreated,
+    todo: typeScriptTodo,
   });
   const lines = createInterface({ input: observer.stdout, crlfDelay: Infinity })
     [Symbol.asyncIterator]();
@@ -124,7 +133,7 @@ try {
   assert.equal(ready.details.direction, "typescript-to-swift");
   assert.equal(ready.details.connectionState, "authenticated");
 
-  const tsTodo = todosV3AppContract.typeScriptCreated;
+  const tsTodo = typeScriptTodo;
   await db.transact(
     db.tx.todos[tsTodo.id].update({
       text: tsTodo.text,
@@ -188,18 +197,20 @@ async function runSwiftWrite(input: SwiftInput): Promise<any> {
   return JSON.parse(lines[0]);
 }
 
+interface TodoShape {
+  id: string;
+  text: string;
+  isCompleted: boolean;
+  createdAtMilliseconds: number;
+}
+
 interface SwiftInput {
   appId: string;
   apiURI: string;
   websocketURI: string;
   refreshToken: string;
   userID: string;
-  todo: {
-    id: string;
-    text: string;
-    isCompleted: boolean;
-    createdAtMilliseconds: number;
-  };
+  todo: TodoShape;
 }
 
 function spawnSwift(mode: string, input: SwiftInput): SwiftProcess {
@@ -263,8 +274,8 @@ async function requireSuccessfulExit(
 
 async function waitForTodo(
   db: any,
-  expected: typeof todosV3AppContract.swiftCreated,
-): Promise<typeof todosV3AppContract.swiftCreated> {
+  expected: TodoShape,
+): Promise<TodoShape> {
   let last: unknown;
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const result = await db.queryOnce({
