@@ -153,6 +153,19 @@ try {
   );
   await db.auth.signInWithToken(typeScriptToken);
 
+  const observer = spawnSwift("--live-mobile-chat-v3-observe", {
+    appId,
+    apiURI,
+    websocketURI,
+    refreshToken: typeScriptToken,
+    graph: typeScriptGraph,
+  });
+  const lines = createInterface({ input: observer.stdout, crlfDelay: Infinity })
+    [Symbol.asyncIterator]();
+  const ready = await nextJSONLine(lines, observer, "Swift Mobile Chat observer readiness");
+  assert.equal(ready.event, "observer-ready");
+  assert.equal(ready.details.connectionState, "authenticated");
+
   const room: any = db.joinRoom(mobileChatV3AppContract.room.type, swiftGraph.channelID);
   const observedSwiftPresence = deferred<{ profileId: string; displayName: string }>();
   const observedSwiftTyping = deferred<typeof mobileChatV3AppContract.room.swiftTyping>();
@@ -244,19 +257,6 @@ try {
     const typeScriptObserved = await waitForGraph(db, swiftGraph);
     assert.deepEqual(typeScriptObserved, swiftGraph);
 
-    const observer = spawnSwift("--live-mobile-chat-v3-observe", {
-      appId,
-      apiURI,
-      websocketURI,
-      refreshToken: typeScriptToken,
-      graph: typeScriptGraph,
-    });
-    const lines = createInterface({ input: observer.stdout, crlfDelay: Infinity })
-      [Symbol.asyncIterator]();
-    const ready = await nextJSONLine(lines, observer, "Swift Mobile Chat observer readiness");
-    assert.equal(ready.event, "observer-ready");
-    assert.equal(ready.details.connectionState, "authenticated");
-
     await db.transact([
       db.tx.profiles[typeScriptGraph.profileID]
         .create({ displayName: typeScriptGraph.displayName })
@@ -294,6 +294,7 @@ try {
       appID: appId,
       ok: true,
       details: {
+        upstream: mobileChatV3AppContract.upstream,
         users: {
           swift: { id: swiftUser.id, email: swiftUser.email },
           typeScript: { id: typeScriptUser.id, email: typeScriptUser.email },
