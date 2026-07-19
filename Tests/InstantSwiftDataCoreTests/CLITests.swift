@@ -998,10 +998,10 @@ extension InstantStoreTests {
 
     expectNoDifference(help.status, 0)
     expectNoDifference(help.error, "")
-    #expect(help.output.contains("schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack"))
-    #expect(help.output.contains("schema verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack"))
-    #expect(help.output.contains("perms generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack"))
-    #expect(help.output.contains("perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack"))
+    #expect(help.output.contains("schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors"))
+    #expect(help.output.contains("schema verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors"))
+    #expect(help.output.contains("perms generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors"))
+    #expect(help.output.contains("perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors"))
   }
 
   @Test
@@ -1030,11 +1030,11 @@ extension InstantStoreTests {
     )
     try expectMalformed(
       ["schema", "generate", "--to", schemaURL.path, "--json"],
-      contains: "schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack"
+      contains: "schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors"
     )
     try expectMalformed(
       ["schema", "dance", "--to", schemaURL.path, "--json"],
-      contains: "schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack"
+      contains: "schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors"
     )
     try expectMalformed(
       ["schema", "verify", "--example", "todos", "--unknown", "--json"],
@@ -1046,7 +1046,7 @@ extension InstantStoreTests {
     )
     try expectMalformed(
       ["perms", "verify", "--example", "todos", "--from", "--json"],
-      contains: "perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack --from instant.perms.ts"
+      contains: "perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors --from instant.perms.ts"
     )
 
     expectNoDifference(
