@@ -390,6 +390,9 @@ private actor InstantRuntimeLiveSession {
   private var inFlightMutationIDs: Set<String> = []
   private var registeredRooms: [InstantRoomHandle: RegisteredRoom] = [:]
   private var registeredStreamReaders: [String: RegisteredStreamReader] = [:]
+  private var pendingStreamStarts:
+    [String: AsyncThrowingStream<InstantLiveStartStreamOK, Error>.Continuation] = [:]
+  private var activeStreamWriterIDs: Set<String> = []
   private var makeID: (@Sendable () -> String)?
   private var sessionID: String?
   private var isOpened = false
@@ -401,6 +404,87 @@ private actor InstantRuntimeLiveSession {
 
   var currentSessionID: String? {
     sessionID
+  }
+
+  func startStream(
+    clientID: String,
+    reconnectToken: String,
+    ruleParams: InstantLiveJSONValue? = nil,
+    clientEventID: String
+  ) async throws -> InstantLiveStartStreamOK {
+    guard let session, isOpened else {
+      throw InstantError(
+        code: .networkFailed,
+        operation: "start Instant live stream",
+        message: "The Instant live session is not open.",
+        recovery: "Connect before creating a live write stream."
+      )
+    }
+    let response = AsyncThrowingStream<InstantLiveStartStreamOK, Error>.makeStream(
+      bufferingPolicy: .bufferingNewest(1)
+    )
+    pendingStreamStarts[clientEventID] = response.continuation
+    do {
+      try await send(
+        .startStream(
+          clientID: clientID,
+          reconnectToken: reconnectToken,
+          ruleParams: ruleParams,
+          clientEventID: clientEventID
+        ),
+        through: session
+      )
+      let responseStream = response.stream
+      let acknowledged = try await instantLiveWithTimeout(
+        operation: "start Instant live stream",
+        timeoutMilliseconds: 10_000
+      ) {
+        var iterator = responseStream.makeAsyncIterator()
+        return try await iterator.next()
+      }
+      guard let started = acknowledged else {
+        throw InstantError(
+          code: .networkFailed,
+          operation: "start Instant live stream",
+          serverEventID: clientEventID,
+          message: "Instant closed the start-stream response without an acknowledgement.",
+          recovery: "Reconnect and retry the write stream with the same reconnect token."
+        )
+      }
+      pendingStreamStarts[clientEventID] = nil
+      activeStreamWriterIDs.insert(started.streamID)
+      return started
+    } catch {
+      pendingStreamStarts[clientEventID]?.finish(throwing: error)
+      pendingStreamStarts[clientEventID] = nil
+      throw error
+    }
+  }
+
+  func appendStream(
+    streamID: String,
+    chunks: [String],
+    offset: Int64,
+    done: Bool,
+    abortReason: String?,
+    clientEventID: String
+  ) async throws {
+    guard let session, isOpened, activeStreamWriterIDs.contains(streamID) else { return }
+    try await send(
+      .appendStream(
+        streamID: streamID,
+        chunks: chunks,
+        offset: offset,
+        done: done,
+        abortReason: abortReason,
+        clientEventID: clientEventID
+      ),
+      through: session
+    )
+  }
+
+  func ownsStreamWriter(streamID: String) -> Bool {
+    activeStreamWriterIDs.contains(streamID)
   }
 
   func open(
@@ -781,6 +865,21 @@ private actor InstantRuntimeLiveSession {
     case let .error(error):
       if let clientEventID = error.clientEventID {
         inFlightMutationIDs.remove(clientEventID)
+        pendingStreamStarts[clientEventID]?.finish(
+          throwing: InstantError(
+            code: .networkFailed,
+            operation: "start Instant live stream",
+            serverEventID: clientEventID,
+            message: error.message,
+            recovery: "Inspect the stream create permission and reconnect token."
+          )
+        )
+        pendingStreamStarts[clientEventID] = nil
+      }
+    case let .startStreamOK(started):
+      if let clientEventID = started.clientEventID {
+        pendingStreamStarts[clientEventID]?.yield(started)
+        pendingStreamStarts[clientEventID]?.finish()
       }
     case let .joinRoomOK(room):
       try await recordRoomEvent(op: room.op, roomID: room.roomID)
@@ -853,6 +952,10 @@ private actor InstantRuntimeLiveSession {
       registeredRooms[room]?.isConnected = false
     }
     await session.close()
+    for continuation in pendingStreamStarts.values {
+      continuation.finish(throwing: failure ?? CancellationError())
+    }
+    pendingStreamStarts.removeAll()
     if let failure {
       await onFailure(failure)
     }
@@ -871,6 +974,10 @@ private actor InstantRuntimeLiveSession {
       registeredRooms[room]?.isConnected = false
     }
     isOpened = false
+    for continuation in pendingStreamStarts.values {
+      continuation.finish(throwing: CancellationError())
+    }
+    pendingStreamStarts.removeAll()
     receiverTask?.cancel()
     if let session {
       await session.close()
@@ -3708,13 +3815,40 @@ public final class InstantRuntime: Sendable {
     await operationGate.enter()
     do {
       let userID = try await resolvedAuthenticatedUserID(operation: "create stream", noun: "Stream")
-      let metadata = try await persistence.createStream(
-        appID: configuration.appID,
-        streamID: configuration.makeID(),
-        clientID: clientID,
-        userID: userID,
-        createdAt: configuration.now()
-      )
+      let metadata: InstantStreamMetadata
+      if configuration.liveTransport != nil, await liveSession.isOpen {
+        let started = try await liveSession.startStream(
+          clientID: clientID,
+          reconnectToken: configuration.makeID(),
+          clientEventID: configuration.makeID()
+        )
+        guard started.clientID == clientID, started.offset == 0 else {
+          throw InstantError(
+            code: .decodeFailed,
+            operation: "start Instant live stream",
+            path: "offset",
+            serverEventID: started.clientEventID,
+            message:
+              "Instant acknowledged client id '\(started.clientID)' at byte offset \(started.offset), expected '\(clientID)' at 0.",
+            recovery: "Use a new client id, or reconnect the existing writer with its original token."
+          )
+        }
+        metadata = try await persistence.ensureStreamMetadata(
+          appID: configuration.appID,
+          streamID: started.streamID,
+          clientID: clientID,
+          userID: userID,
+          createdAt: configuration.now()
+        )
+      } else {
+        metadata = try await persistence.createStream(
+          appID: configuration.appID,
+          streamID: configuration.makeID(),
+          clientID: clientID,
+          userID: userID,
+          createdAt: configuration.now()
+        )
+      }
       await operationGate.leave()
       return metadata
     } catch {
@@ -3815,6 +3949,14 @@ public final class InstantRuntime: Sendable {
           recovery: "Create the stream before appending content."
         )
       }
+      try await liveSession.appendStream(
+        streamID: streamID,
+        chunks: [content],
+        offset: append.offset,
+        done: false,
+        abortReason: nil,
+        clientEventID: configuration.makeID()
+      )
       try await publishStreamContentUpdates(streamID: streamID)
       await operationGate.leave()
       return append
@@ -3853,6 +3995,14 @@ public final class InstantRuntime: Sendable {
           recovery: "Create the stream before closing it."
         )
       }
+      try await liveSession.appendStream(
+        streamID: streamID,
+        chunks: [],
+        offset: metadata.size ?? 0,
+        done: true,
+        abortReason: normalizedAbortReason,
+        clientEventID: configuration.makeID()
+      )
       try await publishStreamContentUpdates(streamID: streamID)
       await operationGate.leave()
       return metadata

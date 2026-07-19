@@ -1743,6 +1743,88 @@ struct InstantReactorParityTests {
   }
 
   @Test
+  func runtimeLiveWriterStartsAppendsAndClosesCanonicalStream() async throws {
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "live-stream-writer")
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "typescript-live-stream-writer-parity",
+        persistenceURL: try temporaryReactorParityCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: session.transport
+      )
+    )
+    _ = try await runtime.signInAsGuest()
+    _ = try await runtime.connect()
+
+    let createTask = Task {
+      try await runtime.createStream(clientID: "swift-writer")
+    }
+    try await instantLiveWithTimeout(
+      operation: "wait for canonical start-stream",
+      timeoutMilliseconds: 500
+    ) {
+      await session.waitForSentMessageCount(2)
+    }
+    let start = try #require(await session.sentMessages().last)
+    expectNoDifference(start.op, "start-stream", typescriptStreamWriterSource)
+    expectNoDifference(start.fields["client-id"], .string("swift-writer"))
+    guard case let .string(reconnectToken)? = start.fields["reconnect-token"] else {
+      Issue.record("Expected a canonical reconnect token string.")
+      return
+    }
+    #expect(UUID(uuidString: reconnectToken) != nil)
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "start-stream-ok",
+        clientEventID: start.clientEventID,
+        fields: [
+          "client-id": .string("swift-writer"),
+          "offset": .number(0),
+          "stream-id": .string("00000000-0000-0000-0000-000000000101"),
+        ]
+      )
+    )
+    let metadata = try await createTask.value
+    expectNoDifference(
+      metadata.id,
+      "00000000-0000-0000-0000-000000000101",
+      typescriptStreamWriterSource
+    )
+
+    let append = try await runtime.appendStreamContent(
+      streamID: metadata.id,
+      content: "hello 🚀",
+      expectedOffset: 0
+    )
+    await session.waitForSentMessageCount(3)
+    let appendMessage = try #require(await session.sentMessages().last)
+    expectNoDifference(appendMessage.op, "append-stream", typescriptStreamWriterSource)
+    expectNoDifference(appendMessage.fields, [
+      "chunks": .array([.string("hello 🚀")]),
+      "done": .bool(false),
+      "offset": .number(0),
+      "stream-id": .string(metadata.id),
+    ])
+    expectNoDifference(append.chunk.byteCount, 10, typescriptStreamWriterSource)
+
+    let closed = try await runtime.closeStream(streamID: metadata.id)
+    await session.waitForSentMessageCount(4)
+    let closeMessage = try #require(await session.sentMessages().last)
+    expectNoDifference(closeMessage.op, "append-stream", typescriptStreamWriterSource)
+    expectNoDifference(closeMessage.fields, [
+      "chunks": .array([]),
+      "done": .bool(true),
+      "offset": .number(10),
+      "stream-id": .string(metadata.id),
+    ])
+    expectNoDifference(closed.done, true, typescriptStreamWriterSource)
+    expectNoDifference(closed.size, 10, typescriptStreamWriterSource)
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
   func runtimeAppliesLivePresencePatchesAndEphemeralServerBroadcasts() async throws {
     let room = InstantRoomHandle(type: "chat", id: "room-events")
     let now = InstantTimestamp(milliseconds: 1_700_000_080_000)
@@ -2109,6 +2191,9 @@ private let pythonStreamAppendMaterializationSource =
 
 private let typescriptStreamSource =
   "upstream/instant/client/packages/core/src/Stream.ts createReadStream and upstream/instant/server/src/instant/reactive/session.clj handle-subscribe-stream! [adapted: Swift starts a reader from a client id before local metadata exists, accepts the canonical server-resolved stream and client ids, persists the remote metadata and UTF-8 content, and publishes the open then closed snapshots.]"
+
+private let typescriptStreamWriterSource =
+  "upstream/instant/client/packages/core/src/Stream.ts createWriteStream, startWriteStream, and appendStream plus upstream/instant/server/src/instant/reactive/session.clj handle-start-stream! and handle-append-stream! [adapted: Swift awaits the server stream id, persists that canonical identity, sends ordered UTF-8 chunks at exact byte offsets, and closes with an empty done append.]"
 
 private let reactorRoomEventsSource =
   "upstream/instant/client/packages/core/src/Reactor.js refresh-presence, patch-presence, and server-broadcast receive branches plus upstream/instant/server/test/instant/reactive/session_test.clj patch-presence-works and broadcast-works [adapted: Swift excludes its own live session from peer presence, applies canonical +/r/- edits in memory, publishes typed peer state, and emits remote broadcasts without adding them to durable topic history.]"
