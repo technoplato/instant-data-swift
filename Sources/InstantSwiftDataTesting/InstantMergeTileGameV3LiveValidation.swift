@@ -60,6 +60,8 @@ private final class MergeTileGameV3MessageOutcome {
 }
 
 public enum InstantMergeTileGameV3LiveValidation {
+  public static let boardID = MergeTileGameV3Board.boardID
+
   public static let swiftCell = InstantMergeTileGameV3LiveCell(
     cell: "0-0",
     color: "#e76f51"
