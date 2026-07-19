@@ -276,6 +276,16 @@ As of 2026-07-19:
   drift, and records the five exact server system-schema warnings with zero
   compiler or runtime warnings. Evidence is in
   `/tmp/instant-data-swift-custom-cursors-v3-20260719T042442Z/evidence.json`.
+- The canonical Merge Tile Game boundary is complete through `f77b7a9`, with
+  its fresh-app proof recorded at `387b222`. The app-owned `boards` entity,
+  `@FetchOne`, typed initialize/merge/reset messages, and
+  `tile-game-example/_defaultRoomId` color presence preserve the fixed 4x4
+  board, six-color palette, and single-cell JSON deep merge. The live gate
+  proves Swift and TypeScript publish distinct cells without clobbering,
+  observes exact color presence in both directions, resets all 16 cells, and
+  removes the remote peer on disconnect. Server readback preserves the Swift
+  JSON contract through the explicit `server-json-as-any` warning. Evidence is
+  in `/tmp/instant-data-swift-merge-tile-game-v3-20260719T045153Z/evidence.json`.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -309,7 +319,7 @@ When sources disagree, use this order:
 | Current execution state, packet order, gates, and tag targets | `docs/v3-e2e-port-plan.md` |
 | Product contract and full definition of done | `docs/instant-swift-data-goals.md` |
 | Desired V3 API rules and decision log | `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` |
-| Next app target | Merge Tile Game, beginning source-first from the pinned upstream fixed board, per-cell JSON merge, room color presence, reset, and disconnect behavior |
+| Next app target | Stroopwafel, beginning source-first from the pinned multiplayer demo and its durable plus ephemeral collaboration contract |
 | Current generated recording contract | `InstantSchemaExamples.recordingActionDocument`, `recordingActionValidationPermissions`, and `--example recording-action` |
 | TypeScript contract pin/type-check gate | `validation/ts-runner/package.json`, its committed `pnpm-lock.yaml`, and `validation/typecheck-generated-contract.sh` |
 | Reproducible live schema/perms install and readback | `validation/verify-recording-contract-live.sh` and `validation/fixtures/recording-action.server.*.ts` |
@@ -335,6 +345,8 @@ When sources disagree, use this order:
 | Cursors reproducible cross-SDK gate | `validation/verify-cursors-v3-app-live.sh`, `validation/ts-runner/src/cursors-v3-live-contract.ts`, and its `evidence.json` artifact |
 | Custom Cursors app-owned syntax and exact dynamic presence | `Sources/PresenceRecipesV3App/CustomCursorsV3Screen.swift`, `Tests/PresenceRecipesV3AppTests/CustomCursorsV3Tests.swift`, and `Tests/InstantSwiftDataSchemaTests/CustomCursorsContractTests.swift` |
 | Custom Cursors reproducible cross-SDK gate | `validation/verify-custom-cursors-v3-app-live.sh`, `validation/ts-runner/src/custom-cursors-v3-live-contract.ts`, and `/tmp/instant-data-swift-custom-cursors-v3-20260719T042442Z/evidence.json` |
+| Merge Tile Game app-owned syntax and typed board messages | `Sources/PresenceRecipesV3App/MergeTileGameV3Screen.swift`, `Tests/PresenceRecipesV3AppTests/MergeTileGameV3Tests.swift`, and `Tests/InstantSwiftDataSchemaTests/MergeTileGameContractTests.swift` |
+| Merge Tile Game reproducible cross-SDK gate | `validation/verify-merge-tile-game-v3-app-live.sh`, `validation/ts-runner/src/merge-tile-game-v3-live-contract.ts`, and `/tmp/instant-data-swift-merge-tile-game-v3-20260719T045153Z/evidence.json` |
 | Reactions app-owned syntax and behavior | `Sources/PresenceRecipesV3App/ReactionsV3Screen.swift`, `Sources/PresenceRecipesV3App/PresenceRecipesV3App.swift`, and `Tests/PresenceRecipesV3AppTests/ReactionsV3Tests.swift` |
 | Reactions source/schema/live contracts | `Tests/InstantSwiftDataSchemaTests/ReactionsContractTests.swift`, `Tests/InstantSwiftDataTestingTests/InstantReactionsV3LiveValidationTests.swift`, and `validation/ts-runner/src/reactions-v3-*.ts` |
 | Reactions reproducible cross-SDK gate | `validation/verify-reactions-v3-app-live.sh` and `/tmp/instant-data-swift-reactions-v3-20260719T032236Z/evidence.json` |
@@ -919,9 +931,28 @@ Full verification is green at 992 Swift Testing cases across 63 suites, the
 `presence-recipes-v3` build, and the complete TypeScript typecheck, contract,
 live-support, and fixture matrix.
 
-Next, port Merge Tile Game source-first from its pinned upstream board entity,
-per-cell JSON merge, room color presence, reset, and disconnect behavior. Do
-not create the `v0.4.0-apps-e2e` tag until the full required app matrix passes.
+The canonical Merge Tile Game recipe is complete through `f77b7a9`, with its
+fresh-app gate recorded at `387b222`. The runnable host compiles the app-owned
+`@FetchOne` board, typed initialize/merge/reset messages, and
+`@Room`/`@Presence` color surface. Canonical TypeScript observes Swift's
+`0-0` merge and Swift color, then publishes a distinct `0-1` merge and color;
+both SDKs retain both cells in the exact 16-cell board. Swift then observes the
+canonical full-board reset and TypeScript disconnect. The server-readback gate
+records one app entity, two attributes, no links, one four-rule permissions
+namespace, the five system-schema warnings plus explicit
+`server-json-as-any` for `boards.state`, schema SHA-256
+`08c7de132f7de3268c04472cbe72136d82f5b94b5e5bbb2159c0f896b1fed7b9`,
+permissions SHA-256
+`f1192523fd4726637595a197e42319a6658b46def546deea051329b55e505231`,
+and zero compiler/runtime warnings at
+`/tmp/instant-data-swift-merge-tile-game-v3-20260719T045153Z/evidence.json`.
+Full verification is green at 1,007 Swift Testing cases across 66 suites, the
+`presence-recipes-v3` build, and the complete TypeScript typecheck, contract,
+live-support, and fixture matrix.
+
+Next, port Stroopwafel source-first from its pinned multiplayer demo and
+existing local model/CLI proof. Do not create the `v0.4.0-apps-e2e` tag until
+the full required app matrix passes.
 
 The product-payload mismatch is resolved: playback presence stores and encodes
 `offsetSeconds: Double`, offers `Duration` as a computed product convenience,
