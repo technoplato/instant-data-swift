@@ -98,6 +98,11 @@ try {
   );
   let roomClosed = false;
   let topicUnsubscribed = false;
+  let presenceUnsubscribed = false;
+  const roomReady = deferred<void>();
+  const unsubscribePresence = room.subscribePresence({}, () => {
+    roomReady.resolve();
+  });
   const observedSwiftPayload = deferred<ReactionsV3Payload>();
   const receivedPayloads: ReactionsV3Payload[] = [];
   const unsubscribe = room.subscribeTopic(
@@ -115,6 +120,8 @@ try {
       }
     },
   );
+
+  await withTimeout(roomReady.promise, "join TypeScript reactions room");
 
   const swift = spawnSwift({
     appId,
@@ -217,6 +224,8 @@ try {
     unsubscribeCleanupWitness();
     probeRoom.leaveRoom();
     probeDb.shutdown();
+    unsubscribePresence();
+    presenceUnsubscribed = true;
     room.leaveRoom();
     db.shutdown();
     roomClosed = true;
@@ -256,6 +265,7 @@ try {
     });
   } finally {
     if (!topicUnsubscribed) unsubscribe();
+    if (!presenceUnsubscribed) unsubscribePresence();
     if (!roomClosed) {
       room.leaveRoom();
       db.shutdown();
