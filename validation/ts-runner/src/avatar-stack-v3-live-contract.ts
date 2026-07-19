@@ -14,7 +14,10 @@ import {
 } from "@instantdb/core";
 
 import { avatarStackV3AppContract } from "./avatar-stack-v3-app-contract.js";
-import { projectCanonicalAvatarPeer } from "./avatar-stack-v3-live-support.js";
+import {
+  projectCanonicalAvatarPeer,
+  publicAvatarStackUserEvidence,
+} from "./avatar-stack-v3-live-support.js";
 
 type SwiftProcess = ChildProcessByStdio<null, Readable, Readable>;
 const appId = required("INSTANT_APP_ID");
@@ -108,7 +111,10 @@ try {
     ok: true,
     details: {
       upstream: avatarStackV3AppContract.upstream,
-      users: { swift: swiftUser, typeScript: typeScriptUser },
+      users: {
+        swift: publicAvatarStackUserEvidence(swiftUser),
+        typeScript: publicAvatarStackUserEvidence(typeScriptUser),
+      },
       room: avatarStackV3AppContract.room,
       typeScriptObservedSwift: observedSwift,
       typeScriptPublished: avatarStackV3AppContract.fixtures.typeScript.presence,

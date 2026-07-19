@@ -110,6 +110,7 @@ const permissions = read("swift-server-perms-verify.json");
 const live = read("avatar-stack-v3.json");
 const manifest = JSON.parse(readFileSync(resolve(process.env.RUNNER, "package.json"), "utf8"));
 assert.equal(live.ok, true);
+assert.equal(JSON.stringify(live).includes("refresh_token"), false);
 assert.deepEqual(live.details.swift.publishedPresence, { name: "abcdef" });
 assert.deepEqual(live.details.swift.observedPresence, { name: "uvwxyz" });
 assert.equal(live.details.swift.peerCountAfterDisconnect, 0);

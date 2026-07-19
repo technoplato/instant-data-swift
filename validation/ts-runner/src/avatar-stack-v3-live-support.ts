@@ -9,6 +9,14 @@ export interface CanonicalAvatarStackPeer {
   presence: AvatarStackV3Presence;
 }
 
+export interface PublicAvatarStackUserEvidence {
+  appID: string;
+  id: string;
+  email: string | null;
+  createdAt: string;
+  isGuest: boolean;
+}
+
 export function projectCanonicalAvatarPeer(value: unknown): CanonicalAvatarStackPeer {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw exactShapeError();
@@ -34,6 +42,38 @@ export function avatarStackOnlineCount(
   peers: ReadonlyArray<AvatarStackV3PeerWireValue>,
 ): number {
   return peers.length + 1;
+}
+
+export function publicAvatarStackUserEvidence(
+  value: unknown,
+): PublicAvatarStackUserEvidence {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new TypeError("Expected an Instant Admin SDK user for public avatar evidence.");
+  }
+  const record = value as Record<string, unknown>;
+  const appID = record.app_id;
+  const id = record.id;
+  const email = record.email;
+  const createdAt = record.created_at;
+  const isGuest = record.isGuest;
+  if (typeof email !== "string" && email !== null) {
+    throw new TypeError("Expected an Instant Admin SDK user for public avatar evidence.");
+  }
+  if (
+    typeof appID !== "string"
+    || typeof id !== "string"
+    || typeof createdAt !== "string"
+    || typeof isGuest !== "boolean"
+  ) {
+    throw new TypeError("Expected an Instant Admin SDK user for public avatar evidence.");
+  }
+  return {
+    appID,
+    id,
+    email: email as string | null,
+    createdAt,
+    isGuest,
+  };
 }
 
 function exactShapeError(): TypeError {
