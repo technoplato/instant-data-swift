@@ -399,6 +399,20 @@ public enum InstantSchemaExamples {
     namespaces: []
   )
 
+  public static let streamsDocument = InstantSchemaDocument(entities: [], rooms: [])
+
+  public static let streamsPermissions = InstantPermissionsDocument(
+    namespaces: [
+      InstantNamespacePermissions(
+        namespace: "$streams",
+        allow: [
+          .view: "auth.id != null",
+          .create: "auth.id != null",
+        ]
+      )
+    ]
+  )
+
   public static let avatarStackRoom = InstantRoomSchema(
     name: "avatars-example",
     presence: InstantRoomPayloadSchema(

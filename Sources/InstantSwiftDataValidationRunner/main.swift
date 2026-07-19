@@ -694,6 +694,62 @@ struct InstantSwiftDataValidationRunner {
       )
       try writeJSONLine(row)
 
+    case .liveStreamsV3:
+      let environment = ProcessInfo.processInfo.environment
+      let appID = try requiredEnvironment("INSTANT_APP_ID", environment: environment)
+      let refreshToken = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_STREAMS_REFRESH_TOKEN",
+        environment: environment
+      )
+      let swiftUserID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_STREAMS_SWIFT_USER_ID",
+        environment: environment
+      )
+      let typeScriptClientID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_STREAMS_TYPESCRIPT_CLIENT_ID",
+        environment: environment
+      )
+      let swiftClientID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_STREAMS_SWIFT_CLIENT_ID",
+        environment: environment
+      )
+      let apiURI = URL(
+        string: environment["INSTANT_API_URI"]
+          ?? InstantRuntimeConfiguration.defaultAPIURI.absoluteString
+      ) ?? InstantRuntimeConfiguration.defaultAPIURI
+      let websocketURI = URL(
+        string: environment["INSTANT_WEBSOCKET_URI"]
+          ?? InstantRuntimeConfiguration.defaultWebSocketURI.absoluteString
+      ) ?? InstantRuntimeConfiguration.defaultWebSocketURI
+      let row = try await InstantStreamsV3LiveValidation.run(
+        appID: appID,
+        apiURI: apiURI,
+        websocketURI: websocketURI,
+        refreshToken: refreshToken,
+        expectedSwiftUserID: swiftUserID,
+        typeScriptClientID: typeScriptClientID,
+        swiftClientID: swiftClientID,
+        onReaderReady: {
+          emit(
+            caseID: "validation.live.streams-v3",
+            event: "typescript-writer-ready",
+            ok: true,
+            appID: appID,
+            details: ["clientID": typeScriptClientID]
+          )
+        },
+        onSwiftWriterCreated: { streamID in
+          emit(
+            caseID: "validation.live.streams-v3",
+            event: "swift-writer-created",
+            ok: true,
+            appID: appID,
+            details: ["clientID": swiftClientID, "streamID": streamID]
+          )
+        }
+      )
+      try writeJSONLine(row)
+
     case .liveReactionsV3:
       let environment = ProcessInfo.processInfo.environment
       let appID = try requiredEnvironment("INSTANT_APP_ID", environment: environment)

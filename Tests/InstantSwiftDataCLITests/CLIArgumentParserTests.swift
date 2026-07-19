@@ -3386,6 +3386,10 @@ struct CLIArgumentParserTests {
       .liveTypingIndicatorV3
     )
     expectNoDifference(
+      try parseValidationRunner(["--live-streams-v3"]),
+      .liveStreamsV3
+    )
+    expectNoDifference(
       try parseValidationRunner(["--live-reactions-v3"]),
       .liveReactionsV3
     )
@@ -3540,6 +3544,14 @@ struct CLIArgumentParserTests {
     expectNoDifference(
       CLIValidationRunnerInvocation.liveTypingIndicatorV3.appID,
       "live-typing-indicator-v3"
+    )
+    expectNoDifference(
+      CLIValidationRunnerInvocation.liveStreamsV3.caseID,
+      "validation.live.streams-v3"
+    )
+    expectNoDifference(
+      CLIValidationRunnerInvocation.liveStreamsV3.appID,
+      "live-streams-v3"
     )
     expectNoDifference(
       CLIValidationRunnerInvocation.liveReactionsV3.caseID,
