@@ -38,7 +38,7 @@ struct SyncUpsV3SourceContractTests {
         attendeeDraftIDs: [InstantID(rawValue: "draft-1")],
         blankAttendeeID: InstantID(rawValue: "draft-blank")
       )
-      let recording = SyncUpsV3RecordingState(syncUp: syncUp, attendees: [attendee])
+      let recording = SyncUpsV3RecordingModel(syncUp: syncUp, attendees: [attendee])
 
       let list: any View = SyncUpsV3Screen()
       let detail: any View = SyncUpsV3DetailScreen(syncUp: syncUp)

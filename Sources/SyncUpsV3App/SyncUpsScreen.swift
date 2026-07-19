@@ -54,7 +54,7 @@ import InstantSwiftData
     @Dependency(\.uuid) private var uuid
 
     @State private var form: SyncUpsV3FormState?
-    @State private var recording: SyncUpsV3RecordingState?
+    @State private var recording: SyncUpsV3RecordingModel?
     @State private var message = ""
 
     public let syncUp: SyncUpsV3SyncUp
@@ -122,7 +122,7 @@ import InstantSwiftData
     }
 
     private func startMeetingButtonTapped() {
-      recording = SyncUpsV3RecordingState(syncUp: syncUp, attendees: syncUp.attendees)
+      recording = SyncUpsV3RecordingModel(syncUp: syncUp, attendees: syncUp.attendees)
     }
 
     private func deleteButtonTapped() {
@@ -216,104 +216,87 @@ import InstantSwiftData
     }
   }
 
-  public struct SyncUpsV3RecordingState: Equatable, Identifiable, Sendable {
-    public var id: InstantID<SyncUpsV3SyncUp> { syncUp.id }
-    public var syncUp: SyncUpsV3SyncUp
-    public var attendees: [SyncUpsV3Attendee]
-    public var secondsElapsed: Int
-    public var speakerIndex: Int
-    public var transcript: String
-
-    public init(
-      syncUp: SyncUpsV3SyncUp,
-      attendees: [SyncUpsV3Attendee],
-      secondsElapsed: Int = 0,
-      speakerIndex: Int = 0,
-      transcript: String = ""
-    ) {
-      self.syncUp = syncUp
-      self.attendees = attendees
-      self.secondsElapsed = secondsElapsed
-      self.speakerIndex = speakerIndex
-      self.transcript = transcript
-    }
-
-    public var durationRemaining: Int {
-      max(0, syncUp.seconds - secondsElapsed)
-    }
-
-    public mutating func nextButtonTapped() {
-      guard !attendees.isEmpty else { return }
-      speakerIndex = min(speakerIndex + 1, attendees.count - 1)
-      secondsElapsed = min(
-        syncUp.seconds,
-        speakerIndex * max(1, syncUp.seconds / attendees.count)
-      )
-    }
-  }
-
   @MainActor
   public struct SyncUpsV3RecordMeetingScreen: View {
     @Environment(\.dismiss) private var dismiss
-    @Dependency(\.date.now) private var now
     @Dependency(\.defaultInstantSwiftData) private var db
-    @Dependency(\.uuid) private var uuid
 
-    @State private var recording: SyncUpsV3RecordingState
+    @State private var model: SyncUpsV3RecordingModel
     @State private var message = ""
 
-    public init(recording: SyncUpsV3RecordingState) {
-      _recording = State(initialValue: recording)
+    public init(recording: SyncUpsV3RecordingModel) {
+      _model = State(initialValue: recording)
     }
 
     public var body: some View {
       Form {
         Section("Current speaker") {
-          Text(currentSpeakerName)
+          Text(model.currentSpeaker?.name ?? "Someone")
             .font(.title)
           ProgressView(
-            value: Double(recording.secondsElapsed),
-            total: Double(max(1, recording.syncUp.seconds))
+            value: Double(model.secondsElapsed),
+            total: Double(max(1, model.syncUp.seconds))
           )
-          LabeledContent("Time remaining", value: "\(recording.durationRemaining) seconds")
-          Button("Next speaker", action: nextButtonTapped)
+          LabeledContent("Time remaining", value: "\(model.durationRemaining) seconds")
+          Button("Next speaker") { Task { await nextButtonTapped() } }
         }
         Section("Transcript") {
-          TextEditor(text: $recording.transcript)
+          TextEditor(text: $model.transcript)
+        }
+        if let alert = model.alert {
+          Section("Recording status") {
+            Text(String(describing: alert))
+            if alert == .speechRecognitionDenied {
+              Button("Open Settings") { Task { await openSettingsButtonTapped() } }
+            }
+            Button("Resume", action: resumeButtonTapped)
+          }
         }
         if !message.isEmpty {
           Text(message)
         }
       }
-      .navigationTitle(recording.syncUp.title)
+      .navigationTitle(model.syncUp.title)
       .toolbar {
         ToolbarItem(placement: .cancellationAction) {
-          Button("Discard", role: .destructive) { dismiss() }
+          Button("Discard", role: .destructive, action: discardButtonTapped)
         }
         ToolbarItem(placement: .confirmationAction) {
           Button("Save and end", action: saveAndEndButtonTapped)
         }
       }
+      .task { await task() }
     }
 
-    private var currentSpeakerName: String {
-      recording.attendees.indices.contains(recording.speakerIndex)
-        ? recording.attendees[recording.speakerIndex].name
-        : "Someone"
+    private func task() async {
+      guard let meeting = await model.task() else { return }
+      send(meeting)
     }
 
-    private func nextButtonTapped() {
-      recording.nextButtonTapped()
+    private func nextButtonTapped() async {
+      await model.nextButtonTapped()
+    }
+
+    private func openSettingsButtonTapped() async {
+      await model.openSettingsButtonTapped()
+    }
+
+    private func resumeButtonTapped() {
+      model.resumeButtonTapped()
+    }
+
+    private func discardButtonTapped() {
+      model.discardButtonTapped()
+      dismiss()
     }
 
     private func saveAndEndButtonTapped() {
+      send(model.saveAndEndButtonTapped())
+    }
+
+    private func send(_ meeting: RecordSyncUpsV3Meeting) {
       db.send(
-        RecordSyncUpsV3Meeting(
-          meetingID: InstantID(rawValue: uuid().uuidString.lowercased()),
-          syncUpID: recording.syncUp.id,
-          date: now,
-          transcript: recording.transcript
-        ),
+        meeting,
         onOptimisticCommit: { _ in dismiss() },
         onFailure: { error in message = error.recoveryMessage }
       )

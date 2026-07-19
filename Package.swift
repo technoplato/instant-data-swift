@@ -356,6 +356,7 @@ let package = Package(
       dependencies: [
         "SyncUpsV3App",
         .product(name: "CustomDump", package: "swift-custom-dump"),
+        .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
       ],
       swiftSettings: strictConcurrencySettings
     ),
