@@ -43,6 +43,7 @@
     "live:avatar-stack-v3": "tsx src/avatar-stack-v3-live-contract.ts",
     "live:cursors-v3": "tsx src/cursors-v3-live-contract.ts",
     "live:custom-cursors-v3": "tsx src/custom-cursors-v3-live-contract.ts",
+    "live:merge-tile-game-v3": "tsx src/merge-tile-game-v3-live-contract.ts",
     "live:voice-trail-recordings-list": "tsx src/voice-trail-recordings-list-live-contract.ts",
     "typecheck": "../typecheck-generated-contract.sh",
     "validate": "tsx src/main.ts"
