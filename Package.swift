@@ -326,6 +326,7 @@ let package = Package(
       dependencies: [
         "AppBuilderV3App",
         .product(name: "CustomDump", package: "swift-custom-dump"),
+        .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
       ],
       swiftSettings: strictConcurrencySettings
     ),
