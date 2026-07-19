@@ -1,0 +1,544 @@
+{
+  "case": "benchmark.cross-sdk.v1-performance-baseline",
+  "event": "release-and-live-summary",
+  "ok": true,
+  "details": {
+    "capturedAt": "2026-07-19",
+    "benchmarkEvidence": {
+      "command": "validation/run-cross-sdk-benchmark-comparison.sh",
+      "iterations": 5,
+      "swiftRevision": "08a92953e4d1bf1c0775196e3f5e061b3ee3fc14",
+      "upstreamRevision": "e71017612aed4031710a35e2fcace30d38d557ac",
+      "summary": {
+        "workloadCount": 15,
+        "meetsOrExceedsCount": 0,
+        "optimizationTargetCount": 15,
+        "actorHopInstrumentedWorkloadCount": 3
+      },
+      "core": {
+        "case": "benchmark.cross-sdk.core-comparison",
+        "event": "release-mode-summary",
+        "ok": true,
+        "details": {
+          "contractVersion": 1,
+          "iterations": 5,
+          "swiftRevision": "08a92953e4d1bf1c0775196e3f5e061b3ee3fc14",
+          "upstreamRevision": "e71017612aed4031710a35e2fcace30d38d557ac",
+          "versions": {
+            "typeScriptCore": "1.0.49",
+            "node": "v24.11.1"
+          },
+          "environment": {
+            "platform": "darwin",
+            "release": "25.2.0",
+            "architecture": "arm64",
+            "cpuModel": "Apple M1 Max",
+            "cpuCount": 10,
+            "totalMemoryBytes": 68719476736
+          },
+          "summary": {
+            "workloadCount": 12,
+            "meetsOrExceedsCount": 0,
+            "optimizationTargetCount": 12
+          },
+          "comparisons": [
+            {
+              "name": "transaction-transform.scalar",
+              "unit": "entity",
+              "units": 1000,
+              "swiftP50Nanoseconds": 1940500,
+              "typeScriptP50Nanoseconds": 1044834,
+              "swiftNanosecondsPerUnit": 1940.5,
+              "typeScriptNanosecondsPerUnit": 1044.834,
+              "swiftToTypeScriptRatio": 1.8572328235872875,
+              "deltaPercent": 85.72328235872875,
+              "status": "optimization-target",
+              "optimizationTarget": {
+                "id": "perf.transaction-lowering.transaction-transform.scalar",
+                "targetRatio": 1,
+                "observedRatio": 1.8572328235872875,
+                "reason": "Swift constructs strongly typed Sendable operation values and deterministically sorts payload fields; TypeScript lowers proxy transaction chunks directly into JavaScript arrays.",
+                "nextAction": "Profile this exact workload, preserve semantics, and reduce the release-mode Swift p50 to at most the canonical TypeScript p50 on the same machine."
+              }
+            },
+            {
+              "name": "triple-insert.todos",
+              "unit": "entity",
+              "units": 1000,
+              "swiftP50Nanoseconds": 74252167,
+              "typeScriptP50Nanoseconds": 11294667,
+              "swiftNanosecondsPerUnit": 74252.167,
+              "typeScriptNanosecondsPerUnit": 11294.667,
+              "swiftToTypeScriptRatio": 6.574090851903824,
+              "deltaPercent": 557.4090851903824,
+              "status": "optimization-target",
+              "optimizationTarget": {
+                "id": "perf.incremental-store-commit.triple-insert.todos",
+                "targetRatio": 1,
+                "observedRatio": 6.574090851903824,
+                "reason": "Swift's current actor store commits through value-semantic snapshots and index reconstruction, while the canonical TypeScript store uses optimized structural sharing.",
+                "nextAction": "Profile this exact workload, preserve semantics, and reduce the release-mode Swift p50 to at most the canonical TypeScript p50 on the same machine."
+              }
+            },
+            {
+              "name": "triple-update.todos",
+              "unit": "entity",
+              "units": 1000,
+              "swiftP50Nanoseconds": 106334458,
+              "typeScriptP50Nanoseconds": 12217291,
+              "swiftNanosecondsPerUnit": 106334.458,
+              "typeScriptNanosecondsPerUnit": 12217.291,
+              "swiftToTypeScriptRatio": 8.703603605742058,
+              "deltaPercent": 770.3603605742059,
+              "status": "optimization-target",
+              "optimizationTarget": {
+                "id": "perf.incremental-store-commit.triple-update.todos",
+                "targetRatio": 1,
+                "observedRatio": 8.703603605742058,
+                "reason": "Swift's current actor store commits through value-semantic snapshots and index reconstruction, while the canonical TypeScript store uses optimized structural sharing.",
+                "nextAction": "Profile this exact workload, preserve semantics, and reduce the release-mode Swift p50 to at most the canonical TypeScript p50 on the same machine."
+              }
+            },
+            {
+              "name": "triple-retract.todos",
+              "unit": "entity",
+              "units": 1000,
+              "swiftP50Nanoseconds": 46450542,
+              "typeScriptP50Nanoseconds": 12574875,
+              "swiftNanosecondsPerUnit": 46450.542,
+              "typeScriptNanosecondsPerUnit": 12574.875,
+              "swiftToTypeScriptRatio": 3.6939167983777175,
+              "deltaPercent": 269.39167983777173,
+              "status": "optimization-target",
+              "optimizationTarget": {
+                "id": "perf.incremental-store-commit.triple-retract.todos",
+                "targetRatio": 1,
+                "observedRatio": 3.6939167983777175,
+                "reason": "Swift's current actor store commits through value-semantic snapshots and index reconstruction, while the canonical TypeScript store uses optimized structural sharing.",
+                "nextAction": "Profile this exact workload, preserve semantics, and reduce the release-mode Swift p50 to at most the canonical TypeScript p50 on the same machine."
+              }
+            },
+            {
+              "name": "query-materialization.flat",
+              "unit": "entity",
+              "units": 1000,
+              "swiftP50Nanoseconds": 17492458,
+              "typeScriptP50Nanoseconds": 1221000,
+              "swiftNanosecondsPerUnit": 17492.458,
+              "typeScriptNanosecondsPerUnit": 1221,
+              "swiftToTypeScriptRatio": 14.326337428337427,
+              "deltaPercent": 1332.6337428337426,
+              "status": "optimization-target",
+              "optimizationTarget": {
+                "id": "perf.query-materialization.query-materialization.flat",
+                "targetRatio": 1,
+                "observedRatio": 14.326337428337427,
+                "reason": "Swift currently materializes Sendable value snapshots and performs stable typed ordering across actor isolation; the canonical TypeScript store returns JavaScript object graphs from persistent-map indexes.",
+                "nextAction": "Profile this exact workload, preserve semantics, and reduce the release-mode Swift p50 to at most the canonical TypeScript p50 on the same machine."
+              }
+            },
+            {
+              "name": "query-materialization.nested",
+              "unit": "entity",
+              "units": 1000,
+              "swiftP50Nanoseconds": 2446984958,
+              "typeScriptP50Nanoseconds": 8212000,
+              "swiftNanosecondsPerUnit": 2446984.958,
+              "typeScriptNanosecondsPerUnit": 8212,
+              "swiftToTypeScriptRatio": 297.9767362396493,
+              "deltaPercent": 29697.673623964933,
+              "status": "optimization-target",
+              "optimizationTarget": {
+                "id": "perf.query-materialization.query-materialization.nested",
+                "targetRatio": 1,
+                "observedRatio": 297.9767362396493,
+                "reason": "Swift currently materializes Sendable value snapshots and performs stable typed ordering across actor isolation; the canonical TypeScript store returns JavaScript object graphs from persistent-map indexes.",
+                "nextAction": "Profile this exact workload, preserve semantics, and reduce the release-mode Swift p50 to at most the canonical TypeScript p50 on the same machine."
+              }
+            },
+            {
+              "name": "query-materialization.reverse",
+              "unit": "parent",
+              "units": 100,
+              "swiftP50Nanoseconds": 1925794083,
+              "typeScriptP50Nanoseconds": 9573500,
+              "swiftNanosecondsPerUnit": 19257940.83,
+              "typeScriptNanosecondsPerUnit": 95735,
+              "swiftToTypeScriptRatio": 201.15883250639786,
+              "deltaPercent": 20015.883250639785,
+              "status": "optimization-target",
+              "optimizationTarget": {
+                "id": "perf.query-materialization.query-materialization.reverse",
+                "targetRatio": 1,
+                "observedRatio": 201.15883250639786,
+                "reason": "Swift currently materializes Sendable value snapshots and performs stable typed ordering across actor isolation; the canonical TypeScript store returns JavaScript object graphs from persistent-map indexes.",
+                "nextAction": "Profile this exact workload, preserve semantics, and reduce the release-mode Swift p50 to at most the canonical TypeScript p50 on the same machine."
+              }
+            },
+            {
+              "name": "high-bandwidth.scalar-updates",
+              "unit": "update",
+              "units": 10000,
+              "swiftP50Nanoseconds": 567192167,
+              "typeScriptP50Nanoseconds": 201097500,
+              "swiftNanosecondsPerUnit": 56719.2167,
+              "typeScriptNanosecondsPerUnit": 20109.75,
+              "swiftToTypeScriptRatio": 2.820483432165989,
+              "deltaPercent": 182.0483432165989,
+              "status": "optimization-target",
+              "optimizationTarget": {
+                "id": "perf.incremental-store-commit.high-bandwidth.scalar-updates",
+                "targetRatio": 1,
+                "observedRatio": 2.820483432165989,
+                "reason": "Swift's current actor store commits through value-semantic snapshots and index reconstruction, while the canonical TypeScript store uses optimized structural sharing.",
+                "nextAction": "Profile this exact workload, preserve semantics, and reduce the release-mode Swift p50 to at most the canonical TypeScript p50 on the same machine."
+              }
+            },
+            {
+              "name": "high-bandwidth.linked-writes",
+              "unit": "link",
+              "units": 1000,
+              "swiftP50Nanoseconds": 92334292,
+              "typeScriptP50Nanoseconds": 4548084,
+              "swiftNanosecondsPerUnit": 92334.292,
+              "typeScriptNanosecondsPerUnit": 4548.084,
+              "swiftToTypeScriptRatio": 20.301800054704355,
+              "deltaPercent": 1930.1800054704354,
+              "status": "optimization-target",
+              "optimizationTarget": {
+                "id": "perf.link-indexing.high-bandwidth.linked-writes",
+                "targetRatio": 1,
+                "observedRatio": 20.301800054704355,
+                "reason": "Swift validates typed refs and rebuilds value-semantic index snapshots at commit boundaries; the canonical TypeScript store applies optimized persistent-map link updates.",
+                "nextAction": "Profile this exact workload, preserve semantics, and reduce the release-mode Swift p50 to at most the canonical TypeScript p50 on the same machine."
+              }
+            },
+            {
+              "name": "storage-metadata.query",
+              "unit": "record",
+              "units": 100,
+              "swiftP50Nanoseconds": 1681250,
+              "typeScriptP50Nanoseconds": 116625,
+              "swiftNanosecondsPerUnit": 16812.5,
+              "typeScriptNanosecondsPerUnit": 1166.25,
+              "swiftToTypeScriptRatio": 14.415862808145766,
+              "deltaPercent": 1341.5862808145766,
+              "status": "optimization-target",
+              "optimizationTarget": {
+                "id": "perf.query-materialization.storage-metadata.query",
+                "targetRatio": 1,
+                "observedRatio": 14.415862808145766,
+                "reason": "Swift currently materializes Sendable value snapshots and performs stable typed ordering across actor isolation; the canonical TypeScript store returns JavaScript object graphs from persistent-map indexes.",
+                "nextAction": "Profile this exact workload, preserve semantics, and reduce the release-mode Swift p50 to at most the canonical TypeScript p50 on the same machine."
+              }
+            },
+            {
+              "name": "stream-write.chunks",
+              "unit": "chunk",
+              "units": 1000,
+              "swiftP50Nanoseconds": 819835750,
+              "typeScriptP50Nanoseconds": 8190417,
+              "swiftNanosecondsPerUnit": 819835.75,
+              "typeScriptNanosecondsPerUnit": 8190.417,
+              "swiftToTypeScriptRatio": 100.09694866573948,
+              "deltaPercent": 9909.694866573947,
+              "status": "optimization-target",
+              "optimizationTarget": {
+                "id": "perf.system-record-materialization.stream-write.chunks",
+                "targetRatio": 1,
+                "observedRatio": 100.09694866573948,
+                "reason": "This core comparison models system metadata as typed value records; Swift pays typed decoding and stable ordering costs that JavaScript defers to dynamic objects.",
+                "nextAction": "Profile this exact workload, preserve semantics, and reduce the release-mode Swift p50 to at most the canonical TypeScript p50 on the same machine."
+              }
+            },
+            {
+              "name": "stream-read.chunks",
+              "unit": "chunk",
+              "units": 1000,
+              "swiftP50Nanoseconds": 14938959,
+              "typeScriptP50Nanoseconds": 991292,
+              "swiftNanosecondsPerUnit": 14938.959,
+              "typeScriptNanosecondsPerUnit": 991.292,
+              "swiftToTypeScriptRatio": 15.07019021640445,
+              "deltaPercent": 1407.019021640445,
+              "status": "optimization-target",
+              "optimizationTarget": {
+                "id": "perf.system-record-materialization.stream-read.chunks",
+                "targetRatio": 1,
+                "observedRatio": 15.07019021640445,
+                "reason": "This core comparison models system metadata as typed value records; Swift pays typed decoding and stable ordering costs that JavaScript defers to dynamic objects.",
+                "nextAction": "Profile this exact workload, preserve semantics, and reduce the release-mode Swift p50 to at most the canonical TypeScript p50 on the same machine."
+              }
+            }
+          ]
+        }
+      },
+      "runtime": {
+        "case": "benchmark.cross-sdk.runtime-comparison",
+        "event": "release-mode-summary",
+        "ok": true,
+        "details": {
+          "contractVersion": 1,
+          "iterations": 5,
+          "swiftRevision": "08a92953e4d1bf1c0775196e3f5e061b3ee3fc14",
+          "upstreamRevision": "e71017612aed4031710a35e2fcace30d38d557ac",
+          "versions": {
+            "typeScriptCore": "1.0.49",
+            "node": "v24.11.1"
+          },
+          "persistence": {
+            "swift": "SQLite file-backed runtime",
+            "typeScript": "canonical-indexeddb-semantics-fake-backend",
+            "comparability": "The logical durable-state workload is identical; storage media are platform-native and the TypeScript benchmark uses fake-indexeddb for reproducible Node execution."
+          },
+          "environment": {
+            "platform": "darwin",
+            "release": "25.2.0",
+            "architecture": "arm64",
+            "cpuModel": "Apple M1 Max",
+            "cpuCount": 10,
+            "totalMemoryBytes": 68719476736
+          },
+          "summary": {
+            "workloadCount": 3,
+            "meetsOrExceedsCount": 0,
+            "optimizationTargetCount": 3,
+            "actorHopInstrumentedWorkloadCount": 3
+          },
+          "comparisons": [
+            {
+              "name": "pending-mutation-enqueue.update",
+              "unit": "mutation",
+              "units": 1,
+              "swiftP50Nanoseconds": 736041,
+              "typeScriptP50Nanoseconds": 281459,
+              "swiftToTypeScriptRatio": 2.6150913632180885,
+              "deltaPercent": 161.50913632180885,
+              "swiftActorHops": {
+                "counts": [
+                  8,
+                  8,
+                  8,
+                  8,
+                  8
+                ],
+                "breakdowns": [
+                  {
+                    "operation-gate": 2,
+                    "outbox": 1,
+                    "persistence": 3,
+                    "store": 2
+                  },
+                  {
+                    "operation-gate": 2,
+                    "outbox": 1,
+                    "persistence": 3,
+                    "store": 2
+                  },
+                  {
+                    "operation-gate": 2,
+                    "outbox": 1,
+                    "persistence": 3,
+                    "store": 2
+                  },
+                  {
+                    "operation-gate": 2,
+                    "outbox": 1,
+                    "persistence": 3,
+                    "store": 2
+                  },
+                  {
+                    "operation-gate": 2,
+                    "outbox": 1,
+                    "persistence": 3,
+                    "store": 2
+                  }
+                ]
+              },
+              "status": "optimization-target",
+              "optimizationTarget": {
+                "id": "perf.durable-enqueue.pending-mutation-enqueue.update",
+                "targetRatio": 1,
+                "observedRatio": 2.6150913632180885,
+                "reason": "Swift validates typed operations, crosses its operation, store, outbox, and persistence actors, and commits a SQLite snapshot; TypeScript lowers dynamic chunks into its pending map and persists IndexedDB state.",
+                "nextAction": "Profile this exact workload and its recorded Swift actor-hop breakdown, preserve semantics, and reduce the release-mode Swift p50 to at most the canonical TypeScript p50 on the same machine."
+              }
+            },
+            {
+              "name": "offline-restore.relaunch",
+              "unit": "relaunch",
+              "units": 1,
+              "swiftP50Nanoseconds": 1187625,
+              "typeScriptP50Nanoseconds": 395208,
+              "swiftToTypeScriptRatio": 3.005063156616263,
+              "deltaPercent": 200.50631566162627,
+              "swiftActorHops": {
+                "counts": [
+                  12,
+                  12,
+                  12,
+                  12,
+                  12
+                ],
+                "breakdowns": [
+                  {
+                    "operation-gate": 2,
+                    "outbox": 1,
+                    "persistence": 6,
+                    "store": 3
+                  },
+                  {
+                    "operation-gate": 2,
+                    "outbox": 1,
+                    "persistence": 6,
+                    "store": 3
+                  },
+                  {
+                    "operation-gate": 2,
+                    "outbox": 1,
+                    "persistence": 6,
+                    "store": 3
+                  },
+                  {
+                    "operation-gate": 2,
+                    "outbox": 1,
+                    "persistence": 6,
+                    "store": 3
+                  },
+                  {
+                    "operation-gate": 2,
+                    "outbox": 1,
+                    "persistence": 6,
+                    "store": 3
+                  }
+                ]
+              },
+              "status": "optimization-target",
+              "optimizationTarget": {
+                "id": "perf.durable-restore.offline-restore.relaunch",
+                "targetRatio": 1,
+                "observedRatio": 3.005063156616263,
+                "reason": "Swift opens and decodes a file-backed SQLite snapshot before restoring typed store and outbox actors; the canonical TypeScript persistence semantics run over an in-process fake IndexedDB backend in this reproducible Node gate.",
+                "nextAction": "Profile this exact workload and its recorded Swift actor-hop breakdown, preserve semantics, and reduce the release-mode Swift p50 to at most the canonical TypeScript p50 on the same machine."
+              }
+            },
+            {
+              "name": "reconnect-outbox-drain",
+              "unit": "mutation",
+              "units": 1,
+              "swiftP50Nanoseconds": 1445208,
+              "typeScriptP50Nanoseconds": 459459,
+              "swiftToTypeScriptRatio": 3.1454558513382045,
+              "deltaPercent": 214.54558513382045,
+              "swiftActorHops": {
+                "counts": [
+                  21,
+                  21,
+                  21,
+                  21,
+                  21
+                ],
+                "breakdowns": [
+                  {
+                    "mutation-flush-gate": 2,
+                    "mutation-transport": 1,
+                    "operation-gate": 6,
+                    "outbox": 1,
+                    "persistence": 11
+                  },
+                  {
+                    "mutation-flush-gate": 2,
+                    "mutation-transport": 1,
+                    "operation-gate": 6,
+                    "outbox": 1,
+                    "persistence": 11
+                  },
+                  {
+                    "mutation-flush-gate": 2,
+                    "mutation-transport": 1,
+                    "operation-gate": 6,
+                    "outbox": 1,
+                    "persistence": 11
+                  },
+                  {
+                    "mutation-flush-gate": 2,
+                    "mutation-transport": 1,
+                    "operation-gate": 6,
+                    "outbox": 1,
+                    "persistence": 11
+                  },
+                  {
+                    "mutation-flush-gate": 2,
+                    "mutation-transport": 1,
+                    "operation-gate": 6,
+                    "outbox": 1,
+                    "persistence": 11
+                  }
+                ]
+              },
+              "status": "optimization-target",
+              "optimizationTarget": {
+                "id": "perf.outbox-drain.reconnect-outbox-drain",
+                "targetRatio": 1,
+                "observedRatio": 3.1454558513382045,
+                "reason": "Swift reconnects its runtime state, sends through the mutation transport boundary, and commits confirmed outbox state through actor-isolated SQLite; TypeScript acknowledges and persists its canonical pending-mutation state machine.",
+                "nextAction": "Profile this exact workload and its recorded Swift actor-hop breakdown, preserve semantics, and reduce the release-mode Swift p50 to at most the canonical TypeScript p50 on the same machine."
+              }
+            }
+          ]
+        }
+      }
+    },
+    "liveTransportEvidence": {
+      "command": "validation/verify-todos-v3-app-live.sh",
+      "swiftRevision": "08a92953e4d1bf1c0775196e3f5e061b3ee3fc14",
+      "upstreamRevision": "e71017612aed4031710a35e2fcace30d38d557ac",
+      "typeScriptCoreVersion": "1.0.49",
+      "compilerWarningCount": 0,
+      "performance": {
+        "acceptedMutations": {
+          "actorHopBreakdown": {
+            "live-session": 2,
+            "operation-gate": 8,
+            "outbox": 4,
+            "persistence": 12,
+            "store": 4
+          },
+          "actorHopCount": 30,
+          "durationNanoseconds": 464380834
+        },
+        "authenticateAndConnect": {
+          "actorHopBreakdown": {
+            "live-session": 4,
+            "operation-gate": 2,
+            "persistence": 6
+          },
+          "actorHopCount": 12,
+          "durationNanoseconds": 2297755917
+        },
+        "offlineEnqueue": {
+          "actorHopBreakdown": {
+            "live-session": 1,
+            "operation-gate": 2,
+            "outbox": 3,
+            "persistence": 3,
+            "store": 2
+          },
+          "actorHopCount": 11,
+          "durationNanoseconds": 29128416
+        },
+        "reconnectDrain": {
+          "actorHopBreakdown": {
+            "live-session": 4,
+            "operation-gate": 4,
+            "outbox": 1,
+            "persistence": 8
+          },
+          "actorHopCount": 17,
+          "durationNanoseconds": 261271083
+        }
+      }
+    }
+  }
+}
+

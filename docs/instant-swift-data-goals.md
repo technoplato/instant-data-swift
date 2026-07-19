@@ -1066,8 +1066,17 @@ live-query, presence, topic, storage, and stream cancellation latency.
 High-bandwidth scalar and linked samples also carry resident-memory high-water
 growth and budget fields, 1k/10k/50k triple workload samples carry explicit
 memory budgets, and local transact/query/cache/relaunch/outbox-flush samples
-carry actor-hop breakdowns. Swift/TypeScript comparison and live transport
-actor-hop counts remain future benchmark work.
+carry actor-hop breakdowns. The release-mode
+`cross-sdk-core` and `cross-sdk-runtime` suites now compare 15 equivalent
+logical workloads against pinned canonical TypeScript 1.0.49. The checked
+baseline quantifies every current Swift gap and names a tracked optimization
+target for each slower workload. The runtime suite records actor-hop breakdowns
+for durable enqueue, offline restore, and reconnect drain; the fresh Todos live
+gate separately records authenticated connect, accepted live mutations,
+offline enqueue, and real WebSocket reconnect/drain hops. Reproduce the combined
+comparison with `validation/run-cross-sdk-benchmark-comparison.sh`; inspect
+`validation/benchmarks/v1-cross-sdk-performance-2026-07-19.json` for the pinned
+result.
 
 Success criterion: Swift matches or exceeds TypeScript for equivalent workloads.
 If Swift is slower, the benchmark must name the reason, quantify the gap, and

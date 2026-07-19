@@ -414,7 +414,10 @@ When sources disagree, use this order:
 | Current execution state, packet order, gates, and tag targets | `docs/v3-e2e-port-plan.md` |
 | Product contract and full definition of done | `docs/instant-swift-data-goals.md` |
 | Desired V3 API rules and decision log | `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` |
-| Next execution target | Audit the full goals document against the completed `v0.4.0-apps-e2e` evidence matrix and turn every remaining `v1.0.0` gap into a bounded packet |
+| Next execution target | Compose and pass the single clean-checkout V1 release gate; do not tag `v1.0.0` before it is green |
+| Checked V1 performance baseline | `validation/benchmarks/v1-cross-sdk-performance-2026-07-19.json` |
+| Reproducible cross-SDK performance gate | `validation/run-cross-sdk-benchmark-comparison.sh`, `InstantCrossSDKBenchmark.swift`, `InstantCrossSDKRuntimeBenchmark.swift`, and their pinned TypeScript peers |
+| Live transport actor-hop proof | `validation/verify-todos-v3-app-live.sh` and `InstantTodosV3LiveValidation.swift` |
 | Completed CloudKitDemo live gate | `validation/verify-cloudkit-demo-v3-app-live.sh`, `Sources/InstantSwiftDataTesting/InstantCloudKitDemoV3LiveValidation.swift`, and `validation/ts-runner/src/cloudkit-demo-v3-live-contract.ts` |
 | Completed Streams live gate | `validation/verify-streams-v3-app-live.sh`, `Sources/InstantSwiftDataTesting/InstantStreamsV3LiveValidation.swift`, and `validation/ts-runner/src/streams-v3-live-contract.ts` |
 | Completed SyncUps live gate | `validation/verify-syncups-v3-app-live.sh`, `Sources/InstantSwiftDataTesting/InstantSyncUpsV3LiveValidation.swift`, and `validation/ts-runner/src/syncups-v3-*.ts` |
@@ -636,19 +639,25 @@ fresh-app gate writes its own `swift-coverage-final.json`. The clean run at
 `/tmp/instant-data-swift-cloudkit-demo-v3-20260719T095155Z/evidence.json`
 records 295 cases: 28 exact, 265 adapted, 2 not applicable, and zero blocked.
 
-Two release packets remain:
+One release packet remains:
 
-1. **Finish the performance definition of done.** Local Swift benchmark suites
-   exist, but no checked-in JSON/JSONL benchmark artifact compares equivalent
-   Swift and canonical TypeScript workloads, and live-transport actor-hop
-   counts remain unmeasured. Add the pinned TypeScript counterpart, quantify
-   every gap, name optimization targets where Swift is slower, and check in a
-   reproducible comparison artifact.
-2. **Add one clean-checkout V1 release gate.** Compose the already-green app
+1. **Add one clean-checkout V1 release gate.** Compose the already-green app
    boundaries, artifact-aware zero-blocked coverage, benchmark comparison, full
    Swift suite, isolated macro lane, runnable products, and complete
    TypeScript matrix into one archiveable command. Do not create `v1.0.0`
    until that command passes from a clean checkout.
+
+The performance packet is complete through `08a9295`. The release-mode gate
+compares 15 equivalent logical workloads across Swift and canonical TypeScript
+1.0.49, including durable enqueue, offline restore, and reconnect outbox drain.
+Swift is slower in all 15 measurements on the recorded Apple M1 Max, so the
+checked baseline names and quantifies 15 optimization targets instead of
+masking them behind an aggregate pass. The three durable runtime workloads
+record deterministic local Swift actor-hop breakdowns, and the fresh live
+Todos gate separately measured authenticated connect, two accepted mutations,
+offline enqueue, and real reconnect drain with zero compiler/runtime warnings.
+The combined checked evidence is
+`validation/benchmarks/v1-cross-sdk-performance-2026-07-19.json`.
 
 The locally adapted magic-code extra-fields test can be promoted with live
 transport evidence when that auth surface is revisited, but it is not an

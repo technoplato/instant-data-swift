@@ -722,6 +722,9 @@ swift run instant-swift-data benchmark --suite local-todos --iterations 3 --json
 swift run instant-swift-data benchmark --suite local-todos --iterations 3 --jsonl
 swift run instant-swift-data-benchmarks --suite local-todos --iterations 3 --json
 swift run instant-swift-data-benchmarks --suite local-todos --iterations 3 --jsonl
+swift run -c release instant-swift-data-benchmarks --suite cross-sdk-core --iterations 5 --json
+swift run -c release instant-swift-data-benchmarks --suite cross-sdk-runtime --iterations 5 --json
+validation/run-cross-sdk-benchmark-comparison.sh
 ```
 
 The `local-todos` suite records bootstrap, insert, query, enqueue, cache,
@@ -731,6 +734,13 @@ topic, storage, and stream cancellation timings as structured JSON metrics.
 High-bandwidth scalar, linked, and 1k/10k/50k triple workload samples include
 resident-memory high-water growth and budget fields, and local store/query/
 outbox hot-path samples include actor-hop breakdowns.
+
+The cross-SDK release gate runs 12 in-memory core workloads plus three durable
+runtime workloads against pinned canonical TypeScript 1.0.49, records Swift
+actor-hop breakdowns for the runtime layer, and creates a quantified
+optimization target whenever Swift is slower. The checked baseline, including
+the separate fresh-app live WebSocket actor-hop proof, is
+`validation/benchmarks/v1-cross-sdk-performance-2026-07-19.json`.
 
 The current transport is intentionally marked `not-implemented-local-cache-only`
 in command output. That means the demo proves durable local cache, typed triples,
