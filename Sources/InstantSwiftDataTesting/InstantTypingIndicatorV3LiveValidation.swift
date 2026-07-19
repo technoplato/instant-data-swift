@@ -10,6 +10,76 @@ public struct InstantTypingIndicatorPresenceFrame: Codable, Equatable, Sendable 
     self.phase = phase
     self.presence = presence
   }
+
+  private enum CodingKeys: String, CodingKey {
+    case phase
+    case presence
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    phase = try container.decode(String.self, forKey: .phase)
+    presence = try container
+      .decode([String: InstantPlainJSONValue].self, forKey: .presence)
+      .mapValues(\.value)
+  }
+
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(phase, forKey: .phase)
+    try container.encode(
+      presence.mapValues(InstantPlainJSONValue.init),
+      forKey: .presence
+    )
+  }
+}
+
+private struct InstantPlainJSONValue: Codable, Sendable {
+  var value: JSONValue
+
+  init(_ value: JSONValue) {
+    self.value = value
+  }
+
+  init(from decoder: any Decoder) throws {
+    let container = try decoder.singleValueContainer()
+    if container.decodeNil() {
+      value = .null
+    } else if let bool = try? container.decode(Bool.self) {
+      value = .bool(bool)
+    } else if let number = try? container.decode(Double.self) {
+      value = .number(number)
+    } else if let string = try? container.decode(String.self) {
+      value = .string(string)
+    } else if let array = try? container.decode([Self].self) {
+      value = .array(array.map(\.value))
+    } else if let object = try? container.decode([String: Self].self) {
+      value = .object(object.mapValues(\.value))
+    } else {
+      throw DecodingError.dataCorruptedError(
+        in: container,
+        debugDescription: "Expected a plain JSON null, boolean, number, string, array, or object."
+      )
+    }
+  }
+
+  func encode(to encoder: any Encoder) throws {
+    var container = encoder.singleValueContainer()
+    switch value {
+    case .null:
+      try container.encodeNil()
+    case let .bool(value):
+      try container.encode(value)
+    case let .number(value):
+      try container.encode(value)
+    case let .string(value):
+      try container.encode(value)
+    case let .array(values):
+      try container.encode(values.map(Self.init))
+    case let .object(values):
+      try container.encode(values.mapValues(Self.init))
+    }
+  }
 }
 
 public struct InstantTypingIndicatorV3LiveValidationDetails: Codable, Equatable, Sendable {
