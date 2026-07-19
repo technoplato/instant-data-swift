@@ -3349,6 +3349,14 @@ struct CLIArgumentParserTests {
       try parseValidationRunner(["--live-todos-v3-observe"]),
       .liveTodosV3Observe
     )
+    expectNoDifference(
+      try parseValidationRunner(["--live-mobile-chat-v3-write"]),
+      .liveMobileChatV3Write
+    )
+    expectNoDifference(
+      try parseValidationRunner(["--live-mobile-chat-v3-observe"]),
+      .liveMobileChatV3Observe
+    )
     expectNoDifference(try parseValidationRunner(["--typed-drafts"]), .typedDrafts)
     expectNoDifference(try parseValidationRunner(["--platform-adapters"]), .platformAdapters)
     expectNoDifference(try parseValidationRunner(["--syncups-recording"]), .syncUpsRecording)
@@ -3380,6 +3388,18 @@ struct CLIArgumentParserTests {
     expectNoDifference(
       CLIValidationRunnerInvocation.liveTodosV3Write.appID,
       "live-todos-v3"
+    )
+    expectNoDifference(
+      CLIValidationRunnerInvocation.liveMobileChatV3Write.caseID,
+      "validation.live.mobile-chat-v3-write"
+    )
+    expectNoDifference(
+      CLIValidationRunnerInvocation.liveMobileChatV3Observe.caseID,
+      "validation.live.mobile-chat-v3-observe"
+    )
+    expectNoDifference(
+      CLIValidationRunnerInvocation.liveMobileChatV3Write.appID,
+      "live-mobile-chat-v3"
     )
     expectNoDifference(
       CLIValidationRunnerInvocation.liveAuthV3App.caseID,
