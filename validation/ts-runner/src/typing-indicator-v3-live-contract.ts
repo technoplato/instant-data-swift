@@ -16,6 +16,7 @@ import { typingIndicatorV3AppContract } from "./typing-indicator-v3-app-contract
 import {
   exactTypingIndicatorFrames,
   phaseForTypingIndicatorPresence,
+  serverObservedTypingIndicatorFrames,
   type TypingIndicatorPhase as Phase,
   type TypingIndicatorPresence as Presence,
   type TypingIndicatorPresenceFrame as Frame,
@@ -97,7 +98,8 @@ try {
   const room: any = db.joinRoom(typingIndicatorV3AppContract.room.type, roomID);
   let roomClosed = false;
 
-  const expectedSwiftFrames = exactTypingIndicatorFrames("swift-peer");
+  const publishedSwiftFrames = exactTypingIndicatorFrames("swift-peer");
+  const expectedSwiftFrames = serverObservedTypingIndicatorFrames("swift-peer");
   const observedSwiftFrames = new Map<Phase, Frame>();
   const phaseSignals = {
     initial: deferred<Frame>(),
@@ -111,13 +113,14 @@ try {
       (value: any) => value?.id === "swift-peer",
     ) as Presence | undefined;
     if (!peer) return;
-    const phase = phaseFor(peer, sawInactive);
-    if (!phase || observedSwiftFrames.has(phase)) return;
+    const phase = phaseForTypingIndicatorPresence(peer, { sawInactive });
+    if (observedSwiftFrames.has(phase)) return;
     if (phase === "inactive") sawInactive = true;
     const expected = expectedSwiftFrames.find((frame) => frame.phase === phase)!;
-    assertFrame(peer, expected, phase === "cleared");
-    observedSwiftFrames.set(phase, expected);
-    phaseSignals[phase].resolve(expected);
+    assert.deepEqual(peer, expected.presence);
+    const observed = { phase, presence: peer };
+    observedSwiftFrames.set(phase, observed);
+    phaseSignals[phase].resolve(observed);
   });
 
   const swift = spawnSwift({
@@ -157,13 +160,17 @@ try {
     await requireSuccessfulExit(swift, "Swift typing runner");
     assert.equal(swiftEvidence.ok, true);
     assert.equal(swiftEvidence.event, "bidirectional-presence-frames-observed");
-    assert.deepEqual(swiftEvidence.details.publishedFrames, expectedSwiftFrames);
+    assert.deepEqual(swiftEvidence.details.publishedFrames, publishedSwiftFrames);
     assert.deepEqual(
       swiftEvidence.details.observedFrames,
-      exactTypingIndicatorFrames("typescript-peer"),
+      serverObservedTypingIndicatorFrames("typescript-peer"),
     );
     assert.deepEqual(swiftEvidence.details.activePeerIDs, ["typescript-peer"]);
     assert.equal(swiftEvidence.details.peerCountAfterDisconnect, 0);
+    assert.deepEqual(
+      swiftEvidence.details.serverNormalizations,
+      ["chat-input:null-to-absent"],
+    );
     assert.equal(swiftEvidence.details.connectionState, "authenticated");
     assert.deepEqual(warnings, []);
 
@@ -183,6 +190,7 @@ try {
         swift: swiftEvidence.details,
         typeScriptPublishedFrames: exactTypingIndicatorFrames("typescript-peer"),
         typeScriptObservedSwiftFrames: expectedSwiftFrames,
+        serverNormalizations: ["chat-input:null-to-absent"],
         compilerWarningCount: warnings.length,
         warnings,
       },
@@ -196,23 +204,6 @@ try {
   }
 } finally {
   console.warn = originalWarn;
-}
-
-function phaseFor(peer: Presence, sawInactive: boolean): Phase | undefined {
-  if (sawInactive && !Object.prototype.hasOwnProperty.call(peer, "chat-input")) {
-    return "cleared";
-  }
-  return phaseForTypingIndicatorPresence(peer as Record<string, unknown>);
-}
-
-function assertFrame(actual: Presence, expected: Frame, normalizedClear: boolean): void {
-  assert.equal(actual.id, expected.presence.id);
-  if (normalizedClear && !Object.prototype.hasOwnProperty.call(actual, "chat-input")) return;
-  assert.equal(actual["chat-input"], expected.presence["chat-input"]);
-  assert.equal(
-    Object.prototype.hasOwnProperty.call(actual, "chat-input"),
-    Object.prototype.hasOwnProperty.call(expected.presence, "chat-input"),
-  );
 }
 
 function spawnSwift(input: {

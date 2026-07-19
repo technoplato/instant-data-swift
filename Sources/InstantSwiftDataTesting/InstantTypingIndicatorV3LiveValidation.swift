@@ -21,6 +21,7 @@ public struct InstantTypingIndicatorV3LiveValidationDetails: Codable, Equatable,
   public var observedFrames: [InstantTypingIndicatorPresenceFrame]
   public var activePeerIDs: [String]
   public var peerCountAfterDisconnect: Int
+  public var serverNormalizations: [String]
   public var connectionState: String
 
   public init(
@@ -32,6 +33,7 @@ public struct InstantTypingIndicatorV3LiveValidationDetails: Codable, Equatable,
     observedFrames: [InstantTypingIndicatorPresenceFrame],
     activePeerIDs: [String],
     peerCountAfterDisconnect: Int,
+    serverNormalizations: [String],
     connectionState: String
   ) {
     self.roomType = roomType
@@ -42,6 +44,7 @@ public struct InstantTypingIndicatorV3LiveValidationDetails: Codable, Equatable,
     self.observedFrames = observedFrames
     self.activePeerIDs = activePeerIDs
     self.peerCountAfterDisconnect = peerCountAfterDisconnect
+    self.serverNormalizations = serverNormalizations
     self.connectionState = connectionState
   }
 }
@@ -140,6 +143,7 @@ public enum InstantTypingIndicatorV3LiveValidation {
         observedFrames: observedFrames,
         activePeerIDs: activePeerIDs,
         peerCountAfterDisconnect: peerCountAfterDisconnect,
+        serverNormalizations: ["chat-input:null-to-absent"],
         connectionState: status.state.rawValue
       )
     )
@@ -189,7 +193,10 @@ public enum InstantTypingIndicatorV3LiveValidation {
         && presence["id"] == expected.presence["id"]
         && presence["chat-input"] == nil
       if presence == expected.presence || serverNormalizedClear {
-        return expected
+        return InstantTypingIndicatorPresenceFrame(
+          phase: expected.phase,
+          presence: presence
+        )
       }
     }
     throw validationFailure(
