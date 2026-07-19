@@ -39,15 +39,9 @@ struct InstantAvatarStackV3LiveValidationTests {
       connectionState: "authenticated"
     )
     let encoded = try JSONEncoder().encode(details)
-    let decoded = try JSONDecoder().decode(
-      InstantAvatarStackV3LiveValidationDetails.self,
-      from: encoded
+    expectNoDifference(
+      try JSONDecoder().decode(InstantAvatarStackV3LiveValidationDetails.self, from: encoded),
+      details
     )
-    expectNoDifference(decoded.publishedPresence.name, "abcdef")
-    expectNoDifference(decoded.publishedPresence.userID, "")
-    expectNoDifference(decoded.observedPresence.name, "uvwxyz")
-    expectNoDifference(decoded.observedPresence.userID, "")
-    expectNoDifference(decoded.observedPeerID, "typescript-session")
-    expectNoDifference(decoded.peerCountAfterDisconnect, 0)
   }
 }
