@@ -9,32 +9,145 @@ public struct MergeTileGameV3BoardPatch: Codable, Equatable, Sendable {
   }
 }
 
-public struct MergeTileGameV3Board: Codable, Equatable, Identifiable, Sendable {
+public struct MergeTileGameV3BoardState:
+  Codable,
+  Equatable,
+  ExpressibleByDictionaryLiteral,
+  Hashable,
+  InstantJSONWireValue,
+  InstantValueDecodable,
+  Sendable
+{
+  public private(set) var values: [String: String]
+
+  public init(_ values: [String: String]) {
+    self.values = values
+  }
+
+  public init(dictionaryLiteral elements: (String, String)...) {
+    self.init(Dictionary(uniqueKeysWithValues: elements))
+  }
+
+  public subscript(key: String) -> String? {
+    get { values[key] }
+    set { values[key] = newValue }
+  }
+
+  public var count: Int { values.count }
+
+  public var instantValue: InstantValue {
+    .json(.object(values.mapValues(JSONValue.string)))
+  }
+
+  public static func decodeInstantValue(
+    _ value: InstantValue?,
+    namespace: String,
+    path: String,
+    localID: String?,
+    operation: String
+  ) throws -> Self {
+    guard case let .json(.object(object)) = value else {
+      throw decodeError(
+        value: value,
+        namespace: namespace,
+        path: path,
+        localID: localID,
+        operation: operation,
+        expected: "a JSON object"
+      )
+    }
+
+    var values: [String: String] = [:]
+    for (key, value) in object {
+      guard case let .string(color) = value else {
+        throw decodeError(
+          value: .json(.object(object)),
+          namespace: namespace,
+          path: "\(path).\(key)",
+          localID: localID,
+          operation: operation,
+          expected: "a string color"
+        )
+      }
+      values[key] = color
+    }
+    return Self(values)
+  }
+
+  private static func decodeError(
+    value: InstantValue?,
+    namespace: String,
+    path: String,
+    localID: String?,
+    operation: String,
+    expected: String
+  ) -> InstantError {
+    InstantError(
+      code: .decodeFailed,
+      operation: operation,
+      namespace: namespace,
+      path: path,
+      localID: localID,
+      message: "Expected \(expected), received \(String(describing: value)).",
+      recovery: "Keep the Merge Tile Game board state aligned with the canonical string map."
+    )
+  }
+}
+
+@InstantEntity("boards")
+public struct MergeTileGameV3Board: Codable, Equatable, Hashable, InstantEntityModel {
   public static let boardID = "83c059e2-ed47-42e5-bdd9-6de88d26c521"
+  public static let fixedID = InstantID<Self>(rawValue: boardID)
   public static let boardSize = 4
   public static let emptyColor = "#f5f3f0"
   public static let colors = [
     "#e76f51", "#2a9d8f", "#e9c46a", "#264653", "#f4a261", "#d4a0d0",
   ]
 
-  public var id: String
-  public var state: [String: String]
+  public var id: InstantID<Self>
+
+  @InstantWire(.json)
+  public var state: MergeTileGameV3BoardState
 
   public init(id: String = boardID, state: [String: String]) {
+    self.id = InstantID(rawValue: id)
+    self.state = MergeTileGameV3BoardState(state)
+  }
+
+  public init(id: InstantID<Self> = fixedID, state: MergeTileGameV3BoardState) {
     self.id = id
     self.state = state
   }
 
-  public static var empty: Self {
-    Self(
-      state: Dictionary(
-        uniqueKeysWithValues: (0..<boardSize).flatMap { row in
-          (0..<boardSize).map { column in
-            ("\(row)-\(column)", emptyColor)
-          }
-        }
-      )
+  public init(snapshot: InstantEntitySnapshot) throws {
+    id = InstantID(rawValue: snapshot.id)
+    state = try MergeTileGameV3BoardState.decodeInstantValue(
+      snapshot.values["state"]?.first,
+      namespace: Self.instantNamespace,
+      path: "state",
+      localID: snapshot.id,
+      operation: "decode Merge Tile Game V3 board"
     )
+  }
+
+  public static var emptyState: [String: String] {
+    Dictionary(
+      uniqueKeysWithValues: (0..<boardSize).flatMap { row in
+        (0..<boardSize).map { column in
+          ("\(row)-\(column)", emptyColor)
+        }
+      }
+    )
+  }
+
+  public static var empty: Self {
+    Self(state: MergeTileGameV3BoardState(emptyState))
+  }
+
+  public var stateObject: [String: String] { state.values }
+
+  public func color(row: Int, column: Int) -> String? {
+    state["\(row)-\(column)"]
   }
 
   public static func mergePatch(
@@ -46,11 +159,104 @@ public struct MergeTileGameV3Board: Codable, Equatable, Identifiable, Sendable {
   }
 
   public mutating func merge(_ patch: MergeTileGameV3BoardPatch) {
-    state.merge(patch.state) { _, new in new }
+    for (key, color) in patch.state {
+      state[key] = color
+    }
   }
 
   public mutating func reset() {
     self = .empty
+  }
+}
+
+public struct MergeTileGameV3BoardInitialized: Equatable, Sendable {
+  public var id: InstantID<MergeTileGameV3Board>
+
+  public init(id: InstantID<MergeTileGameV3Board>) {
+    self.id = id
+  }
+}
+
+public struct InitializeMergeTileGameV3Board: InstantMessage {
+  public init() {}
+
+  public func prepare(using client: InstantSwiftDataClient) async throws
+    -> InstantPreparedMessage<MergeTileGameV3BoardInitialized>
+  {
+    _ = client
+    return InstantPreparedMessage(
+      change: MergeTileGameV3BoardInitialized(id: MergeTileGameV3Board.fixedID)
+    ) {
+      MergeTileGameV3Board.create(
+        id: MergeTileGameV3Board.fixedID,
+        MergeTileGameV3Board.state.set(MergeTileGameV3Board.empty.state)
+      )
+    }
+  }
+}
+
+public struct MergeTileGameV3CellPainted: Equatable, Sendable {
+  public var row: Int
+  public var column: Int
+  public var color: String
+
+  public init(row: Int, column: Int, color: String) {
+    self.row = row
+    self.column = column
+    self.color = color
+  }
+}
+
+public struct PaintMergeTileGameV3Cell: InstantMessage {
+  public var row: Int
+  public var column: Int
+  public var color: String
+
+  public init(row: Int, column: Int, color: String) {
+    self.row = row
+    self.column = column
+    self.color = color
+  }
+
+  public func prepare(using client: InstantSwiftDataClient) async throws
+    -> InstantPreparedMessage<MergeTileGameV3CellPainted>
+  {
+    _ = client
+    let patch = MergeTileGameV3Board.mergePatch(row: row, column: column, color: color)
+    return InstantPreparedMessage(
+      change: MergeTileGameV3CellPainted(row: row, column: column, color: color)
+    ) {
+      MergeTileGameV3Board.merge(
+        id: MergeTileGameV3Board.fixedID,
+        MergeTileGameV3Board.state.set(MergeTileGameV3BoardState(patch.state))
+      )
+    }
+  }
+}
+
+public struct MergeTileGameV3BoardReset: Equatable, Sendable {
+  public var id: InstantID<MergeTileGameV3Board>
+
+  public init(id: InstantID<MergeTileGameV3Board>) {
+    self.id = id
+  }
+}
+
+public struct ResetMergeTileGameV3Board: InstantMessage {
+  public init() {}
+
+  public func prepare(using client: InstantSwiftDataClient) async throws
+    -> InstantPreparedMessage<MergeTileGameV3BoardReset>
+  {
+    _ = client
+    return InstantPreparedMessage(
+      change: MergeTileGameV3BoardReset(id: MergeTileGameV3Board.fixedID)
+    ) {
+      MergeTileGameV3Board.update(
+        id: MergeTileGameV3Board.fixedID,
+        MergeTileGameV3Board.state.set(MergeTileGameV3Board.empty.state)
+      )
+    }
   }
 }
 
