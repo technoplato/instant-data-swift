@@ -271,6 +271,32 @@ public struct CreateMobileChatProfile: InstantMessage {
   }
 }
 
+public struct MobileChatChannelCreated: Hashable, Sendable {
+  public var id: InstantID<MobileChatChannel>
+}
+
+public struct CreateMobileChatChannel: InstantMessage {
+  public var id: InstantID<MobileChatChannel>
+  public var name: String
+
+  public init(id: InstantID<MobileChatChannel>, name: String) {
+    self.id = id
+    self.name = name
+  }
+
+  public func prepare(using client: InstantSwiftDataClient) async throws
+    -> InstantPreparedMessage<MobileChatChannelCreated>
+  {
+    _ = client
+    return InstantPreparedMessage(change: MobileChatChannelCreated(id: id)) {
+      MobileChatChannel.create(
+        id: id,
+        MobileChatChannel.name.set(name)
+      )
+    }
+  }
+}
+
 public struct MobileChatMessageSent: Hashable, Sendable {
   public var id: InstantID<MobileChatMessage>
 }
