@@ -23,6 +23,7 @@ let package = Package(
     .library(name: "InstantSwiftDataCore", targets: ["InstantSwiftDataCore"]),
     .library(name: "InstantSwiftDataSchema", targets: ["InstantSwiftDataSchema"]),
     .library(name: "InstantSwiftDataTesting", targets: ["InstantSwiftDataTesting"]),
+    .library(name: "AppBuilderV3App", targets: ["AppBuilderV3App"]),
     .library(name: "AuthV3App", targets: ["AuthV3App"]),
     .library(name: "MobileChatV3App", targets: ["MobileChatV3App"]),
     .library(name: "PresenceRecipesV3App", targets: ["PresenceRecipesV3App"]),
@@ -103,6 +104,15 @@ let package = Package(
         "SyncUpsV3App",
         "TodosV3App",
         "VoiceTrailV3App",
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .target(
+      name: "AppBuilderV3App",
+      dependencies: [
+        "AuthV3App",
+        "InstantSwiftData",
+        .product(name: "Dependencies", package: "swift-dependencies"),
       ],
       swiftSettings: strictConcurrencySettings
     ),
@@ -308,6 +318,14 @@ let package = Package(
         .product(name: "SwiftSyntax", package: "swift-syntax"),
         .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
         .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .testTarget(
+      name: "AppBuilderV3AppTests",
+      dependencies: [
+        "AppBuilderV3App",
+        .product(name: "CustomDump", package: "swift-custom-dump"),
       ],
       swiftSettings: strictConcurrencySettings
     ),
