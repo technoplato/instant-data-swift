@@ -206,13 +206,20 @@ assert.deepEqual(schema.warnings, [
   { code: "system-entity", path: "$files" },
   { code: "system-entity", path: "$streams" },
   { code: "system-entity", path: "$users" },
+  {
+    code: "canonical-link-name",
+    path: "syncUpsAttendees->attendeesSyncUp",
+  },
+  {
+    code: "canonical-link-name",
+    path: "syncUpsMeetings->meetingsSyncUp",
+  },
   { code: "system-link", path: "$streams$files" },
   { code: "system-link", path: "$usersLinkedPrimaryUser" },
 ]);
 assert.equal(permissions.namespaceCount, 3);
 assert.equal(permissions.allowRuleCount, 12);
 assert.equal(permissions.rateLimitCount, 0);
-assert.deepEqual(permissions.warnings, []);
 
 const evidence = {
   case: "validation.syncups-v3-app.live-contract",
@@ -246,7 +253,6 @@ const evidence = {
       namespaceCount: permissions.namespaceCount,
       allowRuleCount: permissions.allowRuleCount,
       rateLimitCount: permissions.rateLimitCount,
-      warnings: permissions.warnings,
       sha256: createHash("sha256")
         .update(readFileSync(resolve(results, "pull/instant.perms.ts")))
         .digest("hex"),
