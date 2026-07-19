@@ -296,6 +296,129 @@ public struct RemindersListSummary: Hashable, Codable, Sendable, Identifiable {
   }
 }
 
+public struct RemindersListsModel: Sendable {
+  public struct ReminderListState: Hashable, Sendable, Identifiable {
+    public var id: String { remindersList.id }
+    public var remindersCount: Int
+    public var remindersList: RemindersListRecord
+    public var share: InstantShareSnapshot?
+
+    public init(
+      remindersCount: Int,
+      remindersList: RemindersListRecord,
+      share: InstantShareSnapshot?
+    ) {
+      self.remindersCount = remindersCount
+      self.remindersList = remindersList
+      self.share = share
+    }
+  }
+
+  public private(set) var isLoading: Bool
+  public private(set) var loadError: InstantError?
+  public private(set) var remindersLists: [ReminderListState]
+  public private(set) var stats: RemindersStats
+  public private(set) var tags: [ReminderTagRecord]
+
+  private let runtime: InstantRuntime
+  private let now: @Sendable () -> InstantTimestamp
+
+  public init(
+    runtime: InstantRuntime,
+    now: @escaping @Sendable () -> InstantTimestamp
+  ) {
+    self.runtime = runtime
+    self.now = now
+    self.isLoading = false
+    self.loadError = nil
+    self.remindersLists = []
+    self.stats = RemindersStats(
+      allCount: 0,
+      completedCount: 0,
+      flaggedCount: 0,
+      scheduledCount: 0,
+      todayCount: 0
+    )
+    self.tags = []
+  }
+
+  public mutating func load() async throws {
+    isLoading = true
+    loadError = nil
+    do {
+      let listSnapshots = try await runtime.query(ReminderExample.listsQuery)
+      let reminderSnapshots = try await runtime.query(ReminderExample.remindersQuery)
+      let lists = try ReminderExample.decodeLists(listSnapshots)
+      let reminders = try ReminderExample.decodeReminders(reminderSnapshots)
+      let allTags = try ReminderExample.decodeTags(
+        try await runtime.query(ReminderExample.tagsQuery)
+      )
+      let usedTagIDs = Set(
+        try ReminderExample.decodeReminderTagLinks(reminderSnapshots).map(\.tagID)
+      )
+      let shares = try await runtime.shares()
+      let sharesByRootID = Dictionary<String, InstantShareSnapshot>(
+        uniqueKeysWithValues: shares.compactMap { snapshot -> (String, InstantShareSnapshot)? in
+          guard
+            !snapshot.share.isRevoked,
+            snapshot.share.rootNamespace == ReminderExample.listsNamespace
+          else { return nil }
+          return (snapshot.share.rootID, snapshot)
+        }
+      )
+      remindersLists = lists.map { list in
+        ReminderListState(
+          remindersCount: reminders.filter {
+            $0.remindersListID == list.id && !$0.isCompleted
+          }.count,
+          remindersList: list,
+          share: sharesByRootID[list.id]
+        )
+      }
+      stats = ReminderExample.stats(for: reminders, today: now())
+      tags = allTags.filter { usedTagIDs.contains($0.id) }
+      isLoading = false
+    } catch let error as CancellationError {
+      isLoading = false
+      throw error
+    } catch {
+      isLoading = false
+      let error = ReminderExample.modelLoadError(
+        from: error,
+        operation: "load reminders lists"
+      )
+      loadError = error
+      throw error
+    }
+  }
+
+  public mutating func move(
+    fromOffsets source: IndexSet,
+    toOffset destination: Int,
+    updatedAt: InstantTimestamp,
+    transactionID: String
+  ) async throws {
+    if remindersLists.isEmpty {
+      try await load()
+    }
+    var states = remindersLists
+    ReminderExample.moveRows(&states, fromOffsets: source, toOffset: destination)
+    let operations = states.enumerated().flatMap { offset, state in
+      ReminderExample.updateListPositionOperations(
+        id: state.remindersList.id,
+        position: offset,
+        updatedAt: updatedAt,
+        transactionID: transactionID
+      )
+    }
+    guard !operations.isEmpty else { return }
+    _ = try await runtime.transact(
+      InstantStoreTransaction(id: transactionID, operations: operations)
+    )
+    try await load()
+  }
+}
+
 public struct RemindersStats: Hashable, Codable, Sendable {
   public var allCount: Int
   public var completedCount: Int
@@ -1247,6 +1370,27 @@ public enum ReminderExample {
           entityID: id,
           attributeID: "remindersLists/title",
           value: .string(title),
+          txID: transactionID,
+          txTime: updatedAt
+        )
+      ),
+    ]
+  }
+
+  public static func updateListPositionOperations(
+    id: String,
+    position: Int,
+    updatedAt: InstantTimestamp,
+    transactionID: String
+  ) -> [InstantTripleOperation] {
+    [
+      .requireEntityExists(entityID: id, namespace: listsNamespace),
+      listIdentityOperation(id: id, updatedAt: updatedAt, transactionID: transactionID),
+      .insert(
+        InstantTriple(
+          entityID: id,
+          attributeID: "remindersLists/position",
+          value: .number(Double(position)),
           txID: transactionID,
           txTime: updatedAt
         )
