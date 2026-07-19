@@ -88,6 +88,7 @@ let package = Package(
         "AuthV3App",
         "InstantSwiftData",
         "InstantSwiftDataCore",
+        "MobileChatV3App",
         "TodosV3App",
         "VoiceTrailV3App",
       ],
