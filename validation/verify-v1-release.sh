@@ -126,7 +126,8 @@ assert.deepStrictEqual(cloudKit.details.coverage.blockedIDs, []);
 assert.equal(todos.ok, true);
 assert.equal(todos.details.swiftRevision, revision);
 assert.equal(todos.details.compilerWarningCount, 0);
-assert.deepStrictEqual(todos.details.warnings, []);
+assert.equal(todos.details.todos.compilerWarningCount, 0);
+assert.deepStrictEqual(todos.details.todos.warnings, []);
 assert.equal(checkedBaseline.ok, true);
 assert.equal(checkedBaseline.details.benchmarkEvidence.summary.workloadCount, 15);
 for (const measurement of Object.values(todos.details.todos.performance)) {
