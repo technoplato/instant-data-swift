@@ -241,7 +241,18 @@ As of 2026-07-19:
   room schema and empty permissions push twice with no drift, pull back and
   strict-typecheck, with five pinned server system-schema warnings and zero
   compiler/runtime warnings. Evidence is in
-  `/tmp/instant-data-swift-reactions-v3-20260719T032258Z/evidence.json`.
+  `/tmp/instant-data-swift-reactions-v3-20260719T032236Z/evidence.json`.
+- The canonical Avatar Stack recipe boundary is complete through `22980dc`.
+  Source-first app, generated-schema, CLI, TypeScript, Swift-evidence,
+  remote-peer-count, and credential-redaction tests pin
+  `avatars-example/avatars-example-1234`, exact name-only app presence,
+  first-six-character fallback names, wrapper-owned peer metadata, local-plus-
+  peers online count, and disconnect cleanup. The clean getadb gate provisions
+  a fresh app directly through `getadb.com`, pushes schema and permissions
+  twice with no drift, pulls and strict-typechecks them, and proves exact
+  `{name}` presence in both Swift/TypeScript directions. Final evidence is in
+  `/tmp/instant-data-swift-avatar-stack-v3-20260719T034215Z/evidence.json` and
+  contains no refresh or admin credentials.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -299,8 +310,10 @@ When sources disagree, use this order:
 | Typing Indicator reproducible cross-SDK gate | `validation/verify-typing-indicator-v3-app-live.sh` and its `evidence.json` artifact |
 | Reactions app-owned syntax and behavior | `Sources/PresenceRecipesV3App/ReactionsV3Screen.swift`, `Sources/PresenceRecipesV3App/PresenceRecipesV3App.swift`, and `Tests/PresenceRecipesV3AppTests/ReactionsV3Tests.swift` |
 | Reactions source/schema/live contracts | `Tests/InstantSwiftDataSchemaTests/ReactionsContractTests.swift`, `Tests/InstantSwiftDataTestingTests/InstantReactionsV3LiveValidationTests.swift`, and `validation/ts-runner/src/reactions-v3-*.ts` |
-| Reactions reproducible cross-SDK gate | `validation/verify-reactions-v3-app-live.sh` and `/tmp/instant-data-swift-reactions-v3-20260719T032258Z/evidence.json` |
-| Avatar Stack reproducible cross-SDK gate | `validation/verify-avatar-stack-v3-app-live.sh` and `/tmp/instant-data-swift-avatar-stack-v3-20260719T034159Z/evidence.json` |
+| Reactions reproducible cross-SDK gate | `validation/verify-reactions-v3-app-live.sh` and `/tmp/instant-data-swift-reactions-v3-20260719T032236Z/evidence.json` |
+| Avatar Stack app-owned syntax and behavior | `Sources/PresenceRecipesV3App/AvatarStackV3Screen.swift`, `Sources/PresenceRecipesV3App/PresenceRecipesV3App.swift`, and `Tests/PresenceRecipesV3AppTests/AvatarStackV3Tests.swift` |
+| Avatar Stack source/schema/live contracts | `Tests/InstantSwiftDataSchemaTests/AvatarStackContractTests.swift`, `Tests/InstantSwiftDataTestingTests/InstantAvatarStackV3LiveValidationTests.swift`, and `validation/ts-runner/src/avatar-stack-v3-*.ts` |
+| Avatar Stack reproducible cross-SDK gate | `validation/verify-avatar-stack-v3-app-live.sh` and `/tmp/instant-data-swift-avatar-stack-v3-20260719T034215Z/evidence.json` |
 
 ## Decisions Already Made
 
@@ -827,18 +840,19 @@ live evidence recorded at `e1f100a`. The desired
 `@Room`/`@Topic` syntax compiles in `PresenceRecipesV3App`, and the clean
 fresh-app gate proves the exact payload in both directions plus unsubscribe
 cleanup. Evidence is at
-`/tmp/instant-data-swift-reactions-v3-20260719T032258Z/evidence.json`. Full
+`/tmp/instant-data-swift-reactions-v3-20260719T032236Z/evidence.json`. Full
 verification is green at 960 Swift Testing cases across 54 suites, 28 macro
 tests, the `presence-recipes-v3` build, and the complete TypeScript typecheck,
 contract, and fixture matrix.
 
-The Avatar Stack presence recipe is complete through `22980dc`, with its
-credential-redacted fresh-app evidence at revision `7af4dd7`. The runnable host
+The Avatar Stack presence recipe is complete through `22980dc`; credential
+redaction was source-tested first in `cb1777d` and implemented in `7af4dd7`.
+The runnable host
 compiles the exact name-only `@Room`/`@Presence` surface while the wrapper keeps
 peer ids out of app presence JSON. The gate proves both SDK directions, one
 remote peer, disconnect cleanup to zero, empty app permissions, five pinned
 server system-schema warnings, and zero compiler/runtime warnings. Evidence is
-at `/tmp/instant-data-swift-avatar-stack-v3-20260719T034159Z/evidence.json`.
+at `/tmp/instant-data-swift-avatar-stack-v3-20260719T034215Z/evidence.json`.
 Full verification is green at 971 Swift Testing cases across 57 suites, 28
 macro tests, the `presence-recipes-v3` build, and the complete TypeScript
 typecheck, contract, live-support, and fixture matrix.
