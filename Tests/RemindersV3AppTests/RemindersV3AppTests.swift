@@ -6,6 +6,75 @@ import Testing
 
 @Suite
 struct RemindersV3AppTests {
+  // Source adaptation:
+  // pointfreeco/sqlite-data@0c79d7a5748fc6d9ce7a1ba2b50f31b175305049
+  // - Examples/RemindersTests/RemindersListsTests.swift
+  // - Examples/RemindersTests/RemindersDetailsTests.swift
+  // SQLiteData commits the parent foreign key with each inserted row. The Instant
+  // port must preserve that atomic shape by lowering owner/list refs into the same
+  // create transaction, rather than repairing relationships in a later mutation.
+  @Test
+  func canonicalCreatesLowerRequiredRelationshipsAtomically() async throws {
+    let persistenceURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("reminders-v3-transport-\(UUID().uuidString).sqlite")
+    defer { try? FileManager.default.removeItem(at: persistenceURL) }
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reminders-v3-transport-tests",
+        persistenceURL: persistenceURL,
+        initialAttributes: RemindersV3Schema.attributes
+      )
+    )
+    let client = InstantSwiftDataClient(runtime: runtime)
+    let ownerID = InstantID<RemindersV3User>(
+      rawValue: "00000000-0000-4000-8000-000000000401"
+    )
+    let listID = InstantID<RemindersV3List>(
+      rawValue: "00000000-0000-4000-8000-000000000402"
+    )
+    let reminderID = InstantID<RemindersV3Reminder>(
+      rawValue: "00000000-0000-4000-8000-000000000403"
+    )
+    let createdAt = Date(timeIntervalSince1970: 1_700_000_000)
+
+    try await transact(
+      CreateRemindersV3List(
+        listID: listID,
+        ownerID: ownerID,
+        title: "Family",
+        position: 0,
+        createdAt: createdAt
+      ),
+      using: client
+    )
+    try await transact(
+      CreateRemindersV3Reminder(
+        reminderID: reminderID,
+        listID: listID,
+        title: "Pack lunch",
+        position: 0,
+        createdAt: createdAt
+      ),
+      using: client
+    )
+
+    let pending = await client.pendingMutations()
+    expectNoDifference(pending.count, 2)
+    let listTransport = InstantTransportMutation(try #require(pending.first))
+    let reminderTransport = InstantTransportMutation(try #require(pending.last))
+
+    expectNoDifference(listTransport.preconditions.map(\.kind), [.entityMissing])
+    expectNoDifference(reminderTransport.preconditions.map(\.kind), [.entityMissing])
+    expectNoDifference(
+      try requiredRef(in: listTransport, attributeID: "remindersLists/owner"),
+      .init(value: ownerID.rawValue, mode: .create)
+    )
+    expectNoDifference(
+      try requiredRef(in: reminderTransport, attributeID: "reminders/list"),
+      .init(value: listID.rawValue, mode: .create)
+    )
+  }
+
   @Test
   func typedMessagesMaterializeTheListReminderAndTagGraph() async throws {
     let persistenceURL = FileManager.default.temporaryDirectory
@@ -189,5 +258,25 @@ struct RemindersV3AppTests {
     _ = try await client.transact {
       for mutation in prepared.mutations { mutation }
     }
+  }
+
+  private struct RequiredRef: Equatable, Sendable {
+    var value: String
+    var mode: InstantTransportOptions.Mode?
+  }
+
+  private func requiredRef(
+    in mutation: InstantTransportMutation,
+    attributeID: String
+  ) throws -> RequiredRef {
+    for step in mutation.txSteps {
+      guard case let .addTriple(_, candidateAttributeID, value, options) = step,
+        candidateAttributeID == attributeID,
+        case let .string(rawValue) = value
+      else { continue }
+      return RequiredRef(value: rawValue, mode: options?.mode)
+    }
+    Issue.record("Missing required ref step for \(attributeID)")
+    throw CancellationError()
   }
 }
