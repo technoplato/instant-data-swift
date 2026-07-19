@@ -9024,10 +9024,10 @@ struct InstantSwiftDataCLI {
 
       Commands:
         init --example todos --to <directory> [--force] [--json|--jsonl]
-        schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game [--to instant.schema.ts] [--json|--jsonl]
-        schema verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game --from instant.schema.ts [--json|--jsonl]
-        perms generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game [--to instant.perms.ts] [--json|--jsonl]
-        perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game --from instant.perms.ts [--json|--jsonl]
+        schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel [--to instant.schema.ts] [--json|--jsonl]
+        schema verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel --from instant.schema.ts [--json|--jsonl]
+        perms generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel [--to instant.perms.ts] [--json|--jsonl]
+        perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel --from instant.perms.ts [--json|--jsonl]
         query todos [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt] [--raw] [--select field[,field]] [--json|--jsonl]
         admin query <namespace> [--limit n] [--json|--jsonl]
         admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id] [--json|--jsonl]
@@ -9218,9 +9218,16 @@ struct InstantSwiftDataCLI {
         permissions: InstantSchemaExamples.mergeTileGamePermissions
       )
 
+    case "stroopwafel":
+      return CLISchemaExample(
+        name: "stroopwafel",
+        schema: InstantSchemaExamples.stroopwafelDocument,
+        permissions: InstantSchemaExamples.stroopwafelPermissions
+      )
+
     default:
       throw CLIError(
-        "Unsupported --example '\(rawName)'. Available examples: todos, validation, recording-action, sharing, voice-trail, mobile-chat, typing-indicator, reactions, avatar-stack, cursors, custom-cursors, merge-tile-game.",
+        "Unsupported --example '\(rawName)'. Available examples: todos, validation, recording-action, sharing, voice-trail, mobile-chat, typing-indicator, reactions, avatar-stack, cursors, custom-cursors, merge-tile-game, stroopwafel.",
         exitCode: 64
       )
     }
@@ -9536,7 +9543,9 @@ struct InstantSwiftDataCLI {
       throw CLIError("Permissions parse failed: \(error.description)", exitCode: 66)
     }
 
-    let expected = example.permissions
+    var expected = example.permissions
+    expected.namespaces.sort { $0.namespace < $1.namespace }
+    expected.rateLimits.sort { $0.name < $1.name }
     guard parsed == expected else {
       throw CLIError("Permissions do not match --example \(example.name).", exitCode: 66)
     }

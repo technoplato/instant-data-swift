@@ -2934,6 +2934,12 @@ struct CLIArgumentParserTests {
     )
     #expect(CLISchemaUsage.generate.contains("|merge-tile-game"))
     #expect(CLISchemaUsage.verify.contains("|merge-tile-game"))
+    expectNoDifference(
+      try parseSchema(["generate", "--example", "stroopwafel"]),
+      .generate(CLIGenerateArtifactInvocation(example: "stroopwafel"))
+    )
+    #expect(CLISchemaUsage.generate.contains("|stroopwafel"))
+    #expect(CLISchemaUsage.verify.contains("|stroopwafel"))
   }
 
   @Test
@@ -3004,6 +3010,12 @@ struct CLIArgumentParserTests {
     )
     #expect(CLIPermissionsUsage.generate.contains("|merge-tile-game"))
     #expect(CLIPermissionsUsage.verify.contains("|merge-tile-game"))
+    expectNoDifference(
+      try parsePermissions(["generate", "--example", "stroopwafel"]),
+      .generate(CLIGenerateArtifactInvocation(example: "stroopwafel"))
+    )
+    #expect(CLIPermissionsUsage.generate.contains("|stroopwafel"))
+    #expect(CLIPermissionsUsage.verify.contains("|stroopwafel"))
   }
 
   @Test
