@@ -271,6 +271,7 @@ async function withTimeout<T>(promise: Promise<T>, operation: string): Promise<T
 }
 
 function entityIDs(value: unknown): string[] {
+  if (value === undefined) return [];
   return requiredArray(value, "linked entities")
     .map((entity) => requiredString(requiredObject(entity).id, "linked entity id"))
     .sort();
