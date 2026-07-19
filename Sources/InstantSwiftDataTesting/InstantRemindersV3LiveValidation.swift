@@ -112,8 +112,8 @@ public enum InstantRemindersV3LiveValidation {
   public static let ownerMembershipID = "00000000-0000-4000-8000-000000000404"
   public static let readerMembershipID = "00000000-0000-4000-8000-000000000405"
   public static let typeScriptReminderID = "00000000-0000-4000-8000-000000000406"
-  public static let swiftTagID = "swift"
-  public static let typeScriptTagID = "typescript"
+  public static let swiftTagID = "00000000-0000-4000-8000-000000000407"
+  public static let typeScriptTagID = "00000000-0000-4000-8000-000000000408"
   public static let listTitle = "Family"
   public static let listColor = "#4a99ef"
   public static let shareToken = "reminders-v3-share"
@@ -185,7 +185,8 @@ public enum InstantRemindersV3LiveValidation {
         priority: .high,
         position: 0,
         createdAt: createdAt,
-        tagIDs: [InstantID(rawValue: swiftTagID)]
+        tagIDs: [InstantID(rawValue: swiftTagID)],
+        tagTitles: [InstantID(rawValue: swiftTagID): "swift"]
       ),
       using: client,
       operation: "create Swift Reminders reminder and tag"

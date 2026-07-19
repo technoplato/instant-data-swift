@@ -132,6 +132,7 @@ public struct CreateRemindersV3Reminder: InstantMessage {
   public var position: Int
   public var createdAt: Date
   public var tagIDs: [InstantID<RemindersV3Tag>]
+  public var tagTitles: [InstantID<RemindersV3Tag>: String]
 
   public init(
     reminderID: InstantID<RemindersV3Reminder>,
@@ -143,7 +144,8 @@ public struct CreateRemindersV3Reminder: InstantMessage {
     priority: RemindersV3Priority? = nil,
     position: Int,
     createdAt: Date,
-    tagIDs: [InstantID<RemindersV3Tag>] = []
+    tagIDs: [InstantID<RemindersV3Tag>] = [],
+    tagTitles: [InstantID<RemindersV3Tag>: String] = [:]
   ) {
     self.reminderID = reminderID
     self.listID = listID
@@ -155,6 +157,7 @@ public struct CreateRemindersV3Reminder: InstantMessage {
     self.position = position
     self.createdAt = createdAt
     self.tagIDs = Self.unique(tagIDs)
+    self.tagTitles = tagTitles
   }
 
   public func prepare(using client: InstantSwiftDataClient) async throws
@@ -179,7 +182,7 @@ public struct CreateRemindersV3Reminder: InstantMessage {
       for tagID in tagIDs {
         RemindersV3Tag.create(
           id: tagID,
-          RemindersV3Tag.title.set(tagID.rawValue)
+          RemindersV3Tag.title.set(tagTitles[tagID] ?? tagID.rawValue)
         )
         RemindersV3Reminder.tags.link(from: reminderID, to: tagID)
       }
@@ -204,6 +207,7 @@ public struct UpdateRemindersV3Reminder: InstantMessage {
   public var priority: RemindersV3Priority?
   public var existingTagIDs: [InstantID<RemindersV3Tag>]
   public var tagIDs: [InstantID<RemindersV3Tag>]
+  public var tagTitles: [InstantID<RemindersV3Tag>: String]
 
   public init(
     reminderID: InstantID<RemindersV3Reminder>,
@@ -214,7 +218,8 @@ public struct UpdateRemindersV3Reminder: InstantMessage {
     dueDate: Date?,
     priority: RemindersV3Priority?,
     existingTagIDs: [InstantID<RemindersV3Tag>],
-    tagIDs: [InstantID<RemindersV3Tag>]
+    tagIDs: [InstantID<RemindersV3Tag>],
+    tagTitles: [InstantID<RemindersV3Tag>: String] = [:]
   ) {
     self.reminderID = reminderID
     self.listID = listID
@@ -225,6 +230,7 @@ public struct UpdateRemindersV3Reminder: InstantMessage {
     self.priority = priority
     self.existingTagIDs = Self.unique(existingTagIDs)
     self.tagIDs = Self.unique(tagIDs)
+    self.tagTitles = tagTitles
   }
 
   public func prepare(using client: InstantSwiftDataClient) async throws
@@ -251,7 +257,7 @@ public struct UpdateRemindersV3Reminder: InstantMessage {
       for tagID in added {
         RemindersV3Tag.create(
           id: tagID,
-          RemindersV3Tag.title.set(tagID.rawValue)
+          RemindersV3Tag.title.set(tagTitles[tagID] ?? tagID.rawValue)
         )
         RemindersV3Reminder.tags.link(from: reminderID, to: tagID)
       }

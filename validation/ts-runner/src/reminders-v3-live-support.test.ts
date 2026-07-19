@@ -91,7 +91,7 @@ test("projects canonical numeric priority, nullable due date, and tags", () => {
       priority: 2,
       position: 1,
       createdAt: 1_700_000_002_000,
-      tags: [{ id: "typescript", title: "TypeScript" }],
+      tags: [{ id: "00000000-0000-4000-8000-000000000408", title: "typescript" }],
     }),
     {
       id: "00000000-0000-4000-8000-000000000406",
@@ -102,7 +102,7 @@ test("projects canonical numeric priority, nullable due date, and tags", () => {
       priority: 2,
       position: 1,
       createdAt: 1_700_000_002_000,
-      tags: [{ id: "typescript", title: "TypeScript" }],
+      tags: [{ id: "00000000-0000-4000-8000-000000000408", title: "typescript" }],
     },
   );
 });

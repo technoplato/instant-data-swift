@@ -50,8 +50,8 @@ test("Reminders V3 pins the SQLiteData source and exact Instant graph", () => {
       ownerMembership: "00000000-0000-4000-8000-000000000404",
       readerMembership: "00000000-0000-4000-8000-000000000405",
       typeScriptReminder: "00000000-0000-4000-8000-000000000406",
-      swiftTag: "swift",
-      typeScriptTag: "typescript",
+      swiftTag: "00000000-0000-4000-8000-000000000407",
+      typeScriptTag: "00000000-0000-4000-8000-000000000408",
     },
     compilerWarningCount: 0,
   });
@@ -68,7 +68,7 @@ test("Reminders V3 preserves exact scalar and nested relation shapes", () => {
     priority: remindersV3AppContract.priority.high,
     position: 0,
     createdAt: 1_700_000_001_000,
-    tags: [{ id: "swift", title: "swift" }],
+    tags: [{ id: remindersV3AppContract.fixtures.swiftTag, title: "swift" }],
   };
   const list: RemindersV3List = {
     id: remindersV3AppContract.fixtures.list,

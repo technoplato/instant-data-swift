@@ -83,7 +83,12 @@ struct RemindersV3SourceContractTests {
       title: "Pack lunch",
       position: 0,
       createdAt: Date(timeIntervalSince1970: 1_700_000_001),
-      tagIDs: [InstantID(rawValue: "family")]
+      tagIDs: [InstantID(rawValue: "00000000-0000-4000-8000-000000000409")],
+      tagTitles: [
+        InstantID<RemindersV3Tag>(
+          rawValue: "00000000-0000-4000-8000-000000000409"
+        ): "family"
+      ]
     )
     _ = CreateRemindersV3Share(
       shareID: InstantID(rawValue: "share-1"),

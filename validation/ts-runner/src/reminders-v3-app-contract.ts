@@ -38,8 +38,8 @@ export const remindersV3AppContract = {
     ownerMembership: "00000000-0000-4000-8000-000000000404",
     readerMembership: "00000000-0000-4000-8000-000000000405",
     typeScriptReminder: "00000000-0000-4000-8000-000000000406",
-    swiftTag: "swift",
-    typeScriptTag: "typescript",
+    swiftTag: "00000000-0000-4000-8000-000000000407",
+    typeScriptTag: "00000000-0000-4000-8000-000000000408",
   },
   compilerWarningCount: 0,
 } as const;

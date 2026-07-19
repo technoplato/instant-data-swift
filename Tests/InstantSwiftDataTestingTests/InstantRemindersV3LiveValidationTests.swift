@@ -33,8 +33,14 @@ struct InstantRemindersV3LiveValidationTests {
       InstantRemindersV3LiveValidation.typeScriptReminderID,
       "00000000-0000-4000-8000-000000000406"
     )
-    expectNoDifference(InstantRemindersV3LiveValidation.swiftTagID, "swift")
-    expectNoDifference(InstantRemindersV3LiveValidation.typeScriptTagID, "typescript")
+    expectNoDifference(
+      InstantRemindersV3LiveValidation.swiftTagID,
+      "00000000-0000-4000-8000-000000000407"
+    )
+    expectNoDifference(
+      InstantRemindersV3LiveValidation.typeScriptTagID,
+      "00000000-0000-4000-8000-000000000408"
+    )
   }
 
   @Test

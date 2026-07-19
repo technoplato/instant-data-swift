@@ -171,7 +171,7 @@ try {
 
   await participantDB.transact([
     participantDB.tx.tags[remindersV3AppContract.fixtures.typeScriptTag].update({
-      title: "TypeScript",
+      title: "typescript",
     }),
     participantDB.tx.reminders[remindersV3AppContract.fixtures.swiftReminder].update({
       title: "Swift reminder updated by TypeScript",
