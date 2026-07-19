@@ -848,6 +848,24 @@ public actor SQLitePersistenceStore {
     )
   }
 
+  public func storageSnapshot(appID: String) throws -> InstantStorageSnapshot {
+    let files = try loadStoredFiles(appID: appID)
+    let streamCacheSize = try selectInt64(
+      """
+      SELECT COALESCE(SUM(byte_count), 0)
+      FROM instant_stream_content_chunks
+      WHERE app_id = ?
+      """,
+      [.text(appID)]
+    )
+    return InstantStorageSnapshot(
+      localCacheSize: localCacheFileSize(),
+      streamCacheSize: streamCacheSize,
+      downloadedFileSize: files.reduce(0) { $0 + $1.byteCount },
+      downloadedFileCount: files.count
+    )
+  }
+
   public func loadStoredFile(appID: String, fileID: String) throws -> InstantStoredFile? {
     let rows: [InstantStoredFile] = try selectJSON(
       """
@@ -1680,6 +1698,20 @@ public actor SQLitePersistenceStore {
     return String(cString: cString)
   }
 
+  private func selectInt64(_ sql: String, _ bindings: [SQLiteBinding] = []) throws -> Int64 {
+    var statement: OpaquePointer?
+    try prepare(sql, statement: &statement)
+    defer { sqlite3_finalize(statement) }
+    try bind(bindings, to: statement)
+
+    let code = sqlite3_step(statement)
+    if code == SQLITE_DONE { return 0 }
+    guard code == SQLITE_ROW else {
+      throw persistenceError(operation: "read SQL", message: lastErrorMessage())
+    }
+    return sqlite3_column_int64(statement, 0)
+  }
+
   private func loadQueryCacheRowsWithoutTransaction() throws -> [QueryCacheStorageRow] {
     var statement: OpaquePointer?
     try prepare(
@@ -2200,6 +2232,14 @@ public actor SQLitePersistenceStore {
 
   private var localFilesRootURL: URL {
     fileURL.deletingLastPathComponent().appendingPathComponent("files", isDirectory: true)
+  }
+
+  private func localCacheFileSize() -> Int64 {
+    [fileURL.path, fileURL.path + "-wal", fileURL.path + "-shm"].reduce(0) { size, path in
+      let attributes = try? FileManager.default.attributesOfItem(atPath: path)
+      let fileSize = (attributes?[.size] as? NSNumber)?.int64Value ?? 0
+      return size + fileSize
+    }
   }
 
   private func sanitizedFileComponent(_ value: String) -> String {

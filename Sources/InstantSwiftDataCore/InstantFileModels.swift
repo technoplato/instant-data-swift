@@ -7,6 +7,32 @@ public enum InstantStorageOperationState: String, Hashable, Codable, Sendable {
   case error
 }
 
+public struct InstantStorageSnapshot: Hashable, Codable, Sendable {
+  public var localCacheSize: Int64
+  public var streamCacheSize: Int64
+  public var downloadedFileSize: Int64
+  public var downloadedFileCount: Int
+
+  public init(
+    localCacheSize: Int64,
+    streamCacheSize: Int64,
+    downloadedFileSize: Int64,
+    downloadedFileCount: Int
+  ) {
+    self.localCacheSize = localCacheSize
+    self.streamCacheSize = streamCacheSize
+    self.downloadedFileSize = downloadedFileSize
+    self.downloadedFileCount = downloadedFileCount
+  }
+
+  public static let empty = Self(
+    localCacheSize: 0,
+    streamCacheSize: 0,
+    downloadedFileSize: 0,
+    downloadedFileCount: 0
+  )
+}
+
 public struct InstantStoredFile: Hashable, Codable, Sendable, Identifiable {
   public var id: String
   public var appID: String

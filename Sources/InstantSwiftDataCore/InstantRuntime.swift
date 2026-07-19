@@ -3270,6 +3270,18 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  public func storageSnapshot() async throws -> InstantStorageSnapshot {
+    await operationGate.enter()
+    do {
+      let snapshot = try await persistence.storageSnapshot(appID: configuration.appID)
+      await operationGate.leave()
+      return snapshot
+    } catch {
+      await operationGate.leave()
+      throw error
+    }
+  }
+
   public func observeStoredFiles() async throws -> AsyncStream<[InstantStoredFile]> {
     await operationGate.enter()
     do {
