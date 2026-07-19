@@ -9024,10 +9024,10 @@ struct InstantSwiftDataCLI {
 
       Commands:
         init --example todos --to <directory> [--force] [--json|--jsonl]
-        schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors [--to instant.schema.ts] [--json|--jsonl]
-        schema verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors --from instant.schema.ts [--json|--jsonl]
-        perms generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors [--to instant.perms.ts] [--json|--jsonl]
-        perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors --from instant.perms.ts [--json|--jsonl]
+        schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors [--to instant.schema.ts] [--json|--jsonl]
+        schema verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors --from instant.schema.ts [--json|--jsonl]
+        perms generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors [--to instant.perms.ts] [--json|--jsonl]
+        perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors --from instant.perms.ts [--json|--jsonl]
         query todos [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt] [--raw] [--select field[,field]] [--json|--jsonl]
         admin query <namespace> [--limit n] [--json|--jsonl]
         admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id] [--json|--jsonl]
@@ -9204,9 +9204,16 @@ struct InstantSwiftDataCLI {
         permissions: InstantSchemaExamples.cursorsPermissions
       )
 
+    case "custom-cursors":
+      return CLISchemaExample(
+        name: "custom-cursors",
+        schema: InstantSchemaExamples.customCursorsDocument,
+        permissions: InstantSchemaExamples.customCursorsPermissions
+      )
+
     default:
       throw CLIError(
-        "Unsupported --example '\(rawName)'. Available examples: todos, validation, recording-action, sharing, voice-trail, mobile-chat, typing-indicator, reactions, avatar-stack, cursors.",
+        "Unsupported --example '\(rawName)'. Available examples: todos, validation, recording-action, sharing, voice-trail, mobile-chat, typing-indicator, reactions, avatar-stack, cursors, custom-cursors.",
         exitCode: 64
       )
     }
