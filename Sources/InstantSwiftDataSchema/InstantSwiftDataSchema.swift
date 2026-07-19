@@ -476,6 +476,43 @@ public enum InstantSchemaExamples {
     namespaces: []
   )
 
+  public static let mergeTileGameBoard = InstantEntitySchema(
+    typeName: "MergeTileGameV3Board",
+    namespace: "boards",
+    attributes: [
+      .primaryKey(namespace: "boards"),
+      InstantAttribute(
+        id: "boards/state",
+        namespace: "boards",
+        name: "state",
+        valueType: .json
+      ),
+    ]
+  )
+
+  public static let mergeTileGameRoom = InstantRoomSchema(
+    name: "tile-game-example",
+    presence: InstantRoomPayloadSchema(
+      attributes: [
+        InstantAttribute(
+          id: "rooms/tile-game-example/presence/color",
+          namespace: "rooms/tile-game-example/presence",
+          name: "color",
+          valueType: .string
+        )
+      ]
+    )
+  )
+
+  public static let mergeTileGameDocument = InstantSchemaDocument(
+    entities: [mergeTileGameBoard],
+    rooms: [mergeTileGameRoom]
+  )
+
+  public static let mergeTileGamePermissions = InstantPermissionsDocument(
+    namespaces: [.allowAll(namespace: "boards")]
+  )
+
   public static let reactionsRoom = InstantRoomSchema(
     name: "topics-example",
     presence: InstantRoomPayloadSchema(),
