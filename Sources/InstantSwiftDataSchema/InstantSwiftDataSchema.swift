@@ -369,6 +369,36 @@ public enum InstantSchemaExamples {
     rooms: [todosRoom]
   )
 
+  public static let typingIndicatorRoom = InstantRoomSchema(
+    name: "typing-indicator-example",
+    presence: InstantRoomPayloadSchema(
+      attributes: [
+        InstantAttribute(
+          id: "rooms/typing-indicator-example/presence/id",
+          namespace: "rooms/typing-indicator-example/presence",
+          name: "id",
+          valueType: .string
+        ),
+        InstantAttribute(
+          id: "rooms/typing-indicator-example/presence/chat-input",
+          namespace: "rooms/typing-indicator-example/presence",
+          name: "chat-input",
+          valueType: .boolean,
+          isRequired: false
+        ),
+      ]
+    )
+  )
+
+  public static let typingIndicatorDocument = InstantSchemaDocument(
+    entities: [],
+    rooms: [typingIndicatorRoom]
+  )
+
+  public static let typingIndicatorPermissions = InstantPermissionsDocument(
+    namespaces: []
+  )
+
   public static let todoPermissions = InstantPermissionsDocument(
     namespaces: [
       .allowAll(namespace: TodoExample.namespace)
