@@ -58,6 +58,8 @@
     "src/custom-cursors-v3-app-contract.test.ts",
     "src/custom-cursors-v3-live-support.ts",
     "src/custom-cursors-v3-live-support.test.ts",
-    "src/custom-cursors-v3-live-contract.ts"
+    "src/custom-cursors-v3-live-contract.ts",
+    "src/merge-tile-game-v3-app-contract.ts",
+    "src/merge-tile-game-v3-app-contract.test.ts"
   ]
 }
