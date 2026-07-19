@@ -199,6 +199,16 @@ As of 2026-07-18:
   disconnected, and observes that exact row in TypeScript after reconnect and
   server acceptance. Compiler/runtime warnings are zero. Evidence is in
   `/tmp/instant-data-swift-todos-v3-20260719T012426Z/evidence.json`.
+- The standalone Auth app boundary is complete through `08df094`, `319aa3c`,
+  `236b6aa`, `a9783c9`, and `9c0b683`. `auth-v3` compiles the settled
+  `@InstantAuth` call-site callback syntax with the exact five-provider
+  catalog. VoiceTrail now consumes those app-owned user, provider, and login
+  screen types instead of maintaining parallel definitions. The clean
+  fresh-app gate proves server-verified sign-in, app-owned `signedIn` state,
+  durable relaunch, app-owned `signedOut`, local session clearing, and remote
+  token rejection through canonical TypeScript with zero warnings. Evidence
+  is in
+  `/tmp/instant-data-swift-auth-v3-app-20260719T013823Z/evidence.json`.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -230,7 +240,7 @@ When sources disagree, use this order:
 | Current execution state, packet order, gates, and tag targets | `docs/v3-e2e-port-plan.md` |
 | Product contract and full definition of done | `docs/instant-swift-data-goals.md` |
 | Desired V3 API rules and decision log | `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` |
-| Next app target | Auth through a thin SwiftUI host that binds the settled auth syntax to the existing canonical live auth boundary |
+| Next app target | Chat/mobile-chat through thin SwiftUI hosts, typed messages, authenticated rooms, presence, and topics |
 | Current generated recording contract | `InstantSchemaExamples.recordingActionDocument`, `recordingActionValidationPermissions`, and `--example recording-action` |
 | TypeScript contract pin/type-check gate | `validation/ts-runner/package.json`, its committed `pnpm-lock.yaml`, and `validation/typecheck-generated-contract.sh` |
 | Reproducible live schema/perms install and readback | `validation/verify-recording-contract-live.sh` and `validation/fixtures/recording-action.server.*.ts` |
@@ -245,6 +255,7 @@ When sources disagree, use this order:
 | Aggregate VoiceTrail app gate | `validation/verify-voice-trail-v3-app-live.sh` and its `app-capture.json`/`evidence.json` artifacts |
 | Runnable Todos app | `Sources/TodosV3App/`, `Sources/TodosV3Executable/`, and `Tests/TodosV3AppTests/` |
 | Aggregate Todos app gate | `validation/verify-todos-v3-app-live.sh`, `validation/ts-runner/src/todos-v3-live-contract.ts`, and its `evidence.json` artifact |
+| Standalone Auth app and live gate | `Sources/AuthV3App/`, `Sources/AuthV3Executable/`, `validation/verify-auth-v3-app-live.sh`, and `validation/ts-runner/src/auth-v3-app-live-contract.ts` |
 
 ## Decisions Already Made
 
@@ -737,10 +748,18 @@ offline mutation before reconnect, then zero pending mutations after server
 acceptance. Evidence is at
 `/tmp/instant-data-swift-todos-v3-20260719T012426Z/evidence.json`.
 
-Next, create the standalone Auth Packet 8 app target from the already-settled
-auth screen syntax and bind its app-owned state/actions to the existing
-server-verified sign-in, durable relaunch, and invalidated-token live proof.
-Do not create the
+The standalone Auth boundary is complete through `9c0b683`. `auth-v3` is a
+thin runnable SwiftUI host over `AuthV3App`; the shared module owns the user,
+five-provider catalog, bootstrap, and login screen. VoiceTrail consumes that
+same module. Its clean fresh-app gate proves app-owned `signedIn`, relaunch,
+and `signedOut` states around the canonical server-verified token lifecycle,
+including TypeScript rejection after invalidation. Evidence is at
+`/tmp/instant-data-swift-auth-v3-app-20260719T013823Z/evidence.json`.
+
+Next, port the canonical chat/mobile-chat examples into thin SwiftUI app
+targets. Bind authenticated message creation, realtime typed queries, room
+presence, and topic payloads to app-owned models before adding their clean
+cross-SDK live gates. Do not create the
 `v0.4.0-apps-e2e` tag until the required app matrix—not only VoiceTrail—passes.
 
 The product-payload mismatch is resolved: playback presence stores and encodes
