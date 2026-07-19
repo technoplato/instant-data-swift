@@ -47,6 +47,21 @@ struct RemindersV3SourceContractTests {
     _ = tags
     _ = listDraft
     _ = reminderDraft
+    _ = CreateRemindersV3List(
+      listID: listID,
+      ownerID: userID,
+      title: "Family",
+      position: 0,
+      createdAt: Date(timeIntervalSince1970: 1_700_000_000)
+    )
+    _ = CreateRemindersV3Reminder(
+      reminderID: InstantID(rawValue: "reminder-1"),
+      listID: listID,
+      title: "Pack lunch",
+      position: 0,
+      createdAt: Date(timeIntervalSince1970: 1_700_000_001),
+      tagIDs: [InstantID(rawValue: "family")]
+    )
   }
 
   @Test
