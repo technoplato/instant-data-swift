@@ -6,6 +6,7 @@ public enum InstantServerSchemaWarningCode: String, Codable, Hashable, Sendable 
   case systemAttribute = "system-attribute"
   case systemLink = "system-link"
   case canonicalLinkName = "canonical-link-name"
+  case serverJSONAsAny = "server-json-as-any"
 }
 
 public struct InstantServerSchemaWarning: Codable, Equatable, Hashable, Sendable {
@@ -102,8 +103,17 @@ extension ParsedInstantSchemaDocument {
         guard let actualAttribute = actualAttributes[expectedAttribute.name] else {
           throw InstantServerSchemaComparisonError.missingAttribute(path)
         }
-        guard actualAttribute == expectedAttribute else {
-          throw InstantServerSchemaComparisonError.mismatchedAttribute(path)
+        if actualAttribute != expectedAttribute {
+          var normalizedActual = actualAttribute
+          normalizedActual.valueType = expectedAttribute.valueType
+          guard
+            actualAttribute.valueType == .any,
+            expectedAttribute.valueType == .json,
+            normalizedActual == expectedAttribute
+          else {
+            throw InstantServerSchemaComparisonError.mismatchedAttribute(path)
+          }
+          warnings.append(.init(code: .serverJSONAsAny, path: path))
         }
       }
 
