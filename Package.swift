@@ -29,6 +29,7 @@ let package = Package(
     .library(name: "VoiceTrailV3App", targets: ["VoiceTrailV3App"]),
     .executable(name: "instant-swift-data", targets: ["instant-swift-data"]),
     .executable(name: "auth-v3", targets: ["AuthV3Executable"]),
+    .executable(name: "mobile-chat-v3", targets: ["MobileChatV3Executable"]),
     .executable(name: "voicetrail-v3", targets: ["VoiceTrailV3Executable"]),
     .executable(name: "todos-v3", targets: ["TodosV3Executable"]),
     .executable(
@@ -167,6 +168,11 @@ let package = Package(
     .executableTarget(
       name: "AuthV3Executable",
       dependencies: ["AuthV3App"],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .executableTarget(
+      name: "MobileChatV3Executable",
+      dependencies: ["MobileChatV3App"],
       swiftSettings: strictConcurrencySettings
     ),
     .executableTarget(
