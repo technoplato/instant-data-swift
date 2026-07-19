@@ -33,6 +33,46 @@ public struct InstantAvatarStackV3LiveValidationDetails: Codable, Equatable, Sen
     self.connectionState = connectionState
   }
 
+  private enum CodingKeys: String, CodingKey {
+    case roomType
+    case roomID
+    case publishedPresence
+    case publishedUserID
+    case observedPresence
+    case observedUserID
+    case observedPeerID
+    case peerCount
+    case peerCountAfterDisconnect
+    case connectionState
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    roomType = try container.decode(String.self, forKey: .roomType)
+    roomID = try container.decode(String.self, forKey: .roomID)
+    publishedPresence = try container.decode(AvatarStackV3Presence.self, forKey: .publishedPresence)
+    publishedPresence.userID = try container.decode(String.self, forKey: .publishedUserID)
+    observedPresence = try container.decode(AvatarStackV3Presence.self, forKey: .observedPresence)
+    observedPresence.userID = try container.decode(String.self, forKey: .observedUserID)
+    observedPeerID = try container.decode(String.self, forKey: .observedPeerID)
+    peerCount = try container.decode(Int.self, forKey: .peerCount)
+    peerCountAfterDisconnect = try container.decode(Int.self, forKey: .peerCountAfterDisconnect)
+    connectionState = try container.decode(String.self, forKey: .connectionState)
+  }
+
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(roomType, forKey: .roomType)
+    try container.encode(roomID, forKey: .roomID)
+    try container.encode(publishedPresence, forKey: .publishedPresence)
+    try container.encode(publishedPresence.userID, forKey: .publishedUserID)
+    try container.encode(observedPresence, forKey: .observedPresence)
+    try container.encode(observedPresence.userID, forKey: .observedUserID)
+    try container.encode(observedPeerID, forKey: .observedPeerID)
+    try container.encode(peerCount, forKey: .peerCount)
+    try container.encode(peerCountAfterDisconnect, forKey: .peerCountAfterDisconnect)
+    try container.encode(connectionState, forKey: .connectionState)
+  }
 }
 
 public enum InstantAvatarStackV3LiveValidation {
