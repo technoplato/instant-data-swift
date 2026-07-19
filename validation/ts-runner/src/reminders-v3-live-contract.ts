@@ -128,6 +128,19 @@ try {
   );
   assert.equal(readerObserved.event, "typescript-reader-observed", JSON.stringify(readerObserved));
   assert.equal(readerObserved.ok, true);
+  const adminReaderGraph = await admin.query(remindersListQuery());
+  assert.equal(
+    adminReaderGraph.remindersLists.length,
+    1,
+    `Admin did not observe the accepted Reminders graph: ${JSON.stringify(adminReaderGraph)}`,
+  );
+  const participantAdminDB = admin.asUser({ token: typeScriptToken });
+  const scopedReaderGraph = await participantAdminDB.query(remindersListQuery());
+  assert.equal(
+    scopedReaderGraph.remindersLists.length,
+    1,
+    `Participant permissions hid the accepted Reminders graph: ${JSON.stringify(adminReaderGraph)}`,
+  );
   const readerList = await waitForList(participantDB, (list) => (
     list.owner.id === swiftUser.id
     && list.readers.some((user) => user.id === typeScriptUser.id)
