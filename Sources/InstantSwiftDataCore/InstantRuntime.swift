@@ -410,6 +410,8 @@ private actor InstantRuntimeLiveSession {
   private var registeredStreamReaders: [String: RegisteredStreamReader] = [:]
   private var pendingStreamStarts:
     [String: AsyncThrowingStream<InstantLiveStartStreamOK, Error>.Continuation] = [:]
+  private var pendingStreamFlushes:
+    [String: AsyncThrowingStream<InstantLiveStreamFlushed, Error>.Continuation] = [:]
   private var registeredStreamWriters: [String: RegisteredStreamWriter] = [:]
   private var makeID: (@Sendable () -> String)?
   private var sessionID: String?
@@ -504,6 +506,50 @@ private actor InstantRuntimeLiveSession {
     writer.buffer.append(buffered)
     registeredStreamWriters[streamID] = writer
     try await sendStreamAppend(buffered, streamID: streamID, through: session, clientEventID: clientEventID)
+  }
+
+  func finishStream(
+    streamID: String,
+    offset: Int64,
+    abortReason: String?,
+    clientEventID: String
+  ) async throws {
+    guard registeredStreamWriters[streamID] != nil else { return }
+    let response = AsyncThrowingStream<InstantLiveStreamFlushed, Error>.makeStream(
+      bufferingPolicy: .bufferingNewest(1)
+    )
+    pendingStreamFlushes[streamID] = response.continuation
+    do {
+      try await appendStream(
+        streamID: streamID,
+        chunks: [],
+        offset: offset,
+        done: true,
+        abortReason: abortReason,
+        clientEventID: clientEventID
+      )
+      let responseStream = response.stream
+      let acknowledged = try await instantLiveWithTimeout(
+        operation: "finish Instant live stream",
+        timeoutMilliseconds: 10_000
+      ) {
+        var iterator = responseStream.makeAsyncIterator()
+        return try await iterator.next()
+      }
+      guard let flushed = acknowledged, flushed.done else {
+        throw InstantError(
+          code: .networkFailed,
+          operation: "finish Instant live stream",
+          message: "Instant did not confirm the terminal stream flush.",
+          recovery: "Reconnect the writer and resend its terminal append."
+        )
+      }
+      pendingStreamFlushes[streamID] = nil
+    } catch {
+      pendingStreamFlushes[streamID]?.finish(throwing: error)
+      pendingStreamFlushes[streamID] = nil
+      throw error
+    }
   }
 
   func reconnectStreamWriters() async throws {
@@ -957,6 +1003,10 @@ private actor InstantRuntimeLiveSession {
         pendingStreamStarts[clientEventID]?.finish()
       }
     case let .streamFlushed(flushed):
+      pendingStreamFlushes[flushed.streamID]?.yield(flushed)
+      if flushed.done {
+        pendingStreamFlushes[flushed.streamID]?.finish()
+      }
       if var writer = registeredStreamWriters[flushed.streamID] {
         writer.buffer.removeAll { $0.endOffset <= flushed.offset }
         if flushed.done {
@@ -1049,6 +1099,10 @@ private actor InstantRuntimeLiveSession {
       continuation.finish(throwing: failure ?? CancellationError())
     }
     pendingStreamStarts.removeAll()
+    for continuation in pendingStreamFlushes.values {
+      continuation.finish(throwing: failure ?? CancellationError())
+    }
+    pendingStreamFlushes.removeAll()
     if let failure {
       await onFailure(failure)
     }
@@ -1071,6 +1125,10 @@ private actor InstantRuntimeLiveSession {
       continuation.finish(throwing: CancellationError())
     }
     pendingStreamStarts.removeAll()
+    for continuation in pendingStreamFlushes.values {
+      continuation.finish(throwing: CancellationError())
+    }
+    pendingStreamFlushes.removeAll()
     receiverTask?.cancel()
     if let session {
       await session.close()
@@ -4094,11 +4152,9 @@ public final class InstantRuntime: Sendable {
           recovery: "Create the stream before closing it."
         )
       }
-      try await liveSession.appendStream(
+      try await liveSession.finishStream(
         streamID: streamID,
-        chunks: [],
         offset: metadata.size ?? 0,
-        done: true,
         abortReason: normalizedAbortReason,
         clientEventID: configuration.makeID()
       )

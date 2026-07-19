@@ -68,9 +68,12 @@ try {
   assert.ok(created.details.streamID);
 
   process.stderr.write("streams-v3: reading Swift stream\n");
-  let observedSwiftContent = "";
-  const swiftReader = admin.streams.createReadStream({ streamId: created.details.streamID });
-  for await (const chunk of swiftReader) observedSwiftContent += chunk;
+  const observedSwiftContent = await withTimeout((async () => {
+    let content = "";
+    const swiftReader = admin.streams.createReadStream({ streamId: created.details.streamID });
+    for await (const chunk of swiftReader) content += chunk;
+    return content;
+  })(), "read Swift stream in TypeScript");
 
   const swiftEvidence = await nextJSONLine(lines, swift, "Swift stream evidence");
   await requireSuccessfulExit(swift, "Swift streams runner");

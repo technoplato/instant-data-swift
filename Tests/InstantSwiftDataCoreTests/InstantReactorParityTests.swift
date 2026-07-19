@@ -1809,7 +1809,7 @@ struct InstantReactorParityTests {
     ])
     expectNoDifference(append.chunk.byteCount, 10, typescriptStreamWriterSource)
 
-    let closed = try await runtime.closeStream(streamID: metadata.id)
+    let closeTask = Task { try await runtime.closeStream(streamID: metadata.id) }
     await session.waitForSentMessageCount(4)
     let closeMessage = try #require(await session.sentMessages().last)
     expectNoDifference(closeMessage.op, "append-stream", typescriptStreamWriterSource)
@@ -1819,6 +1819,17 @@ struct InstantReactorParityTests {
       "offset": .number(10),
       "stream-id": .string(metadata.id),
     ])
+    await session.enqueue(
+      InstantLiveMessage(
+        op: "stream-flushed",
+        fields: [
+          "done": .bool(true),
+          "offset": .number(10),
+          "stream-id": .string(metadata.id),
+        ]
+      )
+    )
+    let closed = try await closeTask.value
     expectNoDifference(closed.done, true, typescriptStreamWriterSource)
     expectNoDifference(closed.size, 10, typescriptStreamWriterSource)
     _ = try await runtime.closeConnection()
