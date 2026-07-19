@@ -249,13 +249,6 @@ public enum InstantMobileChatV3LiveValidation {
       client: client
     )
     let observedTopics = try await remoteTopics.value
-    _ = try await client.publishRoomTopicMessage(
-      room: room,
-      topic: MobileChatRoom.Topic.emoji.rawValue,
-      payload: try encode(
-        MobileChatReaction(name: .confetti, directionAngle: 0, rotationAngle: 0)
-      )
-    )
     let observedPresence = try await remotePresence.value
     _ = try await client.leaveRoom(room)
     _ = try await client.closeConnection()
