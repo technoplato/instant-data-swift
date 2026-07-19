@@ -39,6 +39,6 @@ struct ReactionsContractTests {
     #expect(source.contains("name: i.string()"))
     #expect(source.contains("directionAngle: i.number()"))
     #expect(source.contains("rotationAngle: i.number()"))
-    #expect(!source.contains("presence:"))
+    #expect(source.contains("presence: i.entity({})"))
   }
 }

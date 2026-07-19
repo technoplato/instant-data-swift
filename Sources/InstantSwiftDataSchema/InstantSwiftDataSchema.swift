@@ -399,6 +399,47 @@ public enum InstantSchemaExamples {
     namespaces: []
   )
 
+  public static let reactionsRoom = InstantRoomSchema(
+    name: "topics-example",
+    presence: InstantRoomPayloadSchema(),
+    topics: [
+      InstantRoomTopicSchema(
+        name: "emoji",
+        payload: InstantRoomPayloadSchema(
+          attributes: [
+            InstantAttribute(
+              id: "rooms/topics-example/topics/emoji/name",
+              namespace: "rooms/topics-example/topics/emoji",
+              name: "name",
+              valueType: .string
+            ),
+            InstantAttribute(
+              id: "rooms/topics-example/topics/emoji/directionAngle",
+              namespace: "rooms/topics-example/topics/emoji",
+              name: "directionAngle",
+              valueType: .number
+            ),
+            InstantAttribute(
+              id: "rooms/topics-example/topics/emoji/rotationAngle",
+              namespace: "rooms/topics-example/topics/emoji",
+              name: "rotationAngle",
+              valueType: .number
+            ),
+          ]
+        )
+      )
+    ]
+  )
+
+  public static let reactionsDocument = InstantSchemaDocument(
+    entities: [],
+    rooms: [reactionsRoom]
+  )
+
+  public static let reactionsPermissions = InstantPermissionsDocument(
+    namespaces: []
+  )
+
   public static let todoPermissions = InstantPermissionsDocument(
     namespaces: [
       .allowAll(namespace: TodoExample.namespace)
