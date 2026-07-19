@@ -1,6 +1,7 @@
 import Combine
 import Dependencies
 import Foundation
+import InstantSwiftData
 
 public struct TypingIndicatorPresence: Codable, Equatable, Sendable, Identifiable {
   public var id: String
@@ -57,6 +58,21 @@ public struct TypingIndicatorV3Options: Equatable, Sendable {
 public enum TypingIndicatorV3Key: Equatable, Sendable {
   case character
   case submit
+}
+
+public struct TypingIndicatorV3Room: InstantRoomSchema {
+  public typealias Presence = TypingIndicatorPresence
+  public static let roomType = "typing-indicator-example"
+
+  public struct Topic: InstantRoomTopic {
+    public typealias RoomSchema = TypingIndicatorV3Room
+
+    public let rawValue: String
+
+    public init?(rawValue: String) {
+      return nil
+    }
+  }
 }
 
 @MainActor
