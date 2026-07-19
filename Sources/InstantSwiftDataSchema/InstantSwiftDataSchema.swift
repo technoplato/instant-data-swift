@@ -1068,7 +1068,7 @@ public enum InstantSchemaExamples {
           .delete: "isOwner",
         ],
         link: [
-          "owner": "auth.id in data.ref('owner.id')",
+          "owner": "actions.data == 'create' || auth.id in data.ref('owner.id')",
           "readers": "auth.id in data.ref('owner.id')",
           "writers": "auth.id in data.ref('owner.id')",
           "share": "auth.id in data.ref('owner.id')",
@@ -1092,8 +1092,8 @@ public enum InstantSchemaExamples {
           .delete: "isOwner || isWriter",
         ],
         link: [
-          "list": "auth.id in data.ref('list.owner.id') || auth.id in data.ref('list.writers.id')",
-          "tags": "auth.id in data.ref('list.owner.id') || auth.id in data.ref('list.writers.id')",
+          "list": "actions.data == 'create' || auth.id in data.ref('list.owner.id') || auth.id in data.ref('list.writers.id')",
+          "tags": "actions.data == 'create' || auth.id in data.ref('list.owner.id') || auth.id in data.ref('list.writers.id')",
         ],
         unlink: [
           "list": "auth.id in data.ref('list.owner.id') || auth.id in data.ref('list.writers.id')",
@@ -1110,7 +1110,7 @@ public enum InstantSchemaExamples {
           .delete: "isOwner",
         ],
         link: [
-          "reminders": "auth.id in linkedData.ref('list.owner.id') || auth.id in linkedData.ref('list.writers.id')"
+          "reminders": "actions.data == 'create' || actions.linkedData == 'create' || auth.id in linkedData.ref('list.owner.id') || auth.id in linkedData.ref('list.writers.id')"
         ],
         unlink: [
           "reminders": "auth.id in linkedData.ref('list.owner.id') || auth.id in linkedData.ref('list.writers.id')"
@@ -1126,8 +1126,8 @@ public enum InstantSchemaExamples {
           .delete: "isShareOwner",
         ],
         link: [
-          "share": "auth.id in data.ref('share.owner.id')",
-          "user": "auth.id in data.ref('share.owner.id')",
+          "share": "actions.data == 'create' || auth.id in data.ref('share.owner.id')",
+          "user": "actions.data == 'create' || auth.id in data.ref('share.owner.id')",
         ],
         unlink: [
           "share": "auth.id in data.ref('share.owner.id')",
@@ -1147,8 +1147,8 @@ public enum InstantSchemaExamples {
           .delete: "isOwner",
         ],
         link: [
-          "owner": "auth.id in data.ref('owner.id')",
-          "root": "auth.id in data.ref('owner.id')",
+          "owner": "actions.data == 'create' || auth.id in data.ref('owner.id')",
+          "root": "actions.data == 'create' || auth.id in data.ref('owner.id')",
           "memberships": "auth.id in data.ref('owner.id')",
         ],
         unlink: [

@@ -161,7 +161,7 @@ struct RemindersV3ContractTests {
     expectNoDifference(
       lists.link,
       [
-        "owner": "auth.id in data.ref('owner.id')",
+        "owner": "actions.data == 'create' || auth.id in data.ref('owner.id')",
         "readers": "auth.id in data.ref('owner.id')",
         "writers": "auth.id in data.ref('owner.id')",
         "share": "auth.id in data.ref('owner.id')",
@@ -200,8 +200,8 @@ struct RemindersV3ContractTests {
     expectNoDifference(
       reminders.link,
       [
-        "list": "auth.id in data.ref('list.owner.id') || auth.id in data.ref('list.writers.id')",
-        "tags": "auth.id in data.ref('list.owner.id') || auth.id in data.ref('list.writers.id')",
+        "list": "actions.data == 'create' || auth.id in data.ref('list.owner.id') || auth.id in data.ref('list.writers.id')",
+        "tags": "actions.data == 'create' || auth.id in data.ref('list.owner.id') || auth.id in data.ref('list.writers.id')",
       ]
     )
   }
@@ -243,7 +243,7 @@ struct RemindersV3ContractTests {
     expectNoDifference(
       tags.link,
       [
-        "reminders": "auth.id in linkedData.ref('list.owner.id') || auth.id in linkedData.ref('list.writers.id')"
+        "reminders": "actions.data == 'create' || actions.linkedData == 'create' || auth.id in linkedData.ref('list.owner.id') || auth.id in linkedData.ref('list.writers.id')"
       ]
     )
   }
@@ -268,8 +268,8 @@ struct RemindersV3ContractTests {
     expectNoDifference(
       namespaces["v3_shares"]?.link,
       [
-        "owner": "auth.id in data.ref('owner.id')",
-        "root": "auth.id in data.ref('owner.id')",
+        "owner": "actions.data == 'create' || auth.id in data.ref('owner.id')",
+        "root": "actions.data == 'create' || auth.id in data.ref('owner.id')",
         "memberships": "auth.id in data.ref('owner.id')",
       ]
     )
@@ -285,8 +285,8 @@ struct RemindersV3ContractTests {
     expectNoDifference(
       namespaces["v3_share_memberships"]?.link,
       [
-        "share": "auth.id in data.ref('share.owner.id')",
-        "user": "auth.id in data.ref('share.owner.id')",
+        "share": "actions.data == 'create' || auth.id in data.ref('share.owner.id')",
+        "user": "actions.data == 'create' || auth.id in data.ref('share.owner.id')",
       ]
     )
   }
