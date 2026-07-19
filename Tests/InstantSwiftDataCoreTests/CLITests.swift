@@ -937,7 +937,7 @@ extension InstantStoreTests {
     )
     expectNoDifference(permissionsVerify.example, "recording-action")
     expectNoDifference(permissionsVerify.namespaceCount, 4)
-    expectNoDifference(permissionsVerify.allowRuleCount, 17)
+    expectNoDifference(permissionsVerify.allowRuleCount, 16)
 
     let serverPermissionsURL = packageRootURL()
       .appendingPathComponent(
@@ -1204,7 +1204,7 @@ extension InstantStoreTests {
     )
     try expectMalformed(
       ["perms", "verify", "--example", "todos", "--from", "--json"],
-      contains: "perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game --from instant.perms.ts"
+      contains: "perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel --from instant.perms.ts"
     )
 
     expectNoDifference(
