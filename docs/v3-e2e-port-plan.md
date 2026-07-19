@@ -977,6 +977,9 @@ permissions SHA-256
 `e693f551cf212c8b8d5425aadcf4cebae590119cf9663f9b09b956d553ef356b`,
 and zero compiler/runtime warnings at
 `/tmp/instant-data-swift-stroopwafel-v3-20260719T054351Z/evidence.json`.
+The post-port aggregate is green at 1,027 Swift Testing cases across 71
+suites, the `stroopwafel-v3` build, and the complete TypeScript typecheck,
+contract, live-support, and fixture matrix.
 
 Next, port Reminders sharing source-first from its pinned SQLiteData tests and
 existing local model/CLI proof. Do not create the `v0.4.0-apps-e2e` tag until
