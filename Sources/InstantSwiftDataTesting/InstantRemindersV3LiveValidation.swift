@@ -217,6 +217,25 @@ public enum InstantRemindersV3LiveValidation {
     onSwiftGraphReady()
 
     _ = try await waitForList(lists) { list in
+      list.share?.memberships.contains {
+          $0.id.rawValue == readerMembershipID
+            && $0.user == participantID
+            && $0.shareRole == .reader
+        } == true
+    }
+    try await requireServerAcceptance(
+      AcceptRemindersV3Share(
+        shareID: InstantID(rawValue: shareID),
+        membershipID: InstantID(rawValue: readerMembershipID),
+        listID: typedListID,
+        userID: participantID,
+        role: .reader,
+        acceptedAt: createdAt.addingTimeInterval(1)
+      ),
+      using: client,
+      operation: "accept TypeScript participant as Reminders reader"
+    )
+    _ = try await waitForList(lists) { list in
       list.readers.contains(participantID)
         && list.share?.memberships.contains {
           $0.id.rawValue == readerMembershipID
