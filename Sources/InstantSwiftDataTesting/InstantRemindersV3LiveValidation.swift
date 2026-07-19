@@ -184,12 +184,26 @@ public enum InstantRemindersV3LiveValidation {
         dueDate: Date(timeIntervalSince1970: Double(dueAtMilliseconds) / 1_000),
         priority: .high,
         position: 0,
-        createdAt: createdAt,
+        createdAt: createdAt
+      ),
+      using: client,
+      operation: "create Swift Reminders reminder"
+    )
+    try await requireServerAcceptance(
+      UpdateRemindersV3Reminder(
+        reminderID: InstantID(rawValue: swiftReminderID),
+        listID: typedListID,
+        title: swiftReminderTitle,
+        notes: "Created by InstantSwiftData",
+        isFlagged: true,
+        dueDate: Date(timeIntervalSince1970: Double(dueAtMilliseconds) / 1_000),
+        priority: .high,
+        existingTagIDs: [],
         tagIDs: [InstantID(rawValue: swiftTagID)],
         tagTitles: [InstantID(rawValue: swiftTagID): "swift"]
       ),
       using: client,
-      operation: "create Swift Reminders reminder and tag"
+      operation: "attach Swift Reminders tag"
     )
     try await requireServerAcceptance(
       CreateRemindersV3Share(
