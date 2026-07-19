@@ -596,7 +596,7 @@ public enum InstantMobileChatV3LiveValidation {
           from: .object(member.values)
         ) else { continue }
         if value == expected {
-          return (value, members.count + 1)
+          return (value, members.count)
         }
       }
     }
