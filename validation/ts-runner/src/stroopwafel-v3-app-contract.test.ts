@@ -44,8 +44,12 @@ test("Stroopwafel V3 pins the exact canonical source and durable graph", () => {
       colors: ["red", "green", "blue", "yellow"],
     },
     fixtures: {
-      room: { id: "room-stroopwafel-v3", code: "AB12" },
-      game: { id: "game-stroopwafel-v3" },
+      room: { id: "00000000-0000-4000-8000-000000000301", code: "AB12" },
+      game: { id: "00000000-0000-4000-8000-000000000302" },
+      points: {
+        swift: "00000000-0000-4000-8000-000000000303",
+        typeScript: "00000000-0000-4000-8000-000000000304",
+      },
     },
     compilerWarningCount: 0,
   });
