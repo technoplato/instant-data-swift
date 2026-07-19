@@ -142,13 +142,13 @@ public enum InstantAppBuilderV3LiveValidation {
         message: "The app model finished with status '\(model.message)'."
       )
     }
+    onSwiftBuildReady()
     let swiftBuild = try await waitForBuild(
       id: swiftBuildID,
       builds: builds,
       files: files,
       expectedCode: swiftCode
     )
-    onSwiftBuildReady()
 
     let typeScriptBuild = try await waitForBuild(
       id: typeScriptBuildID,
@@ -277,7 +277,11 @@ public enum InstantAppBuilderV3LiveValidation {
     }
     throw failure(
       operation: "observe App Builder V3 build",
-      message: "Timed out waiting for build '\(id)' and its linked file."
+      message:
+        "Timed out waiting for build '\(id)' and its linked file. "
+        + "Observed builds: \(builds.wrappedValue.map { $0.id.rawValue }); "
+        + "build file ids: \(builds.wrappedValue.compactMap { $0.file?.rawValue }); "
+        + "files: \(files.wrappedValue.map { $0.id.rawValue })."
     )
   }
 
