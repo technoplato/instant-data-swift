@@ -882,6 +882,58 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliRoundTripsSyncUpsV3Artifacts() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    let schemaURL = homeURL.appendingPathComponent("syncups.schema.ts")
+    let permissionsURL = homeURL.appendingPathComponent("syncups.perms.ts")
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let generatedSchema = try JSONDecoder().decode(
+      CLIGeneratedArtifactOutput.self,
+      from: Data(try runCLI([
+        "schema", "generate", "--example", "syncups",
+        "--to", schemaURL.path, "--json",
+      ], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(generatedSchema.example, "syncups")
+    let schemaSource = try String(contentsOf: schemaURL, encoding: .utf8)
+    #expect(schemaSource.contains("syncUps: i.entity"))
+    #expect(schemaSource.contains("attendees: i.entity"))
+    #expect(schemaSource.contains("meetings: i.entity"))
+    #expect(schemaSource.contains("syncUpsAttendees:"))
+    #expect(schemaSource.contains("syncUpsMeetings:"))
+
+    let schemaVerify = try JSONDecoder().decode(
+      CLISchemaVerifyOutput.self,
+      from: Data(try runCLI([
+        "schema", "verify", "--example", "syncups",
+        "--from", schemaURL.path, "--json",
+      ], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(schemaVerify.example, "syncups")
+    expectNoDifference(schemaVerify.entityCount, 3)
+    expectNoDifference(schemaVerify.linkCount, 2)
+    expectNoDifference(schemaVerify.warnings, [])
+
+    _ = try runCLI([
+      "perms", "generate", "--example", "syncups",
+      "--to", permissionsURL.path, "--json",
+    ], homeURL: homeURL)
+    let permissionsVerify = try JSONDecoder().decode(
+      CLIPermissionsVerifyOutput.self,
+      from: Data(try runCLI([
+        "perms", "verify", "--example", "syncups",
+        "--from", permissionsURL.path, "--json",
+      ], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(permissionsVerify.example, "syncups")
+    expectNoDifference(permissionsVerify.namespaceCount, 3)
+    expectNoDifference(permissionsVerify.allowRuleCount, 12)
+  }
+
+  @Test
   func cliGeneratesAndVerifiesCanonicalRecordingActionContract() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
