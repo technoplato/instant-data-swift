@@ -1324,6 +1324,78 @@ public enum InstantSchemaExamples {
     namespaces: []
   )
 
+  public static let appBuilderV3Files = InstantEntitySchema(
+    typeName: "AppBuilderV3File",
+    namespace: AppBuilderExample.filesNamespace,
+    attributes: AppBuilderExample.attributes.filter {
+      $0.namespace == AppBuilderExample.filesNamespace && $0.valueType != .ref
+    }
+  )
+
+  public static let appBuilderV3Users = InstantEntitySchema(
+    typeName: "AppBuilderV3User",
+    namespace: AppBuilderExample.usersNamespace,
+    attributes: AppBuilderExample.attributes.filter {
+      $0.namespace == AppBuilderExample.usersNamespace && $0.valueType != .ref
+    }
+  )
+
+  public static let appBuilderV3Builds = InstantEntitySchema(
+    typeName: "AppBuilderV3Build",
+    namespace: AppBuilderExample.buildsNamespace,
+    attributes: AppBuilderExample.attributes.filter {
+      $0.namespace == AppBuilderExample.buildsNamespace && $0.valueType != .ref
+    }
+  )
+
+  public static let appBuilderV3Document = InstantSchemaDocument(
+    entities: [appBuilderV3Files, appBuilderV3Users, appBuilderV3Builds],
+    links: [
+      InstantLinkSchema(
+        name: "buildFile",
+        forward: InstantLinkEndpoint(
+          namespace: AppBuilderExample.buildsNamespace,
+          cardinality: .one,
+          label: "file"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: AppBuilderExample.filesNamespace,
+          cardinality: .many,
+          label: "builds"
+        )
+      ),
+      InstantLinkSchema(
+        name: "buildOwner",
+        forward: InstantLinkEndpoint(
+          namespace: AppBuilderExample.buildsNamespace,
+          cardinality: .one,
+          label: "owner"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: AppBuilderExample.usersNamespace,
+          cardinality: .many,
+          label: "builds"
+        ),
+        isRequired: true
+      ),
+    ]
+  )
+
+  public static let appBuilderV3Permissions = InstantPermissionsDocument(
+    defaults: InstantDefaultPermissions(allow: [.default: "true"]),
+    namespaces: [
+      InstantNamespacePermissions(
+        namespace: AppBuilderExample.usersNamespace,
+        allow: [
+          .view: "auth.id == data.id",
+          .create: "false",
+          .update: "false",
+          .delete: "false",
+        ]
+      )
+    ]
+  )
+
   public static let todoPermissions = InstantPermissionsDocument(
     namespaces: [
       .allowAll(namespace: TodoExample.namespace)

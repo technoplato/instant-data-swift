@@ -113,6 +113,7 @@ let package = Package(
       dependencies: [
         "AuthV3App",
         "InstantSwiftData",
+        "InstantSwiftDataSchema",
         .product(name: "Dependencies", package: "swift-dependencies"),
       ],
       swiftSettings: strictConcurrencySettings

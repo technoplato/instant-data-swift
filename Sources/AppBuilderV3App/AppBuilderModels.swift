@@ -1,6 +1,7 @@
 import AuthV3App
 import Foundation
 import InstantSwiftData
+import InstantSwiftDataSchema
 
 public typealias AppBuilderV3User = AuthV3User
 public typealias AppBuilderV3AuthProviders = AuthV3Providers
@@ -54,7 +55,8 @@ public struct AppBuilderV3BuildError:
 }
 
 public enum AppBuilderV3Schema {
-  public static let attributes = AppBuilderExample.attributes
+  public static let document = InstantSchemaExamples.appBuilderV3Document
+  public static let attributes = document.attributes
 }
 
 @InstantEntity("$files")
