@@ -190,7 +190,7 @@ public struct VoiceTrailV3E2EContract: Hashable, Sendable {
         role: "reader"
       ),
       playback: VoiceTrailV3PlaybackContract(
-        roomType: "recording.playback",
+        roomType: VoiceTrailPlaybackRoom.roomType,
         roomID: capture.recordingID,
         swiftPresence: VoiceTrailV3PresenceContract(
           userID: swiftUserID,

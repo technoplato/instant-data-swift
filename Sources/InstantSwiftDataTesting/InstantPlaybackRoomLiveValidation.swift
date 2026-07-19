@@ -1,6 +1,7 @@
 import Dependencies
 import Foundation
 import InstantSwiftData
+import VoiceTrailV3App
 
 public struct InstantPlaybackRoomPresenceValue: Codable, Equatable, Sendable {
   public var userID: String
@@ -170,32 +171,32 @@ public enum InstantPlaybackRoomLiveValidation {
       )
     }
 
-    let room = InstantRoomHandle(type: "recording.playback", id: roomID)
+    let room = InstantRoomHandle(type: VoiceTrailPlaybackRoom.roomType, id: roomID)
     let presenceStream = try await client.observeRoomPresence(room: room)
     let reactionStream = try await client.observeRoomTopicMessages(
       room: room,
-      topic: "reaction"
+      topic: VoiceTrailPlaybackRoom.Topic.reaction.rawValue
     )
     let draftStream = try await client.observeRoomTopicMessages(
       room: room,
-      topic: "commentDraft"
+      topic: VoiceTrailPlaybackRoom.Topic.commentDraft.rawValue
     )
     let committedStream = try await client.observeRoomTopicMessages(
       room: room,
-      topic: "commentCommitted"
+      topic: VoiceTrailPlaybackRoom.Topic.commentCommitted.rawValue
     )
 
-    let expectedTypeScriptPresence = PlaybackPresence(
+    let expectedTypeScriptPresence = VoiceTrailPlaybackPresence(
       userID: InstantID(rawValue: typeScriptUserID),
       displayName: "TypeScript Listener",
       isPlaying: false,
       offsetSeconds: 4.25,
-      focusedSegmentID: InstantID(rawValue: "segment-typescript")
+      focusedSegmentID: "segment-typescript"
     )
     let expectedTypeScriptTopics = PlaybackTopics(
-      reaction: PlaybackReaction(emoji: "typescript-wave", offsetSeconds: 4.25),
-      commentDraft: PlaybackCommentDraft(text: "TypeScript draft", offsetSeconds: 4.25),
-      commentCommitted: PlaybackCommentCommitted(commentID: "comment-typescript")
+      reaction: VoiceTrailReaction(emoji: "typescript-wave", offsetSeconds: 4.25),
+      commentDraft: VoiceTrailCommentDraft(text: "TypeScript draft", offsetSeconds: 4.25),
+      commentCommitted: VoiceTrailCommentCommitted(commentID: "comment-typescript")
     )
     let remoteObservation = Task {
       try await withTimeout(operation: "observe TypeScript playback room payloads") {
@@ -230,17 +231,17 @@ public enum InstantPlaybackRoomLiveValidation {
     _ = try await client.connect()
     _ = try await client.joinRoom(room)
 
-    let swiftPresence = PlaybackPresence(
+    let swiftPresence = VoiceTrailPlaybackPresence(
       userID: InstantID(rawValue: swiftUserID),
       displayName: "Swift Listener",
       isPlaying: true,
       offsetSeconds: 12.5,
-      focusedSegmentID: InstantID(rawValue: "segment-swift")
+      focusedSegmentID: "segment-swift"
     )
     let swiftTopics = PlaybackTopics(
-      reaction: PlaybackReaction(emoji: "swift-wave", offsetSeconds: 12.5),
-      commentDraft: PlaybackCommentDraft(text: "Swift draft", offsetSeconds: 12.5),
-      commentCommitted: PlaybackCommentCommitted(commentID: "comment-swift")
+      reaction: VoiceTrailReaction(emoji: "swift-wave", offsetSeconds: 12.5),
+      commentDraft: VoiceTrailCommentDraft(text: "Swift draft", offsetSeconds: 12.5),
+      commentCommitted: VoiceTrailCommentCommitted(commentID: "comment-swift")
     )
     let publishedPresence = try encodeObject(swiftPresence)
     let publishedTopics = try encodeTopics(swiftTopics)
@@ -256,20 +257,20 @@ public enum InstantPlaybackRoomLiveValidation {
     }
 
     let observed = try await remoteObservation.value
-    let reconnectedTypeScriptPresence = PlaybackPresence(
+    let reconnectedTypeScriptPresence = VoiceTrailPlaybackPresence(
       userID: InstantID(rawValue: typeScriptUserID),
       displayName: "TypeScript Listener Rejoined",
       isPlaying: true,
       offsetSeconds: 9.5,
-      focusedSegmentID: InstantID(rawValue: "segment-typescript-rejoined")
+      focusedSegmentID: "segment-typescript-rejoined"
     )
     let reconnectedTypeScriptTopics = PlaybackTopics(
-      reaction: PlaybackReaction(emoji: "typescript-rejoined", offsetSeconds: 9.5),
-      commentDraft: PlaybackCommentDraft(
+      reaction: VoiceTrailReaction(emoji: "typescript-rejoined", offsetSeconds: 9.5),
+      commentDraft: VoiceTrailCommentDraft(
         text: "TypeScript draft after reconnect",
         offsetSeconds: 9.5
       ),
-      commentCommitted: PlaybackCommentCommitted(
+      commentCommitted: VoiceTrailCommentCommitted(
         commentID: "comment-typescript-rejoined"
       )
     )
@@ -306,20 +307,20 @@ public enum InstantPlaybackRoomLiveValidation {
     try await reconnectTransport.disconnectCurrentSession()
     try await waitForReconnect(client: client, transport: reconnectTransport)
 
-    let reconnectedSwiftPresence = PlaybackPresence(
+    let reconnectedSwiftPresence = VoiceTrailPlaybackPresence(
       userID: InstantID(rawValue: swiftUserID),
       displayName: "Swift Listener Rejoined",
       isPlaying: false,
       offsetSeconds: 18.75,
-      focusedSegmentID: InstantID(rawValue: "segment-swift-rejoined")
+      focusedSegmentID: "segment-swift-rejoined"
     )
     let reconnectedSwiftTopics = PlaybackTopics(
-      reaction: PlaybackReaction(emoji: "swift-rejoined", offsetSeconds: 18.75),
-      commentDraft: PlaybackCommentDraft(
+      reaction: VoiceTrailReaction(emoji: "swift-rejoined", offsetSeconds: 18.75),
+      commentDraft: VoiceTrailCommentDraft(
         text: "Swift draft after reconnect",
         offsetSeconds: 18.75
       ),
-      commentCommitted: PlaybackCommentCommitted(commentID: "comment-swift-rejoined")
+      commentCommitted: VoiceTrailCommentCommitted(commentID: "comment-swift-rejoined")
     )
     _ = try await client.setRoomPresence(
       room: room,
@@ -388,12 +389,15 @@ public enum InstantPlaybackRoomLiveValidation {
   }
 
   private static func matchingPresence(
-    _ expected: PlaybackPresence,
+    _ expected: VoiceTrailPlaybackPresence,
     in stream: AsyncStream<[InstantRoomPresenceMember]>
-  ) async throws -> PlaybackPresence {
+  ) async throws -> VoiceTrailPlaybackPresence {
     for await members in stream {
       for member in members {
-        guard let value = try? decode(PlaybackPresence.self, from: .object(member.values)) else {
+        guard let value = try? decode(
+          VoiceTrailPlaybackPresence.self,
+          from: .object(member.values)
+        ) else {
           continue
         }
         if value == expected { return value }
@@ -446,9 +450,12 @@ public enum InstantPlaybackRoomLiveValidation {
 
   private static func encodeTopics(_ topics: PlaybackTopics) throws -> [String: JSONValue] {
     [
-      "commentCommitted": try encode(topics.commentCommitted),
-      "commentDraft": try encode(topics.commentDraft),
-      "reaction": try encode(topics.reaction),
+      VoiceTrailPlaybackRoom.Topic.commentCommitted.rawValue:
+        try encode(topics.commentCommitted),
+      VoiceTrailPlaybackRoom.Topic.commentDraft.rawValue:
+        try encode(topics.commentDraft),
+      VoiceTrailPlaybackRoom.Topic.reaction.rawValue:
+        try encode(topics.reaction),
     ]
   }
 
@@ -607,50 +614,25 @@ private actor PlaybackReconnectTransport {
   }
 }
 
-private enum PlaybackUser {}
-private enum PlaybackSegment {}
-
-private struct PlaybackPresence: Codable, Equatable, Sendable {
-  var userID: InstantID<PlaybackUser>
-  var displayName: String
-  var isPlaying: Bool
-  var offsetSeconds: Double
-  var focusedSegmentID: InstantID<PlaybackSegment>?
-}
-
-private struct PlaybackReaction: Codable, Equatable, Sendable {
-  var emoji: String
-  var offsetSeconds: Double
-}
-
-private struct PlaybackCommentDraft: Codable, Equatable, Sendable {
-  var text: String
-  var offsetSeconds: Double
-}
-
-private struct PlaybackCommentCommitted: Codable, Equatable, Sendable {
-  var commentID: String
-}
-
 private struct PlaybackTopics: Sendable {
-  var reaction: PlaybackReaction
-  var commentDraft: PlaybackCommentDraft
-  var commentCommitted: PlaybackCommentCommitted
+  var reaction: VoiceTrailReaction
+  var commentDraft: VoiceTrailCommentDraft
+  var commentCommitted: VoiceTrailCommentCommitted
 }
 
 private struct PlaybackObservation: Sendable {
-  var presence: PlaybackPresence
+  var presence: VoiceTrailPlaybackPresence
   var topics: PlaybackTopics
 }
 
-private extension PlaybackPresence {
+private extension VoiceTrailPlaybackPresence {
   var evidence: InstantPlaybackRoomPresenceValue {
     InstantPlaybackRoomPresenceValue(
       userID: userID.rawValue,
       displayName: displayName,
       isPlaying: isPlaying,
       offsetSeconds: offsetSeconds,
-      focusedSegmentID: focusedSegmentID?.rawValue
+      focusedSegmentID: focusedSegmentID
     )
   }
 }

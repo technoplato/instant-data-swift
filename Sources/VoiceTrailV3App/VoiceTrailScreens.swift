@@ -313,7 +313,7 @@ import InstantSwiftData
       .instantRoom(
         $room,
         InstantRoom<VoiceTrailPlaybackRoom>(
-          type: "recording.playback",
+          type: VoiceTrailPlaybackRoom.roomType,
           id: recordingID.rawValue
         )
       )

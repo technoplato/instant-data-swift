@@ -683,8 +683,9 @@ public struct FinishVoiceTrailRecording: InstantMessage {
 
 public struct VoiceTrailPlaybackRoom: InstantSwiftData.InstantRoomSchema {
   public typealias Presence = VoiceTrailPlaybackPresence
+  public static let roomType = "recording.playback"
 
-  public enum Topic: String, InstantRoomTopic {
+  public enum Topic: String, CaseIterable, InstantRoomTopic {
     public typealias RoomSchema = VoiceTrailPlaybackRoom
 
     case reaction
@@ -722,6 +723,24 @@ public struct VoiceTrailReaction: Codable, Equatable, Sendable {
   public init(emoji: String, offsetSeconds: Double) {
     self.emoji = emoji
     self.offsetSeconds = offsetSeconds
+  }
+}
+
+public struct VoiceTrailCommentDraft: Codable, Equatable, Sendable {
+  public var text: String
+  public var offsetSeconds: Double
+
+  public init(text: String, offsetSeconds: Double) {
+    self.text = text
+    self.offsetSeconds = offsetSeconds
+  }
+}
+
+public struct VoiceTrailCommentCommitted: Codable, Equatable, Sendable {
+  public var commentID: String
+
+  public init(commentID: String) {
+    self.commentID = commentID
   }
 }
 
