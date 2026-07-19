@@ -422,6 +422,30 @@ public enum InstantSchemaExamples {
     namespaces: []
   )
 
+  public static let cursorsRoom = InstantRoomSchema(
+    name: "cursors-example",
+    presence: InstantRoomPayloadSchema(
+      attributes: [
+        InstantAttribute(
+          id: "rooms/cursors-example/presence/cursors-space-default--cursors-example-123",
+          namespace: "rooms/cursors-example/presence",
+          name: "cursors-space-default--cursors-example-123",
+          valueType: .json,
+          isRequired: false
+        )
+      ]
+    )
+  )
+
+  public static let cursorsDocument = InstantSchemaDocument(
+    entities: [],
+    rooms: [cursorsRoom]
+  )
+
+  public static let cursorsPermissions = InstantPermissionsDocument(
+    namespaces: []
+  )
+
   public static let reactionsRoom = InstantRoomSchema(
     name: "topics-example",
     presence: InstantRoomPayloadSchema(),
