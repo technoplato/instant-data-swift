@@ -506,3 +506,103 @@ public final class CursorsV3Model: ObservableObject {
     }
   }
 }
+
+public struct CustomCursorsV3Presence: Codable, Equatable, Identifiable, Sendable {
+  public var id: String { userID }
+  public var userID: String
+  public var name: String
+  public var cursor: CursorsV3Cursor?
+
+  public init(
+    userID: String,
+    name: String,
+    cursor: CursorsV3Cursor?
+  ) {
+    self.userID = userID
+    self.name = name
+    self.cursor = cursor
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: DynamicCodingKey.self)
+    userID = try container.decodeIfPresent(
+      String.self,
+      forKey: DynamicCodingKey("userID")
+    ) ?? ""
+    name = try container.decode(String.self, forKey: DynamicCodingKey("name"))
+    cursor = try container.decodeIfPresent(
+      CursorsV3Cursor.self,
+      forKey: DynamicCodingKey(CustomCursorsV3Room.defaultSpaceID)
+    )
+  }
+
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: DynamicCodingKey.self)
+    try container.encode(name, forKey: DynamicCodingKey("name"))
+    if let cursor {
+      try container.encode(
+        cursor,
+        forKey: DynamicCodingKey(CustomCursorsV3Room.defaultSpaceID)
+      )
+    }
+  }
+}
+
+public struct CustomCursorsV3Room: InstantRoomSchema {
+  public typealias Presence = CustomCursorsV3Presence
+  public static let roomType = "cursors-example"
+  public static let defaultRoomID = "124"
+  public static let defaultSpaceID = "cursors-space-default--cursors-example-124"
+
+  public struct Topic: InstantRoomTopic {
+    public typealias RoomSchema = CustomCursorsV3Room
+
+    public let rawValue: String
+
+    public init?(rawValue: String) {
+      return nil
+    }
+  }
+}
+
+@MainActor
+public final class CustomCursorsV3Model: ObservableObject {
+  @Published public private(set) var presence: CustomCursorsV3Presence
+  @Published public private(set) var peers: [CustomCursorsV3Presence] = []
+
+  public let profileID: String
+  public let color: String
+
+  public init(profileID: String, name: String, color: String) {
+    self.profileID = profileID
+    self.color = color
+    presence = CustomCursorsV3Presence(
+      userID: profileID,
+      name: name,
+      cursor: nil
+    )
+  }
+
+  public func movePointer(
+    clientX: Double,
+    clientY: Double,
+    frame: CursorsV3Frame
+  ) {
+    presence.cursor = CursorsV3Model.cursor(
+      clientX: clientX,
+      clientY: clientY,
+      frame: frame,
+      color: color
+    )
+  }
+
+  public func clearPointer() {
+    presence.cursor = nil
+  }
+
+  public func updatePresence(_ values: [CustomCursorsV3Presence]) {
+    peers = values.filter { value in
+      value.userID != profileID && value.cursor != nil
+    }
+  }
+}
