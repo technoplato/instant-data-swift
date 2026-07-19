@@ -1,6 +1,7 @@
 import CustomDump
 import Foundation
 import InstantSwiftDataTesting
+import MobileChatV3App
 import Testing
 
 @Suite
