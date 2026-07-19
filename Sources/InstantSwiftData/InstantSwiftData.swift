@@ -13,7 +13,7 @@ public macro InstantEntity(_ namespace: String? = nil) =
   #externalMacro(module: "InstantSwiftDataMacros", type: "InstantEntityMacro")
 
 @attached(peer)
-public macro InstantRelation(reverse: String) =
+public macro InstantRelation(reverse: String, reverseMember: String? = nil) =
   #externalMacro(module: "InstantSwiftDataMacros", type: "InstantRelationMacro")
 
 @attached(peer)

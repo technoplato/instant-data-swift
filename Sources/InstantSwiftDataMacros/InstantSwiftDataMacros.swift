@@ -106,7 +106,7 @@ public struct InstantEntityMacro: MemberMacro {
       }
     }
     let duplicateReverseNames = Set(
-      Dictionary(grouping: relationProperties, by: { $0.relation?.reverseName ?? "" })
+      Dictionary(grouping: relationProperties, by: { $0.relation?.reverseMember ?? "" })
         .filter { !$0.key.isEmpty && $0.value.count > 1 }
         .keys
     )
@@ -118,22 +118,22 @@ public struct InstantEntityMacro: MemberMacro {
     }
     for property in relationProperties {
       guard let relation = property.relation else { continue }
-      if !relation.reverseName.isSwiftIdentifier {
+      if !relation.reverseMember.isSwiftIdentifier {
         context.diagnose(
-          InstantEntityDiagnostic.invalidReverseRelationName(relation.reverseName)
+          InstantEntityDiagnostic.invalidReverseRelationName(relation.reverseMember)
             .diagnose(at: Syntax(declaration))
         )
       }
-      if reservedGeneratedMemberNames.contains(relation.reverseName) {
+      if reservedGeneratedMemberNames.contains(relation.reverseMember) {
         context.diagnose(
-          InstantEntityDiagnostic.reservedReverseRelationName(relation.reverseName)
+          InstantEntityDiagnostic.reservedReverseRelationName(relation.reverseMember)
             .diagnose(at: Syntax(declaration))
         )
       }
-      if generatedAttributeNames.contains(relation.reverseName) {
+      if generatedAttributeNames.contains(relation.reverseMember) {
         context.diagnose(
           InstantEntityDiagnostic.reverseRelationNameCollidesWithGeneratedMember(
-            relation.reverseName
+            relation.reverseMember
           )
           .diagnose(at: Syntax(declaration))
         )
@@ -220,18 +220,18 @@ public struct InstantEntityMacro: MemberMacro {
         let relation = property.relation,
         let targetType = property.schemaValue?.refTargetType,
         hasAttributePath,
-        relation.reverseName.isSwiftIdentifier,
-        !explicitStaticMembers.contains(relation.reverseName),
-        !reservedGeneratedMemberNames.contains(relation.reverseName),
-        !generatedAttributeNames.contains(relation.reverseName),
-        !duplicateReverseNames.contains(relation.reverseName)
+        relation.reverseMember.isSwiftIdentifier,
+        !explicitStaticMembers.contains(relation.reverseMember),
+        !reservedGeneratedMemberNames.contains(relation.reverseMember),
+        !generatedAttributeNames.contains(relation.reverseMember),
+        !duplicateReverseNames.contains(relation.reverseMember)
       else {
         return nil
       }
 
       return DeclSyntax(
         stringLiteral: """
-        public static let `\(relation.reverseName)` = InstantReverseRelation<\(targetType), \(typeName)>(attribute: \(typeName).\(property.name))
+        public static let `\(relation.reverseMember)` = InstantReverseRelation<\(targetType), \(typeName)>(attribute: \(typeName).\(property.name))
         """
       )
     }
@@ -500,10 +500,10 @@ public struct InstantEntityMacro: MemberMacro {
 
       guard
         case let .argumentList(arguments) = attribute.arguments,
-        arguments.count == 1,
-        let argument = arguments.first,
-        argument.label?.text == "reverse",
-        let expression = argument.expression.as(StringLiteralExprSyntax.self),
+        arguments.count == 1 || arguments.count == 2,
+        let reverseArgument = arguments.first,
+        reverseArgument.label?.text == "reverse",
+        let expression = reverseArgument.expression.as(StringLiteralExprSyntax.self),
         let reverseName = expression.representedLiteralValue,
         !reverseName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       else {
@@ -514,7 +514,30 @@ public struct InstantEntityMacro: MemberMacro {
         return nil
       }
 
-      return InstantRelationMetadata(reverseName: reverseName)
+      let reverseMember: String
+      if arguments.count == 2 {
+        guard
+          let memberArgument = arguments.last,
+          memberArgument.label?.text == "reverseMember",
+          let expression = memberArgument.expression.as(StringLiteralExprSyntax.self),
+          let value = expression.representedLiteralValue,
+          !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else {
+          context.diagnose(
+            InstantEntityDiagnostic.unsupportedInstantRelationArgument
+              .diagnose(at: Syntax(attribute))
+          )
+          return nil
+        }
+        reverseMember = value
+      } else {
+        reverseMember = reverseName
+      }
+
+      return InstantRelationMetadata(
+        reverseName: reverseName,
+        reverseMember: reverseMember
+      )
     }
 
     return nil
@@ -778,6 +801,7 @@ private struct StoredProperty {
 
 private struct InstantRelationMetadata {
   var reverseName: String
+  var reverseMember: String
 }
 
 private struct InstantSchemaValue {
