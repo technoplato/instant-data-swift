@@ -1011,7 +1011,7 @@
 
           public static let author = InstantAttributePath<Post, InstantID<User>>("author")
 
-          public static let authoredPosts = InstantReverseRelation<User, Post>(attribute: Post.author)
+          public static let `authoredPosts` = InstantReverseRelation<User, Post>(attribute: Post.author)
 
           public static var instantAttributes: [InstantAttribute] {
             [
