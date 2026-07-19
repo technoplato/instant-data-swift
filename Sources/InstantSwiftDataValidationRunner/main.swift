@@ -829,6 +829,57 @@ struct InstantSwiftDataValidationRunner {
       )
       try writeJSONLine(row)
 
+    case .liveCustomCursorsV3:
+      let environment = ProcessInfo.processInfo.environment
+      let appID = try requiredEnvironment("INSTANT_APP_ID", environment: environment)
+      let refreshToken = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_CUSTOM_CURSORS_REFRESH_TOKEN",
+        environment: environment
+      )
+      let swiftUserID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_CUSTOM_CURSORS_SWIFT_USER_ID",
+        environment: environment
+      )
+      let roomID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_CUSTOM_CURSORS_ROOM_ID",
+        environment: environment
+      )
+      let apiURI = URL(
+        string: environment["INSTANT_API_URI"]
+          ?? InstantRuntimeConfiguration.defaultAPIURI.absoluteString
+      ) ?? InstantRuntimeConfiguration.defaultAPIURI
+      let websocketURI = URL(
+        string: environment["INSTANT_WEBSOCKET_URI"]
+          ?? InstantRuntimeConfiguration.defaultWebSocketURI.absoluteString
+      ) ?? InstantRuntimeConfiguration.defaultWebSocketURI
+      let row = try await InstantCustomCursorsV3LiveValidation.run(
+        appID: appID,
+        apiURI: apiURI,
+        websocketURI: websocketURI,
+        refreshToken: refreshToken,
+        expectedUserID: swiftUserID,
+        roomID: roomID,
+        onCursorObserved: {
+          emit(
+            caseID: "validation.live.custom-cursors-v3",
+            event: "typescript-custom-cursor-observed",
+            ok: true,
+            appID: appID,
+            details: ["roomID": roomID]
+          )
+        },
+        onCursorCleared: {
+          emit(
+            caseID: "validation.live.custom-cursors-v3",
+            event: "typescript-custom-cursor-cleared-name-retained",
+            ok: true,
+            appID: appID,
+            details: ["roomID": roomID]
+          )
+        }
+      )
+      try writeJSONLine(row)
+
     case .livePreferences:
       let environment = ProcessInfo.processInfo.environment
       let appID = try requiredEnvironment(
