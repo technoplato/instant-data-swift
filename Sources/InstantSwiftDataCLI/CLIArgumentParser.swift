@@ -1490,6 +1490,7 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
   case liveTodosV3Write
   case liveTodosV3Observe
   case liveAuthInvalidation
+  case liveAuthV3App
   case livePlaybackRoom
   case livePreferences
   case typedDrafts
@@ -1528,6 +1529,8 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
       "validation.live.todos-v3-observe"
     case .liveAuthInvalidation:
       "validation.live.auth-invalidation"
+    case .liveAuthV3App:
+      "validation.live.auth-v3-app"
     case .livePlaybackRoom:
       "validation.live.playback-room"
     case .livePreferences:
@@ -1567,6 +1570,8 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
       "live-todos-v3"
     case .liveAuthInvalidation:
       "live-auth-invalidation"
+    case .liveAuthV3App:
+      "live-auth-v3-app"
     case .livePlaybackRoom:
       "live-playback-room"
     case .livePreferences:
@@ -1604,7 +1609,7 @@ public enum CLIValidationUsage {
 
 public enum CLIValidationRunnerUsage {
   public static let validationRunner =
-    "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--reminders|--local-reminders|--server-transaction-loopback|--cloudkit-demo|--live-session|--live-transaction|--live-observe|--live-sharing|--live-sharing-writer|--live-voice-trail-recordings-list|--live-auth-invalidation|--live-playback-room|--live-preferences|--live-voice-trail-v3-capture|--live-todos-v3-write|--live-todos-v3-observe|--typed-drafts|--platform-adapters|--syncups-recording|--parity-report|--coverage]"
+    "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--reminders|--local-reminders|--server-transaction-loopback|--cloudkit-demo|--live-session|--live-transaction|--live-observe|--live-sharing|--live-sharing-writer|--live-voice-trail-recordings-list|--live-auth-invalidation|--live-auth-v3-app|--live-playback-room|--live-preferences|--live-voice-trail-v3-capture|--live-todos-v3-write|--live-todos-v3-observe|--typed-drafts|--platform-adapters|--syncups-recording|--parity-report|--coverage]"
 }
 
 public enum CLIValidationArgumentError: Error, Equatable, Sendable {
@@ -4821,6 +4826,9 @@ public struct CLIValidationRunnerParser: Parser {
 
     case "--live-auth-invalidation":
       return .liveAuthInvalidation
+
+    case "--live-auth-v3-app":
+      return .liveAuthV3App
 
     case "--live-playback-room":
       return .livePlaybackRoom
