@@ -134,6 +134,13 @@ assert.equal(live.details.compilerWarningCount, 0);
 assert.deepEqual(live.details.warnings, []);
 assert.equal(schema.entityCount, 0);
 assert.equal(schema.linkCount, 0);
+assert.deepEqual(schema.warnings, [
+  { code: "system-entity", path: "$files" },
+  { code: "system-entity", path: "$streams" },
+  { code: "system-entity", path: "$users" },
+  { code: "system-link", path: "$streams$files" },
+  { code: "system-link", path: "$usersLinkedPrimaryUser" },
+]);
 assert.equal(permissions.namespaceCount, 0);
 assert.equal(permissions.allowRuleCount, 0);
 assert.equal(permissions.rateLimitCount, 0);
