@@ -184,7 +184,7 @@ struct RemindersV3ContractTests {
       reminders.allow,
       [
         .view: "isOwner || isWriter || isReader",
-        .create: "isOwner || isWriter",
+        .create: "auth.id != null",
         .update: "isOwner || isWriter",
         .delete: "isOwner || isWriter",
       ]

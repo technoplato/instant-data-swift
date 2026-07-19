@@ -1087,7 +1087,7 @@ public enum InstantSchemaExamples {
         namespace: ReminderExample.remindersNamespace,
         allow: [
           .view: "isOwner || isWriter || isReader",
-          .create: "isOwner || isWriter",
+          .create: "auth.id != null",
           .update: "isOwner || isWriter",
           .delete: "isOwner || isWriter",
         ],
