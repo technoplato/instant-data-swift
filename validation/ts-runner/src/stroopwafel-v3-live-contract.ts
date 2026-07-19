@@ -214,7 +214,7 @@ async function waitForRoom(
   for (let attempt = 0; attempt < 300; attempt += 1) {
     const result = await db.queryOnce({
       rooms: {
-        $: { where: { id: "room-stroopwafel-v3" } },
+        $: { where: { id: stroopwafelV3AppContract.fixtures.room.id } },
         users: {},
       },
     });
@@ -236,7 +236,7 @@ async function waitForGame(
   for (let attempt = 0; attempt < 300; attempt += 1) {
     const result = await db.queryOnce({
       games: {
-        $: { where: { id: "game-stroopwafel-v3" } },
+        $: { where: { id: stroopwafelV3AppContract.fixtures.game.id } },
         users: {},
         rooms: { users: {} },
         points: {},
