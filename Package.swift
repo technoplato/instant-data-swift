@@ -23,9 +23,11 @@ let package = Package(
     .library(name: "InstantSwiftDataCore", targets: ["InstantSwiftDataCore"]),
     .library(name: "InstantSwiftDataSchema", targets: ["InstantSwiftDataSchema"]),
     .library(name: "InstantSwiftDataTesting", targets: ["InstantSwiftDataTesting"]),
+    .library(name: "TodosV3App", targets: ["TodosV3App"]),
     .library(name: "VoiceTrailV3App", targets: ["VoiceTrailV3App"]),
     .executable(name: "instant-swift-data", targets: ["instant-swift-data"]),
     .executable(name: "voicetrail-v3", targets: ["VoiceTrailV3Executable"]),
+    .executable(name: "todos-v3", targets: ["TodosV3Executable"]),
     .executable(
       name: "instant-swift-data-validation-runner",
       targets: ["InstantSwiftDataValidationRunner"]
@@ -86,6 +88,14 @@ let package = Package(
       swiftSettings: strictConcurrencySettings
     ),
     .target(
+      name: "TodosV3App",
+      dependencies: [
+        "InstantSwiftData",
+        .product(name: "Dependencies", package: "swift-dependencies"),
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .target(
       name: "VoiceTrailV3App",
       dependencies: [
         "InstantSwiftData",
@@ -129,6 +139,11 @@ let package = Package(
         "InstantSwiftDataCLIParsing",
         "InstantSwiftDataCore",
       ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .executableTarget(
+      name: "TodosV3Executable",
+      dependencies: ["TodosV3App"],
       swiftSettings: strictConcurrencySettings
     ),
     .executableTarget(
@@ -191,6 +206,14 @@ let package = Package(
         .product(name: "SwiftSyntax", package: "swift-syntax"),
         .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
         .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .testTarget(
+      name: "TodosV3AppTests",
+      dependencies: [
+        "TodosV3App",
+        .product(name: "CustomDump", package: "swift-custom-dump"),
       ],
       swiftSettings: strictConcurrencySettings
     ),
