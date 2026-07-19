@@ -324,6 +324,89 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliGeneratesAndVerifiesExactMobileChatContract() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    let schemaURL = homeURL.appendingPathComponent("mobile-chat.schema.ts")
+    let permissionsURL = homeURL.appendingPathComponent("mobile-chat.perms.ts")
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let generatedSchema = try JSONDecoder().decode(
+      CLIGeneratedArtifactOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "schema", "generate", "--example", "mobile-chat",
+            "--to", schemaURL.path,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(generatedSchema.example, "mobile-chat")
+    let schemaSource = try String(contentsOf: schemaURL, encoding: .utf8)
+    #expect(schemaSource.contains("userProfile"))
+    #expect(schemaSource.contains("authorMessages"))
+    #expect(schemaSource.contains("channelMessages"))
+    #expect(schemaSource.contains("profileId"))
+    #expect(schemaSource.contains("typing"))
+    #expect(schemaSource.contains("emoji"))
+    #expect(!schemaSource.contains("mobileProfiles"))
+
+    let schemaVerify = try JSONDecoder().decode(
+      CLISchemaVerifyOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "schema", "verify", "--example", "mobile-chat",
+            "--from", schemaURL.path,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(schemaVerify.example, "mobile-chat")
+    expectNoDifference(schemaVerify.entityCount, 5)
+    expectNoDifference(schemaVerify.linkCount, 4)
+    expectNoDifference(schemaVerify.warnings, [])
+
+    let generatedPermissions = try JSONDecoder().decode(
+      CLIGeneratedArtifactOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "perms", "generate", "--example", "mobile-chat",
+            "--to", permissionsURL.path,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(generatedPermissions.example, "mobile-chat")
+
+    let permissionsVerify = try JSONDecoder().decode(
+      CLIPermissionsVerifyOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "perms", "verify", "--example", "mobile-chat",
+            "--from", permissionsURL.path,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(permissionsVerify.example, "mobile-chat")
+    expectNoDifference(permissionsVerify.namespaceCount, 5)
+    expectNoDifference(permissionsVerify.allowRuleCount, 17)
+  }
+
+  @Test
   func cliGeneratesAndVerifiesCanonicalRecordingActionContract() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
