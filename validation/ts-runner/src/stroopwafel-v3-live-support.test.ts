@@ -42,6 +42,11 @@ const game = {
 
 test("live Stroopwafel support accepts the exact room and game graphs", () => {
   assert.deepEqual(projectCanonicalStroopwafelRoom(room), room);
+  const { currentGameId: _currentGameID, ...roomWithoutCurrentGame } = room;
+  assert.deepEqual(
+    projectCanonicalStroopwafelRoom({ ...room, currentGameId: null }),
+    roomWithoutCurrentGame,
+  );
   assert.deepEqual(projectCanonicalStroopwafelGame(game), game);
   assert.deepEqual(projectCanonicalStroopwafelPoint(game.points[0]), game.points[0]);
 });

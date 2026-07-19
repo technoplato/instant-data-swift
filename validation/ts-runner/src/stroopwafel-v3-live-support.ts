@@ -35,13 +35,13 @@ export function projectCanonicalStroopwafelRoom(value: unknown): StroopwafelV3Ro
   ])) throw roomShapeError();
   if (
     typeof value.id !== "string"
-    || ("code" in value && typeof value.code !== "string")
+    || !isOptionalString(value.code)
     || typeof value.hostId !== "string"
     || !isStringArray(value.readyIds)
     || !isStringArray(value.kickedIds)
-    || ("currentGameId" in value && typeof value.currentGameId !== "string")
+    || !isOptionalString(value.currentGameId)
     || typeof value.created_at !== "string"
-    || ("deleted_at" in value && typeof value.deleted_at !== "string")
+    || !isOptionalString(value.deleted_at)
     || !Array.isArray(value.users)
   ) throw roomShapeError();
   return {
@@ -144,6 +144,10 @@ function isStringArray(value: unknown): value is string[] {
 
 function isInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value);
+}
+
+function isOptionalString(value: unknown): value is string | null | undefined {
+  return value === undefined || value === null || typeof value === "string";
 }
 
 function hasOnlyKeys(value: Record<string, unknown>, allowed: ReadonlyArray<string>): boolean {
