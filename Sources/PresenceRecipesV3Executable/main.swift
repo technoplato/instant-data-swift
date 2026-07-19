@@ -11,7 +11,6 @@ import PresenceRecipesV3App
           TypingIndicatorV3Screen(
             roomID: "main",
             profileID: "presence-recipes-v3-user",
-            displayName: "Swift User",
             options: TypingIndicatorV3Options(stopOnSubmit: true)
           )
         }

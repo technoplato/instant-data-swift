@@ -16,14 +16,12 @@
     public init(
       roomID: String,
       profileID: String,
-      displayName: String,
       options: TypingIndicatorV3Options = TypingIndicatorV3Options()
     ) {
       self.roomID = roomID
       _model = StateObject(
         wrappedValue: TypingIndicatorV3Model(
           profileID: profileID,
-          displayName: displayName,
           options: options
         )
       )
@@ -43,7 +41,7 @@
             Text("No one is typing")
           } else {
             ForEach(model.activePeers) { peer in
-              Text("\(peer.displayName) is typing…")
+              Text("\(peer.id) is typing…")
             }
           }
         }

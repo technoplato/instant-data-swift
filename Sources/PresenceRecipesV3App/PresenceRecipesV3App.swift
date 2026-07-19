@@ -5,37 +5,66 @@ import InstantSwiftData
 
 public struct TypingIndicatorPresence: Codable, Equatable, Sendable, Identifiable {
   public var id: String
-  public var displayName: String
-  public var chatInput: Bool?
 
-  public init(id: String, displayName: String, chatInput: Bool?) {
+  private var chatInputState: ChatInputState
+
+  public var chatInput: Bool? {
+    guard case let .value(value) = chatInputState else { return nil }
+    return value
+  }
+
+  public init(id: String) {
     self.id = id
-    self.displayName = displayName
-    self.chatInput = chatInput
+    self.chatInputState = .omitted
+  }
+
+  public init(id: String, chatInput: Bool?) {
+    self.id = id
+    self.chatInputState = chatInput.map(ChatInputState.value) ?? .null
   }
 
   private enum CodingKeys: String, CodingKey {
     case id
-    case displayName
     case chatInput = "chat-input"
+  }
+
+  private enum ChatInputState: Equatable, Sendable {
+    case omitted
+    case value(Bool)
+    case null
   }
 
   public init(from decoder: any Decoder) throws {
     let container = try decoder.container(keyedBy: CodingKeys.self)
     id = try container.decode(String.self, forKey: .id)
-    displayName = try container.decode(String.self, forKey: .displayName)
-    chatInput = try container.decodeIfPresent(Bool.self, forKey: .chatInput)
+    if !container.contains(.chatInput) {
+      chatInputState = .omitted
+    } else if try container.decodeNil(forKey: .chatInput) {
+      chatInputState = .null
+    } else {
+      chatInputState = .value(try container.decode(Bool.self, forKey: .chatInput))
+    }
   }
 
   public func encode(to encoder: any Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
     try container.encode(id, forKey: .id)
-    try container.encode(displayName, forKey: .displayName)
-    if let chatInput {
-      try container.encode(chatInput, forKey: .chatInput)
-    } else {
+    switch chatInputState {
+    case .omitted:
+      break
+    case let .value(value):
+      try container.encode(value, forKey: .chatInput)
+    case .null:
       try container.encodeNil(forKey: .chatInput)
     }
+  }
+
+  mutating func setChatInput(_ value: Bool) {
+    chatInputState = .value(value)
+  }
+
+  mutating func clearChatInput() {
+    chatInputState = .null
   }
 }
 
@@ -87,14 +116,9 @@ public final class TypingIndicatorV3Model: ObservableObject {
 
   public init(
     profileID: String,
-    displayName: String,
     options: TypingIndicatorV3Options = TypingIndicatorV3Options()
   ) {
-    presence = TypingIndicatorPresence(
-      id: profileID,
-      displayName: displayName,
-      chatInput: nil
-    )
+    presence = TypingIndicatorPresence(id: profileID)
     self.options = options
   }
 
@@ -113,13 +137,15 @@ public final class TypingIndicatorV3Model: ObservableObject {
   }
 
   public func stop() {
-    setActive(false)
+    timeoutTask?.cancel()
+    timeoutTask = nil
+    presence.clearChatInput()
   }
 
   public func setActive(_ isActive: Bool) {
     timeoutTask?.cancel()
     timeoutTask = nil
-    presence.chatInput = isActive ? true : nil
+    presence.setChatInput(isActive)
 
     guard
       isActive,
@@ -131,7 +157,7 @@ public final class TypingIndicatorV3Model: ObservableObject {
       do {
         try await clock.sleep(for: timeout)
         try Task.checkCancellation()
-        self?.presence.chatInput = nil
+        self?.presence.clearChatInput()
         self?.timeoutTask = nil
       } catch {
         // Cancellation is the normal result of another key event or cleanup.
