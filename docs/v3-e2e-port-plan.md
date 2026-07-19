@@ -253,6 +253,18 @@ As of 2026-07-19:
   `{name}` presence in both Swift/TypeScript directions. Final evidence is in
   `/tmp/instant-data-swift-avatar-stack-v3-20260719T034215Z/evidence.json` and
   contains no refresh or admin credentials.
+- The canonical Cursors recipe boundary is complete through `fb946c0`, with
+  its clean fresh-app proof recorded at `e09d871`. Source-first Swift and
+  TypeScript contracts pin `cursors-example/123`, the dynamic
+  `cursors-space-default--cursors-example-123` presence key, exact
+  `{x, y, xPercent, yPercent, color}` cursor payload, viewport normalization,
+  dark lowercase hex colors, peer-only projection, and credential-redacted
+  evidence. The gate provisions a fresh getadb app, pushes schema and empty
+  permissions twice without drift, pulls and strict-typechecks them, proves
+  both SDK directions, observes cursor clear separately from peer disconnect,
+  and asserts the exact five server system-schema warnings with zero compiler
+  or runtime warnings. Evidence is in
+  `/tmp/instant-data-swift-cursors-v3-20260719T040045Z/evidence.json`.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -308,6 +320,8 @@ When sources disagree, use this order:
 | Typing Indicator app-owned syntax and behavior | `Sources/PresenceRecipesV3App/`, `Sources/PresenceRecipesV3Executable/`, and `Tests/PresenceRecipesV3AppTests/` |
 | Typing Indicator source/schema/live contracts | `Tests/InstantSwiftDataSchemaTests/TypingIndicatorContractTests.swift`, `Tests/InstantSwiftDataTestingTests/InstantTypingIndicatorV3LiveValidationTests.swift`, and `validation/ts-runner/src/typing-indicator-v3-*.ts` |
 | Typing Indicator reproducible cross-SDK gate | `validation/verify-typing-indicator-v3-app-live.sh` and its `evidence.json` artifact |
+| Cursors app-owned syntax and exact dynamic presence | `Sources/PresenceRecipesV3App/CursorsV3Screen.swift`, `Tests/PresenceRecipesV3AppTests/CursorsV3Tests.swift`, and `Tests/InstantSwiftDataSchemaTests/CursorsContractTests.swift` |
+| Cursors reproducible cross-SDK gate | `validation/verify-cursors-v3-app-live.sh`, `validation/ts-runner/src/cursors-v3-live-contract.ts`, and its `evidence.json` artifact |
 | Reactions app-owned syntax and behavior | `Sources/PresenceRecipesV3App/ReactionsV3Screen.swift`, `Sources/PresenceRecipesV3App/PresenceRecipesV3App.swift`, and `Tests/PresenceRecipesV3AppTests/ReactionsV3Tests.swift` |
 | Reactions source/schema/live contracts | `Tests/InstantSwiftDataSchemaTests/ReactionsContractTests.swift`, `Tests/InstantSwiftDataTestingTests/InstantReactionsV3LiveValidationTests.swift`, and `validation/ts-runner/src/reactions-v3-*.ts` |
 | Reactions reproducible cross-SDK gate | `validation/verify-reactions-v3-app-live.sh` and `/tmp/instant-data-swift-reactions-v3-20260719T032236Z/evidence.json` |
@@ -857,11 +871,28 @@ Full verification is green at 971 Swift Testing cases across 57 suites, 28
 macro tests, the `presence-recipes-v3` build, and the complete TypeScript
 typecheck, contract, live-support, and fixture matrix.
 
-Next, port the canonical Cursors presence recipe into the same host. Pin its
-room identity, exact cursor payload and color/name derivation, viewport
-normalization, peer-only projection, and disconnect cleanup before
-implementation. Then continue with custom cursors and the merge tile game. Do
-not create the `v0.4.0-apps-e2e` tag until the full required app matrix passes.
+The canonical Cursors presence recipe is complete through `fb946c0`, with its
+fresh-app gate recorded at `e09d871`. The shared host compiles the desired
+`@Room`/`@Presence` surface, and the exact dynamic cursor-space payload is
+generated, verified, strict-typechecked, and observed through both Swift and
+canonical TypeScript SDK 1.0.49. Clear removes the remote cursor while keeping
+the peer connected; disconnect then removes the peer. The clean gate recorded
+the expected empty app schema and permissions, five exact server system-schema
+warnings, schema SHA-256
+`50085a139e9caba2a19686194f31fa6fa4d8dae66f1aef2292ca3f7a8e4394ae`,
+permissions SHA-256
+`fbedb26406126ca62a8725cb698494ac186944ebd4a0c15288ba8b0fc989ba37`,
+and zero compiler/runtime warnings at
+`/tmp/instant-data-swift-cursors-v3-20260719T040045Z/evidence.json`. Full
+verification is green at 982 Swift Testing cases across 60 suites, 28 macro
+tests, the `presence-recipes-v3` build, and the complete TypeScript typecheck,
+contract, live-support, and fixture matrix.
+
+Next, port Custom Cursors source-first, preserving its canonical room `124`,
+dynamic cursor-space key, extra `name` presence field, custom rendering data,
+peer-only projection, clear, and disconnect behavior. Then continue with the
+merge tile game. Do not create the `v0.4.0-apps-e2e` tag until the full required
+app matrix passes.
 
 The product-payload mismatch is resolved: playback presence stores and encodes
 `offsetSeconds: Double`, offers `Duration` as a computed product convenience,
