@@ -446,6 +446,36 @@ public enum InstantSchemaExamples {
     namespaces: []
   )
 
+  public static let customCursorsRoom = InstantRoomSchema(
+    name: "cursors-example",
+    presence: InstantRoomPayloadSchema(
+      attributes: [
+        InstantAttribute(
+          id: "rooms/cursors-example/presence/name",
+          namespace: "rooms/cursors-example/presence",
+          name: "name",
+          valueType: .string
+        ),
+        InstantAttribute(
+          id: "rooms/cursors-example/presence/cursors-space-default--cursors-example-124",
+          namespace: "rooms/cursors-example/presence",
+          name: "cursors-space-default--cursors-example-124",
+          valueType: .json,
+          isRequired: false
+        ),
+      ]
+    )
+  )
+
+  public static let customCursorsDocument = InstantSchemaDocument(
+    entities: [],
+    rooms: [customCursorsRoom]
+  )
+
+  public static let customCursorsPermissions = InstantPermissionsDocument(
+    namespaces: []
+  )
+
   public static let reactionsRoom = InstantRoomSchema(
     name: "topics-example",
     presence: InstantRoomPayloadSchema(),
