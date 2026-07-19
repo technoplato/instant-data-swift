@@ -3390,6 +3390,10 @@ struct CLIArgumentParserTests {
       .liveStreamsV3
     )
     expectNoDifference(
+      try parseValidationRunner(["--live-cloudkit-demo-v3"]),
+      .liveCloudKitDemoV3
+    )
+    expectNoDifference(
       try parseValidationRunner(["--live-reactions-v3"]),
       .liveReactionsV3
     )
@@ -3552,6 +3556,14 @@ struct CLIArgumentParserTests {
     expectNoDifference(
       CLIValidationRunnerInvocation.liveStreamsV3.appID,
       "live-streams-v3"
+    )
+    expectNoDifference(
+      CLIValidationRunnerInvocation.liveCloudKitDemoV3.caseID,
+      "validation.live.cloudkit-demo-v3"
+    )
+    expectNoDifference(
+      CLIValidationRunnerInvocation.liveCloudKitDemoV3.appID,
+      "live-cloudkit-demo-v3"
     )
     expectNoDifference(
       CLIValidationRunnerInvocation.liveReactionsV3.caseID,

@@ -750,6 +750,75 @@ struct InstantSwiftDataValidationRunner {
       )
       try writeJSONLine(row)
 
+    case .liveCloudKitDemoV3:
+      let environment = ProcessInfo.processInfo.environment
+      let appID = try requiredEnvironment("INSTANT_APP_ID", environment: environment)
+      let apiURI = URL(
+        string: environment["INSTANT_API_URI"]
+          ?? InstantRuntimeConfiguration.defaultAPIURI.absoluteString
+      ) ?? InstantRuntimeConfiguration.defaultAPIURI
+      let websocketURI = URL(
+        string: environment["INSTANT_WEBSOCKET_URI"]
+          ?? InstantRuntimeConfiguration.defaultWebSocketURI.absoluteString
+      ) ?? InstantRuntimeConfiguration.defaultWebSocketURI
+      let row = try await InstantCloudKitDemoV3LiveValidation.run(
+        appID: appID,
+        apiURI: apiURI,
+        websocketURI: websocketURI,
+        ownerRefreshToken: try requiredEnvironment(
+          "INSTANT_SWIFT_DATA_CLOUDKIT_OWNER_REFRESH_TOKEN",
+          environment: environment
+        ),
+        ownerUserID: try requiredEnvironment(
+          "INSTANT_SWIFT_DATA_CLOUDKIT_OWNER_USER_ID",
+          environment: environment
+        ),
+        readerRefreshToken: try requiredEnvironment(
+          "INSTANT_SWIFT_DATA_CLOUDKIT_READER_REFRESH_TOKEN",
+          environment: environment
+        ),
+        readerUserID: try requiredEnvironment(
+          "INSTANT_SWIFT_DATA_CLOUDKIT_READER_USER_ID",
+          environment: environment
+        ),
+        writerUserID: try requiredEnvironment(
+          "INSTANT_SWIFT_DATA_CLOUDKIT_WRITER_USER_ID",
+          environment: environment
+        ),
+        counterID: try requiredEnvironment(
+          "INSTANT_SWIFT_DATA_CLOUDKIT_COUNTER_ID",
+          environment: environment
+        ),
+        shareID: try requiredEnvironment(
+          "INSTANT_SWIFT_DATA_CLOUDKIT_SHARE_ID",
+          environment: environment
+        ),
+        ownerMembershipID: try requiredEnvironment(
+          "INSTANT_SWIFT_DATA_CLOUDKIT_OWNER_MEMBERSHIP_ID",
+          environment: environment
+        ),
+        readerMembershipID: try requiredEnvironment(
+          "INSTANT_SWIFT_DATA_CLOUDKIT_READER_MEMBERSHIP_ID",
+          environment: environment
+        ),
+        writerMembershipID: try requiredEnvironment(
+          "INSTANT_SWIFT_DATA_CLOUDKIT_WRITER_MEMBERSHIP_ID",
+          environment: environment
+        ),
+        onTypeScriptWriterReady: {
+          emit(
+            caseID: "validation.live.cloudkit-demo-v3",
+            event: "typescript-writer-ready",
+            ok: true,
+            appID: appID,
+            details: [
+              "counterID": environment["INSTANT_SWIFT_DATA_CLOUDKIT_COUNTER_ID"] ?? ""
+            ]
+          )
+        }
+      )
+      try writeJSONLine(row)
+
     case .liveReactionsV3:
       let environment = ProcessInfo.processInfo.environment
       let appID = try requiredEnvironment("INSTANT_APP_ID", environment: environment)
