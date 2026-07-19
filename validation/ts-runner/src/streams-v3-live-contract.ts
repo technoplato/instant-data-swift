@@ -26,12 +26,18 @@ console.warn = (...values) => warnings.push(values.map(String).join(" "));
 
 try {
   const admin = initAdmin({ appId, adminToken, apiURI });
-  const swiftToken = await admin.auth.createToken({
-    email: `streams-swift-${suffix}@example.com`,
-  });
-  const swiftUser = await admin.auth.verifyToken(swiftToken);
+  process.stderr.write("streams-v3: creating Swift auth token\n");
+  const swiftToken = await withTimeout(
+    admin.auth.createToken({ email: `streams-swift-${suffix}@example.com` }),
+    "create Swift streams token",
+  );
+  const swiftUser = await withTimeout(
+    admin.auth.verifyToken(swiftToken),
+    "verify Swift streams token",
+  );
   assert.ok(swiftUser?.id, "Expected a canonical Swift streams user.");
 
+  process.stderr.write("streams-v3: starting Swift reader\n");
   const swift = spawnSwift({
     appId,
     apiURI,
@@ -48,18 +54,20 @@ try {
   assert.equal(ready.event, "typescript-writer-ready");
   assert.equal(ready.details.clientID, typeScriptClientID);
 
+  process.stderr.write("streams-v3: writing TypeScript stream\n");
   const typeScriptWriter = admin.streams.createWriteStream({ clientId: typeScriptClientID });
   const typeScriptStreamID = typeScriptWriter.streamId();
   const writer = typeScriptWriter.getWriter();
-  await writer.write("typescript ");
-  await writer.write("to swift 🚀");
-  await writer.close();
+  await withTimeout(writer.write("typescript "), "write TypeScript stream prefix");
+  await withTimeout(writer.write("to swift 🚀"), "write TypeScript stream suffix");
+  await withTimeout(writer.close(), "close TypeScript stream");
 
   const created = await nextJSONLine(lines, swift, "Swift writer creation");
   assert.equal(created.event, "swift-writer-created");
   assert.equal(created.details.clientID, swiftClientID);
   assert.ok(created.details.streamID);
 
+  process.stderr.write("streams-v3: reading Swift stream\n");
   let observedSwiftContent = "";
   const swiftReader = admin.streams.createReadStream({ streamId: created.details.streamID });
   for await (const chunk of swiftReader) observedSwiftContent += chunk;
