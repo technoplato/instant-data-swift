@@ -25,6 +25,7 @@
     "src/auth-live-contract.ts",
     "src/auth-v3-app-contract.ts",
     "src/auth-v3-app-contract.test.ts",
+    "src/auth-v3-app-live-contract.ts",
     "src/playback-room-sdk-contract.ts",
     "src/playback-room-sdk-contract.test.ts",
     "src/playback-room-live-contract.ts",
