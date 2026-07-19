@@ -783,6 +783,262 @@ public enum InstantSchemaExamples {
     ]
   )
 
+  public static let remindersV3Lists = InstantEntitySchema(
+    typeName: "RemindersV3List",
+    namespace: ReminderExample.listsNamespace,
+    attributes: [
+      .primaryKey(namespace: ReminderExample.listsNamespace),
+      InstantAttribute(
+        id: "remindersLists/title",
+        namespace: ReminderExample.listsNamespace,
+        name: "title",
+        valueType: .string,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "remindersLists/color",
+        namespace: ReminderExample.listsNamespace,
+        name: "color",
+        valueType: .string,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "remindersLists/position",
+        namespace: ReminderExample.listsNamespace,
+        name: "position",
+        valueType: .number,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "remindersLists/createdAt",
+        namespace: ReminderExample.listsNamespace,
+        name: "createdAt",
+        valueType: .date,
+        isIndexed: true
+      ),
+    ]
+  )
+
+  public static let remindersV3Reminders = InstantEntitySchema(
+    typeName: "RemindersV3Reminder",
+    namespace: ReminderExample.remindersNamespace,
+    attributes: [
+      .primaryKey(namespace: ReminderExample.remindersNamespace),
+      InstantAttribute(
+        id: "reminders/title",
+        namespace: ReminderExample.remindersNamespace,
+        name: "title",
+        valueType: .string,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "reminders/notes",
+        namespace: ReminderExample.remindersNamespace,
+        name: "notes",
+        valueType: .string,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "reminders/isCompleted",
+        namespace: ReminderExample.remindersNamespace,
+        name: "isCompleted",
+        valueType: .boolean,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "reminders/isFlagged",
+        namespace: ReminderExample.remindersNamespace,
+        name: "isFlagged",
+        valueType: .boolean,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "reminders/dueDate",
+        namespace: ReminderExample.remindersNamespace,
+        name: "dueDate",
+        valueType: .date,
+        isRequired: false,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "reminders/priority",
+        namespace: ReminderExample.remindersNamespace,
+        name: "priority",
+        valueType: .number,
+        isRequired: false,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "reminders/position",
+        namespace: ReminderExample.remindersNamespace,
+        name: "position",
+        valueType: .number,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "reminders/createdAt",
+        namespace: ReminderExample.remindersNamespace,
+        name: "createdAt",
+        valueType: .date,
+        isIndexed: true
+      ),
+    ]
+  )
+
+  public static let remindersV3Tags = InstantEntitySchema(
+    typeName: "RemindersV3Tag",
+    namespace: ReminderExample.tagsNamespace,
+    attributes: [
+      .primaryKey(namespace: ReminderExample.tagsNamespace),
+      InstantAttribute(
+        id: "tags/title",
+        namespace: ReminderExample.tagsNamespace,
+        name: "title",
+        valueType: .string,
+        isIndexed: true,
+        isUnique: true
+      ),
+    ]
+  )
+
+  public static let remindersV3Document = InstantSchemaDocument(
+    entities: [
+      recordingActionUsers,
+      remindersV3Lists,
+      remindersV3Reminders,
+      remindersV3Tags,
+      sharingMemberships,
+      sharingShares,
+    ],
+    links: [
+      InstantLinkSchema(
+        name: "remindersList",
+        forward: InstantLinkEndpoint(
+          namespace: ReminderExample.remindersNamespace,
+          cardinality: .one,
+          label: "list",
+          onDelete: .cascade
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: ReminderExample.listsNamespace,
+          cardinality: .many,
+          label: "reminders"
+        ),
+        isRequired: true
+      ),
+      InstantLinkSchema(
+        name: "remindersTags",
+        forward: InstantLinkEndpoint(
+          namespace: ReminderExample.remindersNamespace,
+          cardinality: .many,
+          label: "tags"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: ReminderExample.tagsNamespace,
+          cardinality: .many,
+          label: "reminders"
+        )
+      ),
+      InstantLinkSchema(
+        name: "remindersListsOwner",
+        forward: InstantLinkEndpoint(
+          namespace: ReminderExample.listsNamespace,
+          cardinality: .one,
+          label: "owner"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "$users",
+          cardinality: .many,
+          label: "ownedRemindersLists"
+        ),
+        isRequired: true
+      ),
+      InstantLinkSchema(
+        name: "remindersListsReaders",
+        forward: InstantLinkEndpoint(
+          namespace: ReminderExample.listsNamespace,
+          cardinality: .many,
+          label: "readers"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "$users",
+          cardinality: .many,
+          label: "readableRemindersLists"
+        )
+      ),
+      InstantLinkSchema(
+        name: "remindersListsWriters",
+        forward: InstantLinkEndpoint(
+          namespace: ReminderExample.listsNamespace,
+          cardinality: .many,
+          label: "writers"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "$users",
+          cardinality: .many,
+          label: "writableRemindersLists"
+        )
+      ),
+      InstantLinkSchema(
+        name: "v3_share_membershipsShare",
+        forward: InstantLinkEndpoint(
+          namespace: "v3_share_memberships",
+          cardinality: .one,
+          label: "share",
+          onDelete: .cascade
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "v3_shares",
+          cardinality: .many,
+          label: "memberships"
+        ),
+        isRequired: true
+      ),
+      InstantLinkSchema(
+        name: "v3_share_membershipsUser",
+        forward: InstantLinkEndpoint(
+          namespace: "v3_share_memberships",
+          cardinality: .one,
+          label: "user"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "$users",
+          cardinality: .many,
+          label: "shareMemberships"
+        ),
+        isRequired: true
+      ),
+      InstantLinkSchema(
+        name: "v3_sharesOwner",
+        forward: InstantLinkEndpoint(
+          namespace: "v3_shares",
+          cardinality: .one,
+          label: "owner"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "$users",
+          cardinality: .many,
+          label: "ownedShares"
+        ),
+        isRequired: true
+      ),
+      InstantLinkSchema(
+        name: "v3_sharesRoot",
+        forward: InstantLinkEndpoint(
+          namespace: "v3_shares",
+          cardinality: .one,
+          label: "root"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: ReminderExample.listsNamespace,
+          cardinality: .one,
+          label: "share"
+        ),
+        isRequired: true
+      ),
+    ]
+  )
+
   public static let reactionsRoom = InstantRoomSchema(
     name: "topics-example",
     presence: InstantRoomPayloadSchema(),
