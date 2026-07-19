@@ -271,3 +271,82 @@ public final class ReactionsV3Model: ObservableObject {
     animations.append(ReactionsV3Animation(name: name, payload: payload))
   }
 }
+
+public struct AvatarStackV3Presence: Codable, Equatable, Identifiable, Sendable {
+  public var id: String { userID }
+  public var userID: String
+  public var name: String
+
+  public init(userID: String, name: String) {
+    self.userID = userID
+    self.name = name
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case userID
+    case name
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    userID = try container.decodeIfPresent(String.self, forKey: .userID) ?? ""
+    name = try container.decode(String.self, forKey: .name)
+  }
+
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(name, forKey: .name)
+  }
+}
+
+public struct AvatarStackV3Room: InstantRoomSchema {
+  public typealias Presence = AvatarStackV3Presence
+  public static let roomType = "avatars-example"
+  public static let defaultRoomID = "avatars-example-1234"
+
+  public struct Topic: InstantRoomTopic {
+    public typealias RoomSchema = AvatarStackV3Room
+
+    public let rawValue: String
+
+    public init?(rawValue: String) {
+      return nil
+    }
+  }
+}
+
+@MainActor
+public final class AvatarStackV3Model: ObservableObject {
+  @Published public private(set) var currentUser: AvatarStackV3Presence?
+  @Published public private(set) var peers: [AvatarStackV3Presence] = []
+
+  public let profileID: String
+
+  public var presence: AvatarStackV3Presence {
+    AvatarStackV3Presence(
+      userID: profileID,
+      name: Self.defaultName(profileID: profileID)
+    )
+  }
+
+  public var onlineCount: Int {
+    peers.count + 1
+  }
+
+  public init(profileID: String) {
+    self.profileID = profileID
+    currentUser = AvatarStackV3Presence(
+      userID: profileID,
+      name: Self.defaultName(profileID: profileID)
+    )
+  }
+
+  public static func defaultName(profileID: String) -> String {
+    String(profileID.prefix(6))
+  }
+
+  public func updatePresence(_ values: [AvatarStackV3Presence]) {
+    currentUser = values.first { $0.userID == profileID } ?? presence
+    peers = values.filter { $0.userID != profileID }
+  }
+}
