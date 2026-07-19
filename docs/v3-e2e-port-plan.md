@@ -10,7 +10,7 @@ current local-first implementation to real Swift/TypeScript synchronization.
 
 ## Current Baseline
 
-As of 2026-07-18:
+As of 2026-07-19:
 
 - The package already has a substantial local core: schema generation, typed
   queries and mutations, SQLite persistence, optimistic outbox behavior,
@@ -209,6 +209,16 @@ As of 2026-07-18:
   token rejection through canonical TypeScript with zero warnings. Evidence
   is in
   `/tmp/instant-data-swift-auth-v3-app-20260719T013823Z/evidence.json`.
+- The canonical Mobile Chat boundary is complete through `5f3276a`.
+  `MobileChatV3App` and the `mobile-chat-v3` executable own the exact upstream
+  `$users`, `profiles`, `channels`, and `messages` graph; authenticated profile,
+  channel, and message mutations; `chat` presence; and `typing`/`emoji` topics.
+  The clean getadb gate pushed the Swift-generated schema and permissions twice
+  with no drift, pulled and verified the server-normalized contract, type-checked
+  the generated and pulled TypeScript, proved both SDK graph directions, proved
+  both room payload directions plus disconnect cleanup, and rejected a
+  cross-user message edit with zero compiler/runtime warnings. Evidence is in
+  `/tmp/instant-data-swift-mobile-chat-v3-20260719T021910Z/evidence.json`.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -240,7 +250,7 @@ When sources disagree, use this order:
 | Current execution state, packet order, gates, and tag targets | `docs/v3-e2e-port-plan.md` |
 | Product contract and full definition of done | `docs/instant-swift-data-goals.md` |
 | Desired V3 API rules and decision log | `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` |
-| Next app target | Chat/mobile-chat through thin SwiftUI hosts, typed messages, authenticated rooms, presence, and topics |
+| Next app target | Presence/topic recipe app surfaces, beginning with pinned upstream source tests before implementation |
 | Current generated recording contract | `InstantSchemaExamples.recordingActionDocument`, `recordingActionValidationPermissions`, and `--example recording-action` |
 | TypeScript contract pin/type-check gate | `validation/ts-runner/package.json`, its committed `pnpm-lock.yaml`, and `validation/typecheck-generated-contract.sh` |
 | Reproducible live schema/perms install and readback | `validation/verify-recording-contract-live.sh` and `validation/fixtures/recording-action.server.*.ts` |
@@ -256,6 +266,9 @@ When sources disagree, use this order:
 | Runnable Todos app | `Sources/TodosV3App/`, `Sources/TodosV3Executable/`, and `Tests/TodosV3AppTests/` |
 | Aggregate Todos app gate | `validation/verify-todos-v3-app-live.sh`, `validation/ts-runner/src/todos-v3-live-contract.ts`, and its `evidence.json` artifact |
 | Standalone Auth app and live gate | `Sources/AuthV3App/`, `Sources/AuthV3Executable/`, `validation/verify-auth-v3-app-live.sh`, and `validation/ts-runner/src/auth-v3-app-live-contract.ts` |
+| Mobile Chat app-owned syntax and behavior | `Sources/MobileChatV3App/`, `Sources/MobileChatV3Executable/`, and `Tests/MobileChatV3AppTests/` |
+| Mobile Chat source-first schema/live contracts | `Tests/InstantSwiftDataSchemaTests/MobileChatContractTests.swift`, `Tests/InstantSwiftDataTestingTests/InstantMobileChatV3LiveValidationTests.swift`, and `validation/ts-runner/src/mobile-chat-v3-app-contract.test.ts` |
+| Mobile Chat reproducible cross-SDK gate | `validation/verify-mobile-chat-v3-app-live.sh` and `validation/ts-runner/src/mobile-chat-v3-live-contract.ts` |
 
 ## Decisions Already Made
 
@@ -756,11 +769,18 @@ and `signedOut` states around the canonical server-verified token lifecycle,
 including TypeScript rejection after invalidation. Evidence is at
 `/tmp/instant-data-swift-auth-v3-app-20260719T013823Z/evidence.json`.
 
-Next, port the canonical chat/mobile-chat examples into thin SwiftUI app
-targets. Bind authenticated message creation, realtime typed queries, room
-presence, and topic payloads to app-owned models before adding their clean
-cross-SDK live gates. Do not create the
-`v0.4.0-apps-e2e` tag until the required app matrix—not only VoiceTrail—passes.
+The Mobile Chat app boundary is complete through `5f3276a`. The desired syntax
+is no longer an open design question for this slice: the app target compiles it,
+the source-first schema and live-evidence tests pin it, and the clean getadb gate
+proves it against canonical TypeScript SDK 1.0.49. Evidence is at
+`/tmp/instant-data-swift-mobile-chat-v3-20260719T021910Z/evidence.json`.
+
+Next, begin the presence/topic recipe slice. Before changing production or app
+code, pin the exact upstream recipe/helper source and port its source-of-truth
+event-order and cleanup assertions into focused Swift tests. Then add only the
+thin app-owned reaction, typing-indicator, avatar-stack, or cursor surface needed
+to satisfy those tests, followed by the clean cross-SDK gate. Do not create the
+`v0.4.0-apps-e2e` tag until the full required app matrix passes.
 
 The product-payload mismatch is resolved: playback presence stores and encodes
 `offsetSeconds: Double`, offers `Duration` as a computed product convenience,
