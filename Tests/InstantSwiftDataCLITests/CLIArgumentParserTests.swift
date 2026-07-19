@@ -3317,6 +3317,14 @@ struct CLIArgumentParserTests {
       try parseValidationRunner(["--live-voice-trail-v3-capture"]),
       .liveVoiceTrailV3Capture
     )
+    expectNoDifference(
+      try parseValidationRunner(["--live-todos-v3-write"]),
+      .liveTodosV3Write
+    )
+    expectNoDifference(
+      try parseValidationRunner(["--live-todos-v3-observe"]),
+      .liveTodosV3Observe
+    )
     expectNoDifference(try parseValidationRunner(["--typed-drafts"]), .typedDrafts)
     expectNoDifference(try parseValidationRunner(["--platform-adapters"]), .platformAdapters)
     expectNoDifference(try parseValidationRunner(["--syncups-recording"]), .syncUpsRecording)
@@ -3336,6 +3344,18 @@ struct CLIArgumentParserTests {
     expectNoDifference(CLIValidationRunnerInvocation.cloudKitDemo.appID, "cloudkit-demo-validation")
     expectNoDifference(CLIValidationRunnerInvocation.liveSession.caseID, "validation.live.session")
     expectNoDifference(CLIValidationRunnerInvocation.liveSession.appID, "live-session-validation")
+    expectNoDifference(
+      CLIValidationRunnerInvocation.liveTodosV3Write.caseID,
+      "validation.live.todos-v3-write"
+    )
+    expectNoDifference(
+      CLIValidationRunnerInvocation.liveTodosV3Observe.caseID,
+      "validation.live.todos-v3-observe"
+    )
+    expectNoDifference(
+      CLIValidationRunnerInvocation.liveTodosV3Write.appID,
+      "live-todos-v3"
+    )
     expectNoDifference(
       CLIValidationRunnerInvocation.liveTransaction.caseID,
       "validation.live.transaction"
