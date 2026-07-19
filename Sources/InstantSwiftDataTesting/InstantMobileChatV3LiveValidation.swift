@@ -173,7 +173,7 @@ public enum InstantMobileChatV3LiveValidation {
     )
     let remoteRoom = Task {
       try await withTimeout(operation: "observe TypeScript Mobile Chat room payloads") {
-        async let presence = matchingPresenceLifecycle(
+        async let presence = matchingPresence(
           expectedPeerPresence,
           in: presenceStream
         )
@@ -245,6 +245,14 @@ public enum InstantMobileChatV3LiveValidation {
       client: client
     )
     let observedRoom = try await remoteRoom.value
+    _ = try await client.publishRoomTopicMessage(
+      room: room,
+      topic: MobileChatRoom.Topic.emoji.rawValue,
+      payload: try encode(
+        MobileChatReaction(name: .confetti, directionAngle: 0, rotationAngle: 0)
+      )
+    )
+    let peerCountAfterDisconnect = try await waitForNoPeers(in: presenceStream)
     _ = try await client.leaveRoom(room)
     _ = try await client.closeConnection()
 
@@ -265,7 +273,7 @@ public enum InstantMobileChatV3LiveValidation {
           presence: swiftPresence,
           typing: swiftTyping,
           emoji: swiftEmoji,
-          peerCountAfterDisconnect: observedRoom.0.peerCountAfterDisconnect,
+          peerCountAfterDisconnect: peerCountAfterDisconnect,
           receivedPresence: observedRoom.0.presence,
           receivedTyping: observedRoom.1,
           receivedEmoji: observedRoom.2
@@ -577,37 +585,40 @@ public enum InstantMobileChatV3LiveValidation {
     )
   }
 
-  private static func matchingPresenceLifecycle(
+  private static func matchingPresence(
     _ expected: MobileChatPresence,
     in stream: AsyncStream<[InstantRoomPresenceMember]>
   ) async throws -> (
     presence: MobileChatPresence,
-    peerCount: Int,
-    peerCountAfterDisconnect: Int
+    peerCount: Int
   ) {
-    var matched: MobileChatPresence?
-    var peerCount = 0
     for await members in stream {
-      if matched == nil {
-        for member in members {
-          guard let value = try? decode(
-            MobileChatPresence.self,
-            from: .object(member.values)
-          ) else { continue }
-          if value == expected {
-            matched = value
-            peerCount = members.count + 1
-            break
-          }
+      for member in members {
+        guard let value = try? decode(
+          MobileChatPresence.self,
+          from: .object(member.values)
+        ) else { continue }
+        if value == expected {
+          return (value, members.count + 1)
         }
-      } else if members.isEmpty, let matched {
-        return (matched, peerCount, 1)
       }
     }
     throw failure(
-      operation: "observe Mobile Chat V3 presence lifecycle",
-      message: "The room ended before the exact peer joined and departed."
+      operation: "observe Mobile Chat V3 presence",
+      message: "The room ended before the exact peer joined."
     )
+  }
+
+  private static func waitForNoPeers(
+    in stream: AsyncStream<[InstantRoomPresenceMember]>
+  ) async throws -> Int {
+    try await withTimeout(operation: "observe Mobile Chat V3 peer cleanup") {
+      for await members in stream where members.isEmpty { return 1 }
+      throw failure(
+        operation: "observe Mobile Chat V3 peer cleanup",
+        message: "The presence stream ended before the peer departed."
+      )
+    }
   }
 
   private static func matchingTopic<Value: Codable & Equatable & Sendable>(
