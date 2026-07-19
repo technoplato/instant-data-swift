@@ -71,7 +71,7 @@ struct RemindersV3SharingTests {
     expectNoDifference(readerLists.wrappedValue.map(\.writers), [[]])
     expectNoDifference(
       readerLists.wrappedValue.first?.share?.memberships.map(\.shareRole),
-      [.reader]
+      [.owner, .reader]
     )
 
     try await transact(
@@ -91,7 +91,7 @@ struct RemindersV3SharingTests {
     expectNoDifference(readerLists.wrappedValue.map(\.writers), [[memberID]])
     expectNoDifference(
       readerLists.wrappedValue.first?.share?.memberships.map(\.shareRole),
-      [.writer]
+      [.owner, .writer]
     )
 
     try await transact(

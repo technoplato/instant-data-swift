@@ -97,10 +97,8 @@ public struct RemindersV3List: Codable, Hashable, InstantEntityModel {
   }
 
   public static func visible(to userID: InstantID<RemindersV3User>) -> InstantQuery<Self> {
-    let membershipQuery = RemindersV3ShareMembership.query
-      .where(RemindersV3ShareMembership.user == userID)
     let shareQuery = RemindersV3Share.query
-      .include(RemindersV3Share.memberships, membershipQuery)
+      .include(RemindersV3Share.memberships)
     let reminderQuery = RemindersV3Reminder.query
       .include(RemindersV3Reminder.tags)
       .order(RemindersV3Reminder.position)
@@ -109,6 +107,13 @@ public struct RemindersV3List: Codable, Hashable, InstantEntityModel {
       .include(reminders, reminderQuery)
       .include(share, shareQuery)
       .order(position)
+  }
+
+  public static func byID(
+    _ listID: InstantID<Self>,
+    visibleTo userID: InstantID<RemindersV3User>
+  ) -> InstantQuery<Self> {
+    visible(to: userID).where(identifier == listID.rawValue)
   }
 }
 

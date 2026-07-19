@@ -34,6 +34,7 @@ let package = Package(
     .executable(name: "auth-v3", targets: ["AuthV3Executable"]),
     .executable(name: "mobile-chat-v3", targets: ["MobileChatV3Executable"]),
     .executable(name: "presence-recipes-v3", targets: ["PresenceRecipesV3Executable"]),
+    .executable(name: "reminders-v3", targets: ["RemindersV3Executable"]),
     .executable(name: "stroopwafel-v3", targets: ["StroopwafelV3Executable"]),
     .executable(name: "voicetrail-v3", targets: ["VoiceTrailV3Executable"]),
     .executable(name: "todos-v3", targets: ["TodosV3Executable"]),
@@ -213,6 +214,11 @@ let package = Package(
     .executableTarget(
       name: "PresenceRecipesV3Executable",
       dependencies: ["PresenceRecipesV3App"],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .executableTarget(
+      name: "RemindersV3Executable",
+      dependencies: ["RemindersV3App"],
       swiftSettings: strictConcurrencySettings
     ),
     .executableTarget(

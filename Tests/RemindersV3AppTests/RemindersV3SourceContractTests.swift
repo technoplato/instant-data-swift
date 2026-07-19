@@ -4,6 +4,10 @@ import InstantSwiftData
 import RemindersV3App
 import Testing
 
+#if canImport(SwiftUI)
+  import SwiftUI
+#endif
+
 // Canonical sources:
 // pointfreeco/sqlite-data@0c79d7a5748fc6d9ce7a1ba2b50f31b175305049
 // - Examples/Reminders/Schema.swift
@@ -12,6 +16,25 @@ import Testing
 // - Tests/SQLiteDataTests/CloudKitTests/SharingTests.swift
 @Suite
 struct RemindersV3SourceContractTests {
+  #if canImport(SwiftUI)
+    @Test @MainActor
+    func desiredWrapperOwnedScreenSyntaxCompiles() {
+      let screen: any View = RemindersV3Screen(
+        userID: InstantID(rawValue: "user-1")
+      )
+      _ = screen
+    }
+  #endif
+
+  #if canImport(SwiftUI)
+    @Test @MainActor
+    func desiredRunnableScreenSyntaxCompiles() {
+      let screen = RemindersV3Screen()
+      let view: any View = screen
+      _ = view
+    }
+  #endif
+
   @Test
   func desiredTypedEntityAndQuerySyntaxCompiles() {
     let userID = InstantID<RemindersV3User>(rawValue: "user-1")
