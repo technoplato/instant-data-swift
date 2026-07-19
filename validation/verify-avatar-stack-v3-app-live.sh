@@ -7,6 +7,8 @@ CLI="${RUNNER}/node_modules/.bin/instant-cli"
 RESULTS="${INSTANT_SWIFT_DATA_AVATAR_STACK_RESULTS_DIR:-/tmp/instant-data-swift-avatar-stack-v3-$(date -u +%Y%m%dT%H%M%SZ)}"
 PUSH="${RESULTS}/push"
 PULL="${RESULTS}/pull"
+GETADB_CREDENTIALS_FILE="${INSTANT_GETADB_CREDENTIALS_FILE:-}"
+REMOVE_GETADB_CREDENTIALS=0
 
 if [[ -n "$(git -C "${ROOT}" status --porcelain)" ]]; then
   echo "Avatar Stack V3 verification requires a clean worktree." >&2
@@ -27,7 +29,25 @@ fi
 export CI=1
 export NO_COLOR=1
 mkdir -p "${PUSH}" "${PULL}"
-trap 'unlink "${PUSH}/.instant.env" 2>/dev/null || true; unlink "${PUSH}/node_modules" 2>/dev/null || true; unlink "${PULL}/node_modules" 2>/dev/null || true' EXIT
+if [[ -z "${GETADB_CREDENTIALS_FILE}" ]]; then
+  GETADB_PROVISION_ID="$(uuidgen | tr '[:upper:]' '[:lower:]')"
+  GETADB_CREDENTIALS_FILE="${RESULTS}/getadb-${GETADB_PROVISION_ID}.txt"
+  curl -fsSL "https://www.getadb.com/provision/${GETADB_PROVISION_ID}" \
+    >"${GETADB_CREDENTIALS_FILE}"
+  chmod 600 "${GETADB_CREDENTIALS_FILE}"
+  REMOVE_GETADB_CREDENTIALS=1
+else
+  GETADB_PROVISION_ID="provided"
+fi
+trap 'if [[ "${REMOVE_GETADB_CREDENTIALS}" == 1 ]]; then rm -f "${GETADB_CREDENTIALS_FILE}"; fi; unlink "${PUSH}/node_modules" 2>/dev/null || true; unlink "${PULL}/node_modules" 2>/dev/null || true' EXIT
+
+export INSTANT_APP_ID="$(sed -n 's/^VITE_INSTANT_APP_ID=//p' "${GETADB_CREDENTIALS_FILE}" | head -1)"
+export INSTANT_ADMIN_TOKEN="$(sed -n 's/^INSTANT_ADMIN_TOKEN=//p' "${GETADB_CREDENTIALS_FILE}" | head -1)"
+: "${INSTANT_APP_ID:?getadb response did not contain VITE_INSTANT_APP_ID}"
+: "${INSTANT_ADMIN_TOKEN:?getadb response did not contain INSTANT_ADMIN_TOKEN}"
+export INSTANT_APP_ADMIN_TOKEN="${INSTANT_ADMIN_TOKEN}"
+export INSTANT_CLI_AUTH_TOKEN="${INSTANT_ADMIN_TOKEN}"
+
 cp "${RUNNER}/package.json" "${PUSH}/package.json"
 cp "${RUNNER}/package.json" "${PULL}/package.json"
 ln -s "${RUNNER}/node_modules" "${PUSH}/node_modules"
@@ -40,18 +60,8 @@ swift run --package-path "${ROOT}" instant-swift-data perms generate \
   --example avatar-stack --to "${PUSH}/instant.perms.ts" --json \
   >"${RESULTS}/swift-perms-generate.json"
 
-(
-  cd "${PUSH}"
-  "${CLI}" init --temp --title "instant-data-swift-avatar-stack-v3" --yes --env .instant.env
-) | tee "${RESULTS}/instant-cli-init.log"
-set -a
-# shellcheck disable=SC1090
-source "${PUSH}/.instant.env"
-set +a
-export INSTANT_APP_ID
-export INSTANT_ADMIN_TOKEN="${INSTANT_APP_ADMIN_TOKEN:?Missing admin token}"
-export INSTANT_APP_ADMIN_TOKEN
-export INSTANT_CLI_AUTH_TOKEN="${INSTANT_APP_ADMIN_TOKEN}"
+printf 'Provisioned Avatar Stack V3 app through getadb.com (%s).\n' \
+  "${GETADB_PROVISION_ID}" | tee "${RESULTS}/getadb-provision.log"
 
 (
   cd "${PUSH}"
@@ -75,13 +85,13 @@ swift run --package-path "${ROOT}" instant-swift-data schema verify \
 swift run --package-path "${ROOT}" instant-swift-data perms verify \
   --example avatar-stack --from "${PULL}/instant.perms.ts" --json \
   >"${RESULTS}/swift-server-perms-verify.json"
-pnpm --dir "${RUNNER}" exec tsc --noEmit --project tsconfig.json
-pnpm --dir "${RUNNER}" exec tsc --noEmit --strict --target ES2022 \
+corepack pnpm --dir "${RUNNER}" exec tsc --noEmit --project tsconfig.json
+corepack pnpm --dir "${RUNNER}" exec tsc --noEmit --strict --target ES2022 \
   --module NodeNext --moduleResolution NodeNext \
   "${PULL}/instant.schema.ts" "${PULL}/instant.perms.ts"
 
 INSTANT_SWIFT_DATA_AVATAR_STACK_SCHEMA_PATH="${PUSH}/instant.schema.ts" \
-  pnpm --dir "${RUNNER}" exec tsx src/avatar-stack-v3-live-contract.ts \
+  corepack pnpm --dir "${RUNNER}" exec tsx src/avatar-stack-v3-live-contract.ts \
   >"${RESULTS}/avatar-stack-v3.json"
 
 ROOT="${ROOT}" RUNNER="${RUNNER}" RESULTS="${RESULTS}" \
