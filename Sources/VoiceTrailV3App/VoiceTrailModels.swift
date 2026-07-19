@@ -61,10 +61,17 @@ public struct VoiceTrailRecording: Hashable, Codable, InstantEntityModel {
   public var deviceID: String
   public var state: String
   public var durationMilliseconds: Int
+  public var viewerMembership: VoiceTrailViewerMembership?
 
   public static let instantNamespace = "v3_capture_recordings"
+  public static let identifier = InstantAttributePath<Self, String>("id")
   public static let title = InstantAttributePath<Self, String>("title")
   public static let owner = InstantAttributePath<Self, InstantID<VoiceTrailUser>>("owner")
+  public static let readers = InstantAttributePath<Self, InstantID<VoiceTrailUser>>("readers")
+  public static let writers = InstantAttributePath<Self, InstantID<VoiceTrailUser>>("writers")
+  public static let share = InstantReverseRelation<Self, VoiceTrailShare>(
+    attribute: VoiceTrailShare.root
+  )
   public static let deviceID = InstantAttributePath<Self, String>("deviceID")
   public static let state = InstantAttributePath<Self, String>("state")
   public static let durationMilliseconds = InstantAttributePath<Self, Int>(
@@ -88,6 +95,28 @@ public struct VoiceTrailRecording: Hashable, Codable, InstantEntityModel {
       isIndexed: true,
       forwardIdentity: "v3_capture_recordings/owner",
       reverseIdentity: "$users/recordings",
+      linkNamespace: VoiceTrailUser.instantNamespace
+    ),
+    InstantAttribute(
+      id: "v3_capture_recordings/readers",
+      namespace: instantNamespace,
+      name: "readers",
+      valueType: .ref,
+      cardinality: .many,
+      isIndexed: true,
+      forwardIdentity: "v3_capture_recordings/readers",
+      reverseIdentity: "$users/readableRecordings",
+      linkNamespace: VoiceTrailUser.instantNamespace
+    ),
+    InstantAttribute(
+      id: "v3_capture_recordings/writers",
+      namespace: instantNamespace,
+      name: "writers",
+      valueType: .ref,
+      cardinality: .many,
+      isIndexed: true,
+      forwardIdentity: "v3_capture_recordings/writers",
+      reverseIdentity: "$users/writableRecordings",
       linkNamespace: VoiceTrailUser.instantNamespace
     ),
     InstantAttribute(
@@ -135,6 +164,234 @@ public struct VoiceTrailRecording: Hashable, Codable, InstantEntityModel {
     self.deviceID = deviceID
     self.state = state
     self.durationMilliseconds = Int(durationMilliseconds)
+    self.viewerMembership = try snapshot.links?["share"]?.first
+      .flatMap { $0.links?["memberships"]?.first }
+      .map(VoiceTrailViewerMembership.init)
+  }
+
+  public var viewerRole: InstantShareRole? {
+    viewerMembership?.role
+  }
+}
+
+public enum VoiceTrailRecordingScope: String, CaseIterable, Hashable, Identifiable, Sendable {
+  case mine
+  case shared
+
+  public var id: Self { self }
+
+  public var title: String {
+    switch self {
+    case .mine: "Mine"
+    case .shared: "Shared"
+    }
+  }
+}
+
+public struct VoiceTrailShare: Hashable, Codable, InstantEntityModel {
+  public var id: InstantID<Self>
+
+  public static let instantNamespace = "v3_shares"
+  public static let owner = InstantAttributePath<Self, InstantID<VoiceTrailUser>>("owner")
+  public static let root = InstantAttributePath<Self, InstantID<VoiceTrailRecording>>("root")
+  public static let memberships = InstantReverseRelation<Self, VoiceTrailShareMembership>(
+    attribute: VoiceTrailShareMembership.share
+  )
+  public static let instantAttributes = [
+    InstantAttribute.primaryKey(namespace: instantNamespace),
+    InstantAttribute(
+      id: "v3_shares/token",
+      namespace: instantNamespace,
+      name: "token",
+      valueType: .string,
+      isIndexed: true,
+      isUnique: true
+    ),
+    InstantAttribute(
+      id: "v3_shares/rootNamespace",
+      namespace: instantNamespace,
+      name: "rootNamespace",
+      valueType: .string,
+      isIndexed: true
+    ),
+    InstantAttribute(
+      id: "v3_shares/rootID",
+      namespace: instantNamespace,
+      name: "rootID",
+      valueType: .string,
+      isIndexed: true
+    ),
+    InstantAttribute(
+      id: "v3_shares/createdAt",
+      namespace: instantNamespace,
+      name: "createdAt",
+      valueType: .date,
+      isIndexed: true
+    ),
+    InstantAttribute(
+      id: "v3_shares/updatedAt",
+      namespace: instantNamespace,
+      name: "updatedAt",
+      valueType: .date,
+      isIndexed: true
+    ),
+    InstantAttribute(
+      id: "v3_shares/revokedAt",
+      namespace: instantNamespace,
+      name: "revokedAt",
+      valueType: .date,
+      isRequired: false,
+      isIndexed: true
+    ),
+    InstantAttribute(
+      id: "v3_shares/owner",
+      namespace: instantNamespace,
+      name: "owner",
+      valueType: .ref,
+      isRequired: true,
+      isIndexed: true,
+      forwardIdentity: "v3_shares/owner",
+      reverseIdentity: "$users/ownedShares",
+      linkNamespace: VoiceTrailUser.instantNamespace
+    ),
+    InstantAttribute(
+      id: "v3_shares/root",
+      namespace: instantNamespace,
+      name: "root",
+      valueType: .ref,
+      isRequired: true,
+      isIndexed: true,
+      isUnique: true,
+      forwardIdentity: "v3_shares/root",
+      reverseIdentity: "v3_capture_recordings/share",
+      linkNamespace: VoiceTrailRecording.instantNamespace
+    ),
+  ]
+
+  public init(snapshot: InstantEntitySnapshot) throws {
+    id = InstantID(rawValue: snapshot.id)
+  }
+}
+
+public struct VoiceTrailShareMembership: Hashable, Codable, InstantEntityModel {
+  public var id: InstantID<Self>
+
+  public static let instantNamespace = "v3_share_memberships"
+  public static let role = InstantAttributePath<Self, String>("role")
+  public static let acceptedAt = InstantAttributePath<Self, Date>("acceptedAt")
+  public static let share = InstantAttributePath<Self, InstantID<VoiceTrailShare>>("share")
+  public static let user = InstantAttributePath<Self, InstantID<VoiceTrailUser>>("user")
+  public static let instantAttributes = [
+    InstantAttribute.primaryKey(namespace: instantNamespace),
+    InstantAttribute(
+      id: "v3_share_memberships/role",
+      namespace: instantNamespace,
+      name: "role",
+      valueType: .string,
+      isIndexed: true
+    ),
+    InstantAttribute(
+      id: "v3_share_memberships/acceptedAt",
+      namespace: instantNamespace,
+      name: "acceptedAt",
+      valueType: .date,
+      isIndexed: true
+    ),
+    InstantAttribute(
+      id: "v3_share_memberships/revokedAt",
+      namespace: instantNamespace,
+      name: "revokedAt",
+      valueType: .date,
+      isRequired: false,
+      isIndexed: true
+    ),
+    InstantAttribute(
+      id: "v3_share_memberships/share",
+      namespace: instantNamespace,
+      name: "share",
+      valueType: .ref,
+      isRequired: true,
+      isIndexed: true,
+      forwardIdentity: "v3_share_memberships/share",
+      reverseIdentity: "v3_shares/memberships",
+      linkNamespace: VoiceTrailShare.instantNamespace,
+      onDelete: .cascade
+    ),
+    InstantAttribute(
+      id: "v3_share_memberships/user",
+      namespace: instantNamespace,
+      name: "user",
+      valueType: .ref,
+      isRequired: true,
+      isIndexed: true,
+      forwardIdentity: "v3_share_memberships/user",
+      reverseIdentity: "$users/shareMemberships",
+      linkNamespace: VoiceTrailUser.instantNamespace
+    ),
+  ]
+
+  public init(snapshot: InstantEntitySnapshot) throws {
+    id = InstantID(rawValue: snapshot.id)
+  }
+}
+
+public struct VoiceTrailViewerMembership: Hashable, Codable, Sendable {
+  public var id: String
+  public var userID: InstantID<VoiceTrailUser>
+  public var role: InstantShareRole
+  public var acceptedAt: Date
+
+  public init(_ snapshot: InstantLinkedEntitySnapshot) throws {
+    guard case let .string(rawRole) = snapshot.values["role"]?.first,
+      let role = InstantShareRole(rawValue: rawRole),
+      case let .date(acceptedAt) = snapshot.values["acceptedAt"]?.first,
+      let userID = snapshot.links?["user"]?.first?.id
+    else {
+      throw InstantError(
+        code: .decodeFailed,
+        operation: "decode VoiceTrail viewer membership",
+        namespace: VoiceTrailShareMembership.instantNamespace,
+        localID: snapshot.id,
+        message: "Expected role, acceptedAt, and one user link.",
+        recovery: "Keep the app recording projection aligned with the canonical share graph."
+      )
+    }
+    id = snapshot.id
+    self.userID = InstantID(rawValue: userID)
+    self.role = role
+    self.acceptedAt = acceptedAt
+  }
+}
+
+extension VoiceTrailRecording {
+  public static func recordingsQuery(
+    scope: VoiceTrailRecordingScope,
+    searchText: String,
+    viewerID: InstantID<VoiceTrailUser>?
+  ) -> InstantQuery<Self> {
+    guard let viewerID else {
+      return query.where(identifier.isIn([]))
+    }
+    let viewerMembership = VoiceTrailShareMembership.query
+      .where(VoiceTrailShareMembership.user == viewerID)
+      .include(VoiceTrailShareMembership.user)
+    let shareQuery = VoiceTrailShare.query
+      .include(VoiceTrailShare.owner)
+      .include(VoiceTrailShare.memberships, viewerMembership)
+    var query = query
+      .include(owner)
+      .include(readers)
+      .include(writers)
+      .include(share, shareQuery)
+      .order(title)
+    switch scope {
+    case .mine:
+      query = query.where(owner == viewerID)
+    case .shared:
+      query = query.where(.any(readers == viewerID, writers == viewerID))
+    }
+    guard !searchText.isEmpty else { return query }
+    return query.where(title.iLike("%\(searchText)%"))
   }
 }
 

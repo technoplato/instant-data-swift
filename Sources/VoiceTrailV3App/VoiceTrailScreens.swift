@@ -130,8 +130,12 @@ import InstantSwiftData
 
   @MainActor
   public struct VoiceTrailRecordingsListScreen: View {
+    @InstantAuth(VoiceTrailUser.self, providers: VoiceTrailAuthProviders.self)
+    private var auth
+
     @FetchAll private var recordings: [VoiceTrailRecording]
     @State private var searchText = ""
+    @State private var scope: VoiceTrailRecordingScope = .mine
 
     private let onOpenRecording: @MainActor (InstantID<VoiceTrailRecording>) -> Void
 
@@ -142,18 +146,26 @@ import InstantSwiftData
     }
 
     public var body: some View {
-      List {
-        if recordings.isEmpty {
-          Text("No recordings yet")
+      VStack {
+        Picker("Scope", selection: $scope) {
+          ForEach(VoiceTrailRecordingScope.allCases) { scope in
+            Text(scope.title).tag(scope)
+          }
         }
-        ForEach(recordings) { recording in
-          Button {
-            onOpenRecording(recording.id)
-          } label: {
-            VStack(alignment: .leading) {
-              Text(recording.title)
-              Text(recording.state)
-                .font(.caption)
+
+        List {
+          if recordings.isEmpty {
+            Text("No recordings yet")
+          }
+          ForEach(recordings) { recording in
+            Button {
+              onOpenRecording(recording.id)
+            } label: {
+              VStack(alignment: .leading) {
+                Text(recording.title)
+                Text(recording.viewerRole?.rawValue ?? recording.state)
+                  .font(.caption)
+              }
             }
           }
         }
@@ -163,11 +175,11 @@ import InstantSwiftData
     }
 
     private var recordingsQuery: InstantQuery<VoiceTrailRecording> {
-      var query = VoiceTrailRecording.query.order(VoiceTrailRecording.title)
-      if !searchText.isEmpty {
-        query = query.where(VoiceTrailRecording.title.iLike("%\(searchText)%"))
-      }
-      return query
+      VoiceTrailRecording.recordingsQuery(
+        scope: scope,
+        searchText: searchText,
+        viewerID: auth.user?.id
+      )
     }
   }
 

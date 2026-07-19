@@ -1,5 +1,6 @@
 import Foundation
 import InstantSwiftData
+import VoiceTrailV3App
 
 public enum InstantVoiceTrailRecordingsListValidationMode: String, Sendable {
   case owner
@@ -85,7 +86,7 @@ public enum InstantVoiceTrailRecordingsListLiveValidation {
             userID: viewerUserID
           )
           let client = InstantSwiftDataClient(runtime: runtime)
-          let rows = FetchAll<LiveRecordingRow>()
+          let rows = FetchAll<VoiceTrailRecording>()
           let query = recordingsQuery(viewerUserID: viewerUserID, mode: mode)
           let rowsTask = Task {
             try await rows.task(query, using: client)
@@ -197,40 +198,21 @@ public enum InstantVoiceTrailRecordingsListLiveValidation {
   private static func recordingsQuery(
     viewerUserID: String,
     mode: InstantVoiceTrailRecordingsListValidationMode
-  ) -> InstantQuery<LiveRecordingRow> {
-    let viewerID = InstantID<LiveUser>(rawValue: viewerUserID)
-    let membership = LiveMembership.query
-      .where(LiveMembership.user == viewerID)
-      .include(LiveMembership.user)
-    let share = LiveShare.query
-      .include(LiveShare.owner)
-      .include(LiveShare.memberships, membership)
-    let query = LiveRecordingRow.query
-      .include(LiveRecordingRow.owner)
-      .include(LiveRecordingRow.readers)
-      .include(LiveRecordingRow.writers)
-      .include(LiveRecordingRow.share, share)
-      .order(LiveRecordingRow.title)
-    switch mode {
-    case .owner:
-      return query.where(LiveRecordingRow.owner == viewerID)
-    case .member:
-      return query.where(
-        .any(
-          LiveRecordingRow.readers == viewerID,
-          LiveRecordingRow.writers == viewerID
-        )
-      )
-    }
+  ) -> InstantQuery<VoiceTrailRecording> {
+    VoiceTrailRecording.recordingsQuery(
+      scope: mode == .owner ? .mine : .shared,
+      searchText: "",
+      viewerID: InstantID(rawValue: viewerUserID)
+    )
   }
 
   private static func waitForRole(
     _ role: InstantShareRole,
     recordingID: String,
-    rows: FetchAll<LiveRecordingRow>,
+    rows: FetchAll<VoiceTrailRecording>,
     operation: String,
     trace: VoiceTrailRecordingsLiveTrace
-  ) async throws -> [LiveRecordingRow] {
+  ) async throws -> [VoiceTrailRecording] {
     for _ in 0..<800 {
       let values = rows.wrappedValue
       if values.contains(where: { $0.id.rawValue == recordingID && $0.viewerRole == role }) {
@@ -244,9 +226,9 @@ public enum InstantVoiceTrailRecordingsListLiveValidation {
 
   private static func waitForRevocation(
     recordingID: String,
-    rows: FetchAll<LiveRecordingRow>,
+    rows: FetchAll<VoiceTrailRecording>,
     trace: VoiceTrailRecordingsLiveTrace
-  ) async throws -> [LiveRecordingRow] {
+  ) async throws -> [VoiceTrailRecording] {
     for _ in 0..<800 {
       let values = rows.wrappedValue
       if !values.contains(where: { $0.id.rawValue == recordingID }) {
@@ -265,7 +247,7 @@ public enum InstantVoiceTrailRecordingsListLiveValidation {
   private static func evidence(
     stage: String,
     viewerUserID: String,
-    rows: [LiveRecordingRow],
+    rows: [VoiceTrailRecording],
     runtime: InstantRuntime
   ) async throws -> ValidationEvidenceRow<InstantVoiceTrailRecordingsListLiveDetails> {
     let status = try await runtime.connectionStatus()
@@ -284,7 +266,7 @@ public enum InstantVoiceTrailRecordingsListLiveValidation {
           InstantVoiceTrailRecordingRowEvidence(
             id: $0.id.rawValue,
             title: $0.title,
-            ownerUserID: $0.ownerUserID.rawValue,
+            ownerUserID: $0.ownerID.rawValue,
             viewerRole: $0.viewerRole?.rawValue
           )
         },
@@ -295,7 +277,7 @@ public enum InstantVoiceTrailRecordingsListLiveValidation {
 
   private static func timeout(
     _ operation: String,
-    rows: [LiveRecordingRow],
+    rows: [VoiceTrailRecording],
     trace: VoiceTrailRecordingsLiveTrace
   ) async -> InstantError {
     let summary = rows.map {
@@ -314,10 +296,10 @@ public enum InstantVoiceTrailRecordingsListLiveValidation {
   }
 
   private static let voiceTrailAttributes =
-    LiveUser.instantAttributes
-    + LiveRecordingRow.instantAttributes
-    + LiveShare.instantAttributes
-    + LiveMembership.instantAttributes
+    VoiceTrailUser.instantAttributes
+    + VoiceTrailRecording.instantAttributes
+    + VoiceTrailShare.instantAttributes
+    + VoiceTrailShareMembership.instantAttributes
 }
 
 private actor VoiceTrailRecordingsLiveTrace {
@@ -362,214 +344,4 @@ private actor VoiceTrailRecordingsLiveTrace {
       queryResults.append(String(describing: message.fields["result"]))
     }
   }
-}
-
-private struct LiveRecordingRow: Hashable, Codable, InstantEntityModel {
-  var id: InstantID<Self>
-  var title: String
-  var ownerUserID: InstantID<LiveUser>
-  var viewerRole: InstantShareRole?
-
-  static let instantNamespace = "v3_capture_recordings"
-  static let title = InstantAttributePath<Self, String>("title")
-  static let owner = InstantAttributePath<Self, InstantID<LiveUser>>("owner")
-  static let readers = InstantAttributePath<Self, InstantID<LiveUser>>("readers")
-  static let writers = InstantAttributePath<Self, InstantID<LiveUser>>("writers")
-  static let share = InstantReverseRelation<Self, LiveShare>(attribute: LiveShare.root)
-  static let instantAttributes = [
-    InstantAttribute.primaryKey(namespace: instantNamespace),
-    scalar("title", .string),
-    scalar("deviceID", .string),
-    scalar("state", .string),
-    scalar("durationMilliseconds", .number),
-    userLink("owner", reverse: "recordings", cardinality: .one),
-    userLink("readers", reverse: "readableRecordings", cardinality: .many),
-    userLink("writers", reverse: "writableRecordings", cardinality: .many),
-  ]
-
-  init(snapshot: InstantEntitySnapshot) throws {
-    guard case let .string(title) = snapshot.values["title"]?.first,
-      case let .ref(ownerUserID) = snapshot.values["owner"]?.first
-    else {
-      throw decodeError("Expected recording title and owner.", snapshot: snapshot)
-    }
-    id = InstantID(rawValue: snapshot.id)
-    self.title = title
-    self.ownerUserID = InstantID(rawValue: ownerUserID)
-    let membership = snapshot.links?["share"]?.first?.links?["memberships"]?.first
-    if let membership {
-      guard case let .string(rawRole) = membership.values["role"]?.first,
-        let role = InstantShareRole(rawValue: rawRole)
-      else {
-        throw decodeError("Expected a canonical membership role.", snapshot: snapshot)
-      }
-      viewerRole = role
-    } else {
-      viewerRole = nil
-    }
-  }
-
-  private static func scalar(_ name: String, _ type: InstantValueType) -> InstantAttribute {
-    InstantAttribute(
-      id: "\(instantNamespace)/\(name)",
-      namespace: instantNamespace,
-      name: name,
-      valueType: type,
-      isIndexed: true
-    )
-  }
-
-  private static func userLink(
-    _ name: String,
-    reverse: String,
-    cardinality: InstantCardinality
-  ) -> InstantAttribute {
-    InstantAttribute(
-      id: "\(instantNamespace)/\(name)",
-      namespace: instantNamespace,
-      name: name,
-      valueType: .ref,
-      cardinality: cardinality,
-      forwardIdentity: "\(instantNamespace)/\(name)",
-      reverseIdentity: "$users/\(reverse)",
-      linkNamespace: LiveUser.instantNamespace
-    )
-  }
-}
-
-private struct LiveUser: Hashable, Codable, InstantEntityModel {
-  var id: InstantID<Self>
-  static let instantNamespace = "$users"
-  static let instantAttributes = [InstantAttribute.primaryKey(namespace: instantNamespace)]
-
-  init(snapshot: InstantEntitySnapshot) throws {
-    id = InstantID(rawValue: snapshot.id)
-  }
-}
-
-private struct LiveShare: Hashable, Codable, InstantEntityModel {
-  var id: InstantID<Self>
-  static let instantNamespace = "v3_shares"
-  static let owner = InstantAttributePath<Self, InstantID<LiveUser>>("owner")
-  static let root = InstantAttributePath<Self, InstantID<LiveRecordingRow>>("root")
-  static let memberships = InstantReverseRelation<Self, LiveMembership>(
-    attribute: LiveMembership.share
-  )
-  static let instantAttributes = [
-    InstantAttribute.primaryKey(namespace: instantNamespace),
-    ref("owner", target: LiveUser.instantNamespace, reverse: "$users/ownedShares"),
-    ref(
-      "root",
-      target: LiveRecordingRow.instantNamespace,
-      reverse: "v3_capture_recordings/share",
-      isUnique: true
-    ),
-    scalar("token", .string),
-    scalar("rootNamespace", .string),
-    scalar("rootID", .string),
-    scalar("createdAt", .date),
-    scalar("updatedAt", .date),
-    scalar("revokedAt", .date, isRequired: false),
-  ]
-
-  init(snapshot: InstantEntitySnapshot) throws {
-    id = InstantID(rawValue: snapshot.id)
-  }
-
-  private static func scalar(
-    _ name: String,
-    _ type: InstantValueType,
-    isRequired: Bool = true
-  ) -> InstantAttribute {
-    InstantAttribute(
-      id: "\(instantNamespace)/\(name)",
-      namespace: instantNamespace,
-      name: name,
-      valueType: type,
-      isRequired: isRequired,
-      isIndexed: true
-    )
-  }
-
-  private static func ref(
-    _ name: String,
-    target: String,
-    reverse: String,
-    isUnique: Bool = false
-  ) -> InstantAttribute {
-    InstantAttribute(
-      id: "\(instantNamespace)/\(name)",
-      namespace: instantNamespace,
-      name: name,
-      valueType: .ref,
-      isUnique: isUnique,
-      forwardIdentity: "\(instantNamespace)/\(name)",
-      reverseIdentity: reverse,
-      linkNamespace: target
-    )
-  }
-}
-
-private struct LiveMembership: Hashable, Codable, InstantEntityModel {
-  var id: InstantID<Self>
-  static let instantNamespace = "v3_share_memberships"
-  static let share = InstantAttributePath<Self, InstantID<LiveShare>>("share")
-  static let user = InstantAttributePath<Self, InstantID<LiveUser>>("user")
-  static let instantAttributes = [
-    InstantAttribute.primaryKey(namespace: instantNamespace),
-    scalar("role", .string),
-    scalar("acceptedAt", .date),
-    scalar("revokedAt", .date, isRequired: false),
-    ref("share", target: LiveShare.instantNamespace, reverse: "v3_shares/memberships"),
-    ref("user", target: LiveUser.instantNamespace, reverse: "$users/shareMemberships"),
-  ]
-
-  init(snapshot: InstantEntitySnapshot) throws {
-    id = InstantID(rawValue: snapshot.id)
-  }
-
-  private static func scalar(
-    _ name: String,
-    _ type: InstantValueType,
-    isRequired: Bool = true
-  ) -> InstantAttribute {
-    InstantAttribute(
-      id: "\(instantNamespace)/\(name)",
-      namespace: instantNamespace,
-      name: name,
-      valueType: type,
-      isRequired: isRequired,
-      isIndexed: true
-    )
-  }
-
-  private static func ref(
-    _ name: String,
-    target: String,
-    reverse: String
-  ) -> InstantAttribute {
-    InstantAttribute(
-      id: "\(instantNamespace)/\(name)",
-      namespace: instantNamespace,
-      name: name,
-      valueType: .ref,
-      forwardIdentity: "\(instantNamespace)/\(name)",
-      reverseIdentity: reverse,
-      linkNamespace: target
-    )
-  }
-}
-
-private func decodeError(
-  _ message: String,
-  snapshot: InstantEntitySnapshot
-) -> InstantError {
-  InstantError(
-    code: .decodeFailed,
-    operation: "decode live VoiceTrail recordings-list row",
-    namespace: snapshot.namespace,
-    localID: snapshot.id,
-    message: message,
-    recovery: "Keep the Swift row projection aligned with the canonical TypeScript graph."
-  )
 }
