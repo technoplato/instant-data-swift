@@ -312,6 +312,16 @@ As of 2026-07-19:
   `/tmp/instant-data-swift-reminders-v3-20260719T070753Z/evidence.json`. The
   post-port aggregate passes 1,049 Swift Testing cases across 76 suites plus
   the complete TypeScript typecheck, contract, live-support, and fixture matrix.
+- The first SyncUps app packet is complete through `7d7b1d6`. Commits
+  `5cc878b` through `7d7b1d6` pin the three upstream entities, all 16 theme
+  strings, two required cascading parent links, list/detail/child query syntax,
+  generated drafts, exact new/edit form replacement behavior, meeting
+  persistence, parent cascade deletion, app-owned list/detail/form/recording
+  screens, local/live bootstrap selection, and the runnable `syncups-v3`
+  executable. Its 12 focused tests and strict-concurrency product build pass.
+  The recording screen currently provides the app-facing manual transcript and
+  speaker flow; the existing speech, sound, settings, and timer dependencies
+  are the next behavior seam before generated-contract and live E2E work.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -1003,12 +1013,15 @@ and zero compiler/runtime warnings at
 post-port aggregate is green at 1,049 Swift Testing cases across 76 suites and
 the complete TypeScript typecheck, contract, live-support, and fixture matrix.
 
-Next, port SyncUps source-first from its pinned schema, form tests, screen and
-recording sources, and the existing local `SyncUpsExample` plus
-`syncups-recording` validation proof. The first packet should pin the exact
-entity/link contract and compile the app-owned list, detail, form, and recording
-syntax before adding its fresh-app live boundary. Do not create the
-`v0.4.0-apps-e2e` tag until the full required app matrix passes.
+The first SyncUps packet is complete through `7d7b1d6`: the exact entity/link
+contract, upstream form behavior, recording persistence, app-owned list,
+detail, form, and recording syntax, and runnable executable all compile and
+pass their 12 focused tests. Next, route the existing `SyncUpSpeechClient`,
+`SyncUpSoundEffectClient`, `SyncUpOpenSettingsClient`, and clock behavior through
+the app-owned recording screen with deterministic dependency tests. Then add
+the generated schema/permissions and canonical TypeScript contract before the
+fresh-app live boundary. Do not create the `v0.4.0-apps-e2e` tag until the full
+required app matrix passes.
 
 The product-payload mismatch is resolved: playback presence stores and encodes
 `offsetSeconds: Double`, offers `Duration` as a computed product convenience,
