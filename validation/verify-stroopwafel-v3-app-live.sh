@@ -110,16 +110,24 @@ assert.equal(serializedLive.includes("refresh_token"), false);
 assert.equal(serializedLive.includes("INSTANT_ADMIN_TOKEN"), false);
 assert.equal(live.details.compilerWarningCount, 0);
 assert.deepEqual(live.details.warnings, []);
-assert.equal(live.details.gameStarted.colors.length, 14);
-assert.equal(live.details.typeScriptPoint.val, 1);
-assert.equal(live.details.completedGame.status, "GAME_COMPLETED");
+assert.equal(live.details.typeScriptObservedSwiftGame.colors.length, 14);
+assert.equal(live.details.typeScriptObservedCompletedGame.status, "GAME_COMPLETED");
 assert.equal(
-  live.details.completedGame.points.find(
+  live.details.typeScriptObservedCompletedGame.points.find(
     (point) => point.userId === live.details.users.swift.id,
   ).val,
   13,
 );
-assert.equal(live.details.completedGame.rooms[0].currentGameId, undefined);
+assert.equal(
+  live.details.typeScriptObservedCompletedGame.points.find(
+    (point) => point.userId === live.details.users.typeScript.id,
+  ).val,
+  1,
+);
+assert.equal(
+  live.details.typeScriptObservedCompletedGame.rooms[0].currentGameId,
+  undefined,
+);
 assert.equal(live.details.swift.typeScriptPointObservedBySwift.value, 1);
 assert.equal(live.details.swift.winningPointValue, 13);
 assert.equal(live.details.swift.currentGameIDAfterCompletion, undefined);
