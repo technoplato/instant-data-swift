@@ -10421,7 +10421,9 @@ struct InstantStoreTests {
     )
   }
 
-  @Test
+  // Source: pointfreeco/sqlite-data@0c79d7a5748fc6d9ce7a1ba2b50f31b175305049
+  // Examples/RemindersTests/SearchRemindersTests.swift
+  @Test("SQLiteData SearchRemindersTests.basics/showCompleted/deleteCompleted")
   func searchRemindersModelPortsBasicsShowCompletedAndDeleteCompleted() async throws {
     let fixture = try await upstreamRemindersFixture()
     var model = SearchRemindersModel(runtime: fixture.runtime, now: { fixture.now })
@@ -10628,7 +10630,9 @@ struct InstantStoreTests {
     expectNoDifference(model.searchResults.rows.map(\.reminder.title), ["Take out trash"])
   }
 
-  @Test
+  // Source: pointfreeco/sqlite-data@0c79d7a5748fc6d9ce7a1ba2b50f31b175305049
+  // Examples/RemindersTests/RemindersDetailsTests.swift
+  @Test("SQLiteData RemindersDetailsTests.basics/ordering")
   func remindersDetailModelPortsOrderingAndRichRows() async throws {
     let fixture = try await upstreamRemindersFixture()
     var model = RemindersDetailModel(
@@ -10678,7 +10682,7 @@ struct InstantStoreTests {
     ])
   }
 
-  @Test
+  @Test("SQLiteData RemindersDetailsTests.showCompleted")
   func remindersDetailModelPortsShowCompletedToggle() async throws {
     let fixture = try await upstreamRemindersFixture()
     var model = RemindersDetailModel(
@@ -10716,7 +10720,7 @@ struct InstantStoreTests {
     ])
   }
 
-  @Test
+  @Test("SQLiteData RemindersDetailsTests.move")
   func remindersDetailModelPortsMoveToManualOrdering() async throws {
     let fixture = try await upstreamRemindersFixture()
     var model = RemindersDetailModel(
@@ -10796,7 +10800,7 @@ struct InstantStoreTests {
     ])
   }
 
-  @Test
+  @Test("SQLiteData RemindersDetailsTests.all/completed/flagged/scheduled/today/tagged")
   func remindersDetailModelPortsSmartListsAndTags() async throws {
     let fixture = try await upstreamRemindersFixture()
     let someday = try #require(fixture.tags.first { $0.id == "someday" })
