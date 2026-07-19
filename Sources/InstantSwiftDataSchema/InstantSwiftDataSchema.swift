@@ -1049,7 +1049,7 @@ public enum InstantSchemaExamples {
           "readableRemindersLists": "auth.id in linkedData.ref('owner.id')",
           "writableRemindersLists": "auth.id in linkedData.ref('owner.id')",
           "ownedShares": "data.id == auth.id && actions.linkedData == 'create'",
-          "shareMemberships": "auth.id in linkedData.ref('share.owner.id')",
+          "shareMemberships": "actions.linkedData == 'create'",
         ],
         unlink: [
           "ownedRemindersLists": "data.id == auth.id",
@@ -1141,7 +1141,7 @@ public enum InstantSchemaExamples {
         link: [
           "owner": "actions.data == 'create' || auth.id in data.ref('owner.id')",
           "root": "actions.data == 'create' || auth.id in data.ref('owner.id')",
-          "memberships": "auth.id in data.ref('owner.id')",
+          "memberships": "actions.data == 'create' || data.id in auth.ref('$user.ownedShares.id')",
         ],
         unlink: [
           "owner": "auth.id in data.ref('owner.id')",
