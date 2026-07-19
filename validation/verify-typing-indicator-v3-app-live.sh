@@ -149,27 +149,22 @@ const frames = (peerID) => [
   { phase: "inactive", presence: { id: peerID, "chat-input": false } },
   { phase: "cleared", presence: { id: peerID, "chat-input": null } },
 ];
-const serverFrames = (peerID) => [
-  ...frames(peerID).slice(0, 3),
-  { phase: "cleared", presence: { id: peerID } },
-];
-
 assert.equal(live.ok, true);
 assert.equal(live.details.compilerWarningCount, 0);
 assert.deepStrictEqual(live.details.warnings, []);
 assert.deepStrictEqual(live.details.swift.publishedFrames, frames("swift-peer"));
-assert.deepStrictEqual(live.details.swift.observedFrames, serverFrames("typescript-peer"));
+assert.deepStrictEqual(live.details.swift.observedFrames, frames("typescript-peer"));
 assert.deepStrictEqual(live.details.swift.activePeerIDs, ["typescript-peer"]);
 assert.equal(live.details.swift.peerCountAfterDisconnect, 0);
 assert.deepStrictEqual(
   live.details.swift.typeScriptPatchNormalizations,
-  ["chat-input:null-to-absent"],
+  [],
 );
 assert.deepStrictEqual(live.details.typeScriptPublishedFrames, frames("typescript-peer"));
 assert.deepStrictEqual(live.details.typeScriptObservedSwiftFrames, frames("swift-peer"));
 assert.deepStrictEqual(
   live.details.typeScriptPatchNormalizations,
-  ["chat-input:null-to-absent"],
+  [],
 );
 assert.equal(schema.entityCount, 0);
 assert.equal(schema.linkCount, 0);

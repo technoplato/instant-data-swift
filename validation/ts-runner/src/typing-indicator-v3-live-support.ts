@@ -27,22 +27,17 @@ export function exactTypingIndicatorFrames(peerID: string): TypingIndicatorPrese
 export function typeScriptPatchObservedTypingIndicatorFrames(
   peerID: string,
 ): TypingIndicatorPresenceFrame[] {
-  const frames = exactTypingIndicatorFrames(peerID);
-  return [
-    ...frames.slice(0, 3),
-    { phase: "cleared", presence: { id: peerID } },
-  ];
+  return exactTypingIndicatorFrames(peerID);
 }
 
 export function phaseForTypingIndicatorPresence(
   value: Record<string, unknown>,
-  state: { sawInactive?: boolean } = {},
 ): TypingIndicatorPhase {
   if (typeof value.id !== "string") throw exactShapeError();
 
   const keys = Object.keys(value).sort();
   if (keys.length === 1 && keys[0] === "id") {
-    return state.sawInactive ? "cleared" : "initial";
+    return "initial";
   }
   if (keys.length !== 2 || keys[0] !== "chat-input" || keys[1] !== "id") {
     throw exactShapeError();

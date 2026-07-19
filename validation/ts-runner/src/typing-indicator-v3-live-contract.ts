@@ -107,16 +107,14 @@ try {
     inactive: deferred<Frame>(),
     cleared: deferred<Frame>(),
   };
-  let sawInactive = false;
   const unsubscribe = room.subscribePresence({}, (snapshot: any) => {
     const rawPeer = Object.values(snapshot.peers ?? {}).find(
       (value: any) => value?.id === "swift-peer",
     ) as Presence | undefined;
     if (!rawPeer) return;
     const peer = projectCanonicalTypingPeer(rawPeer as Record<string, unknown>).presence;
-    const phase = phaseForTypingIndicatorPresence(peer, { sawInactive });
+    const phase = phaseForTypingIndicatorPresence(peer);
     if (observedSwiftFrames.has(phase)) return;
-    if (phase === "inactive") sawInactive = true;
     const expected = expectedSwiftFrames.find((frame) => frame.phase === phase)!;
     assert.deepEqual(peer, expected.presence);
     const observed = { phase, presence: peer };
@@ -170,7 +168,7 @@ try {
     assert.equal(swiftEvidence.details.peerCountAfterDisconnect, 0);
     assert.deepEqual(
       swiftEvidence.details.typeScriptPatchNormalizations,
-      ["chat-input:null-to-absent"],
+      [],
     );
     assert.equal(swiftEvidence.details.connectionState, "authenticated");
     assert.deepEqual(warnings, []);
@@ -191,7 +189,7 @@ try {
         swift: swiftEvidence.details,
         typeScriptPublishedFrames: exactTypingIndicatorFrames("typescript-peer"),
         typeScriptObservedSwiftFrames: expectedSwiftFrames,
-        typeScriptPatchNormalizations: ["chat-input:null-to-absent"],
+        typeScriptPatchNormalizations: [],
         compilerWarningCount: warnings.length,
         warnings,
       },

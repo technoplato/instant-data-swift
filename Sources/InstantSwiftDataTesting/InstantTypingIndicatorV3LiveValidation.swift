@@ -213,7 +213,7 @@ public enum InstantTypingIndicatorV3LiveValidation {
         observedFrames: observedFrames,
         activePeerIDs: activePeerIDs,
         peerCountAfterDisconnect: peerCountAfterDisconnect,
-        typeScriptPatchNormalizations: ["chat-input:null-to-absent"],
+        typeScriptPatchNormalizations: [],
         connectionState: status.state.rawValue
       )
     )
@@ -259,10 +259,7 @@ public enum InstantTypingIndicatorV3LiveValidation {
       let presence = member.values.filter { key, _ in
         key == "id" || key == "chat-input"
       }
-      let serverNormalizedClear = expected.phase == "cleared"
-        && presence["id"] == expected.presence["id"]
-        && presence["chat-input"] == nil
-      if presence == expected.presence || serverNormalizedClear {
+      if presence == expected.presence {
         return InstantTypingIndicatorPresenceFrame(
           phase: expected.phase,
           presence: presence
