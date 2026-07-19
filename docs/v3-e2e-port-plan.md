@@ -344,6 +344,16 @@ As of 2026-07-19:
   post-port aggregate passes 1,083 Swift Testing cases across 90 suites, 28
   macro tests, the `app-builder-v3` build, and the complete TypeScript
   typecheck, contract, live-support, and fixture matrix.
+- Commits `1d77c27`, `a3238fe`, `f0daf86`, and `217c4a7` close the remaining
+  local live-reader stream packet. The runtime now fetches canonical signed
+  `stream-append` files in order while prefetching the next response, discards
+  overlap in bytes across file and inline segments, preserves split UTF-8
+  scalars, cancels active response bodies, advances reconnect state by fetched
+  bytes only after persistence, and stops after the upstream ten-retry budget.
+  Client-id and stream-id readers can start from an empty cache; the first
+  canonical append persists its server-resolved metadata and publishes
+  identical snapshots to both selector forms. The post-packet local gate passes
+  1,092 Swift Testing cases across 91 suites plus 28 macro tests.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -377,7 +387,7 @@ When sources disagree, use this order:
 | Current execution state, packet order, gates, and tag targets | `docs/v3-e2e-port-plan.md` |
 | Product contract and full definition of done | `docs/instant-swift-data-goals.md` |
 | Desired V3 API rules and decision log | `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` |
-| Next app target | Streams and the CloudKitDemo-equivalent sharing boundary; keep file-backed `stream-append` fetching and remote stream metadata bootstrap in their own stream packet |
+| Next app target | Streams: port the pinned AI-chat/resumable reader shape and prove fresh-app Swift-to-TypeScript plus TypeScript-to-Swift stream data, reconnect, cancellation, file-backed append, and metadata; then CloudKitDemo-equivalent sharing |
 | Completed SyncUps live gate | `validation/verify-syncups-v3-app-live.sh`, `Sources/InstantSwiftDataTesting/InstantSyncUpsV3LiveValidation.swift`, and `validation/ts-runner/src/syncups-v3-*.ts` |
 | Completed App Builder and Storage live gate | `validation/verify-app-builder-v3-app-live.sh`, `Sources/InstantSwiftDataTesting/InstantAppBuilderV3LiveValidation.swift`, `Sources/InstantSwiftDataCore/InstantStorageTransport.swift`, and `validation/ts-runner/src/app-builder-v3-*.ts` |
 | Current generated recording contract | `InstantSchemaExamples.recordingActionDocument`, `recordingActionValidationPermissions`, and `--example recording-action` |
@@ -1061,10 +1071,22 @@ unsupported non-indexed server order.
 The post-port aggregate passes 1,083 Swift Testing cases across 90 suites, 28
 macro tests, the runnable app build, and the complete TypeScript matrix.
 
-Next, resume the remaining Packet 8 matrix with streams, then the
-CloudKitDemo-equivalent sharing boundary. File-backed `stream-append` fetching
-and remote stream metadata bootstrap are the immediate stream gaps. Do not
-create the `v0.4.0-apps-e2e` tag until the full required app matrix passes.
+The local stream runtime packet is complete through `217c4a7`. It includes
+file-backed append fetching, cross-segment byte overlap, split UTF-8 handling,
+next-file prefetch, cancellation cleanup, the canonical ten-retry budget,
+post-persistence reconnect offsets, and remote metadata bootstrap for both
+client-id and stream-id readers. The complete local gate passes 1,092 Swift
+Testing cases across 91 suites plus 28 macro tests.
+
+Next, add the Packet 8 stream app/live gate from the pinned
+`upstream/instant/examples/ai-chat` and `client/packages/resumable-stream`
+contracts. The fresh app must prove Swift-to-TypeScript and
+TypeScript-to-Swift ordered UTF-8 content, server-resolved stream ids and
+metadata, reconnect from the exact fetched-byte offset, file-backed append
+consumption, cancellation cleanup, and a bounded failure case with zero
+compiler/runtime warnings. Then continue to the CloudKitDemo-equivalent
+sharing boundary. Do not create the `v0.4.0-apps-e2e` tag until the full
+required app matrix passes.
 
 The product-payload mismatch is resolved: playback presence stores and encodes
 `offsetSeconds: Double`, offers `Duration` as a computed product convenience,
@@ -1072,6 +1094,5 @@ and includes optional `focusedSegmentID`. Typed `InstantID` values encode as
 canonical strings while retaining legacy keyed-shape decoding. The live room
 gate must assert this exact presence shape.
 
-File-backed `stream-append` fetching and remote stream metadata bootstrap remain
-important live-stream work, but they do not block the recording-screen fixture
-and should stay in their own packet.
+The recording-screen fixture remains independent of the stream app gate; its
+stream-cache measurement does not replace the required cross-SDK stream proof.
