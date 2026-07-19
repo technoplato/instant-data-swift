@@ -299,7 +299,14 @@ async function waitForList(
     last = result.data;
     const rawList = result.data.remindersLists?.[0];
     if (rawList) {
-      const list = projectCanonicalRemindersV3List(rawList);
+      let list: CanonicalList;
+      try {
+        list = projectCanonicalRemindersV3List(rawList);
+      } catch (error) {
+        throw new Error(
+          `Could not project canonical Reminders list: ${String(error)}; raw=${JSON.stringify(rawList)}`,
+        );
+      }
       if (predicate(list)) return list;
     }
     await delay();
