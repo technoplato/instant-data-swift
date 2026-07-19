@@ -486,6 +486,87 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliGeneratesAndVerifiesExactReactionsContract() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    let schemaURL = homeURL.appendingPathComponent("reactions.schema.ts")
+    let permissionsURL = homeURL.appendingPathComponent("reactions.perms.ts")
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let generatedSchema = try JSONDecoder().decode(
+      CLIGeneratedArtifactOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "schema", "generate", "--example", "reactions",
+            "--to", schemaURL.path,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(generatedSchema.example, "reactions")
+    let schemaSource = try String(contentsOf: schemaURL, encoding: .utf8)
+    #expect(schemaSource.contains("\"topics-example\""))
+    #expect(schemaSource.contains("emoji: i.entity"))
+    #expect(schemaSource.contains("name: i.string()"))
+    #expect(schemaSource.contains("directionAngle: i.number()"))
+    #expect(schemaSource.contains("rotationAngle: i.number()"))
+
+    let schemaVerify = try JSONDecoder().decode(
+      CLISchemaVerifyOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "schema", "verify", "--example", "reactions",
+            "--from", schemaURL.path,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(schemaVerify.example, "reactions")
+    expectNoDifference(schemaVerify.entityCount, 0)
+    expectNoDifference(schemaVerify.linkCount, 0)
+    expectNoDifference(schemaVerify.warnings, [])
+
+    let generatedPermissions = try JSONDecoder().decode(
+      CLIGeneratedArtifactOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "perms", "generate", "--example", "reactions",
+            "--to", permissionsURL.path,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(generatedPermissions.example, "reactions")
+
+    let permissionsVerify = try JSONDecoder().decode(
+      CLIPermissionsVerifyOutput.self,
+      from: Data(
+        try runCLI(
+          [
+            "perms", "verify", "--example", "reactions",
+            "--from", permissionsURL.path,
+            "--json",
+          ],
+          homeURL: homeURL
+        ).utf8
+      )
+    )
+    expectNoDifference(permissionsVerify.example, "reactions")
+    expectNoDifference(permissionsVerify.namespaceCount, 0)
+    expectNoDifference(permissionsVerify.allowRuleCount, 0)
+  }
+
+  @Test
   func cliGeneratesAndVerifiesCanonicalRecordingActionContract() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
