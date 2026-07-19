@@ -3,6 +3,12 @@ import Foundation
 import InstantSwiftData
 import VoiceTrailV3App
 
+@MainActor
+private final class VoiceTrailMessageOutcome {
+  var accepted = false
+  var failure: InstantError?
+}
+
 public struct InstantVoiceTrailV3CaptureLiveValidationDetails: Codable, Equatable, Sendable {
   public var direction: String
   public var userID: String
@@ -79,7 +85,8 @@ public enum InstantVoiceTrailV3CaptureLiveValidation {
       appID: appID,
       apiURI: apiURI,
       websocketURI: websocketURI,
-      persistenceURL: persistenceURL ?? FileManager.default.temporaryDirectory
+      persistenceURL: persistenceURL
+        ?? FileManager.default.temporaryDirectory
         .appendingPathComponent("instant-voice-trail-v3-capture-\(UUID().uuidString).sqlite"),
       initialAttributes: VoiceTrailSchema.attributes,
       liveShareContract: .v3CaptureRecordings
@@ -98,39 +105,39 @@ public enum InstantVoiceTrailV3CaptureLiveValidation {
     _ = try await client.connect()
     try await waitForAuthenticated(client)
 
-    let prepared = try await CreateVoiceTrailRecording(
-      recordingID: InstantID(rawValue: recordingID),
-      transcriptionID: InstantID(rawValue: transcriptionID),
-      ownerID: InstantID(rawValue: expectedUserID),
-      deviceID: deviceID,
-      title: title
-    ).prepare(using: client)
-    _ = try await client.transact {
-      for mutation in prepared.mutations { mutation }
-    }
-    try await waitForOutboxDrain(client)
+    try await sendAndRequireServerAcceptance(
+      CreateVoiceTrailRecording(
+        recordingID: InstantID(rawValue: recordingID),
+        transcriptionID: InstantID(rawValue: transcriptionID),
+        ownerID: InstantID(rawValue: expectedUserID),
+        deviceID: deviceID,
+        title: title
+      ),
+      using: client,
+      operation: "create VoiceTrail V3 recording"
+    )
 
-    let attachment = try await CreateVoiceTrailAttachment(
-      attachmentID: InstantID(rawValue: attachmentID),
-      recordingID: InstantID(rawValue: recordingID),
-      kind: attachmentKind,
-      contents: attachmentContents,
-      offsetMilliseconds: attachmentOffsetMilliseconds
-    ).prepare(using: client)
-    _ = try await client.transact {
-      for mutation in attachment.mutations { mutation }
-    }
-    try await waitForOutboxDrain(client)
+    try await sendAndRequireServerAcceptance(
+      CreateVoiceTrailAttachment(
+        attachmentID: InstantID(rawValue: attachmentID),
+        recordingID: InstantID(rawValue: recordingID),
+        kind: attachmentKind,
+        contents: attachmentContents,
+        offsetMilliseconds: attachmentOffsetMilliseconds
+      ),
+      using: client,
+      operation: "create VoiceTrail V3 attachment"
+    )
 
-    let finished = try await FinishVoiceTrailRecording(
-      recordingID: InstantID(rawValue: recordingID),
-      transcriptionID: InstantID(rawValue: transcriptionID),
-      durationMilliseconds: durationMilliseconds
-    ).prepare(using: client)
-    _ = try await client.transact {
-      for mutation in finished.mutations { mutation }
-    }
-    try await waitForOutboxDrain(client)
+    try await sendAndRequireServerAcceptance(
+      FinishVoiceTrailRecording(
+        recordingID: InstantID(rawValue: recordingID),
+        transcriptionID: InstantID(rawValue: transcriptionID),
+        durationMilliseconds: durationMilliseconds
+      ),
+      using: client,
+      operation: "finish VoiceTrail V3 recording"
+    )
 
     let pendingMutationCount = await client.pendingMutations()
       .filter { $0.status == .pending }
@@ -195,17 +202,39 @@ public enum InstantVoiceTrailV3CaptureLiveValidation {
     )
   }
 
-  private static func waitForOutboxDrain(_ client: InstantSwiftDataClient) async throws {
-    let deadline = ContinuousClock.now + .seconds(15)
-    while ContinuousClock.now < deadline {
-      _ = try await client.flushPendingMutations()
-      if await client.pendingMutations().isEmpty { return }
-      try await Task.sleep(for: .milliseconds(25))
-    }
-    let count = await client.pendingMutations().count
-    throw validationFailure(
-      operation: "drain VoiceTrail V3 capture outbox",
-      message: "Expected zero pending mutations, found \(count)."
+  private static func sendAndRequireServerAcceptance<Message: InstantMessage>(
+    _ message: Message,
+    using client: InstantSwiftDataClient,
+    operation: String
+  ) async throws {
+    let outcome = await MainActor.run { VoiceTrailMessageOutcome() }
+    let task = client.send(
+      message,
+      onServerAccepted: { _ in outcome.accepted = true },
+      onFailure: { outcome.failure = $0 }
     )
+    defer { task.cancel() }
+
+    try await withThrowingTaskGroup(of: Void.self) { group in
+      group.addTask { await task.value }
+      group.addTask {
+        try await Task.sleep(for: .seconds(15))
+        throw validationFailure(
+          operation: operation,
+          message: "Timed out waiting for server acceptance."
+        )
+      }
+      _ = try await group.next()
+      group.cancelAll()
+    }
+
+    let result = await MainActor.run { (outcome.accepted, outcome.failure) }
+    if let failure = result.1 { throw failure }
+    guard result.0 else {
+      throw validationFailure(
+        operation: operation,
+        message: "The message completed without server acceptance."
+      )
+    }
   }
 }
