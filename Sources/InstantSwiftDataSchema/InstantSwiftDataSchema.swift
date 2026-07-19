@@ -1091,14 +1091,6 @@ public enum InstantSchemaExamples {
           .update: "isOwner || isWriter",
           .delete: "isOwner || isWriter",
         ],
-        link: [
-          "list": "actions.data == 'create' || auth.id in data.ref('list.owner.id') || auth.id in data.ref('list.writers.id')",
-          "tags": "actions.data == 'create' || auth.id in data.ref('list.owner.id') || auth.id in data.ref('list.writers.id')",
-        ],
-        unlink: [
-          "list": "auth.id in data.ref('list.owner.id') || auth.id in data.ref('list.writers.id')",
-          "tags": "auth.id in data.ref('list.owner.id') || auth.id in data.ref('list.writers.id')",
-        ],
         bind: remindersV3ChildRoleBindings
       ),
       InstantNamespacePermissions(

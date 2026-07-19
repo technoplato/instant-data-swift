@@ -197,13 +197,7 @@ struct RemindersV3ContractTests {
         InstantPermissionBinding("isReader", "auth.id in data.ref('list.readers.id')"),
       ]
     )
-    expectNoDifference(
-      reminders.link,
-      [
-        "list": "actions.data == 'create' || auth.id in data.ref('list.owner.id') || auth.id in data.ref('list.writers.id')",
-        "tags": "actions.data == 'create' || auth.id in data.ref('list.owner.id') || auth.id in data.ref('list.writers.id')",
-      ]
-    )
+    expectNoDifference(reminders.link, [:])
   }
 
   @Test("Tags inherit visibility from linked reminder list roots")
