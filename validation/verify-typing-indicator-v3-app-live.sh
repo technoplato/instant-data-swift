@@ -119,7 +119,7 @@ pnpm --dir "${RUNNER}" exec tsc \
   "${PULL_DIR}/instant.perms.ts"
 
 INSTANT_SWIFT_DATA_TYPING_INDICATOR_SCHEMA_PATH="${PUSH_DIR}/instant.schema.ts" \
-  pnpm --dir "${RUNNER}" live:typing-indicator-v3 \
+  pnpm --dir "${RUNNER}" exec tsx src/typing-indicator-v3-live-contract.ts \
   >"${RESULTS_DIR}/typing-indicator-v3.json"
 
 ROOT="${ROOT}" \
