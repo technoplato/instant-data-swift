@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  customCursorsV3AppContract,
+  customCursorAvatarURL,
   customCursorPresence,
-  nameOnlyCustomCursorPresence,
+  customCursorsV3AppContract,
+  presenceAfterCursorClear,
 } from "./custom-cursors-v3-app-contract.js";
 
-test("Custom Cursors V3 preserves name plus exact dynamic cursor presence", () => {
+test("Custom Cursors V3 preserves the exact canonical name plus dynamic cursor shape", () => {
   assert.deepEqual(customCursorsV3AppContract, {
     upstream: {
       repository: "https://github.com/instantdb/instant",
@@ -19,6 +20,13 @@ test("Custom Cursors V3 preserves name plus exact dynamic cursor presence", () =
       type: "cursors-example",
       id: "124",
       spaceID: "cursors-space-default--cursors-example-124",
+    },
+    presence: {
+      nameKey: "name",
+    },
+    avatar: {
+      endpoint: "/api/avatar",
+      size: 40,
     },
     fixtures: {
       swift: {
@@ -46,17 +54,20 @@ test("Custom Cursors V3 preserves name plus exact dynamic cursor presence", () =
   });
 });
 
-test("Custom Cursors V3 clear retains name-only rendering presence", () => {
+test("Custom Cursors V3 publishes name outside the cursor payload and retains it on clear", () => {
   const fixture = customCursorsV3AppContract.fixtures.swift;
-  assert.deepEqual(
-    customCursorPresence(fixture.name, fixture.cursor),
-    {
-      name: fixture.name,
-      [customCursorsV3AppContract.room.spaceID]: fixture.cursor,
-    },
-  );
-  assert.deepEqual(
-    nameOnlyCustomCursorPresence(fixture.name),
-    { name: fixture.name },
+  assert.deepEqual(customCursorPresence(fixture.name, fixture.cursor), {
+    name: "swift-custom-avatar",
+    "cursors-space-default--cursors-example-124": fixture.cursor,
+  });
+  assert.deepEqual(presenceAfterCursorClear(fixture.name), {
+    name: "swift-custom-avatar",
+  });
+});
+
+test("Custom Cursors V3 renders the canonical encoded 40-point avatar URL", () => {
+  assert.equal(
+    customCursorAvatarURL("Swift & TypeScript"),
+    "/api/avatar?name=Swift%20%26%20TypeScript&size=40",
   );
 });
