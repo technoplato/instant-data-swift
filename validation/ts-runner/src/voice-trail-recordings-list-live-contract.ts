@@ -107,6 +107,21 @@ try {
   }));
   assert.equal(memberList.v3_capture_recordings.length, 1);
   assert.equal(memberList.v3_capture_recordings[0]?.id, ids.recordingID);
+  const readerUpdateRejection = await rejected(
+    memberDB.transact(
+      memberDB.tx.v3_capture_recordings[ids.recordingID].update({
+        title: "Reader must not update",
+      }),
+    ),
+  );
+  assert.match(readerUpdateRejection, /permission|recording|update/i);
+  const unchangedAfterRejection = await ownerDB.query(
+    recordingQuery(ids.recordingID, users.owner.id),
+  );
+  assert.equal(
+    unchangedAfterRejection.v3_capture_recordings[0]?.title,
+    "Canonical shared recording",
+  );
 
   const ownerRows = await runSwift("owner", users.owner.token, users.owner.id);
   assert.deepStrictEqual(ownerRows.map((row) => row.details.stage), ["owner", "cancelled"]);
@@ -172,6 +187,7 @@ try {
       ),
       ownerStages: ownerRows.map((row) => row.details.stage),
       memberStages: memberRows.map((row) => row.details.stage),
+      readerUpdateRejection,
       compilerWarningCount: warnings.length,
       warnings,
     },
@@ -309,4 +325,13 @@ function requiredEnvironment(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`Missing ${name}.`);
   return value;
+}
+
+async function rejected(promise: Promise<unknown>): Promise<string> {
+  try {
+    await promise;
+  } catch (error) {
+    return error instanceof Error ? error.message : String(error);
+  }
+  throw new Error("Expected the operation to be rejected.");
 }

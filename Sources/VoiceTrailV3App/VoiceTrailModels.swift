@@ -450,9 +450,14 @@ public struct VoiceTrailTranscription: Hashable, Codable, InstantEntityModel {
 
 public struct VoiceTrailRecordingCreated: Hashable, Sendable {
   public var recordingID: InstantID<VoiceTrailRecording>
+  public var transcriptionID: InstantID<VoiceTrailTranscription>
 
-  public init(recordingID: InstantID<VoiceTrailRecording>) {
+  public init(
+    recordingID: InstantID<VoiceTrailRecording>,
+    transcriptionID: InstantID<VoiceTrailTranscription>
+  ) {
     self.recordingID = recordingID
+    self.transcriptionID = transcriptionID
   }
 }
 
@@ -482,7 +487,10 @@ public struct CreateVoiceTrailRecording: InstantMessage {
   {
     _ = client
     return InstantPreparedMessage(
-      change: VoiceTrailRecordingCreated(recordingID: recordingID)
+      change: VoiceTrailRecordingCreated(
+        recordingID: recordingID,
+        transcriptionID: transcriptionID
+      )
     ) {
       VoiceTrailRecording.create(
         id: recordingID,
@@ -496,6 +504,178 @@ public struct CreateVoiceTrailRecording: InstantMessage {
         id: transcriptionID,
         VoiceTrailTranscription.recording.set(recordingID),
         VoiceTrailTranscription.state.set("processing")
+      )
+    }
+  }
+}
+
+public struct VoiceTrailAttachment: Hashable, Codable, InstantEntityModel {
+  public var id: InstantID<Self>
+  public var recordingID: InstantID<VoiceTrailRecording>
+  public var kind: String
+  public var contents: String
+  public var offsetMilliseconds: Int
+
+  public static let instantNamespace = "v3_capture_attachments"
+  public static let recording = InstantAttributePath<Self, InstantID<VoiceTrailRecording>>(
+    "recording"
+  )
+  public static let kind = InstantAttributePath<Self, String>("kind")
+  public static let contents = InstantAttributePath<Self, String>("contents")
+  public static let offsetMilliseconds = InstantAttributePath<Self, Int>("offsetMilliseconds")
+  public static let instantAttributes = [
+    InstantAttribute.primaryKey(namespace: instantNamespace),
+    InstantAttribute(
+      id: "v3_capture_attachments/recording",
+      namespace: instantNamespace,
+      name: "recording",
+      valueType: .ref,
+      isRequired: true,
+      isIndexed: true,
+      forwardIdentity: "v3_capture_attachments/recording",
+      reverseIdentity: "v3_capture_recordings/attachments",
+      linkNamespace: VoiceTrailRecording.instantNamespace,
+      onDelete: .cascade
+    ),
+    InstantAttribute(
+      id: "v3_capture_attachments/kind",
+      namespace: instantNamespace,
+      name: "kind",
+      valueType: .string,
+      isIndexed: true
+    ),
+    InstantAttribute(
+      id: "v3_capture_attachments/contents",
+      namespace: instantNamespace,
+      name: "contents",
+      valueType: .string
+    ),
+    InstantAttribute(
+      id: "v3_capture_attachments/offsetMilliseconds",
+      namespace: instantNamespace,
+      name: "offsetMilliseconds",
+      valueType: .number,
+      isIndexed: true
+    ),
+  ]
+
+  public init(snapshot: InstantEntitySnapshot) throws {
+    guard case let .ref(recordingID) = snapshot.values["recording"]?.first,
+      case let .string(kind) = snapshot.values["kind"]?.first,
+      case let .string(contents) = snapshot.values["contents"]?.first,
+      case let .number(offset) = snapshot.values["offsetMilliseconds"]?.first,
+      let offsetMilliseconds = Int(exactly: offset)
+    else {
+      throw InstantError(
+        code: .decodeFailed,
+        operation: "decode VoiceTrail attachment",
+        namespace: Self.instantNamespace,
+        localID: snapshot.id,
+        message: "Expected recording, kind, contents, and exact offset values.",
+        recovery: "Keep the app attachment model aligned with the generated VoiceTrail schema."
+      )
+    }
+    id = InstantID(rawValue: snapshot.id)
+    self.recordingID = InstantID(rawValue: recordingID)
+    self.kind = kind
+    self.contents = contents
+    self.offsetMilliseconds = offsetMilliseconds
+  }
+}
+
+public struct VoiceTrailAttachmentCreated: Hashable, Sendable {
+  public var attachmentID: InstantID<VoiceTrailAttachment>
+
+  public init(attachmentID: InstantID<VoiceTrailAttachment>) {
+    self.attachmentID = attachmentID
+  }
+}
+
+public struct CreateVoiceTrailAttachment: InstantMessage {
+  public var attachmentID: InstantID<VoiceTrailAttachment>
+  public var recordingID: InstantID<VoiceTrailRecording>
+  public var kind: String
+  public var contents: String
+  public var offsetMilliseconds: Int
+
+  public init(
+    attachmentID: InstantID<VoiceTrailAttachment>,
+    recordingID: InstantID<VoiceTrailRecording>,
+    kind: String,
+    contents: String,
+    offsetMilliseconds: Int
+  ) {
+    self.attachmentID = attachmentID
+    self.recordingID = recordingID
+    self.kind = kind
+    self.contents = contents
+    self.offsetMilliseconds = offsetMilliseconds
+  }
+
+  public func prepare(using client: InstantSwiftDataClient) async throws
+    -> InstantPreparedMessage<VoiceTrailAttachmentCreated>
+  {
+    _ = client
+    return InstantPreparedMessage(
+      change: VoiceTrailAttachmentCreated(attachmentID: attachmentID)
+    ) {
+      VoiceTrailAttachment.create(
+        id: attachmentID,
+        VoiceTrailAttachment.recording.set(recordingID),
+        VoiceTrailAttachment.kind.set(kind),
+        VoiceTrailAttachment.contents.set(contents),
+        VoiceTrailAttachment.offsetMilliseconds.set(offsetMilliseconds)
+      )
+    }
+  }
+}
+
+public struct VoiceTrailRecordingFinished: Hashable, Sendable {
+  public var recordingID: InstantID<VoiceTrailRecording>
+  public var durationMilliseconds: Int
+
+  public init(
+    recordingID: InstantID<VoiceTrailRecording>,
+    durationMilliseconds: Int
+  ) {
+    self.recordingID = recordingID
+    self.durationMilliseconds = durationMilliseconds
+  }
+}
+
+public struct FinishVoiceTrailRecording: InstantMessage {
+  public var recordingID: InstantID<VoiceTrailRecording>
+  public var transcriptionID: InstantID<VoiceTrailTranscription>
+  public var durationMilliseconds: Int
+
+  public init(
+    recordingID: InstantID<VoiceTrailRecording>,
+    transcriptionID: InstantID<VoiceTrailTranscription>,
+    durationMilliseconds: Int
+  ) {
+    self.recordingID = recordingID
+    self.transcriptionID = transcriptionID
+    self.durationMilliseconds = durationMilliseconds
+  }
+
+  public func prepare(using client: InstantSwiftDataClient) async throws
+    -> InstantPreparedMessage<VoiceTrailRecordingFinished>
+  {
+    _ = client
+    return InstantPreparedMessage(
+      change: VoiceTrailRecordingFinished(
+        recordingID: recordingID,
+        durationMilliseconds: durationMilliseconds
+      )
+    ) {
+      VoiceTrailRecording.updateExisting(
+        id: recordingID,
+        VoiceTrailRecording.state.set("finished"),
+        VoiceTrailRecording.durationMilliseconds.set(durationMilliseconds)
+      )
+      VoiceTrailTranscription.updateExisting(
+        id: transcriptionID,
+        VoiceTrailTranscription.state.set("ready")
       )
     }
   }

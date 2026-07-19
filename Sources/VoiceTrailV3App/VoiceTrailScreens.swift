@@ -194,6 +194,8 @@ import InstantSwiftData
 
     @State private var title = "New recording"
     @State private var message = "Ready"
+    @State private var activeRecordingID: InstantID<VoiceTrailRecording>?
+    @State private var activeTranscriptionID: InstantID<VoiceTrailTranscription>?
 
     public init() {}
 
@@ -204,6 +206,12 @@ import InstantSwiftData
         Text(message)
         Button("Start recording", action: startRecordingButtonTapped)
           .disabled(auth.user == nil || deviceID == nil)
+        Button("Capture screenshot", action: screenshotButtonTapped)
+          .disabled(activeRecordingID == nil)
+        Button("Copy text attachment", action: copiedTextButtonTapped)
+          .disabled(activeRecordingID == nil)
+        Button("Stop recording", action: stopRecordingButtonTapped)
+          .disabled(activeRecordingID == nil || activeTranscriptionID == nil)
       }
     }
 
@@ -222,9 +230,57 @@ import InstantSwiftData
           title: title
         ),
         onOptimisticCommit: { change in
+          activeRecordingID = change.recordingID
+          activeTranscriptionID = change.transcriptionID
           message = "Recording \(change.recordingID.rawValue) started"
         },
         onServerAccepted: { _ in message = "Recording synced" },
+        onFailure: { error in message = error.recoveryMessage }
+      )
+    }
+
+    private func screenshotButtonTapped() {
+      createAttachment(kind: "screenshot", contents: "capture.png", offsetMilliseconds: 2_500)
+    }
+
+    private func copiedTextButtonTapped() {
+      createAttachment(kind: "text", contents: "Copied notes", offsetMilliseconds: 3_000)
+    }
+
+    private func createAttachment(
+      kind: String,
+      contents: String,
+      offsetMilliseconds: Int
+    ) {
+      guard let activeRecordingID else { return }
+      db.send(
+        CreateVoiceTrailAttachment(
+          attachmentID: InstantID(rawValue: uuid().uuidString.lowercased()),
+          recordingID: activeRecordingID,
+          kind: kind,
+          contents: contents,
+          offsetMilliseconds: offsetMilliseconds
+        ),
+        onOptimisticCommit: { change in
+          message = "Attachment \(change.attachmentID.rawValue) added"
+        },
+        onServerAccepted: { _ in message = "Attachment synced" },
+        onFailure: { error in message = error.recoveryMessage }
+      )
+    }
+
+    private func stopRecordingButtonTapped() {
+      guard let activeRecordingID, let activeTranscriptionID else { return }
+      db.send(
+        FinishVoiceTrailRecording(
+          recordingID: activeRecordingID,
+          transcriptionID: activeTranscriptionID,
+          durationMilliseconds: 12_750
+        ),
+        onOptimisticCommit: { change in
+          message = "Finished at \(change.durationMilliseconds) ms"
+        },
+        onServerAccepted: { _ in message = "Finished recording synced" },
         onFailure: { error in message = error.recoveryMessage }
       )
     }

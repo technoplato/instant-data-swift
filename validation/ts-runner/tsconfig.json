@@ -37,6 +37,7 @@
     "src/voice-trail-sdk-contract.test.ts",
     "src/voice-trail-runtime-schema.ts",
     "src/voice-trail-recordings-list-live-contract.ts",
+    "src/voice-trail-v3-capture-live-contract.ts",
     "src/voice-trail-v3-app-contract.ts",
     "src/voice-trail-v3-app-contract.test.ts"
   ]

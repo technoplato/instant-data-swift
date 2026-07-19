@@ -264,6 +264,64 @@ struct InstantSwiftDataValidationRunner {
         try writeJSONLine(row)
       }
 
+    case .liveVoiceTrailV3Capture:
+      let environment = ProcessInfo.processInfo.environment
+      let appID = try requiredEnvironment(
+        "INSTANT_APP_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let refreshToken = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_VOICE_TRAIL_V3_REFRESH_TOKEN",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let userID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_VOICE_TRAIL_V3_USER_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let recordingID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_VOICE_TRAIL_V3_RECORDING_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let transcriptionID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_VOICE_TRAIL_V3_TRANSCRIPTION_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let title = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_VOICE_TRAIL_V3_TITLE",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let deviceID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_VOICE_TRAIL_V3_DEVICE_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let apiURI = URL(
+        string: environment["INSTANT_API_URI"]
+          ?? InstantRuntimeConfiguration.defaultAPIURI.absoluteString
+      ) ?? InstantRuntimeConfiguration.defaultAPIURI
+      let websocketURI = URL(
+        string: environment["INSTANT_WEBSOCKET_URI"]
+          ?? InstantRuntimeConfiguration.defaultWebSocketURI.absoluteString
+      ) ?? InstantRuntimeConfiguration.defaultWebSocketURI
+      let row = try await InstantVoiceTrailV3CaptureLiveValidation.run(
+        appID: appID,
+        apiURI: apiURI,
+        websocketURI: websocketURI,
+        refreshToken: refreshToken,
+        expectedUserID: userID,
+        recordingID: recordingID,
+        transcriptionID: transcriptionID,
+        title: title,
+        deviceID: deviceID
+      )
+      try writeJSONLine(row)
+
     case .liveAuthInvalidation:
       let environment = ProcessInfo.processInfo.environment
       let appID = try requiredEnvironment("INSTANT_APP_ID", environment: environment)

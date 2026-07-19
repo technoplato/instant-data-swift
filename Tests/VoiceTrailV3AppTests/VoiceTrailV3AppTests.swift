@@ -114,5 +114,38 @@ struct VoiceTrailV3AppTests {
     expectNoDifference(transcription.id, transcriptionID)
     expectNoDifference(transcription.recordingID, recordingID)
     expectNoDifference(transcription.state, "processing")
+
+    let attachmentID = InstantID<VoiceTrailAttachment>(rawValue: "attachment-app")
+    let attachment = try await CreateVoiceTrailAttachment(
+      attachmentID: attachmentID,
+      recordingID: recordingID,
+      kind: "screenshot",
+      contents: "capture.png",
+      offsetMilliseconds: 2_500
+    ).prepare(using: client)
+    let finished = try await FinishVoiceTrailRecording(
+      recordingID: recordingID,
+      transcriptionID: transcriptionID,
+      durationMilliseconds: 12_750
+    ).prepare(using: client)
+    _ = try await client.transact {
+      for mutation in attachment.mutations { mutation }
+      for mutation in finished.mutations { mutation }
+    }
+
+    try await recordings.load(using: client)
+    try await transcriptions.load(using: client)
+    let attachments = FetchAll(VoiceTrailAttachment.query)
+    try await attachments.load(using: client)
+
+    expectNoDifference(recordings.wrappedValue.first?.state, "finished")
+    expectNoDifference(recordings.wrappedValue.first?.durationMilliseconds, 12_750)
+    expectNoDifference(transcriptions.wrappedValue.first?.state, "ready")
+    let storedAttachment = try #require(attachments.wrappedValue.first)
+    expectNoDifference(storedAttachment.id, attachmentID)
+    expectNoDifference(storedAttachment.recordingID, recordingID)
+    expectNoDifference(storedAttachment.kind, "screenshot")
+    expectNoDifference(storedAttachment.contents, "capture.png")
+    expectNoDifference(storedAttachment.offsetMilliseconds, 2_500)
   }
 }

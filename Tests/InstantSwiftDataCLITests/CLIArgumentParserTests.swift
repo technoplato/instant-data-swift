@@ -3313,6 +3313,10 @@ struct CLIArgumentParserTests {
       try parseValidationRunner(["--live-preferences"]),
       .livePreferences
     )
+    expectNoDifference(
+      try parseValidationRunner(["--live-voice-trail-v3-capture"]),
+      .liveVoiceTrailV3Capture
+    )
     expectNoDifference(try parseValidationRunner(["--typed-drafts"]), .typedDrafts)
     expectNoDifference(try parseValidationRunner(["--platform-adapters"]), .platformAdapters)
     expectNoDifference(try parseValidationRunner(["--syncups-recording"]), .syncUpsRecording)
@@ -3376,6 +3380,10 @@ struct CLIArgumentParserTests {
       CLIValidationRunnerInvocation.livePreferences.appID,
       "live-preferences"
     )
+    expectNoDifference(
+      CLIValidationRunnerInvocation.liveVoiceTrailV3Capture.caseID,
+      "validation.live.voice-trail-v3-capture"
+    )
     expectNoDifference(CLIValidationRunnerInvocation.coverage.appID, "local-validation")
   }
 
@@ -3394,6 +3402,7 @@ struct CLIArgumentParserTests {
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-auth-invalidation"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-playback-room"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-preferences"))
+    #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-voice-trail-v3-capture"))
     try expectValidationRunnerParseError(
       ["--remote"],
       description: CLIValidationRunnerUsage.validationRunner
