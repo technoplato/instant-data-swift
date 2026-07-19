@@ -773,7 +773,9 @@ The Mobile Chat app boundary is complete through `5f3276a`. The desired syntax
 is no longer an open design question for this slice: the app target compiles it,
 the source-first schema and live-evidence tests pin it, and the clean getadb gate
 proves it against canonical TypeScript SDK 1.0.49. Evidence is at
-`/tmp/instant-data-swift-mobile-chat-v3-20260719T021910Z/evidence.json`.
+`/tmp/instant-data-swift-mobile-chat-v3-20260719T022106Z/evidence.json`. Full
+verification is green at 939 Swift Testing cases across 48 suites, 28 macro
+tests, and the complete TypeScript typecheck, contract, and fixture matrix.
 
 Next, begin the presence/topic recipe slice. Before changing production or app
 code, pin the exact upstream recipe/helper source and port its source-of-truth
