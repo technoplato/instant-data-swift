@@ -259,7 +259,7 @@ try {
       },
       typing: mobileChatV3AppContract.room.swiftTyping,
       emoji: mobileChatV3AppContract.room.swiftReaction,
-      peerCountAfterDisconnect: 1,
+      peerCountAfterDisconnect: 0,
       receivedPresence: typeScriptPresence,
       receivedTyping: mobileChatV3AppContract.room.typeScriptTyping,
       receivedEmoji: mobileChatV3AppContract.room.typeScriptReaction,
@@ -333,7 +333,7 @@ try {
           observedSwiftPresence: swiftPresence,
           observedSwiftTyping: swiftTyping,
           observedSwiftReaction: swiftReaction,
-          peerCountAfterDisconnect: 1,
+          observedSwiftPeerCountAfterDisconnect: 1,
         },
         permissions: {
           crossUserUpdateRejected: true,

@@ -174,6 +174,7 @@ assert.deepStrictEqual(live.details.room, {
   },
   observedSwiftTyping: { isTyping: true },
   observedSwiftReaction: { name: "wave", directionAngle: 90, rotationAngle: 180 },
+  observedSwiftPeerCountAfterDisconnect: 1,
   roomType: "chat",
   roomID: live.details.swift.channelID,
   peerCount: 2,
@@ -183,7 +184,7 @@ assert.deepStrictEqual(live.details.room, {
   },
   typing: { isTyping: true },
   emoji: { name: "wave", directionAngle: 90, rotationAngle: 180 },
-  peerCountAfterDisconnect: 1,
+  peerCountAfterDisconnect: 0,
   receivedPresence: {
     profileId: live.details.typeScriptCreated.profileID,
     displayName: "TypeScript Chatter",

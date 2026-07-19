@@ -29,7 +29,7 @@ struct InstantMobileChatV3LiveValidationTests {
   @Test
   func roomEvidenceDecodesExactPresenceTypingEmojiAndCleanup() throws {
     let data = Data(
-      #"{"roomType":"chat","roomID":"00000000-0000-4000-8000-000000000003","peerCount":2,"presence":{"profileId":"00000000-0000-4000-8000-000000000002","displayName":"Swift Chatter"},"typing":{"isTyping":true},"emoji":{"name":"wave","directionAngle":90,"rotationAngle":180},"peerCountAfterDisconnect":1}"#.utf8
+      #"{"roomType":"chat","roomID":"00000000-0000-4000-8000-000000000003","peerCount":2,"presence":{"profileId":"00000000-0000-4000-8000-000000000002","displayName":"Swift Chatter"},"typing":{"isTyping":true},"emoji":{"name":"wave","directionAngle":90,"rotationAngle":180},"peerCountAfterDisconnect":0}"#.utf8
     )
     let details = try JSONDecoder().decode(
       InstantMobileChatV3RoomValidationDetails.self,
@@ -43,7 +43,7 @@ struct InstantMobileChatV3LiveValidationTests {
     expectNoDifference(details.emoji.name.rawValue, "wave")
     expectNoDifference(details.emoji.directionAngle, 90)
     expectNoDifference(details.emoji.rotationAngle, 180)
-    expectNoDifference(details.peerCountAfterDisconnect, 1)
+    expectNoDifference(details.peerCountAfterDisconnect, 0)
   }
 
   @Test
