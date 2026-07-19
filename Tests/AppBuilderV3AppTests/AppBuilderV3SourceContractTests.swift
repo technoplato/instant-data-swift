@@ -3,8 +3,48 @@ import CustomDump
 import InstantSwiftData
 import Testing
 
+#if canImport(SwiftUI)
+  import SwiftUI
+#endif
+
 @Suite
 struct AppBuilderV3SourceContractTests {
+  #if canImport(SwiftUI)
+    @Test @MainActor
+    func desiredAppOwnedListDetailAndGenerationSyntaxCompiles() {
+      let ownerID = InstantID<AppBuilderV3User>(rawValue: "user-1")
+      let buildID = InstantID<AppBuilderV3Build>(rawValue: "build-1")
+      let root: any View = AppBuilderV3Screen()
+      let list: any View = AppBuilderV3BuildsScreen(ownerID: ownerID)
+      let detail: any View = AppBuilderV3BuildScreen(buildID: buildID)
+      _ = root
+      _ = list
+      _ = detail
+    }
+  #endif
+
+  @Test
+  func environmentConfigurationSelectsLocalAndLiveModes() {
+    expectNoDifference(
+      AppBuilderV3AppConfiguration.environment([:]),
+      AppBuilderV3AppConfiguration(
+        appID: "app-builder-v3-local",
+        enablesLiveSync: false
+      )
+    )
+    expectNoDifference(
+      AppBuilderV3AppConfiguration.environment([
+        "INSTANT_APP_ID": "app-builder-live",
+        "INSTANT_PERSISTENCE_PATH": "/tmp/app-builder-v3.sqlite",
+      ]),
+      AppBuilderV3AppConfiguration(
+        appID: "app-builder-live",
+        persistenceURL: URL(fileURLWithPath: "/tmp/app-builder-v3.sqlite"),
+        enablesLiveSync: true
+      )
+    )
+  }
+
   @Test
   func typedEntitiesAndQueriesPreserveThePinnedContract() {
     let ownerID = InstantID<AppBuilderV3User>(rawValue: "user-1")

@@ -33,6 +33,7 @@ let package = Package(
     .library(name: "TodosV3App", targets: ["TodosV3App"]),
     .library(name: "VoiceTrailV3App", targets: ["VoiceTrailV3App"]),
     .executable(name: "instant-swift-data", targets: ["instant-swift-data"]),
+    .executable(name: "app-builder-v3", targets: ["AppBuilderV3Executable"]),
     .executable(name: "auth-v3", targets: ["AuthV3Executable"]),
     .executable(name: "mobile-chat-v3", targets: ["MobileChatV3Executable"]),
     .executable(name: "presence-recipes-v3", targets: ["PresenceRecipesV3Executable"]),
@@ -221,6 +222,11 @@ let package = Package(
         "InstantSwiftDataCLIParsing",
         "InstantSwiftDataCore",
       ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .executableTarget(
+      name: "AppBuilderV3Executable",
+      dependencies: ["AppBuilderV3App"],
       swiftSettings: strictConcurrencySettings
     ),
     .executableTarget(
