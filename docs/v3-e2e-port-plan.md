@@ -364,7 +364,7 @@ As of 2026-07-19:
   TypeScript-to-Swift directions, distinct server-issued stream ids,
   authenticated Swift state, two `$streams` allow rules, five expected system
   schema warnings, and zero compiler/runtime warnings at
-  `/tmp/instant-data-swift-streams-v3-20260719T091619Z/evidence.json`. The
+  `/tmp/instant-data-swift-streams-v3-20260719T092305Z/evidence.json`. The
   post-port aggregate passes 1,096 Swift Testing cases across 92 suites plus 28
   macro tests, the `streams-v3` build, and the complete TypeScript typecheck.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
@@ -1091,7 +1091,7 @@ SDK directions using the pinned AI-chat and resumable-stream sources. The
 runtime packet also covers file-backed reads, cancellation, bounded retries,
 reader and writer reconnect, metadata bootstrap, and terminal flush
 acknowledgement. Evidence is at
-`/tmp/instant-data-swift-streams-v3-20260719T091619Z/evidence.json`; the
+`/tmp/instant-data-swift-streams-v3-20260719T092305Z/evidence.json`; the
 post-port aggregate passes 1,096 Swift Testing cases across 92 suites plus 28
 macro tests.
 
