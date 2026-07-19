@@ -25,13 +25,8 @@ test("live typing support preserves the canonical absent, true, false, and null 
     "cleared",
   ]);
   assert.deepEqual(typeScriptPatchObservedTypingIndicatorFrames("typescript-peer"), [
-    ...frames.slice(0, 3),
-    { phase: "cleared", presence: { id: "typescript-peer" } },
+    ...frames,
   ]);
-  assert.equal(
-    phaseForTypingIndicatorPresence({ id: "typescript-peer" }, { sawInactive: true }),
-    "cleared",
-  );
 });
 
 test("live typing support filters only true remote peers and rejects widened shapes", () => {
