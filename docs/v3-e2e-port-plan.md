@@ -219,6 +219,15 @@ As of 2026-07-19:
   both room payload directions plus disconnect cleanup, and rejected a
   cross-user message edit with zero compiler/runtime warnings. Evidence is in
   `/tmp/instant-data-swift-mobile-chat-v3-20260719T021910Z/evidence.json`.
+- The canonical Typing Indicator recipe boundary is complete through `2c36ab7`.
+  `PresenceRecipesV3App` and the `presence-recipes-v3` executable own the
+  source-pinned room/presence surface for `typing-indicator-example/1234`.
+  The fresh-app gate proves the exact initial-absence, active `true`, inactive
+  `false`, and cleared `null` frames in both Swift/TypeScript directions, active
+  peer filtering, TypeScript disconnect cleanup to zero remote peers, generated
+  room schema and empty permissions round trips, strict TypeScript compilation,
+  and five pinned server system-schema warnings. Evidence is in
+  `/tmp/instant-data-swift-typing-indicator-v3-20260719T025123Z/evidence.json`.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -250,7 +259,7 @@ When sources disagree, use this order:
 | Current execution state, packet order, gates, and tag targets | `docs/v3-e2e-port-plan.md` |
 | Product contract and full definition of done | `docs/instant-swift-data-goals.md` |
 | Desired V3 API rules and decision log | `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` |
-| Next app target | Presence/topic recipe app surfaces, beginning with pinned upstream source tests before implementation |
+| Next app target | Reactions topic recipe, beginning with the pinned upstream recipe and exact publish/observe payload tests |
 | Current generated recording contract | `InstantSchemaExamples.recordingActionDocument`, `recordingActionValidationPermissions`, and `--example recording-action` |
 | TypeScript contract pin/type-check gate | `validation/ts-runner/package.json`, its committed `pnpm-lock.yaml`, and `validation/typecheck-generated-contract.sh` |
 | Reproducible live schema/perms install and readback | `validation/verify-recording-contract-live.sh` and `validation/fixtures/recording-action.server.*.ts` |
@@ -269,6 +278,9 @@ When sources disagree, use this order:
 | Mobile Chat app-owned syntax and behavior | `Sources/MobileChatV3App/`, `Sources/MobileChatV3Executable/`, and `Tests/MobileChatV3AppTests/` |
 | Mobile Chat source-first schema/live contracts | `Tests/InstantSwiftDataSchemaTests/MobileChatContractTests.swift`, `Tests/InstantSwiftDataTestingTests/InstantMobileChatV3LiveValidationTests.swift`, and `validation/ts-runner/src/mobile-chat-v3-app-contract.test.ts` |
 | Mobile Chat reproducible cross-SDK gate | `validation/verify-mobile-chat-v3-app-live.sh` and `validation/ts-runner/src/mobile-chat-v3-live-contract.ts` |
+| Typing Indicator app-owned syntax and behavior | `Sources/PresenceRecipesV3App/`, `Sources/PresenceRecipesV3Executable/`, and `Tests/PresenceRecipesV3AppTests/` |
+| Typing Indicator source/schema/live contracts | `Tests/InstantSwiftDataSchemaTests/TypingIndicatorContractTests.swift`, `Tests/InstantSwiftDataTestingTests/InstantTypingIndicatorV3LiveValidationTests.swift`, and `validation/ts-runner/src/typing-indicator-v3-*.ts` |
+| Typing Indicator reproducible cross-SDK gate | `validation/verify-typing-indicator-v3-app-live.sh` and its `evidence.json` artifact |
 
 ## Decisions Already Made
 
@@ -777,11 +789,22 @@ proves it against canonical TypeScript SDK 1.0.49. Evidence is at
 verification is green at 939 Swift Testing cases across 48 suites, 28 macro
 tests, and the complete TypeScript typecheck, contract, and fixture matrix.
 
-Next, begin the presence/topic recipe slice. Before changing production or app
-code, pin the exact upstream recipe/helper source and port its source-of-truth
-event-order and cleanup assertions into focused Swift tests. Then add only the
-thin app-owned reaction, typing-indicator, avatar-stack, or cursor surface needed
-to satisfy those tests, followed by the clean cross-SDK gate. Do not create the
+The first presence recipe boundary, Typing Indicator, is complete through
+`2c36ab7`. The app and helper tests pin the exact upstream
+`typing-indicator-example/1234` room, `id` and `chat-input` keys, one-second
+timeout replacement, write-only behavior, and cleanup. The clean fresh-app gate
+proves the four exact presence frames in both directions without widening or
+lossy normalization; `null` remains `null`. It also proves remote-peer cleanup,
+zero app namespaces or permissions, five exact server system-schema warnings,
+and zero compiler/runtime warnings. Evidence is at
+`/tmp/instant-data-swift-typing-indicator-v3-20260719T025123Z/evidence.json`.
+Full verification is green at 950 Swift Testing cases across 51 suites, 28 macro
+tests, and the complete TypeScript typecheck, contract, and fixture matrix.
+
+Next, port the canonical Reactions topic recipe into the same
+`PresenceRecipesV3App` host. Pin its upstream room/topic names and exact payload
+shape first, compile the thin `@Room`/`@Topic` screen, then run a fresh-app
+bidirectional publish/observe and disconnect-cleanup gate. Do not create the
 `v0.4.0-apps-e2e` tag until the full required app matrix passes.
 
 The product-payload mismatch is resolved: playback presence stores and encodes
