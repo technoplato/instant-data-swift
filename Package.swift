@@ -83,6 +83,7 @@ let package = Package(
     .target(
       name: "InstantSwiftDataTesting",
       dependencies: [
+        "AuthV3App",
         "InstantSwiftData",
         "InstantSwiftDataCore",
         "TodosV3App",
@@ -109,6 +110,7 @@ let package = Package(
     .target(
       name: "VoiceTrailV3App",
       dependencies: [
+        "AuthV3App",
         "InstantSwiftData",
         "InstantSwiftDataSchema",
         .product(name: "Dependencies", package: "swift-dependencies"),

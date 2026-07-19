@@ -1,3 +1,4 @@
+import AuthV3App
 import Dependencies
 import Foundation
 import InstantSwiftData
@@ -55,78 +56,7 @@ import InstantSwiftData
     }
   }
 
-  @MainActor
-  public struct VoiceTrailAuthLoginScreen: View {
-    @InstantAuth(VoiceTrailUser.self, providers: VoiceTrailAuthProviders.self)
-    private var auth
-
-    @State private var message = "Signed out"
-
-    public init() {}
-
-    public var body: some View {
-      Form {
-        Section("VoiceTrail") {
-          Text(message)
-          TextField("Email", text: $auth.email)
-          if showsMagicCode {
-            TextField("Code", text: $auth.magicCode)
-            Button("Verify code", action: verifyCodeButtonTapped)
-            Button("Use a different email", action: auth.resetMagicCode)
-          } else {
-            Button("Send magic code", action: sendMagicCodeButtonTapped)
-          }
-          Button("Continue as guest", action: continueAsGuestButtonTapped)
-        }
-
-        Section("Providers") {
-          ForEach(auth.providers) { provider in
-            Button(provider.title) {
-              providerButtonTapped(provider)
-            }
-          }
-        }
-      }
-      .disabled(auth.isBusy)
-    }
-
-    private var showsMagicCode: Bool {
-      switch auth.mode {
-      case .magicCodeSent, .verifyingMagicCode: true
-      default: false
-      }
-    }
-
-    private func sendMagicCodeButtonTapped() {
-      auth.sendMagicCode(
-        onChallengeSent: { challenge in message = "Code sent to \(challenge.email)" },
-        onFailure: { error in message = error.recoveryMessage }
-      )
-    }
-
-    private func verifyCodeButtonTapped() {
-      auth.verifyMagicCode(
-        onSignedIn: { event in message = "Signed in as \(event.session.userID)" },
-        onFailure: { error in message = error.recoveryMessage }
-      )
-    }
-
-    private func continueAsGuestButtonTapped() {
-      auth.signInAsGuest(
-        onSignedIn: { event in message = "Guest \(event.session.userID)" },
-        onFailure: { error in message = error.recoveryMessage }
-      )
-    }
-
-    private func providerButtonTapped(_ provider: AuthProvider) {
-      auth.signIn(
-        provider,
-        onProviderCompleted: { _ in },
-        onSignedIn: { event in message = "Signed in as \(event.session.userID)" },
-        onFailure: { error in message = error.recoveryMessage }
-      )
-    }
-  }
+  public typealias VoiceTrailAuthLoginScreen = AuthV3LoginScreen
 
   @MainActor
   public struct VoiceTrailRecordingsListScreen: View {
