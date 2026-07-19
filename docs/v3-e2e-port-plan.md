@@ -241,7 +241,7 @@ As of 2026-07-19:
   room schema and empty permissions push twice with no drift, pull back and
   strict-typecheck, with five pinned server system-schema warnings and zero
   compiler/runtime warnings. Evidence is in
-  `/tmp/instant-data-swift-reactions-v3-20260719T032236Z/evidence.json`.
+  `/tmp/instant-data-swift-reactions-v3-20260719T032258Z/evidence.json`.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -275,7 +275,7 @@ When sources disagree, use this order:
 | Current execution state, packet order, gates, and tag targets | `docs/v3-e2e-port-plan.md` |
 | Product contract and full definition of done | `docs/instant-swift-data-goals.md` |
 | Desired V3 API rules and decision log | `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` |
-| Next app target | Avatar Stack presence recipe, beginning with pinned upstream source tests for room identity, exact `name` presence, peer-only projection, and disconnect cleanup |
+| Next app target | Cursors presence recipe, beginning with pinned upstream room identity, exact cursor payload, viewport normalization, peer-only projection, and disconnect cleanup |
 | Current generated recording contract | `InstantSchemaExamples.recordingActionDocument`, `recordingActionValidationPermissions`, and `--example recording-action` |
 | TypeScript contract pin/type-check gate | `validation/ts-runner/package.json`, its committed `pnpm-lock.yaml`, and `validation/typecheck-generated-contract.sh` |
 | Reproducible live schema/perms install and readback | `validation/verify-recording-contract-live.sh` and `validation/fixtures/recording-action.server.*.ts` |
@@ -299,7 +299,8 @@ When sources disagree, use this order:
 | Typing Indicator reproducible cross-SDK gate | `validation/verify-typing-indicator-v3-app-live.sh` and its `evidence.json` artifact |
 | Reactions app-owned syntax and behavior | `Sources/PresenceRecipesV3App/ReactionsV3Screen.swift`, `Sources/PresenceRecipesV3App/PresenceRecipesV3App.swift`, and `Tests/PresenceRecipesV3AppTests/ReactionsV3Tests.swift` |
 | Reactions source/schema/live contracts | `Tests/InstantSwiftDataSchemaTests/ReactionsContractTests.swift`, `Tests/InstantSwiftDataTestingTests/InstantReactionsV3LiveValidationTests.swift`, and `validation/ts-runner/src/reactions-v3-*.ts` |
-| Reactions reproducible cross-SDK gate | `validation/verify-reactions-v3-app-live.sh` and `/tmp/instant-data-swift-reactions-v3-20260719T032236Z/evidence.json` |
+| Reactions reproducible cross-SDK gate | `validation/verify-reactions-v3-app-live.sh` and `/tmp/instant-data-swift-reactions-v3-20260719T032258Z/evidence.json` |
+| Avatar Stack reproducible cross-SDK gate | `validation/verify-avatar-stack-v3-app-live.sh` and `/tmp/instant-data-swift-avatar-stack-v3-20260719T034159Z/evidence.json` |
 
 ## Decisions Already Made
 
@@ -826,17 +827,27 @@ live evidence recorded at `e1f100a`. The desired
 `@Room`/`@Topic` syntax compiles in `PresenceRecipesV3App`, and the clean
 fresh-app gate proves the exact payload in both directions plus unsubscribe
 cleanup. Evidence is at
-`/tmp/instant-data-swift-reactions-v3-20260719T032236Z/evidence.json`. Full
+`/tmp/instant-data-swift-reactions-v3-20260719T032258Z/evidence.json`. Full
 verification is green at 960 Swift Testing cases across 54 suites, 28 macro
 tests, the `presence-recipes-v3` build, and the complete TypeScript typecheck,
 contract, and fixture matrix.
 
-Next, port the canonical Avatar Stack presence recipe into the same host. Pin
-the upstream `avatars-example/avatars-example-1234` room, exact `name` payload,
-fallback-name behavior, peer-only projection, and disconnect cleanup in source
-tests before implementation. Then continue with cursors, custom cursors, and
-the merge tile game. Do not create the `v0.4.0-apps-e2e` tag until the full
-required app matrix passes.
+The Avatar Stack presence recipe is complete through `22980dc`, with its
+credential-redacted fresh-app evidence at revision `7af4dd7`. The runnable host
+compiles the exact name-only `@Room`/`@Presence` surface while the wrapper keeps
+peer ids out of app presence JSON. The gate proves both SDK directions, one
+remote peer, disconnect cleanup to zero, empty app permissions, five pinned
+server system-schema warnings, and zero compiler/runtime warnings. Evidence is
+at `/tmp/instant-data-swift-avatar-stack-v3-20260719T034159Z/evidence.json`.
+Full verification is green at 971 Swift Testing cases across 57 suites, 28
+macro tests, the `presence-recipes-v3` build, and the complete TypeScript
+typecheck, contract, live-support, and fixture matrix.
+
+Next, port the canonical Cursors presence recipe into the same host. Pin its
+room identity, exact cursor payload and color/name derivation, viewport
+normalization, peer-only projection, and disconnect cleanup before
+implementation. Then continue with custom cursors and the merge tile game. Do
+not create the `v0.4.0-apps-e2e` tag until the full required app matrix passes.
 
 The product-payload mismatch is resolved: playback presence stores and encodes
 `offsetSeconds: Double`, offers `Duration` as a computed product convenience,
