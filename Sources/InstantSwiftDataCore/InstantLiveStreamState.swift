@@ -70,6 +70,7 @@ actor InstantLiveStreamReaderState {
   private var seenOffset: Int64
   private var currentSubscriptionEventID: String?
   private var pendingFailure: InstantError?
+  private var fileFetchFailures = 0
   private var receivedAppends: [InstantLiveStreamAppend] = []
 
   init(
@@ -107,6 +108,24 @@ actor InstantLiveStreamReaderState {
   func recordSeenOffset(_ offset: Int64) {
     guard offset >= seenOffset else { return }
     seenOffset = offset
+  }
+
+  func recordFileFetchFailure() -> InstantLiveStreamReaderDisposition {
+    fileFetchFailures += 1
+    guard fileFetchFailures > 10 else { return .requestReconnect }
+    let failure = InstantError(
+      code: .networkFailed,
+      operation: "process Instant stream file retries",
+      serverEventID: currentSubscriptionEventID,
+      message: "Unable to process the Instant stream after 11 file-fetch attempts.",
+      recovery: "Create a new reader after checking the signed stream file URLs."
+    )
+    pendingFailure = failure
+    return .failure(failure)
+  }
+
+  func resetFileFetchFailures() {
+    fileFetchFailures = 0
   }
 
   func recordSubscriptionEventID(_ eventID: String) {

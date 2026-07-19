@@ -663,8 +663,24 @@ private actor InstantRuntimeLiveSession {
         continue
       }
       await registration.reader.recordSeenOffset(seenOffset)
+      await registration.reader.resetFileFetchFailures()
       return
     }
+  }
+
+  func recordStreamFileFetchFailure(
+    clientEventID: String?
+  ) async -> InstantLiveStreamReaderDisposition {
+    guard let clientEventID else { return .ignored }
+    for key in registeredStreamReaders.keys.sorted() {
+      guard let registration = registeredStreamReaders[key],
+        await registration.reader.subscriptionEventID == clientEventID
+      else {
+        continue
+      }
+      return await registration.reader.recordFileFetchFailure()
+    }
+    return .ignored
   }
 
   func sendMutations(_ mutations: [InstantTransportMutation]) async throws {
@@ -2088,7 +2104,13 @@ public final class InstantRuntime: Sendable {
     }
   }
 
-  private func handleLiveSessionFailure(_: Error) async {
+  private func handleLiveSessionFailure(_ error: Error) async {
+    if let error = error as? InstantError,
+      error.operation == "process Instant stream file retries"
+    {
+      await recordConnectionError(error)
+      return
+    }
     await operationGate.enter()
     do {
       try await saveClosedConnectionMetadataWithGateHeld()
@@ -2175,7 +2197,19 @@ public final class InstantRuntime: Sendable {
       ) else {
         return
       }
-      let seenOffset = try await applyLiveStreamAppend(delivery)
+      let seenOffset: Int64
+      do {
+        seenOffset = try await applyLiveStreamAppend(delivery)
+      } catch let error as InstantError where error.operation == "fetch Instant stream file" {
+        switch await liveSession.recordStreamFileFetchFailure(
+          clientEventID: delivery.clientEventID
+        ) {
+        case let .failure(failure):
+          throw failure
+        case .requestReconnect, .deliver, .ignored:
+          throw error
+        }
+      }
       await liveSession.recordDeliveredStreamAppend(delivery, seenOffset: seenOffset)
 
     case let .error(error):

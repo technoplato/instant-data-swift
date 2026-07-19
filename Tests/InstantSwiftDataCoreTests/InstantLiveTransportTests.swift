@@ -36,6 +36,13 @@ private let pythonStreamAppendMaterializationSource =
   + "multi-byte scalar, and delivers only bytes not already seen; upstream/instant/client/"
   + "packages/core/src/Stream.ts createReadStream uses the same seenOffset/discardLen rules]"
 
+private let pythonStreamFileRetryBudgetSource =
+  "upstream/instant/client/packages/python/tests/test_streams_state.py "
+  + "test_reader_fetch_failure_triggers_reconnect_within_budget and "
+  + "test_reader_fetch_failure_surfaces_after_budget_exhausted "
+  + "[adapted: Swift requests reconnect for the first ten signed-file failures and stores "
+  + "a terminal reader failure on the eleventh attempt]"
+
 @Suite
 struct InstantLiveTransportTests {
   @Test
@@ -438,6 +445,30 @@ struct InstantLiveTransportTests {
       ],
       pythonStreamAppendMaterializationSource
     )
+  }
+
+  @Test
+  func streamFileFetchFailureSurfacesAfterRetryBudget() async throws {
+    let reader = try InstantLiveStreamReaderState(clientID: "c")
+    await reader.recordSubscriptionEventID("evt-1")
+
+    for _ in 0..<10 {
+      let disposition = await reader.recordFileFetchFailure()
+      expectNoDifference(
+        disposition,
+        .requestReconnect,
+        pythonStreamFileRetryBudgetSource
+      )
+    }
+    let exhausted = await reader.recordFileFetchFailure()
+    guard case let .failure(failure) = exhausted else {
+      Issue.record("Expected the eleventh file-fetch failure to exhaust the reader retry budget.")
+      return
+    }
+    expectNoDifference(failure.operation, "process Instant stream file retries")
+    await #expect(throws: InstantError.self) {
+      try await reader.checkForFailure()
+    }
   }
 
   @Test

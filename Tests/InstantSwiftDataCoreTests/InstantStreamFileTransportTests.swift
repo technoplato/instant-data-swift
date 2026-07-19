@@ -135,6 +135,32 @@ struct InstantStreamFileTransportTests {
       )
     }
   }
+
+  @Test("Cancelling materialization terminates the active response body")
+  func cancellationTerminatesActiveResponseBody() async throws {
+    let recorder = CancellableStreamFileRecorder()
+    let append = InstantLiveStreamAppend(
+      clientEventID: "subscription-1",
+      streamID: "stream-1",
+      clientID: "client-1",
+      files: [.init(url: "https://files.test/blocking", size: 10)],
+      offset: 0
+    )
+    let task = Task {
+      try await InstantStreamFileAppendMaterializer.materialize(
+        append,
+        seenOffset: 0,
+        transport: recorder.client
+      )
+    }
+
+    await recorder.waitUntilStarted()
+    task.cancel()
+    await #expect(throws: CancellationError.self){
+      _ = try await task.value
+    }
+    await recorder.waitUntilTerminated()
+  }
 }
 
 private actor StreamFileResponseRecorder {
@@ -210,5 +236,51 @@ private actor GatedStreamFileRecorder {
       continuation.finish()
     }
     bodyContinuations.removeAll()
+  }
+}
+
+private actor CancellableStreamFileRecorder {
+  private var started = false
+  private var terminated = false
+  private var startWaiters: [CheckedContinuation<Void, Never>] = []
+  private var terminationWaiters: [CheckedContinuation<Void, Never>] = []
+
+  nonisolated var client: InstantStreamFileTransportClient {
+    InstantStreamFileTransportClient { _ in
+      await self.fetch()
+    }
+  }
+
+  func fetch() -> InstantStreamFileFetchResponse {
+    started = true
+    let waiters = startWaiters
+    startWaiters.removeAll()
+    waiters.forEach { $0.resume() }
+    let pair = AsyncThrowingStream<Data, Error>.makeStream()
+    pair.continuation.onTermination = { @Sendable _ in
+      Task { await self.recordTermination() }
+    }
+    return InstantStreamFileFetchResponse(statusCode: 200, body: pair.stream)
+  }
+
+  func waitUntilStarted() async {
+    if started { return }
+    await withCheckedContinuation { continuation in
+      startWaiters.append(continuation)
+    }
+  }
+
+  func waitUntilTerminated() async {
+    if terminated { return }
+    await withCheckedContinuation { continuation in
+      terminationWaiters.append(continuation)
+    }
+  }
+
+  private func recordTermination() {
+    terminated = true
+    let waiters = terminationWaiters
+    terminationWaiters.removeAll()
+    waiters.forEach { $0.resume() }
   }
 }

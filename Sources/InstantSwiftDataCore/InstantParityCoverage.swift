@@ -1133,14 +1133,15 @@ public enum InstantSwiftDataParityCoverage {
     instantPython(
       id: "instant.python.stream-append-materialization",
       sourceFile: pythonStreamsStateSource,
-      sourceTestName: "test_reader_holds_partial_utf8_across_chunk_boundary + _process_append",
+      sourceTestName:
+        "test_reader_holds_partial_utf8_across_chunk_boundary + test_reader_aclose_cancels_active_file_fetch + test_reader_fetch_failure_triggers_reconnect_within_budget + test_reader_fetch_failure_surfaces_after_budget_exhausted + _process_append",
       swiftFile: reactorParitySwiftFile,
       swiftTestName:
-        "runtimeInlineStreamAppendPublishesAndAdvancesReconnectOffset + runtimeFileStreamAppendPublishesAndAdvancesByFetchedBytes + runtimeFileStreamFailureReconnectsWithoutAdvancingOffset + runtimeClientIDReaderBootstrapsRemoteStreamMetadata",
+        "InstantStreamFileTransportTests + streamFileFetchFailureSurfacesAfterRetryBudget + runtimeInlineStreamAppendPublishesAndAdvancesReconnectOffset + runtimeFileStreamAppendPublishesAndAdvancesByFetchedBytes + runtimeFileStreamFailureReconnectsWithoutAdvancingOffset + runtimeClientIDReaderBootstrapsRemoteStreamMetadata",
       surface: "live-stream-materialization",
       status: .adapted,
       notes:
-        "Swift applies inline and file-backed overlap in UTF-8 bytes, pipelines ordered signed-file fetches, persists and publishes only unseen content, advances reconnect state by fetched bytes only after persistence, retries a failed fetch from the unchanged offset, and bootstraps server-resolved metadata for empty-cache client-id and stream-id readers."
+        "Swift applies inline and file-backed overlap in UTF-8 bytes, pipelines ordered signed-file fetches, cancels active response bodies, persists and publishes only unseen content, advances reconnect state by fetched bytes only after persistence, retries a failed fetch from the unchanged offset with the upstream ten-retry budget, and bootstraps server-resolved metadata for empty-cache client-id and stream-id readers."
     ),
     instant(
       id: "instant.reactor.reconnect-flush-pending-only",

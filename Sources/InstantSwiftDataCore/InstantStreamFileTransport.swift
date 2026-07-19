@@ -145,6 +145,7 @@ enum InstantStreamFileAppendMaterializer {
         try Task.checkCancellation()
         appendUnseenBytes(chunk)
       }
+      try Task.checkCancellation()
     }
 
     if let content = append.content, !content.isEmpty {
