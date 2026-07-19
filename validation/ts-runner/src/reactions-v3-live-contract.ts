@@ -221,37 +221,39 @@ try {
     db.shutdown();
     roomClosed = true;
 
-    process.stdout.write(`${JSON.stringify({
-      case: "validation.typescript.reactions-v3-live-contract",
-      event: "bidirectional-topic-payloads-observed",
-      side: "typescript",
-      appID: appId,
-      ok: true,
-      details: {
-        upstream: reactionsV3AppContract.upstream,
-        users: {
-          swift: { id: swiftUser.id, email: swiftUser.email },
-          typeScript: { id: typeScriptUser.id, email: typeScriptUser.email },
+    await new Promise<void>((resolveOutput) => {
+      process.stdout.write(`${JSON.stringify({
+        case: "validation.typescript.reactions-v3-live-contract",
+        event: "bidirectional-topic-payloads-observed",
+        side: "typescript",
+        appID: appId,
+        ok: true,
+        details: {
+          upstream: reactionsV3AppContract.upstream,
+          users: {
+            swift: { id: swiftUser.id, email: swiftUser.email },
+            typeScript: { id: typeScriptUser.id, email: typeScriptUser.email },
+          },
+          room: reactionsV3AppContract.room,
+          swift: swiftEvidence.details,
+          typeScriptPublishedPayload: reactionsV3AppContract.typeScriptPublished,
+          typeScriptInvalidPayload: {
+            name: reactionsV3AppContract.invalidReceivedName,
+            directionAngle: 135,
+            rotationAngle: 315,
+          },
+          typeScriptObservedSwiftPayload: swiftPayload,
+          subscriptionCleanup: {
+            cleanupProbePayload,
+            witnessObserved: true,
+            callbackCountBeforeProbe: callbackCountBeforeCleanupProbe,
+            callbackCountAfterProbe: receivedPayloads.length,
+          },
+          compilerWarningCount: warnings.length,
+          warnings,
         },
-        room: reactionsV3AppContract.room,
-        swift: swiftEvidence.details,
-        typeScriptPublishedPayload: reactionsV3AppContract.typeScriptPublished,
-        typeScriptInvalidPayload: {
-          name: reactionsV3AppContract.invalidReceivedName,
-          directionAngle: 135,
-          rotationAngle: 315,
-        },
-        typeScriptObservedSwiftPayload: swiftPayload,
-        subscriptionCleanup: {
-          cleanupProbePayload,
-          witnessObserved: true,
-          callbackCountBeforeProbe: callbackCountBeforeCleanupProbe,
-          callbackCountAfterProbe: receivedPayloads.length,
-        },
-        compilerWarningCount: warnings.length,
-        warnings,
-      },
-    }, null, 2)}\n`);
+      }, null, 2)}\n`, resolveOutput);
+    });
   } finally {
     if (!topicUnsubscribed) unsubscribe();
     if (!roomClosed) {
@@ -262,6 +264,8 @@ try {
 } finally {
   console.warn = originalWarn;
 }
+
+process.exit(0);
 
 function spawnSwift(input: {
   appId: string;
