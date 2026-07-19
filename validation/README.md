@@ -263,7 +263,7 @@ records normalized system, canonical-link-name, JSON-as-any, and managed-email
 warnings explicitly, rejects any other warning class, emits no credentials, and
 removes its temporary credential file. Clean evidence for revision `3584c15`
 is in
-`/tmp/instant-data-swift-stroopwafel-v3-20260719T054331Z/evidence.json`.
+`/tmp/instant-data-swift-stroopwafel-v3-20260719T054351Z/evidence.json`.
 
 The preferences contract also creates its own fresh temporary app and drives
 the public `@InstantSyncStatus` and `@InstantStorageStatus` behavior through the

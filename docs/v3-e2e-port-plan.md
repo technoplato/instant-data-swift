@@ -297,7 +297,7 @@ As of 2026-07-19:
   observation and completion at 13, and cleared `currentGameId`. The gate also
   caught and fixed a core transport ambiguity by keeping lookup references
   distinct from ordinary two-element JSON arrays. Evidence is in
-  `/tmp/instant-data-swift-stroopwafel-v3-20260719T054331Z/evidence.json` with
+  `/tmp/instant-data-swift-stroopwafel-v3-20260719T054351Z/evidence.json` with
   zero compiler/runtime warnings.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
@@ -362,7 +362,7 @@ When sources disagree, use this order:
 | Merge Tile Game reproducible cross-SDK gate | `validation/verify-merge-tile-game-v3-app-live.sh`, `validation/ts-runner/src/merge-tile-game-v3-live-contract.ts`, and `/tmp/instant-data-swift-merge-tile-game-v3-20260719T045650Z/evidence.json` |
 | Stroopwafel app-owned syntax and typed lifecycle | `Sources/StroopwafelV3App/`, `Sources/StroopwafelV3Executable/`, `Tests/StroopwafelV3AppTests/`, and `Tests/InstantSwiftDataSchemaTests/StroopwafelContractTests.swift` |
 | Stroopwafel source/live contracts | `Tests/InstantSwiftDataTestingTests/InstantStroopwafelV3LiveValidationTests.swift` and `validation/ts-runner/src/stroopwafel-v3-*.ts` |
-| Stroopwafel reproducible cross-SDK gate | `validation/verify-stroopwafel-v3-app-live.sh` and `/tmp/instant-data-swift-stroopwafel-v3-20260719T054331Z/evidence.json` |
+| Stroopwafel reproducible cross-SDK gate | `validation/verify-stroopwafel-v3-app-live.sh` and `/tmp/instant-data-swift-stroopwafel-v3-20260719T054351Z/evidence.json` |
 | Reactions app-owned syntax and behavior | `Sources/PresenceRecipesV3App/ReactionsV3Screen.swift`, `Sources/PresenceRecipesV3App/PresenceRecipesV3App.swift`, and `Tests/PresenceRecipesV3AppTests/ReactionsV3Tests.swift` |
 | Reactions source/schema/live contracts | `Tests/InstantSwiftDataSchemaTests/ReactionsContractTests.swift`, `Tests/InstantSwiftDataTestingTests/InstantReactionsV3LiveValidationTests.swift`, and `validation/ts-runner/src/reactions-v3-*.ts` |
 | Reactions reproducible cross-SDK gate | `validation/verify-reactions-v3-app-live.sh` and `/tmp/instant-data-swift-reactions-v3-20260719T032236Z/evidence.json` |
@@ -976,7 +976,7 @@ warnings, schema SHA-256
 permissions SHA-256
 `e693f551cf212c8b8d5425aadcf4cebae590119cf9663f9b09b956d553ef356b`,
 and zero compiler/runtime warnings at
-`/tmp/instant-data-swift-stroopwafel-v3-20260719T054331Z/evidence.json`.
+`/tmp/instant-data-swift-stroopwafel-v3-20260719T054351Z/evidence.json`.
 
 Next, port Reminders sharing source-first from its pinned SQLiteData tests and
 existing local model/CLI proof. Do not create the `v0.4.0-apps-e2e` tag until
