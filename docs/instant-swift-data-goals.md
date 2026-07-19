@@ -114,7 +114,7 @@ Port the examples from `pointfreeco/sqlite-data/Examples`:
   mean using CloudKit; it means providing the Instant equivalent of shared
   records, participants, permissions, accept/share links, and visible sharing
   state.
-  Current local progress includes a CloudKitDemo-style counter CLI:
+  The local CloudKitDemo-style counter CLI remains available:
   `instant-swift-data examples counters add/list/increment/decrement/delete`
   and the `examples cloudkit-demo` alias. It proves local visible sharing
   metadata, current-user roles, member counts, reader rejection, and writer
@@ -122,9 +122,13 @@ Port the examples from `pointfreeco/sqlite-data/Examples`:
   cloudkit-demo --jsonl` promotes that proof to a terminal artifact covering
   owner create/share, invitee accept, reader rejection without local/outbox
   mutation, writer promotion/update, and relaunch persistence. This is
-  local/mock-remote Instant evidence. The separate live sharing contract now
-  proves the normal Swift WebSocket reader path against canonical TypeScript
-  setup, including rejected optimistic-write refetch and retained failure state.
+  local/mock-remote Instant evidence. The runnable `CloudKitDemoV3App` now
+  completes the real boundary on a fresh Instant app using the settled sharing
+  namespaces and public typed messages. Swift creates the shared graph,
+  reader denial rolls optimistic state back, the owner replaces reader/writer
+  roles and revokes access, both SDKs increment the same exact counter shape,
+  and Swift relaunches with visible `@Shares` state. Reproducible evidence is
+  produced by `validation/verify-cloudkit-demo-v3-app-live.sh`.
 
 ## Public API Goals
 
@@ -931,10 +935,12 @@ The Reminders port must include real list sharing. A user must be able to share
 a reminders list, another user must accept it, permissions must govern writes,
 and both clients must observe the shared state through Instant.
 The CloudKitDemo concept must include shared counter-style records with visible
-share state. The current local CLI slice proves this shape through
-`instant-swift-data examples counters`, `examples cloudkit-demo`, and
-`instant-swift-data validation cloudkit-demo --jsonl`; the final acceptance bar
-still requires real Instant-backed sharing and Swift/TypeScript verification.
+share state. The local CLI slice proves this shape through `instant-swift-data
+examples counters`, `examples cloudkit-demo`, and `instant-swift-data
+validation cloudkit-demo --jsonl`. The runnable V3 app and
+`validation/verify-cloudkit-demo-v3-app-live.sh` satisfy the real
+Instant-backed Swift/TypeScript acceptance bar with exact cross-SDK values,
+reader/writer permissions, role replacement, revocation, and relaunch.
 
 ## Testing And Validation
 

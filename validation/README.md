@@ -56,6 +56,7 @@ swift run instant-swift-data-validation-runner --reminders
 swift run instant-swift-data-validation-runner --cloudkit-demo
 swift run instant-swift-data-validation-runner --live-session
 swift run instant-swift-data-validation-runner --live-transaction
+swift run instant-swift-data-validation-runner --live-cloudkit-demo-v3
 swift run instant-swift-data validation reminders --jsonl | jq 'select(.event == "search-token-model") | .details.searchTokens'
 swift run instant-swift-data-validation-runner --typed-drafts
 swift run instant-swift-data-validation-runner --platform-adapters
@@ -123,6 +124,12 @@ file, and writes non-secret evidence:
 
 ```bash
 validation/verify-recording-contract-live.sh
+```
+
+The final required app boundary has its own clean fresh-app gate:
+
+```bash
+validation/verify-cloudkit-demo-v3-app-live.sh
 ```
 
 The same command runs the recording graph in both SDK directions. Swift writes

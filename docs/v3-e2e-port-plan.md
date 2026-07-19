@@ -367,16 +367,30 @@ As of 2026-07-19:
   `/tmp/instant-data-swift-streams-v3-20260719T092305Z/evidence.json`. The
   post-port aggregate passes 1,096 Swift Testing cases across 92 suites plus 28
   macro tests, the `streams-v3` build, and the complete TypeScript typecheck.
+- The CloudKitDemo-equivalent boundary is complete through `f3ee07c`.
+  `CloudKitDemoV3App` owns the runnable shared-counter UI, typed create,
+  increment, participant grant, role-replacement, and revocation messages, and
+  the existing `v3_shared_lists`/`v3_shares`/`v3_share_memberships` wire model.
+  The clean fresh-app gate proves Swift graph creation observed by TypeScript;
+  reader rejection and authoritative rollback; reader-to-writer-to-reader role
+  replacement; Swift increment `0 -> 1`; TypeScript increment `1 -> 2`;
+  participant revocation; writer and outsider permissions; visible `@Shares`
+  state; and owner relaunch with zero pending or failed mutations. Evidence is
+  in
+  `/tmp/instant-data-swift-cloudkit-demo-v3-20260719T093505Z/evidence.json`.
+  The post-port aggregate passes 1,100 Swift Testing cases across 94 suites,
+  28 isolated macro tests, the `cloudkit-demo-v3` build, and the complete
+  TypeScript typecheck, contract, live-support, and fixture matrix.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
   `instant.live-transport.swift-to-typescript` and
   `instant.live-transport.typescript-to-swift`; valid credentialed artifacts
   promote those two records instead of changing the static source ledger.
-- No new version tag should be created yet. The existing
-  `v0.3.0-schema-auth-sharing` tag remains the latest milestone; the
-  `v0.4.0-apps-e2e` tag stays guarded until the complete required app matrix
-  passes.
+- The required app matrix and its final CloudKitDemo boundary are green, so
+  `v0.4.0-apps-e2e` is ready to bind to this clean evidence record. The next
+  execution phase is a `v1.0.0` goals audit, not another V3 syntax-design
+  phase.
 
 ## Authority Order
 
@@ -400,7 +414,8 @@ When sources disagree, use this order:
 | Current execution state, packet order, gates, and tag targets | `docs/v3-e2e-port-plan.md` |
 | Product contract and full definition of done | `docs/instant-swift-data-goals.md` |
 | Desired V3 API rules and decision log | `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` |
-| Next app target | CloudKitDemo-equivalent shared counters: app-owned public syntax, owner/read-only/read-write roles, exact cross-SDK increments, denial and revocation, relaunch, and fresh-app evidence |
+| Next execution target | Audit the full goals document against the completed `v0.4.0-apps-e2e` evidence matrix and turn every remaining `v1.0.0` gap into a bounded packet |
+| Completed CloudKitDemo live gate | `validation/verify-cloudkit-demo-v3-app-live.sh`, `Sources/InstantSwiftDataTesting/InstantCloudKitDemoV3LiveValidation.swift`, and `validation/ts-runner/src/cloudkit-demo-v3-live-contract.ts` |
 | Completed Streams live gate | `validation/verify-streams-v3-app-live.sh`, `Sources/InstantSwiftDataTesting/InstantStreamsV3LiveValidation.swift`, and `validation/ts-runner/src/streams-v3-live-contract.ts` |
 | Completed SyncUps live gate | `validation/verify-syncups-v3-app-live.sh`, `Sources/InstantSwiftDataTesting/InstantSyncUpsV3LiveValidation.swift`, and `validation/ts-runner/src/syncups-v3-*.ts` |
 | Completed App Builder and Storage live gate | `validation/verify-app-builder-v3-app-live.sh`, `Sources/InstantSwiftDataTesting/InstantAppBuilderV3LiveValidation.swift`, `Sources/InstantSwiftDataCore/InstantStorageTransport.swift`, and `validation/ts-runner/src/app-builder-v3-*.ts` |
@@ -513,10 +528,10 @@ remaining version line.
 
 | Version | State | Next proof required |
 | --- | --- | --- |
-| `v0.1.0-v3-syntax` | Pending | Five V3 screens compile against public APIs |
-| `v0.2.0-live-sync` | Pending | Normal runtime passes two-way live boundary |
+| `v0.1.0-v3-syntax` | Complete, subsumed | Preserve the compiling screen and wrapper fixtures in the `v0.4.0` aggregate |
+| `v0.2.0-live-sync` | Complete, subsumed | Preserve the bidirectional runtime, reconnect, and rejection gates in the `v0.4.0` aggregate |
 | `v0.3.0-schema-auth-sharing` | Complete | Preserve the clean aggregate evidence named by the annotated tag |
-| `v0.4.0-apps-e2e` | Pending | Required apps run through live public APIs |
+| `v0.4.0-apps-e2e` | Complete | Preserve the clean CloudKitDemo and aggregate evidence named by the annotated tag |
 | `v1.0.0` | Pending | Full goals definition of done |
 
 ### `v0.1.0-v3-syntax`
@@ -591,6 +606,16 @@ Gate:
   CloudKitDemo meet the goals document acceptance cases.
 - Auth, offline/reconnect, sharing, permissions, presence, topics, storage, and
   streams are exercised through app-facing adapters.
+
+Current evidence: the required VoiceTrail and example-app sequence is complete
+through `f3ee07c`. The final CloudKitDemo-equivalent gate created a fresh app,
+pushed and pulled the Swift-owned sharing schema and permissions without
+drift, strictly type-checked the server-normalized TypeScript, and proved exact
+shared-counter values and roles in both SDK directions. Its evidence is at
+`/tmp/instant-data-swift-cloudkit-demo-v3-20260719T093505Z/evidence.json`.
+The clean aggregate then passed 1,100 Swift Testing cases across 94 suites, 28
+isolated macro tests, the runnable app build, and the complete pinned
+TypeScript matrix.
 
 ### `v1.0.0`
 
@@ -1095,12 +1120,16 @@ acknowledgement. Evidence is at
 post-port aggregate passes 1,096 Swift Testing cases across 92 suites plus 28
 macro tests.
 
-Next, complete the remaining Packet 8 CloudKitDemo-equivalent shared-counter
-app and fresh-app boundary. It must use the settled public sharing surface and
-prove owner, read-only, read-write, denial, role replacement, revocation,
-cross-SDK increments, and relaunch without introducing a parallel sharing
-model. Do not create the `v0.4.0-apps-e2e` tag until that final required app
-boundary and the complete matrix pass.
+Packet 8 is complete through `f3ee07c`. The final CloudKitDemo-equivalent app
+uses the settled sharing namespaces and public wrappers, and its clean
+fresh-app boundary proves owner, read-only, read-write, denial, role
+replacement, revocation, exact cross-SDK increments, visible share state, and
+relaunch. Evidence is at
+`/tmp/instant-data-swift-cloudkit-demo-v3-20260719T093505Z/evidence.json`; the
+post-port aggregate passes 1,100 Swift Testing cases across 94 suites, 28
+isolated macro tests, the runnable app build, and the complete TypeScript
+matrix. Next, audit the full `v1.0.0` goals definition against the accumulated
+evidence and schedule only the remaining gaps.
 
 The product-payload mismatch is resolved: playback presence stores and encodes
 `offsetSeconds: Double`, offers `Duration` as a computed product convenience,
