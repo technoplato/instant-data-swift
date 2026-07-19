@@ -1043,7 +1043,21 @@ public enum InstantSchemaExamples {
     namespaces: [
       InstantNamespacePermissions(
         namespace: "$users",
-        allow: [.view: "auth.id != null"]
+        allow: [.view: "auth.id != null"],
+        link: [
+          "ownedRemindersLists": "data.id == auth.id && actions.linkedData == 'create'",
+          "readableRemindersLists": "auth.id in linkedData.ref('owner.id')",
+          "writableRemindersLists": "auth.id in linkedData.ref('owner.id')",
+          "ownedShares": "data.id == auth.id && actions.linkedData == 'create'",
+          "shareMemberships": "auth.id in linkedData.ref('share.owner.id')",
+        ],
+        unlink: [
+          "ownedRemindersLists": "data.id == auth.id",
+          "readableRemindersLists": "auth.id in linkedData.ref('owner.id')",
+          "writableRemindersLists": "auth.id in linkedData.ref('owner.id')",
+          "ownedShares": "data.id == auth.id",
+          "shareMemberships": "auth.id in linkedData.ref('share.owner.id')",
+        ]
       ),
       InstantNamespacePermissions(
         namespace: ReminderExample.listsNamespace,

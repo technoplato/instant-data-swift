@@ -130,6 +130,17 @@ struct RemindersV3ContractTests {
     )
 
     let lists = try #require(namespaces["remindersLists"])
+    let users = try #require(namespaces["$users"])
+    expectNoDifference(
+      users.link,
+      [
+        "ownedRemindersLists": "data.id == auth.id && actions.linkedData == 'create'",
+        "readableRemindersLists": "auth.id in linkedData.ref('owner.id')",
+        "writableRemindersLists": "auth.id in linkedData.ref('owner.id')",
+        "ownedShares": "data.id == auth.id && actions.linkedData == 'create'",
+        "shareMemberships": "auth.id in linkedData.ref('share.owner.id')",
+      ]
+    )
     expectNoDifference(
       lists.allow,
       [
