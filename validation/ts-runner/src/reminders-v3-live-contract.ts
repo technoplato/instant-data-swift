@@ -73,18 +73,30 @@ const databases: any[] = [];
 try {
   const suffix = randomUUID();
   const admin = initAdmin({ appId, adminToken, apiURI });
-  const swiftToken = await admin.auth.createToken({
-    email: `reminders-swift-${suffix}@example.com`,
-  });
-  const typeScriptToken = await admin.auth.createToken({
-    email: `reminders-typescript-${suffix}@example.com`,
-  });
-  const outsiderToken = await admin.auth.createToken({
-    email: `reminders-outsider-${suffix}@example.com`,
-  });
-  const swiftUser = await admin.auth.verifyToken(swiftToken);
-  const typeScriptUser = await admin.auth.verifyToken(typeScriptToken);
-  const outsiderUser = await admin.auth.verifyToken(outsiderToken);
+  const swiftToken = await withRetries(
+    () => admin.auth.createToken({ email: `reminders-swift-${suffix}@example.com` }),
+    "create Swift Reminders token",
+  );
+  const typeScriptToken = await withRetries(
+    () => admin.auth.createToken({ email: `reminders-typescript-${suffix}@example.com` }),
+    "create TypeScript Reminders token",
+  );
+  const outsiderToken = await withRetries(
+    () => admin.auth.createToken({ email: `reminders-outsider-${suffix}@example.com` }),
+    "create outsider Reminders token",
+  );
+  const swiftUser = await withRetries(
+    () => admin.auth.verifyToken(swiftToken),
+    "verify Swift Reminders token",
+  );
+  const typeScriptUser = await withRetries(
+    () => admin.auth.verifyToken(typeScriptToken),
+    "verify TypeScript Reminders token",
+  );
+  const outsiderUser = await withRetries(
+    () => admin.auth.verifyToken(outsiderToken),
+    "verify outsider Reminders token",
+  );
   assert.ok(swiftUser?.id, "Expected a canonical Swift Reminders owner.");
   assert.ok(typeScriptUser?.id, "Expected a canonical TypeScript Reminders participant.");
   assert.ok(outsiderUser?.id, "Expected a canonical Reminders outsider.");
@@ -372,6 +384,24 @@ async function withTimeout<T>(promise: Promise<T>, operation: string): Promise<T
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+async function withRetries<T>(
+  operation: () => Promise<T>,
+  label: string,
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await operation();
+    } catch (error) {
+      lastError = error;
+      if (attempt < 2) {
+        await new Promise((resolveRetry) => setTimeout(resolveRetry, 250 * (attempt + 1)));
+      }
+    }
+  }
+  throw new Error(`${label} failed after three attempts: ${String(lastError)}`);
 }
 
 async function delay(): Promise<void> {
