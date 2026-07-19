@@ -2,12 +2,12 @@ import AuthV3App
 import Foundation
 import InstantSwiftData
 
-@InstantEntity("mobileProfiles")
+@InstantEntity("profiles")
 public struct MobileChatProfile: Hashable, Codable, InstantEntityModel {
   public var id: InstantID<Self>
   public var displayName: String
 
-  @InstantRelation(reverse: "mobileProfile")
+  @InstantRelation(reverse: "profile")
   public var user: InstantID<AuthV3User>
 
   public var userID: InstantID<AuthV3User> { user }
@@ -30,7 +30,7 @@ public struct MobileChatProfile: Hashable, Codable, InstantEntityModel {
       isIndexed: true,
       isUnique: true,
       forwardIdentity: user.attributeID,
-      reverseIdentity: AuthV3User.instantNamespace + "/mobileProfile",
+      reverseIdentity: AuthV3User.instantNamespace + "/profile",
       linkNamespace: AuthV3User.instantNamespace,
       onDelete: .cascade
     ),
@@ -54,7 +54,7 @@ public struct MobileChatProfile: Hashable, Codable, InstantEntityModel {
   }
 }
 
-@InstantEntity("mobileChannels")
+@InstantEntity("channels")
 public struct MobileChatChannel: Hashable, Codable, InstantEntityModel {
   public var id: InstantID<Self>
   public var name: String
@@ -85,7 +85,7 @@ public struct MobileChatChannel: Hashable, Codable, InstantEntityModel {
   }
 }
 
-@InstantEntity("mobileMessages")
+@InstantEntity("messages")
 public struct MobileChatMessage: Hashable, Codable, InstantEntityModel {
   public var id: InstantID<Self>
 
@@ -186,6 +186,11 @@ public struct MobileChatPresence: Codable, Equatable, Sendable {
   public init(profileID: String, displayName: String) {
     self.profileID = profileID
     self.displayName = displayName
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case profileID = "profileId"
+    case displayName
   }
 }
 
