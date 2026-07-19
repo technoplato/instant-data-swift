@@ -9024,10 +9024,10 @@ struct InstantSwiftDataCLI {
 
       Commands:
         init --example todos --to <directory> [--force] [--json|--jsonl]
-        schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions [--to instant.schema.ts] [--json|--jsonl]
-        schema verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions --from instant.schema.ts [--json|--jsonl]
-        perms generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions [--to instant.perms.ts] [--json|--jsonl]
-        perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions --from instant.perms.ts [--json|--jsonl]
+        schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack [--to instant.schema.ts] [--json|--jsonl]
+        schema verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack --from instant.schema.ts [--json|--jsonl]
+        perms generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack [--to instant.perms.ts] [--json|--jsonl]
+        perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack --from instant.perms.ts [--json|--jsonl]
         query todos [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt] [--raw] [--select field[,field]] [--json|--jsonl]
         admin query <namespace> [--limit n] [--json|--jsonl]
         admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id] [--json|--jsonl]
@@ -9190,9 +9190,16 @@ struct InstantSwiftDataCLI {
         permissions: InstantSchemaExamples.reactionsPermissions
       )
 
+    case "avatar-stack":
+      return CLISchemaExample(
+        name: "avatar-stack",
+        schema: InstantSchemaExamples.avatarStackDocument,
+        permissions: InstantSchemaExamples.avatarStackPermissions
+      )
+
     default:
       throw CLIError(
-        "Unsupported --example '\(rawName)'. Available examples: todos, validation, recording-action, sharing, voice-trail, mobile-chat, typing-indicator, reactions.",
+        "Unsupported --example '\(rawName)'. Available examples: todos, validation, recording-action, sharing, voice-trail, mobile-chat, typing-indicator, reactions, avatar-stack.",
         exitCode: 64
       )
     }
