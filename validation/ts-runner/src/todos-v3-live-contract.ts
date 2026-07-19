@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, type ChildProcessByStdio } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { createInterface } from "node:readline";
+import type { Readable } from "node:stream";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { init as initAdmin } from "@instantdb/admin";
 import {
@@ -11,6 +12,8 @@ import {
 } from "@instantdb/core";
 
 import { todosV3AppContract } from "./todos-v3-app-contract.js";
+
+type SwiftProcess = ChildProcessByStdio<null, Readable, Readable>;
 
 const appId = requiredEnvironment("INSTANT_APP_ID");
 const adminToken = requiredEnvironment("INSTANT_ADMIN_TOKEN");
@@ -199,7 +202,7 @@ interface SwiftInput {
   };
 }
 
-function spawnSwift(mode: string, input: SwiftInput): ChildProcessWithoutNullStreams {
+function spawnSwift(mode: string, input: SwiftInput): SwiftProcess {
   return spawn(
     "swift",
     [
@@ -230,7 +233,7 @@ function spawnSwift(mode: string, input: SwiftInput): ChildProcessWithoutNullStr
 
 async function nextJSONLine(
   lines: AsyncIterator<string>,
-  child: ChildProcessWithoutNullStreams,
+  child: SwiftProcess,
   operation: string,
 ): Promise<any> {
   const result = await withTimeout(lines.next(), operation);
@@ -246,7 +249,7 @@ async function nextJSONLine(
 }
 
 async function requireSuccessfulExit(
-  child: ChildProcessWithoutNullStreams,
+  child: SwiftProcess,
   operation: string,
 ): Promise<void> {
   let stderr = "";
@@ -300,7 +303,8 @@ function unwrapSchema(module: unknown): any {
   throw new Error("Generated Todos schema did not load as an Instant schema.");
 }
 
-function childExit(child: ChildProcessWithoutNullStreams): Promise<number> {
+function childExit(child: SwiftProcess): Promise<number> {
+  if (child.exitCode !== null) return Promise.resolve(child.exitCode);
   return new Promise((resolveCode, reject) => {
     child.once("error", reject);
     child.once("close", (code) => resolveCode(code ?? 1));
