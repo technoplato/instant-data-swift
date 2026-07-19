@@ -165,3 +165,109 @@ public final class TypingIndicatorV3Model: ObservableObject {
     }
   }
 }
+
+public struct ReactionsV3Presence: Codable, Equatable, Sendable {
+  public init() {}
+}
+
+public enum ReactionsV3Name: String, Codable, CaseIterable, Sendable {
+  case fire
+  case wave
+  case confetti
+  case heart
+
+  public var symbol: String {
+    switch self {
+    case .fire: "🔥"
+    case .wave: "👋"
+    case .confetti: "🎉"
+    case .heart: "❤️"
+    }
+  }
+}
+
+public struct ReactionsV3Payload: Codable, Equatable, Sendable {
+  public var name: String
+  public var directionAngle: Double
+  public var rotationAngle: Double
+
+  public init(
+    name: String,
+    directionAngle: Double,
+    rotationAngle: Double
+  ) {
+    self.name = name
+    self.directionAngle = directionAngle
+    self.rotationAngle = rotationAngle
+  }
+}
+
+public struct ReactionsV3Room: InstantRoomSchema {
+  public typealias Presence = ReactionsV3Presence
+  public static let roomType = "topics-example"
+
+  public enum Topic: String, InstantRoomTopic {
+    public typealias RoomSchema = ReactionsV3Room
+    case emoji
+  }
+}
+
+public struct ReactionsV3Animation: Equatable, Identifiable, Sendable {
+  public var id: UUID
+  public var name: ReactionsV3Name
+  public var payload: ReactionsV3Payload
+
+  public init(
+    id: UUID = UUID(),
+    name: ReactionsV3Name,
+    payload: ReactionsV3Payload
+  ) {
+    self.id = id
+    self.name = name
+    self.payload = payload
+  }
+}
+
+@MainActor
+public final class ReactionsV3Model: ObservableObject {
+  @Published public private(set) var animations: [ReactionsV3Animation] = []
+
+  private var observedMessageCount = 0
+
+  public init() {}
+
+  @discardableResult
+  public func reactionButtonTapped(
+    _ name: ReactionsV3Name,
+    directionAngle: Double,
+    rotationAngle: Double
+  ) -> ReactionsV3Payload {
+    let payload = ReactionsV3Payload(
+      name: name.rawValue,
+      directionAngle: directionAngle,
+      rotationAngle: rotationAngle
+    )
+    animate(payload)
+    return payload
+  }
+
+  public func observe(_ payloads: [ReactionsV3Payload]) {
+    if payloads.count < observedMessageCount {
+      observedMessageCount = 0
+    }
+    let newPayloads = payloads.dropFirst(observedMessageCount)
+    observedMessageCount = payloads.count
+    for payload in newPayloads {
+      animate(payload)
+    }
+  }
+
+  public func dismissAnimation(id: ReactionsV3Animation.ID) {
+    animations.removeAll { $0.id == id }
+  }
+
+  private func animate(_ payload: ReactionsV3Payload) {
+    guard let name = ReactionsV3Name(rawValue: payload.name) else { return }
+    animations.append(ReactionsV3Animation(name: name, payload: payload))
+  }
+}
