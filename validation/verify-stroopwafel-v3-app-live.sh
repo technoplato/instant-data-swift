@@ -139,7 +139,9 @@ assert.ok(schema.warnings.every((warning) => (
   warning.code === "server-json-as-any"
   || warning.code === "server-system-string-as-any"
   || warning.code === "system-entity"
+  || warning.code === "system-attribute"
   || warning.code === "system-link"
+  || warning.code === "canonical-link-name"
 )));
 assert.equal(permissions.namespaceCount, 4);
 assert.equal(permissions.allowRuleCount, 17);

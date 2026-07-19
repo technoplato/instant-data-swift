@@ -107,7 +107,7 @@ try {
     [Symbol.asyncIterator]();
 
   const roomReady = await nextJSONLine(lines, swift, "Swift Stroopwafel room readiness");
-  assert.equal(roomReady.event, "swift-room-ready");
+  assert.equal(roomReady.event, "swift-room-ready", JSON.stringify(roomReady));
   assert.equal(roomReady.ok, true);
 
   const swiftRoom = await waitForRoom((room) => (
