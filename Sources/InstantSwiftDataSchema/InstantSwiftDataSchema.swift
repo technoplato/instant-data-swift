@@ -399,6 +399,29 @@ public enum InstantSchemaExamples {
     namespaces: []
   )
 
+  public static let avatarStackRoom = InstantRoomSchema(
+    name: "avatars-example",
+    presence: InstantRoomPayloadSchema(
+      attributes: [
+        InstantAttribute(
+          id: "rooms/avatars-example/presence/name",
+          namespace: "rooms/avatars-example/presence",
+          name: "name",
+          valueType: .string
+        )
+      ]
+    )
+  )
+
+  public static let avatarStackDocument = InstantSchemaDocument(
+    entities: [],
+    rooms: [avatarStackRoom]
+  )
+
+  public static let avatarStackPermissions = InstantPermissionsDocument(
+    namespaces: []
+  )
+
   public static let reactionsRoom = InstantRoomSchema(
     name: "topics-example",
     presence: InstantRoomPayloadSchema(),
