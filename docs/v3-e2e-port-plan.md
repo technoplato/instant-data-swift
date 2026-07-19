@@ -191,8 +191,14 @@ As of 2026-07-18:
   a runnable `todos-v3` SwiftUI executable and shared `TodosV3App` target. It
   uses the desired `@InstantEntity`, `@FetchAll`, typed-message, call-site
   callback, room, and presence syntax. Focused model tests and the full package
-  gate pass at 922 Swift tests in 42 suites. The live bidirectional, viewer,
-  and offline boundary is the next packet; this shell is not yet E2E evidence.
+  gate pass at 922 Swift tests in 42 suites.
+- The Todos live boundary is complete through `122d4e0`. A clean fresh-app run
+  installs and reads back the generated schema and permissions, proves the
+  exact Swift-to-TypeScript and TypeScript-to-typed-Swift rows, observes one
+  canonical TypeScript room peer, queues exactly one Swift mutation while
+  disconnected, and observes that exact row in TypeScript after reconnect and
+  server acceptance. Compiler/runtime warnings are zero. Evidence is in
+  `/tmp/instant-data-swift-todos-v3-20260719T012426Z/evidence.json`.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -224,7 +230,7 @@ When sources disagree, use this order:
 | Current execution state, packet order, gates, and tag targets | `docs/v3-e2e-port-plan.md` |
 | Product contract and full definition of done | `docs/instant-swift-data-goals.md` |
 | Desired V3 API rules and decision log | `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` |
-| Next app target | Todos through a thin SwiftUI host, public wrappers, and a canonical TypeScript live boundary |
+| Next app target | Auth through a thin SwiftUI host that binds the settled auth syntax to the existing canonical live auth boundary |
 | Current generated recording contract | `InstantSchemaExamples.recordingActionDocument`, `recordingActionValidationPermissions`, and `--example recording-action` |
 | TypeScript contract pin/type-check gate | `validation/ts-runner/package.json`, its committed `pnpm-lock.yaml`, and `validation/typecheck-generated-contract.sh` |
 | Reproducible live schema/perms install and readback | `validation/verify-recording-contract-live.sh` and `validation/fixtures/recording-action.server.*.ts` |
@@ -238,6 +244,7 @@ When sources disagree, use this order:
 | Reproducible Swift/TypeScript harness | `validation/run-e2e.sh` and `validation/README.md` |
 | Aggregate VoiceTrail app gate | `validation/verify-voice-trail-v3-app-live.sh` and its `app-capture.json`/`evidence.json` artifacts |
 | Runnable Todos app | `Sources/TodosV3App/`, `Sources/TodosV3Executable/`, and `Tests/TodosV3AppTests/` |
+| Aggregate Todos app gate | `validation/verify-todos-v3-app-live.sh`, `validation/ts-runner/src/todos-v3-live-contract.ts`, and its `evidence.json` artifact |
 
 ## Decisions Already Made
 
@@ -721,17 +728,19 @@ comment-committed payloads. The clean aggregate rerun proves those app types in
 both directions before and after forced reconnect. Evidence is at
 `/tmp/instant-data-swift-voice-trail-v3-app-20260719T005834Z/evidence.json`.
 
-The Todos shell is complete in `f1b4d30` and `58b7496`. `todos-v3` is a thin
-runnable SwiftUI host over a shared `TodosV3App` target, and the app compiles
-the requested `@InstantEntity`, `@FetchAll`, typed-message, room, and presence
-surface. The full package gate passes at 922 Swift tests in 42 suites.
+The Todos app boundary is complete through `122d4e0`. `todos-v3` is a thin
+runnable SwiftUI host over the shared `TodosV3App` target. Its clean fresh-app
+gate proves the requested `@InstantEntity`, `@FetchAll`, typed-message, room,
+presence, and offline/reconnect surface through the real Swift and canonical
+TypeScript SDKs. The final run observed one remote viewer and exactly one
+offline mutation before reconnect, then zero pending mutations after server
+acceptance. Evidence is at
+`/tmp/instant-data-swift-todos-v3-20260719T012426Z/evidence.json`.
 
-Next, port the canonical upstream Todos flow into a fresh-app live gate: Swift
-creates through the app message and TypeScript observes the exact shape;
-TypeScript updates and Swift's typed subscription observes it; a second peer
-changes the viewer count; and a Swift write queued while disconnected appears
-after reconnect. Continue with the remaining Packet 8 examples only after all
-four proofs are green. Do not create the
+Next, create the standalone Auth Packet 8 app target from the already-settled
+auth screen syntax and bind its app-owned state/actions to the existing
+server-verified sign-in, durable relaunch, and invalidated-token live proof.
+Do not create the
 `v0.4.0-apps-e2e` tag until the required app matrix—not only VoiceTrail—passes.
 
 The product-payload mismatch is resolved: playback presence stores and encodes
