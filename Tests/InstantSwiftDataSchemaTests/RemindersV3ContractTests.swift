@@ -161,21 +161,21 @@ struct RemindersV3ContractTests {
     expectNoDifference(
       lists.link,
       [
-        "owner": "actions.data == 'create' || auth.id in data.ref('owner.id')",
-        "readers": "auth.id in data.ref('owner.id')",
-        "writers": "auth.id in data.ref('owner.id')",
-        "share": "auth.id in data.ref('owner.id')",
-        "reminders": "auth.id in data.ref('owner.id') || auth.id in data.ref('writers.id')",
+        "owner": "actions.data == 'create' || data.id in auth.ref('$user.ownedRemindersLists.id')",
+        "readers": "data.id in auth.ref('$user.ownedRemindersLists.id')",
+        "writers": "data.id in auth.ref('$user.ownedRemindersLists.id')",
+        "share": "data.id in auth.ref('$user.ownedRemindersLists.id')",
+        "reminders": "data.id in auth.ref('$user.ownedRemindersLists.id') || data.id in auth.ref('$user.writableRemindersLists.id')",
       ]
     )
     expectNoDifference(
       lists.unlink,
       [
-        "owner": "auth.id in data.ref('owner.id')",
-        "readers": "auth.id in data.ref('owner.id')",
-        "writers": "auth.id in data.ref('owner.id')",
-        "share": "auth.id in data.ref('owner.id')",
-        "reminders": "auth.id in data.ref('owner.id') || auth.id in data.ref('writers.id')",
+        "owner": "data.id in auth.ref('$user.ownedRemindersLists.id')",
+        "readers": "data.id in auth.ref('$user.ownedRemindersLists.id')",
+        "writers": "data.id in auth.ref('$user.ownedRemindersLists.id')",
+        "share": "data.id in auth.ref('$user.ownedRemindersLists.id')",
+        "reminders": "data.id in auth.ref('$user.ownedRemindersLists.id') || data.id in auth.ref('$user.writableRemindersLists.id')",
       ]
     )
 
