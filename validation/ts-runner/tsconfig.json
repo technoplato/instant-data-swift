@@ -67,6 +67,7 @@
     "src/stroopwafel-v3-app-contract.ts",
     "src/stroopwafel-v3-app-contract.test.ts",
     "src/stroopwafel-v3-live-support.ts",
-    "src/stroopwafel-v3-live-support.test.ts"
+    "src/stroopwafel-v3-live-support.test.ts",
+    "src/stroopwafel-v3-live-contract.ts"
   ]
 }
