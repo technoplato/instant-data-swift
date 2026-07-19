@@ -100,7 +100,7 @@ try {
   assert.equal(swiftEvidence.details.peerCountAfterDisconnect, 0);
   assert.deepEqual(warnings, []);
 
-  await new Promise<void>((resolveOutput) => process.stdout.write(`${JSON.stringify({
+  await new Promise<void>((resolveOutput, rejectOutput) => process.stdout.write(`${JSON.stringify({
     case: "validation.typescript.avatar-stack-v3-live-contract",
     event: "bidirectional-presence-observed",
     side: "typescript",
@@ -117,7 +117,7 @@ try {
       compilerWarningCount: warnings.length,
       warnings,
     },
-  }, null, 2)}\n`, resolveOutput));
+  }, null, 2)}\n`, (error) => error ? rejectOutput(error) : resolveOutput()));
 
   if (!unsubscribed) unsubscribe();
   if (!closed) { room.leaveRoom(); db.shutdown(); }
