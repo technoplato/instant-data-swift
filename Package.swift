@@ -94,6 +94,7 @@ let package = Package(
         "InstantSwiftDataCore",
         "MobileChatV3App",
         "PresenceRecipesV3App",
+        "StroopwafelV3App",
         "TodosV3App",
         "VoiceTrailV3App",
       ],
