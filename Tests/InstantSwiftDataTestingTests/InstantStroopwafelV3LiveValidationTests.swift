@@ -9,9 +9,23 @@ import Testing
 struct InstantStroopwafelV3LiveValidationTests {
   @Test
   func fixturesPinCanonicalCrossSDKIdentifiersAndPrompts() {
-    expectNoDifference(InstantStroopwafelV3LiveValidation.roomID, "room-stroopwafel-v3")
+    expectNoDifference(
+      InstantStroopwafelV3LiveValidation.roomID,
+      "00000000-0000-4000-8000-000000000301"
+    )
     expectNoDifference(InstantStroopwafelV3LiveValidation.roomCode, "AB12")
-    expectNoDifference(InstantStroopwafelV3LiveValidation.gameID, "game-stroopwafel-v3")
+    expectNoDifference(
+      InstantStroopwafelV3LiveValidation.gameID,
+      "00000000-0000-4000-8000-000000000302"
+    )
+    expectNoDifference(
+      InstantStroopwafelV3LiveValidation.hostPointID,
+      "00000000-0000-4000-8000-000000000303"
+    )
+    expectNoDifference(
+      InstantStroopwafelV3LiveValidation.guestPointID,
+      "00000000-0000-4000-8000-000000000304"
+    )
     expectNoDifference(InstantStroopwafelV3LiveValidation.swiftHostID, "swift-host")
     expectNoDifference(InstantStroopwafelV3LiveValidation.typeScriptGuestID, "typescript-guest")
     expectNoDifference(InstantStroopwafelV3LiveValidation.prompts.count, 14)

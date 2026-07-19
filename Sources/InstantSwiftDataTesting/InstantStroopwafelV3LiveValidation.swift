@@ -126,13 +126,13 @@ public struct InstantStroopwafelV3LiveValidationDetails:
 }
 
 public enum InstantStroopwafelV3LiveValidation {
-  public static let roomID = "room-stroopwafel-v3"
+  public static let roomID = "00000000-0000-4000-8000-000000000301"
   public static let roomCode = "AB12"
-  public static let gameID = "game-stroopwafel-v3"
+  public static let gameID = "00000000-0000-4000-8000-000000000302"
   public static let swiftHostID = "swift-host"
   public static let typeScriptGuestID = "typescript-guest"
-  public static let hostPointID = "point-swift-host"
-  public static let guestPointID = "point-typescript-guest"
+  public static let hostPointID = "00000000-0000-4000-8000-000000000303"
+  public static let guestPointID = "00000000-0000-4000-8000-000000000304"
   public static let hostHandle = "SwiftHost"
   public static let guestHandle = "TypeScriptGuest"
   public static let createdAt = "2026-07-19T00:00:00.000Z"
