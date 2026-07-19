@@ -10,6 +10,11 @@ export interface TypingIndicatorPresenceFrame {
   presence: TypingIndicatorPresence;
 }
 
+export interface CanonicalTypingIndicatorPeer {
+  peerId: string;
+  presence: TypingIndicatorPresence;
+}
+
 export function exactTypingIndicatorFrames(peerID: string): TypingIndicatorPresenceFrame[] {
   return [
     { phase: "initial", presence: { id: peerID } },
@@ -63,6 +68,30 @@ export function activeTypingPeerIDs(
     const phase = phaseForTypingIndicatorPresence(peer);
     return phase === "active" && peer.id !== selfID ? [peer.id as string] : [];
   });
+}
+
+export function projectCanonicalTypingPeer(
+  peer: Record<string, unknown>,
+): CanonicalTypingIndicatorPeer {
+  const unexpectedKeys = Object.keys(peer).filter(
+    (key) => key !== "id" && key !== "chat-input" && key !== "peerId",
+  );
+  if (
+    unexpectedKeys.length > 0
+    || typeof peer.peerId !== "string"
+  ) {
+    throw exactShapeError();
+  }
+
+  const presence: Record<string, unknown> = { id: peer.id };
+  if (Object.prototype.hasOwnProperty.call(peer, "chat-input")) {
+    presence["chat-input"] = peer["chat-input"];
+  }
+  phaseForTypingIndicatorPresence(presence);
+  return {
+    peerId: peer.peerId,
+    presence: presence as unknown as TypingIndicatorPresence,
+  };
 }
 
 function exactShapeError(): TypeError {
