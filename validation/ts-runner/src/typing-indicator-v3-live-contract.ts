@@ -16,6 +16,7 @@ import { typingIndicatorV3AppContract } from "./typing-indicator-v3-app-contract
 import {
   exactTypingIndicatorFrames,
   phaseForTypingIndicatorPresence,
+  projectCanonicalTypingPeer,
   serverObservedTypingIndicatorFrames,
   type TypingIndicatorPhase as Phase,
   type TypingIndicatorPresence as Presence,
@@ -109,10 +110,11 @@ try {
   };
   let sawInactive = false;
   const unsubscribe = room.subscribePresence({}, (snapshot: any) => {
-    const peer = Object.values(snapshot.peers ?? {}).find(
+    const rawPeer = Object.values(snapshot.peers ?? {}).find(
       (value: any) => value?.id === "swift-peer",
     ) as Presence | undefined;
-    if (!peer) return;
+    if (!rawPeer) return;
+    const peer = projectCanonicalTypingPeer(rawPeer as Record<string, unknown>).presence;
     const phase = phaseForTypingIndicatorPresence(peer, { sawInactive });
     if (observedSwiftFrames.has(phase)) return;
     if (phase === "inactive") sawInactive = true;
