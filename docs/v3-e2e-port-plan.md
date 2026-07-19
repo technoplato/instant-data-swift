@@ -276,8 +276,8 @@ As of 2026-07-19:
   drift, and records the five exact server system-schema warnings with zero
   compiler or runtime warnings. Evidence is in
   `/tmp/instant-data-swift-custom-cursors-v3-20260719T042442Z/evidence.json`.
-- The canonical Merge Tile Game boundary is complete through `f77b7a9`, with
-  its fresh-app proof recorded at `387b222`. The app-owned `boards` entity,
+- The canonical Merge Tile Game boundary is complete through `59a5e2d`, with
+  its clean fresh-app proof recorded at the same revision. The app-owned `boards` entity,
   `@FetchOne`, typed initialize/merge/reset messages, and
   `tile-game-example/_defaultRoomId` color presence preserve the fixed 4x4
   board, six-color palette, and single-cell JSON deep merge. The live gate
@@ -285,7 +285,7 @@ As of 2026-07-19:
   observes exact color presence in both directions, resets all 16 cells, and
   removes the remote peer on disconnect. Server readback preserves the Swift
   JSON contract through the explicit `server-json-as-any` warning. Evidence is
-  in `/tmp/instant-data-swift-merge-tile-game-v3-20260719T045153Z/evidence.json`.
+  in `/tmp/instant-data-swift-merge-tile-game-v3-20260719T045650Z/evidence.json`.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -346,7 +346,7 @@ When sources disagree, use this order:
 | Custom Cursors app-owned syntax and exact dynamic presence | `Sources/PresenceRecipesV3App/CustomCursorsV3Screen.swift`, `Tests/PresenceRecipesV3AppTests/CustomCursorsV3Tests.swift`, and `Tests/InstantSwiftDataSchemaTests/CustomCursorsContractTests.swift` |
 | Custom Cursors reproducible cross-SDK gate | `validation/verify-custom-cursors-v3-app-live.sh`, `validation/ts-runner/src/custom-cursors-v3-live-contract.ts`, and `/tmp/instant-data-swift-custom-cursors-v3-20260719T042442Z/evidence.json` |
 | Merge Tile Game app-owned syntax and typed board messages | `Sources/PresenceRecipesV3App/MergeTileGameV3Screen.swift`, `Tests/PresenceRecipesV3AppTests/MergeTileGameV3Tests.swift`, and `Tests/InstantSwiftDataSchemaTests/MergeTileGameContractTests.swift` |
-| Merge Tile Game reproducible cross-SDK gate | `validation/verify-merge-tile-game-v3-app-live.sh`, `validation/ts-runner/src/merge-tile-game-v3-live-contract.ts`, and `/tmp/instant-data-swift-merge-tile-game-v3-20260719T045153Z/evidence.json` |
+| Merge Tile Game reproducible cross-SDK gate | `validation/verify-merge-tile-game-v3-app-live.sh`, `validation/ts-runner/src/merge-tile-game-v3-live-contract.ts`, and `/tmp/instant-data-swift-merge-tile-game-v3-20260719T045650Z/evidence.json` |
 | Reactions app-owned syntax and behavior | `Sources/PresenceRecipesV3App/ReactionsV3Screen.swift`, `Sources/PresenceRecipesV3App/PresenceRecipesV3App.swift`, and `Tests/PresenceRecipesV3AppTests/ReactionsV3Tests.swift` |
 | Reactions source/schema/live contracts | `Tests/InstantSwiftDataSchemaTests/ReactionsContractTests.swift`, `Tests/InstantSwiftDataTestingTests/InstantReactionsV3LiveValidationTests.swift`, and `validation/ts-runner/src/reactions-v3-*.ts` |
 | Reactions reproducible cross-SDK gate | `validation/verify-reactions-v3-app-live.sh` and `/tmp/instant-data-swift-reactions-v3-20260719T032236Z/evidence.json` |
@@ -931,8 +931,8 @@ Full verification is green at 992 Swift Testing cases across 63 suites, the
 `presence-recipes-v3` build, and the complete TypeScript typecheck, contract,
 live-support, and fixture matrix.
 
-The canonical Merge Tile Game recipe is complete through `f77b7a9`, with its
-fresh-app gate recorded at `387b222`. The runnable host compiles the app-owned
+The canonical Merge Tile Game recipe is complete through `59a5e2d`, with its
+clean fresh-app gate recorded at the same revision. The runnable host compiles the app-owned
 `@FetchOne` board, typed initialize/merge/reset messages, and
 `@Room`/`@Presence` color surface. Canonical TypeScript observes Swift's
 `0-0` merge and Swift color, then publishes a distinct `0-1` merge and color;
@@ -945,7 +945,7 @@ namespace, the five system-schema warnings plus explicit
 permissions SHA-256
 `f1192523fd4726637595a197e42319a6658b46def546deea051329b55e505231`,
 and zero compiler/runtime warnings at
-`/tmp/instant-data-swift-merge-tile-game-v3-20260719T045153Z/evidence.json`.
+`/tmp/instant-data-swift-merge-tile-game-v3-20260719T045650Z/evidence.json`.
 Full verification is green at 1,007 Swift Testing cases across 66 suites, the
 `presence-recipes-v3` build, and the complete TypeScript typecheck, contract,
 live-support, and fixture matrix.

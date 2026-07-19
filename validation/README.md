@@ -227,6 +227,23 @@ validation/verify-playback-room-contract-live.sh
 The verifier removes the temporary app credentials after recording non-secret
 evidence; no sourced credential environment is required.
 
+The Merge Tile Game V3 verifier ports the fixed canonical board through the
+public Swift entity/query/message and room/presence surfaces, then proves the
+exact contract against canonical TypeScript SDK 1.0.49:
+
+```bash
+validation/verify-merge-tile-game-v3-app-live.sh
+```
+
+It provisions a fresh getadb app, pushes schema and permissions twice without
+drift, pulls and strict-typechecks the server artifacts, preserves independent
+Swift and TypeScript cell merges, observes full reset and peer disconnect, and
+removes its temporary credential file. The server currently pulls the pushed
+`i.json()` board state as `i.any()`; verification keeps JSON as the source
+contract and records the exact `server-json-as-any` warning. Clean evidence
+for revision `59a5e2d` is in
+`/tmp/instant-data-swift-merge-tile-game-v3-20260719T045650Z/evidence.json`.
+
 The preferences contract also creates its own fresh temporary app and drives
 the public `@InstantSyncStatus` and `@InstantStorageStatus` behavior through the
 Swift validation runner:
