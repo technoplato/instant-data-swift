@@ -161,10 +161,11 @@ struct InstantSwiftDataValidationRunner {
         "INSTANT_SWIFT_DATA_SHARING_REJECTED_VALUE",
         environment: environment
       )
-      let websocketURI = URL(
-        string: environment["INSTANT_WEBSOCKET_URI"]
-          ?? InstantRuntimeConfiguration.defaultWebSocketURI.absoluteString
-      ) ?? InstantRuntimeConfiguration.defaultWebSocketURI
+      let websocketURI =
+        URL(
+          string: environment["INSTANT_WEBSOCKET_URI"]
+            ?? InstantRuntimeConfiguration.defaultWebSocketURI.absoluteString
+        ) ?? InstantRuntimeConfiguration.defaultWebSocketURI
       let row = try await InstantSharingLiveValidation.run(
         appID: appID,
         websocketURI: websocketURI,
@@ -199,10 +200,11 @@ struct InstantSwiftDataValidationRunner {
         "INSTANT_SWIFT_DATA_SHARING_ACCEPTED_VALUE",
         environment: environment
       )
-      let websocketURI = URL(
-        string: environment["INSTANT_WEBSOCKET_URI"]
-          ?? InstantRuntimeConfiguration.defaultWebSocketURI.absoluteString
-      ) ?? InstantRuntimeConfiguration.defaultWebSocketURI
+      let websocketURI =
+        URL(
+          string: environment["INSTANT_WEBSOCKET_URI"]
+            ?? InstantRuntimeConfiguration.defaultWebSocketURI.absoluteString
+        ) ?? InstantRuntimeConfiguration.defaultWebSocketURI
       let row = try await InstantSharingLiveValidation.runWriter(
         appID: appID,
         websocketURI: websocketURI,
@@ -248,10 +250,11 @@ struct InstantSwiftDataValidationRunner {
           message: "Expected INSTANT_SWIFT_DATA_RECORDINGS_MODE to be owner or member."
         )
       }
-      let websocketURI = URL(
-        string: environment["INSTANT_WEBSOCKET_URI"]
-          ?? InstantRuntimeConfiguration.defaultWebSocketURI.absoluteString
-      ) ?? InstantRuntimeConfiguration.defaultWebSocketURI
+      let websocketURI =
+        URL(
+          string: environment["INSTANT_WEBSOCKET_URI"]
+            ?? InstantRuntimeConfiguration.defaultWebSocketURI.absoluteString
+        ) ?? InstantRuntimeConfiguration.defaultWebSocketURI
       let rows = InstantVoiceTrailRecordingsListLiveValidation.run(
         appID: appID,
         websocketURI: websocketURI,
@@ -326,14 +329,16 @@ struct InstantSwiftDataValidationRunner {
         environment: environment,
         caseID: invocation.caseID
       )
-      let apiURI = URL(
-        string: environment["INSTANT_API_URI"]
-          ?? InstantRuntimeConfiguration.defaultAPIURI.absoluteString
-      ) ?? InstantRuntimeConfiguration.defaultAPIURI
-      let websocketURI = URL(
-        string: environment["INSTANT_WEBSOCKET_URI"]
-          ?? InstantRuntimeConfiguration.defaultWebSocketURI.absoluteString
-      ) ?? InstantRuntimeConfiguration.defaultWebSocketURI
+      let apiURI =
+        URL(
+          string: environment["INSTANT_API_URI"]
+            ?? InstantRuntimeConfiguration.defaultAPIURI.absoluteString
+        ) ?? InstantRuntimeConfiguration.defaultAPIURI
+      let websocketURI =
+        URL(
+          string: environment["INSTANT_WEBSOCKET_URI"]
+            ?? InstantRuntimeConfiguration.defaultWebSocketURI.absoluteString
+        ) ?? InstantRuntimeConfiguration.defaultWebSocketURI
       let row = try await InstantVoiceTrailV3CaptureLiveValidation.run(
         appID: appID,
         apiURI: apiURI,
@@ -352,6 +357,82 @@ struct InstantSwiftDataValidationRunner {
       )
       try writeJSONLine(row)
 
+    case .liveTodosV3Write, .liveTodosV3Observe:
+      let environment = ProcessInfo.processInfo.environment
+      let appID = try requiredEnvironment(
+        "INSTANT_APP_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let refreshToken = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_TODOS_V3_REFRESH_TOKEN",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let userID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_TODOS_V3_USER_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let id = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_TODOS_V3_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let text = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_TODOS_V3_TEXT",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let createdAtMilliseconds = try requiredIntEnvironment(
+        "INSTANT_SWIFT_DATA_TODOS_V3_CREATED_AT_MILLISECONDS",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let apiURI =
+        URL(
+          string: environment["INSTANT_API_URI"]
+            ?? InstantRuntimeConfiguration.defaultAPIURI.absoluteString
+        ) ?? InstantRuntimeConfiguration.defaultAPIURI
+      let websocketURI =
+        URL(
+          string: environment["INSTANT_WEBSOCKET_URI"]
+            ?? InstantRuntimeConfiguration.defaultWebSocketURI.absoluteString
+        ) ?? InstantRuntimeConfiguration.defaultWebSocketURI
+
+      switch invocation {
+      case .liveTodosV3Write:
+        let row = try await InstantTodosV3LiveValidation.write(
+          appID: appID,
+          apiURI: apiURI,
+          websocketURI: websocketURI,
+          refreshToken: refreshToken,
+          expectedUserID: userID,
+          id: id,
+          text: text,
+          createdAtMilliseconds: Int64(createdAtMilliseconds)
+        )
+        try writeJSONLine(row)
+
+      case .liveTodosV3Observe:
+        let rows = InstantTodosV3LiveValidation.observe(
+          appID: appID,
+          apiURI: apiURI,
+          websocketURI: websocketURI,
+          refreshToken: refreshToken,
+          expectedUserID: userID,
+          id: id,
+          text: text,
+          createdAtMilliseconds: Int64(createdAtMilliseconds)
+        )
+        for try await row in rows {
+          try writeJSONLine(row)
+        }
+
+      default:
+        preconditionFailure("Unexpected Todos V3 runner mode.")
+      }
+
     case .liveAuthInvalidation:
       let environment = ProcessInfo.processInfo.environment
       let appID = try requiredEnvironment("INSTANT_APP_ID", environment: environment)
@@ -363,10 +444,11 @@ struct InstantSwiftDataValidationRunner {
         "INSTANT_SWIFT_DATA_AUTH_USER_ID",
         environment: environment
       )
-      let apiURI = URL(
-        string: environment["INSTANT_API_URI"]
-          ?? InstantRuntimeConfiguration.defaultAPIURI.absoluteString
-      ) ?? InstantRuntimeConfiguration.defaultAPIURI
+      let apiURI =
+        URL(
+          string: environment["INSTANT_API_URI"]
+            ?? InstantRuntimeConfiguration.defaultAPIURI.absoluteString
+        ) ?? InstantRuntimeConfiguration.defaultAPIURI
       let row = try await InstantAuthLiveValidation.run(
         appID: appID,
         apiURI: apiURI,
@@ -394,14 +476,16 @@ struct InstantSwiftDataValidationRunner {
         "INSTANT_SWIFT_DATA_PLAYBACK_ROOM_ID",
         environment: environment
       )
-      let apiURI = URL(
-        string: environment["INSTANT_API_URI"]
-          ?? InstantRuntimeConfiguration.defaultAPIURI.absoluteString
-      ) ?? InstantRuntimeConfiguration.defaultAPIURI
-      let websocketURI = URL(
-        string: environment["INSTANT_WEBSOCKET_URI"]
-          ?? InstantRuntimeConfiguration.defaultWebSocketURI.absoluteString
-      ) ?? InstantRuntimeConfiguration.defaultWebSocketURI
+      let apiURI =
+        URL(
+          string: environment["INSTANT_API_URI"]
+            ?? InstantRuntimeConfiguration.defaultAPIURI.absoluteString
+        ) ?? InstantRuntimeConfiguration.defaultAPIURI
+      let websocketURI =
+        URL(
+          string: environment["INSTANT_WEBSOCKET_URI"]
+            ?? InstantRuntimeConfiguration.defaultWebSocketURI.absoluteString
+        ) ?? InstantRuntimeConfiguration.defaultWebSocketURI
       let row = try await InstantPlaybackRoomLiveValidation.run(
         appID: appID,
         apiURI: apiURI,

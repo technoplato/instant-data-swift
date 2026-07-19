@@ -353,14 +353,16 @@ struct CLIArgumentParserTests {
         )
       )
     )
-    expectNoDifference(try parseExamplesAppBuilderLeaf(["finish", "build-1"]), .finish(buildID: "build-1"))
+    expectNoDifference(
+      try parseExamplesAppBuilderLeaf(["finish", "build-1"]), .finish(buildID: "build-1"))
     expectNoDifference(try parseExamplesAppBuilderLeaf(["reset"]), .reset)
     expectNoDifference(try parseExamplesAppBuilderLeaf(["dance", "--fast"]), .unknown("dance"))
   }
 
   @Test
   func examplesAppBuilderLeafParserReportsMalformedArguments() throws {
-    try expectExamplesAppBuilderLeafParseError([], description: CLIExamplesAppBuilderUsage.appBuilder)
+    try expectExamplesAppBuilderLeafParseError(
+      [], description: CLIExamplesAppBuilderUsage.appBuilder)
     try expectExamplesAppBuilderLeafParseError(
       ["generate"],
       description: CLIExamplesAppBuilderUsage.generate
@@ -439,7 +441,8 @@ struct CLIArgumentParserTests {
     )
     try expectExamplesTodosLeafParseError(
       ["watch", "--order-by", "title"],
-      description: "Usage: \(CLIExamplesTodosUsage.watchCommand) --order-by none|createdAt|serverCreatedAt"
+      description:
+        "Usage: \(CLIExamplesTodosUsage.watchCommand) --order-by none|createdAt|serverCreatedAt"
     )
     try expectExamplesTodosLeafParseError(
       ["watch", "--first", "1", "--last", "1"],
@@ -1553,13 +1556,15 @@ struct CLIArgumentParserTests {
         "--x-percent", "0",
         "--y-percent", "0",
       ]),
-      .cursors(.move(CLIExamplesCursorsMoveInvocation(
-        userID: "user-1",
-        x: 0,
-        y: 0,
-        xPercent: 0,
-        yPercent: 0
-      )))
+      .cursors(
+        .move(
+          CLIExamplesCursorsMoveInvocation(
+            userID: "user-1",
+            x: 0,
+            y: 0,
+            xPercent: 0,
+            yPercent: 0
+          )))
     )
     expectNoDifference(
       try parseExamples(["cursor", "list"]),
@@ -1574,14 +1579,16 @@ struct CLIArgumentParserTests {
         "--y-percent", "4",
         "--name", "Ada",
       ]),
-      .customCursors(.move(CLIExamplesCursorsMoveInvocation(
-        userID: "user-1",
-        x: 1,
-        y: 2,
-        xPercent: 3,
-        yPercent: 4,
-        name: "Ada"
-      )))
+      .customCursors(
+        .move(
+          CLIExamplesCursorsMoveInvocation(
+            userID: "user-1",
+            x: 1,
+            y: 2,
+            xPercent: 3,
+            yPercent: 4,
+            name: "Ada"
+          )))
     )
     expectNoDifference(
       try parseExamples(["custom-cursor", "watch"]),
@@ -1650,7 +1657,8 @@ struct CLIArgumentParserTests {
       .list(CLIExamplesCursorsListInvocation(viewerUserID: "user-1"))
     )
     expectNoDifference(
-      try parseExamplesCustomCursorsLeaf(["observe", "--events", "1", "--viewer-user-id", "user-2"]),
+      try parseExamplesCustomCursorsLeaf(["observe", "--events", "1", "--viewer-user-id", "user-2"]
+      ),
       .watch(CLIExamplesCursorsWatchInvocation(eventCount: 1, viewerUserID: "user-2"))
     )
     expectNoDifference(
@@ -1682,11 +1690,17 @@ struct CLIArgumentParserTests {
       description: CLIExamplesCursorsUsage.move
     )
     try expectExamplesCursorsLeafParseError(
-      ["move", "user-1", "--x", "1", "--y", "2", "--x-percent", "3", "--y-percent", "4", "--name", "Ada"],
+      [
+        "move", "user-1", "--x", "1", "--y", "2", "--x-percent", "3", "--y-percent", "4", "--name",
+        "Ada",
+      ],
       description: CLIExamplesCursorsUsage.move
     )
     try expectExamplesCustomCursorsLeafParseError(
-      ["move", "user-1", "--x", "1", "--y", "2", "--x-percent", "3", "--y-percent", "4", "--name", "  "],
+      [
+        "move", "user-1", "--x", "1", "--y", "2", "--x-percent", "3", "--y-percent", "4", "--name",
+        "  ",
+      ],
       description: CLIExamplesCustomCursorsUsage.move
     )
     try expectExamplesCursorsLeafParseError(
@@ -1719,11 +1733,13 @@ struct CLIArgumentParserTests {
     )
     expectNoDifference(
       try parseExamples(["tile-game", "tap", "user-1", "0", "1"]),
-      .mergeTileGame(.tap(CLIExamplesMergeTileGameTapInvocation(
-        userID: "user-1",
-        row: 0,
-        column: 1
-      )))
+      .mergeTileGame(
+        .tap(
+          CLIExamplesMergeTileGameTapInvocation(
+            userID: "user-1",
+            row: 0,
+            column: 1
+          )))
     )
     expectNoDifference(
       try parseExamples(["merge-game", "watch"]),
@@ -1753,7 +1769,8 @@ struct CLIArgumentParserTests {
       .board(CLIExamplesMergeTileGameBoardInvocation(viewerUserID: "user-1"))
     )
     expectNoDifference(
-      try parseExamplesMergeTileGameLeaf(["observe", "--events", "1", "--viewer-user-id", "user-2"]),
+      try parseExamplesMergeTileGameLeaf(["observe", "--events", "1", "--viewer-user-id", "user-2"]
+      ),
       .watch(CLIExamplesMergeTileGameWatchInvocation(eventCount: 1, viewerUserID: "user-2"))
     )
     expectNoDifference(
@@ -1819,10 +1836,11 @@ struct CLIArgumentParserTests {
     expectNoDifference(
       try parseExamples(["syncups", "add", "Daily", "--attendee", "Blob"]),
       .syncUps(
-        .add(CLIExamplesSyncUpsAddInvocation(
-          title: "Daily",
-          attendeeNames: ["Blob"]
-        ))
+        .add(
+          CLIExamplesSyncUpsAddInvocation(
+            title: "Daily",
+            attendeeNames: ["Blob"]
+          ))
       )
     )
     expectNoDifference(
@@ -2880,7 +2898,8 @@ struct CLIArgumentParserTests {
     )
     expectNoDifference(
       try parseSchema(["generate", "--example", "validation", "--to", "validation.schema.ts"]),
-      .generate(CLIGenerateArtifactInvocation(example: "validation", outputPath: "validation.schema.ts"))
+      .generate(
+        CLIGenerateArtifactInvocation(example: "validation", outputPath: "validation.schema.ts"))
     )
     expectNoDifference(
       try parseSchema([
@@ -2931,7 +2950,8 @@ struct CLIArgumentParserTests {
     )
     expectNoDifference(
       try parsePermissions(["generate", "--example", "validation", "--to", "validation.perms.ts"]),
-      .generate(CLIGenerateArtifactInvocation(example: "validation", outputPath: "validation.perms.ts"))
+      .generate(
+        CLIGenerateArtifactInvocation(example: "validation", outputPath: "validation.perms.ts"))
     )
     expectNoDifference(
       try parsePermissions([
@@ -3340,7 +3360,8 @@ struct CLIArgumentParserTests {
       CLIValidationRunnerInvocation.syncUpsRecording.appID,
       "syncups-recording-validation"
     )
-    expectNoDifference(CLIValidationRunnerInvocation.cloudKitDemo.caseID, "validation.cloudkit.demo")
+    expectNoDifference(
+      CLIValidationRunnerInvocation.cloudKitDemo.caseID, "validation.cloudkit.demo")
     expectNoDifference(CLIValidationRunnerInvocation.cloudKitDemo.appID, "cloudkit-demo-validation")
     expectNoDifference(CLIValidationRunnerInvocation.liveSession.caseID, "validation.live.session")
     expectNoDifference(CLIValidationRunnerInvocation.liveSession.appID, "live-session-validation")
@@ -3476,7 +3497,8 @@ struct CLIArgumentParserTests {
     try expectAdminParseError(["query"], description: CLIAdminUsage.query)
     try expectAdminParseError(
       ["query", "bad/namespace"],
-      description: "\(CLIAdminUsage.query): namespace must not be empty or contain whitespace or '/'."
+      description:
+        "\(CLIAdminUsage.query): namespace must not be empty or contain whitespace or '/'."
     )
     try expectAdminParseError(
       ["query", "notes", "--limit"],
@@ -3493,7 +3515,8 @@ struct CLIArgumentParserTests {
     try expectAdminParseError(["transact", "notes"], description: CLIAdminUsage.transact)
     try expectAdminParseError(
       ["transact", "bad namespace", "note-1", "--merge", "{}"],
-      description: "\(CLIAdminUsage.transact): namespace must not be empty or contain whitespace or '/'."
+      description:
+        "\(CLIAdminUsage.transact): namespace must not be empty or contain whitespace or '/'."
     )
     try expectAdminParseError(
       ["transact", "notes", "  ", "--merge", "{}"],
@@ -3685,7 +3708,8 @@ struct CLIArgumentParserTests {
       description: "Unknown outbox flush option: --unknown. \(CLIOutboxUsage.flush)"
     )
     try expectOutboxParseError(["confirm"], description: CLIOutboxUsage.confirm)
-    try expectOutboxParseError(["confirm", "mutation-1", "extra"], description: CLIOutboxUsage.confirm)
+    try expectOutboxParseError(
+      ["confirm", "mutation-1", "extra"], description: CLIOutboxUsage.confirm)
     try expectOutboxParseError(["fail"], description: CLIOutboxUsage.fail)
     try expectOutboxParseError(["fail", "mutation-1", "  "], description: CLIOutboxUsage.fail)
     try expectOutboxParseError(["retry"], description: CLIOutboxUsage.retry)
@@ -3975,7 +3999,7 @@ struct CLIArgumentParserTests {
         "upload", " ./photo.jpg ", "--name", " Uploaded Photo ", "--content-type",
         " image/jpeg ",
       ]),
-        .upload(
+      .upload(
         CLIFileUploadInvocation(
           sourcePath: " ./photo.jpg ",
           name: "Uploaded Photo",
@@ -4241,7 +4265,9 @@ struct CLIArgumentParserTests {
       .readContent(CLIStreamContentReadInvocation(selector: .clientID("client-1")))
     )
     expectNoDifference(
-      try parseStreams(["watch-content", "--client-id", "client-1", "--byte-offset", "3", "--events", "1"]),
+      try parseStreams([
+        "watch-content", "--client-id", "client-1", "--byte-offset", "3", "--events", "1",
+      ]),
       .watchContent(
         CLIStreamContentWatchInvocation(
           selector: .clientID("client-1"),

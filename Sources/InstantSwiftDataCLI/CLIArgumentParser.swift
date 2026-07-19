@@ -1487,6 +1487,8 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
   case liveSharingWriter
   case liveVoiceTrailRecordingsList
   case liveVoiceTrailV3Capture
+  case liveTodosV3Write
+  case liveTodosV3Observe
   case liveAuthInvalidation
   case livePlaybackRoom
   case livePreferences
@@ -1520,6 +1522,10 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
       "validation.live.voice-trail-recordings-list"
     case .liveVoiceTrailV3Capture:
       "validation.live.voice-trail-v3-capture"
+    case .liveTodosV3Write:
+      "validation.live.todos-v3-write"
+    case .liveTodosV3Observe:
+      "validation.live.todos-v3-observe"
     case .liveAuthInvalidation:
       "validation.live.auth-invalidation"
     case .livePlaybackRoom:
@@ -1557,6 +1563,8 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
       "live-voice-trail-recordings-list"
     case .liveVoiceTrailV3Capture:
       "live-voice-trail-v3-capture"
+    case .liveTodosV3Write, .liveTodosV3Observe:
+      "live-todos-v3"
     case .liveAuthInvalidation:
       "live-auth-invalidation"
     case .livePlaybackRoom:
@@ -1596,7 +1604,7 @@ public enum CLIValidationUsage {
 
 public enum CLIValidationRunnerUsage {
   public static let validationRunner =
-    "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--reminders|--local-reminders|--server-transaction-loopback|--cloudkit-demo|--live-session|--live-transaction|--live-observe|--live-sharing|--live-sharing-writer|--live-voice-trail-recordings-list|--live-auth-invalidation|--live-playback-room|--live-preferences|--live-voice-trail-v3-capture|--typed-drafts|--platform-adapters|--syncups-recording|--parity-report|--coverage]"
+    "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--reminders|--local-reminders|--server-transaction-loopback|--cloudkit-demo|--live-session|--live-transaction|--live-observe|--live-sharing|--live-sharing-writer|--live-voice-trail-recordings-list|--live-auth-invalidation|--live-playback-room|--live-preferences|--live-voice-trail-v3-capture|--live-todos-v3-write|--live-todos-v3-observe|--typed-drafts|--platform-adapters|--syncups-recording|--parity-report|--coverage]"
 }
 
 public enum CLIValidationArgumentError: Error, Equatable, Sendable {
@@ -2606,7 +2614,8 @@ public struct CLIInvocationParser: Parser {
     var arguments = Array(input)
     let output = CLIArguments.normalizeOutputMode(in: &arguments)
     var commandInput = arguments[...]
-    let command = commandInput.isEmpty
+    let command =
+      commandInput.isEmpty
       ? nil
       : try CLITopLevelCommandParser().parse(&commandInput)
     input.removeAll()
@@ -2828,8 +2837,10 @@ public struct CLIExamplesAuthLeafParser: Parser {
       return .sendCode(email: email)
 
     case "verify-code", "verify", "magic-code-verify":
-      let email = try parseRawAuthRecipeArgument(from: &input, usage: CLIExamplesAuthUsage.verifyCode)
-      let code = try parseRawAuthRecipeArgument(from: &input, usage: CLIExamplesAuthUsage.verifyCode)
+      let email = try parseRawAuthRecipeArgument(
+        from: &input, usage: CLIExamplesAuthUsage.verifyCode)
+      let code = try parseRawAuthRecipeArgument(
+        from: &input, usage: CLIExamplesAuthUsage.verifyCode)
       try requireNoRemainingExamplesAuthArguments(&input, usage: CLIExamplesAuthUsage.verifyCode)
       return .verifyCode(email: email, code: code)
 
@@ -3318,7 +3329,8 @@ public struct CLIExamplesTodosWatchOptionsParser: Parser {
 public struct CLIExamplesTodoLinksLeafParser: Parser {
   public init() {}
 
-  public func parse(_ input: inout ArraySlice<String>) throws -> CLIExamplesTodoLinksLeafInvocation {
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIExamplesTodoLinksLeafInvocation
+  {
     guard let command = input.first else {
       throw CLIExamplesTodoLinksArgumentError.invalidArguments(
         usage: CLIExamplesTodoLinksUsage.todoLinks
@@ -4197,7 +4209,8 @@ public struct CLIExamplesSyncUpsLeafParser: Parser {
 public struct CLIExamplesRemindersLeafParser: Parser {
   public init() {}
 
-  public func parse(_ input: inout ArraySlice<String>) throws -> CLIExamplesRemindersLeafInvocation {
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIExamplesRemindersLeafInvocation
+  {
     guard let command = input.first else {
       throw CLIExamplesRemindersArgumentError.invalidArguments(
         CLIExamplesRemindersUsage.reminders
@@ -4226,7 +4239,9 @@ public struct CLIExamplesRemindersLeafParser: Parser {
     case "tags", "list-tags":
       try requireNoRemainingExamplesRemindersArguments(
         &input,
-        usage: command == "list-tags" ? "Usage: instant-swift-data examples reminders list-tags [--json|--jsonl]" : CLIExamplesRemindersUsage.tags
+        usage: command == "list-tags"
+          ? "Usage: instant-swift-data examples reminders list-tags [--json|--jsonl]"
+          : CLIExamplesRemindersUsage.tags
       )
       return .tags
 
@@ -4798,6 +4813,12 @@ public struct CLIValidationRunnerParser: Parser {
     case "--live-voice-trail-v3-capture":
       return .liveVoiceTrailV3Capture
 
+    case "--live-todos-v3-write":
+      return .liveTodosV3Write
+
+    case "--live-todos-v3-observe":
+      return .liveTodosV3Observe
+
     case "--live-auth-invalidation":
       return .liveAuthInvalidation
 
@@ -4994,7 +5015,8 @@ public struct CLISyncParser: Parser {
       return .inspect
 
     case "mark-processed":
-      let transactionID = try parseRequiredSyncArgument(from: &input, usage: CLISyncUsage.markProcessed)
+      let transactionID = try parseRequiredSyncArgument(
+        from: &input, usage: CLISyncUsage.markProcessed)
       try requireNoRemainingSyncArguments(&input, usage: CLISyncUsage.markProcessed)
       return .markProcessed(transactionID: transactionID)
 
@@ -5966,7 +5988,8 @@ public struct CLIStreamCreateParser: Parser {
 
   public func parse(_ input: inout ArraySlice<String>) throws -> CLIStreamCreateInvocation {
     let clientID = try parseRequiredStreamArgument(from: &input, usage: CLIStreamsUsage.create)
-    try requireNoRemainingStreamArguments(&input, domain: "streams create", usage: CLIStreamsUsage.create)
+    try requireNoRemainingStreamArguments(
+      &input, domain: "streams create", usage: CLIStreamsUsage.create)
     return CLIStreamCreateInvocation(clientID: clientID)
   }
 }
@@ -5975,7 +5998,8 @@ public struct CLIStreamAppendContentParser: Parser {
   public init() {}
 
   public func parse(_ input: inout ArraySlice<String>) throws -> CLIStreamAppendContentInvocation {
-    let streamID = try parseRequiredStreamArgument(from: &input, usage: CLIStreamsUsage.appendContent)
+    let streamID = try parseRequiredStreamArgument(
+      from: &input, usage: CLIStreamsUsage.appendContent)
     var content: String?
     var expectedOffset: Int64?
 
@@ -8568,8 +8592,9 @@ private func parseExamplesRemindersSearchOptions(
   }
 
   let text = terms.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
-  guard !text.isEmpty || rawTag != nil || listID != nil || flagged != nil || scheduled
-    || today || priorityRawValue != nil
+  guard
+    !text.isEmpty || rawTag != nil || listID != nil || flagged != nil || scheduled
+      || today || priorityRawValue != nil
   else {
     throw CLIExamplesRemindersArgumentError.invalidArguments(
       CLIExamplesRemindersUsage.search
@@ -8900,7 +8925,8 @@ private func parseCLITodoOrderField(_ value: String) -> CLITodosQueryOrderField?
 }
 
 private func parseCLITodoSelectedFields(_ value: String) throws -> [String] {
-  let fields = value
+  let fields =
+    value
     .split(separator: ",")
     .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
     .filter { !$0.isEmpty }
