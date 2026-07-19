@@ -17,6 +17,7 @@
     "test:preferences": "tsx --test src/preferences-sdk-contract.test.ts",
     "live:sharing": "tsx src/sharing-live-contract.ts",
     "live:playback-room": "tsx src/playback-room-live-contract.ts",
+    "live:preferences": "tsx src/preferences-live-contract.ts",
     "live:voice-trail-recordings-list": "tsx src/voice-trail-recordings-list-live-contract.ts",
     "typecheck": "../typecheck-generated-contract.sh",
     "validate": "tsx src/main.ts"
