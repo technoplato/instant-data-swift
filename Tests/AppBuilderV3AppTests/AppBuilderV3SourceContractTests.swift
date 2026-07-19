@@ -53,6 +53,15 @@ struct AppBuilderV3SourceContractTests {
     let detail = FetchOne(AppBuilderV3Build.byID(buildID))
     let files = FetchAll(AppBuilderV3File.ordered)
 
+    expectNoDifference(
+      AppBuilderV3Build.forOwner(ownerID).plan.filters,
+      [.equals(field: "owner.id", value: .string("user-1"))]
+    )
+    expectNoDifference(
+      AppBuilderV3Build.query.where(AppBuilderV3Build.owner != ownerID).plan.filters,
+      [.notEquals(field: "owner.id", value: .string("user-1"))]
+    )
+
     _ = ownerBuilds
     _ = detail
     _ = files

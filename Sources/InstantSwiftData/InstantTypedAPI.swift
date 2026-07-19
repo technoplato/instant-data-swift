@@ -1662,6 +1662,7 @@ extension InstantPredicate {
   }
 }
 
+@_disfavoredOverload
 public func == <Entity, Value>(
   lhs: InstantAttributePath<Entity, Value>,
   rhs: Value
@@ -1676,6 +1677,7 @@ public func == <Entity, Target>(
   InstantPredicate(.equals(field: "\(lhs.name).id", value: .string(rhs.rawValue)))
 }
 
+@_disfavoredOverload
 public func != <Entity, Value>(
   lhs: InstantAttributePath<Entity, Value>,
   rhs: Value
