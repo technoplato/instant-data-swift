@@ -128,11 +128,11 @@ try {
     swift,
     "Swift observation of TypeScript Stroopwafel readiness",
   );
-  assert.equal(readyObserved.event, "typescript-ready-observed");
+  assert.equal(readyObserved.event, "typescript-ready-observed", JSON.stringify(readyObserved));
   assert.equal(readyObserved.ok, true);
 
   const gameStarted = await nextJSONLine(lines, swift, "Swift Stroopwafel game start");
-  assert.equal(gameStarted.event, "swift-game-started");
+  assert.equal(gameStarted.event, "swift-game-started", JSON.stringify(gameStarted));
   assert.equal(gameStarted.ok, true);
   const game = await waitForGame((value) => (
     value.status === stroopwafelV3AppContract.game.inProgress
@@ -150,11 +150,11 @@ try {
     swift,
     "Swift observation of TypeScript Stroopwafel point",
   );
-  assert.equal(pointObserved.event, "typescript-point-observed");
+  assert.equal(pointObserved.event, "typescript-point-observed", JSON.stringify(pointObserved));
   assert.equal(pointObserved.ok, true);
 
   const completed = await nextJSONLine(lines, swift, "Swift Stroopwafel completion");
-  assert.equal(completed.event, "swift-completion-observed");
+  assert.equal(completed.event, "swift-completion-observed", JSON.stringify(completed));
   assert.equal(completed.ok, true);
   const completedGame = await waitForGame((value) => (
     value.status === stroopwafelV3AppContract.game.completed
