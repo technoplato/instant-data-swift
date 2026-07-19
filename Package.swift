@@ -30,6 +30,7 @@ let package = Package(
     .library(name: "RemindersV3App", targets: ["RemindersV3App"]),
     .library(name: "StroopwafelV3App", targets: ["StroopwafelV3App"]),
     .library(name: "SyncUpsV3App", targets: ["SyncUpsV3App"]),
+    .library(name: "StreamsV3App", targets: ["StreamsV3App"]),
     .library(name: "TodosV3App", targets: ["TodosV3App"]),
     .library(name: "VoiceTrailV3App", targets: ["VoiceTrailV3App"]),
     .executable(name: "instant-swift-data", targets: ["instant-swift-data"]),
@@ -40,6 +41,7 @@ let package = Package(
     .executable(name: "reminders-v3", targets: ["RemindersV3Executable"]),
     .executable(name: "stroopwafel-v3", targets: ["StroopwafelV3Executable"]),
     .executable(name: "syncups-v3", targets: ["SyncUpsV3Executable"]),
+    .executable(name: "streams-v3", targets: ["StreamsV3Executable"]),
     .executable(name: "voicetrail-v3", targets: ["VoiceTrailV3Executable"]),
     .executable(name: "todos-v3", targets: ["TodosV3Executable"]),
     .executable(
@@ -190,6 +192,14 @@ let package = Package(
       swiftSettings: strictConcurrencySettings
     ),
     .target(
+      name: "StreamsV3App",
+      dependencies: [
+        "InstantSwiftData",
+        .product(name: "Dependencies", package: "swift-dependencies"),
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .target(
       name: "InstantSwiftDataCLIParsing",
       dependencies: [
         .product(name: "CasePaths", package: "swift-case-paths"),
@@ -259,6 +269,11 @@ let package = Package(
     .executableTarget(
       name: "SyncUpsV3Executable",
       dependencies: ["SyncUpsV3App"],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .executableTarget(
+      name: "StreamsV3Executable",
+      dependencies: ["StreamsV3App"],
       swiftSettings: strictConcurrencySettings
     ),
     .executableTarget(
@@ -343,6 +358,15 @@ let package = Package(
       dependencies: [
         "AuthV3App",
         .product(name: "CustomDump", package: "swift-custom-dump"),
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .testTarget(
+      name: "StreamsV3AppTests",
+      dependencies: [
+        "StreamsV3App",
+        .product(name: "CustomDump", package: "swift-custom-dump"),
+        .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
       ],
       swiftSettings: strictConcurrencySettings
     ),
