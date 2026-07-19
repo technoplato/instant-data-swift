@@ -95,6 +95,7 @@ try {
     reactionsV3AppContract.room.id,
   );
   let roomClosed = false;
+  let topicUnsubscribed = false;
   const observedSwiftPayload = deferred<ReactionsV3Payload>();
   const receivedPayloads: ReactionsV3Payload[] = [];
   const unsubscribe = room.subscribeTopic(
@@ -162,6 +163,7 @@ try {
     assert.deepEqual(warnings, []);
 
     unsubscribe();
+    topicUnsubscribed = true;
     const callbackCountBeforeCleanupProbe = receivedPayloads.length;
     const cleanupProbePayload = {
       name: "fire",
@@ -249,7 +251,7 @@ try {
       },
     }, null, 2)}\n`);
   } finally {
-    unsubscribe();
+    if (!topicUnsubscribed) unsubscribe();
     if (!roomClosed) {
       room.leaveRoom();
       db.shutdown();
