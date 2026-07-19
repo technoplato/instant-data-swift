@@ -137,6 +137,7 @@ for (const path of ["rooms.readyIds", "rooms.kickedIds", "games.playerIds", "gam
 }
 assert.ok(schema.warnings.every((warning) => (
   warning.code === "server-json-as-any"
+  || warning.code === "server-system-string-as-any"
   || warning.code === "system-entity"
   || warning.code === "system-link"
 )));

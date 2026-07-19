@@ -196,4 +196,28 @@ struct StroopwafelContractTests {
     #expect(!schemaSource.contains("topics:"))
     #expect(permissionsSource.contains("request.modifiedFields.all(field, field in ['val'])"))
   }
+
+  @Test
+  func serverManagedEmailStringNormalizesToCanonicalAnyWithExplicitWarning() throws {
+    let expected = ParsedInstantSchemaDocument(InstantSchemaExamples.stroopwafelDocument)
+    var server = expected
+    let usersIndex = try #require(server.entities.firstIndex { $0.namespace == "$users" })
+    let emailIndex = try #require(
+      server.entities[usersIndex].attributes.firstIndex { $0.name == "email" }
+    )
+    server.entities[usersIndex].attributes[emailIndex].valueType = .string
+
+    let comparison = try server.comparingServerNormalized(to: expected)
+
+    expectNoDifference(comparison.normalizedDocument, expected)
+    expectNoDifference(
+      comparison.warnings,
+      [
+        InstantServerSchemaWarning(
+          code: .serverSystemStringAsAny,
+          path: "$users.email"
+        )
+      ]
+    )
+  }
 }
