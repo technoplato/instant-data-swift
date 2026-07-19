@@ -43,6 +43,11 @@ export interface AppBuilderV3File {
   id: string;
   path: string;
   url: string;
+  "content-disposition": string;
+  "content-type": string;
+  "key-version": number;
+  "location-id": string;
+  size: number;
 }
 
 export interface AppBuilderV3BuildError {

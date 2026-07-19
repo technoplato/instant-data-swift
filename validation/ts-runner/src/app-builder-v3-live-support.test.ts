@@ -15,7 +15,16 @@ test("projects the canonical nested App Builder graph", () => {
       isPreviewable: true,
       title: "Build a notes app",
       owner: { id: "user-1", email: "builder@example.com" },
-      file: { id: "file-1", path: "build-1-App.tsx", url: "https://files.example/app" },
+      file: {
+        id: "file-1",
+        path: "build-1-App.tsx",
+        url: "https://files.example/app",
+        "content-disposition": "inline",
+        "content-type": "text/typescript",
+        "key-version": 1,
+        "location-id": "location-1",
+        size: 32,
+      },
     }),
     {
       id: "build-1",
@@ -27,7 +36,16 @@ test("projects the canonical nested App Builder graph", () => {
       isPreviewable: true,
       title: "Build a notes app",
       owner: { id: "user-1", email: "builder@example.com" },
-      file: { id: "file-1", path: "build-1-App.tsx", url: "https://files.example/app" },
+      file: {
+        id: "file-1",
+        path: "build-1-App.tsx",
+        url: "https://files.example/app",
+        "content-disposition": "inline",
+        "content-type": "text/typescript",
+        "key-version": 1,
+        "location-id": "location-1",
+        size: 32,
+      },
     },
   );
 });

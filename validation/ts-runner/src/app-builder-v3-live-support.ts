@@ -50,12 +50,31 @@ function projectUser(value: Record<string, unknown>): AppBuilderV3User {
 function projectFile(value: unknown): AppBuilderV3File {
   if (
     !isRecord(value)
-    || !hasExactKeys(value, ["id", "path", "url"])
+    || !hasExactKeys(value, [
+      "id", "path", "url", "content-disposition", "content-type",
+      "key-version", "location-id", "size",
+    ])
     || typeof value.id !== "string"
     || typeof value.path !== "string"
     || typeof value.url !== "string"
+    || typeof value["content-disposition"] !== "string"
+    || typeof value["content-type"] !== "string"
+    || typeof value["key-version"] !== "number"
+    || !Number.isInteger(value["key-version"])
+    || typeof value["location-id"] !== "string"
+    || typeof value.size !== "number"
+    || !Number.isInteger(value.size)
   ) throw shapeError();
-  return { id: value.id, path: value.path, url: value.url };
+  return {
+    id: value.id,
+    path: value.path,
+    url: value.url,
+    "content-disposition": value["content-disposition"],
+    "content-type": value["content-type"],
+    "key-version": value["key-version"],
+    "location-id": value["location-id"],
+    size: value.size,
+  };
 }
 
 function projectError(value: unknown): AppBuilderV3BuildError {
