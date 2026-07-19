@@ -1082,6 +1082,11 @@ Success criterion: Swift matches or exceeds TypeScript for equivalent workloads.
 If Swift is slower, the benchmark must name the reason, quantify the gap, and
 create a tracked optimization target.
 
+V1 acceptance record: `validation/verify-v1-release.sh` passed from the clean
+`95bd966` revision and is bound to annotated tag `v1.0.0`. The archiveable
+evidence is
+`/tmp/instant-data-swift-v1-release-20260719T103430Z/evidence.json`.
+
 ## Definition Of Done
 
 The project is done when:

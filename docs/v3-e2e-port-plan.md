@@ -1,6 +1,6 @@
 # V3 Syntax and End-to-End Port Plan
 
-Status: active execution plan
+Status: V1 port complete; performance optimization follow-up active
 
 This document turns the V3 SwiftUI sketches into a sequence of small,
 test-gated implementation packets. It is subordinate to
@@ -414,7 +414,8 @@ When sources disagree, use this order:
 | Current execution state, packet order, gates, and tag targets | `docs/v3-e2e-port-plan.md` |
 | Product contract and full definition of done | `docs/instant-swift-data-goals.md` |
 | Desired V3 API rules and decision log | `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` |
-| Next execution target | Compose and pass the single clean-checkout V1 release gate; do not tag `v1.0.0` before it is green |
+| Next execution target | Profile the largest checked performance gaps, beginning with nested and reverse linked query materialization, without changing V1 semantics |
+| V1 clean release gate | `validation/verify-v1-release.sh` and `/tmp/instant-data-swift-v1-release-20260719T103430Z/evidence.json` |
 | Checked V1 performance baseline | `validation/benchmarks/v1-cross-sdk-performance-2026-07-19.json` |
 | Reproducible cross-SDK performance gate | `validation/run-cross-sdk-benchmark-comparison.sh`, `InstantCrossSDKBenchmark.swift`, `InstantCrossSDKRuntimeBenchmark.swift`, and their pinned TypeScript peers |
 | Live transport actor-hop proof | `validation/verify-todos-v3-app-live.sh` and `InstantTodosV3LiveValidation.swift` |
@@ -535,7 +536,7 @@ remaining version line.
 | `v0.2.0-live-sync` | Complete, subsumed | Preserve the bidirectional runtime, reconnect, and rejection gates in the `v0.4.0` aggregate |
 | `v0.3.0-schema-auth-sharing` | Complete | Preserve the clean aggregate evidence named by the annotated tag |
 | `v0.4.0-apps-e2e` | Complete | Preserve the clean CloudKitDemo and aggregate evidence named by the annotated tag |
-| `v1.0.0` | Pending | Full goals definition of done |
+| `v1.0.0` | Complete | Preserve the clean release evidence named by the annotated tag |
 
 ### `v0.1.0-v3-syntax`
 
@@ -639,13 +640,10 @@ fresh-app gate writes its own `swift-coverage-final.json`. The clean run at
 `/tmp/instant-data-swift-cloudkit-demo-v3-20260719T095155Z/evidence.json`
 records 295 cases: 28 exact, 265 adapted, 2 not applicable, and zero blocked.
 
-One release packet remains:
-
-1. **Add one clean-checkout V1 release gate.** Compose the already-green app
-   boundaries, artifact-aware zero-blocked coverage, benchmark comparison, full
-   Swift suite, isolated macro lane, runnable products, and complete
-   TypeScript matrix into one archiveable command. Do not create `v1.0.0`
-   until that command passes from a clean checkout.
+No V1 release packets remain. `validation/verify-v1-release.sh` composes the
+app boundaries, artifact-aware zero-blocked coverage, benchmark comparison,
+full Swift suite, isolated macro lane, runnable products, and complete
+TypeScript matrix into one archiveable command.
 
 The performance packet is complete through `08a9295`. The release-mode gate
 compares 15 equivalent logical workloads across Swift and canonical TypeScript
@@ -658,6 +656,14 @@ Todos gate separately measured authenticated connect, two accepted mutations,
 offline enqueue, and real reconnect drain with zero compiler/runtime warnings.
 The combined checked evidence is
 `validation/benchmarks/v1-cross-sdk-performance-2026-07-19.json`.
+
+The clean gate passed at revision `95bd966` and is bound to the annotated
+`v1.0.0` tag. Evidence is in
+`/tmp/instant-data-swift-v1-release-20260719T103430Z/evidence.json`: 1,106 Swift
+tests across 96 suites, 28 isolated macro tests, all 14 runnable products, the
+complete TypeScript matrix, 295 classified parity records with zero blocked,
+15 quantified benchmark workloads, fresh CloudKitDemo and Todos app
+boundaries, live actor-hop evidence, and zero compiler/runtime warnings.
 
 The locally adapted magic-code extra-fields test can be promoted with live
 transport evidence when that auth surface is revisited, but it is not an

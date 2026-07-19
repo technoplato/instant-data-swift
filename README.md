@@ -725,6 +725,7 @@ swift run instant-swift-data-benchmarks --suite local-todos --iterations 3 --jso
 swift run -c release instant-swift-data-benchmarks --suite cross-sdk-core --iterations 5 --json
 swift run -c release instant-swift-data-benchmarks --suite cross-sdk-runtime --iterations 5 --json
 validation/run-cross-sdk-benchmark-comparison.sh
+validation/verify-v1-release.sh
 ```
 
 The `local-todos` suite records bootstrap, insert, query, enqueue, cache,
@@ -741,6 +742,12 @@ actor-hop breakdowns for the runtime layer, and creates a quantified
 optimization target whenever Swift is slower. The checked baseline, including
 the separate fresh-app live WebSocket actor-hop proof, is
 `validation/benchmarks/v1-cross-sdk-performance-2026-07-19.json`.
+
+The annotated `v1.0.0` tag is bound to clean release evidence at
+`/tmp/instant-data-swift-v1-release-20260719T103430Z/evidence.json`: 1,106
+Swift tests in 96 suites, 28 macro tests, 14 runnable products, complete
+TypeScript validation, zero blocked parity cases, fresh CloudKitDemo and Todos
+boundaries, and zero compiler/runtime warnings.
 
 The current transport is intentionally marked `not-implemented-local-cache-only`
 in command output. That means the demo proves durable local cache, typed triples,
