@@ -398,12 +398,14 @@ public enum InstantStroopwafelV3LiveValidation {
       onFailure: { outcome.failure = $0 }
     )
     defer { task.cancel() }
-    try await withTimeout(operation) { await task.value }
-    let result = await MainActor.run { (outcome.accepted, outcome.failure) }
-    if let error = result.1 { throw error }
-    guard result.0 else {
-      throw failure("\(operation) completed without server acceptance.")
+    let deadline = ContinuousClock.now + .seconds(30)
+    while ContinuousClock.now < deadline {
+      let result = await MainActor.run { (outcome.accepted, outcome.failure) }
+      if let error = result.1 { throw error }
+      if result.0 { return }
+      try await Task.sleep(for: .milliseconds(25))
     }
+    throw failure("Timed out waiting for server acceptance: \(operation).")
   }
 
   private static func waitForRoom(
