@@ -162,12 +162,15 @@ assert.deepStrictEqual(live.details.swift.observedFrames, serverFrames("typescri
 assert.deepStrictEqual(live.details.swift.activePeerIDs, ["typescript-peer"]);
 assert.equal(live.details.swift.peerCountAfterDisconnect, 0);
 assert.deepStrictEqual(
-  live.details.swift.serverNormalizations,
+  live.details.swift.typeScriptPatchNormalizations,
   ["chat-input:null-to-absent"],
 );
 assert.deepStrictEqual(live.details.typeScriptPublishedFrames, frames("typescript-peer"));
-assert.deepStrictEqual(live.details.typeScriptObservedSwiftFrames, serverFrames("swift-peer"));
-assert.deepStrictEqual(live.details.serverNormalizations, ["chat-input:null-to-absent"]);
+assert.deepStrictEqual(live.details.typeScriptObservedSwiftFrames, frames("swift-peer"));
+assert.deepStrictEqual(
+  live.details.typeScriptPatchNormalizations,
+  ["chat-input:null-to-absent"],
+);
 assert.equal(schema.entityCount, 0);
 assert.equal(schema.linkCount, 0);
 assert.equal(permissions.namespaceCount, 0);

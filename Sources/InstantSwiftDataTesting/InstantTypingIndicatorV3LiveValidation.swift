@@ -21,7 +21,7 @@ public struct InstantTypingIndicatorV3LiveValidationDetails: Codable, Equatable,
   public var observedFrames: [InstantTypingIndicatorPresenceFrame]
   public var activePeerIDs: [String]
   public var peerCountAfterDisconnect: Int
-  public var serverNormalizations: [String]
+  public var typeScriptPatchNormalizations: [String]
   public var connectionState: String
 
   public init(
@@ -33,7 +33,7 @@ public struct InstantTypingIndicatorV3LiveValidationDetails: Codable, Equatable,
     observedFrames: [InstantTypingIndicatorPresenceFrame],
     activePeerIDs: [String],
     peerCountAfterDisconnect: Int,
-    serverNormalizations: [String],
+    typeScriptPatchNormalizations: [String],
     connectionState: String
   ) {
     self.roomType = roomType
@@ -44,7 +44,7 @@ public struct InstantTypingIndicatorV3LiveValidationDetails: Codable, Equatable,
     self.observedFrames = observedFrames
     self.activePeerIDs = activePeerIDs
     self.peerCountAfterDisconnect = peerCountAfterDisconnect
-    self.serverNormalizations = serverNormalizations
+    self.typeScriptPatchNormalizations = typeScriptPatchNormalizations
     self.connectionState = connectionState
   }
 }
@@ -143,7 +143,7 @@ public enum InstantTypingIndicatorV3LiveValidation {
         observedFrames: observedFrames,
         activePeerIDs: activePeerIDs,
         peerCountAfterDisconnect: peerCountAfterDisconnect,
-        serverNormalizations: ["chat-input:null-to-absent"],
+        typeScriptPatchNormalizations: ["chat-input:null-to-absent"],
         connectionState: status.state.rawValue
       )
     )

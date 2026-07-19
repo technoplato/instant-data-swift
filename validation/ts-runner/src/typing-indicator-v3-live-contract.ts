@@ -17,7 +17,7 @@ import {
   exactTypingIndicatorFrames,
   phaseForTypingIndicatorPresence,
   projectCanonicalTypingPeer,
-  serverObservedTypingIndicatorFrames,
+  typeScriptPatchObservedTypingIndicatorFrames,
   type TypingIndicatorPhase as Phase,
   type TypingIndicatorPresence as Presence,
   type TypingIndicatorPresenceFrame as Frame,
@@ -99,8 +99,7 @@ try {
   const room: any = db.joinRoom(typingIndicatorV3AppContract.room.type, roomID);
   let roomClosed = false;
 
-  const publishedSwiftFrames = exactTypingIndicatorFrames("swift-peer");
-  const expectedSwiftFrames = serverObservedTypingIndicatorFrames("swift-peer");
+  const expectedSwiftFrames = exactTypingIndicatorFrames("swift-peer");
   const observedSwiftFrames = new Map<Phase, Frame>();
   const phaseSignals = {
     initial: deferred<Frame>(),
@@ -162,15 +161,15 @@ try {
     await requireSuccessfulExit(swift, "Swift typing runner");
     assert.equal(swiftEvidence.ok, true);
     assert.equal(swiftEvidence.event, "bidirectional-presence-frames-observed");
-    assert.deepEqual(swiftEvidence.details.publishedFrames, publishedSwiftFrames);
+    assert.deepEqual(swiftEvidence.details.publishedFrames, expectedSwiftFrames);
     assert.deepEqual(
       swiftEvidence.details.observedFrames,
-      serverObservedTypingIndicatorFrames("typescript-peer"),
+      typeScriptPatchObservedTypingIndicatorFrames("typescript-peer"),
     );
     assert.deepEqual(swiftEvidence.details.activePeerIDs, ["typescript-peer"]);
     assert.equal(swiftEvidence.details.peerCountAfterDisconnect, 0);
     assert.deepEqual(
-      swiftEvidence.details.serverNormalizations,
+      swiftEvidence.details.typeScriptPatchNormalizations,
       ["chat-input:null-to-absent"],
     );
     assert.equal(swiftEvidence.details.connectionState, "authenticated");
@@ -192,7 +191,7 @@ try {
         swift: swiftEvidence.details,
         typeScriptPublishedFrames: exactTypingIndicatorFrames("typescript-peer"),
         typeScriptObservedSwiftFrames: expectedSwiftFrames,
-        serverNormalizations: ["chat-input:null-to-absent"],
+        typeScriptPatchNormalizations: ["chat-input:null-to-absent"],
         compilerWarningCount: warnings.length,
         warnings,
       },

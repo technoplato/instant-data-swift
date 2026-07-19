@@ -24,7 +24,7 @@ export function exactTypingIndicatorFrames(peerID: string): TypingIndicatorPrese
   ];
 }
 
-export function serverObservedTypingIndicatorFrames(
+export function typeScriptPatchObservedTypingIndicatorFrames(
   peerID: string,
 ): TypingIndicatorPresenceFrame[] {
   const frames = exactTypingIndicatorFrames(peerID);
