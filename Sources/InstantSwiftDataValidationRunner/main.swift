@@ -291,6 +291,11 @@ struct InstantSwiftDataValidationRunner {
         environment: environment,
         caseID: invocation.caseID
       )
+      let attachmentID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_VOICE_TRAIL_V3_ATTACHMENT_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
       let title = try requiredEnvironment(
         "INSTANT_SWIFT_DATA_VOICE_TRAIL_V3_TITLE",
         environment: environment,
@@ -298,6 +303,26 @@ struct InstantSwiftDataValidationRunner {
       )
       let deviceID = try requiredEnvironment(
         "INSTANT_SWIFT_DATA_VOICE_TRAIL_V3_DEVICE_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let attachmentKind = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_VOICE_TRAIL_V3_ATTACHMENT_KIND",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let attachmentContents = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_VOICE_TRAIL_V3_ATTACHMENT_CONTENTS",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let attachmentOffsetMilliseconds = try requiredIntEnvironment(
+        "INSTANT_SWIFT_DATA_VOICE_TRAIL_V3_ATTACHMENT_OFFSET_MILLISECONDS",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let durationMilliseconds = try requiredIntEnvironment(
+        "INSTANT_SWIFT_DATA_VOICE_TRAIL_V3_DURATION_MILLISECONDS",
         environment: environment,
         caseID: invocation.caseID
       )
@@ -317,8 +342,13 @@ struct InstantSwiftDataValidationRunner {
         expectedUserID: userID,
         recordingID: recordingID,
         transcriptionID: transcriptionID,
+        attachmentID: attachmentID,
         title: title,
-        deviceID: deviceID
+        deviceID: deviceID,
+        attachmentKind: attachmentKind,
+        attachmentContents: attachmentContents,
+        attachmentOffsetMilliseconds: attachmentOffsetMilliseconds,
+        durationMilliseconds: durationMilliseconds
       )
       try writeJSONLine(row)
 
@@ -516,6 +546,22 @@ struct InstantSwiftDataValidationRunner {
         caseID: "validation.live.sharing",
         appID: environment["INSTANT_APP_ID"] ?? "live-sharing-validation",
         message: "Expected \(key) to be a finite number."
+      )
+    }
+    return number
+  }
+
+  private static func requiredIntEnvironment(
+    _ key: String,
+    environment: [String: String],
+    caseID: String
+  ) throws -> Int {
+    let value = try requiredEnvironment(key, environment: environment, caseID: caseID)
+    guard let number = Int(value) else {
+      throw ValidationFailure(
+        caseID: caseID,
+        appID: environment["INSTANT_APP_ID"] ?? "live-validation",
+        message: "Expected \(key) to be an integer."
       )
     }
     return number

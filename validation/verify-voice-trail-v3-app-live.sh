@@ -149,12 +149,16 @@ assert.equal(appCapture.details.swift.pendingMutationCount, 0);
 assert.deepStrictEqual(appCapture.details.typescript, {
   recordingID: appCapture.details.swift.recordingID,
   transcriptionID: appCapture.details.swift.transcriptionID,
+  attachmentID: appCapture.details.swift.attachmentID,
   title: appCapture.details.swift.title,
   ownerUserID: appCapture.details.swift.userID,
   deviceID: appCapture.details.swift.deviceID,
-  recordingState: "recording",
-  durationMilliseconds: 0,
-  transcriptionState: "processing",
+  recordingState: "finished",
+  durationMilliseconds: 12_750,
+  transcriptionState: "ready",
+  attachmentKind: "screenshot",
+  attachmentContents: "capture.png",
+  attachmentOffsetMilliseconds: 2_500,
 });
 assert.equal(appCapture.details.compilerWarningCount, 0);
 assert.deepStrictEqual(appCapture.details.warnings, []);

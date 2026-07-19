@@ -8,11 +8,15 @@ public struct InstantVoiceTrailV3CaptureLiveValidationDetails: Codable, Equatabl
   public var userID: String
   public var recordingID: String
   public var transcriptionID: String
+  public var attachmentID: String
   public var title: String
   public var deviceID: String
   public var recordingState: String
   public var durationMilliseconds: Int
   public var transcriptionState: String
+  public var attachmentKind: String
+  public var attachmentContents: String
+  public var attachmentOffsetMilliseconds: Int
   public var connectionState: String
   public var pendingMutationCount: Int
 
@@ -21,11 +25,15 @@ public struct InstantVoiceTrailV3CaptureLiveValidationDetails: Codable, Equatabl
     userID: String,
     recordingID: String,
     transcriptionID: String,
+    attachmentID: String,
     title: String,
     deviceID: String,
     recordingState: String,
     durationMilliseconds: Int,
     transcriptionState: String,
+    attachmentKind: String,
+    attachmentContents: String,
+    attachmentOffsetMilliseconds: Int,
     connectionState: String,
     pendingMutationCount: Int
   ) {
@@ -33,11 +41,15 @@ public struct InstantVoiceTrailV3CaptureLiveValidationDetails: Codable, Equatabl
     self.userID = userID
     self.recordingID = recordingID
     self.transcriptionID = transcriptionID
+    self.attachmentID = attachmentID
     self.title = title
     self.deviceID = deviceID
     self.recordingState = recordingState
     self.durationMilliseconds = durationMilliseconds
     self.transcriptionState = transcriptionState
+    self.attachmentKind = attachmentKind
+    self.attachmentContents = attachmentContents
+    self.attachmentOffsetMilliseconds = attachmentOffsetMilliseconds
     self.connectionState = connectionState
     self.pendingMutationCount = pendingMutationCount
   }
@@ -52,8 +64,13 @@ public enum InstantVoiceTrailV3CaptureLiveValidation {
     expectedUserID: String,
     recordingID: String,
     transcriptionID: String,
+    attachmentID: String,
     title: String,
     deviceID: String,
+    attachmentKind: String,
+    attachmentContents: String,
+    attachmentOffsetMilliseconds: Int,
+    durationMilliseconds: Int,
     persistenceURL: URL? = nil
   ) async throws -> ValidationEvidenceRow<InstantVoiceTrailV3CaptureLiveValidationDetails> {
     var dependencies = DependencyValues()
@@ -93,6 +110,28 @@ public enum InstantVoiceTrailV3CaptureLiveValidation {
     }
     try await waitForOutboxDrain(client)
 
+    let attachment = try await CreateVoiceTrailAttachment(
+      attachmentID: InstantID(rawValue: attachmentID),
+      recordingID: InstantID(rawValue: recordingID),
+      kind: attachmentKind,
+      contents: attachmentContents,
+      offsetMilliseconds: attachmentOffsetMilliseconds
+    ).prepare(using: client)
+    _ = try await client.transact {
+      for mutation in attachment.mutations { mutation }
+    }
+    try await waitForOutboxDrain(client)
+
+    let finished = try await FinishVoiceTrailRecording(
+      recordingID: InstantID(rawValue: recordingID),
+      transcriptionID: InstantID(rawValue: transcriptionID),
+      durationMilliseconds: durationMilliseconds
+    ).prepare(using: client)
+    _ = try await client.transact {
+      for mutation in finished.mutations { mutation }
+    }
+    try await waitForOutboxDrain(client)
+
     let pendingMutationCount = await client.pendingMutations()
       .filter { $0.status == .pending }
       .count
@@ -109,7 +148,7 @@ public enum InstantVoiceTrailV3CaptureLiveValidation {
     return ValidationEvidenceRow(
       caseID: "validation.live.voice-trail-v3-capture",
       side: "swift",
-      event: "app-capture-created",
+      event: "app-capture-finished",
       appID: appID,
       entityID: recordingID,
       timestampMs: Int64((Date().timeIntervalSince1970 * 1_000).rounded()),
@@ -119,11 +158,15 @@ public enum InstantVoiceTrailV3CaptureLiveValidation {
         userID: expectedUserID,
         recordingID: recordingID,
         transcriptionID: transcriptionID,
+        attachmentID: attachmentID,
         title: title,
         deviceID: deviceID,
-        recordingState: "recording",
-        durationMilliseconds: 0,
-        transcriptionState: "processing",
+        recordingState: "finished",
+        durationMilliseconds: durationMilliseconds,
+        transcriptionState: "ready",
+        attachmentKind: attachmentKind,
+        attachmentContents: attachmentContents,
+        attachmentOffsetMilliseconds: attachmentOffsetMilliseconds,
         connectionState: status.state.rawValue,
         pendingMutationCount: pendingMutationCount
       )

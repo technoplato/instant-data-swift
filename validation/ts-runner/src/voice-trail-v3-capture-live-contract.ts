@@ -16,8 +16,13 @@ const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../.
 const suffix = randomUUID();
 const recordingID = randomUUID();
 const transcriptionID = randomUUID();
+const attachmentID = randomUUID();
 const title = `VoiceTrail V3 app capture ${recordingID}`;
 const deviceID = "swift-voicetrail-v3-app";
+const attachmentKind = "screenshot";
+const attachmentContents = "capture.png";
+const attachmentOffsetMilliseconds = 2_500;
+const durationMilliseconds = 12_750;
 const warnings: string[] = [];
 const originalWarn = console.warn;
 console.warn = (...values) => warnings.push(values.map(String).join(" "));
@@ -44,8 +49,13 @@ try {
     userID: user.id,
     recordingID,
     transcriptionID,
+    attachmentID,
     title,
     deviceID,
+    attachmentKind,
+    attachmentContents,
+    attachmentOffsetMilliseconds,
+    durationMilliseconds,
   });
   assert.equal(swift.ok, true);
   assert.equal(swift.case, "validation.live.voice-trail-v3-capture");
@@ -54,11 +64,15 @@ try {
     userID: user.id,
     recordingID,
     transcriptionID,
+    attachmentID,
     title,
     deviceID,
-    recordingState: "recording",
-    durationMilliseconds: 0,
-    transcriptionState: "processing",
+    recordingState: "finished",
+    durationMilliseconds,
+    transcriptionState: "ready",
+    attachmentKind,
+    attachmentContents,
+    attachmentOffsetMilliseconds,
     connectionState: "authenticated",
     pendingMutationCount: 0,
   });
@@ -67,12 +81,16 @@ try {
   assert.deepEqual(projectCapture(observed), {
     recordingID,
     transcriptionID,
+    attachmentID,
     title,
     ownerUserID: user.id,
     deviceID,
-    recordingState: "recording",
-    durationMilliseconds: 0,
-    transcriptionState: "processing",
+    recordingState: "finished",
+    durationMilliseconds,
+    transcriptionState: "ready",
+    attachmentKind,
+    attachmentContents,
+    attachmentOffsetMilliseconds,
   });
   assert.deepEqual(warnings, []);
 
@@ -101,8 +119,13 @@ async function runSwiftCapture(input: {
   userID: string;
   recordingID: string;
   transcriptionID: string;
+  attachmentID: string;
   title: string;
   deviceID: string;
+  attachmentKind: string;
+  attachmentContents: string;
+  attachmentOffsetMilliseconds: number;
+  durationMilliseconds: number;
 }): Promise<any> {
   const child = spawn(
     "swift",
@@ -124,8 +147,15 @@ async function runSwiftCapture(input: {
         INSTANT_SWIFT_DATA_VOICE_TRAIL_V3_USER_ID: input.userID,
         INSTANT_SWIFT_DATA_VOICE_TRAIL_V3_RECORDING_ID: input.recordingID,
         INSTANT_SWIFT_DATA_VOICE_TRAIL_V3_TRANSCRIPTION_ID: input.transcriptionID,
+        INSTANT_SWIFT_DATA_VOICE_TRAIL_V3_ATTACHMENT_ID: input.attachmentID,
         INSTANT_SWIFT_DATA_VOICE_TRAIL_V3_TITLE: input.title,
         INSTANT_SWIFT_DATA_VOICE_TRAIL_V3_DEVICE_ID: input.deviceID,
+        INSTANT_SWIFT_DATA_VOICE_TRAIL_V3_ATTACHMENT_KIND: input.attachmentKind,
+        INSTANT_SWIFT_DATA_VOICE_TRAIL_V3_ATTACHMENT_CONTENTS: input.attachmentContents,
+        INSTANT_SWIFT_DATA_VOICE_TRAIL_V3_ATTACHMENT_OFFSET_MILLISECONDS:
+          String(input.attachmentOffsetMilliseconds),
+        INSTANT_SWIFT_DATA_VOICE_TRAIL_V3_DURATION_MILLISECONDS:
+          String(input.durationMilliseconds),
       },
       stdio: ["ignore", "pipe", "pipe"],
     },
@@ -160,9 +190,15 @@ async function waitForCapture(db: any, id: string): Promise<any> {
         $: { where: { id } },
         owner: {},
         transcriptions: {},
+        attachments: {},
       },
     });
-    if (last.v3_capture_recordings?.[0]?.transcriptions?.length === 1) {
+    const recording = last.v3_capture_recordings?.[0];
+    if (
+      recording?.state === "finished"
+      && recording?.transcriptions?.[0]?.state === "ready"
+      && recording?.attachments?.length === 1
+    ) {
       return last;
     }
     await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
@@ -173,15 +209,20 @@ async function waitForCapture(db: any, id: string): Promise<any> {
 function projectCapture(result: any) {
   const recording = result.v3_capture_recordings[0];
   const transcription = recording.transcriptions[0];
+  const attachment = recording.attachments[0];
   return {
     recordingID: recording.id,
     transcriptionID: transcription.id,
+    attachmentID: attachment.id,
     title: recording.title,
     ownerUserID: recording.owner.id,
     deviceID: recording.deviceID,
     recordingState: recording.state,
     durationMilliseconds: recording.durationMilliseconds,
     transcriptionState: transcription.state,
+    attachmentKind: attachment.kind,
+    attachmentContents: attachment.contents,
+    attachmentOffsetMilliseconds: attachment.offsetMilliseconds,
   };
 }
 
