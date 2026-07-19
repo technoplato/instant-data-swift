@@ -1,3 +1,4 @@
+import Dependencies
 import Foundation
 import InstantSwiftData
 
@@ -98,6 +99,9 @@ public struct MergeTileGameV3BoardState:
 public struct MergeTileGameV3Board: Codable, Equatable, Hashable, InstantEntityModel {
   public static let boardID = "83c059e2-ed47-42e5-bdd9-6de88d26c521"
   public static let fixedID = InstantID<Self>(rawValue: boardID)
+  public static let fixedQuery = InstantQuery<Self>(
+    filters: [.equals(field: "id", value: .string(boardID))]
+  )
   public static let boardSize = 4
   public static let emptyColor = "#f5f3f0"
   public static let colors = [
@@ -310,9 +314,14 @@ public struct MergeTileGameV3Room: InstantRoomSchema {
   public static let roomType = "tile-game-example"
   public static let defaultRoomID = "_defaultRoomId"
 
-  public enum Topic: String, InstantRoomTopic {
+  public struct Topic: InstantRoomTopic {
     public typealias RoomSchema = MergeTileGameV3Room
-    case changed
+
+    public let rawValue: String
+
+    public init?(rawValue: String) {
+      return nil
+    }
   }
 }
 
@@ -327,10 +336,18 @@ public struct MergeTileGameV3Room: InstantRoomSchema {
 
     public let profileID: String
     private let requestedColor: String?
+    private let colorPicker: @MainActor ([String]) -> String?
+    private var didSelectColor: Bool
 
-    public init(profileID: String, color: String? = nil) {
+    public init(
+      profileID: String,
+      color: String? = nil,
+      colorPicker: @escaping @MainActor ([String]) -> String? = { $0.randomElement() }
+    ) {
       self.profileID = profileID
       requestedColor = color
+      self.colorPicker = colorPicker
+      didSelectColor = color != nil
       presence = MergeTileGameV3Presence(
         userID: profileID,
         color: color ?? MergeTileGameV3Board.colors[0]
@@ -343,22 +360,32 @@ public struct MergeTileGameV3Room: InstantRoomSchema {
     }
 
     public var selectedColor: String {
-      requestedColor ?? availableColors.first ?? MergeTileGameV3Board.colors[0]
+      presence.color
     }
 
     public func updatePresence(_ values: [MergeTileGameV3Presence]) {
       players = values
       peers = values.filter { $0.userID != profileID }
-      presence = MergeTileGameV3Presence(userID: profileID, color: selectedColor)
+      guard !didSelectColor else { return }
+      presence = MergeTileGameV3Presence(
+        userID: profileID,
+        color: requestedColor
+          ?? colorPicker(availableColors)
+          ?? MergeTileGameV3Board.colors[0]
+      )
+      didSelectColor = true
     }
   }
 
   @MainActor
   public struct MergeTileGameV3Screen: View {
+    @FetchOne(MergeTileGameV3Board.fixedQuery) private var board: MergeTileGameV3Board?
     @Room private var room: InstantRoom<MergeTileGameV3Room>
     @Presence private var presence: [MergeTileGameV3Presence]
+    @Dependency(\.defaultInstantSwiftData) private var db
     @StateObject private var model: MergeTileGameV3Model
-    @State private var board = MergeTileGameV3Board.empty
+    @State private var didRequestInitialization = false
+    @State private var status = "Ready"
 
     public init(
       profileID: String = UUID().uuidString,
@@ -379,7 +406,7 @@ public struct MergeTileGameV3Room: InstantRoomSchema {
             .font(.caption)
             .foregroundStyle(.secondary)
           Spacer()
-          Button("Reset") { board.reset() }
+          Button("Reset", action: resetButtonTapped)
             .font(.caption)
         }
         .frame(maxWidth: 200)
@@ -388,11 +415,9 @@ public struct MergeTileGameV3Room: InstantRoomSchema {
           ForEach(0..<MergeTileGameV3Board.boardSize, id: \.self) { row in
             ForEach(0..<MergeTileGameV3Board.boardSize, id: \.self) { column in
               let key = "\(row)-\(column)"
-              Button {
-                board.merge(.init(state: [key: model.selectedColor]))
-              } label: {
+              Button(action: { cellButtonTapped(row: row, column: column) }) {
                 RoundedRectangle(cornerRadius: 8)
-                  .fill(tileColor(board.state[key] ?? MergeTileGameV3Board.emptyColor))
+                  .fill(tileColor(visibleBoard.state[key] ?? MergeTileGameV3Board.emptyColor))
                   .frame(width: 44, height: 44)
               }
               .buttonStyle(.plain)
@@ -402,6 +427,10 @@ public struct MergeTileGameV3Room: InstantRoomSchema {
         .padding(8)
         .background(.white, in: RoundedRectangle(cornerRadius: 12))
         .shadow(radius: 2)
+
+        Text(status)
+          .font(.caption)
+          .foregroundStyle(.secondary)
       }
       .padding()
       .instantRoom(
@@ -413,7 +442,47 @@ public struct MergeTileGameV3Room: InstantRoomSchema {
       )
       .presence($presence, in: room, publishing: model.presence)
       .onChange(of: presence) { _, values in model.updatePresence(values) }
+      .onChange(of: $board.isLoading, initial: true) { _, isLoading in
+        initializeBoardIfNeeded(isLoading: isLoading)
+      }
       .navigationTitle("Merge Tile Game")
+    }
+
+    private var visibleBoard: MergeTileGameV3Board {
+      board ?? .empty
+    }
+
+    private func initializeBoardIfNeeded(isLoading: Bool) {
+      guard !isLoading, board == nil, !didRequestInitialization else { return }
+      didRequestInitialization = true
+      db.send(
+        InitializeMergeTileGameV3Board(),
+        onServerAccepted: { _ in status = "Board synced" },
+        onFailure: { error in
+          didRequestInitialization = false
+          status = error.recoveryMessage
+        }
+      )
+    }
+
+    private func cellButtonTapped(row: Int, column: Int) {
+      db.send(
+        PaintMergeTileGameV3Cell(
+          row: row,
+          column: column,
+          color: model.selectedColor
+        ),
+        onServerAccepted: { _ in status = "Tile synced" },
+        onFailure: { error in status = error.recoveryMessage }
+      )
+    }
+
+    private func resetButtonTapped() {
+      db.send(
+        ResetMergeTileGameV3Board(),
+        onServerAccepted: { _ in status = "Board reset" },
+        onFailure: { error in status = error.recoveryMessage }
+      )
     }
 
     private func tileColor(_ hex: String) -> Color {

@@ -97,7 +97,7 @@ struct MergeTileGameV3Tests {
       }
     }
 
-    let board = FetchOne(MergeTileGameV3Board.query)
+    let board = FetchOne(MergeTileGameV3Board.fixedQuery)
     try await board.load(using: client)
     expectNoDifference(board.wrappedValue?.color(row: 0, column: 0), "#e76f51")
     expectNoDifference(board.wrappedValue?.color(row: 0, column: 1), "#2a9d8f")
@@ -128,7 +128,10 @@ struct MergeTileGameV3Tests {
 
   @Test
   func sourcePortSelectsAnUntakenColorAndProjectsOnlyPeers() {
-    let model = MergeTileGameV3Model(profileID: "local-session")
+    let model = MergeTileGameV3Model(
+      profileID: "local-session",
+      colorPicker: { $0.first }
+    )
     model.updatePresence([
       MergeTileGameV3Presence(userID: "local-session", color: "#e76f51"),
       MergeTileGameV3Presence(userID: "remote-a", color: "#2a9d8f"),
