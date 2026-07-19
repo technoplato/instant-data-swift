@@ -359,8 +359,14 @@ public enum InstantSchemaExamples {
     attributes: TodoExample.attributes
   )
 
+  public static let todosRoom = InstantRoomSchema(
+    name: "todos",
+    presence: InstantRoomPayloadSchema()
+  )
+
   public static let todosDocument = InstantSchemaDocument(
-    entities: [todos]
+    entities: [todos],
+    rooms: [todosRoom]
   )
 
   public static let todoPermissions = InstantPermissionsDocument(
