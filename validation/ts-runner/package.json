@@ -28,6 +28,7 @@
     "live:todos-v3": "tsx src/todos-v3-live-contract.ts",
     "live:auth-v3-app": "tsx src/auth-v3-app-live-contract.ts",
     "live:mobile-chat-v3": "tsx src/mobile-chat-v3-live-contract.ts",
+    "live:typing-indicator-v3": "tsx src/typing-indicator-v3-live-contract.ts",
     "live:voice-trail-recordings-list": "tsx src/voice-trail-recordings-list-live-contract.ts",
     "typecheck": "../typecheck-generated-contract.sh",
     "validate": "tsx src/main.ts"
