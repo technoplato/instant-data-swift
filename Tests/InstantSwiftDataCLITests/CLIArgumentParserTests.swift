@@ -3326,6 +3326,10 @@ struct CLIArgumentParserTests {
       .liveAuthInvalidation
     )
     expectNoDifference(
+      try parseValidationRunner(["--live-auth-v3-app"]),
+      .liveAuthV3App
+    )
+    expectNoDifference(
       try parseValidationRunner(["--live-playback-room"]),
       .livePlaybackRoom
     )
@@ -3376,6 +3380,14 @@ struct CLIArgumentParserTests {
     expectNoDifference(
       CLIValidationRunnerInvocation.liveTodosV3Write.appID,
       "live-todos-v3"
+    )
+    expectNoDifference(
+      CLIValidationRunnerInvocation.liveAuthV3App.caseID,
+      "validation.live.auth-v3-app"
+    )
+    expectNoDifference(
+      CLIValidationRunnerInvocation.liveAuthV3App.appID,
+      "live-auth-v3-app"
     )
     expectNoDifference(
       CLIValidationRunnerInvocation.liveTransaction.caseID,
