@@ -168,6 +168,20 @@ assert.deepStrictEqual(todos.details.room, {
   roomID: "main",
   peerCount: 1,
 });
+assert.deepStrictEqual(Object.keys(todos.details.performance).sort(), [
+  "acceptedMutations",
+  "authenticateAndConnect",
+  "offlineEnqueue",
+  "reconnectDrain",
+]);
+for (const measurement of Object.values(todos.details.performance)) {
+  assert.ok(measurement.durationNanoseconds > 0);
+  assert.ok(measurement.actorHopCount > 0);
+  assert.equal(
+    measurement.actorHopCount,
+    Object.values(measurement.actorHopBreakdown).reduce((sum, count) => sum + count, 0),
+  );
+}
 assert.equal(todos.details.offline.pendingWhileOffline, 1);
 assert.match(
   todos.details.offline.swift.id,

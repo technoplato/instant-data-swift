@@ -114,7 +114,8 @@ try {
   });
   assert.equal(swift.ok, true);
   assert.equal(swift.event, "viewer-and-offline-replay-observed");
-  assert.deepEqual(swift.details, {
+  const { performance, ...swiftDetails } = swift.details;
+  assert.deepEqual(swiftDetails, {
     roomType: todosV3AppContract.roomType,
     roomID: "main",
     peerCount: 1,
@@ -132,6 +133,21 @@ try {
       pendingMutationCount: 0,
     },
   });
+  assert.deepEqual(Object.keys(performance).sort(), [
+    "acceptedMutations",
+    "authenticateAndConnect",
+    "offlineEnqueue",
+    "reconnectDrain",
+  ]);
+  for (const measurement of Object.values(performance) as any[]) {
+    assert.ok(measurement.durationNanoseconds > 0);
+    assert.ok(measurement.actorHopCount > 0);
+    assert.equal(
+      measurement.actorHopCount,
+      Object.values(measurement.actorHopBreakdown as Record<string, number>)
+        .reduce((sum, count) => sum + count, 0),
+    );
+  }
 
   const observedByTypeScript = await waitForTodo(
     db,
@@ -189,6 +205,7 @@ try {
     details: {
       user: { id: user.id, email: user.email },
       swift: swift.details.online,
+      performance,
       room: {
         roomType: swift.details.roomType,
         roomID: swift.details.roomID,

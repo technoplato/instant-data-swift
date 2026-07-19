@@ -25,7 +25,7 @@ public struct InstantRuntimeConfiguration: Sendable {
   public var userCookieSyncClient: InstantUserCookieSyncClient
   public var platformAppClient: InstantPlatformAppClient
   public var appBuilderCodeGenerator: AppBuilderCodeGeneratorClient
-  var actorHopRecorder: InstantActorHopRecorder?
+  package var actorHopRecorder: InstantActorHopRecorder?
   var liveReconnectSleep: @Sendable (UInt64) async throws -> Void = { milliseconds in
     try await Task.sleep(nanoseconds: milliseconds * 1_000_000)
   }
@@ -2187,11 +2187,14 @@ public final class InstantRuntime: Sendable {
   }
 
   private func connectLiveSession(reportsFailure: Bool) async throws -> InstantConnectionStatus {
+    recordActorHop(.operationGate)
     await operationGate.enter()
     do {
       if let liveTransport = configuration.liveTransport {
+        recordActorHop(.persistence)
         let session = try await persistence.loadAuthSession(key: authSessionKey)
         do {
+          recordActorHop(.liveSession)
           try await liveSession.open(
             request: InstantLiveSessionRequest(
               appID: configuration.appID,
@@ -2201,10 +2204,12 @@ public final class InstantRuntime: Sendable {
             transport: liveTransport,
             makeID: configuration.makeID
           )
+          recordActorHop(.liveSession)
           try await liveSession.sendMutations(
             await outboxTransportMutations().filter { $0.status == .pending }
           )
         } catch {
+          recordActorHop(.liveSession)
           await liveSession.close()
           if reportsFailure {
             try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
@@ -2217,8 +2222,10 @@ public final class InstantRuntime: Sendable {
       }
       try await saveOpenedConnectionMetadataWithGateHeld()
       let status = try await publishConnectionStatusWithGateHeld()
+      recordActorHop(.operationGate)
       await operationGate.leave()
       if configuration.liveTransport != nil {
+        recordActorHop(.liveSession)
         await liveSession.startReceiving(
           onEvent: { [weak self] event, attributes in
             guard let self else { return }
@@ -2230,14 +2237,17 @@ public final class InstantRuntime: Sendable {
           }
         )
         do {
+          recordActorHop(.liveSession)
           try await liveSession.reconnectStreamWriters()
         } catch {
+          recordActorHop(.liveSession)
           await liveSession.close()
           await handleLiveSessionFailure(error)
         }
       }
       return status
     } catch {
+      recordActorHop(.operationGate)
       await operationGate.leave()
       throw error
     }
@@ -2246,8 +2256,10 @@ public final class InstantRuntime: Sendable {
   @discardableResult
   public func closeConnection() async throws -> InstantConnectionStatus {
     await reconnectController.cancel()
+    recordActorHop(.operationGate)
     await operationGate.enter()
     do {
+      recordActorHop(.liveSession)
       await liveSession.close()
       try await persistence.saveMetadataValue(
         InstantConnectionState.closed.rawValue,
@@ -2255,9 +2267,11 @@ public final class InstantRuntime: Sendable {
         updatedAt: configuration.now()
       )
       let status = try await publishConnectionStatusWithGateHeld()
+      recordActorHop(.operationGate)
       await operationGate.leave()
       return status
     } catch {
+      recordActorHop(.operationGate)
       await operationGate.leave()
       throw error
     }
@@ -2659,6 +2673,7 @@ public final class InstantRuntime: Sendable {
   private func sendPendingMutationsToLiveSession() async {
     guard configuration.liveTransport != nil else { return }
     do {
+      recordActorHop(.liveSession)
       try await liveSession.sendMutations(
         await outboxTransportMutations().filter { $0.status == .pending }
       )

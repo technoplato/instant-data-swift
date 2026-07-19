@@ -1,4 +1,3 @@
-import Dependencies
 import Foundation
 import InstantSwiftData
 import TodosV3App
@@ -42,6 +41,7 @@ public struct InstantTodosV3SessionValidationDetails: Codable, Equatable, Sendab
   public var roomID: String
   public var peerCount: Int
   public var pendingWhileOffline: Int
+  public var performance: InstantTodosV3PerformanceDetails?
   public var online: InstantTodosV3LiveValidationDetails
   public var offline: InstantTodosV3LiveValidationDetails
 
@@ -50,6 +50,7 @@ public struct InstantTodosV3SessionValidationDetails: Codable, Equatable, Sendab
     roomID: String,
     peerCount: Int,
     pendingWhileOffline: Int,
+    performance: InstantTodosV3PerformanceDetails? = nil,
     online: InstantTodosV3LiveValidationDetails,
     offline: InstantTodosV3LiveValidationDetails
   ) {
@@ -57,8 +58,40 @@ public struct InstantTodosV3SessionValidationDetails: Codable, Equatable, Sendab
     self.roomID = roomID
     self.peerCount = peerCount
     self.pendingWhileOffline = pendingWhileOffline
+    self.performance = performance
     self.online = online
     self.offline = offline
+  }
+}
+
+public struct InstantTodosV3ActorHopMeasurement: Codable, Equatable, Sendable {
+  public var durationNanoseconds: UInt64
+  public var actorHopCount: Int
+  public var actorHopBreakdown: [String: Int]
+
+  package init(durationNanoseconds: UInt64, summary: InstantActorHopSummary) {
+    self.durationNanoseconds = durationNanoseconds
+    self.actorHopCount = summary.count
+    self.actorHopBreakdown = summary.breakdown
+  }
+}
+
+public struct InstantTodosV3PerformanceDetails: Codable, Equatable, Sendable {
+  public var authenticateAndConnect: InstantTodosV3ActorHopMeasurement
+  public var acceptedMutations: InstantTodosV3ActorHopMeasurement
+  public var offlineEnqueue: InstantTodosV3ActorHopMeasurement
+  public var reconnectDrain: InstantTodosV3ActorHopMeasurement
+
+  public init(
+    authenticateAndConnect: InstantTodosV3ActorHopMeasurement,
+    acceptedMutations: InstantTodosV3ActorHopMeasurement,
+    offlineEnqueue: InstantTodosV3ActorHopMeasurement,
+    reconnectDrain: InstantTodosV3ActorHopMeasurement
+  ) {
+    self.authenticateAndConnect = authenticateAndConnect
+    self.acceptedMutations = acceptedMutations
+    self.offlineEnqueue = offlineEnqueue
+    self.reconnectDrain = reconnectDrain
   }
 }
 
@@ -78,17 +111,22 @@ public enum InstantTodosV3LiveValidation {
     roomID: String = "main",
     persistenceURL: URL? = nil
   ) async throws -> ValidationEvidenceRow<InstantTodosV3SessionValidationDetails> {
-    let client = try await liveClient(
+    let live = try await liveClient(
       appID: appID,
       apiURI: apiURI,
       websocketURI: websocketURI,
       persistenceURL: persistenceURL
     )
-    try await authenticate(
-      client,
-      refreshToken: refreshToken,
-      expectedUserID: expectedUserID
-    )
+    let connectBaseline = live.recorder.baseline()
+    let (_, connectDuration) = try await measured {
+      try await authenticate(
+        live.client,
+        refreshToken: refreshToken,
+        expectedUserID: expectedUserID
+      )
+    }
+    let connectHops = live.recorder.summary(since: connectBaseline)
+    let client = live.client
 
     let room = InstantRoomHandle(type: TodosRoom.roomType, id: roomID)
     let presence = try await client.observeRoomPresence(room: room)
@@ -97,20 +135,24 @@ public enum InstantTodosV3LiveValidation {
     let peerCount = try await waitForPeer(in: presence)
 
     let todoID = InstantID<Todo>(rawValue: id)
-    try await sendAndRequireServerAcceptance(
-      CreateTodo(
-        id: todoID,
-        text: text,
-        createdAt: Date(timeIntervalSince1970: Double(createdAtMilliseconds) / 1_000)
-      ),
-      using: client,
-      operation: "create Todos V3 todo"
-    )
-    try await sendAndRequireServerAcceptance(
-      SetTodoCompletion(id: todoID, isCompleted: true),
-      using: client,
-      operation: "complete Todos V3 todo"
-    )
+    let acceptedBaseline = live.recorder.baseline()
+    let (_, acceptedDuration) = try await measured {
+      try await sendAndRequireServerAcceptance(
+        CreateTodo(
+          id: todoID,
+          text: text,
+          createdAt: Date(timeIntervalSince1970: Double(createdAtMilliseconds) / 1_000)
+        ),
+        using: client,
+        operation: "create Todos V3 todo"
+      )
+      try await sendAndRequireServerAcceptance(
+        SetTodoCompletion(id: todoID, isCompleted: true),
+        using: client,
+        operation: "complete Todos V3 todo"
+      )
+    }
+    let acceptedHops = live.recorder.summary(since: acceptedBaseline)
 
     let online = try await evidence(
       direction: "swift-to-typescript",
@@ -124,7 +166,7 @@ public enum InstantTodosV3LiveValidation {
     )
 
     _ = try await client.closeConnection()
-    let pendingWhileOffline = try await sendWhileDisconnectedThenReconnect(
+    let offlineReplay = try await sendWhileDisconnectedThenReconnect(
       CreateTodo(
         id: InstantID(rawValue: offlineID),
         text: offlineText,
@@ -132,7 +174,8 @@ public enum InstantTodosV3LiveValidation {
           timeIntervalSince1970: Double(offlineCreatedAtMilliseconds) / 1_000
         )
       ),
-      using: client
+      using: client,
+      recorder: live.recorder
     )
     let offline = try await evidence(
       direction: "swift-offline-to-typescript",
@@ -159,7 +202,19 @@ public enum InstantTodosV3LiveValidation {
         roomType: room.type,
         roomID: room.id,
         peerCount: peerCount,
-        pendingWhileOffline: pendingWhileOffline,
+        pendingWhileOffline: offlineReplay.pendingCount,
+        performance: InstantTodosV3PerformanceDetails(
+          authenticateAndConnect: InstantTodosV3ActorHopMeasurement(
+            durationNanoseconds: connectDuration,
+            summary: connectHops
+          ),
+          acceptedMutations: InstantTodosV3ActorHopMeasurement(
+            durationNanoseconds: acceptedDuration,
+            summary: acceptedHops
+          ),
+          offlineEnqueue: offlineReplay.enqueue,
+          reconnectDrain: offlineReplay.reconnect
+        ),
         online: online.details,
         offline: offline.details
       )
@@ -183,14 +238,14 @@ public enum InstantTodosV3LiveValidation {
     AsyncThrowingStream { continuation in
       let task = Task {
         do {
-          let client = try await liveClient(
+          let live = try await liveClient(
             appID: appID,
             apiURI: apiURI,
             websocketURI: websocketURI,
             persistenceURL: persistenceURL
           )
           try await authenticate(
-            client,
+            live.client,
             refreshToken: refreshToken,
             expectedUserID: expectedUserID
           )
@@ -199,7 +254,7 @@ public enum InstantTodosV3LiveValidation {
           let rowsTask = Task {
             try await rows.task(
               Todo.query.order(.serverCreatedAt, .descending),
-              using: client
+              using: live.client
             )
           }
           defer { rowsTask.cancel() }
@@ -212,7 +267,7 @@ public enum InstantTodosV3LiveValidation {
               isCompleted: false,
               createdAtMilliseconds: createdAtMilliseconds,
               appID: appID,
-              client: client,
+              client: live.client,
               event: "observer-ready"
             )
           )
@@ -232,13 +287,13 @@ public enum InstantTodosV3LiveValidation {
               isCompleted: observed.isCompleted,
               createdAtMilliseconds: milliseconds(observed.createdAt),
               appID: appID,
-              client: client,
+              client: live.client,
               event: "typescript-todo-observed"
             )
           )
           rowsTask.cancel()
           _ = try? await rowsTask.value
-          _ = try await client.closeConnection()
+          _ = try await live.client.closeConnection()
           continuation.finish()
         } catch {
           continuation.finish(throwing: error)
@@ -253,24 +308,23 @@ public enum InstantTodosV3LiveValidation {
     apiURI: URL,
     websocketURI: URL,
     persistenceURL: URL?
-  ) async throws -> InstantSwiftDataClient {
-    try await withDependencies {
-      $0.context = .live
-      $0.instantLiveTransport = .live
-      try await $0.bootstrapInstantSwiftData(
-        appID: appID,
-        apiURI: apiURI,
-        websocketURI: websocketURI,
-        persistenceURL: persistenceURL
-          ?? FileManager.default.temporaryDirectory
-          .appendingPathComponent("instant-todos-v3-live-\(UUID().uuidString).sqlite"),
-        context: .live,
-        initialAttributes: Todo.instantAttributes
-      )
-    } operation: {
-      @Dependency(\.defaultInstantSwiftData) var client
-      return client
-    }
+  ) async throws -> (client: InstantSwiftDataClient, recorder: InstantActorHopRecorder) {
+    let recorder = InstantActorHopRecorder()
+    var configuration = InstantRuntimeConfiguration(
+      appID: appID,
+      apiURI: apiURI,
+      websocketURI: websocketURI,
+      persistenceURL: persistenceURL
+        ?? FileManager.default.temporaryDirectory
+        .appendingPathComponent("instant-todos-v3-live-\(UUID().uuidString).sqlite"),
+      initialAttributes: Todo.instantAttributes,
+      refreshTokenVerifier: .live,
+      authTokenInvalidator: .live,
+      liveTransport: .live
+    )
+    configuration.actorHopRecorder = recorder
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    return (InstantSwiftDataClient(runtime: runtime), recorder)
   }
 
   private static func authenticate(
@@ -338,8 +392,15 @@ public enum InstantTodosV3LiveValidation {
 
   private static func sendWhileDisconnectedThenReconnect<Message: InstantMessage>(
     _ message: Message,
-    using client: InstantSwiftDataClient
-  ) async throws -> Int {
+    using client: InstantSwiftDataClient,
+    recorder: InstantActorHopRecorder
+  ) async throws -> (
+    pendingCount: Int,
+    enqueue: InstantTodosV3ActorHopMeasurement,
+    reconnect: InstantTodosV3ActorHopMeasurement
+  ) {
+    let enqueueBaseline = recorder.baseline()
+    let enqueueStartedAt = DispatchTime.now().uptimeNanoseconds
     let outcome = await MainActor.run { TodosV3MessageOutcome() }
     let task = client.send(
       message,
@@ -361,21 +422,27 @@ public enum InstantTodosV3LiveValidation {
         message: "Expected exactly one pending mutation while disconnected."
       )
     }
+    let enqueueDuration = DispatchTime.now().uptimeNanoseconds - enqueueStartedAt
+    let enqueueHops = recorder.summary(since: enqueueBaseline)
 
-    _ = try await client.connect()
-    try await waitForAuthenticated(client)
-    try await withThrowingTaskGroup(of: Void.self) { group in
-      group.addTask { await task.value }
-      group.addTask {
-        try await Task.sleep(for: .seconds(15))
-        throw validationFailure(
-          operation: "replay disconnected Todos V3 write",
-          message: "Timed out waiting for server acceptance after reconnect."
-        )
+    let reconnectBaseline = recorder.baseline()
+    let (_, reconnectDuration) = try await measured {
+      _ = try await client.connect()
+      try await waitForAuthenticated(client)
+      try await withThrowingTaskGroup(of: Void.self) { group in
+        group.addTask { await task.value }
+        group.addTask {
+          try await Task.sleep(for: .seconds(15))
+          throw validationFailure(
+            operation: "replay disconnected Todos V3 write",
+            message: "Timed out waiting for server acceptance after reconnect."
+          )
+        }
+        _ = try await group.next()
+        group.cancelAll()
       }
-      _ = try await group.next()
-      group.cancelAll()
     }
+    let reconnectHops = recorder.summary(since: reconnectBaseline)
 
     let result = await MainActor.run { (outcome.accepted, outcome.failure) }
     if let failure = result.1 { throw failure }
@@ -385,7 +452,25 @@ public enum InstantTodosV3LiveValidation {
         message: "The queued message completed without server acceptance."
       )
     }
-    return pendingCount
+    return (
+      pendingCount,
+      InstantTodosV3ActorHopMeasurement(
+        durationNanoseconds: enqueueDuration,
+        summary: enqueueHops
+      ),
+      InstantTodosV3ActorHopMeasurement(
+        durationNanoseconds: reconnectDuration,
+        summary: reconnectHops
+      )
+    )
+  }
+
+  private static func measured<Value: Sendable>(
+    operation: () async throws -> Value
+  ) async rethrows -> (Value, UInt64) {
+    let startedAt = DispatchTime.now().uptimeNanoseconds
+    let value = try await operation()
+    return (value, DispatchTime.now().uptimeNanoseconds - startedAt)
   }
 
   private static func waitForPeer(
