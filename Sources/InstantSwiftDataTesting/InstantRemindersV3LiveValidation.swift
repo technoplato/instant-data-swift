@@ -131,6 +131,7 @@ public enum InstantRemindersV3LiveValidation {
     expectedOwnerUserID: String,
     expectedParticipantUserID: String,
     persistenceURL: URL? = nil,
+    readerCheckSignalURL: URL? = nil,
     onSwiftGraphReady: @escaping @Sendable () -> Void = {},
     onReaderObserved: @escaping @Sendable () -> Void = {},
     onWriterReady: @escaping @Sendable () -> Void = {},
@@ -244,6 +245,13 @@ public enum InstantRemindersV3LiveValidation {
         } == true
     }
     onReaderObserved()
+    if let readerCheckSignalURL {
+      try await withTimeout("wait for TypeScript reader-denial evidence") {
+        while !FileManager.default.fileExists(atPath: readerCheckSignalURL.path) {
+          try await Task.sleep(for: .milliseconds(25))
+        }
+      }
+    }
 
     let promotedAt = createdAt.addingTimeInterval(2)
     try await requireServerAcceptance(

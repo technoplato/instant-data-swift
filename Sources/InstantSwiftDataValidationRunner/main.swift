@@ -1057,6 +1057,8 @@ struct InstantSwiftDataValidationRunner {
         refreshToken: refreshToken,
         expectedOwnerUserID: ownerUserID,
         expectedParticipantUserID: participantUserID,
+        readerCheckSignalURL: environment["INSTANT_SWIFT_DATA_REMINDERS_READER_CHECK_SIGNAL"]
+          .map { URL(fileURLWithPath: $0) },
         onSwiftGraphReady: {
           emit(
             caseID: "validation.live.reminders-v3",

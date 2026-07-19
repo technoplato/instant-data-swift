@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { createInterface } from "node:readline";
 import type { Readable } from "node:stream";
@@ -26,6 +28,7 @@ const apiURI = process.env.INSTANT_API_URI ?? "https://api.instantdb.com";
 const websocketURI = process.env.INSTANT_WEBSOCKET_URI
   ?? "wss://api.instantdb.com/runtime/session";
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+const readerCheckSignal = resolve(tmpdir(), `reminders-reader-check-${randomUUID()}`);
 const warnings: string[] = [];
 const originalWarn = console.warn;
 console.warn = (...values) => warnings.push(values.map(String).join(" "));
@@ -153,6 +156,7 @@ try {
     ),
   );
   assert.match(readerUpdateRejection, /permission|reminder|update/i);
+  await writeFile(readerCheckSignal, "reader update rejected\n", "utf8");
 
   const writerReady = await nextJSONLine(lines, swift, "Swift Reminders writer promotion");
   assert.equal(writerReady.event, "swift-writer-promotion-ready", JSON.stringify(writerReady));
@@ -256,6 +260,7 @@ try {
   await writeStdout(`${JSON.stringify(output, null, 2)}\n`);
 } finally {
   console.warn = originalWarn;
+  await rm(readerCheckSignal, { force: true });
   for (const database of databases) database.shutdown();
   if (swift && swift.exitCode === null) swift.kill();
 }
@@ -324,6 +329,7 @@ function spawnSwift(
         INSTANT_SWIFT_DATA_REMINDERS_REFRESH_TOKEN: refreshToken,
         INSTANT_SWIFT_DATA_REMINDERS_OWNER_USER_ID: ownerUserID,
         INSTANT_SWIFT_DATA_REMINDERS_PARTICIPANT_USER_ID: participantUserID,
+        INSTANT_SWIFT_DATA_REMINDERS_READER_CHECK_SIGNAL: readerCheckSignal,
       },
       stdio: ["ignore", "pipe", "pipe"],
     },
