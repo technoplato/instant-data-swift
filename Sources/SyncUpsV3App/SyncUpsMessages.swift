@@ -111,3 +111,100 @@ public enum SyncUpsV3MessageError: Error, Equatable, Sendable {
   case attendeeRequired
   case invalidDuration(Int)
 }
+
+public struct SyncUpsV3MeetingRecorded: Equatable, Hashable, Sendable {
+  public var meetingID: InstantID<SyncUpsV3Meeting>
+  public var syncUpID: InstantID<SyncUpsV3SyncUp>
+
+  public init(
+    meetingID: InstantID<SyncUpsV3Meeting>,
+    syncUpID: InstantID<SyncUpsV3SyncUp>
+  ) {
+    self.meetingID = meetingID
+    self.syncUpID = syncUpID
+  }
+}
+
+public struct RecordSyncUpsV3Meeting: InstantMessage {
+  public var meetingID: InstantID<SyncUpsV3Meeting>
+  public var syncUpID: InstantID<SyncUpsV3SyncUp>
+  public var date: Date
+  public var transcript: String
+
+  public init(
+    meetingID: InstantID<SyncUpsV3Meeting>,
+    syncUpID: InstantID<SyncUpsV3SyncUp>,
+    date: Date,
+    transcript: String
+  ) {
+    self.meetingID = meetingID
+    self.syncUpID = syncUpID
+    self.date = date
+    self.transcript = transcript
+  }
+
+  public func prepare(using client: InstantSwiftDataClient) async throws
+    -> InstantPreparedMessage<SyncUpsV3MeetingRecorded>
+  {
+    _ = client
+    return InstantPreparedMessage(
+      change: SyncUpsV3MeetingRecorded(meetingID: meetingID, syncUpID: syncUpID)
+    ) {
+      SyncUpsV3Meeting.create(
+        id: meetingID,
+        SyncUpsV3Meeting.date.set(date),
+        SyncUpsV3Meeting.syncUp.set(syncUpID),
+        SyncUpsV3Meeting.transcript.set(transcript)
+      )
+    }
+  }
+}
+
+public struct DeleteSyncUpsV3Meeting: InstantMessage {
+  public var meetingID: InstantID<SyncUpsV3Meeting>
+  public var syncUpID: InstantID<SyncUpsV3SyncUp>
+
+  public init(
+    meetingID: InstantID<SyncUpsV3Meeting>,
+    syncUpID: InstantID<SyncUpsV3SyncUp>
+  ) {
+    self.meetingID = meetingID
+    self.syncUpID = syncUpID
+  }
+
+  public func prepare(using client: InstantSwiftDataClient) async throws
+    -> InstantPreparedMessage<SyncUpsV3MeetingRecorded>
+  {
+    _ = client
+    return InstantPreparedMessage(
+      change: SyncUpsV3MeetingRecorded(meetingID: meetingID, syncUpID: syncUpID)
+    ) {
+      SyncUpsV3Meeting.delete(id: meetingID)
+    }
+  }
+}
+
+public struct SyncUpsV3SyncUpDeleted: Equatable, Hashable, Sendable {
+  public var syncUpID: InstantID<SyncUpsV3SyncUp>
+
+  public init(syncUpID: InstantID<SyncUpsV3SyncUp>) {
+    self.syncUpID = syncUpID
+  }
+}
+
+public struct DeleteSyncUpsV3SyncUp: InstantMessage {
+  public var syncUpID: InstantID<SyncUpsV3SyncUp>
+
+  public init(syncUpID: InstantID<SyncUpsV3SyncUp>) {
+    self.syncUpID = syncUpID
+  }
+
+  public func prepare(using client: InstantSwiftDataClient) async throws
+    -> InstantPreparedMessage<SyncUpsV3SyncUpDeleted>
+  {
+    _ = client
+    return InstantPreparedMessage(change: SyncUpsV3SyncUpDeleted(syncUpID: syncUpID)) {
+      SyncUpsV3SyncUp.delete(id: syncUpID)
+    }
+  }
+}
