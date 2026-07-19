@@ -100,7 +100,8 @@ pnpm --dir "${RUNNER}" exec tsc \
   "${PULL_DIR}/instant.perms.ts"
 
 INSTANT_SWIFT_DATA_TODOS_SCHEMA_PATH="${PUSH_DIR}/instant.schema.ts" \
-  pnpm --dir "${RUNNER}" run live:todos-v3 >"${RESULTS_DIR}/todos-v3.json"
+  pnpm --dir "${RUNNER}" exec tsx src/todos-v3-live-contract.ts \
+  >"${RESULTS_DIR}/todos-v3.json"
 
 ROOT="${ROOT}" \
 RUNNER="${RUNNER}" \
