@@ -41,7 +41,7 @@ struct InstantTypingIndicatorV3LiveValidationTests {
       observedFrames: observedFrames,
       activePeerIDs: ["typescript-peer"],
       peerCountAfterDisconnect: 0,
-      serverNormalizations: ["chat-input:null-to-absent"],
+      typeScriptPatchNormalizations: ["chat-input:null-to-absent"],
       connectionState: "authenticated"
     )
 
@@ -57,6 +57,9 @@ struct InstantTypingIndicatorV3LiveValidationTests {
     expectNoDifference(decoded.observedFrames[3].presence, ["id": .string("swift-peer")])
     expectNoDifference(decoded.activePeerIDs, ["typescript-peer"])
     expectNoDifference(decoded.peerCountAfterDisconnect, 0)
-    expectNoDifference(decoded.serverNormalizations, ["chat-input:null-to-absent"])
+    expectNoDifference(
+      decoded.typeScriptPatchNormalizations,
+      ["chat-input:null-to-absent"]
+    )
   }
 }
