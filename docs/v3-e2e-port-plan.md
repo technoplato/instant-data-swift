@@ -154,6 +154,14 @@ As of 2026-07-18:
   the complete TypeScript contract/fixture suite pass. Clean evidence for
   revision `ece3022` is in
   `/tmp/instant-data-swift-playback-room-reconnect-clean-ece3022-20260718T1957Z/evidence.json`.
+- Commits `4ddf46b`, `ff71165`, and `7176dfa` compile the preferences sync and
+  storage source contracts. `@InstantSyncStatus` renders cached, connecting,
+  connected, authenticated, reconnecting, offline, and failed phases from the
+  canonical connection observer and exposes explicit manual-flush callbacks.
+  `@InstantStorageStatus` reads actual SQLite, stream-content, and downloaded
+  file byte counts, while typed file matching clears only the selected
+  downloads and reports one explicit completion callback. Full verification is
+  green at 912 Swift tests in 37 suites.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -638,7 +646,7 @@ runtime. Clean evidence for revision `6fa8019` is at
 That gate also closed two cross-SDK runtime gaps: typed relation predicates now
 encode canonical dotted ID paths such as `owner.id`, and `refresh-ok` replaces
 each query's authoritative triple set while retaining triples still owned by
-another active query. Full verification is green at 907 Swift tests in 35
+another active query. Full verification is green at 912 Swift tests in 37
 suites plus the generated-contract and TypeScript fixture suites.
 
 The playback disconnect/rejoin boundary is complete through `45daf84`,
@@ -649,14 +657,19 @@ payload contract, and `validation/verify-playback-room-contract-live.sh`.
 Clean evidence for revision `ece3022` is at
 `/tmp/instant-data-swift-playback-room-reconnect-clean-ece3022-20260718T1957Z/evidence.json`.
 
-Next, port the preferences-screen source contracts before implementing its
-remaining public app behavior. Start from `screens/v3/preferences.md` and the
-canonical connection/storage state tests. Require `@InstantSyncStatus` to
-render cached, connecting, authenticated, reconnecting, offline, and error
-states without exposing socket management to the view. Then prove file/storage
-status through the public screen surface and fold the five VoiceTrail fixtures
-into one runnable app target. Do not create the `v0.4.0-apps-e2e` tag until
-those remaining screen flows and the integrated app pass the clean live gate.
+The preferences source-contract boundary is complete through `4ddf46b`,
+`ff71165`, and `7176dfa`. The syntax in `screens/v3/preferences.md` remains the
+target: `@ConnectionStatus`, `@InstantSyncStatus`, and `@InstantStorageStatus`
+own observation and renderable state, while flush and clear-download actions
+use call-site callbacks. The implementation now covers every recorded sync
+phase and exact local-cache, stream-cache, and downloaded-file measurements.
+
+Next, fold the five VoiceTrail fixtures into one runnable app target, preserving
+the settled syntax in `screens/v3/*.md`. The first integration packet should
+create the app shell and route all five screens without adding new data APIs;
+then run each existing fixture behavior through that target before defining the
+clean app-level live gate. Do not create the `v0.4.0-apps-e2e` tag until those
+integrated screen flows pass that clean gate.
 
 The product-payload mismatch is resolved: playback presence stores and encodes
 `offsetSeconds: Double`, offers `Duration` as a computed product convenience,

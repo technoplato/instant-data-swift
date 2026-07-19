@@ -7,6 +7,12 @@ This screen demonstrates rooms, presence, topics, infinite comments, and
 queryable files. The wrappers own observation. The call sites publish
 messages and handle side effects for the specific user action.
 
+Implementation status (2026-07-18): the room/presence/topic surface is proven
+through automatic disconnect and rejoin at `ece3022`. A fresh credentialed app
+observed exact presence plus all three topic payloads in both directions before
+and after the forced Swift transport loss, with no call-site socket management.
+The recorded syntax is settled for app integration.
+
 ```swift
 import SwiftUI
 import Dependencies

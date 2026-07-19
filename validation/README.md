@@ -213,17 +213,19 @@ INSTANT_SWIFT_DATA_ALLOW_EPHEMERAL_APP_MUTATION=1 \
   validation/verify-v0.3-schema-auth-sharing.sh
 ```
 
-The playback room contract generates the Swift-owned typed room schema, checks
-it with the pinned TypeScript compiler, creates two authenticated peers, and
-requires exact bidirectional presence plus `reaction`, `commentDraft`, and
-`commentCommitted` payloads:
+The playback room contract creates a fresh temporary app, generates and pushes
+the Swift-owned typed room schema, checks it with the pinned TypeScript
+compiler, and creates two authenticated peers. It requires exact bidirectional
+presence plus `reaction`, `commentDraft`, and `commentCommitted` payloads,
+forces the Swift transport to disconnect, and repeats the exact payload round
+after automatic room rejoin:
 
 ```bash
-set -a
-source /tmp/instant-data-swift-ephemeral-20260718.env
-set +a
 validation/verify-playback-room-contract-live.sh
 ```
+
+The verifier removes the temporary app credentials after recording non-secret
+evidence; no sourced credential environment is required.
 
 Both aggregate verifiers refuse dirty worktrees for acceptance evidence and
 record the Swift revision, pinned upstream revision, SDK versions, schema hash,

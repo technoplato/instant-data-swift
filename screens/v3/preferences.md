@@ -6,6 +6,14 @@ This screen demonstrates renderable sync state and call-site callbacks
 for explicit user actions. `@InstantSyncStatus` exposes state. Buttons
 send messages such as refresh, sign out, flush, and clear cache.
 
+Implementation status (2026-07-18): commits `4ddf46b`, `ff71165`, and
+`7176dfa` compile and test the recorded `@ConnectionStatus`,
+`@InstantSyncStatus`, and `@InstantStorageStatus` surface. Sync phases come
+from the canonical connection observer; storage sizes come from the real
+SQLite/file runtime; manual flush and typed download clearing retain explicit
+call-site callbacks. The next boundary is the integrated VoiceTrail app target,
+not another syntax-design pass for this screen.
+
 ```swift
 import SwiftUI
 import Dependencies
