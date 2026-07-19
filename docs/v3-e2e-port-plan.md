@@ -312,16 +312,21 @@ As of 2026-07-19:
   `/tmp/instant-data-swift-reminders-v3-20260719T070753Z/evidence.json`. The
   post-port aggregate passes 1,049 Swift Testing cases across 76 suites plus
   the complete TypeScript typecheck, contract, live-support, and fixture matrix.
-- The first SyncUps app packet is complete through `7d7b1d6`. Commits
-  `5cc878b` through `7d7b1d6` pin the three upstream entities, all 16 theme
-  strings, two required cascading parent links, list/detail/child query syntax,
-  generated drafts, exact new/edit form replacement behavior, meeting
-  persistence, parent cascade deletion, app-owned list/detail/form/recording
-  screens, local/live bootstrap selection, and the runnable `syncups-v3`
-  executable. Its 12 focused tests and strict-concurrency product build pass.
-  The recording screen currently provides the app-facing manual transcript and
-  speaker flow; the existing speech, sound, settings, and timer dependencies
-  are the next behavior seam before generated-contract and live E2E work.
+- The canonical SyncUps boundary is complete through `b689469`. The app owns
+  the three upstream entities, all 16 themes, two required cascading parent
+  links, list/detail/form/recording screens, speech authorization and
+  recognition, sound, settings, clock behavior, generated schema and
+  permissions, and the runnable `syncups-v3` executable. The fresh-app gate
+  pushes the Swift-owned contract twice with no drift, pulls and verifies the
+  server-normalized artifacts, strictly type-checks them, and proves the exact
+  nested graph in both Swift-to-TypeScript and TypeScript-to-Swift directions.
+  It records three entities, nine attributes, two links, twelve allow rules,
+  canonical `Date` objects, authenticated Swift state, zero pending mutations,
+  and zero compiler/runtime warnings at
+  `/tmp/instant-data-swift-syncups-v3-20260719T073704Z/evidence.json`. The
+  post-port aggregate at `194ef4d` passes 1,067 Swift Testing cases across 83
+  suites, the `syncups-v3` build, and the complete TypeScript typecheck,
+  contract, live-support, and fixture matrix.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -355,7 +360,8 @@ When sources disagree, use this order:
 | Current execution state, packet order, gates, and tag targets | `docs/v3-e2e-port-plan.md` |
 | Product contract and full definition of done | `docs/instant-swift-data-goals.md` |
 | Desired V3 API rules and decision log | `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` |
-| Next app target | SyncUps, beginning source-first from `upstream/sqlite-data/Examples/SyncUps`, `Examples/SyncUpTests/SyncUpFormTests.swift`, and the existing local model/CLI/recording proof |
+| Next app target | App Builder and storage, beginning source-first from `upstream/instant/client/www/_examples/app-builder.md`, `Sources/InstantSwiftDataCore/AppBuilderExample.swift`, the existing CLI/tests, and canonical `StorageAPI.ts` plus storage examples |
+| Completed SyncUps live gate | `validation/verify-syncups-v3-app-live.sh`, `Sources/InstantSwiftDataTesting/InstantSyncUpsV3LiveValidation.swift`, and `validation/ts-runner/src/syncups-v3-*.ts` |
 | Current generated recording contract | `InstantSchemaExamples.recordingActionDocument`, `recordingActionValidationPermissions`, and `--example recording-action` |
 | TypeScript contract pin/type-check gate | `validation/ts-runner/package.json`, its committed `pnpm-lock.yaml`, and `validation/typecheck-generated-contract.sh` |
 | Reproducible live schema/perms install and readback | `validation/verify-recording-contract-live.sh` and `validation/fixtures/recording-action.server.*.ts` |
@@ -1013,14 +1019,22 @@ and zero compiler/runtime warnings at
 post-port aggregate is green at 1,049 Swift Testing cases across 76 suites and
 the complete TypeScript typecheck, contract, live-support, and fixture matrix.
 
-The first SyncUps packet is complete through `7d7b1d6`: the exact entity/link
-contract, upstream form behavior, recording persistence, app-owned list,
-detail, form, and recording syntax, and runnable executable all compile and
-pass their 12 focused tests. Next, route the existing `SyncUpSpeechClient`,
-`SyncUpSoundEffectClient`, `SyncUpOpenSettingsClient`, and clock behavior through
-the app-owned recording screen with deterministic dependency tests. Then add
-the generated schema/permissions and canonical TypeScript contract before the
-fresh-app live boundary. Do not create the `v0.4.0-apps-e2e` tag until the full
+The canonical SyncUps app is complete through `b689469`. The clean fresh-app
+gate records three entities, nine attributes, two required links, twelve allow
+rules, the two exact server-canonical link-name warnings, canonical TypeScript
+`Date` objects, both nested data directions, authenticated Swift state, zero
+pending mutations, and zero compiler/runtime warnings at
+`/tmp/instant-data-swift-syncups-v3-20260719T073704Z/evidence.json`. The
+post-port aggregate at `194ef4d` is green at 1,067 Swift Testing cases across
+83 suites, the `syncups-v3` build, and the complete TypeScript typecheck,
+contract, live-support, and fixture matrix.
+
+Next, port the App Builder and storage slice through app-owned Swift syntax and
+a fresh canonical TypeScript boundary. Start from the pinned website example,
+the existing local `AppBuilderExample`/CLI behavior, and canonical storage
+client sources; preserve `$users`, `$files`, `builds`, owner filtering,
+generation updates, uploaded `App.tsx` content, and cleanup as exact
+cross-SDK shapes. Do not create the `v0.4.0-apps-e2e` tag until the full
 required app matrix passes.
 
 The product-payload mismatch is resolved: playback presence stores and encodes
