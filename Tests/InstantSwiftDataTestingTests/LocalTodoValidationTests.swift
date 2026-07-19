@@ -4325,8 +4325,9 @@ private func runTypeScriptValidationRunner(
   environment: [String: String?] = [:]
 ) throws -> (status: Int32, stdout: String, stderr: String) {
   let process = Process()
-  process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-  process.arguments = ["node", "validation/ts-runner/src/main.ts"] + arguments
+  process.executableURL = currentDirectory
+    .appendingPathComponent("validation/ts-runner/node_modules/.bin/tsx")
+  process.arguments = ["validation/ts-runner/src/main.ts"] + arguments
   process.currentDirectoryURL = currentDirectory
   var processEnvironment = ProcessInfo.processInfo.environment
   for (key, value) in environment {
