@@ -327,6 +327,23 @@ As of 2026-07-19:
   post-port aggregate at `194ef4d` passes 1,067 Swift Testing cases across 83
   suites, the `syncups-v3` build, and the complete TypeScript typecheck,
   contract, live-support, and fixture matrix.
+- The canonical App Builder and Storage boundary is complete through
+  `7f9acc5`. `AppBuilderV3App` owns the authenticated owner list, build detail,
+  generation model, streaming reasoning/code updates, platform-app creation,
+  uploaded `App.tsx`, linked `$files` record, failure cleanup, runnable host,
+  generated schema, and source-pinned permissions. Swift file uploads now use
+  the canonical Storage PUT/DELETE requests, retain downloaded bytes in the
+  local cache under the server-issued file id, and expose the same linked file
+  graph as TypeScript. The clean fresh-app gate pushes schema and permissions
+  twice with no drift, pulls and strictly verifies them, and proves both SDK
+  directions plus exact downloaded file contents and canonical server-owned
+  file metadata. It records three entities, thirteen authored attributes, two
+  links, five allow rules, eight exact normalization warnings, authenticated
+  Swift state, zero pending mutations, and zero compiler/runtime warnings at
+  `/tmp/instant-data-swift-app-builder-v3-20260719T082431Z/evidence.json`. The
+  post-port aggregate passes 1,083 Swift Testing cases across 90 suites, 28
+  macro tests, the `app-builder-v3` build, and the complete TypeScript
+  typecheck, contract, live-support, and fixture matrix.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -360,8 +377,9 @@ When sources disagree, use this order:
 | Current execution state, packet order, gates, and tag targets | `docs/v3-e2e-port-plan.md` |
 | Product contract and full definition of done | `docs/instant-swift-data-goals.md` |
 | Desired V3 API rules and decision log | `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` |
-| Next app target | App Builder and storage, beginning source-first from `upstream/instant/client/www/_examples/app-builder.md`, `Sources/InstantSwiftDataCore/AppBuilderExample.swift`, the existing CLI/tests, and canonical `StorageAPI.ts` plus storage examples |
+| Next app target | Streams and the CloudKitDemo-equivalent sharing boundary; keep file-backed `stream-append` fetching and remote stream metadata bootstrap in their own stream packet |
 | Completed SyncUps live gate | `validation/verify-syncups-v3-app-live.sh`, `Sources/InstantSwiftDataTesting/InstantSyncUpsV3LiveValidation.swift`, and `validation/ts-runner/src/syncups-v3-*.ts` |
+| Completed App Builder and Storage live gate | `validation/verify-app-builder-v3-app-live.sh`, `Sources/InstantSwiftDataTesting/InstantAppBuilderV3LiveValidation.swift`, `Sources/InstantSwiftDataCore/InstantStorageTransport.swift`, and `validation/ts-runner/src/app-builder-v3-*.ts` |
 | Current generated recording contract | `InstantSchemaExamples.recordingActionDocument`, `recordingActionValidationPermissions`, and `--example recording-action` |
 | TypeScript contract pin/type-check gate | `validation/ts-runner/package.json`, its committed `pnpm-lock.yaml`, and `validation/typecheck-generated-contract.sh` |
 | Reproducible live schema/perms install and readback | `validation/verify-recording-contract-live.sh` and `validation/fixtures/recording-action.server.*.ts` |
@@ -1029,13 +1047,24 @@ post-port aggregate at `194ef4d` is green at 1,067 Swift Testing cases across
 83 suites, the `syncups-v3` build, and the complete TypeScript typecheck,
 contract, live-support, and fixture matrix.
 
-Next, port the App Builder and storage slice through app-owned Swift syntax and
-a fresh canonical TypeScript boundary. Start from the pinned website example,
-the existing local `AppBuilderExample`/CLI behavior, and canonical storage
-client sources; preserve `$users`, `$files`, `builds`, owner filtering,
-generation updates, uploaded `App.tsx` content, and cleanup as exact
-cross-SDK shapes. Do not create the `v0.4.0-apps-e2e` tag until the full
-required app matrix passes.
+The canonical App Builder and Storage slice is complete through `7f9acc5`.
+The clean fresh-app gate records three authored namespaces, thirteen authored
+attributes, two links, five allow rules, eight exact server-normalization
+warnings, both generated-code directions, server-issued file ids, canonical
+Storage metadata, exact downloaded `App.tsx` bytes in both SDKs, authenticated
+Swift state, zero pending mutations, and zero compiler/runtime warnings at
+`/tmp/instant-data-swift-app-builder-v3-20260719T082431Z/evidence.json`.
+During the live gate, `where(owner == ownerID)` also exposed and fixed generic
+overload selection so typed relation filters now lower to canonical dotted id
+paths, and the owner list was brought back to the pinned source by removing an
+unsupported non-indexed server order.
+The post-port aggregate passes 1,083 Swift Testing cases across 90 suites, 28
+macro tests, the runnable app build, and the complete TypeScript matrix.
+
+Next, resume the remaining Packet 8 matrix with streams, then the
+CloudKitDemo-equivalent sharing boundary. File-backed `stream-append` fetching
+and remote stream metadata bootstrap are the immediate stream gaps. Do not
+create the `v0.4.0-apps-e2e` tag until the full required app matrix passes.
 
 The product-payload mismatch is resolved: playback presence stores and encodes
 `offsetSeconds: Double`, offers `Duration` as a computed product convenience,
