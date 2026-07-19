@@ -88,6 +88,7 @@ import Testing
       expectNoDifference(profileUser.forwardIdentity, "profiles/user")
       expectNoDifference(profileUser.reverseIdentity, "$users/profile")
       expectNoDifference(profileUser.linkNamespace, "$users")
+      expectNoDifference(profileUser.isRequired, false)
       expectNoDifference(profileUser.onDelete, .cascade)
 
       let messageAuthor = try #require(
@@ -96,6 +97,7 @@ import Testing
       expectNoDifference(messageAuthor.forwardIdentity, "messages/author")
       expectNoDifference(messageAuthor.reverseIdentity, "profiles/messages")
       expectNoDifference(messageAuthor.linkNamespace, "profiles")
+      expectNoDifference(messageAuthor.isRequired, false)
       expectNoDifference(messageAuthor.onDelete, .cascade)
 
       let messageChannel = try #require(
@@ -104,6 +106,7 @@ import Testing
       expectNoDifference(messageChannel.forwardIdentity, "messages/channel")
       expectNoDifference(messageChannel.reverseIdentity, "channels/messages")
       expectNoDifference(messageChannel.linkNamespace, "channels")
+      expectNoDifference(messageChannel.isRequired, false)
       expectNoDifference(messageChannel.onDelete, .cascade)
     }
 
