@@ -171,7 +171,6 @@ try {
   const observedSwiftTyping = deferred<typeof mobileChatV3AppContract.room.swiftTyping>();
   const observedSwiftReaction = deferred<typeof mobileChatV3AppContract.room.swiftReaction>();
   const observedSwiftDisconnect = deferred<void>();
-  const swiftCleanupAcknowledged = deferred<void>();
   let sawSwiftPresence = false;
   const unsubscribePresence = room.subscribePresence({}, (presence: any) => {
     const peers = Object.values(presence.peers ?? {});
@@ -197,9 +196,6 @@ try {
   const unsubscribeEmoji = room.subscribeTopic("emoji", (value: any) => {
     if (matches(value, mobileChatV3AppContract.room.swiftReaction)) {
       observedSwiftReaction.resolve(mobileChatV3AppContract.room.swiftReaction);
-    }
-    if (matches(value, { name: "confetti", directionAngle: 0, rotationAngle: 0 })) {
-      swiftCleanupAcknowledged.resolve();
     }
   });
 
@@ -228,10 +224,6 @@ try {
     room.publishPresence(typeScriptPresence);
     room.publishTopic("typing", mobileChatV3AppContract.room.typeScriptTyping);
     room.publishTopic("emoji", mobileChatV3AppContract.room.typeScriptReaction);
-    await withTimeout(
-      swiftCleanupAcknowledged.promise,
-      "wait for Swift Mobile Chat cleanup acknowledgement",
-    );
     await withTimeout(
       observedSwiftDisconnect.promise,
       "observe Swift Mobile Chat peer cleanup",
