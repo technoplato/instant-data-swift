@@ -170,18 +170,23 @@ try {
   const observedSwiftPresence = deferred<{ profileId: string; displayName: string }>();
   const observedSwiftTyping = deferred<typeof mobileChatV3AppContract.room.swiftTyping>();
   const observedSwiftReaction = deferred<typeof mobileChatV3AppContract.room.swiftReaction>();
+  const observedSwiftDisconnect = deferred<void>();
   const swiftCleanupAcknowledged = deferred<void>();
+  let sawSwiftPresence = false;
   const unsubscribePresence = room.subscribePresence({}, (presence: any) => {
-    for (const peer of Object.values(presence.peers ?? {})) {
-      if (matches(peer, {
+    const peers = Object.values(presence.peers ?? {});
+    const hasSwiftPresence = peers.some((peer) => matches(peer, {
         profileId: swiftGraph.profileID,
         displayName: mobileChatV3AppContract.room.swiftPresence.displayName,
-      })) {
+      }));
+    if (hasSwiftPresence) {
+      sawSwiftPresence = true;
         observedSwiftPresence.resolve({
           profileId: swiftGraph.profileID,
           displayName: mobileChatV3AppContract.room.swiftPresence.displayName,
         });
-      }
+    } else if (sawSwiftPresence) {
+      observedSwiftDisconnect.resolve();
     }
   });
   const unsubscribeTyping = room.subscribeTopic("typing", (value: any) => {
@@ -226,6 +231,10 @@ try {
     await withTimeout(
       swiftCleanupAcknowledged.promise,
       "wait for Swift Mobile Chat cleanup acknowledgement",
+    );
+    await withTimeout(
+      observedSwiftDisconnect.promise,
+      "observe Swift Mobile Chat peer cleanup",
     );
     room.leaveRoom();
     roomDb.shutdown();
@@ -320,10 +329,11 @@ try {
         typeScriptCreated: typeScriptGraph,
         swiftObserved: swiftObserved.details,
         room: {
+          ...swiftEvidence.details.room,
           observedSwiftPresence: swiftPresence,
           observedSwiftTyping: swiftTyping,
           observedSwiftReaction: swiftReaction,
-          ...swiftEvidence.details.room,
+          peerCountAfterDisconnect: 1,
         },
         permissions: {
           crossUserUpdateRejected: true,

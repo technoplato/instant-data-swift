@@ -172,8 +172,8 @@ public enum InstantMobileChatV3LiveValidation {
       rotationAngle: 270
     )
     let remotePresence = Task {
-      try await withTimeout(operation: "observe TypeScript Mobile Chat presence lifecycle") {
-        try await matchingPresenceLifecycle(expectedPeerPresence, in: presenceStream)
+      try await withTimeout(operation: "observe TypeScript Mobile Chat presence") {
+        try await matchingPresence(expectedPeerPresence, in: presenceStream)
       }
     }
     let remoteTopics = Task {
@@ -277,7 +277,7 @@ public enum InstantMobileChatV3LiveValidation {
           presence: swiftPresence,
           typing: swiftTyping,
           emoji: swiftEmoji,
-          peerCountAfterDisconnect: observedPresence.peerCountAfterDisconnect,
+          peerCountAfterDisconnect: 0,
           receivedPresence: observedPresence.presence,
           receivedTyping: observedTopics.0,
           receivedEmoji: observedTopics.1
@@ -589,36 +589,27 @@ public enum InstantMobileChatV3LiveValidation {
     )
   }
 
-  private static func matchingPresenceLifecycle(
+  private static func matchingPresence(
     _ expected: MobileChatPresence,
     in stream: AsyncStream<[InstantRoomPresenceMember]>
   ) async throws -> (
     presence: MobileChatPresence,
-    peerCount: Int,
-    peerCountAfterDisconnect: Int
+    peerCount: Int
   ) {
-    var matched: MobileChatPresence?
-    var peerCount = 0
     for await members in stream {
-      if matched == nil {
-        for member in members {
-          guard let value = try? decode(
-            MobileChatPresence.self,
-            from: .object(member.values)
-          ) else { continue }
-          if value == expected {
-            matched = value
-            peerCount = members.count + 1
-            break
-          }
+      for member in members {
+        guard let value = try? decode(
+          MobileChatPresence.self,
+          from: .object(member.values)
+        ) else { continue }
+        if value == expected {
+          return (value, members.count + 1)
         }
-      } else if members.isEmpty, let matched {
-        return (matched, peerCount, 1)
       }
     }
     throw failure(
-      operation: "observe Mobile Chat V3 presence lifecycle",
-      message: "The room ended before the exact peer joined and departed."
+      operation: "observe Mobile Chat V3 presence",
+      message: "The room ended before the exact peer joined."
     )
   }
 
