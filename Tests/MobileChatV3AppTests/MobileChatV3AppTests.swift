@@ -23,7 +23,7 @@ import Testing
           MobileChatChannel.instantNamespace,
           MobileChatMessage.instantNamespace,
         ],
-        ["mobileProfiles", "mobileChannels", "mobileMessages"]
+        ["profiles", "channels", "messages"]
       )
       expectNoDifference(MobileChatRoom.roomType, "chat")
       expectNoDifference(
@@ -77,21 +77,34 @@ import Testing
     }
 
     @Test
-    func appOwnedEntitiesMatchTheCanonicalMobileChatSchema() {
-      let namespaces = Set([
-        MobileChatProfile.instantNamespace,
-        MobileChatChannel.instantNamespace,
-        MobileChatMessage.instantNamespace,
-      ])
-      let canonicalAttributes = MobileChatExample.attributes.filter {
-        namespaces.contains($0.namespace)
-      }
-      let appAttributes =
-        MobileChatProfile.instantAttributes
-        + MobileChatChannel.instantAttributes
-        + MobileChatMessage.instantAttributes
+    func appOwnedEntitiesMatchTheCanonicalMobileChatSchema() throws {
+      expectNoDifference(MobileChatProfile.instantNamespace, "profiles")
+      expectNoDifference(MobileChatChannel.instantNamespace, "channels")
+      expectNoDifference(MobileChatMessage.instantNamespace, "messages")
 
-      expectNoDifference(appAttributes, canonicalAttributes)
+      let profileUser = try #require(
+        MobileChatProfile.instantAttributes.first { $0.name == "user" }
+      )
+      expectNoDifference(profileUser.forwardIdentity, "profiles/user")
+      expectNoDifference(profileUser.reverseIdentity, "$users/profile")
+      expectNoDifference(profileUser.linkNamespace, "$users")
+      expectNoDifference(profileUser.onDelete, .cascade)
+
+      let messageAuthor = try #require(
+        MobileChatMessage.instantAttributes.first { $0.name == "author" }
+      )
+      expectNoDifference(messageAuthor.forwardIdentity, "messages/author")
+      expectNoDifference(messageAuthor.reverseIdentity, "profiles/messages")
+      expectNoDifference(messageAuthor.linkNamespace, "profiles")
+      expectNoDifference(messageAuthor.onDelete, .cascade)
+
+      let messageChannel = try #require(
+        MobileChatMessage.instantAttributes.first { $0.name == "channel" }
+      )
+      expectNoDifference(messageChannel.forwardIdentity, "messages/channel")
+      expectNoDifference(messageChannel.reverseIdentity, "channels/messages")
+      expectNoDifference(messageChannel.linkNamespace, "channels")
+      expectNoDifference(messageChannel.onDelete, .cascade)
     }
 
     @Test @MainActor
@@ -104,6 +117,18 @@ import Testing
 
       let encoder = JSONEncoder()
       encoder.outputFormatting = [.sortedKeys]
+      expectNoDifference(
+        String(
+          decoding: try encoder.encode(
+            MobileChatPresence(
+              profileID: "00000000-0000-4000-8000-000000000002",
+              displayName: "Swift Chatter"
+            )
+          ),
+          as: UTF8.self
+        ),
+        #"{"displayName":"Swift Chatter","profileId":"00000000-0000-4000-8000-000000000002"}"#
+      )
       expectNoDifference(
         String(
           decoding: try encoder.encode(MobileChatTypingEvent(isTyping: true)),

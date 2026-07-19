@@ -10,26 +10,45 @@ struct MobileChatContractTests {
     let document = InstantSchemaExamples.mobileChatDocument
 
     expectNoDifference(
-      document.attributes.sorted { $0.id < $1.id },
-      MobileChatExample.attributes.sorted { $0.id < $1.id }
+      document.attributes.map(\.id).sorted(),
+      [
+        "$files/id",
+        "$files/path",
+        "$files/url",
+        "$users/email",
+        "$users/id",
+        "$users/imageURL",
+        "$users/linkedPrimaryUser",
+        "$users/type",
+        "channels/id",
+        "channels/name",
+        "messages/author",
+        "messages/channel",
+        "messages/content",
+        "messages/id",
+        "messages/timestamp",
+        "profiles/displayName",
+        "profiles/id",
+        "profiles/user",
+      ]
     )
     expectNoDifference(
       document.entities.map(\.namespace),
-      ["$files", "$users", "mobileProfiles", "mobileChannels", "mobileMessages"]
+      ["$files", "$users", "profiles", "channels", "messages"]
     )
     expectNoDifference(
       document.links.map(\.name),
       [
-        "mobileUsersLinkedPrimaryUser",
-        "mobileProfilesUser",
-        "mobileMessagesAuthor",
-        "mobileMessagesChannel",
+        "$usersLinkedPrimaryUser",
+        "userProfile",
+        "authorMessages",
+        "channelMessages",
       ]
     )
 
     let room = document.rooms.first
     expectNoDifference(room?.name, "chat")
-    expectNoDifference(room?.presence.attributes.map(\.name), ["profileID", "displayName"])
+    expectNoDifference(room?.presence.attributes.map(\.name), ["profileId", "displayName"])
     expectNoDifference(room?.topics.map(\.name), ["typing", "emoji"])
     expectNoDifference(
       room?.topics.first { $0.name == "typing" }?.payload.attributes.map(\.name),
@@ -51,7 +70,7 @@ struct MobileChatContractTests {
 
     expectNoDifference(permissions["$users"]?.allow, [.view: "auth.id != null"])
     expectNoDifference(
-      permissions["mobileProfiles"]?.allow,
+      permissions["profiles"]?.allow,
       [
         .view: "auth.id != null",
         .create: "isSelf",
@@ -60,11 +79,11 @@ struct MobileChatContractTests {
       ]
     )
     expectNoDifference(
-      permissions["mobileProfiles"]?.bind,
+      permissions["profiles"]?.bind,
       [InstantPermissionBinding("isSelf", "auth.id in data.ref('user.id')")]
     )
     expectNoDifference(
-      permissions["mobileMessages"]?.allow,
+      permissions["messages"]?.allow,
       [
         .view: "auth.id != null",
         .create: "isAuthor",
@@ -73,7 +92,7 @@ struct MobileChatContractTests {
       ]
     )
     expectNoDifference(
-      permissions["mobileMessages"]?.bind,
+      permissions["messages"]?.bind,
       [InstantPermissionBinding("isAuthor", "auth.id in data.ref('author.user.id')")]
     )
   }
