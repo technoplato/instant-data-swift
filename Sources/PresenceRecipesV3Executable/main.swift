@@ -32,6 +32,14 @@ import PresenceRecipesV3App
                 color: "#123456"
               )
             }
+            NavigationLink("Custom Cursors") {
+              CustomCursorsV3Screen(
+                roomID: CustomCursorsV3Room.defaultRoomID,
+                profileID: "custom-cursors-v3-user",
+                name: "custom-cursors-v3-avatar",
+                color: "#123456"
+              )
+            }
           }
           .navigationTitle("Presence Recipes")
         }
