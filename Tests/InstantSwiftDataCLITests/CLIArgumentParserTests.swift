@@ -2922,6 +2922,12 @@ struct CLIArgumentParserTests {
     )
     #expect(CLISchemaUsage.generate.contains("|cursors"))
     #expect(CLISchemaUsage.verify.contains("|cursors"))
+    expectNoDifference(
+      try parseSchema(["generate", "--example", "custom-cursors"]),
+      .generate(CLIGenerateArtifactInvocation(example: "custom-cursors"))
+    )
+    #expect(CLISchemaUsage.generate.contains("|custom-cursors"))
+    #expect(CLISchemaUsage.verify.contains("|custom-cursors"))
   }
 
   @Test
@@ -2980,6 +2986,12 @@ struct CLIArgumentParserTests {
     )
     #expect(CLIPermissionsUsage.generate.contains("|cursors"))
     #expect(CLIPermissionsUsage.verify.contains("|cursors"))
+    expectNoDifference(
+      try parsePermissions(["generate", "--example", "custom-cursors"]),
+      .generate(CLIGenerateArtifactInvocation(example: "custom-cursors"))
+    )
+    #expect(CLIPermissionsUsage.generate.contains("|custom-cursors"))
+    #expect(CLIPermissionsUsage.verify.contains("|custom-cursors"))
   }
 
   @Test

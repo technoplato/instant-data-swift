@@ -671,6 +671,61 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliRoundTripsCanonicalCustomCursorsArtifacts() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    let schemaURL = homeURL.appendingPathComponent("custom-cursors.schema.ts")
+    let permissionsURL = homeURL.appendingPathComponent("custom-cursors.perms.ts")
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let generatedSchema = try JSONDecoder().decode(
+      CLIGeneratedArtifactOutput.self,
+      from: Data(try runCLI([
+        "schema", "generate", "--example", "custom-cursors",
+        "--to", schemaURL.path, "--json",
+      ], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(generatedSchema.example, "custom-cursors")
+    let schemaSource = try String(contentsOf: schemaURL, encoding: .utf8)
+    #expect(schemaSource.contains("\"cursors-example\""))
+    #expect(
+      schemaSource.contains(
+        "\"cursors-space-default--cursors-example-124\": i.json().optional()"
+      )
+    )
+    #expect(schemaSource.contains("name: i.string()"))
+    #expect(!schemaSource.contains("userID"))
+
+    let schemaVerify = try JSONDecoder().decode(
+      CLISchemaVerifyOutput.self,
+      from: Data(try runCLI([
+        "schema", "verify", "--example", "custom-cursors",
+        "--from", schemaURL.path, "--json",
+      ], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(schemaVerify.example, "custom-cursors")
+    expectNoDifference(schemaVerify.entityCount, 0)
+    expectNoDifference(schemaVerify.linkCount, 0)
+    expectNoDifference(schemaVerify.warnings, [])
+
+    _ = try runCLI([
+      "perms", "generate", "--example", "custom-cursors",
+      "--to", permissionsURL.path, "--json",
+    ], homeURL: homeURL)
+    let permissionsVerify = try JSONDecoder().decode(
+      CLIPermissionsVerifyOutput.self,
+      from: Data(try runCLI([
+        "perms", "verify", "--example", "custom-cursors",
+        "--from", permissionsURL.path, "--json",
+      ], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(permissionsVerify.example, "custom-cursors")
+    expectNoDifference(permissionsVerify.namespaceCount, 0)
+    expectNoDifference(permissionsVerify.allowRuleCount, 0)
+  }
+
+  @Test
   func cliGeneratesAndVerifiesCanonicalRecordingActionContract() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
