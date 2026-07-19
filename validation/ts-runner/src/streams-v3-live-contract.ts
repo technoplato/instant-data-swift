@@ -91,7 +91,7 @@ try {
   assert.equal(observedSwiftContent, swiftContent);
   assert.deepEqual(warnings, []);
 
-  process.stdout.write(`${JSON.stringify({
+  const evidence = `${JSON.stringify({
     case: "validation.typescript.streams-v3-live-contract",
     event: "bidirectional-streams-observed",
     side: "typescript",
@@ -119,7 +119,9 @@ try {
       compilerWarningCount: warnings.length,
       warnings,
     },
-  }, null, 2)}\n`);
+  }, null, 2)}\n`;
+  await new Promise<void>((resolveWrite) => process.stdout.write(evidence, resolveWrite));
+  process.exit(0);
 } finally {
   console.warn = originalWarn;
 }
