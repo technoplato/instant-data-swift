@@ -136,6 +136,19 @@ try {
   );
   await db.auth.signInWithToken(typeScriptToken);
 
+  const roomDb = initCore(
+    {
+      appId,
+      apiURI,
+      websocketURI,
+      schema,
+      devtool: false,
+    },
+    MemoryStore,
+    AlwaysOnline,
+  );
+  await roomDb.auth.signInWithToken(typeScriptToken);
+
   const observer = spawnSwift("--live-mobile-chat-v3-observe", {
     appId,
     apiURI,
@@ -149,7 +162,11 @@ try {
   assert.equal(ready.event, "observer-ready");
   assert.equal(ready.details.connectionState, "authenticated");
 
-  const room: any = db.joinRoom(mobileChatV3AppContract.room.type, swiftGraph.channelID);
+  const room: any = roomDb.joinRoom(
+    mobileChatV3AppContract.room.type,
+    swiftGraph.channelID,
+  );
+  let roomClosed = false;
   const observedSwiftPresence = deferred<{ profileId: string; displayName: string }>();
   const observedSwiftTyping = deferred<typeof mobileChatV3AppContract.room.swiftTyping>();
   const observedSwiftReaction = deferred<typeof mobileChatV3AppContract.room.swiftReaction>();
@@ -211,6 +228,8 @@ try {
       "wait for Swift Mobile Chat cleanup acknowledgement",
     );
     room.leaveRoom();
+    roomDb.shutdown();
+    roomClosed = true;
 
     const swiftEvidence = await swiftWrite;
     assert.equal(swiftEvidence.ok, true);
@@ -319,6 +338,10 @@ try {
     unsubscribePresence();
     unsubscribeTyping();
     unsubscribeEmoji();
+    if (!roomClosed) {
+      room.leaveRoom();
+      roomDb.shutdown();
+    }
   }
 } finally {
   console.warn = originalWarn;
