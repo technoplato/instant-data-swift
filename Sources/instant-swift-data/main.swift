@@ -566,10 +566,20 @@ struct InstantSwiftDataCLI {
 
   private static func runBenchmark(arguments: [String], output: OutputMode) async throws {
     let options = try BenchmarkOptions.parse(arguments: arguments)
-    let result = try await InstantSwiftDataLocalBenchmarks.runLocalTodos(
-      appID: options.appID,
-      iterations: options.iterations
-    )
+    let result = switch options.suite {
+    case InstantSwiftDataLocalBenchmarks.localTodosSuite:
+      try await InstantSwiftDataLocalBenchmarks.runLocalTodos(
+        appID: options.appID,
+        iterations: options.iterations
+      )
+    case InstantSwiftDataCrossSDKBenchmarks.suite:
+      try await InstantSwiftDataCrossSDKBenchmarks.run(
+        appID: options.appID,
+        iterations: options.iterations
+      )
+    default:
+      preconditionFailure("Benchmark options reject unsupported suites.")
+    }
     try printBenchmark(result: result, output: output)
   }
 
@@ -9114,7 +9124,7 @@ struct InstantSwiftDataCLI {
         validation syncups-recording [--json|--jsonl]
         validation parity-report [--json|--jsonl]
         validation coverage [--json|--jsonl]
-        benchmark [--suite local-todos] [--iterations n] [--app-id id] [--json|--jsonl]
+        benchmark [--suite <local-todos|cross-sdk-core>] [--iterations n] [--app-id id] [--json|--jsonl]
 
       Environment:
         INSTANT_SWIFT_DATA_HOME  Directory for CLI SQLite state. Defaults to ~/.instant-swift-data.
@@ -12614,7 +12624,10 @@ private struct BenchmarkOptions: Sendable {
       throw CLIError(error.description, exitCode: error.exitCode)
     }
 
-    guard invocation.suite == InstantSwiftDataLocalBenchmarks.localTodosSuite else {
+    guard [
+      InstantSwiftDataLocalBenchmarks.localTodosSuite,
+      InstantSwiftDataCrossSDKBenchmarks.suite,
+    ].contains(invocation.suite) else {
       throw CLIError("Unsupported benchmark suite: \(invocation.suite). \(usage)", exitCode: 64)
     }
 
@@ -12627,7 +12640,7 @@ private struct BenchmarkOptions: Sendable {
 
   private static var usage: String {
     """
-    Usage: instant-swift-data benchmark [--suite local-todos] [--iterations n] [--app-id id] [--json|--jsonl]
+    Usage: instant-swift-data benchmark [--suite <local-todos|cross-sdk-core>] [--iterations n] [--app-id id] [--json|--jsonl]
     """
   }
 }

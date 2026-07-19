@@ -32,10 +32,20 @@ struct InstantSwiftDataBenchmarks {
 
   private static func run() async throws {
     let options = try BenchmarkOptions.parse(arguments: Array(CommandLine.arguments.dropFirst()))
-    let result = try await InstantSwiftDataLocalBenchmarks.runLocalTodos(
-      appID: options.appID,
-      iterations: options.iterations
-    )
+    let result = switch options.suite {
+    case InstantSwiftDataLocalBenchmarks.localTodosSuite:
+      try await InstantSwiftDataLocalBenchmarks.runLocalTodos(
+        appID: options.appID,
+        iterations: options.iterations
+      )
+    case InstantSwiftDataCrossSDKBenchmarks.suite:
+      try await InstantSwiftDataCrossSDKBenchmarks.run(
+        appID: options.appID,
+        iterations: options.iterations
+      )
+    default:
+      preconditionFailure("Benchmark options reject unsupported suites.")
+    }
 
     switch options.output {
     case .human, .json:
@@ -99,7 +109,10 @@ private struct BenchmarkOptions: Sendable {
       usageCommand: "instant-swift-data-benchmarks"
     )
 
-    guard invocation.suite == InstantSwiftDataLocalBenchmarks.localTodosSuite else {
+    guard [
+      InstantSwiftDataLocalBenchmarks.localTodosSuite,
+      InstantSwiftDataCrossSDKBenchmarks.suite,
+    ].contains(invocation.suite) else {
       throw BenchmarkCLIError("Unsupported benchmark suite: \(invocation.suite).\n\(usage)", exitCode: 64)
     }
 
@@ -113,7 +126,7 @@ private struct BenchmarkOptions: Sendable {
 
   private static var usage: String {
     """
-    Usage: instant-swift-data-benchmarks [--suite local-todos] [--iterations n] [--app-id id] [--json|--jsonl]
+    Usage: instant-swift-data-benchmarks [--suite <local-todos|cross-sdk-core>] [--iterations n] [--app-id id] [--json|--jsonl]
     """
   }
 }
