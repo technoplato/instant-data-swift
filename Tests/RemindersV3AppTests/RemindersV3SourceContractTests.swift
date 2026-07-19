@@ -62,6 +62,14 @@ struct RemindersV3SourceContractTests {
       createdAt: Date(timeIntervalSince1970: 1_700_000_001),
       tagIDs: [InstantID(rawValue: "family")]
     )
+    _ = CreateRemindersV3Share(
+      shareID: InstantID(rawValue: "share-1"),
+      ownerMembershipID: InstantID(rawValue: "membership-owner"),
+      listID: listID,
+      ownerID: userID,
+      token: "share-token",
+      createdAt: Date(timeIntervalSince1970: 1_700_000_000)
+    )
   }
 
   @Test
