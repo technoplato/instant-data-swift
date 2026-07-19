@@ -5,6 +5,10 @@ import Foundation
 import PresenceRecipesV3App
 import Testing
 
+#if canImport(SwiftUI)
+  import SwiftUI
+#endif
+
 // Canonical implementation source:
 // upstream/instant/client/packages/vue/src/InstantVueRoom.ts::useTypingIndicator
 // Canonical source test:
@@ -17,6 +21,20 @@ import Testing
 @Suite
 @MainActor
 struct TypingIndicatorV3Tests {
+  #if canImport(SwiftUI)
+    @Test
+    func desiredRoomPresenceSyntaxCompiles() {
+      let screen: any View = TypingIndicatorV3Screen(
+        roomID: "typing-room",
+        profileID: "current-user",
+        displayName: "Current user"
+      )
+      _ = screen
+
+      expectNoDifference(TypingIndicatorV3Room.roomType, "typing-indicator-example")
+    }
+  #endif
+
   @Test
   func sourcePortFiltersOnlyActivePeersAndHonorsWriteOnly() {
     let peers = [
