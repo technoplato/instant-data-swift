@@ -9,11 +9,12 @@
   },
   "scripts": {
     "fixtures": "tsx src/main.ts --fixtures",
-    "test": "pnpm run typecheck && pnpm run test:recording-action && pnpm run test:sharing && pnpm run test:voice-trail && pnpm run test:playback-room && pnpm run fixtures",
+    "test": "pnpm run typecheck && pnpm run test:recording-action && pnpm run test:sharing && pnpm run test:voice-trail && pnpm run test:playback-room && pnpm run test:preferences && pnpm run fixtures",
     "test:recording-action": "tsx --test src/recording-action-sdk-contract.test.ts",
     "test:sharing": "tsx --test src/sharing-sdk-contract.test.ts",
     "test:voice-trail": "tsx --test src/voice-trail-sdk-contract.test.ts",
     "test:playback-room": "tsx --test src/playback-room-sdk-contract.test.ts",
+    "test:preferences": "tsx --test src/preferences-sdk-contract.test.ts",
     "live:sharing": "tsx src/sharing-live-contract.ts",
     "live:playback-room": "tsx src/playback-room-live-contract.ts",
     "live:voice-trail-recordings-list": "tsx src/voice-trail-recordings-list-live-contract.ts",
