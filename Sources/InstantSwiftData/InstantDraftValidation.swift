@@ -1055,7 +1055,7 @@ private extension InstantTransportValue {
       "number"
     case .string:
       "string"
-    case .array:
+    case .array, .lookupRef:
       "array"
     case .object:
       "object"
@@ -1072,7 +1072,7 @@ private extension InstantTransportValue {
       "number:\(value)"
     case let .string(value):
       "string:\(value)"
-    case .array:
+    case .array, .lookupRef:
       "array"
     case .object:
       "object"

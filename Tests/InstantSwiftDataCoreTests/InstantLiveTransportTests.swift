@@ -1909,10 +1909,10 @@ struct InstantLiveTransportTests {
         .addTriple(
           entity: .id("live-transaction-note"),
           attributeID: "todos/prerequisite",
-          value: .array([
-            .string("todos/id"),
-            .string("seed-todo"),
-          ])
+          value: .lookupRef(
+            attributeID: "todos/id",
+            value: .string("seed-todo")
+          )
         )
       ],
       resolveTransactionAttributeIDs: true,
@@ -1960,6 +1960,34 @@ struct InstantLiveTransportTests {
           ]),
         ]),
       ])
+    )
+  }
+
+  @Test
+  func liveTransactionPreservesTwoElementJSONArrayValues() throws {
+    let playerIDs: InstantTransportValue = .array([
+      .string("2fe78833-f4f7-453d-98b3-21663443b405"),
+      .string("c746147b-923d-498f-b24b-f95b080fa57e"),
+    ])
+
+    expectNoDifference(
+      try InstantLiveMutationEncoder.resolveAttributeIDs(
+        in: [
+          .addTriple(
+            entity: .id("game-1"),
+            attributeID: "todos/text",
+            value: playerIDs
+          )
+        ],
+        attrs: .todoServerAttrs
+      ),
+      [
+        .addTriple(
+          entity: .id("game-1"),
+          attributeID: "server-todos-text",
+          value: playerIDs
+        )
+      ]
     )
   }
 

@@ -250,6 +250,7 @@ public indirect enum InstantTransportValue: Hashable, Encodable, Sendable {
   case string(String)
   case array([Self])
   case object([String: Self])
+  case lookupRef(attributeID: String, value: Self)
 
   public init(_ value: InstantValue) {
     switch value {
@@ -268,7 +269,7 @@ public indirect enum InstantTransportValue: Hashable, Encodable, Sendable {
     case let .ref(value):
       self = .string(value)
     case let .lookupRef(lookup):
-      self = .array([.string(lookup.attributeID), Self(lookup.value)])
+      self = .lookupRef(attributeID: lookup.attributeID, value: Self(lookup.value))
     }
   }
 
@@ -337,6 +338,11 @@ public indirect enum InstantTransportValue: Hashable, Encodable, Sendable {
       for key in values.keys.sorted() {
         try container.encode(values[key], forKey: DynamicCodingKey(key))
       }
+
+    case let .lookupRef(attributeID, value):
+      var container = encoder.unkeyedContainer()
+      try container.encode(attributeID)
+      try container.encode(value)
     }
   }
 

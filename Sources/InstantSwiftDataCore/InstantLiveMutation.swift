@@ -101,15 +101,14 @@ enum InstantLiveMutationEncoder {
       case .null, .bool, .number, .string:
         return value
       case let .array(values):
-        if values.count == 2, case let .string(attributeID) = values[0] {
-          return .array([
-            .string(try resolve(attributeID)),
-            try resolve(values[1]),
-          ])
-        }
         return .array(try values.map(resolve))
       case let .object(values):
         return .object(try values.mapValues(resolve))
+      case let .lookupRef(attributeID, value):
+        return .lookupRef(
+          attributeID: try resolve(attributeID),
+          value: try resolve(value)
+        )
       }
     }
   }
