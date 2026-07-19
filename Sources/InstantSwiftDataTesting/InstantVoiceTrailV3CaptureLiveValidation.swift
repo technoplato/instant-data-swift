@@ -78,6 +78,7 @@ public enum InstantVoiceTrailV3CaptureLiveValidation {
         message: "Server-verified capture user did not match the expected user."
       )
     }
+    try await waitForAuthenticated(client)
 
     let prepared = try await CreateVoiceTrailRecording(
       recordingID: InstantID(rawValue: recordingID),
@@ -89,7 +90,7 @@ public enum InstantVoiceTrailV3CaptureLiveValidation {
     _ = try await client.transact {
       for mutation in prepared.mutations { mutation }
     }
-    _ = try await client.flushPendingMutations()
+    try await waitForOutboxDrain(client)
 
     let pendingMutationCount = await client.pendingMutations()
       .filter { $0.status == .pending }
@@ -98,7 +99,9 @@ public enum InstantVoiceTrailV3CaptureLiveValidation {
     guard pendingMutationCount == 0, status.state == .authenticated else {
       throw validationFailure(
         operation: "sync VoiceTrail V3 capture",
-        message: "Expected an authenticated connection with zero pending mutations."
+        message:
+          "Expected an authenticated connection with zero pending mutations; found "
+          + "\(status.state.rawValue) and \(pendingMutationCount) pending."
       )
     }
 
@@ -132,6 +135,33 @@ public enum InstantVoiceTrailV3CaptureLiveValidation {
       operation: operation,
       message: message,
       recovery: "Inspect the VoiceTrail V3 app capture messages and live permissions."
+    )
+  }
+
+  private static func waitForAuthenticated(_ client: InstantSwiftDataClient) async throws {
+    let deadline = ContinuousClock.now + .seconds(15)
+    while ContinuousClock.now < deadline {
+      if try await client.connectionStatus().state == .authenticated { return }
+      try await Task.sleep(for: .milliseconds(25))
+    }
+    let status = try await client.connectionStatus()
+    throw validationFailure(
+      operation: "wait for VoiceTrail V3 authentication",
+      message: "Expected authenticated, found \(status.state.rawValue)."
+    )
+  }
+
+  private static func waitForOutboxDrain(_ client: InstantSwiftDataClient) async throws {
+    let deadline = ContinuousClock.now + .seconds(15)
+    while ContinuousClock.now < deadline {
+      _ = try await client.flushPendingMutations()
+      if await client.pendingMutations().isEmpty { return }
+      try await Task.sleep(for: .milliseconds(25))
+    }
+    let count = await client.pendingMutations().count
+    throw validationFailure(
+      operation: "drain VoiceTrail V3 capture outbox",
+      message: "Expected zero pending mutations, found \(count)."
     )
   }
 }
