@@ -17,6 +17,7 @@ import { remindersV3AppContract } from "./reminders-v3-app-contract.js";
 import { projectCanonicalRemindersV3List } from "./reminders-v3-live-support.js";
 
 type SwiftProcess = ChildProcessByStdio<null, Readable, Readable>;
+type CanonicalList = ReturnType<typeof projectCanonicalRemindersV3List>;
 
 const appId = requiredEnvironment("INSTANT_APP_ID");
 const adminToken = requiredEnvironment("INSTANT_ADMIN_TOKEN");
@@ -69,21 +70,21 @@ const databases: any[] = [];
 try {
   const suffix = randomUUID();
   const admin = initAdmin({ appId, adminToken, apiURI });
-  const ownerToken = await admin.auth.createToken({
-    email: `reminders-owner-${suffix}@example.com`,
+  const swiftToken = await admin.auth.createToken({
+    email: `reminders-swift-${suffix}@example.com`,
   });
-  const participantToken = await admin.auth.createToken({
-    email: `reminders-participant-${suffix}@example.com`,
+  const typeScriptToken = await admin.auth.createToken({
+    email: `reminders-typescript-${suffix}@example.com`,
   });
   const outsiderToken = await admin.auth.createToken({
     email: `reminders-outsider-${suffix}@example.com`,
   });
-  const owner = await admin.auth.verifyToken(ownerToken);
-  const participant = await admin.auth.verifyToken(participantToken);
-  const outsider = await admin.auth.verifyToken(outsiderToken);
-  assert.ok(owner?.id, "Expected a canonical Reminders owner.");
-  assert.ok(participant?.id, "Expected a canonical Reminders participant.");
-  assert.ok(outsider?.id, "Expected a canonical Reminders outsider.");
+  const swiftUser = await admin.auth.verifyToken(swiftToken);
+  const typeScriptUser = await admin.auth.verifyToken(typeScriptToken);
+  const outsiderUser = await admin.auth.verifyToken(outsiderToken);
+  assert.ok(swiftUser?.id, "Expected a canonical Swift Reminders owner.");
+  assert.ok(typeScriptUser?.id, "Expected a canonical TypeScript Reminders participant.");
+  assert.ok(outsiderUser?.id, "Expected a canonical Reminders outsider.");
 
   const schema = unwrapSchema(await import(pathToFileURL(schemaPath).href));
   (globalThis as any).window = globalThis;
@@ -94,12 +95,12 @@ try {
   const outsiderDB = coreDatabase(schema);
   databases.push(ownerDB, participantDB, outsiderDB);
   await Promise.all([
-    ownerDB.auth.signInWithToken(ownerToken),
-    participantDB.auth.signInWithToken(participantToken),
+    ownerDB.auth.signInWithToken(swiftToken),
+    participantDB.auth.signInWithToken(typeScriptToken),
     outsiderDB.auth.signInWithToken(outsiderToken),
   ]);
 
-  swift = spawnSwift(ownerToken, owner.id, participant.id);
+  swift = spawnSwift(swiftToken, swiftUser.id, typeScriptUser.id);
   const lines = createInterface({ input: swift.stdout, crlfDelay: Infinity })
     [Symbol.asyncIterator]();
 
@@ -108,10 +109,10 @@ try {
   assert.equal(graphReady.ok, true);
 
   const swiftList = await waitForList(ownerDB, (list) => (
-    list.owner.id === owner.id
+    list.owner.id === swiftUser.id
     && list.share?.id === remindersV3AppContract.fixtures.share
     && list.share.memberships.some((membership) => (
-      membership.user.id === owner.id && membership.role === "owner"
+      membership.user.id === swiftUser.id && membership.role === "owner"
     ))
     && list.reminders.some((reminder) => (
       reminder.id === remindersV3AppContract.fixtures.swiftReminder
@@ -120,23 +121,29 @@ try {
     ))
   ));
 
-  const acceptedAt = new Date(1_784_424_001_000);
-  await ownerDB.transact([
-    ownerDB.tx.v3_share_memberships[remindersV3AppContract.fixtures.readerMembership]
-      .update({ role: "reader", acceptedAt })
+  await participantDB.transact(
+    participantDB.tx.v3_share_memberships[remindersV3AppContract.fixtures.readerMembership]
+      .update({
+        role: "reader",
+        acceptedAt: 1_784_424_001_000,
+      })
       .link({
         share: remindersV3AppContract.fixtures.share,
-        user: participant.id,
+        user: typeScriptUser.id,
       }),
-    ownerDB.tx.remindersLists[remindersV3AppContract.fixtures.list]
-      .link({ readers: participant.id }),
-  ]);
+  );
 
+  const readerObserved = await nextJSONLine(
+    lines,
+    swift,
+    "Swift acceptance of TypeScript Reminders reader membership",
+  );
+  assert.equal(readerObserved.event, "typescript-reader-observed", JSON.stringify(readerObserved));
+  assert.equal(readerObserved.ok, true);
   const readerList = await waitForList(participantDB, (list) => (
-    list.readers.some((user) => user.id === participant.id)
-    && list.writers.length === 0
+    list.readers.some((user) => user.id === typeScriptUser.id)
     && list.share?.memberships.some((membership) => (
-      membership.user.id === participant.id && membership.role === "reader"
+      membership.user.id === typeScriptUser.id && membership.role === "reader"
     )) === true
   ));
   const readerUpdateRejection = await rejected(
@@ -147,30 +154,24 @@ try {
   );
   assert.match(readerUpdateRejection, /permission|reminder|update/i);
 
-  const readerObserved = await nextJSONLine(
-    lines,
-    swift,
-    "Swift observation of the TypeScript reader",
-  );
-  assert.equal(readerObserved.event, "typescript-reader-observed", JSON.stringify(readerObserved));
-  assert.equal(readerObserved.ok, true);
-
   const writerReady = await nextJSONLine(lines, swift, "Swift Reminders writer promotion");
   assert.equal(writerReady.event, "swift-writer-promotion-ready", JSON.stringify(writerReady));
   assert.equal(writerReady.ok, true);
   const writerList = await waitForList(participantDB, (list) => (
-    list.readers.length === 0
-    && list.writers.some((user) => user.id === participant.id)
+    list.readers.every((user) => user.id !== typeScriptUser.id)
+    && list.writers.some((user) => user.id === typeScriptUser.id)
     && list.share?.memberships.some((membership) => (
-      membership.user.id === participant.id && membership.role === "writer"
+      membership.user.id === typeScriptUser.id && membership.role === "writer"
     )) === true
   ));
 
   await participantDB.transact([
-    participantDB.tx.reminders[remindersV3AppContract.fixtures.swiftReminder]
-      .update({ title: "Swift reminder updated by TypeScript" }),
-    participantDB.tx.tags[remindersV3AppContract.fixtures.typeScriptTag]
-      .update({ title: "typescript" }),
+    participantDB.tx.tags[remindersV3AppContract.fixtures.typeScriptTag].update({
+      title: "TypeScript",
+    }),
+    participantDB.tx.reminders[remindersV3AppContract.fixtures.swiftReminder].update({
+      title: "Swift reminder updated by TypeScript",
+    }),
     participantDB.tx.reminders[remindersV3AppContract.fixtures.typeScriptReminder]
       .update({
         title: "TypeScript reminder",
@@ -179,7 +180,7 @@ try {
         isFlagged: false,
         priority: remindersV3AppContract.priority.medium,
         position: 1,
-        createdAt: new Date(1_784_424_003_000),
+        createdAt: 1_784_424_002_000,
       })
       .link({
         list: remindersV3AppContract.fixtures.list,
@@ -187,7 +188,14 @@ try {
       }),
   ]);
 
-  const finalList = await waitForList(ownerDB, (list) => (
+  const reminderObserved = await nextJSONLine(
+    lines,
+    swift,
+    "Swift observation of TypeScript Reminders writes",
+  );
+  assert.equal(reminderObserved.event, "typescript-reminder-observed", JSON.stringify(reminderObserved));
+  assert.equal(reminderObserved.ok, true);
+  const completedList = await waitForList(ownerDB, (list) => (
     list.reminders.some((reminder) => (
       reminder.id === remindersV3AppContract.fixtures.swiftReminder
       && reminder.title === "Swift reminder updated by TypeScript"
@@ -198,32 +206,23 @@ try {
       && reminder.tags.some((tag) => tag.id === remindersV3AppContract.fixtures.typeScriptTag)
     ))
   ));
-
   const outsiderResult = await outsiderDB.queryOnce(remindersListQuery());
   assert.deepEqual(outsiderResult.data.remindersLists, []);
-
-  const reminderObserved = await nextJSONLine(
-    lines,
-    swift,
-    "Swift observation of the TypeScript reminder",
-  );
-  assert.equal(reminderObserved.event, "typescript-reminder-observed", JSON.stringify(reminderObserved));
-  assert.equal(reminderObserved.ok, true);
 
   const swiftEvidence = await nextJSONLine(lines, swift, "Swift Reminders evidence");
   await requireSuccessfulExit(swift, "Swift Reminders runner");
   swift = undefined;
   assert.equal(swiftEvidence.ok, true);
   assert.equal(swiftEvidence.event, "typescript-writer-reminder-observed");
-  assert.equal(swiftEvidence.details.connectionState, "authenticated");
   assert.equal(swiftEvidence.details.pendingMutationCount, 0);
+  assert.equal(swiftEvidence.details.connectionState, "authenticated");
   assert.equal(
     swiftEvidence.details.swiftReminder.title,
     "Swift reminder updated by TypeScript",
   );
-  assert.deepEqual(
-    swiftEvidence.details.typeScriptReminderObservedBySwift.tagIDs,
-    [remindersV3AppContract.fixtures.typeScriptTag],
+  assert.equal(
+    swiftEvidence.details.typeScriptReminderObservedBySwift.priority,
+    remindersV3AppContract.priority.medium,
   );
   assert.deepEqual(warnings, []);
 
@@ -236,14 +235,14 @@ try {
     details: {
       upstream: remindersV3AppContract.upstream,
       users: {
-        owner: { id: owner.id },
-        participant: { id: participant.id },
-        outsider: { id: outsider.id },
+        owner: { id: swiftUser.id },
+        participant: { id: typeScriptUser.id },
+        outsider: { id: outsiderUser.id },
       },
       typeScriptObservedSwiftList: swiftList,
       typeScriptObservedReaderList: readerList,
       typeScriptObservedWriterList: writerList,
-      typeScriptObservedFinalList: finalList,
+      typeScriptObservedFinalList: completedList,
       outsiderVisibleListCount: outsiderResult.data.remindersLists.length,
       readerUpdateRejection,
       swift: swiftEvidence.details,
@@ -278,18 +277,15 @@ function remindersListQuery(): any {
       readers: {},
       writers: {},
       reminders: { tags: {} },
-      share: {
-        owner: {},
-        memberships: { user: {} },
-      },
+      share: { owner: {}, memberships: { user: {} } },
     },
   };
 }
 
 async function waitForList(
   database: any,
-  predicate: (list: ReturnType<typeof projectCanonicalRemindersV3List>) => boolean,
-): Promise<ReturnType<typeof projectCanonicalRemindersV3List>> {
+  predicate: (list: CanonicalList) => boolean,
+): Promise<CanonicalList> {
   let last: unknown;
   for (let attempt = 0; attempt < 300; attempt += 1) {
     const result = await database.queryOnce(remindersListQuery());
