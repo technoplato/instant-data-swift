@@ -48,7 +48,7 @@ export const mobileChatV3AppContract = {
   swiftCreated: {
     profile: {
       id: "mobile-chat-swift-profile",
-      user: "mobile-chat-user",
+      user: "mobile-chat-swift-user",
       displayName: "Swift Chatter",
     },
     channel: {
@@ -66,7 +66,7 @@ export const mobileChatV3AppContract = {
   typeScriptCreated: {
     profile: {
       id: "mobile-chat-typescript-profile",
-      user: "mobile-chat-user",
+      user: "mobile-chat-typescript-user",
       displayName: "TypeScript Chatter",
     },
     channel: {

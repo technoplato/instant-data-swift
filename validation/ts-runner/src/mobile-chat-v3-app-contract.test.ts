@@ -46,7 +46,7 @@ test("Mobile Chat V3 preserves exact canonical cross-SDK shapes", () => {
     swiftCreated: {
       profile: {
         id: "mobile-chat-swift-profile",
-        user: "mobile-chat-user",
+        user: "mobile-chat-swift-user",
         displayName: "Swift Chatter",
       },
       channel: {
@@ -64,7 +64,7 @@ test("Mobile Chat V3 preserves exact canonical cross-SDK shapes", () => {
     typeScriptCreated: {
       profile: {
         id: "mobile-chat-typescript-profile",
-        user: "mobile-chat-user",
+        user: "mobile-chat-typescript-user",
         displayName: "TypeScript Chatter",
       },
       channel: {
