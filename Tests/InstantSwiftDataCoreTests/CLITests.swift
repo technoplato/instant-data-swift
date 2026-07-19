@@ -829,6 +829,59 @@ extension InstantStoreTests {
   }
 
   @Test
+  func cliRoundTripsRemindersV3Artifacts() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    let schemaURL = homeURL.appendingPathComponent("reminders.schema.ts")
+    let permissionsURL = homeURL.appendingPathComponent("reminders.perms.ts")
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let generatedSchema = try JSONDecoder().decode(
+      CLIGeneratedArtifactOutput.self,
+      from: Data(try runCLI([
+        "schema", "generate", "--example", "reminders",
+        "--to", schemaURL.path, "--json",
+      ], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(generatedSchema.example, "reminders")
+    let schemaSource = try String(contentsOf: schemaURL, encoding: .utf8)
+    #expect(schemaSource.contains("remindersLists: i.entity"))
+    #expect(schemaSource.contains("reminders: i.entity"))
+    #expect(schemaSource.contains("tags: i.entity"))
+    #expect(schemaSource.contains("remindersList:"))
+    #expect(schemaSource.contains("remindersListsReaders:"))
+    #expect(schemaSource.contains("v3_sharesRoot:"))
+
+    let schemaVerify = try JSONDecoder().decode(
+      CLISchemaVerifyOutput.self,
+      from: Data(try runCLI([
+        "schema", "verify", "--example", "reminders",
+        "--from", schemaURL.path, "--json",
+      ], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(schemaVerify.example, "reminders")
+    expectNoDifference(schemaVerify.entityCount, 6)
+    expectNoDifference(schemaVerify.linkCount, 9)
+    expectNoDifference(schemaVerify.warnings, [])
+
+    _ = try runCLI([
+      "perms", "generate", "--example", "reminders",
+      "--to", permissionsURL.path, "--json",
+    ], homeURL: homeURL)
+    let permissionsVerify = try JSONDecoder().decode(
+      CLIPermissionsVerifyOutput.self,
+      from: Data(try runCLI([
+        "perms", "verify", "--example", "reminders",
+        "--from", permissionsURL.path, "--json",
+      ], homeURL: homeURL).utf8)
+    )
+    expectNoDifference(permissionsVerify.example, "reminders")
+    expectNoDifference(permissionsVerify.namespaceCount, 6)
+    expectNoDifference(permissionsVerify.allowRuleCount, 21)
+  }
+
+  @Test
   func cliGeneratesAndVerifiesCanonicalRecordingActionContract() throws {
     let homeURL = FileManager.default.temporaryDirectory
       .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
@@ -1204,7 +1257,7 @@ extension InstantStoreTests {
     )
     try expectMalformed(
       ["perms", "verify", "--example", "todos", "--from", "--json"],
-      contains: "perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel --from instant.perms.ts"
+      contains: "perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders --from instant.perms.ts"
     )
 
     expectNoDifference(

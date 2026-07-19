@@ -9024,10 +9024,10 @@ struct InstantSwiftDataCLI {
 
       Commands:
         init --example todos --to <directory> [--force] [--json|--jsonl]
-        schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel [--to instant.schema.ts] [--json|--jsonl]
-        schema verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel --from instant.schema.ts [--json|--jsonl]
-        perms generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel [--to instant.perms.ts] [--json|--jsonl]
-        perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel --from instant.perms.ts [--json|--jsonl]
+        schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders [--to instant.schema.ts] [--json|--jsonl]
+        schema verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders --from instant.schema.ts [--json|--jsonl]
+        perms generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders [--to instant.perms.ts] [--json|--jsonl]
+        perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders --from instant.perms.ts [--json|--jsonl]
         query todos [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt] [--raw] [--select field[,field]] [--json|--jsonl]
         admin query <namespace> [--limit n] [--json|--jsonl]
         admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id] [--json|--jsonl]
@@ -9225,9 +9225,16 @@ struct InstantSwiftDataCLI {
         permissions: InstantSchemaExamples.stroopwafelPermissions
       )
 
+    case "reminders":
+      return CLISchemaExample(
+        name: "reminders",
+        schema: InstantSchemaExamples.remindersV3Document,
+        permissions: InstantSchemaExamples.remindersV3Permissions
+      )
+
     default:
       throw CLIError(
-        "Unsupported --example '\(rawName)'. Available examples: todos, validation, recording-action, sharing, voice-trail, mobile-chat, typing-indicator, reactions, avatar-stack, cursors, custom-cursors, merge-tile-game, stroopwafel.",
+        "Unsupported --example '\(rawName)'. Available examples: todos, validation, recording-action, sharing, voice-trail, mobile-chat, typing-indicator, reactions, avatar-stack, cursors, custom-cursors, merge-tile-game, stroopwafel, reminders.",
         exitCode: 64
       )
     }

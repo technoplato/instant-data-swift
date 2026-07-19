@@ -1343,16 +1343,16 @@ public struct CLIVerifyArtifactInvocation: Equatable, Sendable {
 
 public enum CLISchemaUsage {
   public static let generate =
-    "Usage: instant-swift-data schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel [--to instant.schema.ts] [--json|--jsonl]"
+    "Usage: instant-swift-data schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders [--to instant.schema.ts] [--json|--jsonl]"
   public static let verify =
-    "Usage: instant-swift-data schema verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel --from instant.schema.ts"
+    "Usage: instant-swift-data schema verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders --from instant.schema.ts"
 }
 
 public enum CLIPermissionsUsage {
   public static let generate =
-    "Usage: instant-swift-data perms generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel [--to instant.perms.ts] [--json|--jsonl]"
+    "Usage: instant-swift-data perms generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders [--to instant.perms.ts] [--json|--jsonl]"
   public static let verify =
-    "Usage: instant-swift-data perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel --from instant.perms.ts"
+    "Usage: instant-swift-data perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders --from instant.perms.ts"
 }
 
 public enum CLISchemaArgumentError: Error, Equatable, Sendable {
