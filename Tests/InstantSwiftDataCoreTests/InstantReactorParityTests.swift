@@ -1825,6 +1825,108 @@ struct InstantReactorParityTests {
   }
 
   @Test
+  func runtimeLiveWriterReconnectsAndResendsOnlyUnflushedChunks() async throws {
+    let firstSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "writer-before-drop")
+    ])
+    let secondSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "writer-after-drop")
+    ])
+    let transport = LiveReactorParityTransport(sessions: [firstSession, secondSession])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "typescript-resumable-stream-writer-parity",
+        persistenceURL: try temporaryReactorParityCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: transport.transport
+      )
+    )
+    _ = try await runtime.signInAsGuest()
+    _ = try await runtime.connect()
+
+    let createTask = Task { try await runtime.createStream(clientID: "resumable-writer") }
+    await firstSession.waitForSentMessageCount(2)
+    let firstStart = try #require(await firstSession.sentMessages().last)
+    let reconnectToken = try #require(firstStart.fields["reconnect-token"])
+    await firstSession.enqueue(
+      InstantLiveMessage(
+        op: "start-stream-ok",
+        clientEventID: firstStart.clientEventID,
+        fields: [
+          "client-id": .string("resumable-writer"),
+          "offset": .number(0),
+          "stream-id": .string("00000000-0000-0000-0000-000000000201"),
+        ]
+      )
+    )
+    let metadata = try await createTask.value
+    _ = try await runtime.appendStreamContent(
+      streamID: metadata.id,
+      content: "hello",
+      expectedOffset: 0
+    )
+    await firstSession.enqueue(
+      InstantLiveMessage(
+        op: "stream-flushed",
+        fields: [
+          "done": .bool(false),
+          "offset": .number(5),
+          "stream-id": .string(metadata.id),
+        ]
+      )
+    )
+    _ = try await runtime.appendStreamContent(
+      streamID: metadata.id,
+      content: " 🚀",
+      expectedOffset: 5
+    )
+    await firstSession.waitForSentMessageCount(4)
+    await firstSession.failReceive(
+      InstantError(
+        code: .networkFailed,
+        operation: "drop resumable writer session",
+        message: "transient writer drop",
+        recovery: "Reconnect with the original token."
+      )
+    )
+
+    try await instantLiveWithTimeout(
+      operation: "wait for resumable writer reconnect",
+      timeoutMilliseconds: 500
+    ) {
+      await transport.waitForConnectionCount(2)
+    }
+    await secondSession.waitForSentMessageCount(2)
+    let secondStart = try #require(await secondSession.sentMessages().last)
+    expectNoDifference(secondStart.op, "start-stream", typescriptStreamWriterSource)
+    expectNoDifference(secondStart.fields, [
+      "client-id": .string("resumable-writer"),
+      "reconnect-token": reconnectToken,
+    ])
+    await secondSession.enqueue(
+      InstantLiveMessage(
+        op: "start-stream-ok",
+        clientEventID: secondStart.clientEventID,
+        fields: [
+          "client-id": .string("resumable-writer"),
+          "offset": .number(5),
+          "stream-id": .string(metadata.id),
+        ]
+      )
+    )
+    await secondSession.waitForSentMessageCount(3)
+    let resent = try #require(await secondSession.sentMessages().last)
+    expectNoDifference(resent.op, "append-stream", typescriptStreamWriterSource)
+    expectNoDifference(resent.fields, [
+      "chunks": .array([.string(" 🚀")]),
+      "done": .bool(false),
+      "offset": .number(5),
+      "stream-id": .string(metadata.id),
+    ])
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
   func runtimeAppliesLivePresencePatchesAndEphemeralServerBroadcasts() async throws {
     let room = InstantRoomHandle(type: "chat", id: "room-events")
     let now = InstantTimestamp(milliseconds: 1_700_000_080_000)

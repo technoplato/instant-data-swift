@@ -383,6 +383,24 @@ private actor InstantRuntimeLiveSession {
     var observerCount: Int
   }
 
+  private struct BufferedStreamAppend: Sendable {
+    var chunks: [String]
+    var offset: Int64
+    var done: Bool
+    var abortReason: String?
+
+    var endOffset: Int64 {
+      offset + chunks.reduce(Int64(0)) { $0 + Int64($1.utf8.count) }
+    }
+  }
+
+  private struct RegisteredStreamWriter: Sendable {
+    var clientID: String
+    var reconnectToken: String
+    var streamID: String
+    var buffer: [BufferedStreamAppend] = []
+  }
+
   private var session: InstantLiveWebSocketSession?
   private var receiverTask: Task<Void, Never>?
   private var registeredQueries: [String: RegisteredQuery] = [:]
@@ -392,7 +410,7 @@ private actor InstantRuntimeLiveSession {
   private var registeredStreamReaders: [String: RegisteredStreamReader] = [:]
   private var pendingStreamStarts:
     [String: AsyncThrowingStream<InstantLiveStartStreamOK, Error>.Continuation] = [:]
-  private var activeStreamWriterIDs: Set<String> = []
+  private var registeredStreamWriters: [String: RegisteredStreamWriter] = [:]
   private var makeID: (@Sendable () -> String)?
   private var sessionID: String?
   private var isOpened = false
@@ -410,7 +428,8 @@ private actor InstantRuntimeLiveSession {
     clientID: String,
     reconnectToken: String,
     ruleParams: InstantLiveJSONValue? = nil,
-    clientEventID: String
+    clientEventID: String,
+    registersWriter: Bool = true
   ) async throws -> InstantLiveStartStreamOK {
     guard let session, isOpened else {
       throw InstantError(
@@ -452,7 +471,13 @@ private actor InstantRuntimeLiveSession {
         )
       }
       pendingStreamStarts[clientEventID] = nil
-      activeStreamWriterIDs.insert(started.streamID)
+      if registersWriter {
+        registeredStreamWriters[started.streamID] = RegisteredStreamWriter(
+          clientID: clientID,
+          reconnectToken: reconnectToken,
+          streamID: started.streamID
+        )
+      }
       return started
     } catch {
       pendingStreamStarts[clientEventID]?.finish(throwing: error)
@@ -469,14 +494,64 @@ private actor InstantRuntimeLiveSession {
     abortReason: String?,
     clientEventID: String
   ) async throws {
-    guard let session, isOpened, activeStreamWriterIDs.contains(streamID) else { return }
+    guard let session, isOpened, var writer = registeredStreamWriters[streamID] else { return }
+    let buffered = BufferedStreamAppend(
+      chunks: chunks,
+      offset: offset,
+      done: done,
+      abortReason: abortReason
+    )
+    writer.buffer.append(buffered)
+    registeredStreamWriters[streamID] = writer
+    try await sendStreamAppend(buffered, streamID: streamID, through: session, clientEventID: clientEventID)
+  }
+
+  func reconnectStreamWriters() async throws {
+    guard isOpened, let makeID else { return }
+    for streamID in registeredStreamWriters.keys.sorted() {
+      guard var writer = registeredStreamWriters[streamID] else { continue }
+      let started = try await startStream(
+        clientID: writer.clientID,
+        reconnectToken: writer.reconnectToken,
+        clientEventID: makeID(),
+        registersWriter: false
+      )
+      guard started.streamID == streamID else {
+        throw InstantError(
+          code: .decodeFailed,
+          operation: "reconnect Instant live stream writer",
+          serverEventID: started.clientEventID,
+          message: "Instant resolved writer '\(writer.clientID)' to unexpected stream '\(started.streamID)'.",
+          recovery: "Reconnect using the original writer client id and reconnect token."
+        )
+      }
+      writer.buffer.removeAll { $0.endOffset <= started.offset }
+      registeredStreamWriters[streamID] = writer
+      guard let session else { throw CancellationError() }
+      for append in writer.buffer {
+        try await sendStreamAppend(
+          append,
+          streamID: streamID,
+          through: session,
+          clientEventID: makeID()
+        )
+      }
+    }
+  }
+
+  private func sendStreamAppend(
+    _ append: BufferedStreamAppend,
+    streamID: String,
+    through session: InstantLiveWebSocketSession,
+    clientEventID: String
+  ) async throws {
     try await send(
       .appendStream(
         streamID: streamID,
-        chunks: chunks,
-        offset: offset,
-        done: done,
-        abortReason: abortReason,
+        chunks: append.chunks,
+        offset: append.offset,
+        done: append.done,
+        abortReason: append.abortReason,
         clientEventID: clientEventID
       ),
       through: session
@@ -484,7 +559,7 @@ private actor InstantRuntimeLiveSession {
   }
 
   func ownsStreamWriter(streamID: String) -> Bool {
-    activeStreamWriterIDs.contains(streamID)
+    registeredStreamWriters[streamID] != nil
   }
 
   func open(
@@ -880,6 +955,24 @@ private actor InstantRuntimeLiveSession {
       if let clientEventID = started.clientEventID {
         pendingStreamStarts[clientEventID]?.yield(started)
         pendingStreamStarts[clientEventID]?.finish()
+      }
+    case let .streamFlushed(flushed):
+      if var writer = registeredStreamWriters[flushed.streamID] {
+        writer.buffer.removeAll { $0.endOffset <= flushed.offset }
+        if flushed.done {
+          registeredStreamWriters[flushed.streamID] = nil
+        } else {
+          registeredStreamWriters[flushed.streamID] = writer
+        }
+      }
+    case let .appendFailed(failed):
+      guard registeredStreamWriters[failed.streamID] == nil else {
+        throw InstantError(
+          code: .networkFailed,
+          operation: "retry Instant live stream writer",
+          message: "Instant could not flush stream '\(failed.streamID)'.",
+          recovery: "Reconnect the writer with its original token and resend unflushed chunks."
+        )
       }
     case let .joinRoomOK(room):
       try await recordRoomEvent(op: room.op, roomID: room.roomID)
@@ -2078,6 +2171,12 @@ public final class InstantRuntime: Sendable {
             await self.handleLiveSessionFailure(error)
           }
         )
+        do {
+          try await liveSession.reconnectStreamWriters()
+        } catch {
+          await liveSession.close()
+          await handleLiveSessionFailure(error)
+        }
       }
       return status
     } catch {

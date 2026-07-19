@@ -1137,11 +1137,11 @@ public enum InstantSwiftDataParityCoverage {
         "test_reader_holds_partial_utf8_across_chunk_boundary + test_reader_aclose_cancels_active_file_fetch + test_reader_fetch_failure_triggers_reconnect_within_budget + test_reader_fetch_failure_surfaces_after_budget_exhausted + _process_append + Stream.ts createWriteStream/startWriteStream/appendStream",
       swiftFile: reactorParitySwiftFile,
       swiftTestName:
-        "InstantStreamFileTransportTests + streamFileFetchFailureSurfacesAfterRetryBudget + streamWriterMessagesAndAcknowledgementsUseCanonicalShapes + runtimeInlineStreamAppendPublishesAndAdvancesReconnectOffset + runtimeFileStreamAppendPublishesAndAdvancesByFetchedBytes + runtimeFileStreamFailureReconnectsWithoutAdvancingOffset + runtimeClientIDReaderBootstrapsRemoteStreamMetadata + runtimeLiveWriterStartsAppendsAndClosesCanonicalStream",
+        "InstantStreamFileTransportTests + streamFileFetchFailureSurfacesAfterRetryBudget + streamWriterMessagesAndAcknowledgementsUseCanonicalShapes + runtimeInlineStreamAppendPublishesAndAdvancesReconnectOffset + runtimeFileStreamAppendPublishesAndAdvancesByFetchedBytes + runtimeFileStreamFailureReconnectsWithoutAdvancingOffset + runtimeClientIDReaderBootstrapsRemoteStreamMetadata + runtimeLiveWriterStartsAppendsAndClosesCanonicalStream + runtimeLiveWriterReconnectsAndResendsOnlyUnflushedChunks",
       surface: "live-stream-materialization",
       status: .adapted,
       notes:
-        "Swift applies inline and file-backed overlap in UTF-8 bytes, pipelines ordered signed-file fetches, cancels active response bodies, persists and publishes only unseen content, advances reconnect state by fetched bytes only after persistence, retries a failed fetch from the unchanged offset with the upstream ten-retry budget, bootstraps server-resolved metadata for empty-cache readers, and writes canonical start/append/close messages using the server-issued stream id."
+        "Swift applies inline and file-backed overlap in UTF-8 bytes, pipelines ordered signed-file fetches, cancels active response bodies, persists and publishes only unseen content, advances reconnect state by fetched bytes only after persistence, retries a failed fetch from the unchanged offset with the upstream ten-retry budget, bootstraps server-resolved metadata for empty-cache readers, writes canonical start/append/close messages using the server-issued stream id, and reconnects writers with the original token while resending only unflushed chunks."
     ),
     instant(
       id: "instant.reactor.reconnect-flush-pending-only",
