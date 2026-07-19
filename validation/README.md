@@ -372,6 +372,16 @@ against an existing app.
 
 ## Required Cases
 
+For the current VoiceTrail app milestone, run
+`validation/verify-voice-trail-v3-app-live.sh` from a clean worktree. It creates
+a temporary app, installs and reads back the Swift-generated VoiceTrail schema
+and permissions, type-checks the canonical TypeScript contract, and emits one
+aggregate `evidence.json` covering app-model capture, bidirectional recording
+data, recordings sharing/permissions, playback reconnect, preferences/storage,
+and auth invalidation. Set
+`INSTANT_SWIFT_DATA_VOICE_TRAIL_V3_APP_RESULTS_DIR` to retain it at a chosen
+path.
+
 - Swift writes, TypeScript observes.
 - TypeScript writes, Swift observes.
 - Swift linked graph writes, TypeScript nested query observes.

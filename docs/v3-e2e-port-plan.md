@@ -171,6 +171,15 @@ As of 2026-07-18:
   routing, and verify local/live bootstrap selection. Full verification is
   green at 917 Swift tests in 39 suites plus the complete TypeScript contract
   and fixture suite.
+- Commits `6e649b0` through `9bc6fc2` move capture start, attachment, and finish
+  into the shared app target and add the first clean aggregate app gate. A
+  fresh app at revision `9bc6fc2` verified generated schema and permissions,
+  the actual app-model recording/transcription write observed through the
+  canonical TypeScript SDK, bidirectional recording graph compatibility,
+  owner/reader/writer/revocation plus reader-write denial, playback room
+  reconnect, preferences storage cleanup, and auth invalidation with zero
+  compiler/runtime warnings. Evidence is in
+  `/tmp/instant-data-swift-voice-trail-v3-app-20260719T004002Z/evidence.json`.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -202,7 +211,7 @@ When sources disagree, use this order:
 | Current execution state, packet order, gates, and tag targets | `docs/v3-e2e-port-plan.md` |
 | Product contract and full definition of done | `docs/instant-swift-data-goals.md` |
 | Desired V3 API rules and decision log | `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` |
-| Next live boundary target | `screens/v3/playback.md` room, presence, and topic lifecycle |
+| Next live boundary target | `screens/v3/recording.md` attachment and finish actions through the app-model live runner |
 | Current generated recording contract | `InstantSchemaExamples.recordingActionDocument`, `recordingActionValidationPermissions`, and `--example recording-action` |
 | TypeScript contract pin/type-check gate | `validation/ts-runner/package.json`, its committed `pnpm-lock.yaml`, and `validation/typecheck-generated-contract.sh` |
 | Reproducible live schema/perms install and readback | `validation/verify-recording-contract-live.sh` and `validation/fixtures/recording-action.server.*.ts` |
@@ -214,6 +223,7 @@ When sources disagree, use this order:
 | Canonical stream state tests | `upstream/instant/client/packages/python/tests/test_streams_state.py` |
 | Source-to-Swift parity ledger | `Sources/InstantSwiftDataCore/InstantParityCoverage.swift` |
 | Reproducible Swift/TypeScript harness | `validation/run-e2e.sh` and `validation/README.md` |
+| Aggregate VoiceTrail app gate | `validation/verify-voice-trail-v3-app-live.sh` and its `app-capture.json`/`evidence.json` artifacts |
 
 ## Decisions Already Made
 
@@ -676,16 +686,25 @@ fresh-app gate at revision `1e81ab1` authenticates the public wrapper, measures
 12 stream bytes and 7 downloaded bytes, clears exactly one 4-byte audio file,
 and retains the transcript with zero warnings.
 
-The first integration packet is complete at `1e81ab1`: `VoiceTrailV3App` owns
-the five settled screens and `voicetrail-v3` is the thin executable host. The
-product builds, the root compiles all screens, recording selection routes to
-playback, and bootstrap tests cover local and live configuration.
+The first integrated live packet is complete through `6e649b0`, `e970238`, and
+`9bc6fc2`. `VoiceTrailV3App` owns the five settled screens and
+`voicetrail-v3` is the thin executable host. The capture screen now sends its
+public start, attachment, and finish messages; its local app test verifies the
+exact durable recording, transcription, and attachment shapes. The clean
+aggregate gate at `9bc6fc2` creates a fresh app, pushes and reads back the
+generated contract, writes the initial capture through those app messages,
+and observes the exact recording/transcription graph through canonical
+TypeScript. It also runs the recordings, playback, preferences, and auth live
+contracts on the same app. Evidence is at
+`/tmp/instant-data-swift-voice-trail-v3-app-20260719T004002Z/evidence.json`.
 
-Next, port the app-level source test that drives the existing five fixture
-behaviors through this integrated target, then implement only the orchestration
-needed by that test and bind it to a clean getadb live gate. Do not create the
-`v0.4.0-apps-e2e` tag until that integrated flow passes; separate fixture proofs
-and a compiling shell are necessary but not sufficient for the tag.
+Next, extend that same app-model live capture runner through the attachment and
+finish messages and require TypeScript to observe `finished`, the exact
+duration, the `ready` transcription, and the exact attachment. This is an
+implementation/evidence packet, not a new syntax-design phase. After that,
+bind the playback live proof directly to the app target's room/presence/topic
+types, then continue Packet 8's required example apps. Do not create the
+`v0.4.0-apps-e2e` tag until the required app matrix—not only VoiceTrail—passes.
 
 The product-payload mismatch is resolved: playback presence stores and encodes
 `offsetSeconds: Double`, offers `Duration` as a computed product convenience,
