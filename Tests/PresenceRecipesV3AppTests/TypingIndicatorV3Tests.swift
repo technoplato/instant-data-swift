@@ -26,8 +26,7 @@ struct TypingIndicatorV3Tests {
     func desiredRoomPresenceSyntaxCompiles() {
       let screen: any View = TypingIndicatorV3Screen(
         roomID: "typing-room",
-        profileID: "current-user",
-        displayName: "Current user"
+        profileID: "current-user"
       )
       _ = screen
 
@@ -38,21 +37,17 @@ struct TypingIndicatorV3Tests {
   @Test
   func sourcePortFiltersOnlyActivePeersAndHonorsWriteOnly() {
     let peers = [
-      TypingIndicatorPresence(id: "peer-1", displayName: "Blob", chatInput: true),
-      TypingIndicatorPresence(id: "peer-2", displayName: "Blob Jr", chatInput: false),
-      TypingIndicatorPresence(id: "peer-3", displayName: "Blob Sr", chatInput: nil),
+      TypingIndicatorPresence(id: "peer-1", chatInput: true),
+      TypingIndicatorPresence(id: "peer-2", chatInput: false),
+      TypingIndicatorPresence(id: "peer-3", chatInput: nil),
     ]
 
-    var model = TypingIndicatorV3Model(
-      profileID: "self",
-      displayName: "Current user"
-    )
+    var model = TypingIndicatorV3Model(profileID: "self")
     model.updatePeers(peers)
     expectNoDifference(model.activePeers, [peers[0]])
 
     model = TypingIndicatorV3Model(
       profileID: "self",
-      displayName: "Current user",
       options: TypingIndicatorV3Options(writeOnly: true)
     )
     model.updatePeers(peers)
@@ -60,10 +55,9 @@ struct TypingIndicatorV3Tests {
   }
 
   @Test
-  func sourcePortPublishesTrueThenNullForSubmitBlurAndCleanup() {
+  func sourcePortPublishesTrueFalseAndNullAtTheCanonicalTransitions() {
     let model = TypingIndicatorV3Model(
       profileID: "self",
-      displayName: "Current user",
       options: TypingIndicatorV3Options(timeout: nil, stopOnSubmit: true)
     )
 
@@ -71,11 +65,11 @@ struct TypingIndicatorV3Tests {
     expectNoDifference(model.presence.chatInput, true)
 
     model.keyDown(.submit)
-    expectNoDifference(model.presence.chatInput, nil)
+    expectNoDifference(model.presence.chatInput, false)
 
     model.keyDown(.character)
     model.blur()
-    expectNoDifference(model.presence.chatInput, nil)
+    expectNoDifference(model.presence.chatInput, false)
 
     model.keyDown(.character)
     model.stop()
@@ -89,10 +83,7 @@ struct TypingIndicatorV3Tests {
   )
   func sourcePortDefaultsToOneSecondAndResetsTheTimeout() async {
     @Dependency(\.continuousClock, as: TestClock<Duration>.self) var clock
-    let model = TypingIndicatorV3Model(
-      profileID: "self",
-      displayName: "Current user"
-    )
+    let model = TypingIndicatorV3Model(profileID: "self")
 
     model.keyDown(.character)
     await Task.yield()
@@ -116,7 +107,6 @@ struct TypingIndicatorV3Tests {
     @Dependency(\.continuousClock, as: TestClock<Duration>.self) var clock
     let model = TypingIndicatorV3Model(
       profileID: "self",
-      displayName: "Current user",
       options: TypingIndicatorV3Options(timeout: .zero)
     )
 
@@ -126,19 +116,26 @@ struct TypingIndicatorV3Tests {
   }
 
   @Test
-  func sourcePortEncodesTheCanonicalHyphenatedPresenceKeyAndNullClear() throws {
-    let presence = TypingIndicatorPresence(
-      id: "peer-1",
-      displayName: "Blob",
-      chatInput: nil
+  func sourcePortEncodesInitialAbsenceAndCanonicalHyphenatedNullClear() throws {
+    let initialObject = try #require(
+      JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(TypingIndicatorPresence(id: "peer-1"))
+      ) as? [String: Any]
     )
-    let object = try #require(
-      JSONSerialization.jsonObject(with: JSONEncoder().encode(presence))
+    expectNoDifference(Set(initialObject.keys), ["id"])
+    expectNoDifference(initialObject["id"] as? String, "peer-1")
+
+    let clearedObject = try #require(
+      JSONSerialization.jsonObject(
+        with: JSONEncoder().encode(
+          TypingIndicatorPresence(id: "peer-1", chatInput: nil)
+        )
+      )
         as? [String: Any]
     )
 
-    expectNoDifference(object["id"] as? String, "peer-1")
-    expectNoDifference(object["displayName"] as? String, "Blob")
-    #expect(object["chat-input"] is NSNull)
+    expectNoDifference(Set(clearedObject.keys), ["chat-input", "id"])
+    expectNoDifference(clearedObject["id"] as? String, "peer-1")
+    #expect(clearedObject["chat-input"] is NSNull)
   }
 }
