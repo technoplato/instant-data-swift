@@ -21,9 +21,7 @@ test("App Builder V3 pins the exact source, graph, and storage adaptation", () =
   assert.deepEqual(appBuilderV3AppContract.fixtures, {
     user: "00000000-0000-4000-8000-000000000601",
     swiftBuild: "00000000-0000-4000-8000-000000000602",
-    swiftFile: "00000000-0000-4000-8000-000000000603",
     typeScriptBuild: "00000000-0000-4000-8000-000000000604",
-    typeScriptFile: "00000000-0000-4000-8000-000000000605",
   });
 });
 
