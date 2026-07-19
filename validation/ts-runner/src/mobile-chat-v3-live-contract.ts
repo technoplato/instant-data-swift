@@ -122,23 +122,6 @@ try {
   (globalThis as any).window = globalThis;
   (globalThis as any).BroadcastChannel = undefined;
 
-  const anonymous = initCore(
-    { appId, apiURI, websocketURI, schema, devtool: false },
-    MemoryStore,
-    AlwaysOnline,
-  );
-  let anonymousRejection = "";
-  try {
-    await anonymous.transact(
-      anonymous.tx.channels[randomUUID()].create({ name: "Denied channel" }),
-    );
-  } catch (error) {
-    anonymousRejection = String(error);
-  } finally {
-    anonymous.shutdown();
-  }
-  assert.notEqual(anonymousRejection, "", "Expected unauthenticated channel creation denial.");
-
   const db = initCore(
     {
       appId,
@@ -257,6 +240,20 @@ try {
     const typeScriptObserved = await waitForGraph(db, swiftGraph);
     assert.deepEqual(typeScriptObserved, swiftGraph);
 
+    let crossUserUpdateRejection = "";
+    try {
+      await db.transact(
+        db.tx.messages[swiftGraph.messageID].update({ content: "Denied edit" }),
+      );
+    } catch (error) {
+      crossUserUpdateRejection = String(error);
+    }
+    assert.notEqual(
+      crossUserUpdateRejection,
+      "",
+      "Expected a non-author Mobile Chat message update denial.",
+    );
+
     await db.transact([
       db.tx.profiles[typeScriptGraph.profileID]
         .create({ displayName: typeScriptGraph.displayName })
@@ -310,8 +307,8 @@ try {
           ...swiftEvidence.details.room,
         },
         permissions: {
-          anonymousCreateRejected: true,
-          rejection: anonymousRejection,
+          crossUserUpdateRejected: true,
+          rejection: crossUserUpdateRejection,
         },
         compilerWarningCount: warnings.length,
         warnings,

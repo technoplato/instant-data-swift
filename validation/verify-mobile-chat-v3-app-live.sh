@@ -191,7 +191,7 @@ assert.deepStrictEqual(live.details.room, {
   receivedTyping: { isTyping: false },
   receivedEmoji: { name: "heart", directionAngle: 45, rotationAngle: 270 },
 });
-assert.equal(live.details.permissions.anonymousCreateRejected, true);
+assert.equal(live.details.permissions.crossUserUpdateRejected, true);
 assert.match(live.details.permissions.rejection, /permission|denied|record|auth|400/i);
 assert.equal(schema.entityCount, 5);
 assert.equal(schema.attributeCount, 14);
@@ -234,7 +234,7 @@ const evidence = {
       sha256: createHash("sha256")
         .update(readFileSync(resolve(results, "pull/instant.perms.ts")))
         .digest("hex"),
-      anonymousCreateRejected: live.details.permissions.anonymousCreateRejected,
+      crossUserUpdateRejected: live.details.permissions.crossUserUpdateRejected,
     },
     mobileChat: live.details,
   },
