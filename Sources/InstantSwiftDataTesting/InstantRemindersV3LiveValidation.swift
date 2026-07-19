@@ -385,7 +385,9 @@ public enum InstantRemindersV3LiveValidation {
     var didExplicitlyFlush = false
     while ContinuousClock.now < deadline {
       let result = await MainActor.run { (outcome.accepted, outcome.failure) }
-      if let error = result.1 { throw error }
+      if let error = result.1 {
+        throw failure("Server rejected \(operation): \(error.message)")
+      }
       if result.0 { return }
       if !didExplicitlyFlush, ContinuousClock.now >= explicitFlushAt {
         didExplicitlyFlush = true
