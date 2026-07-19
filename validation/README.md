@@ -227,6 +227,22 @@ validation/verify-playback-room-contract-live.sh
 The verifier removes the temporary app credentials after recording non-secret
 evidence; no sourced credential environment is required.
 
+The preferences contract also creates its own fresh temporary app and drives
+the public `@InstantSyncStatus` and `@InstantStorageStatus` behavior through the
+Swift validation runner:
+
+```bash
+validation/verify-preferences-contract-live.sh
+```
+
+It requires connected-to-authenticated sync state, a nonempty real SQLite
+cache, exact 12-byte stream content, exact 7-byte downloaded content, and one
+selective 4-byte audio deletion while retaining the transcript. The pinned
+TypeScript contract checks the same values, warnings must remain empty, and the
+temporary `.instant.env` credential file is removed on exit. Clean evidence for
+revision `1e81ab1` is in
+`/tmp/instant-data-swift-preferences-contract-20260719T001942Z/evidence.json`.
+
 Both aggregate verifiers refuse dirty worktrees for acceptance evidence and
 record the Swift revision, pinned upstream revision, SDK versions, schema hash,
 warning count, and exact non-secret values.

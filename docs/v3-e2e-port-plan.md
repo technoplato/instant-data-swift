@@ -154,14 +154,23 @@ As of 2026-07-18:
   the complete TypeScript contract/fixture suite pass. Clean evidence for
   revision `ece3022` is in
   `/tmp/instant-data-swift-playback-room-reconnect-clean-ece3022-20260718T1957Z/evidence.json`.
-- Commits `4ddf46b`, `ff71165`, and `7176dfa` compile the preferences sync and
-  storage source contracts. `@InstantSyncStatus` renders cached, connecting,
+- Commits `4ddf46b` through `02e06cf` compile and live-prove the preferences
+  sync and storage source contracts. `@InstantSyncStatus` renders cached, connecting,
   connected, authenticated, reconnecting, offline, and failed phases from the
   canonical connection observer and exposes explicit manual-flush callbacks.
   `@InstantStorageStatus` reads actual SQLite, stream-content, and downloaded
   file byte counts, while typed file matching clears only the selected
-  downloads and reports one explicit completion callback. Full verification is
-  green at 912 Swift tests in 37 suites.
+  downloads and reports one explicit completion callback. The fresh getadb
+  gate proves connected-to-authenticated state plus exact 12-byte stream cache,
+  7-byte downloaded cache, and selective 4-byte audio deletion. Clean evidence
+  for revision `1e81ab1` is in
+  `/tmp/instant-data-swift-preferences-contract-20260719T001942Z/evidence.json`.
+- Commit `1e81ab1` adds the runnable `voicetrail-v3` executable and a shared app
+  target containing auth, recordings, capture, playback, and preferences. The
+  focused app tests compile every settled screen, prove recording-to-playback
+  routing, and verify local/live bootstrap selection. Full verification is
+  green at 917 Swift tests in 39 suites plus the complete TypeScript contract
+  and fixture suite.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -657,19 +666,26 @@ payload contract, and `validation/verify-playback-room-contract-live.sh`.
 Clean evidence for revision `ece3022` is at
 `/tmp/instant-data-swift-playback-room-reconnect-clean-ece3022-20260718T1957Z/evidence.json`.
 
-The preferences source-contract boundary is complete through `4ddf46b`,
-`ff71165`, and `7176dfa`. The syntax in `screens/v3/preferences.md` remains the
+The preferences boundary is complete through `4ddf46b`, `ff71165`, `7176dfa`,
+`cd8f8d5`, `6038411`, `9e6868f`, `5214b59`, `15fb55f`, and `02e06cf`. The syntax in `screens/v3/preferences.md` remains the
 target: `@ConnectionStatus`, `@InstantSyncStatus`, and `@InstantStorageStatus`
 own observation and renderable state, while flush and clear-download actions
-use call-site callbacks. The implementation now covers every recorded sync
-phase and exact local-cache, stream-cache, and downloaded-file measurements.
+use call-site callbacks. The source tests cover every recorded sync phase and
+exact local-cache, stream-cache, and downloaded-file measurements. The clean
+fresh-app gate at revision `1e81ab1` authenticates the public wrapper, measures
+12 stream bytes and 7 downloaded bytes, clears exactly one 4-byte audio file,
+and retains the transcript with zero warnings.
 
-Next, fold the five VoiceTrail fixtures into one runnable app target, preserving
-the settled syntax in `screens/v3/*.md`. The first integration packet should
-create the app shell and route all five screens without adding new data APIs;
-then run each existing fixture behavior through that target before defining the
-clean app-level live gate. Do not create the `v0.4.0-apps-e2e` tag until those
-integrated screen flows pass that clean gate.
+The first integration packet is complete at `1e81ab1`: `VoiceTrailV3App` owns
+the five settled screens and `voicetrail-v3` is the thin executable host. The
+product builds, the root compiles all screens, recording selection routes to
+playback, and bootstrap tests cover local and live configuration.
+
+Next, port the app-level source test that drives the existing five fixture
+behaviors through this integrated target, then implement only the orchestration
+needed by that test and bind it to a clean getadb live gate. Do not create the
+`v0.4.0-apps-e2e` tag until that integrated flow passes; separate fixture proofs
+and a compiling shell are necessary but not sufficient for the tag.
 
 The product-payload mismatch is resolved: playback presence stores and encodes
 `offsetSeconds: Double`, offers `Duration` as a computed product convenience,
