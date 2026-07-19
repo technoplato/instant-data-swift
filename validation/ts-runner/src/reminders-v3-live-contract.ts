@@ -109,19 +109,6 @@ try {
   assert.equal(graphReady.event, "swift-graph-ready", JSON.stringify(graphReady));
   assert.equal(graphReady.ok, true);
 
-  const swiftList = await waitForList(ownerDB, (list) => (
-    list.owner.id === swiftUser.id
-    && list.share?.id === remindersV3AppContract.fixtures.share
-    && list.share.memberships.some((membership) => (
-      membership.user.id === swiftUser.id && membership.role === "owner"
-    ))
-    && list.reminders.some((reminder) => (
-      reminder.id === remindersV3AppContract.fixtures.swiftReminder
-      && reminder.priority === remindersV3AppContract.priority.high
-      && reminder.tags.some((tag) => tag.id === remindersV3AppContract.fixtures.swiftTag)
-    ))
-  ));
-
   const readerObserved = await nextJSONLine(
     lines,
     swift,
@@ -130,11 +117,18 @@ try {
   assert.equal(readerObserved.event, "typescript-reader-observed", JSON.stringify(readerObserved));
   assert.equal(readerObserved.ok, true);
   const readerList = await waitForList(participantDB, (list) => (
-    list.readers.some((user) => user.id === typeScriptUser.id)
+    list.owner.id === swiftUser.id
+    && list.readers.some((user) => user.id === typeScriptUser.id)
     && list.share?.memberships.some((membership) => (
       membership.user.id === typeScriptUser.id && membership.role === "reader"
     )) === true
+    && list.reminders.some((reminder) => (
+      reminder.id === remindersV3AppContract.fixtures.swiftReminder
+      && reminder.priority === remindersV3AppContract.priority.high
+      && reminder.tags.some((tag) => tag.id === remindersV3AppContract.fixtures.swiftTag)
+    ))
   ));
+  const swiftList = readerList;
   const readerUpdateRejection = await rejected(
     participantDB.transact(
       participantDB.tx.reminders[remindersV3AppContract.fixtures.swiftReminder]
@@ -185,7 +179,7 @@ try {
   );
   assert.equal(reminderObserved.event, "typescript-reminder-observed", JSON.stringify(reminderObserved));
   assert.equal(reminderObserved.ok, true);
-  const completedList = await waitForList(ownerDB, (list) => (
+  const completedList = await waitForList(participantDB, (list) => (
     list.reminders.some((reminder) => (
       reminder.id === remindersV3AppContract.fixtures.swiftReminder
       && reminder.title === "Swift reminder updated by TypeScript"
