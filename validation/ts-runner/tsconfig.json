@@ -52,6 +52,7 @@
     "src/cursors-v3-app-contract.ts",
     "src/cursors-v3-app-contract.test.ts",
     "src/cursors-v3-live-support.ts",
-    "src/cursors-v3-live-support.test.ts"
+    "src/cursors-v3-live-support.test.ts",
+    "src/cursors-v3-live-contract.ts"
   ]
 }
