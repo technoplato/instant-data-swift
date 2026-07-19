@@ -171,7 +171,6 @@ public struct AppBuilderV3Build: Codable, Equatable, Hashable, InstantEntityMode
     query
       .where(owner == ownerID)
       .include(file)
-      .order(title)
   }
 
   public static func byID(_ buildID: InstantID<Self>) -> InstantQuery<Self> {

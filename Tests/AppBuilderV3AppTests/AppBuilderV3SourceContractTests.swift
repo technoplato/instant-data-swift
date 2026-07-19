@@ -57,6 +57,7 @@ struct AppBuilderV3SourceContractTests {
       AppBuilderV3Build.forOwner(ownerID).plan.filters,
       [.equals(field: "owner.id", value: .string("user-1"))]
     )
+    expectNoDifference(AppBuilderV3Build.forOwner(ownerID).plan.order, nil)
     expectNoDifference(
       AppBuilderV3Build.query.where(AppBuilderV3Build.owner != ownerID).plan.filters,
       [.notEquals(field: "owner.id", value: .string("user-1"))]
