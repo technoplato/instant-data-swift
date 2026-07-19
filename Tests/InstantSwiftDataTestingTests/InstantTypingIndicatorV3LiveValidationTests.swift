@@ -26,15 +26,22 @@ struct InstantTypingIndicatorV3LiveValidationTests {
         presence: ["id": .string("swift-peer"), "chat-input": .null]
       ),
     ]
+    let observedFrames = Array(frames.dropLast()) + [
+      InstantTypingIndicatorPresenceFrame(
+        phase: "cleared",
+        presence: ["id": .string("swift-peer")]
+      )
+    ]
     let details = InstantTypingIndicatorV3LiveValidationDetails(
       roomType: "typing-indicator-example",
       roomID: "1234",
       swiftUserID: "swift-user",
       typeScriptUserID: "typescript-user",
       publishedFrames: frames,
-      observedFrames: frames,
+      observedFrames: observedFrames,
       activePeerIDs: ["typescript-peer"],
       peerCountAfterDisconnect: 0,
+      serverNormalizations: ["chat-input:null-to-absent"],
       connectionState: "authenticated"
     )
 
@@ -47,7 +54,9 @@ struct InstantTypingIndicatorV3LiveValidationTests {
     expectNoDifference(decoded.publishedFrames[1].presence["chat-input"], .bool(true))
     expectNoDifference(decoded.publishedFrames[2].presence["chat-input"], .bool(false))
     expectNoDifference(decoded.publishedFrames[3].presence["chat-input"], .null)
+    expectNoDifference(decoded.observedFrames[3].presence, ["id": .string("swift-peer")])
     expectNoDifference(decoded.activePeerIDs, ["typescript-peer"])
     expectNoDifference(decoded.peerCountAfterDisconnect, 0)
+    expectNoDifference(decoded.serverNormalizations, ["chat-input:null-to-absent"])
   }
 }

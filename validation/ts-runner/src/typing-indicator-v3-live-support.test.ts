@@ -5,6 +5,7 @@ import {
   activeTypingPeerIDs,
   exactTypingIndicatorFrames,
   phaseForTypingIndicatorPresence,
+  serverObservedTypingIndicatorFrames,
 } from "./typing-indicator-v3-live-support.js";
 
 test("live typing support preserves the canonical absent, true, false, and null frames", () => {
@@ -22,6 +23,14 @@ test("live typing support preserves the canonical absent, true, false, and null 
     "inactive",
     "cleared",
   ]);
+  assert.deepEqual(serverObservedTypingIndicatorFrames("typescript-peer"), [
+    ...frames.slice(0, 3),
+    { phase: "cleared", presence: { id: "typescript-peer" } },
+  ]);
+  assert.equal(
+    phaseForTypingIndicatorPresence({ id: "typescript-peer" }, { sawInactive: true }),
+    "cleared",
+  );
 });
 
 test("live typing support filters only true remote peers and rejects widened shapes", () => {
