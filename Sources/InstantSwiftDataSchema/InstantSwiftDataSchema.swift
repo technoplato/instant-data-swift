@@ -1039,6 +1039,89 @@ public enum InstantSchemaExamples {
     ]
   )
 
+  public static let remindersV3Permissions = InstantPermissionsDocument(
+    namespaces: [
+      InstantNamespacePermissions(
+        namespace: "$users",
+        allow: [.view: "auth.id != null"]
+      ),
+      InstantNamespacePermissions(
+        namespace: ReminderExample.listsNamespace,
+        allow: [
+          .view: "isOwner || isWriter || isReader",
+          .create: "isOwner",
+          .update: "isOwner || isWriter",
+          .delete: "isOwner",
+        ],
+        bind: remindersV3RootRoleBindings
+      ),
+      InstantNamespacePermissions(
+        namespace: ReminderExample.remindersNamespace,
+        allow: [
+          .view: "isOwner || isWriter || isReader",
+          .create: "isOwner || isWriter",
+          .update: "isOwner || isWriter",
+          .delete: "isOwner || isWriter",
+        ],
+        bind: remindersV3ChildRoleBindings
+      ),
+      InstantNamespacePermissions(
+        namespace: ReminderExample.tagsNamespace,
+        allow: [
+          .view: "isOwner || isWriter || isReader",
+          .create: "auth.id != null",
+          .update: "isOwner || isWriter",
+          .delete: "isOwner",
+        ],
+        bind: remindersV3TagRoleBindings
+      ),
+      InstantNamespacePermissions(
+        namespace: "v3_share_memberships",
+        allow: [
+          .view: "isSelf || isShareOwner",
+          .create: "isSelf || isShareOwner",
+          .update: "isShareOwner",
+          .delete: "isShareOwner",
+        ],
+        bind: [
+          InstantPermissionBinding("isSelf", "auth.id in data.ref('user.id')"),
+          InstantPermissionBinding("isShareOwner", "auth.id in data.ref('share.owner.id')"),
+        ]
+      ),
+      InstantNamespacePermissions(
+        namespace: "v3_shares",
+        allow: [
+          .view: "isOwner || isMember",
+          .create: "isOwner",
+          .update: "isOwner",
+          .delete: "isOwner",
+        ],
+        bind: [
+          InstantPermissionBinding("isOwner", "auth.id in data.ref('owner.id')"),
+          InstantPermissionBinding("isMember", "auth.id in data.ref('memberships.user.id')"),
+        ]
+      ),
+    ]
+  )
+
+  private static let remindersV3RootRoleBindings = [
+    InstantPermissionBinding("isOwner", "auth.id in data.ref('owner.id')"),
+    InstantPermissionBinding("isWriter", "auth.id in data.ref('writers.id')"),
+    InstantPermissionBinding("isReader", "auth.id in data.ref('readers.id')"),
+  ]
+
+  private static let remindersV3ChildRoleBindings = [
+    InstantPermissionBinding("isOwner", "auth.id in data.ref('list.owner.id')"),
+    InstantPermissionBinding("isWriter", "auth.id in data.ref('list.writers.id')"),
+    InstantPermissionBinding("isReader", "auth.id in data.ref('list.readers.id')"),
+  ]
+
+  private static let remindersV3TagRoleBindings = [
+    InstantPermissionBinding("isOwner", "auth.id in data.ref('reminders.list.owner.id')"),
+    InstantPermissionBinding("isWriter", "auth.id in data.ref('reminders.list.writers.id')"),
+    InstantPermissionBinding("isReader", "auth.id in data.ref('reminders.list.readers.id')"),
+  ]
+
   public static let reactionsRoom = InstantRoomSchema(
     name: "topics-example",
     presence: InstantRoomPayloadSchema(),

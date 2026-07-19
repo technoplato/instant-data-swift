@@ -120,4 +120,115 @@ struct RemindersV3ContractTests {
     )
     expectNoDifference(roleLinks.map(\.isRequired), [true, nil, nil])
   }
+
+  @Test("SQLiteData read-only participants can read a list and cannot mutate children")
+  func permissionsSeparateReaderAndWriterCapabilities() throws {
+    let namespaces = Dictionary(
+      uniqueKeysWithValues: InstantSchemaExamples.remindersV3Permissions.namespaces.map {
+        ($0.namespace, $0)
+      }
+    )
+
+    let lists = try #require(namespaces["remindersLists"])
+    expectNoDifference(
+      lists.allow,
+      [
+        .view: "isOwner || isWriter || isReader",
+        .create: "isOwner",
+        .update: "isOwner || isWriter",
+        .delete: "isOwner",
+      ]
+    )
+    expectNoDifference(
+      lists.bind,
+      [
+        InstantPermissionBinding("isOwner", "auth.id in data.ref('owner.id')"),
+        InstantPermissionBinding("isWriter", "auth.id in data.ref('writers.id')"),
+        InstantPermissionBinding("isReader", "auth.id in data.ref('readers.id')"),
+      ]
+    )
+
+    let reminders = try #require(namespaces["reminders"])
+    expectNoDifference(
+      reminders.allow,
+      [
+        .view: "isOwner || isWriter || isReader",
+        .create: "isOwner || isWriter",
+        .update: "isOwner || isWriter",
+        .delete: "isOwner || isWriter",
+      ]
+    )
+    expectNoDifference(
+      reminders.bind,
+      [
+        InstantPermissionBinding("isOwner", "auth.id in data.ref('list.owner.id')"),
+        InstantPermissionBinding("isWriter", "auth.id in data.ref('list.writers.id')"),
+        InstantPermissionBinding("isReader", "auth.id in data.ref('list.readers.id')"),
+      ]
+    )
+  }
+
+  @Test("Tags inherit visibility from linked reminder list roots")
+  func permissionsKeepTagsInsideVisibleSharedLists() throws {
+    let tags = try #require(
+      InstantSchemaExamples.remindersV3Permissions.namespaces.first {
+        $0.namespace == "tags"
+      }
+    )
+
+    expectNoDifference(
+      tags.allow,
+      [
+        .view: "isOwner || isWriter || isReader",
+        .create: "auth.id != null",
+        .update: "isOwner || isWriter",
+        .delete: "isOwner",
+      ]
+    )
+    expectNoDifference(
+      tags.bind,
+      [
+        InstantPermissionBinding(
+          "isOwner",
+          "auth.id in data.ref('reminders.list.owner.id')"
+        ),
+        InstantPermissionBinding(
+          "isWriter",
+          "auth.id in data.ref('reminders.list.writers.id')"
+        ),
+        InstantPermissionBinding(
+          "isReader",
+          "auth.id in data.ref('reminders.list.readers.id')"
+        ),
+      ]
+    )
+  }
+
+  @Test("Share metadata remains owner managed and member visible")
+  func permissionsPreserveAcceptAndRevokeMetadata() throws {
+    let namespaces = Dictionary(
+      uniqueKeysWithValues: InstantSchemaExamples.remindersV3Permissions.namespaces.map {
+        ($0.namespace, $0.allow)
+      }
+    )
+
+    expectNoDifference(
+      namespaces["v3_shares"],
+      [
+        .view: "isOwner || isMember",
+        .create: "isOwner",
+        .update: "isOwner",
+        .delete: "isOwner",
+      ]
+    )
+    expectNoDifference(
+      namespaces["v3_share_memberships"],
+      [
+        .view: "isSelf || isShareOwner",
+        .create: "isSelf || isShareOwner",
+        .update: "isShareOwner",
+        .delete: "isShareOwner",
+      ]
+    )
+  }
 }
