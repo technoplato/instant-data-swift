@@ -1488,6 +1488,7 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
   case liveVoiceTrailRecordingsList
   case liveAuthInvalidation
   case livePlaybackRoom
+  case livePreferences
   case typedDrafts
   case platformAdapters
   case syncUpsRecording
@@ -1520,6 +1521,8 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
       "validation.live.auth-invalidation"
     case .livePlaybackRoom:
       "validation.live.playback-room"
+    case .livePreferences:
+      "validation.live.preferences"
     case .typedDrafts:
       "validation.typed.drafts"
     case .platformAdapters:
@@ -1553,6 +1556,8 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
       "live-auth-invalidation"
     case .livePlaybackRoom:
       "live-playback-room"
+    case .livePreferences:
+      "live-preferences"
     case .typedDrafts:
       "draft-validation"
     case .platformAdapters:
@@ -1586,7 +1591,7 @@ public enum CLIValidationUsage {
 
 public enum CLIValidationRunnerUsage {
   public static let validationRunner =
-    "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--reminders|--local-reminders|--server-transaction-loopback|--cloudkit-demo|--live-session|--live-transaction|--live-observe|--live-sharing|--live-sharing-writer|--live-voice-trail-recordings-list|--live-auth-invalidation|--live-playback-room|--typed-drafts|--platform-adapters|--syncups-recording|--parity-report|--coverage]"
+    "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--reminders|--local-reminders|--server-transaction-loopback|--cloudkit-demo|--live-session|--live-transaction|--live-observe|--live-sharing|--live-sharing-writer|--live-voice-trail-recordings-list|--live-auth-invalidation|--live-playback-room|--live-preferences|--typed-drafts|--platform-adapters|--syncups-recording|--parity-report|--coverage]"
 }
 
 public enum CLIValidationArgumentError: Error, Equatable, Sendable {
@@ -4790,6 +4795,9 @@ public struct CLIValidationRunnerParser: Parser {
 
     case "--live-playback-room":
       return .livePlaybackRoom
+
+    case "--live-preferences":
+      return .livePreferences
 
     case "--typed-drafts":
       return .typedDrafts

@@ -325,6 +325,42 @@ struct InstantSwiftDataValidationRunner {
       )
       try writeJSONLine(row)
 
+    case .livePreferences:
+      let environment = ProcessInfo.processInfo.environment
+      let appID = try requiredEnvironment(
+        "INSTANT_APP_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let refreshToken = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_PREFERENCES_REFRESH_TOKEN",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let expectedUserID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_PREFERENCES_USER_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let apiURI = URL(
+        string: environment["INSTANT_API_URI"] ?? "https://api.instantdb.com"
+      )!
+      let websocketURI = URL(
+        string: environment["INSTANT_WEBSOCKET_URI"]
+          ?? "wss://api.instantdb.com/runtime/session"
+      )!
+      let persistenceURL = environment["INSTANT_SWIFT_DATA_PREFERENCES_PERSISTENCE_PATH"]
+        .map { URL(fileURLWithPath: $0) }
+      let row = try await InstantPreferencesLiveValidation.run(
+        appID: appID,
+        apiURI: apiURI,
+        websocketURI: websocketURI,
+        refreshToken: refreshToken,
+        expectedUserID: expectedUserID,
+        persistenceURL: persistenceURL
+      )
+      try writeJSONLine(row)
+
     case .typedDrafts:
       let run = try await InstantSwiftDataTestHarness.runDraftValidation()
       for row in run.result.evidence {

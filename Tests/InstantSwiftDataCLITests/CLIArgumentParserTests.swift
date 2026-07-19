@@ -3309,6 +3309,10 @@ struct CLIArgumentParserTests {
       try parseValidationRunner(["--live-playback-room"]),
       .livePlaybackRoom
     )
+    expectNoDifference(
+      try parseValidationRunner(["--live-preferences"]),
+      .livePreferences
+    )
     expectNoDifference(try parseValidationRunner(["--typed-drafts"]), .typedDrafts)
     expectNoDifference(try parseValidationRunner(["--platform-adapters"]), .platformAdapters)
     expectNoDifference(try parseValidationRunner(["--syncups-recording"]), .syncUpsRecording)
@@ -3364,6 +3368,14 @@ struct CLIArgumentParserTests {
       CLIValidationRunnerInvocation.livePlaybackRoom.appID,
       "live-playback-room"
     )
+    expectNoDifference(
+      CLIValidationRunnerInvocation.livePreferences.caseID,
+      "validation.live.preferences"
+    )
+    expectNoDifference(
+      CLIValidationRunnerInvocation.livePreferences.appID,
+      "live-preferences"
+    )
     expectNoDifference(CLIValidationRunnerInvocation.coverage.appID, "local-validation")
   }
 
@@ -3381,6 +3393,7 @@ struct CLIArgumentParserTests {
     )
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-auth-invalidation"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-playback-room"))
+    #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-preferences"))
     try expectValidationRunnerParseError(
       ["--remote"],
       description: CLIValidationRunnerUsage.validationRunner
