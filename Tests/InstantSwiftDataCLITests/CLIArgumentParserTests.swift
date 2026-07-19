@@ -3334,6 +3334,10 @@ struct CLIArgumentParserTests {
       .livePlaybackRoom
     )
     expectNoDifference(
+      try parseValidationRunner(["--live-typing-indicator-v3"]),
+      .liveTypingIndicatorV3
+    )
+    expectNoDifference(
       try parseValidationRunner(["--live-preferences"]),
       .livePreferences
     )
@@ -3446,6 +3450,14 @@ struct CLIArgumentParserTests {
       "live-playback-room"
     )
     expectNoDifference(
+      CLIValidationRunnerInvocation.liveTypingIndicatorV3.caseID,
+      "validation.live.typing-indicator-v3"
+    )
+    expectNoDifference(
+      CLIValidationRunnerInvocation.liveTypingIndicatorV3.appID,
+      "live-typing-indicator-v3"
+    )
+    expectNoDifference(
       CLIValidationRunnerInvocation.livePreferences.caseID,
       "validation.live.preferences"
     )
@@ -3474,6 +3486,7 @@ struct CLIArgumentParserTests {
     )
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-auth-invalidation"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-playback-room"))
+    #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-typing-indicator-v3"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-preferences"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-voice-trail-v3-capture"))
     try expectValidationRunnerParseError(
