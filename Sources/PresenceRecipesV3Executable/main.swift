@@ -8,11 +8,19 @@ import PresenceRecipesV3App
     var body: some Scene {
       WindowGroup {
         NavigationStack {
-          TypingIndicatorV3Screen(
-            roomID: "main",
-            profileID: "presence-recipes-v3-user",
-            options: TypingIndicatorV3Options(stopOnSubmit: true)
-          )
+          List {
+            NavigationLink("Typing Indicator") {
+              TypingIndicatorV3Screen(
+                roomID: "1234",
+                profileID: "presence-recipes-v3-user",
+                options: TypingIndicatorV3Options(stopOnSubmit: true)
+              )
+            }
+            NavigationLink("Reactions") {
+              ReactionsV3Screen(roomID: "123")
+            }
+          }
+          .navigationTitle("Presence Recipes")
         }
       }
     }
