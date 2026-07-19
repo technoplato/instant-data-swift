@@ -265,6 +265,17 @@ As of 2026-07-19:
   and asserts the exact five server system-schema warnings with zero compiler
   or runtime warnings. Evidence is in
   `/tmp/instant-data-swift-cursors-v3-20260719T040045Z/evidence.json`.
+- The canonical Custom Cursors recipe boundary is complete through `8f3e9e2`.
+  Source-first Swift, generated-schema, CLI, TypeScript, live-support, and
+  Swift-evidence contracts pin `cursors-example/124`, the dynamic
+  `cursors-space-default--cursors-example-124` key, required top-level `name`,
+  exact `{x, y, xPercent, yPercent, color}` cursor data, and the canonical
+  encoded 40-point avatar URL. The clean fresh-app gate proves both SDK
+  directions, keeps the named peer after cursor clear, removes the peer after
+  disconnect, pushes and reads back empty app schema and permissions without
+  drift, and records the five exact server system-schema warnings with zero
+  compiler or runtime warnings. Evidence is in
+  `/tmp/instant-data-swift-custom-cursors-v3-20260719T042442Z/evidence.json`.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -298,7 +309,7 @@ When sources disagree, use this order:
 | Current execution state, packet order, gates, and tag targets | `docs/v3-e2e-port-plan.md` |
 | Product contract and full definition of done | `docs/instant-swift-data-goals.md` |
 | Desired V3 API rules and decision log | `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` |
-| Next app target | Cursors presence recipe, beginning with pinned upstream room identity, exact cursor payload, viewport normalization, peer-only projection, and disconnect cleanup |
+| Next app target | Merge Tile Game, beginning source-first from the pinned upstream fixed board, per-cell JSON merge, room color presence, reset, and disconnect behavior |
 | Current generated recording contract | `InstantSchemaExamples.recordingActionDocument`, `recordingActionValidationPermissions`, and `--example recording-action` |
 | TypeScript contract pin/type-check gate | `validation/ts-runner/package.json`, its committed `pnpm-lock.yaml`, and `validation/typecheck-generated-contract.sh` |
 | Reproducible live schema/perms install and readback | `validation/verify-recording-contract-live.sh` and `validation/fixtures/recording-action.server.*.ts` |
@@ -322,6 +333,8 @@ When sources disagree, use this order:
 | Typing Indicator reproducible cross-SDK gate | `validation/verify-typing-indicator-v3-app-live.sh` and its `evidence.json` artifact |
 | Cursors app-owned syntax and exact dynamic presence | `Sources/PresenceRecipesV3App/CursorsV3Screen.swift`, `Tests/PresenceRecipesV3AppTests/CursorsV3Tests.swift`, and `Tests/InstantSwiftDataSchemaTests/CursorsContractTests.swift` |
 | Cursors reproducible cross-SDK gate | `validation/verify-cursors-v3-app-live.sh`, `validation/ts-runner/src/cursors-v3-live-contract.ts`, and its `evidence.json` artifact |
+| Custom Cursors app-owned syntax and exact dynamic presence | `Sources/PresenceRecipesV3App/CustomCursorsV3Screen.swift`, `Tests/PresenceRecipesV3AppTests/CustomCursorsV3Tests.swift`, and `Tests/InstantSwiftDataSchemaTests/CustomCursorsContractTests.swift` |
+| Custom Cursors reproducible cross-SDK gate | `validation/verify-custom-cursors-v3-app-live.sh`, `validation/ts-runner/src/custom-cursors-v3-live-contract.ts`, and `/tmp/instant-data-swift-custom-cursors-v3-20260719T042442Z/evidence.json` |
 | Reactions app-owned syntax and behavior | `Sources/PresenceRecipesV3App/ReactionsV3Screen.swift`, `Sources/PresenceRecipesV3App/PresenceRecipesV3App.swift`, and `Tests/PresenceRecipesV3AppTests/ReactionsV3Tests.swift` |
 | Reactions source/schema/live contracts | `Tests/InstantSwiftDataSchemaTests/ReactionsContractTests.swift`, `Tests/InstantSwiftDataTestingTests/InstantReactionsV3LiveValidationTests.swift`, and `validation/ts-runner/src/reactions-v3-*.ts` |
 | Reactions reproducible cross-SDK gate | `validation/verify-reactions-v3-app-live.sh` and `/tmp/instant-data-swift-reactions-v3-20260719T032236Z/evidence.json` |
@@ -888,11 +901,27 @@ verification is green at 982 Swift Testing cases across 60 suites, 28 macro
 tests, the `presence-recipes-v3` build, and the complete TypeScript typecheck,
 contract, live-support, and fixture matrix.
 
-Next, port Custom Cursors source-first, preserving its canonical room `124`,
-dynamic cursor-space key, extra `name` presence field, custom rendering data,
-peer-only projection, clear, and disconnect behavior. Then continue with the
-merge tile game. Do not create the `v0.4.0-apps-e2e` tag until the full required
-app matrix passes.
+The canonical Custom Cursors presence recipe is complete through `8f3e9e2`.
+The shared host compiles the desired `@Room`/`@Presence` surface with required
+top-level `name`, exact dynamic cursor data, and the canonical encoded avatar
+URL. The clean fresh-app gate proves Swift name/cursor publication in
+TypeScript and TypeScript name/cursor publication in Swift. Clearing the
+dynamic key produces zero remote cursors while retaining one named peer;
+disconnect then removes that peer. The gate recorded the expected empty app
+schema and permissions, the same five exact server system-schema warnings,
+schema SHA-256
+`50085a139e9caba2a19686194f31fa6fa4d8dae66f1aef2292ca3f7a8e4394ae`,
+permissions SHA-256
+`fbedb26406126ca62a8725cb698494ac186944ebd4a0c15288ba8b0fc989ba37`,
+and zero compiler/runtime warnings at
+`/tmp/instant-data-swift-custom-cursors-v3-20260719T042442Z/evidence.json`.
+Full verification is green at 992 Swift Testing cases across 63 suites, the
+`presence-recipes-v3` build, and the complete TypeScript typecheck, contract,
+live-support, and fixture matrix.
+
+Next, port Merge Tile Game source-first from its pinned upstream board entity,
+per-cell JSON merge, room color presence, reset, and disconnect behavior. Do
+not create the `v0.4.0-apps-e2e` tag until the full required app matrix passes.
 
 The product-payload mismatch is resolved: playback presence stores and encodes
 `offsetSeconds: Double`, offers `Duration` as a computed product convenience,
