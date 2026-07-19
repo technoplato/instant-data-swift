@@ -1,0 +1,409 @@
+import assert from "node:assert/strict";
+import { spawn, type ChildProcessByStdio } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import { dirname, resolve } from "node:path";
+import { createInterface } from "node:readline";
+import type { Readable } from "node:stream";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { init as initAdmin } from "@instantdb/admin";
+import {
+  init as initCore,
+  StoreInterface,
+  type StoreInterfaceStoreName,
+} from "@instantdb/core";
+import WebSocket from "ws";
+
+import { remindersV3AppContract } from "./reminders-v3-app-contract.js";
+import { projectCanonicalRemindersV3List } from "./reminders-v3-live-support.js";
+
+type SwiftProcess = ChildProcessByStdio<null, Readable, Readable>;
+
+const appId = requiredEnvironment("INSTANT_APP_ID");
+const adminToken = requiredEnvironment("INSTANT_ADMIN_TOKEN");
+const schemaPath = requiredEnvironment("INSTANT_SWIFT_DATA_REMINDERS_SCHEMA_PATH");
+const apiURI = process.env.INSTANT_API_URI ?? "https://api.instantdb.com";
+const websocketURI = process.env.INSTANT_WEBSOCKET_URI
+  ?? "wss://api.instantdb.com/runtime/session";
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
+const warnings: string[] = [];
+const originalWarn = console.warn;
+console.warn = (...values) => warnings.push(values.map(String).join(" "));
+
+class MemoryStore extends StoreInterface {
+  private readonly values = new Map<string, unknown>();
+
+  constructor(appID: string, storeName: StoreInterfaceStoreName) {
+    super(appID, storeName);
+  }
+
+  async getItem(key: string): Promise<unknown> {
+    return this.values.get(key) ?? null;
+  }
+
+  async removeItem(key: string): Promise<void> {
+    this.values.delete(key);
+  }
+
+  async multiSet(entries: Array<[string, unknown]>): Promise<void> {
+    for (const [key, value] of entries) this.values.set(key, value);
+  }
+
+  async getAllKeys(): Promise<string[]> {
+    return [...this.values.keys()];
+  }
+}
+
+class AlwaysOnline {
+  static async getIsOnline(): Promise<boolean> {
+    return true;
+  }
+
+  static listen(_listener: (isOnline: boolean) => void): () => void {
+    return () => {};
+  }
+}
+
+let swift: SwiftProcess | undefined;
+const databases: any[] = [];
+
+try {
+  const suffix = randomUUID();
+  const admin = initAdmin({ appId, adminToken, apiURI });
+  const ownerToken = await admin.auth.createToken({
+    email: `reminders-owner-${suffix}@example.com`,
+  });
+  const participantToken = await admin.auth.createToken({
+    email: `reminders-participant-${suffix}@example.com`,
+  });
+  const outsiderToken = await admin.auth.createToken({
+    email: `reminders-outsider-${suffix}@example.com`,
+  });
+  const owner = await admin.auth.verifyToken(ownerToken);
+  const participant = await admin.auth.verifyToken(participantToken);
+  const outsider = await admin.auth.verifyToken(outsiderToken);
+  assert.ok(owner?.id, "Expected a canonical Reminders owner.");
+  assert.ok(participant?.id, "Expected a canonical Reminders participant.");
+  assert.ok(outsider?.id, "Expected a canonical Reminders outsider.");
+
+  const schema = unwrapSchema(await import(pathToFileURL(schemaPath).href));
+  (globalThis as any).window = globalThis;
+  (globalThis as any).BroadcastChannel = undefined;
+  (globalThis as any).WebSocket = WebSocket;
+  const ownerDB = coreDatabase(schema);
+  const participantDB = coreDatabase(schema);
+  const outsiderDB = coreDatabase(schema);
+  databases.push(ownerDB, participantDB, outsiderDB);
+  await Promise.all([
+    ownerDB.auth.signInWithToken(ownerToken),
+    participantDB.auth.signInWithToken(participantToken),
+    outsiderDB.auth.signInWithToken(outsiderToken),
+  ]);
+
+  swift = spawnSwift(ownerToken, owner.id, participant.id);
+  const lines = createInterface({ input: swift.stdout, crlfDelay: Infinity })
+    [Symbol.asyncIterator]();
+
+  const graphReady = await nextJSONLine(lines, swift, "Swift Reminders graph readiness");
+  assert.equal(graphReady.event, "swift-graph-ready", JSON.stringify(graphReady));
+  assert.equal(graphReady.ok, true);
+
+  const swiftList = await waitForList(ownerDB, (list) => (
+    list.owner.id === owner.id
+    && list.share?.id === remindersV3AppContract.fixtures.share
+    && list.share.memberships.some((membership) => (
+      membership.user.id === owner.id && membership.role === "owner"
+    ))
+    && list.reminders.some((reminder) => (
+      reminder.id === remindersV3AppContract.fixtures.swiftReminder
+      && reminder.priority === remindersV3AppContract.priority.high
+      && reminder.tags.some((tag) => tag.id === remindersV3AppContract.fixtures.swiftTag)
+    ))
+  ));
+
+  const acceptedAt = new Date(1_784_424_001_000);
+  await ownerDB.transact([
+    ownerDB.tx.v3_share_memberships[remindersV3AppContract.fixtures.readerMembership]
+      .update({ role: "reader", acceptedAt })
+      .link({
+        share: remindersV3AppContract.fixtures.share,
+        user: participant.id,
+      }),
+    ownerDB.tx.remindersLists[remindersV3AppContract.fixtures.list]
+      .link({ readers: participant.id }),
+  ]);
+
+  const readerList = await waitForList(participantDB, (list) => (
+    list.readers.some((user) => user.id === participant.id)
+    && list.writers.length === 0
+    && list.share?.memberships.some((membership) => (
+      membership.user.id === participant.id && membership.role === "reader"
+    )) === true
+  ));
+  const readerUpdateRejection = await rejected(
+    participantDB.transact(
+      participantDB.tx.reminders[remindersV3AppContract.fixtures.swiftReminder]
+        .update({ title: "Reader must not update" }),
+    ),
+  );
+  assert.match(readerUpdateRejection, /permission|reminder|update/i);
+
+  const readerObserved = await nextJSONLine(
+    lines,
+    swift,
+    "Swift observation of the TypeScript reader",
+  );
+  assert.equal(readerObserved.event, "typescript-reader-observed", JSON.stringify(readerObserved));
+  assert.equal(readerObserved.ok, true);
+
+  const writerReady = await nextJSONLine(lines, swift, "Swift Reminders writer promotion");
+  assert.equal(writerReady.event, "swift-writer-promotion-ready", JSON.stringify(writerReady));
+  assert.equal(writerReady.ok, true);
+  const writerList = await waitForList(participantDB, (list) => (
+    list.readers.length === 0
+    && list.writers.some((user) => user.id === participant.id)
+    && list.share?.memberships.some((membership) => (
+      membership.user.id === participant.id && membership.role === "writer"
+    )) === true
+  ));
+
+  await participantDB.transact([
+    participantDB.tx.reminders[remindersV3AppContract.fixtures.swiftReminder]
+      .update({ title: "Swift reminder updated by TypeScript" }),
+    participantDB.tx.tags[remindersV3AppContract.fixtures.typeScriptTag]
+      .update({ title: "typescript" }),
+    participantDB.tx.reminders[remindersV3AppContract.fixtures.typeScriptReminder]
+      .update({
+        title: "TypeScript reminder",
+        notes: "Created by @instantdb/core",
+        isCompleted: false,
+        isFlagged: false,
+        priority: remindersV3AppContract.priority.medium,
+        position: 1,
+        createdAt: new Date(1_784_424_003_000),
+      })
+      .link({
+        list: remindersV3AppContract.fixtures.list,
+        tags: remindersV3AppContract.fixtures.typeScriptTag,
+      }),
+  ]);
+
+  const finalList = await waitForList(ownerDB, (list) => (
+    list.reminders.some((reminder) => (
+      reminder.id === remindersV3AppContract.fixtures.swiftReminder
+      && reminder.title === "Swift reminder updated by TypeScript"
+    ))
+    && list.reminders.some((reminder) => (
+      reminder.id === remindersV3AppContract.fixtures.typeScriptReminder
+      && reminder.priority === remindersV3AppContract.priority.medium
+      && reminder.tags.some((tag) => tag.id === remindersV3AppContract.fixtures.typeScriptTag)
+    ))
+  ));
+
+  const outsiderResult = await outsiderDB.queryOnce(remindersListQuery());
+  assert.deepEqual(outsiderResult.data.remindersLists, []);
+
+  const reminderObserved = await nextJSONLine(
+    lines,
+    swift,
+    "Swift observation of the TypeScript reminder",
+  );
+  assert.equal(reminderObserved.event, "typescript-reminder-observed", JSON.stringify(reminderObserved));
+  assert.equal(reminderObserved.ok, true);
+
+  const swiftEvidence = await nextJSONLine(lines, swift, "Swift Reminders evidence");
+  await requireSuccessfulExit(swift, "Swift Reminders runner");
+  swift = undefined;
+  assert.equal(swiftEvidence.ok, true);
+  assert.equal(swiftEvidence.event, "typescript-writer-reminder-observed");
+  assert.equal(swiftEvidence.details.connectionState, "authenticated");
+  assert.equal(swiftEvidence.details.pendingMutationCount, 0);
+  assert.equal(
+    swiftEvidence.details.swiftReminder.title,
+    "Swift reminder updated by TypeScript",
+  );
+  assert.deepEqual(
+    swiftEvidence.details.typeScriptReminderObservedBySwift.tagIDs,
+    [remindersV3AppContract.fixtures.typeScriptTag],
+  );
+  assert.deepEqual(warnings, []);
+
+  const output = {
+    case: "validation.typescript.reminders-v3-live-contract",
+    event: "bidirectional-sharing-and-reminders-observed",
+    side: "typescript",
+    appID: appId,
+    ok: true,
+    details: {
+      upstream: remindersV3AppContract.upstream,
+      users: {
+        owner: { id: owner.id },
+        participant: { id: participant.id },
+        outsider: { id: outsider.id },
+      },
+      typeScriptObservedSwiftList: swiftList,
+      typeScriptObservedReaderList: readerList,
+      typeScriptObservedWriterList: writerList,
+      typeScriptObservedFinalList: finalList,
+      outsiderVisibleListCount: outsiderResult.data.remindersLists.length,
+      readerUpdateRejection,
+      swift: swiftEvidence.details,
+      compilerWarningCount: warnings.length,
+      warnings,
+    },
+  };
+  const serialized = JSON.stringify(output);
+  assert.equal(serialized.includes("refresh_token"), false);
+  assert.equal(serialized.includes(adminToken), false);
+  await writeStdout(`${JSON.stringify(output, null, 2)}\n`);
+} finally {
+  console.warn = originalWarn;
+  for (const database of databases) database.shutdown();
+  if (swift && swift.exitCode === null) swift.kill();
+}
+process.exit(0);
+
+function coreDatabase(schema: any): any {
+  return initCore(
+    { appId, apiURI, websocketURI, schema, devtool: false },
+    MemoryStore,
+    AlwaysOnline,
+  );
+}
+
+function remindersListQuery(): any {
+  return {
+    remindersLists: {
+      $: { where: { id: remindersV3AppContract.fixtures.list } },
+      owner: {},
+      readers: {},
+      writers: {},
+      reminders: { tags: {} },
+      share: {
+        owner: {},
+        memberships: { user: {} },
+      },
+    },
+  };
+}
+
+async function waitForList(
+  database: any,
+  predicate: (list: ReturnType<typeof projectCanonicalRemindersV3List>) => boolean,
+): Promise<ReturnType<typeof projectCanonicalRemindersV3List>> {
+  let last: unknown;
+  for (let attempt = 0; attempt < 300; attempt += 1) {
+    const result = await database.queryOnce(remindersListQuery());
+    last = result.data;
+    const rawList = result.data.remindersLists?.[0];
+    if (rawList) {
+      const list = projectCanonicalRemindersV3List(rawList);
+      if (predicate(list)) return list;
+    }
+    await delay();
+  }
+  throw new Error(`Timed out waiting for canonical Reminders list: ${JSON.stringify(last)}`);
+}
+
+function spawnSwift(
+  refreshToken: string,
+  ownerUserID: string,
+  participantUserID: string,
+): SwiftProcess {
+  return spawn(
+    "swift",
+    [
+      "run",
+      "--package-path",
+      repositoryRoot,
+      "instant-swift-data-validation-runner",
+      "--live-reminders-v3",
+    ],
+    {
+      cwd: repositoryRoot,
+      env: {
+        ...process.env,
+        INSTANT_APP_ID: appId,
+        INSTANT_API_URI: apiURI,
+        INSTANT_WEBSOCKET_URI: websocketURI,
+        INSTANT_SWIFT_DATA_REMINDERS_REFRESH_TOKEN: refreshToken,
+        INSTANT_SWIFT_DATA_REMINDERS_OWNER_USER_ID: ownerUserID,
+        INSTANT_SWIFT_DATA_REMINDERS_PARTICIPANT_USER_ID: participantUserID,
+      },
+      stdio: ["ignore", "pipe", "pipe"],
+    },
+  );
+}
+
+function unwrapSchema(module: any): any {
+  let value = module;
+  for (let index = 0; index < 4; index += 1) {
+    if (value && typeof value === "object" && "entities" in value) return value;
+    value = value?.default;
+  }
+  throw new Error("Generated Reminders schema did not load.");
+}
+
+async function nextJSONLine(
+  lines: AsyncIterator<string>,
+  child: SwiftProcess,
+  operation: string,
+): Promise<any> {
+  const line = await withTimeout(lines.next(), operation);
+  if (line.done) throw new Error(`${operation} ended early.`);
+  try {
+    return JSON.parse(line.value);
+  } catch (error) {
+    child.kill();
+    throw new Error(`${operation} emitted invalid JSON: ${line.value}; ${String(error)}`);
+  }
+}
+
+async function requireSuccessfulExit(child: SwiftProcess, operation: string): Promise<void> {
+  let stderr = "";
+  child.stderr.on("data", (chunk) => { stderr += String(chunk); });
+  const code = await withTimeout(new Promise<number>((resolveCode, reject) => {
+    if (child.exitCode !== null) return resolveCode(child.exitCode);
+    child.once("error", reject);
+    child.once("close", (value) => resolveCode(value ?? 1));
+  }), `${operation} exit`);
+  assert.equal(code, 0, stderr);
+}
+
+async function rejected(promise: Promise<unknown>): Promise<string> {
+  try {
+    await promise;
+  } catch (error) {
+    return String(error);
+  }
+  throw new Error("Expected the reader operation to be rejected by permissions.");
+}
+
+async function withTimeout<T>(promise: Promise<T>, operation: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`Timed out: ${operation}.`)), 45_000);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function delay(): Promise<void> {
+  await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+}
+
+function requiredEnvironment(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) throw new Error(`Missing ${name}.`);
+  return value;
+}
+
+async function writeStdout(value: string): Promise<void> {
+  await new Promise<void>((resolveOutput, rejectOutput) => {
+    process.stdout.write(value, (error) => error ? rejectOutput(error) : resolveOutput());
+  });
+}
