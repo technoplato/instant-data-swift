@@ -181,6 +181,12 @@ As of 2026-07-18:
   reconnect, preferences storage cleanup, and auth invalidation with zero
   compiler/runtime warnings. Evidence is in
   `/tmp/instant-data-swift-voice-trail-v3-app-20260719T004933Z/evidence.json`.
+- Commits `7cad7ee` and `1dcee4b` make the VoiceTrail app the authority for the
+  playback room type and all presence/reaction/comment payloads, removing the
+  validator's parallel payload models. The clean aggregate rerun at `1dcee4b`
+  proves those exact app-owned payloads in both directions before and after a
+  forced reconnect, with zero warnings. Evidence is in
+  `/tmp/instant-data-swift-voice-trail-v3-app-20260719T005834Z/evidence.json`.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -212,7 +218,7 @@ When sources disagree, use this order:
 | Current execution state, packet order, gates, and tag targets | `docs/v3-e2e-port-plan.md` |
 | Product contract and full definition of done | `docs/instant-swift-data-goals.md` |
 | Desired V3 API rules and decision log | `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` |
-| Next live boundary target | `screens/v3/playback.md` app-owned room, presence, and topic types through the live runner |
+| Next app target | Todos through a thin SwiftUI host, public wrappers, and a canonical TypeScript live boundary |
 | Current generated recording contract | `InstantSchemaExamples.recordingActionDocument`, `recordingActionValidationPermissions`, and `--example recording-action` |
 | TypeScript contract pin/type-check gate | `validation/ts-runner/package.json`, its committed `pnpm-lock.yaml`, and `validation/typecheck-generated-contract.sh` |
 | Reproducible live schema/perms install and readback | `validation/verify-recording-contract-live.sh` and `validation/fixtures/recording-action.server.*.ts` |
@@ -702,9 +708,17 @@ It also runs the recordings, playback, preferences, and auth live contracts on
 the same app with zero compiler/runtime warnings. Evidence is at
 `/tmp/instant-data-swift-voice-trail-v3-app-20260719T004933Z/evidence.json`.
 
-Next, bind the playback live proof directly to the app target's
-room/presence/topic types, removing its parallel validation-only payload types.
-Then continue Packet 8's required example apps. Do not create the
+The playback binding is complete in `7cad7ee` and `1dcee4b`. The app target now
+owns `recording.playback`, presence, reaction, comment-draft, and
+comment-committed payloads. The clean aggregate rerun proves those app types in
+both directions before and after forced reconnect. Evidence is at
+`/tmp/instant-data-swift-voice-trail-v3-app-20260719T005834Z/evidence.json`.
+
+Next, start the required app matrix with Todos: add a thin runnable SwiftUI
+host over the existing public typed query/message surface, port the canonical
+TypeScript Todos data-shape test into that app target, and bind the flow to a
+fresh-app Swift-to-TypeScript and TypeScript-to-Swift gate. Continue with the
+remaining Packet 8 examples only after that packet is green. Do not create the
 `v0.4.0-apps-e2e` tag until the required app matrix—not only VoiceTrail—passes.
 
 The product-payload mismatch is resolved: playback presence stores and encodes
