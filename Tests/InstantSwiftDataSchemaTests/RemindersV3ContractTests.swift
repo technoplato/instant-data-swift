@@ -156,22 +156,27 @@ struct RemindersV3ContractTests {
         InstantPermissionBinding("isOwner", "auth.id in data.ref('owner.id')"),
         InstantPermissionBinding("isWriter", "auth.id in data.ref('writers.id')"),
         InstantPermissionBinding("isReader", "auth.id in data.ref('readers.id')"),
-        InstantPermissionBinding("isNewList", "actions.data == 'create'"),
-        InstantPermissionBinding("linkingSelf", "linkedData.id == auth.id"),
       ]
     )
     expectNoDifference(
       lists.link,
       [
-        "owner": "isNewList ? linkingSelf : isOwner",
-        "readers": "isOwner",
-        "writers": "isOwner",
-        "share": "isOwner",
+        "owner": "auth.id in data.ref('owner.id')",
+        "readers": "auth.id in data.ref('owner.id')",
+        "writers": "auth.id in data.ref('owner.id')",
+        "share": "auth.id in data.ref('owner.id')",
+        "reminders": "auth.id in data.ref('owner.id') || auth.id in data.ref('writers.id')",
       ]
     )
     expectNoDifference(
       lists.unlink,
-      ["owner": "isOwner", "readers": "isOwner", "writers": "isOwner", "share": "isOwner"]
+      [
+        "owner": "auth.id in data.ref('owner.id')",
+        "readers": "auth.id in data.ref('owner.id')",
+        "writers": "auth.id in data.ref('owner.id')",
+        "share": "auth.id in data.ref('owner.id')",
+        "reminders": "auth.id in data.ref('owner.id') || auth.id in data.ref('writers.id')",
+      ]
     )
 
     let reminders = try #require(namespaces["reminders"])
@@ -190,6 +195,13 @@ struct RemindersV3ContractTests {
         InstantPermissionBinding("isOwner", "auth.id in data.ref('list.owner.id')"),
         InstantPermissionBinding("isWriter", "auth.id in data.ref('list.writers.id')"),
         InstantPermissionBinding("isReader", "auth.id in data.ref('list.readers.id')"),
+      ]
+    )
+    expectNoDifference(
+      reminders.link,
+      [
+        "list": "auth.id in data.ref('list.owner.id') || auth.id in data.ref('list.writers.id')",
+        "tags": "auth.id in data.ref('list.owner.id') || auth.id in data.ref('list.writers.id')",
       ]
     )
   }
@@ -228,6 +240,12 @@ struct RemindersV3ContractTests {
         ),
       ]
     )
+    expectNoDifference(
+      tags.link,
+      [
+        "reminders": "auth.id in linkedData.ref('list.owner.id') || auth.id in linkedData.ref('list.writers.id')"
+      ]
+    )
   }
 
   @Test("Share metadata remains owner managed and member visible")
@@ -249,7 +267,11 @@ struct RemindersV3ContractTests {
     )
     expectNoDifference(
       namespaces["v3_shares"]?.link,
-      ["owner": "isNewShare ? linkingSelf : isOwner", "root": "isNewShare", "memberships": "isOwner"]
+      [
+        "owner": "auth.id in data.ref('owner.id')",
+        "root": "auth.id in data.ref('owner.id')",
+        "memberships": "auth.id in data.ref('owner.id')",
+      ]
     )
     expectNoDifference(
       namespaces["v3_share_memberships"]?.allow,
@@ -262,7 +284,10 @@ struct RemindersV3ContractTests {
     )
     expectNoDifference(
       namespaces["v3_share_memberships"]?.link,
-      ["share": "isNewMembership || isShareOwner", "user": "isNewMembership || isShareOwner"]
+      [
+        "share": "auth.id in data.ref('share.owner.id')",
+        "user": "auth.id in data.ref('share.owner.id')",
+      ]
     )
   }
 }
