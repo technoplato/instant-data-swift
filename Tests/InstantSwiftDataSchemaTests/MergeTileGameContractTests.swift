@@ -52,4 +52,28 @@ struct MergeTileGameContractTests {
     #expect(source.contains("color: i.string()"))
     #expect(!source.contains("topics:"))
   }
+
+  @Test
+  func serverJSONProjectionKeepsTheSwiftJSONContractWithAnExplicitWarning() throws {
+    let expected = ParsedInstantSchemaDocument(InstantSchemaExamples.mergeTileGameDocument)
+    var server = expected
+    server.rooms = []
+    let boardsIndex = try #require(
+      server.entities.firstIndex { $0.namespace == "boards" }
+    )
+    let stateIndex = try #require(
+      server.entities[boardsIndex].attributes.firstIndex { $0.name == "state" }
+    )
+    server.entities[boardsIndex].attributes[stateIndex].valueType = .any
+
+    let comparison = try server.comparingServerNormalized(to: expected)
+
+    expectNoDifference(comparison.normalizedDocument, expected)
+    expectNoDifference(
+      comparison.warnings,
+      [
+        InstantServerSchemaWarning(code: .serverJSONAsAny, path: "boards.state")
+      ]
+    )
+  }
 }
