@@ -69,6 +69,12 @@ export INSTANT_SWIFT_DATA_REMOTE_APP_ID="${APP_ID}"
 ) | tee "${RESULTS_DIR}/instant-cli-push.log"
 
 (
+  cd "${PUSH_DIR}"
+  "${CLI}" push schema --yes
+  "${CLI}" push perms --yes
+) | tee "${RESULTS_DIR}/instant-cli-push-no-drift.log"
+
+(
   cd "${PULL_DIR}"
   "${CLI}" pull schema --yes
   "${CLI}" pull perms --yes
@@ -118,17 +124,45 @@ const permissions = readJSON("swift-server-perms-verify.json");
 const todos = readJSON("todos-v3.json");
 
 assert.equal(todos.ok, true);
-assert.equal(todos.details.swift.isCompleted, true);
-assert.equal(todos.details.swift.direction, "swift-to-typescript");
-assert.equal(todos.details.swiftObserved.direction, "typescript-to-swift");
+assert.deepStrictEqual(todos.details.swift, {
+  direction: "swift-to-typescript",
+  id: "todos-v3-swift",
+  text: "Swift live todo",
+  isCompleted: true,
+  createdAtMilliseconds: 1_700_000_000_000,
+  connectionState: "authenticated",
+  pendingMutationCount: 0,
+});
 assert.deepStrictEqual(todos.details.typeScriptObserved, {
-  id: todos.details.swift.id,
-  text: todos.details.swift.text,
-  isCompleted: todos.details.swift.isCompleted,
-  createdAtMilliseconds: todos.details.swift.createdAtMilliseconds,
+  id: "todos-v3-swift",
+  text: "Swift live todo",
+  isCompleted: true,
+  createdAtMilliseconds: 1_700_000_000_000,
+});
+assert.deepStrictEqual(todos.details.typeScriptCreated, {
+  id: "todos-v3-typescript",
+  text: "TypeScript live todo",
+  isCompleted: false,
+  createdAtMilliseconds: 1_700_000_001_000,
+});
+assert.deepStrictEqual(todos.details.swiftObserved, {
+  direction: "typescript-to-swift",
+  id: "todos-v3-typescript",
+  text: "TypeScript live todo",
+  isCompleted: false,
+  createdAtMilliseconds: 1_700_000_001_000,
+  connectionState: "authenticated",
+  pendingMutationCount: 0,
 });
 assert.equal(todos.details.compilerWarningCount, 0);
 assert.deepStrictEqual(todos.details.warnings, []);
+assert.equal(schema.entityCount, 1);
+assert.equal(schema.attributeCount, 4);
+assert.equal(schema.linkCount, 0);
+assert.deepStrictEqual(schema.warnings, []);
+assert.equal(permissions.namespaceCount, 1);
+assert.equal(permissions.allowRuleCount, 4);
+assert.deepStrictEqual(permissions.warnings, []);
 
 const evidence = {
   case: "validation.todos-v3-app.live-contract",
@@ -139,6 +173,7 @@ const evidence = {
     swiftRevision: execFileSync("git", ["-C", root, "rev-parse", "HEAD"], {
       encoding: "utf8",
     }).trim(),
+    worktreeDirty: false,
     upstreamRevision: process.env.UPSTREAM_REVISION,
     coreVersion: manifest.dependencies["@instantdb/core"],
     adminVersion: manifest.dependencies["@instantdb/admin"],
