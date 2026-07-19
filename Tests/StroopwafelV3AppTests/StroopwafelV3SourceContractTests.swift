@@ -4,6 +4,10 @@ import InstantSwiftData
 import StroopwafelV3App
 import Testing
 
+#if canImport(SwiftUI)
+  import SwiftUI
+#endif
+
 // Canonical source:
 // jsventures/stroopwafel@7f5e2379464d932c0e4681655cbf022f8d9c2614
 // - instant.schema.ts
@@ -11,6 +15,14 @@ import Testing
 // - src/components/scenes/WaitingRoom.tsx
 @Suite
 struct StroopwafelV3SourceContractTests {
+  #if canImport(SwiftUI)
+    @Test @MainActor
+    func desiredWrapperOwnedScreenSyntaxCompiles() {
+      let screen: any View = StroopwafelV3Screen()
+      _ = screen
+    }
+  #endif
+
   @Test
   func desiredTypedEntityQueryAndMessageSyntaxCompiles() {
     let rooms = FetchOne(StroopwafelV3Room.forCode("ABCD"))
