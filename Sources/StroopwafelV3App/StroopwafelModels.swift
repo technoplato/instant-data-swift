@@ -142,8 +142,8 @@ public struct StroopwafelV3ColorSequence:
   }
 }
 
+@InstantEntity("$users")
 public struct StroopwafelV3User: Codable, Equatable, Hashable, InstantEntityModel {
-  public static let instantNamespace = "$users"
   public static let email = InstantAttributePath<Self, String?>("email")
   public static let handle = InstantAttributePath<Self, String?>("handle")
   public static let highScore = InstantAttributePath<Self, Int?>("highScore")
@@ -181,8 +181,8 @@ public struct StroopwafelV3User: Codable, Equatable, Hashable, InstantEntityMode
   }
 }
 
+@InstantEntity("rooms")
 public struct StroopwafelV3Room: Codable, Equatable, Hashable, InstantEntityModel {
-  public static let instantNamespace = "rooms"
   public static let identifier = InstantAttributePath<Self, String>("id")
   public static let code = InstantAttributePath<Self, String?>("code")
   public static let hostID = InstantAttributePath<Self, String>("hostId")
@@ -199,7 +199,10 @@ public struct StroopwafelV3Room: Codable, Equatable, Hashable, InstantEntityMode
   public var id: InstantID<Self>
   public var code: String?
   public var hostID: String
+  @InstantWire(.json)
   public var readyIDs: StroopwafelV3StringList
+
+  @InstantWire(.json)
   public var kickedIDs: StroopwafelV3StringList
   public var currentGameID: String?
   public var createdAt: String
@@ -283,8 +286,8 @@ public struct StroopwafelV3Room: Codable, Equatable, Hashable, InstantEntityMode
   }
 }
 
+@InstantEntity("points")
 public struct StroopwafelV3Point: Codable, Equatable, Hashable, InstantEntityModel {
-  public static let instantNamespace = "points"
   public static let value = InstantAttributePath<Self, Int>("val")
   public static let userID = InstantAttributePath<Self, String>("userId")
   public static let instantAttributes = StroopwafelExample.attributes.filter {
@@ -325,8 +328,8 @@ public struct StroopwafelV3Point: Codable, Equatable, Hashable, InstantEntityMod
   }
 }
 
+@InstantEntity("games")
 public struct StroopwafelV3Game: Codable, Equatable, Hashable, InstantEntityModel {
-  public static let instantNamespace = "games"
   public static let identifier = InstantAttributePath<Self, String>("id")
   public static let status = InstantAttributePath<Self, String>("status")
   public static let playerIDs = InstantAttributePath<Self, StroopwafelV3StringList>("playerIds")
@@ -341,7 +344,10 @@ public struct StroopwafelV3Game: Codable, Equatable, Hashable, InstantEntityMode
 
   public var id: InstantID<Self>
   public var status: String
+  @InstantWire(.json)
   public var playerIDs: StroopwafelV3StringList
+
+  @InstantWire(.json)
   public var colors: StroopwafelV3ColorSequence
   public var createdAt: String
   public var users: [StroopwafelV3User]

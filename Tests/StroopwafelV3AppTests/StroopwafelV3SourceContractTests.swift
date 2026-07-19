@@ -18,10 +18,18 @@ struct StroopwafelV3SourceContractTests {
       StroopwafelV3Game.byID(InstantID<StroopwafelV3Game>(rawValue: "game-1"))
     )
     let users = FetchAll(StroopwafelV3User.query)
+    let roomDraft = StroopwafelV3Room.Draft(
+      code: "ABCD",
+      hostID: "host",
+      readyIDs: [],
+      kickedIDs: [],
+      createdAt: "2026-07-19T00:00:00.000Z"
+    )
 
     _ = rooms
     _ = game
     _ = users
+    _ = roomDraft
     _ = SetupStroopwafelV3Profile(
       userID: InstantID(rawValue: "user-1"),
       handle: "PlayerOne",
