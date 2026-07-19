@@ -935,6 +935,91 @@ struct InstantSwiftDataValidationRunner {
       )
       try writeJSONLine(row)
 
+    case .liveStroopwafelV3:
+      let environment = ProcessInfo.processInfo.environment
+      let appID = try requiredEnvironment(
+        "INSTANT_APP_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let refreshToken = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_STROOPWAFEL_REFRESH_TOKEN",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let hostUserID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_STROOPWAFEL_HOST_USER_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let guestUserID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_STROOPWAFEL_GUEST_USER_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let apiURI = URL(
+        string: environment["INSTANT_API_URI"]
+          ?? InstantRuntimeConfiguration.defaultAPIURI.absoluteString
+      ) ?? InstantRuntimeConfiguration.defaultAPIURI
+      let websocketURI = URL(
+        string: environment["INSTANT_WEBSOCKET_URI"]
+          ?? InstantRuntimeConfiguration.defaultWebSocketURI.absoluteString
+      ) ?? InstantRuntimeConfiguration.defaultWebSocketURI
+      let row = try await InstantStroopwafelV3LiveValidation.run(
+        appID: appID,
+        apiURI: apiURI,
+        websocketURI: websocketURI,
+        refreshToken: refreshToken,
+        expectedHostUserID: hostUserID,
+        expectedGuestUserID: guestUserID,
+        onSwiftRoomReady: {
+          emit(
+            caseID: "validation.live.stroopwafel-v3",
+            event: "swift-room-ready",
+            ok: true,
+            appID: appID,
+            details: ["roomID": InstantStroopwafelV3LiveValidation.roomID]
+          )
+        },
+        onTypeScriptReadyObserved: {
+          emit(
+            caseID: "validation.live.stroopwafel-v3",
+            event: "typescript-ready-observed",
+            ok: true,
+            appID: appID,
+            details: ["roomID": InstantStroopwafelV3LiveValidation.roomID]
+          )
+        },
+        onSwiftGameStarted: {
+          emit(
+            caseID: "validation.live.stroopwafel-v3",
+            event: "swift-game-started",
+            ok: true,
+            appID: appID,
+            details: ["gameID": InstantStroopwafelV3LiveValidation.gameID]
+          )
+        },
+        onTypeScriptPointObserved: {
+          emit(
+            caseID: "validation.live.stroopwafel-v3",
+            event: "typescript-point-observed",
+            ok: true,
+            appID: appID,
+            details: ["pointID": InstantStroopwafelV3LiveValidation.guestPointID]
+          )
+        },
+        onSwiftCompleted: {
+          emit(
+            caseID: "validation.live.stroopwafel-v3",
+            event: "swift-completion-observed",
+            ok: true,
+            appID: appID,
+            details: ["gameID": InstantStroopwafelV3LiveValidation.gameID]
+          )
+        }
+      )
+      try writeJSONLine(row)
+
     case .livePreferences:
       let environment = ProcessInfo.processInfo.environment
       let appID = try requiredEnvironment(

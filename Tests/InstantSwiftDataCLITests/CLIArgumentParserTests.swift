@@ -3406,6 +3406,10 @@ struct CLIArgumentParserTests {
       .liveMergeTileGameV3
     )
     expectNoDifference(
+      try parseValidationRunner(["--live-stroopwafel-v3"]),
+      .liveStroopwafelV3
+    )
+    expectNoDifference(
       try parseValidationRunner(["--live-preferences"]),
       .livePreferences
     )
@@ -3566,6 +3570,14 @@ struct CLIArgumentParserTests {
       "live-merge-tile-game-v3"
     )
     expectNoDifference(
+      CLIValidationRunnerInvocation.liveStroopwafelV3.caseID,
+      "validation.live.stroopwafel-v3"
+    )
+    expectNoDifference(
+      CLIValidationRunnerInvocation.liveStroopwafelV3.appID,
+      "live-stroopwafel-v3"
+    )
+    expectNoDifference(
       CLIValidationRunnerInvocation.livePreferences.caseID,
       "validation.live.preferences"
     )
@@ -3600,6 +3612,7 @@ struct CLIArgumentParserTests {
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-cursors-v3"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-custom-cursors-v3"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-merge-tile-game-v3"))
+    #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-stroopwafel-v3"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-preferences"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-voice-trail-v3-capture"))
     try expectValidationRunnerParseError(
