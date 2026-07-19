@@ -25,11 +25,13 @@ let package = Package(
     .library(name: "InstantSwiftDataTesting", targets: ["InstantSwiftDataTesting"]),
     .library(name: "AuthV3App", targets: ["AuthV3App"]),
     .library(name: "MobileChatV3App", targets: ["MobileChatV3App"]),
+    .library(name: "PresenceRecipesV3App", targets: ["PresenceRecipesV3App"]),
     .library(name: "TodosV3App", targets: ["TodosV3App"]),
     .library(name: "VoiceTrailV3App", targets: ["VoiceTrailV3App"]),
     .executable(name: "instant-swift-data", targets: ["instant-swift-data"]),
     .executable(name: "auth-v3", targets: ["AuthV3Executable"]),
     .executable(name: "mobile-chat-v3", targets: ["MobileChatV3Executable"]),
+    .executable(name: "presence-recipes-v3", targets: ["PresenceRecipesV3Executable"]),
     .executable(name: "voicetrail-v3", targets: ["VoiceTrailV3Executable"]),
     .executable(name: "todos-v3", targets: ["TodosV3Executable"]),
     .executable(
@@ -112,6 +114,14 @@ let package = Package(
       swiftSettings: strictConcurrencySettings
     ),
     .target(
+      name: "PresenceRecipesV3App",
+      dependencies: [
+        "InstantSwiftData",
+        .product(name: "Dependencies", package: "swift-dependencies"),
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .target(
       name: "TodosV3App",
       dependencies: [
         "InstantSwiftData",
@@ -174,6 +184,11 @@ let package = Package(
     .executableTarget(
       name: "MobileChatV3Executable",
       dependencies: ["MobileChatV3App"],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .executableTarget(
+      name: "PresenceRecipesV3Executable",
+      dependencies: ["PresenceRecipesV3App"],
       swiftSettings: strictConcurrencySettings
     ),
     .executableTarget(
@@ -257,6 +272,15 @@ let package = Package(
       dependencies: [
         "MobileChatV3App",
         .product(name: "CustomDump", package: "swift-custom-dump"),
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .testTarget(
+      name: "PresenceRecipesV3AppTests",
+      dependencies: [
+        "PresenceRecipesV3App",
+        .product(name: "CustomDump", package: "swift-custom-dump"),
+        .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
       ],
       swiftSettings: strictConcurrencySettings
     ),
