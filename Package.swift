@@ -83,6 +83,7 @@ let package = Package(
       dependencies: [
         "InstantSwiftData",
         "InstantSwiftDataCore",
+        "TodosV3App",
         "VoiceTrailV3App",
       ],
       swiftSettings: strictConcurrencySettings
