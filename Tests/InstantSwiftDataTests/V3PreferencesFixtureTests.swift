@@ -95,18 +95,52 @@ import Testing
       )
       expectNoDifference(callbacks.failures, [])
     }
+
+    @Test @MainActor
+    func storageStatusLoadsExactSizesAndClearsMatchingFilesOnce() async throws {
+      let recorder = V3PreferencesStorageRecorder()
+      let client = v3PreferencesStorageClient(recorder)
+      let state = InstantStorageStatusState()
+
+      await state.load(using: client).value
+      expectNoDifference(state.localCacheSize, 184)
+      expectNoDifference(state.streamCacheSize, 12)
+      expectNoDifference(state.downloadedFileSize, 7)
+      expectNoDifference(state.downloadedFileCount, 2)
+
+      let callbacks = V3PreferencesStorageCallbacks()
+      await state.clearDownloadedFiles(
+        matching: V3RecordingAudioPath.self,
+        using: client,
+        onCleared: { callbacks.cleared.append($0) },
+        onFailure: { callbacks.failures.append($0) }
+      ).value
+
+      expectNoDifference(
+        callbacks.cleared,
+        [InstantStorageFilesClearedEvent(fileCount: 1, bytesRemoved: 4)]
+      )
+      expectNoDifference(callbacks.failures, [])
+      let deletedIDs = await recorder.deletedIDs()
+      expectNoDifference(deletedIDs, ["recording-audio"])
+      expectNoDifference(state.downloadedFileSize, 3)
+      expectNoDifference(state.downloadedFileCount, 1)
+    }
   }
 
   @MainActor
   private struct V3PreferencesSyncFixture: View {
     @ConnectionStatus private var connection
     @InstantSyncStatus private var sync
+    @InstantStorageStatus private var storage
 
     var body: some View {
       Form {
         Text(connection.state.rawValue)
         Text(sync.summary)
         Text(sync.pendingOutboxCount.formatted())
+        Text(storage.localCacheSize.formatted())
+        Text(storage.streamCacheSize.formatted())
         Toggle("Premium-only sync", isOn: $sync.usesPremiumGate)
       }
     }
@@ -117,6 +151,72 @@ import Testing
     var started: [InstantSyncFlushStartedEvent] = []
     var accepted: [InstantSyncFlushAcceptedEvent] = []
     var failures: [InstantError] = []
+  }
+
+  private enum V3RecordingAudioPath: InstantStoredFileMatcher {
+    static func matches(_ file: InstantStoredFile) -> Bool {
+      file.contentType?.hasPrefix("audio/") == true
+    }
+  }
+
+  @MainActor
+  private final class V3PreferencesStorageCallbacks {
+    var cleared: [InstantStorageFilesClearedEvent] = []
+    var failures: [InstantError] = []
+  }
+
+  private actor V3PreferencesStorageRecorder {
+    private var files = [
+      InstantStoredFile(
+        id: "recording-audio",
+        appID: "preferences-test",
+        name: "recording.m4a",
+        contentType: "audio/mp4",
+        byteCount: 4,
+        localPath: "/tmp/recording.m4a",
+        ownerUserID: "preferences-user",
+        createdAt: InstantTimestamp(milliseconds: 1),
+        updatedAt: InstantTimestamp(milliseconds: 1)
+      ),
+      InstantStoredFile(
+        id: "transcript",
+        appID: "preferences-test",
+        name: "transcript.txt",
+        contentType: "text/plain",
+        byteCount: 3,
+        localPath: "/tmp/transcript.txt",
+        ownerUserID: "preferences-user",
+        createdAt: InstantTimestamp(milliseconds: 2),
+        updatedAt: InstantTimestamp(milliseconds: 2)
+      ),
+    ]
+    private var deleted: [String] = []
+
+    func snapshot() -> InstantStorageSnapshot {
+      InstantStorageSnapshot(
+        localCacheSize: 184,
+        streamCacheSize: 12,
+        downloadedFileSize: files.reduce(0) { $0 + $1.byteCount },
+        downloadedFileCount: files.count
+      )
+    }
+
+    func storedFiles() -> [InstantStoredFile] { files }
+
+    func delete(id: String) throws -> InstantStoredFile {
+      guard let index = files.firstIndex(where: { $0.id == id }) else {
+        throw InstantError(
+          code: .validationFailed,
+          operation: "delete preferences fixture file",
+          message: "Missing file \(id).",
+          recovery: "Use a fixture file id."
+        )
+      }
+      deleted.append(id)
+      return files.remove(at: index)
+    }
+
+    func deletedIDs() -> [String] { deleted }
   }
 
   private actor V3PreferencesStatusRecorder {
@@ -192,6 +292,21 @@ import Testing
       connectionStatus: { v3PreferencesStatus(state: .connecting) },
       observeConnectionStatus: { await recorder.stream() },
       localID: { _ in "unused-preferences-local-id" }
+    )
+  }
+
+  private func v3PreferencesStorageClient(
+    _ recorder: V3PreferencesStorageRecorder
+  ) -> InstantSwiftDataClient {
+    InstantSwiftDataClient(
+      transact: { _ in fatalError("Unused preferences transaction") },
+      query: { _ in [] },
+      observe: { _ in AsyncStream { $0.finish() } },
+      pendingMutations: { [] },
+      localID: { _ in "unused-preferences-local-id" },
+      storedFiles: { await recorder.storedFiles() },
+      storageSnapshot: { await recorder.snapshot() },
+      deleteStoredFile: { try await recorder.delete(id: $0) }
     )
   }
 

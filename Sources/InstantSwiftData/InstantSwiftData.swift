@@ -84,6 +84,7 @@ public struct InstantSwiftDataClient: Sendable {
     @Sendable (URL, String?, String?) async throws
       -> AsyncThrowingStream<InstantFileUploadProgress, Error>
   private var storedFilesOperation: @Sendable () async throws -> [InstantStoredFile]
+  private var storageSnapshotOperation: @Sendable () async throws -> InstantStorageSnapshot
   private var observeStoredFilesOperation:
     @Sendable () async throws -> AsyncStream<[InstantStoredFile]>
   private var storedFileContentsOperation:
@@ -250,6 +251,9 @@ public struct InstantSwiftDataClient: Sendable {
     self.storedFilesOperation = {
       try await runtime.storedFiles()
     }
+    self.storageSnapshotOperation = {
+      try await runtime.storageSnapshot()
+    }
     self.observeStoredFilesOperation = {
       try await runtime.observeStoredFiles()
     }
@@ -380,6 +384,7 @@ public struct InstantSwiftDataClient: Sendable {
       (@Sendable (URL, String?, String?) async throws
         -> AsyncThrowingStream<InstantFileUploadProgress, Error>)? = nil,
     storedFiles: (@Sendable () async throws -> [InstantStoredFile])? = nil,
+    storageSnapshot: (@Sendable () async throws -> InstantStorageSnapshot)? = nil,
     observeStoredFiles:
       (@Sendable () async throws -> AsyncStream<[InstantStoredFile]>)? = nil,
     storedFileContents:
@@ -466,6 +471,7 @@ public struct InstantSwiftDataClient: Sendable {
       uploadFile: uploadFile,
       uploadFileProgress: uploadFileProgress,
       storedFiles: storedFiles,
+      storageSnapshot: storageSnapshot,
       observeStoredFiles: observeStoredFiles,
       storedFileContents: storedFileContents,
       deleteStoredFile: deleteStoredFile,
@@ -555,6 +561,7 @@ public struct InstantSwiftDataClient: Sendable {
       (@Sendable (URL, String?, String?) async throws
         -> AsyncThrowingStream<InstantFileUploadProgress, Error>)? = nil,
     storedFiles: (@Sendable () async throws -> [InstantStoredFile])? = nil,
+    storageSnapshot: (@Sendable () async throws -> InstantStorageSnapshot)? = nil,
     observeStoredFiles:
       (@Sendable () async throws -> AsyncStream<[InstantStoredFile]>)? = nil,
     storedFileContents:
@@ -741,6 +748,7 @@ public struct InstantSwiftDataClient: Sendable {
     self.uploadFileOperation = uploadFile ?? { _, _, _ in throw filesError }
     self.uploadFileProgressOperation = uploadFileProgress ?? { _, _, _ in throw filesError }
     self.storedFilesOperation = storedFiles ?? { throw filesError }
+    self.storageSnapshotOperation = storageSnapshot ?? { throw filesError }
     self.observeStoredFilesOperation = observeStoredFiles ?? { throw filesError }
     self.storedFileContentsOperation = storedFileContents ?? { _ in throw filesError }
     self.deleteStoredFileOperation = deleteStoredFile ?? { _ in throw filesError }
@@ -1282,6 +1290,10 @@ public struct InstantSwiftDataClient: Sendable {
 
   public func storedFiles() async throws -> [InstantStoredFile] {
     try await storedFilesOperation()
+  }
+
+  public func storageSnapshot() async throws -> InstantStorageSnapshot {
+    try await storageSnapshotOperation()
   }
 
   public func observeStoredFiles() async throws -> AsyncStream<[InstantStoredFile]> {
