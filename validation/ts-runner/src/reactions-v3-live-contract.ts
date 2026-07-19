@@ -96,6 +96,7 @@ try {
   );
   let roomClosed = false;
   const observedSwiftPayload = deferred<ReactionsV3Payload>();
+  const receivedPayloads: ReactionsV3Payload[] = [];
   const unsubscribe = room.subscribeTopic(
     reactionsV3AppContract.room.topic,
     (value: unknown) => {
@@ -105,6 +106,7 @@ try {
       } catch {
         return;
       }
+      receivedPayloads.push(payload);
       if (matches(payload, reactionsV3AppContract.swiftPublished)) {
         observedSwiftPayload.resolve(payload);
       }
@@ -159,6 +161,58 @@ try {
     assert.equal(swiftEvidence.details.connectionState, "authenticated");
     assert.deepEqual(warnings, []);
 
+    unsubscribe();
+    const callbackCountBeforeCleanupProbe = receivedPayloads.length;
+    const cleanupProbePayload = {
+      name: "fire",
+      directionAngle: 225,
+      rotationAngle: 135,
+    };
+    const cleanupProbeObserved = deferred<ReactionsV3Payload>();
+    const unsubscribeCleanupWitness = room.subscribeTopic(
+      reactionsV3AppContract.room.topic,
+      (value: unknown) => {
+        let payload: ReactionsV3Payload;
+        try {
+          payload = exactReactionPayload(value);
+        } catch {
+          return;
+        }
+        if (matches(payload, cleanupProbePayload)) {
+          cleanupProbeObserved.resolve(payload);
+        }
+      },
+    );
+    const probeDb = initCore(
+      {
+        appId,
+        apiURI,
+        websocketURI,
+        schema,
+        devtool: false,
+        useDateObjects: true,
+      },
+      MemoryStore,
+      AlwaysOnline,
+    );
+    await probeDb.auth.signInWithToken(typeScriptToken);
+    const probeRoom: any = probeDb.joinRoom(
+      reactionsV3AppContract.room.type,
+      reactionsV3AppContract.room.id,
+    );
+    probeRoom.publishTopic(reactionsV3AppContract.room.topic, cleanupProbePayload);
+    assert.deepEqual(
+      await withTimeout(cleanupProbeObserved.promise, "observe reactions cleanup probe"),
+      cleanupProbePayload,
+    );
+    assert.equal(
+      receivedPayloads.length,
+      callbackCountBeforeCleanupProbe,
+      "The unsubscribed canonical topic callback must not receive the cleanup probe.",
+    );
+    unsubscribeCleanupWitness();
+    probeRoom.leaveRoom();
+    probeDb.shutdown();
     room.leaveRoom();
     db.shutdown();
     roomClosed = true;
@@ -184,6 +238,12 @@ try {
           rotationAngle: 315,
         },
         typeScriptObservedSwiftPayload: swiftPayload,
+        subscriptionCleanup: {
+          cleanupProbePayload,
+          witnessObserved: true,
+          callbackCountBeforeProbe: callbackCountBeforeCleanupProbe,
+          callbackCountAfterProbe: receivedPayloads.length,
+        },
         compilerWarningCount: warnings.length,
         warnings,
       },
