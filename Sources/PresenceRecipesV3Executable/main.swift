@@ -25,6 +25,13 @@ import PresenceRecipesV3App
                 profileID: "abcdef123456"
               )
             }
+            NavigationLink("Cursors") {
+              CursorsV3Screen(
+                roomID: CursorsV3Room.defaultRoomID,
+                profileID: "cursors-v3-user",
+                color: "#123456"
+              )
+            }
           }
           .navigationTitle("Presence Recipes")
         }
