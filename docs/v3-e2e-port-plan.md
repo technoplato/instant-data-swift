@@ -627,21 +627,24 @@ Swift/TypeScript evidence and benchmark artifacts.
 
 The `v0.4.0-apps-e2e` matrix closes the syntax, app-port, live data-plane,
 schema, permissions, auth, sharing, storage, room, presence/topic, and stream
-acceptance rows. The remaining work is narrower than another port phase:
+acceptance rows. The remaining work is narrower than another port phase.
 
-1. **Close the artifact-aware parity gate.** Static coverage still reports the
-   two credentialed live-transport directions as blocked unless evidence is
-   supplied under the legacy `run-e2e.sh` artifact names. The completed live
-   app gates already prove both directions; the next packet should teach the
-   aggregate coverage gate to consume the current non-secret evidence and
-   record a zero-blocked release artifact without weakening the static ledger.
-2. **Finish the performance definition of done.** Local Swift benchmark suites
+The artifact-aware parity gap is closed through `ffc9ea3`. The coverage reader
+now accepts the strict CloudKitDemo V3 fresh-app shape as evidence for both
+live-transport directions without changing the static source ledger, and the
+fresh-app gate writes its own `swift-coverage-final.json`. The clean run at
+`/tmp/instant-data-swift-cloudkit-demo-v3-20260719T095155Z/evidence.json`
+records 295 cases: 28 exact, 265 adapted, 2 not applicable, and zero blocked.
+
+Two release packets remain:
+
+1. **Finish the performance definition of done.** Local Swift benchmark suites
    exist, but no checked-in JSON/JSONL benchmark artifact compares equivalent
    Swift and canonical TypeScript workloads, and live-transport actor-hop
    counts remain unmeasured. Add the pinned TypeScript counterpart, quantify
    every gap, name optimization targets where Swift is slower, and check in a
    reproducible comparison artifact.
-3. **Add one clean-checkout V1 release gate.** Compose the already-green app
+2. **Add one clean-checkout V1 release gate.** Compose the already-green app
    boundaries, artifact-aware zero-blocked coverage, benchmark comparison, full
    Swift suite, isolated macro lane, runnable products, and complete
    TypeScript matrix into one archiveable command. Do not create `v1.0.0`
