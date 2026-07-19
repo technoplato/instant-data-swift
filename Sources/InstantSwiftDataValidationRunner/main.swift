@@ -694,6 +694,48 @@ struct InstantSwiftDataValidationRunner {
       )
       try writeJSONLine(row)
 
+    case .liveReactionsV3:
+      let environment = ProcessInfo.processInfo.environment
+      let appID = try requiredEnvironment("INSTANT_APP_ID", environment: environment)
+      let refreshToken = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_REACTIONS_REFRESH_TOKEN",
+        environment: environment
+      )
+      let swiftUserID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_REACTIONS_SWIFT_USER_ID",
+        environment: environment
+      )
+      let roomID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_REACTIONS_ROOM_ID",
+        environment: environment
+      )
+      let apiURI = URL(
+        string: environment["INSTANT_API_URI"]
+          ?? InstantRuntimeConfiguration.defaultAPIURI.absoluteString
+      ) ?? InstantRuntimeConfiguration.defaultAPIURI
+      let websocketURI = URL(
+        string: environment["INSTANT_WEBSOCKET_URI"]
+          ?? InstantRuntimeConfiguration.defaultWebSocketURI.absoluteString
+      ) ?? InstantRuntimeConfiguration.defaultWebSocketURI
+      let row = try await InstantReactionsV3LiveValidation.run(
+        appID: appID,
+        apiURI: apiURI,
+        websocketURI: websocketURI,
+        refreshToken: refreshToken,
+        expectedUserID: swiftUserID,
+        roomID: roomID,
+        onPayloadsObserved: {
+          emit(
+            caseID: "validation.live.reactions-v3",
+            event: "typescript-payloads-observed",
+            ok: true,
+            appID: appID,
+            details: ["roomID": roomID]
+          )
+        }
+      )
+      try writeJSONLine(row)
+
     case .livePreferences:
       let environment = ProcessInfo.processInfo.environment
       let appID = try requiredEnvironment(
