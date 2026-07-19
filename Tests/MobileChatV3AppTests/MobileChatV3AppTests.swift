@@ -75,5 +75,23 @@ import Testing
         )
       )
     }
+
+    @Test
+    func appOwnedEntitiesMatchTheCanonicalMobileChatSchema() {
+      let namespaces = Set([
+        MobileChatProfile.instantNamespace,
+        MobileChatChannel.instantNamespace,
+        MobileChatMessage.instantNamespace,
+      ])
+      let canonicalAttributes = MobileChatExample.attributes.filter {
+        namespaces.contains($0.namespace)
+      }
+      let appAttributes =
+        MobileChatProfile.instantAttributes
+        + MobileChatChannel.instantAttributes
+        + MobileChatMessage.instantAttributes
+
+      expectNoDifference(appAttributes, canonicalAttributes)
+    }
   }
 #endif
