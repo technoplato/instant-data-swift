@@ -168,10 +168,15 @@ assert.deepStrictEqual(todos.details.warnings, []);
 assert.equal(schema.entityCount, 1);
 assert.equal(schema.attributeCount, 4);
 assert.equal(schema.linkCount, 0);
-assert.deepStrictEqual(schema.warnings, []);
+assert.deepStrictEqual(schema.warnings, [
+  { code: "system-entity", path: "$files" },
+  { code: "system-entity", path: "$streams" },
+  { code: "system-entity", path: "$users" },
+  { code: "system-link", path: "$streams$files" },
+  { code: "system-link", path: "$usersLinkedPrimaryUser" },
+]);
 assert.equal(permissions.namespaceCount, 1);
 assert.equal(permissions.allowRuleCount, 4);
-assert.deepStrictEqual(permissions.warnings, []);
 
 const evidence = {
   case: "validation.todos-v3-app.live-contract",
