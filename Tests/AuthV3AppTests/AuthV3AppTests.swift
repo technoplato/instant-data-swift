@@ -28,7 +28,8 @@ import Testing
       let user = try AuthV3User(
         snapshot: InstantEntitySnapshot(
           id: "auth-v3-user",
-          values: ["email": [.string("person@example.com")]]
+          namespace: AuthV3User.instantNamespace,
+          values: ["email": .one(.string("person@example.com"))]
         )
       )
       expectNoDifference(user.id.rawValue, "auth-v3-user")
