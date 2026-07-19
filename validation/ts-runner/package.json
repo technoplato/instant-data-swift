@@ -9,7 +9,8 @@
   },
   "scripts": {
     "fixtures": "tsx src/main.ts --fixtures",
-    "test": "pnpm run typecheck && pnpm run test:recording-action && pnpm run test:sharing && pnpm run test:voice-trail && pnpm run test:playback-room && pnpm run test:preferences && pnpm run test:voice-trail-v3-app && pnpm run test:todos-v3-app && pnpm run test:auth-v3-app && pnpm run test:mobile-chat-v3-app && pnpm run test:typing-indicator-v3-app && pnpm run test:typing-indicator-v3-live-support && pnpm run test:reactions-v3-app && pnpm run test:reactions-v3-live-support && pnpm run test:avatar-stack-v3-app && pnpm run test:avatar-stack-v3-live-support && pnpm run test:cursors-v3-app && pnpm run test:cursors-v3-live-support && pnpm run test:custom-cursors-v3-app && pnpm run test:custom-cursors-v3-live-support && pnpm run test:merge-tile-game-v3-app && pnpm run test:merge-tile-game-v3-live-support && pnpm run test:stroopwafel-v3-app && pnpm run test:stroopwafel-v3-live-support && pnpm run test:reminders-v3-app && pnpm run test:reminders-v3-live-support && pnpm run test:syncups-v3-app && pnpm run test:syncups-v3-live-support && pnpm run test:app-builder-v3-app && pnpm run test:app-builder-v3-live-support && pnpm run fixtures",
+    "test": "pnpm run typecheck && pnpm run test:cross-sdk-core-benchmark && pnpm run test:recording-action && pnpm run test:sharing && pnpm run test:voice-trail && pnpm run test:playback-room && pnpm run test:preferences && pnpm run test:voice-trail-v3-app && pnpm run test:todos-v3-app && pnpm run test:auth-v3-app && pnpm run test:mobile-chat-v3-app && pnpm run test:typing-indicator-v3-app && pnpm run test:typing-indicator-v3-live-support && pnpm run test:reactions-v3-app && pnpm run test:reactions-v3-live-support && pnpm run test:avatar-stack-v3-app && pnpm run test:avatar-stack-v3-live-support && pnpm run test:cursors-v3-app && pnpm run test:cursors-v3-live-support && pnpm run test:custom-cursors-v3-app && pnpm run test:custom-cursors-v3-live-support && pnpm run test:merge-tile-game-v3-app && pnpm run test:merge-tile-game-v3-live-support && pnpm run test:stroopwafel-v3-app && pnpm run test:stroopwafel-v3-live-support && pnpm run test:reminders-v3-app && pnpm run test:reminders-v3-live-support && pnpm run test:syncups-v3-app && pnpm run test:syncups-v3-live-support && pnpm run test:app-builder-v3-app && pnpm run test:app-builder-v3-live-support && pnpm run fixtures",
+    "test:cross-sdk-core-benchmark": "tsx --test src/cross-sdk-core-benchmark.test.ts",
     "test:recording-action": "tsx --test src/recording-action-sdk-contract.test.ts",
     "test:sharing": "tsx --test src/sharing-sdk-contract.test.ts",
     "test:voice-trail": "tsx --test src/voice-trail-sdk-contract.test.ts",
@@ -57,6 +58,7 @@
     "live:syncups-v3": "tsx src/syncups-v3-live-contract.ts",
     "live:app-builder-v3": "tsx src/app-builder-v3-live-contract.ts",
     "live:voice-trail-recordings-list": "tsx src/voice-trail-recordings-list-live-contract.ts",
+    "benchmark:cross-sdk-core": "tsx src/cross-sdk-core-benchmark.ts",
     "typecheck": "../typecheck-generated-contract.sh",
     "validate": "tsx src/main.ts"
   },
