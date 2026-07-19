@@ -452,11 +452,112 @@ struct InstantSwiftDataValidationRunner {
       }
 
     case .liveMobileChatV3Write, .liveMobileChatV3Observe:
-      throw ValidationFailure(
-        caseID: invocation.caseID,
-        appID: invocation.appID,
-        message: "Mobile Chat V3 live runner implementation is pending."
+      let environment = ProcessInfo.processInfo.environment
+      let appID = try requiredEnvironment(
+        "INSTANT_APP_ID",
+        environment: environment,
+        caseID: invocation.caseID
       )
+      let refreshToken = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_MOBILE_CHAT_V3_REFRESH_TOKEN",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let userID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_MOBILE_CHAT_V3_USER_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let profileID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_MOBILE_CHAT_V3_PROFILE_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let displayName = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_MOBILE_CHAT_V3_DISPLAY_NAME",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let channelID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_MOBILE_CHAT_V3_CHANNEL_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let channelName = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_MOBILE_CHAT_V3_CHANNEL_NAME",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let messageID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_MOBILE_CHAT_V3_MESSAGE_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let content = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_MOBILE_CHAT_V3_CONTENT",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let timestampMilliseconds = try requiredIntEnvironment(
+        "INSTANT_SWIFT_DATA_MOBILE_CHAT_V3_TIMESTAMP_MILLISECONDS",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let apiURI = URL(
+        string: environment["INSTANT_API_URI"]
+          ?? InstantRuntimeConfiguration.defaultAPIURI.absoluteString
+      ) ?? InstantRuntimeConfiguration.defaultAPIURI
+      let websocketURI = URL(
+        string: environment["INSTANT_WEBSOCKET_URI"]
+          ?? InstantRuntimeConfiguration.defaultWebSocketURI.absoluteString
+      ) ?? InstantRuntimeConfiguration.defaultWebSocketURI
+
+      switch invocation {
+      case .liveMobileChatV3Write:
+        let peerProfileID = try requiredEnvironment(
+          "INSTANT_SWIFT_DATA_MOBILE_CHAT_V3_PEER_PROFILE_ID",
+          environment: environment,
+          caseID: invocation.caseID
+        )
+        let row = try await InstantMobileChatV3LiveValidation.write(
+          appID: appID,
+          apiURI: apiURI,
+          websocketURI: websocketURI,
+          refreshToken: refreshToken,
+          expectedUserID: userID,
+          profileID: profileID,
+          displayName: displayName,
+          channelID: channelID,
+          channelName: channelName,
+          messageID: messageID,
+          content: content,
+          timestampMilliseconds: Int64(timestampMilliseconds),
+          expectedPeerProfileID: peerProfileID
+        )
+        try writeJSONLine(row)
+
+      case .liveMobileChatV3Observe:
+        let rows = InstantMobileChatV3LiveValidation.observe(
+          appID: appID,
+          apiURI: apiURI,
+          websocketURI: websocketURI,
+          refreshToken: refreshToken,
+          expectedUserID: userID,
+          profileID: profileID,
+          displayName: displayName,
+          channelID: channelID,
+          channelName: channelName,
+          messageID: messageID,
+          content: content,
+          timestampMilliseconds: Int64(timestampMilliseconds)
+        )
+        for try await row in rows {
+          try writeJSONLine(row)
+        }
+
+      default:
+        preconditionFailure("Unexpected Mobile Chat V3 runner mode.")
+      }
 
     case .liveAuthInvalidation:
       let environment = ProcessInfo.processInfo.environment
