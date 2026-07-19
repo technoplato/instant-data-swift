@@ -34,6 +34,7 @@
     "test:stroopwafel-v3-app": "tsx --test src/stroopwafel-v3-app-contract.test.ts",
     "test:stroopwafel-v3-live-support": "tsx --test src/stroopwafel-v3-live-support.test.ts",
     "test:reminders-v3-app": "tsx --test src/reminders-v3-app-contract.test.ts",
+    "test:reminders-v3-live-support": "tsx --test src/reminders-v3-live-support.test.ts",
     "live:sharing": "tsx src/sharing-live-contract.ts",
     "live:playback-room": "tsx src/playback-room-live-contract.ts",
     "live:preferences": "tsx src/preferences-live-contract.ts",
