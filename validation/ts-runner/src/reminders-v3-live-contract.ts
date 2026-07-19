@@ -106,12 +106,9 @@ try {
   (globalThis as any).BroadcastChannel = undefined;
   (globalThis as any).WebSocket = WebSocket;
   const participantDB = coreDatabase(schema);
-  const outsiderDB = coreDatabase(schema);
-  databases.push(participantDB, outsiderDB);
-  await Promise.all([
-    participantDB.auth.signInWithToken(typeScriptToken),
-    outsiderDB.auth.signInWithToken(outsiderToken),
-  ]);
+  const outsiderDB = admin.asUser({ token: outsiderToken });
+  databases.push(participantDB);
+  await participantDB.auth.signInWithToken(typeScriptToken);
 
   swift = spawnSwift(swiftToken, swiftUser.id, typeScriptUser.id);
   const lines = createInterface({ input: swift.stdout, crlfDelay: Infinity })
@@ -215,8 +212,8 @@ try {
       && reminder.tags.some((tag) => tag.id === remindersV3AppContract.fixtures.typeScriptTag)
     ))
   ));
-  const outsiderResult = await outsiderDB.queryOnce(remindersListQuery());
-  assert.deepEqual(outsiderResult.data.remindersLists, []);
+  const outsiderResult = await outsiderDB.query(remindersListQuery());
+  assert.deepEqual(outsiderResult.remindersLists, []);
 
   const swiftEvidence = await nextJSONLine(lines, swift, "Swift Reminders evidence");
   await requireSuccessfulExit(swift, "Swift Reminders runner");
@@ -252,7 +249,7 @@ try {
       typeScriptObservedReaderList: readerList,
       typeScriptObservedWriterList: writerList,
       typeScriptObservedFinalList: completedList,
-      outsiderVisibleListCount: outsiderResult.data.remindersLists.length,
+      outsiderVisibleListCount: outsiderResult.remindersLists.length,
       readerUpdateRejection,
       swift: swiftEvidence.details,
       compilerWarningCount: warnings.length,
