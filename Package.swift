@@ -25,6 +25,7 @@ let package = Package(
     .library(name: "InstantSwiftDataTesting", targets: ["InstantSwiftDataTesting"]),
     .library(name: "AppBuilderV3App", targets: ["AppBuilderV3App"]),
     .library(name: "AuthV3App", targets: ["AuthV3App"]),
+    .library(name: "CloudKitDemoV3App", targets: ["CloudKitDemoV3App"]),
     .library(name: "MobileChatV3App", targets: ["MobileChatV3App"]),
     .library(name: "PresenceRecipesV3App", targets: ["PresenceRecipesV3App"]),
     .library(name: "RemindersV3App", targets: ["RemindersV3App"]),
@@ -36,6 +37,7 @@ let package = Package(
     .executable(name: "instant-swift-data", targets: ["instant-swift-data"]),
     .executable(name: "app-builder-v3", targets: ["AppBuilderV3Executable"]),
     .executable(name: "auth-v3", targets: ["AuthV3Executable"]),
+    .executable(name: "cloudkit-demo-v3", targets: ["CloudKitDemoV3Executable"]),
     .executable(name: "mobile-chat-v3", targets: ["MobileChatV3Executable"]),
     .executable(name: "presence-recipes-v3", targets: ["PresenceRecipesV3Executable"]),
     .executable(name: "reminders-v3", targets: ["RemindersV3Executable"]),
@@ -99,6 +101,7 @@ let package = Package(
       dependencies: [
         "AppBuilderV3App",
         "AuthV3App",
+        "CloudKitDemoV3App",
         "InstantSwiftData",
         "InstantSwiftDataCore",
         "MobileChatV3App",
@@ -125,6 +128,16 @@ let package = Package(
       name: "AuthV3App",
       dependencies: [
         "InstantSwiftData",
+        .product(name: "Dependencies", package: "swift-dependencies"),
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .target(
+      name: "CloudKitDemoV3App",
+      dependencies: [
+        "AuthV3App",
+        "InstantSwiftData",
+        "InstantSwiftDataSchema",
         .product(name: "Dependencies", package: "swift-dependencies"),
       ],
       swiftSettings: strictConcurrencySettings
@@ -247,6 +260,11 @@ let package = Package(
       swiftSettings: strictConcurrencySettings
     ),
     .executableTarget(
+      name: "CloudKitDemoV3Executable",
+      dependencies: ["CloudKitDemoV3App"],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .executableTarget(
       name: "MobileChatV3Executable",
       dependencies: ["MobileChatV3App"],
       swiftSettings: strictConcurrencySettings
@@ -358,6 +376,15 @@ let package = Package(
       dependencies: [
         "AuthV3App",
         .product(name: "CustomDump", package: "swift-custom-dump"),
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .testTarget(
+      name: "CloudKitDemoV3AppTests",
+      dependencies: [
+        "CloudKitDemoV3App",
+        .product(name: "CustomDump", package: "swift-custom-dump"),
+        .product(name: "DependenciesTestSupport", package: "swift-dependencies"),
       ],
       swiftSettings: strictConcurrencySettings
     ),
