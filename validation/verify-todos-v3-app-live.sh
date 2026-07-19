@@ -125,9 +125,13 @@ const permissions = readJSON("swift-server-perms-verify.json");
 const todos = readJSON("todos-v3.json");
 
 assert.equal(todos.ok, true);
+assert.match(
+  todos.details.swift.id,
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+);
 assert.deepStrictEqual(todos.details.swift, {
   direction: "swift-to-typescript",
-  id: "todos-v3-swift",
+  id: todos.details.swift.id,
   text: "Swift live todo",
   isCompleted: true,
   createdAtMilliseconds: 1_700_000_000_000,
@@ -135,20 +139,24 @@ assert.deepStrictEqual(todos.details.swift, {
   pendingMutationCount: 0,
 });
 assert.deepStrictEqual(todos.details.typeScriptObserved, {
-  id: "todos-v3-swift",
+  id: todos.details.swift.id,
   text: "Swift live todo",
   isCompleted: true,
   createdAtMilliseconds: 1_700_000_000_000,
 });
+assert.match(
+  todos.details.typeScriptCreated.id,
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+);
 assert.deepStrictEqual(todos.details.typeScriptCreated, {
-  id: "todos-v3-typescript",
+  id: todos.details.typeScriptCreated.id,
   text: "TypeScript live todo",
   isCompleted: false,
   createdAtMilliseconds: 1_700_000_001_000,
 });
 assert.deepStrictEqual(todos.details.swiftObserved, {
   direction: "typescript-to-swift",
-  id: "todos-v3-typescript",
+  id: todos.details.typeScriptCreated.id,
   text: "TypeScript live todo",
   isCompleted: false,
   createdAtMilliseconds: 1_700_000_001_000,
