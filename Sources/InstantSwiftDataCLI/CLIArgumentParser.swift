@@ -6542,7 +6542,7 @@ public struct CLIBenchmarkParser: Parser {
   }
 
   private var usage: String {
-    "Usage: \(usageCommand) [--suite <local-todos|cross-sdk-core>] [--iterations n] [--app-id id] [--json|--jsonl]"
+    "Usage: \(usageCommand) [--suite <local-todos|cross-sdk-core|cross-sdk-runtime>] [--iterations n] [--app-id id] [--json|--jsonl]"
   }
 
   private func takeValue(

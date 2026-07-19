@@ -34,16 +34,39 @@ swift run --package-path "${ROOT}" -c release instant-swift-data-benchmarks \
   --suite cross-sdk-core \
   --iterations "${ITERATIONS}" \
   --app-id cross-sdk-core-benchmark \
-  --json >"${RESULTS_DIR}/swift.json"
+  --json >"${RESULTS_DIR}/swift-core.json"
 
 corepack pnpm --dir "${RUNNER}" exec tsx src/cross-sdk-core-benchmark.ts \
-  --iterations "${ITERATIONS}" >"${RESULTS_DIR}/typescript.json"
+  --iterations "${ITERATIONS}" >"${RESULTS_DIR}/typescript-core.json"
 
 (
   cd "${ROOT}"
   node validation/compare-cross-sdk-benchmarks.mjs \
-    "${RESULTS_DIR}/swift.json" \
-    "${RESULTS_DIR}/typescript.json"
+    "${RESULTS_DIR}/swift-core.json" \
+    "${RESULTS_DIR}/typescript-core.json"
+) >"${RESULTS_DIR}/core-comparison.json"
+
+swift run --package-path "${ROOT}" -c release instant-swift-data-benchmarks \
+  --suite cross-sdk-runtime \
+  --iterations "${ITERATIONS}" \
+  --app-id cross-sdk-runtime-benchmark \
+  --json >"${RESULTS_DIR}/swift-runtime.json"
+
+corepack pnpm --dir "${RUNNER}" exec tsx src/cross-sdk-runtime-benchmark.ts \
+  --iterations "${ITERATIONS}" >"${RESULTS_DIR}/typescript-runtime.json"
+
+(
+  cd "${ROOT}"
+  node validation/compare-cross-sdk-runtime-benchmarks.mjs \
+    "${RESULTS_DIR}/swift-runtime.json" \
+    "${RESULTS_DIR}/typescript-runtime.json"
+) >"${RESULTS_DIR}/runtime-comparison.json"
+
+(
+  cd "${ROOT}"
+  node validation/combine-cross-sdk-benchmark-comparisons.mjs \
+    "${RESULTS_DIR}/core-comparison.json" \
+    "${RESULTS_DIR}/runtime-comparison.json"
 ) | tee "${RESULTS_DIR}/comparison.json"
 
 echo "Cross-SDK benchmark evidence: ${RESULTS_DIR}/comparison.json"
