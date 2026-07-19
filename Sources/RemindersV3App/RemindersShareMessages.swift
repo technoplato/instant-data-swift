@@ -75,7 +75,6 @@ public struct CreateRemindersV3Share: InstantMessage {
         RemindersV3ShareMembership.share.set(shareID),
         RemindersV3ShareMembership.user.set(ownerID)
       )
-      RemindersV3List.owner.link(from: listID, to: ownerID)
     }
   }
 }
