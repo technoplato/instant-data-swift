@@ -19,6 +19,12 @@ import PresenceRecipesV3App
             NavigationLink("Reactions") {
               ReactionsV3Screen(roomID: "123")
             }
+            NavigationLink("Avatar Stack") {
+              AvatarStackV3Screen(
+                roomID: AvatarStackV3Room.defaultRoomID,
+                profileID: "abcdef123456"
+              )
+            }
           }
           .navigationTitle("Presence Recipes")
         }
