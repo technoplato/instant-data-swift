@@ -5,6 +5,7 @@ import {
   activeTypingPeerIDs,
   exactTypingIndicatorFrames,
   phaseForTypingIndicatorPresence,
+  projectCanonicalTypingPeer,
   serverObservedTypingIndicatorFrames,
 } from "./typing-indicator-v3-live-support.js";
 
@@ -46,8 +47,24 @@ test("live typing support filters only true remote peers and rejects widened sha
     ),
     ["swift-peer"],
   );
+  assert.deepEqual(
+    projectCanonicalTypingPeer({
+      id: "swift-peer",
+      "chat-input": true,
+      peerId: "canonical-session-id",
+    }),
+    {
+      peerId: "canonical-session-id",
+      presence: { id: "swift-peer", "chat-input": true },
+    },
+  );
   assert.throws(
-    () => phaseForTypingIndicatorPresence({ id: "peer", "chat-input": true, displayName: "No" }),
+    () => projectCanonicalTypingPeer({
+      id: "peer",
+      "chat-input": true,
+      peerId: "canonical-session-id",
+      displayName: "No",
+    }),
     /exact typing-indicator presence shape/i,
   );
 });
