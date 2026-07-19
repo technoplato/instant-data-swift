@@ -78,6 +78,7 @@ public enum InstantVoiceTrailV3CaptureLiveValidation {
         message: "Server-verified capture user did not match the expected user."
       )
     }
+    _ = try await client.connect()
     try await waitForAuthenticated(client)
 
     let prepared = try await CreateVoiceTrailRecording(
