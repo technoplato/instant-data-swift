@@ -197,6 +197,29 @@ public struct MobileChatTypingEvent: Codable, Equatable, Sendable {
   }
 }
 
+public enum MobileChatReactionName: String, Codable, CaseIterable, Sendable {
+  case fire
+  case wave
+  case confetti
+  case heart
+}
+
+public struct MobileChatReaction: Codable, Equatable, Sendable {
+  public var name: MobileChatReactionName
+  public var directionAngle: Double
+  public var rotationAngle: Double
+
+  public init(
+    name: MobileChatReactionName,
+    directionAngle: Double,
+    rotationAngle: Double
+  ) {
+    self.name = name
+    self.directionAngle = directionAngle
+    self.rotationAngle = rotationAngle
+  }
+}
+
 public struct MobileChatRoom: InstantRoomSchema {
   public typealias Presence = MobileChatPresence
   public static let roomType = "chat"
@@ -204,6 +227,7 @@ public struct MobileChatRoom: InstantRoomSchema {
   public enum Topic: String, InstantRoomTopic {
     public typealias RoomSchema = MobileChatRoom
     case typing
+    case emoji
   }
 }
 

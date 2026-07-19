@@ -36,6 +36,10 @@ public struct MobileChatV3AppConfiguration: Hashable, Sendable {
     @FetchAll private var messages: [MobileChatMessage]
     @Room private var room: InstantRoom<MobileChatRoom>
     @Presence private var peers: [MobileChatPresence]
+    @Topic(MobileChatRoom.Topic.typing)
+    private var typing: InstantTopic<MobileChatTypingEvent>
+    @Topic(MobileChatRoom.Topic.emoji)
+    private var reactions: InstantTopic<MobileChatReaction>
     @Dependency(\.defaultInstantSwiftData) private var db
     @Dependency(\.date.now) private var now
     @Dependency(\.uuid) private var uuid
@@ -61,8 +65,13 @@ public struct MobileChatV3AppConfiguration: Hashable, Sendable {
           Text(message.content)
         }
         TextField("Message", text: $content)
+          .onChange(of: content, typingChanged)
         Button("Send", action: sendButtonTapped)
           .disabled(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        Button("Send 👋", action: reactionButtonTapped)
+          .disabled(!room.isJoined)
+        Text("Typing events: \(typing.messages.count)")
+        Text("Reactions: \(reactions.messages.count)")
         Text(status)
       }
       .instantFetch($messages, messagesQuery)
@@ -71,6 +80,8 @@ public struct MobileChatV3AppConfiguration: Hashable, Sendable {
         InstantRoom<MobileChatRoom>(type: MobileChatRoom.roomType, id: channelID.rawValue)
       )
       .presence($peers, in: room, publishing: presence)
+      .instantTopic($typing, in: room)
+      .instantTopic($reactions, in: room)
     }
 
     private var messagesQuery: InstantQuery<MobileChatMessage> {
@@ -99,6 +110,25 @@ public struct MobileChatV3AppConfiguration: Hashable, Sendable {
         ),
         onOptimisticCommit: { _ in content = "" },
         onServerAccepted: { _ in status = "Message synced" },
+        onFailure: { error in status = error.recoveryMessage }
+      )
+    }
+
+    private func typingChanged(_ oldValue: String, _ newValue: String) {
+      let wasTyping = !oldValue.isEmpty
+      let isTyping = !newValue.isEmpty
+      guard wasTyping != isTyping else { return }
+      typing.publish(MobileChatTypingEvent(isTyping: isTyping))
+    }
+
+    private func reactionButtonTapped() {
+      reactions.publish(
+        MobileChatReaction(
+          name: .wave,
+          directionAngle: 0,
+          rotationAngle: 0
+        ),
+        onPublished: { _ in status = "Reaction sent" },
         onFailure: { error in status = error.recoveryMessage }
       )
     }
