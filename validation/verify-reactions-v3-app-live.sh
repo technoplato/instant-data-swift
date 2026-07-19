@@ -106,7 +106,6 @@ pnpm --dir "${RUNNER}" exec tsc --noEmit --strict --target ES2022 \
   --module NodeNext --moduleResolution NodeNext \
   "${PULL_DIR}/instant.schema.ts" "${PULL_DIR}/instant.perms.ts"
 
-NODE_OPTIONS="${NODE_OPTIONS:-} --experimental-websocket" \
 INSTANT_SWIFT_DATA_REACTIONS_SCHEMA_PATH="${PUSH_DIR}/instant.schema.ts" \
   pnpm --dir "${RUNNER}" exec tsx src/reactions-v3-live-contract.ts \
   >"${RESULTS_DIR}/reactions-v3.json"

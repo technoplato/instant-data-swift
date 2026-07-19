@@ -6,6 +6,7 @@ import { createInterface } from "node:readline";
 import type { Readable } from "node:stream";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { init as initAdmin } from "@instantdb/admin";
+import WebSocket from "ws";
 import {
   init as initCore,
   StoreInterface,
@@ -83,6 +84,7 @@ try {
   const schema = unwrapSchema(schemaModule);
   (globalThis as any).window = globalThis;
   (globalThis as any).BroadcastChannel = undefined;
+  (globalThis as any).WebSocket = WebSocket;
 
   const db = initCore(
     { appId, apiURI, websocketURI, schema, devtool: false },

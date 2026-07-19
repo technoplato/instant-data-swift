@@ -18,6 +18,9 @@ importers:
       '@types/node':
         specifier: 22.13.0
         version: 22.13.0
+      '@types/ws':
+        specifier: 8.5.13
+        version: 8.5.13
       instant-cli:
         specifier: 1.0.49
         version: 1.0.49(@effect/cluster@0.56.4(@effect/platform@0.94.5(effect@3.22.0))(@effect/rpc@0.73.2(@effect/platform@0.94.5(effect@3.22.0))(effect@3.22.0))(@effect/sql@0.49.0(@effect/experimental@0.58.0(@effect/platform@0.94.5(effect@3.22.0))(effect@3.22.0))(@effect/platform@0.94.5(effect@3.22.0))(effect@3.22.0))(@effect/workflow@0.16.0(@effect/experimental@0.58.0(@effect/platform@0.94.5(effect@3.22.0))(effect@3.22.0))(@effect/platform@0.94.5(effect@3.22.0))(@effect/rpc@0.73.2(@effect/platform@0.94.5(effect@3.22.0))(effect@3.22.0))(effect@3.22.0))(effect@3.22.0))(@effect/rpc@0.73.2(@effect/platform@0.94.5(effect@3.22.0))(effect@3.22.0))(@effect/sql@0.49.0(@effect/experimental@0.58.0(@effect/platform@0.94.5(effect@3.22.0))(effect@3.22.0))(@effect/platform@0.94.5(effect@3.22.0))(effect@3.22.0))
@@ -27,6 +30,9 @@ importers:
       typescript:
         specifier: 5.9.3
         version: 5.9.3
+      ws:
+        specifier: 8.18.0
+        version: 8.18.0
 
 packages:
 
@@ -417,6 +423,9 @@ packages:
   '@types/node@22.13.0':
     resolution: {integrity: sha512-ClIbNe36lawluuvq3+YYhnIN2CELi+6q8NpnM7PYp4hBn/TatfboPgVSm2rwKRfnV2M+Ty9GWDFI64KEe+kysA==}
 
+  '@types/ws@8.5.13':
+    resolution: {integrity: sha512-osM/gWBTPKgHV8XkTunnegTRIsvF6owmf5w+JtAfOw472dptdm0dlGv4xCt6GwQRcC2XVOvvRE/0bAoQcL2QkA==}
+
   acorn-typescript@1.4.13:
     resolution: {integrity: sha512-xsc9Xv0xlVfwp2o7sQ+GCQ1PgbkdcpWdTzrwXxO3xDMTAywVS3oXVOcOHuRjAPkS4P9b+yc/qNF15460v+jp4Q==}
     peerDependencies:
@@ -761,6 +770,18 @@ packages:
     resolution: {integrity: sha512-42AtmgqjV+X1VpdOfyTGOYRi0/zsoLqtXQckTmqTeybT+BDIbM/Guxo7x3pE2vtpr1ok6xRqM9OpBe+Jyoqyww==}
     engines: {node: '>=18'}
 
+  ws@8.18.0:
+    resolution: {integrity: sha512-8VbfWfHLbbwu3+N6OKsOMpBdT4kXPDDB9cJk2bJ6mh9ucxdlnNvH1e+roYkKmN9Nxw2yjz7VzeO9oOz2zJ04Pw==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
   ws@8.21.1:
     resolution: {integrity: sha512-+0NTnW77fFN/DjQi6k/Sq/Yvk4Sgajw7urW8V+asjXnRgDs9gyGkdb7EzgfhA4goXsRIZKE28fzIXBHEzhuiWw==}
     engines: {node: '>=10.0.0'}
@@ -1069,6 +1090,10 @@ snapshots:
   '@types/node@22.13.0':
     dependencies:
       undici-types: 6.20.0
+
+  '@types/ws@8.5.13':
+    dependencies:
+      '@types/node': 22.13.0
 
   acorn-typescript@1.4.13(acorn@8.17.0):
     dependencies:
@@ -1420,6 +1445,8 @@ snapshots:
       ansi-styles: 6.2.3
       string-width: 7.2.0
       strip-ansi: 7.2.0
+
+  ws@8.18.0: {}
 
   ws@8.21.1: {}
 
