@@ -458,6 +458,40 @@ public struct InstantLiveStreamAppend: Hashable, Sendable {
   }
 }
 
+public struct InstantLiveStartStreamOK: Hashable, Sendable {
+  public var clientEventID: String?
+  public var streamID: String
+  public var clientID: String
+  public var offset: Int64
+
+  public init(clientEventID: String?, streamID: String, clientID: String, offset: Int64) {
+    self.clientEventID = clientEventID
+    self.streamID = streamID
+    self.clientID = clientID
+    self.offset = offset
+  }
+}
+
+public struct InstantLiveStreamFlushed: Hashable, Sendable {
+  public var streamID: String
+  public var offset: Int64
+  public var done: Bool
+
+  public init(streamID: String, offset: Int64, done: Bool) {
+    self.streamID = streamID
+    self.offset = offset
+    self.done = done
+  }
+}
+
+public struct InstantLiveAppendFailed: Hashable, Sendable {
+  public var streamID: String
+
+  public init(streamID: String) {
+    self.streamID = streamID
+  }
+}
+
 public enum InstantLiveServerEvent: Hashable, Sendable {
   case initOK(InstantLiveInitOK)
   case addQueryOK(InstantLiveQueryOK)
@@ -469,6 +503,9 @@ public enum InstantLiveServerEvent: Hashable, Sendable {
   case refreshPresence(InstantLivePresenceRefresh)
   case patchPresence(InstantLivePresencePatch)
   case serverBroadcast(InstantLiveServerBroadcast)
+  case startStreamOK(InstantLiveStartStreamOK)
+  case streamFlushed(InstantLiveStreamFlushed)
+  case appendFailed(InstantLiveAppendFailed)
   case streamAppend(InstantLiveStreamAppend)
   case error(InstantLiveErrorMessage)
   case other(InstantLiveMessage)
@@ -562,6 +599,32 @@ public enum InstantLiveServerEvent: Hashable, Sendable {
         )
       )
 
+    case "start-stream-ok":
+      self = .startStreamOK(
+        InstantLiveStartStreamOK(
+          clientEventID: message.clientEventID,
+          streamID: message.fields["stream-id"]?.stringValue ?? "",
+          clientID: message.fields["client-id"]?.stringValue ?? "",
+          offset: Int64(message.fields["offset"]?.intValue ?? 0)
+        )
+      )
+
+    case "stream-flushed":
+      self = .streamFlushed(
+        InstantLiveStreamFlushed(
+          streamID: message.fields["stream-id"]?.stringValue ?? "",
+          offset: Int64(message.fields["offset"]?.intValue ?? 0),
+          done: message.fields["done"]?.booleanValue ?? false
+        )
+      )
+
+    case "append-failed":
+      self = .appendFailed(
+        InstantLiveAppendFailed(
+          streamID: message.fields["stream-id"]?.stringValue ?? ""
+        )
+      )
+
     case "stream-append":
       let files: [InstantLiveStreamFile] =
         (message.fields["files"]?.arrayValue ?? []).compactMap { value in
@@ -626,6 +689,12 @@ public enum InstantLiveServerEvent: Hashable, Sendable {
       return "patch-presence"
     case .serverBroadcast:
       return "server-broadcast"
+    case .startStreamOK:
+      return "start-stream-ok"
+    case .streamFlushed:
+      return "stream-flushed"
+    case .appendFailed:
+      return "append-failed"
     case .streamAppend:
       return "stream-append"
     case .error:
@@ -864,6 +933,11 @@ private extension InstantLiveJSONValue {
       return nil
     }
     return Int(value)
+  }
+
+  var booleanValue: Bool? {
+    guard case let .bool(value) = self else { return nil }
+    return value
   }
 
   var scalarStringValue: String? {

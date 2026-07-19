@@ -288,6 +288,93 @@ struct InstantLiveTransportTests {
   }
 
   @Test
+  func streamWriterMessagesAndAcknowledgementsUseCanonicalShapes() throws {
+    let start = InstantLiveMessage.startStream(
+      clientID: "chat-1",
+      reconnectToken: "00000000-0000-0000-0000-000000000001",
+      ruleParams: .object(["workspace": .string("shared")]),
+      clientEventID: "event-start"
+    )
+    expectNoDifference(start.op, "start-stream")
+    expectNoDifference(start.fields, [
+      "client-id": .string("chat-1"),
+      "reconnect-token": .string("00000000-0000-0000-0000-000000000001"),
+      "rule-params": .object(["workspace": .string("shared")]),
+    ])
+
+    let append = InstantLiveMessage.appendStream(
+      streamID: "00000000-0000-0000-0000-000000000002",
+      chunks: ["hello ", "🚀"],
+      offset: 0,
+      done: true,
+      abortReason: "complete",
+      clientEventID: "event-append"
+    )
+    expectNoDifference(append.op, "append-stream")
+    expectNoDifference(append.fields, [
+      "abort-reason": .string("complete"),
+      "chunks": .array([.string("hello "), .string("🚀")]),
+      "done": .bool(true),
+      "offset": .number(0),
+      "stream-id": .string("00000000-0000-0000-0000-000000000002"),
+    ])
+
+    let startEvent = InstantLiveServerEvent(
+      message: InstantLiveMessage(
+        op: "start-stream-ok",
+        clientEventID: "event-start",
+        fields: [
+          "client-id": .string("chat-1"),
+          "offset": .number(4),
+          "stream-id": .string("00000000-0000-0000-0000-000000000002"),
+        ]
+      )
+    )
+    expectNoDifference(
+      startEvent,
+      .startStreamOK(
+        InstantLiveStartStreamOK(
+          clientEventID: "event-start",
+          streamID: "00000000-0000-0000-0000-000000000002",
+          clientID: "chat-1",
+          offset: 4
+        )
+      )
+    )
+
+    expectNoDifference(
+      InstantLiveServerEvent(
+        message: InstantLiveMessage(
+          op: "stream-flushed",
+          fields: [
+            "done": .bool(true),
+            "offset": .number(10),
+            "stream-id": .string("00000000-0000-0000-0000-000000000002"),
+          ]
+        )
+      ),
+      .streamFlushed(
+        InstantLiveStreamFlushed(
+          streamID: "00000000-0000-0000-0000-000000000002",
+          offset: 10,
+          done: true
+        )
+      )
+    )
+    expectNoDifference(
+      InstantLiveServerEvent(
+        message: InstantLiveMessage(
+          op: "append-failed",
+          fields: ["stream-id": .string("00000000-0000-0000-0000-000000000002")]
+        )
+      ),
+      .appendFailed(
+        InstantLiveAppendFailed(streamID: "00000000-0000-0000-0000-000000000002")
+      )
+    )
+  }
+
+  @Test
   func streamReaderReconnectResubscribesWithCurrentOffset() async throws {
     let reader = try InstantLiveStreamReaderState(clientID: "c")
     let recorder = InstantLiveStreamMessageRecorder()

@@ -2228,7 +2228,8 @@ public final class InstantRuntime: Sendable {
         recovery: "Inspect the Instant runtime WebSocket event and reconnect."
       )
 
-    case .initOK, .addQueryExists, .joinRoomOK, .leaveRoomOK, .other:
+    case .initOK, .addQueryExists, .joinRoomOK, .leaveRoomOK, .startStreamOK,
+      .streamFlushed, .appendFailed, .other:
       break
     }
   }

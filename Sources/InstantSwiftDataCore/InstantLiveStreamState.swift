@@ -1,6 +1,42 @@
 import Foundation
 
 extension InstantLiveMessage {
+  static func startStream(
+    clientID: String,
+    reconnectToken: String,
+    ruleParams: InstantLiveJSONValue? = nil,
+    clientEventID: String
+  ) -> Self {
+    var fields: [String: InstantLiveJSONValue] = [
+      "client-id": .string(clientID),
+      "reconnect-token": .string(reconnectToken),
+    ]
+    if let ruleParams {
+      fields["rule-params"] = ruleParams
+    }
+    return Self(op: "start-stream", clientEventID: clientEventID, fields: fields)
+  }
+
+  static func appendStream(
+    streamID: String,
+    chunks: [String],
+    offset: Int64,
+    done: Bool,
+    abortReason: String? = nil,
+    clientEventID: String
+  ) -> Self {
+    var fields: [String: InstantLiveJSONValue] = [
+      "chunks": .array(chunks.map(InstantLiveJSONValue.string)),
+      "done": .bool(done),
+      "offset": .number(Double(offset)),
+      "stream-id": .string(streamID),
+    ]
+    if let abortReason {
+      fields["abort-reason"] = .string(abortReason)
+    }
+    return Self(op: "append-stream", clientEventID: clientEventID, fields: fields)
+  }
+
   static func subscribeStream(
     clientID: String? = nil,
     streamID: String? = nil,
