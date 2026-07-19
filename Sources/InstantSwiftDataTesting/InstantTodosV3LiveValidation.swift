@@ -37,6 +37,31 @@ public struct InstantTodosV3LiveValidationDetails: Codable, Equatable, Sendable 
   }
 }
 
+public struct InstantTodosV3SessionValidationDetails: Codable, Equatable, Sendable {
+  public var roomType: String
+  public var roomID: String
+  public var peerCount: Int
+  public var pendingWhileOffline: Int
+  public var online: InstantTodosV3LiveValidationDetails
+  public var offline: InstantTodosV3LiveValidationDetails
+
+  public init(
+    roomType: String,
+    roomID: String,
+    peerCount: Int,
+    pendingWhileOffline: Int,
+    online: InstantTodosV3LiveValidationDetails,
+    offline: InstantTodosV3LiveValidationDetails
+  ) {
+    self.roomType = roomType
+    self.roomID = roomID
+    self.peerCount = peerCount
+    self.pendingWhileOffline = pendingWhileOffline
+    self.online = online
+    self.offline = offline
+  }
+}
+
 public enum InstantTodosV3LiveValidation {
   public static func write(
     appID: String,
