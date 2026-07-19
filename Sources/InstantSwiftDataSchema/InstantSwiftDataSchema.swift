@@ -884,6 +884,14 @@ public enum InstantSchemaExamples {
     ]
   )
 
+  public static let syncUpsV3Permissions = InstantPermissionsDocument(
+    namespaces: [
+      .allowAll(namespace: SyncUpsExample.syncUpsNamespace),
+      .allowAll(namespace: SyncUpsExample.attendeesNamespace),
+      .allowAll(namespace: SyncUpsExample.meetingsNamespace),
+    ]
+  )
+
   public static let remindersV3Lists = InstantEntitySchema(
     typeName: "RemindersV3List",
     namespace: ReminderExample.listsNamespace,
