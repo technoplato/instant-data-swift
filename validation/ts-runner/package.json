@@ -9,7 +9,7 @@
   },
   "scripts": {
     "fixtures": "tsx src/main.ts --fixtures",
-    "test": "pnpm run typecheck && pnpm run test:recording-action && pnpm run test:sharing && pnpm run test:voice-trail && pnpm run test:playback-room && pnpm run test:preferences && pnpm run test:voice-trail-v3-app && pnpm run test:todos-v3-app && pnpm run test:auth-v3-app && pnpm run test:mobile-chat-v3-app && pnpm run test:typing-indicator-v3-app && pnpm run test:typing-indicator-v3-live-support && pnpm run test:reactions-v3-app && pnpm run fixtures",
+    "test": "pnpm run typecheck && pnpm run test:recording-action && pnpm run test:sharing && pnpm run test:voice-trail && pnpm run test:playback-room && pnpm run test:preferences && pnpm run test:voice-trail-v3-app && pnpm run test:todos-v3-app && pnpm run test:auth-v3-app && pnpm run test:mobile-chat-v3-app && pnpm run test:typing-indicator-v3-app && pnpm run test:typing-indicator-v3-live-support && pnpm run test:reactions-v3-app && pnpm run test:reactions-v3-live-support && pnpm run fixtures",
     "test:recording-action": "tsx --test src/recording-action-sdk-contract.test.ts",
     "test:sharing": "tsx --test src/sharing-sdk-contract.test.ts",
     "test:voice-trail": "tsx --test src/voice-trail-sdk-contract.test.ts",
@@ -22,6 +22,7 @@
     "test:typing-indicator-v3-app": "tsx --test src/typing-indicator-v3-app-contract.test.ts",
     "test:typing-indicator-v3-live-support": "tsx --test src/typing-indicator-v3-live-support.test.ts",
     "test:reactions-v3-app": "tsx --test src/reactions-v3-app-contract.test.ts",
+    "test:reactions-v3-live-support": "tsx --test src/reactions-v3-live-support.test.ts",
     "live:sharing": "tsx src/sharing-live-contract.ts",
     "live:playback-room": "tsx src/playback-room-live-contract.ts",
     "live:preferences": "tsx src/preferences-live-contract.ts",
