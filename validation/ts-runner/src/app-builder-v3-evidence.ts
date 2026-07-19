@@ -36,6 +36,9 @@ assert.equal(swiftBuild.isPreviewable, true);
 assert.equal(swiftBuild.title, "Build a workout tracker");
 assert.equal(swiftBuild.owner.id, live.details.user.id);
 assert.equal(swiftBuild.file.path, `${swiftBuildID}-App.tsx`);
+assert.equal(swiftBuild.file["content-disposition"], "inline");
+assert.equal(swiftBuild.file["content-type"], "text/typescript");
+assert.equal(swiftBuild.file.size, Buffer.byteLength(swiftCode));
 
 const typeScriptBuild = live.details.typeScriptObservedTypeScriptBuild;
 assert.equal(typeScriptBuild.id, typeScriptBuildID);
@@ -46,12 +49,17 @@ assert.equal(typeScriptBuild.isPreviewable, true);
 assert.equal(typeScriptBuild.title, "Build a notes app");
 assert.equal(typeScriptBuild.owner.id, live.details.user.id);
 assert.equal(typeScriptBuild.file.path, `${typeScriptBuildID}-App.tsx`);
+assert.equal(typeScriptBuild.file["content-disposition"], "inline");
+assert.equal(typeScriptBuild.file["content-type"], "text/typescript");
+assert.equal(typeScriptBuild.file.size, Buffer.byteLength(typeScriptCode));
 
 assert.equal(live.details.swift.swiftBuild.id, swiftBuildID);
 assert.equal(live.details.swift.swiftBuild.ownerID, live.details.user.id);
+assert.equal(live.details.swift.swiftBuild.file.id, swiftBuild.file.id);
 assert.equal(live.details.swift.swiftBuild.file.contents, swiftCode);
 assert.equal(live.details.swift.typeScriptBuild.id, typeScriptBuildID);
 assert.equal(live.details.swift.typeScriptBuild.ownerID, live.details.user.id);
+assert.equal(live.details.swift.typeScriptBuild.file.id, typeScriptBuild.file.id);
 assert.equal(live.details.swift.typeScriptBuild.file.contents, typeScriptCode);
 assert.equal(live.details.swift.connectionState, "authenticated");
 assert.equal(live.details.swift.pendingMutationCount, 0);
@@ -59,8 +67,22 @@ assert.equal(live.details.swift.pendingMutationCount, 0);
 assert.equal(schema.entityCount, 3);
 assert.equal(schema.attributeCount, 13);
 assert.equal(schema.linkCount, 2);
+assert.deepEqual(schema.warnings, [
+  { code: "system-entity", path: "$streams" },
+  { code: "system-attribute", path: "$users.imageURL" },
+  { code: "system-attribute", path: "$users.type" },
+  { code: "server-json-as-any", path: "builds.error" },
+  { code: "canonical-link-name", path: "buildFile->buildsFile" },
+  { code: "canonical-link-name", path: "buildOwner->buildsOwner" },
+  { code: "system-link", path: "$streams$files" },
+  { code: "system-link", path: "$usersLinkedPrimaryUser" },
+]);
+assert.equal(permissions.namespaceCount, 1);
 assert.equal(permissions.allowRuleCount, 5);
 assert.equal(permissions.rateLimitCount, 0);
+const noDriftLog = readFileSync(resolve(results, "instant-cli-push-no-drift.log"), "utf8");
+assert.match(noDriftLog, /No schema changes to apply!/);
+assert.match(noDriftLog, /No perms changes to apply!/);
 
 const evidence = {
   case: "validation.app-builder-v3-app.live-contract",
