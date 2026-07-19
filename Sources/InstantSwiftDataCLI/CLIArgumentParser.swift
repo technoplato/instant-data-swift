@@ -1489,6 +1489,8 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
   case liveVoiceTrailV3Capture
   case liveTodosV3Write
   case liveTodosV3Observe
+  case liveMobileChatV3Write
+  case liveMobileChatV3Observe
   case liveAuthInvalidation
   case liveAuthV3App
   case livePlaybackRoom
@@ -1527,6 +1529,10 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
       "validation.live.todos-v3-write"
     case .liveTodosV3Observe:
       "validation.live.todos-v3-observe"
+    case .liveMobileChatV3Write:
+      "validation.live.mobile-chat-v3-write"
+    case .liveMobileChatV3Observe:
+      "validation.live.mobile-chat-v3-observe"
     case .liveAuthInvalidation:
       "validation.live.auth-invalidation"
     case .liveAuthV3App:
@@ -1568,6 +1574,8 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
       "live-voice-trail-v3-capture"
     case .liveTodosV3Write, .liveTodosV3Observe:
       "live-todos-v3"
+    case .liveMobileChatV3Write, .liveMobileChatV3Observe:
+      "live-mobile-chat-v3"
     case .liveAuthInvalidation:
       "live-auth-invalidation"
     case .liveAuthV3App:
@@ -1609,7 +1617,7 @@ public enum CLIValidationUsage {
 
 public enum CLIValidationRunnerUsage {
   public static let validationRunner =
-    "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--reminders|--local-reminders|--server-transaction-loopback|--cloudkit-demo|--live-session|--live-transaction|--live-observe|--live-sharing|--live-sharing-writer|--live-voice-trail-recordings-list|--live-auth-invalidation|--live-auth-v3-app|--live-playback-room|--live-preferences|--live-voice-trail-v3-capture|--live-todos-v3-write|--live-todos-v3-observe|--typed-drafts|--platform-adapters|--syncups-recording|--parity-report|--coverage]"
+    "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--reminders|--local-reminders|--server-transaction-loopback|--cloudkit-demo|--live-session|--live-transaction|--live-observe|--live-sharing|--live-sharing-writer|--live-voice-trail-recordings-list|--live-auth-invalidation|--live-auth-v3-app|--live-playback-room|--live-preferences|--live-voice-trail-v3-capture|--live-todos-v3-write|--live-todos-v3-observe|--live-mobile-chat-v3-write|--live-mobile-chat-v3-observe|--typed-drafts|--platform-adapters|--syncups-recording|--parity-report|--coverage]"
 }
 
 public enum CLIValidationArgumentError: Error, Equatable, Sendable {
@@ -4823,6 +4831,12 @@ public struct CLIValidationRunnerParser: Parser {
 
     case "--live-todos-v3-observe":
       return .liveTodosV3Observe
+
+    case "--live-mobile-chat-v3-write":
+      return .liveMobileChatV3Write
+
+    case "--live-mobile-chat-v3-observe":
+      return .liveMobileChatV3Observe
 
     case "--live-auth-invalidation":
       return .liveAuthInvalidation

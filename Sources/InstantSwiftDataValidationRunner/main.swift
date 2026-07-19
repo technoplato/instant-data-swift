@@ -451,6 +451,13 @@ struct InstantSwiftDataValidationRunner {
         preconditionFailure("Unexpected Todos V3 runner mode.")
       }
 
+    case .liveMobileChatV3Write, .liveMobileChatV3Observe:
+      throw ValidationFailure(
+        caseID: invocation.caseID,
+        appID: invocation.appID,
+        message: "Mobile Chat V3 live runner implementation is pending."
+      )
+
     case .liveAuthInvalidation:
       let environment = ProcessInfo.processInfo.environment
       let appID = try requiredEnvironment("INSTANT_APP_ID", environment: environment)
