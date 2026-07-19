@@ -206,7 +206,14 @@ async function waitForBuild(
     last = result.data;
     const raw = result.data.builds?.[0];
     if (raw) {
-      const build = projectCanonicalAppBuilderV3Build(raw);
+      let build: AppBuilderV3Build;
+      try {
+        build = projectCanonicalAppBuilderV3Build(raw);
+      } catch (error) {
+        throw new Error(
+          `Could not project canonical App Builder build: ${String(error)}; raw=${JSON.stringify(raw)}`,
+        );
+      }
       if (predicate(build)) return build;
     }
     await delay();
