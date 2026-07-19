@@ -64,18 +64,18 @@ export interface RemindersV3Reminder {
   notes: string;
   isCompleted: boolean;
   isFlagged: boolean;
-  dueDate?: string;
+  dueDate?: Date;
   priority?: RemindersV3Priority;
   position: number;
-  createdAt: string;
+  createdAt: Date;
   tags: RemindersV3Tag[];
 }
 
 export interface RemindersV3ShareMembership {
   id: string;
   role: RemindersV3Role;
-  acceptedAt: string;
-  revokedAt?: string;
+  acceptedAt: Date;
+  revokedAt?: Date;
   user: RemindersV3User;
 }
 
@@ -84,9 +84,9 @@ export interface RemindersV3Share {
   token: string;
   rootNamespace: "remindersLists";
   rootID: string;
-  createdAt: string;
-  updatedAt: string;
-  revokedAt?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  revokedAt?: Date;
   owner: RemindersV3User;
   memberships: RemindersV3ShareMembership[];
 }
@@ -96,7 +96,7 @@ export interface RemindersV3List {
   title: string;
   color: string;
   position: number;
-  createdAt: string;
+  createdAt: Date;
   owner: RemindersV3User;
   readers: RemindersV3User[];
   writers: RemindersV3User[];

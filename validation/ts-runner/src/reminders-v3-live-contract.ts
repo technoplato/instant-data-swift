@@ -186,7 +186,7 @@ try {
         isFlagged: false,
         priority: remindersV3AppContract.priority.medium,
         position: 1,
-        createdAt: 1_784_424_002_000,
+        createdAt: new Date(1_784_424_002_000),
       })
       .link({
         list: remindersV3AppContract.fixtures.list,
@@ -270,7 +270,7 @@ process.exit(0);
 
 function coreDatabase(schema: any): any {
   return initCore(
-    { appId, apiURI, websocketURI, schema, devtool: false },
+    { appId, apiURI, websocketURI, schema, devtool: false, useDateObjects: true },
     MemoryStore,
     AlwaysOnline,
   );

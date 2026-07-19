@@ -64,10 +64,10 @@ test("Reminders V3 preserves exact scalar and nested relation shapes", () => {
     notes: "Fruit and water",
     isCompleted: false,
     isFlagged: true,
-    dueDate: "2023-11-15T22:13:20.000Z",
+    dueDate: new Date("2023-11-15T22:13:20.000Z"),
     priority: remindersV3AppContract.priority.high,
     position: 0,
-    createdAt: "2023-11-14T22:13:21.000Z",
+    createdAt: new Date("2023-11-14T22:13:21.000Z"),
     tags: [{ id: remindersV3AppContract.fixtures.swiftTag, title: "swift" }],
   };
   const list: RemindersV3List = {
@@ -75,14 +75,14 @@ test("Reminders V3 preserves exact scalar and nested relation shapes", () => {
     title: "Family",
     color: "#4a99ef",
     position: 0,
-    createdAt: "2023-11-14T22:13:20.000Z",
+    createdAt: new Date("2023-11-14T22:13:20.000Z"),
     owner: { id: "owner-user" },
     readers: [{ id: "reader-user" }],
     writers: [],
     reminders: [swiftReminder],
   };
 
-  assert.deepEqual(JSON.parse(JSON.stringify(list)), list);
+  assert.deepEqual(structuredClone(list), list);
 });
 
 test("Reminders V3 reader and writer roles retain SQLiteData sharing semantics", () => {
