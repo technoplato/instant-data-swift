@@ -299,6 +299,19 @@ As of 2026-07-19:
   distinct from ordinary two-element JSON arrays. Evidence is in
   `/tmp/instant-data-swift-stroopwafel-v3-20260719T054351Z/evidence.json` with
   zero compiler/runtime warnings.
+- The canonical Reminders boundary is complete through `e72c99a`. The
+  source-first Swift app, generated schema and permissions, canonical
+  TypeScript contract, and fresh-app verifier preserve the six-namespace,
+  nine-link sharing graph; UUID tag identity with human titles; `Date`
+  semantics; and owner, reader, writer, and outsider boundaries. The live gate
+  proves Swift graph creation observed by TypeScript, reader visibility with a
+  rejected write, Swift promotion to writer, TypeScript mutation and reminder
+  creation observed by Swift, Swift state observed back in TypeScript, zero
+  pending mutations, outsider invisibility, and zero compiler/runtime warnings.
+  Evidence is in
+  `/tmp/instant-data-swift-reminders-v3-20260719T070753Z/evidence.json`. The
+  post-port aggregate passes 1,049 Swift Testing cases across 76 suites plus
+  the complete TypeScript typecheck, contract, live-support, and fixture matrix.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -332,7 +345,7 @@ When sources disagree, use this order:
 | Current execution state, packet order, gates, and tag targets | `docs/v3-e2e-port-plan.md` |
 | Product contract and full definition of done | `docs/instant-swift-data-goals.md` |
 | Desired V3 API rules and decision log | `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` |
-| Next app target | Reminders sharing, beginning source-first from the pinned SQLiteData tests and existing local model/CLI proof |
+| Next app target | SyncUps, beginning source-first from `upstream/sqlite-data/Examples/SyncUps`, `Examples/SyncUpTests/SyncUpFormTests.swift`, and the existing local model/CLI/recording proof |
 | Current generated recording contract | `InstantSchemaExamples.recordingActionDocument`, `recordingActionValidationPermissions`, and `--example recording-action` |
 | TypeScript contract pin/type-check gate | `validation/ts-runner/package.json`, its committed `pnpm-lock.yaml`, and `validation/typecheck-generated-contract.sh` |
 | Reproducible live schema/perms install and readback | `validation/verify-recording-contract-live.sh` and `validation/fixtures/recording-action.server.*.ts` |
@@ -981,9 +994,21 @@ The post-port aggregate is green at 1,027 Swift Testing cases across 71
 suites, the `stroopwafel-v3` build, and the complete TypeScript typecheck,
 contract, live-support, and fixture matrix.
 
-Next, port Reminders sharing source-first from its pinned SQLiteData tests and
-existing local model/CLI proof. Do not create the `v0.4.0-apps-e2e` tag until
-the full required app matrix passes.
+The canonical Reminders app is complete through `e72c99a`. The clean fresh-app
+gate records six namespaces, 29 attributes, nine links, 21 allow rules, exact
+normalized server warnings, canonical TypeScript `Date` objects, both data
+directions, reader write denial before writer promotion, outsider invisibility,
+and zero compiler/runtime warnings at
+`/tmp/instant-data-swift-reminders-v3-20260719T070753Z/evidence.json`. The
+post-port aggregate is green at 1,049 Swift Testing cases across 76 suites and
+the complete TypeScript typecheck, contract, live-support, and fixture matrix.
+
+Next, port SyncUps source-first from its pinned schema, form tests, screen and
+recording sources, and the existing local `SyncUpsExample` plus
+`syncups-recording` validation proof. The first packet should pin the exact
+entity/link contract and compile the app-owned list, detail, form, and recording
+syntax before adding its fresh-app live boundary. Do not create the
+`v0.4.0-apps-e2e` tag until the full required app matrix passes.
 
 The product-payload mismatch is resolved: playback presence stores and encodes
 `offsetSeconds: Double`, offers `Duration` as a computed product convenience,
