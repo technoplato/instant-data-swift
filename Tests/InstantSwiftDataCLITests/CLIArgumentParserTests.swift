@@ -2928,6 +2928,12 @@ struct CLIArgumentParserTests {
     )
     #expect(CLISchemaUsage.generate.contains("|custom-cursors"))
     #expect(CLISchemaUsage.verify.contains("|custom-cursors"))
+    expectNoDifference(
+      try parseSchema(["generate", "--example", "merge-tile-game"]),
+      .generate(CLIGenerateArtifactInvocation(example: "merge-tile-game"))
+    )
+    #expect(CLISchemaUsage.generate.contains("|merge-tile-game"))
+    #expect(CLISchemaUsage.verify.contains("|merge-tile-game"))
   }
 
   @Test
@@ -2992,6 +2998,12 @@ struct CLIArgumentParserTests {
     )
     #expect(CLIPermissionsUsage.generate.contains("|custom-cursors"))
     #expect(CLIPermissionsUsage.verify.contains("|custom-cursors"))
+    expectNoDifference(
+      try parsePermissions(["generate", "--example", "merge-tile-game"]),
+      .generate(CLIGenerateArtifactInvocation(example: "merge-tile-game"))
+    )
+    #expect(CLIPermissionsUsage.generate.contains("|merge-tile-game"))
+    #expect(CLIPermissionsUsage.verify.contains("|merge-tile-game"))
   }
 
   @Test
