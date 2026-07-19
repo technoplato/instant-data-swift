@@ -622,18 +622,6 @@ public enum InstantSchemaExamples {
         allow: [.view: "auth.id != null"]
       ),
       InstantNamespacePermissions(
-        namespace: "profiles",
-        allow: [
-          .view: "auth.id != null",
-          .create: "isSelf",
-          .update: "isSelf",
-          .delete: "isSelf",
-        ],
-        bind: [
-          InstantPermissionBinding("isSelf", "auth.id in data.ref('user.id')")
-        ]
-      ),
-      InstantNamespacePermissions(
         namespace: "channels",
         allow: Dictionary(
           uniqueKeysWithValues: InstantPermissionAction.entityActions.map {
@@ -654,6 +642,18 @@ public enum InstantSchemaExamples {
             "isAuthor",
             "auth.id in data.ref('author.user.id')"
           )
+        ]
+      ),
+      InstantNamespacePermissions(
+        namespace: "profiles",
+        allow: [
+          .view: "auth.id != null",
+          .create: "isSelf",
+          .update: "isSelf",
+          .delete: "isSelf",
+        ],
+        bind: [
+          InstantPermissionBinding("isSelf", "auth.id in data.ref('user.id')")
         ]
       ),
     ]
