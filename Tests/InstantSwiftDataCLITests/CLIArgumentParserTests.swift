@@ -3374,6 +3374,10 @@ struct CLIArgumentParserTests {
       .liveCursorsV3
     )
     expectNoDifference(
+      try parseValidationRunner(["--live-custom-cursors-v3"]),
+      .liveCustomCursorsV3
+    )
+    expectNoDifference(
       try parseValidationRunner(["--live-preferences"]),
       .livePreferences
     )
@@ -3518,6 +3522,14 @@ struct CLIArgumentParserTests {
       "live-cursors-v3"
     )
     expectNoDifference(
+      CLIValidationRunnerInvocation.liveCustomCursorsV3.caseID,
+      "validation.live.custom-cursors-v3"
+    )
+    expectNoDifference(
+      CLIValidationRunnerInvocation.liveCustomCursorsV3.appID,
+      "live-custom-cursors-v3"
+    )
+    expectNoDifference(
       CLIValidationRunnerInvocation.livePreferences.caseID,
       "validation.live.preferences"
     )
@@ -3550,6 +3562,7 @@ struct CLIArgumentParserTests {
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-reactions-v3"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-avatar-stack-v3"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-cursors-v3"))
+    #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-custom-cursors-v3"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-preferences"))
     #expect(CLIValidationRunnerUsage.validationRunner.contains("--live-voice-trail-v3-capture"))
     try expectValidationRunnerParseError(
