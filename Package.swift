@@ -37,6 +37,7 @@ let package = Package(
     .executable(name: "presence-recipes-v3", targets: ["PresenceRecipesV3Executable"]),
     .executable(name: "reminders-v3", targets: ["RemindersV3Executable"]),
     .executable(name: "stroopwafel-v3", targets: ["StroopwafelV3Executable"]),
+    .executable(name: "syncups-v3", targets: ["SyncUpsV3Executable"]),
     .executable(name: "voicetrail-v3", targets: ["VoiceTrailV3Executable"]),
     .executable(name: "todos-v3", targets: ["TodosV3Executable"]),
     .executable(
@@ -234,6 +235,11 @@ let package = Package(
     .executableTarget(
       name: "StroopwafelV3Executable",
       dependencies: ["StroopwafelV3App"],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .executableTarget(
+      name: "SyncUpsV3Executable",
+      dependencies: ["SyncUpsV3App"],
       swiftSettings: strictConcurrencySettings
     ),
     .executableTarget(
