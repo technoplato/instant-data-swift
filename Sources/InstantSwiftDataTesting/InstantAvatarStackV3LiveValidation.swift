@@ -171,7 +171,11 @@ public enum InstantAvatarStackV3LiveValidation {
     for await members in stream {
       try Task.checkCancellation()
       if let member = members.first(where: { $0.values["name"] == .string(name) }) {
-        return (member.userID, name, members.count)
+        return (
+          member.userID,
+          name,
+          remotePeerCount(in: members, excludingName: swiftPresence.name)
+        )
       }
     }
     throw failure("Presence observation ended before the exact peer joined.")
@@ -183,9 +187,20 @@ public enum InstantAvatarStackV3LiveValidation {
   ) async throws -> Int {
     for await members in stream {
       try Task.checkCancellation()
-      if members.count == count { return count }
+      if remotePeerCount(in: members, excludingName: swiftPresence.name) == count {
+        return count
+      }
     }
     throw failure("Presence observation ended before peer count \(count).")
+  }
+
+  public static func remotePeerCount(
+    in members: [InstantRoomPresenceMember],
+    excludingName localName: String
+  ) -> Int {
+    members.count { member in
+      member.values["name"] != .string(localName)
+    }
   }
 
   private static func withTimeout<Value: Sendable>(
