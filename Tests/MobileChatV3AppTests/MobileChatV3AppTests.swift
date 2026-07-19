@@ -77,6 +77,19 @@ import Testing
     }
 
     @Test
+    func channelCreationUsesTheAppOwnedCanonicalMessage() {
+      let id = InstantID<MobileChatChannel>(
+        rawValue: "00000000-0000-4000-8000-000000000020"
+      )
+      let message = CreateMobileChatChannel(id: id, name: "general")
+
+      expectNoDifference(message.id, id)
+      expectNoDifference(message.name, "general")
+      expectNoDifference(MobileChatChannel.name.name, "name")
+      expectNoDifference(MobileChatChannel.name.attributeID, "channels/name")
+    }
+
+    @Test
     func appOwnedEntitiesMatchTheCanonicalMobileChatSchema() throws {
       expectNoDifference(MobileChatProfile.instantNamespace, "profiles")
       expectNoDifference(MobileChatChannel.instantNamespace, "channels")
