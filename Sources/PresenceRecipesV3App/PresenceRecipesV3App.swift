@@ -350,3 +350,159 @@ public final class AvatarStackV3Model: ObservableObject {
     peers = values.filter { $0.userID != profileID }
   }
 }
+
+public struct CursorsV3Frame: Equatable, Sendable {
+  public var left: Double
+  public var top: Double
+  public var width: Double
+  public var height: Double
+
+  public init(left: Double, top: Double, width: Double, height: Double) {
+    self.left = left
+    self.top = top
+    self.width = width
+    self.height = height
+  }
+}
+
+public struct CursorsV3Cursor: Codable, Equatable, Sendable {
+  public var x: Double
+  public var y: Double
+  public var xPercent: Double
+  public var yPercent: Double
+  public var color: String
+
+  public init(
+    x: Double,
+    y: Double,
+    xPercent: Double,
+    yPercent: Double,
+    color: String
+  ) {
+    self.x = x
+    self.y = y
+    self.xPercent = xPercent
+    self.yPercent = yPercent
+    self.color = color
+  }
+}
+
+public struct CursorsV3Presence: Codable, Equatable, Identifiable, Sendable {
+  public var id: String { userID }
+  public var userID: String
+  public var cursor: CursorsV3Cursor?
+
+  public init(userID: String, cursor: CursorsV3Cursor?) {
+    self.userID = userID
+    self.cursor = cursor
+  }
+
+  public init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: DynamicCodingKey.self)
+    userID = try container.decodeIfPresent(
+      String.self,
+      forKey: DynamicCodingKey("userID")
+    ) ?? ""
+    cursor = try container.decodeIfPresent(
+      CursorsV3Cursor.self,
+      forKey: DynamicCodingKey(CursorsV3Room.defaultSpaceID)
+    )
+  }
+
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: DynamicCodingKey.self)
+    if let cursor {
+      try container.encode(
+        cursor,
+        forKey: DynamicCodingKey(CursorsV3Room.defaultSpaceID)
+      )
+    }
+  }
+}
+
+private struct DynamicCodingKey: CodingKey {
+  var stringValue: String
+  var intValue: Int? { nil }
+
+  init(_ stringValue: String) {
+    self.stringValue = stringValue
+  }
+
+  init?(stringValue: String) {
+    self.init(stringValue)
+  }
+
+  init?(intValue: Int) {
+    return nil
+  }
+}
+
+public struct CursorsV3Room: InstantRoomSchema {
+  public typealias Presence = CursorsV3Presence
+  public static let roomType = "cursors-example"
+  public static let defaultRoomID = "123"
+  public static let defaultSpaceID = "cursors-space-default--cursors-example-123"
+
+  public struct Topic: InstantRoomTopic {
+    public typealias RoomSchema = CursorsV3Room
+
+    public let rawValue: String
+
+    public init?(rawValue: String) {
+      return nil
+    }
+  }
+}
+
+@MainActor
+public final class CursorsV3Model: ObservableObject {
+  @Published public private(set) var presence: CursorsV3Presence
+  @Published public private(set) var peers: [CursorsV3Presence] = []
+
+  public let profileID: String
+  public let color: String
+
+  public init(profileID: String, color: String) {
+    self.profileID = profileID
+    self.color = color
+    self.presence = CursorsV3Presence(userID: profileID, cursor: nil)
+  }
+
+  public static func cursor(
+    clientX: Double,
+    clientY: Double,
+    frame: CursorsV3Frame,
+    color: String
+  ) -> CursorsV3Cursor {
+    CursorsV3Cursor(
+      x: clientX,
+      y: clientY,
+      xPercent: ((clientX - frame.left) / frame.width) * 100,
+      yPercent: ((clientY - frame.top) / frame.height) * 100,
+      color: color
+    )
+  }
+
+  public static func color(red: Int, green: Int, blue: Int) -> String {
+    String(format: "#%02x%02x%02x", red, green, blue)
+  }
+
+  public func movePointer(clientX: Double, clientY: Double, frame: CursorsV3Frame) {
+    presence.cursor = Self.cursor(
+      clientX: clientX,
+      clientY: clientY,
+      frame: frame,
+      color: color
+    )
+  }
+
+  public func clearPointer() {
+    presence.cursor = nil
+  }
+
+  public func updatePresence(_ values: [CursorsV3Presence]) {
+    peers = values.filter { value in
+      value.userID != profileID && value.cursor != nil
+    }
+  }
+}
