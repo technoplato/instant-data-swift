@@ -20,7 +20,7 @@ export function projectCanonicalRemindersV3List(value: unknown): RemindersV3List
     || typeof value.title !== "string"
     || typeof value.color !== "string"
     || !isInteger(value.position)
-    || !isFiniteNumber(value.createdAt)
+    || !isDateString(value.createdAt)
     || !Array.isArray(value.readers)
     || !Array.isArray(value.writers)
     || !Array.isArray(value.reminders)
@@ -55,10 +55,10 @@ export function projectCanonicalRemindersV3Reminder(
     || typeof value.notes !== "string"
     || typeof value.isCompleted !== "boolean"
     || typeof value.isFlagged !== "boolean"
-    || !isOptionalFiniteNumber(value.dueDate)
+    || !isOptionalDateString(value.dueDate)
     || !isOptionalPriority(value.priority)
     || !isInteger(value.position)
-    || !isFiniteNumber(value.createdAt)
+    || !isDateString(value.createdAt)
     || !Array.isArray(value.tags)
   ) throw reminderShapeError();
 
@@ -68,7 +68,7 @@ export function projectCanonicalRemindersV3Reminder(
     notes: value.notes,
     isCompleted: value.isCompleted,
     isFlagged: value.isFlagged,
-    ...(typeof value.dueDate === "number" ? { dueDate: value.dueDate } : {}),
+    ...(typeof value.dueDate === "string" ? { dueDate: value.dueDate } : {}),
     ...(typeof value.priority === "number" ? { priority: value.priority } : {}),
     position: value.position,
     createdAt: value.createdAt,
@@ -86,9 +86,9 @@ function projectShare(value: unknown): RemindersV3Share {
     || typeof value.token !== "string"
     || value.rootNamespace !== "remindersLists"
     || typeof value.rootID !== "string"
-    || !isFiniteNumber(value.createdAt)
-    || !isFiniteNumber(value.updatedAt)
-    || !isOptionalFiniteNumber(value.revokedAt)
+    || !isDateString(value.createdAt)
+    || !isDateString(value.updatedAt)
+    || !isOptionalDateString(value.revokedAt)
     || !Array.isArray(value.memberships)
   ) throw listShapeError();
   return {
@@ -98,7 +98,7 @@ function projectShare(value: unknown): RemindersV3Share {
     rootID: value.rootID,
     createdAt: value.createdAt,
     updatedAt: value.updatedAt,
-    ...(typeof value.revokedAt === "number" ? { revokedAt: value.revokedAt } : {}),
+    ...(typeof value.revokedAt === "string" ? { revokedAt: value.revokedAt } : {}),
     owner: projectUser(value.owner),
     memberships: value.memberships.map(projectMembership),
   };
@@ -111,14 +111,14 @@ function projectMembership(value: unknown): RemindersV3ShareMembership {
   if (
     typeof value.id !== "string"
     || !isRole(value.role)
-    || !isFiniteNumber(value.acceptedAt)
-    || !isOptionalFiniteNumber(value.revokedAt)
+    || !isDateString(value.acceptedAt)
+    || !isOptionalDateString(value.revokedAt)
   ) throw listShapeError();
   return {
     id: value.id,
     role: value.role,
     acceptedAt: value.acceptedAt,
-    ...(typeof value.revokedAt === "number" ? { revokedAt: value.revokedAt } : {}),
+    ...(typeof value.revokedAt === "string" ? { revokedAt: value.revokedAt } : {}),
     user: projectUser(value.user),
   };
 }
@@ -169,8 +169,12 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-function isOptionalFiniteNumber(value: unknown): value is number | null | undefined {
-  return value === null || value === undefined || isFiniteNumber(value);
+function isDateString(value: unknown): value is string {
+  return typeof value === "string" && !Number.isNaN(Date.parse(value));
+}
+
+function isOptionalDateString(value: unknown): value is string | null | undefined {
+  return value === null || value === undefined || isDateString(value);
 }
 
 function isInteger(value: unknown): value is number {

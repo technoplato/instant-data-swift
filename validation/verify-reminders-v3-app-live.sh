@@ -139,7 +139,7 @@ assert.equal(live.details.swift.pendingMutationCount, 0);
 assert.deepEqual(live.details.swift.list.membershipRoles, ["owner", "writer"]);
 assert.deepEqual(
   live.details.swift.typeScriptReminderObservedBySwift.tagIDs,
-  ["typescript"],
+  ["00000000-0000-4000-8000-000000000408"],
 );
 assert.equal(schema.entityCount, 6);
 assert.equal(schema.attributeCount, 29);
