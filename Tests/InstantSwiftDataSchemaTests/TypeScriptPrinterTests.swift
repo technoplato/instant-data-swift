@@ -244,6 +244,32 @@ struct TypeScriptPrinterTests {
   }
 
   @Test
+  func todoDocumentDeclaresCanonicalViewerRoom() throws {
+    expectNoDifference(
+      try TypeScriptSchemaPrinter().printSchema(InstantSchemaExamples.todosDocument),
+      """
+      import { i } from '@instantdb/core';
+
+      export default i.schema({
+        entities: {
+          todos: i.entity({
+            createdAt: i.date().indexed(),
+            isCompleted: i.boolean().indexed(),
+            text: i.string().indexed(),
+          }),
+        },
+        rooms: {
+          todos: {
+            presence: i.entity({}),
+          },
+        },
+      });
+
+      """
+    )
+  }
+
+  @Test
   func schemaPrinterEmitsValidationExample() throws {
     expectNoDifference(
       try TypeScriptSchemaPrinter().printSchema(InstantSchemaExamples.validationDocument),
