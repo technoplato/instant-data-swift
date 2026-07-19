@@ -138,6 +138,7 @@ assert.deepEqual(schema.warnings, [
   { code: "system-entity", path: "$files" },
   { code: "system-entity", path: "$streams" },
   { code: "system-entity", path: "$users" },
+  { code: "server-json-as-any", path: "boards.state" },
   { code: "system-link", path: "$streams$files" },
   { code: "system-link", path: "$usersLinkedPrimaryUser" },
 ]);
