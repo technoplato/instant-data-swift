@@ -1966,7 +1966,7 @@ private let reactorRewriteExpectedSteps: [InstantTransportStep] = [
   .addTriple(
     entity: .lookup(InstantLookupRef(attributeID: "users/handle", value: .string("stopa"))),
     attributeID: "users/id",
-    value: .array([.string("users/handle"), .string("stopa")])
+    value: .lookupRef(attributeID: "users/handle", value: .string("stopa"))
   ),
   .addTriple(
     entity: .id("bookshelfId"),
@@ -1976,12 +1976,12 @@ private let reactorRewriteExpectedSteps: [InstantTransportStep] = [
   .addTriple(
     entity: .id("bookshelfId"),
     attributeID: "bookshelves/users",
-    value: .array([.string("users/handle"), .string("stopa")])
+    value: .lookupRef(attributeID: "users/handle", value: .string("stopa"))
   ),
   .retractTriple(
     entity: .id("bookshelfId"),
     attributeID: "bookshelves/users",
-    value: .array([.string("users/handle"), .string("joe")])
+    value: .lookupRef(attributeID: "users/handle", value: .string("joe"))
   ),
 ]
 

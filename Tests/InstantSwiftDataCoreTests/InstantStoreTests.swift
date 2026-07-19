@@ -2097,7 +2097,7 @@ struct InstantStoreTests {
         .addTriple(
           entity: .id("user-forward-link"),
           attributeID: "users/posts",
-          value: .array([.string("posts/slug"), .string("life-is-good")])
+          value: .lookupRef(attributeID: "posts/slug", value: .string("life-is-good"))
         ),
       ],
       source
@@ -2359,7 +2359,7 @@ struct InstantStoreTests {
         .addTriple(
           entity: .id("user-declared-link"),
           attributeID: "users/posts",
-          value: .array([.string("posts/slug"), .string("life-is-good")])
+          value: .lookupRef(attributeID: "posts/slug", value: .string("life-is-good"))
         ),
       ],
       source
@@ -2493,12 +2493,12 @@ struct InstantStoreTests {
         .addTriple(
           entity: .lookup(postLookup),
           attributeID: "posts/id",
-          value: .array([.string("posts/slug"), .string("life-is-good")])
+          value: .lookupRef(attributeID: "posts/slug", value: .string("life-is-good"))
         ),
         .addTriple(
           entity: .lookup(postLookup),
           attributeID: "posts/parent",
-          value: .array([.string("posts/slug"), .string("life-is-good")])
+          value: .lookupRef(attributeID: "posts/slug", value: .string("life-is-good"))
         ),
       ],
       source
@@ -2588,12 +2588,12 @@ struct InstantStoreTests {
         .addTriple(
           entity: .lookup(postLookup),
           attributeID: "posts/id",
-          value: .array([.string("posts/slug"), .string("life-is-good")])
+          value: .lookupRef(attributeID: "posts/slug", value: .string("life-is-good"))
         ),
         .addTriple(
           entity: .lookup(childLookup),
           attributeID: "posts/parent",
-          value: .array([.string("posts/slug"), .string("life-is-good")])
+          value: .lookupRef(attributeID: "posts/slug", value: .string("life-is-good"))
         ),
       ],
       source
@@ -2698,7 +2698,7 @@ struct InstantStoreTests {
         .addTriple(
           entity: .lookup(userPrefsByUserLookup),
           attributeID: "user_prefs/id",
-          value: .array([.string("user_prefs/users"), .string("user-1")])
+          value: .lookupRef(attributeID: "user_prefs/users", value: .string("user-1"))
         ),
       ],
       source
@@ -2849,7 +2849,7 @@ struct InstantStoreTests {
         .addTriple(
           entity: .id("user-1"),
           attributeID: "users/user_prefs",
-          value: .array([.string("user_prefs/users"), .string("user-1")])
+          value: .lookupRef(attributeID: "user_prefs/users", value: .string("user-1"))
         ),
       ],
       source
@@ -3384,13 +3384,13 @@ struct InstantStoreTests {
         .addTriple(
           entity: .id("user-1"),
           attributeID: "users/posts",
-          value: .array([.string("posts/slug"), .string("life-is-good")]),
+          value: .lookupRef(attributeID: "posts/slug", value: .string("life-is-good")),
           options: InstantTransportOptions(mode: .update)
         ),
         .addTriple(
           entity: .id("user-1"),
           attributeID: "users/user_prefs",
-          value: .array([.string("user_prefs/users"), .string("user-1")]),
+          value: .lookupRef(attributeID: "user_prefs/users", value: .string("user-1")),
           options: InstantTransportOptions(mode: .update)
         ),
       ],
@@ -3477,12 +3477,12 @@ struct InstantStoreTests {
         .addTriple(
           entity: .id("user-1"),
           attributeID: "users/posts",
-          value: .array([.string("posts/slug"), .string("life-is-good")])
+          value: .lookupRef(attributeID: "posts/slug", value: .string("life-is-good"))
         ),
         .addTriple(
           entity: .id("user-1"),
           attributeID: "users/posts",
-          value: .array([.string("posts/slug"), .string("check-this-out")])
+          value: .lookupRef(attributeID: "posts/slug", value: .string("check-this-out"))
         ),
       ],
       source
@@ -3984,7 +3984,7 @@ struct InstantStoreTests {
         .addTriple(
           entity: .lookup(lookup),
           attributeID: "users/id",
-          value: .array([.string("users/nickname"), .string("stopanator")])
+          value: .lookupRef(attributeID: "users/nickname", value: .string("stopanator"))
         ),
       ],
       source
@@ -4188,7 +4188,7 @@ struct InstantStoreTests {
         .addTriple(
           entity: .id("user-1"),
           attributeID: "users/authoredPosts",
-          value: .array([.string("posts/slug"), .string("life-is-good")])
+          value: .lookupRef(attributeID: "posts/slug", value: .string("life-is-good"))
         ),
       ],
       source
@@ -4410,12 +4410,12 @@ struct InstantStoreTests {
         .addTriple(
           entity: .id("user-1"),
           attributeID: "users/authoredPosts",
-          value: .array([.string("posts/slug"), .string("life-is-good")])
+          value: .lookupRef(attributeID: "posts/slug", value: .string("life-is-good"))
         ),
         .addTriple(
           entity: .id("user-1"),
           attributeID: "users/authoredPosts",
-          value: .array([.string("posts/slug"), .string("check-this-out")])
+          value: .lookupRef(attributeID: "posts/slug", value: .string("check-this-out"))
         ),
       ],
       source
@@ -4679,7 +4679,7 @@ struct InstantStoreTests {
         .addTriple(
           entity: .lookup(userPrefsByUserLookup),
           attributeID: "user_prefs/id",
-          value: .array([.string("user_prefs/user"), .string("user-1")])
+          value: .lookupRef(attributeID: "user_prefs/user", value: .string("user-1"))
         ),
       ],
       source
@@ -4910,7 +4910,7 @@ struct InstantStoreTests {
         .addTriple(
           entity: .id("user-1"),
           attributeID: "users/user_pref",
-          value: .array([.string("user_prefs/user"), .string("user-1")])
+          value: .lookupRef(attributeID: "user_prefs/user", value: .string("user-1"))
         ),
       ],
       source
@@ -5646,7 +5646,7 @@ struct InstantStoreTests {
         .addTriple(
           entity: .lookup(userLookup),
           attributeID: "users/id",
-          value: .array([.string("users/handle"), .string("bobby_newuser")])
+          value: .lookupRef(attributeID: "users/handle", value: .string("bobby_newuser"))
         ),
         .addTriple(
           entity: .lookup(userLookup),
@@ -5663,7 +5663,7 @@ struct InstantStoreTests {
         .addTriple(
           entity: .lookup(userLookup),
           attributeID: "users/id",
-          value: .array([.string("users/handle"), .string("bobby_newuser")])
+          value: .lookupRef(attributeID: "users/handle", value: .string("bobby_newuser"))
         ),
         .retractTriple(
           entity: .lookup(userLookup),
