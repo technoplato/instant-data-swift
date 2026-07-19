@@ -1499,6 +1499,7 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
   case liveAvatarStackV3
   case liveCursorsV3
   case liveCustomCursorsV3
+  case liveMergeTileGameV3
   case livePreferences
   case typedDrafts
   case platformAdapters
@@ -1554,6 +1555,8 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
       "validation.live.cursors-v3"
     case .liveCustomCursorsV3:
       "validation.live.custom-cursors-v3"
+    case .liveMergeTileGameV3:
+      "validation.live.merge-tile-game-v3"
     case .livePreferences:
       "validation.live.preferences"
     case .typedDrafts:
@@ -1607,6 +1610,8 @@ public enum CLIValidationRunnerInvocation: Equatable, Sendable {
       "live-cursors-v3"
     case .liveCustomCursorsV3:
       "live-custom-cursors-v3"
+    case .liveMergeTileGameV3:
+      "live-merge-tile-game-v3"
     case .livePreferences:
       "live-preferences"
     case .typedDrafts:
@@ -1642,7 +1647,7 @@ public enum CLIValidationUsage {
 
 public enum CLIValidationRunnerUsage {
   public static let validationRunner =
-    "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--reminders|--local-reminders|--server-transaction-loopback|--cloudkit-demo|--live-session|--live-transaction|--live-observe|--live-sharing|--live-sharing-writer|--live-voice-trail-recordings-list|--live-auth-invalidation|--live-auth-v3-app|--live-playback-room|--live-typing-indicator-v3|--live-reactions-v3|--live-avatar-stack-v3|--live-cursors-v3|--live-custom-cursors-v3|--live-preferences|--live-voice-trail-v3-capture|--live-todos-v3-write|--live-todos-v3-observe|--live-mobile-chat-v3-write|--live-mobile-chat-v3-observe|--typed-drafts|--platform-adapters|--syncups-recording|--parity-report|--coverage]"
+    "Usage: instant-swift-data-validation-runner [--local-todos|--local-integrations|--reminders|--local-reminders|--server-transaction-loopback|--cloudkit-demo|--live-session|--live-transaction|--live-observe|--live-sharing|--live-sharing-writer|--live-voice-trail-recordings-list|--live-auth-invalidation|--live-auth-v3-app|--live-playback-room|--live-typing-indicator-v3|--live-reactions-v3|--live-avatar-stack-v3|--live-cursors-v3|--live-custom-cursors-v3|--live-merge-tile-game-v3|--live-preferences|--live-voice-trail-v3-capture|--live-todos-v3-write|--live-todos-v3-observe|--live-mobile-chat-v3-write|--live-mobile-chat-v3-observe|--typed-drafts|--platform-adapters|--syncups-recording|--parity-report|--coverage]"
 }
 
 public enum CLIValidationArgumentError: Error, Equatable, Sendable {
@@ -4886,6 +4891,9 @@ public struct CLIValidationRunnerParser: Parser {
 
     case "--live-custom-cursors-v3":
       return .liveCustomCursorsV3
+
+    case "--live-merge-tile-game-v3":
+      return .liveMergeTileGameV3
 
     case "--live-preferences":
       return .livePreferences

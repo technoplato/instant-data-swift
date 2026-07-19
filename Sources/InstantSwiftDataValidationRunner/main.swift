@@ -880,6 +880,61 @@ struct InstantSwiftDataValidationRunner {
       )
       try writeJSONLine(row)
 
+    case .liveMergeTileGameV3:
+      let environment = ProcessInfo.processInfo.environment
+      let appID = try requiredEnvironment("INSTANT_APP_ID", environment: environment)
+      let refreshToken = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_MERGE_TILE_GAME_REFRESH_TOKEN",
+        environment: environment
+      )
+      let swiftUserID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_MERGE_TILE_GAME_SWIFT_USER_ID",
+        environment: environment
+      )
+      let apiURI = URL(
+        string: environment["INSTANT_API_URI"]
+          ?? InstantRuntimeConfiguration.defaultAPIURI.absoluteString
+      ) ?? InstantRuntimeConfiguration.defaultAPIURI
+      let websocketURI = URL(
+        string: environment["INSTANT_WEBSOCKET_URI"]
+          ?? InstantRuntimeConfiguration.defaultWebSocketURI.absoluteString
+      ) ?? InstantRuntimeConfiguration.defaultWebSocketURI
+      let row = try await InstantMergeTileGameV3LiveValidation.run(
+        appID: appID,
+        apiURI: apiURI,
+        websocketURI: websocketURI,
+        refreshToken: refreshToken,
+        expectedUserID: swiftUserID,
+        onSwiftReady: {
+          emit(
+            caseID: "validation.live.merge-tile-game-v3",
+            event: "swift-merge-and-presence-ready",
+            ok: true,
+            appID: appID,
+            details: ["boardID": InstantMergeTileGameV3LiveValidation.boardID]
+          )
+        },
+        onTypeScriptMergeObserved: {
+          emit(
+            caseID: "validation.live.merge-tile-game-v3",
+            event: "typescript-independent-merge-observed",
+            ok: true,
+            appID: appID,
+            details: ["boardID": InstantMergeTileGameV3LiveValidation.boardID]
+          )
+        },
+        onResetObserved: {
+          emit(
+            caseID: "validation.live.merge-tile-game-v3",
+            event: "typescript-reset-observed",
+            ok: true,
+            appID: appID,
+            details: ["boardID": InstantMergeTileGameV3LiveValidation.boardID]
+          )
+        }
+      )
+      try writeJSONLine(row)
+
     case .livePreferences:
       let environment = ProcessInfo.processInfo.environment
       let appID = try requiredEnvironment(
