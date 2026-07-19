@@ -7,7 +7,7 @@ export type PreferencesDownloadedFile = {
 
 export type PreferencesContract = {
   swiftUserID: string;
-  phaseSequence: ["connecting", "authenticated"];
+  phaseSequence: ["connected", "authenticated"];
   streamContent: "hello-stream";
   downloadedFiles: [PreferencesDownloadedFile, PreferencesDownloadedFile];
 };
@@ -17,7 +17,7 @@ export function preferencesContract(input: {
 }): PreferencesContract {
   return {
     swiftUserID: input.swiftUserID,
-    phaseSequence: ["connecting", "authenticated"],
+    phaseSequence: ["connected", "authenticated"],
     streamContent: "hello-stream",
     downloadedFiles: [
       {

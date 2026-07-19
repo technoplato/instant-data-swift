@@ -6,7 +6,7 @@ test("preferences contract preserves exact sync and local storage values", () =>
   const contract = preferencesContract({ swiftUserID: "swift-user" });
 
   assert.equal(contract.swiftUserID, "swift-user");
-  assert.deepEqual(contract.phaseSequence, ["connecting", "authenticated"]);
+  assert.deepEqual(contract.phaseSequence, ["connected", "authenticated"]);
   assert.equal(contract.streamContent, "hello-stream");
   assert.equal(Buffer.byteLength(contract.streamContent), 12);
   assert.deepEqual(contract.downloadedFiles, [

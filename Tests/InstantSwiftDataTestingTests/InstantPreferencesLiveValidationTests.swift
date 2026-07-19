@@ -17,14 +17,14 @@ struct InstantPreferencesLiveValidationTests {
   @Test
   func evidenceDecodesExactSyncAndStorageBoundary() throws {
     let canonicalJSON = Data(
-      #"{"userID":"swift-user","phaseSequence":["connecting","authenticated"],"connectionState":"authenticated","localCacheSize":184,"streamCacheSize":12,"downloadedFileSizeBeforeClear":7,"downloadedFileCountBeforeClear":2,"clearedFileCount":1,"clearedBytes":4,"downloadedFileSizeAfterClear":3,"downloadedFileCountAfterClear":1,"remainingFileNames":["transcript.txt"]}"#.utf8
+      #"{"userID":"swift-user","phaseSequence":["connected","authenticated"],"connectionState":"authenticated","localCacheSize":184,"streamCacheSize":12,"downloadedFileSizeBeforeClear":7,"downloadedFileCountBeforeClear":2,"clearedFileCount":1,"clearedBytes":4,"downloadedFileSizeAfterClear":3,"downloadedFileCountAfterClear":1,"remainingFileNames":["transcript.txt"]}"#.utf8
     )
     let details = try JSONDecoder().decode(
       InstantPreferencesLiveValidationDetails.self,
       from: canonicalJSON
     )
 
-    expectNoDifference(details.phaseSequence, ["connecting", "authenticated"])
+    expectNoDifference(details.phaseSequence, ["connected", "authenticated"])
     expectNoDifference(details.connectionState, "authenticated")
     expectNoDifference(details.streamCacheSize, 12)
     expectNoDifference(details.downloadedFileSizeBeforeClear, 7)
