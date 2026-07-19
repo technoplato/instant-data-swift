@@ -14,7 +14,6 @@ export const appBuilderV3AppContract = {
   namespaces: ["$files", "$users", "builds"],
   links: ["buildFile", "buildOwner"],
   fixtures: {
-    user: "00000000-0000-4000-8000-000000000601",
     swiftBuild: "00000000-0000-4000-8000-000000000602",
     typeScriptBuild: "00000000-0000-4000-8000-000000000604",
   },

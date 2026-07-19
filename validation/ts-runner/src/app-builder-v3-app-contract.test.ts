@@ -19,7 +19,6 @@ test("App Builder V3 pins the exact source, graph, and storage adaptation", () =
   assert.deepEqual(appBuilderV3AppContract.namespaces, ["$files", "$users", "builds"]);
   assert.deepEqual(appBuilderV3AppContract.links, ["buildFile", "buildOwner"]);
   assert.deepEqual(appBuilderV3AppContract.fixtures, {
-    user: "00000000-0000-4000-8000-000000000601",
     swiftBuild: "00000000-0000-4000-8000-000000000602",
     typeScriptBuild: "00000000-0000-4000-8000-000000000604",
   });
