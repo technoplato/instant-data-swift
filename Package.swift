@@ -23,7 +23,9 @@ let package = Package(
     .library(name: "InstantSwiftDataCore", targets: ["InstantSwiftDataCore"]),
     .library(name: "InstantSwiftDataSchema", targets: ["InstantSwiftDataSchema"]),
     .library(name: "InstantSwiftDataTesting", targets: ["InstantSwiftDataTesting"]),
+    .library(name: "VoiceTrailV3App", targets: ["VoiceTrailV3App"]),
     .executable(name: "instant-swift-data", targets: ["instant-swift-data"]),
+    .executable(name: "voicetrail-v3", targets: ["VoiceTrailV3Executable"]),
     .executable(
       name: "instant-swift-data-validation-runner",
       targets: ["InstantSwiftDataValidationRunner"]
@@ -83,6 +85,15 @@ let package = Package(
       swiftSettings: strictConcurrencySettings
     ),
     .target(
+      name: "VoiceTrailV3App",
+      dependencies: [
+        "InstantSwiftData",
+        "InstantSwiftDataSchema",
+        .product(name: "Dependencies", package: "swift-dependencies"),
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .target(
       name: "InstantSwiftDataCLIParsing",
       dependencies: [
         .product(name: "CasePaths", package: "swift-case-paths"),
@@ -117,6 +128,11 @@ let package = Package(
         "InstantSwiftDataCLIParsing",
         "InstantSwiftDataCore",
       ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .executableTarget(
+      name: "VoiceTrailV3Executable",
+      dependencies: ["VoiceTrailV3App"],
       swiftSettings: strictConcurrencySettings
     ),
     .testTarget(
@@ -174,6 +190,14 @@ let package = Package(
         .product(name: "SwiftSyntax", package: "swift-syntax"),
         .product(name: "SwiftSyntaxBuilder", package: "swift-syntax"),
         .product(name: "SwiftSyntaxMacros", package: "swift-syntax"),
+      ],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .testTarget(
+      name: "VoiceTrailV3AppTests",
+      dependencies: [
+        "VoiceTrailV3App",
+        .product(name: "CustomDump", package: "swift-custom-dump"),
       ],
       swiftSettings: strictConcurrencySettings
     ),
