@@ -513,6 +513,276 @@ public enum InstantSchemaExamples {
     namespaces: [.allowAll(namespace: "boards")]
   )
 
+  public static let stroopwafelUsers = InstantEntitySchema(
+    typeName: "StroopwafelV3User",
+    namespace: "$users",
+    attributes: [
+      .primaryKey(namespace: "$users"),
+      InstantAttribute(
+        id: "$users/email",
+        namespace: "$users",
+        name: "email",
+        valueType: .any,
+        isRequired: false,
+        isIndexed: true,
+        isUnique: true
+      ),
+      InstantAttribute(
+        id: "$users/handle",
+        namespace: "$users",
+        name: "handle",
+        valueType: .string,
+        isRequired: false
+      ),
+      InstantAttribute(
+        id: "$users/highScore",
+        namespace: "$users",
+        name: "highScore",
+        valueType: .number,
+        isRequired: false
+      ),
+      InstantAttribute(
+        id: "$users/created_at",
+        namespace: "$users",
+        name: "created_at",
+        valueType: .string,
+        isRequired: false
+      ),
+    ]
+  )
+
+  public static let stroopwafelRooms = InstantEntitySchema(
+    typeName: "StroopwafelV3Room",
+    namespace: "rooms",
+    attributes: [
+      .primaryKey(namespace: "rooms"),
+      InstantAttribute(
+        id: "rooms/code",
+        namespace: "rooms",
+        name: "code",
+        valueType: .string,
+        isRequired: false,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "rooms/hostId",
+        namespace: "rooms",
+        name: "hostId",
+        valueType: .string
+      ),
+      InstantAttribute(
+        id: "rooms/readyIds",
+        namespace: "rooms",
+        name: "readyIds",
+        valueType: .json
+      ),
+      InstantAttribute(
+        id: "rooms/kickedIds",
+        namespace: "rooms",
+        name: "kickedIds",
+        valueType: .json
+      ),
+      InstantAttribute(
+        id: "rooms/currentGameId",
+        namespace: "rooms",
+        name: "currentGameId",
+        valueType: .string,
+        isRequired: false
+      ),
+      InstantAttribute(
+        id: "rooms/created_at",
+        namespace: "rooms",
+        name: "created_at",
+        valueType: .string
+      ),
+      InstantAttribute(
+        id: "rooms/deleted_at",
+        namespace: "rooms",
+        name: "deleted_at",
+        valueType: .string,
+        isRequired: false
+      ),
+    ]
+  )
+
+  public static let stroopwafelGames = InstantEntitySchema(
+    typeName: "StroopwafelV3Game",
+    namespace: "games",
+    attributes: [
+      .primaryKey(namespace: "games"),
+      InstantAttribute(
+        id: "games/status",
+        namespace: "games",
+        name: "status",
+        valueType: .string
+      ),
+      InstantAttribute(
+        id: "games/playerIds",
+        namespace: "games",
+        name: "playerIds",
+        valueType: .json
+      ),
+      InstantAttribute(
+        id: "games/colors",
+        namespace: "games",
+        name: "colors",
+        valueType: .json
+      ),
+      InstantAttribute(
+        id: "games/created_at",
+        namespace: "games",
+        name: "created_at",
+        valueType: .string
+      ),
+    ]
+  )
+
+  public static let stroopwafelPoints = InstantEntitySchema(
+    typeName: "StroopwafelV3Point",
+    namespace: "points",
+    attributes: [
+      .primaryKey(namespace: "points"),
+      InstantAttribute(
+        id: "points/val",
+        namespace: "points",
+        name: "val",
+        valueType: .number
+      ),
+      InstantAttribute(
+        id: "points/userId",
+        namespace: "points",
+        name: "userId",
+        valueType: .string
+      ),
+    ]
+  )
+
+  public static let stroopwafelDocument = InstantSchemaDocument(
+    entities: [
+      stroopwafelUsers,
+      stroopwafelRooms,
+      stroopwafelGames,
+      stroopwafelPoints,
+    ],
+    links: [
+      InstantLinkSchema(
+        name: "roomUsers",
+        forward: InstantLinkEndpoint(
+          namespace: "rooms",
+          cardinality: .many,
+          label: "users"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "$users",
+          cardinality: .many,
+          label: "rooms"
+        )
+      ),
+      InstantLinkSchema(
+        name: "gameUsers",
+        forward: InstantLinkEndpoint(
+          namespace: "games",
+          cardinality: .many,
+          label: "users"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "$users",
+          cardinality: .many,
+          label: "games"
+        )
+      ),
+      InstantLinkSchema(
+        name: "gameRooms",
+        forward: InstantLinkEndpoint(
+          namespace: "games",
+          cardinality: .many,
+          label: "rooms"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "rooms",
+          cardinality: .many,
+          label: "games"
+        )
+      ),
+      InstantLinkSchema(
+        name: "gamePoints",
+        forward: InstantLinkEndpoint(
+          namespace: "games",
+          cardinality: .many,
+          label: "points"
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "points",
+          cardinality: .one,
+          label: "game"
+        )
+      ),
+    ]
+  )
+
+  public static let stroopwafelPermissions = InstantPermissionsDocument(
+    attrs: InstantAttributePermissions(allow: [.create: "false"]),
+    namespaces: [
+      InstantNamespacePermissions(
+        namespace: "$users",
+        allow: [
+          .view: "true",
+          .create: "false",
+          .update: "auth.id == data.id",
+          .delete: "false",
+        ],
+        fields: ["email": "auth.id == data.id"]
+      ),
+      InstantNamespacePermissions(
+        namespace: "rooms",
+        allow: [
+          .view: "true",
+          .create: "auth.id != null",
+          .update: "isHost || onlyMemberFields",
+          .delete: "false",
+        ],
+        bind: [
+          InstantPermissionBinding("isHost", "auth.id == data.hostId"),
+          InstantPermissionBinding(
+            "onlyMemberFields",
+            "request.modifiedFields.all(field, field in ['readyIds', 'currentGameId', 'users'])"
+          ),
+        ]
+      ),
+      InstantNamespacePermissions(
+        namespace: "games",
+        allow: [
+          .view: "true",
+          .create: "auth.id != null",
+          .update: "onlyMutableFields",
+          .delete: "false",
+        ],
+        bind: [
+          InstantPermissionBinding(
+            "onlyMutableFields",
+            "request.modifiedFields.all(field, field in ['status'])"
+          )
+        ]
+      ),
+      InstantNamespacePermissions(
+        namespace: "points",
+        allow: [
+          .view: "true",
+          .create: "auth.id != null",
+          .update: "isOwner && onlyMutableFields",
+          .delete: "false",
+        ],
+        bind: [
+          InstantPermissionBinding("isOwner", "auth.id == data.userId"),
+          InstantPermissionBinding(
+            "onlyMutableFields",
+            "request.modifiedFields.all(field, field in ['val'])"
+          ),
+        ]
+      ),
+    ]
+  )
+
   public static let reactionsRoom = InstantRoomSchema(
     name: "topics-example",
     presence: InstantRoomPayloadSchema(),
