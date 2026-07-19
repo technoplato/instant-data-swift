@@ -1,5 +1,6 @@
 import CustomDump
 import Foundation
+import InstantSwiftData
 import InstantSwiftDataTesting
 import Testing
 
@@ -42,6 +43,40 @@ struct InstantAvatarStackV3LiveValidationTests {
     expectNoDifference(
       try JSONDecoder().decode(InstantAvatarStackV3LiveValidationDetails.self, from: encoded),
       details
+    )
+  }
+
+  @Test
+  func remotePeerCountExcludesTheLocalCanonicalPresence() {
+    let room = InstantRoomHandle(type: "avatars-example", id: "avatars-example-1234")
+    let local = InstantRoomPresenceMember(
+      appID: "avatar-stack-app",
+      room: room,
+      userID: "swift-session",
+      values: ["name": .string("abcdef")],
+      updatedAt: InstantTimestamp(milliseconds: 1)
+    )
+    let remote = InstantRoomPresenceMember(
+      appID: "avatar-stack-app",
+      room: room,
+      userID: "typescript-session",
+      values: ["name": .string("uvwxyz")],
+      updatedAt: InstantTimestamp(milliseconds: 2)
+    )
+
+    expectNoDifference(
+      InstantAvatarStackV3LiveValidation.remotePeerCount(
+        in: [local, remote],
+        excludingName: "abcdef"
+      ),
+      1
+    )
+    expectNoDifference(
+      InstantAvatarStackV3LiveValidation.remotePeerCount(
+        in: [local],
+        excludingName: "abcdef"
+      ),
+      0
     )
   }
 }
