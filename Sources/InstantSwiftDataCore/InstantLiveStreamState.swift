@@ -185,7 +185,7 @@ actor InstantLiveStreamReaderState {
     }
 
     var delivery = append
-    if let content = append.content {
+    if append.files.isEmpty, let content = append.content {
       let bytes = Data(content.utf8)
       let discardByteCount = seenOffset - append.offset
       guard discardByteCount <= Int64(bytes.count) else {

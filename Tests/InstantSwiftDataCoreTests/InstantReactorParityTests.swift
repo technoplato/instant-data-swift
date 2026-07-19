@@ -1433,6 +1433,212 @@ struct InstantReactorParityTests {
   }
 
   @Test
+  func runtimeFileStreamAppendPublishesAndAdvancesByFetchedBytes() async throws {
+    let firstSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "stream-file-before")
+    ])
+    let secondSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "stream-file-after")
+    ])
+    let transport = LiveReactorParityTransport(sessions: [firstSession, secondSession])
+    let fileTransport = InstantStreamFileTransportClient { url in
+      expectNoDifference(
+        url.absoluteString,
+        "https://files.test/chunk",
+        pythonStreamAppendMaterializationSource
+      )
+      let bytes = Data("lo 🚀".utf8)
+      return InstantStreamFileFetchResponse(
+        statusCode: 200,
+        body: AsyncThrowingStream { continuation in
+          continuation.yield(bytes.prefix(5))
+          continuation.yield(bytes.dropFirst(5))
+          continuation.finish()
+        }
+      )
+    }
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "python-stream-file-append-parity",
+        persistenceURL: try temporaryReactorParityCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: transport.transport
+      ),
+      storageTransport: nil,
+      streamFileTransport: fileTransport
+    )
+    _ = try await runtime.signInAsGuest()
+    let metadata = try await runtime.createStream(clientID: "stream-file-append")
+    _ = try await runtime.appendStreamContent(streamID: metadata.id, content: "hello")
+    _ = try await runtime.connect()
+
+    let observation = try await runtime.observeStreamContent(streamID: metadata.id)
+    let observerTask = Task { () -> [InstantStreamContentRead] in
+      var iterator = observation.makeAsyncIterator()
+      var values: [InstantStreamContentRead] = []
+      if let initial = await iterator.next() { values.append(initial) }
+      if let updated = await iterator.next() { values.append(updated) }
+      return values
+    }
+    defer { observerTask.cancel() }
+
+    try await instantLiveWithTimeout(
+      operation: "wait for file stream subscription",
+      timeoutMilliseconds: 500
+    ) {
+      await firstSession.waitForSentMessageCount(2)
+    }
+    let subscribe = try #require(await firstSession.sentMessages().last)
+    await firstSession.enqueue(
+      InstantLiveMessage(
+        op: "stream-append",
+        clientEventID: subscribe.clientEventID,
+        fields: [
+          "client-id": .string("stream-file-append"),
+          "files": .array([
+            .object([
+              "size": .number(999),
+              "url": .string("https://files.test/chunk"),
+            ])
+          ]),
+          "offset": .number(3),
+          "retry": .bool(false),
+          "stream-id": .string(metadata.id),
+        ]
+      )
+    )
+
+    let values = try await instantLiveWithTimeout(
+      operation: "wait for file stream append publication",
+      timeoutMilliseconds: 500
+    ) {
+      await observerTask.value
+    }
+    expectNoDifference(
+      values.map(\.content),
+      ["hello", "hello 🚀"],
+      pythonStreamAppendMaterializationSource
+    )
+
+    await firstSession.failReceive(
+      InstantError(
+        code: .networkFailed,
+        operation: "drop file stream session",
+        message: "verify fetched-byte resume offset",
+        recovery: "Reconnect the stream reader."
+      )
+    )
+    try await instantLiveWithTimeout(
+      operation: "wait for file stream reconnect",
+      timeoutMilliseconds: 500
+    ) {
+      await transport.waitForConnectionCount(2)
+    }
+    try await instantLiveWithTimeout(
+      operation: "wait for file stream resubscription",
+      timeoutMilliseconds: 500
+    ) {
+      await secondSession.waitForSentMessageCount(2)
+    }
+    let resubscribe = try #require(await secondSession.sentMessages().last)
+    expectNoDifference(
+      resubscribe.fields,
+      [
+        "offset": .number(10),
+        "stream-id": .string(metadata.id),
+      ],
+      pythonStreamAppendMaterializationSource
+    )
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func runtimeFileStreamFailureReconnectsWithoutAdvancingOffset() async throws {
+    let firstSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "stream-file-fail-before")
+    ])
+    let secondSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "stream-file-fail-after")
+    ])
+    let transport = LiveReactorParityTransport(sessions: [firstSession, secondSession])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "python-stream-file-failure-parity",
+        persistenceURL: try temporaryReactorParityCacheURL(),
+        initialAttributes: TodoExample.attributes,
+        liveTransport: transport.transport
+      ),
+      storageTransport: nil,
+      streamFileTransport: InstantStreamFileTransportClient { _ in
+        InstantStreamFileFetchResponse(statusCode: 503, data: Data())
+      }
+    )
+    _ = try await runtime.signInAsGuest()
+    let metadata = try await runtime.createStream(clientID: "stream-file-failure")
+    _ = try await runtime.appendStreamContent(streamID: metadata.id, content: "hello")
+    _ = try await runtime.connect()
+
+    let observation = try await runtime.observeStreamContent(streamID: metadata.id)
+    let observerTask = Task {
+      var iterator = observation.makeAsyncIterator()
+      _ = await iterator.next()
+      _ = await iterator.next()
+    }
+    defer { observerTask.cancel() }
+
+    try await instantLiveWithTimeout(
+      operation: "wait for failing file stream subscription",
+      timeoutMilliseconds: 500
+    ) {
+      await firstSession.waitForSentMessageCount(2)
+    }
+    let subscribe = try #require(await firstSession.sentMessages().last)
+    await firstSession.enqueue(
+      InstantLiveMessage(
+        op: "stream-append",
+        clientEventID: subscribe.clientEventID,
+        fields: [
+          "client-id": .string("stream-file-failure"),
+          "files": .array([
+            .object([
+              "size": .number(10),
+              "url": .string("https://files.test/failure"),
+            ])
+          ]),
+          "offset": .number(5),
+          "retry": .bool(false),
+          "stream-id": .string(metadata.id),
+        ]
+      )
+    )
+
+    try await instantLiveWithTimeout(
+      operation: "wait for failed file stream reconnect",
+      timeoutMilliseconds: 500
+    ) {
+      await transport.waitForConnectionCount(2)
+    }
+    try await instantLiveWithTimeout(
+      operation: "wait for failed file stream resubscription",
+      timeoutMilliseconds: 500
+    ) {
+      await secondSession.waitForSentMessageCount(2)
+    }
+    let resubscribe = try #require(await secondSession.sentMessages().last)
+    expectNoDifference(
+      resubscribe.fields,
+      [
+        "offset": .number(5),
+        "stream-id": .string(metadata.id),
+      ],
+      pythonStreamAppendMaterializationSource
+    )
+    let read = try await runtime.streamContent(streamID: metadata.id)
+    expectNoDifference(read.content, "hello", pythonStreamAppendMaterializationSource)
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
   func runtimeAppliesLivePresencePatchesAndEphemeralServerBroadcasts() async throws {
     let room = InstantRoomHandle(type: "chat", id: "room-events")
     let now = InstantTimestamp(milliseconds: 1_700_000_080_000)

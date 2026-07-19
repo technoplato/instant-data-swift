@@ -651,17 +651,18 @@ private actor InstantRuntimeLiveSession {
     return nil
   }
 
-  func recordDeliveredStreamAppend(_ append: InstantLiveStreamAppend) async {
+  func recordDeliveredStreamAppend(
+    _ append: InstantLiveStreamAppend,
+    seenOffset: Int64
+  ) async {
     guard let clientEventID = append.clientEventID else { return }
-    let deliveredByteCount = Int64(append.content?.utf8.count ?? 0)
-      + append.files.reduce(Int64(0)) { $0 + $1.size }
     for key in registeredStreamReaders.keys.sorted() {
       guard let registration = registeredStreamReaders[key],
         await registration.reader.subscriptionEventID == clientEventID
       else {
         continue
       }
-      await registration.reader.recordSeenOffset(append.offset + deliveredByteCount)
+      await registration.reader.recordSeenOffset(seenOffset)
       return
     }
   }
@@ -1012,6 +1013,7 @@ public final class InstantRuntime: Sendable {
   private let storedFilesObservers =
     InstantSnapshotObservers<InstantStoredFilesObservationKey, [InstantStoredFile]>()
   private let storageTransport: InstantStorageTransportClient?
+  private let streamFileTransport: InstantStreamFileTransportClient
   private let streamChunksObservers =
     InstantSnapshotObservers<InstantStreamChunksObservationKey, [InstantStreamChunk]>()
   private let streamContentObservers = InstantStreamContentObservers()
@@ -1029,22 +1031,40 @@ public final class InstantRuntime: Sendable {
     store: InstantStore,
     outbox: InstantOutbox,
     persistence: SQLitePersistenceStore,
-    storageTransport: InstantStorageTransportClient?
+    storageTransport: InstantStorageTransportClient?,
+    streamFileTransport: InstantStreamFileTransportClient
   ) {
     self.configuration = configuration
     self.store = store
     self.outbox = outbox
     self.persistence = persistence
     self.storageTransport = storageTransport
+    self.streamFileTransport = streamFileTransport
   }
 
   public static func bootstrap(configuration: InstantRuntimeConfiguration) async throws -> Self {
-    try await bootstrap(configuration: configuration, storageTransport: nil)
+    try await bootstrap(
+      configuration: configuration,
+      storageTransport: nil,
+      streamFileTransport: .live
+    )
   }
 
   public static func bootstrap(
     configuration: InstantRuntimeConfiguration,
     storageTransport: InstantStorageTransportClient?
+  ) async throws -> Self {
+    try await bootstrap(
+      configuration: configuration,
+      storageTransport: storageTransport,
+      streamFileTransport: .live
+    )
+  }
+
+  public static func bootstrap(
+    configuration: InstantRuntimeConfiguration,
+    storageTransport: InstantStorageTransportClient?,
+    streamFileTransport: InstantStreamFileTransportClient
   ) async throws -> Self {
     try validateEndpoints(configuration)
     try validateInitialAttributes(configuration.initialAttributes)
@@ -1061,7 +1081,8 @@ public final class InstantRuntime: Sendable {
       store: store,
       outbox: outbox,
       persistence: persistence,
-      storageTransport: storageTransport
+      storageTransport: storageTransport,
+      streamFileTransport: streamFileTransport
     )
 
     if !configuration.initialAttributes.isEmpty {
@@ -2154,8 +2175,8 @@ public final class InstantRuntime: Sendable {
       ) else {
         return
       }
-      try await applyLiveStreamAppend(delivery)
-      await liveSession.recordDeliveredStreamAppend(delivery)
+      let seenOffset = try await applyLiveStreamAppend(delivery)
+      await liveSession.recordDeliveredStreamAppend(delivery, seenOffset: seenOffset)
 
     case let .error(error):
       if let clientEventID = error.clientEventID?.nilIfEmpty,
@@ -2178,21 +2199,42 @@ public final class InstantRuntime: Sendable {
     }
   }
 
-  private func applyLiveStreamAppend(_ append: InstantLiveStreamAppend) async throws {
-    if !append.files.isEmpty {
+  private func applyLiveStreamAppend(_ append: InstantLiveStreamAppend) async throws -> Int64 {
+    guard let current = try await persistence.loadStreamContent(
+      appID: configuration.appID,
+      streamID: append.streamID,
+      byteOffset: 0
+    ) else {
       throw InstantError(
         code: .implementationFailed,
         operation: "apply Instant live stream append",
         serverEventID: append.clientEventID,
-        message: "File-backed live stream appends are not implemented yet.",
-        recovery: "Use inline stream content until the canonical file-fetch packet is ported."
+        message: "Instant stream '\(append.streamID)' has no local metadata.",
+        recovery: "Bootstrap remote stream metadata before materializing the append."
       )
     }
-    if let content = append.content, !content.isEmpty {
+    let seenOffset = current.byteOffset + current.byteCount
+    let materialization = try await InstantStreamFileAppendMaterializer.materialize(
+      append,
+      seenOffset: seenOffset,
+      transport: streamFileTransport
+    )
+
+    if !materialization.data.isEmpty {
+      guard let content = String(data: materialization.data, encoding: .utf8) else {
+        throw InstantError(
+          code: .decodeFailed,
+          operation: "materialize Instant stream append",
+          path: "content",
+          serverEventID: append.clientEventID,
+          message: "Instant stream file content is not valid UTF-8.",
+          recovery: "Reconnect from a server-confirmed UTF-8 byte boundary."
+        )
+      }
       _ = try await appendStreamContent(
         streamID: append.streamID,
         content: content,
-        expectedOffset: append.offset
+        expectedOffset: seenOffset
       )
     }
     if append.done {
@@ -2201,6 +2243,7 @@ public final class InstantRuntime: Sendable {
         abortReason: append.abortReason
       )
     }
+    return materialization.nextSeenOffset
   }
 
   private func applyLivePresenceRefresh(
