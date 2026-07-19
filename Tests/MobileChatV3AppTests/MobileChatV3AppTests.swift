@@ -93,5 +93,56 @@ import Testing
 
       expectNoDifference(appAttributes, canonicalAttributes)
     }
+
+    @Test @MainActor
+    func roomTopicsUseTheCanonicalTypingAndEmojiPayloads() throws {
+      let fixture: any View = MobileChatTopicsFixture()
+      _ = fixture
+
+      expectNoDifference(MobileChatRoom.Topic.typing.rawValue, "typing")
+      expectNoDifference(MobileChatRoom.Topic.emoji.rawValue, "emoji")
+
+      let encoder = JSONEncoder()
+      encoder.outputFormatting = [.sortedKeys]
+      expectNoDifference(
+        String(
+          decoding: try encoder.encode(MobileChatTypingEvent(isTyping: true)),
+          as: UTF8.self
+        ),
+        #"{"isTyping":true}"#
+      )
+      expectNoDifference(
+        String(
+          decoding: try encoder.encode(
+            MobileChatReaction(
+              name: .wave,
+              directionAngle: 90,
+              rotationAngle: 180
+            )
+          ),
+          as: UTF8.self
+        ),
+        #"{"directionAngle":90,"name":"wave","rotationAngle":180}"#
+      )
+    }
+  }
+
+  @MainActor
+  private struct MobileChatTopicsFixture: View {
+    @Room private var room: InstantRoom<MobileChatRoom>
+    @Topic(MobileChatRoom.Topic.typing)
+    private var typing: InstantTopic<MobileChatTypingEvent>
+    @Topic(MobileChatRoom.Topic.emoji)
+    private var reactions: InstantTopic<MobileChatReaction>
+
+    var body: some View {
+      Text("\(typing.messages.count):\(reactions.messages.count)")
+        .instantRoom(
+          $room,
+          InstantRoom<MobileChatRoom>(type: MobileChatRoom.roomType, id: "source-contract")
+        )
+        .instantTopic($typing, in: room)
+        .instantTopic($reactions, in: room)
+    }
   }
 #endif
