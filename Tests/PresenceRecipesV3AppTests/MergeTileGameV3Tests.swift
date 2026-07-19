@@ -1,5 +1,6 @@
 import CustomDump
 import Foundation
+import InstantSwiftData
 import PresenceRecipesV3App
 import Testing
 
@@ -14,19 +15,21 @@ import Testing
 struct MergeTileGameV3Tests {
   #if canImport(SwiftUI)
     @Test
-    func desiredEntityRoomPresenceAndMergeSyntaxCompiles() {
+    func desiredEntityFetchMessageRoomAndPresenceSyntaxCompiles() {
       let screen: any View = MergeTileGameV3Screen(
         profileID: "local-session",
         color: "#e76f51"
       )
       _ = screen
 
+      expectNoDifference(MergeTileGameV3Room.roomType, "tile-game-example")
+      expectNoDifference(MergeTileGameV3Room.defaultRoomID, "_defaultRoomId")
       expectNoDifference(
         MergeTileGameV3Board.boardID,
         "83c059e2-ed47-42e5-bdd9-6de88d26c521"
       )
-      expectNoDifference(MergeTileGameV3Room.roomType, "tile-game-example")
-      expectNoDifference(MergeTileGameV3Room.defaultRoomID, "_defaultRoomId")
+      expectNoDifference(MergeTileGameV3Board.boardSize, 4)
+      expectNoDifference(MergeTileGameV3Board.emptyColor, "#f5f3f0")
     }
   #endif
 
@@ -65,16 +68,60 @@ struct MergeTileGameV3Tests {
   }
 
   @Test
-  func presenceEncodesOnlyTheCanonicalColorField() throws {
+  func boardMessagesCreateMergeIndependentCellsAndResetExactState() async throws {
+    let persistenceURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("merge-tile-game-v3-tests-\(UUID().uuidString).sqlite")
+    defer { try? FileManager.default.removeItem(at: persistenceURL) }
+
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "merge-tile-game-v3-tests",
+        persistenceURL: persistenceURL,
+        initialAttributes: MergeTileGameV3Board.instantAttributes
+      )
+    )
+    let client = InstantSwiftDataClient(runtime: runtime)
+
+    let initialized = try await InitializeMergeTileGameV3Board().prepare(using: client)
+    _ = try await client.transact {
+      for mutation in initialized.mutations { mutation }
+    }
+
+    for message in [
+      PaintMergeTileGameV3Cell(row: 0, column: 0, color: "#e76f51"),
+      PaintMergeTileGameV3Cell(row: 0, column: 1, color: "#2a9d8f"),
+    ] {
+      let prepared = try await message.prepare(using: client)
+      _ = try await client.transact {
+        for mutation in prepared.mutations { mutation }
+      }
+    }
+
+    let board = FetchOne(MergeTileGameV3Board.query)
+    try await board.load(using: client)
+    expectNoDifference(board.wrappedValue?.color(row: 0, column: 0), "#e76f51")
+    expectNoDifference(board.wrappedValue?.color(row: 0, column: 1), "#2a9d8f")
+    expectNoDifference(board.wrappedValue?.stateObject.count, 16)
+
+    let reset = try await ResetMergeTileGameV3Board().prepare(using: client)
+    _ = try await client.transact {
+      for mutation in reset.mutations { mutation }
+    }
+    try await board.load(using: client)
+    expectNoDifference(board.wrappedValue?.stateObject, MergeTileGameV3Board.emptyState)
+  }
+
+  @Test
+  func presencePublishesOnlyTheCanonicalColorField() throws {
+    let presence = MergeTileGameV3Presence(
+      userID: "session-metadata",
+      color: "#e76f51"
+    )
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys]
+
     expectNoDifference(
-      String(
-        decoding: try encoder.encode(
-          MergeTileGameV3Presence(userID: "session-metadata", color: "#e76f51")
-        ),
-        as: UTF8.self
-      ),
+      String(decoding: try encoder.encode(presence), as: UTF8.self),
       ##"{"color":"#e76f51"}"##
     )
   }
