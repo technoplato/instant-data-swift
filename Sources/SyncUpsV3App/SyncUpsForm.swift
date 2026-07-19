@@ -11,7 +11,7 @@ public struct SyncUpsV3AttendeeDraft: Equatable, Hashable, Identifiable, Sendabl
   }
 }
 
-public struct SyncUpsV3FormState: Equatable, Sendable {
+public struct SyncUpsV3FormState: Equatable, Identifiable, Sendable {
   public enum Field: Equatable, Hashable, Sendable {
     case attendee(InstantID<SyncUpsV3Attendee>)
     case title
@@ -25,6 +25,13 @@ public struct SyncUpsV3FormState: Equatable, Sendable {
   public internal(set) var existingAttendeeIDs: [InstantID<SyncUpsV3Attendee>]
   public var focus: Field?
   public var isDismissed: Bool
+
+  public var id: String { syncUpID?.rawValue ?? "new-sync-up" }
+
+  public var durationMinutes: Double {
+    get { Double(seconds) / 60 }
+    set { seconds = Int(newValue * 60) }
+  }
 
   public init(
     syncUp: SyncUpsV3SyncUp? = nil,
