@@ -187,6 +187,12 @@ As of 2026-07-18:
   proves those exact app-owned payloads in both directions before and after a
   forced reconnect, with zero warnings. Evidence is in
   `/tmp/instant-data-swift-voice-trail-v3-app-20260719T005834Z/evidence.json`.
+- Commits `f1b4d30` and `58b7496` add the first non-VoiceTrail Packet 8 app:
+  a runnable `todos-v3` SwiftUI executable and shared `TodosV3App` target. It
+  uses the desired `@InstantEntity`, `@FetchAll`, typed-message, call-site
+  callback, room, and presence syntax. Focused model tests and the full package
+  gate pass at 922 Swift tests in 42 suites. The live bidirectional, viewer,
+  and offline boundary is the next packet; this shell is not yet E2E evidence.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
@@ -231,6 +237,7 @@ When sources disagree, use this order:
 | Source-to-Swift parity ledger | `Sources/InstantSwiftDataCore/InstantParityCoverage.swift` |
 | Reproducible Swift/TypeScript harness | `validation/run-e2e.sh` and `validation/README.md` |
 | Aggregate VoiceTrail app gate | `validation/verify-voice-trail-v3-app-live.sh` and its `app-capture.json`/`evidence.json` artifacts |
+| Runnable Todos app | `Sources/TodosV3App/`, `Sources/TodosV3Executable/`, and `Tests/TodosV3AppTests/` |
 
 ## Decisions Already Made
 
@@ -714,11 +721,17 @@ comment-committed payloads. The clean aggregate rerun proves those app types in
 both directions before and after forced reconnect. Evidence is at
 `/tmp/instant-data-swift-voice-trail-v3-app-20260719T005834Z/evidence.json`.
 
-Next, start the required app matrix with Todos: add a thin runnable SwiftUI
-host over the existing public typed query/message surface, port the canonical
-TypeScript Todos data-shape test into that app target, and bind the flow to a
-fresh-app Swift-to-TypeScript and TypeScript-to-Swift gate. Continue with the
-remaining Packet 8 examples only after that packet is green. Do not create the
+The Todos shell is complete in `f1b4d30` and `58b7496`. `todos-v3` is a thin
+runnable SwiftUI host over a shared `TodosV3App` target, and the app compiles
+the requested `@InstantEntity`, `@FetchAll`, typed-message, room, and presence
+surface. The full package gate passes at 922 Swift tests in 42 suites.
+
+Next, port the canonical upstream Todos flow into a fresh-app live gate: Swift
+creates through the app message and TypeScript observes the exact shape;
+TypeScript updates and Swift's typed subscription observes it; a second peer
+changes the viewer count; and a Swift write queued while disconnected appears
+after reconnect. Continue with the remaining Packet 8 examples only after all
+four proofs are green. Do not create the
 `v0.4.0-apps-e2e` tag until the required app matrix—not only VoiceTrail—passes.
 
 The product-payload mismatch is resolved: playback presence stores and encodes
