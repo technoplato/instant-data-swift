@@ -375,6 +375,202 @@ public enum InstantSchemaExamples {
     ]
   )
 
+  private static func mobileChatEntity(
+    typeName: String,
+    namespace: String
+  ) -> InstantEntitySchema {
+    InstantEntitySchema(
+      typeName: typeName,
+      namespace: namespace,
+      attributes: MobileChatExample.attributes.filter {
+        $0.namespace == namespace && ($0.primaryKey || $0.valueType != .ref)
+      }
+    )
+  }
+
+  public static let mobileChatRoom = InstantRoomSchema(
+    name: "chat",
+    presence: InstantRoomPayloadSchema(
+      attributes: [
+        InstantAttribute(
+          id: "rooms/chat/presence/profileID",
+          namespace: "rooms/chat/presence",
+          name: "profileID",
+          valueType: .string
+        ),
+        InstantAttribute(
+          id: "rooms/chat/presence/displayName",
+          namespace: "rooms/chat/presence",
+          name: "displayName",
+          valueType: .string
+        ),
+      ]
+    ),
+    topics: [
+      InstantRoomTopicSchema(
+        name: "typing",
+        payload: InstantRoomPayloadSchema(
+          attributes: [
+            InstantAttribute(
+              id: "rooms/chat/topics/typing/isTyping",
+              namespace: "rooms/chat/topics/typing",
+              name: "isTyping",
+              valueType: .boolean
+            )
+          ]
+        )
+      ),
+      InstantRoomTopicSchema(
+        name: "emoji",
+        payload: InstantRoomPayloadSchema(
+          attributes: [
+            InstantAttribute(
+              id: "rooms/chat/topics/emoji/name",
+              namespace: "rooms/chat/topics/emoji",
+              name: "name",
+              valueType: .string
+            ),
+            InstantAttribute(
+              id: "rooms/chat/topics/emoji/directionAngle",
+              namespace: "rooms/chat/topics/emoji",
+              name: "directionAngle",
+              valueType: .number
+            ),
+            InstantAttribute(
+              id: "rooms/chat/topics/emoji/rotationAngle",
+              namespace: "rooms/chat/topics/emoji",
+              name: "rotationAngle",
+              valueType: .number
+            ),
+          ]
+        )
+      ),
+    ]
+  )
+
+  public static let mobileChatDocument = InstantSchemaDocument(
+    entities: [
+      mobileChatEntity(typeName: "MobileChatFile", namespace: "$files"),
+      mobileChatEntity(typeName: "MobileChatUser", namespace: "$users"),
+      mobileChatEntity(typeName: "MobileChatProfile", namespace: "mobileProfiles"),
+      mobileChatEntity(typeName: "MobileChatChannel", namespace: "mobileChannels"),
+      mobileChatEntity(typeName: "MobileChatMessage", namespace: "mobileMessages"),
+    ],
+    links: [
+      InstantLinkSchema(
+        name: "mobileUsersLinkedPrimaryUser",
+        forward: InstantLinkEndpoint(
+          namespace: "$users",
+          cardinality: .one,
+          label: "linkedPrimaryUser",
+          onDelete: .cascade
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "$users",
+          cardinality: .many,
+          label: "linkedGuestUsers"
+        )
+      ),
+      InstantLinkSchema(
+        name: "mobileProfilesUser",
+        forward: InstantLinkEndpoint(
+          namespace: "mobileProfiles",
+          cardinality: .one,
+          label: "user",
+          onDelete: .cascade
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "$users",
+          cardinality: .one,
+          label: "mobileProfile"
+        ),
+        isRequired: true
+      ),
+      InstantLinkSchema(
+        name: "mobileMessagesAuthor",
+        forward: InstantLinkEndpoint(
+          namespace: "mobileMessages",
+          cardinality: .one,
+          label: "author",
+          onDelete: .cascade
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "mobileProfiles",
+          cardinality: .many,
+          label: "messages"
+        )
+      ),
+      InstantLinkSchema(
+        name: "mobileMessagesChannel",
+        forward: InstantLinkEndpoint(
+          namespace: "mobileMessages",
+          cardinality: .one,
+          label: "channel",
+          onDelete: .cascade
+        ),
+        reverse: InstantLinkEndpoint(
+          namespace: "mobileChannels",
+          cardinality: .many,
+          label: "messages"
+        ),
+        isRequired: true
+      ),
+    ],
+    rooms: [mobileChatRoom]
+  )
+
+  public static let mobileChatPermissions = InstantPermissionsDocument(
+    namespaces: [
+      InstantNamespacePermissions(
+        namespace: "$files",
+        allow: Dictionary(
+          uniqueKeysWithValues: InstantPermissionAction.entityActions.map {
+            ($0, "auth.id != null")
+          }
+        )
+      ),
+      InstantNamespacePermissions(
+        namespace: "$users",
+        allow: [.view: "auth.id != null"]
+      ),
+      InstantNamespacePermissions(
+        namespace: "mobileProfiles",
+        allow: [
+          .view: "auth.id != null",
+          .create: "isSelf",
+          .update: "isSelf",
+          .delete: "isSelf",
+        ],
+        bind: [
+          InstantPermissionBinding("isSelf", "auth.id in data.ref('user.id')")
+        ]
+      ),
+      InstantNamespacePermissions(
+        namespace: "mobileChannels",
+        allow: Dictionary(
+          uniqueKeysWithValues: InstantPermissionAction.entityActions.map {
+            ($0, "auth.id != null")
+          }
+        )
+      ),
+      InstantNamespacePermissions(
+        namespace: "mobileMessages",
+        allow: [
+          .view: "auth.id != null",
+          .create: "isAuthor",
+          .update: "isAuthor",
+          .delete: "isAuthor",
+        ],
+        bind: [
+          InstantPermissionBinding(
+            "isAuthor",
+            "auth.id in data.ref('author.user.id')"
+          )
+        ]
+      ),
+    ]
+  )
+
   public static let validationProfiles = InstantEntitySchema(
     typeName: "Profile",
     namespace: "profiles",
