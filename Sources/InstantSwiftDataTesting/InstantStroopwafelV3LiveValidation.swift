@@ -399,10 +399,24 @@ public enum InstantStroopwafelV3LiveValidation {
     )
     defer { task.cancel() }
     let deadline = ContinuousClock.now + .seconds(30)
+    let explicitFlushAt = ContinuousClock.now + .seconds(5)
+    var didExplicitlyFlush = false
     while ContinuousClock.now < deadline {
       let result = await MainActor.run { (outcome.accepted, outcome.failure) }
       if let error = result.1 { throw error }
       if result.0 { return }
+      if !didExplicitlyFlush, ContinuousClock.now >= explicitFlushAt {
+        didExplicitlyFlush = true
+        let flush = try await client.flushPendingMutations()
+        if let failed = flush.results.first(where: { $0.outcome == .failed }) {
+          throw failure(
+            "Server rejected \(operation): \(failed.message ?? "unknown failure")."
+          )
+        }
+        if !flush.confirmed.isEmpty || flush.pendingMutationCount == 0 {
+          return
+        }
+      }
       try await Task.sleep(for: .milliseconds(25))
     }
     throw failure("Timed out waiting for server acceptance: \(operation).")
