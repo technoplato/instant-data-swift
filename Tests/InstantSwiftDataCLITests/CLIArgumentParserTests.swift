@@ -2916,6 +2916,12 @@ struct CLIArgumentParserTests {
       try parseSchema(["verify", "--example", "validation", "--from", "validation.schema.ts"]),
       .verify(CLIVerifyArtifactInvocation(example: "validation", inputPath: "validation.schema.ts"))
     )
+    expectNoDifference(
+      try parseSchema(["generate", "--example", "cursors"]),
+      .generate(CLIGenerateArtifactInvocation(example: "cursors"))
+    )
+    #expect(CLISchemaUsage.generate.contains("|cursors"))
+    #expect(CLISchemaUsage.verify.contains("|cursors"))
   }
 
   @Test
@@ -2968,6 +2974,12 @@ struct CLIArgumentParserTests {
       try parsePermissions(["verify", "--example", "validation", "--from", "validation.perms.ts"]),
       .verify(CLIVerifyArtifactInvocation(example: "validation", inputPath: "validation.perms.ts"))
     )
+    expectNoDifference(
+      try parsePermissions(["generate", "--example", "cursors"]),
+      .generate(CLIGenerateArtifactInvocation(example: "cursors"))
+    )
+    #expect(CLIPermissionsUsage.generate.contains("|cursors"))
+    #expect(CLIPermissionsUsage.verify.contains("|cursors"))
   }
 
   @Test
