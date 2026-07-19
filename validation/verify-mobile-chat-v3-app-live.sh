@@ -197,7 +197,13 @@ assert.match(live.details.permissions.rejection, /permission|denied|record|auth|
 assert.equal(schema.entityCount, 5);
 assert.equal(schema.attributeCount, 14);
 assert.equal(schema.linkCount, 4);
-assert.deepStrictEqual(schema.warnings, []);
+assert.deepStrictEqual(schema.warnings, [
+  { code: "system-entity", path: "$streams" },
+  { code: "canonical-link-name", path: "authorMessages->messagesAuthor" },
+  { code: "canonical-link-name", path: "channelMessages->messagesChannel" },
+  { code: "canonical-link-name", path: "userProfile->profilesUser" },
+  { code: "system-link", path: "$streams$files" },
+]);
 assert.equal(permissions.namespaceCount, 5);
 assert.equal(permissions.allowRuleCount, 17);
 assert.equal(permissions.rateLimitCount, 0);
