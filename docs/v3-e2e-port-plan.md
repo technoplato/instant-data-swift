@@ -623,6 +623,35 @@ Target: the complete definition of done in
 `docs/instant-swift-data-goals.md` passes from a clean checkout with reproducible
 Swift/TypeScript evidence and benchmark artifacts.
 
+### V1 readiness audit — 2026-07-19
+
+The `v0.4.0-apps-e2e` matrix closes the syntax, app-port, live data-plane,
+schema, permissions, auth, sharing, storage, room, presence/topic, and stream
+acceptance rows. The remaining work is narrower than another port phase:
+
+1. **Close the artifact-aware parity gate.** Static coverage still reports the
+   two credentialed live-transport directions as blocked unless evidence is
+   supplied under the legacy `run-e2e.sh` artifact names. The completed live
+   app gates already prove both directions; the next packet should teach the
+   aggregate coverage gate to consume the current non-secret evidence and
+   record a zero-blocked release artifact without weakening the static ledger.
+2. **Finish the performance definition of done.** Local Swift benchmark suites
+   exist, but no checked-in JSON/JSONL benchmark artifact compares equivalent
+   Swift and canonical TypeScript workloads, and live-transport actor-hop
+   counts remain unmeasured. Add the pinned TypeScript counterpart, quantify
+   every gap, name optimization targets where Swift is slower, and check in a
+   reproducible comparison artifact.
+3. **Add one clean-checkout V1 release gate.** Compose the already-green app
+   boundaries, artifact-aware zero-blocked coverage, benchmark comparison, full
+   Swift suite, isolated macro lane, runnable products, and complete
+   TypeScript matrix into one archiveable command. Do not create `v1.0.0`
+   until that command passes from a clean checkout.
+
+The locally adapted magic-code extra-fields test can be promoted with live
+transport evidence when that auth surface is revisited, but it is not an
+unclassified parity hole: the ledger already names the upstream test, Swift
+tests, adaptation, and remaining transport difference.
+
 ## Porting Discipline
 
 For every canonical Instant behavior, port the upstream source-of-truth test
