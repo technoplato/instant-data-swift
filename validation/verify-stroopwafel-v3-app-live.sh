@@ -122,7 +122,7 @@ assert.equal(
 assert.equal(live.details.completedGame.rooms[0].currentGameId, undefined);
 assert.equal(live.details.swift.typeScriptPointObservedBySwift.value, 1);
 assert.equal(live.details.swift.winningPointValue, 13);
-assert.equal(live.details.swift.currentGameIDAfterCompletion, null);
+assert.equal(live.details.swift.currentGameIDAfterCompletion, undefined);
 assert.equal(live.details.swift.connectionState, "authenticated");
 assert.equal(schema.entityCount, 4);
 assert.equal(schema.attributeCount, 21);

@@ -173,7 +173,7 @@ try {
   assert.equal(swiftEvidence.event, "typescript-point-and-swift-completion-observed");
   assert.equal(swiftEvidence.details.winningPointValue, 13);
   assert.equal(swiftEvidence.details.typeScriptPointObservedBySwift.value, 1);
-  assert.equal(swiftEvidence.details.currentGameIDAfterCompletion, null);
+  assert.equal(swiftEvidence.details.currentGameIDAfterCompletion, undefined);
   assert.equal(swiftEvidence.details.connectionState, "authenticated");
   assert.deepEqual(warnings, []);
 
