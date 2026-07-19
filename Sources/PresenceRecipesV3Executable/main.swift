@@ -40,6 +40,12 @@ import PresenceRecipesV3App
                 color: "#123456"
               )
             }
+            NavigationLink("Merge Tile Game") {
+              MergeTileGameV3Screen(
+                profileID: "merge-tile-game-v3-user",
+                color: "#e76f51"
+              )
+            }
           }
           .navigationTitle("Presence Recipes")
         }
