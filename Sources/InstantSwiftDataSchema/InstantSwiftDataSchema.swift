@@ -1049,7 +1049,7 @@ public enum InstantSchemaExamples {
         namespace: ReminderExample.listsNamespace,
         allow: [
           .view: "isOwner || isWriter || isReader",
-          .create: "isOwner",
+          .create: "auth.id != null",
           .update: "isOwner || isWriter",
           .delete: "isOwner",
         ],
@@ -1092,7 +1092,7 @@ public enum InstantSchemaExamples {
         namespace: "v3_shares",
         allow: [
           .view: "isOwner || isMember",
-          .create: "isOwner",
+          .create: "auth.id != null",
           .update: "isOwner",
           .delete: "isOwner",
         ],

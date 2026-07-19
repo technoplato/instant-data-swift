@@ -93,12 +93,10 @@ try {
   (globalThis as any).window = globalThis;
   (globalThis as any).BroadcastChannel = undefined;
   (globalThis as any).WebSocket = WebSocket;
-  const ownerDB = coreDatabase(schema);
   const participantDB = coreDatabase(schema);
   const outsiderDB = coreDatabase(schema);
-  databases.push(ownerDB, participantDB, outsiderDB);
+  databases.push(participantDB, outsiderDB);
   await Promise.all([
-    ownerDB.auth.signInWithToken(swiftToken),
     participantDB.auth.signInWithToken(typeScriptToken),
     outsiderDB.auth.signInWithToken(outsiderToken),
   ]);
@@ -123,18 +121,6 @@ try {
       && reminder.tags.some((tag) => tag.id === remindersV3AppContract.fixtures.swiftTag)
     ))
   ));
-
-  await participantDB.transact(
-    participantDB.tx.v3_share_memberships[remindersV3AppContract.fixtures.readerMembership]
-      .update({
-        role: "reader",
-        acceptedAt: 1_784_424_001_000,
-      })
-      .link({
-        share: remindersV3AppContract.fixtures.share,
-        user: typeScriptUser.id,
-      }),
-  );
 
   const readerObserved = await nextJSONLine(
     lines,

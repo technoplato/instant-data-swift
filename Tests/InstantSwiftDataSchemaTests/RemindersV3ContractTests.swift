@@ -134,7 +134,7 @@ struct RemindersV3ContractTests {
       lists.allow,
       [
         .view: "isOwner || isWriter || isReader",
-        .create: "isOwner",
+        .create: "auth.id != null",
         .update: "isOwner || isWriter",
         .delete: "isOwner",
       ]
@@ -216,7 +216,7 @@ struct RemindersV3ContractTests {
       namespaces["v3_shares"],
       [
         .view: "isOwner || isMember",
-        .create: "isOwner",
+        .create: "auth.id != null",
         .update: "isOwner",
         .delete: "isOwner",
       ]

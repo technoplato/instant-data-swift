@@ -218,13 +218,6 @@ public enum InstantRemindersV3LiveValidation {
     }
     onSwiftGraphReady()
 
-    _ = try await waitForList(lists) { list in
-      list.share?.memberships.contains {
-          $0.id.rawValue == readerMembershipID
-            && $0.user == participantID
-            && $0.shareRole == .reader
-        } == true
-    }
     try await requireServerAcceptance(
       AcceptRemindersV3Share(
         shareID: InstantID(rawValue: shareID),
