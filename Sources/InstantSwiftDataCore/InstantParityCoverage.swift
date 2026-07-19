@@ -143,6 +143,79 @@ private struct LiveBoundaryArtifactContext: Sendable {
   var entityID: String?
 }
 
+private struct CloudKitDemoV3BoundaryArtifact: Sendable {
+  static let fileName = "cloudkit-demo-v3.json"
+  static let recordIDs = [
+    "instant.live-transport.swift-to-typescript",
+    "instant.live-transport.typescript-to-swift",
+  ]
+  static let note =
+    "CloudKitDemo V3 fresh-app evidence proves exact Swift-to-TypeScript and TypeScript-to-Swift shared-counter updates through the normal live runtimes."
+
+  static func isSatisfied(in directory: URL) -> Bool {
+    let fileURL = directory.appendingPathComponent(fileName)
+    guard let data = try? Data(contentsOf: fileURL),
+      let row = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+      row["case"] as? String == "validation.typescript.cloudkit-demo-v3-live-contract",
+      row["event"] as? String == "shared-counter-lifecycle-complete",
+      row["side"] as? String == "typescript",
+      row["ok"] as? Bool == true,
+      let appID = row["appID"] as? String,
+      !appID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+      appID != "local-validation",
+      let details = row["details"] as? [String: Any],
+      let ids = details["ids"] as? [String: Any],
+      let counterID = nonEmptyString(ids["counterID"]),
+      nonEmptyString(ids["shareID"]) != nil,
+      let before = details["beforeTypeScriptIncrement"] as? [String: Any],
+      integer(before["value"]) == 1,
+      let final = details["final"] as? [String: Any],
+      let owner = final["owner"] as? [String: Any],
+      integer(owner["value"]) == 2,
+      let reader = final["reader"] as? [String: Any],
+      integer(reader["count"]) == 0,
+      let writer = final["writer"] as? [String: Any],
+      integer(writer["value"]) == 2,
+      let outsider = final["outsider"] as? [String: Any],
+      integer(outsider["count"]) == 0,
+      let swift = details["swift"] as? [String: Any],
+      swift["counterID"] as? String == counterID,
+      integerArray(swift["ownerObservedValues"]) == [0, 1, 2],
+      integerArray(swift["readerObservedValues"]) == [0, 1, 0, 1, 2, 3, 2],
+      swift["readerVisibleAfterRevocation"] as? Bool == false,
+      integer(swift["relaunchedValue"]) == 2,
+      integer(swift["pendingMutationCount"]) == 0,
+      integer(swift["failedMutationCount"]) == 0,
+      integer(details["compilerWarningCount"]) == 0,
+      (details["warnings"] as? [Any])?.isEmpty == true
+    else {
+      return false
+    }
+    return true
+  }
+
+  private static func nonEmptyString(_ value: Any?) -> String? {
+    guard let value = value as? String else { return nil }
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
+  }
+
+  private static func integer(_ value: Any?) -> Int? {
+    guard let number = value as? NSNumber,
+      CFGetTypeID(number) != CFBooleanGetTypeID()
+    else { return nil }
+    let double = number.doubleValue
+    guard double.isFinite, double.rounded(.towardZero) == double else { return nil }
+    return Int(exactly: double)
+  }
+
+  private static func integerArray(_ value: Any?) -> [Int]? {
+    guard let values = value as? [Any] else { return nil }
+    let integers = values.compactMap(integer)
+    return integers.count == values.count ? integers : nil
+  }
+}
+
 public enum InstantSwiftDataParityCoverage {
   public static var current: InstantParityCoverageReport {
     InstantParityCoverageReport(records: records)
@@ -3396,6 +3469,15 @@ private extension Array where Element == InstantParityCoverageRecord {
       records[index].status = .adapted
       if !records[index].notes.contains(expectation.note) {
         records[index].notes += " \(expectation.note)"
+      }
+    }
+    if CloudKitDemoV3BoundaryArtifact.isSatisfied(in: directory) {
+      for recordID in CloudKitDemoV3BoundaryArtifact.recordIDs {
+        guard let index = records.firstIndex(where: { $0.id == recordID }) else { continue }
+        records[index].status = .adapted
+        if !records[index].notes.contains(CloudKitDemoV3BoundaryArtifact.note) {
+          records[index].notes += " \(CloudKitDemoV3BoundaryArtifact.note)"
+        }
       }
     }
     return records

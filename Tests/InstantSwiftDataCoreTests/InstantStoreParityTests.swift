@@ -6,6 +6,60 @@ import Testing
 @Suite(.serialized)
 struct InstantStoreParityTests {
   @Test
+  func cloudKitDemoV3FreshAppEvidenceClosesBothLiveTransportRecords() throws {
+    let artifactsURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent(
+        "InstantParityCloudKitDemoV3-\(UUID().uuidString)",
+        isDirectory: true
+      )
+    try FileManager.default.createDirectory(at: artifactsURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: artifactsURL) }
+    try """
+      {
+        "case": "validation.typescript.cloudkit-demo-v3-live-contract",
+        "event": "shared-counter-lifecycle-complete",
+        "side": "typescript",
+        "appID": "remote-cloudkit-demo-v3",
+        "ok": true,
+        "details": {
+          "ids": {"counterID": "counter-1", "shareID": "share-1"},
+          "beforeTypeScriptIncrement": {"value": 1},
+          "final": {
+            "owner": {"value": 2},
+            "reader": {"count": 0},
+            "writer": {"value": 2},
+            "outsider": {"count": 0}
+          },
+          "swift": {
+            "counterID": "counter-1",
+            "ownerObservedValues": [0, 1, 2],
+            "readerObservedValues": [0, 1, 0, 1, 2, 3, 2],
+            "readerVisibleAfterRevocation": false,
+            "relaunchedValue": 2,
+            "pendingMutationCount": 0,
+            "failedMutationCount": 0
+          },
+          "compilerWarningCount": 0,
+          "warnings": []
+        }
+      }
+      """.write(
+        to: artifactsURL.appendingPathComponent("cloudkit-demo-v3.json"),
+        atomically: true,
+        encoding: .utf8
+      )
+
+    let report = InstantSwiftDataParityCoverage.current(artifactsDirectory: artifactsURL)
+    expectNoDifference(report.coverageComplete, true)
+    expectNoDifference(report.adaptedCount, 265)
+    expectNoDifference(report.blockedCount, 0)
+    expectNoDifference(
+      report.records.filter { $0.surface == "live-transport" }.map(\.status),
+      [.adapted, .adapted]
+    )
+  }
+
+  @Test
   func parityCoverageReportRecordsCurrentSourceProvenance() throws {
     let report = InstantSwiftDataParityCoverage.current
 

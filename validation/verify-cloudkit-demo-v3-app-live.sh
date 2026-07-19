@@ -87,6 +87,10 @@ corepack pnpm --dir "${RUNNER}" exec tsc --noEmit --strict --target ES2022 \
 corepack pnpm --dir "${RUNNER}" exec tsx src/cloudkit-demo-v3-live-contract.ts \
   >"${RESULTS_DIR}/cloudkit-demo-v3.json"
 
+INSTANT_SWIFT_DATA_COVERAGE_ARTIFACTS_DIR="${RESULTS_DIR}" \
+  swift run --package-path "${ROOT}" instant-swift-data validation coverage --json \
+  >"${RESULTS_DIR}/swift-coverage-final.json"
+
 ROOT="${ROOT}" RUNNER="${RUNNER}" RESULTS_DIR="${RESULTS_DIR}" \
 UPSTREAM_REVISION="${UPSTREAM_REVISION}" node --input-type=module <<'NODE' \
   | tee "${RESULTS_DIR}/evidence.json"
@@ -104,6 +108,7 @@ const manifest = JSON.parse(readFileSync(resolve(runner, "package.json"), "utf8"
 const schema = readJSON("swift-server-schema-verify.json");
 const permissions = readJSON("swift-server-perms-verify.json");
 const live = readJSON("cloudkit-demo-v3.json");
+const coverage = readJSON("swift-coverage-final.json");
 const expectedWarnings = [
   { code: "system-entity", path: "$files" },
   { code: "system-entity", path: "$streams" },
@@ -133,6 +138,13 @@ assert.deepStrictEqual(schema.warnings, expectedWarnings);
 assert.equal(permissions.namespaceCount, 4);
 assert.equal(permissions.allowRuleCount, 13);
 assert.equal(permissions.rateLimitCount, 0);
+assert.equal(coverage.ok, true);
+assert.equal(coverage.coverageComplete, true);
+assert.equal(coverage.recordCount, 295);
+assert.equal(coverage.exactCount, 28);
+assert.equal(coverage.adaptedCount, 265);
+assert.equal(coverage.blockedCount, 0);
+assert.deepStrictEqual(coverage.blockedIDs, []);
 
 const evidence = {
   case: "validation.cloudkit-demo-v3-app.live-contract",
@@ -167,6 +179,7 @@ const evidence = {
         .update(readFileSync(resolve(results, "pull/instant.perms.ts")))
         .digest("hex"),
     },
+    coverage,
     sharing: live.details,
   },
 };
