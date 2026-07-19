@@ -21,6 +21,7 @@
     "live:playback-room": "tsx src/playback-room-live-contract.ts",
     "live:preferences": "tsx src/preferences-live-contract.ts",
     "live:voice-trail-v3-capture": "tsx src/voice-trail-v3-capture-live-contract.ts",
+    "live:todos-v3": "tsx src/todos-v3-live-contract.ts",
     "live:voice-trail-recordings-list": "tsx src/voice-trail-recordings-list-live-contract.ts",
     "typecheck": "../typecheck-generated-contract.sh",
     "validate": "tsx src/main.ts"

@@ -41,6 +41,7 @@
     "src/voice-trail-v3-app-contract.ts",
     "src/voice-trail-v3-app-contract.test.ts",
     "src/todos-v3-app-contract.ts",
-    "src/todos-v3-app-contract.test.ts"
+    "src/todos-v3-app-contract.test.ts",
+    "src/todos-v3-live-contract.ts"
   ]
 }
