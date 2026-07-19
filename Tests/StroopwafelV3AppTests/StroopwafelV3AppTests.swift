@@ -3,10 +3,46 @@ import InstantSwiftData
 import StroopwafelV3App
 import Testing
 
+#if canImport(SwiftUI)
+  import SwiftUI
+#endif
+
 // Canonical source:
 // jsventures/stroopwafel@7f5e2379464d932c0e4681655cbf022f8d9c2614
 @Suite
 struct StroopwafelV3AppTests {
+  @Test
+  func appConfigurationChoosesLocalOrLiveRuntimeFromEnvironment() {
+    expectNoDifference(
+      StroopwafelV3AppConfiguration.environment([:]),
+      StroopwafelV3AppConfiguration(
+        appID: "stroopwafel-v3-local",
+        enablesLiveSync: false
+      )
+    )
+    expectNoDifference(
+      StroopwafelV3AppConfiguration.environment([
+        "INSTANT_APP_ID": "canonical-app",
+        "INSTANT_PERSISTENCE_PATH": "/tmp/stroopwafel.sqlite",
+      ]),
+      StroopwafelV3AppConfiguration(
+        appID: "canonical-app",
+        persistenceURL: URL(fileURLWithPath: "/tmp/stroopwafel.sqlite"),
+        enablesLiveSync: true
+      )
+    )
+    expectNoDifference(StroopwafelV3AuthProviders.all, [])
+  }
+
+  #if canImport(SwiftUI)
+    @MainActor
+    @Test
+    func runnableScreenSyntaxCompiles() {
+      let screen: any View = StroopwafelV3Screen()
+      _ = screen
+    }
+  #endif
+
   @Test
   func appModelsPreserveCanonicalNamespacesAttributesAndLinks() {
     expectNoDifference(
