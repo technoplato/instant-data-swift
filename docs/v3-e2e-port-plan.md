@@ -228,14 +228,30 @@ As of 2026-07-19:
   room schema and empty permissions round trips, strict TypeScript compilation,
   and five pinned server system-schema warnings. Evidence is in
   `/tmp/instant-data-swift-typing-indicator-v3-20260719T025123Z/evidence.json`.
+- The canonical Reactions recipe boundary is complete through `e84679b`, with
+  the final clean live gate recorded at `e1f100a` before the executable-only
+  recipe navigation commit.
+  Source-first app, schema, CLI, TypeScript, live-support, and Swift-evidence
+  tests pin `topics-example/123`, the `emoji` topic, the exact
+  `{name, directionAngle, rotationAngle}` payload, and the four canonical
+  reaction names. The clean fresh-app gate proves Swift `heart` publication is
+  observed by TypeScript, TypeScript `wave` publication is observed by Swift,
+  unknown `sparkle` is ignored by the app model, and topic unsubscribe cleanup
+  prevents a later `fire` probe from invoking the removed callback. Generated
+  room schema and empty permissions push twice with no drift, pull back and
+  strict-typecheck, with five pinned server system-schema warnings and zero
+  compiler/runtime warnings. Evidence is in
+  `/tmp/instant-data-swift-reactions-v3-20260719T032236Z/evidence.json`.
 - The current static parity gate records 295 cases: 28 exact, 263 adapted, 2 not
   applicable, and 2 blocked when no credentialed artifacts are supplied. The
   only blocked ids are
   `instant.live-transport.swift-to-typescript` and
   `instant.live-transport.typescript-to-swift`; valid credentialed artifacts
   promote those two records instead of changing the static source ledger.
-- No version tag should be created yet. The `v0.1.0-v3-syntax` compile and
-  lifecycle gate remains pending.
+- No new version tag should be created yet. The existing
+  `v0.3.0-schema-auth-sharing` tag remains the latest milestone; the
+  `v0.4.0-apps-e2e` tag stays guarded until the complete required app matrix
+  passes.
 
 ## Authority Order
 
@@ -259,7 +275,7 @@ When sources disagree, use this order:
 | Current execution state, packet order, gates, and tag targets | `docs/v3-e2e-port-plan.md` |
 | Product contract and full definition of done | `docs/instant-swift-data-goals.md` |
 | Desired V3 API rules and decision log | `INSTANT_DATA_API_DESIGN_PREFERENCES_V3.md` |
-| Next app target | Reactions topic recipe, beginning with the pinned upstream recipe and exact publish/observe payload tests |
+| Next app target | Avatar Stack presence recipe, beginning with pinned upstream source tests for room identity, exact `name` presence, peer-only projection, and disconnect cleanup |
 | Current generated recording contract | `InstantSchemaExamples.recordingActionDocument`, `recordingActionValidationPermissions`, and `--example recording-action` |
 | TypeScript contract pin/type-check gate | `validation/ts-runner/package.json`, its committed `pnpm-lock.yaml`, and `validation/typecheck-generated-contract.sh` |
 | Reproducible live schema/perms install and readback | `validation/verify-recording-contract-live.sh` and `validation/fixtures/recording-action.server.*.ts` |
@@ -281,6 +297,9 @@ When sources disagree, use this order:
 | Typing Indicator app-owned syntax and behavior | `Sources/PresenceRecipesV3App/`, `Sources/PresenceRecipesV3Executable/`, and `Tests/PresenceRecipesV3AppTests/` |
 | Typing Indicator source/schema/live contracts | `Tests/InstantSwiftDataSchemaTests/TypingIndicatorContractTests.swift`, `Tests/InstantSwiftDataTestingTests/InstantTypingIndicatorV3LiveValidationTests.swift`, and `validation/ts-runner/src/typing-indicator-v3-*.ts` |
 | Typing Indicator reproducible cross-SDK gate | `validation/verify-typing-indicator-v3-app-live.sh` and its `evidence.json` artifact |
+| Reactions app-owned syntax and behavior | `Sources/PresenceRecipesV3App/ReactionsV3Screen.swift`, `Sources/PresenceRecipesV3App/PresenceRecipesV3App.swift`, and `Tests/PresenceRecipesV3AppTests/ReactionsV3Tests.swift` |
+| Reactions source/schema/live contracts | `Tests/InstantSwiftDataSchemaTests/ReactionsContractTests.swift`, `Tests/InstantSwiftDataTestingTests/InstantReactionsV3LiveValidationTests.swift`, and `validation/ts-runner/src/reactions-v3-*.ts` |
+| Reactions reproducible cross-SDK gate | `validation/verify-reactions-v3-app-live.sh` and `/tmp/instant-data-swift-reactions-v3-20260719T032236Z/evidence.json` |
 
 ## Decisions Already Made
 
@@ -346,8 +365,9 @@ or the expectation is stale.
 
 Create annotated Git tags only after the milestone gate passes from a clean
 checkout. The tag message must name the validation artifact directory and the
-canonical TypeScript dependency revisions. There are currently no repository
-tags; the targets below establish the first version line.
+canonical TypeScript dependency revisions. The repository currently has the
+annotated `v0.3.0-schema-auth-sharing` milestone; the targets below govern the
+remaining version line.
 
 ## Version Targets
 
@@ -801,11 +821,22 @@ and zero compiler/runtime warnings. Evidence is at
 Full verification is green at 950 Swift Testing cases across 51 suites, 28 macro
 tests, and the complete TypeScript typecheck, contract, and fixture matrix.
 
-Next, port the canonical Reactions topic recipe into the same
-`PresenceRecipesV3App` host. Pin its upstream room/topic names and exact payload
-shape first, compile the thin `@Room`/`@Topic` screen, then run a fresh-app
-bidirectional publish/observe and disconnect-cleanup gate. Do not create the
-`v0.4.0-apps-e2e` tag until the full required app matrix passes.
+The Reactions topic recipe is complete through `e84679b`, with its final clean
+live evidence recorded at `e1f100a`. The desired
+`@Room`/`@Topic` syntax compiles in `PresenceRecipesV3App`, and the clean
+fresh-app gate proves the exact payload in both directions plus unsubscribe
+cleanup. Evidence is at
+`/tmp/instant-data-swift-reactions-v3-20260719T032236Z/evidence.json`. Full
+verification is green at 960 Swift Testing cases across 54 suites, 28 macro
+tests, the `presence-recipes-v3` build, and the complete TypeScript typecheck,
+contract, and fixture matrix.
+
+Next, port the canonical Avatar Stack presence recipe into the same host. Pin
+the upstream `avatars-example/avatars-example-1234` room, exact `name` payload,
+fallback-name behavior, peer-only projection, and disconnect cleanup in source
+tests before implementation. Then continue with cursors, custom cursors, and
+the merge tile game. Do not create the `v0.4.0-apps-e2e` tag until the full
+required app matrix passes.
 
 The product-payload mismatch is resolved: playback presence stores and encodes
 `offsetSeconds: Double`, offers `Duration` as a computed product convenience,
