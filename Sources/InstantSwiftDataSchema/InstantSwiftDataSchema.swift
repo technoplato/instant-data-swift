@@ -375,27 +375,117 @@ public enum InstantSchemaExamples {
     ]
   )
 
-  private static func mobileChatEntity(
-    typeName: String,
-    namespace: String
-  ) -> InstantEntitySchema {
-    InstantEntitySchema(
-      typeName: typeName,
-      namespace: namespace,
-      attributes: MobileChatExample.attributes.filter {
-        $0.namespace == namespace && ($0.primaryKey || $0.valueType != .ref)
-      }
-    )
-  }
+  public static let mobileChatFiles = InstantEntitySchema(
+    typeName: "MobileChatFile",
+    namespace: "$files",
+    attributes: [
+      .primaryKey(namespace: "$files"),
+      InstantAttribute(
+        id: "$files/path",
+        namespace: "$files",
+        name: "path",
+        valueType: .string,
+        isIndexed: true,
+        isUnique: true
+      ),
+      InstantAttribute(
+        id: "$files/url",
+        namespace: "$files",
+        name: "url",
+        valueType: .string
+      ),
+    ]
+  )
+
+  public static let mobileChatUsers = InstantEntitySchema(
+    typeName: "MobileChatUser",
+    namespace: "$users",
+    attributes: [
+      .primaryKey(namespace: "$users"),
+      InstantAttribute(
+        id: "$users/email",
+        namespace: "$users",
+        name: "email",
+        valueType: .string,
+        isRequired: false,
+        isIndexed: true,
+        isUnique: true
+      ),
+      InstantAttribute(
+        id: "$users/imageURL",
+        namespace: "$users",
+        name: "imageURL",
+        valueType: .string,
+        isRequired: false
+      ),
+      InstantAttribute(
+        id: "$users/type",
+        namespace: "$users",
+        name: "type",
+        valueType: .string,
+        isRequired: false
+      ),
+    ]
+  )
+
+  public static let mobileChatProfiles = InstantEntitySchema(
+    typeName: "MobileChatProfile",
+    namespace: "profiles",
+    attributes: [
+      .primaryKey(namespace: "profiles"),
+      InstantAttribute(
+        id: "profiles/displayName",
+        namespace: "profiles",
+        name: "displayName",
+        valueType: .string
+      ),
+    ]
+  )
+
+  public static let mobileChatChannels = InstantEntitySchema(
+    typeName: "MobileChatChannel",
+    namespace: "channels",
+    attributes: [
+      .primaryKey(namespace: "channels"),
+      InstantAttribute(
+        id: "channels/name",
+        namespace: "channels",
+        name: "name",
+        valueType: .string,
+        isIndexed: true
+      ),
+    ]
+  )
+
+  public static let mobileChatMessages = InstantEntitySchema(
+    typeName: "MobileChatMessage",
+    namespace: "messages",
+    attributes: [
+      .primaryKey(namespace: "messages"),
+      InstantAttribute(
+        id: "messages/content",
+        namespace: "messages",
+        name: "content",
+        valueType: .string
+      ),
+      InstantAttribute(
+        id: "messages/timestamp",
+        namespace: "messages",
+        name: "timestamp",
+        valueType: .number,
+        isIndexed: true
+      ),
+    ]
+  )
 
   public static let mobileChatRoom = InstantRoomSchema(
     name: "chat",
     presence: InstantRoomPayloadSchema(
       attributes: [
         InstantAttribute(
-          id: "rooms/chat/presence/profileID",
+          id: "rooms/chat/presence/profileId",
           namespace: "rooms/chat/presence",
-          name: "profileID",
+          name: "profileId",
           valueType: .string
         ),
         InstantAttribute(
@@ -450,15 +540,15 @@ public enum InstantSchemaExamples {
 
   public static let mobileChatDocument = InstantSchemaDocument(
     entities: [
-      mobileChatEntity(typeName: "MobileChatFile", namespace: "$files"),
-      mobileChatEntity(typeName: "MobileChatUser", namespace: "$users"),
-      mobileChatEntity(typeName: "MobileChatProfile", namespace: "mobileProfiles"),
-      mobileChatEntity(typeName: "MobileChatChannel", namespace: "mobileChannels"),
-      mobileChatEntity(typeName: "MobileChatMessage", namespace: "mobileMessages"),
+      mobileChatFiles,
+      mobileChatUsers,
+      mobileChatProfiles,
+      mobileChatChannels,
+      mobileChatMessages,
     ],
     links: [
       InstantLinkSchema(
-        name: "mobileUsersLinkedPrimaryUser",
+        name: "$usersLinkedPrimaryUser",
         forward: InstantLinkEndpoint(
           namespace: "$users",
           cardinality: .one,
@@ -472,9 +562,9 @@ public enum InstantSchemaExamples {
         )
       ),
       InstantLinkSchema(
-        name: "mobileProfilesUser",
+        name: "userProfile",
         forward: InstantLinkEndpoint(
-          namespace: "mobileProfiles",
+          namespace: "profiles",
           cardinality: .one,
           label: "user",
           onDelete: .cascade
@@ -482,38 +572,36 @@ public enum InstantSchemaExamples {
         reverse: InstantLinkEndpoint(
           namespace: "$users",
           cardinality: .one,
-          label: "mobileProfile"
-        ),
-        isRequired: true
+          label: "profile"
+        )
       ),
       InstantLinkSchema(
-        name: "mobileMessagesAuthor",
+        name: "authorMessages",
         forward: InstantLinkEndpoint(
-          namespace: "mobileMessages",
+          namespace: "messages",
           cardinality: .one,
           label: "author",
           onDelete: .cascade
         ),
         reverse: InstantLinkEndpoint(
-          namespace: "mobileProfiles",
+          namespace: "profiles",
           cardinality: .many,
           label: "messages"
         )
       ),
       InstantLinkSchema(
-        name: "mobileMessagesChannel",
+        name: "channelMessages",
         forward: InstantLinkEndpoint(
-          namespace: "mobileMessages",
+          namespace: "messages",
           cardinality: .one,
           label: "channel",
           onDelete: .cascade
         ),
         reverse: InstantLinkEndpoint(
-          namespace: "mobileChannels",
+          namespace: "channels",
           cardinality: .many,
           label: "messages"
-        ),
-        isRequired: true
+        )
       ),
     ],
     rooms: [mobileChatRoom]
@@ -534,7 +622,7 @@ public enum InstantSchemaExamples {
         allow: [.view: "auth.id != null"]
       ),
       InstantNamespacePermissions(
-        namespace: "mobileProfiles",
+        namespace: "profiles",
         allow: [
           .view: "auth.id != null",
           .create: "isSelf",
@@ -546,7 +634,7 @@ public enum InstantSchemaExamples {
         ]
       ),
       InstantNamespacePermissions(
-        namespace: "mobileChannels",
+        namespace: "channels",
         allow: Dictionary(
           uniqueKeysWithValues: InstantPermissionAction.entityActions.map {
             ($0, "auth.id != null")
@@ -554,7 +642,7 @@ public enum InstantSchemaExamples {
         )
       ),
       InstantNamespacePermissions(
-        namespace: "mobileMessages",
+        namespace: "messages",
         allow: [
           .view: "auth.id != null",
           .create: "isAuthor",
