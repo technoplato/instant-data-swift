@@ -44,4 +44,41 @@ struct InstantMobileChatV3LiveValidationTests {
     expectNoDifference(details.emoji.rotationAngle, 180)
     expectNoDifference(details.peerCountAfterDisconnect, 1)
   }
+
+  @Test
+  func sessionEvidenceContainsBothSDKDirectionsAndRoomTraffic() throws {
+    let entity = InstantMobileChatV3LiveValidationDetails(
+      direction: "swift-to-typescript",
+      userID: "user",
+      profileID: "profile",
+      displayName: "Swift Chatter",
+      channelID: "channel",
+      channelName: "Swift Channel",
+      messageID: "message",
+      messageChannelID: "channel",
+      authorProfileID: "profile",
+      content: "Swift live message",
+      timestampMilliseconds: 1_700_000_010_000,
+      connectionState: "authenticated",
+      pendingMutationCount: 0
+    )
+    let room = InstantMobileChatV3RoomValidationDetails(
+      roomType: "chat",
+      roomID: "channel",
+      peerCount: 2,
+      presence: MobileChatPresence(profileID: "profile", displayName: "TypeScript Chatter"),
+      typing: MobileChatTypingEvent(isTyping: false),
+      emoji: MobileChatReaction(name: .heart, directionAngle: 45, rotationAngle: 270),
+      peerCountAfterDisconnect: 1
+    )
+    let session = InstantMobileChatV3SessionValidationDetails(
+      swift: entity,
+      observedTypeScript: entity,
+      room: room
+    )
+
+    expectNoDifference(session.swift.messageChannelID, "channel")
+    expectNoDifference(session.observedTypeScript.authorProfileID, "profile")
+    expectNoDifference(session.room.presence.displayName, "TypeScript Chatter")
+  }
 }
