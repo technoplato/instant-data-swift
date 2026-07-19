@@ -1020,6 +1020,82 @@ struct InstantSwiftDataValidationRunner {
       )
       try writeJSONLine(row)
 
+    case .liveRemindersV3:
+      let environment = ProcessInfo.processInfo.environment
+      let appID = try requiredEnvironment(
+        "INSTANT_APP_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let refreshToken = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_REMINDERS_REFRESH_TOKEN",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let ownerUserID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_REMINDERS_OWNER_USER_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let participantUserID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_REMINDERS_PARTICIPANT_USER_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let apiURI = URL(
+        string: environment["INSTANT_API_URI"]
+          ?? InstantRuntimeConfiguration.defaultAPIURI.absoluteString
+      ) ?? InstantRuntimeConfiguration.defaultAPIURI
+      let websocketURI = URL(
+        string: environment["INSTANT_WEBSOCKET_URI"]
+          ?? InstantRuntimeConfiguration.defaultWebSocketURI.absoluteString
+      ) ?? InstantRuntimeConfiguration.defaultWebSocketURI
+      let row = try await InstantRemindersV3LiveValidation.run(
+        appID: appID,
+        apiURI: apiURI,
+        websocketURI: websocketURI,
+        refreshToken: refreshToken,
+        expectedOwnerUserID: ownerUserID,
+        expectedParticipantUserID: participantUserID,
+        onSwiftGraphReady: {
+          emit(
+            caseID: "validation.live.reminders-v3",
+            event: "swift-graph-ready",
+            ok: true,
+            appID: appID,
+            details: ["listID": InstantRemindersV3LiveValidation.listID]
+          )
+        },
+        onReaderObserved: {
+          emit(
+            caseID: "validation.live.reminders-v3",
+            event: "typescript-reader-observed",
+            ok: true,
+            appID: appID,
+            details: ["membershipID": InstantRemindersV3LiveValidation.readerMembershipID]
+          )
+        },
+        onWriterReady: {
+          emit(
+            caseID: "validation.live.reminders-v3",
+            event: "swift-writer-promotion-ready",
+            ok: true,
+            appID: appID,
+            details: ["membershipID": InstantRemindersV3LiveValidation.readerMembershipID]
+          )
+        },
+        onTypeScriptReminderObserved: {
+          emit(
+            caseID: "validation.live.reminders-v3",
+            event: "typescript-reminder-observed",
+            ok: true,
+            appID: appID,
+            details: ["reminderID": InstantRemindersV3LiveValidation.typeScriptReminderID]
+          )
+        }
+      )
+      try writeJSONLine(row)
+
     case .livePreferences:
       let environment = ProcessInfo.processInfo.environment
       let appID = try requiredEnvironment(
