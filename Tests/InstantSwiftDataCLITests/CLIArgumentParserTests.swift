@@ -3418,6 +3418,10 @@ struct CLIArgumentParserTests {
       .liveSyncUpsV3
     )
     expectNoDifference(
+      try parseValidationRunner(["--live-app-builder-v3"]),
+      .liveAppBuilderV3
+    )
+    expectNoDifference(
       try parseValidationRunner(["--live-preferences"]),
       .livePreferences
     )

@@ -95,6 +95,7 @@ let package = Package(
     .target(
       name: "InstantSwiftDataTesting",
       dependencies: [
+        "AppBuilderV3App",
         "AuthV3App",
         "InstantSwiftData",
         "InstantSwiftDataCore",
