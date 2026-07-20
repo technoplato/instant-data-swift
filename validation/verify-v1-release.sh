@@ -38,6 +38,7 @@ products=(
   mobile-chat-v3
   presence-recipes-v3
   reminders-v3
+  reminders-v3-cli
   stroopwafel-v3
   streams-v3
   syncups-v3
