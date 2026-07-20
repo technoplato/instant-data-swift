@@ -2,9 +2,31 @@ import Foundation
 
 struct AttributeStore: Hashable, Codable, Sendable {
   private var attributesByID: [String: InstantAttribute] = [:]
+  private var attributesByNamespaceAndName: [String: [String: InstantAttribute]] = [:]
+  private var attributesByNamespace: [String: [InstantAttribute]] = [:]
+  private var reverseAttributesByNamespaceAndName: [String: [String: InstantAttribute]] = [:]
+  private var reverseAttributesByID: [String: InstantAttribute] = [:]
+
+  private enum CodingKeys: String, CodingKey {
+    case attributesByID
+  }
 
   init(attributes: [InstantAttribute] = []) {
     self.replaceAll(attributes)
+  }
+
+  init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.attributesByID = try container.decode(
+      [String: InstantAttribute].self,
+      forKey: .attributesByID
+    )
+    rebuildLookupIndexes()
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(attributesByID, forKey: .attributesByID)
   }
 
   var attributes: [InstantAttribute] {
@@ -15,16 +37,22 @@ struct AttributeStore: Hashable, Codable, Sendable {
     Set(attributesByID.values.map(\.namespace))
   }
 
+  var count: Int {
+    attributesByID.count
+  }
+
   mutating func replaceAll(_ attributes: [InstantAttribute]) {
     attributesByID = Dictionary(
       uniqueKeysWithValues: Self.withPrimaryKeys(attributes).map { ($0.id, $0) }
     )
+    rebuildLookupIndexes()
   }
 
   mutating func merge(_ attributes: [InstantAttribute]) {
     for attribute in Self.withPrimaryKeys(attributes) {
       attributesByID[attribute.id] = attribute
     }
+    rebuildLookupIndexes()
   }
 
   subscript(id: String) -> InstantAttribute? {
@@ -33,13 +61,20 @@ struct AttributeStore: Hashable, Codable, Sendable {
 
   func attribute(namespace: String, name: String) -> InstantAttribute? {
     if name == "id" {
-      return self[InstantAttribute.primaryKeyID(namespace: namespace)]
+      return attributesByNamespaceAndName[namespace]?[name]
+        ?? self[InstantAttribute.primaryKeyID(namespace: namespace)]
     }
-    return attributesByID.values.first { $0.namespace == namespace && $0.name == name }
+    return attributesByNamespaceAndName[namespace]?[name]
+  }
+
+  func attributes(namespace: String) -> [InstantAttribute] {
+    attributesByNamespace[namespace] ?? []
   }
 
   func primaryKeyAttribute(namespace: String) -> InstantAttribute {
-    self[InstantAttribute.primaryKeyID(namespace: namespace)] ?? .primaryKey(namespace: namespace)
+    attributesByNamespaceAndName[namespace]?["id"]
+      ?? self[InstantAttribute.primaryKeyID(namespace: namespace)]
+      ?? .primaryKey(namespace: namespace)
   }
 
   func lookupAttribute(id: String) -> InstantResolvedLookupAttribute? {
@@ -51,7 +86,7 @@ struct AttributeStore: Hashable, Codable, Sendable {
         name: attribute.name
       )
     }
-    guard let attribute = attributesByID.values.first(where: { $0.reverseIdentity == id }) else {
+    guard let attribute = reverseAttributesByID[id] else {
       return nil
     }
     return InstantResolvedLookupAttribute(
@@ -62,10 +97,54 @@ struct AttributeStore: Hashable, Codable, Sendable {
     )
   }
 
+  func reverseAttribute(namespace: String, name: String) -> InstantAttribute? {
+    reverseAttributesByNamespaceAndName[namespace]?[name]
+  }
+
+  private mutating func rebuildLookupIndexes() {
+    attributesByNamespaceAndName = [:]
+    attributesByNamespace = [:]
+    reverseAttributesByNamespaceAndName = [:]
+    reverseAttributesByID = [:]
+
+    for attribute in attributesByID.values {
+      attributesByNamespaceAndName[attribute.namespace, default: [:]][attribute.name] = attribute
+      attributesByNamespace[attribute.namespace, default: []].append(attribute)
+      guard
+        attribute.valueType == .ref,
+        let linkNamespace = attribute.linkNamespace,
+        let reverseIdentity = attribute.reverseIdentity
+      else { continue }
+      reverseAttributesByID[reverseIdentity] = attribute
+      if let reverseName = Self.name(in: reverseIdentity) {
+        reverseAttributesByNamespaceAndName[linkNamespace, default: [:]][reverseName] = attribute
+      }
+    }
+    for namespace in attributesByNamespace.keys {
+      attributesByNamespace[namespace]?.sort { $0.id < $1.id }
+    }
+  }
+
   private static func withPrimaryKeys(_ attributes: [InstantAttribute]) -> [InstantAttribute] {
+    let attributes = attributes.map { attribute in
+      guard attribute.name == "id" || attribute.primaryKey else { return attribute }
+      var primaryKey = attribute
+      primaryKey.cardinality = .one
+      primaryKey.isIndexed = true
+      primaryKey.isUnique = true
+      primaryKey.primaryKey = true
+      return primaryKey
+    }
     let namespaces = Set(attributes.map(\.namespace))
-    let primaryKeys = namespaces.map(InstantAttribute.primaryKey(namespace:))
-    return primaryKeys + attributes.filter { !$0.primaryKey && $0.name != "id" }
+    let namespacesWithPrimaryKeys = Set(
+      attributes
+        .filter { $0.primaryKey || $0.name == "id" }
+        .map(\.namespace)
+    )
+    let primaryKeys = namespaces
+      .subtracting(namespacesWithPrimaryKeys)
+      .map(InstantAttribute.primaryKey(namespace:))
+    return primaryKeys + attributes
   }
 
   private static func primaryKeyAttribute(id: String) -> InstantAttribute? {
@@ -116,6 +195,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   private struct QuerySnapshot: Hashable, Sendable {
     var snapshot: InstantEntitySnapshot
     var serverCreatedAt: InstantValue?
+    var sortValue: InstantValue?
   }
 
   private struct DeleteVisit: Hashable, Sendable {
@@ -138,8 +218,23 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       }
   }
 
+  var tripleCount: Int {
+    eav.values.reduce(into: 0) { count, attributesByID in
+      for valuesByValue in attributesByID.values {
+        count += valuesByValue.count
+      }
+    }
+  }
+
   func triples(entityID: String) -> [InstantTriple] {
     eav[entityID]?.values.flatMap(\.values) ?? []
+  }
+
+  mutating func reserveCapacity(entityCapacity: Int, attributeCapacity: Int) {
+    guard entityCapacity > 0 || attributeCapacity > 0 else { return }
+    eav.reserveCapacity(eav.count + max(entityCapacity, 0))
+    aev.reserveCapacity(aev.count + max(attributeCapacity, 0))
+    vae.reserveCapacity(vae.count + max(entityCapacity, 0))
   }
 
   func containsEntity(
@@ -147,19 +242,16 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     namespace: String?,
     attributes: AttributeStore
   ) -> Bool {
-    let entityTriples = triples(entityID: entityID)
-    if let namespace {
-      let idAttribute = attributes.primaryKeyAttribute(namespace: namespace)
-      if entityTriples.contains(where: {
-        $0.attributeID == idAttribute.id && $0.value == .string(entityID)
-      }) {
-        return true
-      }
+    guard let attributesByID = eav[entityID] else { return false }
+    guard let namespace else { return !attributesByID.isEmpty }
+
+    let idAttribute = attributes.primaryKeyAttribute(namespace: namespace)
+    if attributesByID[idAttribute.id]?[.string(entityID)] != nil {
+      return true
     }
 
-    return entityTriples.contains { triple in
-      guard let namespace else { return true }
-      return attributes[triple.attributeID]?.namespace == namespace
+    return attributesByID.keys.contains { attributeID in
+      attributes[attributeID]?.namespace == namespace
     }
   }
 
@@ -266,46 +358,67 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     attributes: AttributeStore,
     remotePageInfo: InstantQueryRemotePageInfo? = nil
   ) -> InstantQueryPage {
+    let effectiveOrder = Self.effectiveOrder(plan.order)
+    if let page = materializeSimpleOrderedPage(
+      plan,
+      order: effectiveOrder,
+      attributes: attributes,
+      remotePageInfo: remotePageInfo
+    ) {
+      return page
+    }
+
+    if let snapshots = materializeOrderedSnapshots(
+      plan,
+      order: effectiveOrder,
+      attributes: attributes
+    ) {
+      let paged = paginate(
+        snapshots,
+        plan: plan,
+        effectiveOrder: effectiveOrder,
+        attributes: attributes,
+        remotePageInfo: remotePageInfo
+      )
+      let linked = includeLinks(paged.values.map(\.snapshot), plan: plan, attributes: attributes)
+      return InstantQueryPage(
+        values: project(linked, selectedFields: plan.selectedFields),
+        pageInfo: paged.pageInfo
+      )
+    }
+
     var snapshots: [QuerySnapshot] = []
 
     for (entityID, attributesByID) in eav {
-      var values: [String: InstantMaterializedValue] = [:]
-
-      for (attributeID, valuesByValue) in attributesByID {
-        guard let attribute = attributes[attributeID], attribute.namespace == plan.namespace
-        else { continue }
-
-        let sortedValues = valuesByValue.values
-          .sorted { $0.value.comparableKey < $1.value.comparableKey }
-          .map(\.value)
-
-        switch attribute.cardinality {
-        case .one:
-          if let value = sortedValues.last {
-            values[attribute.name] = .one(value)
-          }
-        case .many:
-          values[attribute.name] = .many(sortedValues)
-        }
-      }
-
-      guard !values.isEmpty else { continue }
+      guard let values = materializedValues(
+        entityID: entityID,
+        namespace: plan.namespace,
+        attributesByID: attributesByID,
+        attributes: attributes
+      ) else { continue }
       let snapshot = InstantEntitySnapshot(id: entityID, namespace: plan.namespace, values: values)
       guard matches(snapshot, filters: plan.filters, namespace: plan.namespace, attributes: attributes)
       else { continue }
+      let serverCreatedAt = needsServerCreatedAt(effectiveOrder)
+        ? serverCreatedAtValue(
+          entityID: entityID,
+          namespace: plan.namespace,
+          attributes: attributes
+        )
+        : nil
       snapshots.append(
         QuerySnapshot(
           snapshot: snapshot,
-          serverCreatedAt: serverCreatedAtValue(
-            entityID: entityID,
-            namespace: plan.namespace,
-            attributes: attributes
+          serverCreatedAt: serverCreatedAt,
+          sortValue: Self.orderValue(
+            snapshot,
+            serverCreatedAt: serverCreatedAt,
+            field: effectiveOrder.field
           )
         )
       )
     }
 
-    let effectiveOrder = Self.effectiveOrder(plan.order)
     snapshots.sort {
       Self.compare($0, $1, order: effectiveOrder) == .orderedAscending
     }
@@ -322,6 +435,196 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       values: project(linked, selectedFields: plan.selectedFields),
       pageInfo: paged.pageInfo
     )
+  }
+
+  private func materializeSimpleOrderedPage(
+    _ plan: InstantQueryPlan,
+    order: InstantQueryOrder,
+    attributes: AttributeStore,
+    remotePageInfo: InstantQueryRemotePageInfo?
+  ) -> InstantQueryPage? {
+    guard
+      Self.canMaterializeSimpleOrderedPage(plan, remotePageInfo: remotePageInfo),
+      !order.isServerCreatedAt,
+      let attribute = attributes.attribute(namespace: plan.namespace, name: order.field),
+      attribute.cardinality == .one,
+      let valuesByEntityID = aev[attribute.id]
+    else { return nil }
+
+    let orderedEntityCount = valuesByEntityID.count
+    guard orderedEntityCount == namespaceEntityCount(plan.namespace, attributes: attributes) else {
+      return nil
+    }
+
+    var ordered: [(entityID: String, value: InstantValue)] = []
+    ordered.reserveCapacity(orderedEntityCount)
+    for (entityID, valuesByValue) in valuesByEntityID {
+      guard let value = valuesByValue.first?.value.value else { return nil }
+      ordered.append((entityID, value))
+    }
+    ordered.sort { lhs, rhs in
+      Self.orderedValuePrecedes(
+        lhs,
+        rhs,
+        attribute: attribute,
+        direction: order.direction
+      )
+    }
+
+    var snapshots: [InstantEntitySnapshot] = []
+    snapshots.reserveCapacity(ordered.count)
+    for (entityID, _) in ordered {
+      guard let attributesByID = eav[entityID],
+            let values = materializedValues(
+              entityID: entityID,
+              namespace: plan.namespace,
+              attributesByID: attributesByID,
+              attributes: attributes
+            )
+      else { continue }
+      snapshots.append(
+        InstantEntitySnapshot(id: entityID, namespace: plan.namespace, values: values)
+      )
+    }
+
+    return InstantQueryPage(values: snapshots, pageInfo: nil)
+  }
+
+  private static func orderedValuePrecedes(
+    _ lhs: (entityID: String, value: InstantValue),
+    _ rhs: (entityID: String, value: InstantValue),
+    attribute: InstantAttribute,
+    direction: InstantQuerySortDirection
+  ) -> Bool {
+    let valueComparison = orderedValueComparison(lhs.value, rhs.value, attribute: attribute)
+    let directedComparison: ComparisonResult
+    switch direction {
+    case .ascending:
+      directedComparison = valueComparison
+    case .descending:
+      directedComparison = valueComparison.reversed
+    }
+    guard directedComparison == .orderedSame else {
+      return directedComparison == .orderedAscending
+    }
+    switch direction {
+    case .ascending:
+      return lhs.entityID < rhs.entityID
+    case .descending:
+      return lhs.entityID > rhs.entityID
+    }
+  }
+
+  private static func orderedValueComparison(
+    _ lhs: InstantValue,
+    _ rhs: InstantValue,
+    attribute: InstantAttribute
+  ) -> ComparisonResult {
+    switch attribute.valueType {
+    case .number:
+      if case let .number(left) = lhs, case let .number(right) = rhs {
+        return left == right ? .orderedSame : (left < right ? .orderedAscending : .orderedDescending)
+      }
+
+    case .date:
+      if case let .date(left) = lhs, case let .date(right) = rhs {
+        return left == right ? .orderedSame : (left < right ? .orderedAscending : .orderedDescending)
+      }
+
+    case .string:
+      break
+
+    case .boolean, .json, .ref, .any:
+      break
+    }
+
+    return lhs.compare(to: rhs)
+  }
+
+  private static func canMaterializeSimpleOrderedPage(
+    _ plan: InstantQueryPlan,
+    remotePageInfo: InstantQueryRemotePageInfo?
+  ) -> Bool {
+    plan.filters.isEmpty
+      && (plan.includes?.isEmpty ?? true)
+      && plan.selectedFields == nil
+      && plan.offset == nil
+      && plan.limit == nil
+      && plan.first == nil
+      && plan.after == nil
+      && plan.last == nil
+      && plan.before == nil
+      && remotePageInfo == nil
+  }
+
+  private func materializeOrderedSnapshots(
+    _ plan: InstantQueryPlan,
+    order: InstantQueryOrder,
+    attributes: AttributeStore
+  ) -> [QuerySnapshot]? {
+    guard
+      !order.isServerCreatedAt,
+      let attribute = attributes.attribute(namespace: plan.namespace, name: order.field),
+      attribute.cardinality == .one,
+      let valuesByEntityID = aev[attribute.id]
+    else { return nil }
+
+    let orderedEntityCount = valuesByEntityID.count
+    guard orderedEntityCount == namespaceEntityCount(plan.namespace, attributes: attributes) else {
+      return nil
+    }
+
+    var ordered: [(entityID: String, value: InstantValue)] = []
+    ordered.reserveCapacity(orderedEntityCount)
+    for (entityID, valuesByValue) in valuesByEntityID {
+      guard let value = valuesByValue.first?.value.value else { return nil }
+      ordered.append((entityID, value))
+    }
+    ordered.sort { lhs, rhs in
+      Self.orderedValuePrecedes(
+        lhs,
+        rhs,
+        attribute: attribute,
+        direction: order.direction
+      )
+    }
+
+    var snapshots: [QuerySnapshot] = []
+    snapshots.reserveCapacity(ordered.count)
+    for (entityID, sortValue) in ordered {
+      guard
+        let snapshot = snapshot(
+          entityID: entityID,
+          namespace: plan.namespace,
+          attributes: attributes
+        ),
+        matches(snapshot, filters: plan.filters, namespace: plan.namespace, attributes: attributes)
+      else { continue }
+      snapshots.append(
+        QuerySnapshot(
+          snapshot: snapshot,
+          serverCreatedAt: nil,
+          sortValue: sortValue
+        )
+      )
+    }
+    return snapshots
+  }
+
+  private func namespaceEntityCount(
+    _ namespace: String,
+    attributes: AttributeStore
+  ) -> Int {
+    return eav.values.reduce(into: 0) { count, attributesByID in
+      if attributesByID.keys.contains(where: { attributeID in
+        guard let attribute = attributes[attributeID], attribute.namespace == namespace else {
+          return false
+        }
+        return !attribute.primaryKey || attributesByID[attribute.id] != nil
+      }) {
+        count += 1
+      }
+    }
   }
 
   static func validate(
@@ -441,10 +744,66 @@ struct TripleIndexes: Hashable, Codable, Sendable {
         id: "\(namespace).included.\(include.name)",
         namespace: namespace
       )
-    return materializePage(query, attributes: attributes)
-      .values
-      .filter { ids.contains($0.id) }
+    return materializeSnapshots(
+      ids: ids,
+      query: query,
+      attributes: attributes
+    )
       .map(InstantLinkedEntitySnapshot.init)
+  }
+
+  private func materializeSnapshots(
+    ids: Set<String>,
+    query: InstantQueryPlan,
+    attributes: AttributeStore
+  ) -> [InstantEntitySnapshot] {
+    guard !ids.isEmpty else { return [] }
+
+    var snapshots: [QuerySnapshot] = []
+    snapshots.reserveCapacity(ids.count)
+    let effectiveOrder = Self.effectiveOrder(query.order)
+
+    for entityID in ids {
+      guard
+        let snapshot = snapshot(
+          entityID: entityID,
+          namespace: query.namespace,
+          attributes: attributes
+        ),
+        matches(
+          snapshot,
+          filters: query.filters,
+          namespace: query.namespace,
+          attributes: attributes
+        )
+      else { continue }
+
+      let serverCreatedAt = needsServerCreatedAt(effectiveOrder)
+        ? serverCreatedAtValue(
+          entityID: entityID,
+          namespace: query.namespace,
+          attributes: attributes
+        )
+        : nil
+      snapshots.append(
+        QuerySnapshot(
+          snapshot: snapshot,
+          serverCreatedAt: serverCreatedAt,
+          sortValue: Self.orderValue(
+            snapshot,
+            serverCreatedAt: serverCreatedAt,
+            field: effectiveOrder.field
+          )
+        )
+      )
+    }
+
+    snapshots.sort {
+      Self.compare($0, $1, order: effectiveOrder) == .orderedAscending
+    }
+
+    let linked = includeLinks(snapshots.map(\.snapshot), plan: query, attributes: attributes)
+    return project(linked, selectedFields: query.selectedFields)
   }
 
   private func snapshot(
@@ -454,27 +813,93 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   ) -> InstantEntitySnapshot? {
     guard let attributesByID = eav[entityID] else { return nil }
 
+    guard
+      let values = materializedValues(
+        entityID: entityID,
+        namespace: namespace,
+        attributesByID: attributesByID,
+        attributes: attributes
+      )
+    else { return nil }
+    return InstantEntitySnapshot(id: entityID, namespace: namespace, values: values)
+  }
+
+  private func materializedValues(
+    entityID: String,
+    namespace: String,
+    attributesByID: [String: [InstantValue: InstantTriple]],
+    attributes: AttributeStore
+  ) -> [String: InstantMaterializedValue]? {
+    let namespaceAttributes = attributes.attributes(namespace: namespace)
+    if namespaceAttributes.isEmpty {
+      return materializedValuesByScanningEntityAttributes(
+        namespace: namespace,
+        attributesByID: attributesByID,
+        attributes: attributes
+      )
+    }
+
     var values: [String: InstantMaterializedValue] = [:]
+    var hasNamespaceData = false
+    values.reserveCapacity(namespaceAttributes.count)
+    for attribute in namespaceAttributes {
+      if attribute.primaryKey {
+        if attributesByID[attribute.id] != nil {
+          hasNamespaceData = true
+        }
+        values[attribute.name] = .one(.string(entityID))
+        continue
+      }
+      guard let valuesByValue = attributesByID[attribute.id] else { continue }
+      hasNamespaceData = true
+
+      if let value = materializedValue(valuesByValue, attribute: attribute) {
+        values[attribute.name] = value
+      }
+    }
+
+    return hasNamespaceData ? values : nil
+  }
+
+  private func materializedValuesByScanningEntityAttributes(
+    namespace: String,
+    attributesByID: [String: [InstantValue: InstantTriple]],
+    attributes: AttributeStore
+  ) -> [String: InstantMaterializedValue]? {
+    var values: [String: InstantMaterializedValue] = [:]
+    values.reserveCapacity(attributesByID.count)
     for (attributeID, valuesByValue) in attributesByID {
       guard let attribute = attributes[attributeID], attribute.namespace == namespace
       else { continue }
 
-      let sortedValues = valuesByValue.values
-        .sorted { $0.value.comparableKey < $1.value.comparableKey }
-        .map(\.value)
-
-      switch attribute.cardinality {
-      case .one:
-        if let value = sortedValues.last {
-          values[attribute.name] = .one(value)
-        }
-      case .many:
-        values[attribute.name] = .many(sortedValues)
+      if let value = materializedValue(valuesByValue, attribute: attribute) {
+        values[attribute.name] = value
       }
     }
 
-    guard !values.isEmpty else { return nil }
-    return InstantEntitySnapshot(id: entityID, namespace: namespace, values: values)
+    return values.isEmpty ? nil : values
+  }
+
+  private func materializedValue(
+    _ valuesByValue: [InstantValue: InstantTriple],
+    attribute: InstantAttribute
+  ) -> InstantMaterializedValue? {
+    switch attribute.cardinality {
+    case .one:
+      guard let value = valuesByValue.first?.value.value else { return nil }
+      return .one(value)
+
+    case .many:
+      return .many(
+        valuesByValue.values
+          .sorted { $0.value.comparableKey < $1.value.comparableKey }
+          .map(\.value)
+      )
+    }
+  }
+
+  private func needsServerCreatedAt(_ order: InstantQueryOrder) -> Bool {
+    order.isServerCreatedAt
   }
 
   private func serverCreatedAtValue(
@@ -704,7 +1129,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     if attribute?.cardinality == .one {
       if let existingValues = eav[triple.entityID]?[triple.attributeID]?.values {
         for existing in Array(existingValues) {
-          remove(existing, attribute: attribute)
+          removeNormalized(existing, attribute: attribute)
         }
       }
     }
@@ -720,7 +1145,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   private mutating func merge(_ triple: InstantTriple, attribute: InstantAttribute?) -> Bool {
     guard
       attribute?.cardinality != .many,
-      let existing = eav[triple.entityID]?[triple.attributeID]?.values.first
+      let existing = eav[triple.entityID]?[triple.attributeID]?.first?.value
     else {
       return false
     }
@@ -763,6 +1188,10 @@ struct TripleIndexes: Hashable, Codable, Sendable {
 
   private mutating func remove(_ triple: InstantTriple, attribute: InstantAttribute?) {
     let triple = Self.normalizedTriple(triple, attribute: attribute)
+    removeNormalized(triple, attribute: attribute)
+  }
+
+  private mutating func removeNormalized(_ triple: InstantTriple, attribute: InstantAttribute?) {
     eav[triple.entityID]?[triple.attributeID]?[triple.value] = nil
     if eav[triple.entityID]?[triple.attributeID]?.isEmpty == true {
       eav[triple.entityID]?[triple.attributeID] = nil
@@ -865,10 +1294,10 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     }
 
     for triple in outgoingTriples {
-      remove(triple, attribute: attributes[triple.attributeID])
+      removeNormalized(triple, attribute: attributes[triple.attributeID])
     }
     for triple in incomingTriples {
-      remove(triple, attribute: attributes[triple.attributeID])
+      removeNormalized(triple, attribute: attributes[triple.attributeID])
     }
 
     return changed
@@ -1690,11 +2119,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     name: String,
     attributes: AttributeStore
   ) -> InstantAttribute? {
-    attributes.attributes.first {
-      $0.valueType == .ref
-        && $0.linkNamespace == namespace
-        && $0.reverseIdentity == "\(namespace)/\(name)"
-    }
+    attributes.reverseAttribute(namespace: namespace, name: name)
   }
 
   private func selectedFieldsReferenceDeclaredFields(
@@ -1767,11 +2192,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     name: String,
     attributes: AttributeStore
   ) -> InstantAttribute? {
-    attributes.attributes.first {
-      $0.valueType == .ref
-        && $0.linkNamespace == namespace
-        && $0.reverseIdentity == "\(namespace)/\(name)"
-    }
+    attributes.reverseAttribute(namespace: namespace, name: name)
   }
 
   private func project(
@@ -2212,8 +2633,8 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       return lhs.snapshot.id.compare(rhs.snapshot.id)
     }
 
-    let lhsValue = orderValue(lhs, field: order.field)
-    let rhsValue = orderValue(rhs, field: order.field)
+    let lhsValue = lhs.sortValue
+    let rhsValue = rhs.sortValue
     let valueComparison = compare(lhsValue, rhsValue)
     let directedComparison: ComparisonResult
     switch order.direction {
@@ -2249,7 +2670,7 @@ struct TripleIndexes: Hashable, Codable, Sendable {
       return querySnapshot.snapshot.id.compare(cursor.entityID)
     }
 
-    let value = orderValue(querySnapshot, field: order.field)
+    let value = querySnapshot.sortValue
     let normalizedSortValue = normalizedValue(
       sortValue,
       attribute: attributes.attribute(namespace: namespace, name: order.field)
@@ -2275,9 +2696,17 @@ struct TripleIndexes: Hashable, Codable, Sendable {
   }
 
   private static func orderValue(_ querySnapshot: QuerySnapshot, field: String) -> InstantValue? {
+    querySnapshot.sortValue
+  }
+
+  private static func orderValue(
+    _ snapshot: InstantEntitySnapshot,
+    serverCreatedAt: InstantValue?,
+    field: String
+  ) -> InstantValue? {
     field == InstantQueryOrder.serverCreatedAtField
-      ? querySnapshot.serverCreatedAt
-      : querySnapshot.snapshot.values[field]?.first
+      ? serverCreatedAt
+      : snapshot.values[field]?.first
   }
 
   private static func compare(_ lhs: InstantValue?, _ rhs: InstantValue?) -> ComparisonResult {

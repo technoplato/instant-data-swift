@@ -2,17 +2,20 @@ import Foundation
 
 public struct InstantMagicCodeSendRequest: Sendable {
   public var appID: String
+  public var apiURI: URL
   public var email: String
   public var sentAt: InstantTimestamp
   public var makeID: @Sendable () -> String
 
   public init(
     appID: String,
+    apiURI: URL = InstantRuntimeConfiguration.defaultAPIURI,
     email: String,
     sentAt: InstantTimestamp,
     makeID: @escaping @Sendable () -> String
   ) {
     self.appID = appID
+    self.apiURI = apiURI
     self.email = email
     self.sentAt = sentAt
     self.makeID = makeID
@@ -21,22 +24,31 @@ public struct InstantMagicCodeSendRequest: Sendable {
 
 public struct InstantMagicCodeVerifyRequest: Sendable {
   public var appID: String
+  public var apiURI: URL
   public var email: String
   public var code: String
   public var challenge: InstantMagicCodeChallenge
+  public var refreshToken: String?
+  public var extraFields: [String: InstantValue]
   public var verifiedAt: InstantTimestamp
 
   public init(
     appID: String,
+    apiURI: URL = InstantRuntimeConfiguration.defaultAPIURI,
     email: String,
     code: String,
     challenge: InstantMagicCodeChallenge,
+    refreshToken: String? = nil,
+    extraFields: [String: InstantValue] = [:],
     verifiedAt: InstantTimestamp
   ) {
     self.appID = appID
+    self.apiURI = apiURI
     self.email = email
     self.code = code
     self.challenge = challenge
+    self.refreshToken = refreshToken
+    self.extraFields = extraFields
     self.verifiedAt = verifiedAt
   }
 }
@@ -44,10 +56,16 @@ public struct InstantMagicCodeVerifyRequest: Sendable {
 public struct InstantMagicCodeVerification: Hashable, Codable, Sendable {
   public var userID: String
   public var refreshToken: String?
+  public var created: Bool?
 
   public init(userID: String, refreshToken: String? = nil) {
+    self.init(userID: userID, refreshToken: refreshToken, created: nil)
+  }
+
+  public init(userID: String, refreshToken: String?, created: Bool?) {
     self.userID = userID
     self.refreshToken = refreshToken
+    self.created = created
   }
 }
 
@@ -119,6 +137,55 @@ extension InstantMagicCodeExchange {
       )
     }
   )
+
+  public static let live = live()
+
+  public static func live(httpClient: InstantAuthHTTPClient = .live) -> Self {
+    Self(
+      send: { request in
+        let urlRequest = try instantAuthRequest(
+          apiURI: request.apiURI,
+          path: ["runtime", "auth", "send_magic_code"],
+          body: InstantSendMagicCodeBody(appID: request.appID, email: request.email)
+        )
+        let response = try await httpClient.send(urlRequest)
+        try validateInstantAuthResponse(response, operation: "send magic code")
+        return InstantMagicCodeChallenge(
+          appID: request.appID,
+          email: request.email,
+          code: "",
+          createdAt: request.sentAt,
+          expiresAt: InstantTimestamp(
+            milliseconds: request.sentAt.milliseconds + Self.localMagicCodeLifetimeMilliseconds
+          )
+        )
+      },
+      verify: { request in
+        let urlRequest = try instantAuthRequest(
+          apiURI: request.apiURI,
+          path: ["runtime", "auth", "verify_magic_code"],
+          body: InstantVerifyMagicCodeBody(
+            appID: request.appID,
+            email: request.email,
+            code: request.code,
+            refreshToken: request.refreshToken,
+            extraFields: request.extraFields
+          )
+        )
+        let response = try await httpClient.send(urlRequest)
+        try validateInstantAuthResponse(response, operation: "sign in with magic code")
+        let decoded = try decodeInstantAuthUserResponse(
+          response.data,
+          operation: "sign in with magic code"
+        )
+        return InstantMagicCodeVerification(
+          userID: decoded.user.id,
+          refreshToken: decoded.user.refreshToken,
+          created: decoded.created
+        )
+      }
+    )
+  }
 
   private static let localMagicCodeLifetimeMilliseconds: Int64 = 10 * 60 * 1000
 

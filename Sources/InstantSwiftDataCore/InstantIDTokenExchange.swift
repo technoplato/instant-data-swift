@@ -2,6 +2,7 @@ import Foundation
 
 public struct InstantIDTokenSignInRequest: Sendable {
   public var appID: String
+  public var apiURI: URL
   public var clientName: String
   public var idToken: String
   public var nonce: String?
@@ -11,6 +12,7 @@ public struct InstantIDTokenSignInRequest: Sendable {
 
   public init(
     appID: String,
+    apiURI: URL = InstantRuntimeConfiguration.defaultAPIURI,
     clientName: String,
     idToken: String,
     nonce: String? = nil,
@@ -19,6 +21,7 @@ public struct InstantIDTokenSignInRequest: Sendable {
     makeID: @escaping @Sendable () -> String
   ) {
     self.appID = appID
+    self.apiURI = apiURI
     self.clientName = clientName
     self.idToken = idToken
     self.nonce = nonce
@@ -60,4 +63,32 @@ extension InstantIDTokenExchange {
       )
     }
   )
+
+  public static let live = live()
+
+  public static func live(httpClient: InstantAuthHTTPClient = .live) -> Self {
+    Self { request in
+      let urlRequest = try instantAuthRequest(
+        apiURI: request.apiURI,
+        path: ["runtime", "oauth", "id_token"],
+        body: InstantIDTokenBody(
+          appID: request.appID,
+          nonce: request.nonce,
+          idToken: request.idToken,
+          clientName: request.clientName,
+          refreshToken: request.refreshToken
+        )
+      )
+      let response = try await httpClient.send(urlRequest)
+      try validateInstantAuthResponse(response, operation: "sign in with id token")
+      let decoded = try decodeInstantAuthUserResponse(
+        response.data,
+        operation: "sign in with id token"
+      )
+      return InstantIDTokenVerification(
+        userID: decoded.user.id,
+        refreshToken: decoded.user.refreshToken
+      )
+    }
+  }
 }

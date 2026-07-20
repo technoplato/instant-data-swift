@@ -360,6 +360,7 @@ struct InstantStoreTests {
         @escaping @Sendable () -> InstantTimestamp,
         @escaping @Sendable () -> String,
         InstantRefreshTokenVerifier,
+        InstantGuestAuthenticator,
         InstantMagicCodeExchange,
         InstantIDTokenExchange,
         InstantOAuthExchange,
@@ -374,6 +375,7 @@ struct InstantStoreTests {
       TodoExample.attributes,
       { InstantTimestamp(milliseconds: 1_700_000_000_000) },
       { "fixed-id" },
+      .local,
       .local,
       .local,
       .local,
@@ -7547,6 +7549,7 @@ struct InstantStoreTests {
       InstantAuthSession(
         appID: "app-a",
         userID: "guest-user",
+        refreshToken: "local-guest:app-a:guest-user",
         isGuest: true,
         createdAt: signedInAt,
         updatedAt: signedInAt
@@ -7588,6 +7591,108 @@ struct InstantStoreTests {
     let stillSignedInToken = try await stillSignedInTokenRuntime.authSession()
     expectNoDifference(signedOutGuest, nil)
     expectNoDifference(stillSignedInToken, token)
+  }
+
+  @Test
+  func guestSignInUsesAuthenticatorAndPersistsRefreshToken() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let signedInAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let requests = LockIsolated<[InstantGuestAuthRequest]>([])
+    let authenticator = InstantGuestAuthenticator { request in
+      requests.withValue { $0.append(request) }
+      return InstantGuestAuthVerification(
+        userID:
+          "guest:\(request.appID):\(request.signedInAt.milliseconds):\(request.makeID())",
+        refreshToken: "guest-refresh-token"
+      )
+    }
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        now: { signedInAt },
+        makeID: { "guest-user" },
+        guestAuthenticator: authenticator
+      )
+    )
+
+    let session = try await runtime.signInAsGuest()
+    expectNoDifference(
+      session,
+      InstantAuthSession(
+        appID: "app-a",
+        userID: "guest:app-a:1700000000000:guest-user",
+        refreshToken: "guest-refresh-token",
+        isGuest: true,
+        createdAt: signedInAt,
+        updatedAt: signedInAt
+      )
+    )
+    let authenticatorRequests = requests.withValue { $0 }
+    expectNoDifference(authenticatorRequests.count, 1)
+    expectNoDifference(authenticatorRequests.first?.appID, "app-a")
+    expectNoDifference(authenticatorRequests.first?.apiURI.absoluteString, "https://api.instantdb.com")
+    expectNoDifference(authenticatorRequests.first?.signedInAt, signedInAt)
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(appID: "app-a", persistenceURL: cacheURL)
+    )
+    let persistedSession = try await relaunchedRuntime.authSession()
+    expectNoDifference(persistedSession, session)
+  }
+
+  @Test
+  func liveGuestAuthenticatorDecodesCanonicalResponse() async throws {
+    let requests = LockIsolated<[URLRequest]>([])
+    let authenticator = InstantGuestAuthenticator.live(
+      httpClient: InstantAuthHTTPClient { request in
+        requests.withValue { $0.append(request) }
+        return InstantAuthHTTPResponse(
+          statusCode: 200,
+          data: Data(
+            """
+            {
+              "user": {
+                "id": "guest-user",
+                "refresh_token": "guest-refresh-token",
+                "type": "guest"
+              }
+            }
+            """.utf8
+          )
+        )
+      }
+    )
+
+    let verification = try await authenticator.signIn(
+      InstantGuestAuthRequest(
+        appID: "app-a",
+        apiURI: try #require(URL(string: "https://api.example.test")),
+        signedInAt: InstantTimestamp(milliseconds: 1_700_000_000_000),
+        makeID: { "unused-local-id" }
+      )
+    )
+
+    expectNoDifference(
+      verification,
+      InstantGuestAuthVerification(
+        userID: "guest-user",
+        refreshToken: "guest-refresh-token"
+      )
+    )
+    let sentRequests = requests.withValue { $0 }
+    expectNoDifference(sentRequests.count, 1)
+    expectNoDifference(
+      sentRequests.first?.url?.absoluteString,
+      "https://api.example.test/runtime/auth/sign_in_guest"
+    )
+    expectNoDifference(sentRequests.first?.httpMethod, "POST")
+    expectNoDifference(
+      sentRequests.first.flatMap { $0.httpBody }.flatMap {
+        String(data: $0, encoding: .utf8)
+      },
+      #"{"app-id":"app-a"}"#
+    )
   }
 
   @Test

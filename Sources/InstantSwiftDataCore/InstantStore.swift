@@ -21,8 +21,44 @@ public struct InstantStoreMutationResult: Hashable, Codable, Sendable {
 
 struct PreparedStoreMutation: Sendable {
   var result: InstantStoreMutationResult
-  var snapshot: InstantStoreSnapshot
   var sequence: Int64
+  var attributes: AttributeStore
+  var indexes: TripleIndexes
+  private var preparedSnapshot: InstantStoreSnapshot?
+
+  var snapshot: InstantStoreSnapshot {
+    preparedSnapshot
+      ?? InstantStoreSnapshot(attributes: attributes.attributes, triples: indexes.triples)
+  }
+
+  init(
+    result: InstantStoreMutationResult,
+    snapshot: InstantStoreSnapshot,
+    sequence: Int64
+  ) {
+    let attributes = AttributeStore(attributes: snapshot.attributes)
+    self.init(
+      result: result,
+      sequence: sequence,
+      attributes: attributes,
+      indexes: TripleIndexes(triples: snapshot.triples, attributes: attributes),
+      snapshot: snapshot
+    )
+  }
+
+  init(
+    result: InstantStoreMutationResult,
+    sequence: Int64,
+    attributes: AttributeStore,
+    indexes: TripleIndexes,
+    snapshot: InstantStoreSnapshot? = nil
+  ) {
+    self.result = result
+    self.sequence = sequence
+    self.attributes = attributes
+    self.indexes = indexes
+    self.preparedSnapshot = snapshot
+  }
 }
 
 private struct StoreObserver: Sendable {
@@ -135,7 +171,11 @@ public actor InstantStore {
   }
 
   func prepare(_ transaction: InstantStoreTransaction) throws -> PreparedStoreMutation {
-    let prepared = try prepare(transaction, applyingTo: snapshot())
+    let prepared = try prepare(
+      transaction,
+      attributes: attributes,
+      indexes: indexes
+    )
     return commit(prepared)
   }
 
@@ -144,7 +184,20 @@ public actor InstantStore {
     applyingTo snapshot: InstantStoreSnapshot
   ) throws -> PreparedStoreMutation {
     let attributes = AttributeStore(attributes: snapshot.attributes)
-    var indexes = TripleIndexes(triples: snapshot.triples, attributes: attributes)
+    let indexes = TripleIndexes(triples: snapshot.triples, attributes: attributes)
+    return try prepare(transaction, attributes: attributes, indexes: indexes)
+  }
+
+  private func prepare(
+    _ transaction: InstantStoreTransaction,
+    attributes: AttributeStore,
+    indexes initialIndexes: TripleIndexes
+  ) throws -> PreparedStoreMutation {
+    var indexes = initialIndexes
+    indexes.reserveCapacity(
+      entityCapacity: transaction.operations.count,
+      attributeCapacity: attributes.count
+    )
     var changedEntityIDs: Set<String> = []
 
     for operation in transaction.operations {
@@ -261,13 +314,14 @@ public actor InstantStore {
     let result = InstantStoreMutationResult(
       transactionID: transaction.id,
       changedEntityIDs: changedEntityIDs,
-      tripleCount: indexes.triples.count,
+      tripleCount: indexes.tripleCount,
       emissions: []
     )
     return PreparedStoreMutation(
       result: result,
-      snapshot: InstantStoreSnapshot(attributes: attributes.attributes, triples: indexes.triples),
-      sequence: nextSequence
+      sequence: nextSequence,
+      attributes: attributes,
+      indexes: indexes
     )
   }
 
@@ -283,8 +337,8 @@ public actor InstantStore {
     _ prepared: PreparedStoreMutation,
     shouldPublish: Bool
   ) -> PreparedStoreMutation {
-    self.attributes = AttributeStore(attributes: prepared.snapshot.attributes)
-    self.indexes = TripleIndexes(triples: prepared.snapshot.triples, attributes: self.attributes)
+    self.attributes = prepared.attributes
+    self.indexes = prepared.indexes
     self.sequence = prepared.sequence
 
     var emissionsByObservation: [StoreObservationKey: InstantQueryEmission] = [:]
@@ -318,7 +372,12 @@ public actor InstantStore {
     result.emissions = emissionsByObservation
       .sorted { lhs, rhs in Self.emissionSortKey(lhs.key) < Self.emissionSortKey(rhs.key) }
       .map(\.value)
-    return PreparedStoreMutation(result: result, snapshot: prepared.snapshot, sequence: sequence)
+    return PreparedStoreMutation(
+      result: result,
+      sequence: sequence,
+      attributes: prepared.attributes,
+      indexes: prepared.indexes
+    )
   }
 
   private static func emissionSortKey(_ key: StoreObservationKey) -> String {

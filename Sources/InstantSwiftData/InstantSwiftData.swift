@@ -2494,7 +2494,7 @@ private enum InstantMagicCodeExchangeKey: TestDependencyKey {
 
 extension InstantMagicCodeExchangeKey: DependencyKey {
   static var liveValue: InstantMagicCodeExchange {
-    .local
+    .live
   }
 }
 
@@ -2514,6 +2514,22 @@ extension InstantRefreshTokenVerifierKey: DependencyKey {
   }
 }
 
+private enum InstantGuestAuthenticatorKey: TestDependencyKey {
+  static var testValue: InstantGuestAuthenticator {
+    .local
+  }
+
+  static var previewValue: InstantGuestAuthenticator {
+    .local
+  }
+}
+
+extension InstantGuestAuthenticatorKey: DependencyKey {
+  static var liveValue: InstantGuestAuthenticator {
+    .live
+  }
+}
+
 private enum InstantIDTokenExchangeKey: TestDependencyKey {
   static var testValue: InstantIDTokenExchange {
     .local
@@ -2526,7 +2542,7 @@ private enum InstantIDTokenExchangeKey: TestDependencyKey {
 
 extension InstantIDTokenExchangeKey: DependencyKey {
   static var liveValue: InstantIDTokenExchange {
-    .local
+    .live
   }
 }
 
@@ -2542,7 +2558,7 @@ private enum InstantOAuthExchangeKey: TestDependencyKey {
 
 extension InstantOAuthExchangeKey: DependencyKey {
   static var liveValue: InstantOAuthExchange {
-    .local
+    .live
   }
 }
 
@@ -2722,6 +2738,11 @@ extension DependencyValues {
     set { self[InstantRefreshTokenVerifierKey.self] = newValue }
   }
 
+  public var instantGuestAuthenticator: InstantGuestAuthenticator {
+    get { self[InstantGuestAuthenticatorKey.self] }
+    set { self[InstantGuestAuthenticatorKey.self] = newValue }
+  }
+
   public var instantIDTokenExchange: InstantIDTokenExchange {
     get { self[InstantIDTokenExchangeKey.self] }
     set { self[InstantIDTokenExchangeKey.self] = newValue }
@@ -2816,6 +2837,7 @@ extension DependencyValues {
     let uuid = self.uuid
     let magicCodeExchange = self.instantMagicCodeExchange
     let refreshTokenVerifier = self.instantRefreshTokenVerifier
+    let guestAuthenticator = self.instantGuestAuthenticator
     let idTokenExchange = self.instantIDTokenExchange
     let oauthExchange = self.instantOAuthExchange
     let authTokenInvalidator = self.instantAuthTokenInvalidator
@@ -2848,6 +2870,7 @@ extension DependencyValues {
           uuid().uuidString.lowercased()
         },
         refreshTokenVerifier: refreshTokenVerifier,
+        guestAuthenticator: guestAuthenticator,
         magicCodeExchange: magicCodeExchange,
         idTokenExchange: idTokenExchange,
         oauthExchange: oauthExchange,

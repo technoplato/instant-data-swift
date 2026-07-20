@@ -5,6 +5,156 @@ import Testing
 
 @Suite(.serialized)
 struct InstantAuthHTTPParityTests {
+  @Test("Instant authAPI magic-code calls use canonical endpoints and bodies")
+  func magicCodeRequestsMatchCanonicalSDK() async throws {
+    let sendRecorder = AuthRequestRecorder()
+    let exchange = InstantMagicCodeExchange.live(
+      httpClient: InstantAuthHTTPClient { request in
+        await sendRecorder.record(request)
+        return InstantAuthHTTPResponse(statusCode: 200, data: Data(#"{"sent":true}"#.utf8))
+      }
+    )
+    let apiURI = try #require(URL(string: "https://api.example.test/custom"))
+    let challenge = try await exchange.send(
+      InstantMagicCodeSendRequest(
+        appID: "app-1",
+        apiURI: apiURI,
+        email: "user@example.com",
+        sentAt: InstantTimestamp(milliseconds: 1_700_000_000_000),
+        makeID: { "unused" }
+      )
+    )
+    let sendRequest = try #require(await sendRecorder.onlyRequest())
+    expectNoDifference(
+      sendRequest.url?.absoluteString,
+      "https://api.example.test/custom/runtime/auth/send_magic_code"
+    )
+    expectNoDifference(
+      try requestJSONObject(sendRequest),
+      ["app-id": "app-1", "email": "user@example.com"]
+    )
+    expectNoDifference(challenge.code, "")
+
+    let verifyRecorder = AuthRequestRecorder()
+    let verifier = InstantMagicCodeExchange.live(
+      httpClient: InstantAuthHTTPClient { request in
+        await verifyRecorder.record(request)
+        return InstantAuthHTTPResponse(
+          statusCode: 200,
+          data: Data(#"{"user":{"id":"user-1","refresh_token":"token-2"},"created":true}"#.utf8)
+        )
+      }
+    )
+    let verification = try await verifier.verify(
+      InstantMagicCodeVerifyRequest(
+        appID: "app-1",
+        apiURI: apiURI,
+        email: "user@example.com",
+        code: "123456",
+        challenge: challenge,
+        refreshToken: "token-1",
+        extraFields: ["displayName": .string("Sample User")],
+        verifiedAt: InstantTimestamp(milliseconds: 1_700_000_001_000)
+      )
+    )
+    expectNoDifference(
+      verification,
+      InstantMagicCodeVerification(userID: "user-1", refreshToken: "token-2", created: true)
+    )
+    let verifyRequest = try #require(await verifyRecorder.onlyRequest())
+    expectNoDifference(
+      verifyRequest.url?.absoluteString,
+      "https://api.example.test/custom/runtime/auth/verify_magic_code"
+    )
+    let verifyRequestBody = try #require(verifyRequest.httpBody)
+    let body = try #require(
+      JSONSerialization.jsonObject(with: verifyRequestBody) as? [String: Any]
+    )
+    expectNoDifference(body["app-id"] as? String, "app-1")
+    expectNoDifference(body["refresh-token"] as? String, "token-1")
+    expectNoDifference(
+      (body["extra-fields"] as? [String: String])?["displayName"],
+      "Sample User"
+    )
+  }
+
+  @Test("Instant authAPI ID-token and OAuth calls use canonical endpoints and bodies")
+  func oauthRequestsMatchCanonicalSDK() async throws {
+    let apiURI = try #require(URL(string: "https://api.example.test/custom"))
+    let idRecorder = AuthRequestRecorder()
+    let idExchange = InstantIDTokenExchange.live(
+      httpClient: InstantAuthHTTPClient { request in
+        await idRecorder.record(request)
+        return InstantAuthHTTPResponse(
+          statusCode: 200,
+          data: Data(#"{"user":{"id":"id-user","refresh_token":"id-refresh"},"created":false}"#.utf8)
+        )
+      }
+    )
+    _ = try await idExchange.signIn(
+      InstantIDTokenSignInRequest(
+        appID: "app-1",
+        apiURI: apiURI,
+        clientName: "google-ios",
+        idToken: "jwt",
+        nonce: "nonce",
+        refreshToken: "existing",
+        signedInAt: InstantTimestamp(milliseconds: 1),
+        makeID: { "unused" }
+      )
+    )
+    let idRequest = try #require(await idRecorder.onlyRequest())
+    expectNoDifference(
+      idRequest.url?.absoluteString,
+      "https://api.example.test/custom/runtime/oauth/id_token"
+    )
+    let idRequestBody = try #require(idRequest.httpBody)
+    let idBody = try #require(
+      JSONSerialization.jsonObject(with: idRequestBody) as? [String: String]
+    )
+    expectNoDifference(
+      idBody,
+      [
+        "app_id": "app-1", "client_name": "google-ios", "id_token": "jwt",
+        "nonce": "nonce", "refresh_token": "existing",
+      ]
+    )
+
+    let oauthRecorder = AuthRequestRecorder()
+    let oauthExchange = InstantOAuthExchange.live(
+      httpClient: InstantAuthHTTPClient { request in
+        await oauthRecorder.record(request)
+        return InstantAuthHTTPResponse(
+          statusCode: 200,
+          data: Data(#"{"user":{"id":"oauth-user","refresh_token":"oauth-refresh"},"created":true}"#.utf8)
+        )
+      }
+    )
+    _ = try await oauthExchange.signIn(
+      InstantOAuthSignInRequest(
+        appID: "app-1",
+        apiURI: apiURI,
+        code: "auth-code",
+        codeVerifier: "verifier",
+        refreshToken: "existing",
+        signedInAt: InstantTimestamp(milliseconds: 1),
+        makeID: { "unused" }
+      )
+    )
+    let oauthRequest = try #require(await oauthRecorder.onlyRequest())
+    expectNoDifference(
+      oauthRequest.url?.absoluteString,
+      "https://api.example.test/custom/runtime/oauth/token"
+    )
+    expectNoDifference(
+      try requestJSONObject(oauthRequest),
+      [
+        "app_id": "app-1", "code": "auth-code", "code_verifier": "verifier",
+        "refresh_token": "existing",
+      ]
+    )
+  }
+
   @Test("Instant authAPI.verifyRefreshToken posts canonical body and decodes user")
   func verifyRefreshTokenRequestMatchesCanonicalSDK() async throws {
     let recorder = AuthRequestRecorder()

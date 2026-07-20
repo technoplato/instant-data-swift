@@ -55,6 +55,139 @@ struct InstantSignOutBody: Encodable {
   }
 }
 
+struct InstantSendMagicCodeBody: Encodable {
+  var appID: String
+  var email: String
+
+  private enum CodingKeys: String, CodingKey {
+    case appID = "app-id"
+    case email
+  }
+}
+
+struct InstantVerifyMagicCodeBody: Encodable {
+  var appID: String
+  var email: String
+  var code: String
+  var refreshToken: String?
+  var extraFields: [String: InstantValue]
+
+  private enum CodingKeys: String, CodingKey {
+    case appID = "app-id"
+    case email
+    case code
+    case refreshToken = "refresh-token"
+    case extraFields = "extra-fields"
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(appID, forKey: .appID)
+    try container.encode(email, forKey: .email)
+    try container.encode(code, forKey: .code)
+    try container.encodeIfPresent(refreshToken, forKey: .refreshToken)
+    if !extraFields.isEmpty {
+      try container.encode(
+        extraFields.mapValues(InstantAuthJSONValue.init),
+        forKey: .extraFields
+      )
+    }
+  }
+}
+
+struct InstantIDTokenBody: Encodable {
+  var appID: String
+  var nonce: String?
+  var idToken: String
+  var clientName: String
+  var refreshToken: String?
+
+  private enum CodingKeys: String, CodingKey {
+    case appID = "app_id"
+    case nonce
+    case idToken = "id_token"
+    case clientName = "client_name"
+    case refreshToken = "refresh_token"
+  }
+}
+
+struct InstantOAuthTokenBody: Encodable {
+  var appID: String
+  var code: String
+  var codeVerifier: String?
+  var refreshToken: String?
+
+  private enum CodingKeys: String, CodingKey {
+    case appID = "app_id"
+    case code
+    case codeVerifier = "code_verifier"
+    case refreshToken = "refresh_token"
+  }
+}
+
+private indirect enum InstantAuthJSONValue: Encodable {
+  case null
+  case string(String)
+  case number(Double)
+  case bool(Bool)
+  case array([InstantAuthJSONValue])
+  case object([String: InstantAuthJSONValue])
+
+  init(_ value: InstantValue) {
+    switch value {
+    case .null:
+      self = .null
+    case let .string(value), let .ref(value):
+      self = .string(value)
+    case let .number(value):
+      self = .number(value)
+    case let .bool(value):
+      self = .bool(value)
+    case let .date(value):
+      self = .string(ISO8601DateFormatter().string(from: value))
+    case let .json(value):
+      self.init(value)
+    case let .lookupRef(value):
+      self = .string(value.description)
+    }
+  }
+
+  init(_ value: JSONValue) {
+    switch value {
+    case .null:
+      self = .null
+    case let .string(value):
+      self = .string(value)
+    case let .number(value):
+      self = .number(value)
+    case let .bool(value):
+      self = .bool(value)
+    case let .array(values):
+      self = .array(values.map(Self.init))
+    case let .object(values):
+      self = .object(values.mapValues(Self.init))
+    }
+  }
+
+  func encode(to encoder: Encoder) throws {
+    var container = encoder.singleValueContainer()
+    switch self {
+    case .null:
+      try container.encodeNil()
+    case let .string(value):
+      try container.encode(value)
+    case let .number(value):
+      try container.encode(value)
+    case let .bool(value):
+      try container.encode(value)
+    case let .array(value):
+      try container.encode(value)
+    case let .object(value):
+      try container.encode(value)
+    }
+  }
+}
+
 struct InstantVerifyRefreshTokenResponse: Decodable {
   struct User: Decodable {
     var id: String
@@ -67,6 +200,37 @@ struct InstantVerifyRefreshTokenResponse: Decodable {
   }
 
   var user: User
+}
+
+struct InstantAuthUserResponse: Decodable {
+  struct User: Decodable {
+    var id: String
+    var refreshToken: String?
+
+    private enum CodingKeys: String, CodingKey {
+      case id
+      case refreshToken = "refresh_token"
+    }
+  }
+
+  var user: User
+  var created: Bool?
+}
+
+func decodeInstantAuthUserResponse(
+  _ data: Data,
+  operation: String
+) throws -> InstantAuthUserResponse {
+  do {
+    return try JSONDecoder().decode(InstantAuthUserResponse.self, from: data)
+  } catch {
+    throw InstantError(
+      code: .decodeFailed,
+      operation: operation,
+      message: "Instant auth returned an invalid user response.",
+      recovery: "Inspect the canonical Instant auth response shape."
+    )
+  }
 }
 
 func instantAuthRequest<Body: Encodable>(
@@ -93,7 +257,7 @@ func validateInstantAuthResponse(
       code: .authFailed,
       operation: operation,
       message: "Instant auth returned HTTP \(response.statusCode).",
-      recovery: "Verify the app ID and refresh token, then authenticate again."
+      recovery: "Verify the app ID and authentication credentials, then try again."
     )
   }
 }

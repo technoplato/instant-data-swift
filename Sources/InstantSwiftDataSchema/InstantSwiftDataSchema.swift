@@ -1438,6 +1438,15 @@ public enum InstantSchemaExamples {
     ]
   )
 
+  public static let storageDocument = InstantSchemaDocument(
+    entities: [mobileChatFiles],
+    links: []
+  )
+
+  public static let storagePermissions = InstantPermissionsDocument(
+    namespaces: [.allowAll(namespace: "$files")]
+  )
+
   public static let mobileChatUsers = InstantEntitySchema(
     typeName: "MobileChatUser",
     namespace: "$users",

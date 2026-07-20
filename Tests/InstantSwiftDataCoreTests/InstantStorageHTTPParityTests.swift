@@ -77,6 +77,26 @@ struct InstantStorageHTTPParityTests {
     expectNoDifference(request.httpBody, nil)
   }
 
+  @Test("Storage download fetches the URL discovered from the $files query")
+  func downloadUsesDiscoveredURL() async throws {
+    let body = Data("remote-file".utf8)
+    let recorder = StorageRequestRecorder(
+      response: InstantStorageHTTPResponse(statusCode: 200, data: body)
+    )
+    let client = InstantStorageTransportClient.live(httpClient: recorder.client)
+    let url = try #require(
+      URL(string: "https://instant-storage.example.test/signed/file-1?token=abc")
+    )
+
+    let downloaded = try await client.download(InstantStorageDownloadRequest(url: url))
+
+    expectNoDifference(downloaded, body)
+    let request = try #require(await recorder.onlyRequest())
+    expectNoDifference(request.httpMethod, "GET")
+    expectNoDifference(request.url, url)
+    expectNoDifference(request.httpBody, nil)
+  }
+
   @Test("Storage maps authorization and malformed response failures")
   func failuresAreActionable() async throws {
     let forbidden = InstantStorageTransportClient.live(

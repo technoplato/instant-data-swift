@@ -15,12 +15,14 @@ public struct InstantRuntimeConfiguration: Sendable {
   public var now: @Sendable () -> InstantTimestamp
   public var makeID: @Sendable () -> String
   public var refreshTokenVerifier: InstantRefreshTokenVerifier
+  public var guestAuthenticator: InstantGuestAuthenticator
   public var magicCodeExchange: InstantMagicCodeExchange
   public var idTokenExchange: InstantIDTokenExchange
   public var oauthExchange: InstantOAuthExchange
   public var authTokenInvalidator: InstantAuthTokenInvalidator
   public var mutationTransport: InstantMutationTransportClient
   public var liveTransport: InstantLiveTransportClient?
+  public var autoConnectLiveTransport: Bool
   public var liveShareContract: InstantLiveShareContract?
   public var userCookieSyncClient: InstantUserCookieSyncClient
   public var platformAppClient: InstantPlatformAppClient
@@ -39,6 +41,7 @@ public struct InstantRuntimeConfiguration: Sendable {
     },
     makeID: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() },
     refreshTokenVerifier: InstantRefreshTokenVerifier = .local,
+    guestAuthenticator: InstantGuestAuthenticator = .local,
     magicCodeExchange: InstantMagicCodeExchange = .local,
     idTokenExchange: InstantIDTokenExchange = .local,
     oauthExchange: InstantOAuthExchange = .local,
@@ -55,6 +58,7 @@ public struct InstantRuntimeConfiguration: Sendable {
       now: now,
       makeID: makeID,
       refreshTokenVerifier: refreshTokenVerifier,
+      guestAuthenticator: guestAuthenticator,
       magicCodeExchange: magicCodeExchange,
       idTokenExchange: idTokenExchange,
       oauthExchange: oauthExchange,
@@ -70,12 +74,44 @@ public struct InstantRuntimeConfiguration: Sendable {
   public init(
     appID: String,
     persistenceURL: URL,
+    initialAttributes: [InstantAttribute],
+    now: @escaping @Sendable () -> InstantTimestamp,
+    makeID: @escaping @Sendable () -> String,
+    refreshTokenVerifier: InstantRefreshTokenVerifier,
+    magicCodeExchange: InstantMagicCodeExchange,
+    idTokenExchange: InstantIDTokenExchange,
+    oauthExchange: InstantOAuthExchange,
+    authTokenInvalidator: InstantAuthTokenInvalidator,
+    platformAppClient: InstantPlatformAppClient,
+    appBuilderCodeGenerator: AppBuilderCodeGeneratorClient
+  ) {
+    self.init(
+      appID: appID,
+      persistenceURL: persistenceURL,
+      initialAttributes: initialAttributes,
+      now: now,
+      makeID: makeID,
+      refreshTokenVerifier: refreshTokenVerifier,
+      guestAuthenticator: .local,
+      magicCodeExchange: magicCodeExchange,
+      idTokenExchange: idTokenExchange,
+      oauthExchange: oauthExchange,
+      authTokenInvalidator: authTokenInvalidator,
+      platformAppClient: platformAppClient,
+      appBuilderCodeGenerator: appBuilderCodeGenerator
+    )
+  }
+
+  public init(
+    appID: String,
+    persistenceURL: URL,
     initialAttributes: [InstantAttribute] = [],
     now: @escaping @Sendable () -> InstantTimestamp = {
       InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1_000).rounded()))
     },
     makeID: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() },
     refreshTokenVerifier: InstantRefreshTokenVerifier = .local,
+    guestAuthenticator: InstantGuestAuthenticator = .local,
     magicCodeExchange: InstantMagicCodeExchange = .local,
     idTokenExchange: InstantIDTokenExchange = .local,
     oauthExchange: InstantOAuthExchange = .local,
@@ -93,6 +129,7 @@ public struct InstantRuntimeConfiguration: Sendable {
       now: now,
       makeID: makeID,
       refreshTokenVerifier: refreshTokenVerifier,
+      guestAuthenticator: guestAuthenticator,
       magicCodeExchange: magicCodeExchange,
       idTokenExchange: idTokenExchange,
       oauthExchange: oauthExchange,
@@ -117,6 +154,7 @@ public struct InstantRuntimeConfiguration: Sendable {
     },
     makeID: @escaping @Sendable () -> String = { UUID().uuidString.lowercased() },
     refreshTokenVerifier: InstantRefreshTokenVerifier = .local,
+    guestAuthenticator: InstantGuestAuthenticator = .local,
     magicCodeExchange: InstantMagicCodeExchange = .local,
     idTokenExchange: InstantIDTokenExchange = .local,
     oauthExchange: InstantOAuthExchange = .local,
@@ -137,12 +175,14 @@ public struct InstantRuntimeConfiguration: Sendable {
     self.now = now
     self.makeID = makeID
     self.refreshTokenVerifier = refreshTokenVerifier
+    self.guestAuthenticator = guestAuthenticator
     self.magicCodeExchange = magicCodeExchange
     self.idTokenExchange = idTokenExchange
     self.oauthExchange = oauthExchange
     self.authTokenInvalidator = authTokenInvalidator
     self.mutationTransport = mutationTransport
     self.liveTransport = liveTransport
+    self.autoConnectLiveTransport = false
     self.liveShareContract = liveShareContract
     self.userCookieSyncClient = userCookieSyncClient
     self.platformAppClient = platformAppClient
@@ -1265,6 +1305,51 @@ private struct InstantAppliedServerTransaction: Sendable {
   var mergedAttributeCount: Int
 }
 
+private actor InstantLiveQueryAcknowledgementState {
+  private var revisions: [String: Int] = [:]
+  private var waiters: [String: [UUID: AsyncStream<Void>.Continuation]] = [:]
+
+  func revision(for key: String) -> Int {
+    revisions[key, default: 0]
+  }
+
+  func record(key: String) {
+    revisions[key, default: 0] += 1
+    let continuations = waiters.removeValue(forKey: key).map { Array($0.values) } ?? []
+    for continuation in continuations {
+      continuation.yield(())
+      continuation.finish()
+    }
+  }
+
+  func wait(for key: String, after observedRevision: Int) async {
+    if revisions[key, default: 0] > observedRevision { return }
+    let id = UUID()
+    let stream = AsyncStream<Void>(bufferingPolicy: .bufferingNewest(1)) { continuation in
+      if revisions[key, default: 0] > observedRevision {
+        continuation.yield(())
+        continuation.finish()
+      } else {
+        waiters[key, default: [:]][id] = continuation
+        continuation.onTermination = { @Sendable _ in
+          Task {
+            await self.cancelWaiter(key: key, id: id)
+          }
+        }
+      }
+    }
+    var iterator = stream.makeAsyncIterator()
+    _ = await iterator.next()
+  }
+
+  private func cancelWaiter(key: String, id: UUID) {
+    waiters[key]?[id] = nil
+    if waiters[key]?.isEmpty == true {
+      waiters[key] = nil
+    }
+  }
+}
+
 public final class InstantRuntime: Sendable {
   public static let selectedAppIDMetadataKey = "cli.selected_app_id"
   public static let cookieSyncLastUpdatedMetadataKey = "lastSyncedUserCookie"
@@ -1297,6 +1382,7 @@ public final class InstantRuntime: Sendable {
   private let mutationFlushGate = AsyncSerialGate()
   private let liveSession = InstantRuntimeLiveSession()
   private let liveQueryResultState = InstantLiveQueryResultState()
+  private let liveQueryAcknowledgements = InstantLiveQueryAcknowledgementState()
   private let liveRoomPresenceState = InstantRuntimeLiveRoomPresenceState()
   private let reconnectController = InstantRuntimeReconnectController()
 
@@ -1466,6 +1552,7 @@ public final class InstantRuntime: Sendable {
     createdAt: InstantTimestamp? = nil,
     source: String = "local"
   ) async throws -> InstantStoreMutationResult {
+    try await ensureLiveConnectionIfNeeded()
     await enterOperationGate()
     do {
       let result = try await performTransact(transaction, createdAt: createdAt, source: source)
@@ -1981,6 +2068,52 @@ public final class InstantRuntime: Sendable {
   }
 
   public func queryOnce(_ plan: InstantQueryPlan) async throws -> InstantQueryEmission {
+    if configuration.liveTransport != nil,
+      configuration.autoConnectLiveTransport,
+      try await persistedConnectionState() != .closed
+    {
+      return try await queryOnceThroughLive(plan)
+    }
+    return try await materializeLocalQueryOnce(plan)
+  }
+
+  private func queryOnceThroughLive(_ plan: InstantQueryPlan) async throws -> InstantQueryEmission {
+    let query = try InstantLiveQueryEncoder.encode(plan)
+    let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
+    let observedRevision = await liveQueryAcknowledgements.revision(for: registrationKey)
+
+    try await ensureLiveConnectionIfNeeded()
+    try await liveSession.registerQuery(
+      query,
+      key: registrationKey,
+      clientEventID: configuration.makeID()
+    )
+    defer {
+      Task {
+        try? await self.liveSession.unregisterQuery(
+          key: registrationKey,
+          clientEventID: self.configuration.makeID()
+        )
+      }
+    }
+
+    do {
+      try await instantLiveWithTimeout(
+        operation: "run Instant live query",
+        timeoutMilliseconds: 10_000
+      ) {
+        await self.liveQueryAcknowledgements.wait(for: registrationKey, after: observedRevision)
+      }
+    } catch {
+      await recordConnectionError(error)
+      throw error
+    }
+    return try await materializeLocalQueryOnce(plan)
+  }
+
+  private func materializeLocalQueryOnce(_ plan: InstantQueryPlan) async throws
+    -> InstantQueryEmission
+  {
     await enterOperationGate()
     do {
       for _ in 0..<5 {
@@ -2121,6 +2254,14 @@ public final class InstantRuntime: Sendable {
         key: processedTransactionIDMetadataKey
       )
     )
+  }
+
+  private func ensureLiveConnectionIfNeeded() async throws {
+    guard configuration.liveTransport != nil else { return }
+    guard configuration.autoConnectLiveTransport else { return }
+    guard await !liveSession.isOpen else { return }
+    guard try await persistedConnectionState() != .closed else { return }
+    _ = try await connect()
   }
 
   public func markProcessedTransaction(id transactionID: String) async throws -> InstantSyncState {
@@ -2412,14 +2553,24 @@ public final class InstantRuntime: Sendable {
   ) async throws {
     switch event {
     case let .addQueryOK(queryOK):
-      guard !queryOK.result.isEmpty else { return }
-      guard let query = queryOK.query,
-        let processedTransactionID = queryOK.processedTransactionID?.nilIfEmpty
-      else {
+      guard let query = queryOK.query else {
         throw InstantError(
           code: .decodeFailed,
           operation: "apply Instant live query result",
-          message: "A non-empty add-query-ok must include q and processed-tx-id.",
+          message: "add-query-ok must include q.",
+          recovery: "Inspect the canonical Instant add-query-ok payload."
+        )
+      }
+      let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
+      guard !queryOK.result.isEmpty else {
+        await liveQueryAcknowledgements.record(key: registrationKey)
+        return
+      }
+      guard let processedTransactionID = queryOK.processedTransactionID?.nilIfEmpty else {
+        throw InstantError(
+          code: .decodeFailed,
+          operation: "apply Instant live query result",
+          message: "A non-empty add-query-ok must include processed-tx-id.",
           recovery: "Inspect the canonical Instant add-query-ok payload."
         )
       }
@@ -2436,6 +2587,7 @@ public final class InstantRuntime: Sendable {
           ]
         )
       )
+      await liveQueryAcknowledgements.record(key: registrationKey)
 
     case let .refreshOK(refreshOK):
       try await applyLiveRefresh(
@@ -2791,13 +2943,23 @@ public final class InstantRuntime: Sendable {
 
   public func signInAsGuest() async throws -> InstantAuthSession {
     let now = configuration.now()
+    let verification = try await configuration.guestAuthenticator.signIn(
+      InstantGuestAuthRequest(
+        appID: configuration.appID,
+        apiURI: configuration.apiURI,
+        signedInAt: now,
+        makeID: configuration.makeID
+      )
+    )
     let session = InstantAuthSession(
       appID: configuration.appID,
-      userID: configuration.makeID(),
+      userID: verification.userID,
+      refreshToken: verification.refreshToken,
       isGuest: true,
       createdAt: now,
       updatedAt: now
     )
+    _ = try await saveGuestUserFields(userID: session.userID, signedInAt: now)
     try await saveAuthSession(session)
     return session
   }
@@ -2808,6 +2970,7 @@ public final class InstantRuntime: Sendable {
     let challenge = try await configuration.magicCodeExchange.send(
       InstantMagicCodeSendRequest(
         appID: configuration.appID,
+        apiURI: configuration.apiURI,
         email: email,
         sentAt: now,
         makeID: configuration.makeID
@@ -2865,12 +3028,17 @@ public final class InstantRuntime: Sendable {
         state: stateBeforeVerification
       )
       let now = configuration.now()
+      let currentRefreshToken = try await persistence.loadAuthSession(key: authSessionKey)?
+        .refreshToken
       let verification = try await configuration.magicCodeExchange.verify(
         InstantMagicCodeVerifyRequest(
           appID: configuration.appID,
+          apiURI: configuration.apiURI,
           email: email,
           code: code,
           challenge: challenge,
+          refreshToken: currentRefreshToken,
+          extraFields: extraFields,
           verifiedAt: now
         )
       )
@@ -2882,7 +3050,7 @@ public final class InstantRuntime: Sendable {
         createdAt: now,
         updatedAt: now
       )
-      let created = try await saveMagicCodeUserFields(
+      let locallyCreated = try await saveMagicCodeUserFields(
         userID: session.userID,
         email: email,
         extraFields: extraFields,
@@ -2894,7 +3062,10 @@ public final class InstantRuntime: Sendable {
       _ = try? await publishConnectionStatusWithGateHeld()
       await operationGate.leave()
       _ = try? await syncUserCookieToEndpoint(session)
-      return InstantMagicCodeSignInResult(session: session, created: created)
+      return InstantMagicCodeSignInResult(
+        session: session,
+        created: verification.created ?? locallyCreated
+      )
     } catch {
       await operationGate.leave()
       throw error
@@ -2973,6 +3144,45 @@ public final class InstantRuntime: Sendable {
       receivedAt: verifiedAt
     )
     return !userExists
+  }
+
+  private func saveGuestUserFields(
+    userID: String,
+    signedInAt: InstantTimestamp
+  ) async throws -> Bool {
+    recordActorHop(.persistence)
+    let state = try await persistence.loadState()
+    let attributes = AttributeStore(attributes: state.snapshot.store.attributes)
+    let canWriteUsers =
+      attributes.namespaces.isEmpty || attributes.namespaces.contains(Self.authUsersNamespace)
+    guard canWriteUsers else { return false }
+
+    let userExists = state.snapshot.store.triples.contains { triple in
+      triple.entityID == userID && triple.attributeID.hasPrefix(Self.authUsersNamespace + "/")
+    }
+    guard !userExists else { return false }
+
+    let transactionID = "auth.guest.\(configuration.makeID())"
+    _ = try await performApplyServerTransaction(
+      InstantStoreTransaction(
+        id: transactionID,
+        operations: [
+          .requireEntityMissing(entityID: userID, namespace: Self.authUsersNamespace),
+          .insert(
+            InstantTriple(
+              entityID: userID,
+              attributeID: InstantAttribute.primaryKeyID(namespace: Self.authUsersNamespace),
+              value: .string(userID),
+              txID: transactionID,
+              txTime: signedInAt
+            )
+          ),
+        ]
+      ),
+      processedTransactionID: transactionID,
+      receivedAt: signedInAt
+    )
+    return true
   }
 
   private func validateMagicCodeExtraFieldsSchema(
@@ -3109,6 +3319,7 @@ public final class InstantRuntime: Sendable {
     let verification = try await configuration.idTokenExchange.signIn(
       InstantIDTokenSignInRequest(
         appID: configuration.appID,
+        apiURI: configuration.apiURI,
         clientName: clientName,
         idToken: idToken,
         nonce: rawNonce,
@@ -3149,6 +3360,7 @@ public final class InstantRuntime: Sendable {
     let verification = try await configuration.oauthExchange.signIn(
       InstantOAuthSignInRequest(
         appID: configuration.appID,
+        apiURI: configuration.apiURI,
         code: code,
         codeVerifier: rawCodeVerifier,
         refreshToken: refreshToken,
@@ -3677,16 +3889,17 @@ public final class InstantRuntime: Sendable {
   }
 
   public func storedFiles() async throws -> [InstantStoredFile] {
-    await operationGate.enter()
-    do {
-      _ = try await resolvedFileUserID(operation: "list files")
-      let files = try await persistence.loadStoredFiles(appID: configuration.appID)
-      await operationGate.leave()
-      return files
-    } catch {
-      await operationGate.leave()
-      throw error
+    _ = try await resolvedFileUserID(operation: "list files")
+    if storageTransport != nil, configuration.liveTransport != nil {
+      do {
+        let remote = try await queryOnce(Self.storedFilesQuery).values
+        return try await mergedStoredFiles(remoteSnapshots: remote)
+      } catch let error as InstantError where error.code == .networkFailed {
+        // Preserve Instant's offline-first behavior: a disconnected device can
+        // still enumerate files it has already downloaded.
+      }
     }
+    return try await persistence.loadStoredFiles(appID: configuration.appID)
   }
 
   public func storageSnapshot() async throws -> InstantStorageSnapshot {
@@ -3702,6 +3915,36 @@ public final class InstantRuntime: Sendable {
   }
 
   public func observeStoredFiles() async throws -> AsyncStream<[InstantStoredFile]> {
+    if storageTransport != nil, configuration.liveTransport != nil {
+      _ = try await resolvedFileUserID(operation: "observe files")
+      do {
+        _ = try await queryOnce(Self.storedFilesQuery)
+      } catch let error as InstantError where error.code == .networkFailed {
+        return try await localStoredFilesStream()
+      }
+      let remoteStream = await observe(Self.storedFilesQuery)
+      return AsyncStream { continuation in
+        let task = Task {
+          for await emission in remoteStream {
+            guard !Task.isCancelled else { break }
+            do {
+              continuation.yield(
+                try await self.mergedStoredFiles(remoteSnapshots: emission.values)
+              )
+            } catch {
+              continuation.finish()
+              return
+            }
+          }
+          continuation.finish()
+        }
+        continuation.onTermination = { @Sendable _ in task.cancel() }
+      }
+    }
+    return try await localStoredFilesStream()
+  }
+
+  private func localStoredFilesStream() async throws -> AsyncStream<[InstantStoredFile]> {
     await operationGate.enter()
     do {
       _ = try await resolvedFileUserID(operation: "observe files")
@@ -3726,26 +3969,38 @@ public final class InstantRuntime: Sendable {
       recovery: "Pass the id returned by 'instant-swift-data files list'."
     )
 
-    await operationGate.enter()
-    do {
-      _ = try await resolvedFileUserID(operation: "read file")
-      guard let contents = try await persistence.readStoredFileContents(
-        appID: configuration.appID,
-        fileID: id
-      ) else {
-        throw validationFailed(
-          operation: "read file",
-          localID: id,
-          message: "No local file exists for id '\(id)'.",
-          recovery: "Run 'instant-swift-data files list' to inspect local file ids."
-        )
-      }
-      await operationGate.leave()
+    _ = try await resolvedFileUserID(operation: "read file")
+    if let contents = try await persistence.readStoredFileContents(
+      appID: configuration.appID,
+      fileID: id
+    ) {
       return contents
-    } catch {
-      await operationGate.leave()
-      throw error
     }
+
+    guard let storageTransport, configuration.liveTransport != nil else {
+      throw validationFailed(
+        operation: "read file",
+        localID: id,
+        message: "No downloaded file exists for id '\(id)'.",
+        recovery: "Run 'instant-swift-data files list' to inspect available file ids."
+      )
+    }
+    let remoteFiles = try await remoteStoredFiles()
+    guard let file = remoteFiles.first(where: { $0.id == id }), let remoteURL = file.remoteURL else {
+      throw validationFailed(
+        operation: "read file",
+        localID: id,
+        message: "No remote file exists for id '\(id)'.",
+        recovery: "Run 'instant-swift-data files list' to inspect remote file ids."
+      )
+    }
+    let data = try await storageTransport.download(
+      InstantStorageDownloadRequest(url: remoteURL)
+    )
+    let saved = try await persistence.saveDownloadedFile(file, data: data)
+    let localFiles = try await persistence.loadStoredFiles(appID: configuration.appID)
+    await storedFilesObservers.publish(localFiles, for: storedFilesObservationKey)
+    return InstantStoredFileContents(file: saved, data: data)
   }
 
   @discardableResult
@@ -3757,19 +4012,17 @@ public final class InstantRuntime: Sendable {
       recovery: "Pass the id returned by 'instant-swift-data files list'."
     )
 
-    await operationGate.enter()
+    _ = try await resolvedFileUserID(operation: "delete file")
+    let file = try await storedFiles().first(where: { $0.id == id })
+    guard let file else {
+      throw validationFailed(
+        operation: "delete file",
+        localID: id,
+        message: "No local or remote file exists for id '\(id)'.",
+        recovery: "Run 'instant-swift-data files list' to inspect available file ids."
+      )
+    }
     do {
-      _ = try await resolvedFileUserID(operation: "delete file")
-      guard let file = try await persistence.loadStoredFiles(appID: configuration.appID)
-        .first(where: { $0.id == id })
-      else {
-        throw validationFailed(
-          operation: "delete file",
-          localID: id,
-          message: "No local file exists for id '\(id)'.",
-          recovery: "Run 'instant-swift-data files list' to inspect local file ids."
-        )
-      }
       if let storageTransport {
         let refreshToken = try await storageRefreshToken(operation: "delete file")
         _ = try await storageTransport.delete(
@@ -3781,28 +4034,76 @@ public final class InstantRuntime: Sendable {
           )
         )
       }
-      guard try await persistence.deleteStoredFile(
+      _ = try await persistence.deleteStoredFile(
         appID: configuration.appID,
         fileID: id
-      ) != nil else {
-        throw validationFailed(
-          operation: "delete file",
-          localID: id,
-          message: "No local file exists for id '\(id)'.",
-          recovery: "Run 'instant-swift-data files list' to inspect local file ids."
-        )
-      }
+      )
       let files = try await persistence.loadStoredFiles(appID: configuration.appID)
       await storedFilesObservers.publish(
         files,
         for: storedFilesObservationKey
       )
-      await operationGate.leave()
       return file
     } catch {
-      await operationGate.leave()
       throw error
     }
+  }
+
+  private static let storedFilesQuery = InstantQueryPlan(
+    id: "instant.storage.files",
+    namespace: "$files",
+    order: .serverCreatedAt
+  )
+
+  private func remoteStoredFiles() async throws -> [InstantStoredFile] {
+    let emission = try await queryOnce(Self.storedFilesQuery)
+    return try await mergedStoredFiles(
+      remoteSnapshots: emission.values,
+      includeLocalOnly: false
+    )
+  }
+
+  private func mergedStoredFiles(
+    remoteSnapshots: [InstantEntitySnapshot],
+    includeLocalOnly: Bool = true
+  ) async throws -> [InstantStoredFile] {
+    let remote = remoteSnapshots.compactMap(remoteStoredFile(from:))
+    let local = try await persistence.loadStoredFiles(appID: configuration.appID)
+    var filesByID = Dictionary(uniqueKeysWithValues: remote.map { ($0.id, $0) })
+    for var file in local {
+      if let discovered = filesByID[file.id] {
+        file.name = discovered.name
+        file.contentType = discovered.contentType ?? file.contentType
+        file.remoteURL = discovered.remoteURL
+      }
+      if includeLocalOnly || filesByID[file.id] != nil {
+        filesByID[file.id] = file
+      }
+    }
+    return filesByID.values.sorted {
+      ($0.name, $0.id) < ($1.name, $1.id)
+    }
+  }
+
+  private func remoteStoredFile(from snapshot: InstantEntitySnapshot) -> InstantStoredFile? {
+    guard
+      let name = snapshot.stringValue(for: "path"),
+      let urlString = snapshot.stringValue(for: "url"),
+      let url = URL(string: urlString)
+    else { return nil }
+    let unknownTimestamp = InstantTimestamp(milliseconds: 0)
+    return InstantStoredFile(
+      id: snapshot.id,
+      appID: configuration.appID,
+      name: name,
+      contentType: snapshot.stringValue(for: "content-type"),
+      byteCount: 0,
+      localPath: "",
+      ownerUserID: "",
+      createdAt: unknownTimestamp,
+      updatedAt: unknownTimestamp,
+      remoteURL: url
+    )
   }
 
   func activeStoredFilesObservationCount() async -> Int {
@@ -5968,6 +6269,13 @@ private extension InstantStoreMutationResult {
       syncState: InstantSyncState(processedTransactionID: processedTransactionID),
       pendingMutationCount: pendingMutations.filter { $0.status == .pending }.count
     )
+  }
+}
+
+private extension InstantEntitySnapshot {
+  func stringValue(for field: String) -> String? {
+    guard case let .string(value) = values[field]?.first else { return nil }
+    return value
   }
 }
 

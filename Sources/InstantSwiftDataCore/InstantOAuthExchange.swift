@@ -2,6 +2,7 @@ import Foundation
 
 public struct InstantOAuthSignInRequest: Sendable {
   public var appID: String
+  public var apiURI: URL
   public var code: String
   public var codeVerifier: String?
   public var refreshToken: String?
@@ -10,6 +11,7 @@ public struct InstantOAuthSignInRequest: Sendable {
 
   public init(
     appID: String,
+    apiURI: URL = InstantRuntimeConfiguration.defaultAPIURI,
     code: String,
     codeVerifier: String? = nil,
     refreshToken: String? = nil,
@@ -17,6 +19,7 @@ public struct InstantOAuthSignInRequest: Sendable {
     makeID: @escaping @Sendable () -> String
   ) {
     self.appID = appID
+    self.apiURI = apiURI
     self.code = code
     self.codeVerifier = codeVerifier
     self.refreshToken = refreshToken
@@ -57,4 +60,31 @@ extension InstantOAuthExchange {
       )
     }
   )
+
+  public static let live = live()
+
+  public static func live(httpClient: InstantAuthHTTPClient = .live) -> Self {
+    Self { request in
+      let urlRequest = try instantAuthRequest(
+        apiURI: request.apiURI,
+        path: ["runtime", "oauth", "token"],
+        body: InstantOAuthTokenBody(
+          appID: request.appID,
+          code: request.code,
+          codeVerifier: request.codeVerifier,
+          refreshToken: request.refreshToken
+        )
+      )
+      let response = try await httpClient.send(urlRequest)
+      try validateInstantAuthResponse(response, operation: "sign in with oauth")
+      let decoded = try decodeInstantAuthUserResponse(
+        response.data,
+        operation: "sign in with oauth"
+      )
+      return InstantOAuthVerification(
+        userID: decoded.user.id,
+        refreshToken: decoded.user.refreshToken
+      )
+    }
+  }
 }

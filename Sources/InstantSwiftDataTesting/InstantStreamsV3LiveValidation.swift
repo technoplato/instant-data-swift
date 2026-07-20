@@ -59,11 +59,12 @@ public enum InstantStreamsV3LiveValidation {
     }
     _ = try await client.connect()
 
-    let typeScriptSnapshots = try await client.observeStreamContent(clientID: typeScriptClientID)
+    let typeScriptSnapshots = try await client.subscribeStreamContent(clientID: typeScriptClientID)
+    defer { typeScriptSnapshots.cancel() }
     onReaderReady()
     let typeScriptRead = try await streamsWithTimeout(operation: "read TypeScript stream in Swift")
     {
-      for await snapshot in typeScriptSnapshots {
+      for try await snapshot in typeScriptSnapshots {
         try Task.checkCancellation()
         if snapshot.done { return snapshot }
       }
@@ -72,6 +73,7 @@ public enum InstantStreamsV3LiveValidation {
         message: "The TypeScript stream ended without a closed snapshot."
       )
     }
+    typeScriptSnapshots.cancel()
 
     let swiftMetadata = try await client.createStream(clientID: swiftClientID)
     onSwiftWriterCreated(swiftMetadata.id)

@@ -845,6 +845,108 @@ struct InstantLiveTransportTests {
   }
 
   @Test
+  func runtimeLiveQueryOnceOpensSessionAndWaitsForServerResult() async throws {
+    let serverCreatedAt = InstantTimestamp(milliseconds: 1_700_000_000_789)
+    let query: InstantLiveJSONValue = .object([
+      TodoExample.namespace: .object([
+        "$": .object([
+          "order": .object(["createdAt": .string("asc")])
+        ])
+      ])
+    ])
+    let computation = InstantLiveJSONValue.todoJoinRowsComputation(
+      entityID: "runtime-query-once-live-todo",
+      text: "Arrived through live queryOnce",
+      isCompleted: false,
+      createdAt: serverCreatedAt,
+      processedTransactionID: "server-tx-query-once"
+    )
+    let initialResult = try #require(
+      computation.objectValue?["instaql-result"]?.arrayValue
+    )
+    let session = InstantRuntimeScriptedLiveSession(messages: [
+      .initOK(clientEventID: "event-init", attrs: .todoServerAttrs),
+      .addQueryOK(
+        clientEventID: "event-query",
+        query: query,
+        result: initialResult,
+        processedTransactionID: "server-tx-query-once",
+      ),
+    ])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "runtime-live-query-once",
+      websocketURI: try #require(URL(string: "wss://ws.example.test/runtime/session")),
+      persistenceURL: try temporaryLiveCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: session.transport
+    )
+    configuration.autoConnectLiveTransport = true
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+
+    let emission = try await runtime.queryOnce(TodoExample.query)
+    expectNoDifference(
+      try TodoExample.decode(emission.values),
+      [
+        TodoRecord(
+          id: "runtime-query-once-live-todo",
+          text: "Arrived through live queryOnce",
+          isCompleted: false,
+          createdAt: serverCreatedAt
+        )
+      ]
+    )
+
+    await session.waitForSentMessageCount(3)
+    let sentMessages = await session.sentMessages()
+    expectNoDifference(sentMessages.map(\.op), ["init", "add-query", "remove-query"])
+    expectNoDifference(sentMessages[1].fields["q"], query)
+    let syncState = try await runtime.syncState()
+    expectNoDifference(syncState.processedTransactionID, "server-tx-query-once")
+    let closed = try await runtime.closeConnection()
+    expectNoDifference(closed.state, .closed)
+  }
+
+  @Test
+  func runtimeLiveTransactOpensSessionAndSendsMutationWithoutExplicitConnect() async throws {
+    let ids = InstantLiveTransportTestIDSequence(["event-init", "event-tx"])
+    let session = InstantRuntimeScriptedLiveSession(messages: [
+      .initOK(clientEventID: "event-init", attrs: .todoServerAttrs)
+    ])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "runtime-live-transact-autoconnect",
+      websocketURI: try #require(URL(string: "wss://ws.example.test/runtime/session")),
+      persistenceURL: try temporaryLiveCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      makeID: { ids.next() },
+      liveTransport: session.transport
+    )
+    configuration.autoConnectLiveTransport = true
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+
+    _ = try await runtime.transact(
+      InstantStoreTransaction(
+        id: "event-tx",
+        operations: TodoExample.createOperations(
+          id: "runtime-live-transact-autoconnect-todo",
+          text: "Sent through live transact autoconnect",
+          createdAt: InstantTimestamp(milliseconds: 1_700_000_001_000),
+          transactionID: "event-tx"
+        )
+      )
+    )
+
+    await session.waitForSentMessageCount(2)
+    let sentMessages = await session.sentMessages()
+    expectNoDifference(sentMessages.map(\.op), ["init", "transact"])
+    expectNoDifference(sentMessages[1].clientEventID, "event-tx")
+    let status = try await runtime.connectionStatus()
+    expectNoDifference(status.transport, .webSocket)
+    expectNoDifference(status.pendingMutationCount, 1)
+    let closed = try await runtime.closeConnection()
+    expectNoDifference(closed.state, .closed)
+  }
+
+  @Test
   func runtimeLiveRefreshReusesInitAttributesWhenPayloadOmitsThem() async throws {
     let serverCreatedAt = InstantTimestamp(milliseconds: 1_700_000_000_456)
     let session = InstantRuntimeScriptedLiveSession(messages: [
@@ -994,6 +1096,116 @@ struct InstantLiveTransportTests {
     expectNoDifference(sentMessages.map(\.op), ["init", "add-query", "remove-query"])
     expectNoDifference(sentMessages.last?.fields["q"], query)
     _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func liveQueryEncoderPortsWhereOperatorsAndReverseIncludes() throws {
+    let plan = InstantQueryPlan(
+      id: "runtime-live-query-operators",
+      namespace: TodoProjectExample.namespace,
+      filters: [
+        .or([
+          .equals(field: "title", value: .string("Launch linked todos")),
+          .in(field: "id", values: [.string("project-1"), .string("project-2")]),
+        ])
+      ],
+      order: InstantQueryOrder("title", .descending),
+      offset: 1,
+      limit: 10,
+      selectedFields: ["title"],
+      includes: [
+        InstantQueryInclude(
+          "todos",
+          direction: .reverse,
+          query: InstantQueryIncludePlan(
+            id: "runtime-live-query-operators.todos",
+            namespace: TodoExample.namespace,
+            filters: [
+              .equals(field: "isCompleted", value: .bool(false)),
+              .notEquals(field: "text", value: .string("Done")),
+              .greaterThan(field: "text", value: .string("A")),
+              .greaterThanOrEqual(field: "text", value: .string("A")),
+              .lessThan(field: "text", value: .string("Z")),
+              .lessThanOrEqual(field: "text", value: .string("Z")),
+              .in(field: "text", values: [.string("Wire"), .string("Review")]),
+              .like(field: "text", pattern: "%wire%"),
+              .iLike(field: "text", pattern: "%WIRE%"),
+              .isNull(field: "project"),
+              .isNotNull(field: "project"),
+              .and([
+                .equals(field: "isCompleted", value: .bool(false)),
+                .or([
+                  .like(field: "text", pattern: "Wire%"),
+                  .equals(field: "project", value: .ref("project-1")),
+                ]),
+              ]),
+            ],
+            order: InstantQueryOrder("text", .ascending),
+            selectedFields: ["text", "isCompleted", "project"]
+          )
+        )
+      ]
+    )
+
+    expectNoDifference(
+      try InstantLiveQueryEncoder.encode(plan),
+      .object([
+        "projects": .object([
+          "$": .object([
+            "fields": .array([.string("title")]),
+            "limit": .number(10),
+            "offset": .number(1),
+            "order": .object(["title": .string("desc")]),
+            "where": .object([
+              "or": .array([
+                .object(["title": .string("Launch linked todos")]),
+                .object([
+                  "id": .object([
+                    "$in": .array([.string("project-1"), .string("project-2")])
+                  ])
+                ]),
+              ])
+            ]),
+          ]),
+          "todos": .object([
+            "$": .object([
+              "fields": .array([.string("isCompleted"), .string("project"), .string("text")]),
+              "order": .object(["text": .string("asc")]),
+              "where": .object([
+                "and": .array([
+                  .object(["isCompleted": .bool(false)]),
+                  .object(["text": .object(["$ne": .string("Done")])]),
+                  .object(["text": .object(["$gt": .string("A")])]),
+                  .object(["text": .object(["$gte": .string("A")])]),
+                  .object(["text": .object(["$lt": .string("Z")])]),
+                  .object(["text": .object(["$lte": .string("Z")])]),
+                  .object([
+                    "text": .object([
+                      "$in": .array([.string("Wire"), .string("Review")])
+                    ])
+                  ]),
+                  .object(["text": .object(["$like": .string("%wire%")])]),
+                  .object(["text": .object(["$ilike": .string("%WIRE%")])]),
+                  .object(["project": .object(["$isNull": .bool(true)])]),
+                  .object(["project": .object(["$isNull": .bool(false)])]),
+                  .object([
+                    "and": .array([
+                      .object(["isCompleted": .bool(false)]),
+                      .object([
+                        "or": .array([
+                          .object(["text": .object(["$like": .string("Wire%")])]),
+                          .object(["project": .string("project-1")]),
+                        ])
+                      ]),
+                    ])
+                  ]),
+                ])
+              ]),
+            ])
+          ]),
+        ])
+      ])
+    )
   }
 
   @Test

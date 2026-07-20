@@ -451,12 +451,14 @@ extension InstantValue {
 }
 
 private extension String {
+  static let instantTextLocale = Locale(identifier: "en_US")
+
   func instantTextCompare(_ other: String) -> ComparisonResult {
     (self as NSString).compare(
       other,
       options: [],
       range: NSRange(location: 0, length: (self as NSString).length),
-      locale: Locale(identifier: "en_US")
+      locale: Self.instantTextLocale
     )
   }
 }

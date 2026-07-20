@@ -58,11 +58,21 @@ public struct InstantStorageDeleteResponse: Hashable, Codable, Sendable {
   }
 }
 
+public struct InstantStorageDownloadRequest: Hashable, Sendable {
+  public var url: URL
+
+  public init(url: URL) {
+    self.url = url
+  }
+}
+
 public final class InstantStorageTransportClient: Sendable {
   public let upload:
     @Sendable (InstantStorageUploadRequest) async throws -> InstantStorageUploadResponse
   public let delete:
     @Sendable (InstantStorageDeleteRequest) async throws -> InstantStorageDeleteResponse
+  public let download:
+    @Sendable (InstantStorageDownloadRequest) async throws -> Data
 
   public init(
     upload: @escaping @Sendable (InstantStorageUploadRequest) async throws
@@ -72,6 +82,26 @@ public final class InstantStorageTransportClient: Sendable {
   ) {
     self.upload = upload
     self.delete = delete
+    self.download = { _ in
+      throw InstantError(
+        code: .networkFailed,
+        operation: "download file",
+        message: "No remote storage download transport is configured.",
+        recovery: "Configure InstantStorageTransportClient.live() before downloading remote files."
+      )
+    }
+  }
+
+  public init(
+    upload: @escaping @Sendable (InstantStorageUploadRequest) async throws
+      -> InstantStorageUploadResponse,
+    delete: @escaping @Sendable (InstantStorageDeleteRequest) async throws
+      -> InstantStorageDeleteResponse,
+    download: @escaping @Sendable (InstantStorageDownloadRequest) async throws -> Data
+  ) {
+    self.upload = upload
+    self.delete = delete
+    self.download = download
   }
 }
 
@@ -189,6 +219,13 @@ extension InstantStorageTransportClient {
             recovery: "Retry the delete and inspect the Instant storage response."
           )
         }
+      },
+      download: { request in
+        var urlRequest = URLRequest(url: request.url)
+        urlRequest.httpMethod = "GET"
+        let response = try await httpClient.send(urlRequest)
+        try validateStorageResponse(response, operation: "download file")
+        return response.data
       }
     )
   }

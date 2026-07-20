@@ -43,6 +43,7 @@ public struct InstantStoredFile: Hashable, Codable, Sendable, Identifiable {
   public var ownerUserID: String
   public var createdAt: InstantTimestamp
   public var updatedAt: InstantTimestamp
+  public var remoteURL: URL?
 
   public init(
     id: String,
@@ -55,6 +56,32 @@ public struct InstantStoredFile: Hashable, Codable, Sendable, Identifiable {
     createdAt: InstantTimestamp,
     updatedAt: InstantTimestamp
   ) {
+    self.init(
+      id: id,
+      appID: appID,
+      name: name,
+      contentType: contentType,
+      byteCount: byteCount,
+      localPath: localPath,
+      ownerUserID: ownerUserID,
+      createdAt: createdAt,
+      updatedAt: updatedAt,
+      remoteURL: nil
+    )
+  }
+
+  public init(
+    id: String,
+    appID: String,
+    name: String,
+    contentType: String? = nil,
+    byteCount: Int64,
+    localPath: String,
+    ownerUserID: String,
+    createdAt: InstantTimestamp,
+    updatedAt: InstantTimestamp,
+    remoteURL: URL?
+  ) {
     self.id = id
     self.appID = appID
     self.name = name
@@ -64,7 +91,10 @@ public struct InstantStoredFile: Hashable, Codable, Sendable, Identifiable {
     self.ownerUserID = ownerUserID
     self.createdAt = createdAt
     self.updatedAt = updatedAt
+    self.remoteURL = remoteURL
   }
+
+  public var isDownloaded: Bool { !localPath.isEmpty }
 }
 
 public struct InstantStoredFileContents: Hashable, Codable, Sendable {

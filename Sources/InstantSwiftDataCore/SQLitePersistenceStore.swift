@@ -832,6 +832,51 @@ public actor SQLitePersistenceStore {
     return savedFile
   }
 
+  public func saveDownloadedFile(
+    _ file: InstantStoredFile,
+    data: Data
+  ) throws -> InstantStoredFile {
+    let directory = localFilesRootURL
+      .appendingPathComponent(sanitizedFileComponent(file.appID), isDirectory: true)
+      .appendingPathComponent(sanitizedFileComponent(file.id), isDirectory: true)
+    let targetURL = directory.appendingPathComponent(sanitizedFileComponent(file.name))
+    do {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+      try data.write(to: targetURL, options: .atomic)
+    } catch {
+      throw persistenceError(
+        operation: "download file",
+        message:
+          "Could not cache downloaded file '\(file.name)' locally: \(error.localizedDescription)"
+      )
+    }
+
+    var savedFile = file
+    savedFile.byteCount = Int64(data.count)
+    savedFile.localPath = targetURL.path
+    do {
+      try execute(
+        """
+        INSERT OR REPLACE INTO instant_files
+          (app_id, file_id, name, created_at_ms, updated_at_ms, json)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        [
+          .text(savedFile.appID),
+          .text(savedFile.id),
+          .text(savedFile.name),
+          .int(savedFile.createdAt.milliseconds),
+          .int(savedFile.updatedAt.milliseconds),
+          .text(try encode(savedFile)),
+        ]
+      )
+    } catch {
+      try? FileManager.default.removeItem(at: targetURL)
+      throw error
+    }
+    return savedFile
+  }
+
   public func regularFileByteCount(at sourceURL: URL, operation: String) throws -> Int64 {
     let sourceValues = try regularFileResourceValues(at: sourceURL, operation: operation)
     return Int64(sourceValues.fileSize ?? 0)

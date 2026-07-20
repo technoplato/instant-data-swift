@@ -629,13 +629,14 @@ struct InstantQueryExecutionParityTests {
       person(name: "Arnold Schwarzenegger").id,
       person(name: "Linda Hamilton").id,
       person(name: "Michael Biehn").id,
+      movie(title: "The Terminator").id,
       movie(title: "Terminator 2: Judgment Day").id,
     ]
     .sorted()
     expectParityEqual(
       terminatorValues,
       expectedMaterializedTerminatorValues,
-      "\(datalogSource("play")) adapted: Swift snapshots expose primary keys as id rather than duplicating them in values."
+      datalogSource("play")
     )
 
     let arnold = try await person(name: "Arnold Schwarzenegger")
@@ -2164,7 +2165,7 @@ private func testTriple(
 
 private extension InstantEntitySnapshot {
   var materializedScalarKeysIncludingID: [String] {
-    Array(values.filter { !$0.value.containsRef }.keys).appending("id").sorted()
+    Array(Set(values.filter { !$0.value.containsRef }.keys).union(["id"])).sorted()
   }
 
   func string(_ field: String) -> String? {
