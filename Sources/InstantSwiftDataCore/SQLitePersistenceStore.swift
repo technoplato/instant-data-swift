@@ -772,7 +772,7 @@ public actor SQLitePersistenceStore {
       """
       SELECT json FROM instant_room_topic_messages
       WHERE app_id = ? AND room_type = ? AND room_id = ? AND topic = ?
-      ORDER BY created_at_ms, message_id
+      ORDER BY created_at_ms, rowid
       """,
       [.text(appID), .text(room.type), .text(room.id), .text(topic)]
     )

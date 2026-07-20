@@ -8407,6 +8407,35 @@ struct InstantStoreTests {
   }
 
   @Test
+  func roomTopicsPreservePublicationOrderWhenTimestampsMatch() async throws {
+    let ids = LockIsolated(["z-first", "a-second"])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "room-topic-order",
+        persistenceURL: temporaryCacheURL(),
+        now: { InstantTimestamp(milliseconds: 1_700_000_000_000) },
+        makeID: { ids.withValue { $0.removeFirst() } }
+      )
+    )
+    _ = try await runtime.signInWithRefreshToken("refresh-token", userID: "user-1")
+    let room = InstantRoomHandle(type: "chat", id: "lobby")
+
+    _ = try await runtime.publishTopicMessage(
+      room: room,
+      topic: "reaction",
+      payload: .string("first")
+    )
+    _ = try await runtime.publishTopicMessage(
+      room: room,
+      topic: "reaction",
+      payload: .string("second")
+    )
+
+    let messageIDs = try await runtime.roomTopicMessages(room: room, topic: "reaction").map(\.id)
+    expectNoDifference(messageIDs, ["z-first", "a-second"])
+  }
+
+  @Test
   func reactionsRecipePayloadsDecodeTopicMessages() async throws {
     let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let idSequence = LockIsolated(0)
