@@ -64,6 +64,7 @@ public enum CLIExamplesInvocation: Equatable, Sendable {
   case stroopwafel(CLIExamplesStroopwafelLeafInvocation)
   case syncUps(CLIExamplesSyncUpsLeafInvocation)
   case reminders(CLIExamplesRemindersLeafInvocation)
+  case remindersV3(CLIExamplesRemindersV3LeafInvocation)
   case todoLinks(CLIExamplesTodoLinksLeafInvocation)
   case unknown(String, arguments: [String])
 }
@@ -132,7 +133,7 @@ public enum CLIExamplesTodosUsage {
     "\(listCommand) [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt]"
   public static let watchCommand = "instant-swift-data examples todos watch"
   public static let watch =
-    "\(watchCommand) [--events 1] [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt]"
+    "\(watchCommand) [--events n] [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt]"
   public static let complete =
     "Usage: instant-swift-data examples todos complete <todo-id>"
   public static let update =
@@ -1286,6 +1287,134 @@ public enum CLIExamplesRemindersArgumentError: Error, Equatable, Sendable {
   public var exitCode: Int32 { 64 }
 }
 
+public enum CLIExamplesRemindersV3LeafInvocation: Equatable, Sendable {
+  case guest
+  case list
+  case watch(eventCount: Int)
+  case addList(title: String, color: String?)
+  case renameList(listID: String, title: String)
+  case add(CLIExamplesRemindersV3AddInvocation)
+  case update(CLIExamplesRemindersV3UpdateInvocation)
+  case complete(reminderID: String)
+  case delete(reminderID: String)
+  case shareCreate(listID: String, token: String?)
+  case shareAccept(token: String, role: String)
+  case shareRole(shareID: String, userID: String, role: String)
+  case shareRevoke(shareID: String, userID: String)
+  case unknown(String)
+}
+
+public struct CLIExamplesRemindersV3AddInvocation: Equatable, Sendable {
+  public var listID: String
+  public var title: String
+  public var notes: String
+  public var isFlagged: Bool
+  public var dueDateRawValue: String?
+  public var priorityRawValue: String?
+
+  public init(
+    listID: String,
+    title: String,
+    notes: String = "",
+    isFlagged: Bool = false,
+    dueDateRawValue: String? = nil,
+    priorityRawValue: String? = nil
+  ) {
+    self.listID = listID
+    self.title = title
+    self.notes = notes
+    self.isFlagged = isFlagged
+    self.dueDateRawValue = dueDateRawValue
+    self.priorityRawValue = priorityRawValue
+  }
+}
+
+public struct CLIExamplesRemindersV3UpdateInvocation: Equatable, Sendable {
+  public var reminderID: String
+  public var title: String?
+  public var notes: String?
+  public var isFlagged: Bool?
+  public var isCompleted: Bool?
+  public var dueDateRawValue: String?
+  public var clearsDueDate: Bool
+  public var priorityRawValue: String?
+  public var clearsPriority: Bool
+
+  public init(
+    reminderID: String,
+    title: String? = nil,
+    notes: String? = nil,
+    isFlagged: Bool? = nil,
+    isCompleted: Bool? = nil,
+    dueDateRawValue: String? = nil,
+    clearsDueDate: Bool = false,
+    priorityRawValue: String? = nil,
+    clearsPriority: Bool = false
+  ) {
+    self.reminderID = reminderID
+    self.title = title
+    self.notes = notes
+    self.isFlagged = isFlagged
+    self.isCompleted = isCompleted
+    self.dueDateRawValue = dueDateRawValue
+    self.clearsDueDate = clearsDueDate
+    self.priorityRawValue = priorityRawValue
+    self.clearsPriority = clearsPriority
+  }
+}
+
+public enum CLIExamplesRemindersV3Usage {
+  public static let priorityList = "low|medium|high"
+  public static let reminders = """
+    Usage: instant-swift-data examples reminders-v3 <guest|list|watch|add-list|rename-list|add|update|complete|delete|share-create|share-accept|share-role|share-revoke>
+      instant-swift-data examples reminders-v3 guest [--json|--jsonl]
+      instant-swift-data examples reminders-v3 list [--json|--jsonl]
+      instant-swift-data examples reminders-v3 watch [--events n] [--json|--jsonl]
+      instant-swift-data examples reminders-v3 add-list "list title" [--color "#4a99ef"] [--json|--jsonl]
+      instant-swift-data examples reminders-v3 rename-list <list-id> "new title" [--json|--jsonl]
+      instant-swift-data examples reminders-v3 add <list-id> "reminder title" [--notes text] [--due-date date] [--priority \(priorityList)] [--flagged] [--json|--jsonl]
+      instant-swift-data examples reminders-v3 update <reminder-id> ["new title"] [--notes text] [--due-date date|--clear-due-date] [--priority \(priorityList)|none|--clear-priority] [--flagged|--unflagged] [--completed true|false] [--json|--jsonl]
+      instant-swift-data examples reminders-v3 complete <reminder-id> [--json|--jsonl]
+      instant-swift-data examples reminders-v3 delete <reminder-id> [--json|--jsonl]
+      instant-swift-data examples reminders-v3 share-create <list-id> [--token token] [--json|--jsonl]
+      instant-swift-data examples reminders-v3 share-accept <token> [--role reader|writer] [--json|--jsonl]
+      instant-swift-data examples reminders-v3 share-role <share-id> <user-id> <reader|writer> [--json|--jsonl]
+      instant-swift-data examples reminders-v3 share-revoke <share-id> <user-id> [--json|--jsonl]
+    """
+  public static let guest =
+    "Usage: instant-swift-data examples reminders-v3 guest [--json|--jsonl]"
+  public static let list =
+    "Usage: instant-swift-data examples reminders-v3 list [--json|--jsonl]"
+  public static let watch =
+    "Usage: instant-swift-data examples reminders-v3 watch [--events n] [--json|--jsonl]"
+  public static let addList =
+    ##"Usage: instant-swift-data examples reminders-v3 add-list "list title" [--color "#4a99ef"]"##
+  public static let renameList =
+    #"Usage: instant-swift-data examples reminders-v3 rename-list <list-id> "new title""#
+  public static let add =
+    "Usage: instant-swift-data examples reminders-v3 add <list-id> \"reminder title\" [--notes text] [--due-date YYYY-MM-DD|ISO-8601|milliseconds] [--priority \(priorityList)] [--flagged] [--json|--jsonl]"
+  public static let update =
+    "Usage: instant-swift-data examples reminders-v3 update <reminder-id> [\"new title\"] [--notes text] [--due-date YYYY-MM-DD|ISO-8601|milliseconds] [--clear-due-date] [--priority \(priorityList)|none] [--clear-priority] [--flagged|--unflagged] [--completed true|false] [--json|--jsonl]"
+  public static let complete =
+    "Usage: instant-swift-data examples reminders-v3 complete <reminder-id>"
+  public static let delete =
+    "Usage: instant-swift-data examples reminders-v3 delete <reminder-id>"
+  public static let shareCreate =
+    "Usage: instant-swift-data examples reminders-v3 share-create <list-id> [--token token]"
+  public static let shareAccept =
+    "Usage: instant-swift-data examples reminders-v3 share-accept <token> [--role reader|writer]"
+  public static let shareRole =
+    "Usage: instant-swift-data examples reminders-v3 share-role <share-id> <user-id> <reader|writer>"
+  public static let shareRevoke =
+    "Usage: instant-swift-data examples reminders-v3 share-revoke <share-id> <user-id>"
+}
+
+public enum CLIExamplesRemindersV3ArgumentError: Error, Equatable, Sendable {
+  case invalidArguments(String)
+
+  public var exitCode: Int32 { 64 }
+}
+
 public struct CLIScaffoldInvocation: Equatable, Sendable {
   public var example: String
   public var outputDirectory: String
@@ -1343,16 +1472,16 @@ public struct CLIVerifyArtifactInvocation: Equatable, Sendable {
 
 public enum CLISchemaUsage {
   public static let generate =
-    "Usage: instant-swift-data schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder [--to instant.schema.ts] [--json|--jsonl]"
+    "Usage: instant-swift-data schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder [--to instant.schema.ts] [--json|--jsonl]"
   public static let verify =
-    "Usage: instant-swift-data schema verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder --from instant.schema.ts"
+    "Usage: instant-swift-data schema verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder --from instant.schema.ts"
 }
 
 public enum CLIPermissionsUsage {
   public static let generate =
-    "Usage: instant-swift-data perms generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder [--to instant.perms.ts] [--json|--jsonl]"
+    "Usage: instant-swift-data perms generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder [--to instant.perms.ts] [--json|--jsonl]"
   public static let verify =
-    "Usage: instant-swift-data perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder --from instant.perms.ts"
+    "Usage: instant-swift-data perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder --from instant.perms.ts"
 }
 
 public enum CLISchemaArgumentError: Error, Equatable, Sendable {
@@ -2754,6 +2883,9 @@ public struct CLIExamplesParser: Parser {
     case "reminders":
       return .reminders(try CLIExamplesRemindersLeafParser().parse(&input))
 
+    case "reminders-v3", "reminders3", "reminders-sharing":
+      return .remindersV3(try CLIExamplesRemindersV3LeafParser().parse(&input))
+
     case "todo-links":
       return .todoLinks(try CLIExamplesTodoLinksLeafParser().parse(&input))
 
@@ -3375,10 +3507,10 @@ public struct CLIExamplesTodosWatchOptionsParser: Parser {
       case "--events":
         guard let value = input.first,
           let parsed = Int(value),
-          parsed == 1
+          parsed > 0
         else {
           throw CLIExamplesTodosArgumentError.invalidArguments(
-            usage: "Usage: \(usageCommand) --events 1"
+            usage: "Usage: \(usageCommand) --events n"
           )
         }
         input.removeFirst()
@@ -4393,6 +4525,125 @@ public struct CLIExamplesRemindersLeafParser: Parser {
 
     case "search":
       return .search(try parseExamplesRemindersSearchOptions(from: &input))
+
+    default:
+      input.removeAll()
+      return .unknown(command)
+    }
+  }
+}
+
+public struct CLIExamplesRemindersV3LeafParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout ArraySlice<String>) throws -> CLIExamplesRemindersV3LeafInvocation
+  {
+    guard let command = input.first else {
+      throw CLIExamplesRemindersV3ArgumentError.invalidArguments(
+        CLIExamplesRemindersV3Usage.reminders
+      )
+    }
+    input.removeFirst()
+
+    switch command {
+    case "guest", "sign-in-guest":
+      try requireNoRemainingExamplesRemindersV3Arguments(
+        &input,
+        usage: CLIExamplesRemindersV3Usage.guest
+      )
+      return .guest
+
+    case "list", "lists", "refresh":
+      try requireNoRemainingExamplesRemindersV3Arguments(
+        &input,
+        usage: CLIExamplesRemindersV3Usage.list
+      )
+      return .list
+
+    case "watch", "observe":
+      return .watch(eventCount: try parseExamplesRemindersV3WatchOptions(from: &input))
+
+    case "add-list", "create-list":
+      let options = try parseExamplesRemindersV3AddListOptions(from: &input)
+      return .addList(title: options.title, color: options.color)
+
+    case "rename-list", "update-list":
+      let listID = try parseRequiredExamplesRemindersV3Argument(
+        from: &input,
+        usage: CLIExamplesRemindersV3Usage.renameList
+      )
+      let title = joinedTrimmed(input)
+      input.removeAll()
+      guard !title.isEmpty else {
+        throw CLIExamplesRemindersV3ArgumentError.invalidArguments(
+          CLIExamplesRemindersV3Usage.renameList
+        )
+      }
+      return .renameList(listID: listID, title: title)
+
+    case "add", "create":
+      return .add(try parseExamplesRemindersV3AddOptions(from: &input))
+
+    case "update", "edit":
+      return .update(try parseExamplesRemindersV3UpdateOptions(from: &input))
+
+    case "complete", "done":
+      return .complete(
+        reminderID: try parseSingleExamplesRemindersV3Argument(
+          from: &input,
+          usage: CLIExamplesRemindersV3Usage.complete
+        )
+      )
+
+    case "delete", "remove":
+      return .delete(
+        reminderID: try parseSingleExamplesRemindersV3Argument(
+          from: &input,
+          usage: CLIExamplesRemindersV3Usage.delete
+        )
+      )
+
+    case "share-create", "create-share":
+      let options = try parseExamplesRemindersV3ShareCreateOptions(from: &input)
+      return .shareCreate(listID: options.listID, token: options.token)
+
+    case "share-accept", "accept-share":
+      let options = try parseExamplesRemindersV3ShareAcceptOptions(from: &input)
+      return .shareAccept(token: options.token, role: options.role)
+
+    case "share-role", "role":
+      let shareID = try parseRequiredExamplesRemindersV3Argument(
+        from: &input,
+        usage: CLIExamplesRemindersV3Usage.shareRole
+      )
+      let userID = try parseRequiredExamplesRemindersV3Argument(
+        from: &input,
+        usage: CLIExamplesRemindersV3Usage.shareRole
+      )
+      let role = try parseRequiredExamplesRemindersV3Argument(
+        from: &input,
+        usage: CLIExamplesRemindersV3Usage.shareRole
+      )
+      try requireNoRemainingExamplesRemindersV3Arguments(
+        &input,
+        usage: CLIExamplesRemindersV3Usage.shareRole
+      )
+      return .shareRole(shareID: shareID, userID: userID, role: role)
+
+    case "share-revoke", "revoke-share":
+      let shareID = try parseRequiredExamplesRemindersV3Argument(
+        from: &input,
+        usage: CLIExamplesRemindersV3Usage.shareRevoke
+      )
+      let userID = try parseRequiredExamplesRemindersV3Argument(
+        from: &input,
+        usage: CLIExamplesRemindersV3Usage.shareRevoke
+      )
+      try requireNoRemainingExamplesRemindersV3Arguments(
+        &input,
+        usage: CLIExamplesRemindersV3Usage.shareRevoke
+      )
+      return .shareRevoke(shareID: shareID, userID: userID)
 
     default:
       input.removeAll()
@@ -8955,6 +9206,306 @@ private func requireNoRemainingExamplesRemindersArguments(
   }
 }
 
+private func parseExamplesRemindersV3WatchOptions(
+  from input: inout ArraySlice<String>
+) throws -> Int {
+  var eventCount = 1
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--events":
+      let raw = try parseExamplesRemindersV3OptionValue(
+        from: &input,
+        usage: CLIExamplesRemindersV3Usage.watch
+      )
+      guard let parsed = Int(raw), parsed > 0 else {
+        throw CLIExamplesRemindersV3ArgumentError.invalidArguments(
+          CLIExamplesRemindersV3Usage.watch
+        )
+      }
+      eventCount = parsed
+
+    default:
+      throw CLIExamplesRemindersV3ArgumentError.invalidArguments(
+        CLIExamplesRemindersV3Usage.watch
+      )
+    }
+  }
+  return eventCount
+}
+
+private func parseExamplesRemindersV3AddListOptions(
+  from input: inout ArraySlice<String>
+) throws -> (title: String, color: String?) {
+  var titleParts: [String] = []
+  var color: String?
+  while let value = input.first {
+    input.removeFirst()
+    switch value {
+    case "--color":
+      color = try parseExamplesRemindersV3OptionValue(
+        from: &input,
+        usage: CLIExamplesRemindersV3Usage.addList
+      )
+
+    default:
+      titleParts.append(value)
+    }
+  }
+  let title = titleParts.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+  guard !title.isEmpty else {
+    throw CLIExamplesRemindersV3ArgumentError.invalidArguments(
+      CLIExamplesRemindersV3Usage.addList
+    )
+  }
+  return (title, color)
+}
+
+private func parseExamplesRemindersV3AddOptions(
+  from input: inout ArraySlice<String>
+) throws -> CLIExamplesRemindersV3AddInvocation {
+  let listID = try parseRequiredExamplesRemindersV3Argument(
+    from: &input,
+    usage: CLIExamplesRemindersV3Usage.add
+  )
+  var titleParts: [String] = []
+  var notes = ""
+  var isFlagged = false
+  var dueDateRawValue: String?
+  var priorityRawValue: String?
+  while let value = input.first {
+    input.removeFirst()
+    switch value {
+    case "--notes":
+      notes = try parseExamplesRemindersV3OptionValue(
+        from: &input,
+        usage: CLIExamplesRemindersV3Usage.add
+      )
+
+    case "--due-date":
+      dueDateRawValue = try parseExamplesRemindersV3OptionValue(
+        from: &input,
+        usage: CLIExamplesRemindersV3Usage.add
+      )
+
+    case "--priority":
+      priorityRawValue = try parseExamplesRemindersV3OptionValue(
+        from: &input,
+        usage: CLIExamplesRemindersV3Usage.add
+      )
+
+    case "--flagged":
+      isFlagged = true
+
+    default:
+      titleParts.append(value)
+    }
+  }
+  let title = titleParts.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+  guard !title.isEmpty else {
+    throw CLIExamplesRemindersV3ArgumentError.invalidArguments(
+      CLIExamplesRemindersV3Usage.add
+    )
+  }
+  return CLIExamplesRemindersV3AddInvocation(
+    listID: listID,
+    title: title,
+    notes: notes,
+    isFlagged: isFlagged,
+    dueDateRawValue: dueDateRawValue,
+    priorityRawValue: priorityRawValue
+  )
+}
+
+private func parseExamplesRemindersV3UpdateOptions(
+  from input: inout ArraySlice<String>
+) throws -> CLIExamplesRemindersV3UpdateInvocation {
+  let reminderID = try parseRequiredExamplesRemindersV3Argument(
+    from: &input,
+    usage: CLIExamplesRemindersV3Usage.update
+  )
+  var titleParts: [String] = []
+  var notes: String?
+  var isFlagged: Bool?
+  var isCompleted: Bool?
+  var dueDateRawValue: String?
+  var clearsDueDate = false
+  var priorityRawValue: String?
+  var clearsPriority = false
+  while let value = input.first {
+    input.removeFirst()
+    switch value {
+    case "--notes":
+      notes = try parseExamplesRemindersV3OptionValue(
+        from: &input,
+        usage: CLIExamplesRemindersV3Usage.update
+      )
+
+    case "--due-date":
+      dueDateRawValue = try parseExamplesRemindersV3OptionValue(
+        from: &input,
+        usage: CLIExamplesRemindersV3Usage.update
+      )
+
+    case "--clear-due-date":
+      clearsDueDate = true
+
+    case "--priority":
+      let rawPriority = try parseExamplesRemindersV3OptionValue(
+        from: &input,
+        usage: CLIExamplesRemindersV3Usage.update
+      )
+      if rawPriority == "none" {
+        clearsPriority = true
+      } else {
+        priorityRawValue = rawPriority
+      }
+
+    case "--clear-priority":
+      clearsPriority = true
+
+    case "--flagged":
+      isFlagged = true
+
+    case "--unflagged":
+      isFlagged = false
+
+    case "--completed":
+      let rawCompleted = try parseExamplesRemindersV3OptionValue(
+        from: &input,
+        usage: CLIExamplesRemindersV3Usage.update
+      )
+      guard let parsed = parseCLIQueryBool(rawCompleted) else {
+        throw CLIExamplesRemindersV3ArgumentError.invalidArguments(
+          CLIExamplesRemindersV3Usage.update
+        )
+      }
+      isCompleted = parsed
+
+    default:
+      titleParts.append(value)
+    }
+  }
+  let title = titleParts.isEmpty
+    ? nil
+    : titleParts.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+  guard title != "" else {
+    throw CLIExamplesRemindersV3ArgumentError.invalidArguments(
+      CLIExamplesRemindersV3Usage.update
+    )
+  }
+  guard title != nil || notes != nil || isFlagged != nil || isCompleted != nil
+    || dueDateRawValue != nil || clearsDueDate || priorityRawValue != nil || clearsPriority
+  else {
+    throw CLIExamplesRemindersV3ArgumentError.invalidArguments(
+      CLIExamplesRemindersV3Usage.update
+    )
+  }
+  return CLIExamplesRemindersV3UpdateInvocation(
+    reminderID: reminderID,
+    title: title,
+    notes: notes,
+    isFlagged: isFlagged,
+    isCompleted: isCompleted,
+    dueDateRawValue: dueDateRawValue,
+    clearsDueDate: clearsDueDate,
+    priorityRawValue: priorityRawValue,
+    clearsPriority: clearsPriority
+  )
+}
+
+private func parseExamplesRemindersV3ShareCreateOptions(
+  from input: inout ArraySlice<String>
+) throws -> (listID: String, token: String?) {
+  let listID = try parseRequiredExamplesRemindersV3Argument(
+    from: &input,
+    usage: CLIExamplesRemindersV3Usage.shareCreate
+  )
+  var token: String?
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--token":
+      token = try parseExamplesRemindersV3OptionValue(
+        from: &input,
+        usage: CLIExamplesRemindersV3Usage.shareCreate
+      )
+
+    default:
+      throw CLIExamplesRemindersV3ArgumentError.invalidArguments(
+        CLIExamplesRemindersV3Usage.shareCreate
+      )
+    }
+  }
+  return (listID, token)
+}
+
+private func parseExamplesRemindersV3ShareAcceptOptions(
+  from input: inout ArraySlice<String>
+) throws -> (token: String, role: String) {
+  let token = try parseRequiredExamplesRemindersV3Argument(
+    from: &input,
+    usage: CLIExamplesRemindersV3Usage.shareAccept
+  )
+  var role = "reader"
+  while let option = input.first {
+    input.removeFirst()
+    switch option {
+    case "--role":
+      role = try parseExamplesRemindersV3OptionValue(
+        from: &input,
+        usage: CLIExamplesRemindersV3Usage.shareAccept
+      )
+
+    default:
+      throw CLIExamplesRemindersV3ArgumentError.invalidArguments(
+        CLIExamplesRemindersV3Usage.shareAccept
+      )
+    }
+  }
+  return (token, role)
+}
+
+private func parseSingleExamplesRemindersV3Argument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  let value = try parseRequiredExamplesRemindersV3Argument(from: &input, usage: usage)
+  try requireNoRemainingExamplesRemindersV3Arguments(&input, usage: usage)
+  return value
+}
+
+private func parseRequiredExamplesRemindersV3Argument(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  guard let value = input.first else {
+    throw CLIExamplesRemindersV3ArgumentError.invalidArguments(usage)
+  }
+  input.removeFirst()
+  let parsed = trimmed(value)
+  guard !parsed.isEmpty else {
+    throw CLIExamplesRemindersV3ArgumentError.invalidArguments(usage)
+  }
+  return parsed
+}
+
+private func parseExamplesRemindersV3OptionValue(
+  from input: inout ArraySlice<String>,
+  usage: String
+) throws -> String {
+  try parseRequiredExamplesRemindersV3Argument(from: &input, usage: usage)
+}
+
+private func requireNoRemainingExamplesRemindersV3Arguments(
+  _ input: inout ArraySlice<String>,
+  usage: String
+) throws {
+  if !input.isEmpty {
+    throw CLIExamplesRemindersV3ArgumentError.invalidArguments(usage)
+  }
+}
+
 private func joinedTrimmed(_ input: ArraySlice<String>) -> String {
   input.joined(separator: " ").trimmingCharacters(in: .whitespacesAndNewlines)
 }
@@ -9286,6 +9837,15 @@ extension CLIExamplesSyncUpsArgumentError: CustomStringConvertible {
 }
 
 extension CLIExamplesRemindersArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case let .invalidArguments(message):
+      return message
+    }
+  }
+}
+
+extension CLIExamplesRemindersV3ArgumentError: CustomStringConvertible {
   public var description: String {
     switch self {
     case let .invalidArguments(message):

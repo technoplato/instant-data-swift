@@ -103,12 +103,12 @@ struct CLIArgumentParserTests {
       )
     )
     expectNoDifference(
-      try parseExamples(["todos", "observe", "--events", "1"]),
+      try parseExamples(["todos", "observe", "--events", "2"]),
       .todos(
         CLIExamplesTodosInvocation(
           command: .watch,
-          arguments: ["--events", "1"],
-          leaf: .watch(CLIExamplesTodosWatchInvocation(eventCount: 1))
+          arguments: ["--events", "2"],
+          leaf: .watch(CLIExamplesTodosWatchInvocation(eventCount: 2))
         )
       )
     )
@@ -202,7 +202,7 @@ struct CLIArgumentParserTests {
     )
     expectNoDifference(
       try parseExamplesTodosLeaf([
-        "observe", "--events", "1", "--last", "2", "--before", " note-9 ",
+        "observe", "--events", "2", "--last", "2", "--before", " note-9 ",
         "--order-by", "none",
       ]),
       .watch(
@@ -212,7 +212,7 @@ struct CLIArgumentParserTests {
             before: CLIQueryCursor(entityID: "note-9"),
             orderField: .none
           ),
-          eventCount: 1
+          eventCount: 2
         )
       )
     )
@@ -428,8 +428,8 @@ struct CLIArgumentParserTests {
       description: "Unknown todo list option: --unknown. Usage: \(CLIExamplesTodosUsage.list)"
     )
     try expectExamplesTodosLeafParseError(
-      ["watch", "--events", "2"],
-      description: "Usage: \(CLIExamplesTodosUsage.watchCommand) --events 1"
+      ["watch", "--events", "0"],
+      description: "Usage: \(CLIExamplesTodosUsage.watchCommand) --events n"
     )
     try expectExamplesTodosLeafParseError(
       ["watch", "--completed", "maybe"],
@@ -523,7 +523,7 @@ struct CLIArgumentParserTests {
   func examplesTodosWatchOptionsParserConsumesWatchOptions() throws {
     expectNoDifference(
       try parseExamplesTodosWatchOptions([
-        "--events", "1", "--completed", "yes", "--search", " tea ",
+        "--events", "2", "--completed", "yes", "--search", " tea ",
         "--first", "2", "--after", "todo-1", "--order", "asc", "--order-by", "none",
       ]),
       CLIExamplesTodosWatchInvocation(
@@ -534,7 +534,7 @@ struct CLIArgumentParserTests {
           after: CLIQueryCursor(entityID: "todo-1"),
           orderField: .none
         ),
-        eventCount: 1
+        eventCount: 2
       )
     )
   }
@@ -542,8 +542,8 @@ struct CLIArgumentParserTests {
   @Test
   func examplesTodosWatchOptionsParserReportsMalformedArguments() throws {
     try expectExamplesTodosWatchOptionsParseError(
-      ["--events", "2"],
-      description: "Usage: \(CLIExamplesTodosUsage.watchCommand) --events 1"
+      ["--events", "0"],
+      description: "Usage: \(CLIExamplesTodosUsage.watchCommand) --events n"
     )
     try expectExamplesTodosWatchOptionsParseError(
       ["--search", "  "],

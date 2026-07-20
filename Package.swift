@@ -41,6 +41,7 @@ let package = Package(
     .executable(name: "mobile-chat-v3", targets: ["MobileChatV3Executable"]),
     .executable(name: "presence-recipes-v3", targets: ["PresenceRecipesV3Executable"]),
     .executable(name: "reminders-v3", targets: ["RemindersV3Executable"]),
+    .executable(name: "reminders-v3-cli", targets: ["RemindersV3CLIExecutable"]),
     .executable(name: "stroopwafel-v3", targets: ["StroopwafelV3Executable"]),
     .executable(name: "syncups-v3", targets: ["SyncUpsV3Executable"]),
     .executable(name: "streams-v3", targets: ["StreamsV3Executable"]),
@@ -229,6 +230,7 @@ let package = Package(
         "InstantSwiftDataCore",
         "InstantSwiftDataSchema",
         "InstantSwiftDataTesting",
+        "RemindersV3App",
       ],
       swiftSettings: strictConcurrencySettings
     ),
@@ -277,6 +279,14 @@ let package = Package(
     .executableTarget(
       name: "RemindersV3Executable",
       dependencies: ["RemindersV3App"],
+      swiftSettings: strictConcurrencySettings
+    ),
+    .executableTarget(
+      name: "RemindersV3CLIExecutable",
+      dependencies: [
+        "RemindersV3App",
+        "InstantSwiftData",
+      ],
       swiftSettings: strictConcurrencySettings
     ),
     .executableTarget(

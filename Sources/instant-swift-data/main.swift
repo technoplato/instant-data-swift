@@ -338,7 +338,8 @@ struct InstantSwiftDataCLI {
           )
         } ?? validationLiveTransactionSteps(
           entityID: transactionEntityID,
-          text: validationLiveTransactionText(entityID: transactionEntityID)
+          text: validationLiveTransactionText(entityID: transactionEntityID),
+          createdAt: runsLive ? Date() : nil
         )
         let result = try await InstantSwiftDataLiveSessionValidation.run(
           appID: appID,
@@ -714,6 +715,8 @@ struct InstantSwiftDataCLI {
       throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesRemindersArgumentError {
       throw CLIError(error.description, exitCode: error.exitCode)
+    } catch let error as CLIExamplesRemindersV3ArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     }
     switch invocation {
     case let .auth(leaf):
@@ -775,6 +778,12 @@ struct InstantSwiftDataCLI {
     case let .reminders(leaf):
       try await runReminders(leaf: leaf, output: output)
       return
+
+    case .remindersV3:
+      throw CLIError(
+        "Reminders V3 sharing uses the dedicated terminal app: run 'reminders-v3-cli help'.",
+        exitCode: 64
+      )
 
     case let .todoLinks(leaf):
       try await runTodoLinks(leaf: leaf, output: output)
@@ -4133,7 +4142,7 @@ struct InstantSwiftDataCLI {
       appID: context.appID,
       cachePath: context.cacheURL.path,
       event: event,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       isSignedIn: session != nil,
       userID: session?.userID,
       isGuest: session?.isGuest,
@@ -4153,6 +4162,7 @@ struct InstantSwiftDataCLI {
     } else {
       print("auth: signed out")
     }
+    print("transport: \(payload.transport)")
     print("cache: \(payload.cachePath)")
   }
 
@@ -4167,7 +4177,7 @@ struct InstantSwiftDataCLI {
       appID: context.appID,
       cachePath: context.cacheURL.path,
       event: event,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       apiURI: context.runtime.configuration.apiURI.absoluteString,
       websocketURI: context.runtime.configuration.websocketURI.absoluteString,
       authorizationURL: authorizationURL?.absoluteString,
@@ -4252,7 +4262,7 @@ struct InstantSwiftDataCLI {
           appID: context.appID,
           cachePath: context.cacheURL.path,
           event: "watch",
-          transport: "not-implemented-local-cache-only",
+          transport: context.transportLabel,
           requestedEventCount: eventCount,
           emittedEventCount: emissions.count,
           emissions: emissions
@@ -4312,7 +4322,7 @@ struct InstantSwiftDataCLI {
       cachePath: context.cacheURL.path,
       event: event,
       recipeSlug: AuthRecipeExample.recipeSlug,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       isLoginVisible: AuthRecipeExample.isLoginVisible(for: session),
       isEmailEntryVisible: AuthRecipeExample.isEmailEntryVisible(
         session: session,
@@ -4329,7 +4339,7 @@ struct InstantSwiftDataCLI {
       isGuest: session?.isGuest,
       hasRefreshToken: session?.refreshToken != nil,
       sentEmail: challenge?.email ?? sentEmail,
-      localVerificationCode: challenge?.code,
+      localVerificationCode: challenge?.code.nilIfEmpty,
       expiresAt: challenge?.expiresAt,
       createdAt: session?.createdAt,
       updatedAt: session?.updatedAt
@@ -4413,7 +4423,7 @@ struct InstantSwiftDataCLI {
           cachePath: context.cacheURL.path,
           event: "watch",
           recipeSlug: AuthRecipeExample.recipeSlug,
-          transport: "not-implemented-local-cache-only",
+          transport: context.transportLabel,
           requestedEventCount: eventCount,
           emittedEventCount: emissions.count,
           emissions: emissions
@@ -4431,16 +4441,20 @@ struct InstantSwiftDataCLI {
       appID: context.appID,
       cachePath: context.cacheURL.path,
       event: "magic-code-send",
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       email: challenge.email,
       expiresAt: challenge.expiresAt,
-      localVerificationCode: challenge.code
+      localVerificationCode: challenge.code.nilIfEmpty
     )
 
     switch output {
     case .human:
       print("email: \(payload.email)")
-      print("local verification code: \(payload.localVerificationCode)")
+      if let localVerificationCode = payload.localVerificationCode {
+        print("local verification code: \(localVerificationCode)")
+      } else {
+        print("verification code: sent by email")
+      }
       print("expires at ms: \(payload.expiresAt.milliseconds)")
       print("cache: \(payload.cachePath)")
 
@@ -4609,7 +4623,7 @@ struct InstantSwiftDataCLI {
       appID: context.appID,
       cachePath: context.cacheURL.path,
       event: event,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       room: room,
       userID: userID,
       memberCount: members.count,
@@ -4673,7 +4687,7 @@ struct InstantSwiftDataCLI {
       appID: context.appID,
       cachePath: context.cacheURL.path,
       event: event,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       room: room,
       topic: topic,
       publishedMessageID: publishedMessageID,
@@ -4738,7 +4752,7 @@ struct InstantSwiftDataCLI {
       cachePath: context.cacheURL.path,
       event: event,
       changedID: changedID,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       fileCount: files.count,
       files: files
     )
@@ -4801,7 +4815,7 @@ struct InstantSwiftDataCLI {
         appID: context.appID,
         cachePath: context.cacheURL.path,
         event: "upload-progress",
-        transport: "not-implemented-local-cache-only",
+        transport: context.transportLabel,
         index: index,
         operationID: progress.operationID,
         fileID: progress.fileID,
@@ -4859,7 +4873,7 @@ struct InstantSwiftDataCLI {
           appID: context.appID,
           cachePath: context.cacheURL.path,
           event: "upload-progress",
-          transport: "not-implemented-local-cache-only",
+          transport: context.transportLabel,
           emittedEventCount: events.count,
           finalState: events.last?.state ?? .idle,
           events: events
@@ -4878,7 +4892,7 @@ struct InstantSwiftDataCLI {
       appID: context.appID,
       cachePath: context.cacheURL.path,
       event: "read",
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       file: contents.file,
       byteCount: contents.byteCount,
       base64Content: contents.data.base64EncodedString(),
@@ -4930,7 +4944,7 @@ struct InstantSwiftDataCLI {
       cachePath: context.cacheURL.path,
       event: event,
       changedID: changedID,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       streamID: streamID,
       afterIndex: afterIndex,
       chunkCount: chunks.count,
@@ -5058,7 +5072,7 @@ struct InstantSwiftDataCLI {
       cachePath: context.cacheURL.path,
       event: event,
       changedID: changedID,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       shareCount: shares.count,
       shares: shares
     )
@@ -5117,7 +5131,7 @@ struct InstantSwiftDataCLI {
       appID: context.appID,
       cachePath: context.cacheURL.path,
       event: event,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       pendingMutationCount: mutations.filter { $0.status == .pending }.count,
       mutationCount: mutations.count,
       mutation: mutation
@@ -5163,7 +5177,7 @@ struct InstantSwiftDataCLI {
       appID: context.appID,
       cachePath: context.cacheURL.path,
       event: event,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       pendingMutationCount: remainingMutations.filter { $0.status == .pending }.count,
       mutationCount: remainingMutations.count,
       drainedMutationCount: mutations.count,
@@ -5233,7 +5247,7 @@ struct InstantSwiftDataCLI {
       cachePath: context.cacheURL.path,
       event: event,
       changedID: changedID,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       queryID: query.id,
       cacheKey: query.cacheKey,
       pageInfo: emission.pageInfo,
@@ -5302,7 +5316,7 @@ struct InstantSwiftDataCLI {
       cachePath: context.cacheURL.path,
       event: event,
       changedID: changedID,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       projectQueryID: TodoProjectExample.projectsQuery.id,
       todoQueryID: TodoProjectExample.todosQuery.id,
       projectCacheKey: TodoProjectExample.projectsQuery.cacheKey,
@@ -5393,7 +5407,7 @@ struct InstantSwiftDataCLI {
       cachePath: context.cacheURL.path,
       event: event,
       changedID: changedID,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       queryID: CounterExample.query.id,
       cacheKey: CounterExample.query.cacheKey,
       pendingMutationCount: pending.count,
@@ -5480,7 +5494,7 @@ struct InstantSwiftDataCLI {
       selectedChannelID: selectedChannelID,
       authUserID: session?.userID,
       authIsGuest: session?.isGuest,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       channelQueryID: ChatExample.channelsQuery.id,
       messageQueryID: messageQuery.id,
       channelCacheKey: ChatExample.channelsQuery.cacheKey,
@@ -5632,7 +5646,7 @@ struct InstantSwiftDataCLI {
       selectedBuildID: selectedBuildID,
       authUserID: session?.userID,
       authUserEmail: AuthRecipeExample.userEmail(from: session),
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       platformApp: platformApp,
       queryID: AppBuilderExample.buildsQuery.id,
       cacheKey: AppBuilderExample.buildsQuery.cacheKey,
@@ -5855,7 +5869,7 @@ struct InstantSwiftDataCLI {
       selectedProfile: selectedProfile,
       selectedPostID: selectedPostID,
       authUserID: session?.userID,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       userQueryID: MicroblogExample.usersQuery.id,
       profileQueryID: MicroblogExample.profilesQuery.id,
       postQueryID: MicroblogExample.postsQuery.id,
@@ -6171,7 +6185,7 @@ struct InstantSwiftDataCLI {
       selectedChannelID: selectedChannelID,
       authUserID: session?.userID,
       authIsGuest: session?.isGuest,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       userQueryID: MobileChatExample.usersQuery.id,
       profileQueryID: MobileChatExample.profilesQuery.id,
       channelQueryID: MobileChatExample.channelsQuery.id,
@@ -6560,7 +6574,7 @@ struct InstantSwiftDataCLI {
       publishedMessageID: publishedMessageID,
       authUserID: session?.userID,
       authIsGuest: session?.isGuest,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       room: ReactionsRecipeExample.room,
       topic: ReactionsRecipeExample.topic,
       messageCount: messages.count,
@@ -6771,7 +6785,7 @@ struct InstantSwiftDataCLI {
       event: event,
       userID: userID,
       viewerUserID: viewerUserID,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       room: TypingIndicatorRecipeExample.room,
       inputName: TypingIndicatorRecipeExample.inputName,
       memberCount: members.count,
@@ -6925,7 +6939,7 @@ struct InstantSwiftDataCLI {
       event: event,
       userID: userID,
       viewerUserID: viewerUserID,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       room: AvatarStackRecipeExample.room,
       nameKey: AvatarStackRecipeExample.nameKey,
       memberCount: snapshot.members.count,
@@ -7201,7 +7215,7 @@ struct InstantSwiftDataCLI {
       event: event,
       userID: userID,
       viewerUserID: viewerUserID,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       room: kind.room,
       spaceID: CursorsRecipeExample.spaceID(for: kind.room),
       nameKey: kind.nameKey,
@@ -7490,7 +7504,7 @@ struct InstantSwiftDataCLI {
       event: event,
       userID: userID,
       viewerUserID: viewerUserID,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       room: MergeTileGameRecipeExample.room,
       boardID: MergeTileGameRecipeExample.boardID,
       boardSize: MergeTileGameRecipeExample.boardSize,
@@ -8017,7 +8031,7 @@ struct InstantSwiftDataCLI {
       selectedGame: resolvedSelectedGame,
       authUserID: session?.userID,
       authIsGuest: session?.isGuest,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       userQueryID: StroopwafelExample.usersQuery.id,
       roomQueryID: StroopwafelExample.roomsQuery.id,
       gameQueryID: StroopwafelExample.gamesQuery.id,
@@ -8414,7 +8428,7 @@ struct InstantSwiftDataCLI {
       cachePath: context.cacheURL.path,
       event: event,
       changedID: changedID,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       listQueryID: ReminderExample.listsQuery.id,
       reminderQueryID: remindersQuery.id,
       tagQueryID: ReminderExample.tagsQuery.id,
@@ -8583,7 +8597,7 @@ struct InstantSwiftDataCLI {
       cachePath: context.cacheURL.path,
       event: event,
       changedID: changedID,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       syncUpQueryID: SyncUpsExample.syncUpsQuery.id,
       attendeeQueryID: attendeeQuery.id,
       meetingQueryID: meetingQuery.id,
@@ -8707,7 +8721,7 @@ struct InstantSwiftDataCLI {
       appID: context.appID,
       cachePath: context.cacheURL.path,
       event: event,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       todoQueryID: TodoProjectExample.todosWithProjectQuery.id,
       projectQueryID: TodoProjectExample.projectsWithTodosQuery.id,
       todoCacheKey: TodoProjectExample.todosWithProjectQuery.cacheKey,
@@ -8791,7 +8805,7 @@ struct InstantSwiftDataCLI {
       appID: context.appID,
       cachePath: context.cacheURL.path,
       event: event,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       queryID: query.id,
       cacheKey: query.cacheKey,
       selectedFields: query.selectedFields,
@@ -8858,7 +8872,7 @@ struct InstantSwiftDataCLI {
       cachePath: context.cacheURL.path,
       event: "transact",
       changedID: options.entityID,
-      transport: "not-implemented-local-cache-only",
+      transport: context.transportLabel,
       namespace: options.namespace,
       transactionID: result.transactionID,
       changedEntityIDs: result.changedEntityIDs.sorted(),
@@ -8957,16 +8971,23 @@ struct InstantSwiftDataCLI {
     var iterator = stream.makeAsyncIterator()
     var emissions: [TodoWatchEmissionOutput] = []
     emissions.reserveCapacity(options.eventCount)
+    var lastSnapshot: TodoWatchSnapshotSignature?
 
     while emissions.count < options.eventCount {
       guard let emission = await iterator.next() else { break }
+      let snapshot = TodoWatchSnapshotSignature(
+        values: emission.values,
+        pageInfo: emission.pageInfo
+      )
+      guard snapshot != lastSnapshot else { continue }
+      lastSnapshot = snapshot
       let todos = try TodoExample.decode(emission.values)
       let pending = await context.runtime.pendingMutations()
       let payload = TodoWatchEmissionOutput(
         appID: context.appID,
         cachePath: context.cacheURL.path,
         event: "watch",
-        transport: "not-implemented-local-cache-only",
+        transport: context.transportLabel,
         queryID: options.query.id,
         cacheKey: options.query.cacheKey,
         emissionIndex: emissions.count,
@@ -9021,7 +9042,7 @@ struct InstantSwiftDataCLI {
           appID: context.appID,
           cachePath: context.cacheURL.path,
           event: "watch",
-          transport: "not-implemented-local-cache-only",
+          transport: context.transportLabel,
           queryID: options.query.id,
           cacheKey: options.query.cacheKey,
           requestedEventCount: options.eventCount,
@@ -9039,10 +9060,10 @@ struct InstantSwiftDataCLI {
 
       Commands:
         init --example todos --to <directory> [--force] [--json|--jsonl]
-        schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder [--to instant.schema.ts] [--json|--jsonl]
-        schema verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder --from instant.schema.ts [--json|--jsonl]
-        perms generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder [--to instant.perms.ts] [--json|--jsonl]
-        perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder --from instant.perms.ts [--json|--jsonl]
+        schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder [--to instant.schema.ts] [--json|--jsonl]
+        schema verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder --from instant.schema.ts [--json|--jsonl]
+        perms generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder [--to instant.perms.ts] [--json|--jsonl]
+        perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder --from instant.perms.ts [--json|--jsonl]
         query todos [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt] [--raw] [--select field[,field]] [--json|--jsonl]
         admin query <namespace> [--limit n] [--json|--jsonl]
         admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id] [--json|--jsonl]
@@ -9050,7 +9071,7 @@ struct InstantSwiftDataCLI {
         examples todos add "do the dishes" [--json|--jsonl]
         examples reminders list [--refresh] [--json|--jsonl]
         examples todos list [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt] [--json|--jsonl]
-        examples todos watch [--events 1] [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt] [--json|--jsonl]
+        examples todos watch [--events n] [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt] [--json|--jsonl]
         examples todos complete <todo-id> [--json|--jsonl]
         examples todos update <todo-id> "new text" [--json|--jsonl]
         examples todos delete <todo-id> [--json|--jsonl]
@@ -9135,6 +9156,9 @@ struct InstantSwiftDataCLI {
         INSTANT_SWIFT_DATA_HOME  Directory for CLI SQLite state. Defaults to ~/.instant-swift-data.
         INSTANT_APP_ID           Logical app id recorded in output. Defaults to local-demo.
         INSTANT_SWIFT_DATA_NOW   Fixed clock for local runs. Accepts YYYY-MM-DD, ISO-8601, or epoch milliseconds.
+        INSTANT_SWIFT_DATA_TRANSPORT
+                                  local (default) or live/websocket/ws.
+        INSTANT_SWIFT_DATA_LIVE  Set to 1/true/yes as a shorthand for live transport.
         INSTANT_API_URI          Instant HTTP API endpoint. Defaults to https://api.instantdb.com.
         INSTANT_WEBSOCKET_URI    Instant WebSocket endpoint. Defaults to wss://api.instantdb.com/runtime/session.
       """
@@ -9189,6 +9213,13 @@ struct InstantSwiftDataCLI {
         name: "mobile-chat",
         schema: InstantSchemaExamples.mobileChatDocument,
         permissions: InstantSchemaExamples.mobileChatPermissions
+      )
+
+    case "storage":
+      return CLISchemaExample(
+        name: "storage",
+        schema: InstantSchemaExamples.storageDocument,
+        permissions: InstantSchemaExamples.storagePermissions
       )
 
     case "typing-indicator":
@@ -9270,7 +9301,7 @@ struct InstantSwiftDataCLI {
 
     default:
       throw CLIError(
-        "Unsupported --example '\(rawName)'. Available examples: todos, validation, recording-action, sharing, voice-trail, mobile-chat, typing-indicator, streams, reactions, avatar-stack, cursors, custom-cursors, merge-tile-game, stroopwafel, reminders, syncups, app-builder.",
+        "Unsupported --example '\(rawName)'. Available examples: todos, validation, recording-action, sharing, voice-trail, mobile-chat, storage, typing-indicator, streams, reactions, avatar-stack, cursors, custom-cursors, merge-tile-game, stroopwafel, reminders, syncups, app-builder.",
         exitCode: 64
       )
     }
@@ -10361,9 +10392,10 @@ struct InstantSwiftDataCLI {
 
   private static func validationLiveTransactionSteps(
     entityID: String,
-    text: String
+    text: String,
+    createdAt: Date? = nil
   ) -> [InstantTransportStep] {
-    [
+    var steps: [InstantTransportStep] = [
       .addTriple(
         entity: .id(entityID),
         attributeID: "\(TodoExample.namespace)/id",
@@ -10380,6 +10412,16 @@ struct InstantSwiftDataCLI {
         value: .bool(false)
       ),
     ]
+    if let createdAt {
+      steps.append(
+        .addTriple(
+          entity: .id(entityID),
+          attributeID: "\(TodoExample.namespace)/createdAt",
+          value: InstantTransportValue(InstantValue.date(createdAt))
+        )
+      )
+    }
+    return steps
   }
 
   private static func validationLiveObserveEntityID() -> String {
@@ -11321,6 +11363,12 @@ private struct CLIContext: Sendable {
   var cacheURL: URL
   var runtime: InstantRuntime
 
+  var transportLabel: String {
+    runtime.configuration.liveTransport == nil
+      ? "not-implemented-local-cache-only"
+      : InstantRuntimeTransportKind.webSocket.rawValue
+  }
+
   static func bootstrap(
     appIDOverride: String? = nil,
     initialAttributes: [InstantAttribute] = TodoExample.attributes
@@ -11357,21 +11405,32 @@ private struct CLIContext: Sendable {
       }
       return timestamp
     }
+    let liveMode = try liveTransportEnabled(environment: environment)
     let now: @Sendable () -> InstantTimestamp = {
       if let fixedNow {
         return fixedNow
       }
       return InstantTimestamp(milliseconds: Int64((Date().timeIntervalSince1970 * 1000).rounded()))
     }
+    var runtimeConfiguration = InstantRuntimeConfiguration(
+      appID: resolved.appID,
+      apiURI: apiURI,
+      websocketURI: websocketURI,
+      persistenceURL: cacheURL,
+      initialAttributes: initialAttributes,
+      now: now,
+      refreshTokenVerifier: liveMode ? .live : .local,
+      guestAuthenticator: liveMode ? .live : .local,
+      magicCodeExchange: liveMode ? .live : .local,
+      idTokenExchange: liveMode ? .live : .local,
+      oauthExchange: liveMode ? .live : .local,
+      authTokenInvalidator: liveMode ? .live : .local,
+      liveTransport: liveMode ? .live : nil
+    )
+    runtimeConfiguration.autoConnectLiveTransport = liveMode
     let runtime = try await InstantRuntime.bootstrap(
-      configuration: InstantRuntimeConfiguration(
-        appID: resolved.appID,
-        apiURI: apiURI,
-        websocketURI: websocketURI,
-        persistenceURL: cacheURL,
-        initialAttributes: initialAttributes,
-        now: now
-      )
+      configuration: runtimeConfiguration,
+      storageTransport: liveMode ? .live() : nil
     )
     try await runtime.migrateLocalPersistenceSnapshot(
       name: "reminders.priority-ranks",
@@ -11406,6 +11465,31 @@ private struct CLIContext: Sendable {
     }
 
     return ("local-demo", .default)
+  }
+
+  private static func liveTransportEnabled(environment: [String: String]) throws -> Bool {
+    if let rawMode = environment["INSTANT_SWIFT_DATA_TRANSPORT"]?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased(),
+      !rawMode.isEmpty
+    {
+      switch rawMode {
+      case "live", "websocket", "ws":
+        return true
+      case "local", "cache", "offline", "local-cache-only":
+        return false
+      default:
+        throw CLIError(
+          "INSTANT_SWIFT_DATA_TRANSPORT must be 'live' or 'local'.",
+          exitCode: 64
+        )
+      }
+    }
+
+    let rawFlag = environment["INSTANT_SWIFT_DATA_LIVE"]?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .lowercased()
+    return rawFlag == "1" || rawFlag == "true" || rawFlag == "yes"
   }
 
   private static func endpointURL(
@@ -11457,6 +11541,10 @@ private enum OutputMode: Equatable, Sendable {
       self = .jsonl
     }
   }
+}
+
+private extension String {
+  var nilIfEmpty: String? { isEmpty ? nil : self }
 }
 
 private struct TodosOutput: Codable, Sendable {
@@ -11808,6 +11896,11 @@ private struct TodoWatchOptions: Sendable {
   var eventCount: Int
 }
 
+private struct TodoWatchSnapshotSignature: Equatable {
+  var values: [InstantEntitySnapshot]
+  var pageInfo: InstantQueryPageInfo?
+}
+
 private struct TodoWatchOutput: Codable, Sendable {
   var appID: String
   var cachePath: String
@@ -12032,7 +12125,7 @@ private struct MagicCodeOutput: Codable, Sendable {
   var transport: String
   var email: String
   var expiresAt: InstantTimestamp
-  var localVerificationCode: String
+  var localVerificationCode: String?
 }
 
 private struct AppOutput: Codable, Sendable {

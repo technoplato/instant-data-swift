@@ -320,7 +320,7 @@ extension InstantStoreTests {
       homeURL: homeURL
     )
     expectNoDifference(unsupported.status, 64)
-    #expect(unsupported.error.contains("Available examples: todos, validation, recording-action, sharing, voice-trail, mobile-chat, typing-indicator, streams, reactions, avatar-stack"))
+    #expect(unsupported.error.contains("Available examples: todos, validation, recording-action, sharing, voice-trail, mobile-chat, storage, typing-indicator, streams, reactions, avatar-stack"))
   }
 
   @Test
@@ -1314,10 +1314,10 @@ extension InstantStoreTests {
 
     expectNoDifference(help.status, 0)
     expectNoDifference(help.error, "")
-    #expect(help.output.contains("schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|streams|reactions|avatar-stack|cursors"))
-    #expect(help.output.contains("schema verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|streams|reactions|avatar-stack|cursors"))
-    #expect(help.output.contains("perms generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|streams|reactions|avatar-stack|cursors"))
-    #expect(help.output.contains("perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|streams|reactions|avatar-stack|cursors"))
+    #expect(help.output.contains("schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors"))
+    #expect(help.output.contains("schema verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors"))
+    #expect(help.output.contains("perms generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors"))
+    #expect(help.output.contains("perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors"))
   }
 
   @Test
@@ -1346,11 +1346,11 @@ extension InstantStoreTests {
     )
     try expectMalformed(
       ["schema", "generate", "--to", schemaURL.path, "--json"],
-      contains: "schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors"
+      contains: "schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors"
     )
     try expectMalformed(
       ["schema", "dance", "--to", schemaURL.path, "--json"],
-      contains: "schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors"
+      contains: "schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors"
     )
     try expectMalformed(
       ["schema", "verify", "--example", "todos", "--unknown", "--json"],
@@ -1362,7 +1362,7 @@ extension InstantStoreTests {
     )
     try expectMalformed(
       ["perms", "verify", "--example", "todos", "--from", "--json"],
-      contains: "perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|typing-indicator|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder --from instant.perms.ts"
+      contains: "perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder --from instant.perms.ts"
     )
 
     expectNoDifference(
@@ -1883,8 +1883,8 @@ extension InstantStoreTests {
       contains: "Unknown todo list option: --unknown"
     )
     try expectMalformed(
-      ["examples", "todos", "watch", "--events", "2", "--jsonl"],
-      contains: "examples todos watch --events 1"
+      ["examples", "todos", "watch", "--events", "0", "--jsonl"],
+      contains: "examples todos watch --events n"
     )
     try expectMalformed(
       ["examples", "todos", "watch", "--completed", "maybe", "--jsonl"],
@@ -4062,11 +4062,42 @@ extension InstantStoreTests {
     _ = try runCLI(["connection", "connect", "--json"], homeURL: homeURL)
 
     let invalidEvents = try runCLIResult(
-      ["examples", "todos", "watch", "--events", "2", "--json"],
+      ["examples", "todos", "watch", "--events", "0", "--json"],
       homeURL: homeURL
     )
     #expect(invalidEvents.status == 64)
-    #expect(invalidEvents.error.contains("watch --events 1"))
+    #expect(invalidEvents.error.contains("watch --events n"))
+  }
+
+  @Test
+  func cliCanSelectLiveTransportWithoutConnecting() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let signedOut = try JSONDecoder().decode(
+      CLIAuthOutput.self,
+      from: Data(
+        try runCLI(
+          ["auth", "show", "--json"],
+          homeURL: homeURL,
+          environment: ["INSTANT_SWIFT_DATA_TRANSPORT": "live"]
+        ).utf8
+      )
+    )
+
+    expectNoDifference(signedOut.event, "show")
+    expectNoDifference(signedOut.transport, "websocket")
+    expectNoDifference(signedOut.isSignedIn, false)
+
+    let invalidMode = try runCLIResult(
+      ["auth", "show", "--json"],
+      homeURL: homeURL,
+      environment: ["INSTANT_SWIFT_DATA_TRANSPORT": "bogus"]
+    )
+    expectNoDifference(invalidMode.status, 64)
+    #expect(invalidMode.error.contains("INSTANT_SWIFT_DATA_TRANSPORT must be 'live' or 'local'."))
   }
 
   @Test
@@ -12436,6 +12467,7 @@ private struct CLITodoWatchEmission: Decodable {
 
 private struct CLIAuthOutput: Decodable {
   var event: String
+  var transport: String
   var isSignedIn: Bool
   var userID: String?
   var isGuest: Bool?
