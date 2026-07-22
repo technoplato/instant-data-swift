@@ -4,11 +4,51 @@ Instant Swift Data is a Swift package for building InstantDB-backed apps with
 typed schema, local persistence, optimistic writes, live observation, and
 agent-friendly command-line workflows.
 
-This repository is early, but the first local core slice is usable: todos can be
-created, listed, completed, updated, deleted, and read back across separate CLI
-invocations through the same SQLite cache and outbox path used by the core
-runtime. Local auth, room presence, and room topic messages also persist across
-CLI launches.
+The package now includes a local-first runtime, typed query and mutation APIs,
+live InstantDB transport, auth, storage, rooms/presence/topics, streams, v3
+sharing, command-line workflows, and runnable SwiftUI examples. Todos and
+Reminders have both been exercised against live Instant apps across separate
+processes; Reminders has also been exercised between two macOS binaries and an
+iOS Simulator build.
+
+Runtime and Reminders app diagnostics are documented in
+[docs/diagnostics.md](docs/diagnostics.md). The macOS Reminders executable writes
+structured JSON Lines to `~/Library/Logs/InstantSwiftData/reminders-v3.jsonl`.
+The current Reminders behavior, upstream references, real-binary evidence, and
+exact remaining reference differences are recorded in
+[docs/reminders-v3-live-parity-audit.md](docs/reminders-v3-live-parity-audit.md).
+
+Run the live macOS Reminders app with the retained prototype credentials:
+
+```bash
+set -a
+source "$HOME/Sync/private/credentials/swift-instant-data/reminders-v3.env"
+set +a
+swift run reminders-v3
+```
+
+Use a different `INSTANT_PERSISTENCE_PATH` in each terminal to run two isolated
+clients. iOS Simulator build and launch commands are in the parity audit.
+
+Drive the same live Reminders data from the dedicated CLI. Reusing an app's
+authenticated cache uses that user's session; a different path is an isolated
+third client and must be signed in or granted access to the shared list:
+
+```bash
+export INSTANT_PERSISTENCE_PATH=/tmp/reminders-cli.sqlite
+swift run reminders-v3-cli --json auth guest
+swift run reminders-v3-cli --json lists list
+swift run reminders-v3-cli --json reminders add <list-id> "Created from CLI" \
+  --notes "Visible live on macOS and iOS" \
+  --due-date 2026-07-23 --priority high --flagged --tag cli
+swift run reminders-v3-cli --json reminders update <reminder-id> \
+  --title "Updated from CLI"
+```
+
+For an isolated guest cache, copy the reported user ID into the owner's sharing
+screen and grant it writer access before adding to the shared list. `--watch`
+on `lists list` or `reminders list` keeps the terminal subscribed to live
+InstantDB changes.
 
 ## Local Todo CLI Demo
 
@@ -749,19 +789,20 @@ Swift tests in 96 suites, 28 macro tests, 14 runnable products, complete
 TypeScript validation, zero blocked parity cases, fresh CloudKitDemo and Todos
 boundaries, and zero compiler/runtime warnings.
 
-The current transport is intentionally marked `not-implemented-local-cache-only`
-in command output. That means the demo proves durable local cache, typed triples,
+CLI commands default to `local-cache-only` and report that label honestly when
+no network transport is enabled. That mode provides durable local cache, typed triples,
 query materialization, plan-aware persisted query results, optimistic outbox
 persistence, local auth/session state, local room presence/topics, local file
 metadata/content copies, local stream chunks, local share metadata/memberships,
-local admin query/transact helpers, and non-captive CLI interaction, but it does
-not yet sync with a real Instant app. The outbox can lower pending mutations to
+local admin query/transact helpers, and non-captive CLI interaction. Set
+`INSTANT_SWIFT_DATA_TRANSPORT=live` (or `INSTANT_SWIFT_DATA_LIVE=1`) with an
+Instant app ID to enable the implemented WebSocket and HTTP transports; those
+commands report `websocket`. The outbox can also lower pending mutations to
 Instant-shaped transport `txSteps` for inspection with `outbox transport` and
-can exercise the local mutation transport ack path with `outbox flush`; explicit
+exercise the local mutation transport ack path with `outbox flush`; explicit
 `connection close` keeps writes queued until `connection connect`.
 Endpoint helpers such as `auth oauth-url` and `auth issuer` mirror Instant's URL
-shape and use configured `INSTANT_API_URI`/`INSTANT_WEBSOCKET_URI` values, but
-they do not perform network I/O.
+shape and use configured `INSTANT_API_URI`/`INSTANT_WEBSOCKET_URI` values.
 
 ## Development
 

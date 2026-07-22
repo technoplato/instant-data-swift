@@ -23,6 +23,7 @@ public struct RemindersV3List: Codable, Hashable, InstantEntityModel {
   public static let identifier = InstantAttributePath<Self, String>("id")
   public static let title = InstantAttributePath<Self, String>("title")
   public static let color = InstantAttributePath<Self, String>("color")
+  public static let coverFileID = InstantAttributePath<Self, String?>("coverFileID")
   public static let position = InstantAttributePath<Self, Int>("position")
   public static let createdAt = InstantAttributePath<Self, Date>("createdAt")
   public static let owner = InstantAttributePath<Self, InstantID<RemindersV3User>>("owner")
@@ -41,6 +42,7 @@ public struct RemindersV3List: Codable, Hashable, InstantEntityModel {
   public var id: InstantID<Self>
   public var title: String
   public var color: String
+  public var coverFileID: String?
   public var position: Int
   public var createdAt: Date
   public var owner: InstantID<RemindersV3User>
@@ -53,6 +55,7 @@ public struct RemindersV3List: Codable, Hashable, InstantEntityModel {
     id: InstantID<Self>,
     title: String,
     color: String,
+    coverFileID: String? = nil,
     position: Int,
     createdAt: Date,
     owner: InstantID<RemindersV3User>,
@@ -64,6 +67,7 @@ public struct RemindersV3List: Codable, Hashable, InstantEntityModel {
     self.id = id
     self.title = title
     self.color = color
+    self.coverFileID = coverFileID
     self.position = position
     self.createdAt = createdAt
     self.owner = owner
@@ -77,6 +81,10 @@ public struct RemindersV3List: Codable, Hashable, InstantEntityModel {
     id = InstantID(rawValue: snapshot.id)
     title = try snapshot.remindersV3String("title", operation: "decode Reminders V3 list")
     color = try snapshot.remindersV3String("color", operation: "decode Reminders V3 list")
+    coverFileID = try snapshot.remindersV3OptionalString(
+      "coverFileID",
+      operation: "decode Reminders V3 list"
+    )
     position = try snapshot.remindersV3Integer(
       "position",
       operation: "decode Reminders V3 list"
@@ -120,6 +128,16 @@ public struct RemindersV3List: Codable, Hashable, InstantEntityModel {
     visibleTo userID: InstantID<RemindersV3User>
   ) -> InstantQuery<Self> {
     visible(to: userID).where(identifier == listID.rawValue)
+  }
+}
+
+extension RemindersV3List {
+  public func isOwned(by userID: InstantID<RemindersV3User>) -> Bool {
+    owner == userID
+  }
+
+  public func canWrite(as userID: InstantID<RemindersV3User>) -> Bool {
+    isOwned(by: userID) || writers.contains(userID)
   }
 }
 
@@ -373,6 +391,22 @@ extension InstantEntitySnapshot {
       throw remindersV3DecodeError(self, path: path, operation: operation, expected: "a string")
     }
     return value
+  }
+
+  fileprivate func remindersV3OptionalString(
+    _ path: String,
+    operation: String
+  ) throws -> String? {
+    guard let value = values[path]?.first, value != .null else { return nil }
+    guard case let .string(string) = value else {
+      throw remindersV3DecodeError(
+        self,
+        path: path,
+        operation: operation,
+        expected: "a string or null"
+      )
+    }
+    return string
   }
 
   fileprivate func remindersV3Boolean(_ path: String, operation: String) throws -> Bool {

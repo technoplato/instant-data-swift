@@ -14,6 +14,7 @@ public struct CreateRemindersV3List: InstantMessage {
   public var ownerID: InstantID<RemindersV3User>
   public var title: String
   public var color: String
+  public var coverFileID: String?
   public var position: Int
   public var createdAt: Date
 
@@ -22,6 +23,7 @@ public struct CreateRemindersV3List: InstantMessage {
     ownerID: InstantID<RemindersV3User>,
     title: String,
     color: String = "#4a99ef",
+    coverFileID: String? = nil,
     position: Int,
     createdAt: Date
   ) {
@@ -29,6 +31,7 @@ public struct CreateRemindersV3List: InstantMessage {
     self.ownerID = ownerID
     self.title = title
     self.color = color
+    self.coverFileID = coverFileID
     self.position = position
     self.createdAt = createdAt
   }
@@ -42,6 +45,7 @@ public struct CreateRemindersV3List: InstantMessage {
         id: listID,
         RemindersV3List.title.set(title),
         RemindersV3List.color.set(color),
+        RemindersV3List.coverFileID.set(coverFileID),
         RemindersV3List.position.set(position),
         RemindersV3List.createdAt.set(createdAt),
         RemindersV3List.owner.set(ownerID)
@@ -69,6 +73,39 @@ public struct RenameRemindersV3List: InstantMessage {
   }
 }
 
+public struct UpdateRemindersV3List: InstantMessage {
+  public var listID: InstantID<RemindersV3List>
+  public var title: String
+  public var color: String
+  public var coverFileID: String?
+
+  public init(
+    listID: InstantID<RemindersV3List>,
+    title: String,
+    color: String,
+    coverFileID: String? = nil
+  ) {
+    self.listID = listID
+    self.title = title
+    self.color = color
+    self.coverFileID = coverFileID
+  }
+
+  public func prepare(using client: InstantSwiftDataClient) async throws
+    -> InstantPreparedMessage<RemindersV3ListChanged>
+  {
+    _ = client
+    return InstantPreparedMessage(change: .init(listID: listID)) {
+      RemindersV3List.updateExisting(
+        id: listID,
+        RemindersV3List.title.set(title),
+        RemindersV3List.color.set(color),
+        RemindersV3List.coverFileID.set(coverFileID)
+      )
+    }
+  }
+}
+
 public struct MoveRemindersV3List: InstantMessage {
   public var listID: InstantID<RemindersV3List>
   public var position: Int
@@ -91,6 +128,40 @@ public struct MoveRemindersV3List: InstantMessage {
   }
 }
 
+public struct ReorderRemindersV3Lists: InstantMessage {
+  public struct Position: Hashable, Sendable {
+    public var listID: InstantID<RemindersV3List>
+    public var position: Int
+
+    public init(listID: InstantID<RemindersV3List>, position: Int) {
+      self.listID = listID
+      self.position = position
+    }
+  }
+
+  public var positions: [Position]
+
+  public init(positions: [Position]) {
+    self.positions = positions
+  }
+
+  public func prepare(using client: InstantSwiftDataClient) async throws
+    -> InstantPreparedMessage<RemindersV3ListChanged>
+  {
+    _ = client
+    return InstantPreparedMessage(
+      change: .init(listID: positions.first?.listID ?? InstantID(rawValue: ""))
+    ) {
+      for position in positions {
+        RemindersV3List.updateExisting(
+          id: position.listID,
+          RemindersV3List.position.set(position.position)
+        )
+      }
+    }
+  }
+}
+
 public struct DeleteRemindersV3List: InstantMessage {
   public var listID: InstantID<RemindersV3List>
 
@@ -104,6 +175,31 @@ public struct DeleteRemindersV3List: InstantMessage {
     _ = client
     return InstantPreparedMessage(change: .init(listID: listID)) {
       RemindersV3List.delete(id: listID)
+    }
+  }
+}
+
+public struct RemindersV3TagChanged: Hashable, Sendable {
+  public var tagID: InstantID<RemindersV3Tag>
+
+  public init(tagID: InstantID<RemindersV3Tag>) {
+    self.tagID = tagID
+  }
+}
+
+public struct DeleteRemindersV3Tag: InstantMessage {
+  public var tagID: InstantID<RemindersV3Tag>
+
+  public init(tagID: InstantID<RemindersV3Tag>) {
+    self.tagID = tagID
+  }
+
+  public func prepare(using client: InstantSwiftDataClient) async throws
+    -> InstantPreparedMessage<RemindersV3TagChanged>
+  {
+    _ = client
+    return InstantPreparedMessage(change: .init(tagID: tagID)) {
+      RemindersV3Tag.delete(id: tagID)
     }
   }
 }
@@ -303,6 +399,49 @@ public struct SetRemindersV3Completion: InstantMessage {
   }
 }
 
+public struct ReorderRemindersV3Reminders: InstantMessage {
+  public struct Position: Hashable, Sendable {
+    public var reminderID: InstantID<RemindersV3Reminder>
+    public var position: Int
+
+    public init(reminderID: InstantID<RemindersV3Reminder>, position: Int) {
+      self.reminderID = reminderID
+      self.position = position
+    }
+  }
+
+  public var listID: InstantID<RemindersV3List>
+  public var positions: [Position]
+
+  public init(
+    listID: InstantID<RemindersV3List>,
+    positions: [Position]
+  ) {
+    self.listID = listID
+    self.positions = positions
+  }
+
+  public func prepare(using client: InstantSwiftDataClient) async throws
+    -> InstantPreparedMessage<RemindersV3ReminderChanged>
+  {
+    _ = client
+    return InstantPreparedMessage(
+      change: .init(
+        reminderID: positions.first?.reminderID ?? InstantID(rawValue: ""),
+        listID: listID
+      )
+    ) {
+      for position in positions {
+        RemindersV3Reminder.updateExisting(
+          id: position.reminderID,
+          RemindersV3Reminder.position.set(position.position),
+          RemindersV3Reminder.list.set(listID)
+        )
+      }
+    }
+  }
+}
+
 public struct DeleteRemindersV3Reminder: InstantMessage {
   public var reminderID: InstantID<RemindersV3Reminder>
   public var listID: InstantID<RemindersV3List>
@@ -324,6 +463,45 @@ public struct DeleteRemindersV3Reminder: InstantMessage {
     ) {
       RemindersV3Reminder.list.link(from: reminderID, to: listID)
       RemindersV3Reminder.delete(id: reminderID)
+    }
+  }
+}
+
+public struct DeleteRemindersV3CompletedReminders: InstantMessage {
+  public struct Target: Hashable, Sendable {
+    public var reminderID: InstantID<RemindersV3Reminder>
+    public var listID: InstantID<RemindersV3List>
+
+    public init(
+      reminderID: InstantID<RemindersV3Reminder>,
+      listID: InstantID<RemindersV3List>
+    ) {
+      self.reminderID = reminderID
+      self.listID = listID
+    }
+  }
+
+  public var targets: [Target]
+
+  public init(targets: [Target]) {
+    var seen: Set<String> = []
+    self.targets = targets.filter { seen.insert($0.reminderID.rawValue).inserted }
+  }
+
+  public func prepare(using client: InstantSwiftDataClient) async throws
+    -> InstantPreparedMessage<RemindersV3ReminderChanged>
+  {
+    _ = client
+    return InstantPreparedMessage(
+      change: .init(
+        reminderID: targets.first?.reminderID ?? InstantID(rawValue: ""),
+        listID: targets.first?.listID ?? InstantID(rawValue: "")
+      )
+    ) {
+      for target in targets {
+        RemindersV3Reminder.list.link(from: target.reminderID, to: target.listID)
+        RemindersV3Reminder.delete(id: target.reminderID)
+      }
     }
   }
 }

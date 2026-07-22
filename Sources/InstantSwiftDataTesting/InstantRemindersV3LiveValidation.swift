@@ -130,6 +130,16 @@ public enum InstantRemindersV3LiveValidation {
     refreshToken: String,
     expectedOwnerUserID: String,
     expectedParticipantUserID: String,
+    listID: String = InstantRemindersV3LiveValidation.listID,
+    swiftReminderID: String = InstantRemindersV3LiveValidation.swiftReminderID,
+    shareID: String = InstantRemindersV3LiveValidation.shareID,
+    ownerMembershipID: String = InstantRemindersV3LiveValidation.ownerMembershipID,
+    readerMembershipID: String = InstantRemindersV3LiveValidation.readerMembershipID,
+    typeScriptReminderID: String = InstantRemindersV3LiveValidation.typeScriptReminderID,
+    swiftTagID: String = InstantRemindersV3LiveValidation.swiftTagID,
+    typeScriptTagID: String = InstantRemindersV3LiveValidation.typeScriptTagID,
+    swiftTagTitle: String = "swift",
+    shareToken: String = InstantRemindersV3LiveValidation.shareToken,
     persistenceURL: URL? = nil,
     readerCheckSignalURL: URL? = nil,
     onSwiftGraphReady: @escaping @Sendable () -> Void = {},
@@ -200,7 +210,7 @@ public enum InstantRemindersV3LiveValidation {
         priority: .high,
         existingTagIDs: [],
         tagIDs: [InstantID(rawValue: swiftTagID)],
-        tagTitles: [InstantID(rawValue: swiftTagID): "swift"]
+        tagTitles: [InstantID(rawValue: swiftTagID): swiftTagTitle]
       ),
       using: client,
       operation: "attach Swift Reminders tag"

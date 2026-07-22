@@ -23,7 +23,7 @@ public struct InstantEphemeralApp: Codable, Equatable, Sendable {
 }
 
 public enum InstantEphemeralApps {
-  public static let localTransport = "not-implemented-local-cache-only"
+  public static let localTransport = "local-cache-only"
 
   public static func makeLocal(
     title: String,

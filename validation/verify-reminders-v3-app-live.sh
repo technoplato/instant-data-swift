@@ -124,13 +124,13 @@ assert.equal(live.details.typeScriptObservedWriterList.writers.length, 1);
 assert.equal(live.details.typeScriptObservedFinalList.reminders.length, 2);
 assert.equal(
   live.details.typeScriptObservedFinalList.reminders.find(
-    (reminder) => reminder.id === "00000000-0000-4000-8000-000000000402",
+    (reminder) => reminder.id === live.details.fixtureIDs.swiftReminder,
   ).title,
   "Swift reminder updated by TypeScript",
 );
 assert.equal(
   live.details.typeScriptObservedFinalList.reminders.find(
-    (reminder) => reminder.id === "00000000-0000-4000-8000-000000000406",
+    (reminder) => reminder.id === live.details.fixtureIDs.typeScriptReminder,
   ).priority,
   2,
 );
@@ -139,10 +139,10 @@ assert.equal(live.details.swift.pendingMutationCount, 0);
 assert.deepEqual(live.details.swift.list.membershipRoles, ["owner", "writer"]);
 assert.deepEqual(
   live.details.swift.typeScriptReminderObservedBySwift.tagIDs,
-  ["00000000-0000-4000-8000-000000000408"],
+  [live.details.fixtureIDs.typeScriptTag],
 );
 assert.equal(schema.entityCount, 6);
-assert.equal(schema.attributeCount, 29);
+assert.equal(schema.attributeCount, 30);
 assert.equal(schema.linkCount, 9);
 assert.ok(schema.warnings.every((warning) => (
   warning.code === "server-json-as-any"

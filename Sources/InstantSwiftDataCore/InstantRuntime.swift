@@ -653,6 +653,18 @@ private actor InstantRuntimeLiveSession {
     transport: InstantLiveTransportClient,
     makeID: @escaping @Sendable () -> String
   ) async throws {
+    InstantDiagnostics.shared.record(
+      .debug,
+      subsystem: "instant-swift-data-core",
+      category: "transport",
+      event: "websocket.session-opening",
+      message: "Opening a low-level Instant WebSocket session.",
+      metadata: [
+        "appID": request.appID,
+        "websocketHost": request.websocketURI.host ?? "unknown",
+        "hasRefreshToken": String(request.refreshToken?.isEmpty == false),
+      ]
+    )
     generation += 1
     receiverTask?.cancel()
     receiverTask = nil
@@ -696,6 +708,18 @@ private actor InstantRuntimeLiveSession {
         self.makeID = makeID
         self.sessionID = initOK.sessionID
         self.isOpened = true
+        InstantDiagnostics.shared.record(
+          .notice,
+          subsystem: "instant-swift-data-core",
+          category: "transport",
+          event: "websocket.session-opened",
+          message: "Low-level Instant WebSocket session opened.",
+          metadata: [
+            "appID": request.appID,
+            "sessionID": initOK.sessionID,
+            "serverAttributeCount": String(initOK.attrs.count),
+          ]
+        )
 
       case let .error(error):
         throw InstantError(
@@ -744,6 +768,14 @@ private actor InstantRuntimeLiveSession {
       sessionID = nil
       serverAttributes = []
       isOpened = false
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "transport",
+        event: "websocket.session-open-failed",
+        message: "Low-level Instant WebSocket session failed to open.",
+        metadata: ["appID": request.appID]
+      )
       throw error
     }
   }
@@ -789,11 +821,18 @@ private actor InstantRuntimeLiveSession {
   func registerQuery(
     _ query: InstantLiveJSONValue,
     key: String,
-    clientEventID: String
+    clientEventID: String,
+    requiresServerAcknowledgement: Bool = false
   ) async throws {
     if var registration = registeredQueries[key] {
       registration.observerCount += 1
       registeredQueries[key] = registration
+      guard requiresServerAcknowledgement, let session, isOpened else { return }
+      // Upstream queryOnce always sends add-query, even when this exact query is
+      // already subscribed. Instant answers with add-query-exists, which gives
+      // the one-shot operation a fresh server acknowledgement while retaining
+      // the materialized query store.
+      try await send(.addQuery(query, clientEventID: clientEventID), through: session)
       return
     }
     registeredQueries[key] = RegisteredQuery(query: query, observerCount: 1)
@@ -1016,6 +1055,18 @@ private actor InstantRuntimeLiveSession {
     generation: Int
   ) async throws -> [InstantLiveJSONValue]? {
     guard generation == self.generation else { return nil }
+    InstantDiagnostics.shared.record(
+      .trace,
+      subsystem: "instant-swift-data-core",
+      category: "transport",
+      event: "websocket.message-decoded",
+      message: "Decoded an Instant WebSocket server message.",
+      metadata: [
+        "op": event.op,
+        "generation": String(generation),
+        "sessionID": sessionID ?? "none",
+      ]
+    )
     switch event {
     case let .refreshOK(refreshOK) where !refreshOK.attrs.isEmpty:
       serverAttributes = refreshOK.attrs
@@ -1112,11 +1163,46 @@ private actor InstantRuntimeLiveSession {
     _ message: InstantLiveMessage,
     through session: InstantLiveWebSocketSession
   ) async throws {
-    try await instantLiveWithTimeout(
-      operation: "send Instant live session message",
-      timeoutMilliseconds: 10_000
-    ) {
-      try await session.send(message)
+    InstantDiagnostics.shared.record(
+      .trace,
+      subsystem: "instant-swift-data-core",
+      category: "transport",
+      event: "websocket.message-sending",
+      message: "Sending an Instant WebSocket message.",
+      metadata: [
+        "op": message.op,
+        "fieldCount": String(message.fields.count),
+        "sessionID": sessionID ?? "none",
+      ],
+      correlationID: message.clientEventID
+    )
+    do {
+      try await instantLiveWithTimeout(
+        operation: "send Instant live session message",
+        timeoutMilliseconds: 10_000
+      ) {
+        try await session.send(message)
+      }
+      InstantDiagnostics.shared.record(
+        .trace,
+        subsystem: "instant-swift-data-core",
+        category: "transport",
+        event: "websocket.message-sent",
+        message: "Sent an Instant WebSocket message.",
+        metadata: ["op": message.op],
+        correlationID: message.clientEventID
+      )
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "transport",
+        event: "websocket.message-send-failed",
+        message: "Failed to send an Instant WebSocket message.",
+        metadata: ["op": message.op],
+        correlationID: message.clientEventID
+      )
+      throw error
     }
   }
 
@@ -1426,35 +1512,85 @@ public final class InstantRuntime: Sendable {
     storageTransport: InstantStorageTransportClient?,
     streamFileTransport: InstantStreamFileTransportClient
   ) async throws -> Self {
-    try validateEndpoints(configuration)
-    try validateInitialAttributes(configuration.initialAttributes)
-
-    let persistence = try SQLitePersistenceStore(fileURL: configuration.persistenceURL)
-    configuration.actorHopRecorder?.record(.persistence)
-    try await persistence.bootstrap()
-    configuration.actorHopRecorder?.record(.persistence)
-    let state = try await persistence.loadState()
-    let store = InstantStore(snapshot: state.snapshot.store)
-    let outbox = InstantOutbox(mutations: state.snapshot.outbox)
-    let runtime = Self(
-      configuration: configuration,
-      store: store,
-      outbox: outbox,
-      persistence: persistence,
-      storageTransport: storageTransport,
-      streamFileTransport: streamFileTransport
+    let startedAt = Date()
+    InstantDiagnostics.shared.record(
+      .info,
+      subsystem: "instant-swift-data-core",
+      category: "runtime",
+      event: "runtime.bootstrap-started",
+      message: "Bootstrapping the Instant runtime.",
+      metadata: [
+        "appID": configuration.appID,
+        "persistencePath": configuration.persistenceURL.path,
+        "attributeCount": String(configuration.initialAttributes.count),
+        "hasLiveTransport": String(configuration.liveTransport != nil),
+        "autoConnect": String(configuration.autoConnectLiveTransport),
+        "hasStorageTransport": String(storageTransport != nil),
+      ]
     )
+    do {
+      try validateEndpoints(configuration)
+      try validateInitialAttributes(configuration.initialAttributes)
 
-    if !configuration.initialAttributes.isEmpty {
-      configuration.actorHopRecorder?.record(.store)
-      let storeSnapshot = await store.mergeAttributes(configuration.initialAttributes)
+      let persistence = try SQLitePersistenceStore(fileURL: configuration.persistenceURL)
       configuration.actorHopRecorder?.record(.persistence)
-      try await persistence.saveStoreSnapshot(storeSnapshot)
+      try await persistence.bootstrap()
+      configuration.actorHopRecorder?.record(.persistence)
+      let state = try await persistence.loadState()
+      let store = InstantStore(snapshot: state.snapshot.store)
+      let outbox = InstantOutbox(mutations: state.snapshot.outbox)
+      let runtime = Self(
+        configuration: configuration,
+        store: store,
+        outbox: outbox,
+        persistence: persistence,
+        storageTransport: storageTransport,
+        streamFileTransport: streamFileTransport
+      )
+
+      if !configuration.initialAttributes.isEmpty {
+        configuration.actorHopRecorder?.record(.store)
+        let storeSnapshot = await store.mergeAttributes(configuration.initialAttributes)
+        configuration.actorHopRecorder?.record(.persistence)
+        try await persistence.saveStoreSnapshot(storeSnapshot)
+      }
+
+      await runtime.syncUserCookieOnStartup()
+      runtime.startAutomaticLiveConnectionIfNeeded()
+      InstantDiagnostics.shared.record(
+        .notice,
+        subsystem: "instant-swift-data-core",
+        category: "runtime",
+        event: "runtime.bootstrap-completed",
+        message: "Instant runtime bootstrap completed.",
+        metadata: [
+          "appID": configuration.appID,
+          "durationMilliseconds": String(
+            Int64((Date().timeIntervalSince(startedAt) * 1_000).rounded())
+          ),
+          "storedAttributeCount": String(state.snapshot.store.attributes.count),
+          "storedTripleCount": String(state.snapshot.store.triples.count),
+          "outboxCount": String(state.snapshot.outbox.count),
+        ]
+      )
+      return runtime
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "runtime",
+        event: "runtime.bootstrap-failed",
+        message: "Instant runtime bootstrap failed.",
+        metadata: [
+          "appID": configuration.appID,
+          "persistencePath": configuration.persistenceURL.path,
+          "durationMilliseconds": String(
+            Int64((Date().timeIntervalSince(startedAt) * 1_000).rounded())
+          ),
+        ]
+      )
+      throw error
     }
-
-    await runtime.syncUserCookieOnStartup()
-
-    return runtime
   }
 
   private static func validateInitialAttributes(_ attributes: [InstantAttribute]) throws {
@@ -1552,15 +1688,78 @@ public final class InstantRuntime: Sendable {
     createdAt: InstantTimestamp? = nil,
     source: String = "local"
   ) async throws -> InstantStoreMutationResult {
-    try await ensureLiveConnectionIfNeeded()
-    await enterOperationGate()
+    let startedAt = Date()
+    InstantDiagnostics.shared.record(
+      .info,
+      subsystem: "instant-swift-data-core",
+      category: "mutation",
+      event: "transaction.started",
+      message: "Started an Instant transaction.",
+      metadata: [
+        "appID": configuration.appID,
+        "operationCount": String(transaction.operations.count),
+        "source": source,
+      ],
+      correlationID: transaction.id
+    )
+    var enteredOperationGate = false
     do {
+      do {
+        try await ensureLiveConnectionIfNeeded()
+      } catch {
+        // Instant transactions are local-first. A failed connection attempt must
+        // not prevent the optimistic cache/outbox commit; the reconnect loop will
+        // deliver it when the transport is reachable again.
+        await scheduleReconnect(
+          after: error,
+          event: "connection.optimistic-transaction-connect-failed",
+          message: "Instant could not connect before an optimistic transaction and will retry."
+        )
+      }
+      await enterOperationGate()
+      enteredOperationGate = true
       let result = try await performTransact(transaction, createdAt: createdAt, source: source)
       await leaveOperationGate()
+      enteredOperationGate = false
       await sendPendingMutationsToLiveSession()
+      InstantDiagnostics.shared.record(
+        .notice,
+        subsystem: "instant-swift-data-core",
+        category: "mutation",
+        event: "transaction.optimistic-commit",
+        message: "Transaction committed to the local cache and entered sync processing.",
+        metadata: [
+          "appID": configuration.appID,
+          "changedEntityCount": String(result.changedEntityIDs.count),
+          "emissionCount": String(result.emissions.count),
+          "tripleCount": String(result.tripleCount),
+          "durationMilliseconds": String(
+            Int64((Date().timeIntervalSince(startedAt) * 1_000).rounded())
+          ),
+        ],
+        correlationID: transaction.id
+      )
       return result
     } catch {
-      await leaveOperationGate()
+      if enteredOperationGate {
+        await leaveOperationGate()
+      }
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "mutation",
+        event: "transaction.failed",
+        message: "Instant transaction failed.",
+        metadata: [
+          "appID": configuration.appID,
+          "operationCount": String(transaction.operations.count),
+          "source": source,
+          "durationMilliseconds": String(
+            Int64((Date().timeIntervalSince(startedAt) * 1_000).rounded())
+          ),
+        ],
+        correlationID: transaction.id
+      )
       throw error
     }
   }
@@ -1886,9 +2085,30 @@ public final class InstantRuntime: Sendable {
     do {
       let result = try await performConfirmMutationIfPresent(id: id)
       await leaveOperationGate()
+      InstantDiagnostics.shared.record(
+        result.mutation == nil ? .debug : .notice,
+        subsystem: "instant-swift-data-core",
+        category: "mutation",
+        event: result.mutation == nil
+          ? "transaction.confirmation-not-found"
+          : "transaction.server-accepted",
+        message: result.mutation == nil
+          ? "Server confirmation did not match a local outbox mutation."
+          : "Instant accepted an outbox mutation.",
+        metadata: ["pendingMutationCount": String(result.pendingMutationCount)],
+        correlationID: id
+      )
       return result.mutation
     } catch {
       await leaveOperationGate()
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "mutation",
+        event: "transaction.confirmation-failed",
+        message: "Failed to apply Instant server acceptance to the outbox.",
+        correlationID: id
+      )
       throw error
     }
   }
@@ -2011,6 +2231,19 @@ public final class InstantRuntime: Sendable {
     _ plan: InstantQueryPlan,
     remotePageInfo: InstantQueryRemotePageInfo? = nil
   ) async -> AsyncStream<InstantQueryEmission> {
+    InstantDiagnostics.shared.record(
+      .info,
+      subsystem: "instant-swift-data-core",
+      category: "query",
+      event: "query-observation.started",
+      message: "Started observing an Instant query.",
+      metadata: [
+        "appID": configuration.appID,
+        "namespace": plan.namespace,
+        "transport": configuration.liveTransport == nil ? "local-cache" : "websocket",
+      ],
+      correlationID: plan.id
+    )
     await enterOperationGate()
     recordActorHop(.persistence)
     let attributes: [InstantAttribute]
@@ -2024,12 +2257,32 @@ public final class InstantRuntime: Sendable {
     }
     if TripleIndexes.validate(plan, attributes: AttributeStore(attributes: attributes)) != nil {
       await leaveOperationGate()
+      InstantDiagnostics.shared.record(
+        .warning,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: "query-observation.validation-failed",
+        message: "Query observation failed schema validation and will emit no values.",
+        metadata: ["namespace": plan.namespace],
+        correlationID: plan.id
+      )
       return Self.emptyObservation(plan)
     }
     recordActorHop(.store)
     let stream = await store.observe(plan, remotePageInfo: remotePageInfo)
     await leaveOperationGate()
-    guard configuration.liveTransport != nil else { return stream }
+    guard configuration.liveTransport != nil else {
+      InstantDiagnostics.shared.record(
+        .debug,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: "query-observation.local-registered",
+        message: "Registered a local-cache query observation.",
+        metadata: ["namespace": plan.namespace],
+        correlationID: plan.id
+      )
+      return stream
+    }
 
     let query: InstantLiveJSONValue
     let registrationKey: String
@@ -2038,6 +2291,15 @@ public final class InstantRuntime: Sendable {
       registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
     } catch {
       await recordConnectionError(error)
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: "query-observation.encoding-failed",
+        message: "Could not encode a live query observation.",
+        metadata: ["namespace": plan.namespace],
+        correlationID: plan.id
+      )
       return stream
     }
 
@@ -2047,8 +2309,36 @@ public final class InstantRuntime: Sendable {
         key: registrationKey,
         clientEventID: configuration.makeID()
       )
+      let isLiveSessionOpen = await liveSession.isOpen
+      InstantDiagnostics.shared.record(
+        isLiveSessionOpen ? .notice : .debug,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: isLiveSessionOpen
+          ? "query-observation.live-registered"
+          : "query-observation.live-pending",
+        message: isLiveSessionOpen
+          ? "Registered a live Instant query observation."
+          : "The live query will register automatically when the WebSocket session opens.",
+        metadata: [
+          "namespace": plan.namespace,
+          "registrationKey": registrationKey,
+          "autoConnect": String(configuration.autoConnectLiveTransport),
+          "liveSessionOpen": String(isLiveSessionOpen),
+        ],
+        correlationID: plan.id
+      )
     } catch {
       await recordConnectionError(error)
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: "query-observation.registration-failed",
+        message: "Could not register a live Instant query observation.",
+        metadata: ["namespace": plan.namespace],
+        correlationID: plan.id
+      )
     }
     return Self.liveObservation(stream) { [weak self] in
       guard let self else { return }
@@ -2057,8 +2347,25 @@ public final class InstantRuntime: Sendable {
           key: registrationKey,
           clientEventID: self.configuration.makeID()
         )
+        InstantDiagnostics.shared.record(
+          .debug,
+          subsystem: "instant-swift-data-core",
+          category: "query",
+          event: "query-observation.live-unregistered",
+          message: "Unregistered a live Instant query observation.",
+          metadata: ["registrationKey": registrationKey],
+          correlationID: plan.id
+        )
       } catch {
         await self.recordConnectionError(error)
+        InstantDiagnostics.shared.record(
+          error: error,
+          subsystem: "instant-swift-data-core",
+          category: "query",
+          event: "query-observation.unregister-failed",
+          message: "Could not unregister a live Instant query observation.",
+          correlationID: plan.id
+        )
       }
     }
   }
@@ -2068,13 +2375,64 @@ public final class InstantRuntime: Sendable {
   }
 
   public func queryOnce(_ plan: InstantQueryPlan) async throws -> InstantQueryEmission {
-    if configuration.liveTransport != nil,
-      configuration.autoConnectLiveTransport,
-      try await persistedConnectionState() != .closed
-    {
-      return try await queryOnceThroughLive(plan)
+    let startedAt = Date()
+    do {
+      let usesLiveTransport: Bool
+      if configuration.liveTransport != nil, configuration.autoConnectLiveTransport {
+        usesLiveTransport = try await persistedConnectionState() != .closed
+      } else {
+        usesLiveTransport = false
+      }
+      InstantDiagnostics.shared.record(
+        .info,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: "query-once.started",
+        message: "Started a one-shot Instant query.",
+        metadata: [
+          "appID": configuration.appID,
+          "namespace": plan.namespace,
+          "transport": usesLiveTransport ? "websocket" : "local-cache",
+        ],
+        correlationID: plan.id
+      )
+      let emission = try await usesLiveTransport
+        ? queryOnceThroughLive(plan)
+        : materializeLocalQueryOnce(plan)
+      InstantDiagnostics.shared.record(
+        .notice,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: "query-once.completed",
+        message: "One-shot Instant query completed.",
+        metadata: [
+          "namespace": plan.namespace,
+          "resultCount": String(emission.values.count),
+          "sequence": String(emission.sequence),
+          "durationMilliseconds": String(
+            Int64((Date().timeIntervalSince(startedAt) * 1_000).rounded())
+          ),
+        ],
+        correlationID: plan.id
+      )
+      return emission
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: "query-once.failed",
+        message: "One-shot Instant query failed.",
+        metadata: [
+          "namespace": plan.namespace,
+          "durationMilliseconds": String(
+            Int64((Date().timeIntervalSince(startedAt) * 1_000).rounded())
+          ),
+        ],
+        correlationID: plan.id
+      )
+      throw error
     }
-    return try await materializeLocalQueryOnce(plan)
   }
 
   private func queryOnceThroughLive(_ plan: InstantQueryPlan) async throws -> InstantQueryEmission {
@@ -2086,7 +2444,8 @@ public final class InstantRuntime: Sendable {
     try await liveSession.registerQuery(
       query,
       key: registrationKey,
-      clientEventID: configuration.makeID()
+      clientEventID: configuration.makeID(),
+      requiresServerAcknowledgement: true
     )
     defer {
       Task {
@@ -2261,7 +2620,40 @@ public final class InstantRuntime: Sendable {
     guard configuration.autoConnectLiveTransport else { return }
     guard await !liveSession.isOpen else { return }
     guard try await persistedConnectionState() != .closed else { return }
-    _ = try await connect()
+    await reconnectController.cancel()
+    _ = try await connectLiveSession(reportsFailure: true, onlyIfNeeded: true)
+  }
+
+  private func startAutomaticLiveConnectionIfNeeded() {
+    guard configuration.liveTransport != nil else { return }
+    guard configuration.autoConnectLiveTransport else { return }
+    Task { [weak self] in
+      guard let self else { return }
+      do {
+        try await self.ensureLiveConnectionIfNeeded()
+      } catch {
+        await self.scheduleReconnect(
+          after: error,
+          event: "connection.auto-connect-failed",
+          message: "Automatic Instant connection failed and will retry."
+        )
+      }
+    }
+  }
+
+  private func reconnectAfterAuthChangeIfNeeded() async {
+    guard configuration.liveTransport != nil else { return }
+    guard configuration.autoConnectLiveTransport else { return }
+    guard (try? await persistedConnectionState()) != .closed else { return }
+    do {
+      _ = try await connect()
+    } catch {
+      await scheduleReconnect(
+        after: error,
+        event: "connection.auth-reconnect-failed",
+        message: "Instant could not reconnect after authentication changed and will retry."
+      )
+    }
   }
 
   public func markProcessedTransaction(id transactionID: String) async throws -> InstantSyncState {
@@ -2327,10 +2719,50 @@ public final class InstantRuntime: Sendable {
     return try await connectLiveSession(reportsFailure: true)
   }
 
-  private func connectLiveSession(reportsFailure: Bool) async throws -> InstantConnectionStatus {
+  private func connectLiveSession(
+    reportsFailure: Bool,
+    onlyIfNeeded: Bool = false
+  ) async throws -> InstantConnectionStatus {
+    let startedAt = Date()
+    InstantDiagnostics.shared.record(
+      .info,
+      subsystem: "instant-swift-data-core",
+      category: "connection",
+      event: "connection.open-started",
+      message: "Opening the Instant connection.",
+      metadata: [
+        "appID": configuration.appID,
+        "transport": configuration.liveTransport == nil ? "local-cache" : "websocket",
+        "isReconnect": String(!reportsFailure),
+        "websocketHost": configuration.websocketURI.host ?? "unknown",
+      ]
+    )
     recordActorHop(.operationGate)
     await operationGate.enter()
     do {
+      if onlyIfNeeded {
+        let persistedState = try await persistedConnectionState()
+        let liveSessionIsOpen = await liveSession.isOpen
+        if persistedState == .closed || liveSessionIsOpen {
+          let status = try await connectionStatusWithGateHeld()
+          recordActorHop(.operationGate)
+          await operationGate.leave()
+          InstantDiagnostics.shared.record(
+            .debug,
+            subsystem: "instant-swift-data-core",
+            category: "connection",
+            event: "connection.open-reused",
+            message: liveSessionIsOpen
+              ? "Reused the existing Instant connection."
+              : "Preserved the explicitly closed Instant connection.",
+            metadata: [
+              "appID": configuration.appID,
+              "state": status.state.rawValue,
+            ]
+          )
+          return status
+        }
+      }
       if let liveTransport = configuration.liveTransport {
         recordActorHop(.persistence)
         let session = try await persistence.loadAuthSession(key: authSessionKey)
@@ -2352,12 +2784,10 @@ public final class InstantRuntime: Sendable {
         } catch {
           recordActorHop(.liveSession)
           await liveSession.close()
+          try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
           if reportsFailure {
-            try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
-          } else {
-            try await saveClosedConnectionMetadataWithGateHeld()
+            _ = try? await publishConnectionStatusWithGateHeld()
           }
-          _ = try? await publishConnectionStatusWithGateHeld()
           throw error
         }
       }
@@ -2386,10 +2816,40 @@ public final class InstantRuntime: Sendable {
           await handleLiveSessionFailure(error)
         }
       }
+      InstantDiagnostics.shared.record(
+        .notice,
+        subsystem: "instant-swift-data-core",
+        category: "connection",
+        event: "connection.open-completed",
+        message: "Instant connection opened.",
+        metadata: [
+          "appID": configuration.appID,
+          "state": status.state.rawValue,
+          "authenticated": String(status.isAuthenticated),
+          "pendingMutationCount": String(status.pendingMutationCount),
+          "durationMilliseconds": String(
+            Int64((Date().timeIntervalSince(startedAt) * 1_000).rounded())
+          ),
+        ]
+      )
       return status
     } catch {
       recordActorHop(.operationGate)
       await operationGate.leave()
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "connection",
+        event: "connection.open-failed",
+        message: "Instant connection failed to open.",
+        metadata: [
+          "appID": configuration.appID,
+          "isReconnect": String(!reportsFailure),
+          "durationMilliseconds": String(
+            Int64((Date().timeIntervalSince(startedAt) * 1_000).rounded())
+          ),
+        ]
+      )
       throw error
     }
   }
@@ -2516,7 +2976,6 @@ public final class InstantRuntime: Sendable {
     await operationGate.enter()
     do {
       try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
-      _ = try? await publishConnectionStatusWithGateHeld()
       await operationGate.leave()
     } catch {
       await operationGate.leave()
@@ -2524,6 +2983,26 @@ public final class InstantRuntime: Sendable {
   }
 
   private func handleLiveSessionFailure(_ error: Error) async {
+    await scheduleReconnect(
+      after: error,
+      event: "connection.receive-loop-failed",
+      message: "Instant live receive loop ended with an error."
+    )
+  }
+
+  private func scheduleReconnect(
+    after error: Error,
+    event: String,
+    message: String
+  ) async {
+    InstantDiagnostics.shared.record(
+      error: error,
+      subsystem: "instant-swift-data-core",
+      category: "connection",
+      event: event,
+      message: message,
+      metadata: ["appID": configuration.appID]
+    )
     if let error = error as? InstantError,
       error.operation == "process Instant stream file retries"
     {
@@ -2532,8 +3011,7 @@ public final class InstantRuntime: Sendable {
     }
     await operationGate.enter()
     do {
-      try await saveClosedConnectionMetadataWithGateHeld()
-      _ = try? await publishConnectionStatusWithGateHeld()
+      try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
       await operationGate.leave()
     } catch {
       await operationGate.leave()
@@ -2551,6 +3029,18 @@ public final class InstantRuntime: Sendable {
     _ event: InstantLiveServerEvent,
     serverAttributes: [InstantLiveJSONValue]
   ) async throws {
+    InstantDiagnostics.shared.record(
+      .debug,
+      subsystem: "instant-swift-data-core",
+      category: "transport",
+      event: "websocket.event-received",
+      message: "Received an Instant WebSocket event.",
+      metadata: [
+        "appID": configuration.appID,
+        "op": event.op,
+        "serverAttributeCount": String(serverAttributes.count),
+      ]
+    )
     switch event {
     case let .addQueryOK(queryOK):
       guard let query = queryOK.query else {
@@ -2587,6 +3077,18 @@ public final class InstantRuntime: Sendable {
           ]
         )
       )
+      await liveQueryAcknowledgements.record(key: registrationKey)
+
+    case let .addQueryExists(queryOK):
+      guard let query = queryOK.query else {
+        throw InstantError(
+          code: .decodeFailed,
+          operation: "acknowledge existing Instant live query",
+          message: "add-query-exists must include q.",
+          recovery: "Inspect the canonical Instant add-query-exists payload."
+        )
+      }
+      let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
       await liveQueryAcknowledgements.record(key: registrationKey)
 
     case let .refreshOK(refreshOK):
@@ -2658,7 +3160,7 @@ public final class InstantRuntime: Sendable {
         recovery: "Inspect the Instant runtime WebSocket event and reconnect."
       )
 
-    case .initOK, .addQueryExists, .joinRoomOK, .leaveRoomOK, .startStreamOK,
+    case .initOK, .joinRoomOK, .leaveRoomOK, .startStreamOK,
       .streamFlushed, .appendFailed, .other:
       break
     }
@@ -2942,26 +3444,67 @@ public final class InstantRuntime: Sendable {
   }
 
   public func signInAsGuest() async throws -> InstantAuthSession {
-    let now = configuration.now()
-    let verification = try await configuration.guestAuthenticator.signIn(
-      InstantGuestAuthRequest(
-        appID: configuration.appID,
-        apiURI: configuration.apiURI,
-        signedInAt: now,
-        makeID: configuration.makeID
+    let startedAt = Date()
+    InstantDiagnostics.shared.record(
+      .info,
+      subsystem: "instant-swift-data-core",
+      category: "auth",
+      event: "guest-auth.started",
+      message: "Starting Instant guest authentication.",
+      metadata: ["appID": configuration.appID]
+    )
+    do {
+      let now = configuration.now()
+      let verification = try await configuration.guestAuthenticator.signIn(
+        InstantGuestAuthRequest(
+          appID: configuration.appID,
+          apiURI: configuration.apiURI,
+          signedInAt: now,
+          makeID: configuration.makeID
+        )
       )
-    )
-    let session = InstantAuthSession(
-      appID: configuration.appID,
-      userID: verification.userID,
-      refreshToken: verification.refreshToken,
-      isGuest: true,
-      createdAt: now,
-      updatedAt: now
-    )
-    _ = try await saveGuestUserFields(userID: session.userID, signedInAt: now)
-    try await saveAuthSession(session)
-    return session
+      let session = InstantAuthSession(
+        appID: configuration.appID,
+        userID: verification.userID,
+        refreshToken: verification.refreshToken,
+        isGuest: true,
+        createdAt: now,
+        updatedAt: now
+      )
+      _ = try await saveGuestUserFields(userID: session.userID, signedInAt: now)
+      try await saveAuthSession(session)
+      InstantDiagnostics.shared.record(
+        .notice,
+        subsystem: "instant-swift-data-core",
+        category: "auth",
+        event: "guest-auth.completed",
+        message: "Instant guest authentication completed.",
+        metadata: [
+          "appID": configuration.appID,
+          "userID": session.userID,
+          "hasRefreshToken": String(session.refreshToken?.isEmpty == false),
+          "durationMilliseconds": String(
+            Int64((Date().timeIntervalSince(startedAt) * 1_000).rounded())
+          ),
+        ]
+      )
+      return session
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "auth",
+        event: "guest-auth.failed",
+        message: "Instant guest authentication failed.",
+        metadata: [
+          "appID": configuration.appID,
+          "durationMilliseconds": String(
+            Int64((Date().timeIntervalSince(startedAt) * 1_000).rounded())
+          ),
+        ]
+      )
+      throw error
+    }
   }
 
   public func sendMagicCode(email rawEmail: String) async throws -> InstantMagicCodeChallenge {
@@ -3061,6 +3604,7 @@ public final class InstantRuntime: Sendable {
       await authSessionObservers.yield(session)
       _ = try? await publishConnectionStatusWithGateHeld()
       await operationGate.leave()
+      await reconnectAfterAuthChangeIfNeeded()
       _ = try? await syncUserCookieToEndpoint(session)
       return InstantMagicCodeSignInResult(
         session: session,
@@ -3448,6 +3992,7 @@ public final class InstantRuntime: Sendable {
       throw error
     }
 
+    await reconnectAfterAuthChangeIfNeeded()
     _ = try? await syncUserCookieToEndpoint(nil)
 
     if let invalidationRequest {
@@ -5734,10 +6279,36 @@ public final class InstantRuntime: Sendable {
       await authSessionObservers.yield(session)
       _ = try? await publishConnectionStatusWithGateHeld()
       await operationGate.leave()
+      InstantDiagnostics.shared.record(
+        .debug,
+        subsystem: "instant-swift-data-core",
+        category: "auth",
+        event: "auth-session.persisted",
+        message: "Persisted and published an Instant auth session.",
+        metadata: [
+          "appID": session.appID,
+          "userID": session.userID,
+          "isGuest": String(session.isGuest),
+          "hasRefreshToken": String(session.refreshToken?.isEmpty == false),
+        ]
+      )
     } catch {
       await operationGate.leave()
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "auth",
+        event: "auth-session.persistence-failed",
+        message: "Failed to persist an Instant auth session.",
+        metadata: [
+          "appID": session.appID,
+          "userID": session.userID,
+          "isGuest": String(session.isGuest),
+        ]
+      )
       throw error
     }
+    await reconnectAfterAuthChangeIfNeeded()
     _ = try? await syncUserCookieToEndpoint(session)
   }
 

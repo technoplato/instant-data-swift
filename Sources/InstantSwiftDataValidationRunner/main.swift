@@ -1167,6 +1167,56 @@ struct InstantSwiftDataValidationRunner {
         environment: environment,
         caseID: invocation.caseID
       )
+      let listID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_REMINDERS_LIST_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let swiftReminderID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_REMINDERS_SWIFT_REMINDER_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let shareID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_REMINDERS_SHARE_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let ownerMembershipID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_REMINDERS_OWNER_MEMBERSHIP_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let readerMembershipID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_REMINDERS_READER_MEMBERSHIP_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let typeScriptReminderID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_REMINDERS_TYPESCRIPT_REMINDER_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let swiftTagID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_REMINDERS_SWIFT_TAG_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let typeScriptTagID = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_REMINDERS_TYPESCRIPT_TAG_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let swiftTagTitle = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_REMINDERS_SWIFT_TAG_TITLE",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let shareToken = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_REMINDERS_SHARE_TOKEN",
+        environment: environment,
+        caseID: invocation.caseID
+      )
       let apiURI = URL(
         string: environment["INSTANT_API_URI"]
           ?? InstantRuntimeConfiguration.defaultAPIURI.absoluteString
@@ -1182,6 +1232,16 @@ struct InstantSwiftDataValidationRunner {
         refreshToken: refreshToken,
         expectedOwnerUserID: ownerUserID,
         expectedParticipantUserID: participantUserID,
+        listID: listID,
+        swiftReminderID: swiftReminderID,
+        shareID: shareID,
+        ownerMembershipID: ownerMembershipID,
+        readerMembershipID: readerMembershipID,
+        typeScriptReminderID: typeScriptReminderID,
+        swiftTagID: swiftTagID,
+        typeScriptTagID: typeScriptTagID,
+        swiftTagTitle: swiftTagTitle,
+        shareToken: shareToken,
         readerCheckSignalURL: environment["INSTANT_SWIFT_DATA_REMINDERS_READER_CHECK_SIGNAL"]
           .map { URL(fileURLWithPath: $0) },
         onSwiftGraphReady: {
@@ -1190,7 +1250,7 @@ struct InstantSwiftDataValidationRunner {
             event: "swift-graph-ready",
             ok: true,
             appID: appID,
-            details: ["listID": InstantRemindersV3LiveValidation.listID]
+            details: ["listID": listID]
           )
         },
         onReaderObserved: {
@@ -1199,7 +1259,7 @@ struct InstantSwiftDataValidationRunner {
             event: "typescript-reader-observed",
             ok: true,
             appID: appID,
-            details: ["membershipID": InstantRemindersV3LiveValidation.readerMembershipID]
+            details: ["membershipID": readerMembershipID]
           )
         },
         onWriterReady: {
@@ -1208,7 +1268,7 @@ struct InstantSwiftDataValidationRunner {
             event: "swift-writer-promotion-ready",
             ok: true,
             appID: appID,
-            details: ["membershipID": InstantRemindersV3LiveValidation.readerMembershipID]
+            details: ["membershipID": readerMembershipID]
           )
         },
         onTypeScriptReminderObserved: {
@@ -1217,7 +1277,7 @@ struct InstantSwiftDataValidationRunner {
             event: "typescript-reminder-observed",
             ok: true,
             appID: appID,
-            details: ["reminderID": InstantRemindersV3LiveValidation.typeScriptReminderID]
+            details: ["reminderID": typeScriptReminderID]
           )
         }
       )

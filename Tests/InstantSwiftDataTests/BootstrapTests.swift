@@ -5,6 +5,63 @@ import Foundation
 import InstantSwiftData
 import Testing
 
+private actor BootstrapLiveConnectionProbe {
+  private var requests: [InstantLiveSessionRequest] = []
+
+  func record(_ request: InstantLiveSessionRequest) {
+    requests.append(request)
+  }
+
+  func snapshot() -> [InstantLiveSessionRequest] {
+    requests
+  }
+}
+
+private actor BootstrapLiveTestSession {
+  private var queued: [InstantLiveMessage] = []
+  private var waiters: [CheckedContinuation<InstantLiveMessage, Error>] = []
+  private var isClosed = false
+
+  func send(_ message: InstantLiveMessage) {
+    guard message.op == "init" else { return }
+    yield(
+      InstantLiveMessage(
+        op: "init-ok",
+        clientEventID: message.clientEventID,
+        fields: [
+          "session-id": .string("bootstrap-live-test-session"),
+          "attrs": .array([]),
+        ]
+      )
+    )
+  }
+
+  func receive() async throws -> InstantLiveMessage {
+    if !queued.isEmpty { return queued.removeFirst() }
+    if isClosed { throw CancellationError() }
+    return try await withCheckedThrowingContinuation { continuation in
+      waiters.append(continuation)
+    }
+  }
+
+  func close() {
+    isClosed = true
+    let waiters = self.waiters
+    self.waiters.removeAll()
+    for waiter in waiters {
+      waiter.resume(throwing: CancellationError())
+    }
+  }
+
+  private func yield(_ message: InstantLiveMessage) {
+    if !waiters.isEmpty {
+      waiters.removeFirst().resume(returning: message)
+    } else {
+      queued.append(message)
+    }
+  }
+}
+
 @Suite(.serialized)
 struct BootstrapTests {
   @Test
@@ -193,6 +250,55 @@ struct BootstrapTests {
     }
   }
 
+  // Canonical behavior:
+  // upstream/instant/client/packages/core/src/Reactor.js
+  // - constructor starts the socket after loading network state
+  // - updateUser closes the current transport so it reconnects with the new token
+  @Test
+  func liveBootstrapAutomaticallyConnectsAndReconnectsAfterGuestAuth() async throws {
+    let probe = BootstrapLiveConnectionProbe()
+    let appID = "automatic-live-bootstrap-\(UUID().uuidString)"
+    let persistenceURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("\(appID).sqlite")
+    defer { try? FileManager.default.removeItem(at: persistenceURL) }
+
+    try await withDependencies {
+      $0.instantLiveTransport = InstantLiveTransportClient { request in
+        await probe.record(request)
+        let session = BootstrapLiveTestSession()
+        return InstantLiveWebSocketSession(
+          send: { message in await session.send(message) },
+          receive: { try await session.receive() },
+          close: { await session.close() }
+        )
+      }
+      try await $0.bootstrapInstantSwiftData(
+        appID: appID,
+        persistenceURL: persistenceURL,
+        context: .test,
+        initialAttributes: TodoExample.attributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var client
+      let runtime = try #require(client.runtime)
+      #expect(runtime.configuration.autoConnectLiveTransport)
+
+      try await waitForLiveConnectionCount(1, probe: probe)
+      let initialRequests = await probe.snapshot()
+      expectNoDifference(initialRequests.first?.refreshToken, nil)
+
+      let guest = try await client.signInAsGuest()
+      let refreshToken = try #require(guest.refreshToken)
+      try await waitForLiveConnectionCount(2, probe: probe)
+      let authenticatedRequests = await probe.snapshot()
+      expectNoDifference(authenticatedRequests.last?.refreshToken, refreshToken)
+
+      let status = try await waitForConnectionState(.authenticated, client: client)
+      expectNoDifference(status.state, .authenticated)
+      _ = try await client.closeConnection()
+    }
+  }
+
   @Test
   func bootstrapUsesLocalMagicCodeExchangeByDefault() async throws {
     let appID = "local-magic-code-default-\(UUID().uuidString)"
@@ -245,6 +351,31 @@ struct BootstrapTests {
       let persistedSession = try await client.authSession()
       expectNoDifference(persistedSession, session)
     }
+  }
+
+  private func waitForLiveConnectionCount(
+    _ expectedCount: Int,
+    probe: BootstrapLiveConnectionProbe
+  ) async throws {
+    let deadline = ContinuousClock.now + .seconds(2)
+    while ContinuousClock.now < deadline {
+      if await probe.snapshot().count >= expectedCount { return }
+      try await Task.sleep(for: .milliseconds(10))
+    }
+    Issue.record("Timed out waiting for \(expectedCount) automatic live connection(s).")
+  }
+
+  private func waitForConnectionState(
+    _ expectedState: InstantConnectionState,
+    client: InstantSwiftDataClient
+  ) async throws -> InstantConnectionStatus {
+    let deadline = ContinuousClock.now + .seconds(2)
+    var status = try await client.connectionStatus()
+    while status.state != expectedState, ContinuousClock.now < deadline {
+      try await Task.sleep(for: .milliseconds(10))
+      status = try await client.connectionStatus()
+    }
+    return status
   }
 
   @Test

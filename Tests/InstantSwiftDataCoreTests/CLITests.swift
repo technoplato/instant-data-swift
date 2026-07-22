@@ -21,7 +21,7 @@ extension InstantStoreTests {
     )
     expectNoDifference(output.example, "todos")
     expectNoDifference(output.directory, scaffoldURL.path)
-    expectNoDifference(output.transport, "not-implemented-local-cache-only")
+    expectNoDifference(output.transport, "local-cache-only")
     expectNoDifference(output.files.map(\.kind), ["schema", "permissions", "swift-schema", "readme"])
 
     let schemaURL = scaffoldURL.appendingPathComponent("instant.schema.ts")
@@ -32,7 +32,7 @@ extension InstantStoreTests {
       #expect(FileManager.default.fileExists(atPath: url.path))
     }
     #expect(try String(contentsOf: swiftSchemaURL).contains("InstantSchemaExamples.todosDocument"))
-    #expect(try String(contentsOf: readmeURL).contains("not-implemented-local-cache-only"))
+    #expect(try String(contentsOf: readmeURL).contains("local-cache-only"))
 
     _ = try runCLI(
       ["schema", "verify", "--example", "todos", "--from", schemaURL.path, "--json"],
@@ -173,7 +173,7 @@ extension InstantStoreTests {
       ["init", "--example", "todos", "--to", humanURL.path],
       homeURL: homeURL
     )
-    #expect(humanOutput.contains("transport: not-implemented-local-cache-only"))
+    #expect(humanOutput.contains("transport: local-cache-only"))
     #expect(humanOutput.contains("instant.schema.ts"))
 
     let unsupported = try runCLIResult(
@@ -1396,7 +1396,7 @@ extension InstantStoreTests {
       from: Data(try runCLI(["query", "todos", "--completed", "true", "--json"], homeURL: homeURL).utf8)
     )
     expectNoDifference(completedQuery.event, "query")
-    expectNoDifference(completedQuery.transport, "not-implemented-local-cache-only")
+    expectNoDifference(completedQuery.transport, "local-cache-only")
     expectNoDifference(completedQuery.queryID, "examples.todos.list.completed-true")
     #expect(completedQuery.cacheKey.hasPrefix("plan:"))
     expectNoDifference(completedQuery.todos.map(\.text), ["query completed"])
@@ -1415,7 +1415,7 @@ extension InstantStoreTests {
     )
     expectNoDifference(summary.caseID, "cli.query.todos")
     expectNoDifference(summary.event, "query")
-    expectNoDifference(summary.details.transport, "not-implemented-local-cache-only")
+    expectNoDifference(summary.details.transport, "local-cache-only")
     expectNoDifference(summary.details.queryID, "examples.todos.list.completed-false")
     expectNoDifference(summary.details.todos.map(\.text), ["query open", "query second open"])
 
@@ -1490,7 +1490,7 @@ extension InstantStoreTests {
       homeURL: homeURL
     )
     #expect(selectedSnapshotsJSON.contains(#""event" : "query""#))
-    #expect(selectedSnapshotsJSON.contains(#""transport" : "not-implemented-local-cache-only""#))
+    #expect(selectedSnapshotsJSON.contains(#""transport" : "local-cache-only""#))
     #expect(selectedSnapshotsJSON.contains(#""selectedFields" : ["#))
     #expect(selectedSnapshotsJSON.contains(#""isCompleted""#))
     #expect(selectedSnapshotsJSON.contains(#""text""#))
@@ -1523,7 +1523,7 @@ extension InstantStoreTests {
     #expect(badSelection.error.contains("path: missing"))
 
     let humanOutput = try runCLI(["query", "todos", "--completed", "true"], homeURL: homeURL)
-    #expect(humanOutput.contains("transport: not-implemented-local-cache-only"))
+    #expect(humanOutput.contains("transport: local-cache-only"))
     #expect(humanOutput.contains("query completed"))
 
     let malformed = try runCLIResult(["query", "todos", "--completed", "--json"], homeURL: homeURL)
@@ -1566,7 +1566,7 @@ extension InstantStoreTests {
     )
     expectNoDifference(created.event, "transact")
     expectNoDifference(created.changedID, "note-1")
-    expectNoDifference(created.transport, "not-implemented-local-cache-only")
+    expectNoDifference(created.transport, "local-cache-only")
     expectNoDifference(created.namespace, "notes")
     expectNoDifference(created.transactionID, adminTransactionID)
     expectNoDifference(created.changedEntityIDs, ["note-1"])
@@ -1626,7 +1626,7 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(queried.event, "admin-query")
-    expectNoDifference(queried.transport, "not-implemented-local-cache-only")
+    expectNoDifference(queried.transport, "local-cache-only")
     expectNoDifference(queried.pendingMutationCount, 1)
     expectNoDifference(queried.snapshots, created.snapshots)
 
@@ -2707,7 +2707,7 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(seed.event, "seed")
-    expectNoDifference(seed.transport, "not-implemented-local-cache-only")
+    expectNoDifference(seed.transport, "local-cache-only")
     expectNoDifference(seed.projects.map(\.title), ["Launch linked todos"])
     expectNoDifference(seed.todos.map(\.text), ["Wire a project link"])
     expectNoDifference(seed.todos.map(\.projectID), [seed.projects.first?.id])
@@ -2783,7 +2783,7 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(addedList.event, "add-list")
-    expectNoDifference(addedList.transport, "not-implemented-local-cache-only")
+    expectNoDifference(addedList.transport, "local-cache-only")
     expectNoDifference(addedList.lists.map(\.list.title), ["Family"])
     expectNoDifference(addedList.lists.map(\.reminderCount), [0])
     expectNoDifference(addedList.pendingMutationCount, 1)
@@ -3577,7 +3577,7 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(added.event, "add")
-    expectNoDifference(added.transport, "not-implemented-local-cache-only")
+    expectNoDifference(added.transport, "local-cache-only")
     expectNoDifference(added.syncUps.map(\.syncUp.title), ["Design"])
     expectNoDifference(added.syncUps.map(\.attendeeCount), [2])
     expectNoDifference(added.attendees.map(\.name), ["Blob", "Blob Jr"])
@@ -5073,7 +5073,7 @@ extension InstantStoreTests {
           .utf8
       )
     )
-    expectNoDifference(localIDs.transport, "not-implemented-local-cache-only")
+    expectNoDifference(localIDs.transport, "local-cache-only")
     expectNoDifference(localIDs.localIDCount, 3)
     expectNoDifference(
       localIDs.localIDs.map(\.name),
@@ -5107,7 +5107,7 @@ extension InstantStoreTests {
 
     let localIDHuman = try runCLI(["local-id", "list"], homeURL: homeURL)
     #expect(localIDHuman.contains("examples.todos.seed.plan \(planID.id)"))
-    #expect(localIDHuman.contains("transport: not-implemented-local-cache-only"))
+    #expect(localIDHuman.contains("transport: local-cache-only"))
 
     let malformedLocalIDList = try runCLIResult(
       ["local-id", "list", "unexpected", "--json"],
@@ -5855,7 +5855,7 @@ extension InstantStoreTests {
     )
     #expect(created.appID.hasPrefix("local-ephemeral-"))
     expectNoDifference(created.event, "ephemeral")
-    expectNoDifference(created.transport, "not-implemented-local-cache-only")
+    expectNoDifference(created.transport, "local-cache-only")
     expectNoDifference(created.selectionSource, "argument")
     expectNoDifference(created.title, "Reminders Port")
     expectNoDifference(created.isLocalOnly, true)
@@ -5900,7 +5900,7 @@ extension InstantStoreTests {
       homeURL: homeURL,
       environment: ["INSTANT_APP_ID": nil]
     )
-    #expect(humanOutput.contains("transport: not-implemented-local-cache-only"))
+    #expect(humanOutput.contains("transport: local-cache-only"))
 
     let malformed = try runCLIResult(
       ["app", "ephemeral", "--json"],
@@ -5937,7 +5937,7 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(setPresence.event, "presence-set")
-    expectNoDifference(setPresence.transport, "not-implemented-local-cache-only")
+    expectNoDifference(setPresence.transport, "local-cache-only")
     expectNoDifference(setPresence.room, InstantRoomHandle(type: "chat", id: "lobby"))
     expectNoDifference(setPresence.userID, "user-1")
     expectNoDifference(setPresence.memberCount, 1)
@@ -6165,7 +6165,7 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(wave.event, "tap")
-    expectNoDifference(wave.transport, "not-implemented-local-cache-only")
+    expectNoDifference(wave.transport, "local-cache-only")
     expectNoDifference(wave.room, ReactionsRecipeExample.room)
     expectNoDifference(wave.topic, ReactionsRecipeExample.topic)
     expectNoDifference(wave.authUserID, "user-a")
@@ -6277,7 +6277,7 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(joined.event, "join")
-    expectNoDifference(joined.transport, "not-implemented-local-cache-only")
+    expectNoDifference(joined.transport, "local-cache-only")
     expectNoDifference(joined.room, TypingIndicatorRecipeExample.room)
     expectNoDifference(joined.inputName, TypingIndicatorRecipeExample.inputName)
     expectNoDifference(joined.userID, "user-a")
@@ -6417,7 +6417,7 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(joined.event, "join")
-    expectNoDifference(joined.transport, "not-implemented-local-cache-only")
+    expectNoDifference(joined.transport, "local-cache-only")
     expectNoDifference(joined.room, AvatarStackRecipeExample.room)
     expectNoDifference(joined.nameKey, AvatarStackRecipeExample.nameKey)
     expectNoDifference(joined.userID, "user-alpha")
@@ -6551,7 +6551,7 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(alphaMoved.event, "move")
-    expectNoDifference(alphaMoved.transport, "not-implemented-local-cache-only")
+    expectNoDifference(alphaMoved.transport, "local-cache-only")
     expectNoDifference(alphaMoved.room, CursorsRecipeExample.room)
     expectNoDifference(alphaMoved.spaceID, CursorsRecipeExample.spaceID)
     expectNoDifference(alphaMoved.nameKey, nil)
@@ -6714,7 +6714,7 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(initialBoard.event, "board")
-    expectNoDifference(initialBoard.transport, "not-implemented-local-cache-only")
+    expectNoDifference(initialBoard.transport, "local-cache-only")
     expectNoDifference(initialBoard.room, MergeTileGameRecipeExample.room)
     expectNoDifference(initialBoard.boardID, MergeTileGameRecipeExample.boardID)
     expectNoDifference(initialBoard.boardSize, 4)
@@ -6893,7 +6893,7 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(upload.event, "upload")
-    expectNoDifference(upload.transport, "not-implemented-local-cache-only")
+    expectNoDifference(upload.transport, "local-cache-only")
     expectNoDifference(upload.fileCount, 1)
     let file = try #require(upload.files.first)
     expectNoDifference(upload.changedID, file.id)
@@ -6908,7 +6908,7 @@ extension InstantStoreTests {
       from: Data(try runCLI(["files", "read", file.id, "--json"], homeURL: homeURL).utf8)
     )
     expectNoDifference(read.event, "read")
-    expectNoDifference(read.transport, "not-implemented-local-cache-only")
+    expectNoDifference(read.transport, "local-cache-only")
     expectNoDifference(read.file, file)
     expectNoDifference(read.byteCount, Int64(contents.count))
     expectNoDifference(read.base64Content, contents.base64EncodedString())
@@ -7087,7 +7087,7 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(summary.event, "upload-progress")
-    expectNoDifference(summary.transport, "not-implemented-local-cache-only")
+    expectNoDifference(summary.transport, "local-cache-only")
     expectNoDifference(summary.emittedEventCount, 2)
     expectNoDifference(summary.finalState, .success)
     expectNoDifference(summary.events.map(\.state), [.loading, .success])
@@ -7150,7 +7150,7 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(firstAppend.event, "append")
-    expectNoDifference(firstAppend.transport, "not-implemented-local-cache-only")
+    expectNoDifference(firstAppend.transport, "local-cache-only")
     expectNoDifference(firstAppend.streamID, "chat/lobby")
     expectNoDifference(firstAppend.chunkCount, 1)
     expectNoDifference(firstAppend.chunks.map(\.payload), [.object(["text": .string("hello")])])
@@ -7462,7 +7462,7 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(created.event, "create")
-    expectNoDifference(created.transport, "not-implemented-local-cache-only")
+    expectNoDifference(created.transport, "local-cache-only")
     expectNoDifference(created.shareCount, 1)
     let createdSnapshot = try #require(created.shares.first)
     expectNoDifference(created.changedID, createdSnapshot.share.id)
@@ -7668,7 +7668,7 @@ extension InstantStoreTests {
       )
     )
     expectNoDifference(added.event, "add")
-    expectNoDifference(added.transport, "not-implemented-local-cache-only")
+    expectNoDifference(added.transport, "local-cache-only")
     expectNoDifference(added.counterCount, 1)
     expectNoDifference(added.sharedCounterCount, 0)
     expectNoDifference(added.counters.map(\.counter.count), [2])
@@ -7854,7 +7854,7 @@ extension InstantStoreTests {
       from: Data(try runCLI(["examples", "chat", "seed", "--json"], homeURL: homeURL).utf8)
     )
     expectNoDifference(seeded.event, "seed")
-    expectNoDifference(seeded.transport, "not-implemented-local-cache-only")
+    expectNoDifference(seeded.transport, "local-cache-only")
     expectNoDifference(seeded.channelCount, 2)
     expectNoDifference(seeded.messageCount, 2)
     expectNoDifference(seeded.channels.map(\.title), ["general", "random"])
@@ -8015,7 +8015,7 @@ extension InstantStoreTests {
       from: Data(try runCLI(["examples", "microblog", "seed", "--json"], homeURL: homeURL).utf8)
     )
     expectNoDifference(seeded.event, "seed")
-    expectNoDifference(seeded.transport, "not-implemented-local-cache-only")
+    expectNoDifference(seeded.transport, "local-cache-only")
     expectNoDifference(seeded.authUserID, nil)
     expectNoDifference(seeded.userCount, 3)
     expectNoDifference(seeded.profileCount, 3)
@@ -8262,7 +8262,7 @@ extension InstantStoreTests {
       from: Data(try runCLI(["examples", "mobile-chat", "seed", "--json"], homeURL: homeURL).utf8)
     )
     expectNoDifference(seeded.event, "seed")
-    expectNoDifference(seeded.transport, "not-implemented-local-cache-only")
+    expectNoDifference(seeded.transport, "local-cache-only")
     expectNoDifference(seeded.authUserID, nil)
     expectNoDifference(seeded.userCount, 1)
     expectNoDifference(seeded.profileCount, 1)
@@ -9228,7 +9228,7 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.appID, "cli-cache-test")
     expectNoDifference(jsonOutput.event, "cloudkit-demo")
-    expectNoDifference(jsonOutput.transport, "not-implemented-local-cache-only")
+    expectNoDifference(jsonOutput.transport, "local-cache-only")
     expectNoDifference(jsonOutput.ok, true)
     expectNoDifference(jsonOutput.evidenceCount, 7)
     expectNoDifference(jsonOutput.events, [
@@ -9540,7 +9540,7 @@ extension InstantStoreTests {
     )
     expectNoDifference(jsonOutput.appID, "cli-cache-test")
     expectNoDifference(jsonOutput.event, "reminders")
-    expectNoDifference(jsonOutput.transport, "not-implemented-local-cache-only")
+    expectNoDifference(jsonOutput.transport, "local-cache-only")
     expectNoDifference(jsonOutput.ok, true)
     expectNoDifference(jsonOutput.evidenceCount, 11)
     expectNoDifference(
@@ -11570,7 +11570,7 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.appID, "cli-benchmark")
     expectNoDifference(jsonOutput.iterations, 1)
     expectNoDifference(jsonOutput.ok, true)
-    expectNoDifference(jsonOutput.transport, "not-implemented-local-cache-only")
+    expectNoDifference(jsonOutput.transport, "local-cache-only")
     expectNoDifference(jsonOutput.finalTodoCount, 0)
     expectNoDifference(jsonOutput.pendingMutationCount, 0)
     expectNoDifference(
@@ -11772,7 +11772,7 @@ extension InstantStoreTests {
     )
     expectNoDifference(firstEvidence.caseID, "benchmark.local.todos")
     expectNoDifference(firstEvidence.event, "summary")
-    expectNoDifference(firstEvidence.details.transport, "not-implemented-local-cache-only")
+    expectNoDifference(firstEvidence.details.transport, "local-cache-only")
     expectNoDifference(firstEvidence.details.iterations, 1)
     expectNoDifference(firstEvidence.details.metric, nil)
     expectNoDifference(

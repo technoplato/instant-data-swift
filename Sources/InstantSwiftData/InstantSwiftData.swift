@@ -25,10 +25,10 @@ public struct InstantSwiftDataClient: Sendable {
 
   private var transactOperation:
     @Sendable (InstantStoreTransaction) async throws -> InstantStoreMutationResult
-  private var queryOnceOperation:
-    @Sendable (InstantQueryPlan) async throws -> InstantQueryEmission
+  private var queryOnceOperation: @Sendable (InstantQueryPlan) async throws -> InstantQueryEmission
   private var queryOperation: @Sendable (InstantQueryPlan) async throws -> [InstantEntitySnapshot]
-  private var observeOperation: @Sendable (InstantQueryPlan) async -> AsyncStream<InstantQueryEmission>
+  private var observeOperation:
+    @Sendable (InstantQueryPlan) async -> AsyncStream<InstantQueryEmission>
   private var subscribeInfiniteQueryOperation:
     @Sendable (InstantQueryPlan) async -> InstantInfiniteQuerySubscription
   private var infiniteQueryInitialSnapshotOperation:
@@ -89,16 +89,14 @@ public struct InstantSwiftDataClient: Sendable {
     @Sendable () async throws -> AsyncStream<[InstantStoredFile]>
   private var storedFileContentsOperation:
     @Sendable (String) async throws -> InstantStoredFileContents
-  private var deleteStoredFileOperation:
-    @Sendable (String) async throws -> InstantStoredFile
+  private var deleteStoredFileOperation: @Sendable (String) async throws -> InstantStoredFile
   private var appendStreamChunkOperation:
     @Sendable (String, JSONValue) async throws -> InstantStreamChunk
   private var streamChunksOperation:
     @Sendable (String, Int?, Int64?) async throws -> [InstantStreamChunk]
   private var observeStreamChunksOperation:
     @Sendable (String, Int64?) async throws -> AsyncStream<[InstantStreamChunk]>
-  private var createStreamOperation:
-    @Sendable (String) async throws -> InstantStreamMetadata
+  private var createStreamOperation: @Sendable (String) async throws -> InstantStreamMetadata
   private var streamMetadataByStreamIDOperation:
     @Sendable (String) async throws -> InstantStreamMetadata
   private var streamMetadataByClientIDOperation:
@@ -115,8 +113,7 @@ public struct InstantSwiftDataClient: Sendable {
     @Sendable (String, Int64) async throws -> AsyncStream<InstantStreamContentRead>
   private var observeStreamContentByClientIDOperation:
     @Sendable (String, Int64) async throws -> AsyncStream<InstantStreamContentRead>
-  private var createShareOperation:
-    @Sendable (String, String) async throws -> InstantShareSnapshot
+  private var createShareOperation: @Sendable (String, String) async throws -> InstantShareSnapshot
   private var acceptShareOperation: @Sendable (String) async throws -> InstantShareSnapshot
   private var sharesOperation: @Sendable () async throws -> [InstantShareSnapshot]
   private var observeSharesOperation:
@@ -348,8 +345,10 @@ public struct InstantSwiftDataClient: Sendable {
     sendMagicCode: (@Sendable (String) async throws -> InstantMagicCodeChallenge)? = nil,
     signInWithMagicCode: (@Sendable (String, String) async throws -> InstantAuthSession)? = nil,
     signInWithMagicCodeResult:
-      (@Sendable (String, String, [String: InstantValue]) async throws
-        -> InstantMagicCodeSignInResult)? = nil,
+      (
+        @Sendable (String, String, [String: InstantValue]) async throws
+          -> InstantMagicCodeSignInResult
+      )? = nil,
     signInWithRefreshToken:
       (@Sendable (String, String?) async throws -> InstantAuthSession)? = nil,
     signOut: (@Sendable () async throws -> Void)? = nil,
@@ -361,28 +360,38 @@ public struct InstantSwiftDataClient: Sendable {
     joinRoom: (@Sendable (InstantRoomHandle) async throws -> InstantRoomHandle)? = nil,
     leaveRoom: (@Sendable (InstantRoomHandle) async throws -> InstantRoomHandle)? = nil,
     setRoomPresence:
-      (@Sendable (InstantRoomHandle, String?, [String: JSONValue]) async throws
-        -> InstantRoomPresenceMember)? = nil,
+      (
+        @Sendable (InstantRoomHandle, String?, [String: JSONValue]) async throws
+          -> InstantRoomPresenceMember
+      )? = nil,
     roomPresence:
       (@Sendable (InstantRoomHandle) async throws -> [InstantRoomPresenceMember])? = nil,
     observeRoomPresence:
       (@Sendable (InstantRoomHandle) async throws -> AsyncStream<[InstantRoomPresenceMember]>)? =
-        nil,
+      nil,
     leaveRoomPresence: (@Sendable (InstantRoomHandle, String?) async throws -> String)? = nil,
     publishRoomTopicMessage:
-      (@Sendable (InstantRoomHandle, String, String?, JSONValue) async throws
-        -> InstantRoomTopicMessage)? = nil,
+      (
+        @Sendable (InstantRoomHandle, String, String?, JSONValue) async throws
+          -> InstantRoomTopicMessage
+      )? = nil,
     roomTopicMessages:
-      (@Sendable (InstantRoomHandle, String, Int?) async throws
-        -> [InstantRoomTopicMessage])? = nil,
+      (
+        @Sendable (InstantRoomHandle, String, Int?) async throws
+          -> [InstantRoomTopicMessage]
+      )? = nil,
     observeRoomTopicMessages:
-      (@Sendable (InstantRoomHandle, String) async throws
-        -> AsyncStream<[InstantRoomTopicMessage]>)? = nil,
+      (
+        @Sendable (InstantRoomHandle, String) async throws
+          -> AsyncStream<[InstantRoomTopicMessage]>
+      )? = nil,
     uploadFile:
       (@Sendable (URL, String?, String?) async throws -> InstantStoredFile)? = nil,
     uploadFileProgress:
-      (@Sendable (URL, String?, String?) async throws
-        -> AsyncThrowingStream<InstantFileUploadProgress, Error>)? = nil,
+      (
+        @Sendable (URL, String?, String?) async throws
+          -> AsyncThrowingStream<InstantFileUploadProgress, Error>
+      )? = nil,
     storedFiles: (@Sendable () async throws -> [InstantStoredFile])? = nil,
     storageSnapshot: (@Sendable () async throws -> InstantStorageSnapshot)? = nil,
     observeStoredFiles:
@@ -523,8 +532,10 @@ public struct InstantSwiftDataClient: Sendable {
     sendMagicCode: (@Sendable (String) async throws -> InstantMagicCodeChallenge)? = nil,
     signInWithMagicCode: (@Sendable (String, String) async throws -> InstantAuthSession)? = nil,
     signInWithMagicCodeResult:
-      (@Sendable (String, String, [String: InstantValue]) async throws
-        -> InstantMagicCodeSignInResult)? = nil,
+      (
+        @Sendable (String, String, [String: InstantValue]) async throws
+          -> InstantMagicCodeSignInResult
+      )? = nil,
     signInWithRefreshToken:
       (@Sendable (String, String?) async throws -> InstantAuthSession)? = nil,
     oauthAuthorizationURL: (@Sendable (String, URL) throws -> URL)? = nil,
@@ -538,28 +549,38 @@ public struct InstantSwiftDataClient: Sendable {
     joinRoom: (@Sendable (InstantRoomHandle) async throws -> InstantRoomHandle)? = nil,
     leaveRoom: (@Sendable (InstantRoomHandle) async throws -> InstantRoomHandle)? = nil,
     setRoomPresence:
-      (@Sendable (InstantRoomHandle, String?, [String: JSONValue]) async throws
-        -> InstantRoomPresenceMember)? = nil,
+      (
+        @Sendable (InstantRoomHandle, String?, [String: JSONValue]) async throws
+          -> InstantRoomPresenceMember
+      )? = nil,
     roomPresence:
       (@Sendable (InstantRoomHandle) async throws -> [InstantRoomPresenceMember])? = nil,
     observeRoomPresence:
       (@Sendable (InstantRoomHandle) async throws -> AsyncStream<[InstantRoomPresenceMember]>)? =
-        nil,
+      nil,
     leaveRoomPresence: (@Sendable (InstantRoomHandle, String?) async throws -> String)? = nil,
     publishRoomTopicMessage:
-      (@Sendable (InstantRoomHandle, String, String?, JSONValue) async throws
-        -> InstantRoomTopicMessage)? = nil,
+      (
+        @Sendable (InstantRoomHandle, String, String?, JSONValue) async throws
+          -> InstantRoomTopicMessage
+      )? = nil,
     roomTopicMessages:
-      (@Sendable (InstantRoomHandle, String, Int?) async throws
-        -> [InstantRoomTopicMessage])? = nil,
+      (
+        @Sendable (InstantRoomHandle, String, Int?) async throws
+          -> [InstantRoomTopicMessage]
+      )? = nil,
     observeRoomTopicMessages:
-      (@Sendable (InstantRoomHandle, String) async throws
-        -> AsyncStream<[InstantRoomTopicMessage]>)? = nil,
+      (
+        @Sendable (InstantRoomHandle, String) async throws
+          -> AsyncStream<[InstantRoomTopicMessage]>
+      )? = nil,
     uploadFile:
       (@Sendable (URL, String?, String?) async throws -> InstantStoredFile)? = nil,
     uploadFileProgress:
-      (@Sendable (URL, String?, String?) async throws
-        -> AsyncThrowingStream<InstantFileUploadProgress, Error>)? = nil,
+      (
+        @Sendable (URL, String?, String?) async throws
+          -> AsyncThrowingStream<InstantFileUploadProgress, Error>
+      )? = nil,
     storedFiles: (@Sendable () async throws -> [InstantStoredFile])? = nil,
     storageSnapshot: (@Sendable () async throws -> InstantStorageSnapshot)? = nil,
     observeStoredFiles:
@@ -613,7 +634,8 @@ public struct InstantSwiftDataClient: Sendable {
       code: .implementationFailed,
       operation: "access InstantSwiftData auth",
       message: "No auth client has been configured.",
-      recovery: "Bootstrap Instant Swift Data before using auth, or override auth closures in tests."
+      recovery:
+        "Bootstrap Instant Swift Data before using auth, or override auth closures in tests."
     )
     let transportError = InstantError(
       code: .implementationFailed,
@@ -676,7 +698,8 @@ public struct InstantSwiftDataClient: Sendable {
     self.observeOperation = observe
     self.subscribeInfiniteQueryOperation =
       subscribeInfiniteQuery
-      ?? { plan in Self.failedInfiniteQuerySubscription(error: infiniteQueryError, queryID: plan.id) }
+      ?? { plan in Self.failedInfiniteQuerySubscription(error: infiniteQueryError, queryID: plan.id)
+      }
     self.infiniteQueryInitialSnapshotOperation =
       infiniteQueryInitialSnapshot ?? { _ in throw infiniteQueryError }
     self.pendingMutationsOperation = pendingMutations
@@ -779,8 +802,10 @@ public struct InstantSwiftDataClient: Sendable {
     self.streamMetadataByClientIDOperation = streamMetadataByClientID ?? { _ in throw streamsError }
     self.appendStreamContentOperation = appendStreamContent ?? { _, _, _ in throw streamsError }
     self.closeStreamOperation = closeStream ?? { _, _ in throw streamsError }
-    self.streamContentByStreamIDOperation = streamContentByStreamID ?? { _, _ in throw streamsError }
-    self.streamContentByClientIDOperation = streamContentByClientID ?? { _, _ in throw streamsError }
+    self.streamContentByStreamIDOperation =
+      streamContentByStreamID ?? { _, _ in throw streamsError }
+    self.streamContentByClientIDOperation =
+      streamContentByClientID ?? { _, _ in throw streamsError }
     self.observeStreamContentByStreamIDOperation =
       observeStreamContentByStreamID ?? { _, _ in throw streamsError }
     self.observeStreamContentByClientIDOperation =
@@ -799,9 +824,10 @@ public struct InstantSwiftDataClient: Sendable {
     limit: Int?,
     afterIndex: Int64?
   ) -> [InstantStreamChunk] {
-    let resumed = afterIndex.map { index in
-      chunks.filter { $0.index > index }
-    } ?? chunks
+    let resumed =
+      afterIndex.map { index in
+        chunks.filter { $0.index > index }
+      } ?? chunks
     if let limit {
       return Array(resumed.prefix(limit))
     }
@@ -830,7 +856,8 @@ public struct InstantSwiftDataClient: Sendable {
       code: .implementationFailed,
       operation: "access default InstantSwiftData client",
       message: message,
-      recovery: "Bootstrap Instant Swift Data before reading the dependency, or override it in tests."
+      recovery:
+        "Bootstrap Instant Swift Data before reading the dependency, or override it in tests."
     )
 
     return Self(
@@ -1095,7 +1122,8 @@ public struct InstantSwiftDataClient: Sendable {
     try await observeConnectionStatusOperation()
   }
 
-  public func subscribeConnectionStatus() async throws -> FetchSubscription<InstantConnectionStatus> {
+  public func subscribeConnectionStatus() async throws -> FetchSubscription<InstantConnectionStatus>
+  {
     let statuses = try await observeConnectionStatus()
     try Task.checkCancellation()
     return fetchSubscription(from: statuses)
@@ -1777,6 +1805,10 @@ private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
   private var _activeSubscriptionID = 0
   private var _activeSubscription: (id: Int, subscription: FetchSubscription<Value>)?
 
+  #if canImport(SwiftUI)
+    let objectWillChange = ObservableObjectPublisher()
+  #endif
+
   init(value: Value) {
     self._initialValue = value
     self._wrappedValue = value
@@ -1789,6 +1821,7 @@ private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
       withLock { _initialValue }
     }
     set {
+      publishChange()
       withLock {
         _initialValue = newValue
       }
@@ -1800,6 +1833,7 @@ private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
       withLock { _wrappedValue }
     }
     set {
+      publishChange()
       withLock {
         _wrappedValue = newValue
       }
@@ -1811,6 +1845,7 @@ private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
       withLock { _loadError }
     }
     set {
+      publishChange()
       withLock {
         _loadError = newValue
       }
@@ -1822,6 +1857,7 @@ private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
       withLock { _isLoading }
     }
     set {
+      publishChange()
       withLock {
         _isLoading = newValue
       }
@@ -1832,6 +1868,7 @@ private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
     withLock {
       _wrappedValue = _initialValue
     }
+    publishChange()
   }
 
   func cancelActiveSubscription() {
@@ -1866,6 +1903,7 @@ private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
       return (generation: _activeSubscriptionID, subscription: subscription)
     }
     result.subscription?.cancel()
+    publishChange()
     return result.generation
   }
 
@@ -1900,13 +1938,15 @@ private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
   }
 
   func updateActiveSubscriptionValue(_ value: Value, id: Int) -> Bool {
-    withLock {
+    publishChange()
+    let didUpdate = withLock {
       guard _activeSubscription?.id == id else { return false }
       _wrappedValue = value
       _loadError = nil
       _isLoading = false
       return true
     }
+    return didUpdate
   }
 
   func finishActiveOrPendingSubscriptionTask(
@@ -1914,7 +1954,8 @@ private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
     generation: Int,
     loadError: InstantError?
   ) -> Bool {
-    withLock {
+    publishChange()
+    let didFinish = withLock {
       if let id {
         guard _activeSubscription?.id == id else { return false }
         _activeSubscription = nil
@@ -1925,6 +1966,19 @@ private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
       _isLoading = false
       return true
     }
+    return didFinish
+  }
+
+  private func publishChange() {
+    #if canImport(SwiftUI)
+      if Thread.isMainThread {
+        objectWillChange.send()
+      } else {
+        DispatchQueue.main.async { [weak self] in
+          self?.objectWillChange.send()
+        }
+      }
+    #endif
   }
 
   private func withLock<Result>(_ operation: () throws -> Result) rethrows -> Result {
@@ -1934,6 +1988,10 @@ private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
   }
 }
 
+#if canImport(SwiftUI)
+  extension FetchStorage: ObservableObject {}
+#endif
+
 private func runFetchStorageSubscriptionTask<Value: Sendable>(
   storage: FetchStorage<Value>,
   subscribe: @escaping @Sendable () async throws -> FetchSubscription<Value>,
@@ -1942,6 +2000,19 @@ private func runFetchStorageSubscriptionTask<Value: Sendable>(
 ) async throws {
   let generation = storage.prepareActiveSubscriptionTask()
   var activeSubscriptionID: Int?
+  var emissionCount = 0
+  InstantDiagnostics.shared.record(
+    .debug,
+    subsystem: "instant-swift-data",
+    category: "fetch-wrapper",
+    event: "fetch-task.started",
+    message: "Started a property-wrapper subscription task.",
+    metadata: [
+      "operation": operation,
+      "generation": String(generation),
+      "valueType": String(reflecting: Value.self),
+    ]
+  )
   do {
     let subscription = try await subscribe()
     defer {
@@ -1953,35 +2024,104 @@ private func runFetchStorageSubscriptionTask<Value: Sendable>(
       throw CancellationError()
     }
     activeSubscriptionID = subscriptionID
+    InstantDiagnostics.shared.record(
+      .debug,
+      subsystem: "instant-swift-data",
+      category: "fetch-wrapper",
+      event: "fetch-task.subscribed",
+      message: "Property wrapper established its subscription.",
+      metadata: [
+        "operation": operation,
+        "generation": String(generation),
+        "subscriptionID": String(subscriptionID),
+      ]
+    )
     for try await value in subscription {
       try Task.checkCancellation()
       guard storage.updateActiveSubscriptionValue(value, id: subscriptionID) else {
         throw CancellationError()
       }
+      emissionCount += 1
+      var emissionMetadata = [
+        "operation": operation,
+        "emissionCount": String(emissionCount),
+        "subscriptionID": String(subscriptionID),
+      ]
+      let mirror = Mirror(reflecting: value)
+      if mirror.displayStyle == .collection || mirror.displayStyle == .set
+        || mirror.displayStyle == .dictionary
+      {
+        emissionMetadata["resultCount"] = String(mirror.children.count)
+      }
+      InstantDiagnostics.shared.record(
+        .trace,
+        subsystem: "instant-swift-data",
+        category: "fetch-wrapper",
+        event: "fetch-task.emitted",
+        message: "Property wrapper applied a subscription emission.",
+        metadata: emissionMetadata
+      )
     }
     try Task.checkCancellation()
-    guard storage.finishActiveOrPendingSubscriptionTask(
-      id: subscriptionID,
-      generation: generation,
-      loadError: nil
-    ) else {
+    guard
+      storage.finishActiveOrPendingSubscriptionTask(
+        id: subscriptionID,
+        generation: generation,
+        loadError: nil
+      )
+    else {
       throw CancellationError()
     }
+    InstantDiagnostics.shared.record(
+      .debug,
+      subsystem: "instant-swift-data",
+      category: "fetch-wrapper",
+      event: "fetch-task.finished",
+      message: "Property-wrapper subscription task finished.",
+      metadata: [
+        "operation": operation,
+        "emissionCount": String(emissionCount),
+      ]
+    )
   } catch let error as CancellationError {
     _ = storage.finishActiveOrPendingSubscriptionTask(
       id: activeSubscriptionID,
       generation: generation,
       loadError: nil
     )
+    InstantDiagnostics.shared.record(
+      .debug,
+      subsystem: "instant-swift-data",
+      category: "fetch-wrapper",
+      event: "fetch-task.cancelled",
+      message: "Property-wrapper subscription task was cancelled.",
+      metadata: [
+        "operation": operation,
+        "emissionCount": String(emissionCount),
+      ]
+    )
     throw error
   } catch let error as InstantError {
-    guard storage.finishActiveOrPendingSubscriptionTask(
-      id: activeSubscriptionID,
-      generation: generation,
-      loadError: error
-    ) else {
+    guard
+      storage.finishActiveOrPendingSubscriptionTask(
+        id: activeSubscriptionID,
+        generation: generation,
+        loadError: error
+      )
+    else {
       throw CancellationError()
     }
+    InstantDiagnostics.shared.record(
+      error: error,
+      subsystem: "instant-swift-data",
+      category: "fetch-wrapper",
+      event: "fetch-task.failed",
+      message: "Property-wrapper subscription task failed.",
+      metadata: [
+        "operation": operation,
+        "emissionCount": String(emissionCount),
+      ]
+    )
     throw error
   } catch {
     let error = InstantError(
@@ -1990,13 +2130,26 @@ private func runFetchStorageSubscriptionTask<Value: Sendable>(
       message: String(describing: error),
       recovery: recovery
     )
-    guard storage.finishActiveOrPendingSubscriptionTask(
-      id: activeSubscriptionID,
-      generation: generation,
-      loadError: error
-    ) else {
+    guard
+      storage.finishActiveOrPendingSubscriptionTask(
+        id: activeSubscriptionID,
+        generation: generation,
+        loadError: error
+      )
+    else {
       throw CancellationError()
     }
+    InstantDiagnostics.shared.record(
+      error: error,
+      subsystem: "instant-swift-data",
+      category: "fetch-wrapper",
+      event: "fetch-task.failed",
+      message: "Property-wrapper subscription task failed.",
+      metadata: [
+        "operation": operation,
+        "emissionCount": String(emissionCount),
+      ]
+    )
     throw error
   }
 }
@@ -2011,8 +2164,11 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
   private var _pageInfo: InstantQueryPageInfo?
   private var _canLoadNextPage: Bool
   private var _activeSubscriptionID = 0
-  private var _activeSubscription:
-    (id: Int, subscription: InfiniteQuerySubscription<Element>)?
+  private var _activeSubscription: (id: Int, subscription: InfiniteQuerySubscription<Element>)?
+
+  #if canImport(SwiftUI)
+    let objectWillChange = ObservableObjectPublisher()
+  #endif
 
   init(value: [Element]) {
     self._initialValue = value
@@ -2028,6 +2184,7 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
       withLock { _initialValue }
     }
     set {
+      publishChange()
       withLock {
         _initialValue = newValue
       }
@@ -2039,6 +2196,7 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
       withLock { _wrappedValue }
     }
     set {
+      publishChange()
       withLock {
         _wrappedValue = newValue
       }
@@ -2050,6 +2208,7 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
       withLock { _loadError }
     }
     set {
+      publishChange()
       withLock {
         _loadError = newValue
       }
@@ -2061,6 +2220,7 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
       withLock { _isLoading }
     }
     set {
+      publishChange()
       withLock {
         _isLoading = newValue
       }
@@ -2072,6 +2232,7 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
       withLock { _pageInfo }
     }
     set {
+      publishChange()
       withLock {
         _pageInfo = newValue
       }
@@ -2083,6 +2244,7 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
       withLock { _canLoadNextPage }
     }
     set {
+      publishChange()
       withLock {
         _canLoadNextPage = newValue
       }
@@ -2090,6 +2252,7 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
   }
 
   func resetToInitialValue() {
+    publishChange()
     withLock {
       _wrappedValue = _initialValue
       _loadError = nil
@@ -2100,6 +2263,7 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
   }
 
   func apply(_ snapshot: InfiniteQuerySnapshot<Element>) {
+    publishChange()
     withLock {
       _wrappedValue = snapshot.values
       _loadError = snapshot.error
@@ -2133,6 +2297,7 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
   }
 
   func prepareActiveSubscriptionTask() -> Int {
+    publishChange()
     let result = withLock {
       _activeSubscriptionID += 1
       let subscription = _activeSubscription?.subscription
@@ -2145,6 +2310,7 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
   }
 
   func preparePendingLoad() -> Int {
+    publishChange()
     let result = withLock {
       _activeSubscriptionID += 1
       let subscription = _activeSubscription?.subscription
@@ -2191,7 +2357,8 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
     _ snapshot: InfiniteQuerySnapshot<Element>,
     id: Int
   ) -> Bool {
-    withLock {
+    publishChange()
+    return withLock {
       guard _activeSubscription?.id == id else { return false }
       _wrappedValue = snapshot.values
       _loadError = snapshot.error
@@ -2206,7 +2373,8 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
     _ snapshot: InfiniteQuerySnapshot<Element>,
     generation: Int
   ) -> Bool {
-    withLock {
+    publishChange()
+    return withLock {
       guard _activeSubscriptionID == generation else { return false }
       _wrappedValue = snapshot.values
       _loadError = snapshot.error
@@ -2221,7 +2389,8 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
     generation: Int,
     loadError: InstantError?
   ) -> Bool {
-    withLock {
+    publishChange()
+    return withLock {
       guard _activeSubscriptionID == generation else { return false }
       _loadError = loadError
       _isLoading = false
@@ -2234,7 +2403,8 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
     generation: Int,
     loadError: InstantError?
   ) -> Bool {
-    withLock {
+    publishChange()
+    return withLock {
       if let id {
         guard _activeSubscription?.id == id else { return false }
         _activeSubscription = nil
@@ -2254,12 +2424,28 @@ private final class InfiniteQueryStorage<Element: Sendable>: @unchecked Sendable
     subscription?.loadNextPage()
   }
 
+  private func publishChange() {
+    #if canImport(SwiftUI)
+      if Thread.isMainThread {
+        objectWillChange.send()
+      } else {
+        DispatchQueue.main.async { [weak self] in
+          self?.objectWillChange.send()
+        }
+      }
+    #endif
+  }
+
   private func withLock<Result>(_ operation: () throws -> Result) rethrows -> Result {
     lock.lock()
     defer { lock.unlock() }
     return try operation()
   }
 }
+
+#if canImport(SwiftUI)
+  extension InfiniteQueryStorage: ObservableObject {}
+#endif
 
 private func runInfiniteQueryStorageSubscriptionTask<Element: Sendable>(
   storage: InfiniteQueryStorage<Element>,
@@ -2269,6 +2455,19 @@ private func runInfiniteQueryStorageSubscriptionTask<Element: Sendable>(
 ) async throws {
   let generation = storage.prepareActiveSubscriptionTask()
   var activeSubscriptionID: Int?
+  var emissionCount = 0
+  InstantDiagnostics.shared.record(
+    .debug,
+    subsystem: "instant-swift-data",
+    category: "fetch-wrapper",
+    event: "infinite-query-task.started",
+    message: "Started an infinite-query property-wrapper subscription task.",
+    metadata: [
+      "operation": operation,
+      "generation": String(generation),
+      "elementType": String(reflecting: Element.self),
+    ]
+  )
   do {
     let subscription = try await subscribe()
     defer {
@@ -2280,35 +2479,100 @@ private func runInfiniteQueryStorageSubscriptionTask<Element: Sendable>(
       throw CancellationError()
     }
     activeSubscriptionID = subscriptionID
+    InstantDiagnostics.shared.record(
+      .debug,
+      subsystem: "instant-swift-data",
+      category: "fetch-wrapper",
+      event: "infinite-query-task.subscribed",
+      message: "Infinite-query wrapper established its subscription.",
+      metadata: [
+        "operation": operation,
+        "generation": String(generation),
+        "subscriptionID": String(subscriptionID),
+      ]
+    )
     for try await snapshot in subscription {
       try Task.checkCancellation()
       guard storage.applyActiveSubscriptionSnapshot(snapshot, id: subscriptionID) else {
         throw CancellationError()
       }
+      emissionCount += 1
+      InstantDiagnostics.shared.record(
+        .trace,
+        subsystem: "instant-swift-data",
+        category: "fetch-wrapper",
+        event: "infinite-query-task.emitted",
+        message: "Infinite-query wrapper applied a subscription snapshot.",
+        metadata: [
+          "operation": operation,
+          "emissionCount": String(emissionCount),
+          "subscriptionID": String(subscriptionID),
+          "resultCount": String(snapshot.values.count),
+          "canLoadNextPage": String(snapshot.canLoadNextPage),
+          "hasError": String(snapshot.error != nil),
+        ]
+      )
     }
     try Task.checkCancellation()
-    guard storage.finishActiveOrPendingSubscriptionTask(
-      id: subscriptionID,
-      generation: generation,
-      loadError: nil
-    ) else {
+    guard
+      storage.finishActiveOrPendingSubscriptionTask(
+        id: subscriptionID,
+        generation: generation,
+        loadError: nil
+      )
+    else {
       throw CancellationError()
     }
+    InstantDiagnostics.shared.record(
+      .debug,
+      subsystem: "instant-swift-data",
+      category: "fetch-wrapper",
+      event: "infinite-query-task.finished",
+      message: "Infinite-query wrapper subscription finished.",
+      metadata: [
+        "operation": operation,
+        "emissionCount": String(emissionCount),
+      ]
+    )
   } catch let error as CancellationError {
     _ = storage.finishActiveOrPendingSubscriptionTask(
       id: activeSubscriptionID,
       generation: generation,
       loadError: nil
     )
+    InstantDiagnostics.shared.record(
+      .debug,
+      subsystem: "instant-swift-data",
+      category: "fetch-wrapper",
+      event: "infinite-query-task.cancelled",
+      message: "Infinite-query wrapper subscription was cancelled.",
+      metadata: [
+        "operation": operation,
+        "emissionCount": String(emissionCount),
+      ]
+    )
     throw error
   } catch let error as InstantError {
-    guard storage.finishActiveOrPendingSubscriptionTask(
-      id: activeSubscriptionID,
-      generation: generation,
-      loadError: error
-    ) else {
+    guard
+      storage.finishActiveOrPendingSubscriptionTask(
+        id: activeSubscriptionID,
+        generation: generation,
+        loadError: error
+      )
+    else {
       throw CancellationError()
     }
+    InstantDiagnostics.shared.record(
+      error: error,
+      subsystem: "instant-swift-data",
+      category: "fetch-wrapper",
+      event: "infinite-query-task.failed",
+      message: "Infinite-query wrapper subscription failed.",
+      metadata: [
+        "operation": operation,
+        "emissionCount": String(emissionCount),
+      ]
+    )
     throw error
   } catch {
     let error = InstantError(
@@ -2317,13 +2581,26 @@ private func runInfiniteQueryStorageSubscriptionTask<Element: Sendable>(
       message: String(describing: error),
       recovery: recovery
     )
-    guard storage.finishActiveOrPendingSubscriptionTask(
-      id: activeSubscriptionID,
-      generation: generation,
-      loadError: error
-    ) else {
+    guard
+      storage.finishActiveOrPendingSubscriptionTask(
+        id: activeSubscriptionID,
+        generation: generation,
+        loadError: error
+      )
+    else {
       throw CancellationError()
     }
+    InstantDiagnostics.shared.record(
+      error: error,
+      subsystem: "instant-swift-data",
+      category: "fetch-wrapper",
+      event: "infinite-query-task.failed",
+      message: "Infinite-query wrapper subscription failed.",
+      metadata: [
+        "operation": operation,
+        "emissionCount": String(emissionCount),
+      ]
+    )
     throw error
   }
 }
@@ -2855,8 +3132,7 @@ extension DependencyValues {
         uniqueID: context == .test ? uuid().uuidString.lowercased() : nil
       )
 
-    self.defaultInstantSwiftData = try await InstantSwiftDataClient.bootstrap(
-      configuration: InstantRuntimeConfiguration(
+    var runtimeConfiguration = InstantRuntimeConfiguration(
         appID: appID,
         apiURI: apiURI,
         websocketURI: websocketURI,
@@ -2881,7 +3157,11 @@ extension DependencyValues {
         userCookieSyncClient: userCookieSyncClient,
         platformAppClient: platformAppClient,
         appBuilderCodeGenerator: appBuilderCodeGenerator
-      ),
+      )
+    runtimeConfiguration.autoConnectLiveTransport = liveTransport != nil
+
+    self.defaultInstantSwiftData = try await InstantSwiftDataClient.bootstrap(
+      configuration: runtimeConfiguration,
       storageTransport: storageTransport
     )
   }
@@ -2895,8 +3175,7 @@ extension DependencyValues {
 
     switch context {
     case .live:
-      return FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent(".instant-swift-data", isDirectory: true)
+      return defaultApplicationDataURL()
         .appendingPathComponent("apps", isDirectory: true)
         .appendingPathComponent(fileName)
 
@@ -2930,16 +3209,40 @@ extension DependencyValues {
       return URL(fileURLWithPath: path, isDirectory: true)
     }
 
+    #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
+      return defaultApplicationDataURL()
+    #else
     return FileManager.default.homeDirectoryForCurrentUser
       .appendingPathComponent(".instant-swift-data", isDirectory: true)
+    #endif
+  }
+
+  private static func defaultApplicationDataURL() -> URL {
+    #if os(iOS) || os(tvOS) || os(watchOS) || os(visionOS)
+      return (
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+          ?? FileManager.default.temporaryDirectory
+      )
+      .appendingPathComponent("InstantSwiftData", isDirectory: true)
+    #else
+      return FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent(".instant-swift-data", isDirectory: true)
+    #endif
   }
 }
 
 @dynamicMemberLookup
 @propertyWrapper
-public struct InfiniteQuery<Element: InstantEntityModel>: Sendable {
-  private let storage: InfiniteQueryStorage<Element>
+// SAFETY: mutable query state is owned by lock-protected storage references;
+// SwiftUI observes the same reference through its main-actor DynamicProperty hook.
+public struct InfiniteQuery<Element: InstantEntityModel>: @unchecked Sendable {
+  private let storageReference: LockedValueStorage<InfiniteQueryStorage<Element>>
+  #if canImport(SwiftUI)
+    @StateObject private var storageObserver: InfiniteQueryStorage<Element>
+  #endif
   private let query: LockedValueStorage<InstantEntityQuery<Element>?>
+
+  private var storage: InfiniteQueryStorage<Element> { storageReference.value }
 
   public var wrappedValue: [Element] {
     get { storage.wrappedValue }
@@ -2993,7 +3296,11 @@ public struct InfiniteQuery<Element: InstantEntityModel>: Sendable {
     wrappedValue: [Element] = [],
     _ query: InstantEntityQuery<Element>
   ) {
-    self.storage = InfiniteQueryStorage(value: wrappedValue)
+    let storage = InfiniteQueryStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
     self.query = LockedValueStorage(query)
   }
 
@@ -3001,7 +3308,11 @@ public struct InfiniteQuery<Element: InstantEntityModel>: Sendable {
     wrappedValue: [Element] = [],
     _ query: InstantEntityQuery<Element>?
   ) {
-    self.storage = InfiniteQueryStorage(value: wrappedValue)
+    let storage = InfiniteQueryStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
     self.query = LockedValueStorage(query)
   }
 
@@ -3201,7 +3512,8 @@ public struct InfiniteQuery<Element: InstantEntityModel>: Sendable {
       storage: storage,
       subscribe: { try await makeSubscription(using: client) },
       operation: "observe InfiniteQuery",
-      recovery: "Inspect the configured InstantSwiftDataClient and infinite query subscription operation."
+      recovery:
+        "Inspect the configured InstantSwiftDataClient and infinite query subscription operation."
     )
   }
 
@@ -3260,9 +3572,16 @@ public struct InfiniteQuery<Element: InstantEntityModel>: Sendable {
 
 @dynamicMemberLookup
 @propertyWrapper
-public struct FetchAll<Element: Sendable>: Sendable {
-  private let storage: FetchStorage<[Element]>
+// SAFETY: mutable fetch state is owned by lock-protected storage references;
+// SwiftUI observes the same reference through its main-actor DynamicProperty hook.
+public struct FetchAll<Element: Sendable>: @unchecked Sendable {
+  private let storageReference: LockedValueStorage<FetchStorage<[Element]>>
+  #if canImport(SwiftUI)
+    @StateObject private var storageObserver: FetchStorage<[Element]>
+  #endif
   private let operations: FetchOperationStorage<[Element]>
+
+  private var storage: FetchStorage<[Element]> { storageReference.value }
 
   public var wrappedValue: [Element] {
     get { storage.wrappedValue }
@@ -3300,7 +3619,11 @@ public struct FetchAll<Element: Sendable>: Sendable {
 
   @_disfavoredOverload
   public init(wrappedValue: [Element] = []) {
-    self.storage = FetchStorage(value: wrappedValue)
+    let storage = FetchStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
     self.operations = FetchOperationStorage()
   }
 
@@ -3322,7 +3645,11 @@ public struct FetchAll<Element: Sendable>: Sendable {
     wrappedValue: [Element] = [],
     _ query: InstantEntityQuery<Element>
   ) where Element: InstantEntityModel {
-    self.storage = FetchStorage(value: wrappedValue)
+    let storage = FetchStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
     self.operations = FetchOperationStorage(Self.operations(for: query))
   }
 
@@ -3365,7 +3692,8 @@ public struct FetchAll<Element: Sendable>: Sendable {
         code: .implementationFailed,
         operation: "load FetchAll",
         message: "No Instant query has been configured for this fetch wrapper.",
-        recovery: "Initialize @FetchAll with an InstantEntityQuery, or pass a query to load(_:using:)."
+        recovery:
+          "Initialize @FetchAll with an InstantEntityQuery, or pass a query to load(_:using:)."
       )
       loadError = error
       throw error
@@ -3461,7 +3789,8 @@ public struct FetchAll<Element: Sendable>: Sendable {
         code: .implementationFailed,
         operation: "subscribe FetchAll",
         message: "No Instant query has been configured for this fetch wrapper.",
-        recovery: "Initialize @FetchAll with an InstantEntityQuery, or pass a query to subscribe(_:using:)."
+        recovery:
+          "Initialize @FetchAll with an InstantEntityQuery, or pass a query to subscribe(_:using:)."
       )
     }
 
@@ -3594,7 +3923,11 @@ extension FetchAll where Element: InstantValueDecodable & InstantValueRepresenta
     _ field: InstantAttributePath<Entity, Element>,
     from query: InstantEntityQuery<Entity> = Entity.query
   ) {
-    self.storage = FetchStorage(value: wrappedValue)
+    let storage = FetchStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
     self.operations = FetchOperationStorage(Self.scalarOperations(for: query, selecting: field))
   }
 
@@ -3812,8 +4145,13 @@ extension FetchAll {
     _ field: InstantAttributePath<Entity, FieldValue>,
     from query: InstantEntityQuery<Entity> = Entity.query
   ) where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
-    self.storage = FetchStorage(value: wrappedValue)
-    self.operations = FetchOperationStorage(Self.optionalScalarOperations(for: query, selecting: field))
+    let storage = FetchStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
+    self.operations = FetchOperationStorage(
+      Self.optionalScalarOperations(for: query, selecting: field))
   }
 
   #if canImport(SwiftUI)
@@ -3849,7 +4187,8 @@ extension FetchAll {
   public func load<Entity: InstantEntityModel, FieldValue>(
     _ field: InstantAttributePath<Entity, FieldValue>,
     from query: InstantEntityQuery<Entity> = Entity.query
-  ) async throws where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+  ) async throws
+  where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
     @Dependency(\.defaultInstantSwiftData) var client
     try await load(field, from: query, using: client)
   }
@@ -3858,7 +4197,8 @@ extension FetchAll {
     _ field: InstantAttributePath<Entity, FieldValue>,
     from query: InstantEntityQuery<Entity> = Entity.query,
     using client: InstantSwiftDataClient
-  ) async throws where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+  ) async throws
+  where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
     configureOptionalScalarQuery(query, selecting: field)
     try await load(using: client)
   }
@@ -3866,7 +4206,8 @@ extension FetchAll {
   public func load<Entity: InstantEntityModel, FieldValue>(
     _ query: InstantEntityQuery<Entity>,
     selecting field: InstantAttributePath<Entity, FieldValue>
-  ) async throws where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+  ) async throws
+  where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
     @Dependency(\.defaultInstantSwiftData) var client
     try await load(query, selecting: field, using: client)
   }
@@ -3875,7 +4216,8 @@ extension FetchAll {
     _ query: InstantEntityQuery<Entity>,
     selecting field: InstantAttributePath<Entity, FieldValue>,
     using client: InstantSwiftDataClient
-  ) async throws where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+  ) async throws
+  where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
     try await load(field, from: query, using: client)
   }
 
@@ -3919,7 +4261,8 @@ extension FetchAll {
   public func task<Entity: InstantEntityModel, FieldValue>(
     _ field: InstantAttributePath<Entity, FieldValue>,
     from query: InstantEntityQuery<Entity> = Entity.query
-  ) async throws where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+  ) async throws
+  where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
     @Dependency(\.defaultInstantSwiftData) var client
     try await task(field, from: query, using: client)
   }
@@ -3928,7 +4271,8 @@ extension FetchAll {
     _ field: InstantAttributePath<Entity, FieldValue>,
     from query: InstantEntityQuery<Entity> = Entity.query,
     using client: InstantSwiftDataClient
-  ) async throws where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+  ) async throws
+  where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
     configureOptionalScalarQuery(query, selecting: field)
     try await task(using: client)
   }
@@ -3936,7 +4280,8 @@ extension FetchAll {
   public func task<Entity: InstantEntityModel, FieldValue>(
     _ query: InstantEntityQuery<Entity>,
     selecting field: InstantAttributePath<Entity, FieldValue>
-  ) async throws where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+  ) async throws
+  where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
     @Dependency(\.defaultInstantSwiftData) var client
     try await task(query, selecting: field, using: client)
   }
@@ -3945,7 +4290,8 @@ extension FetchAll {
     _ query: InstantEntityQuery<Entity>,
     selecting field: InstantAttributePath<Entity, FieldValue>,
     using client: InstantSwiftDataClient
-  ) async throws where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+  ) async throws
+  where Element == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
     try await task(field, from: query, using: client)
   }
 
@@ -4037,8 +4383,13 @@ extension FetchAll {
 @dynamicMemberLookup
 @propertyWrapper
 public struct FetchOne<Value: Sendable>: Sendable {
-  private let storage: FetchStorage<Value>
+  private let storageReference: LockedValueStorage<FetchStorage<Value>>
+  #if canImport(SwiftUI)
+    @StateObject private var storageObserver: FetchStorage<Value>
+  #endif
   private let operations: FetchOperationStorage<Value>
+
+  private var storage: FetchStorage<Value> { storageReference.value }
 
   public var wrappedValue: Value {
     get { storage.wrappedValue }
@@ -4076,7 +4427,11 @@ public struct FetchOne<Value: Sendable>: Sendable {
 
   @_disfavoredOverload
   public init(wrappedValue: Value) {
-    self.storage = FetchStorage(value: wrappedValue)
+    let storage = FetchStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
     self.operations = FetchOperationStorage()
   }
 
@@ -4112,7 +4467,8 @@ public struct FetchOne<Value: Sendable>: Sendable {
         code: .implementationFailed,
         operation: "load FetchOne",
         message: "No Instant query has been configured for this fetch wrapper.",
-        recovery: "Initialize @FetchOne with an InstantEntityQuery, or pass a query to load(_:using:)."
+        recovery:
+          "Initialize @FetchOne with an InstantEntityQuery, or pass a query to load(_:using:)."
       )
       loadError = error
       throw error
@@ -4175,7 +4531,8 @@ public struct FetchOne<Value: Sendable>: Sendable {
         code: .implementationFailed,
         operation: "subscribe FetchOne",
         message: "No Instant query has been configured for this fetch wrapper.",
-        recovery: "Initialize @FetchOne with an InstantEntityQuery, or pass a query to subscribe(_:using:)."
+        recovery:
+          "Initialize @FetchOne with an InstantEntityQuery, or pass a query to subscribe(_:using:)."
       )
     }
 
@@ -4238,7 +4595,11 @@ extension FetchOne where Value: InstantEntityModel {
     wrappedValue: Value,
     _ query: InstantEntityQuery<Value>
   ) {
-    self.storage = FetchStorage(value: wrappedValue)
+    let storage = FetchStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
     self.operations = FetchOperationStorage(Self.requiredOperations(for: query))
   }
 
@@ -4344,7 +4705,11 @@ extension FetchOne {
     wrappedValue: Entity? = nil,
     _ query: InstantEntityQuery<Entity>
   ) where Value == Entity? {
-    self.storage = FetchStorage(value: wrappedValue)
+    let storage = FetchStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
     self.operations = FetchOperationStorage(Self.optionalOperations(for: query))
   }
 
@@ -4491,7 +4856,11 @@ extension FetchOne where Value: InstantValueDecodable & InstantValueRepresentabl
     _ field: InstantAttributePath<Entity, Value>,
     from query: InstantEntityQuery<Entity> = Entity.query
   ) {
-    self.storage = FetchStorage(value: wrappedValue)
+    let storage = FetchStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
     self.operations = FetchOperationStorage(Self.scalarOperations(for: query, selecting: field))
   }
 
@@ -4646,7 +5015,8 @@ extension FetchOne where Value: InstantValueDecodable & InstantValueRepresentabl
         )
       },
       subscribe: { client in
-        await scalarSubscription(client: client, query: query, selectedQuery: selectedQuery, field: field)
+        await scalarSubscription(
+          client: client, query: query, selectedQuery: selectedQuery, field: field)
       }
     )
   }
@@ -4717,7 +5087,8 @@ extension FetchOne where Value: InstantValueDecodable & InstantValueRepresentabl
   }
 }
 
-extension FetchOne where
+extension FetchOne
+where
   Value: ExpressibleByNilLiteral & InstantValueDecodable & InstantValueRepresentable
 {
   public init<Entity: InstantEntityModel>(
@@ -4761,8 +5132,13 @@ extension FetchOne {
     _ field: InstantAttributePath<Entity, FieldValue>,
     from query: InstantEntityQuery<Entity> = Entity.query
   ) where Value == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
-    self.storage = FetchStorage(value: wrappedValue)
-    self.operations = FetchOperationStorage(Self.optionalScalarOperations(for: query, selecting: field))
+    let storage = FetchStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
+    self.operations = FetchOperationStorage(
+      Self.optionalScalarOperations(for: query, selecting: field))
   }
 
   #if canImport(SwiftUI)
@@ -4798,7 +5174,8 @@ extension FetchOne {
   public func load<Entity: InstantEntityModel, FieldValue>(
     _ field: InstantAttributePath<Entity, FieldValue>,
     from query: InstantEntityQuery<Entity> = Entity.query
-  ) async throws where Value == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+  ) async throws
+  where Value == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
     @Dependency(\.defaultInstantSwiftData) var client
     try await load(field, from: query, using: client)
   }
@@ -4807,7 +5184,8 @@ extension FetchOne {
     _ field: InstantAttributePath<Entity, FieldValue>,
     from query: InstantEntityQuery<Entity> = Entity.query,
     using client: InstantSwiftDataClient
-  ) async throws where Value == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+  ) async throws
+  where Value == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
     configureOptionalScalarQuery(query, selecting: field)
     try await load(using: client)
   }
@@ -4815,7 +5193,8 @@ extension FetchOne {
   public func load<Entity: InstantEntityModel, FieldValue>(
     _ query: InstantEntityQuery<Entity>,
     selecting field: InstantAttributePath<Entity, FieldValue>
-  ) async throws where Value == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+  ) async throws
+  where Value == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
     @Dependency(\.defaultInstantSwiftData) var client
     try await load(query, selecting: field, using: client)
   }
@@ -4824,7 +5203,8 @@ extension FetchOne {
     _ query: InstantEntityQuery<Entity>,
     selecting field: InstantAttributePath<Entity, FieldValue>,
     using client: InstantSwiftDataClient
-  ) async throws where Value == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+  ) async throws
+  where Value == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
     try await load(field, from: query, using: client)
   }
 
@@ -4868,7 +5248,8 @@ extension FetchOne {
   public func task<Entity: InstantEntityModel, FieldValue>(
     _ field: InstantAttributePath<Entity, FieldValue>,
     from query: InstantEntityQuery<Entity> = Entity.query
-  ) async throws where Value == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+  ) async throws
+  where Value == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
     @Dependency(\.defaultInstantSwiftData) var client
     try await task(field, from: query, using: client)
   }
@@ -4877,7 +5258,8 @@ extension FetchOne {
     _ field: InstantAttributePath<Entity, FieldValue>,
     from query: InstantEntityQuery<Entity> = Entity.query,
     using client: InstantSwiftDataClient
-  ) async throws where Value == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+  ) async throws
+  where Value == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
     configureOptionalScalarQuery(query, selecting: field)
     try await task(using: client)
   }
@@ -4885,7 +5267,8 @@ extension FetchOne {
   public func task<Entity: InstantEntityModel, FieldValue>(
     _ query: InstantEntityQuery<Entity>,
     selecting field: InstantAttributePath<Entity, FieldValue>
-  ) async throws where Value == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+  ) async throws
+  where Value == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
     @Dependency(\.defaultInstantSwiftData) var client
     try await task(query, selecting: field, using: client)
   }
@@ -4894,7 +5277,8 @@ extension FetchOne {
     _ query: InstantEntityQuery<Entity>,
     selecting field: InstantAttributePath<Entity, FieldValue>,
     using client: InstantSwiftDataClient
-  ) async throws where Value == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
+  ) async throws
+  where Value == FieldValue?, FieldValue: InstantValueDecodable & InstantValueRepresentable {
     try await task(field, from: query, using: client)
   }
 
@@ -5000,8 +5384,10 @@ public protocol InstantFetchKeyRequest: Sendable {
   func subscribe(using client: InstantSwiftDataClient) async throws -> FetchSubscription<Value>
 }
 
-public extension InstantFetchKeyRequest {
-  func subscribe(using client: InstantSwiftDataClient) async throws -> FetchSubscription<Value> {
+extension InstantFetchKeyRequest {
+  public func subscribe(using client: InstantSwiftDataClient) async throws -> FetchSubscription<
+    Value
+  > {
     throw InstantError(
       code: .implementationFailed,
       operation: "subscribe Fetch",
@@ -5015,8 +5401,13 @@ public extension InstantFetchKeyRequest {
 @dynamicMemberLookup
 @propertyWrapper
 public struct Fetch<Value: Sendable>: Sendable {
-  private let storage: FetchStorage<Value>
+  private let storageReference: LockedValueStorage<FetchStorage<Value>>
+  #if canImport(SwiftUI)
+    @StateObject private var storageObserver: FetchStorage<Value>
+  #endif
   private let operations: FetchOperationStorage<Value>
+
+  private var storage: FetchStorage<Value> { storageReference.value }
 
   public var wrappedValue: Value {
     get { storage.wrappedValue }
@@ -5053,7 +5444,11 @@ public struct Fetch<Value: Sendable>: Sendable {
   #endif
 
   public init(wrappedValue: Value) {
-    self.storage = FetchStorage(value: wrappedValue)
+    let storage = FetchStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
     self.operations = FetchOperationStorage()
   }
 
@@ -5071,7 +5466,11 @@ public struct Fetch<Value: Sendable>: Sendable {
     load: @escaping @Sendable (InstantSwiftDataClient) async throws -> Value,
     subscribe: (@Sendable (InstantSwiftDataClient) async throws -> FetchSubscription<Value>)? = nil
   ) {
-    self.storage = FetchStorage(value: wrappedValue)
+    let storage = FetchStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
     self.operations = FetchOperationStorage(FetchOperations(load: load, subscribe: subscribe))
   }
 
@@ -5079,7 +5478,8 @@ public struct Fetch<Value: Sendable>: Sendable {
     public init(
       wrappedValue: Value,
       load: @escaping @Sendable (InstantSwiftDataClient) async throws -> Value,
-      subscribe: (@Sendable (InstantSwiftDataClient) async throws -> FetchSubscription<Value>)? = nil,
+      subscribe: (@Sendable (InstantSwiftDataClient) async throws -> FetchSubscription<Value>)? =
+        nil,
       animation: Animation?
     ) {
       self.init(wrappedValue: wrappedValue, load: load, subscribe: subscribe)
@@ -5271,7 +5671,11 @@ extension Fetch {
     wrappedValue: Value,
     _ request: Request
   ) where Request.Value == Value {
-    self.storage = FetchStorage(value: wrappedValue)
+    let storage = FetchStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
     self.operations = FetchOperationStorage(Self.operations(for: request))
   }
 
@@ -5410,7 +5814,12 @@ extension Fetch {
 
 @propertyWrapper
 public struct ConnectionStatus: Sendable {
-  private let storage: FetchStorage<InstantConnectionStatus>
+  private let storageReference: LockedValueStorage<FetchStorage<InstantConnectionStatus>>
+  #if canImport(SwiftUI)
+    @StateObject private var storageObserver: FetchStorage<InstantConnectionStatus>
+  #endif
+
+  private var storage: FetchStorage<InstantConnectionStatus> { storageReference.value }
 
   public var wrappedValue: InstantConnectionStatus {
     get { storage.wrappedValue }
@@ -5437,11 +5846,19 @@ public struct ConnectionStatus: Sendable {
   #endif
 
   public init() {
-    self.storage = FetchStorage(value: Self.defaultConnectingStatus)
+    let storage = FetchStorage(value: Self.defaultConnectingStatus)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
   }
 
   public init(wrappedValue: InstantConnectionStatus) {
-    self.storage = FetchStorage(value: wrappedValue)
+    let storage = FetchStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
   }
 
   public var projectedValue: Self {
@@ -5558,7 +5975,12 @@ public struct ConnectionStatus: Sendable {
 
 @propertyWrapper
 public struct AuthSession: Sendable {
-  private let storage: FetchStorage<InstantAuthSession?>
+  private let storageReference: LockedValueStorage<FetchStorage<InstantAuthSession?>>
+  #if canImport(SwiftUI)
+    @StateObject private var storageObserver: FetchStorage<InstantAuthSession?>
+  #endif
+
+  private var storage: FetchStorage<InstantAuthSession?> { storageReference.value }
 
   public var wrappedValue: InstantAuthSession? {
     get { storage.wrappedValue }
@@ -5585,7 +6007,11 @@ public struct AuthSession: Sendable {
   #endif
 
   public init(wrappedValue: InstantAuthSession? = nil) {
-    self.storage = FetchStorage(value: wrappedValue)
+    let storage = FetchStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
   }
 
   public var projectedValue: Self {
@@ -5603,7 +6029,8 @@ public struct AuthSession: Sendable {
         code: .authFailed,
         operation: "access AuthSession user",
         message: "useUser must be used within an auth-protected route",
-        recovery: "Load or subscribe to @AuthSession in an auth-protected flow before requiring a user."
+        recovery:
+          "Load or subscribe to @AuthSession in an auth-protected flow before requiring a user."
       )
     }
     return session
@@ -5700,8 +6127,13 @@ public struct AuthSession: Sendable {
 
 @propertyWrapper
 public struct RoomPresence: Sendable {
-  private let storage: FetchStorage<[InstantRoomPresenceMember]>
+  private let storageReference: LockedValueStorage<FetchStorage<[InstantRoomPresenceMember]>>
+  #if canImport(SwiftUI)
+    @StateObject private var storageObserver: FetchStorage<[InstantRoomPresenceMember]>
+  #endif
   private let room: LockedValueStorage<InstantRoomHandle?>
+
+  private var storage: FetchStorage<[InstantRoomPresenceMember]> { storageReference.value }
 
   public var wrappedValue: [InstantRoomPresenceMember] {
     get { storage.wrappedValue }
@@ -5728,27 +6160,47 @@ public struct RoomPresence: Sendable {
   #endif
 
   public init(wrappedValue: [InstantRoomPresenceMember] = []) {
-    self.storage = FetchStorage(value: wrappedValue)
+    let storage = FetchStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
     self.room = LockedValueStorage(nil)
   }
 
   public init(_ type: String, _ id: String) {
-    self.storage = FetchStorage(value: [])
+    let storage = FetchStorage<[InstantRoomPresenceMember]>(value: [])
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
     self.room = LockedValueStorage(InstantRoomHandle(type: type, id: id))
   }
 
   public init(room: InstantRoomHandle) {
-    self.storage = FetchStorage(value: [])
+    let storage = FetchStorage<[InstantRoomPresenceMember]>(value: [])
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
     self.room = LockedValueStorage(room)
   }
 
   public init(wrappedValue: [InstantRoomPresenceMember], _ type: String, _ id: String) {
-    self.storage = FetchStorage(value: wrappedValue)
+    let storage = FetchStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
     self.room = LockedValueStorage(InstantRoomHandle(type: type, id: id))
   }
 
   public init(wrappedValue: [InstantRoomPresenceMember], room: InstantRoomHandle) {
-    self.storage = FetchStorage(value: wrappedValue)
+    let storage = FetchStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
     self.room = LockedValueStorage(room)
   }
 
@@ -5979,8 +6431,13 @@ private struct RoomTopicMessagesConfiguration: Sendable {
 
 @propertyWrapper
 public struct RoomTopicMessages: Sendable {
-  private let storage: FetchStorage<[InstantRoomTopicMessage]>
+  private let storageReference: LockedValueStorage<FetchStorage<[InstantRoomTopicMessage]>>
+  #if canImport(SwiftUI)
+    @StateObject private var storageObserver: FetchStorage<[InstantRoomTopicMessage]>
+  #endif
   private let configuration: LockedValueStorage<RoomTopicMessagesConfiguration>
+
+  private var storage: FetchStorage<[InstantRoomTopicMessage]> { storageReference.value }
 
   public var wrappedValue: [InstantRoomTopicMessage] {
     get { storage.wrappedValue }
@@ -6007,14 +6464,22 @@ public struct RoomTopicMessages: Sendable {
   #endif
 
   public init(wrappedValue: [InstantRoomTopicMessage] = []) {
-    self.storage = FetchStorage(value: wrappedValue)
+    let storage = FetchStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
     self.configuration = LockedValueStorage(
       RoomTopicMessagesConfiguration(room: nil, topic: nil, limit: nil)
     )
   }
 
   public init(_ type: String, _ id: String, _ topic: String, limit: Int? = nil) {
-    self.storage = FetchStorage(value: [])
+    let storage = FetchStorage<[InstantRoomTopicMessage]>(value: [])
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
     self.configuration = LockedValueStorage(
       RoomTopicMessagesConfiguration(
         room: InstantRoomHandle(type: type, id: id),
@@ -6025,7 +6490,11 @@ public struct RoomTopicMessages: Sendable {
   }
 
   public init(room: InstantRoomHandle, topic: String, limit: Int? = nil) {
-    self.storage = FetchStorage(value: [])
+    let storage = FetchStorage<[InstantRoomTopicMessage]>(value: [])
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
     self.configuration = LockedValueStorage(
       RoomTopicMessagesConfiguration(room: room, topic: topic, limit: limit)
     )
@@ -6038,7 +6507,11 @@ public struct RoomTopicMessages: Sendable {
     _ topic: String,
     limit: Int? = nil
   ) {
-    self.storage = FetchStorage(value: wrappedValue)
+    let storage = FetchStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
     self.configuration = LockedValueStorage(
       RoomTopicMessagesConfiguration(
         room: InstantRoomHandle(type: type, id: id),
@@ -6054,7 +6527,11 @@ public struct RoomTopicMessages: Sendable {
     topic: String,
     limit: Int? = nil
   ) {
-    self.storage = FetchStorage(value: wrappedValue)
+    let storage = FetchStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
     self.configuration = LockedValueStorage(
       RoomTopicMessagesConfiguration(room: room, topic: topic, limit: limit)
     )
@@ -6372,7 +6849,12 @@ public struct RoomTopicMessages: Sendable {
 
 @propertyWrapper
 public struct StoredFiles: Sendable {
-  private let storage: FetchStorage<[InstantStoredFile]>
+  private let storageReference: LockedValueStorage<FetchStorage<[InstantStoredFile]>>
+  #if canImport(SwiftUI)
+    @StateObject private var storageObserver: FetchStorage<[InstantStoredFile]>
+  #endif
+
+  private var storage: FetchStorage<[InstantStoredFile]> { storageReference.value }
 
   public var wrappedValue: [InstantStoredFile] {
     get { storage.wrappedValue }
@@ -6399,7 +6881,11 @@ public struct StoredFiles: Sendable {
   #endif
 
   public init(wrappedValue: [InstantStoredFile] = []) {
-    self.storage = FetchStorage(value: wrappedValue)
+    let storage = FetchStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
   }
 
   public var projectedValue: Self {
@@ -6540,8 +7026,13 @@ private final class StreamChunksConfigurationStorage: @unchecked Sendable {
 
 @propertyWrapper
 public struct StreamChunks: Sendable {
-  private let storage: FetchStorage<[InstantStreamChunk]>
+  private let storageReference: LockedValueStorage<FetchStorage<[InstantStreamChunk]>>
+  #if canImport(SwiftUI)
+    @StateObject private var storageObserver: FetchStorage<[InstantStreamChunk]>
+  #endif
   private let configuration: StreamChunksConfigurationStorage
+
+  private var storage: FetchStorage<[InstantStreamChunk]> { storageReference.value }
 
   public var wrappedValue: [InstantStreamChunk] {
     get { storage.wrappedValue }
@@ -6568,7 +7059,11 @@ public struct StreamChunks: Sendable {
   #endif
 
   public init(wrappedValue: [InstantStreamChunk] = []) {
-    self.storage = FetchStorage(value: wrappedValue)
+    let storage = FetchStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
     self.configuration = StreamChunksConfigurationStorage(
       streamID: nil,
       limit: nil,
@@ -6577,7 +7072,11 @@ public struct StreamChunks: Sendable {
   }
 
   public init(_ streamID: String, limit: Int? = nil, afterIndex: Int64? = nil) {
-    self.storage = FetchStorage(value: [])
+    let storage = FetchStorage<[InstantStreamChunk]>(value: [])
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
     self.configuration = StreamChunksConfigurationStorage(
       streamID: streamID,
       limit: limit,
@@ -6591,7 +7090,11 @@ public struct StreamChunks: Sendable {
     limit: Int? = nil,
     afterIndex: Int64? = nil
   ) {
-    self.storage = FetchStorage(value: wrappedValue)
+    let storage = FetchStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
     self.configuration = StreamChunksConfigurationStorage(
       streamID: streamID,
       limit: limit,
@@ -6829,14 +7332,20 @@ public struct StreamChunks: Sendable {
       code: .validationFailed,
       operation: operation,
       message: "Stream chunk after-index must be greater than or equal to 0.",
-      recovery: "Pass a previously emitted chunk index, or omit afterIndex to observe every local chunk."
+      recovery:
+        "Pass a previously emitted chunk index, or omit afterIndex to observe every local chunk."
     )
   }
 }
 
 @propertyWrapper
 public struct Shares: Sendable {
-  private let storage: FetchStorage<[InstantShareSnapshot]>
+  private let storageReference: LockedValueStorage<FetchStorage<[InstantShareSnapshot]>>
+  #if canImport(SwiftUI)
+    @StateObject private var storageObserver: FetchStorage<[InstantShareSnapshot]>
+  #endif
+
+  private var storage: FetchStorage<[InstantShareSnapshot]> { storageReference.value }
 
   public var wrappedValue: [InstantShareSnapshot] {
     get { storage.wrappedValue }
@@ -6863,7 +7372,11 @@ public struct Shares: Sendable {
   #endif
 
   public init(wrappedValue: [InstantShareSnapshot] = []) {
-    self.storage = FetchStorage(value: wrappedValue)
+    let storage = FetchStorage(value: wrappedValue)
+    self.storageReference = LockedValueStorage(storage)
+    #if canImport(SwiftUI)
+      self._storageObserver = StateObject(wrappedValue: storage)
+    #endif
   }
 
   public var projectedValue: Self {
@@ -6965,6 +7478,48 @@ public struct Shares: Sendable {
     )
   }
 }
+
+#if canImport(SwiftUI)
+  @MainActor
+  extension InfiniteQuery: DynamicProperty {
+    public mutating func update() {
+      storageReference.value = storageObserver
+    }
+  }
+  @MainActor
+  extension FetchAll: DynamicProperty {
+    public mutating func update() {
+      storageReference.value = storageObserver
+    }
+  }
+  @MainActor extension FetchOne: DynamicProperty {
+    public mutating func update() { storageReference.value = storageObserver }
+  }
+  @MainActor extension Fetch: DynamicProperty {
+    public mutating func update() { storageReference.value = storageObserver }
+  }
+  @MainActor extension ConnectionStatus: DynamicProperty {
+    public mutating func update() { storageReference.value = storageObserver }
+  }
+  @MainActor extension AuthSession: DynamicProperty {
+    public mutating func update() { storageReference.value = storageObserver }
+  }
+  @MainActor extension RoomPresence: DynamicProperty {
+    public mutating func update() { storageReference.value = storageObserver }
+  }
+  @MainActor extension RoomTopicMessages: DynamicProperty {
+    public mutating func update() { storageReference.value = storageObserver }
+  }
+  @MainActor extension StoredFiles: DynamicProperty {
+    public mutating func update() { storageReference.value = storageObserver }
+  }
+  @MainActor extension StreamChunks: DynamicProperty {
+    public mutating func update() { storageReference.value = storageObserver }
+  }
+  @MainActor extension Shares: DynamicProperty {
+    public mutating func update() { storageReference.value = storageObserver }
+  }
+#endif
 
 // SAFETY: lifecycle task access is serialized by `lock`; value access delegates
 // to the wrapper's already thread-safe fetch storage.

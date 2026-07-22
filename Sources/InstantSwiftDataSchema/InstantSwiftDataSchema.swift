@@ -926,6 +926,14 @@ public enum InstantSchemaExamples {
         isIndexed: true
       ),
       InstantAttribute(
+        id: "remindersLists/coverFileID",
+        namespace: ReminderExample.listsNamespace,
+        name: "coverFileID",
+        valueType: .string,
+        isRequired: false,
+        isIndexed: true
+      ),
+      InstantAttribute(
         id: "remindersLists/position",
         namespace: ReminderExample.listsNamespace,
         name: "position",

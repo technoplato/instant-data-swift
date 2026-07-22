@@ -916,7 +916,7 @@ public enum InstantSwiftDataLocalBenchmarks {
       suite: localTodosSuite,
       appID: appID,
       cachePath: cacheDirectory.path,
-      transport: "not-implemented-local-cache-only",
+      transport: "local-cache-only",
       iterations: iterations,
       timestampMs: timestamp().milliseconds,
       ok: true,

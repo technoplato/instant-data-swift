@@ -2840,7 +2840,7 @@ struct InstantSwiftDataCLI {
       let summary = CacheInspectOutput(
         appID: context.appID,
         cachePath: context.cacheURL.path,
-        transport: "not-implemented-local-cache-only",
+        transport: "local-cache-only",
         attributeCount: snapshot.store.attributes.count,
         tripleCount: snapshot.store.triples.count,
         queryCacheCount: queryCache.count,
@@ -3004,7 +3004,7 @@ struct InstantSwiftDataCLI {
       let payload = LocalIDOutput(
         appID: context.appID,
         cachePath: context.cacheURL.path,
-        transport: "not-implemented-local-cache-only",
+        transport: "local-cache-only",
         name: name,
         id: id
       )
@@ -3753,7 +3753,7 @@ struct InstantSwiftDataCLI {
     let payload = LocalIDsOutput(
       appID: context.appID,
       cachePath: context.cacheURL.path,
-      transport: "not-implemented-local-cache-only",
+      transport: "local-cache-only",
       localIDCount: localIDs.count,
       localIDs: localIDs
     )
@@ -3809,7 +3809,7 @@ struct InstantSwiftDataCLI {
     let payload = CacheAttributesOutput(
       appID: context.appID,
       cachePath: context.cacheURL.path,
-      transport: "not-implemented-local-cache-only",
+      transport: "local-cache-only",
       namespace: namespace,
       attributeCount: attributes.count,
       attributes: attributes
@@ -3869,7 +3869,7 @@ struct InstantSwiftDataCLI {
     let payload = CacheTriplesOutput(
       appID: context.appID,
       cachePath: context.cacheURL.path,
-      transport: "not-implemented-local-cache-only",
+      transport: "local-cache-only",
       namespace: namespace,
       tripleCount: triples.count,
       triples: triples
@@ -3928,7 +3928,7 @@ struct InstantSwiftDataCLI {
     let summary = OutboxInspectOutput(
       appID: context.appID,
       cachePath: context.cacheURL.path,
-      transport: "not-implemented-local-cache-only",
+      transport: "local-cache-only",
       pendingMutationCount: mutations.filter { $0.status == .pending }.count,
       mutationCount: mutations.count,
       mutations: mutations
@@ -3987,7 +3987,7 @@ struct InstantSwiftDataCLI {
       appID: context.appID,
       cachePath: context.cacheURL.path,
       event: "transport",
-      transport: "not-implemented-local-cache-only",
+      transport: "local-cache-only",
       includeFailed: includeFailed,
       mutationCount: mutations.count,
       txStepCount: txStepCount,
@@ -4486,7 +4486,7 @@ struct InstantSwiftDataCLI {
       appID: context.appID,
       cachePath: context.cacheURL.path,
       event: event,
-      transport: ephemeralApp?.transport ?? "not-implemented-local-cache-only",
+      transport: ephemeralApp?.transport ?? "local-cache-only",
       selectionSource: context.appIDSource.rawValue,
       title: ephemeralApp?.title,
       isLocalOnly: ephemeralApp?.isLocalOnly,
@@ -4533,7 +4533,7 @@ struct InstantSwiftDataCLI {
       appID: context.appID,
       cachePath: context.cacheURL.path,
       event: event,
-      transport: "not-implemented-local-cache-only",
+      transport: "local-cache-only",
       processedTransactionID: state.processedTransactionID
     )
 
@@ -9331,7 +9331,7 @@ struct InstantSwiftDataCLI {
       fileName: fileName,
       path: path,
       byteCount: data.count,
-      transport: "not-implemented-local-cache-only",
+      transport: "local-cache-only",
       contents: path == nil ? contents : nil
     )
 
@@ -9408,7 +9408,7 @@ struct InstantSwiftDataCLI {
     let summary = ScaffoldOutput(
       example: options.example,
       directory: directoryURL.path,
-      transport: "not-implemented-local-cache-only",
+      transport: "local-cache-only",
       files: files
     )
 
@@ -9525,8 +9525,8 @@ struct InstantSwiftDataCLI {
     swift run instant-swift-data perms verify --example todos --from instant.perms.ts --json
     ```
 
-    The current transport is intentionally `not-implemented-local-cache-only`.
-    It proves local schema/perms generation and CLI workflows, not a pushed Instant app.
+    This scaffold defaults to `local-cache-only` CLI workflows.
+    Set INSTANT_SWIFT_DATA_TRANSPORT=live with an Instant app id for network sync.
     Re-run `instant-swift-data init ... --force` to replace generated files.
 
     """
@@ -9666,7 +9666,7 @@ struct InstantSwiftDataCLI {
       appID: result.appID,
       cachePath: result.cacheURL.path,
       event: "local-todos",
-      transport: "not-implemented-local-cache-only",
+      transport: "local-cache-only",
       ok: result.evidence.allSatisfy { $0.ok },
       evidenceCount: result.evidence.count,
       events: result.evidence.map(\.event),
@@ -9702,7 +9702,7 @@ struct InstantSwiftDataCLI {
       appID: result.appID,
       cachePath: result.cacheURL.path,
       event: "local-integrations",
-      transport: "not-implemented-local-cache-only",
+      transport: "local-cache-only",
       ok: result.evidence.allSatisfy { $0.ok },
       evidenceCount: result.evidence.count,
       events: result.evidence.map(\.event),
@@ -9746,7 +9746,7 @@ struct InstantSwiftDataCLI {
       appID: result.appID,
       cachePath: result.cacheURL.path,
       event: "reminders",
-      transport: "not-implemented-local-cache-only",
+      transport: "local-cache-only",
       ok: result.evidence.allSatisfy { $0.ok },
       evidenceCount: result.evidence.count,
       events: result.evidence.map(\.event),
@@ -9844,7 +9844,7 @@ struct InstantSwiftDataCLI {
       appID: result.appID,
       cachePath: result.cacheURL.path,
       event: "cloudkit-demo",
-      transport: "not-implemented-local-cache-only",
+      transport: "local-cache-only",
       ok: result.evidence.allSatisfy { $0.ok },
       evidenceCount: result.evidence.count,
       events: result.evidence.map(\.event),
@@ -9985,7 +9985,7 @@ struct InstantSwiftDataCLI {
       appID: result.appID,
       cachePath: result.cacheURL.path,
       event: "typed-drafts",
-      transport: "not-implemented-local-cache-only",
+      transport: "local-cache-only",
       ok: result.evidence.allSatisfy { $0.ok },
       evidenceCount: result.evidence.count,
       events: result.evidence.map(\.event),
@@ -10052,7 +10052,7 @@ struct InstantSwiftDataCLI {
       appID: result.appID,
       cachePath: result.cacheURL.path,
       event: "platform-adapters",
-      transport: "not-implemented-local-cache-only",
+      transport: "local-cache-only",
       ok: result.evidence.allSatisfy { $0.ok },
       evidenceCount: result.evidence.count,
       events: result.evidence.map(\.event),
@@ -10130,7 +10130,7 @@ struct InstantSwiftDataCLI {
       appID: result.appID,
       cachePath: result.cacheURL.path,
       event: "syncups-recording",
-      transport: "not-implemented-local-cache-only",
+      transport: "local-cache-only",
       ok: result.evidence.allSatisfy { $0.ok },
       evidenceCount: result.evidence.count,
       events: result.evidence.map(\.event),
@@ -11365,7 +11365,7 @@ private struct CLIContext: Sendable {
 
   var transportLabel: String {
     runtime.configuration.liveTransport == nil
-      ? "not-implemented-local-cache-only"
+      ? "local-cache-only"
       : InstantRuntimeTransportKind.webSocket.rawValue
   }
 

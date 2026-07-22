@@ -4,24 +4,42 @@ import InstantSwiftData
 
 public struct RemindersV3AppConfiguration: Hashable, Sendable {
   public var appID: String
+  public var apiURI: URL
+  public var websocketURI: URL
   public var persistenceURL: URL?
   public var enablesLiveSync: Bool
 
-  public init(appID: String, persistenceURL: URL? = nil, enablesLiveSync: Bool) {
+  public init(
+    appID: String,
+    apiURI: URL = InstantRuntimeConfiguration.defaultAPIURI,
+    websocketURI: URL = InstantRuntimeConfiguration.defaultWebSocketURI,
+    persistenceURL: URL? = nil,
+    enablesLiveSync: Bool
+  ) {
     self.appID = appID
+    self.apiURI = apiURI
+    self.websocketURI = websocketURI
     self.persistenceURL = persistenceURL
     self.enablesLiveSync = enablesLiveSync
   }
 
   public static func environment(
-    _ environment: [String: String] = ProcessInfo.processInfo.environment
+    _ environment: [String: String] = ProcessInfo.processInfo.environment,
+    bundledAppID: String? = Bundle.main.object(forInfoDictionaryKey: "InstantAppID") as? String
   ) -> Self {
-    let configuredAppID = environment["INSTANT_APP_ID"]?
-      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let configuredAppID = [environment["INSTANT_APP_ID"], bundledAppID]
+      .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .first { !$0.isEmpty }
     return Self(
-      appID: configuredAppID.flatMap { $0.isEmpty ? nil : $0 } ?? "reminders-v3-local",
+      appID: configuredAppID ?? "reminders-v3-local",
+      apiURI: environment["INSTANT_API_URI"]
+        .flatMap { URL(string: $0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        ?? InstantRuntimeConfiguration.defaultAPIURI,
+      websocketURI: environment["INSTANT_WEBSOCKET_URI"]
+        .flatMap { URL(string: $0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+        ?? InstantRuntimeConfiguration.defaultWebSocketURI,
       persistenceURL: environment["INSTANT_PERSISTENCE_PATH"].map(URL.init(fileURLWithPath:)),
-      enablesLiveSync: configuredAppID?.isEmpty == false
+      enablesLiveSync: configuredAppID != nil
     )
   }
 }
@@ -39,10 +57,48 @@ public struct RemindersV3AppConfiguration: Hashable, Sendable {
 
     public init(configuration: RemindersV3AppConfiguration) {
       self.configuration = configuration
+      InstantDiagnostics.shared.record(
+        .debug,
+        subsystem: "reminders-v3",
+        category: "bootstrap",
+        event: "bootstrap.model-created",
+        message: "Created the Reminders bootstrap model.",
+        metadata: [
+          "appID": configuration.appID,
+          "liveSync": String(configuration.enablesLiveSync),
+          "apiHost": configuration.apiURI.host ?? "none",
+          "websocketHost": configuration.websocketURI.host ?? "none",
+          "persistencePath": configuration.persistenceURL?.path ?? "default",
+        ]
+      )
     }
 
     public func startIfNeeded() {
-      guard client == nil, task == nil else { return }
+      guard client == nil, task == nil else {
+        InstantDiagnostics.shared.record(
+          .trace,
+          subsystem: "reminders-v3",
+          category: "bootstrap",
+          event: "bootstrap.start-skipped",
+          message: "Skipped duplicate bootstrap request.",
+          metadata: [
+            "hasClient": String(client != nil),
+            "hasTask": String(task != nil),
+          ]
+        )
+        return
+      }
+      InstantDiagnostics.shared.record(
+        .info,
+        subsystem: "reminders-v3",
+        category: "bootstrap",
+        event: "bootstrap.started",
+        message: "Starting the Reminders data stack.",
+        metadata: [
+          "appID": configuration.appID,
+          "liveSync": String(configuration.enablesLiveSync),
+        ]
+      )
       task = Task { @MainActor [weak self, configuration] in
         do {
           var dependencies = DependencyValues()
@@ -51,6 +107,8 @@ public struct RemindersV3AppConfiguration: Hashable, Sendable {
           }
           try await dependencies.bootstrapInstantSwiftData(
             appID: configuration.appID,
+            apiURI: configuration.apiURI,
+            websocketURI: configuration.websocketURI,
             persistenceURL: configuration.persistenceURL,
             initialAttributes: RemindersV3Schema.attributes
           )
@@ -58,15 +116,36 @@ public struct RemindersV3AppConfiguration: Hashable, Sendable {
           prepareDependencies { $0.defaultInstantSwiftData = client }
           self?.client = client
           self?.task = nil
+          InstantDiagnostics.shared.record(
+            .notice,
+            subsystem: "reminders-v3",
+            category: "bootstrap",
+            event: "bootstrap.completed",
+            message: "Reminders data stack is ready.",
+            metadata: [
+              "appID": configuration.appID,
+              "liveSync": String(configuration.enablesLiveSync),
+              "hasRuntime": String(client.runtime != nil),
+            ]
+          )
         } catch {
           self?.errorMessage = String(describing: error)
           self?.task = nil
+          InstantDiagnostics.shared.record(
+            error: error,
+            subsystem: "reminders-v3",
+            category: "bootstrap",
+            event: "bootstrap.failed",
+            message: "Reminders data stack failed to start.",
+            metadata: ["appID": configuration.appID]
+          )
         }
       }
     }
   }
 
   @MainActor
+  @available(iOS 17.0, macOS 14.0, *)
   public struct RemindersV3BootstrapScreen: View {
     @StateObject private var model: RemindersV3BootstrapModel
 
@@ -85,6 +164,24 @@ public struct RemindersV3AppConfiguration: Hashable, Sendable {
         }
       }
       .task { model.startIfNeeded() }
+      .onAppear {
+        InstantDiagnostics.shared.record(
+          .debug,
+          subsystem: "reminders-v3",
+          category: "ui",
+          event: "bootstrap-screen.appeared",
+          message: "Bootstrap screen appeared."
+        )
+      }
+      .onDisappear {
+        InstantDiagnostics.shared.record(
+          .debug,
+          subsystem: "reminders-v3",
+          category: "ui",
+          event: "bootstrap-screen.disappeared",
+          message: "Bootstrap screen disappeared."
+        )
+      }
     }
   }
 #endif

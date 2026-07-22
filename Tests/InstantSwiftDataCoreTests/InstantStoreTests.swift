@@ -7,6 +7,37 @@ import Testing
 @Suite(.serialized)
 struct InstantStoreTests {
   @Test
+  func persistenceFilesRestrictRefreshSessionsToTheCurrentUser() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let store = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await store.bootstrap()
+    try await store.saveAuthSession(
+      InstantAuthSession(
+        appID: "permissions-app",
+        userID: "user-1",
+        refreshToken: "private-refresh-token",
+        isGuest: true,
+        createdAt: InstantTimestamp(milliseconds: 1),
+        updatedAt: InstantTimestamp(milliseconds: 1)
+      ),
+      key: "permissions-app"
+    )
+
+    let fileManager = FileManager.default
+    let persistenceFiles = [
+      cacheURL,
+      URL(fileURLWithPath: cacheURL.path + "-wal"),
+      URL(fileURLWithPath: cacheURL.path + "-shm"),
+    ].filter { fileManager.fileExists(atPath: $0.path) }
+    #expect(!persistenceFiles.isEmpty)
+    for fileURL in persistenceFiles {
+      let attributes = try fileManager.attributesOfItem(atPath: fileURL.path)
+      let permissions = try #require(attributes[.posixPermissions] as? NSNumber)
+      expectNoDifference(permissions.intValue & 0o777, 0o600)
+    }
+  }
+
+  @Test
   func runtimePersistsTodosAndOutboxAcrossLaunches() async throws {
     let cacheURL = try temporaryCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
@@ -13691,6 +13722,93 @@ struct InstantStoreTests {
   }
 
   @Test
+  func automaticReconnectFailureRemainsRetryableAcrossRelaunchAndFlushesOfflineOutbox()
+    async throws
+  {
+    let cacheURL = try temporaryCacheURL()
+    let reconnectSleepCalls = LockIsolated(0)
+    var offlineConfiguration = InstantRuntimeConfiguration(
+      appID: "offline-relaunch-app",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      liveTransport: InstantLiveTransportClient { _ in
+        throw InstantError(
+          code: .networkFailed,
+          operation: "open test live session",
+          message: "The test network is offline.",
+          recovery: "Relaunch with a reachable transport."
+        )
+      }
+    )
+    offlineConfiguration.autoConnectLiveTransport = true
+    offlineConfiguration.liveReconnectSleep = { _ in
+      reconnectSleepCalls.withValue { $0 += 1 }
+      throw CancellationError()
+    }
+    let offlineRuntime = try await InstantRuntime.bootstrap(configuration: offlineConfiguration)
+
+    for _ in 0..<100 where reconnectSleepCalls.withValue({ $0 }) == 0 {
+      try await Task.sleep(nanoseconds: 10_000_000)
+    }
+    expectNoDifference(reconnectSleepCalls.withValue { $0 }, 1)
+    let offlineStatus = try await offlineRuntime.connectionStatus()
+    expectNoDifference(offlineStatus.state, .errored)
+    #expect(offlineStatus.lastErrorMessage?.contains("test network is offline") == true)
+
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    try await offlineRuntime.transact(
+      InstantStoreTransaction(
+        id: "tx-created-offline",
+        operations: TodoExample.createOperations(
+          id: "todo-created-offline",
+          text: "flush after relaunch",
+          createdAt: createdAt,
+          transactionID: "tx-created-offline"
+        )
+      ),
+      createdAt: createdAt
+    )
+    let offlinePendingIDs = await offlineRuntime.pendingMutations().map(\.id)
+    expectNoDifference(offlinePendingIDs, ["tx-created-offline"])
+
+    let onlineSession = PersistentTestLiveSession(appID: "offline-relaunch-app")
+    var onlineConfiguration = InstantRuntimeConfiguration(
+      appID: "offline-relaunch-app",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      liveTransport: InstantLiveTransportClient { _ in
+        InstantLiveWebSocketSession(
+          send: { message in await onlineSession.send(message) },
+          receive: { try await onlineSession.receive() },
+          close: { await onlineSession.close() }
+        )
+      }
+    )
+    onlineConfiguration.autoConnectLiveTransport = true
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(configuration: onlineConfiguration)
+
+    var reconnectedStatus = try await relaunchedRuntime.connectionStatus()
+    for _ in 0..<100 where
+      reconnectedStatus.state != .opened || reconnectedStatus.pendingMutationCount != 0
+    {
+      try await Task.sleep(nanoseconds: 10_000_000)
+      reconnectedStatus = try await relaunchedRuntime.connectionStatus()
+    }
+    expectNoDifference(reconnectedStatus.state, .opened)
+    expectNoDifference(reconnectedStatus.pendingMutationCount, 0)
+    expectNoDifference(reconnectedStatus.lastErrorMessage, nil)
+    let relaunchedPending = await relaunchedRuntime.pendingMutations()
+    expectNoDifference(relaunchedPending, [])
+    let relaunchedTodos = try await TodoExample.decode(
+      relaunchedRuntime.query(TodoExample.query)
+    )
+    expectNoDifference(
+      relaunchedTodos.map(\.text),
+      ["flush after relaunch"]
+    )
+  }
+
+  @Test
   func observeConnectionStatusPublishesRuntimeStatusChanges() async throws {
     let cacheURL = try temporaryCacheURL()
     let baseTime = InstantTimestamp(milliseconds: 1_700_000_000_000)
@@ -17776,6 +17894,80 @@ private actor MutationTransportRecorder {
 
   func requests() -> [InstantMutationTransportRequest] {
     recordedRequests
+  }
+}
+
+private actor PersistentTestLiveSession {
+  private let appID: String
+  private var pending: [InstantLiveMessage] = []
+  private var waiter: CheckedContinuation<InstantLiveMessage, Error>?
+  private var isClosed = false
+
+  init(appID: String) {
+    self.appID = appID
+  }
+
+  func send(_ message: InstantLiveMessage) {
+    guard !isClosed else { return }
+    let response: InstantLiveMessage?
+    switch message.op {
+    case "init":
+      response = InstantLiveMessage(
+        op: "init-ok",
+        clientEventID: message.clientEventID,
+        fields: [
+          "attrs": .array([]),
+          "auth": .null,
+          "session-id": .string("persistent-test-session-\(appID)"),
+        ]
+      )
+    case "transact":
+      response = InstantLiveMessage(
+        op: "transact-ok",
+        clientEventID: message.clientEventID,
+        fields: [
+          "isn": .string("persistent-test-isn"),
+          "tx-id": .string("persistent-test-\(message.clientEventID ?? "transaction")"),
+        ]
+      )
+    case "add-query":
+      response = InstantLiveMessage(
+        op: "add-query-ok",
+        clientEventID: message.clientEventID,
+        fields: [
+          "q": message.fields["q"] ?? .object([:]),
+          "result": .array([]),
+        ]
+      )
+    default:
+      response = nil
+    }
+    guard let response else { return }
+    if let waiter {
+      self.waiter = nil
+      waiter.resume(returning: response)
+    } else {
+      pending.append(response)
+    }
+  }
+
+  func receive() async throws -> InstantLiveMessage {
+    if !pending.isEmpty {
+      return pending.removeFirst()
+    }
+    if isClosed {
+      throw CancellationError()
+    }
+    return try await withCheckedThrowingContinuation { continuation in
+      waiter = continuation
+    }
+  }
+
+  func close() {
+    isClosed = true
+    pending.removeAll()
+    waiter?.resume(throwing: CancellationError())
+    waiter = nil
   }
 }
 

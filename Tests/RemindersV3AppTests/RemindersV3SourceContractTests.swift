@@ -113,7 +113,8 @@ struct RemindersV3SourceContractTests {
     expectNoDifference(
       RemindersV3List.instantAttributes.map(\.name),
       [
-        "id", "title", "color", "position", "createdAt", "owner", "readers", "writers",
+        "id", "title", "color", "coverFileID", "position", "createdAt", "owner",
+        "readers", "writers",
       ]
     )
     expectNoDifference(

@@ -8,10 +8,15 @@ RESULTS_DIR="${INSTANT_SWIFT_DATA_TYPING_INDICATOR_V3_RESULTS_DIR:-/tmp/instant-
 PUSH_DIR="${RESULTS_DIR}/push"
 PULL_DIR="${RESULTS_DIR}/pull"
 
+WORKTREE_DIRTY=false
 if [[ -n "$(git -C "${ROOT}" status --porcelain)" ]]; then
-  echo "Typing Indicator V3 verification requires a clean worktree." >&2
-  exit 1
+  WORKTREE_DIRTY=true
+  if [[ "${INSTANT_SWIFT_DATA_ALLOW_DIRTY_CONTRACT_RUN:-0}" != "1" ]]; then
+    echo "Typing Indicator V3 verification requires a clean worktree." >&2
+    exit 1
+  fi
 fi
+export WORKTREE_DIRTY
 if [[ ! -x "${CLI}" ]]; then
   echo "Missing pinned Instant CLI. Run pnpm install in validation/ts-runner." >&2
   exit 1
@@ -189,7 +194,7 @@ const evidence = {
     swiftRevision: execFileSync("git", ["-C", root, "rev-parse", "HEAD"], {
       encoding: "utf8",
     }).trim(),
-    worktreeDirty: false,
+    worktreeDirty: process.env.WORKTREE_DIRTY === "true",
     upstreamRevision: process.env.UPSTREAM_REVISION,
     coreVersion: manifest.dependencies["@instantdb/core"],
     adminVersion: manifest.dependencies["@instantdb/admin"],

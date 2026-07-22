@@ -22,6 +22,19 @@ if [[ ! -x "${CLI}" ]]; then
   exit 1
 fi
 
+APP_ID="${INSTANT_APP_ID:-}"
+ADMIN_TOKEN="${INSTANT_ADMIN_TOKEN:-${INSTANT_APP_ADMIN_TOKEN:-}}"
+if [[ -n "${APP_ID}" || -n "${ADMIN_TOKEN}" ]]; then
+  if [[ -z "${APP_ID}" || -z "${ADMIN_TOKEN}" ]]; then
+    echo "Configured-app mode requires both INSTANT_APP_ID and an admin token." >&2
+    exit 1
+  fi
+  if [[ "${INSTANT_SWIFT_DATA_ALLOW_EPHEMERAL_APP_MUTATION:-}" != "1" ]]; then
+    echo "Set INSTANT_SWIFT_DATA_ALLOW_EPHEMERAL_APP_MUTATION=1 for configured-app mutation." >&2
+    exit 1
+  fi
+fi
+
 EXPECTED_UPSTREAM_REVISION="$({
   cd "${RUNNER}"
   node -p "require('./package.json').instantContract.upstreamRevision"
@@ -48,10 +61,16 @@ swift run --package-path "${ROOT}" instant-swift-data perms generate \
   --example streams --to "${PUSH_DIR}/instant.perms.ts" --json \
   >"${RESULTS_DIR}/swift-perms-generate.json"
 
-(
-  cd "${PUSH_DIR}"
-  "${CLI}" init --temp --title "instant-data-swift-streams-v3" --yes --env .instant.env
-) | tee "${RESULTS_DIR}/instant-cli-init.log"
+if [[ -z "${APP_ID}" ]]; then
+  (
+    cd "${PUSH_DIR}"
+    "${CLI}" init --temp --title "instant-data-swift-streams-v3" --yes --env .instant.env
+  ) | tee "${RESULTS_DIR}/instant-cli-init.log"
+else
+  install -m 600 /dev/null "${PUSH_DIR}/.instant.env"
+  printf 'INSTANT_APP_ID=%s\nINSTANT_APP_ADMIN_TOKEN=%s\n' \
+    "${APP_ID}" "${ADMIN_TOKEN}" >"${PUSH_DIR}/.instant.env"
+fi
 set -a
 # shellcheck disable=SC1090
 source "${PUSH_DIR}/.instant.env"
@@ -59,6 +78,7 @@ set +a
 
 export INSTANT_APP_ID="${INSTANT_APP_ID:?Instant CLI did not write INSTANT_APP_ID}"
 export INSTANT_ADMIN_TOKEN="${INSTANT_APP_ADMIN_TOKEN:?Instant CLI did not write INSTANT_APP_ADMIN_TOKEN}"
+export INSTANT_APP_ADMIN_TOKEN="${INSTANT_ADMIN_TOKEN}"
 export INSTANT_CLI_AUTH_TOKEN="${INSTANT_ADMIN_TOKEN}"
 
 (

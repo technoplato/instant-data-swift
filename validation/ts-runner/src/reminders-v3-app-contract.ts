@@ -95,6 +95,7 @@ export interface RemindersV3List {
   id: string;
   title: string;
   color: string;
+  coverFileID?: string;
   position: number;
   createdAt: Date;
   owner: RemindersV3User;

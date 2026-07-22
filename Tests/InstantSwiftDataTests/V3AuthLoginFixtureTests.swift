@@ -183,6 +183,43 @@ import Testing
     }
 
     @Test @MainActor
+    func signOutClearsOwnedStateAndForwardsTokenInvalidationChoice() async throws {
+      let guest = v3AuthSession(userID: "guest-to-sign-out", isGuest: true)
+      let signOuts = V3AuthSignOutRecorder()
+      let client = v3AuthClient(
+        signInAsGuest: { guest },
+        signOutWithOptions: { invalidateToken in
+          await signOuts.record(invalidateToken)
+        }
+      )
+      let state = InstantAuthState<V3VoiceTrailUser>(
+        providers: V3VoiceTrailAuthProviders.all
+      )
+      let callbacks = V3AuthCallbackRecorder()
+
+      await state.signInAsGuest(using: client).value
+      state.email = "person@example.com"
+      state.magicCode = "123456"
+      await state.signOut(
+        using: client,
+        invalidateToken: false,
+        onSignedOut: { callbacks.signedOutCount += 1 },
+        onFailure: { callbacks.failures.append($0) }
+      ).value
+
+      let signOutValues = await signOuts.values()
+      expectNoDifference(signOutValues, [false])
+      expectNoDifference(callbacks.signedOutCount, 1)
+      expectNoDifference(callbacks.failures, [])
+      expectNoDifference(state.session, nil)
+      expectNoDifference(state.status, .signedOut)
+      expectNoDifference(state.mode, .enteringEmail)
+      expectNoDifference(state.email, "")
+      expectNoDifference(state.magicCode, "")
+      expectNoDifference(state.isBusy, false)
+    }
+
+    @Test @MainActor
     func providerActionExchangesTypedCredentialAndFiresCallbacksOnce() async throws {
       let provider = AuthProvider.apple(clientName: "apple-ios", presentation: .native)
       let credential = InstantAuthProviderCredential(
@@ -301,7 +338,7 @@ import Testing
     ]
 
     init(snapshot: InstantEntitySnapshot) throws {
-      guard case let .string(email) = snapshot.values["email"]?.first else {
+      guard case .string(let email) = snapshot.values["email"]?.first else {
         throw InstantError(
           code: .decodeFailed,
           operation: "decode V3 auth user fixture",
@@ -322,6 +359,19 @@ import Testing
     var credentials: [InstantAuthProviderCredential] = []
     var signedIn: [InstantAuthSignedInEvent] = []
     var failures: [InstantError] = []
+    var signedOutCount = 0
+  }
+
+  private actor V3AuthSignOutRecorder {
+    private var recorded: [Bool] = []
+
+    func record(_ invalidateToken: Bool) {
+      recorded.append(invalidateToken)
+    }
+
+    func values() -> [Bool] {
+      recorded
+    }
   }
 
   private actor V3AuthChallengeGate {
@@ -418,7 +468,9 @@ import Testing
     sendMagicCode: @escaping @Sendable (String) async throws -> InstantMagicCodeChallenge = {
       v3AuthChallenge(email: $0)
     },
-    signInWithIDToken: @escaping @Sendable (String, String, String?) async throws
+    signOutWithOptions: @escaping @Sendable (Bool) async throws -> Void = { _ in },
+    signInWithIDToken:
+      @escaping @Sendable (String, String, String?) async throws
       -> InstantAuthSession = { _, _, _ in
         v3AuthSession(userID: "unused-id-token", isGuest: false)
       }
@@ -438,7 +490,8 @@ import Testing
       localID: { "v3-auth-\($0)" },
       signInAsGuest: signInAsGuest,
       sendMagicCode: sendMagicCode,
-      signInWithIDToken: signInWithIDToken
+      signInWithIDToken: signInWithIDToken,
+      signOutWithOptions: signOutWithOptions
     )
   }
 

@@ -74,7 +74,7 @@ try {
   );
 
   const swiftEvidence = await nextJSONLine(lines, swift, "Swift shared-counter evidence");
-  await requireSuccessfulExit(swift, "Swift CloudKitDemo V3 runner");
+  await requireSuccessfulExit(swift, "Swift CloudKitDemo V3 runner", swiftEvidence);
   assert.equal(swiftEvidence.ok, true);
   assert.equal(swiftEvidence.details.counterID, ids.counterID);
   assert.equal(swiftEvidence.details.shareID, ids.shareID);
@@ -235,12 +235,21 @@ async function nextJSONLine(
   }
 }
 
-async function requireSuccessfulExit(child: SwiftProcess, operation: string): Promise<void> {
+async function requireSuccessfulExit(
+  child: SwiftProcess,
+  operation: string,
+  evidence?: unknown,
+): Promise<void> {
   let stderr = "";
   child.stderr.setEncoding("utf8");
   child.stderr.on("data", (chunk) => { stderr += chunk; });
   const code = await withTimeout(childExit(child), `${operation} exit`);
-  if (code !== 0) throw new Error(`${operation} failed with status ${code}: ${stderr.trim()}`);
+  if (code !== 0) {
+    throw new Error(
+      `${operation} failed with status ${code}: ${stderr.trim()}; `
+      + `last evidence: ${JSON.stringify(evidence)}`,
+    );
+  }
 }
 
 function childExit(child: SwiftProcess): Promise<number> {

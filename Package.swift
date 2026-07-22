@@ -278,7 +278,7 @@ let package = Package(
     ),
     .executableTarget(
       name: "RemindersV3Executable",
-      dependencies: ["RemindersV3App"],
+      dependencies: ["RemindersV3App", "InstantSwiftData"],
       swiftSettings: strictConcurrencySettings
     ),
     .executableTarget(

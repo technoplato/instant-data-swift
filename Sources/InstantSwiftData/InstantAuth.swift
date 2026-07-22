@@ -7,6 +7,7 @@ public enum InstantAuthMode: Hashable, Sendable {
   case magicCodeSent(email: String)
   case verifyingMagicCode(email: String)
   case signingIn(providerID: InstantAuthProviderID)
+  case signingOut
 }
 
 public enum InstantAuthStatus: Hashable, Sendable {
@@ -111,7 +112,8 @@ public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
 
     @discardableResult
     public func sendMagicCode(
-      onChallengeSent: @escaping @MainActor @Sendable (InstantMagicCodeChallenge) -> Void = { _ in },
+      onChallengeSent: @escaping @MainActor @Sendable (InstantMagicCodeChallenge) -> Void = { _ in
+      },
       onFailure: @escaping @MainActor @Sendable (InstantError) -> Void = { _ in }
     ) -> Task<Void, Never> {
       @Dependency(\.defaultInstantSwiftData) var client
@@ -125,7 +127,8 @@ public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
     @discardableResult
     public func sendMagicCode(
       using client: InstantSwiftDataClient,
-      onChallengeSent: @escaping @MainActor @Sendable (InstantMagicCodeChallenge) -> Void = { _ in },
+      onChallengeSent: @escaping @MainActor @Sendable (InstantMagicCodeChallenge) -> Void = { _ in
+      },
       onFailure: @escaping @MainActor @Sendable (InstantError) -> Void = { _ in }
     ) -> Task<Void, Never> {
       let targetEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -172,7 +175,7 @@ public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
     ) -> Task<Void, Never> {
       let targetEmail: String
       switch mode {
-      case let .magicCodeSent(email), let .verifyingMagicCode(email):
+      case .magicCodeSent(let email), .verifyingMagicCode(let email):
         targetEmail = email
       default:
         targetEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -242,9 +245,60 @@ public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
     }
 
     @discardableResult
+    public func signOut(
+      invalidateToken: Bool = true,
+      onSignedOut: @escaping @MainActor @Sendable () -> Void = {},
+      onFailure: @escaping @MainActor @Sendable (InstantError) -> Void = { _ in }
+    ) -> Task<Void, Never> {
+      @Dependency(\.defaultInstantSwiftData) var client
+      return signOut(
+        using: client,
+        invalidateToken: invalidateToken,
+        onSignedOut: onSignedOut,
+        onFailure: onFailure
+      )
+    }
+
+    @discardableResult
+    public func signOut(
+      using client: InstantSwiftDataClient,
+      invalidateToken: Bool = true,
+      onSignedOut: @escaping @MainActor @Sendable () -> Void = {},
+      onFailure: @escaping @MainActor @Sendable (InstantError) -> Void = { _ in }
+    ) -> Task<Void, Never> {
+      let generation = beginAction(mode: .signingOut)
+      let task = Task { @MainActor [weak self] in
+        do {
+          try await client.signOut(invalidateToken: invalidateToken)
+          try Task.checkCancellation()
+          guard let self, self.actionGeneration == generation else { return }
+          self.session = nil
+          self.status = .signedOut
+          self.mode = .enteringEmail
+          self.email = ""
+          self.magicCode = ""
+          self.activeAction = nil
+          onSignedOut()
+        } catch is CancellationError {
+          self?.finishCancellation(generation: generation)
+        } catch {
+          self?.finishFailure(
+            error,
+            operation: "sign out",
+            generation: generation,
+            onFailure: onFailure
+          )
+        }
+      }
+      activeAction = task
+      return task
+    }
+
+    @discardableResult
     public func signIn(
       _ provider: AuthProviderSelection,
-      onProviderCompleted: @escaping @MainActor @Sendable (InstantAuthProviderCredential) -> Void = { _ in },
+      onProviderCompleted: @escaping @MainActor @Sendable (InstantAuthProviderCredential) -> Void =
+        { _ in },
       onSignedIn: @escaping @MainActor @Sendable (InstantAuthSignedInEvent) -> Void = { _ in },
       onFailure: @escaping @MainActor @Sendable (InstantError) -> Void = { _ in }
     ) -> Task<Void, Never> {
@@ -265,7 +319,8 @@ public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
       _ provider: AuthProviderSelection,
       using client: InstantSwiftDataClient,
       authorizer: InstantAuthProviderAuthorizer,
-      onProviderCompleted: @escaping @MainActor @Sendable (InstantAuthProviderCredential) -> Void = { _ in },
+      onProviderCompleted: @escaping @MainActor @Sendable (InstantAuthProviderCredential) -> Void =
+        { _ in },
       onSignedIn: @escaping @MainActor @Sendable (InstantAuthSignedInEvent) -> Void = { _ in },
       onFailure: @escaping @MainActor @Sendable (InstantError) -> Void = { _ in }
     ) -> Task<Void, Never> {
@@ -372,7 +427,7 @@ public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
       using client: InstantSwiftDataClient
     ) async throws -> InstantAuthSession {
       switch (provider.kind, credential.payload) {
-      case let (.idToken, .idToken(value, nonce)):
+      case (.idToken, .idToken(let value, let nonce)):
         guard let clientName = provider.clientName, !clientName.isEmpty else {
           throw InstantError(
             code: .validationFailed,
@@ -387,7 +442,7 @@ public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
           nonce: nonce
         )
 
-      case let (.authorizationCode, .authorizationCode(value, codeVerifier)):
+      case (.authorizationCode, .authorizationCode(let value, let codeVerifier)):
         return try await client.signInWithOAuth(code: value, codeVerifier: codeVerifier)
 
       default:

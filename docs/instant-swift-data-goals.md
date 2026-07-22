@@ -710,8 +710,9 @@ Agent-oriented output modes are required:
   `instant-swift-data examples reminders add-tag <reminder-id> family`,
   `instant-swift-data examples reminders search "Pack" --tag family --json`,
   and `instant-swift-data examples reminders tags --jsonl`; this is a durable
-  Instant-shaped many-ref tag/search slice, not the full upstream FTS/highlight
-  search UI yet.
+  Instant-shaped many-ref tag/search slice. The runnable SwiftUI app now exposes
+  live substring and exact-tag search, while exact SQLite FTS ranking/snippet
+  presentation remains a documented reference difference.
 - delete Reminders locally with commands such as
   `instant-swift-data examples reminders delete <reminder-id>`,
   `instant-swift-data examples reminders delete-completed --list-id <list-id>`,

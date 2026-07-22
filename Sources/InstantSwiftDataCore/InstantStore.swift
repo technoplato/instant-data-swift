@@ -232,12 +232,14 @@ public actor InstantStore {
         }
 
       case let .requireTripleExists(entityID, attributeID, value):
-        guard indexes.containsTriple(
-          entityID: entityID,
-          attributeID: attributeID,
-          value: value,
-          attribute: attributes[attributeID]
-        ) else {
+        guard
+          indexes.containsTriple(
+            entityID: entityID,
+            attributeID: attributeID,
+            value: value,
+            attribute: attributes[attributeID]
+          )
+        else {
           throw Self.missingTripleError(
             entityID: entityID,
             attributeID: attributeID,
@@ -369,9 +371,27 @@ public actor InstantStore {
       }
     }
     var result = prepared.result
-    result.emissions = emissionsByObservation
+    result.emissions =
+      emissionsByObservation
       .sorted { lhs, rhs in Self.emissionSortKey(lhs.key) < Self.emissionSortKey(rhs.key) }
       .map(\.value)
+    InstantDiagnostics.shared.record(
+      .trace,
+      subsystem: "instant-swift-data-core",
+      category: "store",
+      event: shouldPublish ? "store.mutation-published" : "store.mutation-committed",
+      message: shouldPublish
+        ? "Committed a store mutation and published query emissions."
+        : "Committed a store mutation without publishing query emissions.",
+      metadata: [
+        "changedEntityCount": String(result.changedEntityIDs.count),
+        "emissionCount": String(result.emissions.count),
+        "observerCount": String(observers.count),
+        "sequence": String(sequence),
+        "tripleCount": String(result.tripleCount),
+      ],
+      correlationID: result.transactionID
+    )
     return PreparedStoreMutation(
       result: result,
       sequence: sequence,
@@ -436,7 +456,8 @@ public actor InstantStore {
       namespace: namespace,
       localID: entityID,
       message: "No existing entity was found for '\(entityID)'.",
-      recovery: "Create the entity before using a strict update, or use merge for upsert-style writes."
+      recovery:
+        "Create the entity before using a strict update, or use merge for upsert-style writes."
     )
   }
 
@@ -453,7 +474,8 @@ public actor InstantStore {
       namespace: attribute?.namespace,
       path: attribute?.name ?? attributeID,
       localID: entityID,
-      message: "No existing triple was found for '\(entityID)' at '\(attributeID)' with value '\(value)'.",
+      message:
+        "No existing triple was found for '\(entityID)' at '\(attributeID)' with value '\(value)'.",
       recovery: "Refresh the local cache and retry with the current relationship value."
     )
   }
@@ -655,7 +677,8 @@ public actor InstantStore {
       )
     }
 
-    let expectedNamespace = attribute.valueType == .ref ? attribute.linkNamespace : attribute.namespace
+    let expectedNamespace =
+      attribute.valueType == .ref ? attribute.linkNamespace : attribute.namespace
     guard
       let entityID = try resolveEntityID(
         lookup,
@@ -681,7 +704,8 @@ public actor InstantStore {
         path: attribute.name,
         localID: lookup.description,
         message: "Lookup ref values can only fill id and ref attributes.",
-        recovery: "Use lookup refs to identify the entity being written or to link to another entity."
+        recovery:
+          "Use lookup refs to identify the entity being written or to link to another entity."
       )
     }
   }
@@ -692,8 +716,7 @@ public actor InstantStore {
     attributes: AttributeStore
   ) throws {
     let attributeNamespace = namespace(in: triple.attributeID)
-    if
-      !attributes.namespaces.isEmpty,
+    if !attributes.namespaces.isEmpty,
       let attributeNamespace,
       !attributes.namespaces.contains(attributeNamespace)
     {
@@ -913,7 +936,8 @@ public actor InstantStore {
         namespace: lookupAttribute.namespace,
         path: lookupAttribute.name,
         localID: lookup.description,
-        message: "Attribute '\(lookup.attributeID)' is not unique, so it cannot be used as a lookup ref.",
+        message:
+          "Attribute '\(lookup.attributeID)' is not unique, so it cannot be used as a lookup ref.",
         recovery: "Mark the attribute unique in the schema, or write the entity by id."
       )
     }
@@ -959,7 +983,8 @@ public actor InstantStore {
         path: lookupAttribute.name,
         localID: lookup.description,
         message: "Lookup ref '\(lookup.description)' matched more than one local entity.",
-        recovery: "Repair the local cache so unique attributes map to one entity before writing by lookup ref."
+        recovery:
+          "Repair the local cache so unique attributes map to one entity before writing by lookup ref."
       )
     }
     return entityIDs
@@ -1010,7 +1035,8 @@ public actor InstantStore {
       path: attribute.name,
       localID: entityID,
       message: "An entity already exists for lookup '\(lookup.description)'.",
-      recovery: "Use update for upsert-style writes, or choose a fresh unique lookup value before creating."
+      recovery:
+        "Use update for upsert-style writes, or choose a fresh unique lookup value before creating."
     )
   }
 
@@ -1025,7 +1051,8 @@ public actor InstantStore {
       path: attribute.name,
       localID: lookup.description,
       message: "No existing entity was found for lookup '\(lookup.description)'.",
-      recovery: "Create the entity before using a strict update, or use update/merge for server-resolved upserts."
+      recovery:
+        "Create the entity before using a strict update, or use update/merge for server-resolved upserts."
     )
   }
 
@@ -1056,11 +1083,38 @@ public actor InstantStore {
       remotePageInfo: remotePageInfo,
       continuation: continuation
     )
-    continuation.yield(materializeEmission(plan, remotePageInfo: remotePageInfo))
+    let initialEmission = materializeEmission(plan, remotePageInfo: remotePageInfo)
+    continuation.yield(initialEmission)
+    InstantDiagnostics.shared.record(
+      .trace,
+      subsystem: "instant-swift-data-core",
+      category: "store",
+      event: "store.observer-registered",
+      message: "Registered a query observer and emitted its initial snapshot.",
+      metadata: [
+        "namespace": plan.namespace,
+        "observerCount": String(observers.count),
+        "resultCount": String(initialEmission.values.count),
+        "sequence": String(initialEmission.sequence),
+      ],
+      correlationID: plan.id
+    )
   }
 
   private func cancelObservation(id: UUID) {
-    observers[id] = nil
+    let observer = observers.removeValue(forKey: id)
+    InstantDiagnostics.shared.record(
+      .trace,
+      subsystem: "instant-swift-data-core",
+      category: "store",
+      event: "store.observer-cancelled",
+      message: "Cancelled a query observer.",
+      metadata: [
+        "namespace": observer?.plan.namespace ?? "unknown",
+        "observerCount": String(observers.count),
+      ],
+      correlationID: observer?.plan.id
+    )
   }
 
   func activeObservationCount() -> Int {
@@ -1068,8 +1122,8 @@ public actor InstantStore {
   }
 }
 
-private extension InstantValue {
-  var storeValidationTypeDescription: String {
+extension InstantValue {
+  fileprivate var storeValidationTypeDescription: String {
     switch self {
     case .null:
       return "null"
@@ -1091,8 +1145,8 @@ private extension InstantValue {
   }
 }
 
-private extension InstantValueType {
-  var storeValidationDescription: String {
+extension InstantValueType {
+  fileprivate var storeValidationDescription: String {
     switch self {
     case .string:
       return "string"

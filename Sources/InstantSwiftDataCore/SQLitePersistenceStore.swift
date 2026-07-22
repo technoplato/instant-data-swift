@@ -5,7 +5,8 @@ public struct InstantPersistenceSnapshot: Hashable, Codable, Sendable {
   public var store: InstantStoreSnapshot
   public var outbox: [PendingMutation]
 
-  public init(store: InstantStoreSnapshot = InstantStoreSnapshot(), outbox: [PendingMutation] = []) {
+  public init(store: InstantStoreSnapshot = InstantStoreSnapshot(), outbox: [PendingMutation] = [])
+  {
     self.store = store
     self.outbox = outbox
   }
@@ -73,18 +74,54 @@ public actor SQLitePersistenceStore {
     self.encoder = JSONEncoder()
     self.encoder.outputFormatting = [.sortedKeys]
     self.decoder = JSONDecoder()
-    self.connection = SQLiteConnection(try Self.openRawConnection(fileURL: fileURL))
+    InstantDiagnostics.shared.record(
+      .debug,
+      subsystem: "instant-swift-data-core",
+      category: "persistence",
+      event: "sqlite.open-started",
+      message: "Opening the Instant SQLite cache.",
+      metadata: ["path": fileURL.path]
+    )
+    do {
+      self.connection = SQLiteConnection(try Self.openRawConnection(fileURL: fileURL))
+      InstantDiagnostics.shared.record(
+        .notice,
+        subsystem: "instant-swift-data-core",
+        category: "persistence",
+        event: "sqlite.open-completed",
+        message: "Opened the Instant SQLite cache.",
+        metadata: ["path": fileURL.path]
+      )
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "persistence",
+        event: "sqlite.open-failed",
+        message: "Failed to open the Instant SQLite cache.",
+        metadata: ["path": fileURL.path]
+      )
+      throw error
+    }
   }
 
   private static func openRawConnection(fileURL: URL) throws -> OpaquePointer? {
     let directory = fileURL.deletingLastPathComponent()
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    let fileManager = FileManager.default
+    if !fileManager.fileExists(atPath: directory.path) {
+      try fileManager.createDirectory(
+        at: directory,
+        withIntermediateDirectories: true,
+        attributes: [.posixPermissions: 0o700]
+      )
+    }
 
     var opened: OpaquePointer?
     let flags = SQLITE_OPEN_CREATE | SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX
     guard sqlite3_open_v2(fileURL.path, &opened, flags, nil) == SQLITE_OK
     else {
-      let message = opened.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) }
+      let message =
+        opened.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) }
         ?? "SQLite could not open \(fileURL.path)."
       sqlite3_close(opened)
       throw InstantError(
@@ -94,8 +131,20 @@ public actor SQLitePersistenceStore {
         recovery: "Check that the cache directory is writable, or choose another persistence path."
       )
     }
+    do {
+      try securePersistenceFile(at: fileURL)
+    } catch {
+      sqlite3_close(opened)
+      throw InstantError(
+        code: .persistenceFailed,
+        operation: "secure local cache",
+        message: "SQLite opened the local cache but could not restrict its file permissions: \(error)",
+        recovery: "Choose a persistence path whose file permissions can be changed."
+      )
+    }
     guard sqlite3_busy_timeout(opened, 10_000) == SQLITE_OK else {
-      let message = opened.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) }
+      let message =
+        opened.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) }
         ?? "SQLite could not configure a busy timeout for \(fileURL.path)."
       sqlite3_close(opened)
       throw InstantError(
@@ -106,7 +155,8 @@ public actor SQLitePersistenceStore {
       )
     }
     guard sqlite3_exec(opened, "PRAGMA foreign_keys = ON", nil, nil, nil) == SQLITE_OK else {
-      let message = opened.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) }
+      let message =
+        opened.flatMap { sqlite3_errmsg($0) }.map { String(cString: $0) }
         ?? "SQLite could not enable foreign keys for \(fileURL.path)."
       sqlite3_close(opened)
       throw InstantError(
@@ -119,7 +169,34 @@ public actor SQLitePersistenceStore {
     return opened
   }
 
+  private static func securePersistenceFile(at fileURL: URL) throws {
+    try FileManager.default.setAttributes(
+      [.posixPermissions: 0o600],
+      ofItemAtPath: fileURL.path
+    )
+  }
+
+  private static func securePersistenceFiles(at fileURL: URL) throws {
+    let fileManager = FileManager.default
+    for url in [
+      fileURL,
+      URL(fileURLWithPath: fileURL.path + "-wal"),
+      URL(fileURLWithPath: fileURL.path + "-shm"),
+    ] where fileManager.fileExists(atPath: url.path) {
+      try securePersistenceFile(at: url)
+    }
+  }
+
   public func bootstrap() throws {
+    try Self.securePersistenceFiles(at: fileURL)
+    InstantDiagnostics.shared.record(
+      .debug,
+      subsystem: "instant-swift-data-core",
+      category: "persistence",
+      event: "sqlite.bootstrap-started",
+      message: "Bootstrapping the Instant SQLite schema.",
+      metadata: ["path": fileURL.path]
+    )
     try withSQLiteBusyRetry {
       try execute("PRAGMA journal_mode = WAL")
     }
@@ -312,7 +389,8 @@ public actor SQLitePersistenceStore {
           )
         }
         try execute("DROP TABLE instant_room_topic_messages")
-        try execute("ALTER TABLE instant_room_topic_messages_v2 RENAME TO instant_room_topic_messages")
+        try execute(
+          "ALTER TABLE instant_room_topic_messages_v2 RENAME TO instant_room_topic_messages")
         try execute(
           """
           CREATE INDEX IF NOT EXISTS instant_room_topic_messages_room_idx
@@ -486,6 +564,15 @@ public actor SQLitePersistenceStore {
         )
       }
     }
+    try Self.securePersistenceFiles(at: fileURL)
+    InstantDiagnostics.shared.record(
+      .notice,
+      subsystem: "instant-swift-data-core",
+      category: "persistence",
+      event: "sqlite.bootstrap-completed",
+      message: "Instant SQLite schema is ready.",
+      metadata: ["path": fileURL.path]
+    )
   }
 
   func simulateUnexpectedConnectionCloseForTesting() {
@@ -498,12 +585,43 @@ public actor SQLitePersistenceStore {
   }
 
   public func loadState() throws -> InstantPersistenceState {
-    try readTransaction {
-      try InstantPersistenceState(
-        snapshot: loadSnapshotWithoutTransaction(),
-        storeRevision: loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey),
-        outboxRevision: loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+    let startedAt = Date()
+    do {
+      let state = try readTransaction {
+        try InstantPersistenceState(
+          snapshot: loadSnapshotWithoutTransaction(),
+          storeRevision: loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey),
+          outboxRevision: loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+        )
+      }
+      InstantDiagnostics.shared.record(
+        .trace,
+        subsystem: "instant-swift-data-core",
+        category: "persistence",
+        event: "sqlite.state-loaded",
+        message: "Loaded the Instant cache state.",
+        metadata: [
+          "attributeCount": String(state.snapshot.store.attributes.count),
+          "tripleCount": String(state.snapshot.store.triples.count),
+          "outboxCount": String(state.snapshot.outbox.count),
+          "storeRevision": String(state.storeRevision),
+          "outboxRevision": String(state.outboxRevision),
+          "durationMilliseconds": String(
+            Int64((Date().timeIntervalSince(startedAt) * 1_000).rounded())
+          ),
+        ]
       )
+      return state
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "persistence",
+        event: "sqlite.state-load-failed",
+        message: "Failed to load the Instant cache state.",
+        metadata: ["path": fileURL.path]
+      )
+      throw error
     }
   }
 
@@ -650,8 +768,9 @@ public actor SQLitePersistenceStore {
     expectedOutboxRevision: Int64
   ) throws -> Bool {
     try transaction {
-      guard try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
-        == expectedOutboxRevision
+      guard
+        try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+          == expectedOutboxRevision
       else {
         return false
       }
@@ -788,7 +907,8 @@ public actor SQLitePersistenceStore {
   ) throws -> InstantStoredFile {
     let sourceValues = try regularFileResourceValues(at: sourceURL, operation: "upload file")
 
-    let directory = localFilesRootURL
+    let directory =
+      localFilesRootURL
       .appendingPathComponent(sanitizedFileComponent(file.appID), isDirectory: true)
       .appendingPathComponent(sanitizedFileComponent(file.id), isDirectory: true)
     let targetURL = directory.appendingPathComponent(sanitizedFileComponent(file.name))
@@ -836,7 +956,8 @@ public actor SQLitePersistenceStore {
     _ file: InstantStoredFile,
     data: Data
   ) throws -> InstantStoredFile {
-    let directory = localFilesRootURL
+    let directory =
+      localFilesRootURL
       .appendingPathComponent(sanitizedFileComponent(file.appID), isDirectory: true)
       .appendingPathComponent(sanitizedFileComponent(file.id), isDirectory: true)
     let targetURL = directory.appendingPathComponent(sanitizedFileComponent(file.name))
@@ -1312,7 +1433,8 @@ public actor SQLitePersistenceStore {
         [.text(appID), .text(userID)]
       )
       return try shares.map {
-        try shareSnapshotWithoutTransaction(appID: appID, shareID: $0.id, activeMembershipsOnly: true)
+        try shareSnapshotWithoutTransaction(
+          appID: appID, shareID: $0.id, activeMembershipsOnly: true)
       }
     }
   }
@@ -1336,7 +1458,8 @@ public actor SQLitePersistenceStore {
       sql.append("\nORDER BY created_at_ms, share_id")
       let shares: [InstantShare] = try selectJSON(sql, bindings)
       return try shares.map {
-        try shareSnapshotWithoutTransaction(appID: appID, shareID: $0.id, activeMembershipsOnly: true)
+        try shareSnapshotWithoutTransaction(
+          appID: appID, shareID: $0.id, activeMembershipsOnly: true)
       }
     }
   }
@@ -1459,7 +1582,8 @@ public actor SQLitePersistenceStore {
     expectedOutboxRevision: Int64
   ) throws -> Bool {
     try transaction {
-      guard try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
+      guard
+        try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
         try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision
       else {
         return false
@@ -1483,6 +1607,18 @@ public actor SQLitePersistenceStore {
       _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
       _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
     }
+    InstantDiagnostics.shared.record(
+      .trace,
+      subsystem: "instant-swift-data-core",
+      category: "persistence",
+      event: "sqlite.snapshot-saved",
+      message: "Saved an Instant cache snapshot.",
+      metadata: [
+        "attributeCount": String(snapshot.store.attributes.count),
+        "tripleCount": String(snapshot.store.triples.count),
+        "outboxCount": String(snapshot.outbox.count),
+      ]
+    )
   }
 
   public func saveSnapshot(
@@ -1491,7 +1627,8 @@ public actor SQLitePersistenceStore {
     expectedOutboxRevision: Int64
   ) throws -> Bool {
     try transaction {
-      guard try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
+      guard
+        try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
         try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision
       else {
         return false
@@ -1513,7 +1650,8 @@ public actor SQLitePersistenceStore {
     expectedOutboxRevision: Int64
   ) throws -> Bool {
     try transaction {
-      guard try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
+      guard
+        try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
         try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision
       else {
         return false
@@ -1540,7 +1678,8 @@ public actor SQLitePersistenceStore {
     expectedOutboxRevision: Int64
   ) throws -> Bool {
     try transaction {
-      guard try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
+      guard
+        try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
         try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision
       else {
         return false
@@ -1565,7 +1704,8 @@ public actor SQLitePersistenceStore {
     expectedOutboxRevision: Int64
   ) throws -> Bool {
     try transaction {
-      guard try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
+      guard
+        try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
         try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision
       else {
         return false
@@ -1586,7 +1726,9 @@ public actor SQLitePersistenceStore {
     expectedStoreRevision: Int64
   ) throws -> Bool {
     try transaction {
-      guard try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision else {
+      guard
+        try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision
+      else {
         return false
       }
 
@@ -1600,7 +1742,9 @@ public actor SQLitePersistenceStore {
     expectedStoreRevision: Int64
   ) throws -> Bool {
     try transaction {
-      guard try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision else {
+      guard
+        try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision
+      else {
         return false
       }
 
@@ -1701,7 +1845,8 @@ public actor SQLitePersistenceStore {
     for attempt in 0..<6 {
       do {
         return try operation()
-      } catch let error as InstantError where error.code == .persistenceFailed && error.isSQLiteBusy {
+      } catch let error as InstantError where error.code == .persistenceFailed && error.isSQLiteBusy
+      {
         lastError = error
         Thread.sleep(forTimeInterval: 0.025 * Double(attempt + 1))
       }
@@ -1947,7 +2092,9 @@ public actor SQLitePersistenceStore {
     return revision
   }
 
-  private func nextStreamChunkIndexWithoutTransaction(appID: String, streamID: String) throws -> Int64 {
+  private func nextStreamChunkIndexWithoutTransaction(appID: String, streamID: String) throws
+    -> Int64
+  {
     let value: String? = try selectScalar(
       """
       SELECT CAST(COALESCE(MAX(chunk_index), -1) + 1 AS TEXT)
@@ -2044,7 +2191,8 @@ public actor SQLitePersistenceStore {
     )
   }
 
-  private func streamContentSizeWithoutTransaction(appID: String, streamID: String) throws -> Int64 {
+  private func streamContentSizeWithoutTransaction(appID: String, streamID: String) throws -> Int64
+  {
     let value: String? = try selectScalar(
       """
       SELECT CAST(COALESCE(SUM(byte_count), 0) AS TEXT)
@@ -2379,8 +2527,8 @@ private struct QueryCacheStorageRow: Sendable {
   }
 }
 
-private extension InstantError {
-  var isSQLiteBusy: Bool {
+extension InstantError {
+  fileprivate var isSQLiteBusy: Bool {
     let lowercasedMessage = message.lowercased()
     return lowercasedMessage.contains("database is locked")
       || lowercasedMessage.contains("database schema is locked")

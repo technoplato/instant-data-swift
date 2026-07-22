@@ -907,6 +907,82 @@ struct InstantLiveTransportTests {
   }
 
   @Test
+  func runtimeLiveQueryOnceRevalidatesAnAlreadyObservedQuery() async throws {
+    let serverCreatedAt = InstantTimestamp(milliseconds: 1_700_000_000_790)
+    let query: InstantLiveJSONValue = .object([
+      TodoExample.namespace: .object([
+        "$": .object([
+          "order": .object(["createdAt": .string("asc")])
+        ])
+      ])
+    ])
+    let computation = InstantLiveJSONValue.todoJoinRowsComputation(
+      entityID: "runtime-observed-query-once-todo",
+      text: "Already materialized for the active observer",
+      isCompleted: false,
+      createdAt: serverCreatedAt,
+      processedTransactionID: "server-tx-observed-query-once"
+    )
+    let initialResult = try #require(
+      computation.objectValue?["instaql-result"]?.arrayValue
+    )
+    let session = InstantRuntimeScriptedLiveSession(messages: [
+      .initOK(clientEventID: "event-init", attrs: .todoServerAttrs),
+      .addQueryOK(
+        clientEventID: "event-observation",
+        query: query,
+        result: initialResult,
+        processedTransactionID: "server-tx-observed-query-once"
+      ),
+    ])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "runtime-live-observed-query-once",
+      websocketURI: try #require(URL(string: "wss://ws.example.test/runtime/session")),
+      persistenceURL: try temporaryLiveCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: session.transport
+    )
+    configuration.autoConnectLiveTransport = true
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+
+    let observation = await runtime.observe(TodoExample.query)
+    let consumer = Task {
+      var emissions: [InstantQueryEmission] = []
+      for await emission in observation {
+        emissions.append(emission)
+      }
+      return emissions
+    }
+    await session.waitForSentMessageCount(2)
+
+    let oneShot = Task {
+      try await runtime.queryOnce(TodoExample.query)
+    }
+    await session.waitForSentMessageCount(3)
+    await session.enqueue(
+      .addQueryExists(clientEventID: "event-query-once", query: query)
+    )
+
+    let emission = try await oneShot.value
+    expectNoDifference(
+      try TodoExample.decode(emission.values).map(\.text),
+      ["Already materialized for the active observer"]
+    )
+    var sentMessages = await session.sentMessages()
+    expectNoDifference(sentMessages.map(\.op), ["init", "add-query", "add-query"])
+
+    consumer.cancel()
+    _ = await consumer.value
+    await session.waitForSentMessageCount(4)
+    sentMessages = await session.sentMessages()
+    expectNoDifference(
+      sentMessages.map(\.op),
+      ["init", "add-query", "add-query", "remove-query"]
+    )
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
   func runtimeLiveTransactOpensSessionAndSendsMutationWithoutExplicitConnect() async throws {
     let ids = InstantLiveTransportTestIDSequence(["event-init", "event-tx"])
     let session = InstantRuntimeScriptedLiveSession(messages: [
@@ -2558,6 +2634,17 @@ private extension InstantLiveMessage {
       op: "add-query-ok",
       clientEventID: clientEventID,
       fields: fields
+    )
+  }
+
+  static func addQueryExists(
+    clientEventID: String,
+    query: InstantLiveJSONValue
+  ) -> Self {
+    Self(
+      op: "add-query-exists",
+      clientEventID: clientEventID,
+      fields: ["q": query]
     )
   }
 

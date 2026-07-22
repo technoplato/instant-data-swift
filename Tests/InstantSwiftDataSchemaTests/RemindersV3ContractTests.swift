@@ -28,11 +28,15 @@ struct RemindersV3ContractTests {
     let lists = try #require(document.entities.first { $0.namespace == "remindersLists" })
     expectNoDifference(
       lists.attributes.map(\.name),
-      ["id", "title", "color", "position", "createdAt"]
+      ["id", "title", "color", "coverFileID", "position", "createdAt"]
     )
     expectNoDifference(
       lists.attributes.map(\.valueType),
-      [.string, .string, .string, .number, .date]
+      [.string, .string, .string, .string, .number, .date]
+    )
+    expectNoDifference(
+      lists.attributes.filter { !$0.isRequired }.map(\.name),
+      ["coverFileID"]
     )
 
     let reminders = try #require(document.entities.first { $0.namespace == "reminders" })

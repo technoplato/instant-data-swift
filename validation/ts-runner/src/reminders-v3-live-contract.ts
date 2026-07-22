@@ -29,6 +29,19 @@ const websocketURI = process.env.INSTANT_WEBSOCKET_URI
   ?? "wss://api.instantdb.com/runtime/session";
 const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const readerCheckSignal = resolve(tmpdir(), `reminders-reader-check-${randomUUID()}`);
+const fixtures = {
+  list: randomUUID(),
+  swiftReminder: randomUUID(),
+  share: randomUUID(),
+  ownerMembership: randomUUID(),
+  readerMembership: randomUUID(),
+  typeScriptReminder: randomUUID(),
+  swiftTag: randomUUID(),
+  typeScriptTag: randomUUID(),
+  swiftTagTitle: `swift-${randomUUID()}`,
+  typeScriptTagTitle: `typescript-${randomUUID()}`,
+  shareToken: `reminders-v3-${randomUUID()}`,
+};
 const warnings: string[] = [];
 const originalWarn = console.warn;
 console.warn = (...values) => warnings.push(values.map(String).join(" "));
@@ -145,15 +158,15 @@ try {
       membership.user.id === typeScriptUser.id && membership.role === "reader"
     )) === true
     && list.reminders.some((reminder) => (
-      reminder.id === remindersV3AppContract.fixtures.swiftReminder
+      reminder.id === fixtures.swiftReminder
       && reminder.priority === remindersV3AppContract.priority.high
-      && reminder.tags.some((tag) => tag.id === remindersV3AppContract.fixtures.swiftTag)
+      && reminder.tags.some((tag) => tag.id === fixtures.swiftTag)
     ))
   ));
   const swiftList = readerList;
   const readerUpdateRejection = await rejected(
     participantDB.transact(
-      participantDB.tx.reminders[remindersV3AppContract.fixtures.swiftReminder]
+      participantDB.tx.reminders[fixtures.swiftReminder]
         .update({ title: "Reader must not update" }),
     ),
   );
@@ -172,13 +185,13 @@ try {
   ));
 
   await participantDB.transact([
-    participantDB.tx.tags[remindersV3AppContract.fixtures.typeScriptTag].update({
-      title: "typescript",
+    participantDB.tx.tags[fixtures.typeScriptTag].update({
+      title: fixtures.typeScriptTagTitle,
     }),
-    participantDB.tx.reminders[remindersV3AppContract.fixtures.swiftReminder].update({
+    participantDB.tx.reminders[fixtures.swiftReminder].update({
       title: "Swift reminder updated by TypeScript",
     }),
-    participantDB.tx.reminders[remindersV3AppContract.fixtures.typeScriptReminder]
+    participantDB.tx.reminders[fixtures.typeScriptReminder]
       .update({
         title: "TypeScript reminder",
         notes: "Created by @instantdb/core",
@@ -189,8 +202,8 @@ try {
         createdAt: new Date(1_784_424_002_000),
       })
       .link({
-        list: remindersV3AppContract.fixtures.list,
-        tags: remindersV3AppContract.fixtures.typeScriptTag,
+        list: fixtures.list,
+        tags: fixtures.typeScriptTag,
       }),
   ]);
 
@@ -203,13 +216,13 @@ try {
   assert.equal(reminderObserved.ok, true);
   const completedList = await waitForList(participantDB, (list) => (
     list.reminders.some((reminder) => (
-      reminder.id === remindersV3AppContract.fixtures.swiftReminder
+      reminder.id === fixtures.swiftReminder
       && reminder.title === "Swift reminder updated by TypeScript"
     ))
     && list.reminders.some((reminder) => (
-      reminder.id === remindersV3AppContract.fixtures.typeScriptReminder
+      reminder.id === fixtures.typeScriptReminder
       && reminder.priority === remindersV3AppContract.priority.medium
-      && reminder.tags.some((tag) => tag.id === remindersV3AppContract.fixtures.typeScriptTag)
+      && reminder.tags.some((tag) => tag.id === fixtures.typeScriptTag)
     ))
   ));
   const outsiderResult = await outsiderDB.query(remindersListQuery());
@@ -240,6 +253,12 @@ try {
     ok: true,
     details: {
       upstream: remindersV3AppContract.upstream,
+      fixtureIDs: {
+        list: fixtures.list,
+        swiftReminder: fixtures.swiftReminder,
+        typeScriptReminder: fixtures.typeScriptReminder,
+        typeScriptTag: fixtures.typeScriptTag,
+      },
       users: {
         owner: { id: swiftUser.id },
         participant: { id: typeScriptUser.id },
@@ -279,7 +298,7 @@ function coreDatabase(schema: any): any {
 function remindersListQuery(): any {
   return {
     remindersLists: {
-      $: { where: { id: remindersV3AppContract.fixtures.list } },
+      $: { where: { id: fixtures.list } },
       owner: {},
       readers: {},
       writers: {},
@@ -338,6 +357,16 @@ function spawnSwift(
         INSTANT_SWIFT_DATA_REMINDERS_REFRESH_TOKEN: refreshToken,
         INSTANT_SWIFT_DATA_REMINDERS_OWNER_USER_ID: ownerUserID,
         INSTANT_SWIFT_DATA_REMINDERS_PARTICIPANT_USER_ID: participantUserID,
+        INSTANT_SWIFT_DATA_REMINDERS_LIST_ID: fixtures.list,
+        INSTANT_SWIFT_DATA_REMINDERS_SWIFT_REMINDER_ID: fixtures.swiftReminder,
+        INSTANT_SWIFT_DATA_REMINDERS_SHARE_ID: fixtures.share,
+        INSTANT_SWIFT_DATA_REMINDERS_OWNER_MEMBERSHIP_ID: fixtures.ownerMembership,
+        INSTANT_SWIFT_DATA_REMINDERS_READER_MEMBERSHIP_ID: fixtures.readerMembership,
+        INSTANT_SWIFT_DATA_REMINDERS_TYPESCRIPT_REMINDER_ID: fixtures.typeScriptReminder,
+        INSTANT_SWIFT_DATA_REMINDERS_SWIFT_TAG_ID: fixtures.swiftTag,
+        INSTANT_SWIFT_DATA_REMINDERS_TYPESCRIPT_TAG_ID: fixtures.typeScriptTag,
+        INSTANT_SWIFT_DATA_REMINDERS_SWIFT_TAG_TITLE: fixtures.swiftTagTitle,
+        INSTANT_SWIFT_DATA_REMINDERS_SHARE_TOKEN: fixtures.shareToken,
         INSTANT_SWIFT_DATA_REMINDERS_READER_CHECK_SIGNAL: readerCheckSignal,
       },
       stdio: ["ignore", "pipe", "pipe"],

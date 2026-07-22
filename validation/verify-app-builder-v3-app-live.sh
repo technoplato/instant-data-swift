@@ -14,10 +14,15 @@ EXPECTED_INSTANT_REVISION="$(cd "${RUNNER}" && node -p "require('./package.json'
 SQLITE_DATA_REVISION="$(git -C "${ROOT}/upstream/sqlite-data" rev-parse HEAD)"
 INSTANT_REVISION="$(git -C "${ROOT}/upstream/instant" rev-parse HEAD)"
 
+WORKTREE_DIRTY=false
 if [[ -n "$(git -C "${ROOT}" status --porcelain)" ]]; then
-  echo "App Builder V3 verification requires a clean worktree." >&2
-  exit 1
+  WORKTREE_DIRTY=true
+  if [[ "${INSTANT_SWIFT_DATA_ALLOW_DIRTY_CONTRACT_RUN:-0}" != "1" ]]; then
+    echo "App Builder V3 verification requires a clean worktree." >&2
+    exit 1
+  fi
 fi
+export WORKTREE_DIRTY
 if [[ ! -x "${CLI}" ]]; then
   echo "Missing pinned Instant CLI." >&2
   exit 1

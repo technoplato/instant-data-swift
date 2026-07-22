@@ -884,8 +884,9 @@ Create `validation/` with:
   now ports the upstream basics/show-completed/delete-completed tests with
   highlighted titles, tag suggestions, tag-token search, tab-created near
   tokens, aged completed deletion, and loading/error state that keeps previous
-  rows visible on load failure; full upstream FTS ranking/snippet behavior and
-  SwiftUI search views remain future work.
+  rows visible on load failure. The runnable SwiftUI app now exposes live
+  substring and exact-tag search; exact SQLite FTS ranking/snippet presentation
+  remains an intentional reference difference.
 - Reminders: local delete workflows now cover
   `examples reminders delete <reminder-id>`,
   `delete-completed [--list-id id]`, and `delete-list <list-id>`. Reminder
@@ -902,8 +903,9 @@ Create `validation/` with:
   `RemindersDetailModel` now ports upstream due-date, priority, and title
   ordering, show-completed toggling, move-to-manual position persistence, and
   smart-list/tag detail filters, plus loading/error state that keeps previous
-  rows visible on load failure; FTS/highlighting parity and SwiftUI detail views
-  remain future work.
+  rows visible on load failure. The runnable SwiftUI app now exposes list and
+  smart-list detail views, ordering, completion visibility, rich forms, and
+  manual movement; exact FTS snippet presentation remains a reference difference.
 - Reminders: local smart-list stats now expose `examples reminders stats --json`
   with all incomplete, completed, flagged, scheduled, and today counts. The
   flagged/scheduled/today counts exclude completed reminders, matching the

@@ -38,6 +38,9 @@ struct RemindersV3CLI {
     case "lists", "list":
       try await runLists(input, output: output)
 
+    case "tags", "tag":
+      try await runTags(input, output: output)
+
     case "reminders", "reminder":
       try await runReminders(input, output: output)
 
@@ -105,12 +108,18 @@ struct RemindersV3CLI {
       let userID = try await context.requireUserID()
       let lists = try await loadVisibleLists(context: context)
       let listID = InstantID<RemindersV3List>(rawValue: context.makeID())
+      let coverFileID = try await resolveCoverFileID(
+        context: context,
+        explicitID: options.coverFileID,
+        fileURL: options.coverFileURL
+      )
       try await context.send(
         CreateRemindersV3List(
           listID: listID,
           ownerID: userID,
           title: options.title,
           color: options.color,
+          coverFileID: coverFileID,
           position: lists.count,
           createdAt: context.now()
         )
@@ -130,6 +139,31 @@ struct RemindersV3CLI {
       let listID = InstantID<RemindersV3List>(rawValue: arguments[1])
       try await context.send(RenameRemindersV3List(listID: listID, title: joinedTitle(arguments, from: 2)))
       try output.write(ChangeOutput(event: "lists.rename", changedID: listID.rawValue, status: try await context.status()))
+
+    case "update", "edit":
+      let options = try UpdateListOptions(Array(arguments.dropFirst()))
+      let list = try await requireList(context: context, id: options.listID)
+      let coverFileID: String?
+      if options.clearsCover {
+        coverFileID = nil
+      } else if options.coverFileID != nil || options.coverFileURL != nil {
+        coverFileID = try await resolveCoverFileID(
+          context: context,
+          explicitID: options.coverFileID,
+          fileURL: options.coverFileURL
+        )
+      } else {
+        coverFileID = list.coverFileID
+      }
+      try await context.send(
+        UpdateRemindersV3List(
+          listID: list.id,
+          title: options.title ?? list.title,
+          color: options.color ?? list.color,
+          coverFileID: coverFileID
+        )
+      )
+      try output.write(ChangeOutput(event: "lists.update", changedID: list.id.rawValue, status: try await context.status()))
 
     case "delete", "rm":
       guard arguments.count == 2 else {
@@ -239,11 +273,66 @@ struct RemindersV3CLI {
       try await context.send(DeleteRemindersV3Reminder(reminderID: reminder.id, listID: reminder.list))
       try output.write(ChangeOutput(event: "reminders.delete", changedID: reminder.id.rawValue, status: try await context.status()))
 
+    case "delete-completed", "clear-completed", "cleanup-completed":
+      let options = try CompletedCleanupOptions(Array(arguments.dropFirst()))
+      let lists = try await loadVisibleLists(context: context)
+      let selectedLists = try selectLists(lists, listID: options.listID)
+      let targets = selectedLists.flatMap { list in
+        list.reminders
+          .filter { options.scope.includes($0, now: context.now()) }
+          .map { reminder in
+            DeleteRemindersV3CompletedReminders.Target(
+              reminderID: reminder.id,
+              listID: list.id
+            )
+          }
+      }
+      try await context.send(DeleteRemindersV3CompletedReminders(targets: targets))
+      try output.write(
+        DeleteCompletedOutput(
+          event: "reminders.delete-completed",
+          deletedIDs: targets.map(\.reminderID.rawValue),
+          scope: options.scope.description,
+          status: try await context.status()
+        )
+      )
+
     case "tag":
       try await runReminderTags(Array(arguments.dropFirst()), context: context, output: output)
 
     default:
       throw CLIError("Unknown reminders command '\(command)'.\n\(RemindersUsage.text)", exitCode: 64)
+    }
+  }
+
+  private static func runTags(_ arguments: [String], output: OutputMode) async throws {
+    guard let command = arguments.first else {
+      throw CLIError(TagsUsage.text, exitCode: 64)
+    }
+    let context = try await CLIContext.bootstrap()
+    switch command {
+    case "list", "ls":
+      let tags = usedTags(in: try await loadVisibleLists(context: context))
+      try output.write(TagsOutput(event: "tags.list", tags: tags, status: try await context.status()))
+
+    case "delete", "rm":
+      guard arguments.count == 2 else {
+        throw CLIError("Usage: reminders-v3-cli tags delete <tag-id-or-title>", exitCode: 64)
+      }
+      let userID = try await context.requireUserID()
+      let lists = try await loadVisibleLists(context: context)
+      let tag = try requireTag(arguments[1], in: usedTags(in: lists))
+      guard canDeleteTag(tag, in: lists, userID: userID) else {
+        throw CLIError(
+          "Refusing to delete tag '\(tag.title)' because at least one linked list is shared with you rather than owned by you.",
+          exitCode: 66
+        )
+      }
+      try await context.send(DeleteRemindersV3Tag(tagID: tag.id))
+      try output.write(ChangeOutput(event: "tags.delete", changedID: tag.id.rawValue, status: try await context.status()))
+
+    default:
+      throw CLIError("Unknown tags command '\(command)'.\n\(TagsUsage.text)", exitCode: 64)
     }
   }
 
@@ -485,6 +574,29 @@ struct RemindersV3CLI {
     return list.reminders
   }
 
+  private static func requireList(
+    context: CLIContext,
+    id: InstantID<RemindersV3List>
+  ) async throws -> RemindersV3List {
+    let lists = try await loadVisibleLists(context: context)
+    guard let list = lists.first(where: { $0.id == id }) else {
+      throw CLIError("List not found or not visible to the signed-in user: \(id.rawValue)", exitCode: 66)
+    }
+    return list
+  }
+
+  private static func selectLists(
+    _ lists: [RemindersV3List],
+    listID: InstantID<RemindersV3List>?
+  ) throws -> [RemindersV3List] {
+    guard let listID else { return lists }
+    let selected = lists.filter { $0.id == listID }
+    guard !selected.isEmpty else {
+      throw CLIError("List not found or not visible to the signed-in user: \(listID.rawValue)", exitCode: 66)
+    }
+    return selected
+  }
+
   private static func requireReminder(
     context: CLIContext,
     id: InstantID<RemindersV3Reminder>
@@ -494,6 +606,44 @@ struct RemindersV3CLI {
       throw CLIError("Reminder not found: \(id.rawValue)", exitCode: 66)
     }
     return reminder
+  }
+
+  private static func usedTags(in lists: [RemindersV3List]) -> [RemindersV3Tag] {
+    var tagsByID: [InstantID<RemindersV3Tag>: RemindersV3Tag] = [:]
+    for tag in lists.flatMap(\.reminders).flatMap(\.tags) {
+      tagsByID[tag.id] = tag
+    }
+    return tagsByID.values.sorted {
+      let comparison = $0.title.localizedCaseInsensitiveCompare($1.title)
+      if comparison != .orderedSame { return comparison == .orderedAscending }
+      return $0.id.rawValue < $1.id.rawValue
+    }
+  }
+
+  private static func requireTag(
+    _ raw: String,
+    in tags: [RemindersV3Tag]
+  ) throws -> RemindersV3Tag {
+    let normalized = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard let tag = tags.first(where: {
+      $0.id.rawValue.lowercased() == normalized || $0.title.lowercased() == normalized
+    }) else {
+      throw CLIError("Tag not found: \(raw)", exitCode: 66)
+    }
+    return tag
+  }
+
+  private static func canDeleteTag(
+    _ tag: RemindersV3Tag,
+    in lists: [RemindersV3List],
+    userID: InstantID<RemindersV3User>
+  ) -> Bool {
+    let linkedLists = lists.filter { list in
+      list.reminders.contains { reminder in
+        reminder.tags.contains { $0.id == tag.id }
+      }
+    }
+    return !linkedLists.isEmpty && linkedLists.allSatisfy { $0.isOwned(by: userID) }
   }
 
   private static func resolveTags(
@@ -581,6 +731,43 @@ struct RemindersV3CLI {
     }
   }
 
+  private static func resolveCoverFileID(
+    context: CLIContext,
+    explicitID: String?,
+    fileURL: URL?
+  ) async throws -> String? {
+    if let explicitID {
+      return explicitID
+    }
+    guard let fileURL else { return nil }
+    guard FileManager.default.fileExists(atPath: fileURL.path) else {
+      throw CLIError("Cover file not found: \(fileURL.path)", exitCode: 66)
+    }
+    let file = try await context.client.uploadFile(
+      from: fileURL,
+      name: fileURL.lastPathComponent,
+      contentType: contentType(for: fileURL)
+    )
+    return file.id
+  }
+
+  private static func contentType(for fileURL: URL) -> String? {
+    switch fileURL.pathExtension.lowercased() {
+    case "jpg", "jpeg":
+      return "image/jpeg"
+    case "png":
+      return "image/png"
+    case "gif":
+      return "image/gif"
+    case "heic":
+      return "image/heic"
+    case "webp":
+      return "image/webp"
+    default:
+      return nil
+    }
+  }
+
   private static func parseParticipantRole(_ raw: String) throws -> InstantShareRole {
     switch raw.lowercased() {
     case "reader", "read":
@@ -655,9 +842,14 @@ struct RemindersV3CLI {
 
       Lists:
         reminders-v3-cli lists list [--watch]
-        reminders-v3-cli lists add "Family" [--color #4a99ef]
+        reminders-v3-cli lists add "Family" [--color #4a99ef] [--cover-file path|--cover-file-id id]
         reminders-v3-cli lists rename <list-id> "New title"
+        reminders-v3-cli lists update <list-id> [--title text] [--color #4a99ef] [--cover-file path|--cover-file-id id|--clear-cover]
         reminders-v3-cli lists delete <list-id>
+
+      Tags:
+        reminders-v3-cli tags list
+        reminders-v3-cli tags delete <tag-id-or-title>
 
       Reminders:
         reminders-v3-cli reminders list [--list <list-id>] [--completed open|done|all] [--watch]
@@ -666,6 +858,7 @@ struct RemindersV3CLI {
         reminders-v3-cli reminders complete <reminder-id>
         reminders-v3-cli reminders reopen <reminder-id>
         reminders-v3-cli reminders delete <reminder-id>
+        reminders-v3-cli reminders delete-completed [--list <list-id>] [--scope all|1m|6m|1y]
         reminders-v3-cli reminders tag <add|remove|set> <reminder-id> <tag> [...]
 
       Sharing:
@@ -683,6 +876,8 @@ struct RemindersV3CLI {
       Environment:
         INSTANT_APP_ID enables live sync. Without it, the app is local/offline-first.
         INSTANT_PERSISTENCE_PATH overrides the SQLite cache path.
+        Use an authenticated cache for the same user, or sign in a separate cache and
+        grant that CLI user writer access to a shared list, to drive running app clients.
       """
     )
   }
@@ -824,10 +1019,15 @@ private struct ListOptions {
 private struct AddListOptions {
   var title: String
   var color = "#4a99ef"
+  var coverFileID: String?
+  var coverFileURL: URL?
 
   init(_ arguments: [String]) throws {
     guard !arguments.isEmpty else {
-      throw CLIError("Usage: reminders-v3-cli lists add \"Family\" [--color #4a99ef]", exitCode: 64)
+      throw CLIError(
+        "Usage: reminders-v3-cli lists add \"Family\" [--color #4a99ef] [--cover-file path|--cover-file-id id]",
+        exitCode: 64
+      )
     }
     var rest = arguments
     title = rest.removeFirst()
@@ -840,8 +1040,21 @@ private struct AddListOptions {
         }
         color = value
         rest.removeFirst()
+      case "--cover-file":
+        guard coverFileID == nil else {
+          throw CLIError("Use either --cover-file or --cover-file-id, not both.", exitCode: 64)
+        }
+        coverFileURL = URL(fileURLWithPath: try takeValue(&rest, option: option))
+      case "--cover-file-id":
+        guard coverFileURL == nil else {
+          throw CLIError("Use either --cover-file or --cover-file-id, not both.", exitCode: 64)
+        }
+        coverFileID = try takeValue(&rest, option: option)
       default:
-        throw CLIError("Unknown lists add option '\(option)'. Use --color.", exitCode: 64)
+        throw CLIError(
+          "Unknown lists add option '\(option)'. Use --color, --cover-file, or --cover-file-id.",
+          exitCode: 64
+        )
       }
     }
     guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
@@ -850,10 +1063,149 @@ private struct AddListOptions {
   }
 }
 
+private struct UpdateListOptions {
+  var listID: InstantID<RemindersV3List>
+  var title: String?
+  var color: String?
+  var coverFileID: String?
+  var coverFileURL: URL?
+  var clearsCover = false
+
+  init(_ arguments: [String]) throws {
+    guard !arguments.isEmpty else {
+      throw CLIError(
+        "Usage: reminders-v3-cli lists update <list-id> [--title text] [--color #4a99ef] [--cover-file path|--cover-file-id id|--clear-cover]",
+        exitCode: 64
+      )
+    }
+    var rest = arguments
+    listID = InstantID(rawValue: rest.removeFirst())
+    while !rest.isEmpty {
+      let option = rest.removeFirst()
+      switch option {
+      case "--title":
+        title = try takeValue(&rest, option: option)
+      case "--color":
+        color = try takeValue(&rest, option: option)
+      case "--cover-file":
+        try ensureCanSetCover(option)
+        coverFileURL = URL(fileURLWithPath: try takeValue(&rest, option: option))
+      case "--cover-file-id":
+        try ensureCanSetCover(option)
+        coverFileID = try takeValue(&rest, option: option)
+      case "--clear-cover":
+        guard coverFileID == nil, coverFileURL == nil else {
+          throw CLIError("Use --clear-cover by itself, not with a replacement cover.", exitCode: 64)
+        }
+        clearsCover = true
+      default:
+        throw CLIError(
+          "Unknown lists update option '\(option)'. Use --title, --color, --cover-file, --cover-file-id, or --clear-cover.",
+          exitCode: 64
+        )
+      }
+    }
+    guard title != nil || color != nil || coverFileID != nil || coverFileURL != nil || clearsCover else {
+      throw CLIError(
+        "Usage: reminders-v3-cli lists update <list-id> [--title text] [--color #4a99ef] [--cover-file path|--cover-file-id id|--clear-cover]",
+        exitCode: 64
+      )
+    }
+  }
+
+  private func ensureCanSetCover(_ option: String) throws {
+    if clearsCover {
+      throw CLIError("Use --clear-cover by itself, not with \(option).", exitCode: 64)
+    }
+    if coverFileID != nil || coverFileURL != nil {
+      throw CLIError("Only one cover option is allowed.", exitCode: 64)
+    }
+  }
+}
+
 private enum CompletionFilter {
   case open
   case done
   case all
+}
+
+private enum CompletedCleanupScope: CustomStringConvertible {
+  case all
+  case olderThanMonths(Int)
+
+  func includes(_ reminder: RemindersV3Reminder, now: Date) -> Bool {
+    guard reminder.isCompleted else { return false }
+    switch self {
+    case .all:
+      return true
+    case .olderThanMonths(let months):
+      guard let dueDate = reminder.dueDate,
+        let cutoff = Calendar.current.date(byAdding: .month, value: -months, to: now)
+      else { return false }
+      return dueDate < cutoff
+    }
+  }
+
+  var description: String {
+    switch self {
+    case .all:
+      return "all"
+    case .olderThanMonths(1):
+      return "1m"
+    case .olderThanMonths(6):
+      return "6m"
+    case .olderThanMonths(12):
+      return "1y"
+    case .olderThanMonths(let months):
+      return "\(months)m"
+    }
+  }
+}
+
+private struct CompletedCleanupOptions {
+  var listID: InstantID<RemindersV3List>?
+  var scope = CompletedCleanupScope.all
+
+  init(_ arguments: [String]) throws {
+    var rest = arguments
+    while !rest.isEmpty {
+      let option = rest.removeFirst()
+      switch option {
+      case "--list", "--list-id":
+        listID = InstantID(rawValue: try takeValue(&rest, option: option))
+      case "--scope", "--older-than":
+        scope = try Self.parseScope(try takeValue(&rest, option: option))
+      case "--all":
+        scope = .all
+      default:
+        throw CLIError(
+          "Unknown delete-completed option '\(option)'. Use --list, --scope all|1m|6m|1y, or --older-than 1m|6m|1y.",
+          exitCode: 64
+        )
+      }
+    }
+  }
+
+  private static func parseScope(_ raw: String) throws -> CompletedCleanupScope {
+    switch raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() {
+    case "all":
+      return .all
+    case "1m", "1mo", "1month", "1-month", "month":
+      return .olderThanMonths(1)
+    case "6m", "6mo", "6months", "6-month", "6-months":
+      return .olderThanMonths(6)
+    case "1y", "12m", "12mo", "1year", "1-year", "year":
+      return .olderThanMonths(12)
+    case let value:
+      if value.hasSuffix("m"),
+        let months = Int(value.dropLast()),
+        months > 0
+      {
+        return .olderThanMonths(months)
+      }
+      throw CLIError("Invalid completed cleanup scope '\(raw)'. Use all, 1m, 6m, or 1y.", exitCode: 64)
+    }
+  }
 }
 
 private struct ReminderListOptions {
@@ -1046,8 +1398,21 @@ private struct ListsOutput: Codable, CustomStringConvertible {
   var description: String {
     if lists.isEmpty { return "\(event): no lists\n\(status)" }
     return lists.map { list in
-      "\(list.id.rawValue)  \(list.title)  open=\(list.reminders.filter { !$0.isCompleted }.count) share=\(list.share?.id.rawValue ?? "-")"
+      let cover = list.coverFileID.map { " cover=\($0)" } ?? ""
+      return "\(list.id.rawValue)  \(list.title)  color=\(list.color)\(cover) open=\(list.reminders.filter { !$0.isCompleted }.count) share=\(list.share?.id.rawValue ?? "-")"
     }.joined(separator: "\n") + "\n\(status)"
+  }
+}
+
+private struct TagsOutput: Codable, CustomStringConvertible {
+  var event: String
+  var tags: [RemindersV3Tag]
+  var status: StatusOutput
+
+  var description: String {
+    if tags.isEmpty { return "\(event): no tags\n\(status)" }
+    return tags.map { "\($0.id.rawValue)  #\($0.title)" }.joined(separator: "\n")
+      + "\n\(status)"
   }
 }
 
@@ -1107,6 +1472,17 @@ private struct PendingOutput: Codable, CustomStringConvertible {
   }
 }
 
+private struct DeleteCompletedOutput: Codable, CustomStringConvertible {
+  var event: String
+  var deletedIDs: [String]
+  var scope: String
+  var status: StatusOutput
+
+  var description: String {
+    "\(event): deleted=\(deletedIDs.count) scope=\(scope)\n\(status)"
+  }
+}
+
 private struct SimpleOutput: Codable, CustomStringConvertible {
   var event: String
   var ok: Bool
@@ -1120,11 +1496,15 @@ private enum AuthUsage {
 }
 
 private enum ListsUsage {
-  static let text = "Usage: reminders-v3-cli lists <list|add|rename|delete>"
+  static let text = "Usage: reminders-v3-cli lists <list|add|rename|update|delete>"
+}
+
+private enum TagsUsage {
+  static let text = "Usage: reminders-v3-cli tags <list|delete>"
 }
 
 private enum RemindersUsage {
-  static let text = "Usage: reminders-v3-cli reminders <list|add|update|complete|reopen|delete|tag>"
+  static let text = "Usage: reminders-v3-cli reminders <list|add|update|complete|reopen|delete|delete-completed|tag>"
   static let add = "Usage: reminders-v3-cli reminders add <list-id> \"Title\" [--notes text] [--due-date date] [--priority low|medium|high] [--flagged] [--tag tag]..."
   static let update = "Usage: reminders-v3-cli reminders update <reminder-id> [--title text] [--notes text] [--due-date date|--clear-due-date] [--priority low|medium|high|--clear-priority] [--flagged|--unflagged] [--tag tag]..."
 }

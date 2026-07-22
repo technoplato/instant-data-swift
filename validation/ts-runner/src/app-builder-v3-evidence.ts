@@ -93,7 +93,7 @@ const evidence = {
     swiftRevision: execFileSync("git", ["-C", root, "rev-parse", "HEAD"], {
       encoding: "utf8",
     }).trim(),
-    worktreeDirty: false,
+    worktreeDirty: process.env.WORKTREE_DIRTY === "true",
     sqliteDataRevision,
     instantRevision,
     coreVersion: manifest.dependencies["@instantdb/core"],

@@ -19,7 +19,7 @@ extension InstantStoreTests {
         title: "Reminders Port",
         createdAt: InstantTimestamp(milliseconds: 1_234),
         isLocalOnly: true,
-        transport: "not-implemented-local-cache-only"
+        transport: "local-cache-only"
       )
     )
 

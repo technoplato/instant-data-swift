@@ -11,14 +11,15 @@ import {
 } from "./reminders-v3-app-contract.js";
 
 export function projectCanonicalRemindersV3List(value: unknown): RemindersV3List {
-  if (!isRecord(value) || !hasExactKeys(value, [
-    "id", "title", "color", "position", "createdAt", "owner", "readers",
+  if (!isRecord(value) || !hasOnlyKeys(value, [
+    "id", "title", "color", "coverFileID", "position", "createdAt", "owner", "readers",
     "writers", "reminders", "share",
   ])) throw listShapeError();
   if (
     typeof value.id !== "string"
     || typeof value.title !== "string"
     || typeof value.color !== "string"
+    || !isOptionalString(value.coverFileID)
     || !isInteger(value.position)
     || !isDate(value.createdAt)
     || !Array.isArray(value.readers)
@@ -30,6 +31,7 @@ export function projectCanonicalRemindersV3List(value: unknown): RemindersV3List
     id: value.id,
     title: value.title,
     color: value.color,
+    ...(typeof value.coverFileID === "string" ? { coverFileID: value.coverFileID } : {}),
     position: value.position,
     createdAt: value.createdAt,
     owner: projectUser(value.owner),
@@ -175,6 +177,10 @@ function isDate(value: unknown): value is Date {
 
 function isOptionalDate(value: unknown): value is Date | null | undefined {
   return value === null || value === undefined || isDate(value);
+}
+
+function isOptionalString(value: unknown): value is string | null | undefined {
+  return value === null || value === undefined || typeof value === "string";
 }
 
 function isInteger(value: unknown): value is number {

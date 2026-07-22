@@ -297,7 +297,7 @@ extension InstantStoreTests {
     expectNoDifference(evidenceRows.count, 22)
     expectNoDifference(evidenceRows.first?.caseID, "benchmark.local.todos")
     expectNoDifference(evidenceRows.first?.event, "summary")
-    expectNoDifference(evidenceRows.first?.details.transport, "not-implemented-local-cache-only")
+    expectNoDifference(evidenceRows.first?.details.transport, "local-cache-only")
     expectNoDifference(evidenceRows.first?.details.iterations, 2)
     expectNoDifference(evidenceRows.first?.details.metric, nil)
     expectNoDifference(evidenceRows.dropFirst().map(\.details.transport), Array(repeating: result.transport, count: 21))

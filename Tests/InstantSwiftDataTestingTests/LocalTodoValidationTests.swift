@@ -2471,7 +2471,7 @@ struct LocalTodoValidationTests {
             mkdir -p "$(dirname "$output")"
             echo "// generated schema" > "$output"
           fi
-          echo '{"example":"validation","kind":"schema","fileName":"instant.schema.ts","byteCount":19,"transport":"not-implemented-local-cache-only"}'
+          echo '{"example":"validation","kind":"schema","fileName":"instant.schema.ts","byteCount":19,"transport":"local-cache-only"}'
           ;;
         instant-swift-data:perms:generate)
           output=""
@@ -2487,7 +2487,7 @@ struct LocalTodoValidationTests {
             mkdir -p "$(dirname "$output")"
             echo "// generated perms" > "$output"
           fi
-          echo '{"example":"validation","kind":"permissions","fileName":"instant.perms.ts","byteCount":18,"transport":"not-implemented-local-cache-only"}'
+          echo '{"example":"validation","kind":"permissions","fileName":"instant.perms.ts","byteCount":18,"transport":"local-cache-only"}'
           ;;
         instant-swift-data:schema:verify)
           echo '{"example":"validation","kind":"schema","ok":true,"path":"validation/fixtures/instant.schema.ts"}'
@@ -2705,7 +2705,7 @@ struct LocalTodoValidationTests {
               exit 67
               ;;
           esac
-          echo '{"appID":"local-validation","event":"transact","changedID":"contract-note","transport":"not-implemented-local-cache-only","namespace":"validationTransport","transactionID":"validation-transport-contract","changedEntityIDs":["contract-note"],"tripleCount":3,"pendingMutationCount":1,"snapshotCount":1,"snapshots":[]}'
+          echo '{"appID":"local-validation","event":"transact","changedID":"contract-note","transport":"local-cache-only","namespace":"validationTransport","transactionID":"validation-transport-contract","changedEntityIDs":["contract-note"],"tripleCount":3,"pendingMutationCount":1,"snapshotCount":1,"snapshots":[]}'
           ;;
         instant-swift-data:outbox:transport)
           if [ "$5" != "--json" ] || [ -n "${6:-}" ]; then
@@ -2724,7 +2724,7 @@ struct LocalTodoValidationTests {
               exit 67
               ;;
           esac
-          echo '{"appID":"local-validation","event":"transport","transport":"not-implemented-local-cache-only","includeFailed":false,"mutationCount":1,"txStepCount":3,"preconditionCount":0,"mutations":[{"mutationID":"validation-transport-contract","transactionID":"validation-transport-contract","status":"pending","preconditions":[],"txSteps":[["add-triple","contract-note","validationTransport/id","contract-note"],["add-triple","contract-note","validationTransport/done",false],["add-triple","contract-note","validationTransport/title","Swift transport contract"]]}]}'
+          echo '{"appID":"local-validation","event":"transport","transport":"local-cache-only","includeFailed":false,"mutationCount":1,"txStepCount":3,"preconditionCount":0,"mutations":[{"mutationID":"validation-transport-contract","transactionID":"validation-transport-contract","status":"pending","preconditions":[],"txSteps":[["add-triple","contract-note","validationTransport/id","contract-note"],["add-triple","contract-note","validationTransport/done",false],["add-triple","contract-note","validationTransport/title","Swift transport contract"]]}]}'
           ;;
         *)
           echo "unexpected swift arguments: $*" >&2

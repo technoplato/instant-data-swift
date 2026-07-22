@@ -43,10 +43,10 @@ public enum InstantLiveJSONValue: Hashable, Codable, Sendable {
     case .null:
       try container.encodeNil()
 
-    case let .bool(value):
+    case .bool(let value):
       try container.encode(value)
 
-    case let .number(value):
+    case .number(let value):
       if value.isFinite,
         value.rounded() == value,
         value >= Double(Int64.min),
@@ -57,29 +57,29 @@ public enum InstantLiveJSONValue: Hashable, Codable, Sendable {
         try container.encode(value)
       }
 
-    case let .string(value):
+    case .string(let value):
       try container.encode(value)
 
-    case let .array(values):
+    case .array(let values):
       try container.encode(values)
 
-    case let .object(values):
+    case .object(let values):
       try container.encode(values)
     }
   }
 
   public var stringValue: String? {
-    guard case let .string(value) = self else { return nil }
+    guard case .string(let value) = self else { return nil }
     return value
   }
 
   public var arrayValue: [InstantLiveJSONValue]? {
-    guard case let .array(value) = self else { return nil }
+    guard case .array(let value) = self else { return nil }
     return value
   }
 
   public var objectValue: [String: InstantLiveJSONValue]? {
-    guard case let .object(value) = self else { return nil }
+    guard case .object(let value) = self else { return nil }
     return value
   }
 }
@@ -628,12 +628,12 @@ public enum InstantLiveServerEvent: Hashable, Sendable {
     case "stream-append":
       let files: [InstantLiveStreamFile] =
         (message.fields["files"]?.arrayValue ?? []).compactMap { value in
-        guard let object = value.objectValue,
-          let url = object["url"]?.stringValue,
-          let size = object["size"]?.intValue
-        else {
-          return nil
-        }
+          guard let object = value.objectValue,
+            let url = object["url"]?.stringValue,
+            let size = object["size"]?.intValue
+          else {
+            return nil
+          }
           return InstantLiveStreamFile(url: url, size: Int64(size))
         }
       self = .streamAppend(
@@ -671,17 +671,17 @@ public enum InstantLiveServerEvent: Hashable, Sendable {
     switch self {
     case .initOK:
       return "init-ok"
-    case let .addQueryOK(message):
+    case .addQueryOK(let message):
       return message.op
-    case let .addQueryExists(message):
+    case .addQueryExists(let message):
       return message.op
     case .refreshOK:
       return "refresh-ok"
     case .transactOK:
       return "transact-ok"
-    case let .joinRoomOK(message):
+    case .joinRoomOK(let message):
       return message.op
-    case let .leaveRoomOK(message):
+    case .leaveRoomOK(let message):
       return message.op
     case .refreshPresence:
       return "refresh-presence"
@@ -699,7 +699,7 @@ public enum InstantLiveServerEvent: Hashable, Sendable {
       return "stream-append"
     case .error:
       return "error"
-    case let .other(message):
+    case .other(let message):
       return message.op
     }
   }
@@ -735,7 +735,8 @@ public struct InstantLiveSessionRequest: Hashable, Sendable {
         operation: "build Instant live WebSocket URL",
         path: "websocketURI",
         message: "The WebSocket URI must be absolute and include a host.",
-        recovery: "Pass an Instant runtime WebSocket URI such as wss://api.instantdb.com/runtime/session."
+        recovery:
+          "Pass an Instant runtime WebSocket URI such as wss://api.instantdb.com/runtime/session."
       )
     }
     var queryItems = components.queryItems ?? []
@@ -782,11 +783,13 @@ public struct InstantLiveWebSocketSession: Sendable {
 }
 
 public struct InstantLiveTransportClient: Sendable {
-  public var connect: @Sendable (InstantLiveSessionRequest) async throws
-    -> InstantLiveWebSocketSession
+  public var connect:
+    @Sendable (InstantLiveSessionRequest) async throws
+      -> InstantLiveWebSocketSession
 
   public init(
-    connect: @escaping @Sendable (InstantLiveSessionRequest) async throws
+    connect:
+      @escaping @Sendable (InstantLiveSessionRequest) async throws
       -> InstantLiveWebSocketSession
   ) {
     self.connect = connect
@@ -874,25 +877,25 @@ private struct InstantLiveDynamicCodingKey: CodingKey {
   }
 }
 
-private extension InstantLiveJSONValue {
-  init(_ value: JSONValue) {
+extension InstantLiveJSONValue {
+  fileprivate init(_ value: JSONValue) {
     switch value {
     case .null:
       self = .null
-    case let .bool(value):
+    case .bool(let value):
       self = .bool(value)
-    case let .number(value):
+    case .number(let value):
       self = .number(value)
-    case let .string(value):
+    case .string(let value):
       self = .string(value)
-    case let .array(values):
+    case .array(let values):
       self = .array(values.map(Self.init))
-    case let .object(values):
+    case .object(let values):
       self = .object(values.mapValues(Self.init))
     }
   }
 
-  init(jsonObject: Any) throws {
+  fileprivate init(jsonObject: Any) throws {
     switch jsonObject {
     case _ as NSNull:
       self = .null
@@ -923,8 +926,8 @@ private extension InstantLiveJSONValue {
     }
   }
 
-  var intValue: Int? {
-    guard case let .number(value) = self,
+  fileprivate var intValue: Int? {
+    guard case .number(let value) = self,
       value.isFinite,
       value.rounded() == value,
       value >= Double(Int.min),
@@ -935,16 +938,16 @@ private extension InstantLiveJSONValue {
     return Int(value)
   }
 
-  var booleanValue: Bool? {
-    guard case let .bool(value) = self else { return nil }
+  fileprivate var booleanValue: Bool? {
+    guard case .bool(let value) = self else { return nil }
     return value
   }
 
-  var scalarStringValue: String? {
+  fileprivate var scalarStringValue: String? {
     switch self {
-    case let .string(value):
+    case .string(let value):
       return value
-    case let .number(value):
+    case .number(let value):
       guard value.isFinite else { return nil }
       if value.rounded() == value,
         value >= Double(Int64.min),
@@ -964,15 +967,15 @@ extension InstantLiveJSONValue {
     switch self {
     case .null:
       return .null
-    case let .bool(value):
+    case .bool(let value):
       return .bool(value)
-    case let .number(value):
+    case .number(let value):
       return .number(value)
-    case let .string(value):
+    case .string(let value):
       return .string(value)
-    case let .array(values):
+    case .array(let values):
       return .array(values.map(\.jsonValue))
-    case let .object(values):
+    case .object(let values):
       return .object(values.mapValues(\.jsonValue))
     }
   }
@@ -1089,6 +1092,7 @@ private actor InstantLocalLiveSession {
 private actor InstantURLSessionLiveWebSocket {
   private let urlSession: URLSession
   private let task: URLSessionWebSocketTask
+  private var isClosed = false
 
   init(url: URL) throws {
     let configuration = URLSessionConfiguration.ephemeral
@@ -1097,48 +1101,130 @@ private actor InstantURLSessionLiveWebSocket {
     self.urlSession = URLSession(configuration: configuration)
     self.task = urlSession.webSocketTask(with: url)
     self.task.resume()
+    InstantDiagnostics.shared.record(
+      .debug,
+      subsystem: "instant-swift-data-core",
+      category: "network",
+      event: "urlsession-websocket.resumed",
+      message: "URLSession WebSocket task resumed.",
+      metadata: [
+        "host": url.host ?? "unknown",
+        "scheme": url.scheme ?? "unknown",
+      ]
+    )
   }
 
   func send(_ message: InstantLiveMessage) async throws {
-    let data = try JSONEncoder().encode(message)
-    guard let string = String(data: data, encoding: .utf8) else {
-      throw InstantError(
-        code: .decodeFailed,
-        operation: "send Instant live WebSocket message",
-        message: "Encoded WebSocket message was not valid UTF-8.",
-        recovery: "Inspect the live WebSocket message encoder."
+    do {
+      let data = try JSONEncoder().encode(message)
+      guard let string = String(data: data, encoding: .utf8) else {
+        throw InstantError(
+          code: .decodeFailed,
+          operation: "send Instant live WebSocket message",
+          message: "Encoded WebSocket message was not valid UTF-8.",
+          recovery: "Inspect the live WebSocket message encoder."
+        )
+      }
+      try await task.send(.string(string))
+      InstantDiagnostics.shared.record(
+        .trace,
+        subsystem: "instant-swift-data-core",
+        category: "network",
+        event: "urlsession-websocket.frame-sent",
+        message: "URLSession sent a WebSocket text frame.",
+        metadata: [
+          "op": message.op,
+          "byteCount": String(data.count),
+        ],
+        correlationID: message.clientEventID
       )
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "network",
+        event: "urlsession-websocket.send-failed",
+        message: "URLSession failed to send a WebSocket frame.",
+        metadata: ["op": message.op],
+        correlationID: message.clientEventID
+      )
+      throw error
     }
-    try await task.send(.string(string))
   }
 
   func receive() async throws -> InstantLiveMessage {
-    switch try await task.receive() {
-    case let .string(string):
-      guard let data = string.data(using: .utf8) else {
+    do {
+      let message: InstantLiveMessage
+      let byteCount: Int
+      switch try await task.receive() {
+      case .string(let string):
+        guard let data = string.data(using: .utf8) else {
+          throw InstantError(
+            code: .decodeFailed,
+            operation: "decode Instant live WebSocket string",
+            message: "Received WebSocket string was not valid UTF-8.",
+            recovery: "Inspect the Instant live WebSocket response payload."
+          )
+        }
+        byteCount = data.count
+        message = try JSONDecoder().decode(InstantLiveMessage.self, from: data)
+
+      case .data(let data):
+        byteCount = data.count
+        message = try JSONDecoder().decode(InstantLiveMessage.self, from: data)
+
+      @unknown default:
         throw InstantError(
           code: .decodeFailed,
-          operation: "decode Instant live WebSocket string",
-          message: "Received WebSocket string was not valid UTF-8.",
-          recovery: "Inspect the Instant live WebSocket response payload."
+          operation: "decode Instant live WebSocket message",
+          message: "Received an unsupported WebSocket message kind.",
+          recovery: "Update the live transport to handle new WebSocket message kinds."
         )
       }
-      return try JSONDecoder().decode(InstantLiveMessage.self, from: data)
-
-    case let .data(data):
-      return try JSONDecoder().decode(InstantLiveMessage.self, from: data)
-
-    @unknown default:
-      throw InstantError(
-        code: .decodeFailed,
-        operation: "decode Instant live WebSocket message",
-        message: "Received an unsupported WebSocket message kind.",
-        recovery: "Update the live transport to handle new WebSocket message kinds."
+      InstantDiagnostics.shared.record(
+        .trace,
+        subsystem: "instant-swift-data-core",
+        category: "network",
+        event: "urlsession-websocket.frame-received",
+        message: "URLSession received and decoded a WebSocket frame.",
+        metadata: [
+          "op": message.op,
+          "byteCount": String(byteCount),
+        ],
+        correlationID: message.clientEventID
       )
+      return message
+    } catch {
+      if isClosed || error is CancellationError {
+        InstantDiagnostics.shared.record(
+          .debug,
+          subsystem: "instant-swift-data-core",
+          category: "network",
+          event: "urlsession-websocket.receive-ended-after-close",
+          message: "The pending URLSession WebSocket receive ended after the session closed."
+        )
+      } else {
+        InstantDiagnostics.shared.record(
+          error: error,
+          subsystem: "instant-swift-data-core",
+          category: "network",
+          event: "urlsession-websocket.receive-failed",
+          message: "URLSession failed to receive or decode a WebSocket frame."
+        )
+      }
+      throw error
     }
   }
 
   func close() async {
+    isClosed = true
+    InstantDiagnostics.shared.record(
+      .debug,
+      subsystem: "instant-swift-data-core",
+      category: "network",
+      event: "urlsession-websocket.closing",
+      message: "Closing the URLSession WebSocket task."
+    )
     task.cancel(with: .normalClosure, reason: nil)
     urlSession.invalidateAndCancel()
   }
