@@ -59,8 +59,8 @@ let package = Package(
     ),
   ],
   dependencies: [
-    // Keep swift-parsing on the non-macro CasePaths release compatible with SwiftSyntax 602.
-    .package(url: "https://github.com/pointfreeco/swift-case-paths", exact: "1.0.0"),
+    // Accept the CasePaths 1.x line so TCA hosts can unify on their newer compatible release.
+    .package(url: "https://github.com/pointfreeco/swift-case-paths", "1.0.0"..<"2.0.0"),
     .package(url: "https://github.com/pointfreeco/swift-custom-dump", from: "1.0.0"),
     .package(url: "https://github.com/pointfreeco/swift-dependencies", from: "1.0.0"),
     .package(url: "https://github.com/pointfreeco/swift-macro-testing", from: "0.1.0"),

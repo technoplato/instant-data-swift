@@ -2311,17 +2311,27 @@ extension InstantSwiftDataClient {
     createdAt explicitCreatedAt: InstantTimestamp? = nil,
     @InstantMutationBuilder _ build: @Sendable () throws -> [InstantMutation]
   ) async throws -> InstantStoreMutationResult {
-    @Dependency(\.date) var date
-    @Dependency(\.uuid) var uuid
+    let transactionID: String
+    if let explicitID {
+      transactionID = explicitID
+    } else if let runtime {
+      transactionID = runtime.configuration.makeID()
+    } else {
+      @Dependency(\.uuid) var uuid
+      transactionID = uuid().uuidString.lowercased()
+    }
 
-    let transactionID =
-      explicitID
-      ?? runtime?.configuration.makeID()
-      ?? uuid().uuidString.lowercased()
-    let createdAt =
-      explicitCreatedAt
-      ?? runtime?.configuration.now()
-      ?? InstantTimestamp(milliseconds: Int64((date().timeIntervalSince1970 * 1000).rounded()))
+    let createdAt: InstantTimestamp
+    if let explicitCreatedAt {
+      createdAt = explicitCreatedAt
+    } else if let runtime {
+      createdAt = runtime.configuration.now()
+    } else {
+      @Dependency(\.date) var date
+      createdAt = InstantTimestamp(
+        milliseconds: Int64((date().timeIntervalSince1970 * 1000).rounded())
+      )
+    }
     let operations = try build().flatMap {
       try $0.operations(transactionID: transactionID, txTime: createdAt)
     }
