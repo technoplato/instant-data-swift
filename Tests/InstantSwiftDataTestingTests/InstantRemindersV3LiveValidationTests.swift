@@ -46,6 +46,18 @@ struct InstantRemindersV3LiveValidationTests {
   @Test
   func evidenceRoundTripsExactSharingAndReminderShapes() throws {
     let details = InstantRemindersV3LiveValidationDetails(
+      authenticatedUser: InstantRemindersV3LiveUserEvidence(
+        id: "owner-user",
+        email: "owner@example.com",
+        displayName: "Owner",
+        username: "owner"
+      ),
+      participantDirectoryUser: InstantRemindersV3LiveUserEvidence(
+        id: "reader-user",
+        email: "reader@example.com",
+        displayName: "Reader",
+        username: "reader"
+      ),
       list: InstantRemindersV3LiveListEvidence(
         id: InstantRemindersV3LiveValidation.listID,
         title: "Family",

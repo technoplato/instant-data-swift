@@ -979,10 +979,9 @@ Create `validation/` with:
   `watch --events 1`, and `sign-out` commands over the existing auth runtime. It
   preserves the upstream magic-code-only recipe scope, signed-out login state,
   signed-out code-entry state, signed-in dashboard state, and sign-out flow while
-  adapting `db.useUser().email` to the local `InstantAuthSession` shape by
-  deriving the display email from `email:<address>` user ids created by
-  `InstantMagicCodeExchange.local`. `send-code` carries the pending code-entry
-  state; plain `status` reports persisted auth/dashboard state.
+  exposing `db.useUser().email` through the durable Swift auth session's standard
+  user identity fields. `send-code` carries the pending code-entry state; plain
+  `status` reports persisted auth/dashboard state.
 - App-builder: the local Instant website-style port exposes durable
   `examples app-builder generate <prompt> [--org-id org]`, `list`,
   `show <build-id>`, `append <build-id>`, `finish <build-id>`, and `reset`

@@ -1,0 +1,99 @@
+name: InstantRecipesV3
+
+options:
+  bundleIdPrefix: com.technoplato.InstantSwiftData
+  deploymentTarget:
+    iOS: "17.0"
+    macOS: "14.0"
+    tvOS: "17.0"
+    watchOS: "10.0"
+
+packages:
+  InstantSwiftData:
+    path: ../..
+
+targets:
+  InstantRecipesV3iOS:
+    type: application
+    platform: iOS
+    sources:
+      - path: ../../Sources/RecipesV3Executable/main.swift
+    dependencies:
+      - package: InstantSwiftData
+        product: RecipesV3App
+    configFiles:
+      Debug: RecipesV3.xcconfig
+      Release: RecipesV3.xcconfig
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.technoplato.InstantSwiftData.RecipesV3iOS
+        PRODUCT_NAME: Instant Recipes
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: iOS-Info.plist
+        IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+        OTHER_SWIFT_FLAGS: "$(inherited) -parse-as-library"
+        SWIFT_VERSION: "6.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+
+  InstantRecipesV3macOS:
+    type: application
+    platform: macOS
+    sources:
+      - path: ../../Sources/RecipesV3Executable/main.swift
+    dependencies:
+      - package: InstantSwiftData
+        product: RecipesV3App
+    configFiles:
+      Debug: RecipesV3.xcconfig
+      Release: RecipesV3.xcconfig
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.technoplato.InstantSwiftData.RecipesV3macOS
+        PRODUCT_NAME: Instant Recipes
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: macOS-Info.plist
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        OTHER_SWIFT_FLAGS: "$(inherited) -parse-as-library"
+        SWIFT_VERSION: "6.0"
+
+  InstantRecipesV3tvOS:
+    type: application
+    platform: tvOS
+    sources:
+      - path: ../../Sources/RecipesV3Executable/main.swift
+    dependencies:
+      - package: InstantSwiftData
+        product: RecipesV3App
+    configFiles:
+      Debug: RecipesV3.xcconfig
+      Release: RecipesV3.xcconfig
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.technoplato.InstantSwiftData.RecipesV3tvOS
+        PRODUCT_NAME: Instant Recipes
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: tvOS-Info.plist
+        OTHER_SWIFT_FLAGS: "$(inherited) -parse-as-library"
+        SWIFT_VERSION: "6.0"
+        TVOS_DEPLOYMENT_TARGET: "17.0"
+
+  InstantRecipesV3watchOS:
+    type: application
+    platform: watchOS
+    sources:
+      - path: ../../Sources/RecipesV3Executable/main.swift
+    dependencies:
+      - package: InstantSwiftData
+        product: RecipesV3App
+    configFiles:
+      Debug: RecipesV3.xcconfig
+      Release: RecipesV3.xcconfig
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.technoplato.InstantSwiftData.RecipesV3watchOS
+        PRODUCT_NAME: Instant Recipes
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: watchOS-Info.plist
+        OTHER_SWIFT_FLAGS: "$(inherited) -parse-as-library"
+        SWIFT_VERSION: "6.0"
+        WATCHOS_DEPLOYMENT_TARGET: "10.0"

@@ -8,8 +8,8 @@ The package now includes a local-first runtime, typed query and mutation APIs,
 live InstantDB transport, auth, storage, rooms/presence/topics, streams, v3
 sharing, command-line workflows, and runnable SwiftUI examples. Todos and
 Reminders have both been exercised against live Instant apps across separate
-processes; Reminders has also been exercised between two macOS binaries and an
-iOS Simulator build.
+processes. Reminders has also been exercised across macOS, iOS Simulator,
+Apple TV Simulator, and Apple Watch Simulator clients.
 
 Runtime and Reminders app diagnostics are documented in
 [docs/diagnostics.md](docs/diagnostics.md). The macOS Reminders executable writes
@@ -17,6 +17,32 @@ structured JSON Lines to `~/Library/Logs/InstantSwiftData/reminders-v3.jsonl`.
 The current Reminders behavior, upstream references, real-binary evidence, and
 exact remaining reference differences are recorded in
 [docs/reminders-v3-live-parity-audit.md](docs/reminders-v3-live-parity-audit.md).
+
+## Instant Recipes
+
+The eight recipes in the current [Instant Recipes](https://www.instantdb.com/recipes)
+catalog—Todos, Cursors, Custom Cursors, Reactions, Typing Indicator, Avatar
+Stack, Merge Tile Game, and Auth—share a native SwiftUI catalog host and the
+same dependency-injected Swift runtime used by their CLI commands.
+
+```bash
+# Native Mac catalog; select any recipe in the app.
+swift run recipes-v3
+
+# Noninteractive, composable recipe commands.
+swift run instant-swift-data recipes todos add "do the dishes"
+swift run instant-swift-data recipes merge-tile-game board --json
+
+# Interactive recipe shell; type help or exit inside it.
+swift run instant-swift-data recipes interactive
+
+# Reproducible unsigned Mac and simulator builds.
+Examples/RecipesV3/build-all-platforms.sh
+```
+
+The iPhone/iPad, Mac, Apple Watch, and Apple TV schemes, configuration options,
+direct-recipe launch arguments, and complete CLI examples are documented in
+[Examples/RecipesV3/README.md](Examples/RecipesV3/README.md).
 
 Run the live macOS Reminders app with the retained prototype credentials:
 
@@ -28,7 +54,12 @@ swift run reminders-v3
 ```
 
 Use a different `INSTANT_PERSISTENCE_PATH` in each terminal to run two isolated
-clients. iOS Simulator build and launch commands are in the parity audit.
+clients. iOS, tvOS, and watchOS Simulator build and launch commands are in the
+parity audit. The compact Apple TV and Apple Watch hosts provide the same email
+magic-code and guest sign-in flow as iPhone, plus account sign-out and list
+sharing by email. `REMINDERS_V3_USER_ID` and `REMINDERS_V3_REFRESH_TOKEN` remain
+available only as an automation shortcut and never embed the refresh token in
+an app plist.
 
 Drive the same live Reminders data from the dedicated CLI. Reusing an app's
 authenticated cache uses that user's session; a different path is an isolated

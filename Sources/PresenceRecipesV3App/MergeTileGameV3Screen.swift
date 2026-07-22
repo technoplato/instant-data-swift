@@ -191,7 +191,7 @@ public struct InitializeMergeTileGameV3Board: InstantMessage {
     return InstantPreparedMessage(
       change: MergeTileGameV3BoardInitialized(id: MergeTileGameV3Board.fixedID)
     ) {
-      MergeTileGameV3Board.create(
+      MergeTileGameV3Board.update(
         id: MergeTileGameV3Board.fixedID,
         MergeTileGameV3Board.state.set(MergeTileGameV3Board.empty.state)
       )
@@ -329,6 +329,7 @@ public struct MergeTileGameV3Room: InstantRoomSchema {
   import SwiftUI
 
   @MainActor
+  @available(iOS 17.0, macOS 14.0, tvOS 17.0, watchOS 10.0, *)
   public final class MergeTileGameV3Model: ObservableObject {
     @Published public private(set) var presence: MergeTileGameV3Presence
     @Published public private(set) var peers: [MergeTileGameV3Presence] = []
@@ -378,6 +379,7 @@ public struct MergeTileGameV3Room: InstantRoomSchema {
   }
 
   @MainActor
+  @available(iOS 17.0, macOS 14.0, tvOS 17.0, watchOS 10.0, *)
   public struct MergeTileGameV3Screen: View {
     @FetchOne(MergeTileGameV3Board.fixedQuery) private var board: MergeTileGameV3Board?
     @Room private var room: InstantRoom<MergeTileGameV3Room>
@@ -386,6 +388,9 @@ public struct MergeTileGameV3Room: InstantRoomSchema {
     @StateObject private var model: MergeTileGameV3Model
     @State private var didRequestInitialization = false
     @State private var status = "Ready"
+    #if os(tvOS)
+      @FocusState private var focusedCellIndex: Int?
+    #endif
 
     public init(
       profileID: String = UUID().uuidString,
@@ -397,42 +402,18 @@ public struct MergeTileGameV3Room: InstantRoomSchema {
     }
 
     public var body: some View {
-      VStack(spacing: 16) {
-        HStack {
-          Circle()
-            .fill(tileColor(model.selectedColor))
-            .frame(width: 12, height: 12)
-          Text("Your color")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-          Spacer()
-          Button("Reset", action: resetButtonTapped)
-            .font(.caption)
-        }
-        .frame(maxWidth: 200)
-
-        LazyVGrid(columns: Array(repeating: GridItem(.fixed(44), spacing: 4), count: 4), spacing: 4) {
-          ForEach(0..<MergeTileGameV3Board.boardSize, id: \.self) { row in
-            ForEach(0..<MergeTileGameV3Board.boardSize, id: \.self) { column in
-              let key = "\(row)-\(column)"
-              Button(action: { cellButtonTapped(row: row, column: column) }) {
-                RoundedRectangle(cornerRadius: 8)
-                  .fill(tileColor(visibleBoard.state[key] ?? MergeTileGameV3Board.emptyColor))
-                  .frame(width: 44, height: 44)
-              }
-              .buttonStyle(.plain)
-            }
+      Group {
+        #if os(watchOS)
+          ScrollView {
+            gameContent
+              .padding(.horizontal, 4)
+              .padding(.bottom, 8)
           }
-        }
-        .padding(8)
-        .background(.white, in: RoundedRectangle(cornerRadius: 12))
-        .shadow(radius: 2)
-
-        Text(status)
-          .font(.caption)
-          .foregroundStyle(.secondary)
+        #else
+          gameContent
+            .padding()
+        #endif
       }
-      .padding()
       .instantRoom(
         $room,
         InstantRoom<MergeTileGameV3Room>(
@@ -442,10 +423,152 @@ public struct MergeTileGameV3Room: InstantRoomSchema {
       )
       .presence($presence, in: room, publishing: model.presence)
       .onChange(of: presence) { _, values in model.updatePresence(values) }
-      .onChange(of: $board.isLoading, initial: true) { _, isLoading in
+      .onChange(of: $board.isLoading) { _, isLoading in
         initializeBoardIfNeeded(isLoading: isLoading)
       }
+      .task {
+        do {
+          try await $board.task()
+        } catch is CancellationError {
+        } catch let error as InstantError {
+          status = error.recoveryMessage
+        } catch {
+          status = String(describing: error)
+        }
+      }
       .navigationTitle("Merge Tile Game")
+    }
+
+    private var gameContent: some View {
+      VStack(spacing: contentSpacing) {
+        HStack {
+          Circle()
+            .fill(tileColor(model.selectedColor))
+            .frame(width: 12, height: 12)
+          Text("Your color")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+          Spacer()
+          resetButton
+        }
+        .frame(width: controlsWidth)
+
+        LazyVGrid(columns: gridColumns, spacing: tileSpacing) {
+          ForEach(0..<(MergeTileGameV3Board.boardSize * MergeTileGameV3Board.boardSize), id: \.self) { index in
+            let row = index / MergeTileGameV3Board.boardSize
+            let column = index % MergeTileGameV3Board.boardSize
+            tileButton(row: row, column: column)
+          }
+        }
+        .frame(width: boardWidth)
+        .padding(boardPadding)
+        .background(.white, in: RoundedRectangle(cornerRadius: 12))
+        .shadow(radius: 2)
+
+        Text(status)
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
+      #if os(watchOS)
+        .frame(maxWidth: .infinity)
+      #else
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      #endif
+    }
+
+    @ViewBuilder
+    private var resetButton: some View {
+      #if os(watchOS)
+        Button(action: resetButtonTapped) {
+          Image(systemName: "arrow.counterclockwise")
+            .accessibilityLabel("Reset")
+        }
+        .buttonStyle(.bordered)
+      #else
+        Button("Reset", action: resetButtonTapped)
+          .font(.caption)
+          .buttonStyle(.bordered)
+      #endif
+    }
+
+    private var tileSize: CGFloat {
+      #if os(watchOS)
+        26
+      #elseif os(tvOS)
+        72
+      #else
+        44
+      #endif
+    }
+
+    private var tileSpacing: CGFloat {
+      #if os(watchOS)
+        3
+      #elseif os(tvOS)
+        10
+      #else
+        4
+      #endif
+    }
+
+    private var boardPadding: CGFloat {
+      #if os(watchOS)
+        3
+      #elseif os(tvOS)
+        16
+      #else
+        8
+      #endif
+    }
+
+    private var contentSpacing: CGFloat {
+      #if os(watchOS)
+        6
+      #else
+        16
+      #endif
+    }
+
+    private var boardWidth: CGFloat {
+      tileSize * CGFloat(MergeTileGameV3Board.boardSize)
+        + tileSpacing * CGFloat(MergeTileGameV3Board.boardSize - 1)
+    }
+
+    private var controlsWidth: CGFloat {
+      #if os(tvOS)
+        520
+      #else
+        boardWidth
+      #endif
+    }
+
+    private var gridColumns: [GridItem] {
+      Array(
+        repeating: GridItem(.fixed(tileSize), spacing: tileSpacing),
+        count: MergeTileGameV3Board.boardSize
+      )
+    }
+
+    @ViewBuilder
+    private func tileButton(row: Int, column: Int) -> some View {
+      let key = "\(row)-\(column)"
+      let index = row * MergeTileGameV3Board.boardSize + column
+      let button = Button(action: { cellButtonTapped(row: row, column: column) }) {
+        RoundedRectangle(cornerRadius: tileSize / 6)
+          .fill(tileColor(visibleBoard.state[key] ?? MergeTileGameV3Board.emptyColor))
+          .frame(width: tileSize, height: tileSize)
+      }
+      #if os(tvOS)
+        button
+          .focused($focusedCellIndex, equals: index)
+          .buttonStyle(
+            MergeTileGameV3TVButtonStyle(isFocused: focusedCellIndex == index)
+          )
+          .focusEffectDisabled()
+          .animation(.easeInOut(duration: 0.12), value: focusedCellIndex)
+      #else
+        button.buttonStyle(.plain)
+      #endif
     }
 
     private var visibleBoard: MergeTileGameV3Board {
@@ -494,4 +617,20 @@ public struct MergeTileGameV3Room: InstantRoomSchema {
       )
     }
   }
+
+  #if os(tvOS)
+    private struct MergeTileGameV3TVButtonStyle: ButtonStyle {
+      var isFocused: Bool
+
+      func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+          .overlay {
+            RoundedRectangle(cornerRadius: 12)
+              .stroke(isFocused ? .blue : .clear, lineWidth: 5)
+          }
+          .scaleEffect(isFocused ? 1.08 : 1)
+          .opacity(configuration.isPressed ? 0.72 : 1)
+      }
+    }
+  #endif
 #endif

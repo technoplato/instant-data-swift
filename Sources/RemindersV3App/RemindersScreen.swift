@@ -2,7 +2,7 @@ import Dependencies
 import Foundation
 import InstantSwiftData
 
-#if canImport(SwiftUI)
+#if canImport(SwiftUI) && (os(iOS) || os(macOS))
   import SwiftUI
 
   @MainActor
@@ -10,6 +10,7 @@ import InstantSwiftData
   public struct RemindersV3Screen: View {
     @InstantAuth(RemindersV3User.self, providers: RemindersV3AuthProviders.self)
     private var auth
+    @FetchOne private var accountUser: RemindersV3User?
     @State private var message = "Sign in to sync and share lists"
     @State private var showsAccount = false
     @FocusState private var focusedAuthField: AuthField?
@@ -109,6 +110,9 @@ import InstantSwiftData
           metadata: ["characterCount": String(code.count)]
         )
       }
+      .task(id: activeUserID) {
+        await observeAccountUser()
+      }
       .onAppear {
         InstantDiagnostics.shared.record(
           .debug,
@@ -133,9 +137,40 @@ import InstantSwiftData
       }
     }
 
+    private var activeUserID: InstantID<RemindersV3User>? {
+      injectedUserID ?? auth.user?.id
+    }
+
     private var accountSheet: some View {
       NavigationStack {
         Form {
+          Section("Account") {
+            if let imageURL = accountImageURL {
+              AsyncImage(url: imageURL) { image in
+                image
+                  .resizable()
+                  .scaledToFill()
+              } placeholder: {
+                ProgressView()
+              }
+              .frame(width: 56, height: 56)
+              .clipShape(.circle)
+            }
+            if let displayName = accountUser?.displayName?.remindersNonempty {
+              LabeledContent("Name", value: displayName)
+            }
+            if let username = accountUser?.username?.remindersNonempty {
+              LabeledContent("Username", value: "@\(username)")
+            }
+            LabeledContent(
+              "Email",
+              value: accountEmail ?? (auth.session?.isGuest == true ? "Not added" : "Unavailable")
+            )
+            LabeledContent(
+              "Account type",
+              value: auth.session?.isGuest == true ? "Guest" : "Member"
+            )
+          }
           if auth.session?.isGuest == true {
             Section("Protect this guest account") {
               Text("Add your email without losing this guest account or its lists.")
@@ -162,10 +197,6 @@ import InstantSwiftData
                   .foregroundStyle(.secondary)
               }
             }
-          } else {
-            Section("Account") {
-              Text("Signed in as \(auth.session?.userID ?? "Instant user")")
-            }
           }
           Section {
             Button("Sign out", role: .destructive, action: signOut)
@@ -179,6 +210,32 @@ import InstantSwiftData
         }
       }
       .frame(minWidth: 360, minHeight: 300)
+    }
+
+    private var accountEmail: String? {
+      accountUser?.email?.remindersNonempty ?? auth.user?.email?.remindersNonempty
+    }
+
+    private var accountImageURL: URL? {
+      let rawValue = accountUser?.imageURL?.remindersNonempty
+        ?? auth.user?.imageURL?.remindersNonempty
+      return rawValue.flatMap(URL.init(string:))
+    }
+
+    private func observeAccountUser() async {
+      do {
+        let query = activeUserID.map { RemindersV3User.remindersUser(id: $0) }
+        try await $accountUser.task(query)
+      } catch is CancellationError {
+      } catch {
+        InstantDiagnostics.shared.record(
+          error: error,
+          subsystem: "reminders-v3",
+          category: "query",
+          event: "account-user-query.failed",
+          message: "Could not resolve the signed-in user record."
+        )
+      }
     }
 
     private func sendMagicCode() {
@@ -809,6 +866,8 @@ import InstantSwiftData
   public struct RemindersV3ListScreen: View {
     @FetchOne private var list: RemindersV3List?
     @FetchAll private var reminders: [RemindersV3Reminder]
+    @FetchAll private var sharingUsers: [RemindersV3User]
+    @FetchAll private var memberSuggestions: [RemindersV3User]
     @Dependency(\.defaultInstantSwiftData) private var db
     @Dependency(\.date.now) private var now
     @Dependency(\.uuid) private var uuid
@@ -817,7 +876,7 @@ import InstantSwiftData
     @State private var coverImageData: Data?
     @State private var form: RemindersV3ReminderFormDestination?
     @State private var editedList: RemindersV3List?
-    @State private var memberID = ""
+    @State private var memberEmail = ""
     @State private var memberRole = InstantShareRole.reader
     @State private var message = ""
     @State private var ordering = RemindersV3Ordering.manual
@@ -826,7 +885,7 @@ import InstantSwiftData
 
     private enum Field: Hashable {
       case newReminder
-      case memberID
+      case memberEmail
     }
 
     public let listID: InstantID<RemindersV3List>
@@ -918,6 +977,12 @@ import InstantSwiftData
       .task(id: list?.coverFileID) {
         await loadCoverImage(fileID: list?.coverFileID)
       }
+      .task(id: sharingUserIDs) {
+        await observeSharingUsers()
+      }
+      .task(id: normalizedMemberEmail) {
+        await observeMemberSuggestions()
+      }
       .onChange(of: reminders.map(\.id)) { _, ids in
         recordReminderEmission(ids)
       }
@@ -974,44 +1039,146 @@ import InstantSwiftData
       canEditList && reminders.contains { $0.isCompleted }
     }
 
+    private var sharingUserIDs: [InstantID<RemindersV3User>] {
+      guard let list else { return [] }
+      let membershipIDs = list.share?.memberships
+        .filter { $0.revokedAt == nil }
+        .map(\.user) ?? []
+      return Array(Set([list.owner] + membershipIDs)).sorted { $0.rawValue < $1.rawValue }
+    }
+
+    private var normalizedMemberEmail: String {
+      memberEmail.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private var memberTarget: RemindersV3User? {
+      (memberSuggestions + sharingUsers).first {
+        $0.email?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+          == normalizedMemberEmail
+      }
+    }
+
     @ViewBuilder
     private func sharingSection(_ list: RemindersV3List) -> some View {
-      Section("Sharing") {
-        if list.isOwned(by: userID), let share = list.share {
-          Text("Token: \(share.token)")
-            .textSelection(.enabled)
-          ForEach(share.memberships) { membership in
-            HStack {
-              Text(membership.user.rawValue)
-              Spacer()
-              Text(membership.role)
-                .foregroundStyle(.secondary)
-              if membership.shareRole != .owner {
-                Button("Revoke") { revoke(membership, share: share) }
-                  .buttonStyle(.bordered)
+      if let share = list.share {
+        Section("People with Access") {
+          ForEach(share.memberships.filter { $0.revokedAt == nil }) { membership in
+            sharingMembershipRow(membership, share: share, canManage: list.isOwned(by: userID))
+          }
+        }
+      }
+
+      if list.isOwned(by: userID), let share = list.share {
+        Section("Add Person") {
+          TextField("Email address", text: $memberEmail)
+            .textContentType(.emailAddress)
+            .focused($focusedField, equals: .memberEmail)
+          if normalizedMemberEmail.count >= 2 {
+            ForEach(memberSuggestions.filter { $0.id != userID }.prefix(8)) { candidate in
+              Button {
+                memberEmail = candidate.email ?? ""
+                focusedField = nil
+              } label: {
+                sharingIdentityLabel(candidate)
               }
+              .buttonStyle(.plain)
+            }
+            if memberSuggestions.isEmpty && !$memberSuggestions.isLoading {
+              Text("No account matches that email.")
+                .foregroundStyle(.secondary)
             }
           }
-          TextField("Member user ID", text: $memberID)
-            .focused($focusedField, equals: .memberID)
-          Picker("Role", selection: $memberRole) {
-            Text("Reader").tag(InstantShareRole.reader)
-            Text("Writer").tag(InstantShareRole.writer)
+          Picker("Access", selection: $memberRole) {
+            Text("Can view").tag(InstantShareRole.reader)
+            Text("Can edit").tag(InstantShareRole.writer)
           }
-          Button("Grant access") { grantAccess(on: share) }
+          Button(memberTargetIsExisting(in: share) ? "Update access" : "Add person") {
+            grantAccess(on: share)
+          }
+          .buttonStyle(.borderedProminent)
+          .disabled(memberTarget == nil || memberTarget?.id == userID)
+        }
+      } else if list.isOwned(by: userID) {
+        Section("Sharing") {
+          Button("Set up sharing", action: createShare)
             .buttonStyle(.bordered)
-            .disabled(memberID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        } else if list.isOwned(by: userID) {
-          Button("Create share link", action: createShare)
-            .buttonStyle(.bordered)
-        } else {
+          Text("You can then invite people by email and choose whether they can view or edit.")
+            .foregroundStyle(.secondary)
+        }
+      } else {
+        Section("Your Access") {
           Label(
-            list.writers.contains(userID) ? "Your access: Writer" : "Your access: Reader",
+            list.writers.contains(userID) ? "Can edit" : "Can view",
             systemImage: list.writers.contains(userID) ? "pencil" : "eye"
           )
           Text("The list owner manages sharing access.")
             .foregroundStyle(.secondary)
         }
+      }
+    }
+
+    private func sharingMembershipRow(
+      _ membership: RemindersV3ShareMembership,
+      share: RemindersV3Share,
+      canManage: Bool
+    ) -> some View {
+      HStack {
+        if let identity = sharingUsers.first(where: { $0.id == membership.user }) {
+          sharingIdentityLabel(identity)
+        } else {
+          VStack(alignment: .leading) {
+            Text(membership.user == userID ? "You" : "Guest account")
+            Text("Identity details unavailable")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
+        Spacer()
+        Text(membership.role.capitalized)
+          .foregroundStyle(.secondary)
+        if canManage && membership.shareRole != .owner {
+          Button("Remove") { revoke(membership, share: share) }
+            .buttonStyle(.bordered)
+        }
+      }
+    }
+
+    private func sharingIdentityLabel(_ identity: RemindersV3User) -> some View {
+      VStack(alignment: .leading) {
+        Text(identity.id == userID ? "You" : identity.remindersIdentityTitle)
+        if let subtitle = identity.remindersIdentitySubtitle {
+          Text(subtitle)
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+      }
+    }
+
+    private func memberTargetIsExisting(in share: RemindersV3Share) -> Bool {
+      guard let memberTarget else { return false }
+      return share.memberships.contains {
+        $0.user == memberTarget.id && $0.revokedAt == nil
+      }
+    }
+
+    private func observeSharingUsers() async {
+      do {
+        try await $sharingUsers.task(RemindersV3User.remindersUsers(ids: sharingUserIDs))
+      } catch is CancellationError {
+      } catch {
+        message = "Could not load sharing identities: \(String(describing: error))"
+      }
+    }
+
+    private func observeMemberSuggestions() async {
+      do {
+        try await Task.sleep(for: .milliseconds(180))
+        try await $memberSuggestions.task(
+          RemindersV3User.remindersUsers(matchingEmail: normalizedMemberEmail)
+        )
+      } catch is CancellationError {
+      } catch {
+        message = "Could not search people: \(String(describing: error))"
       }
     }
 
@@ -1075,7 +1242,7 @@ import InstantSwiftData
       let name: String
       switch field {
       case .newReminder: name = "new-reminder"
-      case .memberID: name = "member-id"
+      case .memberEmail: name = "member-email"
       case nil: name = "none"
       }
       InstantDiagnostics.shared.record(
@@ -1351,9 +1518,10 @@ import InstantSwiftData
     }
 
     private func grantAccess(on share: RemindersV3Share) {
-      let rawMemberID = memberID.trimmingCharacters(in: .whitespacesAndNewlines)
-      guard !rawMemberID.isEmpty else { return }
-      let targetID = InstantID<RemindersV3User>(rawValue: rawMemberID)
+      guard let targetID = memberTarget?.id, targetID != userID else {
+        message = "Choose an account from the email suggestions."
+        return
+      }
       recordMutation(
         event: "share-access.requested",
         message: "Changing reminder-list share access.",
@@ -1378,6 +1546,7 @@ import InstantSwiftData
           ),
           onServerAccepted: { _ in
             message = "Role updated"
+            memberEmail = ""
             recordMutation(
               .notice,
               event: "share-role.server-accepted",
@@ -1407,6 +1576,7 @@ import InstantSwiftData
           ),
           onServerAccepted: { _ in
             message = "Access granted"
+            memberEmail = ""
             recordMutation(
               .notice,
               event: "share-grant.server-accepted",

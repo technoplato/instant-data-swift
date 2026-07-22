@@ -400,6 +400,33 @@ private actor InstantRuntimeLiveRoomPresenceState {
   }
 }
 
+private actor InstantRuntimeActiveRoomPresenceState {
+  private var userIDsByRoom: [InstantRoomHandle: Set<String>] = [:]
+
+  func activate(userID: String, in room: InstantRoomHandle) {
+    userIDsByRoom[room, default: []].insert(userID)
+  }
+
+  func deactivate(userID: String, in room: InstantRoomHandle) {
+    userIDsByRoom[room]?.remove(userID)
+    if userIDsByRoom[room]?.isEmpty == true {
+      userIDsByRoom[room] = nil
+    }
+  }
+
+  func removeAll(in room: InstantRoomHandle) {
+    userIDsByRoom[room] = nil
+  }
+
+  func activeMembers(
+    _ members: [InstantRoomPresenceMember],
+    in room: InstantRoomHandle
+  ) -> [InstantRoomPresenceMember] {
+    guard let activeUserIDs = userIDsByRoom[room] else { return [] }
+    return members.filter { activeUserIDs.contains($0.userID) }
+  }
+}
+
 private actor InstantRuntimeLiveSession {
   private struct RegisteredQuery: Sendable {
     var query: InstantLiveJSONValue
@@ -1470,6 +1497,7 @@ public final class InstantRuntime: Sendable {
   private let liveQueryResultState = InstantLiveQueryResultState()
   private let liveQueryAcknowledgements = InstantLiveQueryAcknowledgementState()
   private let liveRoomPresenceState = InstantRuntimeLiveRoomPresenceState()
+  private let activeRoomPresenceState = InstantRuntimeActiveRoomPresenceState()
   private let reconnectController = InstantRuntimeReconnectController()
 
   private init(
@@ -3247,8 +3275,30 @@ public final class InstantRuntime: Sendable {
       appID: configuration.appID,
       room: room
     )
+    let activeLocalMembers = await activeRoomPresenceState.activeMembers(
+      localMembers,
+      in: room
+    )
+    let observerCount = await roomPresenceObservers.activeCount(
+      for: roomPresenceObservationKey(room)
+    )
+    InstantDiagnostics.shared.record(
+      .trace,
+      subsystem: "instant-swift-data-core",
+      category: "presence",
+      event: "live-presence.refresh-applied",
+      message: "Applied a live room presence refresh.",
+      metadata: [
+        "roomType": room.type,
+        "sessionCount": String(refresh.sessions.count),
+        "remoteMemberCount": String(remoteMembers.count),
+        "localMemberCount": String(localMembers.count),
+        "activeLocalMemberCount": String(activeLocalMembers.count),
+        "observerCount": String(observerCount),
+      ]
+    )
     await roomPresenceObservers.publish(
-      mergedRoomPresence(local: localMembers, remote: remoteMembers),
+      mergedRoomPresence(local: activeLocalMembers, remote: remoteMembers),
       for: roomPresenceObservationKey(room)
     )
   }
@@ -3268,8 +3318,30 @@ public final class InstantRuntime: Sendable {
       appID: configuration.appID,
       room: room
     )
+    let activeLocalMembers = await activeRoomPresenceState.activeMembers(
+      localMembers,
+      in: room
+    )
+    let observerCount = await roomPresenceObservers.activeCount(
+      for: roomPresenceObservationKey(room)
+    )
+    InstantDiagnostics.shared.record(
+      .trace,
+      subsystem: "instant-swift-data-core",
+      category: "presence",
+      event: "live-presence.patch-applied",
+      message: "Applied a live room presence patch.",
+      metadata: [
+        "roomType": room.type,
+        "editCount": String(patch.edits.count),
+        "remoteMemberCount": String(remoteMembers.count),
+        "localMemberCount": String(localMembers.count),
+        "activeLocalMemberCount": String(activeLocalMembers.count),
+        "observerCount": String(observerCount),
+      ]
+    )
     await roomPresenceObservers.publish(
-      mergedRoomPresence(local: localMembers, remote: remoteMembers),
+      mergedRoomPresence(local: activeLocalMembers, remote: remoteMembers),
       for: roomPresenceObservationKey(room)
     )
   }
@@ -3469,7 +3541,10 @@ public final class InstantRuntime: Sendable {
         refreshToken: verification.refreshToken,
         isGuest: true,
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
+        email: verification.email,
+        imageURL: verification.imageURL,
+        type: verification.type ?? .guest
       )
       _ = try await saveGuestUserFields(userID: session.userID, signedInAt: now)
       try await saveAuthSession(session)
@@ -3591,7 +3666,10 @@ public final class InstantRuntime: Sendable {
         refreshToken: verification.refreshToken,
         isGuest: false,
         createdAt: now,
-        updatedAt: now
+        updatedAt: now,
+        email: verification.email ?? email,
+        imageURL: verification.imageURL,
+        type: verification.type ?? .user
       )
       let locallyCreated = try await saveMagicCodeUserFields(
         userID: session.userID,
@@ -3829,9 +3907,12 @@ public final class InstantRuntime: Sendable {
       appID: configuration.appID,
       userID: verification.userID,
       refreshToken: verification.refreshToken,
-      isGuest: false,
+      isGuest: verification.type == .guest,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      email: verification.email,
+      imageURL: verification.imageURL,
+      type: verification.type
     )
     try await saveAuthSession(session)
     return session
@@ -3878,7 +3959,10 @@ public final class InstantRuntime: Sendable {
       refreshToken: verification.refreshToken,
       isGuest: false,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      email: verification.email,
+      imageURL: verification.imageURL,
+      type: verification.type ?? .user
     )
     try await saveAuthSession(session)
     return session
@@ -3918,7 +4002,10 @@ public final class InstantRuntime: Sendable {
       refreshToken: verification.refreshToken,
       isGuest: false,
       createdAt: now,
-      updatedAt: now
+      updatedAt: now,
+      email: verification.email,
+      imageURL: verification.imageURL,
+      type: verification.type ?? .user
     )
     try await saveAuthSession(session)
     return session
@@ -4017,6 +4104,7 @@ public final class InstantRuntime: Sendable {
     if configuration.liveTransport != nil {
       try await liveSession.leaveRoom(room, clientEventID: configuration.makeID())
       await liveRoomPresenceState.remove(room: room)
+      await activeRoomPresenceState.removeAll(in: room)
     }
     return room
   }
@@ -4041,6 +4129,9 @@ public final class InstantRuntime: Sendable {
         updatedAt: now
       )
       try await persistence.saveRoomPresence(member)
+      if configuration.liveTransport != nil {
+        await activeRoomPresenceState.activate(userID: userID, in: room)
+      }
       let localMembers = try await persistence.loadRoomPresence(
         appID: configuration.appID,
         room: room
@@ -4109,6 +4200,9 @@ public final class InstantRuntime: Sendable {
         room: room,
         userID: userID
       )
+      if configuration.liveTransport != nil {
+        await activeRoomPresenceState.deactivate(userID: userID, in: room)
+      }
       let localMembers = try await persistence.loadRoomPresence(
         appID: configuration.appID,
         room: room
@@ -6709,6 +6803,10 @@ public final class InstantRuntime: Sendable {
     room: InstantRoomHandle
   ) async -> [InstantRoomPresenceMember] {
     guard configuration.liveTransport != nil else { return localMembers }
+    let activeLocalMembers = await activeRoomPresenceState.activeMembers(
+      localMembers,
+      in: room
+    )
     let currentSessionID = await liveSession.currentSessionID
     let remoteMembers = await liveRoomPresenceState.current(
       room: room,
@@ -6716,7 +6814,7 @@ public final class InstantRuntime: Sendable {
       appID: configuration.appID,
       updatedAt: configuration.now()
     )
-    return mergedRoomPresence(local: localMembers, remote: remoteMembers)
+    return mergedRoomPresence(local: activeLocalMembers, remote: remoteMembers)
   }
 
   private func mergedRoomPresence(

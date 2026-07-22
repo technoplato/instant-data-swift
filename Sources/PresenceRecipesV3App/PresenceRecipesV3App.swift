@@ -68,6 +68,7 @@ public struct TypingIndicatorPresence: Codable, Equatable, Sendable, Identifiabl
   }
 }
 
+@available(iOS 16.0, macOS 13.0, tvOS 16.0, watchOS 9.0, *)
 public struct TypingIndicatorV3Options: Equatable, Sendable {
   public var timeout: Duration?
   public var stopOnSubmit: Bool
@@ -105,6 +106,7 @@ public struct TypingIndicatorV3Room: InstantRoomSchema {
 }
 
 @MainActor
+@available(iOS 16.0, macOS 13.0, tvOS 16.0, watchOS 9.0, *)
 public final class TypingIndicatorV3Model: ObservableObject {
   @Published public private(set) var presence: TypingIndicatorPresence
   @Published public private(set) var activePeers: [TypingIndicatorPresence] = []

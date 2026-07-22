@@ -215,22 +215,60 @@ client; sign it in and grant it the appropriate Instant v3 share role first.
 The CLI supports live `lists list --watch` and `reminders list --watch` readers
 as well as add, update, complete, reopen, delete, tag, sharing, and sync verbs.
 
-Build and launch iOS Simulator:
+Build all three simulator apps:
 
 ```bash
 cd Examples/RemindersV3
 xcodegen generate
-./build-ios-simulator.sh
-xcrun simctl install booted \
-  '/tmp/reminders-v3-ios/Build/Products/Debug-iphonesimulator/Reminders V3.app'
-SIMCTL_CHILD_INSTANT_APP_ID="$INSTANT_APP_ID" \
-  xcrun simctl launch --terminate-running-process booted \
-  com.technoplato.InstantSwiftData.RemindersV3iOS
+./build-all-simulators.sh
 ```
 
-The helper contains a DerivedData-only workaround for an Xcode 26.6 local
-SwiftPM macro-product selection defect. It builds the current host macro tool
-and never modifies source or the app bundle to apply the workaround.
+The helper builds `RemindersV3iOS`, `RemindersV3tvOS`, and
+`RemindersV3watchOS` into `/tmp/reminders-v3-simulators/Build/Products`. It
+contains a DerivedData-only workaround for an Xcode 26.6 local SwiftPM
+macro-product selection defect. It builds the current host macro tool and never
+modifies source or the app bundle to apply the workaround.
+
+For normal use, install each app and launch it with only `INSTANT_APP_ID`, then
+sign into the same email account through the UI on iPhone, Apple TV, and Apple
+Watch. Owned and shared lists follow that authenticated Instant user; no
+separate sharing step is needed between devices signed into the same account.
+
+Open a list's `Sharing` screen to invite a different account. The owner first
+selects `Set up sharing`, searches for the other account by email, and grants
+either view or edit access. The owner can later update or remove that access.
+
+Automated simulator verification can instead launch each installed app with
+one injected demo identity:
+
+```bash
+launch_reminders() {
+  local device="$1"
+  local app="$2"
+  local bundle_id="$3"
+  xcrun simctl install "$device" "$app"
+  SIMCTL_CHILD_INSTANT_APP_ID="$INSTANT_APP_ID" \
+  SIMCTL_CHILD_REMINDERS_V3_USER_ID="$REMINDERS_V3_USER_ID" \
+  SIMCTL_CHILD_REMINDERS_V3_REFRESH_TOKEN="$REMINDERS_V3_REFRESH_TOKEN" \
+    xcrun simctl launch --terminate-running-process "$device" "$bundle_id"
+}
+
+launch_reminders "$IOS_UDID" \
+  '/tmp/reminders-v3-simulators/Build/Products/Debug-iphonesimulator/Reminders V3.app' \
+  com.technoplato.InstantSwiftData.RemindersV3iOS
+launch_reminders "$TVOS_UDID" \
+  '/tmp/reminders-v3-simulators/Build/Products/Debug-appletvsimulator/Reminders V3.app' \
+  com.technoplato.InstantSwiftData.RemindersV3tvOS
+launch_reminders "$WATCHOS_UDID" \
+  '/tmp/reminders-v3-simulators/Build/Products/Debug-watchsimulator/Reminders V3.app' \
+  com.technoplato.InstantSwiftData.RemindersV3watchOS
+```
+
+The app ID must point at a server with the current generated Reminders schema
+and permissions. For the automation path, the user ID must match the
+refresh-token identity on all three processes. The refresh token is accepted
+only from the process environment and is deliberately not supported as an
+Info.plist value.
 
 See `docs/diagnostics.md` for log locations and focused `jq` recipes. Run the
 fresh-server cross-SDK contract with:

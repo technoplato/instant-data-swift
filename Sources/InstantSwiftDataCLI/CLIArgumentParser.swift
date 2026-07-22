@@ -48,6 +48,7 @@ public struct CLIInvocation: Equatable, Sendable {
 }
 
 public enum CLIExamplesInvocation: Equatable, Sendable {
+  case interactive(CLIExamplesInteractiveInvocation)
   case todos(CLIExamplesTodosInvocation)
   case auth(CLIExamplesAuthLeafInvocation)
   case appBuilder(CLIExamplesAppBuilderLeafInvocation)
@@ -67,6 +68,30 @@ public enum CLIExamplesInvocation: Equatable, Sendable {
   case remindersV3(CLIExamplesRemindersV3LeafInvocation)
   case todoLinks(CLIExamplesTodoLinksLeafInvocation)
   case unknown(String, arguments: [String])
+}
+
+public struct CLIExamplesInteractiveInvocation: Equatable, Sendable {
+  public var showsPrompt: Bool
+
+  public init(showsPrompt: Bool = true) {
+    self.showsPrompt = showsPrompt
+  }
+}
+
+public enum CLIExamplesInteractiveUsage {
+  public static let interactive =
+    "Usage: instant-swift-data examples interactive [--no-prompt] [--json|--jsonl]"
+}
+
+public enum CLIExamplesInteractiveArgumentError: Error, Equatable, Sendable {
+  case unknownOption(String)
+
+  public var exitCode: Int32 { 64 }
+}
+
+public enum CLIInteractiveCommandError: Error, Equatable, Sendable {
+  case danglingEscape
+  case unterminatedQuote(Character)
 }
 
 public struct CLIExamplesTodosInvocation: Equatable, Sendable {
@@ -1472,16 +1497,16 @@ public struct CLIVerifyArtifactInvocation: Equatable, Sendable {
 
 public enum CLISchemaUsage {
   public static let generate =
-    "Usage: instant-swift-data schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder [--to instant.schema.ts] [--json|--jsonl]"
+    "Usage: instant-swift-data schema generate --example todos|recipes|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder [--to instant.schema.ts] [--json|--jsonl]"
   public static let verify =
-    "Usage: instant-swift-data schema verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder --from instant.schema.ts"
+    "Usage: instant-swift-data schema verify --example todos|recipes|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder --from instant.schema.ts"
 }
 
 public enum CLIPermissionsUsage {
   public static let generate =
-    "Usage: instant-swift-data perms generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder [--to instant.perms.ts] [--json|--jsonl]"
+    "Usage: instant-swift-data perms generate --example todos|recipes|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder [--to instant.perms.ts] [--json|--jsonl]"
   public static let verify =
-    "Usage: instant-swift-data perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder --from instant.perms.ts"
+    "Usage: instant-swift-data perms verify --example todos|recipes|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder --from instant.perms.ts"
 }
 
 public enum CLISchemaArgumentError: Error, Equatable, Sendable {
@@ -2780,6 +2805,7 @@ public struct CLITopLevelCommandParser: Parser {
       CLILiteralTokenParser("connection", output: CLITopLevelCommand.connection)
       CLILiteralTokenParser("connect", output: CLITopLevelCommand.connection)
       CLILiteralTokenParser("examples", output: CLITopLevelCommand.examples)
+      CLILiteralTokenParser("recipes", output: CLITopLevelCommand.examples)
       CLILiteralTokenParser("files", output: CLITopLevelCommand.files)
       CLILiteralTokenParser("storage", output: CLITopLevelCommand.files)
       CLILiteralTokenParser("help", output: CLITopLevelCommand.help)
@@ -2835,6 +2861,9 @@ public struct CLIExamplesParser: Parser {
     input.removeFirst()
 
     switch example {
+    case "interactive", "shell", "repl":
+      return .interactive(try CLIExamplesInteractiveParser().parse(&input))
+
     case "todos":
       return .todos(try CLIExamplesTodosParser().parse(&input))
 
@@ -2894,6 +2923,92 @@ public struct CLIExamplesParser: Parser {
       input.removeAll()
       return .unknown(example, arguments: arguments)
     }
+  }
+}
+
+public struct CLIExamplesInteractiveParser: Parser {
+  public init() {}
+
+  public func parse(
+    _ input: inout ArraySlice<String>
+  ) throws -> CLIExamplesInteractiveInvocation {
+    var invocation = CLIExamplesInteractiveInvocation()
+    while let option = input.first {
+      input.removeFirst()
+      switch option {
+      case "--no-prompt":
+        invocation.showsPrompt = false
+      case "--prompt":
+        invocation.showsPrompt = true
+      default:
+        throw CLIExamplesInteractiveArgumentError.unknownOption(option)
+      }
+    }
+    return invocation
+  }
+}
+
+public struct CLIInteractiveCommandParser: Parser {
+  public init() {}
+
+  public func parse(_ input: inout Substring) throws -> [String] {
+    var arguments: [String] = []
+    var token = ""
+    var tokenStarted = false
+    var quote: Character?
+    var isEscaping = false
+
+    for character in input {
+      if isEscaping {
+        token.append(character)
+        tokenStarted = true
+        isEscaping = false
+        continue
+      }
+
+      if let activeQuote = quote {
+        if character == activeQuote {
+          quote = nil
+          tokenStarted = true
+        } else if character == "\\" && activeQuote == "\"" {
+          isEscaping = true
+        } else {
+          token.append(character)
+          tokenStarted = true
+        }
+        continue
+      }
+
+      switch character {
+      case "'", "\"":
+        quote = character
+        tokenStarted = true
+      case "\\":
+        isEscaping = true
+        tokenStarted = true
+      case _ where character.isWhitespace:
+        if tokenStarted {
+          arguments.append(token)
+          token = ""
+          tokenStarted = false
+        }
+      default:
+        token.append(character)
+        tokenStarted = true
+      }
+    }
+
+    if isEscaping {
+      throw CLIInteractiveCommandError.danglingEscape
+    }
+    if let quote {
+      throw CLIInteractiveCommandError.unterminatedQuote(quote)
+    }
+    if tokenStarted {
+      arguments.append(token)
+    }
+    input.removeAll()
+    return arguments
   }
 }
 
@@ -9653,6 +9768,26 @@ extension CLIPermissionsArgumentError: CustomStringConvertible {
   }
 }
 
+extension CLIExamplesInteractiveArgumentError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case let .unknownOption(option):
+      return "Unknown interactive-shell option: \(option). \(CLIExamplesInteractiveUsage.interactive)"
+    }
+  }
+}
+
+extension CLIInteractiveCommandError: CustomStringConvertible {
+  public var description: String {
+    switch self {
+    case .danglingEscape:
+      return "Interactive command ends with an incomplete escape."
+    case let .unterminatedQuote(quote):
+      return "Interactive command has an unterminated \(quote) quote."
+    }
+  }
+}
+
 extension CLIExamplesTodosArgumentError: CustomStringConvertible {
   public var description: String {
     switch self {
@@ -10234,7 +10369,7 @@ extension CLITopLevelCommand {
       self = .cache
     case "connection", "connect":
       self = .connection
-    case "examples":
+    case "examples", "recipes":
       self = .examples
     case "files", "storage":
       self = .files

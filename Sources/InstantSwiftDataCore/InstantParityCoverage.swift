@@ -3155,7 +3155,7 @@ public enum InstantSwiftDataParityCoverage {
       swiftTestName: "cliAuthRecipeSendsVerifiesWatchesAndSignsOutAcrossLaunches",
       surface: "recipes-auth",
       status: .adapted,
-      notes: "The Instant CLI ports the Auth recipe into a durable magic-code terminal flow with send-code, verify-code, status/dashboard, watch, and sign-out commands. send-code output represents the upstream code-entry form state; status reports persisted auth state. Local magic-code sessions derive the dashboard email from email-prefixed user ids because InstantAuthSession stores userID rather than a user.email field."
+      notes: "The Instant CLI ports the Auth recipe into a durable magic-code terminal flow with send-code, verify-code, status/dashboard, watch, and sign-out commands. send-code output represents the upstream code-entry form state; status reports persisted auth state. InstantAuthSession preserves the authenticated user's standard email, image URL, type, and guest-status fields."
     ),
     instant(
       id: "instant.website.app-builder.local-cli",

@@ -8377,6 +8377,36 @@ struct InstantStoreTests {
   }
 
   @Test
+  func livePresenceIgnoresPersistedMembersUntilTheyBecomeActiveInThisRuntime() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let room = InstantRoomHandle(type: "avatars-example", id: "avatars-example-1234")
+    let configuration = InstantRuntimeConfiguration(
+      appID: "test-app",
+      persistenceURL: cacheURL,
+      liveTransport: .local
+    )
+
+    let previousRuntime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await previousRuntime.setPresence(
+      room: room,
+      userID: "previous-process",
+      values: ["name": .string("Previous")]
+    )
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let presenceAfterRelaunch = try await relaunchedRuntime.roomPresence(room: room)
+    expectNoDifference(presenceAfterRelaunch, [])
+
+    _ = try await relaunchedRuntime.setPresence(
+      room: room,
+      userID: "current-process",
+      values: ["name": .string("Current")]
+    )
+    let activePresence = try await relaunchedRuntime.roomPresence(room: room)
+    expectNoDifference(activePresence.map(\.userID), ["current-process"])
+  }
+
+  @Test
   func roomTopicMigrationPreservesLegacyRowsAndScopesMessageIDsByApp() async throws {
     let cacheURL = try temporaryCacheURL()
     let room = InstantRoomHandle(type: "chat", id: "lobby")
@@ -13333,7 +13363,8 @@ struct InstantStoreTests {
         refreshToken: "local-magic:app-a:user@example.com",
         isGuest: false,
         createdAt: verifiedAt,
-        updatedAt: verifiedAt
+        updatedAt: verifiedAt,
+        email: "user@example.com"
       )
     )
     let persistedSession = try await verifierRuntime.authSession()

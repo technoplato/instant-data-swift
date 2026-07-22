@@ -22,10 +22,22 @@ public struct InstantGuestAuthRequest: Sendable {
 public struct InstantGuestAuthVerification: Hashable, Codable, Sendable {
   public var userID: String
   public var refreshToken: String?
+  public var email: String?
+  public var imageURL: String?
+  public var type: InstantAuthUserType?
 
-  public init(userID: String, refreshToken: String? = nil) {
+  public init(
+    userID: String,
+    refreshToken: String? = nil,
+    email: String? = nil,
+    imageURL: String? = nil,
+    type: InstantAuthUserType? = .guest
+  ) {
     self.userID = userID
     self.refreshToken = refreshToken
+    self.email = email
+    self.imageURL = imageURL
+    self.type = type
   }
 }
 
@@ -65,7 +77,10 @@ extension InstantGuestAuthenticator {
         let decoded = try JSONDecoder().decode(InstantGuestAuthResponse.self, from: response.data)
         return InstantGuestAuthVerification(
           userID: decoded.user.id,
-          refreshToken: decoded.user.refreshToken
+          refreshToken: decoded.user.refreshToken,
+          email: decoded.user.email,
+          imageURL: decoded.user.imageURL,
+          type: decoded.user.type ?? .guest
         )
       } catch let error as InstantError {
         throw error
@@ -93,10 +108,16 @@ private struct InstantGuestAuthResponse: Decodable {
   struct User: Decodable {
     var id: String
     var refreshToken: String?
+    var email: String?
+    var imageURL: String?
+    var type: InstantAuthUserType?
 
     private enum CodingKeys: String, CodingKey {
       case id
       case refreshToken = "refresh_token"
+      case email
+      case imageURL
+      case type
     }
   }
 

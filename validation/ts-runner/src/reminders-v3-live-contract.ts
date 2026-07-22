@@ -85,17 +85,24 @@ const databases: any[] = [];
 
 try {
   const suffix = randomUUID();
+  const swiftEmail = `reminders-swift-${suffix}@example.com`;
+  const swiftDisplayName = "Swift Reminders Owner";
+  const swiftUsername = `swift-${suffix}`;
+  const typeScriptEmail = `reminders-typescript-${suffix}@example.com`;
+  const typeScriptDisplayName = "TypeScript Reminders Collaborator";
+  const typeScriptUsername = `typescript-${suffix}`;
+  const outsiderEmail = `reminders-outsider-${suffix}@example.com`;
   const admin = initAdmin({ appId, adminToken, apiURI });
   const swiftToken = await withRetries(
-    () => admin.auth.createToken({ email: `reminders-swift-${suffix}@example.com` }),
+    () => admin.auth.createToken({ email: swiftEmail }),
     "create Swift Reminders token",
   );
   const typeScriptToken = await withRetries(
-    () => admin.auth.createToken({ email: `reminders-typescript-${suffix}@example.com` }),
+    () => admin.auth.createToken({ email: typeScriptEmail }),
     "create TypeScript Reminders token",
   );
   const outsiderToken = await withRetries(
-    () => admin.auth.createToken({ email: `reminders-outsider-${suffix}@example.com` }),
+    () => admin.auth.createToken({ email: outsiderEmail }),
     "create outsider Reminders token",
   );
   const swiftUser = await withRetries(
@@ -113,6 +120,19 @@ try {
   assert.ok(swiftUser?.id, "Expected a canonical Swift Reminders owner.");
   assert.ok(typeScriptUser?.id, "Expected a canonical TypeScript Reminders participant.");
   assert.ok(outsiderUser?.id, "Expected a canonical Reminders outsider.");
+  await withRetries(
+    () => admin.transact([
+      admin.tx.$users[swiftUser.id].update({
+        displayName: swiftDisplayName,
+        username: swiftUsername,
+      }),
+      admin.tx.$users[typeScriptUser.id].update({
+        displayName: typeScriptDisplayName,
+        username: typeScriptUsername,
+      }),
+    ]),
+    "attach Reminders user profiles",
+  );
 
   const schema = unwrapSchema(await import(pathToFileURL(schemaPath).href));
   (globalThis as any).window = globalThis;
@@ -123,7 +143,17 @@ try {
   databases.push(participantDB);
   await participantDB.auth.signInWithToken(typeScriptToken);
 
-  swift = spawnSwift(swiftToken, swiftUser.id, typeScriptUser.id);
+  swift = spawnSwift({
+    refreshToken: swiftToken,
+    ownerUserID: swiftUser.id,
+    ownerEmail: swiftEmail,
+    ownerDisplayName: swiftDisplayName,
+    ownerUsername: swiftUsername,
+    participantUserID: typeScriptUser.id,
+    participantEmail: typeScriptEmail,
+    participantDisplayName: typeScriptDisplayName,
+    participantUsername: typeScriptUsername,
+  });
   const lines = createInterface({ input: swift.stdout, crlfDelay: Infinity })
     [Symbol.asyncIterator]();
 
@@ -235,6 +265,18 @@ try {
   assert.equal(swiftEvidence.event, "typescript-writer-reminder-observed");
   assert.equal(swiftEvidence.details.pendingMutationCount, 0);
   assert.equal(swiftEvidence.details.connectionState, "authenticated");
+  assert.deepEqual(swiftEvidence.details.authenticatedUser, {
+    id: swiftUser.id,
+    email: swiftEmail,
+    displayName: swiftDisplayName,
+    username: swiftUsername,
+  });
+  assert.deepEqual(swiftEvidence.details.participantDirectoryUser, {
+    id: typeScriptUser.id,
+    email: typeScriptEmail,
+    displayName: typeScriptDisplayName,
+    username: typeScriptUsername,
+  });
   assert.equal(
     swiftEvidence.details.swiftReminder.title,
     "Swift reminder updated by TypeScript",
@@ -260,9 +302,19 @@ try {
         typeScriptTag: fixtures.typeScriptTag,
       },
       users: {
-        owner: { id: swiftUser.id },
-        participant: { id: typeScriptUser.id },
-        outsider: { id: outsiderUser.id },
+        owner: {
+          id: swiftUser.id,
+          email: swiftEmail,
+          displayName: swiftDisplayName,
+          username: swiftUsername,
+        },
+        participant: {
+          id: typeScriptUser.id,
+          email: typeScriptEmail,
+          displayName: typeScriptDisplayName,
+          username: typeScriptUsername,
+        },
+        outsider: { id: outsiderUser.id, email: outsiderEmail },
       },
       typeScriptObservedSwiftList: swiftList,
       typeScriptObservedReaderList: readerList,
@@ -334,9 +386,17 @@ async function waitForList(
 }
 
 function spawnSwift(
-  refreshToken: string,
-  ownerUserID: string,
-  participantUserID: string,
+  input: {
+    refreshToken: string;
+    ownerUserID: string;
+    ownerEmail: string;
+    ownerDisplayName: string;
+    ownerUsername: string;
+    participantUserID: string;
+    participantEmail: string;
+    participantDisplayName: string;
+    participantUsername: string;
+  },
 ): SwiftProcess {
   return spawn(
     "swift",
@@ -354,9 +414,16 @@ function spawnSwift(
         INSTANT_APP_ID: appId,
         INSTANT_API_URI: apiURI,
         INSTANT_WEBSOCKET_URI: websocketURI,
-        INSTANT_SWIFT_DATA_REMINDERS_REFRESH_TOKEN: refreshToken,
-        INSTANT_SWIFT_DATA_REMINDERS_OWNER_USER_ID: ownerUserID,
-        INSTANT_SWIFT_DATA_REMINDERS_PARTICIPANT_USER_ID: participantUserID,
+        INSTANT_SWIFT_DATA_REMINDERS_REFRESH_TOKEN: input.refreshToken,
+        INSTANT_SWIFT_DATA_REMINDERS_OWNER_USER_ID: input.ownerUserID,
+        INSTANT_SWIFT_DATA_REMINDERS_OWNER_EMAIL: input.ownerEmail,
+        INSTANT_SWIFT_DATA_REMINDERS_OWNER_DISPLAY_NAME: input.ownerDisplayName,
+        INSTANT_SWIFT_DATA_REMINDERS_OWNER_USERNAME: input.ownerUsername,
+        INSTANT_SWIFT_DATA_REMINDERS_PARTICIPANT_USER_ID: input.participantUserID,
+        INSTANT_SWIFT_DATA_REMINDERS_PARTICIPANT_EMAIL: input.participantEmail,
+        INSTANT_SWIFT_DATA_REMINDERS_PARTICIPANT_DISPLAY_NAME:
+          input.participantDisplayName,
+        INSTANT_SWIFT_DATA_REMINDERS_PARTICIPANT_USERNAME: input.participantUsername,
         INSTANT_SWIFT_DATA_REMINDERS_LIST_ID: fixtures.list,
         INSTANT_SWIFT_DATA_REMINDERS_SWIFT_REMINDER_ID: fixtures.swiftReminder,
         INSTANT_SWIFT_DATA_REMINDERS_SHARE_ID: fixtures.share,

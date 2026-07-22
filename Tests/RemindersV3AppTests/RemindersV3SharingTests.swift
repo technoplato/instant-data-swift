@@ -32,6 +32,13 @@ struct RemindersV3SharingTests {
     let createdAt = Date(timeIntervalSince1970: 1_700_000_000)
     try await seedUsers([ownerID.rawValue, memberID.rawValue], runtime: runtime)
 
+    let directory = FetchAll(
+      try #require(RemindersV3User.remindersUsers(matchingEmail: "member-user"))
+    )
+    try await directory.load(using: client)
+    expectNoDifference(directory.wrappedValue.map(\.id), [memberID])
+    expectNoDifference(directory.wrappedValue.map(\.email), ["member-user@example.com"])
+
     try await transact(
       CreateRemindersV3List(
         listID: listID,
@@ -147,16 +154,36 @@ struct RemindersV3SharingTests {
     _ = try await runtime.transact(
       InstantStoreTransaction(
         id: "seed-share-users",
-        operations: userIDs.map { userID in
-          .insert(
-            InstantTriple(
-              entityID: userID,
-              attributeID: "$users/id",
-              value: .string(userID),
-              txID: "seed-share-users",
-              txTime: timestamp
-            )
-          )
+        operations: userIDs.flatMap { userID in
+          [
+            .insert(
+              InstantTriple(
+                entityID: userID,
+                attributeID: "$users/id",
+                value: .string(userID),
+                txID: "seed-share-users",
+                txTime: timestamp
+              )
+            ),
+            .insert(
+              InstantTriple(
+                entityID: userID,
+                attributeID: "$users/email",
+                value: .string("\(userID)@example.com"),
+                txID: "seed-share-users",
+                txTime: timestamp
+              )
+            ),
+            .insert(
+              InstantTriple(
+                entityID: userID,
+                attributeID: "$users/displayName",
+                value: .string(userID == "owner-user" ? "Owner" : "Member"),
+                txID: "seed-share-users",
+                txTime: timestamp
+              )
+            ),
+          ]
         }
       ),
       createdAt: timestamp

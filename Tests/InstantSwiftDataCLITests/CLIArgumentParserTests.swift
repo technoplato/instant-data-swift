@@ -49,6 +49,7 @@ struct CLIArgumentParserTests {
       ("localid", .localID),
       ("connection", .connection),
       ("connect", .connection),
+      ("recipes", .examples),
       ("rooms", .rooms),
       ("room", .rooms),
       ("files", .files),
@@ -71,6 +72,42 @@ struct CLIArgumentParserTests {
         try CLIArguments.parse([rawCommand, "tail"]),
         CLIInvocation(output: .human, command: command, arguments: ["tail"])
       )
+    }
+  }
+
+  @Test
+  func examplesParserParsesInteractiveShellAndAliases() throws {
+    expectNoDifference(
+      try parseExamples(["interactive"]),
+      .interactive(CLIExamplesInteractiveInvocation())
+    )
+    expectNoDifference(
+      try parseExamples(["shell", "--no-prompt"]),
+      .interactive(CLIExamplesInteractiveInvocation(showsPrompt: false))
+    )
+    expectNoDifference(
+      try parseExamples(["repl", "--prompt", "--no-prompt"]),
+      .interactive(CLIExamplesInteractiveInvocation(showsPrompt: false))
+    )
+  }
+
+  @Test
+  func interactiveCommandParserHandlesShellWords() throws {
+    expectNoDifference(
+      try parseInteractiveCommand(#"todos add "do the dishes""#),
+      ["todos", "add", "do the dishes"]
+    )
+    expectNoDifference(
+      try parseInteractiveCommand(#"custom-cursors move user\ one --name 'Ada Lovelace'"#),
+      ["custom-cursors", "move", "user one", "--name", "Ada Lovelace"]
+    )
+    expectNoDifference(try parseInteractiveCommand("  "), [])
+
+    do {
+      _ = try parseInteractiveCommand(#"todos add "unfinished"#)
+      Issue.record("Expected an unterminated-quote error")
+    } catch let error as CLIInteractiveCommandError {
+      expectNoDifference(error, .unterminatedQuote("\""))
     }
   }
 
@@ -4697,6 +4734,13 @@ private func parseExamples(_ arguments: [String]) throws -> CLIExamplesInvocatio
   let invocation = try CLIExamplesParser().parse(&input)
   expectNoDifference(Array(input), [])
   return invocation
+}
+
+private func parseInteractiveCommand(_ line: String) throws -> [String] {
+  var input = line[...]
+  let arguments = try CLIInteractiveCommandParser().parse(&input)
+  expectNoDifference(String(input), "")
+  return arguments
 }
 
 private func parseExamplesTodosLeaf(

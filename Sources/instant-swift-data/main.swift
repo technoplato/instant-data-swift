@@ -681,6 +681,8 @@ struct InstantSwiftDataCLI {
     let invocation: CLIExamplesInvocation
     do {
       invocation = try CLIExamplesParser().parse(&input)
+    } catch let error as CLIExamplesInteractiveArgumentError {
+      throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesTodosArgumentError {
       throw CLIError(error.description, exitCode: error.exitCode)
     } catch let error as CLIExamplesAuthArgumentError {
@@ -719,6 +721,10 @@ struct InstantSwiftDataCLI {
       throw CLIError(error.description, exitCode: error.exitCode)
     }
     switch invocation {
+    case let .interactive(interactive):
+      try await runInteractiveExamples(invocation: interactive, output: output)
+      return
+
     case let .auth(leaf):
       try await runAuthRecipe(leaf: leaf, output: output)
       return
@@ -799,6 +805,72 @@ struct InstantSwiftDataCLI {
 
     case .unknown:
       throw CLIError(examplesUsage, exitCode: 64)
+    }
+  }
+
+  private static func runInteractiveExamples(
+    invocation: CLIExamplesInteractiveInvocation,
+    output: OutputMode
+  ) async throws {
+    if output == .human {
+      print(interactiveExamplesWelcome)
+    }
+
+    while true {
+      if invocation.showsPrompt {
+        writePrompt("recipes> ")
+      }
+      guard let line = readLine() else { return }
+
+      do {
+        var input = line[...]
+        var arguments = try CLIInteractiveCommandParser().parse(&input)
+        guard !arguments.isEmpty else { continue }
+
+        if let executable = arguments.first,
+          URL(fileURLWithPath: executable).lastPathComponent == "instant-swift-data"
+        {
+          arguments.removeFirst()
+        }
+
+        if arguments == ["quit"] || arguments == ["exit"] {
+          return
+        }
+        if arguments == ["help"] || arguments == ["?"] {
+          print(interactiveExamplesHelp)
+          continue
+        }
+
+        if arguments.first != "examples" && arguments.first != "recipes" {
+          arguments.insert("examples", at: 0)
+        }
+
+        let hasExplicitOutput = arguments.contains("--json") || arguments.contains("--jsonl")
+        let command = try CLIArguments.parse(arguments)
+        guard command.command == .examples else {
+          throw CLIError(
+            "The recipes shell accepts recipe commands only. Type 'help' for examples.",
+            exitCode: 64
+          )
+        }
+        guard command.arguments.first != "interactive",
+          command.arguments.first != "shell",
+          command.arguments.first != "repl"
+        else {
+          throw CLIError("The recipes shell is already running.", exitCode: 64)
+        }
+
+        try await runExamples(
+          arguments: command.arguments,
+          output: hasExplicitOutput ? OutputMode(command.output) : output
+        )
+      } catch let error as CLIError {
+        writeError(error.description)
+      } catch let error as InstantError {
+        writeError(error.description)
+      } catch {
+        writeError("instant-swift-data: \(error)")
+      }
     }
   }
 
@@ -9060,10 +9132,10 @@ struct InstantSwiftDataCLI {
 
       Commands:
         init --example todos --to <directory> [--force] [--json|--jsonl]
-        schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder [--to instant.schema.ts] [--json|--jsonl]
-        schema verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder --from instant.schema.ts [--json|--jsonl]
-        perms generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder [--to instant.perms.ts] [--json|--jsonl]
-        perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder --from instant.perms.ts [--json|--jsonl]
+        schema generate --example todos|recipes|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder [--to instant.schema.ts] [--json|--jsonl]
+        schema verify --example todos|recipes|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder --from instant.schema.ts [--json|--jsonl]
+        perms generate --example todos|recipes|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder [--to instant.perms.ts] [--json|--jsonl]
+        perms verify --example todos|recipes|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder --from instant.perms.ts [--json|--jsonl]
         query todos [--completed true|false] [--search text] [--offset n] [--limit n] [--first n] [--after id] [--after-inclusive id] [--last n] [--before id] [--before-inclusive id] [--order asc|desc] [--order-by none|createdAt|serverCreatedAt] [--raw] [--select field[,field]] [--json|--jsonl]
         admin query <namespace> [--limit n] [--json|--jsonl]
         admin transact <namespace> <entity-id> --merge '{...}' [--transaction-id id] [--json|--jsonl]
@@ -9178,6 +9250,13 @@ struct InstantSwiftDataCLI {
         name: "todos",
         schema: InstantSchemaExamples.todosDocument,
         permissions: InstantSchemaExamples.todoPermissions
+      )
+
+    case "recipes":
+      return CLISchemaExample(
+        name: "recipes",
+        schema: InstantSchemaExamples.recipesDocument,
+        permissions: InstantSchemaExamples.recipesPermissions
       )
 
     case "validation":
@@ -9301,7 +9380,7 @@ struct InstantSwiftDataCLI {
 
     default:
       throw CLIError(
-        "Unsupported --example '\(rawName)'. Available examples: todos, validation, recording-action, sharing, voice-trail, mobile-chat, storage, typing-indicator, streams, reactions, avatar-stack, cursors, custom-cursors, merge-tile-game, stroopwafel, reminders, syncups, app-builder.",
+        "Unsupported --example '\(rawName)'. Available examples: todos, recipes, validation, recording-action, sharing, voice-trail, mobile-chat, storage, typing-indicator, streams, reactions, avatar-stack, cursors, custom-cursors, merge-tile-game, stroopwafel, reminders, syncups, app-builder.",
         exitCode: 64
       )
     }
@@ -10850,7 +10929,8 @@ struct InstantSwiftDataCLI {
 
   private static var examplesUsage: String {
     """
-    Usage: instant-swift-data examples <todos|auth|app-builder|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|sync-ups>
+    Usage: instant-swift-data examples <interactive|todos|auth|app-builder|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|sync-ups>
+      instant-swift-data recipes interactive [--no-prompt] [--json|--jsonl]
       instant-swift-data examples todos <add|seed|list|watch|complete|update|delete|reset|refresh>
       instant-swift-data examples auth <send-code|verify-code|status|watch|sign-out> [--json|--jsonl]
       instant-swift-data examples app-builder <generate|list|show|append|finish|reset> [--json|--jsonl]
@@ -10868,6 +10948,31 @@ struct InstantSwiftDataCLI {
       instant-swift-data examples stroopwafel <setup-profile|profile|score|create-room|rooms|room|join|ready|unready|kick|start|games|game|tap|leave|reset> [--json|--jsonl]
       instant-swift-data examples reminders <seed|list|stats|tags|list-tags|search|add-list|rename-list|delete-list|add|update|complete|delete|delete-completed|add-tag|remove-tag> [--json|--jsonl]
       instant-swift-data examples sync-ups <seed|list|detail|add|edit|add-attendee|record|record-demo|delete|delete-attendee|delete-meeting> [--json|--jsonl]
+    """
+  }
+
+  private static var interactiveExamplesWelcome: String {
+    """
+    Instant Recipes interactive shell
+    Type a recipe command such as 'todos list', 'help', or 'exit'.
+    """
+  }
+
+  private static var interactiveExamplesHelp: String {
+    """
+    Commands may omit the 'examples' or 'recipes' prefix:
+      todos add "do the dishes"
+      todos list
+      auth status
+      cursors move user-1 --x 30 --y 60
+      custom-cursors list
+      reactions tap fire
+      typing-indicator list
+      avatar-stack list
+      merge-tile-game board
+
+    Add --json or --jsonl to one command for structured output.
+    Type exit or quit to leave the shell.
     """
   }
 
@@ -11302,6 +11407,10 @@ struct InstantSwiftDataCLI {
 
   private static func writeError(_ string: String) {
     FileHandle.standardError.write(Data((string + "\n").utf8))
+  }
+
+  private static func writePrompt(_ string: String) {
+    FileHandle.standardError.write(Data(string.utf8))
   }
 
   private static func exitCode(for error: InstantError) -> Int32 {

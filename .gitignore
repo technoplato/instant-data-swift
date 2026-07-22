@@ -8,3 +8,4 @@ validation/ts-runner/package-lock.json
 validation/ts-runner/yarn.lock
 validation/ts-runner/.generated/
 validation/ts-runner/.generated-contract.*/
+Examples/RecipesV3/RecipesV3.local.xcconfig

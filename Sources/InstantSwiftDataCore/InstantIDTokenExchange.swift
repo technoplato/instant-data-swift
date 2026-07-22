@@ -34,10 +34,22 @@ public struct InstantIDTokenSignInRequest: Sendable {
 public struct InstantIDTokenVerification: Hashable, Codable, Sendable {
   public var userID: String
   public var refreshToken: String?
+  public var email: String?
+  public var imageURL: String?
+  public var type: InstantAuthUserType?
 
-  public init(userID: String, refreshToken: String? = nil) {
+  public init(
+    userID: String,
+    refreshToken: String? = nil,
+    email: String? = nil,
+    imageURL: String? = nil,
+    type: InstantAuthUserType? = nil
+  ) {
     self.userID = userID
     self.refreshToken = refreshToken
+    self.email = email
+    self.imageURL = imageURL
+    self.type = type
   }
 }
 
@@ -87,7 +99,10 @@ extension InstantIDTokenExchange {
       )
       return InstantIDTokenVerification(
         userID: decoded.user.id,
-        refreshToken: decoded.user.refreshToken
+        refreshToken: decoded.user.refreshToken,
+        email: decoded.user.email,
+        imageURL: decoded.user.imageURL,
+        type: decoded.user.type
       )
     }
   }

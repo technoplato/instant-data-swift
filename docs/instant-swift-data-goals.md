@@ -767,8 +767,8 @@ Agent-oriented output modes are required:
   `instant-swift-data examples auth sign-out`; the port uses the same
   `InstantMagicCodeExchange` Swift Dependencies seam as app auth, preserves the
   upstream signed-out login/code-entry versus signed-in dashboard state, and
-  derives the displayed email from local `email:<address>` user ids because the
-  local `InstantAuthSession` stores a user id rather than a `user.email` field.
+  preserves Instant's standard authenticated-user identity fields, including
+  `user.email`, in the durable `InstantAuthSession`.
   The terminal `send-code` output represents the transient code-entry step that
   the React recipe keeps in component state.
 - run the local app-builder port with

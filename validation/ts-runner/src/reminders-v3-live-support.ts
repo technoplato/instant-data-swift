@@ -126,9 +126,25 @@ function projectMembership(value: unknown): RemindersV3ShareMembership {
 }
 
 function projectUser(value: unknown): RemindersV3User {
-  if (!isRecord(value) || !hasOnlyKeys(value, ["id", "email"])) throw listShapeError();
-  if (typeof value.id !== "string") throw listShapeError();
-  return "email" in value ? { id: value.id, email: value.email } : { id: value.id };
+  if (!isRecord(value) || !hasOnlyKeys(value, [
+    "id", "email", "displayName", "username", "imageURL", "type",
+  ])) throw listShapeError();
+  if (
+    typeof value.id !== "string"
+    || !isOptionalString(value.email)
+    || !isOptionalString(value.displayName)
+    || !isOptionalString(value.username)
+    || !isOptionalString(value.imageURL)
+    || !isOptionalString(value.type)
+  ) throw listShapeError();
+  return {
+    id: value.id,
+    ...(typeof value.email === "string" ? { email: value.email } : {}),
+    ...(typeof value.displayName === "string" ? { displayName: value.displayName } : {}),
+    ...(typeof value.username === "string" ? { username: value.username } : {}),
+    ...(typeof value.imageURL === "string" ? { imageURL: value.imageURL } : {}),
+    ...(typeof value.type === "string" ? { type: value.type } : {}),
+  };
 }
 
 function projectTag(value: unknown): RemindersV3Tag {

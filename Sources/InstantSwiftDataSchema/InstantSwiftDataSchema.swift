@@ -527,6 +527,54 @@ public enum InstantSchemaExamples {
     namespaces: [.allowAll(namespace: "boards")]
   )
 
+  public static let recipesCursorsRoom = InstantRoomSchema(
+    name: "cursors-example",
+    presence: InstantRoomPayloadSchema(
+      attributes: [
+        InstantAttribute(
+          id: "rooms/cursors-example/presence/name",
+          namespace: "rooms/cursors-example/presence",
+          name: "name",
+          valueType: .string,
+          isRequired: false
+        ),
+        InstantAttribute(
+          id: "rooms/cursors-example/presence/cursors-space-default--cursors-example-123",
+          namespace: "rooms/cursors-example/presence",
+          name: "cursors-space-default--cursors-example-123",
+          valueType: .json,
+          isRequired: false
+        ),
+        InstantAttribute(
+          id: "rooms/cursors-example/presence/cursors-space-default--cursors-example-124",
+          namespace: "rooms/cursors-example/presence",
+          name: "cursors-space-default--cursors-example-124",
+          valueType: .json,
+          isRequired: false
+        ),
+      ]
+    )
+  )
+
+  public static let recipesDocument = InstantSchemaDocument(
+    entities: [todos, mergeTileGameBoard],
+    rooms: [
+      todosRoom,
+      recipesCursorsRoom,
+      reactionsRoom,
+      typingIndicatorRoom,
+      avatarStackRoom,
+      mergeTileGameRoom,
+    ]
+  )
+
+  public static let recipesPermissions = InstantPermissionsDocument(
+    namespaces: [
+      .allowAll(namespace: TodoExample.namespace),
+      .allowAll(namespace: "boards"),
+    ]
+  )
+
   public static let stroopwafelUsers = InstantEntitySchema(
     typeName: "StroopwafelV3User",
     namespace: "$users",
@@ -906,6 +954,52 @@ public enum InstantSchemaExamples {
     ]
   )
 
+  public static let remindersV3Users = InstantEntitySchema(
+    typeName: "RemindersV3User",
+    namespace: "$users",
+    attributes: [
+      InstantAttribute(
+        id: "$users/email",
+        namespace: "$users",
+        name: "email",
+        valueType: .string,
+        isRequired: false,
+        isIndexed: true,
+        isUnique: true
+      ),
+      InstantAttribute(
+        id: "$users/displayName",
+        namespace: "$users",
+        name: "displayName",
+        valueType: .string,
+        isRequired: false,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "$users/username",
+        namespace: "$users",
+        name: "username",
+        valueType: .string,
+        isRequired: false,
+        isIndexed: true
+      ),
+      InstantAttribute(
+        id: "$users/imageURL",
+        namespace: "$users",
+        name: "imageURL",
+        valueType: .string,
+        isRequired: false
+      ),
+      InstantAttribute(
+        id: "$users/type",
+        namespace: "$users",
+        name: "type",
+        valueType: .string,
+        isRequired: false
+      ),
+    ]
+  )
+
   public static let remindersV3Lists = InstantEntitySchema(
     typeName: "RemindersV3List",
     namespace: ReminderExample.listsNamespace,
@@ -1034,7 +1128,7 @@ public enum InstantSchemaExamples {
 
   public static let remindersV3Document = InstantSchemaDocument(
     entities: [
-      recordingActionUsers,
+      remindersV3Users,
       remindersV3Lists,
       remindersV3Reminders,
       remindersV3Tags,

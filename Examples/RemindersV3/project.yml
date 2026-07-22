@@ -4,6 +4,8 @@ options:
   bundleIdPrefix: com.technoplato.InstantSwiftData
   deploymentTarget:
     iOS: "17.0"
+    tvOS: "17.0"
+    watchOS: "10.0"
 
 packages:
   InstantSwiftData:
@@ -30,3 +32,49 @@ targets:
         OTHER_SWIFT_FLAGS: "$(inherited) -parse-as-library"
         SWIFT_VERSION: "6.0"
         TARGETED_DEVICE_FAMILY: "1,2"
+
+  RemindersV3tvOS:
+    type: application
+    supportedDestinations: [tvOS]
+    sources:
+      - path: ../../Sources/RemindersV3Executable/main.swift
+    dependencies:
+      - package: InstantSwiftData
+        product: InstantSwiftData
+      - package: InstantSwiftData
+        product: RemindersV3App
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.technoplato.InstantSwiftData.RemindersV3tvOS
+        PRODUCT_NAME: Reminders V3
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Reminders V3
+        INFOPLIST_KEY_InstantAppID: "$(INSTANT_APP_ID)"
+        INFOPLIST_KEY_RemindersUserID: "$(REMINDERS_V3_USER_ID)"
+        OTHER_SWIFT_FLAGS: "$(inherited) -parse-as-library"
+        SWIFT_VERSION: "6.0"
+        TVOS_DEPLOYMENT_TARGET: "17.0"
+
+  RemindersV3watchOS:
+    type: application
+    platform: watchOS
+    sources:
+      - path: ../../Sources/RemindersV3Executable/main.swift
+    dependencies:
+      - package: InstantSwiftData
+        product: InstantSwiftData
+      - package: InstantSwiftData
+        product: RemindersV3App
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.technoplato.InstantSwiftData.RemindersV3watchOS
+        PRODUCT_NAME: Reminders V3
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Reminders V3
+        INFOPLIST_KEY_InstantAppID: "$(INSTANT_APP_ID)"
+        INFOPLIST_KEY_RemindersUserID: "$(REMINDERS_V3_USER_ID)"
+        INFOPLIST_KEY_WKApplication: YES
+        INFOPLIST_KEY_WKWatchOnly: YES
+        OTHER_SWIFT_FLAGS: "$(inherited) -parse-as-library"
+        SWIFT_VERSION: "6.0"
+        WATCHOS_DEPLOYMENT_TARGET: "10.0"

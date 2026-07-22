@@ -192,10 +192,16 @@ struct InstantVerifyRefreshTokenResponse: Decodable {
   struct User: Decodable {
     var id: String
     var refreshToken: String
+    var email: String?
+    var imageURL: String?
+    var type: InstantAuthUserType?
 
     private enum CodingKeys: String, CodingKey {
       case id
       case refreshToken = "refresh_token"
+      case email
+      case imageURL
+      case type
     }
   }
 
@@ -206,10 +212,16 @@ struct InstantAuthUserResponse: Decodable {
   struct User: Decodable {
     var id: String
     var refreshToken: String?
+    var email: String?
+    var imageURL: String?
+    var type: InstantAuthUserType?
 
     private enum CodingKeys: String, CodingKey {
       case id
       case refreshToken = "refresh_token"
+      case email
+      case imageURL
+      case type
     }
   }
 

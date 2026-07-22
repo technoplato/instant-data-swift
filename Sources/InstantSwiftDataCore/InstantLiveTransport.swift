@@ -1097,7 +1097,9 @@ private actor InstantURLSessionLiveWebSocket {
   init(url: URL) throws {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.timeoutIntervalForRequest = 10
-    configuration.timeoutIntervalForResource = 30
+    // A WebSocket is a long-lived resource. A short resource timeout closes an
+    // otherwise healthy, idle room and silently drops presence/topic updates.
+    configuration.timeoutIntervalForResource = 7 * 24 * 60 * 60
     self.urlSession = URLSession(configuration: configuration)
     self.task = urlSession.webSocketTask(with: url)
     self.task.resume()

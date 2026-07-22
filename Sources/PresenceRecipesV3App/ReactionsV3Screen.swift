@@ -3,6 +3,7 @@
   import SwiftUI
 
   @MainActor
+  @available(iOS 17.0, macOS 14.0, tvOS 17.0, watchOS 10.0, *)
   public struct ReactionsV3Screen: View {
     @Room private var room: InstantRoom<ReactionsV3Room>
     @Topic(ReactionsV3Room.Topic.emoji)
@@ -60,6 +61,7 @@
   }
 
   @MainActor
+  @available(iOS 16.0, macOS 13.0, tvOS 16.0, watchOS 9.0, *)
   private struct ReactionsV3Burst: View {
     let animation: ReactionsV3Animation
     let completed: @MainActor () -> Void

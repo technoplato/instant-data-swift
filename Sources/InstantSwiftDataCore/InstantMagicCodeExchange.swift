@@ -57,15 +57,28 @@ public struct InstantMagicCodeVerification: Hashable, Codable, Sendable {
   public var userID: String
   public var refreshToken: String?
   public var created: Bool?
+  public var email: String?
+  public var imageURL: String?
+  public var type: InstantAuthUserType?
 
   public init(userID: String, refreshToken: String? = nil) {
     self.init(userID: userID, refreshToken: refreshToken, created: nil)
   }
 
-  public init(userID: String, refreshToken: String?, created: Bool?) {
+  public init(
+    userID: String,
+    refreshToken: String?,
+    created: Bool?,
+    email: String? = nil,
+    imageURL: String? = nil,
+    type: InstantAuthUserType? = nil
+  ) {
     self.userID = userID
     self.refreshToken = refreshToken
     self.created = created
+    self.email = email
+    self.imageURL = imageURL
+    self.type = type
   }
 }
 
@@ -133,7 +146,10 @@ extension InstantMagicCodeExchange {
 
       return InstantMagicCodeVerification(
         userID: "email:\(request.email)",
-        refreshToken: "local-magic:\(request.appID):\(request.email)"
+        refreshToken: "local-magic:\(request.appID):\(request.email)",
+        created: nil,
+        email: request.email,
+        type: .user
       )
     }
   )
@@ -181,7 +197,10 @@ extension InstantMagicCodeExchange {
         return InstantMagicCodeVerification(
           userID: decoded.user.id,
           refreshToken: decoded.user.refreshToken,
-          created: decoded.created
+          created: decoded.created,
+          email: decoded.user.email,
+          imageURL: decoded.user.imageURL,
+          type: decoded.user.type
         )
       }
     )

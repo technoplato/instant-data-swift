@@ -25,6 +25,12 @@ struct RemindersV3ContractTests {
       ]
     )
 
+    let users = try #require(document.entities.first { $0.namespace == "$users" })
+    expectNoDifference(
+      users.attributes.map(\.name),
+      ["email", "displayName", "username", "imageURL", "type"]
+    )
+
     let lists = try #require(document.entities.first { $0.namespace == "remindersLists" })
     expectNoDifference(
       lists.attributes.map(\.name),

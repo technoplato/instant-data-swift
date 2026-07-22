@@ -24,6 +24,7 @@
 
     private var room: InstantRoomHandle?
     private var observationGeneration = 0
+    private let localUserID = UUID().uuidString.lowercased()
 
     fileprivate init(name: String) {
       self.name = name
@@ -135,6 +136,7 @@
           let published = try await client.publishRoomTopicMessage(
             room: room,
             topic: name,
+            userID: localUserID,
             payload: payload
           )
           try Task.checkCancellation()
@@ -206,8 +208,18 @@
       in room: InstantRoom<Name.RoomSchema>,
       using client: InstantSwiftDataClient
     ) async throws {
-      guard let handle = room.handle else { return }
+      let handle = try await waitForInstantTopicRoomHandle(room)
       try await topic.observe(room: handle, using: client)
+    }
+  }
+
+  private func waitForInstantTopicRoomHandle<Schema: InstantRoomSchema>(
+    _ room: InstantRoom<Schema>
+  ) async throws -> InstantRoomHandle {
+    while true {
+      try Task.checkCancellation()
+      if let handle = room.handle { return handle }
+      await Task.yield()
     }
   }
 
@@ -231,7 +243,7 @@
       in room: InstantRoom<Name.RoomSchema>,
       using client: InstantSwiftDataClient
     ) -> some View {
-      task(id: room.handle) {
+      task {
         do {
           try await topic.task(in: room, using: client)
         } catch is CancellationError {

@@ -1162,8 +1162,38 @@ struct InstantSwiftDataValidationRunner {
         environment: environment,
         caseID: invocation.caseID
       )
+      let ownerEmail = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_REMINDERS_OWNER_EMAIL",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let ownerDisplayName = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_REMINDERS_OWNER_DISPLAY_NAME",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let ownerUsername = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_REMINDERS_OWNER_USERNAME",
+        environment: environment,
+        caseID: invocation.caseID
+      )
       let participantUserID = try requiredEnvironment(
         "INSTANT_SWIFT_DATA_REMINDERS_PARTICIPANT_USER_ID",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let participantEmail = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_REMINDERS_PARTICIPANT_EMAIL",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let participantDisplayName = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_REMINDERS_PARTICIPANT_DISPLAY_NAME",
+        environment: environment,
+        caseID: invocation.caseID
+      )
+      let participantUsername = try requiredEnvironment(
+        "INSTANT_SWIFT_DATA_REMINDERS_PARTICIPANT_USERNAME",
         environment: environment,
         caseID: invocation.caseID
       )
@@ -1231,7 +1261,13 @@ struct InstantSwiftDataValidationRunner {
         websocketURI: websocketURI,
         refreshToken: refreshToken,
         expectedOwnerUserID: ownerUserID,
+        expectedOwnerEmail: ownerEmail,
+        expectedOwnerDisplayName: ownerDisplayName,
+        expectedOwnerUsername: ownerUsername,
         expectedParticipantUserID: participantUserID,
+        expectedParticipantEmail: participantEmail,
+        expectedParticipantDisplayName: participantDisplayName,
+        expectedParticipantUsername: participantUsername,
         listID: listID,
         swiftReminderID: swiftReminderID,
         shareID: shareID,

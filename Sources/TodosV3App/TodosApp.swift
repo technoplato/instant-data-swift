@@ -68,6 +68,7 @@ public struct TodosAppConfiguration: Hashable, Sendable {
   }
 
   @MainActor
+  @available(iOS 16.0, macOS 13.0, tvOS 16.0, watchOS 9.0, *)
   public struct TodosBootstrapScreen: View {
     @StateObject private var model: TodosBootstrapModel
 
@@ -90,6 +91,7 @@ public struct TodosAppConfiguration: Hashable, Sendable {
   }
 
   @MainActor
+  @available(iOS 16.0, macOS 13.0, tvOS 16.0, watchOS 9.0, *)
   public struct TodosScreen: View {
     @FetchAll(Todo.query.order(.serverCreatedAt, .descending)) private var todos: [Todo]
     @Room private var room: InstantRoom<TodosRoom>
@@ -100,36 +102,48 @@ public struct TodosAppConfiguration: Hashable, Sendable {
 
     @State private var text = ""
     @State private var message = ""
+    private let wrapsInNavigationStack: Bool
 
-    public init() {}
+    public init(wrapsInNavigationStack: Bool = true) {
+      self.wrapsInNavigationStack = wrapsInNavigationStack
+    }
 
     public var body: some View {
-      NavigationStack {
-        List {
-          Section("\(peers.count + 1) viewing") {
-            TextField("What needs doing?", text: $text)
-            Button("Add todo", action: addTodoButtonTapped)
-              .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-          }
-          ForEach(todos) { todo in
-            Button(action: { todoButtonTapped(todo) }) {
-              Label(
-                todo.text,
-                systemImage: todo.isCompleted ? "checkmark.circle.fill" : "circle"
-              )
-            }
-          }
-          if !message.isEmpty {
-            Text(message)
-          }
+      Group {
+        if wrapsInNavigationStack {
+          NavigationStack { content }
+        } else {
+          content
         }
-        .navigationTitle("Todos")
       }
+      .instantFetch($todos, Todo.query.order(.serverCreatedAt, .descending))
       .instantRoom(
         $room,
         InstantRoom<TodosRoom>(type: TodosRoom.roomType, id: "main")
       )
       .presence($peers, in: room, publishing: TodoViewerPresence())
+    }
+
+    private var content: some View {
+      List {
+        Section("\(peers.count + 1) viewing") {
+          TextField("What needs doing?", text: $text)
+          Button("Add todo", action: addTodoButtonTapped)
+            .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        }
+        ForEach(todos) { todo in
+          Button(action: { todoButtonTapped(todo) }) {
+            Label(
+              todo.text,
+              systemImage: todo.isCompleted ? "checkmark.circle.fill" : "circle"
+            )
+          }
+        }
+        if !message.isEmpty {
+          Text(message)
+        }
+      }
+      .navigationTitle("Todos")
     }
 
     private func addTodoButtonTapped() {

@@ -3,6 +3,7 @@
   import SwiftUI
 
   @MainActor
+  @available(iOS 17.0, macOS 14.0, tvOS 17.0, watchOS 10.0, *)
   public struct AvatarStackV3Screen: View {
     @Room private var room: InstantRoom<AvatarStackV3Room>
     @Presence private var presence: [AvatarStackV3Presence]

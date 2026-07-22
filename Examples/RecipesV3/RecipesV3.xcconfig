@@ -1,0 +1,2 @@
+INSTANT_APP_ID =
+#include? "RecipesV3.local.xcconfig"

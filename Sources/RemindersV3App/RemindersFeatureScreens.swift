@@ -2,7 +2,7 @@ import Dependencies
 import Foundation
 import InstantSwiftData
 
-#if canImport(SwiftUI)
+#if canImport(SwiftUI) && (os(iOS) || os(macOS))
   import SwiftUI
   #if canImport(PhotosUI)
     import PhotosUI

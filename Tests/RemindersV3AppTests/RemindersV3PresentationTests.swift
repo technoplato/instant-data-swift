@@ -190,6 +190,36 @@ import Testing
       #expect(list.canWrite(as: writer))
     }
 
+    @Test
+    func userIdentityPrefersProfileThenEmailAndBuildsBoundedLookupQueries() throws {
+      let user = RemindersV3User(
+        id: InstantID(rawValue: "user-1"),
+        email: "aisha@example.com",
+        displayName: "Aisha Rahman",
+        username: "aisha"
+      )
+      expectNoDifference(user.remindersIdentityTitle, "Aisha Rahman")
+      expectNoDifference(user.remindersIdentitySubtitle, "aisha@example.com")
+
+      let emailOnly = RemindersV3User(
+        id: InstantID(rawValue: "user-2"),
+        email: "sam@example.com"
+      )
+      expectNoDifference(emailOnly.remindersIdentityTitle, "sam@example.com")
+      expectNoDifference(emailOnly.remindersIdentitySubtitle, nil)
+
+      let lookup = try #require(RemindersV3User.remindersUsers(matchingEmail: " Aisha "))
+      expectNoDifference(
+        lookup.plan.filters,
+        [.iLike(field: "email", pattern: "%Aisha%")]
+      )
+      expectNoDifference(lookup.plan.limit, 8)
+      expectNoDifference(
+        RemindersV3User.remindersUsers(matchingEmail: "a"),
+        nil
+      )
+    }
+
     private func fixtureLists() -> [RemindersV3List] {
       let userID = InstantID<RemindersV3User>(rawValue: "user")
       let listID = InstantID<RemindersV3List>(rawValue: "family")

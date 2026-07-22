@@ -345,7 +345,8 @@ struct BootstrapTests {
           refreshToken: "local-magic:\(appID):user@example.com",
           isGuest: false,
           createdAt: fixedTimestamp,
-          updatedAt: fixedTimestamp
+          updatedAt: fixedTimestamp,
+          email: "user@example.com"
         )
       )
       let persistedSession = try await client.authSession()
@@ -442,7 +443,8 @@ struct BootstrapTests {
             refreshToken: "local-magic:\(appID):new@example.com",
             isGuest: false,
             createdAt: fixedTimestamp,
-            updatedAt: fixedTimestamp
+            updatedAt: fixedTimestamp,
+            email: "new@example.com"
           ),
           created: true
         )

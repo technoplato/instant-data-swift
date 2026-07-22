@@ -50,7 +50,11 @@ export type RemindersV3Role = "owner" | "writer" | "reader";
 
 export interface RemindersV3User {
   id: string;
-  email?: unknown;
+  email?: string;
+  displayName?: string;
+  username?: string;
+  imageURL?: string;
+  type?: string;
 }
 
 export interface RemindersV3Tag {

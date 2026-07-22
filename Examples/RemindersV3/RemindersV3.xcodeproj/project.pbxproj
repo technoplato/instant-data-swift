@@ -7,24 +7,50 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		12BE0E51779A60F07C4BF650 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58BBD6ABF0458027479A3F02 /* main.swift */; };
+		1A1F578E1AE99DFE1B416B45 /* RemindersV3App in Frameworks */ = {isa = PBXBuildFile; productRef = B1151DBFFE23AC29CEB32FE4 /* RemindersV3App */; };
 		20422C58FF9A8A73A9F3C7E5 /* InstantSwiftData in Frameworks */ = {isa = PBXBuildFile; productRef = 39710267FBCCF105737B3D05 /* InstantSwiftData */; };
 		6284AC95179BD1B49BE5F0B3 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58BBD6ABF0458027479A3F02 /* main.swift */; };
+		869A2BBA1E649C92FBD10DF1 /* RemindersV3App in Frameworks */ = {isa = PBXBuildFile; productRef = 30A78034C012391541DCAD14 /* RemindersV3App */; };
+		B1096C7E47501C34DEF197BC /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58BBD6ABF0458027479A3F02 /* main.swift */; };
 		EAEB221FE184B91CFAE213A5 /* RemindersV3App in Frameworks */ = {isa = PBXBuildFile; productRef = 36B38BB554609E90D2BB72DE /* RemindersV3App */; };
+		F4B228418BD340C1E8BF1BBA /* InstantSwiftData in Frameworks */ = {isa = PBXBuildFile; productRef = 22293053FD4F9EF54ED1C297 /* InstantSwiftData */; };
+		F7F0F85131A245EC4A4C7324 /* InstantSwiftData in Frameworks */ = {isa = PBXBuildFile; productRef = 35137D30F6714A259CC2C2FF /* InstantSwiftData */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		19837BEABD6EF14229FB8FF6 /* RemindersV3watchOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RemindersV3watchOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		58BBD6ABF0458027479A3F02 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
-		CCBDCE82EBB276914B7F65C7 /* instant-data-swift */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "instant-data-swift"; path = ../..; sourceTree = SOURCE_ROOT; };
+		714648EF5794F61E2E7562B9 /* RemindersV3tvOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = RemindersV3tvOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A77E849A8A9EE99480DB96B1 /* instant-data-swift */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "instant-data-swift"; path = ../..; sourceTree = SOURCE_ROOT; };
 		FBA6037E5C776DD985F32855 /* RemindersV3iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = RemindersV3iOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		1C8DE16ADEBFEDEAFE928FF3 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F4B228418BD340C1E8BF1BBA /* InstantSwiftData in Frameworks */,
+				869A2BBA1E649C92FBD10DF1 /* RemindersV3App in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		2C0F0184479B46D426D46B35 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				20422C58FF9A8A73A9F3C7E5 /* InstantSwiftData in Frameworks */,
 				EAEB221FE184B91CFAE213A5 /* RemindersV3App in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		873BD12B19E781EBECC78F4A /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F7F0F85131A245EC4A4C7324 /* InstantSwiftData in Frameworks */,
+				1A1F578E1AE99DFE1B416B45 /* RemindersV3App in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -53,6 +79,8 @@
 			isa = PBXGroup;
 			children = (
 				FBA6037E5C776DD985F32855 /* RemindersV3iOS.app */,
+				714648EF5794F61E2E7562B9 /* RemindersV3tvOS.app */,
+				19837BEABD6EF14229FB8FF6 /* RemindersV3watchOS.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -60,7 +88,7 @@
 		F317DBD5C518440A1216CEBD /* Packages */ = {
 			isa = PBXGroup;
 			children = (
-				CCBDCE82EBB276914B7F65C7 /* instant-data-swift */,
+				A77E849A8A9EE99480DB96B1 /* instant-data-swift */,
 			);
 			name = Packages;
 			sourceTree = "<group>";
@@ -68,6 +96,46 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		34857E036292B6A72CF71E67 /* RemindersV3tvOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = CEC64EDB33B02888D9597A02 /* Build configuration list for PBXNativeTarget "RemindersV3tvOS" */;
+			buildPhases = (
+				569ADE759B27854DF6B52280 /* Sources */,
+				873BD12B19E781EBECC78F4A /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = RemindersV3tvOS;
+			packageProductDependencies = (
+				35137D30F6714A259CC2C2FF /* InstantSwiftData */,
+				B1151DBFFE23AC29CEB32FE4 /* RemindersV3App */,
+			);
+			productName = RemindersV3tvOS;
+			productReference = 714648EF5794F61E2E7562B9 /* RemindersV3tvOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A70F099E0CCD6321A255C0F0 /* RemindersV3watchOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 75DB5AA3C02EBA1618BEE519 /* Build configuration list for PBXNativeTarget "RemindersV3watchOS" */;
+			buildPhases = (
+				B9932F820A44E607026CB193 /* Sources */,
+				1C8DE16ADEBFEDEAFE928FF3 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = RemindersV3watchOS;
+			packageProductDependencies = (
+				22293053FD4F9EF54ED1C297 /* InstantSwiftData */,
+				30A78034C012391541DCAD14 /* RemindersV3App */,
+			);
+			productName = RemindersV3watchOS;
+			productReference = 19837BEABD6EF14229FB8FF6 /* RemindersV3watchOS.app */;
+			productType = "com.apple.product-type.application";
+		};
 		F267C8C04089700C5CA9D79F /* RemindersV3iOS */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 61CBD8B2523BE368CB490188 /* Build configuration list for PBXNativeTarget "RemindersV3iOS" */;
@@ -117,11 +185,29 @@
 			projectRoot = "";
 			targets = (
 				F267C8C04089700C5CA9D79F /* RemindersV3iOS */,
+				34857E036292B6A72CF71E67 /* RemindersV3tvOS */,
+				A70F099E0CCD6321A255C0F0 /* RemindersV3watchOS */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXSourcesBuildPhase section */
+		569ADE759B27854DF6B52280 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B1096C7E47501C34DEF197BC /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B9932F820A44E607026CB193 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				12BE0E51779A60F07C4BF650 /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		BB027ABFC2B82BC36379919D /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -151,6 +237,27 @@
 				SDKROOT = iphoneos;
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		28EA94943E24046FACE6C4A7 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Reminders V3";
+				INFOPLIST_KEY_InstantAppID = "$(INSTANT_APP_ID)";
+				INFOPLIST_KEY_RemindersUserID = "$(REMINDERS_V3_USER_ID)";
+				INFOPLIST_KEY_WKApplication = YES;
+				INFOPLIST_KEY_WKWatchOnly = YES;
+				OTHER_SWIFT_FLAGS = "$(inherited) -parse-as-library";
+				PRODUCT_BUNDLE_IDENTIFIER = com.technoplato.InstantSwiftData.RemindersV3watchOS;
+				PRODUCT_NAME = "Reminders V3";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
 			};
 			name = Debug;
 		};
@@ -203,10 +310,11 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
+				TVOS_DEPLOYMENT_TARGET = 17.0;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
 			};
 			name = Release;
 		};
@@ -266,12 +374,58 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
+				TVOS_DEPLOYMENT_TARGET = 17.0;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
 			};
 			name = Debug;
+		};
+		4AE5F8CEFD28ABCA4456B51B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
+				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Reminders V3";
+				INFOPLIST_KEY_InstantAppID = "$(INSTANT_APP_ID)";
+				INFOPLIST_KEY_RemindersUserID = "$(REMINDERS_V3_USER_ID)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				OTHER_SWIFT_FLAGS = "$(inherited) -parse-as-library";
+				PRODUCT_BUNDLE_IDENTIFIER = com.technoplato.InstantSwiftData.RemindersV3tvOS;
+				PRODUCT_NAME = "Reminders V3";
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "appletvos appletvsimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TVOS_DEPLOYMENT_TARGET = 17.0;
+			};
+			name = Release;
+		};
+		57D694C18AF4C8C807E222A9 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Reminders V3";
+				INFOPLIST_KEY_InstantAppID = "$(INSTANT_APP_ID)";
+				INFOPLIST_KEY_RemindersUserID = "$(REMINDERS_V3_USER_ID)";
+				INFOPLIST_KEY_WKApplication = YES;
+				INFOPLIST_KEY_WKWatchOnly = YES;
+				OTHER_SWIFT_FLAGS = "$(inherited) -parse-as-library";
+				PRODUCT_BUNDLE_IDENTIFIER = com.technoplato.InstantSwiftData.RemindersV3watchOS;
+				PRODUCT_NAME = "Reminders V3";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
 		};
 		C3F0D92CE09B3AB09CB50882 /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -294,6 +448,30 @@
 			};
 			name = Release;
 		};
+		E9133F32572B2B257D007B2B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
+				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Reminders V3";
+				INFOPLIST_KEY_InstantAppID = "$(INSTANT_APP_ID)";
+				INFOPLIST_KEY_RemindersUserID = "$(REMINDERS_V3_USER_ID)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				OTHER_SWIFT_FLAGS = "$(inherited) -parse-as-library";
+				PRODUCT_BUNDLE_IDENTIFIER = com.technoplato.InstantSwiftData.RemindersV3tvOS;
+				PRODUCT_NAME = "Reminders V3";
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "appletvos appletvsimulator";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TVOS_DEPLOYMENT_TARGET = 17.0;
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -315,6 +493,24 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		75DB5AA3C02EBA1618BEE519 /* Build configuration list for PBXNativeTarget "RemindersV3watchOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				28EA94943E24046FACE6C4A7 /* Debug */,
+				57D694C18AF4C8C807E222A9 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		CEC64EDB33B02888D9597A02 /* Build configuration list for PBXNativeTarget "RemindersV3tvOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E9133F32572B2B257D007B2B /* Debug */,
+				4AE5F8CEFD28ABCA4456B51B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -325,6 +521,18 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		22293053FD4F9EF54ED1C297 /* InstantSwiftData */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = InstantSwiftData;
+		};
+		30A78034C012391541DCAD14 /* RemindersV3App */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RemindersV3App;
+		};
+		35137D30F6714A259CC2C2FF /* InstantSwiftData */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = InstantSwiftData;
+		};
 		36B38BB554609E90D2BB72DE /* RemindersV3App */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = RemindersV3App;
@@ -332,6 +540,10 @@
 		39710267FBCCF105737B3D05 /* InstantSwiftData */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = InstantSwiftData;
+		};
+		B1151DBFFE23AC29CEB32FE4 /* RemindersV3App */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RemindersV3App;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

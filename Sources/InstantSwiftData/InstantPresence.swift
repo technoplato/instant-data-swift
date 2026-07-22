@@ -11,6 +11,7 @@
     @Published var isLoading = false
 
     private var observationGeneration = 0
+    private let localUserID = UUID().uuidString.lowercased()
 
     init(values: [Value]) {
       self.values = values
@@ -25,6 +26,14 @@
       values = []
       error = nil
       isLoading = true
+      InstantDiagnostics.shared.record(
+        .debug,
+        subsystem: "instant-swift-data",
+        category: "presence",
+        event: "typed-presence.observation-started",
+        message: "Started observing typed room presence.",
+        metadata: ["roomType": room.type, "roomID": room.id]
+      )
 
       do {
         let subscription = try await client.subscribeRoomPresence(room: room)
@@ -36,13 +45,43 @@
           guard observationGeneration == generation else {
             throw CancellationError()
           }
-          values = try members.map { member in
+          let remoteMembers = members.filter { $0.userID != self.localUserID }
+          values = remoteMembers.compactMap { member in
             var object = member.values
             if object["userID"] == nil {
               object["userID"] = .string(member.userID)
             }
-            return try InstantRoomCodableJSON.decode(Value.self, from: object)
+            do {
+              return try InstantRoomCodableJSON.decode(Value.self, from: object)
+            } catch {
+              InstantDiagnostics.shared.record(
+                .warning,
+                subsystem: "instant-swift-data",
+                category: "presence",
+                event: "typed-presence.member-decode-failed",
+                message: "Ignored a room presence member that did not match the typed schema.",
+                metadata: [
+                  "roomType": room.type,
+                  "memberID": member.userID,
+                  "valueKeys": object.keys.sorted().joined(separator: ","),
+                  "error": String(describing: error),
+                ]
+              )
+              return nil
+            }
           }
+          InstantDiagnostics.shared.record(
+            .trace,
+            subsystem: "instant-swift-data",
+            category: "presence",
+            event: "typed-presence.emitted",
+            message: "Applied a typed room presence emission.",
+            metadata: [
+              "roomType": room.type,
+              "memberCount": String(members.count),
+              "remoteMemberCount": String(remoteMembers.count),
+            ]
+          )
           error = nil
           isLoading = false
         }
@@ -53,6 +92,14 @@
         }
         isLoading = false
       } catch is CancellationError {
+        InstantDiagnostics.shared.record(
+          .debug,
+          subsystem: "instant-swift-data",
+          category: "presence",
+          event: "typed-presence.observation-cancelled",
+          message: "Stopped observing typed room presence.",
+          metadata: ["roomType": room.type, "roomID": room.id]
+        )
         guard observationGeneration == generation else {
           throw CancellationError()
         }
@@ -90,9 +137,13 @@
       do {
         if let value {
           let object = try InstantRoomCodableJSON.encodeObject(value)
-          _ = try await client.setRoomPresence(room: room, values: object)
+          _ = try await client.setRoomPresence(
+            room: room,
+            userID: localUserID,
+            values: object
+          )
         } else {
-          _ = try await client.leaveRoomPresence(room: room)
+          _ = try await client.leaveRoomPresence(room: room, userID: localUserID)
         }
         error = nil
       } catch is CancellationError {
@@ -111,6 +162,7 @@
         throw instantError
       }
     }
+
   }
 
   @MainActor
@@ -162,11 +214,7 @@
       in room: InstantRoom<Schema>,
       using client: InstantSwiftDataClient
     ) async throws where Schema.Presence == Value {
-      guard let handle = room.handle else {
-        state.values = []
-        state.isLoading = false
-        return
-      }
+      let handle = try await waitForInstantRoomHandle(room)
       try await state.observe(room: handle, using: client)
     }
 
@@ -175,8 +223,18 @@
       in room: InstantRoom<Schema>,
       using client: InstantSwiftDataClient
     ) async throws where Schema.Presence == Value {
-      guard let handle = room.handle else { return }
+      let handle = try await waitForInstantRoomHandle(room)
       try await state.publish(value, room: handle, using: client)
+    }
+  }
+
+  private func waitForInstantRoomHandle<Schema: InstantRoomSchema>(
+    _ room: InstantRoom<Schema>
+  ) async throws -> InstantRoomHandle {
+    while true {
+      try Task.checkCancellation()
+      if let handle = room.handle { return handle }
+      await Task.yield()
     }
   }
 
@@ -210,7 +268,7 @@
         room: room.handle,
         value: currentValue.flatMap { try? InstantRoomCodableJSON.encode($0) }
       )
-      return task(id: room.handle) {
+      return task {
         do {
           try await presence.task(in: room, using: client)
         } catch is CancellationError {

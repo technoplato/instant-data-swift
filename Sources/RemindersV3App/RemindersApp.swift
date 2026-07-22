@@ -8,24 +8,31 @@ public struct RemindersV3AppConfiguration: Hashable, Sendable {
   public var websocketURI: URL
   public var persistenceURL: URL?
   public var enablesLiveSync: Bool
+  public var userIDOverride: InstantID<RemindersV3User>?
+  public var refreshTokenOverride: String?
 
   public init(
     appID: String,
     apiURI: URL = InstantRuntimeConfiguration.defaultAPIURI,
     websocketURI: URL = InstantRuntimeConfiguration.defaultWebSocketURI,
     persistenceURL: URL? = nil,
-    enablesLiveSync: Bool
+    enablesLiveSync: Bool,
+    userIDOverride: InstantID<RemindersV3User>? = nil,
+    refreshTokenOverride: String? = nil
   ) {
     self.appID = appID
     self.apiURI = apiURI
     self.websocketURI = websocketURI
     self.persistenceURL = persistenceURL
     self.enablesLiveSync = enablesLiveSync
+    self.userIDOverride = userIDOverride
+    self.refreshTokenOverride = refreshTokenOverride
   }
 
   public static func environment(
     _ environment: [String: String] = ProcessInfo.processInfo.environment,
-    bundledAppID: String? = Bundle.main.object(forInfoDictionaryKey: "InstantAppID") as? String
+    bundledAppID: String? = Bundle.main.object(forInfoDictionaryKey: "InstantAppID") as? String,
+    bundledUserID: String? = Bundle.main.object(forInfoDictionaryKey: "RemindersUserID") as? String
   ) -> Self {
     let configuredAppID = [environment["INSTANT_APP_ID"], bundledAppID]
       .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -39,7 +46,14 @@ public struct RemindersV3AppConfiguration: Hashable, Sendable {
         .flatMap { URL(string: $0.trimmingCharacters(in: .whitespacesAndNewlines)) }
         ?? InstantRuntimeConfiguration.defaultWebSocketURI,
       persistenceURL: environment["INSTANT_PERSISTENCE_PATH"].map(URL.init(fileURLWithPath:)),
-      enablesLiveSync: configuredAppID != nil
+      enablesLiveSync: configuredAppID != nil,
+      userIDOverride: [environment["REMINDERS_V3_USER_ID"], bundledUserID]
+        .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .first { !$0.isEmpty }
+        .map(InstantID.init(rawValue:)),
+      refreshTokenOverride: environment["REMINDERS_V3_REFRESH_TOKEN"]
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .flatMap { $0.isEmpty ? nil : $0 }
     )
   }
 }
@@ -69,6 +83,8 @@ public struct RemindersV3AppConfiguration: Hashable, Sendable {
           "apiHost": configuration.apiURI.host ?? "none",
           "websocketHost": configuration.websocketURI.host ?? "none",
           "persistencePath": configuration.persistenceURL?.path ?? "default",
+          "usesUserOverride": String(configuration.userIDOverride != nil),
+          "usesRefreshTokenOverride": String(configuration.refreshTokenOverride != nil),
         ]
       )
     }
@@ -113,6 +129,12 @@ public struct RemindersV3AppConfiguration: Hashable, Sendable {
             initialAttributes: RemindersV3Schema.attributes
           )
           let client = dependencies.defaultInstantSwiftData
+          if let refreshToken = configuration.refreshTokenOverride {
+            _ = try await client.signInWithRefreshToken(
+              refreshToken,
+              userID: configuration.userIDOverride?.rawValue
+            )
+          }
           prepareDependencies { $0.defaultInstantSwiftData = client }
           self?.client = client
           self?.task = nil
@@ -145,7 +167,7 @@ public struct RemindersV3AppConfiguration: Hashable, Sendable {
   }
 
   @MainActor
-  @available(iOS 17.0, macOS 14.0, *)
+  @available(iOS 17.0, macOS 14.0, tvOS 17.0, watchOS 10.0, *)
   public struct RemindersV3BootstrapScreen: View {
     @StateObject private var model: RemindersV3BootstrapModel
 
@@ -156,7 +178,11 @@ public struct RemindersV3AppConfiguration: Hashable, Sendable {
     public var body: some View {
       Group {
         if model.client != nil {
-          RemindersV3Screen()
+          if let userID = model.configuration.userIDOverride {
+            RemindersV3Screen(userID: userID)
+          } else {
+            RemindersV3Screen()
+          }
         } else if let errorMessage = model.errorMessage {
           Text(errorMessage)
         } else {

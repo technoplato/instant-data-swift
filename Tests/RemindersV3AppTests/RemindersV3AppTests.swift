@@ -27,6 +27,8 @@ struct RemindersV3AppTests {
       "INSTANT_API_URI": "http://127.0.0.1:18080",
       "INSTANT_WEBSOCKET_URI": "ws://127.0.0.1:18081/runtime/session",
       "INSTANT_PERSISTENCE_PATH": "/tmp/reminders-environment.sqlite",
+      "REMINDERS_V3_USER_ID": " 00000000-0000-4000-8000-000000000001 ",
+      "REMINDERS_V3_REFRESH_TOKEN": " demo-refresh-token ",
     ])
 
     expectNoDifference(configuration.appID, "live-reminders")
@@ -37,12 +39,19 @@ struct RemindersV3AppTests {
     )
     expectNoDifference(configuration.persistenceURL?.path, "/tmp/reminders-environment.sqlite")
     expectNoDifference(configuration.enablesLiveSync, true)
+    expectNoDifference(
+      configuration.userIDOverride?.rawValue,
+      "00000000-0000-4000-8000-000000000001"
+    )
+    expectNoDifference(configuration.refreshTokenOverride, "demo-refresh-token")
 
     let local = RemindersV3AppConfiguration.environment([:])
     expectNoDifference(local.appID, "reminders-v3-local")
     expectNoDifference(local.apiURI, InstantRuntimeConfiguration.defaultAPIURI)
     expectNoDifference(local.websocketURI, InstantRuntimeConfiguration.defaultWebSocketURI)
     expectNoDifference(local.enablesLiveSync, false)
+    expectNoDifference(local.userIDOverride, nil)
+    expectNoDifference(local.refreshTokenOverride, nil)
 
     let bundled = RemindersV3AppConfiguration.environment(
       [:],

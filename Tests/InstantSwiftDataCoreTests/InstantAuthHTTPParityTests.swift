@@ -41,7 +41,9 @@ struct InstantAuthHTTPParityTests {
         await verifyRecorder.record(request)
         return InstantAuthHTTPResponse(
           statusCode: 200,
-          data: Data(#"{"user":{"id":"user-1","refresh_token":"token-2"},"created":true}"#.utf8)
+          data: Data(
+            #"{"user":{"id":"user-1","refresh_token":"token-2","email":"user@example.com","imageURL":"https://example.com/avatar.png","type":"user"},"created":true}"#.utf8
+          )
         )
       }
     )
@@ -59,7 +61,14 @@ struct InstantAuthHTTPParityTests {
     )
     expectNoDifference(
       verification,
-      InstantMagicCodeVerification(userID: "user-1", refreshToken: "token-2", created: true)
+      InstantMagicCodeVerification(
+        userID: "user-1",
+        refreshToken: "token-2",
+        created: true,
+        email: "user@example.com",
+        imageURL: "https://example.com/avatar.png",
+        type: .user
+      )
     )
     let verifyRequest = try #require(await verifyRecorder.onlyRequest())
     expectNoDifference(
@@ -87,11 +96,13 @@ struct InstantAuthHTTPParityTests {
         await idRecorder.record(request)
         return InstantAuthHTTPResponse(
           statusCode: 200,
-          data: Data(#"{"user":{"id":"id-user","refresh_token":"id-refresh"},"created":false}"#.utf8)
+          data: Data(
+            #"{"user":{"id":"id-user","refresh_token":"id-refresh","email":"id@example.com","type":"user"},"created":false}"#.utf8
+          )
         )
       }
     )
-    _ = try await idExchange.signIn(
+    let idVerification = try await idExchange.signIn(
       InstantIDTokenSignInRequest(
         appID: "app-1",
         apiURI: apiURI,
@@ -103,6 +114,8 @@ struct InstantAuthHTTPParityTests {
         makeID: { "unused" }
       )
     )
+    expectNoDifference(idVerification.email, "id@example.com")
+    expectNoDifference(idVerification.type, .user)
     let idRequest = try #require(await idRecorder.onlyRequest())
     expectNoDifference(
       idRequest.url?.absoluteString,
@@ -126,11 +139,13 @@ struct InstantAuthHTTPParityTests {
         await oauthRecorder.record(request)
         return InstantAuthHTTPResponse(
           statusCode: 200,
-          data: Data(#"{"user":{"id":"oauth-user","refresh_token":"oauth-refresh"},"created":true}"#.utf8)
+          data: Data(
+            #"{"user":{"id":"oauth-user","refresh_token":"oauth-refresh","email":"oauth@example.com","type":"user"},"created":true}"#.utf8
+          )
         )
       }
     )
-    _ = try await oauthExchange.signIn(
+    let oauthVerification = try await oauthExchange.signIn(
       InstantOAuthSignInRequest(
         appID: "app-1",
         apiURI: apiURI,
@@ -141,6 +156,8 @@ struct InstantAuthHTTPParityTests {
         makeID: { "unused" }
       )
     )
+    expectNoDifference(oauthVerification.email, "oauth@example.com")
+    expectNoDifference(oauthVerification.type, .user)
     let oauthRequest = try #require(await oauthRecorder.onlyRequest())
     expectNoDifference(
       oauthRequest.url?.absoluteString,
@@ -182,7 +199,11 @@ struct InstantAuthHTTPParityTests {
 
     expectNoDifference(
       verification,
-      InstantRefreshTokenVerification(userID: "user-1", refreshToken: "verified-token")
+      InstantRefreshTokenVerification(
+        userID: "user-1",
+        refreshToken: "verified-token",
+        email: "user@example.com"
+      )
     )
     let request = try #require(await recorder.onlyRequest())
     expectNoDifference(request.httpMethod, "POST")

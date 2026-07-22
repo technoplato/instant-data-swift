@@ -834,11 +834,19 @@ public struct InstantConnectionStatus: Hashable, Codable, Sendable {
   }
 }
 
+public enum InstantAuthUserType: String, Hashable, Codable, Sendable {
+  case user
+  case guest
+}
+
 public struct InstantAuthSession: Hashable, Codable, Sendable, Identifiable {
   public var id: String { userID }
   public var appID: String
   public var userID: String
   public var refreshToken: String?
+  public var email: String?
+  public var imageURL: String?
+  public var type: InstantAuthUserType?
   public var isGuest: Bool
   public var createdAt: InstantTimestamp
   public var updatedAt: InstantTimestamp
@@ -849,11 +857,17 @@ public struct InstantAuthSession: Hashable, Codable, Sendable, Identifiable {
     refreshToken: String? = nil,
     isGuest: Bool,
     createdAt: InstantTimestamp,
-    updatedAt: InstantTimestamp
+    updatedAt: InstantTimestamp,
+    email: String? = nil,
+    imageURL: String? = nil,
+    type: InstantAuthUserType? = nil
   ) {
     self.appID = appID
     self.userID = userID
     self.refreshToken = refreshToken
+    self.email = email
+    self.imageURL = imageURL
+    self.type = type ?? (isGuest ? .guest : .user)
     self.isGuest = isGuest
     self.createdAt = createdAt
     self.updatedAt = updatedAt

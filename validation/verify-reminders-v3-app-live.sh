@@ -136,13 +136,21 @@ assert.equal(
 );
 assert.equal(live.details.swift.connectionState, "authenticated");
 assert.equal(live.details.swift.pendingMutationCount, 0);
+assert.deepEqual(
+  live.details.swift.authenticatedUser,
+  live.details.users.owner,
+);
+assert.deepEqual(
+  live.details.swift.participantDirectoryUser,
+  live.details.users.participant,
+);
 assert.deepEqual(live.details.swift.list.membershipRoles, ["owner", "writer"]);
 assert.deepEqual(
   live.details.swift.typeScriptReminderObservedBySwift.tagIDs,
   [live.details.fixtureIDs.typeScriptTag],
 );
 assert.equal(schema.entityCount, 6);
-assert.equal(schema.attributeCount, 30);
+assert.equal(schema.attributeCount, 34);
 assert.equal(schema.linkCount, 9);
 assert.ok(schema.warnings.every((warning) => (
   warning.code === "server-json-as-any"

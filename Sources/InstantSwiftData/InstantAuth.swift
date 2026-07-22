@@ -35,6 +35,11 @@ public struct InstantAuthUser<Entity: InstantEntityModel>: Hashable, Sendable {
     self.id = id
     self.session = session
   }
+
+  public var email: String? { session.email }
+  public var imageURL: String? { session.imageURL }
+  public var type: InstantAuthUserType { session.type ?? (session.isGuest ? .guest : .user) }
+  public var isGuest: Bool { session.isGuest }
 }
 
 #if canImport(SwiftUI)

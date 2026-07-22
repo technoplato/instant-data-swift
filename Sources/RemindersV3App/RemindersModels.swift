@@ -6,6 +6,59 @@ import InstantSwiftDataSchema
 public typealias RemindersV3User = AuthV3User
 public typealias RemindersV3AuthProviders = AuthV3Providers
 
+extension AuthV3User {
+  public static func remindersUser(
+    id: InstantID<Self>
+  ) -> InstantQuery<Self> {
+    query.where(identifier == id.rawValue)
+  }
+
+  public static func remindersUsers(
+    ids: [InstantID<Self>]
+  ) -> InstantQuery<Self>? {
+    let values = Array(Set(ids.map(\.rawValue))).sorted()
+    guard !values.isEmpty else { return nil }
+    return query.where(identifier.isIn(values))
+  }
+
+  public static func remindersUsers(
+    matchingEmail rawSearch: String,
+    limit: UInt = 8
+  ) -> InstantQuery<Self>? {
+    let search = rawSearch
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .filter { $0 != "%" && $0 != "_" }
+    guard search.count >= 2 else { return nil }
+    return InstantQuery(
+      filters: [.iLike(field: "email", pattern: "%\(search)%")],
+      order: InstantQueryOrder("email", .ascending),
+      limit: limit
+    )
+  }
+
+  public var remindersIdentityTitle: String {
+    nonempty(displayName)
+      ?? nonempty(username).map { "@\($0)" }
+      ?? nonempty(email)
+      ?? "Guest account"
+  }
+
+  public var remindersIdentitySubtitle: String? {
+    guard remindersIdentityTitle != email else { return nil }
+    return nonempty(email)
+  }
+
+  private func nonempty(_ value: String?) -> String? {
+    value?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+      .remindersNonempty
+  }
+}
+
+extension String {
+  var remindersNonempty: String? { isEmpty ? nil : self }
+}
+
 public enum RemindersV3Priority: Int, Codable, CaseIterable, Hashable, InstantNumberEnum,
   Sendable
 {

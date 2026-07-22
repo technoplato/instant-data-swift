@@ -1,0 +1,630 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		1839316989DD225C714535A4 /* RecipesV3App in Frameworks */ = {isa = PBXBuildFile; productRef = 7C3350CCC1BCDB582F8A5731 /* RecipesV3App */; };
+		1FD9E35F7558F09BCB16A46D /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A43B34B403A7137530BB5BA /* main.swift */; };
+		4F2E4B21DB86DF8198CAD83B /* RecipesV3App in Frameworks */ = {isa = PBXBuildFile; productRef = 0CEC7E07DFBBAA44C8463D5B /* RecipesV3App */; };
+		5171E5DF77207544A88850D4 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A43B34B403A7137530BB5BA /* main.swift */; };
+		52BC57A96F5E2EC33A92272C /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A43B34B403A7137530BB5BA /* main.swift */; };
+		E3E4949BB40911CC8623922B /* RecipesV3App in Frameworks */ = {isa = PBXBuildFile; productRef = EBC999694E6FEF19CC3375DB /* RecipesV3App */; };
+		EEF7156F7E7B3EEB1BFB9D25 /* RecipesV3App in Frameworks */ = {isa = PBXBuildFile; productRef = 2F3C478E84932698A2B46A96 /* RecipesV3App */; };
+		F98775CA4C3A1E4148ACBB7A /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A43B34B403A7137530BB5BA /* main.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		000DA2AE3FE950D8554398A2 /* InstantRecipesV3watchOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = InstantRecipesV3watchOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		49C1264C9326C4F064CC0BF8 /* RecipesV3.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = RecipesV3.xcconfig; sourceTree = "<group>"; };
+		4CD15A6E92F66E8C2B4F4EED /* InstantRecipesV3iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = InstantRecipesV3iOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		6A43B34B403A7137530BB5BA /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		A0CD50E81F8D701B26CF1CA4 /* instant-data-swift */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "instant-data-swift"; path = ../..; sourceTree = SOURCE_ROOT; };
+		B40D6A43BC93DA1E24E583E6 /* InstantRecipesV3tvOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = InstantRecipesV3tvOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		EED52D5BA1EDB79807718324 /* InstantRecipesV3macOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = InstantRecipesV3macOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		3A0FDFCDF474FF0B30E70A92 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E3E4949BB40911CC8623922B /* RecipesV3App in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3C99161160F2157110FDEA2F /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				EEF7156F7E7B3EEB1BFB9D25 /* RecipesV3App in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5B7A10E72773B1D4F3CA2444 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4F2E4B21DB86DF8198CAD83B /* RecipesV3App in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F1B807EFE8486239377A84A1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1839316989DD225C714535A4 /* RecipesV3App in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		0523AC2DA672472AF1A38B2B /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				4CD15A6E92F66E8C2B4F4EED /* InstantRecipesV3iOS.app */,
+				EED52D5BA1EDB79807718324 /* InstantRecipesV3macOS.app */,
+				B40D6A43BC93DA1E24E583E6 /* InstantRecipesV3tvOS.app */,
+				000DA2AE3FE950D8554398A2 /* InstantRecipesV3watchOS.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		0BA1FFF66296500EA9CA3EDD /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				A0CD50E81F8D701B26CF1CA4 /* instant-data-swift */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		61E264CEFF1A03DE1870E474 /* RecipesV3 */ = {
+			isa = PBXGroup;
+			children = (
+				49C1264C9326C4F064CC0BF8 /* RecipesV3.xcconfig */,
+			);
+			name = RecipesV3;
+			path = .;
+			sourceTree = "<group>";
+		};
+		9003B3D3763B70D7E9EE3869 = {
+			isa = PBXGroup;
+			children = (
+				0BA1FFF66296500EA9CA3EDD /* Packages */,
+				61E264CEFF1A03DE1870E474 /* RecipesV3 */,
+				D80A5AE630AE3188A95DF047 /* RecipesV3Executable */,
+				0523AC2DA672472AF1A38B2B /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		D80A5AE630AE3188A95DF047 /* RecipesV3Executable */ = {
+			isa = PBXGroup;
+			children = (
+				6A43B34B403A7137530BB5BA /* main.swift */,
+			);
+			name = RecipesV3Executable;
+			path = ../../Sources/RecipesV3Executable;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		19C0DE6519035E95A59C00E9 /* InstantRecipesV3iOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4AEAFE69BA0170B14A5CE7FE /* Build configuration list for PBXNativeTarget "InstantRecipesV3iOS" */;
+			buildPhases = (
+				D8C1149A269CC9667F98E852 /* Sources */,
+				3A0FDFCDF474FF0B30E70A92 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = InstantRecipesV3iOS;
+			packageProductDependencies = (
+				EBC999694E6FEF19CC3375DB /* RecipesV3App */,
+			);
+			productName = InstantRecipesV3iOS;
+			productReference = 4CD15A6E92F66E8C2B4F4EED /* InstantRecipesV3iOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+		350F02CAB5978A635A123059 /* InstantRecipesV3macOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E1324D5631EF1E228307944E /* Build configuration list for PBXNativeTarget "InstantRecipesV3macOS" */;
+			buildPhases = (
+				8D18097FDEB14772A584A725 /* Sources */,
+				5B7A10E72773B1D4F3CA2444 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = InstantRecipesV3macOS;
+			packageProductDependencies = (
+				0CEC7E07DFBBAA44C8463D5B /* RecipesV3App */,
+			);
+			productName = InstantRecipesV3macOS;
+			productReference = EED52D5BA1EDB79807718324 /* InstantRecipesV3macOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+		364C097CE8996A4E3F17D226 /* InstantRecipesV3watchOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1A3E7FBC00045C1AC28E6E98 /* Build configuration list for PBXNativeTarget "InstantRecipesV3watchOS" */;
+			buildPhases = (
+				5539EC9C789A48D3D7E1777B /* Sources */,
+				F1B807EFE8486239377A84A1 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = InstantRecipesV3watchOS;
+			packageProductDependencies = (
+				7C3350CCC1BCDB582F8A5731 /* RecipesV3App */,
+			);
+			productName = InstantRecipesV3watchOS;
+			productReference = 000DA2AE3FE950D8554398A2 /* InstantRecipesV3watchOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+		68D8EBB8029B810E0FA20F37 /* InstantRecipesV3tvOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0CB9EE4A8B8C7AED17889C52 /* Build configuration list for PBXNativeTarget "InstantRecipesV3tvOS" */;
+			buildPhases = (
+				B3A60F30C1220CE5A6A1D997 /* Sources */,
+				3C99161160F2157110FDEA2F /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = InstantRecipesV3tvOS;
+			packageProductDependencies = (
+				2F3C478E84932698A2B46A96 /* RecipesV3App */,
+			);
+			productName = InstantRecipesV3tvOS;
+			productReference = B40D6A43BC93DA1E24E583E6 /* InstantRecipesV3tvOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		E10BFA585D7F2888D0895638 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = 083944B64101F9C0E58731E9 /* Build configuration list for PBXProject "InstantRecipesV3" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 9003B3D3763B70D7E9EE3869;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				00B709059834807F6444E0A8 /* XCLocalSwiftPackageReference "../.." */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 0523AC2DA672472AF1A38B2B /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				19C0DE6519035E95A59C00E9 /* InstantRecipesV3iOS */,
+				350F02CAB5978A635A123059 /* InstantRecipesV3macOS */,
+				68D8EBB8029B810E0FA20F37 /* InstantRecipesV3tvOS */,
+				364C097CE8996A4E3F17D226 /* InstantRecipesV3watchOS */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		5539EC9C789A48D3D7E1777B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F98775CA4C3A1E4148ACBB7A /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8D18097FDEB14772A584A725 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				52BC57A96F5E2EC33A92272C /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B3A60F30C1220CE5A6A1D997 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1FD9E35F7558F09BCB16A46D /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D8C1149A269CC9667F98E852 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5171E5DF77207544A88850D4 /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		170108002E56E882BAE76FF6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 49C1264C9326C4F064CC0BF8 /* RecipesV3.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "watchOS-Info.plist";
+				OTHER_SWIFT_FLAGS = "$(inherited) -parse-as-library";
+				PRODUCT_BUNDLE_IDENTIFIER = com.technoplato.InstantSwiftData.RecipesV3watchOS;
+				PRODUCT_NAME = "Instant Recipes";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		1B243CBAAB85C331E04E68C0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 49C1264C9326C4F064CC0BF8 /* RecipesV3.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "macOS-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				OTHER_SWIFT_FLAGS = "$(inherited) -parse-as-library";
+				PRODUCT_BUNDLE_IDENTIFIER = com.technoplato.InstantSwiftData.RecipesV3macOS;
+				PRODUCT_NAME = "Instant Recipes";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		467883C0A8294D6972B2B1D9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 49C1264C9326C4F064CC0BF8 /* RecipesV3.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "macOS-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				OTHER_SWIFT_FLAGS = "$(inherited) -parse-as-library";
+				PRODUCT_BUNDLE_IDENTIFIER = com.technoplato.InstantSwiftData.RecipesV3macOS;
+				PRODUCT_NAME = "Instant Recipes";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		5649EC8A8F8F595787B5EFC3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 49C1264C9326C4F064CC0BF8 /* RecipesV3.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "iOS-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				OTHER_SWIFT_FLAGS = "$(inherited) -parse-as-library";
+				PRODUCT_BUNDLE_IDENTIFIER = com.technoplato.InstantSwiftData.RecipesV3iOS;
+				PRODUCT_NAME = "Instant Recipes";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		669F8A2DB5DF60F3C0B03C49 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 49C1264C9326C4F064CC0BF8 /* RecipesV3.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "iOS-Info.plist";
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				OTHER_SWIFT_FLAGS = "$(inherited) -parse-as-library";
+				PRODUCT_BUNDLE_IDENTIFIER = com.technoplato.InstantSwiftData.RecipesV3iOS;
+				PRODUCT_NAME = "Instant Recipes";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		6B50B4473DAF370C2934F8E4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 49C1264C9326C4F064CC0BF8 /* RecipesV3.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
+				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "tvOS-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				OTHER_SWIFT_FLAGS = "$(inherited) -parse-as-library";
+				PRODUCT_BUNDLE_IDENTIFIER = com.technoplato.InstantSwiftData.RecipesV3tvOS;
+				PRODUCT_NAME = "Instant Recipes";
+				SDKROOT = appletvos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TVOS_DEPLOYMENT_TARGET = 17.0;
+			};
+			name = Debug;
+		};
+		772563422124DC6266024E17 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 49C1264C9326C4F064CC0BF8 /* RecipesV3.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "watchOS-Info.plist";
+				OTHER_SWIFT_FLAGS = "$(inherited) -parse-as-library";
+				PRODUCT_BUNDLE_IDENTIFIER = com.technoplato.InstantSwiftData.RecipesV3watchOS;
+				PRODUCT_NAME = "Instant Recipes";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+		7985ADA58C0BC31E7D0D2E38 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				TVOS_DEPLOYMENT_TARGET = 17.0;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		C7C6DC3E31F005FD71A83FC1 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				TVOS_DEPLOYMENT_TARGET = 17.0;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+		CB79E2BDAB583AD653B09B03 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 49C1264C9326C4F064CC0BF8 /* RecipesV3.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = "App Icon & Top Shelf Image";
+				ASSETCATALOG_COMPILER_LAUNCHIMAGE_NAME = LaunchImage;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "tvOS-Info.plist";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				OTHER_SWIFT_FLAGS = "$(inherited) -parse-as-library";
+				PRODUCT_BUNDLE_IDENTIFIER = com.technoplato.InstantSwiftData.RecipesV3tvOS;
+				PRODUCT_NAME = "Instant Recipes";
+				SDKROOT = appletvos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 3;
+				TVOS_DEPLOYMENT_TARGET = 17.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		083944B64101F9C0E58731E9 /* Build configuration list for PBXProject "InstantRecipesV3" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7985ADA58C0BC31E7D0D2E38 /* Debug */,
+				C7C6DC3E31F005FD71A83FC1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		0CB9EE4A8B8C7AED17889C52 /* Build configuration list for PBXNativeTarget "InstantRecipesV3tvOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6B50B4473DAF370C2934F8E4 /* Debug */,
+				CB79E2BDAB583AD653B09B03 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		1A3E7FBC00045C1AC28E6E98 /* Build configuration list for PBXNativeTarget "InstantRecipesV3watchOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				170108002E56E882BAE76FF6 /* Debug */,
+				772563422124DC6266024E17 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		4AEAFE69BA0170B14A5CE7FE /* Build configuration list for PBXNativeTarget "InstantRecipesV3iOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				669F8A2DB5DF60F3C0B03C49 /* Debug */,
+				5649EC8A8F8F595787B5EFC3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		E1324D5631EF1E228307944E /* Build configuration list for PBXNativeTarget "InstantRecipesV3macOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				467883C0A8294D6972B2B1D9 /* Debug */,
+				1B243CBAAB85C331E04E68C0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		00B709059834807F6444E0A8 /* XCLocalSwiftPackageReference "../.." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../..;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		0CEC7E07DFBBAA44C8463D5B /* RecipesV3App */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RecipesV3App;
+		};
+		2F3C478E84932698A2B46A96 /* RecipesV3App */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RecipesV3App;
+		};
+		7C3350CCC1BCDB582F8A5731 /* RecipesV3App */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RecipesV3App;
+		};
+		EBC999694E6FEF19CC3375DB /* RecipesV3App */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = RecipesV3App;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = E10BFA585D7F2888D0895638 /* Project object */;
+}

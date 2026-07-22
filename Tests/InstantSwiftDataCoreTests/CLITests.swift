@@ -320,7 +320,7 @@ extension InstantStoreTests {
       homeURL: homeURL
     )
     expectNoDifference(unsupported.status, 64)
-    #expect(unsupported.error.contains("Available examples: todos, validation, recording-action, sharing, voice-trail, mobile-chat, storage, typing-indicator, streams, reactions, avatar-stack"))
+    #expect(unsupported.error.contains("Available examples: todos, recipes, validation, recording-action, sharing, voice-trail, mobile-chat, storage, typing-indicator, streams, reactions, avatar-stack"))
   }
 
   @Test
@@ -1314,10 +1314,10 @@ extension InstantStoreTests {
 
     expectNoDifference(help.status, 0)
     expectNoDifference(help.error, "")
-    #expect(help.output.contains("schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors"))
-    #expect(help.output.contains("schema verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors"))
-    #expect(help.output.contains("perms generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors"))
-    #expect(help.output.contains("perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors"))
+    #expect(help.output.contains("schema generate --example todos|recipes|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors"))
+    #expect(help.output.contains("schema verify --example todos|recipes|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors"))
+    #expect(help.output.contains("perms generate --example todos|recipes|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors"))
+    #expect(help.output.contains("perms verify --example todos|recipes|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors"))
   }
 
   @Test
@@ -1346,11 +1346,11 @@ extension InstantStoreTests {
     )
     try expectMalformed(
       ["schema", "generate", "--to", schemaURL.path, "--json"],
-      contains: "schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors"
+      contains: "schema generate --example todos|recipes|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors"
     )
     try expectMalformed(
       ["schema", "dance", "--to", schemaURL.path, "--json"],
-      contains: "schema generate --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors"
+      contains: "schema generate --example todos|recipes|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors"
     )
     try expectMalformed(
       ["schema", "verify", "--example", "todos", "--unknown", "--json"],
@@ -1362,7 +1362,7 @@ extension InstantStoreTests {
     )
     try expectMalformed(
       ["perms", "verify", "--example", "todos", "--from", "--json"],
-      contains: "perms verify --example todos|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder --from instant.perms.ts"
+      contains: "perms verify --example todos|recipes|validation|recording-action|sharing|voice-trail|mobile-chat|storage|typing-indicator|streams|reactions|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|syncups|app-builder --from instant.perms.ts"
     )
 
     expectNoDifference(
@@ -4966,9 +4966,28 @@ extension InstantStoreTests {
     expectNoDifference(result.status, 64)
     #expect(
       result.error.contains(
-        "Usage: instant-swift-data examples <todos|auth|app-builder|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|sync-ups>"
+        "Usage: instant-swift-data examples <interactive|todos|auth|app-builder|todo-links|counters|chat|mobile-chat|microblog|reactions|typing-indicator|avatar-stack|cursors|custom-cursors|merge-tile-game|stroopwafel|reminders|sync-ups>"
       )
     )
+  }
+
+  @Test
+  func cliRecipesInteractiveShellRunsMultipleCommands() throws {
+    let homeURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("InstantSwiftDataCLITests-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: homeURL, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: homeURL) }
+
+    let result = try runCLIResult(
+      ["recipes", "interactive", "--no-prompt"],
+      homeURL: homeURL,
+      standardInput: "todos add interactive todo\ntodos list\nexit\n"
+    )
+
+    expectNoDifference(result.status, 0)
+    #expect(result.output.contains("Instant Recipes interactive shell"))
+    #expect(result.output.contains("interactive todo"))
+    expectNoDifference(result.error, "")
   }
 
   @Test
@@ -11813,7 +11832,8 @@ extension InstantStoreTests {
   private func runCLIResult(
     _ arguments: [String],
     homeURL: URL,
-    environment: [String: String?] = [:]
+    environment: [String: String?] = [:],
+    standardInput: String? = nil
   ) throws -> CLITestProcessResult {
     let packageURL = packageRootURL()
     let executableURL = packageURL.appendingPathComponent(".build/debug/instant-swift-data")
@@ -11842,8 +11862,10 @@ extension InstantStoreTests {
 
     let outputPipe = Pipe()
     let errorPipe = Pipe()
+    let inputPipe = standardInput.map { _ in Pipe() }
     process.standardOutput = outputPipe
     process.standardError = errorPipe
+    process.standardInput = inputPipe
     let outputCapture = CLITestPipeCapture()
     let errorCapture = CLITestPipeCapture()
     outputPipe.fileHandleForReading.readabilityHandler = { handle in
@@ -11854,6 +11876,10 @@ extension InstantStoreTests {
     }
 
     try process.run()
+    if let standardInput, let inputPipe {
+      inputPipe.fileHandleForWriting.write(Data(standardInput.utf8))
+      try inputPipe.fileHandleForWriting.close()
+    }
     process.waitUntilExit()
     outputPipe.fileHandleForReading.readabilityHandler = nil
     errorPipe.fileHandleForReading.readabilityHandler = nil

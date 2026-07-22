@@ -81,9 +81,32 @@ public struct InstantRemindersV3LiveListEvidence:
   }
 }
 
+public struct InstantRemindersV3LiveUserEvidence:
+  Codable, Equatable, Sendable
+{
+  public var id: String
+  public var email: String?
+  public var displayName: String?
+  public var username: String?
+
+  public init(
+    id: String,
+    email: String?,
+    displayName: String?,
+    username: String?
+  ) {
+    self.id = id
+    self.email = email
+    self.displayName = displayName
+    self.username = username
+  }
+}
+
 public struct InstantRemindersV3LiveValidationDetails:
   Codable, Equatable, Sendable
 {
+  public var authenticatedUser: InstantRemindersV3LiveUserEvidence
+  public var participantDirectoryUser: InstantRemindersV3LiveUserEvidence
   public var list: InstantRemindersV3LiveListEvidence
   public var swiftReminder: InstantRemindersV3LiveReminderEvidence
   public var typeScriptReminderObservedBySwift: InstantRemindersV3LiveReminderEvidence
@@ -91,12 +114,16 @@ public struct InstantRemindersV3LiveValidationDetails:
   public var pendingMutationCount: Int
 
   public init(
+    authenticatedUser: InstantRemindersV3LiveUserEvidence,
+    participantDirectoryUser: InstantRemindersV3LiveUserEvidence,
     list: InstantRemindersV3LiveListEvidence,
     swiftReminder: InstantRemindersV3LiveReminderEvidence,
     typeScriptReminderObservedBySwift: InstantRemindersV3LiveReminderEvidence,
     connectionState: String,
     pendingMutationCount: Int
   ) {
+    self.authenticatedUser = authenticatedUser
+    self.participantDirectoryUser = participantDirectoryUser
     self.list = list
     self.swiftReminder = swiftReminder
     self.typeScriptReminderObservedBySwift = typeScriptReminderObservedBySwift
@@ -129,7 +156,13 @@ public enum InstantRemindersV3LiveValidation {
     websocketURI: URL,
     refreshToken: String,
     expectedOwnerUserID: String,
+    expectedOwnerEmail: String,
+    expectedOwnerDisplayName: String,
+    expectedOwnerUsername: String,
     expectedParticipantUserID: String,
+    expectedParticipantEmail: String,
+    expectedParticipantDisplayName: String,
+    expectedParticipantUsername: String,
     listID: String = InstantRemindersV3LiveValidation.listID,
     swiftReminderID: String = InstantRemindersV3LiveValidation.swiftReminderID,
     shareID: String = InstantRemindersV3LiveValidation.shareID,
@@ -153,11 +186,14 @@ public enum InstantRemindersV3LiveValidation {
       websocketURI: websocketURI,
       persistenceURL: persistenceURL
     )
-    try await authenticate(
+    let session = try await authenticate(
       client,
       refreshToken: refreshToken,
       expectedUserID: expectedOwnerUserID
     )
+    guard session.email == expectedOwnerEmail else {
+      throw failure("Refresh-token auth did not preserve the expected owner email.")
+    }
 
     let ownerID = InstantID<RemindersV3User>(rawValue: expectedOwnerUserID)
     let participantID = InstantID<RemindersV3User>(rawValue: expectedParticipantUserID)
@@ -170,6 +206,33 @@ public enum InstantRemindersV3LiveValidation {
       )
     }
     defer { listTask.cancel() }
+    let accountUser = FetchOne<RemindersV3User?>()
+    let accountTask = Task {
+      try await accountUser.task(RemindersV3User.remindersUser(id: ownerID), using: client)
+    }
+    defer { accountTask.cancel() }
+    let accountProfile = try await waitForUser(accountUser) { user in
+      user.id == ownerID
+        && user.email == expectedOwnerEmail
+        && user.displayName == expectedOwnerDisplayName
+        && user.username == expectedOwnerUsername
+    }
+    guard let participantQuery = RemindersV3User.remindersUsers(
+      matchingEmail: expectedParticipantEmail
+    ) else {
+      throw failure("The participant email did not produce an autocomplete query.")
+    }
+    let directoryUsers = FetchAll<RemindersV3User>()
+    let directoryTask = Task {
+      try await directoryUsers.task(participantQuery, using: client)
+    }
+    defer { directoryTask.cancel() }
+    let participantDirectoryUser = try await waitForUser(directoryUsers) { user in
+      user.id == participantID
+        && user.email == expectedParticipantEmail
+        && user.displayName == expectedParticipantDisplayName
+        && user.username == expectedParticipantUsername
+    }
 
     let createdAt = Date(timeIntervalSince1970: Double(createdAtMilliseconds) / 1_000)
     try await requireServerAcceptance(
@@ -331,6 +394,8 @@ public enum InstantRemindersV3LiveValidation {
       timestampMs: Int64((Date().timeIntervalSince1970 * 1_000).rounded()),
       ok: true,
       details: InstantRemindersV3LiveValidationDetails(
+        authenticatedUser: userEvidence(accountProfile),
+        participantDirectoryUser: userEvidence(participantDirectoryUser),
         list: listEvidence(completedList),
         swiftReminder: reminderEvidence(swiftReminder),
         typeScriptReminderObservedBySwift: reminderEvidence(typeScriptReminder),
@@ -369,7 +434,7 @@ public enum InstantRemindersV3LiveValidation {
     _ client: InstantSwiftDataClient,
     refreshToken: String,
     expectedUserID: String
-  ) async throws {
+  ) async throws -> InstantAuthSession {
     let session = try await client.signInWithRefreshToken(
       refreshToken,
       userID: "untrusted-swift-reminders-user"
@@ -383,6 +448,7 @@ public enum InstantRemindersV3LiveValidation {
         try await Task.sleep(for: .milliseconds(25))
       }
     }
+    return session
   }
 
   private static func requireServerAcceptance<Message: InstantMessage>(
@@ -431,6 +497,41 @@ public enum InstantRemindersV3LiveValidation {
         try await Task.sleep(for: .milliseconds(25))
       }
     }
+  }
+
+  private static func waitForUser(
+    _ row: FetchOne<RemindersV3User?>,
+    matching predicate: @escaping @Sendable (RemindersV3User) -> Bool
+  ) async throws -> RemindersV3User {
+    try await withTimeout("resolve the authenticated Reminders account profile") {
+      while true {
+        if let user = row.wrappedValue, predicate(user) { return user }
+        try await Task.sleep(for: .milliseconds(25))
+      }
+    }
+  }
+
+  private static func waitForUser(
+    _ rows: FetchAll<RemindersV3User>,
+    matching predicate: @escaping @Sendable (RemindersV3User) -> Bool
+  ) async throws -> RemindersV3User {
+    try await withTimeout("resolve a Reminders sharing user by email") {
+      while true {
+        if let user = rows.wrappedValue.first(where: predicate) { return user }
+        try await Task.sleep(for: .milliseconds(25))
+      }
+    }
+  }
+
+  private static func userEvidence(
+    _ user: RemindersV3User
+  ) -> InstantRemindersV3LiveUserEvidence {
+    InstantRemindersV3LiveUserEvidence(
+      id: user.id.rawValue,
+      email: user.email,
+      displayName: user.displayName,
+      username: user.username
+    )
   }
 
   private static func listEvidence(
@@ -490,7 +591,7 @@ public enum InstantRemindersV3LiveValidation {
       code: .implementationFailed,
       operation: "validate Reminders V3 live contract",
       message: message,
-      recovery: "Inspect the canonical list, reminder, tag, share, membership, schema, and permission lifecycle."
+      recovery: "Inspect the canonical auth user, profile directory, list, reminder, tag, share, membership, schema, and permission lifecycle."
     )
   }
 }

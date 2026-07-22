@@ -229,8 +229,10 @@ core does not pretend to own platform UI.
 `@InstantAuth(User.self, ...)` also exposes `auth.user` as an
 `InstantAuthUser<User>`. It derives a typed entity ID from the durable auth
 session, which lets product mutations use `auth.user?.id` without stringly
-typed conversion. It is deliberately an authenticated identity plus session,
-not a claim that the complete `$users` entity snapshot has been queried.
+typed conversion. The authenticated identity preserves Instant's standard
+`email`, `imageURL`, `type`, and `isGuest` fields. Arbitrary application profile
+fields still come from a typed `$users` query; the auth session does not pretend
+that the complete user entity snapshot has been materialized.
 
 ## Provider Configuration
 
