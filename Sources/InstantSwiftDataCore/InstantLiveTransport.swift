@@ -1090,6 +1090,8 @@ private actor InstantLocalLiveSession {
 }
 
 private actor InstantURLSessionLiveWebSocket {
+  private static let maximumMessageSize = 16 * 1_024 * 1_024
+
   private let urlSession: URLSession
   private let task: URLSessionWebSocketTask
   private var isClosed = false
@@ -1101,8 +1103,10 @@ private actor InstantURLSessionLiveWebSocket {
     // otherwise healthy, idle room and silently drops presence/topic updates.
     configuration.timeoutIntervalForResource = 7 * 24 * 60 * 60
     self.urlSession = URLSession(configuration: configuration)
-    self.task = urlSession.webSocketTask(with: url)
-    self.task.resume()
+    let task = urlSession.webSocketTask(with: url)
+    task.maximumMessageSize = Self.maximumMessageSize
+    self.task = task
+    task.resume()
     InstantDiagnostics.shared.record(
       .debug,
       subsystem: "instant-swift-data-core",
@@ -1111,6 +1115,7 @@ private actor InstantURLSessionLiveWebSocket {
       message: "URLSession WebSocket task resumed.",
       metadata: [
         "host": url.host ?? "unknown",
+        "maximumMessageSize": String(Self.maximumMessageSize),
         "scheme": url.scheme ?? "unknown",
       ]
     )
