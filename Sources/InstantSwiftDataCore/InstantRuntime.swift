@@ -2824,6 +2824,7 @@ public final class InstantRuntime: Sendable {
             transport: liveTransport,
             makeID: configuration.makeID
           )
+          try await retryPersistedTransientMutationFailuresWithGateHeld()
           recordActorHop(.liveSession)
           try await liveSession.sendMutations(
             await outboxTransportMutations().filter { $0.status == .pending }
@@ -3195,6 +3196,15 @@ public final class InstantRuntime: Sendable {
       if let clientEventID = error.clientEventID?.nilIfEmpty,
         await pendingMutations().contains(where: { $0.id == clientEventID })
       {
+        if Self.isRetryableMutationError(error) {
+          throw InstantError(
+            code: .networkFailed,
+            operation: "receive retryable Instant live mutation error",
+            serverEventID: clientEventID,
+            message: error.message,
+            recovery: "Reconnect and resend the durable pending mutation."
+          )
+        }
         _ = try await failMutation(id: clientEventID, message: error.message)
         try await liveSession.refreshRegisteredQueries()
         return
@@ -3217,6 +3227,59 @@ public final class InstantRuntime: Sendable {
       .streamFlushed, .appendFailed, .other:
       break
     }
+  }
+
+  private static func isRetryableMutationError(_ error: InstantLiveErrorMessage) -> Bool {
+    if let status = error.status,
+      status == 408 || status == 425 || status == 429 || (500...599).contains(status)
+    {
+      return true
+    }
+    let type = error.type?.lowercased() ?? ""
+    if type.contains("timeout")
+      || type.contains("network")
+      || type.contains("service-unavailable")
+      || type.contains("temporarily-unavailable")
+    {
+      return true
+    }
+    return isRetryableMutationFailureMessage(error.message)
+  }
+
+  private static func isRetryableMutationFailureMessage(_ rawMessage: String) -> Bool {
+    let message = rawMessage.lowercased()
+    return message.contains("operation timed out")
+      || message.contains("transaction timed out")
+      || message.contains("service unavailable")
+      || message.contains("temporarily unavailable")
+  }
+
+  private func retryPersistedTransientMutationFailuresWithGateHeld() async throws {
+    for _ in 0..<5 {
+      recordActorHop(.persistence)
+      let state = try await persistence.loadState()
+      var mutations = state.snapshot.outbox
+      var didRetry = false
+      for index in mutations.indices
+      where mutations[index].status == .failed
+        && mutations[index].failureMessage.map(Self.isRetryableMutationFailureMessage) == true
+      {
+        mutations[index].status = .pending
+        mutations[index].failureMessage = nil
+        didRetry = true
+      }
+      guard didRetry else { return }
+      recordActorHop(.persistence)
+      let didSave = try await persistence.saveOutbox(
+        mutations,
+        expectedOutboxRevision: state.outboxRevision
+      )
+      guard didSave else { continue }
+      recordActorHop(.outbox)
+      await outbox.replace(with: mutations)
+      return
+    }
+    throw outboxChangedDuringFlush()
   }
 
   private func applyLiveStreamAppend(_ append: InstantLiveStreamAppend) async throws -> Int64 {

@@ -883,6 +883,134 @@ struct InstantReactorParityTests {
   }
 
   @Test
+  func transientMutationServerErrorReconnectsAndResendsDurableMutation() async throws {
+    let firstSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "before-timeout")
+    ])
+    let secondSession = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "after-timeout")
+    ])
+    let transport = LiveReactorParityTransport(sessions: [firstSession, secondSession])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "reactor-transient-mutation-error",
+      persistenceURL: try temporaryReactorParityCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      liveTransport: transport.transport
+    )
+    configuration.liveReconnectSleep = { _ in }
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    _ = try await runtime.connect()
+
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_070_500)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-retry-after-handle-receive-timeout",
+        operations: TodoExample.createOperations(
+          id: "todo-retry-after-handle-receive-timeout",
+          text: "Keep locally committed work",
+          createdAt: createdAt,
+          transactionID: "tx-retry-after-handle-receive-timeout"
+        )
+      ),
+      createdAt: createdAt
+    )
+    await firstSession.waitForSentMessageCount(2)
+    await firstSession.enqueue(
+      InstantLiveMessage(
+        op: "error",
+        clientEventID: "tx-retry-after-handle-receive-timeout",
+        fields: ["message": .string("Operation timed out: handle-receive")]
+      )
+    )
+
+    try await Task.sleep(for: .milliseconds(100))
+    let connectionRequests = await transport.connectionRequests()
+    expectNoDifference(connectionRequests.map(\.appID), [
+      "reactor-transient-mutation-error",
+      "reactor-transient-mutation-error",
+    ])
+    let retriedMessages = await secondSession.sentMessages()
+    expectNoDifference(retriedMessages.map(\.op), ["init", "transact"])
+    expectNoDifference(
+      retriedMessages.last?.clientEventID,
+      "tx-retry-after-handle-receive-timeout"
+    )
+    let pending = await runtime.pendingMutations()
+    expectNoDifference(pending.map(\.id), ["tx-retry-after-handle-receive-timeout"])
+
+    await secondSession.enqueue(
+      InstantLiveMessage(
+        op: "transact-ok",
+        clientEventID: "tx-retry-after-handle-receive-timeout",
+        fields: ["tx-id": .string("server-tx-after-timeout")]
+      )
+    )
+    _ = try #require(
+      try await instantLiveWithTimeout(
+        operation: "wait for retried mutation acknowledgement",
+        timeoutMilliseconds: 500
+      ) {
+        try await runtime.observeConnectionStatus().first { $0.pendingMutationCount == 0 }
+      }
+    )
+    let remainingOutbox = await runtime.outboxMutations()
+    expectNoDifference(remainingOutbox, [])
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func connectRequeuesPersistedTransientMutationFailure() async throws {
+    let cacheURL = try temporaryReactorParityCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_070_600)
+    let writer = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reactor-persisted-transient-mutation-error",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await writer.transact(
+      InstantStoreTransaction(
+        id: "tx-persisted-handle-receive-timeout",
+        operations: TodoExample.createOperations(
+          id: "todo-persisted-handle-receive-timeout",
+          text: "Recover after relaunch",
+          createdAt: createdAt,
+          transactionID: "tx-persisted-handle-receive-timeout"
+        )
+      ),
+      createdAt: createdAt
+    )
+    _ = try await writer.failMutation(
+      id: "tx-persisted-handle-receive-timeout",
+      message: "Operation timed out: handle-receive"
+    )
+
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: liveReactorTodoServerAttrs, sessionID: "after-relaunch")
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "reactor-persisted-transient-mutation-error",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        liveTransport: session.transport
+      )
+    )
+    _ = try await runtime.connect()
+
+    let sentMessages = await session.sentMessages()
+    expectNoDifference(sentMessages.map(\.op), ["init", "transact"])
+    expectNoDifference(
+      sentMessages.last?.clientEventID,
+      "tx-persisted-handle-receive-timeout"
+    )
+    let pending = await runtime.pendingMutations()
+    expectNoDifference(pending.map(\.id), ["tx-persisted-handle-receive-timeout"])
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
   func upstreamPythonConnectionCloseCancelsInflightReconnectTask() async throws {
     let firstSession = LiveReactorParitySession(messages: [
       liveReactorInitOK(attrs: liveReactorTodoServerAttrs)
