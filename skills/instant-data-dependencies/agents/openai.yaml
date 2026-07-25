@@ -1,0 +1,4 @@
+interface:
+  display_name: "Instant Data Dependencies"
+  short_description: "Bootstrap and inject Instant data clients"
+  default_prompt: "Use $instant-data-dependencies to configure this Instant client dependency."

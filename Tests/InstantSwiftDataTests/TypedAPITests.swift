@@ -226,6 +226,93 @@ struct TypedAPITests {
     #expect(nestedIncludedQuery.plan.cacheKey != reverseIncludedQuery.plan.cacheKey)
   }
 
+  @Test
+  func deleteAbsentEntityIsIdempotentAndPersistsForReplay() async throws {
+    let persistenceURL = FileManager.default.temporaryDirectory
+      .appendingPathComponent("instant-delete-\(UUID().uuidString).sqlite")
+    defer { try? FileManager.default.removeItem(at: persistenceURL) }
+    let appID = "typed-delete-absent-\(UUID().uuidString)"
+    let transactionID = "tx-delete-absent"
+    let missingID = InstantID<TypedTodo>(rawValue: "missing-todo")
+
+    try await withDependencies {
+      try await $0.bootstrapInstantSwiftData(
+        appID: appID,
+        persistenceURL: persistenceURL,
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var db
+      try await db.transact(id: transactionID) {
+        TypedTodo.delete(id: missingID)
+      }
+      let pending = await db.pendingMutations()
+      expectNoDifference(pending.map(\.id), [transactionID])
+      expectNoDifference(
+        pending.first?.transaction.operations,
+        [.deleteEntityInNamespace(entityID: missingID.rawValue, namespace: "todos")]
+      )
+    }
+
+    try await withDependencies {
+      try await $0.bootstrapInstantSwiftData(
+        appID: appID,
+        persistenceURL: persistenceURL,
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.defaultInstantSwiftData) var relaunchedDB
+      let todos = try await relaunchedDB.query(TypedTodo.query)
+      let pendingIDs = await relaunchedDB.pendingMutations().map(\.id)
+      expectNoDifference(todos, [])
+      expectNoDifference(pendingIDs, [transactionID])
+    }
+  }
+
+  @Test
+  func localOnlyDependencyQueriesAndTransactsWithoutLiveTransport() async throws {
+    let liveTransport = LiveTransportConnectRecorder()
+    try await withDependencies {
+      $0.instantLiveTransport = InstantLiveTransportClient { request in
+        await liveTransport.recordConnect()
+        return try await InstantLiveTransportClient.local.connect(request)
+      }
+      try await $0.bootstrapLocalInstantSwiftData(
+        appID: "local-client-\(UUID().uuidString)",
+        context: .test,
+        initialAttributes: TypedTodo.instantAttributes
+      )
+    } operation: {
+      @Dependency(\.localInstantSwiftData) var localDB
+      let query = TypedTodo.query.order(TypedTodo.createdAt)
+      let subscription = await localDB.subscribe(query)
+      var iterator = subscription.makeAsyncIterator()
+      let initial = try await iterator.next()
+      expectNoDifference(initial, [])
+
+      try await localDB.transact(id: "tx-local-client") {
+        TypedTodo.create(
+          id: InstantID(rawValue: "todo-local-client"),
+          TypedTodo.text.set("Local materialization"),
+          TypedTodo.isCompleted.set(false),
+          TypedTodo.createdAt.set(Date(timeIntervalSince1970: 1_700_000_176))
+        )
+      }
+
+      let observed = try #require(try await iterator.next())
+      let queried = try await localDB.query(query)
+      let pendingIDs = await localDB.pendingMutations().map(\.id)
+      let connectCount = await liveTransport.connectCount
+      expectNoDifference(observed.map(\.text), ["Local materialization"])
+      expectNoDifference(queried.map(\.text), ["Local materialization"])
+      expectNoDifference(pendingIDs, ["tx-local-client"])
+      expectNoDifference(connectCount, 0)
+      subscription.cancel()
+    }
+  }
+
   /// Canonical source:
   /// upstream/instant/client/packages/vue/src/InstantVueDatabase.ts:151
   @Test
@@ -3042,10 +3129,6 @@ struct TypedAPITests {
       expectNoDifference(
         pending.first { $0.id == "tx-lookup-delete-profile" }?.transaction.operations,
         [
-          .requireEntityExistsByLookup(
-            TypedProfile.handle.lookup("shared").lookupRef,
-            namespace: TypedProfile.instantNamespace
-          ),
           .deleteEntityByLookup(TypedProfile.handle.lookup("shared").lookupRef),
         ]
       )
@@ -4556,6 +4639,336 @@ struct TypedAPITests {
   }
 
   @Test
+  func staticFetchAllStartsObservationOnFirstReadWithoutTaskOrLoad() async throws {
+    let recorder = DynamicRequestObservationRecorder()
+    let client = dynamicRequestObservationClient(recorder)
+    let query = TypedTodo.query.where(TypedTodo.isCompleted == false)
+
+    try await withDependencies {
+      $0.defaultInstantSwiftData = client
+    } operation: {
+      let fetch = FetchAll<TypedTodo>(query)
+      try await Task.sleep(for: .milliseconds(20))
+      let initialCounts = await recorder.counts()
+      expectNoDifference(initialCounts.observationCount, 0)
+      _ = fetch.wrappedValue
+      try await waitForTypedCondition(operation: "wait for automatic FetchAll observation") {
+        await recorder.counts().observationCount == 1
+      }
+      await recorder.yield(
+        .open,
+        values: [
+          typedTodoSnapshot(
+            id: "todo-automatic-fetch",
+            text: "Observed automatically",
+            isCompleted: false,
+            createdAt: Date(timeIntervalSince1970: 1_700_000_175)
+          )
+        ]
+      )
+      try await waitForTypedCondition(operation: "wait for automatic FetchAll value") {
+        fetch.wrappedValue.map(\.text) == ["Observed automatically"]
+      }
+      expectNoDifference(fetch.loadError, nil)
+      expectNoDifference(fetch.isLoading, false)
+    }
+  }
+
+  #if canImport(SwiftUI)
+    @Test
+    func fetchWrappersParticipateInSwiftUIViewLifetime() {
+      requireDynamicProperty(FetchAll<TypedTodo>.self)
+      requireDynamicProperty(FetchOne<TypedTodo?>.self)
+      requireDynamicProperty(Fetch<TypedTodoFacts>.self)
+    }
+  #endif
+
+  #if canImport(SwiftUI)
+    @Test
+    func staticFetchAllPublisherEmitsObservedValues() async throws {
+      let recorder = DynamicRequestObservationRecorder()
+      let values = FetchPublisherValueRecorder()
+      let client = dynamicRequestObservationClient(recorder)
+      let query = TypedTodo.query.where(TypedTodo.isCompleted == false)
+      try await withDependencies {
+        $0.defaultInstantSwiftData = client
+      } operation: {
+        let fetch = FetchAll<TypedTodo>(query)
+        let cancellable = fetch.publisher.sink { todos in
+          Task { await values.record(todos.map(\.text)) }
+        }
+
+        try await waitForTypedCondition(operation: "wait for published FetchAll observation") {
+          await recorder.counts().observationCount == 1
+        }
+        await recorder.yield(
+          .open,
+          values: [
+            typedTodoSnapshot(
+              id: "todo-published-fetch",
+              text: "Publisher updated",
+              isCompleted: false,
+              createdAt: Date(timeIntervalSince1970: 1_700_000_175)
+            )
+          ]
+        )
+        try await waitForTypedCondition(operation: "wait for published FetchAll value") {
+          await values.latest() == ["Publisher updated"]
+        }
+        withExtendedLifetime(cancellable) {}
+      }
+    }
+  #endif
+
+  @Test
+  func staticFetchOneStartsObservationOnFirstReadWithoutTaskOrLoad() async throws {
+    let recorder = DynamicRequestObservationRecorder()
+    let client = dynamicRequestObservationClient(recorder)
+    let query = TypedTodo.query.where(TypedTodo.isCompleted == false)
+
+    try await withDependencies {
+      $0.defaultInstantSwiftData = client
+    } operation: {
+      let fetch = FetchOne<TypedTodo?>(query)
+      try await Task.sleep(for: .milliseconds(20))
+      let initialCounts = await recorder.counts()
+      expectNoDifference(initialCounts.observationCount, 0)
+      _ = fetch.wrappedValue
+      try await waitForTypedCondition(operation: "wait for automatic FetchOne observation") {
+        await recorder.counts().observationCount == 1
+      }
+      await recorder.yield(
+        .open,
+        values: [
+          typedTodoSnapshot(
+            id: "todo-automatic-fetch-one",
+            text: "Observed one automatically",
+            isCompleted: false,
+            createdAt: Date(timeIntervalSince1970: 1_700_000_175)
+          )
+        ]
+      )
+      try await waitForTypedCondition(operation: "wait for automatic FetchOne value") {
+        fetch.wrappedValue?.text == "Observed one automatically"
+      }
+      expectNoDifference(fetch.loadError, nil)
+      expectNoDifference(fetch.isLoading, false)
+    }
+  }
+
+  @Test
+  func staticFetchRequestStartsCombinedObservationOnFirstReadWithoutTaskOrLoad() async throws {
+    let recorder = DynamicRequestObservationRecorder()
+    let client = dynamicRequestObservationClient(recorder)
+    let query = TypedTodo.query.where(TypedTodo.isCompleted == false)
+
+    try await withDependencies {
+      $0.defaultInstantSwiftData = client
+    } operation: {
+      let fetch = Fetch(
+        wrappedValue: TypedTodoFacts(),
+        TypedTodoFactsRequest(rowsQuery: query, countQuery: query)
+      )
+      try await Task.sleep(for: .milliseconds(20))
+      let initialCounts = await recorder.counts()
+      expectNoDifference(initialCounts.observationCount, 0)
+      _ = fetch.wrappedValue
+      try await waitForTypedCondition(operation: "wait for automatic Fetch observations") {
+        await recorder.counts().observationCount == 2
+      }
+      await recorder.yield(
+        .open,
+        values: [
+          typedTodoSnapshot(
+            id: "todo-automatic-fetch-request",
+            text: "Observed request automatically",
+            isCompleted: false,
+            createdAt: Date(timeIntervalSince1970: 1_700_000_175)
+          )
+        ]
+      )
+      try await waitForTypedCondition(operation: "wait for automatic Fetch value") {
+        fetch.wrappedValue.todos.map(\.text) == ["Observed request automatically"]
+          && fetch.wrappedValue.count == 1
+      }
+      expectNoDifference(fetch.loadError, nil)
+      expectNoDifference(fetch.isLoading, false)
+    }
+  }
+
+  @Test
+  func staticFetchDeclarationsStartWhenTheirClientBecomesAvailableBeforeFirstRead() async throws {
+    let recorder = DynamicRequestObservationRecorder()
+    let client = dynamicRequestObservationClient(recorder)
+    let query = TypedTodo.query.where(TypedTodo.isCompleted == false)
+    let all = withDependencies {
+      $0.defaultInstantSwiftData = .unimplemented("Client has not bootstrapped yet.")
+    } operation: {
+      FetchAll<TypedTodo>(query)
+    }
+    let one = withDependencies {
+      $0.defaultInstantSwiftData = .unimplemented("Client has not bootstrapped yet.")
+    } operation: {
+      FetchOne<TypedTodo?>(query)
+    }
+    let fetch = withDependencies {
+      $0.defaultInstantSwiftData = .unimplemented("Client has not bootstrapped yet.")
+    } operation: {
+      Fetch(
+        wrappedValue: TypedTodoFacts(),
+        TypedTodoFactsRequest(rowsQuery: query, countQuery: query)
+      )
+    }
+
+    try await Task.sleep(for: .milliseconds(20))
+    let initialCounts = await recorder.counts()
+    expectNoDifference(initialCounts.observationCount, 0)
+
+    try await withDependencies {
+      $0.defaultInstantSwiftData = client
+    } operation: {
+      _ = all.wrappedValue
+      _ = one.wrappedValue
+      _ = fetch.wrappedValue
+      try await waitForTypedCondition(operation: "wait for deferred automatic observations") {
+        await recorder.counts().observationCount == 4
+      }
+      await recorder.yield(
+        .open,
+        values: [
+          typedTodoSnapshot(
+            id: "todo-deferred-automatic-fetch-request",
+            text: "Observed after bootstrap",
+            isCompleted: false,
+            createdAt: Date(timeIntervalSince1970: 1_700_000_175)
+          )
+        ]
+      )
+      try await waitForTypedCondition(operation: "wait for deferred automatic values") {
+        all.wrappedValue.map(\.text) == ["Observed after bootstrap"]
+          && one.wrappedValue?.text == "Observed after bootstrap"
+          && fetch.wrappedValue.todos.map(\.text) == ["Observed after bootstrap"]
+          && fetch.wrappedValue.count == 1
+      }
+    }
+  }
+
+  @Test
+  func disabledDynamicFetchesDoNotObserveBeforeQueryAndNilResetCancels() async throws {
+    let recorder = DynamicRequestObservationRecorder()
+    let client = dynamicRequestObservationClient(recorder)
+    let query = TypedTodo.query.where(TypedTodo.isCompleted == false)
+
+    try await withDependencies {
+      $0.defaultInstantSwiftData = client
+    } operation: {
+      let all = FetchAll<TypedTodo>(nil)
+      let one = FetchOne<TypedTodo?>(nil)
+
+      try await Task.sleep(for: .milliseconds(20))
+      let initialCounts = await recorder.counts()
+      expectNoDifference(initialCounts.observationCount, 0)
+
+      let allTask = Task {
+        try await all.task(query, using: client)
+      }
+      let oneTask = Task {
+        try await one.task(query, using: client)
+      }
+      try await waitForTypedCondition(operation: "wait for configured dynamic fetches") {
+        await recorder.counts().observationCount == 2
+      }
+
+      await recorder.yield(
+        .open,
+        values: [
+          typedTodoSnapshot(
+            id: "todo-disabled-then-configured",
+            text: "Configured after nil",
+            isCompleted: false,
+            createdAt: Date(timeIntervalSince1970: 1_700_000_175)
+          )
+        ]
+      )
+      try await waitForTypedCondition(operation: "wait for configured dynamic values") {
+        all.wrappedValue.map(\.text) == ["Configured after nil"]
+          && one.wrappedValue?.text == "Configured after nil"
+      }
+
+      try await all.task(nil as InstantEntityQuery<TypedTodo>?, using: client)
+      try await one.task(nil as InstantEntityQuery<TypedTodo>?, using: client)
+
+      expectNoDifference(all.wrappedValue, [])
+      expectNoDifference(one.wrappedValue, nil)
+      expectNoDifference(all.loadError, nil)
+      expectNoDifference(one.loadError, nil)
+      expectNoDifference(all.isLoading, false)
+      expectNoDifference(one.isLoading, false)
+      for task in [allTask, oneTask] {
+        do {
+          try await task.value
+          Issue.record("Expected nil reset to cancel the dynamic fetch task.")
+        } catch is CancellationError {
+        } catch {
+          Issue.record("Expected CancellationError, got \(error).")
+        }
+      }
+      try await waitForTypedCondition(operation: "wait for nil-reset termination") {
+        await recorder.counts().terminationCount == 2
+      }
+
+      await recorder.yield(
+        .open,
+        values: [
+          typedTodoSnapshot(
+            id: "todo-stale-after-nil",
+            text: "Stale after nil",
+            isCompleted: false,
+            createdAt: Date(timeIntervalSince1970: 1_700_000_176)
+          )
+        ],
+        sequence: 1
+      )
+      try await Task.sleep(for: .milliseconds(10))
+      expectNoDifference(all.wrappedValue, [])
+      expectNoDifference(one.wrappedValue, nil)
+    }
+  }
+
+  @Test
+  func dynamicFetchAllLoadReplacesAndContinuesObservation() async throws {
+    let recorder = DynamicRequestObservationRecorder()
+    let client = dynamicRequestObservationClient(recorder)
+    let query = TypedTodo.query.where(TypedTodo.isCompleted == true)
+
+    try await withDependencies {
+      $0.defaultInstantSwiftData = client
+    } operation: {
+      let fetch = FetchAll<TypedTodo>()
+      try await fetch.load(query, using: client)
+      try await waitForTypedCondition(operation: "wait for dynamic FetchAll observation") {
+        await recorder.counts().observationCount >= 1
+      }
+      await recorder.yield(
+        .done,
+        values: [
+          typedTodoSnapshot(
+            id: "todo-dynamic-live",
+            text: "Dynamic live update",
+            isCompleted: true,
+            createdAt: Date(timeIntervalSince1970: 1_700_000_175)
+          )
+        ]
+      )
+      try await waitForTypedCondition(operation: "wait for dynamic FetchAll update") {
+        fetch.wrappedValue.map(\.text) == ["Dynamic live update"]
+      }
+      expectNoDifference(fetch.loadError, nil)
+      expectNoDifference(fetch.isLoading, false)
+    }
+  }
+
+  @Test
   func fetchSubscriptionCancelBeforeFirstReadTerminatesObservedStream() async throws {
     let termination = ObservationTermination()
     let mock = mockClient(recording: termination)
@@ -4807,7 +5220,7 @@ struct TypedAPITests {
       [done],
       [open, done],
     ])
-    let client = recordingClient(recorder)
+    let client = recordingClient(recorder, observationEmitsEmptySnapshot: false)
     let fetch = Fetch(wrappedValue: TypedTodoFacts())
 
     try await fetch.load(
@@ -4857,7 +5270,7 @@ struct TypedAPITests {
     )
     let counts = await recorder.counts()
     expectNoDifference(counts.queryCount, 4)
-    expectNoDifference(counts.observationCount, 0)
+    expectNoDifference(counts.observationCount, 4)
   }
 
   @Test
@@ -4981,7 +5394,7 @@ struct TypedAPITests {
     try await waitForTypedCondition(
       operation: "wait for first dynamic Fetch request observation"
     ) {
-      await recorder.counts().observationCount == 1
+      await recorder.counts().observationCount == 2
     }
     await recorder.yield(
       .open,
@@ -5011,7 +5424,7 @@ struct TypedAPITests {
     try await waitForTypedCondition(
       operation: "wait for first dynamic Fetch request termination"
     ) {
-      await recorder.counts().terminationCount == 1
+      await recorder.counts().terminationCount == 2
     }
 
     let doneTask = Task {
@@ -5021,7 +5434,7 @@ struct TypedAPITests {
     try await waitForTypedCondition(
       operation: "wait for second dynamic Fetch request observation"
     ) {
-      await recorder.counts().observationCount == 2
+      await recorder.counts().observationCount == 4
     }
     await recorder.yield(
       .done,
@@ -5031,6 +5444,17 @@ struct TypedAPITests {
           text: "Live done",
           isCompleted: true,
           createdAt: baseDate.addingTimeInterval(1)
+        )
+      ]
+    )
+    await recorder.yield(
+      .open,
+      values: [
+        typedTodoSnapshot(
+          id: "todo-fetch-request-live-count",
+          text: "Live count",
+          isCompleted: false,
+          createdAt: baseDate
         )
       ]
     )
@@ -5070,14 +5494,16 @@ struct TypedAPITests {
     try await waitForTypedCondition(
       operation: "wait for second dynamic Fetch request termination"
     ) {
-      await recorder.counts().terminationCount == 2
+      await recorder.counts().terminationCount == 4
     }
     let plans = await recorder.queryPlans()
     expectNoDifference(
       plans.map(\.filters),
       [
         [.equals(field: "isCompleted", value: .bool(false))],
+        [],
         [.equals(field: "isCompleted", value: .bool(true))],
+        [],
       ]
     )
   }
@@ -5102,7 +5528,7 @@ struct TypedAPITests {
     try await waitForTypedCondition(
       operation: "wait for live Fetch request observation before nil reset"
     ) {
-      await recorder.counts().observationCount == 1
+      await recorder.counts().observationCount == 2
     }
     await recorder.yield(
       .open,
@@ -5136,7 +5562,7 @@ struct TypedAPITests {
     try await waitForTypedCondition(
       operation: "wait for live Fetch request termination after nil reset"
     ) {
-      await recorder.counts().terminationCount == 1
+      await recorder.counts().terminationCount == 2
     }
 
     await recorder.yield(
@@ -5157,24 +5583,24 @@ struct TypedAPITests {
     expectNoDifference(fetch.loadError, nil)
     expectNoDifference(fetch.isLoading, false)
     let counts = await recorder.counts()
-    expectNoDifference(counts.observationCount, 1)
-    expectNoDifference(counts.terminationCount, 1)
+    expectNoDifference(counts.observationCount, 2)
+    expectNoDifference(counts.terminationCount, 2)
   }
 
   @Test
-  func fetchKeyRequestWithoutSubscriptionReportsTaskError() async throws {
+  func fetchKeyRequestSingleQueryTaskBindsSubscription() async throws {
     let fetch = Fetch(wrappedValue: 0, FetchOnlyCountRequest())
+    let todo = typedTodoSnapshot(
+      id: "todo-fetch-only-count",
+      text: "Counted",
+      isCompleted: false,
+      createdAt: Date(timeIntervalSince1970: 1_700_000_175.45)
+    )
 
-    do {
-      try await fetch.task(using: recordingClient(ClientCallRecorder()))
-      Issue.record("Expected fetch-only request task to fail without a subscription implementation.")
-    } catch let error as InstantError {
-      expectNoDifference(error.code, .implementationFailed)
-      expectNoDifference(error.operation, "subscribe Fetch")
-    }
+    try await fetch.task(using: finiteObservationClient([[todo]]))
 
-    expectNoDifference(fetch.wrappedValue, 0)
-    expectNoDifference(fetch.loadError?.operation, "subscribe Fetch")
+    expectNoDifference(fetch.wrappedValue, 1)
+    expectNoDifference(fetch.loadError, nil)
     expectNoDifference(fetch.isLoading, false)
   }
 
@@ -6656,7 +7082,7 @@ struct TypedAPITests {
     let baseDate = Date(timeIntervalSince1970: 1_700_000_368.75)
     let recorder = DynamicRequestObservationRecorder()
     let client = dynamicRequestObservationClient(recorder)
-    let fetch = FetchAll<TypedTodo>()
+    let fetch = FetchAll<TypedTodo>(nil)
     let openQuery = TypedTodo.query
       .where(TypedTodo.isCompleted == false)
       .order(TypedTodo.createdAt)
@@ -6795,11 +7221,14 @@ struct TypedAPITests {
         recovery: "Retry with a valid dynamic query."
       )
     )
-    let client = recordingClient(recorder)
+    let client = recordingClient(recorder, observationEmitsEmptySnapshot: false)
     let fetch = FetchAll<TypedTodo>(TypedTodo.query.order(TypedTodo.createdAt))
 
     try await fetch.load(TypedTodo.query.order(TypedTodo.createdAt), using: client)
     expectNoDifference(fetch.wrappedValue.map(\.text), ["Cached dynamic result"])
+    try await waitForTypedCondition(operation: "wait for dynamic FetchAll observation") {
+      await recorder.counts().observationCount == 1
+    }
 
     do {
       try await fetch.load(
@@ -6818,10 +7247,94 @@ struct TypedAPITests {
     expectNoDifference(fetch.isLoading, false)
     let counts = await recorder.counts()
     expectNoDifference(counts.queryCount, 2)
-    expectNoDifference(counts.observationCount, 0)
+    expectNoDifference(counts.observationCount, 1)
   }
 
   #if canImport(Observation)
+    @MainActor
+    @Test
+    func observableModelComputedFetchValueInvalidatesWithoutManualBridge() async throws {
+      let recorder = DynamicRequestObservationRecorder()
+      let client = dynamicRequestObservationClient(recorder)
+      let query = TypedTodo.query.where(TypedTodo.isCompleted == false)
+
+      try await withDependencies {
+        $0.defaultInstantSwiftData = client
+      } operation: {
+        let model = TypedTodoAutomaticObservationModel(query: query)
+        let change = ObservationChangeFlag()
+        let initial = withObservationTracking {
+          model.visibleTitles
+        } onChange: {
+          change.record()
+        }
+        expectNoDifference(initial, [])
+        try await waitForTypedCondition(operation: "wait for observable model subscription") {
+          await recorder.counts().observationCount > 0
+        }
+
+        await recorder.yield(
+          .open,
+          values: [
+            typedTodoSnapshot(
+              id: "todo-observable-automatic",
+              text: "Observation invalidated",
+              isCompleted: false,
+              createdAt: Date(timeIntervalSince1970: 1_700_000_369)
+            )
+          ]
+        )
+        try await waitForTypedCondition(operation: "wait for observable model invalidation") {
+          change.value
+        }
+        expectNoDifference(model.visibleTitles, ["Observation invalidated"])
+      }
+    }
+
+    @MainActor
+    @Test
+    func observableModelCreatedBeforeBootstrapInvalidatesAfterItsFirstRead() async throws {
+      let recorder = DynamicRequestObservationRecorder()
+      let client = dynamicRequestObservationClient(recorder)
+      let query = TypedTodo.query.where(TypedTodo.isCompleted == false)
+      let model = withDependencies {
+        $0.defaultInstantSwiftData = .unimplemented("Client has not bootstrapped yet.")
+      } operation: {
+        TypedTodoAutomaticObservationModel(query: query)
+      }
+
+      try await withDependencies {
+        $0.defaultInstantSwiftData = client
+      } operation: {
+        let change = ObservationChangeFlag()
+        let initial = withObservationTracking {
+          model.visibleTitles
+        } onChange: {
+          change.record()
+        }
+        expectNoDifference(initial, [])
+        try await waitForTypedCondition(operation: "wait for deferred model subscription") {
+          await recorder.counts().observationCount == 1
+        }
+
+        await recorder.yield(
+          .open,
+          values: [
+            typedTodoSnapshot(
+              id: "todo-observable-after-bootstrap",
+              text: "Observation attached after bootstrap",
+              isCompleted: false,
+              createdAt: Date(timeIntervalSince1970: 1_700_000_369)
+            )
+          ]
+        )
+        try await waitForTypedCondition(operation: "wait for deferred model invalidation") {
+          change.value
+        }
+        expectNoDifference(model.visibleTitles, ["Observation attached after bootstrap"])
+      }
+    }
+
     @Test
     func observableModelCaseStudyWritesCountsAndDeletesThroughWrappers() async throws {
       let baseDate = Date(timeIntervalSince1970: 1_700_000_369.125)
@@ -6890,7 +7403,7 @@ struct TypedAPITests {
         createdAt: Date(timeIntervalSince1970: 1_700_000_369.5)
       )
       let recorder = ClientCallRecorder(queryResults: [[open], [done]])
-      let client = recordingClient(recorder)
+      let client = recordingClient(recorder, observationEmitsEmptySnapshot: false)
       let model = TypedTodoObservableSearchModel()
       let titleChange = ObservationChangeFlag()
       let initiallyObservedTitles = withObservationTracking {
@@ -6922,6 +7435,9 @@ struct TypedAPITests {
       model.searchText = "Done"
       model.isCompleted = true
       try await model.refresh(using: client)
+      try await waitForTypedCondition(operation: "wait for observable dynamic observations") {
+        await recorder.counts().observationCount == 2
+      }
 
       expectNoDifference(model.todos.map(\.text), ["Done"])
       let plans = await recorder.queryPlans()
@@ -6947,7 +7463,7 @@ struct TypedAPITests {
       )
       let counts = await recorder.counts()
       expectNoDifference(counts.queryCount, 2)
-      expectNoDifference(counts.observationCount, 0)
+      expectNoDifference(counts.observationCount, 2)
     }
   #endif
 
@@ -7121,6 +7637,25 @@ struct TypedAPITests {
     }
   #endif
 }
+
+#if canImport(SwiftUI)
+  private func requireDynamicProperty<Value: DynamicProperty>(_: Value.Type) {}
+#endif
+
+#if canImport(SwiftUI)
+  private actor FetchPublisherValueRecorder {
+    private var titles: [String] = []
+
+    func record(_ titles: [String]) {
+      self.titles = titles
+    }
+
+    func latest() -> [String] {
+      titles
+    }
+  }
+
+#endif
 
 private actor TransactionRecorder {
   private(set) var transactions: [InstantStoreTransaction] = []
@@ -7563,6 +8098,14 @@ private final class ObservationChangeFlag: @unchecked Sendable {
   }
 }
 
+private actor LiveTransportConnectRecorder {
+  private(set) var connectCount = 0
+
+  func recordConnect() {
+    connectCount += 1
+  }
+}
+
 private actor ClientCallRecorder {
   private var queryResults: [[InstantEntitySnapshot]]
   private var fallbackError: InstantError?
@@ -7598,6 +8141,13 @@ private actor ClientCallRecorder {
     }
   }
 
+  func observeWithoutEmission(plan: InstantQueryPlan) -> AsyncStream<InstantQueryEmission> {
+    observationCount += 1
+    return AsyncStream { continuation in
+      continuation.finish()
+    }
+  }
+
   func counts() -> (queryCount: Int, observationCount: Int) {
     (queryCount, observationCount)
   }
@@ -7613,22 +8163,21 @@ private actor DynamicRequestObservationRecorder {
     case done
   }
 
-  private var continuations: [Request: AsyncStream<InstantQueryEmission>.Continuation] = [:]
+  private var continuations:
+    [Request: [(queryID: String, continuation: AsyncStream<InstantQueryEmission>.Continuation)]] =
+      [:]
   private var observationCount = 0
   private var plans: [InstantQueryPlan] = []
-  private var queryIDs: [Request: String] = [:]
   private var terminationCount = 0
 
   func observe(plan: InstantQueryPlan) -> AsyncStream<InstantQueryEmission> {
     observationCount += 1
     plans.append(plan)
     let request = Self.request(for: plan)
-    queryIDs[request] = plan.id
-
     let stream = AsyncStream<InstantQueryEmission>.makeStream(
       bufferingPolicy: .bufferingNewest(1)
     )
-    continuations[request] = stream.continuation
+    continuations[request, default: []].append((plan.id, stream.continuation))
     stream.continuation.onTermination = { @Sendable _ in
       Task {
         await self.recordTermination()
@@ -7642,14 +8191,15 @@ private actor DynamicRequestObservationRecorder {
     values: [InstantEntitySnapshot],
     sequence: Int64 = 0
   ) {
-    guard
-      let continuation = continuations[request],
-      let queryID = queryIDs[request]
-    else { return }
-
-    continuation.yield(
-      InstantQueryEmission(queryID: queryID, sequence: sequence, values: values)
-    )
+    for observation in continuations[request, default: []] {
+      observation.continuation.yield(
+        InstantQueryEmission(
+          queryID: observation.queryID,
+          sequence: sequence,
+          values: values
+        )
+      )
+    }
   }
 
   func counts() -> (observationCount: Int, terminationCount: Int) {
@@ -7680,49 +8230,22 @@ private struct TypedTodoFactsRequest: InstantFetchKeyRequest {
   var rowsQuery: InstantEntityQuery<TypedTodo>
   var countQuery: InstantEntityQuery<TypedTodo>
 
-  func fetch(using client: InstantSwiftDataClient) async throws -> TypedTodoFacts {
-    let todos = try await client.query(rowsQuery)
-    let count = try await client.query(countQuery).count
-    return TypedTodoFacts(todos: todos, count: count)
-  }
-
-  func subscribe(using client: InstantSwiftDataClient) async throws -> FetchSubscription<TypedTodoFacts> {
-    let subscription = await client.subscribe(rowsQuery)
-    let stream = AsyncThrowingStream<TypedTodoFacts, Error>.makeStream(
-      bufferingPolicy: .bufferingNewest(1)
-    )
-    let task = Task {
-      do {
-        for try await todos in subscription {
-          try Task.checkCancellation()
-          stream.continuation.yield(TypedTodoFacts(todos: todos, count: todos.count))
-        }
-        stream.continuation.finish()
-      } catch {
-        stream.continuation.finish(throwing: error)
-      }
-    }
-    stream.continuation.onTermination = { @Sendable _ in
-      task.cancel()
-      subscription.cancel()
-    }
-    return FetchSubscription<TypedTodoFacts>(stream: stream.stream) {
-      task.cancel()
-      subscription.cancel()
-      stream.continuation.finish()
+  var fetchRequest: InstantFetchRequest<TypedTodoFacts> {
+    InstantFetchRequest(rowsQuery, countQuery) { todos, countedTodos in
+      TypedTodoFacts(todos: todos, count: countedTodos.count)
     }
   }
 }
 
 private struct FetchOnlyCountRequest: InstantFetchKeyRequest {
-  func fetch(using client: InstantSwiftDataClient) async throws -> Int {
-    try await client.query(TypedTodo.query).count
+  var fetchRequest: InstantFetchRequest<Int> {
+    InstantFetchRequest(TypedTodo.query) { $0.count }
   }
 }
 
 private struct ImmutableProjectedFetchLifecycleModel {
-  @FetchAll var todos: [TypedTodo]
-  @FetchOne var todo: TypedTodo?
+  @FetchAll(nil) var todos: [TypedTodo]
+  @FetchOne(nil) var todo: TypedTodo?
   @Fetch var count = 0
 
   func exercise(using client: InstantSwiftDataClient) async throws {
@@ -7776,7 +8299,10 @@ private actor LocalIDRecorder {
   }
 }
 
-private func recordingClient(_ recorder: ClientCallRecorder) -> InstantSwiftDataClient {
+private func recordingClient(
+  _ recorder: ClientCallRecorder,
+  observationEmitsEmptySnapshot: Bool = true
+) -> InstantSwiftDataClient {
   InstantSwiftDataClient(
     transact: { transaction in
       InstantStoreMutationResult(
@@ -7790,7 +8316,11 @@ private func recordingClient(_ recorder: ClientCallRecorder) -> InstantSwiftData
       try await recorder.query(plan: plan)
     },
     observe: { plan in
-      await recorder.observe(plan: plan)
+      if observationEmitsEmptySnapshot {
+        await recorder.observe(plan: plan)
+      } else {
+        await recorder.observeWithoutEmission(plan: plan)
+      }
     },
     pendingMutations: { [] },
     localID: { name in "recording-\(name)" }
@@ -8072,6 +8602,21 @@ private struct TypedTodoFetchOneModel {
 }
 
 #if canImport(Observation)
+  @MainActor
+  @Observable
+  private final class TypedTodoAutomaticObservationModel {
+    @ObservationIgnored
+    @FetchAll var todos: [TypedTodo]
+
+    var visibleTitles: [String] {
+      todos.map(\.text)
+    }
+
+    init(query: InstantEntityQuery<TypedTodo>) {
+      _todos = FetchAll(query)
+    }
+  }
+
   @Observable
   private final class TypedTodoObservableFactsModel {
     var number = 0

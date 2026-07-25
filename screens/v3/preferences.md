@@ -1,10 +1,17 @@
 # Preferences Screen, V3
 
+> Design target: use current `Sources/` declarations and compiling fixtures in
+> `Tests/` as the authoritative inventory of usable symbols.
+
 URI: `settings.preferences` (`voicetrail://settings/preferences`)
 
 This screen demonstrates renderable sync state and call-site callbacks
 for explicit user actions. `@InstantSyncStatus` exposes state. Buttons
 send messages such as refresh, sign out, flush, and clear cache.
+
+This is an intentional exception to the normal-feature boundary: delivery
+status and flush are the user-visible purpose of this Preferences section.
+Recording, playback, and list features do not coordinate outbox or reconnect.
 
 Implementation status (2026-07-18): commits `4ddf46b`, `ff71165`, and
 `7176dfa` compile and test the recorded `@ConnectionStatus`,

@@ -1,0 +1,34 @@
+name: VoiceTrailV3
+
+options:
+  bundleIdPrefix: com.technoplato.InstantSwiftData
+  deploymentTarget:
+    watchOS: "10.0"
+
+packages:
+  InstantSwiftData:
+    path: ../..
+
+targets:
+  VoiceTrailV3watchOS:
+    type: application
+    platform: watchOS
+    sources:
+      - path: ../../Sources/VoiceTrailV3Executable/main.swift
+    dependencies:
+      - package: InstantSwiftData
+        product: InstantSwiftData
+      - package: InstantSwiftData
+        product: VoiceTrailV3App
+    configFiles:
+      Debug: VoiceTrailV3.xcconfig
+      Release: VoiceTrailV3.xcconfig
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.technoplato.InstantSwiftData.VoiceTrailV3watchOS
+        PRODUCT_NAME: VoiceTrail
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: watchOS-Info.plist
+        OTHER_SWIFT_FLAGS: "$(inherited) -parse-as-library"
+        SWIFT_VERSION: "6.0"
+        WATCHOS_DEPLOYMENT_TARGET: "10.0"

@@ -46,6 +46,71 @@ private let pythonStreamFileRetryBudgetSource =
 @Suite
 struct InstantLiveTransportTests {
   @Test
+  func preparedStoreMutationsComposeWithoutSnapshotRoundTrip() async throws {
+    let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let store = InstantStore(
+      snapshot: InstantStoreSnapshot(attributes: TodoExample.attributes)
+    )
+    let preparedServer = try await store.prepare(
+      InstantStoreTransaction(
+        id: "server-refresh",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: "server-todo",
+              attributeID: "todos/id",
+              value: .string("server-todo"),
+              txID: "server-refresh",
+              txTime: timestamp
+            )
+          )
+        ]
+      )
+    )
+
+    let preparedRebase = try await store.prepare(
+      InstantStoreTransaction(
+        id: "pending-local-write",
+        operations: [
+          .insert(
+            InstantTriple(
+              entityID: "local-todo",
+              attributeID: "todos/id",
+              value: .string("local-todo"),
+              txID: "pending-local-write",
+              txTime: timestamp
+            )
+          )
+        ]
+      ),
+      applyingTo: preparedServer
+    )
+
+    expectNoDifference(
+      preparedRebase.snapshot.triples.map(\.entityID),
+      ["local-todo", "server-todo"]
+    )
+    expectNoDifference(preparedRebase.result.tripleCount, 2)
+  }
+
+  @Test
+  func repeatedLiveWebSocketsReuseOneLongLivedURLSession() async throws {
+    let generationCount = 64
+    var urlSessionIdentities: Set<ObjectIdentifier> = []
+    for _ in 0..<generationCount {
+      var socket: InstantURLSessionLiveWebSocket? = try InstantURLSessionLiveWebSocket(
+        url: try #require(URL(string: "ws://127.0.0.1:1/runtime/session"))
+      )
+      if let socket {
+        urlSessionIdentities.insert(await socket.urlSessionIdentity)
+      }
+      await socket?.close()
+      socket = nil
+    }
+    expectNoDifference(urlSessionIdentities.count, 1)
+  }
+
+  @Test
   func sessionURLAppendsAppID() throws {
     let request = InstantLiveSessionRequest(
       appID: "app-123",
@@ -427,6 +492,26 @@ struct InstantLiveTransportTests {
       Issue.record("Expected the stream reader to retain the resubscribe failure.")
     } catch let error as InstantError {
       #expect(error.message.contains("push failed"), Comment(rawValue: pythonStreamReaderResumeSource))
+    }
+  }
+
+  @Test
+  func streamReaderRetainsTargetedServerSubscriptionFailure() async throws {
+    let reader = try InstantLiveStreamReaderState(streamID: "missing-stream")
+    await reader.recordSubscriptionEventID("evt-subscribe")
+
+    let failure = await reader.recordServerFailure(
+      clientEventID: "evt-subscribe",
+      message: "Validation failed for subscribe-stream: Stream is missing."
+    )
+
+    expectNoDifference(failure.operation, "subscribe to Instant stream")
+    expectNoDifference(failure.serverEventID, "evt-subscribe")
+    do {
+      try await reader.checkForFailure()
+      Issue.record("Expected the reader to retain its targeted server failure.")
+    } catch let error as InstantError {
+      expectNoDifference(error, failure)
     }
   }
 

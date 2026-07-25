@@ -564,6 +564,91 @@ struct InstantStoreTests {
   }
 
   @Test
+  func localQueryMaterializesPersistedStateWhileConnectionIsClosed() async throws {
+    var configuration = InstantRuntimeConfiguration(
+      appID: "local-query-app",
+      persistenceURL: try temporaryCacheURL(),
+      initialAttributes: TodoExample.attributes
+    )
+    configuration.isLocalOnly = true
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-local-query",
+        operations: TodoExample.createOperations(
+          id: "todo-local-query",
+          text: "read SQLite before the network",
+          createdAt: createdAt,
+          transactionID: "tx-local-query"
+        )
+      ),
+      createdAt: createdAt
+    )
+    _ = try await runtime.closeConnection()
+
+    let todos = try await TodoExample.decode(runtime.query(TodoExample.query))
+
+    expectNoDifference(
+      todos,
+      [
+        TodoRecord(
+          id: "todo-local-query",
+          text: "read SQLite before the network",
+          isCompleted: false,
+          createdAt: createdAt
+        )
+      ]
+    )
+  }
+
+  @Test
+  func observationUsesBootstrappedStoreWithoutReloadingPersistence() async throws {
+    let recorder = InstantActorHopRecorder()
+    var configuration = InstantRuntimeConfiguration(
+      appID: "cached-observation-app",
+      persistenceURL: try temporaryCacheURL(),
+      initialAttributes: TodoExample.attributes
+    )
+    configuration.actorHopRecorder = recorder
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-cached-observation",
+        operations: TodoExample.createOperations(
+          id: "todo-cached-observation",
+          text: "emit from the bootstrapped store",
+          createdAt: createdAt,
+          transactionID: "tx-cached-observation"
+        )
+      ),
+      createdAt: createdAt
+    )
+
+    let baseline = recorder.baseline()
+    let stream = await runtime.observe(TodoExample.query)
+    var iterator = stream.makeAsyncIterator()
+    let emission = try #require(await iterator.next())
+    let todos = try TodoExample.decode(emission.values)
+    let actorHops = recorder.summary(since: baseline)
+
+    expectNoDifference(
+      todos,
+      [
+        TodoRecord(
+          id: "todo-cached-observation",
+          text: "emit from the bootstrapped store",
+          isCompleted: false,
+          createdAt: createdAt
+        )
+      ]
+    )
+    expectNoDifference(actorHops.breakdown["persistence"], nil)
+    expectNoDifference(actorHops.breakdown["store"], 2)
+  }
+
+  @Test
   func closedQueryDoesNotReturnStaleCachedQueryAfterServerTransaction() async throws {
     let cacheURL = try temporaryCacheURL()
     let seedCreatedAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
@@ -1047,7 +1132,7 @@ struct InstantStoreTests {
   }
 
   @Test
-  func observeRefreshesDurableSnapshotBeforeInitialEmission() async throws {
+  func observeUsesItsBootstrappedSnapshotWithoutRereadingTheDatabase() async throws {
     let cacheURL = try temporaryCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let staleRuntime = try await InstantRuntime.bootstrap(
@@ -1082,7 +1167,20 @@ struct InstantStoreTests {
     var iterator = stream.makeAsyncIterator()
     let emission = try #require(await iterator.next())
     let todos = try TodoExample.decode(emission.values)
-    expectNoDifference(todos.map(\.text), ["offline observer refresh"])
+    expectNoDifference(todos.map(\.text), [])
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "observe-refresh",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let relaunchedStream = await relaunchedRuntime.observe(TodoExample.query)
+    var relaunchedIterator = relaunchedStream.makeAsyncIterator()
+    let relaunchedEmission = try #require(await relaunchedIterator.next())
+    let relaunchedTodos = try TodoExample.decode(relaunchedEmission.values)
+    expectNoDifference(relaunchedTodos.map(\.text), ["offline observer refresh"])
   }
 
   @Test

@@ -9,7 +9,7 @@ import InstantSwiftData
   public struct StroopwafelV3Screen: View {
     @InstantAuth(StroopwafelV3User.self, providers: StroopwafelV3AuthProviders.self)
     private var auth
-    @FetchOne private var profile: StroopwafelV3User?
+    @FetchOne(nil) private var profile: StroopwafelV3User?
     @Dependency(\.defaultInstantSwiftData) private var db
 
     @State private var handle = ""
@@ -102,10 +102,21 @@ import InstantSwiftData
 
   @MainActor
   private struct StroopwafelV3InjectedScreen: View {
-    @FetchOne private var user: StroopwafelV3User?
+    @FetchOne(nil) private var user: StroopwafelV3User?
 
     let userID: InstantID<StroopwafelV3User>
     let roomCode: String?
+
+    init(
+      userID: InstantID<StroopwafelV3User>,
+      roomCode: String?
+    ) {
+      self.userID = userID
+      self.roomCode = roomCode
+      _user = FetchOne(
+        InstantQuery(filters: [.equals(field: "id", value: .string(userID.rawValue))])
+      )
+    }
 
     var body: some View {
       Group {
@@ -115,21 +126,12 @@ import InstantSwiftData
           ProgressView("Loading player")
         }
       }
-      .task(id: userID) {
-        do {
-          try await $user.task(
-            InstantQuery(filters: [.equals(field: "id", value: .string(userID.rawValue))])
-          )
-        } catch {
-          // FetchOne exposes the renderable error through loadError.
-        }
-      }
     }
   }
 
   @MainActor
   public struct StroopwafelV3LobbyScreen: View {
-    @FetchOne private var room: StroopwafelV3Room?
+    @FetchOne(nil) private var room: StroopwafelV3Room?
     @Dependency(\.defaultInstantSwiftData) private var db
     @Dependency(\.uuid) private var uuid
 
@@ -321,7 +323,7 @@ import InstantSwiftData
 
   @MainActor
   public struct StroopwafelV3GameScreen: View {
-    @FetchOne private var game: StroopwafelV3Game?
+    @FetchOne(nil) private var game: StroopwafelV3Game?
     @Dependency(\.defaultInstantSwiftData) private var db
 
     public let gameID: InstantID<StroopwafelV3Game>
@@ -338,6 +340,7 @@ import InstantSwiftData
       self.gameID = gameID
       self.user = user
       self.onLeave = onLeave
+      _game = FetchOne(StroopwafelV3Game.byID(gameID))
     }
 
     public var body: some View {
@@ -370,14 +373,6 @@ import InstantSwiftData
           }
         } else {
           ProgressView("Loading game")
-        }
-      }
-      .task(id: gameID) {
-        do {
-          try await $game.task(StroopwafelV3Game.byID(gameID))
-        } catch is CancellationError {
-        } catch {
-          message = String(describing: error)
         }
       }
     }

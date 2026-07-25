@@ -1,5 +1,8 @@
 # Authentication Screen, V3
 
+> Design target: use current `Sources/` declarations and compiling fixtures in
+> `Tests/` as the authoritative inventory of usable symbols.
+
 URI: `auth.login` (`voicetrail://auth/login`)
 
 This version keeps auth state in `@InstantAuth`, but keeps callbacks at

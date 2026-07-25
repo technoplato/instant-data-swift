@@ -1,11 +1,19 @@
 # Playback Screen, V3
 
+> Design target: use current `Sources/` declarations and compiling fixtures in
+> `Tests/` as the authoritative inventory of usable symbols.
+
 URI: `recordings.playback`
 (`voicetrail://recordings/:recordingID/playback`)
 
 This screen demonstrates rooms, presence, topics, infinite comments, and
 queryable files. The wrappers own observation. The call sites publish
 messages and handle side effects for the specific user action.
+
+The stable `recordingID` is a dynamic query input for this screen identity, so
+the modifiers replace wrapper keys when that identity changes. Once attached,
+the wrappers emit cached and optimistic state first and own live observation;
+the screen never fetches, subscribes, or merges those values manually.
 
 Implementation status (2026-07-18): the room/presence/topic surface is proven
 through automatic disconnect and rejoin at `ece3022`. A fresh credentialed app

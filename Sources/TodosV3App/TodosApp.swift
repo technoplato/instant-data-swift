@@ -116,7 +116,6 @@ public struct TodosAppConfiguration: Hashable, Sendable {
           content
         }
       }
-      .instantFetch($todos, Todo.query.order(.serverCreatedAt, .descending))
       .instantRoom(
         $room,
         InstantRoom<TodosRoom>(type: TodosRoom.roomType, id: "main")

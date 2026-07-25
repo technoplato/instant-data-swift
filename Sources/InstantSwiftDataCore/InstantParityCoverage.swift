@@ -484,11 +484,12 @@ public enum InstantSwiftDataParityCoverage {
       sourceFile: svelteAdapterSource,
       sourceTestName: "useQuery starts in loading state",
       swiftFile: typedAPISwiftFile,
-      swiftTestName: "fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
+      swiftTestName:
+        "staticFetchAllStartsObservationWithoutTaskOrLoad + fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
       surface: "adapter-query",
       status: .adapted,
       notes:
-        "Swift adapts Svelte's store state as @FetchAll projected state: task(query:) starts loading with empty values and nil error while awaiting the first subscription emission."
+        "Swift adapts Svelte's store state as @FetchAll projected state: a statically configured wrapper starts observing automatically, while dynamic replacement starts loading with empty values and nil error while awaiting the first subscription emission."
     ),
     instant(
       id: "instant.svelte.use-query-subscribes-on-mount",
@@ -496,11 +497,11 @@ public enum InstantSwiftDataParityCoverage {
       sourceTestName: "useQuery subscribes to core on mount",
       swiftFile: typedAPISwiftFile,
       swiftTestName:
-        "fetchAllTaskBindsSubscriptionEmissionsIntoWrappedValue + fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
+        "staticFetchAllStartsObservationWithoutTaskOrLoad + fetchAllTaskBindsSubscriptionEmissionsIntoWrappedValue + fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
       surface: "adapter-query",
       status: .adapted,
       notes:
-        "Swift models the mount effect with @FetchAll.task(query:using:), which starts an InstantSwiftDataClient subscription and binds emissions into the wrapper state."
+        "Swift models the mount effect with automatic observation from a statically configured @FetchAll; changing query inputs use the replacement task API, and both bind InstantSwiftDataClient emissions into wrapper state."
     ),
     instant(
       id: "instant.svelte.use-query-updates-state",
@@ -531,11 +532,11 @@ public enum InstantSwiftDataParityCoverage {
       sourceTestName: "useQuery handles null query",
       swiftFile: typedAPISwiftFile,
       swiftTestName:
-        "fetchAllTaskNilQueryDoesNotStartObservationAndClearsLoading + fetchAllSubscribeNilQueryReturnsFinishedSubscriptionWithoutCallingClient",
+        "disabledDynamicFetchesDoNotObserveBeforeQueryAndNilResetCancels + fetchAllTaskNilQueryDoesNotStartObservationAndClearsLoading + fetchAllSubscribeNilQueryReturnsFinishedSubscriptionWithoutCallingClient",
       surface: "adapter-query",
       status: .adapted,
       notes:
-        "Swift adapts a null query as nil InstantEntityQuery: no client subscription is started, task(nil) clears values/loading/error, and subscribe(nil) returns a finished subscription."
+        "Swift adapts a null query as an explicit nil InstantEntityQuery key: no broad initial subscription is started, a later non-nil key begins observation, and task(nil) cancels and resets wrapper state."
     ),
     instant(
       id: "instant.svelte.use-query-function-query",
@@ -555,11 +556,11 @@ public enum InstantSwiftDataParityCoverage {
       sourceTestName: "useQuery skips subscription when function returns null",
       swiftFile: typedAPISwiftFile,
       swiftTestName:
-        "fetchAllTaskNilQueryDoesNotStartObservationAndClearsLoading + fetchAllSubscribeNilQueryReturnsFinishedSubscriptionWithoutCallingClient",
+        "disabledDynamicFetchesDoNotObserveBeforeQueryAndNilResetCancels + fetchAllTaskNilQueryDoesNotStartObservationAndClearsLoading + fetchAllSubscribeNilQueryReturnsFinishedSubscriptionWithoutCallingClient",
       surface: "adapter-query",
       status: .adapted,
       notes:
-        "Swift adapts a function-returned null as nil InstantEntityQuery and proves both task and subscribe paths avoid the client."
+        "Swift adapts a function-returned null as an explicit nil InstantEntityQuery key and proves initial disablement plus task and subscribe reset paths avoid broad client observation."
     ),
     instant(
       id: "instant.svelte.use-query-function-query-change",
@@ -582,18 +583,19 @@ public enum InstantSwiftDataParityCoverage {
       surface: "adapter-query",
       status: .adapted,
       notes:
-        "Swift adapts Reactor's getPreviousResult cache as the local SQLite runtime snapshot emitted immediately by @FetchAll.task, and dynamic task replacement preserves the last value while the next subscription is loading."
+        "Swift adapts Reactor's getPreviousResult cache as the local SQLite runtime snapshot emitted immediately by automatic @FetchAll observation, and dynamic task replacement preserves the last value while the next subscription is loading."
     ),
     instant(
       id: "instant.vue.use-query-starts-loading",
       sourceFile: vueAdapterSource,
       sourceTestName: "useQuery starts in loading state",
       swiftFile: typedAPISwiftFile,
-      swiftTestName: "fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
+      swiftTestName:
+        "staticFetchAllStartsObservationWithoutTaskOrLoad + fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
       surface: "adapter-query",
       status: .adapted,
       notes:
-        "Swift adapts Vue refs as @FetchAll projected state: task(query:) starts loading with empty values and nil error while awaiting the first subscription emission."
+        "Swift adapts Vue refs as @FetchAll projected state: a statically configured wrapper starts observing automatically, while dynamic replacement starts loading with empty values and nil error while awaiting the first subscription emission."
     ),
     instant(
       id: "instant.vue.use-query-subscribes-when-mounted",
@@ -601,11 +603,11 @@ public enum InstantSwiftDataParityCoverage {
       sourceTestName: "useQuery subscribes to core when mounted",
       swiftFile: typedAPISwiftFile,
       swiftTestName:
-        "fetchAllTaskBindsSubscriptionEmissionsIntoWrappedValue + fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
+        "staticFetchAllStartsObservationWithoutTaskOrLoad + fetchAllTaskBindsSubscriptionEmissionsIntoWrappedValue + fetchAllDynamicQueryTaskReplacementCancelsStaleSubscription",
       surface: "adapter-query",
       status: .adapted,
       notes:
-        "Swift models the Vue effect scope with @FetchAll.task(query:using:), which starts an InstantSwiftDataClient subscription and binds emissions into wrapper state."
+        "Swift models the Vue effect scope with automatic observation from a statically configured @FetchAll; changing query inputs use the replacement task API, and both bind InstantSwiftDataClient emissions into wrapper state."
     ),
     instant(
       id: "instant.vue.use-query-updates-state",
@@ -636,11 +638,11 @@ public enum InstantSwiftDataParityCoverage {
       sourceTestName: "useQuery handles null query",
       swiftFile: typedAPISwiftFile,
       swiftTestName:
-        "fetchAllTaskNilQueryDoesNotStartObservationAndClearsLoading + fetchAllSubscribeNilQueryReturnsFinishedSubscriptionWithoutCallingClient",
+        "disabledDynamicFetchesDoNotObserveBeforeQueryAndNilResetCancels + fetchAllTaskNilQueryDoesNotStartObservationAndClearsLoading + fetchAllSubscribeNilQueryReturnsFinishedSubscriptionWithoutCallingClient",
       surface: "adapter-query",
       status: .adapted,
       notes:
-        "Swift adapts a null query as nil InstantEntityQuery: no client subscription is started, task(nil) clears values/loading/error, and subscribe(nil) returns a finished subscription."
+        "Swift adapts a null query as an explicit nil InstantEntityQuery key: no broad initial subscription is started, a later non-nil key begins observation, and task(nil) cancels and resets wrapper state."
     ),
     instant(
       id: "instant.vue.use-query-function-query",
@@ -671,11 +673,11 @@ public enum InstantSwiftDataParityCoverage {
       sourceTestName: "useQuery skips subscription when getter returns null",
       swiftFile: typedAPISwiftFile,
       swiftTestName:
-        "fetchAllTaskNilQueryDoesNotStartObservationAndClearsLoading + fetchAllSubscribeNilQueryReturnsFinishedSubscriptionWithoutCallingClient",
+        "disabledDynamicFetchesDoNotObserveBeforeQueryAndNilResetCancels + fetchAllTaskNilQueryDoesNotStartObservationAndClearsLoading + fetchAllSubscribeNilQueryReturnsFinishedSubscriptionWithoutCallingClient",
       surface: "adapter-query",
       status: .adapted,
       notes:
-        "Swift adapts a getter-returned null as nil InstantEntityQuery and proves both task and subscribe paths avoid the client."
+        "Swift adapts a getter-returned null as an explicit nil InstantEntityQuery key and proves initial disablement plus task and subscribe reset paths avoid broad client observation."
     ),
     instant(
       id: "instant.vue.use-query-reactive-query-change",
@@ -698,7 +700,7 @@ public enum InstantSwiftDataParityCoverage {
       surface: "adapter-query",
       status: .adapted,
       notes:
-        "Swift adapts Reactor's getPreviousResult cache as the local SQLite runtime snapshot emitted immediately by @FetchAll.task, and dynamic task replacement preserves the last value while the next subscription is loading."
+        "Swift adapts Reactor's getPreviousResult cache as the local SQLite runtime snapshot emitted immediately by automatic @FetchAll observation, and dynamic task replacement preserves the last value while the next subscription is loading."
     ),
     instant(
       id: "instant.svelte.use-auth-starts-loading",
@@ -2673,37 +2675,40 @@ public enum InstantSwiftDataParityCoverage {
       swiftTestName: "observableModelLoadsDynamicFetchQueriesThroughWrapperState",
       surface: "adapter-fetch",
       status: .adapted,
-      notes: "The Instant adapter updates observable model state through projected wrapper dynamic query loading."
+      notes: "The Instant adapter can declare @FetchAll(nil) to prevent a broad initial observation, then update observable model state through non-nil projected-wrapper query replacement."
     ),
     sqlite(
       id: "sqlite.fetch-one.dynamic-query",
       sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchOneTests.swift",
       sourceTestName: "selectStatementInit / optionalStatementInit projected load(query)",
       swiftFile: platformAdapterValidationSwiftFile,
-      swiftTestName: "platformAdapterValidationProvesWrappersBindLocalRuntime",
+      swiftTestName:
+        "disabledDynamicFetchesDoNotObserveBeforeQueryAndNilResetCancels + platformAdapterValidationProvesWrappersBindLocalRuntime",
       surface: "adapter-fetch",
       status: .adapted,
-      notes: "Optional Instant @FetchOne terminal validation swaps non-nil query filters, proves both limit-one plans, and updates the selected entity."
+      notes: "Optional Instant @FetchOne can begin with an explicit nil key and zero observations, then swap non-nil query filters, preserve limit-one plans, and update the selected entity."
     ),
     sqlite(
       id: "sqlite.fetch-one.nil-query",
       sourceFile: "upstream/sqlite-data/Tests/SQLiteDataTests/FetchOneTests.swift",
       sourceTestName: "optionalTableInit / optionalStatementInit empty optional state",
       swiftFile: platformAdapterValidationSwiftFile,
-      swiftTestName: "platformAdapterValidationProvesWrappersBindLocalRuntime",
+      swiftTestName:
+        "disabledDynamicFetchesDoNotObserveBeforeQueryAndNilResetCancels + platformAdapterValidationProvesWrappersBindLocalRuntime",
       surface: "adapter-fetch",
       status: .adapted,
-      notes: "The optional Instant @FetchOne adapter treats a nil dynamic query as a SwiftUI-style disabled binding, clearing cached value, error, and loading state without hitting the client."
+      notes: "The optional Instant @FetchOne adapter treats an explicit nil key as disabled with zero initial observations; returning to nil cancels observation and clears cached value, error, and loading state."
     ),
     sqlite(
       id: "sqlite.fetch.transaction-request",
       sourceFile: "upstream/sqlite-data/Examples/CaseStudies/TransactionDemo.swift",
       sourceTestName: "@Fetch(Facts()) composite transaction value",
       swiftFile: typedAPISwiftFile,
-      swiftTestName: "fetchKeyRequestLoadsTransactionStyleCompositeValues",
+      swiftTestName:
+        "staticFetchRequestStartsCombinedObservationWithoutTaskOrLoad + fetchKeyRequestLoadsTransactionStyleCompositeValues + fetchKeyRequestTaskBindsCompositeSubscriptionValues",
       surface: "adapter-fetch",
       status: .adapted,
-      notes: "InstantFetchKeyRequest gives @Fetch a reusable request object for composite values; the load path performs separate rows/count reads and the live task maps row emissions into the same value shape."
+      notes: "InstantFetchKeyRequest gives @Fetch a reusable request object for composite values; load performs the declared reads and observation combines their streams in the library, emitting only after every source has emitted without claiming an atomic cross-query snapshot."
     ),
     sqlite(
       id: "sqlite.fetch.request-dynamic-query",
@@ -2713,7 +2718,7 @@ public enum InstantSwiftDataParityCoverage {
       swiftTestName: "fetchKeyRequestLoadsDynamicRequestsAndRecordsPlans",
       surface: "adapter-fetch",
       status: .adapted,
-      notes: "Dynamic InstantFetchKeyRequest values replace the configured @Fetch request, reload composite row/count state, and preserve the expected typed query plans."
+      notes: "Dynamic InstantFetchKeyRequest values replace the configured @Fetch request, reload the declared reads, continue library-owned combined observation, and preserve the expected typed query plans."
     ),
     sqlite(
       id: "sqlite.fetch.request-nil-reset",

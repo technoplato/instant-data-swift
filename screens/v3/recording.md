@@ -1,9 +1,16 @@
 # Recording Screen, V3
 
+> Design target: use current `Sources/` declarations and compiling fixtures in
+> `Tests/` as the authoritative inventory of usable symbols.
+
 URI: `recordings.capture` (`voicetrail://recordings/new`)
 
 This screen keeps product recording behavior outside Instant core. The
 Instant-facing pieces are local IDs, live queries, and typed mutations.
+
+Media capture/transfer is independent from entity delivery. Recording and
+transcript entities continue to observe and deliver when an attachment or audio
+stream is offline or rejected; media retry state does not enter this feature.
 
 The recording wrapper owns microphone state. The Instant client owns
 mutation delivery. User actions call synchronous message methods, and

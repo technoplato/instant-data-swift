@@ -6,34 +6,64 @@ public struct VoiceTrailAppConfiguration: Hashable, Sendable {
   public var appID: String
   public var persistenceURL: URL?
   public var enablesLiveSync: Bool
+  public var userIDOverride: InstantID<VoiceTrailUser>?
+  public var refreshTokenOverride: String?
+  public var isDemoMode: Bool
 
   public init(
     appID: String,
     persistenceURL: URL? = nil,
-    enablesLiveSync: Bool
+    enablesLiveSync: Bool,
+    userIDOverride: InstantID<VoiceTrailUser>? = nil,
+    refreshTokenOverride: String? = nil,
+    isDemoMode: Bool = false
   ) {
     self.appID = appID
     self.persistenceURL = persistenceURL
     self.enablesLiveSync = enablesLiveSync
+    self.userIDOverride = userIDOverride
+    self.refreshTokenOverride = refreshTokenOverride
+    self.isDemoMode = isDemoMode
   }
 
   public static func environment(
-    _ environment: [String: String] = ProcessInfo.processInfo.environment
+    _ environment: [String: String] = ProcessInfo.processInfo.environment,
+    bundledAppID: String? = Bundle.main.object(forInfoDictionaryKey: "InstantAppID") as? String,
+    bundledDemoMode: Bool = Bundle.main.object(forInfoDictionaryKey: "VoiceTrailDemoMode")
+      as? Bool ?? false
   ) -> Self {
-    let configuredAppID = environment["INSTANT_APP_ID"]?
+    let isDemoMode = environment["VOICE_TRAIL_DEMO_MODE"] == "1" || bundledDemoMode
+    let configuredAppID = [environment["INSTANT_APP_ID"], bundledAppID]
+      .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .first { !$0.isEmpty }
+    let configuredUserID = environment["VOICE_TRAIL_USER_ID"]?
       .trimmingCharacters(in: .whitespacesAndNewlines)
-    let appID = configuredAppID.flatMap { $0.isEmpty ? nil : $0 } ?? "voicetrail-v3-local"
+    let configuredRefreshToken = environment["VOICE_TRAIL_REFRESH_TOKEN"]?
+      .trimmingCharacters(in: .whitespacesAndNewlines)
     return Self(
-      appID: appID,
+      appID: isDemoMode ? "voicetrail-v3-watch-demo" : configuredAppID ?? "voicetrail-v3-local",
       persistenceURL: environment["INSTANT_PERSISTENCE_PATH"].map(URL.init(fileURLWithPath:)),
-      enablesLiveSync: configuredAppID?.isEmpty == false
+      enablesLiveSync: !isDemoMode && configuredAppID != nil,
+      userIDOverride: isDemoMode
+        ? VoiceTrailWatchDemo.userID
+        : configuredUserID.flatMap { $0.isEmpty ? nil : InstantID(rawValue: $0) },
+      refreshTokenOverride: isDemoMode
+        ? VoiceTrailWatchDemo.refreshToken
+        : configuredRefreshToken.flatMap { $0.isEmpty ? nil : $0 },
+      isDemoMode: isDemoMode
     )
   }
 }
 
+public enum VoiceTrailWatchDemo {
+  public static let userID = InstantID<VoiceTrailUser>(rawValue: "voicetrail-watch-demo-user")
+  public static let refreshToken = "voicetrail-watch-demo-refresh"
+}
+
 public struct VoiceTrailAppBootstrapper: Sendable {
-  public var bootstrap: @Sendable (VoiceTrailAppConfiguration) async throws
-    -> InstantSwiftDataClient
+  public var bootstrap:
+    @Sendable (VoiceTrailAppConfiguration) async throws
+      -> InstantSwiftDataClient
 
   public init(
     bootstrap: @escaping @Sendable (VoiceTrailAppConfiguration) async throws
@@ -47,6 +77,11 @@ public struct VoiceTrailAppBootstrapper: Sendable {
       var dependencies = DependencyValues()
       if configuration.enablesLiveSync {
         dependencies.instantLiveTransport = .live
+      } else {
+        dependencies.instantMagicCodeExchange = .local
+        dependencies.instantRefreshTokenVerifier = .local
+        dependencies.instantGuestAuthenticator = .local
+        dependencies.instantAuthTokenInvalidator = .local
       }
       try await dependencies.bootstrapInstantSwiftData(
         appID: configuration.appID,
@@ -54,7 +89,14 @@ public struct VoiceTrailAppBootstrapper: Sendable {
         initialAttributes: VoiceTrailSchema.attributes,
         liveShareContract: .v3CaptureRecordings
       )
-      return dependencies.defaultInstantSwiftData
+      let client = dependencies.defaultInstantSwiftData
+      if let refreshToken = configuration.refreshTokenOverride {
+        _ = try await client.signInWithRefreshToken(
+          refreshToken,
+          userID: configuration.userIDOverride?.rawValue
+        )
+      }
+      return client
     }
   }
 }
@@ -130,7 +172,15 @@ public enum VoiceTrailBootstrapPhase: Hashable, Sendable {
         case .idle, .loading:
           ProgressView("Opening VoiceTrail")
         case .ready:
-          VoiceTrailRootScreen()
+          #if os(watchOS)
+            VoiceTrailWatchRootScreen(
+              injectedUserID: model.configuration.userIDOverride,
+              isDemoMode: model.configuration.isDemoMode,
+              usesLocalStoreOnly: !model.configuration.enablesLiveSync
+            )
+          #else
+            VoiceTrailRootScreen()
+          #endif
         case let .failed(message):
           VStack {
             Text("VoiceTrail could not start")

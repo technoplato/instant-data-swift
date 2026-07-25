@@ -1,0 +1,344 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		234D3F294507E76CAF6F19B0 /* VoiceTrailV3App in Frameworks */ = {isa = PBXBuildFile; productRef = 45D717A6BAF02E9DCD40309D /* VoiceTrailV3App */; };
+		5EDE669A825521A4ABE7304F /* InstantSwiftData in Frameworks */ = {isa = PBXBuildFile; productRef = 8F7BE83C9D414257D2A045E5 /* InstantSwiftData */; };
+		F6B54B6ACD064EEFE231A9DD /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 735C539DC1E79D107BC26BC7 /* main.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		4EE1CF9AB1039D0C737EF100 /* VoiceTrailV3watchOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VoiceTrailV3watchOS.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		735C539DC1E79D107BC26BC7 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		C44552193AB9E1A81BBA56A2 /* VoiceTrailV3.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = VoiceTrailV3.xcconfig; sourceTree = "<group>"; };
+		F27506306A3E558122322C95 /* instant-data-swift */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "instant-data-swift"; path = ../..; sourceTree = SOURCE_ROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		51FB9B1A76B2CB20E4DD9527 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5EDE669A825521A4ABE7304F /* InstantSwiftData in Frameworks */,
+				234D3F294507E76CAF6F19B0 /* VoiceTrailV3App in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		21D5D3EE2BE23D056691B12C /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				4EE1CF9AB1039D0C737EF100 /* VoiceTrailV3watchOS.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		7145632D4B16D26E93828119 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				F27506306A3E558122322C95 /* instant-data-swift */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		B6CB842B26FA66DD7B985F1C /* VoiceTrailV3 */ = {
+			isa = PBXGroup;
+			children = (
+				C44552193AB9E1A81BBA56A2 /* VoiceTrailV3.xcconfig */,
+			);
+			name = VoiceTrailV3;
+			path = .;
+			sourceTree = "<group>";
+		};
+		CEDB5CF1174946953E238080 /* VoiceTrailV3Executable */ = {
+			isa = PBXGroup;
+			children = (
+				735C539DC1E79D107BC26BC7 /* main.swift */,
+			);
+			name = VoiceTrailV3Executable;
+			path = ../../Sources/VoiceTrailV3Executable;
+			sourceTree = "<group>";
+		};
+		E6FB94942ECF3608E5E8B927 = {
+			isa = PBXGroup;
+			children = (
+				7145632D4B16D26E93828119 /* Packages */,
+				B6CB842B26FA66DD7B985F1C /* VoiceTrailV3 */,
+				CEDB5CF1174946953E238080 /* VoiceTrailV3Executable */,
+				21D5D3EE2BE23D056691B12C /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		DCEBF2A7697134A0018FC66C /* VoiceTrailV3watchOS */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6F61ABF88EAA2E208929764E /* Build configuration list for PBXNativeTarget "VoiceTrailV3watchOS" */;
+			buildPhases = (
+				E2C461FCF08D9EF925F982F5 /* Sources */,
+				51FB9B1A76B2CB20E4DD9527 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = VoiceTrailV3watchOS;
+			packageProductDependencies = (
+				8F7BE83C9D414257D2A045E5 /* InstantSwiftData */,
+				45D717A6BAF02E9DCD40309D /* VoiceTrailV3App */,
+			);
+			productName = VoiceTrailV3watchOS;
+			productReference = 4EE1CF9AB1039D0C737EF100 /* VoiceTrailV3watchOS.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		3C4E1DBF4D990D67CF0A047D /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = 9B459AAC09F621518B684F2A /* Build configuration list for PBXProject "VoiceTrailV3" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = E6FB94942ECF3608E5E8B927;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				0B410ABF375E4176718506D9 /* XCLocalSwiftPackageReference "../.." */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 21D5D3EE2BE23D056691B12C /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				DCEBF2A7697134A0018FC66C /* VoiceTrailV3watchOS */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		E2C461FCF08D9EF925F982F5 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F6B54B6ACD064EEFE231A9DD /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		08F0FA3C762456BEA80806AB /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+		40BA02FB0ED2DD1F3057AE4B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = watchos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		6E4C0CC01ED9A3747BFB9FBC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = C44552193AB9E1A81BBA56A2 /* VoiceTrailV3.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "watchOS-Info.plist";
+				OTHER_SWIFT_FLAGS = "$(inherited) -parse-as-library";
+				PRODUCT_BUNDLE_IDENTIFIER = com.technoplato.InstantSwiftData.VoiceTrailV3watchOS;
+				PRODUCT_NAME = VoiceTrail;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Debug;
+		};
+		A6B041ECCBC0C6062CB4F169 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = C44552193AB9E1A81BBA56A2 /* VoiceTrailV3.xcconfig */;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = "watchOS-Info.plist";
+				OTHER_SWIFT_FLAGS = "$(inherited) -parse-as-library";
+				PRODUCT_BUNDLE_IDENTIFIER = com.technoplato.InstantSwiftData.VoiceTrailV3watchOS;
+				PRODUCT_NAME = VoiceTrail;
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 10.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		6F61ABF88EAA2E208929764E /* Build configuration list for PBXNativeTarget "VoiceTrailV3watchOS" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				6E4C0CC01ED9A3747BFB9FBC /* Debug */,
+				A6B041ECCBC0C6062CB4F169 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		9B459AAC09F621518B684F2A /* Build configuration list for PBXProject "VoiceTrailV3" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				40BA02FB0ED2DD1F3057AE4B /* Debug */,
+				08F0FA3C762456BEA80806AB /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		0B410ABF375E4176718506D9 /* XCLocalSwiftPackageReference "../.." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../..;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		45D717A6BAF02E9DCD40309D /* VoiceTrailV3App */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = VoiceTrailV3App;
+		};
+		8F7BE83C9D414257D2A045E5 /* InstantSwiftData */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = InstantSwiftData;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 3C4E1DBF4D990D67CF0A047D /* Project object */;
+}

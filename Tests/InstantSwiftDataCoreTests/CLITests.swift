@@ -10068,7 +10068,7 @@ extension InstantStoreTests {
     expectNoDifference(jsonOutput.shareCount, 2)
     expectNoDifference(jsonOutput.lifecycleEventCount, 17)
     expectNoDifference(jsonOutput.queryProbeCount, 19)
-    expectNoDifference(jsonOutput.observationProbeCount, 10)
+    expectNoDifference(jsonOutput.observationProbeCount, 20)
     expectNoDifference(jsonOutput.loadErrorOperations, ["query dynamic FetchAll"])
     expectNoDifference(jsonOutput.cancellationTerminated, true)
     #expect(jsonOutput.selectedTodoID != nil)
@@ -10150,6 +10150,7 @@ extension InstantStoreTests {
     expectNoDifference(fetchOneDynamicEvidence.details.todoTitles, ["Done single"])
     expectNoDifference(fetchOneDynamicEvidence.details.selectedTodoTitle, "Done single")
     expectNoDifference(fetchOneDynamicEvidence.details.queryCount, 2)
+    expectNoDifference(fetchOneDynamicEvidence.details.observationCount, 2)
 
     let fetchRequestDynamicEvidence = try #require(
       evidenceRows.first { $0.event == "fetch-request-dynamic-query" }
@@ -10159,6 +10160,7 @@ extension InstantStoreTests {
     expectNoDifference(fetchRequestDynamicEvidence.details.todoTitles, ["Done request"])
     expectNoDifference(fetchRequestDynamicEvidence.details.todoCount, 2)
     expectNoDifference(fetchRequestDynamicEvidence.details.queryCount, 4)
+    expectNoDifference(fetchRequestDynamicEvidence.details.observationCount, 4)
 
     let fetchOneNilEvidence = try #require(
       evidenceRows.first { $0.event == "fetch-one-nil-query" }
@@ -10192,7 +10194,7 @@ extension InstantStoreTests {
       fetchRequestCancellationEvidence.details.adapter,
       "@Fetch(request cancellation)"
     )
-    expectNoDifference(fetchRequestCancellationEvidence.details.observationCount, 1)
+    expectNoDifference(fetchRequestCancellationEvidence.details.observationCount, 2)
     expectNoDifference(fetchRequestCancellationEvidence.details.cancellationTerminated, true)
 
     let infiniteCancellationEvidence = try #require(

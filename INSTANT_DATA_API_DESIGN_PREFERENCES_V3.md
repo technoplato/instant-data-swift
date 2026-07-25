@@ -1,6 +1,14 @@
 # Instant Data API Design Preferences, Version 3
 
-This is the V3 working draft for the SwiftUI-facing Instant API.
+This is the V3 working draft for the SwiftUI-facing Instant API. It records
+design targets, not a complete inventory of symbols available in the package
+today. Before copying an example into production code, confirm it against
+`Sources/` and a compiling fixture in `Tests/`; those are authoritative for
+currently usable syntax.
+
+The accepted ownership and local-first semantics are recorded in
+`docs/adr/0001-application-sync-boundary.md`. This document illustrates that
+boundary; it does not create a second synchronization architecture.
 
 The implementation order, test gates, and Git version targets live in
 `docs/v3-e2e-port-plan.md`.
@@ -23,6 +31,12 @@ These files all follow the call-site callback direction.
 ## Status
 
 - These APIs are design targets.
+- Current `Sources/` declarations and compiling fixture tests take precedence
+  when a sketch differs from the implementation.
+- Projection/fetch-builder names such as `@InstantProjectionBuilder`,
+  `@InstantFetchBuilder`, `InstantFetchPlan`, `Project`, `Query`, and `Count`
+  may be aspirational and must not be presented as implemented without a
+  source check.
 - The recordings-list, auth-login, recording, and playback room/presence/topic
   public seams now have compiling fixtures and lifecycle tests. Their recorded
   syntax is the implementation baseline, not an open-ended sketch.
@@ -56,10 +70,17 @@ The upstream references to keep in view are:
   ```
 
 - `Fetching.md:154-161`
-  shows a count as:
+  shows SQLiteData's count shape. The implemented Instant adaptation uses an
+  `@Fetch` request that projects rows into a count:
 
   ```swift
-  @FetchOne(Reminder.count())
+  struct ReminderCountRequest: InstantFetchKeyRequest {
+    var fetchRequest: InstantFetchRequest<Int> {
+      InstantFetchRequest(Reminder.query) { $0.count }
+    }
+  }
+
+  @Fetch(ReminderCountRequest())
   var remindersCount = 0
   ```
 
@@ -98,8 +119,12 @@ The upstream references to keep in view are:
 The public SwiftUI layer should read like this:
 
 - A list declares list state with `@FetchAll`.
-- A single value or count declares state with `@FetchOne`.
-- A composite value declares state with `@Fetch`.
+- An optional or single entity declares state with `@FetchOne`.
+- An aggregate, count, or composite value declares state with `@Fetch` and an
+  `InstantFetchRequest` that projects entity rows into that value.
+- Static fetch declarations observe automatically; they do not require a task,
+  `load`, or subscribe call.
+- Dynamic input replaces the wrapper-owned key and observation.
 - Buttons send messages from synchronous SwiftUI closures.
 - Wrappers start and cancel tasks internally.
 - Wrappers expose status for rendering.
@@ -122,6 +147,55 @@ Lower-level Instant primitives should remain public:
 
 Those primitives matter for tools, tests, non-SwiftUI code, and
 advanced flows. SwiftUI wrappers are convenience, not a closed world.
+
+## Application Boundary
+
+Apps know schema, query shape, observation lifetime, dynamic inputs, mutations,
+auth, and sharing. Normal features do not know about local materialization,
+outbox persistence, reconnect, mutation delivery, or rejected-stream recovery.
+Instant Swift Data owns those mechanics.
+
+There is no public `queryLocal`. A preview, test, CLI, or deliberately local-only
+app injects a local-only `InstantSwiftDataClient` and uses ordinary fetch,
+subscription, and mutation APIs. Any direct local materializer stays private to
+the runtime or internal test support.
+
+`queryOnce` remains a freshness-sensitive one-shot operation. It may reuse
+applicable local data while connected, but it fails offline instead of silently
+returning stale data. Local-first feature state comes from ongoing observation:
+the wrapper can emit cached and optimistic values immediately, then reconcile
+with live results.
+
+Explicit flush and delivery status belong only in CLIs, diagnostics, tests, or
+a real user-visible operation. Normal feature actions do not flush after writes
+or coordinate reconnection.
+
+Static declarations have no lifecycle modifier:
+
+```swift
+@FetchAll(
+  Recording.query.order(.serverCreatedAt, .descending)
+)
+private var recordings: [Recording]
+
+private struct ActiveRecordingCountRequest: InstantFetchKeyRequest {
+  var fetchRequest: InstantFetchRequest<Int> {
+    InstantFetchRequest(
+      Recording.query.where(Recording.isArchived == false)
+    ) { $0.count }
+  }
+}
+
+@Fetch(ActiveRecordingCountRequest())
+private var activeRecordingCount = 0
+
+@Fetch(RecordingDashboard())
+private var dashboard = RecordingDashboard.Value()
+```
+
+The `.instantFetch` modifier remains the canonical SwiftUI spelling when local
+view input changes the query key. The feature declares the new key; the wrapper
+owns cached emission, cancellation, replacement, and live observation.
 
 ## Auth
 
@@ -374,124 +448,111 @@ open public-syntax questions.
 
 ## Request Objects
 
-Request objects should remain available. They are not the default shape
-for every screen.
+Request objects are available, but they are not the default shape for every
+screen. The currently implemented composite surface is
+`InstantFetchKeyRequest` plus `InstantFetchRequest<Value>`. The key request is
+`Sendable`; it is not required to be `Hashable` unless a separate identity API,
+such as SwiftUI `.task(id:)`, imposes that requirement.
 
-Use a request when one wrapper should vend one composite value:
+Use a request when one wrapper should vend one library-owned combined value.
+Its `combineLatest` observation emits only after every source has emitted; it
+does not claim an atomic cross-query snapshot:
 
 ```swift
+struct RecordingListSummary: Sendable, Equatable {
+  var rows: [VoiceTrailRecording] = []
+  var visibleCount = 0
+}
+
+struct RecordingListSummaryRequest: InstantFetchKeyRequest {
+  var rowsQuery: InstantEntityQuery<VoiceTrailRecording>
+  var countQuery: InstantEntityQuery<VoiceTrailRecording>
+
+  var fetchRequest: InstantFetchRequest<RecordingListSummary> {
+    InstantFetchRequest(rowsQuery, countQuery) { rows, countedRows in
+      RecordingListSummary(
+        rows: rows,
+        visibleCount: countedRows.count
+      )
+    }
+  }
+}
+
 struct VoiceTrailRecordingsSummaryScreen: View {
-  @State
-  private var scope:
-    RecordingListScope = .mine
-
-  @State
-  private var searchText = ""
-
   @Fetch(
-    RecordingListSummary(
-      viewer: .currentUser,
-      scope: .mine,
-      searchText: ""
+    RecordingListSummaryRequest(
+      rowsQuery: VoiceTrailRecording.query.order(
+        VoiceTrailRecording.title
+      ),
+      countQuery: VoiceTrailRecording.query
     )
   )
-  private var summary =
-    RecordingListSummary.Value()
+  private var summary = RecordingListSummary()
 
   var body: some View {
-    List(summary.rows) { row in
-      RecordingRow(row: row)
+    List(summary.rows) { recording in
+      Text(recording.title)
     }
     .safeAreaInset(edge: .bottom) {
-      Text(
-        summary.visibleCount.formatted()
-          + " of "
-          + summary.totalCount.formatted()
-          + " recordings"
-      )
+      Text(summary.visibleCount.formatted() + " recordings")
     }
-    .instantFetch(
-      $summary,
-      request
-    )
-  }
-
-  private var request:
-    RecordingListSummary {
-    RecordingListSummary(
-      viewer: .currentUser,
-      scope: scope,
-      searchText: searchText
-    )
   }
 }
 ```
 
-The request inputs exist because the query depends on them:
+The static declaration observes automatically. `InstantFetchRequest` owns the
+child-query load, subscription, and emission merge. The feature does not fetch,
+subscribe to, or merge those parts itself.
+
+A static composite request can capture a detail ID in the view initializer.
+That ID is fixed for the view's lifetime:
 
 ```swift
-struct RecordingListSummary:
-  InstantFetchRequest,
-  Hashable {
-  var viewer: InstantViewer
-  var scope: RecordingListScope
-  var searchText: String
+struct RecordingDetail: Sendable, Equatable {
+  var recording: VoiceTrailRecording?
+  var transcriptions: [VoiceTrailTranscription] = []
+}
 
-  struct Value:
-    Sendable,
-    Equatable {
-    var rows:
-      [RecordingListRow] = []
-    var visibleCount = 0
-    var totalCount = 0
-  }
+struct RecordingDetailRequest: InstantFetchKeyRequest {
+  var recordingID: InstantID<VoiceTrailRecording>
 
-  @InstantFetchBuilder<Value>
-  var body:
-    some InstantFetchPlan<Value> {
-    Query(\.rows) {
-      Recording.listRows(
-        viewer: viewer,
-        scope: scope,
-        searchText: searchText
+  var fetchRequest: InstantFetchRequest<RecordingDetail> {
+    InstantFetchRequest(
+      VoiceTrailRecording.query.where(
+        VoiceTrailRecording.identifier == recordingID.rawValue
+      ),
+      VoiceTrailTranscription.query.where(
+        VoiceTrailTranscription.recording == recordingID
       )
-    }
-
-    Count(\.visibleCount) {
-      Recording.query
-        .visible(to: viewer)
-        .where(scope.predicate)
-        .whereSearch(searchText)
-    }
-
-    Count(\.totalCount) {
-      Recording.query
-        .visible(to: viewer)
+    ) { recordings, transcriptions in
+      RecordingDetail(
+        recording: recordings.first,
+        transcriptions: transcriptions
+      )
     }
   }
 }
+
+@Fetch private var detail: RecordingDetail
+
+init(recordingID: InstantID<VoiceTrailRecording>) {
+  _detail = Fetch(
+    wrappedValue: RecordingDetail(),
+    RecordingDetailRequest(recordingID: recordingID)
+  )
+}
 ```
 
-Why each part exists:
+When the identity must change without constructing a new view identity, use a
+replacement API that exists in the current source. The existing composite
+wrapper exposes request `load`, `subscribe`, and `task` operations; there is no
+current general-purpose composite `.instantFetch` SwiftUI modifier. Do not
+substitute the aspirational `@InstantFetchBuilder`/`InstantFetchPlan` sketch for
+the compiling request API.
 
-- `viewer`, `scope`, and `searchText` are the key inputs.
-- `Hashable` lets the wrapper detect when the request changed.
-- `Value` is the one piece of wrapper-owned state.
-- `rows`, `visibleCount`, and `totalCount` are outputs.
-- The result builder lets the library derive load and observation.
-- The screen reads `summary.rows` and counts directly.
-
-What should not be here:
-
-- No explicit `subscribe` method in the screen.
-- No manual subscription merging in the screen.
-- No `queryOnceDecoded` in the screen.
-- No unexplained status counts unless the product has a real UI for
-  them.
-
-If a screen only needs rows, use `@FetchAll`. If it needs rows plus a
-coupled count, use `@Fetch` with a narrowly named request such as
-`RecordingListSummary`.
+If a screen only needs rows, use `@FetchAll`. If it needs rows plus a coupled
+count, use `@Fetch` with a narrowly named request such as
+`RecordingListSummaryRequest`.
 
 ## Cleaning Up Further
 
@@ -769,6 +830,16 @@ private func deleteAudioButtonTapped() {
 
 Queryable file metadata stays in the data model. Temporary URLs are an
 implementation detail of storage resolution.
+
+Entity delivery and media transfer are independent. Recording metadata, links,
+and transcript projection continue through ordinary observation and mutation
+delivery even when audio upload or download is slow, offline, or rejected.
+
+The media cache should move toward a bounded LIFO policy: retain and attempt the
+newest eligible media first, cap item and byte usage, evict the oldest eligible
+cache entries at the bound, persist retry metadata, and isolate each rejected
+media item or stream. A media failure must not block entity delivery or an
+unrelated media stream.
 
 ## Open Questions
 

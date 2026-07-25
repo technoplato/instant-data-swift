@@ -3,6 +3,10 @@
 This document is the portable goal contract for continuing the work from this
 repository.
 
+The canonical application/runtime ownership decision is
+`docs/adr/0001-application-sync-boundary.md`. When API sketches or examples
+conflict with that ADR, update them rather than creating a second sync surface.
+
 ## Product Goal
 
 Build **Instant Swift Data**: a Swift package that lets an app describe durable
@@ -53,6 +57,41 @@ examples do not satisfy the goal.
     assertions.
   - `instant-swift-data`: command-line interface.
   - `InstantSwiftDataBenchmarks`: Swift benchmark targets.
+
+## Application Boundary
+
+Applications declare schema, query and observation lifetime, dynamic inputs,
+mutations, auth, and sharing. Instant Swift Data owns local cache
+materialization, optimistic observation, persistent outbox/reconnect, delivery,
+and rejection isolation. Normal app features must not coordinate those runtime
+mechanics.
+
+Static `@FetchAll`, `@FetchOne`, and `@Fetch` declarations automatically observe
+local-first. They require no view task, manual load, or subscribe call. A
+dynamic fetch declares an explicit `nil` key so it does not briefly observe the
+broad entity query before its real input exists. A non-nil input replaces the
+wrapper-owned key; returning to `nil` cancels and resets it. A composite `@Fetch`
+request owns all child reads and observations without feature-managed
+fetch/subscribe/merge.
+
+Static declarations remain automatic when an async composition-root bootstrap
+finishes after wrapper initialization: their first value read attaches to the
+current client. Runtime bootstrap hydrates the in-memory store from SQLite once,
+and query declarations materialize from that store instead of reloading the
+whole persistence file.
+
+Do not add a public `queryLocal`. A local-only app, preview, test, or CLI injects
+a local-only `InstantSwiftDataClient` and uses the ordinary query,
+subscription, and mutation APIs. Direct local materialization is private
+runtime behavior. A live client's `queryOnce` remains freshness-sensitive and
+fails offline, while an explicitly injected local-only client serves it from
+the local runtime; cached and optimistic feature state comes from observation.
+
+Expose flush, delivery status, and cache/outbox inspection only to CLIs,
+diagnostics, tests, and explicit user-visible operations. Keep media transfer
+independent from entity delivery. The media cache should be bounded LIFO,
+prefer newest eligible items, evict the oldest eligible entries at its bounds,
+persist retry state, and isolate each rejected item or stream.
 
 ## Required Example Ports
 
@@ -207,28 +246,41 @@ or the full query emission.
 Strict one-shot queries should validate selected fields, filters, order fields,
 and include targets before materializing or caching invalid plans.
 
+Static wrapper declarations begin local-first observation automatically.
+`queryOnce` is not a cache-only read for a live client: it may reuse applicable
+local state while connected, but it intentionally fails offline rather than
+presenting stale data as fresh. An explicitly injected local-only client serves
+the same API from its local runtime by design.
+
 Dynamic queries are a first-class requirement:
 
 ```swift
-@Observable
-final class ReminderSearchModel {
-  var text = ""
-  var selectedList: ReminderList.ID?
+struct ReminderSearchView: View {
+  @State private var text = ""
+  @State private var selectedList: ReminderList.ID?
+  @FetchAll(nil) private var reminders: [Reminder]
 
-  @ObservationIgnored
-  @FetchAll var reminders: [Reminder] = []
+  var body: some View {
+    List(reminders) { reminder in
+      ReminderRow(reminder: reminder)
+    }
+    .instantFetch($reminders, remindersQuery)
+  }
 
-  func refresh() async throws {
-    try await $reminders.load(
-      Reminder.query
-        .where(\.title.localizedContains(text))
-        .where(optional: selectedList) { \.list.id == $0 }
-        .include(\.tags)
-        .order(\.dueDate, .ascending)
-    )
+  private var remindersQuery: InstantQuery<Reminder> {
+    Reminder.query
+      .where(\.title.localizedContains(text))
+      .where(optional: selectedList) { \.list.id == $0 }
+      .include(\.tags)
+      .order(\.dueDate, .ascending)
   }
 }
 ```
+
+The view owns the search/list inputs. The explicit `nil` key prevents an initial
+all-reminders observation; the wrapper owns cached emission, non-nil query
+replacement, live observation, cancellation/reset when the query becomes nil,
+and errors.
 
 The API should avoid SQL noise. Instant field projection may use `.select(...)`
 with declared attribute paths because it maps to Instant field selection, but do
@@ -353,6 +405,12 @@ SQLite should persist:
 - auth/session state.
 - local IDs.
 - storage/file metadata.
+
+Entity persistence/delivery and media byte transfer are independent lanes.
+Entity projection must remain available when media is offline or rejected. A
+bounded LIFO media cache retains and retries the newest eligible media first,
+evicts the oldest eligible cache entry at explicit item/byte bounds, and keeps
+failure state isolated per item or stream.
 
 The public API should feel like SQLiteData where useful, but the implementation
 should be Instant-shaped, not SQL-shaped.

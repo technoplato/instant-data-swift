@@ -206,6 +206,21 @@ actor InstantLiveStreamReaderState {
     }
   }
 
+  func recordServerFailure(
+    clientEventID: String,
+    message: String
+  ) -> InstantError {
+    let failure = InstantError(
+      code: .networkFailed,
+      operation: "subscribe to Instant stream",
+      serverEventID: clientEventID,
+      message: message,
+      recovery: "Discard the unavailable stream reader without reconnecting the shared live session."
+    )
+    pendingFailure = failure
+    return failure
+  }
+
   func receive(_ append: InstantLiveStreamAppend) -> InstantLiveStreamReaderDisposition {
     guard append.clientEventID == currentSubscriptionEventID else {
       return .ignored

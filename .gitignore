@@ -1,6 +1,7 @@
 .DS_Store
 .build/
 .build-macrotesting*/
+build/
 .swiftpm/
 validation/results/
 validation/ts-runner/node_modules/
@@ -9,3 +10,4 @@ validation/ts-runner/yarn.lock
 validation/ts-runner/.generated/
 validation/ts-runner/.generated-contract.*/
 Examples/RecipesV3/RecipesV3.local.xcconfig
+Examples/VoiceTrailV3/VoiceTrailV3.local.xcconfig

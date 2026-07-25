@@ -383,7 +383,7 @@ import InstantSwiftData
   @MainActor
   @available(iOS 17.0, macOS 14.0, *)
   struct RemindersV3CollectionScreen: View {
-    @FetchAll private var lists: [RemindersV3List]
+    @FetchAll(nil) private var lists: [RemindersV3List]
     @Dependency(\.defaultInstantSwiftData) private var db
     @Dependency(\.date.now) private var now
     @Dependency(\.uuid) private var uuid
@@ -403,6 +403,7 @@ import InstantSwiftData
       self.userID = userID
       self.filter = filter
       showCompleted = filter == .completed
+      _lists = FetchAll(RemindersV3List.visible(to: userID))
     }
 
     var body: some View {
@@ -463,7 +464,6 @@ import InstantSwiftData
           )
         }
       }
-      .task(id: userID) { await observeLists() }
       .onChange(of: rows.map(\.id)) { _, ids in
         InstantDiagnostics.shared.record(
           .info,
@@ -502,23 +502,6 @@ import InstantSwiftData
     private var canClearCompleted: Bool {
       allMatchingRows.contains { row in
         row.reminder.isCompleted && row.list.canWrite(as: userID)
-      }
-    }
-
-    private func observeLists() async {
-      do {
-        try await $lists.task(RemindersV3List.visible(to: userID))
-      } catch is CancellationError {
-      } catch {
-        message = String(describing: error)
-        InstantDiagnostics.shared.record(
-          error: error,
-          subsystem: "reminders-v3",
-          category: "query",
-          event: "collection-query.failed",
-          message: "A Reminders collection query failed.",
-          metadata: ["collection": filter.title]
-        )
       }
     }
 
@@ -591,7 +574,7 @@ import InstantSwiftData
   @MainActor
   @available(iOS 17.0, macOS 14.0, *)
   struct RemindersV3ReminderFormScreen: View {
-    @FetchAll private var lists: [RemindersV3List]
+    @FetchAll(nil) private var lists: [RemindersV3List]
     @Dependency(\.defaultInstantSwiftData) private var db
     @Dependency(\.date.now) private var now
     @Dependency(\.uuid) private var uuid
@@ -626,6 +609,7 @@ import InstantSwiftData
       priority = reminder?.priority
       listID = reminder?.list ?? initialListID
       tagText = reminder?.tags.map(\.title).joined(separator: ", ") ?? ""
+      _lists = FetchAll(RemindersV3List.visible(to: userID))
     }
 
     var body: some View {
@@ -668,17 +652,6 @@ import InstantSwiftData
                 || !canWriteSelectedList
             )
         }
-      }
-      .task(id: userID) { await observeLists() }
-    }
-
-    private func observeLists() async {
-      do {
-        try await $lists.task(RemindersV3List.visible(to: userID))
-      } catch is CancellationError {
-      } catch {
-        message = String(describing: error)
-        record(error: error, event: "reminder-form-query.failed")
       }
     }
 

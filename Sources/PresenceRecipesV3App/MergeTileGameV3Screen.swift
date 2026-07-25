@@ -426,15 +426,9 @@ public struct MergeTileGameV3Room: InstantRoomSchema {
       .onChange(of: $board.isLoading) { _, isLoading in
         initializeBoardIfNeeded(isLoading: isLoading)
       }
-      .task {
-        do {
-          try await $board.task()
-        } catch is CancellationError {
-        } catch let error as InstantError {
-          status = error.recoveryMessage
-        } catch {
-          status = String(describing: error)
-        }
+      .onChange(of: $board.loadError) { _, error in
+        guard let error else { return }
+        status = error.recoveryMessage
       }
       .navigationTitle("Merge Tile Game")
     }

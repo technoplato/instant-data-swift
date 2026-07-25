@@ -1,0 +1,4 @@
+interface:
+  display_name: "Instant Data Modeling"
+  short_description: "Model Instant schemas, queries, and fetching"
+  default_prompt: "Use $instant-data-modeling to design this Instant schema and fetching surface."

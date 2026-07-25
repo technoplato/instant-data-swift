@@ -336,7 +336,8 @@ extension VoiceTrailRecording {
     let shareQuery = VoiceTrailShare.query
       .include(VoiceTrailShare.owner)
       .include(VoiceTrailShare.memberships, viewerMembership)
-    var query = query
+    var query =
+      query
       .include(owner)
       .include(readers)
       .include(writers)
@@ -403,6 +404,55 @@ public struct VoiceTrailTranscription: Hashable, Codable, InstantEntityModel {
     id = InstantID(rawValue: snapshot.id)
     self.recordingID = InstantID(rawValue: recordingID)
     self.state = state
+  }
+}
+
+public struct VoiceTrailTranscriptUpdate: Hashable, Codable, Sendable {
+  public var text: String
+  public var isFinal: Bool
+
+  public init(text: String, isFinal: Bool = false) {
+    self.text = text
+    self.isFinal = isFinal
+  }
+
+  public init?(chunk: InstantStreamChunk) {
+    guard case let .object(payload) = chunk.payload,
+      case let .string(text) = payload["text"]
+    else {
+      return nil
+    }
+    self.init(
+      text: text,
+      isFinal: payload["isFinal"] == .bool(true)
+    )
+  }
+
+  public var payload: JSONValue {
+    .object([
+      "isFinal": .bool(isFinal),
+      "text": .string(text),
+    ])
+  }
+}
+
+public enum VoiceTrailTranscriptStream {
+  public static func clientID(
+    for recordingID: InstantID<VoiceTrailRecording>
+  ) -> String {
+    "voicetrail-transcript-\(recordingID.rawValue)"
+  }
+
+  public static func transcriptionID(
+    for recordingID: InstantID<VoiceTrailRecording>
+  ) -> InstantID<VoiceTrailTranscription> {
+    InstantID(rawValue: "transcription-\(recordingID.rawValue)")
+  }
+
+  public static func latestUpdate(
+    in chunks: [InstantStreamChunk]
+  ) -> VoiceTrailTranscriptUpdate? {
+    chunks.reversed().lazy.compactMap(VoiceTrailTranscriptUpdate.init(chunk:)).first
   }
 }
 

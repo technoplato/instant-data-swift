@@ -188,6 +188,17 @@ public actor InstantStore {
     return try prepare(transaction, attributes: attributes, indexes: indexes)
   }
 
+  func prepare(
+    _ transaction: InstantStoreTransaction,
+    applyingTo prepared: PreparedStoreMutation
+  ) throws -> PreparedStoreMutation {
+    try prepare(
+      transaction,
+      attributes: prepared.attributes,
+      indexes: prepared.indexes
+    )
+  }
+
   private func prepare(
     _ transaction: InstantStoreTransaction,
     attributes: AttributeStore,

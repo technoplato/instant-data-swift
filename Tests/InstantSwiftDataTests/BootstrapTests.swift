@@ -926,6 +926,7 @@ struct BootstrapTests {
     expectNoDifference(dynamic.previousTodoTitles, ["Open dynamic"])
     expectNoDifference(dynamic.todoTitles, ["Done dynamic"])
     expectNoDifference(dynamic.queryCount, 2)
+    expectNoDifference(dynamic.observationCount, 2)
 
     let fetchOneDynamic = try #require(
       result.evidence.first { $0.event == "fetch-one-dynamic-query" }?.details
@@ -934,6 +935,7 @@ struct BootstrapTests {
     expectNoDifference(fetchOneDynamic.todoTitles, ["Done single"])
     expectNoDifference(fetchOneDynamic.selectedTodoTitle, "Done single")
     expectNoDifference(fetchOneDynamic.queryCount, 2)
+    expectNoDifference(fetchOneDynamic.observationCount, 2)
 
     let fetchRequestDynamic = try #require(
       result.evidence.first { $0.event == "fetch-request-dynamic-query" }?.details
@@ -942,7 +944,7 @@ struct BootstrapTests {
     expectNoDifference(fetchRequestDynamic.todoTitles, ["Done request"])
     expectNoDifference(fetchRequestDynamic.todoCount, 2)
     expectNoDifference(fetchRequestDynamic.queryCount, 4)
-    expectNoDifference(fetchRequestDynamic.observationCount, 0)
+    expectNoDifference(fetchRequestDynamic.observationCount, 4)
 
     let nilQuery = try #require(
       result.evidence.first { $0.event == "fetch-all-nil-query" }?.details
@@ -976,6 +978,7 @@ struct BootstrapTests {
     )
     expectNoDifference(cachedPrior.todoTitles, ["Cached before error"])
     expectNoDifference(cachedPrior.loadErrorOperation, "query dynamic FetchAll")
+    expectNoDifference(cachedPrior.observationCount, 1)
 
     let cancellation = try #require(
       result.evidence.first { $0.event == "fetch-all-cancellation" }?.details
@@ -987,7 +990,7 @@ struct BootstrapTests {
       result.evidence.first { $0.event == "fetch-request-cancellation" }?.details
     )
     expectNoDifference(requestCancellation.queryCount, 0)
-    expectNoDifference(requestCancellation.observationCount, 1)
+    expectNoDifference(requestCancellation.observationCount, 2)
     expectNoDifference(requestCancellation.cancellationTerminated, true)
 
     let infiniteCancellation = try #require(

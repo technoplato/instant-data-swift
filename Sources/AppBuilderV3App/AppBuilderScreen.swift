@@ -9,7 +9,7 @@ import InstantSwiftData
   public struct AppBuilderV3Screen: View {
     @InstantAuth(AppBuilderV3User.self, providers: AppBuilderV3AuthProviders.self)
     private var auth
-    @FetchOne private var user: AppBuilderV3User?
+    @FetchOne(nil) private var user: AppBuilderV3User?
 
     public init() {}
 
@@ -47,8 +47,8 @@ import InstantSwiftData
 
   @MainActor
   public struct AppBuilderV3BuildsScreen: View {
-    @FetchAll private var builds: [AppBuilderV3Build]
-    @FetchAll private var files: [AppBuilderV3File]
+    @FetchAll(nil) private var builds: [AppBuilderV3Build]
+    @FetchAll(nil) private var files: [AppBuilderV3File]
     @State private var model: AppBuilderV3Model
 
     public let ownerID: InstantID<AppBuilderV3User>
@@ -59,6 +59,8 @@ import InstantSwiftData
     ) {
       self.ownerID = ownerID
       _model = State(initialValue: model)
+      _builds = FetchAll(AppBuilderV3Build.forOwner(ownerID))
+      _files = FetchAll(AppBuilderV3File.ordered)
     }
 
     public var body: some View {
@@ -107,20 +109,6 @@ import InstantSwiftData
         }
         .navigationTitle("App Builder")
       }
-      .task(id: ownerID) {
-        do {
-          try await $builds.task(AppBuilderV3Build.forOwner(ownerID))
-        } catch is CancellationError {
-        } catch {
-        }
-      }
-      .task {
-        do {
-          try await $files.task(AppBuilderV3File.ordered)
-        } catch is CancellationError {
-        } catch {
-        }
-      }
     }
 
     private func generateButtonTapped() async {
@@ -130,12 +118,13 @@ import InstantSwiftData
 
   @MainActor
   public struct AppBuilderV3BuildScreen: View {
-    @FetchOne private var build: AppBuilderV3Build?
+    @FetchOne(nil) private var build: AppBuilderV3Build?
 
     public let buildID: InstantID<AppBuilderV3Build>
 
     public init(buildID: InstantID<AppBuilderV3Build>) {
       self.buildID = buildID
+      _build = FetchOne(AppBuilderV3Build.byID(buildID))
     }
 
     public var body: some View {
@@ -159,13 +148,6 @@ import InstantSwiftData
         }
       }
       .navigationTitle(build?.title ?? "Build")
-      .task(id: buildID) {
-        do {
-          try await $build.task(AppBuilderV3Build.byID(buildID))
-        } catch is CancellationError {
-        } catch {
-        }
-      }
     }
   }
 #endif

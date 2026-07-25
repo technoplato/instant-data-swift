@@ -1,5 +1,9 @@
 # Recordings List Screen, V3
 
+> Design target: use current `Sources/` declarations and compiling fixtures in
+> `Tests/` as the authoritative inventory of usable symbols. Builder spellings
+> shown below may be aspirational unless confirmed in source.
+
 URI: `recordings.index` (`voicetrail://recordings`)
 
 SQLiteData's default shape is direct observation. Use a request object
@@ -39,15 +43,6 @@ import Dependencies
 import InstantSwiftData
 
 struct VoiceTrailRecordingsListScreen: View {
-  @InstantAuth(
-    VoiceTrailUser.self,
-    providers: VoiceTrailAuthProviders.self
-  )
-  private var auth
-
-  @InstantSyncStatus
-  private var sync
-
   /// `@FetchAll` owns list state.
   ///
   /// The screen reads `rows`, while the wrapper handles local cache,
@@ -86,7 +81,6 @@ struct VoiceTrailRecordingsListScreen: View {
   var body: some View {
     NavigationStack {
       VStack(spacing: 0) {
-        syncBanner
         scopePicker
         recordings
       }
@@ -120,22 +114,6 @@ struct VoiceTrailRecordingsListScreen: View {
       scope: scope,
       searchText: searchText
     )
-  }
-
-  private var syncBanner:
-    some View {
-    HStack {
-      Text(auth.user?.email ?? "Guest")
-      Spacer()
-      Label(
-        sync.summary,
-        systemImage: sync.systemImage
-      )
-    }
-    .font(.footnote)
-    .foregroundStyle(.secondary)
-    .padding(.horizontal)
-    .padding(.vertical, 8)
   }
 
   private var scopePicker:
@@ -240,117 +218,83 @@ and wrapper cancellation without changing this public screen syntax. See
 `validation/verify-voice-trail-recordings-list-live.sh` and the clean evidence
 at `/tmp/instant-data-swift-voice-trail-recordings-20260718T234408Z/evidence.json`.
 
+The list intentionally has no synchronization coordinator, outbox state, or
+manual flush. `@FetchAll` emits local cached and optimistic rows and owns live
+replacement. Delivery details remain in the library; explicit user-visible
+status belongs in Preferences or diagnostics.
+
 ## Composite Request Variant
 
 A request is justified when the wrapper should vend one composite value.
 This mirrors SQLiteData's `Facts` example: rows plus counts travel
-together, so the view reads one value.
+together, so the view reads one value. The compiling API today is
+`InstantFetchKeyRequest` plus `InstantFetchRequest<Value>`; the request is
+`Sendable` and is not inherently `Hashable`.
 
 ```swift
 import SwiftUI
 import InstantSwiftData
 
+struct RecordingListSummary: Sendable, Equatable {
+  var rows: [VoiceTrailRecording] = []
+  var visibleCount = 0
+}
+
+struct RecordingListSummaryRequest: InstantFetchKeyRequest {
+  var rowsQuery: InstantEntityQuery<VoiceTrailRecording>
+  var countQuery: InstantEntityQuery<VoiceTrailRecording>
+
+  var fetchRequest: InstantFetchRequest<RecordingListSummary> {
+    InstantFetchRequest(rowsQuery, countQuery) { rows, countedRows in
+      RecordingListSummary(
+        rows: rows,
+        visibleCount: countedRows.count
+      )
+    }
+  }
+}
+
 struct VoiceTrailRecordingsSummaryScreen: View {
-  @State
-  private var scope:
-    RecordingListScope = .mine
-
-  @State
-  private var searchText = ""
-
   @Fetch(
-    RecordingListSummary(
-      viewer: .currentUser,
-      scope: .mine,
-      searchText: ""
+    RecordingListSummaryRequest(
+      rowsQuery: VoiceTrailRecording.query.order(
+        VoiceTrailRecording.title
+      ),
+      countQuery: VoiceTrailRecording.query
     )
   )
-  private var summary =
-    RecordingListSummary.Value()
+  private var summary = RecordingListSummary()
 
   var body: some View {
-    List(summary.rows) { row in
-      RecordingRow(row: row)
+    List(summary.rows) { recording in
+      Text(recording.title)
     }
     .safeAreaInset(edge: .bottom) {
       Text(
-        summary.visibleCount
-          .formatted()
-          + " of "
-          + summary.totalCount
-            .formatted()
+        summary.visibleCount.formatted()
           + " recordings"
       )
       .font(.footnote)
       .foregroundStyle(.secondary)
     }
-    .instantFetch(
-      $summary,
-      request
-    )
-  }
-
-  private var request:
-    RecordingListSummary {
-    RecordingListSummary(
-      viewer: .currentUser,
-      scope: scope,
-      searchText: searchText
-    )
-  }
-}
-
-struct RecordingListSummary:
-  InstantFetchRequest,
-  Hashable {
-  var viewer: InstantViewer
-  var scope: RecordingListScope
-  var searchText: String
-
-  struct Value:
-    Sendable,
-    Equatable {
-    var rows:
-      [RecordingListRow] = []
-    var visibleCount = 0
-    var totalCount = 0
-  }
-
-  /// The request declares the values it needs.
-  ///
-  /// The library performs the initial load, observes live updates,
-  /// merges emissions, and cancels stale work when inputs change.
-  @InstantFetchBuilder<Value>
-  var body:
-    some InstantFetchPlan<Value> {
-    Query(\.rows) {
-      Recording.listRows(
-        viewer: viewer,
-        scope: scope,
-        searchText: searchText
-      )
-    }
-
-    Count(\.visibleCount) {
-      Recording.query
-        .visible(to: viewer)
-        .where(scope.predicate)
-        .whereSearch(searchText)
-    }
-
-    Count(\.totalCount) {
-      Recording.query
-        .visible(to: viewer)
-    }
   }
 }
 ```
+
+The static declaration observes automatically and the library owns the child
+subscriptions and merged emissions. The current package does not expose a
+general composite `.instantFetch` view modifier. If inputs must change during a
+single view identity, use a replacement operation that exists in the current
+`Fetch` source rather than copying an aspirational builder spelling.
 
 ## Row Projection
 
 A row projection is not an entity. The list needs a recording, the
 current viewer's membership, and a transcript preview. Decoding that
 shape into `Recording` would hide which fields and links were fetched.
+
+The following builder is a design target. Confirm the current implementation
+before using `@InstantProjectionBuilder`, `Project`, `Root`, or `Include`.
 
 ```swift
 import InstantSwiftData

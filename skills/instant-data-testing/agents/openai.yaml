@@ -1,0 +1,4 @@
+interface:
+  display_name: "Instant Data Testing"
+  short_description: "Test local-first and offline Instant behavior"
+  default_prompt: "Use $instant-data-testing to prove this Instant local-first behavior."

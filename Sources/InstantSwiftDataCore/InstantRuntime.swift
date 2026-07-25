@@ -28,6 +28,7 @@ public struct InstantRuntimeConfiguration: Sendable {
   public var platformAppClient: InstantPlatformAppClient
   public var appBuilderCodeGenerator: AppBuilderCodeGeneratorClient
   package var actorHopRecorder: InstantActorHopRecorder?
+  package var isLocalOnly: Bool
   var liveReconnectSleep: @Sendable (UInt64) async throws -> Void = { milliseconds in
     try await Task.sleep(nanoseconds: milliseconds * 1_000_000)
   }
@@ -188,6 +189,7 @@ public struct InstantRuntimeConfiguration: Sendable {
     self.platformAppClient = platformAppClient
     self.appBuilderCodeGenerator = appBuilderCodeGenerator
     self.actorHopRecorder = nil
+    self.isLocalOnly = false
   }
 
   public static func isValidAPIURI(_ url: URL) -> Bool {
@@ -992,6 +994,27 @@ private actor InstantRuntimeLiveSession {
       return await registration.reader.recordFileFetchFailure()
     }
     return .ignored
+  }
+
+  func retireRejectedStreamReader(
+    clientEventID: String?,
+    message: String
+  ) async -> Bool {
+    guard let clientEventID else { return false }
+    for key in registeredStreamReaders.keys.sorted() {
+      guard let registration = registeredStreamReaders[key],
+        await registration.reader.subscriptionEventID == clientEventID
+      else {
+        continue
+      }
+      _ = await registration.reader.recordServerFailure(
+        clientEventID: clientEventID,
+        message: message
+      )
+      registeredStreamReaders[key] = nil
+      return true
+    }
+    return false
   }
 
   func sendMutations(_ mutations: [InstantTransportMutation]) async throws {
@@ -2179,23 +2202,23 @@ public final class InstantRuntime: Sendable {
     _ mutations: [PendingMutation],
     over preparedServer: PreparedStoreMutation
   ) async throws -> PreparedStoreMutation {
-    var snapshot = preparedServer.snapshot
+    var preparedRebase = preparedServer
     for mutation in mutations.sorted(by: PendingMutation.creationOrder)
     where mutation.status == .pending {
       let operations = mutation.transaction.operations.filter(\.isRebasedLocalWrite)
       guard !operations.isEmpty else { continue }
-      let preparedLocal = try await store.prepare(
+      preparedRebase = try await store.prepare(
         InstantStoreTransaction(id: mutation.transaction.id, operations: operations),
-        applyingTo: snapshot
+        applyingTo: preparedRebase
       )
-      snapshot = preparedLocal.snapshot
     }
     var result = preparedServer.result
-    result.tripleCount = snapshot.triples.count
+    result.tripleCount = preparedRebase.indexes.tripleCount
     return PreparedStoreMutation(
       result: result,
-      snapshot: snapshot,
-      sequence: preparedServer.sequence
+      sequence: preparedServer.sequence,
+      attributes: preparedRebase.attributes,
+      indexes: preparedRebase.indexes
     )
   }
 
@@ -2273,16 +2296,10 @@ public final class InstantRuntime: Sendable {
       correlationID: plan.id
     )
     await enterOperationGate()
-    recordActorHop(.persistence)
-    let attributes: [InstantAttribute]
-    if let state = try? await persistence.loadState() {
-      recordActorHop(.store)
-      await store.replaceSnapshot(state.snapshot.store)
-      attributes = state.snapshot.store.attributes
-    } else {
-      recordActorHop(.store)
-      attributes = await store.snapshot().attributes
-    }
+    // Bootstrap hydrates the in-memory store once. Query declarations must not reread the whole
+    // SQLite file; subsequent local and remote mutations update this store directly.
+    recordActorHop(.store)
+    let attributes = await store.snapshot().attributes
     if TripleIndexes.validate(plan, attributes: AttributeStore(attributes: attributes)) != nil {
       await leaveOperationGate()
       InstantDiagnostics.shared.record(
@@ -2518,7 +2535,9 @@ public final class InstantRuntime: Sendable {
             recovery: issue.recovery
           )
         }
-        if try await persistedConnectionState() == .closed {
+        if !configuration.isLocalOnly,
+          try await persistedConnectionState() == .closed
+        {
           recordActorHop(.persistence)
           let cachedState = try await persistence.loadStateAndCachedQuery(cacheKey: plan.cacheKey)
           if let issue = TripleIndexes.validate(
@@ -3178,6 +3197,12 @@ public final class InstantRuntime: Sendable {
       {
         _ = try await failMutation(id: clientEventID, message: error.message)
         try await liveSession.refreshRegisteredQueries()
+        return
+      }
+      if await liveSession.retireRejectedStreamReader(
+        clientEventID: error.clientEventID?.nilIfEmpty,
+        message: error.message
+      ) {
         return
       }
       throw InstantError(

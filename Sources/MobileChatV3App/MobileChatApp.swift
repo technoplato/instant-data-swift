@@ -33,7 +33,7 @@ public struct MobileChatV3AppConfiguration: Hashable, Sendable {
   @MainActor
   public struct MobileChatV3Screen: View {
     @InstantAuth(AuthV3User.self, providers: AuthV3Providers.self) private var auth
-    @FetchAll private var messages: [MobileChatMessage]
+    @FetchAll(nil) private var messages: [MobileChatMessage]
     @Room private var room: InstantRoom<MobileChatRoom>
     @Presence private var peers: [MobileChatPresence]
     @Topic(MobileChatRoom.Topic.typing)
@@ -56,6 +56,11 @@ public struct MobileChatV3AppConfiguration: Hashable, Sendable {
     ) {
       self.channelID = channelID
       self.profile = profile
+      _messages = FetchAll(
+        MobileChatMessage.query
+          .where(MobileChatMessage.channelID == channelID)
+          .order(MobileChatMessage.timestampMilliseconds, .ascending)
+      )
     }
 
     public var body: some View {
@@ -74,7 +79,6 @@ public struct MobileChatV3AppConfiguration: Hashable, Sendable {
         Text("Reactions: \(reactions.messages.count)")
         Text(status)
       }
-      .instantFetch($messages, messagesQuery)
       .instantRoom(
         $room,
         InstantRoom<MobileChatRoom>(type: MobileChatRoom.roomType, id: channelID.rawValue)
@@ -82,12 +86,6 @@ public struct MobileChatV3AppConfiguration: Hashable, Sendable {
       .presence($peers, in: room, publishing: presence)
       .instantTopic($typing, in: room)
       .instantTopic($reactions, in: room)
-    }
-
-    private var messagesQuery: InstantQuery<MobileChatMessage> {
-      MobileChatMessage.query
-        .where(MobileChatMessage.channelID == channelID)
-        .order(MobileChatMessage.timestampMilliseconds, .ascending)
     }
 
     private var presence: MobileChatPresence {

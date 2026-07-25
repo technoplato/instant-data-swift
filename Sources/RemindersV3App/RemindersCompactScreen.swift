@@ -201,7 +201,7 @@ import InstantSwiftData
   @MainActor
   @available(tvOS 17.0, watchOS 10.0, *)
   private struct RemindersV3CompactListsScreen: View {
-    @FetchAll private var lists: [RemindersV3List]
+    @FetchAll(nil) private var lists: [RemindersV3List]
     @ConnectionStatus private var connectionStatus
     @Dependency(\.defaultInstantSwiftData) private var db
     @Dependency(\.date.now) private var now
@@ -213,6 +213,19 @@ import InstantSwiftData
     let accountTitle: String
     let canSignOut: Bool
     let onSignOut: () -> Void
+
+    init(
+      userID: InstantID<RemindersV3User>,
+      accountTitle: String,
+      canSignOut: Bool,
+      onSignOut: @escaping () -> Void
+    ) {
+      self.userID = userID
+      self.accountTitle = accountTitle
+      self.canSignOut = canSignOut
+      self.onSignOut = onSignOut
+      _lists = FetchAll(RemindersV3List.visible(to: userID))
+    }
 
     var body: some View {
       NavigationStack {
@@ -269,7 +282,6 @@ import InstantSwiftData
           }
         }
         .navigationTitle("Reminders")
-        .task(id: userID) { await observeLists() }
         .task { await observeConnection() }
       }
     }
@@ -290,16 +302,6 @@ import InstantSwiftData
       case .connecting: "arrow.triangle.2.circlepath.icloud"
       case .closed: "icloud.slash"
       case .errored: "exclamationmark.icloud"
-      }
-    }
-
-    private func observeLists() async {
-      do {
-        try await $lists.task(RemindersV3List.visible(to: userID))
-      } catch is CancellationError {
-      } catch {
-        message = String(describing: error)
-        record(error: error, event: "compact-lists-query.failed")
       }
     }
 
@@ -378,9 +380,9 @@ import InstantSwiftData
   @MainActor
   @available(tvOS 17.0, watchOS 10.0, *)
   private struct RemindersV3CompactSharingScreen: View {
-    @FetchOne private var list: RemindersV3List?
-    @FetchAll private var sharingUsers: [RemindersV3User]
-    @FetchAll private var memberSuggestions: [RemindersV3User]
+    @FetchOne(nil) private var list: RemindersV3List?
+    @FetchAll(nil) private var sharingUsers: [RemindersV3User]
+    @FetchAll(nil) private var memberSuggestions: [RemindersV3User]
     @Dependency(\.defaultInstantSwiftData) private var db
     @Dependency(\.date.now) private var now
     @Dependency(\.uuid) private var uuid
@@ -391,6 +393,15 @@ import InstantSwiftData
 
     let listID: InstantID<RemindersV3List>
     let userID: InstantID<RemindersV3User>
+
+    init(
+      listID: InstantID<RemindersV3List>,
+      userID: InstantID<RemindersV3User>
+    ) {
+      self.listID = listID
+      self.userID = userID
+      _list = FetchOne(RemindersV3List.byID(listID, visibleTo: userID))
+    }
 
     var body: some View {
       List {
@@ -406,7 +417,6 @@ import InstantSwiftData
         }
       }
       .navigationTitle("Sharing")
-      .task(id: listID) { await observeList() }
       .task(id: sharingUserIDs) { await observeSharingUsers() }
       .task(id: normalizedMemberEmail) { await observeMemberSuggestions() }
     }
@@ -527,15 +537,6 @@ import InstantSwiftData
       guard let memberTarget else { return false }
       return share.memberships.contains {
         $0.user == memberTarget.id && $0.revokedAt == nil
-      }
-    }
-
-    private func observeList() async {
-      do {
-        try await $list.task(RemindersV3List.byID(listID, visibleTo: userID))
-      } catch is CancellationError {
-      } catch {
-        message = "Could not load sharing: \(String(describing: error))"
       }
     }
 

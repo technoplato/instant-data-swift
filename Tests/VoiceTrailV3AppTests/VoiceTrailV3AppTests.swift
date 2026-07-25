@@ -3,6 +3,7 @@ import Foundation
 import InstantSwiftData
 import SwiftUI
 import Testing
+
 @testable import VoiceTrailV3App
 
 @Suite(.serialized)
@@ -13,9 +14,11 @@ struct VoiceTrailV3AppTests {
     let root: any View = VoiceTrailRootScreen(model: model)
     _ = root
 
-    expectNoDifference(VoiceTrailAppTab.allCases, [
-      .auth, .recordings, .capture, .playback, .preferences,
-    ])
+    expectNoDifference(
+      VoiceTrailAppTab.allCases,
+      [
+        .auth, .recordings, .capture, .playback, .preferences,
+      ])
     expectNoDifference(model.selectedTab, .recordings)
 
     let recordingID = InstantID<VoiceTrailRecording>(rawValue: "recording-app-route")
@@ -28,7 +31,11 @@ struct VoiceTrailV3AppTests {
   @Test
   func environmentConfigurationSelectsLocalAndLiveModes() {
     expectNoDifference(
-      VoiceTrailAppConfiguration.environment([:]),
+      VoiceTrailAppConfiguration.environment(
+        [:],
+        bundledAppID: nil,
+        bundledDemoMode: false
+      ),
       VoiceTrailAppConfiguration(
         appID: "voicetrail-v3-local",
         enablesLiveSync: false
@@ -44,6 +51,54 @@ struct VoiceTrailV3AppTests {
         persistenceURL: URL(fileURLWithPath: "/tmp/voicetrail-live.sqlite"),
         enablesLiveSync: true
       )
+    )
+    expectNoDifference(
+      VoiceTrailAppConfiguration.environment(
+        ["VOICE_TRAIL_DEMO_MODE": "1"],
+        bundledAppID: "ignored-live-app",
+        bundledDemoMode: false
+      ),
+      VoiceTrailAppConfiguration(
+        appID: "voicetrail-v3-watch-demo",
+        enablesLiveSync: false,
+        userIDOverride: VoiceTrailWatchDemo.userID,
+        refreshTokenOverride: VoiceTrailWatchDemo.refreshToken,
+        isDemoMode: true
+      )
+    )
+  }
+
+  @Test
+  func transcriptStreamUsesStableIdentityAndLatestValidSnapshot() throws {
+    let recordingID = InstantID<VoiceTrailRecording>(rawValue: "recording-watch")
+
+    expectNoDifference(
+      VoiceTrailTranscriptStream.clientID(for: recordingID),
+      "voicetrail-transcript-recording-watch"
+    )
+    expectNoDifference(
+      VoiceTrailTranscriptStream.transcriptionID(for: recordingID).rawValue,
+      "transcription-recording-watch"
+    )
+
+    let chunks = [
+      transcriptChunk(index: 0, payload: .string("not a transcript snapshot")),
+      transcriptChunk(
+        index: 1,
+        payload: VoiceTrailTranscriptUpdate(text: "Live words").payload
+      ),
+      transcriptChunk(
+        index: 2,
+        payload: VoiceTrailTranscriptUpdate(
+          text: "Live words on Watch",
+          isFinal: true
+        ).payload
+      ),
+    ]
+
+    expectNoDifference(
+      VoiceTrailTranscriptStream.latestUpdate(in: chunks),
+      VoiceTrailTranscriptUpdate(text: "Live words on Watch", isFinal: true)
     )
   }
 
@@ -148,4 +203,16 @@ struct VoiceTrailV3AppTests {
     expectNoDifference(storedAttachment.contents, "capture.png")
     expectNoDifference(storedAttachment.offsetMilliseconds, 2_500)
   }
+}
+
+private func transcriptChunk(index: Int64, payload: JSONValue) -> InstantStreamChunk {
+  InstantStreamChunk(
+    id: "chunk-\(index)",
+    appID: "app-watch",
+    streamID: "stream-watch",
+    index: index,
+    payload: payload,
+    userID: "user-watch",
+    createdAt: InstantTimestamp(milliseconds: index)
+  )
 }

@@ -707,13 +707,13 @@ public enum InstantSwiftDataPlatformAdapterValidation {
     share: InstantShareSnapshot
   ) throws -> ValidationEvidenceRow<PlatformAdapterValidationDetails> {
     #if canImport(SwiftUI)
-      @FetchAll var all: [PlatformAdapterTodo] = []
+      @FetchAll(nil) var all: [PlatformAdapterTodo] = []
       $all.binding.wrappedValue = [todo]
 
       @InfiniteQuery var infinite: [PlatformAdapterTodo] = []
       $infinite.binding.wrappedValue = [todo]
 
-      @FetchOne var one: PlatformAdapterTodo? = nil
+      @FetchOne(nil) var one: PlatformAdapterTodo? = nil
       $one.binding.wrappedValue = todo
 
       @Fetch var count = 0
@@ -908,11 +908,12 @@ public enum InstantSwiftDataPlatformAdapterValidation {
       isCompleted: true,
       createdAt: date(from: timestamp())
     )
-    let recorder = PlatformAdapterLifecycleRecorder(queryResults: [[open], [done]])
-    let client = lifecycleClient(recorder)
-    let fetch = FetchAll<PlatformAdapterTodo>(
-      PlatformAdapterTodo.query.order(PlatformAdapterTodo.createdAt)
+    let recorder = PlatformAdapterLifecycleRecorder(
+      queryResults: [[open], [done]],
+      observationEmitsInitialEmptySnapshot: false
     )
+    let client = lifecycleClient(recorder)
+    let fetch = FetchAll<PlatformAdapterTodo>(nil)
 
     try await fetch.load(
       PlatformAdapterTodo.query
@@ -920,6 +921,9 @@ public enum InstantSwiftDataPlatformAdapterValidation {
         .order(PlatformAdapterTodo.createdAt),
       using: client
     )
+    try await waitForLifecycle(operation: "wait for first dynamic FetchAll observation") {
+      await recorder.counts().observationCount == 1
+    }
     let previousTitles = fetch.wrappedValue.map(\.title)
 
     try await fetch.load(
@@ -928,6 +932,9 @@ public enum InstantSwiftDataPlatformAdapterValidation {
         .order(PlatformAdapterTodo.createdAt),
       using: client
     )
+    try await waitForLifecycle(operation: "wait for dynamic FetchAll observations") {
+      await recorder.counts().observationCount == 2
+    }
     let titles = fetch.wrappedValue.map(\.title)
     let counts = await recorder.counts()
     let plans = await recorder.queryPlans()
@@ -936,7 +943,7 @@ public enum InstantSwiftDataPlatformAdapterValidation {
       previousTitles == ["Open dynamic"],
       titles == ["Done dynamic"],
       counts.queryCount == 2,
-      counts.observationCount == 0,
+      counts.observationCount == 2,
       plans.map(\.filters) == [
         [.equals(field: "isCompleted", value: .bool(false))],
         [.equals(field: "isCompleted", value: .bool(true))],
@@ -989,11 +996,12 @@ public enum InstantSwiftDataPlatformAdapterValidation {
       isCompleted: true,
       createdAt: date(from: timestamp())
     )
-    let recorder = PlatformAdapterLifecycleRecorder(queryResults: [[open], [done]])
-    let client = lifecycleClient(recorder)
-    let fetch = FetchOne<PlatformAdapterTodo?>(
-      PlatformAdapterTodo.query.order(PlatformAdapterTodo.createdAt)
+    let recorder = PlatformAdapterLifecycleRecorder(
+      queryResults: [[open], [done]],
+      observationEmitsInitialEmptySnapshot: false
     )
+    let client = lifecycleClient(recorder)
+    let fetch = FetchOne<PlatformAdapterTodo?>(nil)
 
     try await fetch.load(
       PlatformAdapterTodo.query
@@ -1001,6 +1009,9 @@ public enum InstantSwiftDataPlatformAdapterValidation {
         .order(PlatformAdapterTodo.createdAt),
       using: client
     )
+    try await waitForLifecycle(operation: "wait for first dynamic FetchOne observation") {
+      await recorder.counts().observationCount == 1
+    }
     let previousTitle = fetch.wrappedValue?.title
 
     try await fetch.load(
@@ -1009,6 +1020,9 @@ public enum InstantSwiftDataPlatformAdapterValidation {
         .order(PlatformAdapterTodo.createdAt),
       using: client
     )
+    try await waitForLifecycle(operation: "wait for dynamic FetchOne observations") {
+      await recorder.counts().observationCount == 2
+    }
     let selectedTodo = fetch.wrappedValue
     let counts = await recorder.counts()
     let plans = await recorder.queryPlans()
@@ -1017,7 +1031,7 @@ public enum InstantSwiftDataPlatformAdapterValidation {
       previousTitle == "Open single",
       selectedTodo?.title == "Done single",
       counts.queryCount == 2,
-      counts.observationCount == 0,
+      counts.observationCount == 2,
       plans.map(\.filters) == [
         [.equals(field: "isCompleted", value: .bool(false))],
         [.equals(field: "isCompleted", value: .bool(true))],
@@ -1069,12 +1083,22 @@ public enum InstantSwiftDataPlatformAdapterValidation {
       isCompleted: true,
       createdAt: date(from: timestamp())
     )
-    let recorder = PlatformAdapterLifecycleRecorder(queryResults: [
-      [open],
-      [open, done],
-      [done],
-      [open, done],
-    ])
+    let recorder = PlatformAdapterLifecycleRecorder(
+      queryResultForPlan: { plan in
+        if plan.filters.contains(
+          .equals(field: "isCompleted", value: .bool(false))
+        ) {
+          return [open]
+        }
+        if plan.filters.contains(
+          .equals(field: "isCompleted", value: .bool(true))
+        ) {
+          return [done]
+        }
+        return [open, done]
+      },
+      observationEmitsInitialEmptySnapshot: false
+    )
     let client = lifecycleClient(recorder)
     let fetch = Fetch(wrappedValue: PlatformAdapterTodoFacts())
 
@@ -1087,6 +1111,9 @@ public enum InstantSwiftDataPlatformAdapterValidation {
       ),
       using: client
     )
+    try await waitForLifecycle(operation: "wait for first dynamic Fetch request observations") {
+      await recorder.counts().observationCount == 2
+    }
     let previousTitles = fetch.wrappedValue.todos.map(\.title)
 
     try await fetch.load(
@@ -1098,34 +1125,41 @@ public enum InstantSwiftDataPlatformAdapterValidation {
       ),
       using: client
     )
+    try await waitForLifecycle(operation: "wait for dynamic Fetch request observations") {
+      await recorder.counts().observationCount == 4
+    }
     let counts = await recorder.counts()
     let plans = await recorder.queryPlans()
     let titles = fetch.wrappedValue.todos.map(\.title)
+    let openPlanCount = plans.filter {
+      $0.filters == [.equals(field: "isCompleted", value: .bool(false))]
+        && $0.order == InstantQueryOrder("createdAt")
+    }.count
+    let donePlanCount = plans.filter {
+      $0.filters == [.equals(field: "isCompleted", value: .bool(true))]
+        && $0.order == InstantQueryOrder("createdAt")
+    }.count
+    let countPlanCount = plans.filter { $0.filters.isEmpty && $0.order == nil }.count
 
     guard
       previousTitles == ["Open request"],
       titles == ["Done request"],
       fetch.wrappedValue.count == 2,
       counts.queryCount == 4,
-      counts.observationCount == 0,
-      plans.map(\.filters) == [
-        [.equals(field: "isCompleted", value: .bool(false))],
-        [],
-        [.equals(field: "isCompleted", value: .bool(true))],
-        [],
-      ],
-      plans.map(\.order) == [
-        InstantQueryOrder("createdAt"),
-        nil,
-        InstantQueryOrder("createdAt"),
-        nil,
-      ],
+      counts.observationCount == 4,
+      openPlanCount == 1,
+      donePlanCount == 1,
+      countPlanCount == 2,
       fetch.loadError == nil,
       fetch.isLoading == false
     else {
       throw validationFailure(
         operation: "validate platform adapter dynamic Fetch request",
-        message: "Expected dynamic @Fetch request loads to replace composite request values."
+        message:
+          "Expected dynamic @Fetch request loads to replace composite request values. "
+          + "previous=\(previousTitles), current=\(titles), count=\(fetch.wrappedValue.count), "
+          + "queries=\(counts.queryCount), observations=\(counts.observationCount), "
+          + "filters=\(plans.map(\.filters)), order=\(plans.map(\.order))."
       )
     }
 
@@ -1346,18 +1380,20 @@ public enum InstantSwiftDataPlatformAdapterValidation {
     )
     let recorder = PlatformAdapterLifecycleRecorder(
       queryResults: [[cached]],
-      fallbackError: error
+      fallbackError: error,
+      observationEmitsInitialEmptySnapshot: false
     )
     let client = lifecycleClient(recorder)
-    let fetch = FetchAll<PlatformAdapterTodo>(
-      PlatformAdapterTodo.query.order(PlatformAdapterTodo.createdAt)
-    )
+    let fetch = FetchAll<PlatformAdapterTodo>(nil)
 
     try await fetch.load(
       PlatformAdapterTodo.query.order(PlatformAdapterTodo.createdAt),
       using: client
     )
     let previousTitles = fetch.wrappedValue.map(\.title)
+    try await waitForLifecycle(operation: "wait for cached FetchAll observation") {
+      await recorder.counts().observationCount == 1
+    }
 
     do {
       try await fetch.load(
@@ -1380,7 +1416,7 @@ public enum InstantSwiftDataPlatformAdapterValidation {
       previousTitles == ["Cached before error"],
       titles == previousTitles,
       counts.queryCount == 2,
-      counts.observationCount == 0,
+      counts.observationCount == 1,
       fetch.loadError?.operation == "query dynamic FetchAll",
       fetch.isLoading == false
     else {
@@ -1500,7 +1536,7 @@ public enum InstantSwiftDataPlatformAdapterValidation {
       operation: "wait for platform adapter Fetch request observation"
     ) {
       let counts = await recorder.counts()
-      return counts.observationCount == 1
+      return counts.observationCount == 2
     }
 
     task.cancel()
@@ -1517,14 +1553,14 @@ public enum InstantSwiftDataPlatformAdapterValidation {
       operation: "wait for platform adapter Fetch request cancellation cleanup"
     ) {
       let counts = await recorder.counts()
-      return counts.terminationCount >= 1
+      return counts.terminationCount >= 2
     }
 
     let counts = await recorder.counts()
-    let cancellationTerminated = counts.terminationCount >= 1
+    let cancellationTerminated = counts.terminationCount >= 2
     guard
       counts.queryCount == 0,
-      counts.observationCount == 1,
+      counts.observationCount == 2,
       cancellationTerminated,
       fetch.loadError == nil,
       fetch.isLoading == false
@@ -2430,7 +2466,10 @@ public enum InstantSwiftDataPlatformAdapterValidation {
 
 private actor PlatformAdapterLifecycleRecorder {
   private var queryResults: [[InstantEntitySnapshot]]
+  private let queryResultForPlan:
+    (@Sendable (InstantQueryPlan) throws -> [InstantEntitySnapshot])?
   private var fallbackError: InstantError?
+  private let observationEmitsInitialEmptySnapshot: Bool
   private var queryCount = 0
   private var observationCount = 0
   private var terminationCount = 0
@@ -2438,15 +2477,23 @@ private actor PlatformAdapterLifecycleRecorder {
 
   init(
     queryResults: [[InstantEntitySnapshot]] = [],
-    fallbackError: InstantError? = nil
+    queryResultForPlan:
+      (@Sendable (InstantQueryPlan) throws -> [InstantEntitySnapshot])? = nil,
+    fallbackError: InstantError? = nil,
+    observationEmitsInitialEmptySnapshot: Bool = true
   ) {
     self.queryResults = queryResults
+    self.queryResultForPlan = queryResultForPlan
     self.fallbackError = fallbackError
+    self.observationEmitsInitialEmptySnapshot = observationEmitsInitialEmptySnapshot
   }
 
   func query(plan: InstantQueryPlan) throws -> [InstantEntitySnapshot] {
     queryCount += 1
     plans.append(plan)
+    if let queryResultForPlan {
+      return try queryResultForPlan(plan)
+    }
     if !queryResults.isEmpty {
       return queryResults.removeFirst()
     }
@@ -2459,7 +2506,9 @@ private actor PlatformAdapterLifecycleRecorder {
   func observe(plan: InstantQueryPlan) -> AsyncStream<InstantQueryEmission> {
     observationCount += 1
     return AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
-      continuation.yield(InstantQueryEmission(queryID: plan.id, sequence: 0, values: []))
+      if observationEmitsInitialEmptySnapshot {
+        continuation.yield(InstantQueryEmission(queryID: plan.id, sequence: 0, values: []))
+      }
       continuation.onTermination = { @Sendable _ in
         Task {
           await self.recordTermination()
@@ -2852,40 +2901,9 @@ private struct PlatformAdapterTodoFactsRequest: InstantFetchKeyRequest {
   var rowsQuery: InstantEntityQuery<PlatformAdapterTodo>
   var countQuery: InstantEntityQuery<PlatformAdapterTodo>
 
-  func fetch(using client: InstantSwiftDataClient) async throws -> PlatformAdapterTodoFacts {
-    let todos = try await client.query(rowsQuery)
-    let count = try await client.query(countQuery).count
-    return PlatformAdapterTodoFacts(todos: todos, count: count)
-  }
-
-  func subscribe(
-    using client: InstantSwiftDataClient
-  ) async throws -> FetchSubscription<PlatformAdapterTodoFacts> {
-    let subscription = await client.subscribe(rowsQuery)
-    let stream = AsyncThrowingStream<PlatformAdapterTodoFacts, Error>.makeStream(
-      bufferingPolicy: .bufferingNewest(1)
-    )
-    let task = Task {
-      do {
-        for try await todos in subscription {
-          try Task.checkCancellation()
-          stream.continuation.yield(
-            PlatformAdapterTodoFacts(todos: todos, count: todos.count)
-          )
-        }
-        stream.continuation.finish()
-      } catch {
-        stream.continuation.finish(throwing: error)
-      }
-    }
-    stream.continuation.onTermination = { @Sendable _ in
-      task.cancel()
-      subscription.cancel()
-    }
-    return FetchSubscription<PlatformAdapterTodoFacts>(stream: stream.stream) {
-      task.cancel()
-      subscription.cancel()
-      stream.continuation.finish()
+  var fetchRequest: InstantFetchRequest<PlatformAdapterTodoFacts> {
+    InstantFetchRequest(rowsQuery, countQuery) { todos, countedTodos in
+      PlatformAdapterTodoFacts(todos: todos, count: countedTodos.count)
     }
   }
 }

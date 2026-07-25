@@ -49,7 +49,7 @@ import InstantSwiftData
 
   @MainActor
   public struct CloudKitDemoV3CountersScreen: View {
-    @FetchAll private var counters: [CloudKitDemoV3Counter]
+    @FetchAll(nil) private var counters: [CloudKitDemoV3Counter]
     @Shares private var shares: [InstantShareSnapshot]
     @Dependency(\.date.now) private var now
     @Dependency(\.defaultInstantSwiftData) private var db
@@ -62,6 +62,7 @@ import InstantSwiftData
 
     public init(userID: InstantID<CloudKitDemoV3User>) {
       self.userID = userID
+      _counters = FetchAll(CloudKitDemoV3Counter.visible(to: userID))
     }
 
     public var body: some View {
@@ -94,13 +95,9 @@ import InstantSwiftData
         }
         .navigationTitle("Shared Counters")
       }
-      .task(id: userID) {
+      .task {
         do {
-          async let loadCounters: Void = $counters.task(
-            CloudKitDemoV3Counter.visible(to: userID)
-          )
-          async let loadShares: Void = $shares.task(using: db)
-          _ = try await (loadCounters, loadShares)
+          try await $shares.task(using: db)
         } catch is CancellationError {
         } catch {
           message = String(describing: error)

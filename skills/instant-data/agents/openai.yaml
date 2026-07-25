@@ -1,0 +1,4 @@
+interface:
+  display_name: "Instant Data"
+  short_description: "Route Instant Swift Data repository work"
+  default_prompt: "Use $instant-data to make this Instant Swift Data change with the canonical application boundary."

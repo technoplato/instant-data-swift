@@ -63,7 +63,7 @@ import InstantSwiftData
     @InstantAuth(VoiceTrailUser.self, providers: VoiceTrailAuthProviders.self)
     private var auth
 
-    @FetchAll private var recordings: [VoiceTrailRecording]
+    @FetchAll(nil) private var recordings: [VoiceTrailRecording]
     @State private var searchText = ""
     @State private var scope: VoiceTrailRecordingScope = .mine
 

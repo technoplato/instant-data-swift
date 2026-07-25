@@ -5,6 +5,9 @@ This plan is reconciled with
 project. When the two documents differ, the goals document wins and this plan
 should be updated rather than treated as a competing source of truth.
 
+The accepted application/runtime ownership boundary is
+`docs/adr/0001-application-sync-boundary.md`.
+
 The active, version-gated execution sequence for the V3 public syntax and real
 Swift/TypeScript synchronization is `docs/v3-e2e-port-plan.md`. This document
 remains the full feature inventory and progress record.
@@ -45,10 +48,24 @@ Resolved decisions from the later goal pass:
 - Swift concurrency compliance is a first-class implementation constraint. The
   detailed contract lives in `docs/swift-concurrency-guidance.md`; the core
   package must stay clean under Swift 6 strict concurrency.
+- Apps own schema, observation lifetime and dynamic inputs, mutations, auth,
+  and sharing. The library owns cache, optimistic observation, persistent
+  outbox/reconnect, delivery, and per-operation rejection isolation.
+- Static fetch declarations auto-observe local-first. Dynamic keys replace the
+  wrapper-owned observation; composite fetch requests do not expose manual
+  fetch/subscribe/merge work to features.
+- Public `queryLocal` is rejected. Local-only behavior is selected through an
+  injected local-only client that supports ordinary query and mutation APIs.
+- Flush and delivery status are restricted to CLI, diagnostics, tests, and
+  explicit user-visible operations.
+- Entity delivery is independent from media transfer; media caching moves
+  toward bounded LIFO with per-item rejection isolation.
 
 ## Upstream Inventory
 
-Fetched on 2026-06-12.
+Vendored on 2026-06-12. Canonical query/observation semantics were rechecked on
+2026-07-25 against Instant `origin/main` `a57ca801` and SQLiteData `origin/main`
+`63a2ff6`, both dated 2026-07-24.
 
 | Source | Local path | Revision inspected | What to mine |
 | --- | --- | --- | --- |
@@ -56,6 +73,11 @@ Fetched on 2026-06-12.
 | SQLiteData | `upstream/sqlite-data` | `0c79d7a` | SwiftData-like API shape, `@FetchAll`/`@FetchOne`/`@Fetch`, dependency bootstrap, migration docs, observation ergonomics, example ports |
 | Swift sharing Instant | `upstream/sharing-instant` | `d78601a` | Prior Swift Instant behavior: reactor, triple store, offline tests, pending flush order, schema codegen, presence/topics/storage |
 | Instant iOS SDK draft | `upstream/instant-ios-sdk` | `304677c` | Core Swift client, WebSocket, local storage, auth, storage, query manager, local-first manager, macros |
+
+At the current revisions, Instant still separates cached-first
+`subscribeQuery` from strict offline-failing `queryOnce`, and SQLiteData still
+backs normal `@FetchAll` CRUD with the database reader while reserving
+`SyncEngine` interaction for explicit sharing operations.
 
 `upstream/README.md` is the submodule map. The transferred plan referenced a
 local-only `swift-sharing-instant-ship` checkout and a Sigil bridge path; neither
@@ -132,6 +154,10 @@ coverage in both directions, but it is not yet an always-on runtime event pump.
 ### Querying
 
 - Live subscriptions equivalent to `subscribeQuery`/React `useQuery`.
+- Static `@FetchAll`, `@FetchOne`, and `@Fetch` declarations start local-first
+  observation without a view task or manual load.
+- Composite fetch declarations own their child reads, subscriptions, and merge;
+  features only declare the composite request and any dynamic inputs.
 - One-shot strict queries equivalent to `queryOnce`, exposed through
   `InstantSwiftDataClient.queryOnce(_:)` for raw snapshots/emissions and typed
   `queryOnceDecoded(_:)` for decoded values plus pagination `pageInfo`.
@@ -175,6 +201,8 @@ coverage in both directions, but it is not yet an always-on runtime event pump.
   include targets, unsupported operators, and illegal nested pagination before
   the network call.
 - Hashing/caching of queries so cached results can be restored consistently.
+- No public `queryLocal`; local-only clients use the same ordinary query and
+  observation surface as live clients. Keep any cache materializer private.
 
 ### Mutations
 
@@ -344,6 +372,11 @@ reconnect rejoin remain future work.
   available.
 - File permissions generation for `$files`.
 - Storage references that can be embedded in app entities.
+- Entity observation and mutation delivery stay independent from media byte
+  transfer. A failed media item cannot block graph synchronization.
+- Move media caching toward explicit item/byte bounds and LIFO preference for
+  the newest eligible item, with oldest-eligible eviction and per-item retry or
+  rejection isolation.
 
 Current local progress: `InstantRuntime` can copy a local file into the CLI
 cache directory, persist `InstantStoredFile` metadata in SQLite scoped by app id,

@@ -1089,21 +1089,26 @@ private actor InstantLocalLiveSession {
   }
 }
 
-private actor InstantURLSessionLiveWebSocket {
+actor InstantURLSessionLiveWebSocket {
   private static let maximumMessageSize = 16 * 1_024 * 1_024
-
-  private let urlSession: URLSession
-  private let task: URLSessionWebSocketTask
-  private var isClosed = false
-
-  init(url: URL) throws {
+  private static let sharedURLSession: URLSession = {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.timeoutIntervalForRequest = 10
     // A WebSocket is a long-lived resource. A short resource timeout closes an
     // otherwise healthy, idle room and silently drops presence/topic updates.
     configuration.timeoutIntervalForResource = 7 * 24 * 60 * 60
-    self.urlSession = URLSession(configuration: configuration)
-    let task = urlSession.webSocketTask(with: url)
+    return URLSession(configuration: configuration)
+  }()
+
+  private let task: URLSessionWebSocketTask
+  private var isClosed = false
+
+  var urlSessionIdentity: ObjectIdentifier {
+    ObjectIdentifier(Self.sharedURLSession)
+  }
+
+  init(url: URL) throws {
+    let task = Self.sharedURLSession.webSocketTask(with: url)
     task.maximumMessageSize = Self.maximumMessageSize
     self.task = task
     task.resume()
@@ -1224,6 +1229,7 @@ private actor InstantURLSessionLiveWebSocket {
   }
 
   func close() async {
+    guard !isClosed else { return }
     isClosed = true
     InstantDiagnostics.shared.record(
       .debug,
@@ -1232,7 +1238,6 @@ private actor InstantURLSessionLiveWebSocket {
       event: "urlsession-websocket.closing",
       message: "Closing the URLSession WebSocket task."
     )
-    task.cancel(with: .normalClosure, reason: nil)
-    urlSession.invalidateAndCancel()
+    task.cancel()
   }
 }

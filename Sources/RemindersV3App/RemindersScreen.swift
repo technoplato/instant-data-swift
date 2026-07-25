@@ -10,7 +10,7 @@ import InstantSwiftData
   public struct RemindersV3Screen: View {
     @InstantAuth(RemindersV3User.self, providers: RemindersV3AuthProviders.self)
     private var auth
-    @FetchOne private var accountUser: RemindersV3User?
+    @FetchOne(nil) private var accountUser: RemindersV3User?
     @State private var message = "Sign in to sync and share lists"
     @State private var showsAccount = false
     @FocusState private var focusedAuthField: AuthField?
@@ -404,7 +404,7 @@ import InstantSwiftData
   @MainActor
   @available(iOS 17.0, macOS 14.0, *)
   public struct RemindersV3ListsScreen: View {
-    @FetchAll private var lists: [RemindersV3List]
+    @FetchAll(nil) private var lists: [RemindersV3List]
     @Dependency(\.defaultInstantSwiftData) private var db
     @Dependency(\.date.now) private var now
     @Dependency(\.uuid) private var uuid
@@ -428,6 +428,7 @@ import InstantSwiftData
     ) {
       self.userID = userID
       self.onAccount = onAccount
+      _lists = FetchAll(RemindersV3List.visible(to: userID))
     }
 
     public var body: some View {
@@ -539,9 +540,6 @@ import InstantSwiftData
           message: "Reminders search input changed.",
           metadata: ["characterCount": String(newValue.count)]
         )
-      }
-      .task(id: userID) {
-        await observeLists()
       }
       .onChange(of: lists.map(\.id)) { _, ids in
         recordListEmission(ids)
@@ -766,50 +764,6 @@ import InstantSwiftData
       )
     }
 
-    private func recordListsQueryFailure(_ error: Error) {
-      InstantDiagnostics.shared.record(
-        error: error,
-        subsystem: "reminders-v3",
-        category: "query",
-        event: "lists-query.failed",
-        message: "Visible-list observation failed.",
-        metadata: ["userID": userID.rawValue]
-      )
-    }
-
-    private func observeLists() async {
-      InstantDiagnostics.shared.record(
-        .info,
-        subsystem: "reminders-v3",
-        category: "query",
-        event: "lists-query.started",
-        message: "Started observing visible reminder lists.",
-        metadata: ["userID": userID.rawValue]
-      )
-      do {
-        try await $lists.task(RemindersV3List.visible(to: userID))
-        InstantDiagnostics.shared.record(
-          .debug,
-          subsystem: "reminders-v3",
-          category: "query",
-          event: "lists-query.finished",
-          message: "Visible-list observation finished.",
-          metadata: ["listCount": String(lists.count)]
-        )
-      } catch is CancellationError {
-        InstantDiagnostics.shared.record(
-          .debug,
-          subsystem: "reminders-v3",
-          category: "query",
-          event: "lists-query.cancelled",
-          message: "Visible-list observation was cancelled."
-        )
-      } catch {
-        message = String(describing: error)
-        recordListsQueryFailure(error)
-      }
-    }
-
     private func recordListsScreenDisappeared() {
       InstantDiagnostics.shared.record(
         .debug,
@@ -864,10 +818,10 @@ import InstantSwiftData
   @MainActor
   @available(iOS 17.0, macOS 14.0, *)
   public struct RemindersV3ListScreen: View {
-    @FetchOne private var list: RemindersV3List?
-    @FetchAll private var reminders: [RemindersV3Reminder]
-    @FetchAll private var sharingUsers: [RemindersV3User]
-    @FetchAll private var memberSuggestions: [RemindersV3User]
+    @FetchOne(nil) private var list: RemindersV3List?
+    @FetchAll(nil) private var reminders: [RemindersV3Reminder]
+    @FetchAll(nil) private var sharingUsers: [RemindersV3User]
+    @FetchAll(nil) private var memberSuggestions: [RemindersV3User]
     @Dependency(\.defaultInstantSwiftData) private var db
     @Dependency(\.date.now) private var now
     @Dependency(\.uuid) private var uuid
@@ -897,6 +851,8 @@ import InstantSwiftData
     ) {
       self.listID = listID
       self.userID = userID
+      _list = FetchOne(RemindersV3List.byID(listID, visibleTo: userID))
+      _reminders = FetchAll(RemindersV3Reminder.forList(listID, includeCompleted: true))
     }
 
     public var body: some View {
@@ -970,9 +926,6 @@ import InstantSwiftData
       }
       .onChange(of: newReminderTitle) { oldValue, newValue in
         recordReminderInput(oldValue: oldValue, newValue: newValue)
-      }
-      .task(id: listID) {
-        await observeListDetail()
       }
       .task(id: list?.coverFileID) {
         await loadCoverImage(fileID: list?.coverFileID)
@@ -1179,45 +1132,6 @@ import InstantSwiftData
       } catch is CancellationError {
       } catch {
         message = "Could not search people: \(String(describing: error))"
-      }
-    }
-
-    private func observeListDetail() async {
-      InstantDiagnostics.shared.record(
-        .info,
-        subsystem: "reminders-v3",
-        category: "query",
-        event: "list-detail-query.started",
-        message: "Started observing a reminder list and its reminders.",
-        metadata: ["listID": listID.rawValue]
-      )
-      do {
-        async let loadList: Void = $list.task(
-          RemindersV3List.byID(listID, visibleTo: userID)
-        )
-        async let loadReminders: Void = $reminders.task(
-          RemindersV3Reminder.forList(listID, includeCompleted: true)
-        )
-        _ = try await (loadList, loadReminders)
-      } catch is CancellationError {
-        InstantDiagnostics.shared.record(
-          .debug,
-          subsystem: "reminders-v3",
-          category: "query",
-          event: "list-detail-query.cancelled",
-          message: "List-detail observations were cancelled.",
-          metadata: ["listID": listID.rawValue]
-        )
-      } catch {
-        message = String(describing: error)
-        InstantDiagnostics.shared.record(
-          error: error,
-          subsystem: "reminders-v3",
-          category: "query",
-          event: "list-detail-query.failed",
-          message: "List-detail observations failed.",
-          metadata: ["listID": listID.rawValue]
-        )
       }
     }
 
