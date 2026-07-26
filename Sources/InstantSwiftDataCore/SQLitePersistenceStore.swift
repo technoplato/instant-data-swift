@@ -28,6 +28,28 @@ public struct InstantPersistenceState: Hashable, Sendable {
   }
 }
 
+enum InstantPersistenceStateSource: Equatable, Sendable {
+  case memory
+  case sqlite
+}
+
+struct InstantPersistenceStateLoad: Sendable {
+  var state: InstantPersistenceState
+  var source: InstantPersistenceStateSource
+}
+
+private struct StoredTripleKey: Hashable {
+  var entityID: String
+  var attributeID: String
+  var value: InstantValue
+
+  init(_ triple: InstantTriple) {
+    self.entityID = triple.entityID
+    self.attributeID = triple.attributeID
+    self.value = triple.value
+  }
+}
+
 public struct InstantQueryCachePruningPolicy: Hashable, Codable, Sendable {
   public var maxAgeMilliseconds: Int64?
   public var maxEntries: Int?
@@ -65,15 +87,26 @@ public struct InstantQueryCachePruningResult: Hashable, Codable, Sendable {
 
 public actor SQLitePersistenceStore {
   private let fileURL: URL
+  private let startupTrace: InstantStartupTrace
   private let connection: SQLiteConnection
   private let encoder: JSONEncoder
   private let decoder: JSONDecoder
+  private var cachedState: InstantPersistenceState?
+  private var didTraceInitialStateLoad = false
 
-  public init(fileURL: URL) throws {
+  public init(
+    fileURL: URL,
+    startupTrace: InstantStartupTrace = .disabled
+  ) throws {
     self.fileURL = fileURL
+    self.startupTrace = startupTrace
     self.encoder = JSONEncoder()
     self.encoder.outputFormatting = [.sortedKeys]
     self.decoder = JSONDecoder()
+    let stopwatch = startupTrace.started(
+      "sqlite.open",
+      metadata: ["file": fileURL.lastPathComponent]
+    )
     InstantDiagnostics.shared.record(
       .debug,
       subsystem: "instant-swift-data-core",
@@ -84,6 +117,11 @@ public actor SQLitePersistenceStore {
     )
     do {
       self.connection = SQLiteConnection(try Self.openRawConnection(fileURL: fileURL))
+      startupTrace.completed(
+        "sqlite.open",
+        since: stopwatch,
+        metadata: ["file": fileURL.lastPathComponent]
+      )
       InstantDiagnostics.shared.record(
         .notice,
         subsystem: "instant-swift-data-core",
@@ -93,6 +131,12 @@ public actor SQLitePersistenceStore {
         metadata: ["path": fileURL.path]
       )
     } catch {
+      startupTrace.failed(
+        "sqlite.open",
+        error: error,
+        since: stopwatch,
+        metadata: ["file": fileURL.lastPathComponent]
+      )
       InstantDiagnostics.shared.record(
         error: error,
         subsystem: "instant-swift-data-core",
@@ -188,6 +232,11 @@ public actor SQLitePersistenceStore {
   }
 
   public func bootstrap() throws {
+    let stopwatch = startupTrace.started(
+      "sqlite.schema",
+      metadata: ["file": fileURL.lastPathComponent]
+    )
+    do {
     try Self.securePersistenceFiles(at: fileURL)
     InstantDiagnostics.shared.record(
       .debug,
@@ -197,6 +246,20 @@ public actor SQLitePersistenceStore {
       message: "Bootstrapping the Instant SQLite schema.",
       metadata: ["path": fileURL.path]
     )
+    startupTrace.completed(
+      "sqlite.schema",
+      since: stopwatch,
+      metadata: ["file": fileURL.lastPathComponent]
+    )
+    } catch {
+      startupTrace.failed(
+        "sqlite.schema",
+        error: error,
+        since: stopwatch,
+        metadata: ["file": fileURL.lastPathComponent]
+      )
+      throw error
+    }
     try withSQLiteBusyRetry {
       try execute("PRAGMA journal_mode = WAL")
     }
@@ -585,15 +648,38 @@ public actor SQLitePersistenceStore {
   }
 
   public func loadState() throws -> InstantPersistenceState {
+    try loadStateWithSource().state
+  }
+
+  func loadStateWithSource() throws -> InstantPersistenceStateLoad {
+    let startupStopwatch = didTraceInitialStateLoad
+      ? nil
+      : startupTrace.started(
+        "sqlite.state-load",
+        metadata: ["file": fileURL.lastPathComponent]
+      )
     let startedAt = Date()
     do {
-      let state = try readTransaction {
-        try InstantPersistenceState(
-          snapshot: loadSnapshotWithoutTransaction(),
-          storeRevision: loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey),
-          outboxRevision: loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+      let loaded = try readTransaction {
+        let storeRevision = try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
+        let outboxRevision = try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+        if let cachedState,
+          cachedState.storeRevision == storeRevision,
+          cachedState.outboxRevision == outboxRevision
+        {
+          return InstantPersistenceStateLoad(state: cachedState, source: .memory)
+        }
+        return InstantPersistenceStateLoad(
+          state: try InstantPersistenceState(
+            snapshot: loadSnapshotWithoutTransaction(),
+            storeRevision: storeRevision,
+            outboxRevision: outboxRevision
+          ),
+          source: .sqlite
         )
       }
+      let state = loaded.state
+      cachedState = state
       InstantDiagnostics.shared.record(
         .trace,
         subsystem: "instant-swift-data-core",
@@ -606,13 +692,35 @@ public actor SQLitePersistenceStore {
           "outboxCount": String(state.snapshot.outbox.count),
           "storeRevision": String(state.storeRevision),
           "outboxRevision": String(state.outboxRevision),
+          "source": loaded.source == .memory ? "memory" : "sqlite",
           "durationMilliseconds": String(
             Int64((Date().timeIntervalSince(startedAt) * 1_000).rounded())
           ),
         ]
       )
-      return state
+      if let startupStopwatch {
+        didTraceInitialStateLoad = true
+        startupTrace.completed(
+          "sqlite.state-load",
+          since: startupStopwatch,
+          metadata: [
+            "attributeCount": String(state.snapshot.store.attributes.count),
+            "tripleCount": String(state.snapshot.store.triples.count),
+            "outboxCount": String(state.snapshot.outbox.count),
+            "source": loaded.source == .memory ? "memory" : "sqlite",
+          ]
+        )
+      }
+      return loaded
     } catch {
+      if let startupStopwatch {
+        startupTrace.failed(
+          "sqlite.state-load",
+          error: error,
+          since: startupStopwatch,
+          metadata: ["file": fileURL.lastPathComponent]
+        )
+      }
       InstantDiagnostics.shared.record(
         error: error,
         subsystem: "instant-swift-data-core",
@@ -754,6 +862,7 @@ public actor SQLitePersistenceStore {
       try saveStoreSnapshotWithoutTransaction(snapshot)
       _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
     }
+    cachedState = nil
   }
 
   public func saveOutbox(_ mutations: [PendingMutation]) throws {
@@ -761,23 +870,44 @@ public actor SQLitePersistenceStore {
       try saveOutboxWithoutTransaction(mutations)
       _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
     }
+    cachedState = nil
   }
 
   public func saveOutbox(
     _ mutations: [PendingMutation],
     expectedOutboxRevision: Int64
   ) throws -> Bool {
-    try transaction {
+    let previousState = cachedState
+    let didSave = try transaction {
       guard
         try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
           == expectedOutboxRevision
       else {
         return false
       }
-      try saveOutboxWithoutTransaction(mutations)
+      if let previousState,
+        previousState.outboxRevision == expectedOutboxRevision
+      {
+        try saveOutboxDiffWithoutTransaction(
+          from: previousState.snapshot.outbox,
+          to: mutations
+        )
+      } else {
+        try saveOutboxWithoutTransaction(mutations)
+      }
       _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
       return true
     }
+    if didSave, var previousState,
+      previousState.outboxRevision == expectedOutboxRevision
+    {
+      previousState.snapshot.outbox = mutations
+      previousState.outboxRevision += 1
+      cachedState = previousState
+    } else if didSave {
+      cachedState = nil
+    }
+    return didSave
   }
 
   public func loadAuthSession(key: String) throws -> InstantAuthSession? {
@@ -905,7 +1035,7 @@ public actor SQLitePersistenceStore {
     _ file: InstantStoredFile,
     contentsOf sourceURL: URL
   ) throws -> InstantStoredFile {
-    let sourceValues = try regularFileResourceValues(at: sourceURL, operation: "upload file")
+    _ = try regularFileByteCount(at: sourceURL, operation: "upload file")
 
     let directory =
       localFilesRootURL
@@ -927,7 +1057,7 @@ public actor SQLitePersistenceStore {
     }
 
     var savedFile = file
-    savedFile.byteCount = Int64(sourceValues.fileSize ?? 0)
+    savedFile.byteCount = try regularFileByteCount(at: targetURL, operation: "upload file")
     savedFile.localPath = targetURL.path
     do {
       try execute(
@@ -999,8 +1129,22 @@ public actor SQLitePersistenceStore {
   }
 
   public func regularFileByteCount(at sourceURL: URL, operation: String) throws -> Int64 {
-    let sourceValues = try regularFileResourceValues(at: sourceURL, operation: operation)
-    return Int64(sourceValues.fileSize ?? 0)
+    let attributes: [FileAttributeKey: Any]
+    do {
+      attributes = try FileManager.default.attributesOfItem(atPath: sourceURL.path)
+    } catch {
+      throw persistenceError(
+        operation: operation,
+        message: "Could not read source path '\(sourceURL.path)': \(error.localizedDescription)"
+      )
+    }
+    guard attributes[.type] as? FileAttributeType == .typeRegular else {
+      throw persistenceError(
+        operation: operation,
+        message: "Source path '\(sourceURL.path)' is not a regular file."
+      )
+    }
+    return (attributes[.size] as? NSNumber)?.int64Value ?? 0
   }
 
   public func loadStoredFiles(appID: String) throws -> [InstantStoredFile] {
@@ -1601,12 +1745,19 @@ public actor SQLitePersistenceStore {
   }
 
   public func saveSnapshot(_ snapshot: InstantPersistenceSnapshot) throws {
-    try transaction {
+    let revisions = try transaction {
       try saveStoreSnapshotWithoutTransaction(snapshot.store)
       try saveOutboxWithoutTransaction(snapshot.outbox)
-      _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
-      _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+      return (
+        store: try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey),
+        outbox: try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+      )
     }
+    cachedState = InstantPersistenceState(
+      snapshot: snapshot,
+      storeRevision: revisions.store,
+      outboxRevision: revisions.outbox
+    )
     InstantDiagnostics.shared.record(
       .trace,
       subsystem: "instant-swift-data-core",
@@ -1626,7 +1777,7 @@ public actor SQLitePersistenceStore {
     expectedStoreRevision: Int64,
     expectedOutboxRevision: Int64
   ) throws -> Bool {
-    try transaction {
+    let didSave = try transaction {
       guard
         try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
         try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision
@@ -1639,6 +1790,154 @@ public actor SQLitePersistenceStore {
       _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
       return true
     }
+    if didSave {
+      cachedState = InstantPersistenceState(
+        snapshot: snapshot,
+        storeRevision: expectedStoreRevision + 1,
+        outboxRevision: expectedOutboxRevision + 1
+      )
+    }
+    return didSave
+  }
+
+  public func saveSnapshot(
+    _ snapshot: InstantPersistenceSnapshot,
+    replacing previousSnapshot: InstantPersistenceSnapshot,
+    expectedStoreRevision: Int64,
+    expectedOutboxRevision: Int64
+  ) throws -> Bool {
+    let didSave = try transaction {
+      guard
+        try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
+        try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision
+      else {
+        return false
+      }
+      try saveStoreSnapshotDiffWithoutTransaction(
+        from: previousSnapshot.store,
+        to: snapshot.store
+      )
+      try saveOutboxDiffWithoutTransaction(
+        from: previousSnapshot.outbox,
+        to: snapshot.outbox
+      )
+      _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
+      _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+      return true
+    }
+    if didSave {
+      cachedState = InstantPersistenceState(
+        snapshot: snapshot,
+        storeRevision: expectedStoreRevision + 1,
+        outboxRevision: expectedOutboxRevision + 1
+      )
+    }
+    return didSave
+  }
+
+  func saveLocalMutation(
+    changedEntityTriples: [String: [InstantTriple]],
+    outbox: [PendingMutation],
+    pendingMutation: PendingMutation,
+    expectedStoreRevision: Int64,
+    expectedOutboxRevision: Int64
+  ) throws -> Bool {
+    let cachedChangedEntityTriples: [String: [InstantTriple]]?
+    if let cachedState,
+      cachedState.storeRevision == expectedStoreRevision,
+      cachedState.outboxRevision == expectedOutboxRevision
+    {
+      cachedChangedEntityTriples = Dictionary(
+        uniqueKeysWithValues: changedEntityTriples.keys.map { entityID in
+          (entityID, cachedTriples(in: cachedState.snapshot.store.triples, entityID: entityID))
+        }
+      )
+    } else {
+      cachedChangedEntityTriples = nil
+    }
+
+    let didSave = try transaction {
+      guard
+        try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
+        try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision
+      else {
+        return false
+      }
+
+      for entityID in changedEntityTriples.keys.sorted() {
+        let previousTriples = try cachedChangedEntityTriples?[entityID]
+          ?? selectJSON(
+            "SELECT json FROM instant_triples WHERE entity_id = ? ORDER BY attribute_id, value_json",
+            [.text(entityID)]
+          )
+        try saveTripleDiffWithoutTransaction(
+          from: previousTriples,
+          to: changedEntityTriples[entityID, default: []]
+        )
+      }
+      try execute(
+        """
+        INSERT OR REPLACE INTO instant_outbox (mutation_id, status, created_at_ms, json)
+        VALUES (?, ?, ?, ?)
+        """,
+        [
+          .text(pendingMutation.id),
+          .text(pendingMutation.status.rawValue),
+          .int(pendingMutation.createdAt.milliseconds),
+          .text(try encode(pendingMutation)),
+        ]
+      )
+      _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
+      _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+      return true
+    }
+
+    if didSave, var cachedState,
+      cachedState.storeRevision == expectedStoreRevision,
+      cachedState.outboxRevision == expectedOutboxRevision
+    {
+      replaceCachedTriples(
+        in: &cachedState.snapshot.store.triples,
+        with: changedEntityTriples
+      )
+      cachedState.snapshot.outbox = outbox
+      cachedState.storeRevision += 1
+      cachedState.outboxRevision += 1
+      self.cachedState = cachedState
+    } else if didSave {
+      cachedState = nil
+    }
+    return didSave
+  }
+
+  public func saveStoreSnapshot(
+    _ snapshot: InstantStoreSnapshot,
+    replacing previousSnapshot: InstantStoreSnapshot,
+    expectedStoreRevision: Int64,
+    expectedOutboxRevision: Int64
+  ) throws -> Bool {
+    let didSave = try transaction {
+      guard
+        try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
+        try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision
+      else {
+        return false
+      }
+      try saveStoreSnapshotDiffWithoutTransaction(from: previousSnapshot, to: snapshot)
+      _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
+      return true
+    }
+    if didSave, var cachedState,
+      cachedState.storeRevision == expectedStoreRevision,
+      cachedState.outboxRevision == expectedOutboxRevision
+    {
+      cachedState.snapshot.store = snapshot
+      cachedState.storeRevision += 1
+      self.cachedState = cachedState
+    } else if didSave {
+      cachedState = nil
+    }
+    return didSave
   }
 
   public func saveSnapshot(
@@ -1649,15 +1948,30 @@ public actor SQLitePersistenceStore {
     expectedStoreRevision: Int64,
     expectedOutboxRevision: Int64
   ) throws -> Bool {
-    try transaction {
+    let previousState = cachedState
+    let didSave = try transaction {
       guard
         try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
         try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision
       else {
         return false
       }
-      try saveStoreSnapshotWithoutTransaction(snapshot.store)
-      try saveOutboxWithoutTransaction(snapshot.outbox)
+      if let previousState,
+        previousState.storeRevision == expectedStoreRevision,
+        previousState.outboxRevision == expectedOutboxRevision
+      {
+        try saveStoreSnapshotDiffWithoutTransaction(
+          from: previousState.snapshot.store,
+          to: snapshot.store
+        )
+        try saveOutboxDiffWithoutTransaction(
+          from: previousState.snapshot.outbox,
+          to: snapshot.outbox
+        )
+      } else {
+        try saveStoreSnapshotWithoutTransaction(snapshot.store)
+        try saveOutboxWithoutTransaction(snapshot.outbox)
+      }
       try saveMetadataValueWithoutTransaction(
         metadataValue,
         key: metadataKey,
@@ -1667,6 +1981,14 @@ public actor SQLitePersistenceStore {
       _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
       return true
     }
+    if didSave {
+      cachedState = InstantPersistenceState(
+        snapshot: snapshot,
+        storeRevision: expectedStoreRevision + 1,
+        outboxRevision: expectedOutboxRevision + 1
+      )
+    }
+    return didSave
   }
 
   public func saveOutbox(
@@ -1677,14 +1999,25 @@ public actor SQLitePersistenceStore {
     expectedStoreRevision: Int64,
     expectedOutboxRevision: Int64
   ) throws -> Bool {
-    try transaction {
+    let previousState = cachedState
+    let didSave = try transaction {
       guard
         try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
         try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision
       else {
         return false
       }
-      try saveOutboxWithoutTransaction(mutations)
+      if let previousState,
+        previousState.storeRevision == expectedStoreRevision,
+        previousState.outboxRevision == expectedOutboxRevision
+      {
+        try saveOutboxDiffWithoutTransaction(
+          from: previousState.snapshot.outbox,
+          to: mutations
+        )
+      } else {
+        try saveOutboxWithoutTransaction(mutations)
+      }
       try saveMetadataValueWithoutTransaction(
         metadataValue,
         key: metadataKey,
@@ -1693,6 +2026,17 @@ public actor SQLitePersistenceStore {
       _ = try bumpMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
       return true
     }
+    if didSave, var previousState,
+      previousState.storeRevision == expectedStoreRevision,
+      previousState.outboxRevision == expectedOutboxRevision
+    {
+      previousState.snapshot.outbox = mutations
+      previousState.outboxRevision += 1
+      cachedState = previousState
+    } else if didSave {
+      cachedState = nil
+    }
+    return didSave
   }
 
   public func saveStoreSnapshot(
@@ -1703,14 +2047,25 @@ public actor SQLitePersistenceStore {
     expectedStoreRevision: Int64,
     expectedOutboxRevision: Int64
   ) throws -> Bool {
-    try transaction {
+    let previousState = cachedState
+    let didSave = try transaction {
       guard
         try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey) == expectedStoreRevision,
         try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey) == expectedOutboxRevision
       else {
         return false
       }
-      try saveStoreSnapshotWithoutTransaction(snapshot)
+      if let previousState,
+        previousState.storeRevision == expectedStoreRevision,
+        previousState.outboxRevision == expectedOutboxRevision
+      {
+        try saveStoreSnapshotDiffWithoutTransaction(
+          from: previousState.snapshot.store,
+          to: snapshot
+        )
+      } else {
+        try saveStoreSnapshotWithoutTransaction(snapshot)
+      }
       try saveMetadataValueWithoutTransaction(
         metadataValue,
         key: metadataKey,
@@ -1719,6 +2074,17 @@ public actor SQLitePersistenceStore {
       _ = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
       return true
     }
+    if didSave, var previousState,
+      previousState.storeRevision == expectedStoreRevision,
+      previousState.outboxRevision == expectedOutboxRevision
+    {
+      previousState.snapshot.store = snapshot
+      previousState.storeRevision += 1
+      cachedState = previousState
+    } else if didSave {
+      cachedState = nil
+    }
+    return didSave
   }
 
   public func saveQueryCache(
@@ -1996,9 +2362,137 @@ public actor SQLitePersistenceStore {
     }
 
     for triple in snapshot.triples {
+      try insertTripleWithoutTransaction(triple)
+    }
+  }
+
+  private func insertTripleWithoutTransaction(_ triple: InstantTriple) throws {
+    try execute(
+      """
+      INSERT OR REPLACE INTO instant_triples
+        (entity_id, attribute_id, value_json, tx_id, tx_time_ms, json)
+      VALUES (?, ?, ?, ?, ?, ?)
+      """,
+      [
+        .text(triple.entityID),
+        .text(triple.attributeID),
+        .text(try encode(triple.value)),
+        .text(triple.txID),
+        .int(triple.txTime.milliseconds),
+        .text(try encode(triple)),
+      ]
+    )
+  }
+
+  private func saveTripleDiffWithoutTransaction(
+    from previousTriples: [InstantTriple],
+    to triples: [InstantTriple]
+  ) throws {
+    let previous = Dictionary(
+      uniqueKeysWithValues: previousTriples.map { (StoredTripleKey($0), $0) }
+    )
+    let current = Dictionary(uniqueKeysWithValues: triples.map { (StoredTripleKey($0), $0) })
+    for key in previous.keys where current[key] == nil {
       try execute(
         """
-        INSERT INTO instant_triples
+        DELETE FROM instant_triples
+        WHERE entity_id = ? AND attribute_id = ? AND value_json = ?
+        """,
+        [.text(key.entityID), .text(key.attributeID), .text(try encode(key.value))]
+      )
+    }
+    for triple in triples where previous[StoredTripleKey(triple)] != triple {
+      try insertTripleWithoutTransaction(triple)
+    }
+  }
+
+  private func replaceCachedTriples(
+    in triples: inout [InstantTriple],
+    with changedEntityTriples: [String: [InstantTriple]]
+  ) {
+    for entityID in changedEntityTriples.keys.sorted() {
+      let lowerBound = tripleIndex(in: triples, entityID: entityID, includingEqual: true)
+      let upperBound = tripleIndex(in: triples, entityID: entityID, includingEqual: false)
+      let replacement = changedEntityTriples[entityID, default: []].sorted {
+        if $0.attributeID != $1.attributeID {
+          return $0.attributeID < $1.attributeID
+        }
+        return $0.value.comparableKey < $1.value.comparableKey
+      }
+      triples.replaceSubrange(lowerBound..<upperBound, with: replacement)
+    }
+  }
+
+  private func cachedTriples(
+    in triples: [InstantTriple],
+    entityID: String
+  ) -> [InstantTriple] {
+    let lowerBound = tripleIndex(in: triples, entityID: entityID, includingEqual: true)
+    let upperBound = tripleIndex(in: triples, entityID: entityID, includingEqual: false)
+    return Array(triples[lowerBound..<upperBound])
+  }
+
+  private func tripleIndex(
+    in triples: [InstantTriple],
+    entityID: String,
+    includingEqual: Bool
+  ) -> Int {
+    var lowerBound = triples.startIndex
+    var upperBound = triples.endIndex
+    while lowerBound < upperBound {
+      let distance = triples.distance(from: lowerBound, to: upperBound)
+      let index = triples.index(lowerBound, offsetBy: distance / 2)
+      let belongsBeforeBoundary = includingEqual
+        ? triples[index].entityID < entityID
+        : triples[index].entityID <= entityID
+      if belongsBeforeBoundary {
+        lowerBound = triples.index(after: index)
+      } else {
+        upperBound = index
+      }
+    }
+    return lowerBound
+  }
+
+  private func saveStoreSnapshotDiffWithoutTransaction(
+    from previousSnapshot: InstantStoreSnapshot,
+    to snapshot: InstantStoreSnapshot
+  ) throws {
+    let previousAttributes = Dictionary(
+      uniqueKeysWithValues: previousSnapshot.attributes.map { ($0.id, $0) }
+    )
+    let attributes = Dictionary(uniqueKeysWithValues: snapshot.attributes.map { ($0.id, $0) })
+
+    for id in previousAttributes.keys where attributes[id] == nil {
+      try execute("DELETE FROM instant_attributes WHERE id = ?", [.text(id)])
+    }
+    for attribute in snapshot.attributes where previousAttributes[attribute.id] != attribute {
+      try execute(
+        "INSERT OR REPLACE INTO instant_attributes (id, json) VALUES (?, ?)",
+        [.text(attribute.id), .text(try encode(attribute))]
+      )
+    }
+
+    let previousTriples = Dictionary(
+      uniqueKeysWithValues: previousSnapshot.triples.map { (StoredTripleKey($0), $0) }
+    )
+    let triples = Dictionary(
+      uniqueKeysWithValues: snapshot.triples.map { (StoredTripleKey($0), $0) }
+    )
+
+    for (key, _) in previousTriples where triples[key] == nil {
+      try execute(
+        """
+        DELETE FROM instant_triples
+        WHERE entity_id = ? AND attribute_id = ? AND value_json = ?
+        """,
+        [.text(key.entityID), .text(key.attributeID), .text(try encode(key.value))]
+      )
+    }
+    for triple in snapshot.triples where previousTriples[StoredTripleKey(triple)] != triple {
+      try execute(
+        """
+        INSERT OR REPLACE INTO instant_triples
           (entity_id, attribute_id, value_json, tx_id, tx_time_ms, json)
         VALUES (?, ?, ?, ?, ?, ?)
         """,
@@ -2020,6 +2514,32 @@ public actor SQLitePersistenceStore {
       try execute(
         """
         INSERT INTO instant_outbox (mutation_id, status, created_at_ms, json)
+        VALUES (?, ?, ?, ?)
+        """,
+        [
+          .text(mutation.id),
+          .text(mutation.status.rawValue),
+          .int(mutation.createdAt.milliseconds),
+          .text(try encode(mutation)),
+        ]
+      )
+    }
+  }
+
+  private func saveOutboxDiffWithoutTransaction(
+    from previousMutations: [PendingMutation],
+    to mutations: [PendingMutation]
+  ) throws {
+    let previous = Dictionary(uniqueKeysWithValues: previousMutations.map { ($0.id, $0) })
+    let current = Dictionary(uniqueKeysWithValues: mutations.map { ($0.id, $0) })
+
+    for id in previous.keys where current[id] == nil {
+      try execute("DELETE FROM instant_outbox WHERE mutation_id = ?", [.text(id)])
+    }
+    for mutation in mutations where previous[mutation.id] != mutation {
+      try execute(
+        """
+        INSERT OR REPLACE INTO instant_outbox (mutation_id, status, created_at_ms, json)
         VALUES (?, ?, ?, ?)
         """,
         [
@@ -2483,28 +3003,6 @@ public actor SQLitePersistenceStore {
     }
     let string = String(sanitized).trimmingCharacters(in: .whitespacesAndNewlines)
     return string.isEmpty || string == "." || string == ".." ? "file" : string
-  }
-
-  private func regularFileResourceValues(
-    at sourceURL: URL,
-    operation: String
-  ) throws -> URLResourceValues {
-    let sourceValues: URLResourceValues
-    do {
-      sourceValues = try sourceURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
-    } catch {
-      throw persistenceError(
-        operation: operation,
-        message: "Could not read source path '\(sourceURL.path)': \(error.localizedDescription)"
-      )
-    }
-    guard sourceValues.isRegularFile == true else {
-      throw persistenceError(
-        operation: operation,
-        message: "Source path '\(sourceURL.path)' is not a regular file."
-      )
-    }
-    return sourceValues
   }
 
   private static let storeRevisionKey = "store_revision"

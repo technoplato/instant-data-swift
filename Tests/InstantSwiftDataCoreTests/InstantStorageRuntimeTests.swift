@@ -99,11 +99,45 @@ struct InstantStorageRuntimeTests {
     let files = try await runtime.storedFiles()
     expectNoDifference(files, [])
   }
+
+  @Test("A named remote file downloads without waiting for the live query transport")
+  func namedRemoteDownloadDoesNotRequireLiveQueryTransport() async throws {
+    let directory = FileManager.default.temporaryDirectory
+      .appendingPathComponent("instant-storage-runtime-download-\(UUID().uuidString)", isDirectory: true)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let recorder = StorageTransportRecorder()
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-1",
+        apiURI: try #require(URL(string: "https://api.example.test/custom")),
+        persistenceURL: directory.appendingPathComponent("cache.sqlite"),
+        now: { InstantTimestamp(milliseconds: 1_700_000_000_000) }
+      ),
+      storageTransport: recorder.client
+    )
+    _ = try await runtime.signInWithRefreshToken("refresh-token", userID: "user-1")
+
+    let contents = try await runtime.storedFileContents(
+      id: "remote-file-id",
+      name: "scribe/recording/audio.wav"
+    )
+
+    expectNoDifference(contents.data, Data("remote bytes".utf8))
+    expectNoDifference(contents.file.id, "remote-file-id")
+    expectNoDifference(contents.file.name, "scribe/recording/audio.wav")
+    let request = try #require(await recorder.downloadFileRequests().only)
+    expectNoDifference(request.appID, "app-1")
+    expectNoDifference(request.apiURI.absoluteString, "https://api.example.test/custom")
+    expectNoDifference(request.path, "scribe/recording/audio.wav")
+    expectNoDifference(request.refreshToken, "refresh-token")
+  }
 }
 
 private actor StorageTransportRecorder {
   private var uploads: [InstantStorageUploadRequest] = []
   private var deletes: [InstantStorageDeleteRequest] = []
+  private var fileDownloads: [InstantStorageFileDownloadRequest] = []
 
   nonisolated var client: InstantStorageTransportClient {
     InstantStorageTransportClient(
@@ -114,6 +148,10 @@ private actor StorageTransportRecorder {
       delete: { request in
         await self.record(delete: request)
         return InstantStorageDeleteResponse(id: "remote-file-id")
+      },
+      downloadFile: { request in
+        await self.record(downloadFile: request)
+        return Data("remote bytes".utf8)
       }
     )
   }
@@ -126,12 +164,20 @@ private actor StorageTransportRecorder {
     deletes.append(delete)
   }
 
+  func record(downloadFile: InstantStorageFileDownloadRequest) {
+    fileDownloads.append(downloadFile)
+  }
+
   func uploadRequests() -> [InstantStorageUploadRequest] {
     uploads
   }
 
   func deleteRequests() -> [InstantStorageDeleteRequest] {
     deletes
+  }
+
+  func downloadFileRequests() -> [InstantStorageFileDownloadRequest] {
+    fileDownloads
   }
 }
 

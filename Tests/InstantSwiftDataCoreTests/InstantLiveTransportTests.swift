@@ -46,6 +46,87 @@ private let pythonStreamFileRetryBudgetSource =
 @Suite
 struct InstantLiveTransportTests {
   @Test
+  func olderOptimisticMutationCannotOverwriteNewerLocalState() async throws {
+    let cacheURL = try temporaryLiveCacheURL()
+    let seedAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let olderAt = InstantTimestamp(milliseconds: seedAt.milliseconds + 1)
+    let newerAt = InstantTimestamp(milliseconds: seedAt.milliseconds + 2)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "optimistic-mutation-domain-order",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-seed",
+        operations: TodoExample.createOperations(
+          id: "todo-1",
+          text: "Seed",
+          createdAt: seedAt,
+          transactionID: "tx-seed"
+        )
+      ),
+      createdAt: seedAt
+    )
+    try await runtime.confirmMutation(id: "tx-seed")
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-newer",
+        operations: TodoExample.updateTextOperations(
+          id: "todo-1",
+          text: "Newer value",
+          updatedAt: newerAt,
+          transactionID: "tx-newer"
+        )
+      ),
+      createdAt: newerAt
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-older",
+        operations: TodoExample.updateTextOperations(
+          id: "todo-1",
+          text: "Older value",
+          updatedAt: olderAt,
+          transactionID: "tx-older"
+        )
+      ),
+      createdAt: olderAt
+    )
+
+    let visible = try TodoExample.decode(try await runtime.queryOnce(TodoExample.query).values)
+    expectNoDifference(visible.map(\.text), ["Newer value"])
+    let outboxIDs = await runtime.outboxMutations().map(\.id)
+    expectNoDifference(outboxIDs, ["tx-older", "tx-newer"])
+    let olderTransport = try #require(
+      await runtime.outboxTransportMutations().first { $0.mutationID == "tx-older" }
+    )
+    #expect(
+      !olderTransport.txSteps.contains { step in
+        guard
+          case let .addTriple(_, attributeID, value, _) = step,
+          attributeID == "todos/text",
+          value == .string("Older value")
+        else { return false }
+        return true
+      }
+    )
+
+    let relaunched = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "optimistic-mutation-domain-order",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let restored = try TodoExample.decode(try await relaunched.queryOnce(TodoExample.query).values)
+    expectNoDifference(restored.map(\.text), ["Newer value"])
+  }
+
+  @Test
   func preparedStoreMutationsComposeWithoutSnapshotRoundTrip() async throws {
     let timestamp = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let store = InstantStore(
@@ -108,6 +189,15 @@ struct InstantLiveTransportTests {
       socket = nil
     }
     expectNoDifference(urlSessionIdentities.count, 1)
+  }
+
+  @Test
+  func liveWebSocketSessionWaitsForConnectivity() async throws {
+    let socket = try InstantURLSessionLiveWebSocket(
+      url: try #require(URL(string: "ws://127.0.0.1:1/runtime/session"))
+    )
+    #expect(await socket.waitsForConnectivity)
+    await socket.close()
   }
 
   @Test
@@ -1108,6 +1198,61 @@ struct InstantLiveTransportTests {
   }
 
   @Test
+  func runtimeLiveTransactCommitsLocallyWhileAutomaticConnectionIsStillOpening() async throws {
+    let ids = InstantLiveTransportTestIDSequence(["event-init", "event-tx"])
+    let session = InstantRuntimeScriptedLiveSession(messages: [
+      .initOK(clientEventID: "event-init", attrs: .todoServerAttrs)
+    ])
+    let blockedTransport = InstantRuntimeBlockedLiveTransport(base: session.transport)
+    var configuration = InstantRuntimeConfiguration(
+      appID: "runtime-live-transact-blocked-autoconnect",
+      websocketURI: try #require(URL(string: "wss://ws.example.test/runtime/session")),
+      persistenceURL: try temporaryLiveCacheURL(),
+      initialAttributes: TodoExample.attributes,
+      makeID: { ids.next() },
+      liveTransport: blockedTransport.transport
+    )
+    configuration.autoConnectLiveTransport = true
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    await blockedTransport.waitUntilConnectStarts()
+
+    let transaction = InstantStoreTransaction(
+      id: "event-tx",
+      operations: TodoExample.createOperations(
+        id: "runtime-live-transact-blocked-todo",
+        text: "Committed before connectivity",
+        createdAt: InstantTimestamp(milliseconds: 1_700_000_001_001),
+        transactionID: "event-tx"
+      )
+    )
+    let transactionTask = Task {
+      try await runtime.transact(transaction)
+    }
+
+    var committedBeforeConnectivity = false
+    for _ in 0..<100 {
+      if await runtime.pendingMutations().contains(where: { $0.id == transaction.id }) {
+        committedBeforeConnectivity = true
+        break
+      }
+      try await Task.sleep(for: .milliseconds(5))
+    }
+
+    await blockedTransport.releaseConnection()
+    _ = try await transactionTask.value
+    #expect(committedBeforeConnectivity)
+    let values = await runtime.store.materialize(TodoExample.query)
+    expectNoDifference(
+      try TodoExample.decode(values).map(\.text),
+      ["Committed before connectivity"]
+    )
+    await session.waitForSentMessageCount(2)
+    let sentMessages = await session.sentMessages()
+    expectNoDifference(sentMessages.map(\.op), ["init", "transact"])
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
   func runtimeLiveRefreshReusesInitAttributesWhenPayloadOmitsThem() async throws {
     let serverCreatedAt = InstantTimestamp(milliseconds: 1_700_000_000_456)
     let session = InstantRuntimeScriptedLiveSession(messages: [
@@ -1472,6 +1617,147 @@ struct InstantLiveTransportTests {
     let remainingOutbox = await runtime.outboxMutations()
     expectNoDifference(remainingPending, [])
     expectNoDifference(remainingOutbox, [])
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func acceptedOptimisticMutationSurvivesRefreshUntilServerWatermarkCatchesUp() async throws {
+    let cacheURL = try temporaryLiveCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_800)
+    let query: InstantLiveJSONValue = .object([
+      TodoExample.namespace: .object([:])
+    ])
+    let staleComputation = InstantLiveJSONValue.todoJoinRowsComputation(
+      entityID: "runtime-live-watermark-todo",
+      text: "Stale server value",
+      isCompleted: false,
+      createdAt: createdAt,
+      processedTransactionID: "199"
+    )
+    let staleResult = try #require(
+      staleComputation.objectValue?["instaql-result"]?.arrayValue
+    )
+    let session = InstantRuntimeScriptedLiveSession(messages: [
+      .initOK(clientEventID: "event-init", attrs: .todoServerAttrs)
+    ])
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "runtime-live-accepted-watermark",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        liveTransport: session.transport
+      )
+    )
+    let stream = await runtime.observe(TodoExample.query)
+    var iterator = stream.makeAsyncIterator()
+    _ = try #require(await iterator.next())
+    _ = try await runtime.connect()
+    await session.waitForSentMessageCount(2)
+    await session.enqueue(
+      .addQueryOK(
+        clientEventID: "event-query-initial",
+        query: query,
+        result: staleResult,
+        processedTransactionID: "100"
+      )
+    )
+    let serverEmission = try #require(await iterator.next())
+    expectNoDifference(
+      try TodoExample.decode(serverEmission.values).map(\.text),
+      ["Stale server value"]
+    )
+
+    let mutationID = "tx-runtime-live-accepted-watermark"
+    let optimisticAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: mutationID,
+        operations: TodoExample.updateTextOperations(
+          id: "runtime-live-watermark-todo",
+          text: "Accepted optimistic value",
+          updatedAt: optimisticAt,
+          transactionID: mutationID
+        )
+      ),
+      createdAt: optimisticAt
+    )
+    let optimisticEmission = try #require(await iterator.next())
+    expectNoDifference(
+      try TodoExample.decode(optimisticEmission.values).map(\.text),
+      ["Accepted optimistic value"]
+    )
+    await session.waitForSentMessageCount(3)
+    await session.enqueue(
+      .transactOK(clientEventID: mutationID, transactionID: "200")
+    )
+    _ = try #require(
+      await runtime.observeConnectionStatus().first { $0.pendingMutationCount == 0 }
+    )
+
+    await session.enqueue(
+      .refreshOK(
+        clientEventID: "event-stale-refresh",
+        processedTransactionID: "199",
+        computations: [staleComputation]
+      )
+    )
+    _ = try #require(
+      await runtime.observeConnectionStatus().first { $0.processedTransactionID == "199" }
+    )
+
+    let afterStaleRefresh = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "runtime-live-accepted-watermark",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let staleRefreshValues = try await afterStaleRefresh.query(TodoExample.query)
+    expectNoDifference(
+      try TodoExample.decode(staleRefreshValues).map(\.text),
+      ["Accepted optimistic value"]
+    )
+    let stalePersistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    let staleOutbox = try await stalePersistence.loadSnapshot().outbox
+    let retainedAcceptance = try #require(staleOutbox.first)
+    expectNoDifference(retainedAcceptance.status, .confirmed)
+    expectNoDifference(retainedAcceptance.serverTransactionID, "200")
+
+    let caughtUpComputation = InstantLiveJSONValue.todoJoinRowsComputation(
+      entityID: "runtime-live-watermark-todo",
+      text: "Accepted optimistic value",
+      isCompleted: false,
+      createdAt: optimisticAt,
+      processedTransactionID: "200"
+    )
+    await session.enqueue(
+      .refreshOK(
+        clientEventID: "event-caught-up-refresh",
+        processedTransactionID: "200",
+        computations: [caughtUpComputation]
+      )
+    )
+    _ = try #require(
+      await runtime.observeConnectionStatus().first { $0.processedTransactionID == "200" }
+    )
+
+    let afterCaughtUpRefresh = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "runtime-live-accepted-watermark",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let caughtUpValues = try await afterCaughtUpRefresh.query(TodoExample.query)
+    expectNoDifference(
+      try TodoExample.decode(caughtUpValues).map(\.text),
+      ["Accepted optimistic value"]
+    )
+    let caughtUpPersistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    let persistedCaughtUpOutbox = try await caughtUpPersistence.loadSnapshot().outbox
+    expectNoDifference(persistedCaughtUpOutbox, [])
+    let caughtUpOutbox = await afterCaughtUpRefresh.outboxMutations()
+    expectNoDifference(caughtUpOutbox, [])
     _ = try await runtime.closeConnection()
   }
 
@@ -2683,6 +2969,44 @@ private actor InstantRuntimeScriptedLiveSession {
     isClosed = true
     receiveContinuation?.resume(throwing: CancellationError())
     receiveContinuation = nil
+  }
+}
+
+private actor InstantRuntimeBlockedLiveTransport {
+  private let base: InstantLiveTransportClient
+  private var didStartConnecting = false
+  private var isReleased = false
+  private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+  init(base: InstantLiveTransportClient) {
+    self.base = base
+  }
+
+  nonisolated var transport: InstantLiveTransportClient {
+    InstantLiveTransportClient { request in
+      await self.waitForRelease()
+      return try await self.base.connect(request)
+    }
+  }
+
+  func waitUntilConnectStarts() async {
+    while !didStartConnecting {
+      await Task.yield()
+    }
+  }
+
+  func releaseConnection() {
+    isReleased = true
+    releaseContinuation?.resume()
+    releaseContinuation = nil
+  }
+
+  private func waitForRelease() async {
+    didStartConnecting = true
+    guard !isReleased else { return }
+    await withCheckedContinuation { continuation in
+      releaseContinuation = continuation
+    }
   }
 }
 

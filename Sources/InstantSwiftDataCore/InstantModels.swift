@@ -760,6 +760,7 @@ public struct PendingMutation: Hashable, Codable, Sendable, Identifiable {
   public var transaction: InstantStoreTransaction
   public var status: InstantMutationStatus
   public var failureMessage: String?
+  package var serverTransactionID: String?
 
   public init(
     id: String,
@@ -773,6 +774,7 @@ public struct PendingMutation: Hashable, Codable, Sendable, Identifiable {
     self.transaction = transaction
     self.status = status
     self.failureMessage = failureMessage
+    self.serverTransactionID = nil
   }
 
   static func creationOrder(_ lhs: Self, _ rhs: Self) -> Bool {

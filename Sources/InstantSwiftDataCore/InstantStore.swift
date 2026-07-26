@@ -31,6 +31,14 @@ struct PreparedStoreMutation: Sendable {
       ?? InstantStoreSnapshot(attributes: attributes.attributes, triples: indexes.triples)
   }
 
+  var changedEntityTriples: [String: [InstantTriple]] {
+    Dictionary(
+      uniqueKeysWithValues: result.changedEntityIDs.map { entityID in
+        (entityID, indexes.triples(entityID: entityID))
+      }
+    )
+  }
+
   init(
     result: InstantStoreMutationResult,
     snapshot: InstantStoreSnapshot,
@@ -99,13 +107,50 @@ public actor InstantStore {
   }
 
   public func mergeAttributes(_ attributes: [InstantAttribute]) -> InstantStoreSnapshot {
-    self.attributes.merge(attributes)
+    mergeAttributesIfChanged(attributes) ?? snapshot()
+  }
+
+  func mergeAttributesIfChanged(
+    _ attributes: [InstantAttribute]
+  ) -> InstantStoreSnapshot? {
+    var mergedAttributes = self.attributes
+    mergedAttributes.merge(attributes)
+    guard mergedAttributes != self.attributes else { return nil }
+    self.attributes = mergedAttributes
     self.indexes = TripleIndexes(triples: self.indexes.triples, attributes: self.attributes)
     return snapshot()
   }
 
+  func attributeSnapshot() -> [InstantAttribute] {
+    attributes.attributes
+  }
+
   public func snapshot() -> InstantStoreSnapshot {
     InstantStoreSnapshot(attributes: attributes.attributes, triples: indexes.triples)
+  }
+
+  func visibleWriteFilter(
+    for keys: Set<InstantVisibleWriteKey>
+  ) -> InstantVisibleWriteFilter {
+    var attributesByID: [String: InstantAttribute] = [:]
+    var newestVisibleWrite: [InstantVisibleWriteKey: InstantTimestamp] = [:]
+    attributesByID.reserveCapacity(keys.count)
+    newestVisibleWrite.reserveCapacity(keys.count)
+    for key in keys {
+      if let attribute = attributes[key.attributeID] {
+        attributesByID[key.attributeID] = attribute
+      }
+      if let timestamp = indexes.newestWriteTime(
+        entityID: key.entityID,
+        attributeID: key.attributeID
+      ) {
+        newestVisibleWrite[key] = timestamp
+      }
+    }
+    return InstantVisibleWriteFilter(
+      attributesByID: attributesByID,
+      newestVisibleWrite: newestVisibleWrite
+    )
   }
 
   public func materialize(
@@ -177,6 +222,14 @@ public actor InstantStore {
       indexes: indexes
     )
     return commit(prepared)
+  }
+
+  func prepareCurrent(_ transaction: InstantStoreTransaction) throws -> PreparedStoreMutation {
+    try prepare(
+      transaction,
+      attributes: attributes,
+      indexes: indexes
+    )
   }
 
   func prepare(

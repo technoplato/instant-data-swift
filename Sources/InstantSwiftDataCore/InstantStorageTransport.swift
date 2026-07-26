@@ -66,6 +66,20 @@ public struct InstantStorageDownloadRequest: Hashable, Sendable {
   }
 }
 
+public struct InstantStorageFileDownloadRequest: Hashable, Sendable {
+  public var appID: String
+  public var apiURI: URL
+  public var path: String
+  public var refreshToken: String
+
+  public init(appID: String, apiURI: URL, path: String, refreshToken: String) {
+    self.appID = appID
+    self.apiURI = apiURI
+    self.path = path
+    self.refreshToken = refreshToken
+  }
+}
+
 public final class InstantStorageTransportClient: Sendable {
   public let upload:
     @Sendable (InstantStorageUploadRequest) async throws -> InstantStorageUploadResponse
@@ -73,6 +87,8 @@ public final class InstantStorageTransportClient: Sendable {
     @Sendable (InstantStorageDeleteRequest) async throws -> InstantStorageDeleteResponse
   public let download:
     @Sendable (InstantStorageDownloadRequest) async throws -> Data
+  public let downloadFile:
+    @Sendable (InstantStorageFileDownloadRequest) async throws -> Data
 
   public init(
     upload: @escaping @Sendable (InstantStorageUploadRequest) async throws
@@ -90,6 +106,14 @@ public final class InstantStorageTransportClient: Sendable {
         recovery: "Configure InstantStorageTransportClient.live() before downloading remote files."
       )
     }
+    self.downloadFile = { _ in
+      throw InstantError(
+        code: .networkFailed,
+        operation: "download file",
+        message: "No authenticated storage file download transport is configured.",
+        recovery: "Configure InstantStorageTransportClient.live() before downloading remote files."
+      )
+    }
   }
 
   public init(
@@ -102,6 +126,48 @@ public final class InstantStorageTransportClient: Sendable {
     self.upload = upload
     self.delete = delete
     self.download = download
+    self.downloadFile = { _ in
+      throw InstantError(
+        code: .networkFailed,
+        operation: "download file",
+        message: "No authenticated storage file download transport is configured.",
+        recovery: "Configure InstantStorageTransportClient.live() before downloading remote files."
+      )
+    }
+  }
+
+  public init(
+    upload: @escaping @Sendable (InstantStorageUploadRequest) async throws
+      -> InstantStorageUploadResponse,
+    delete: @escaping @Sendable (InstantStorageDeleteRequest) async throws
+      -> InstantStorageDeleteResponse,
+    downloadFile: @escaping @Sendable (InstantStorageFileDownloadRequest) async throws -> Data
+  ) {
+    self.upload = upload
+    self.delete = delete
+    self.download = { _ in
+      throw InstantError(
+        code: .networkFailed,
+        operation: "download file",
+        message: "No remote storage URL download transport is configured.",
+        recovery: "Configure InstantStorageTransportClient.live() before downloading remote files."
+      )
+    }
+    self.downloadFile = downloadFile
+  }
+
+  public init(
+    upload: @escaping @Sendable (InstantStorageUploadRequest) async throws
+      -> InstantStorageUploadResponse,
+    delete: @escaping @Sendable (InstantStorageDeleteRequest) async throws
+      -> InstantStorageDeleteResponse,
+    download: @escaping @Sendable (InstantStorageDownloadRequest) async throws -> Data,
+    downloadFile: @escaping @Sendable (InstantStorageFileDownloadRequest) async throws -> Data
+  ) {
+    self.upload = upload
+    self.delete = delete
+    self.download = download
+    self.downloadFile = downloadFile
   }
 }
 
@@ -226,6 +292,62 @@ extension InstantStorageTransportClient {
         let response = try await httpClient.send(urlRequest)
         try validateStorageResponse(response, operation: "download file")
         return response.data
+      },
+      downloadFile: { request in
+        var components = URLComponents(
+          url: request.apiURI
+            .appendingPathComponent("storage")
+            .appendingPathComponent("signed-download-url"),
+          resolvingAgainstBaseURL: false
+        )
+        components?.queryItems = [
+          URLQueryItem(name: "app_id", value: request.appID),
+          URLQueryItem(name: "filename", value: request.path),
+        ]
+        guard let signedURLRequestURL = components?.url else {
+          throw InstantError(
+            code: .validationFailed,
+            operation: "download file",
+            message: "Could not construct the Instant storage download URL.",
+            recovery: "Check the configured Instant API endpoint and file path."
+          )
+        }
+        var signedURLRequest = URLRequest(url: signedURLRequestURL)
+        signedURLRequest.httpMethod = "GET"
+        signedURLRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        signedURLRequest.setValue(
+          "Bearer \(request.refreshToken)",
+          forHTTPHeaderField: "Authorization"
+        )
+        let signedURLResponse = try await httpClient.send(signedURLRequest)
+        try validateStorageResponse(signedURLResponse, operation: "download file")
+        let envelope: InstantStorageSignedDownloadEnvelope
+        do {
+          envelope = try JSONDecoder().decode(
+            InstantStorageSignedDownloadEnvelope.self,
+            from: signedURLResponse.data
+          )
+        } catch {
+          throw InstantError(
+            code: .decodeFailed,
+            operation: "download file",
+            message: "Instant storage returned an invalid download URL response.",
+            recovery: "Retry the download and inspect the Instant storage response."
+          )
+        }
+        guard let downloadURL = URL(string: envelope.data) else {
+          throw InstantError(
+            code: .decodeFailed,
+            operation: "download file",
+            message: "Instant storage returned an invalid signed download URL.",
+            recovery: "Retry the download and inspect the Instant storage response."
+          )
+        }
+        var downloadRequest = URLRequest(url: downloadURL)
+        downloadRequest.httpMethod = "GET"
+        let downloadResponse = try await httpClient.send(downloadRequest)
+        try validateStorageResponse(downloadResponse, operation: "download file")
+        return downloadResponse.data
       }
     )
   }
@@ -237,6 +359,10 @@ private struct InstantStorageUploadEnvelope: Decodable {
 
 private struct InstantStorageDeleteEnvelope: Decodable {
   var data: InstantStorageDeleteResponse
+}
+
+private struct InstantStorageSignedDownloadEnvelope: Decodable {
+  var data: String
 }
 
 private func validateStorageResponse(

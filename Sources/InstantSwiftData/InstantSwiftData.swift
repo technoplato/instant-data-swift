@@ -93,7 +93,7 @@ public struct InstantSwiftDataClient: Sendable {
   private var observeStoredFilesOperation:
     @Sendable () async throws -> AsyncStream<[InstantStoredFile]>
   private var storedFileContentsOperation:
-    @Sendable (String) async throws -> InstantStoredFileContents
+    @Sendable (String, String?) async throws -> InstantStoredFileContents
   private var deleteStoredFileOperation: @Sendable (String) async throws -> InstantStoredFile
   private var appendStreamChunkOperation:
     @Sendable (String, JSONValue) async throws -> InstantStreamChunk
@@ -259,8 +259,8 @@ public struct InstantSwiftDataClient: Sendable {
     self.observeStoredFilesOperation = {
       try await runtime.observeStoredFiles()
     }
-    self.storedFileContentsOperation = { id in
-      try await runtime.storedFileContents(id: id)
+    self.storedFileContentsOperation = { id, name in
+      try await runtime.storedFileContents(id: id, name: name)
     }
     self.deleteStoredFileOperation = { id in
       try await runtime.deleteStoredFile(id: id)
@@ -778,7 +778,10 @@ public struct InstantSwiftDataClient: Sendable {
     self.storedFilesOperation = storedFiles ?? { throw filesError }
     self.storageSnapshotOperation = storageSnapshot ?? { throw filesError }
     self.observeStoredFilesOperation = observeStoredFiles ?? { throw filesError }
-    self.storedFileContentsOperation = storedFileContents ?? { _ in throw filesError }
+    self.storedFileContentsOperation = { id, _ in
+      guard let storedFileContents else { throw filesError }
+      return try await storedFileContents(id)
+    }
     self.deleteStoredFileOperation = deleteStoredFile ?? { _ in throw filesError }
     self.appendStreamChunkOperation = appendStreamChunk ?? { _, _ in throw streamsError }
     if let streamChunksAfterIndex {
@@ -1352,7 +1355,14 @@ public struct InstantSwiftDataClient: Sendable {
   }
 
   public func storedFileContents(id: String) async throws -> InstantStoredFileContents {
-    try await storedFileContentsOperation(id)
+    try await storedFileContentsOperation(id, nil)
+  }
+
+  public func storedFileContents(
+    id: String,
+    name: String
+  ) async throws -> InstantStoredFileContents {
+    try await storedFileContentsOperation(id, name)
   }
 
   @discardableResult
@@ -2804,6 +2814,11 @@ private func startAutomaticFetchObservation<Value: Sendable>(
 ) {
   guard storage.reserveAutomaticObservationTask() else { return }
   let storageReference = WeakFetchStorage(storage)
+  let startupTrace = client.runtime?.configuration.startupTrace ?? .disabled
+  let startupStopwatch = startupTrace.started(
+    "fetch.automatic",
+    metadata: ["valueType": String(reflecting: Value.self)]
+  )
   InstantDiagnostics.shared.record(
     .debug,
     subsystem: "instant-swift-data",
@@ -2817,6 +2832,11 @@ private func startAutomaticFetchObservation<Value: Sendable>(
     var emissionCount = 0
     do {
       let subscription = try await subscribe(client)
+      startupTrace.completed(
+        "fetch.subscription-established",
+        since: startupStopwatch,
+        metadata: ["valueType": String(reflecting: Value.self)]
+      )
       defer { subscription.cancel() }
       try Task.checkCancellation()
       guard let id = storageReference.value?.beginActiveSubscription(subscription) else { return }
@@ -2828,6 +2848,16 @@ private func startAutomaticFetchObservation<Value: Sendable>(
         }
         emissionCount += 1
         let mirror = Mirror(reflecting: value)
+        if emissionCount == 1 {
+          startupTrace.completed(
+            "fetch.first-emission",
+            since: startupStopwatch,
+            metadata: [
+              "resultCount": String(mirror.children.count),
+              "valueType": String(reflecting: Value.self),
+            ]
+          )
+        }
         InstantDiagnostics.shared.record(
           .trace,
           subsystem: "instant-swift-data",
@@ -3361,7 +3391,8 @@ extension DependencyValues {
     firstPartyURL: URL? = nil,
     context: InstantSwiftDataBootstrapContext = .live,
     initialAttributes: [InstantAttribute] = [],
-    liveShareContract: InstantLiveShareContract? = nil
+    liveShareContract: InstantLiveShareContract? = nil,
+    startupTrace: InstantStartupTrace = .live()
   ) async throws {
     try await self.bootstrapInstantSwiftData(
       appID: appID,
@@ -3371,7 +3402,8 @@ extension DependencyValues {
       firstPartyURL: firstPartyURL,
       context: context,
       initialAttributes: initialAttributes,
-      liveShareContract: liveShareContract
+      liveShareContract: liveShareContract,
+      startupTrace: startupTrace
     )
   }
 
@@ -3383,8 +3415,16 @@ extension DependencyValues {
     firstPartyURL: URL? = nil,
     context: InstantSwiftDataBootstrapContext = .live,
     initialAttributes: [InstantAttribute] = [],
-    liveShareContract: InstantLiveShareContract? = nil
+    liveShareContract: InstantLiveShareContract? = nil,
+    startupTrace: InstantStartupTrace = .live()
   ) async throws {
+    let bootstrapStopwatch = startupTrace.started(
+      "dependencies.bootstrap",
+      metadata: [
+        "appID": appID,
+        "context": context.rawValue,
+      ]
+    )
     let date = self.date
     let uuid = self.uuid
     let magicCodeExchange = self.instantMagicCodeExchange
@@ -3433,13 +3473,32 @@ extension DependencyValues {
         platformAppClient: platformAppClient,
         appBuilderCodeGenerator: appBuilderCodeGenerator
       )
+    runtimeConfiguration.startupTrace = startupTrace
     runtimeConfiguration.autoConnectLiveTransport = liveTransport != nil
-
-    let client = try await InstantSwiftDataClient.bootstrap(
-      configuration: runtimeConfiguration,
-      storageTransport: storageTransport
+    startupTrace.completed(
+      "dependencies.configuration",
+      durationMilliseconds: 0,
+      metadata: [
+        "autoConnect": String(runtimeConfiguration.autoConnectLiveTransport),
+        "persistenceFile": url.lastPathComponent,
+      ]
     )
-    self.defaultInstantSwiftData = client
+
+    do {
+      let client = try await InstantSwiftDataClient.bootstrap(
+        configuration: runtimeConfiguration,
+        storageTransport: storageTransport
+      )
+      self.defaultInstantSwiftData = client
+      startupTrace.completed(
+        "dependencies.bootstrap",
+        since: bootstrapStopwatch,
+        metadata: ["defaultClientInstalled": "true"]
+      )
+    } catch {
+      startupTrace.failed("dependencies.bootstrap", error: error, since: bootstrapStopwatch)
+      throw error
+    }
   }
 
   public mutating func bootstrapLocalInstantSwiftData(

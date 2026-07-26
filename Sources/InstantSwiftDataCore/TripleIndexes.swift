@@ -230,6 +230,10 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     eav[entityID]?.values.flatMap(\.values) ?? []
   }
 
+  func newestWriteTime(entityID: String, attributeID: String) -> InstantTimestamp? {
+    eav[entityID]?[attributeID]?.values.map(\.txTime).max()
+  }
+
   mutating func reserveCapacity(entityCapacity: Int, attributeCapacity: Int) {
     guard entityCapacity > 0 || attributeCapacity > 0 else { return }
     eav.reserveCapacity(eav.count + max(entityCapacity, 0))
@@ -1128,6 +1132,11 @@ struct TripleIndexes: Hashable, Codable, Sendable {
 
     if attribute?.cardinality == .one {
       if let existingValues = eav[triple.entityID]?[triple.attributeID]?.values {
+        // Optimistic transactions can finish preparing out of submission order. Keep the
+        // value from the newest domain transaction visible instead of letting a delayed,
+        // older write regress the local cache. Equal timestamps still preserve operation
+        // order within a single Instant transaction.
+        guard !existingValues.contains(where: { $0.txTime > triple.txTime }) else { return }
         for existing in Array(existingValues) {
           removeNormalized(existing, attribute: attribute)
         }

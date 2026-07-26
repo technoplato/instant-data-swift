@@ -97,6 +97,49 @@ struct InstantStorageHTTPParityTests {
     expectNoDifference(request.httpBody, nil)
   }
 
+  @Test("Named storage download resolves a signed URL without a live query")
+  func namedDownloadUsesAuthenticatedStorageAPI() async throws {
+    let body = Data("remote-file".utf8)
+    let recorder = StorageRequestRecorder(
+      responses: [
+        InstantStorageHTTPResponse(
+          statusCode: 200,
+          data: Data(
+            #"{"data":"https://instant-storage.example.test/signed/file-1?token=abc"}"#.utf8
+          )
+        ),
+        InstantStorageHTTPResponse(statusCode: 200, data: body),
+      ]
+    )
+    let client = InstantStorageTransportClient.live(httpClient: recorder.client)
+
+    let downloaded = try await client.downloadFile(
+      InstantStorageFileDownloadRequest(
+        appID: "app-1",
+        apiURI: try #require(URL(string: "https://api.example.test/custom")),
+        path: "scribe/recording 1/audio.wav",
+        refreshToken: "refresh-token"
+      )
+    )
+
+    expectNoDifference(downloaded, body)
+    let requests = await recorder.recordedRequests()
+    expectNoDifference(requests.count, 2)
+    expectNoDifference(requests[0].httpMethod, "GET")
+    expectNoDifference(
+      requests[0].url?.absoluteString,
+      "https://api.example.test/custom/storage/signed-download-url?app_id=app-1&filename=scribe/recording%201/audio.wav"
+    )
+    expectNoDifference(
+      requests[0].value(forHTTPHeaderField: "Authorization"),
+      "Bearer refresh-token"
+    )
+    expectNoDifference(
+      requests[1].url?.absoluteString,
+      "https://instant-storage.example.test/signed/file-1?token=abc"
+    )
+  }
+
   @Test("Storage maps authorization and malformed response failures")
   func failuresAreActionable() async throws {
     let forbidden = InstantStorageTransportClient.live(
@@ -139,24 +182,35 @@ struct InstantStorageHTTPParityTests {
 
 private actor StorageRequestRecorder {
   private var requests: [URLRequest] = []
-  private let response: InstantStorageHTTPResponse
+  private var responses: [InstantStorageHTTPResponse]
 
   init(response: InstantStorageHTTPResponse) {
-    self.response = response
+    self.responses = [response]
+  }
+
+  init(responses: [InstantStorageHTTPResponse]) {
+    self.responses = responses
   }
 
   nonisolated var client: InstantStorageHTTPClient {
     InstantStorageHTTPClient { request in
-      await self.record(request)
-      return self.response
+      await self.response(for: request)
     }
   }
 
-  func record(_ request: URLRequest) {
+  func response(for request: URLRequest) -> InstantStorageHTTPResponse {
     requests.append(request)
+    if responses.count > 1 {
+      return responses.removeFirst()
+    }
+    return responses[0]
   }
 
   func onlyRequest() -> URLRequest? {
     requests.count == 1 ? requests[0] : nil
+  }
+
+  func recordedRequests() -> [URLRequest] {
+    requests
   }
 }

@@ -44,6 +44,50 @@ actor InstantOutbox {
     return InstantOutboxUpdate(mutation: mutation, mutations: nextMutations)
   }
 
+  static func accepting(
+    id: String,
+    serverTransactionID: String,
+    in mutations: [PendingMutation]
+  ) -> InstantOutboxUpdate? {
+    guard let index = mutations.firstIndex(where: { $0.id == id }) else { return nil }
+    var nextMutations = mutations
+    nextMutations[index].status = .confirmed
+    nextMutations[index].failureMessage = nil
+    nextMutations[index].serverTransactionID = serverTransactionID
+    return InstantOutboxUpdate(
+      mutation: nextMutations[index],
+      mutations: nextMutations
+    )
+  }
+
+  static func pruningConfirmed(
+    through processedTransactionID: String,
+    in mutations: [PendingMutation]
+  ) -> [PendingMutation] {
+    mutations.filter { mutation in
+      guard mutation.status == .confirmed,
+        let serverTransactionID = mutation.serverTransactionID
+      else { return true }
+      return !transactionID(
+        serverTransactionID,
+        isCoveredBy: processedTransactionID
+      )
+    }
+  }
+
+  private static func transactionID(
+    _ transactionID: String,
+    isCoveredBy processedTransactionID: String
+  ) -> Bool {
+    if transactionID == processedTransactionID {
+      return true
+    }
+    guard let transactionNumber = Int64(transactionID),
+      let processedTransactionNumber = Int64(processedTransactionID)
+    else { return false }
+    return transactionNumber <= processedTransactionNumber
+  }
+
   func failing(id: String, message: String) -> InstantOutboxUpdate? {
     Self.failing(id: id, message: message, in: mutations)
   }
@@ -57,6 +101,7 @@ actor InstantOutbox {
     var nextMutations = mutations
     nextMutations[index].status = .failed
     nextMutations[index].failureMessage = message
+    nextMutations[index].serverTransactionID = nil
     return InstantOutboxUpdate(mutation: nextMutations[index], mutations: nextMutations)
   }
 
@@ -69,6 +114,7 @@ actor InstantOutbox {
     var nextMutations = mutations
     nextMutations[index].status = .pending
     nextMutations[index].failureMessage = nil
+    nextMutations[index].serverTransactionID = nil
     return InstantOutboxUpdate(mutation: nextMutations[index], mutations: nextMutations)
   }
 

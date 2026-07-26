@@ -23,14 +23,14 @@ struct InstantCookieSyncParityTests {
         client: client
       )
     )
-    var requests = await recorder.requests()
+    var requests = try await waitForCookieSyncRequests(recorder, count: 1)
     expectNoDifference(requests.map(\.type), ["sync-user"], cookieSyncOldSource)
     expectNoDifference(requests.map(\.appID), [appID], cookieSyncOldSource)
     expectNoDifference(requests.map(\.firstPartyURL), [cookieSyncFirstPartyURL], cookieSyncOldSource)
     expectNoDifference(requests.map(\.user), [nil], cookieSyncOldSource)
 
     _ = try await runtime.signInWithRefreshToken("refresh-token", userID: "user-id")
-    requests = await recorder.requests()
+    requests = try await waitForCookieSyncRequests(recorder, count: 2)
     expectNoDifference(requests.count, 2, cookieSyncOldSource)
     expectNoDifference(requests.last?.user?.id, "user-id", cookieSyncOldSource)
     expectNoDifference(requests.last?.user?.refreshToken, "refresh-token", cookieSyncOldSource)
@@ -49,7 +49,7 @@ struct InstantCookieSyncParityTests {
       )
     )
 
-    requests = await recorder.requests()
+    requests = try await waitForCookieSyncRequests(recorder, count: 1)
     expectNoDifference(requests.count, 1, cookieSyncOldSource)
     expectNoDifference(requests.first?.type, "sync-user", cookieSyncOldSource)
     expectNoDifference(requests.first?.appID, appID, cookieSyncOldSource)
@@ -76,8 +76,9 @@ struct InstantCookieSyncParityTests {
         client: client
       )
     )
+    _ = try await waitForCookieSyncRequests(recorder, count: 1)
     _ = try await runtime.signInWithRefreshToken("refresh-token", userID: "user-id")
-    var requests = await recorder.requests()
+    var requests = try await waitForCookieSyncRequests(recorder, count: 2)
     expectNoDifference(requests.count, 2, cookieSyncRecentSource)
     expectNoDifference(requests.last?.user?.id, "user-id", cookieSyncRecentSource)
     await recorder.reset()
@@ -152,7 +153,7 @@ struct InstantCookieSyncParityTests {
         client: client
       )
     )
-    var requests = await recorder.requests()
+    var requests = try await waitForCookieSyncRequests(recorder, count: 1)
     expectNoDifference(requests.map(\.appID), ["cookie-sync-app-a"], cookieSyncStorageSource)
     await recorder.reset()
 
@@ -165,9 +166,29 @@ struct InstantCookieSyncParityTests {
       )
     )
 
-    requests = await recorder.requests()
+    requests = try await waitForCookieSyncRequests(recorder, count: 1)
     expectNoDifference(requests.map(\.appID), ["cookie-sync-app-b"], cookieSyncStorageSource)
     expectNoDifference(requests.map(\.user), [nil], cookieSyncStorageSource)
+  }
+
+  @Test
+  func startupCookieSyncDoesNotHoldLocalBootstrapOpen() async throws {
+    let cacheURL = try temporaryCookieSyncCacheURL()
+    let clock = ContinuousClock()
+    let startedAt = clock.now
+
+    _ = try await InstantRuntime.bootstrap(
+      configuration: cookieSyncConfiguration(
+        appID: "cookie-sync-nonblocking-\(UUID().uuidString)",
+        cacheURL: cacheURL,
+        now: InstantTimestamp(milliseconds: 1_767_225_600_000),
+        client: InstantUserCookieSyncClient { _ in
+          try await Task.sleep(for: .seconds(2))
+        }
+      )
+    )
+
+    #expect(startedAt.duration(to: clock.now) < .milliseconds(500))
   }
 }
 
@@ -191,6 +212,20 @@ private actor CookieSyncRecorder {
   private func record(_ request: InstantUserCookieSyncRequest) {
     values.append(request)
   }
+}
+
+private func waitForCookieSyncRequests(
+  _ recorder: CookieSyncRecorder,
+  count: Int
+) async throws -> [InstantUserCookieSyncRequest] {
+  for _ in 0..<100 {
+    let requests = await recorder.requests()
+    if requests.count >= count {
+      return requests
+    }
+    try await Task.sleep(for: .milliseconds(10))
+  }
+  return await recorder.requests()
 }
 
 private let cookieSyncFirstPartyURL = URL(string: "https://example.com")!

@@ -27,6 +27,7 @@ public struct InstantRuntimeConfiguration: Sendable {
   public var userCookieSyncClient: InstantUserCookieSyncClient
   public var platformAppClient: InstantPlatformAppClient
   public var appBuilderCodeGenerator: AppBuilderCodeGeneratorClient
+  public var startupTrace: InstantStartupTrace = .disabled
   package var actorHopRecorder: InstantActorHopRecorder?
   package var isLocalOnly: Bool
   var liveReconnectSleep: @Sendable (UInt64) async throws -> Void = { milliseconds in
@@ -1515,6 +1516,7 @@ public final class InstantRuntime: Sendable {
   private let sharesObservers =
     InstantSnapshotObservers<InstantSharesObservationKey, [InstantShareSnapshot]>()
   private let operationGate = AsyncSerialGate()
+  private let connectionGate = AsyncSerialGate()
   private let mutationFlushGate = AsyncSerialGate()
   private let liveSession = InstantRuntimeLiveSession()
   private let liveQueryResultState = InstantLiveQueryResultState()
@@ -1563,6 +1565,15 @@ public final class InstantRuntime: Sendable {
     storageTransport: InstantStorageTransportClient?,
     streamFileTransport: InstantStreamFileTransportClient
   ) async throws -> Self {
+    let startupTrace = configuration.startupTrace
+    let runtimeStopwatch = startupTrace.started(
+      "runtime.bootstrap",
+      metadata: [
+        "appID": configuration.appID,
+        "attributeCount": String(configuration.initialAttributes.count),
+        "hasLiveTransport": String(configuration.liveTransport != nil),
+      ]
+    )
     let startedAt = Date()
     InstantDiagnostics.shared.record(
       .info,
@@ -1580,16 +1591,104 @@ public final class InstantRuntime: Sendable {
       ]
     )
     do {
+      let validationStopwatch = startupTrace.stopwatch()
       try validateEndpoints(configuration)
       try validateInitialAttributes(configuration.initialAttributes)
+      startupTrace.completed("runtime.validation", since: validationStopwatch)
 
-      let persistence = try SQLitePersistenceStore(fileURL: configuration.persistenceURL)
+      let persistence = try SQLitePersistenceStore(
+        fileURL: configuration.persistenceURL,
+        startupTrace: startupTrace
+      )
       configuration.actorHopRecorder?.record(.persistence)
       try await persistence.bootstrap()
       configuration.actorHopRecorder?.record(.persistence)
-      let state = try await persistence.loadState()
+      var state = try await persistence.loadState()
+      let storeMaterializationStopwatch = startupTrace.stopwatch()
       let store = InstantStore(snapshot: state.snapshot.store)
       let outbox = InstantOutbox(mutations: state.snapshot.outbox)
+      startupTrace.completed(
+        "runtime.store-materialization",
+        since: storeMaterializationStopwatch,
+        metadata: [
+          "attributeCount": String(state.snapshot.store.attributes.count),
+          "tripleCount": String(state.snapshot.store.triples.count),
+          "outboxCount": String(state.snapshot.outbox.count),
+        ]
+      )
+
+      let attributeMergeStopwatch = startupTrace.stopwatch()
+      var didChangeAttributes = false
+      if !configuration.initialAttributes.isEmpty {
+        var didBootstrapAttributes = false
+        for attempt in 1...5 {
+          configuration.actorHopRecorder?.record(.store)
+          let storeMergeStopwatch = startupTrace.stopwatch()
+          let storeSnapshot = await store.mergeAttributesIfChanged(configuration.initialAttributes)
+          startupTrace.completed(
+            "runtime.attribute-store-merge",
+            since: storeMergeStopwatch,
+            metadata: [
+              "attempt": String(attempt),
+              "changed": String(storeSnapshot != nil),
+            ]
+          )
+          guard let storeSnapshot else {
+            didBootstrapAttributes = true
+            break
+          }
+          configuration.actorHopRecorder?.record(.persistence)
+          let didSave = try await persistence.saveStoreSnapshot(
+            storeSnapshot,
+            replacing: state.snapshot.store,
+            expectedStoreRevision: state.storeRevision,
+            expectedOutboxRevision: state.outboxRevision
+          )
+          if didSave {
+            didChangeAttributes = true
+            state = InstantPersistenceState(
+              snapshot: InstantPersistenceSnapshot(
+                store: storeSnapshot,
+                outbox: state.snapshot.outbox
+              ),
+              storeRevision: state.storeRevision + 1,
+              outboxRevision: state.outboxRevision
+            )
+            didBootstrapAttributes = true
+            break
+          }
+          configuration.actorHopRecorder?.record(.persistence)
+          state = try await persistence.loadState()
+          configuration.actorHopRecorder?.record(.store)
+          await store.replaceSnapshot(state.snapshot.store)
+          configuration.actorHopRecorder?.record(.outbox)
+          await outbox.replace(with: state.snapshot.outbox)
+        }
+        guard didBootstrapAttributes else {
+          throw InstantError(
+            code: .persistenceFailed,
+            operation: "bootstrap attributes",
+            message: "The local Instant cache changed repeatedly while bootstrapping schema attributes.",
+            recovery: "Retry launch after other writers finish updating the shared cache."
+          )
+        }
+      } else {
+        startupTrace.completed(
+          "runtime.attribute-store-merge",
+          durationMilliseconds: 0,
+          metadata: ["skipped": "true"]
+        )
+      }
+      startupTrace.completed(
+        "runtime.attribute-merge",
+        since: attributeMergeStopwatch,
+        metadata: [
+          "changed": String(didChangeAttributes),
+          "requestedAttributeCount": String(configuration.initialAttributes.count),
+          "storedAttributeCount": String(state.snapshot.store.attributes.count),
+        ]
+      )
+
       let runtime = Self(
         configuration: configuration,
         store: store,
@@ -1599,15 +1698,18 @@ public final class InstantRuntime: Sendable {
         streamFileTransport: streamFileTransport
       )
 
-      if !configuration.initialAttributes.isEmpty {
-        configuration.actorHopRecorder?.record(.store)
-        let storeSnapshot = await store.mergeAttributes(configuration.initialAttributes)
-        configuration.actorHopRecorder?.record(.persistence)
-        try await persistence.saveStoreSnapshot(storeSnapshot)
+      Task(priority: .utility) {
+        await runtime.syncUserCookieOnStartup()
       }
-
-      await runtime.syncUserCookieOnStartup()
       runtime.startAutomaticLiveConnectionIfNeeded()
+      startupTrace.completed(
+        "runtime.services-scheduled",
+        durationMilliseconds: 0,
+        metadata: [
+          "autoConnect": String(configuration.autoConnectLiveTransport),
+          "cookieSyncScheduled": "true",
+        ]
+      )
       InstantDiagnostics.shared.record(
         .notice,
         subsystem: "instant-swift-data-core",
@@ -1624,8 +1726,18 @@ public final class InstantRuntime: Sendable {
           "outboxCount": String(state.snapshot.outbox.count),
         ]
       )
+      startupTrace.completed(
+        "runtime.bootstrap",
+        since: runtimeStopwatch,
+        metadata: [
+          "storedAttributeCount": String(state.snapshot.store.attributes.count),
+          "storedTripleCount": String(state.snapshot.store.triples.count),
+          "outboxCount": String(state.snapshot.outbox.count),
+        ]
+      )
       return runtime
     } catch {
+      startupTrace.failed("runtime.bootstrap", error: error, since: runtimeStopwatch)
       InstantDiagnostics.shared.record(
         error: error,
         subsystem: "instant-swift-data-core",
@@ -1755,24 +1867,16 @@ public final class InstantRuntime: Sendable {
     )
     var enteredOperationGate = false
     do {
-      do {
-        try await ensureLiveConnectionIfNeeded()
-      } catch {
-        // Instant transactions are local-first. A failed connection attempt must
-        // not prevent the optimistic cache/outbox commit; the reconnect loop will
-        // deliver it when the transport is reachable again.
-        await scheduleReconnect(
-          after: error,
-          event: "connection.optimistic-transaction-connect-failed",
-          message: "Instant could not connect before an optimistic transaction and will retry."
-        )
-      }
       await enterOperationGate()
       enteredOperationGate = true
       let result = try await performTransact(transaction, createdAt: createdAt, source: source)
       await leaveOperationGate()
       enteredOperationGate = false
-      await sendPendingMutationsToLiveSession()
+      if await liveSession.isOpen {
+        await sendPendingMutationsToLiveSession()
+      } else {
+        startLiveMutationDeliveryIfNeeded()
+      }
       InstantDiagnostics.shared.record(
         .notice,
         subsystem: "instant-swift-data-core",
@@ -1824,7 +1928,8 @@ public final class InstantRuntime: Sendable {
 
     for _ in 0..<5 {
       recordActorHop(.persistence)
-      let state = try await persistence.loadState()
+      let loadedState = try await persistence.loadStateWithSource()
+      let state = loadedState.state
       if transaction.operations.isEmpty {
         recordActorHop(.store)
         await store.replaceSnapshot(state.snapshot.store)
@@ -1885,10 +1990,17 @@ public final class InstantRuntime: Sendable {
       let outboxSnapshot = (state.snapshot.outbox + [pendingMutation])
         .sorted(by: PendingMutation.creationOrder)
       recordActorHop(.store)
-      let prepared = try await store.prepare(transaction, applyingTo: state.snapshot.store)
+      let prepared: PreparedStoreMutation
+      if loadedState.source == .memory {
+        prepared = try await store.prepareCurrent(transaction)
+      } else {
+        prepared = try await store.prepare(transaction, applyingTo: state.snapshot.store)
+      }
       recordActorHop(.persistence)
-      let didSave = try await persistence.saveSnapshot(
-        InstantPersistenceSnapshot(store: prepared.snapshot, outbox: outboxSnapshot),
+      let didSave = try await persistence.saveLocalMutation(
+        changedEntityTriples: prepared.changedEntityTriples,
+        outbox: outboxSnapshot,
+        pendingMutation: pendingMutation,
         expectedStoreRevision: state.storeRevision,
         expectedOutboxRevision: state.outboxRevision
       )
@@ -1954,10 +2066,14 @@ public final class InstantRuntime: Sendable {
     for _ in 0..<5 {
       recordActorHop(.persistence)
       let state = try await persistence.loadState()
+      let prunedOutbox = InstantOutbox.pruningConfirmed(
+        through: processedTransactionID,
+        in: state.snapshot.outbox
+      )
       let confirmation = confirmingMutationID.flatMap {
-        InstantOutbox.confirming(id: $0, in: state.snapshot.outbox)
+        InstantOutbox.confirming(id: $0, in: prunedOutbox)
       }
-      let outboxSnapshot = confirmation?.mutations ?? state.snapshot.outbox
+      let outboxSnapshot = confirmation?.mutations ?? prunedOutbox
       let outboxChanged = outboxSnapshot != state.snapshot.outbox
       var storeSnapshot = state.snapshot.store
       let tripleCountBeforeFailedWriteCleanup = storeSnapshot.triples.count
@@ -2164,6 +2280,89 @@ public final class InstantRuntime: Sendable {
     }
   }
 
+  private func acceptMutationIfPresent(
+    id: String,
+    serverTransactionID: String
+  ) async throws -> PendingMutation? {
+    await enterOperationGate()
+    do {
+      let result = try await performAcceptMutationIfPresent(
+        id: id,
+        serverTransactionID: serverTransactionID
+      )
+      await leaveOperationGate()
+      InstantDiagnostics.shared.record(
+        result.mutation == nil ? .debug : .notice,
+        subsystem: "instant-swift-data-core",
+        category: "mutation",
+        event: result.mutation == nil
+          ? "transaction.acceptance-not-found"
+          : "transaction.server-accepted",
+        message: result.mutation == nil
+          ? "Server acceptance did not match a local outbox mutation."
+          : "Instant accepted an outbox mutation and retained its optimistic overlay until the server watermark catches up.",
+        metadata: [
+          "pendingMutationCount": String(result.pendingMutationCount),
+          "serverTransactionID": serverTransactionID,
+        ],
+        correlationID: id
+      )
+      return result.mutation
+    } catch {
+      await leaveOperationGate()
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "mutation",
+        event: "transaction.acceptance-failed",
+        message: "Failed to retain an accepted Instant mutation until its server watermark.",
+        correlationID: id
+      )
+      throw error
+    }
+  }
+
+  private func performAcceptMutationIfPresent(
+    id: String,
+    serverTransactionID: String
+  ) async throws -> (mutation: PendingMutation?, pendingMutationCount: Int) {
+    for _ in 0..<5 {
+      recordActorHop(.persistence)
+      let state = try await persistence.loadState()
+      guard
+        let update = InstantOutbox.accepting(
+          id: id,
+          serverTransactionID: serverTransactionID,
+          in: state.snapshot.outbox
+        )
+      else {
+        recordActorHop(.outbox)
+        await outbox.replace(with: state.snapshot.outbox)
+        return (
+          mutation: nil,
+          pendingMutationCount: state.snapshot.outbox.filter { $0.status == .pending }.count
+        )
+      }
+      recordActorHop(.persistence)
+      let didSave = try await persistence.saveOutbox(
+        update.mutations,
+        expectedOutboxRevision: state.outboxRevision
+      )
+      if didSave {
+        recordActorHop(.outbox)
+        await outbox.replace(with: update.mutations)
+        _ = try? await publishConnectionStatusWithGateHeld()
+        await publishMutationLifecycle(update.mutation)
+        return (
+          mutation: update.mutation,
+          pendingMutationCount: update.mutations.filter { $0.status == .pending }.count
+        )
+      }
+    }
+
+    throw outboxChangedDuringStatusUpdate(id: id)
+  }
+
   private func performConfirmMutationIfPresent(
     id: String
   ) async throws -> (mutation: PendingMutation?, pendingMutationCount: Int) {
@@ -2204,7 +2403,8 @@ public final class InstantRuntime: Sendable {
   ) async throws -> PreparedStoreMutation {
     var preparedRebase = preparedServer
     for mutation in mutations.sorted(by: PendingMutation.creationOrder)
-    where mutation.status == .pending {
+    where mutation.status == .pending
+      || (mutation.status == .confirmed && mutation.serverTransactionID != nil) {
       let operations = mutation.transaction.operations.filter(\.isRebasedLocalWrite)
       guard !operations.isEmpty else { continue }
       preparedRebase = try await store.prepare(
@@ -2282,6 +2482,10 @@ public final class InstantRuntime: Sendable {
     _ plan: InstantQueryPlan,
     remotePageInfo: InstantQueryRemotePageInfo? = nil
   ) async -> AsyncStream<InstantQueryEmission> {
+    let startupStopwatch = configuration.startupTrace.started(
+      "query.observe",
+      metadata: ["namespace": plan.namespace]
+    )
     InstantDiagnostics.shared.record(
       .info,
       subsystem: "instant-swift-data-core",
@@ -2295,13 +2499,18 @@ public final class InstantRuntime: Sendable {
       ],
       correlationID: plan.id
     )
-    await enterOperationGate()
     // Bootstrap hydrates the in-memory store once. Query declarations must not reread the whole
-    // SQLite file; subsequent local and remote mutations update this store directly.
+    // SQLite file or wait for connection/authentication work; subsequent local and remote
+    // mutations update this actor-isolated store directly.
     recordActorHop(.store)
-    let attributes = await store.snapshot().attributes
+    let schemaSnapshotStopwatch = configuration.startupTrace.stopwatch()
+    let attributes = await store.attributeSnapshot()
+    configuration.startupTrace.completed(
+      "query.schema-snapshot",
+      since: schemaSnapshotStopwatch,
+      metadata: ["namespace": plan.namespace]
+    )
     if TripleIndexes.validate(plan, attributes: AttributeStore(attributes: attributes)) != nil {
-      await leaveOperationGate()
       InstantDiagnostics.shared.record(
         .warning,
         subsystem: "instant-swift-data-core",
@@ -2314,8 +2523,18 @@ public final class InstantRuntime: Sendable {
       return Self.emptyObservation(plan)
     }
     recordActorHop(.store)
+    let localRegistrationStopwatch = configuration.startupTrace.stopwatch()
     let stream = await store.observe(plan, remotePageInfo: remotePageInfo)
-    await leaveOperationGate()
+    configuration.startupTrace.completed(
+      "query.local-registration",
+      since: localRegistrationStopwatch,
+      metadata: ["namespace": plan.namespace]
+    )
+    configuration.startupTrace.completed(
+      "query.local-observer",
+      since: startupStopwatch,
+      metadata: ["namespace": plan.namespace]
+    )
     guard configuration.liveTransport != nil else {
       InstantDiagnostics.shared.record(
         .debug,
@@ -2355,6 +2574,13 @@ public final class InstantRuntime: Sendable {
         clientEventID: configuration.makeID()
       )
       let isLiveSessionOpen = await liveSession.isOpen
+      configuration.startupTrace.milestone(
+        "query.live-registration",
+        metadata: [
+          "namespace": plan.namespace,
+          "state": isLiveSessionOpen ? "registered" : "pending",
+        ]
+      )
       InstantDiagnostics.shared.record(
         isLiveSessionOpen ? .notice : .debug,
         subsystem: "instant-swift-data-core",
@@ -2671,6 +2897,23 @@ public final class InstantRuntime: Sendable {
     _ = try await connectLiveSession(reportsFailure: true, onlyIfNeeded: true)
   }
 
+  private func startLiveMutationDeliveryIfNeeded() {
+    guard configuration.liveTransport != nil else { return }
+    Task { [weak self] in
+      guard let self else { return }
+      do {
+        try await self.ensureLiveConnectionIfNeeded()
+        await self.sendPendingMutationsToLiveSession()
+      } catch {
+        await self.scheduleReconnect(
+          after: error,
+          event: "connection.optimistic-transaction-connect-failed",
+          message: "Instant could not connect after an optimistic transaction and will retry."
+        )
+      }
+    }
+  }
+
   private func startAutomaticLiveConnectionIfNeeded() {
     guard configuration.liveTransport != nil else { return }
     guard configuration.autoConnectLiveTransport else { return }
@@ -2784,9 +3027,13 @@ public final class InstantRuntime: Sendable {
         "websocketHost": configuration.websocketURI.host ?? "unknown",
       ]
     )
-    recordActorHop(.operationGate)
-    await operationGate.enter()
+    await connectionGate.enter()
+    var enteredConnectionGate = true
+    var enteredOperationGate = false
     do {
+      recordActorHop(.operationGate)
+      await operationGate.enter()
+      enteredOperationGate = true
       if onlyIfNeeded {
         let persistedState = try await persistedConnectionState()
         let liveSessionIsOpen = await liveSession.isOpen
@@ -2794,6 +3041,9 @@ public final class InstantRuntime: Sendable {
           let status = try await connectionStatusWithGateHeld()
           recordActorHop(.operationGate)
           await operationGate.leave()
+          enteredOperationGate = false
+          await connectionGate.leave()
+          enteredConnectionGate = false
           InstantDiagnostics.shared.record(
             .debug,
             subsystem: "instant-swift-data-core",
@@ -2813,6 +3063,9 @@ public final class InstantRuntime: Sendable {
       if let liveTransport = configuration.liveTransport {
         recordActorHop(.persistence)
         let session = try await persistence.loadAuthSession(key: authSessionKey)
+        recordActorHop(.operationGate)
+        await operationGate.leave()
+        enteredOperationGate = false
         do {
           recordActorHop(.liveSession)
           try await liveSession.open(
@@ -2824,14 +3077,28 @@ public final class InstantRuntime: Sendable {
             transport: liveTransport,
             makeID: configuration.makeID
           )
+          recordActorHop(.operationGate)
+          await operationGate.enter()
+          enteredOperationGate = true
           try await retryPersistedTransientMutationFailuresWithGateHeld()
+          recordActorHop(.operationGate)
+          await operationGate.leave()
+          enteredOperationGate = false
           recordActorHop(.liveSession)
           try await liveSession.sendMutations(
             await outboxTransportMutations().filter { $0.status == .pending }
           )
         } catch {
+          if enteredOperationGate {
+            recordActorHop(.operationGate)
+            await operationGate.leave()
+            enteredOperationGate = false
+          }
           recordActorHop(.liveSession)
           await liveSession.close()
+          recordActorHop(.operationGate)
+          await operationGate.enter()
+          enteredOperationGate = true
           try await saveErroredConnectionMetadataWithGateHeld(message: String(describing: error))
           if reportsFailure {
             _ = try? await publishConnectionStatusWithGateHeld()
@@ -2839,10 +3106,18 @@ public final class InstantRuntime: Sendable {
           throw error
         }
       }
+      if !enteredOperationGate {
+        recordActorHop(.operationGate)
+        await operationGate.enter()
+        enteredOperationGate = true
+      }
       try await saveOpenedConnectionMetadataWithGateHeld()
       let status = try await publishConnectionStatusWithGateHeld()
       recordActorHop(.operationGate)
       await operationGate.leave()
+      enteredOperationGate = false
+      await connectionGate.leave()
+      enteredConnectionGate = false
       if configuration.liveTransport != nil {
         recordActorHop(.liveSession)
         await liveSession.startReceiving(
@@ -2882,8 +3157,13 @@ public final class InstantRuntime: Sendable {
       )
       return status
     } catch {
-      recordActorHop(.operationGate)
-      await operationGate.leave()
+      if enteredOperationGate {
+        recordActorHop(.operationGate)
+        await operationGate.leave()
+      }
+      if enteredConnectionGate {
+        await connectionGate.leave()
+      }
       InstantDiagnostics.shared.record(
         error: error,
         subsystem: "instant-swift-data-core",
@@ -2905,6 +3185,7 @@ public final class InstantRuntime: Sendable {
   @discardableResult
   public func closeConnection() async throws -> InstantConnectionStatus {
     await reconnectController.cancel()
+    await connectionGate.enter()
     recordActorHop(.operationGate)
     await operationGate.enter()
     do {
@@ -2918,10 +3199,12 @@ public final class InstantRuntime: Sendable {
       let status = try await publishConnectionStatusWithGateHeld()
       recordActorHop(.operationGate)
       await operationGate.leave()
+      await connectionGate.leave()
       return status
     } catch {
       recordActorHop(.operationGate)
       await operationGate.leave()
+      await connectionGate.leave()
       throw error
     }
   }
@@ -3151,7 +3434,7 @@ public final class InstantRuntime: Sendable {
 
     case let .transactOK(transactOK):
       guard let clientEventID = transactOK.clientEventID?.nilIfEmpty,
-        transactOK.transactionID?.nilIfEmpty != nil
+        let transactionID = transactOK.transactionID?.nilIfEmpty
       else {
         throw InstantError(
           code: .decodeFailed,
@@ -3160,7 +3443,10 @@ public final class InstantRuntime: Sendable {
           recovery: "Inspect the canonical Instant transact-ok payload."
         )
       }
-      _ = try await confirmMutationIfPresent(id: clientEventID)
+      _ = try await acceptMutationIfPresent(
+        id: clientEventID,
+        serverTransactionID: transactionID
+      )
 
     case let .refreshPresence(refresh):
       try await applyLivePresenceRefresh(refresh)
@@ -4688,15 +4974,26 @@ public final class InstantRuntime: Sendable {
     }
   }
 
-  public func storedFileContents(id rawID: String) async throws -> InstantStoredFileContents {
+  public func storedFileContents(
+    id rawID: String,
+    name rawName: String? = nil
+  ) async throws -> InstantStoredFileContents {
     let id = try validatedNonEmpty(
       rawID,
       label: "File id",
       operation: "read file",
       recovery: "Pass the id returned by 'instant-swift-data files list'."
     )
+    let name = try rawName.map {
+      try validatedNonEmpty(
+        $0,
+        label: "File name",
+        operation: "read file",
+        recovery: "Pass the storage path returned when the file was uploaded."
+      )
+    }
 
-    _ = try await resolvedFileUserID(operation: "read file")
+    let userID = try await resolvedFileUserID(operation: "read file")
     if let contents = try await persistence.readStoredFileContents(
       appID: configuration.appID,
       fileID: id
@@ -4704,7 +5001,42 @@ public final class InstantRuntime: Sendable {
       return contents
     }
 
-    guard let storageTransport, configuration.liveTransport != nil else {
+    guard let storageTransport else {
+      throw validationFailed(
+        operation: "read file",
+        localID: id,
+        message: "No downloaded file exists for id '\(id)'.",
+        recovery: "Run 'instant-swift-data files list' to inspect available file ids."
+      )
+    }
+    if let name {
+      let refreshToken = try await storageRefreshToken(operation: "read file")
+      let data = try await storageTransport.downloadFile(
+        InstantStorageFileDownloadRequest(
+          appID: configuration.appID,
+          apiURI: configuration.apiURI,
+          path: name,
+          refreshToken: refreshToken
+        )
+      )
+      let now = configuration.now()
+      let file = InstantStoredFile(
+        id: id,
+        appID: configuration.appID,
+        name: name,
+        contentType: nil,
+        byteCount: Int64(data.count),
+        localPath: "",
+        ownerUserID: userID,
+        createdAt: now,
+        updatedAt: now
+      )
+      let saved = try await persistence.saveDownloadedFile(file, data: data)
+      let localFiles = try await persistence.loadStoredFiles(appID: configuration.appID)
+      await storedFilesObservers.publish(localFiles, for: storedFilesObservationKey)
+      return InstantStoredFileContents(file: saved, data: data)
+    }
+    guard configuration.liveTransport != nil else {
       throw validationFailed(
         operation: "read file",
         localID: id,
@@ -6152,13 +6484,13 @@ public final class InstantRuntime: Sendable {
   }
 
   public func outboxMutations() async -> [PendingMutation] {
-    await outbox.all()
+    await outbox.all().filter { $0.status != .confirmed }
   }
 
   public func outboxTransportMutations(includeFailed: Bool = false) async
     -> [InstantTransportMutation]
   {
-    await outbox.all()
+    let mutations = await outbox.all()
       .filter { mutation in
         switch mutation.status {
         case .pending:
@@ -6169,7 +6501,17 @@ public final class InstantRuntime: Sendable {
           return includeFailed
         }
       }
-      .map(InstantTransportMutation.init)
+    let visibleWriteFilter = await store.visibleWriteFilter(
+      for: InstantVisibleWriteFilter.writeKeys(in: mutations)
+    )
+    return mutations
+      .map { mutation in
+        var mutation = mutation
+        mutation.transaction.operations = visibleWriteFilter.discardingWritesOlderThanVisibleState(
+          mutation.transaction.operations
+        )
+        return InstantTransportMutation(mutation)
+      }
   }
 
   public func flushPendingMutations(limit: Int? = nil) async throws
@@ -7067,6 +7409,80 @@ private extension InstantTripleOperation {
       .requireTripleExists,
       .ruleParams, .ruleParamsByLookup:
       return false
+    }
+  }
+}
+
+struct InstantVisibleWriteKey: Hashable, Sendable {
+  var entityID: String
+  var attributeID: String
+}
+
+struct InstantVisibleWriteFilter: Sendable {
+  private var attributesByID: [String: InstantAttribute]
+  private var newestVisibleWrite: [InstantVisibleWriteKey: InstantTimestamp]
+
+  init(
+    attributesByID: [String: InstantAttribute],
+    newestVisibleWrite: [InstantVisibleWriteKey: InstantTimestamp]
+  ) {
+    self.attributesByID = attributesByID
+    self.newestVisibleWrite = newestVisibleWrite
+  }
+
+  static func writeKeys(in mutations: [PendingMutation]) -> Set<InstantVisibleWriteKey> {
+    Set(
+      mutations.flatMap { mutation in
+        mutation.transaction.operations.compactMap { operation in
+          switch operation {
+          case let .insert(triple), let .merge(triple):
+            return InstantVisibleWriteKey(
+              entityID: triple.entityID,
+              attributeID: triple.attributeID
+            )
+          case .requireEntityMissing, .requireEntityMissingByLookup,
+            .requireEntityExists, .requireEntityExistsByLookup,
+            .requireTripleExists,
+            .insertByLookup, .mergeByLookup,
+            .retract, .retractByLookup,
+            .deleteEntity, .deleteEntityInNamespace, .deleteEntityByLookup,
+            .ruleParams, .ruleParamsByLookup:
+            return nil
+          }
+        }
+      }
+    )
+  }
+
+  func discardingWritesOlderThanVisibleState(
+    _ operations: [InstantTripleOperation]
+  ) -> [InstantTripleOperation] {
+    return operations.filter { operation in
+      let triple: InstantTriple
+      switch operation {
+      case .insert(let value), .merge(let value):
+        triple = value
+
+      case .requireEntityMissing, .requireEntityMissingByLookup,
+        .requireEntityExists, .requireEntityExistsByLookup,
+        .requireTripleExists,
+        .insertByLookup, .mergeByLookup,
+        .retract, .retractByLookup,
+        .deleteEntity, .deleteEntityInNamespace, .deleteEntityByLookup,
+        .ruleParams, .ruleParamsByLookup:
+        return true
+      }
+
+      guard let attribute = attributesByID[triple.attributeID],
+        attribute.cardinality == .one,
+        !attribute.primaryKey
+      else { return true }
+      let key = InstantVisibleWriteKey(
+        entityID: triple.entityID,
+        attributeID: triple.attributeID
+      )
+      guard let visibleWrite = newestVisibleWrite[key] else { return true }
+      return visibleWrite <= triple.txTime
     }
   }
 }

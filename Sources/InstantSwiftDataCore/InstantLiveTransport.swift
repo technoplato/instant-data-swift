@@ -1093,6 +1093,7 @@ actor InstantURLSessionLiveWebSocket {
   private static let maximumMessageSize = 16 * 1_024 * 1_024
   private static let sharedURLSession: URLSession = {
     let configuration = URLSessionConfiguration.ephemeral
+    configuration.waitsForConnectivity = true
     configuration.timeoutIntervalForRequest = 10
     // A WebSocket is a long-lived resource. A short resource timeout closes an
     // otherwise healthy, idle room and silently drops presence/topic updates.
@@ -1105,6 +1106,10 @@ actor InstantURLSessionLiveWebSocket {
 
   var urlSessionIdentity: ObjectIdentifier {
     ObjectIdentifier(Self.sharedURLSession)
+  }
+
+  var waitsForConnectivity: Bool {
+    Self.sharedURLSession.configuration.waitsForConnectivity
   }
 
   init(url: URL) throws {

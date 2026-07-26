@@ -86,6 +86,83 @@ struct InstantStoreTests {
   }
 
   @Test
+  func transactionsPersistOnlyChangedRows() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "incremental-persistence",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-create-incremental-todo",
+        operations: TodoExample.createOperations(
+          id: "todo-incremental",
+          text: "First value",
+          createdAt: createdAt,
+          transactionID: "tx-create-incremental-todo"
+        )
+      ),
+      createdAt: createdAt
+    )
+    try installPersistenceAuditTriggers(at: cacheURL)
+
+    let updatedAt = InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "tx-update-incremental-todo",
+        operations: TodoExample.updateTextOperations(
+          id: "todo-incremental",
+          text: "Second value",
+          updatedAt: updatedAt,
+          transactionID: "tx-update-incremental-todo"
+        )
+      ),
+      createdAt: updatedAt
+    )
+
+    expectNoDifference(
+      try persistenceAuditCounts(at: cacheURL),
+      PersistenceAuditCounts(
+        attributeDeletes: 0,
+        attributeInserts: 0,
+        tripleDeletes: 1,
+        tripleInserts: 2,
+        outboxDeletes: 0,
+        outboxInserts: 1
+      )
+    )
+  }
+
+  @Test
+  func relaunchDoesNotRewriteUnchangedSchemaAndTriples() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let firstRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "unchanged-bootstrap",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let firstState = try await firstRuntime.persistence.loadState()
+
+    let relaunchedRuntime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "unchanged-bootstrap",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes
+      )
+    )
+    let relaunchedState = try await relaunchedRuntime.persistence.loadState()
+
+    expectNoDifference(relaunchedState.storeRevision, firstState.storeRevision)
+    expectNoDifference(relaunchedState.snapshot.store, firstState.snapshot.store)
+  }
+
+  @Test
   func emptyRuntimeTransactionDoesNotPersistPendingMutation() async throws {
     let cacheURL = try temporaryCacheURL()
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
@@ -1181,6 +1258,30 @@ struct InstantStoreTests {
     let relaunchedEmission = try #require(await relaunchedIterator.next())
     let relaunchedTodos = try TodoExample.decode(relaunchedEmission.values)
     expectNoDifference(relaunchedTodos.map(\.text), ["offline observer refresh"])
+  }
+
+  @Test
+  func liveObservationEmitsLocalSnapshotWhileConnectionIsStillOpening() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let transport = BlockingLiveTransport()
+    var configuration = InstantRuntimeConfiguration(
+      appID: "local-observation-before-network",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      liveTransport: transport.client
+    )
+    configuration.autoConnectLiveTransport = true
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    await transport.waitUntilOpenStarted()
+
+    let clock = ContinuousClock()
+    let startedAt = clock.now
+    let stream = await runtime.observe(TodoExample.query)
+    var iterator = stream.makeAsyncIterator()
+    let emission = try #require(await iterator.next())
+
+    expectNoDifference(emission.values, [])
+    #expect(startedAt.duration(to: clock.now) < .milliseconds(500))
   }
 
   @Test
@@ -9388,6 +9489,31 @@ struct InstantStoreTests {
     } catch {
       #expect(Bool(false), "Unexpected error: \(error)")
     }
+  }
+
+  @Test
+  func fileUploadReadsCurrentSizeAfterAPreviouslyInspectedFileGrows() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let sourceURL = cacheURL.deletingLastPathComponent().appendingPathComponent("growing.wav")
+    try Data([0x52, 0x49, 0x46, 0x46]).write(to: sourceURL)
+    _ = try sourceURL.resourceValues(forKeys: [.fileSizeKey]).fileSize
+    let finalContents = Data(repeating: 0x7f, count: 32_768)
+    try finalContents.write(to: sourceURL)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "app-a",
+        persistenceURL: cacheURL,
+        makeID: { "grown-file" }
+      )
+    )
+    _ = try await runtime.signInWithRefreshToken("refresh-token", userID: "user-1")
+
+    let uploaded = try await runtime.uploadFile(from: sourceURL)
+    let contents = try await runtime.storedFileContents(id: uploaded.id)
+
+    expectNoDifference(uploaded.byteCount, Int64(finalContents.count))
+    expectNoDifference(contents.byteCount, Int64(finalContents.count))
+    expectNoDifference(contents.data, finalContents)
   }
 
   @Test
@@ -18180,6 +18306,35 @@ private actor ConnectionStatusRecorder {
   }
 }
 
+private actor BlockingLiveTransport {
+  private var didStartOpen = false
+  private var startWaiters: [CheckedContinuation<Void, Never>] = []
+
+  nonisolated var client: InstantLiveTransportClient {
+    InstantLiveTransportClient { _ in
+      await self.openStarted()
+      try await Task.sleep(for: .seconds(2))
+      throw CancellationError()
+    }
+  }
+
+  func waitUntilOpenStarted() async {
+    guard !didStartOpen else { return }
+    await withCheckedContinuation { continuation in
+      startWaiters.append(continuation)
+    }
+  }
+
+  private func openStarted() {
+    didStartOpen = true
+    let waiters = startWaiters
+    startWaiters.removeAll()
+    for waiter in waiters {
+      waiter.resume()
+    }
+  }
+}
+
 private func requireObservedConnectionStatus(
   _ recorder: ConnectionStatusRecorder,
   after cursor: Int,
@@ -18217,6 +18372,138 @@ private final class LockIsolated<Value>: @unchecked Sendable {
     defer { lock.unlock() }
     return try operation(&value)
   }
+}
+
+private struct PersistenceAuditCounts: Equatable {
+  var attributeDeletes: Int64
+  var attributeInserts: Int64
+  var tripleDeletes: Int64
+  var tripleInserts: Int64
+  var outboxDeletes: Int64
+  var outboxInserts: Int64
+}
+
+private func installPersistenceAuditTriggers(at url: URL) throws {
+  var connection: OpaquePointer?
+  guard sqlite3_open_v2(
+    url.path,
+    &connection,
+    SQLITE_OPEN_READWRITE | SQLITE_OPEN_FULLMUTEX,
+    nil
+  ) == SQLITE_OK
+  else {
+    defer { sqlite3_close(connection) }
+    throw InstantError(
+      code: .persistenceFailed,
+      operation: "open persistence audit",
+      message: connection.map { String(cString: sqlite3_errmsg($0)) }
+        ?? "SQLite could not open the persistence audit database.",
+      recovery: "Check the temporary test database."
+    )
+  }
+  defer { sqlite3_close(connection) }
+  sqlite3_busy_timeout(connection, 10_000)
+
+  var errorMessage: UnsafeMutablePointer<CChar>?
+  guard sqlite3_exec(
+    connection,
+    """
+    CREATE TABLE instant_persistence_audit (event TEXT NOT NULL);
+    CREATE TRIGGER audit_attribute_delete AFTER DELETE ON instant_attributes BEGIN
+      INSERT INTO instant_persistence_audit VALUES ('attribute-delete');
+    END;
+    CREATE TRIGGER audit_attribute_insert AFTER INSERT ON instant_attributes BEGIN
+      INSERT INTO instant_persistence_audit VALUES ('attribute-insert');
+    END;
+    CREATE TRIGGER audit_triple_delete AFTER DELETE ON instant_triples BEGIN
+      INSERT INTO instant_persistence_audit VALUES ('triple-delete');
+    END;
+    CREATE TRIGGER audit_triple_insert AFTER INSERT ON instant_triples BEGIN
+      INSERT INTO instant_persistence_audit VALUES ('triple-insert');
+    END;
+    CREATE TRIGGER audit_outbox_delete AFTER DELETE ON instant_outbox BEGIN
+      INSERT INTO instant_persistence_audit VALUES ('outbox-delete');
+    END;
+    CREATE TRIGGER audit_outbox_insert AFTER INSERT ON instant_outbox BEGIN
+      INSERT INTO instant_persistence_audit VALUES ('outbox-insert');
+    END;
+    """,
+    nil,
+    nil,
+    &errorMessage
+  ) == SQLITE_OK
+  else {
+    let message = errorMessage.map { String(cString: $0) }
+      ?? connection.map { String(cString: sqlite3_errmsg($0)) }
+      ?? "SQLite could not install persistence audit triggers."
+    sqlite3_free(errorMessage)
+    throw InstantError(
+      code: .persistenceFailed,
+      operation: "install persistence audit triggers",
+      message: message,
+      recovery: "Check the temporary test database."
+    )
+  }
+}
+
+private func persistenceAuditCounts(at url: URL) throws -> PersistenceAuditCounts {
+  var connection: OpaquePointer?
+  guard sqlite3_open_v2(
+    url.path,
+    &connection,
+    SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX,
+    nil
+  ) == SQLITE_OK
+  else {
+    defer { sqlite3_close(connection) }
+    throw InstantError(
+      code: .persistenceFailed,
+      operation: "open persistence audit counts",
+      message: connection.map { String(cString: sqlite3_errmsg($0)) }
+        ?? "SQLite could not open the persistence audit database.",
+      recovery: "Check the temporary test database."
+    )
+  }
+  defer { sqlite3_close(connection) }
+  sqlite3_busy_timeout(connection, 10_000)
+
+  var statement: OpaquePointer?
+  guard sqlite3_prepare_v2(
+    connection,
+    """
+    SELECT
+      COALESCE(SUM(event = 'attribute-delete'), 0),
+      COALESCE(SUM(event = 'attribute-insert'), 0),
+      COALESCE(SUM(event = 'triple-delete'), 0),
+      COALESCE(SUM(event = 'triple-insert'), 0),
+      COALESCE(SUM(event = 'outbox-delete'), 0),
+      COALESCE(SUM(event = 'outbox-insert'), 0)
+    FROM instant_persistence_audit
+    """,
+    -1,
+    &statement,
+    nil
+  ) == SQLITE_OK,
+    sqlite3_step(statement) == SQLITE_ROW
+  else {
+    defer { sqlite3_finalize(statement) }
+    throw InstantError(
+      code: .persistenceFailed,
+      operation: "read persistence audit counts",
+      message: connection.map { String(cString: sqlite3_errmsg($0)) }
+        ?? "SQLite could not read persistence audit counts.",
+      recovery: "Check the temporary test database."
+    )
+  }
+  defer { sqlite3_finalize(statement) }
+  return PersistenceAuditCounts(
+    attributeDeletes: sqlite3_column_int64(statement, 0),
+    attributeInserts: sqlite3_column_int64(statement, 1),
+    tripleDeletes: sqlite3_column_int64(statement, 2),
+    tripleInserts: sqlite3_column_int64(statement, 3),
+    outboxDeletes: sqlite3_column_int64(statement, 4),
+    outboxInserts: sqlite3_column_int64(statement, 5)
+  )
 }
 
 private extension Array {
