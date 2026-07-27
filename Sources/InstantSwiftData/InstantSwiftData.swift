@@ -1164,6 +1164,7 @@ public struct InstantSwiftDataClient: Sendable {
   /// short-lived tools and explicit durability boundaries that must remain alive until another
   /// client can observe the final mutation. Unlike `flushPendingMutations`, this does not invoke a
   /// separately configured mutation transport or locally confirm the outbox.
+  @available(macOS 13, iOS 16, tvOS 16, watchOS 9, *)
   public func waitForAllPendingMutations(
     timeout: Duration = .seconds(10),
     pollInterval: Duration = .milliseconds(50)
