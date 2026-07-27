@@ -1415,6 +1415,13 @@ struct InstantReactorParityTests {
     )
 
     _ = try await runtime.leaveRoom(room)
+    let opsAfterFirstLeave = await secondSession.sentMessages().map(\.op)
+    expectNoDifference(
+      opsAfterFirstLeave,
+      ["init", "join-room", "set-presence", "client-broadcast"],
+      reactorRoomReconnectSource
+    )
+    _ = try await runtime.leaveRoom(room)
     await secondSession.waitForSentMessageCount(5)
     let leaveOp = await secondSession.sentMessages().last?.op
     expectNoDifference(

@@ -443,6 +443,7 @@ private actor InstantRuntimeLiveSession {
 
   private struct RegisteredRoom: Sendable {
     var room: InstantRoomHandle
+    var observerCount: Int
     var presence: [String: JSONValue]?
     var queuedBroadcasts: [QueuedBroadcast] = []
     var isConnected = false
@@ -1046,8 +1047,12 @@ private actor InstantRuntimeLiveSession {
     _ room: InstantRoomHandle,
     clientEventID: String
   ) async throws {
-    guard registeredRooms[room] == nil else { return }
-    registeredRooms[room] = RegisteredRoom(room: room)
+    if var registration = registeredRooms[room] {
+      registration.observerCount += 1
+      registeredRooms[room] = registration
+      return
+    }
+    registeredRooms[room] = RegisteredRoom(room: room, observerCount: 1)
     guard let session, isOpened else { return }
     try await send(.joinRoom(room, clientEventID: clientEventID), through: session)
   }
@@ -1056,7 +1061,13 @@ private actor InstantRuntimeLiveSession {
     _ room: InstantRoomHandle,
     clientEventID: String
   ) async throws {
-    guard registeredRooms.removeValue(forKey: room) != nil else { return }
+    guard var registration = registeredRooms[room] else { return }
+    if registration.observerCount > 1 {
+      registration.observerCount -= 1
+      registeredRooms[room] = registration
+      return
+    }
+    registeredRooms[room] = nil
     guard let session, isOpened else { return }
     try await send(.leaveRoom(room, clientEventID: clientEventID), through: session)
   }
