@@ -16013,6 +16013,46 @@ struct InstantStoreTests {
   }
 
   @Test
+  func storeCommitDoesNotRematerializeObserversFromUnchangedNamespaces() async throws {
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let usersName = InstantAttribute(
+      id: "users/name",
+      namespace: "users",
+      name: "name",
+      valueType: .string
+    )
+    let store = InstantStore(
+      snapshot: InstantStoreSnapshot(attributes: TodoExample.attributes + [usersName])
+    )
+    let todosStream = await store.observe(TodoExample.query)
+    var todosIterator = todosStream.makeAsyncIterator()
+    _ = await todosIterator.next()
+    let usersStream = await store.observe(
+      InstantQueryPlan(id: "users.all", namespace: "users")
+    )
+    var usersIterator = usersStream.makeAsyncIterator()
+    _ = await usersIterator.next()
+    let prepared = try await store.prepare(
+      InstantStoreTransaction(
+        id: "tx-observer-namespace-invalidation",
+        operations: TodoExample.createOperations(
+          id: "todo-observer-namespace-invalidation",
+          text: "only todos changed",
+          createdAt: createdAt,
+          transactionID: "tx-observer-namespace-invalidation"
+        )
+      ),
+      applyingTo: await store.snapshot()
+    )
+
+    let committed = await store.commitAndPublish(prepared)
+
+    expectNoDifference(committed.result.emissions.map(\.queryID), [TodoExample.query.id])
+    let todoUpdate = await todosIterator.next()
+    expectNoDifference(todoUpdate?.values.map(\.id), ["todo-observer-namespace-invalidation"])
+  }
+
+  @Test
   func storeCommitDistinguishesObserversWithSameQueryIDDifferentPlans() async throws {
     let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
     let store = InstantStore(snapshot: InstantStoreSnapshot(attributes: TodoExample.attributes))

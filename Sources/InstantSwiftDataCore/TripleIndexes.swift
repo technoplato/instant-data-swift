@@ -230,6 +230,20 @@ struct TripleIndexes: Hashable, Codable, Sendable {
     eav[entityID]?.values.flatMap(\.values) ?? []
   }
 
+  func namespaces(entityID: String, attributes: AttributeStore) -> Set<String> {
+    var namespaces = Set(
+      eav[entityID]?.keys.compactMap { attributes[$0]?.namespace } ?? []
+    )
+    if let incomingReferences = vae[.ref(entityID)] {
+      for attributeID in incomingReferences.keys {
+        if let namespace = attributes[attributeID]?.linkNamespace {
+          namespaces.insert(namespace)
+        }
+      }
+    }
+    return namespaces
+  }
+
   func newestWriteTime(entityID: String, attributeID: String) -> InstantTimestamp? {
     eav[entityID]?[attributeID]?.values.map(\.txTime).max()
   }

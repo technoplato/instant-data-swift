@@ -403,12 +403,35 @@ public actor InstantStore {
     _ prepared: PreparedStoreMutation,
     shouldPublish: Bool
   ) -> PreparedStoreMutation {
+    let changedNamespaces: Set<String>?
+    if attributes != prepared.attributes {
+      changedNamespaces = nil
+    } else {
+      var resolvedNamespaces: Set<String> = []
+      var resolvedEveryEntity = true
+      for entityID in prepared.result.changedEntityIDs {
+        let entityNamespaces = indexes.namespaces(entityID: entityID, attributes: attributes)
+          .union(
+            prepared.indexes.namespaces(
+              entityID: entityID,
+              attributes: prepared.attributes
+            )
+          )
+        if entityNamespaces.isEmpty {
+          resolvedEveryEntity = false
+        }
+        resolvedNamespaces.formUnion(entityNamespaces)
+      }
+      changedNamespaces = resolvedEveryEntity ? resolvedNamespaces : nil
+    }
     self.attributes = prepared.attributes
     self.indexes = prepared.indexes
     self.sequence = prepared.sequence
 
     var emissionsByObservation: [StoreObservationKey: InstantQueryEmission] = [:]
-    for observer in observers.values {
+    for observer in observers.values
+    where Self.shouldRematerialize(observer, changedNamespaces: changedNamespaces)
+    {
       let key = StoreObservationKey(
         plan: observer.plan,
         remotePageInfo: observer.remotePageInfo
@@ -462,6 +485,15 @@ public actor InstantStore {
       attributes: prepared.attributes,
       indexes: prepared.indexes
     )
+  }
+
+  private static func shouldRematerialize(
+    _ observer: StoreObserver,
+    changedNamespaces: Set<String>?
+  ) -> Bool {
+    guard let changedNamespaces else { return true }
+    guard observer.plan.hasOnlyNamespaceLocalDependencies else { return true }
+    return changedNamespaces.contains(observer.plan.namespace)
   }
 
   private static func emissionSortKey(_ key: StoreObservationKey) -> String {
@@ -1187,6 +1219,30 @@ public actor InstantStore {
 
   func activeQueryCacheKeys() -> Set<String> {
     Set(observers.values.map(\.plan.cacheKey))
+  }
+}
+
+private extension InstantQueryPlan {
+  var hasOnlyNamespaceLocalDependencies: Bool {
+    (includes?.isEmpty ?? true)
+      && filters.allSatisfy(\.hasOnlyNamespaceLocalDependencies)
+      && !(order?.field.contains(".") ?? false)
+      && (selectedFields?.allSatisfy { !$0.contains(".") } ?? true)
+  }
+}
+
+private extension InstantQueryFilter {
+  var hasOnlyNamespaceLocalDependencies: Bool {
+    switch self {
+    case let .equals(field, _), let .notEquals(field, _),
+      let .greaterThan(field, _), let .greaterThanOrEqual(field, _),
+      let .lessThan(field, _), let .lessThanOrEqual(field, _),
+      let .in(field, _), let .like(field, _), let .iLike(field, _),
+      let .isNull(field), let .isNotNull(field):
+      return !field.contains(".")
+    case let .and(filters), let .or(filters):
+      return filters.allSatisfy(\.hasOnlyNamespaceLocalDependencies)
+    }
   }
 }
 
