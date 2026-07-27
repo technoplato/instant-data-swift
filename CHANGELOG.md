@@ -4,6 +4,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 10:41:17 a.m. EDT — `c399e0080ac8` Reconcile final verification evidence
+
+- **Implementation commit:** `c399e0080ac882c641d032fc2d661bb7a088c8dd`
+- **Change:** Reconcile final verification evidence
+- **Details:**
+  - Align the durable audit with the Watch probe recording-compatible asynchronous activation policy.
+  - Point final Scribe, performance-safety, and artifact-sanitizer evidence at the authoritative passing logs.
+- **Files:**
+  - `docs/audits/2026-07-26-fable5-comprehensive-audit.md` — Reconcile the final acceptance record with the last code and verification evidence.
+- **User context (verbatim):**
+  > maintain a human-readable timestamped commit audit journal and clean worktrees
+- **SpecStory:** unavailable — Codex desktop task; no durable SpecStory CLI capture URI is available.
+
 ## July 27th, 2026 at 10:40:22 a.m. EDT — `01782d294545` Record final cross-repository verification
 
 - **Implementation commit:** `01782d2945459b0c382ebb7cd6476595fcae482b`
