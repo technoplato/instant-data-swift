@@ -127,21 +127,31 @@ persisted artifacts outrank code reading whenever they disagree.
   or expensive socket failures as immediate evidence (`bb6ca86`, `8753938`).
   The eight-second auto-run window now begins only after capture, WAV append,
   and Deepgram streaming are active (`6699ea5`).
+- 2026-07-27 — Ported the physically proven Watch audio policy into the
+  production capture client (`3fe73a0`). Production now selects asynchronous
+  watchOS activation, removes `.mixWithOthers`, and keeps the default
+  microphone-compatible route; the existing TCA readiness gates still order
+  capture activation, Deepgram connection/receiver readiness, and PCM delivery.
+  Focused policy/transport tests, the 447-test package suite, and a generic
+  no-sign `ScribeSharedWatch` build passed.
 - 2026-07-27 — Completed the revised ReplayKit code scope. Scribe already
   embeds `RPSystemBroadcastPickerView` from `a888ec9`; `62157d2` now correlates
   transcript attribution to the audio-frame source span and uses the exact
   `System Audio` fallback when application metadata is unavailable.
-- 2026-07-27 — Completed clean-head physical Watch deployment evidence. The
+- 2026-07-27 — Completed clean-head physical Watch transcription evidence. The
   signed `Scribe Audio Probe` built from clean Scribe commit `b2f5a4c`, embedded
   that full commit plus dirty=false and its local/ISO build time, installed on
-  the paired Series 9, and launched successfully. Its copied device-local JSONL
-  log reported `diagnostic.prepared` on watchOS 27.0 with 48 kHz mono PCM and
-  the credential source present. No recording event was generated because the
-  available tooling cannot capture a watchOS hierarchy or safely synthesize a
-  hierarchy-derived tap.
+  the paired Series 9, and launched successfully. The retained device-local log
+  records one cancelled startup followed by a complete attempt: asynchronous
+  default-route activation, 48 kHz mono PCM, 77 sent buffers / 739,200 sent
+  bytes, a 739,244-byte local WAV, an open Deepgram socket, 14 provider
+  messages, and a final speech-final transcript. The matching final-result
+  latencies were 991 ms from PCM send and 2,649 ms from audio end. This proves
+  the focused direct-capture diagnostic path, not a reliability soak or the
+  production app's recording persistence and Instant projection.
 - 2026-07-27 — Final package verification passed after stabilizing only
-  asynchronous test evidence: Scribe ran 446 tests in 47 suites
-  (`/tmp/fable5-scribe-full-final-5.log`), and Instant ran 1,193 tests in 102
+  asynchronous test evidence: Scribe ran 447 tests in 47 suites
+  (`/tmp/fable5-scribe-full-final-6.log`), and Instant ran 1,193 tests in 102
   suites (`/tmp/fable5-instant-full-final-9.log`). The performance-safety suite
   also remained green at 10 tests (`/tmp/fable5-scribe-final-perf.log`), and two
   final sanitizer passes each inspected 19 artifacts without requiring a
@@ -190,15 +200,16 @@ Severity: P0 correctness/data-loss, P1 behavior/perf, P2 ergonomics, P3 polish.
   upserts, the remaining dynamic/composite fetch surface, broader DocC, and a
   unified fetch status remain proposed rather than being claimed complete.
 - **Device evidence:** Watch credential recovery, relay timing, diagnostic
-  logger handoff, asynchronous recording activation, recording-compatible
-  audio policy,
-  Watch-probe provenance/timestamp, ReplayKit source correlation, the clear
-  fallback label, and the embedded broadcast picker are covered by focused
-  tests. The final clean Watch probe also built, installed, launched, and wrote
-  a matching `diagnostic.prepared` row on the physical paired Series 9. A human
-  recording/transcription interaction and an iPhone ReplayKit broadcast remain
-  device acceptance work; neither package tests nor a successful process
-  launch are presented as proof of those interactions.
+  logger handoff, production asynchronous recording activation, the
+  recording-compatible audio policy, Watch-probe provenance/timestamp,
+  ReplayKit source correlation, the clear fallback label, and the embedded
+  broadcast picker are covered by focused tests. The final clean Watch probe
+  also built, installed, launched, and completed local PCM/WAV capture plus a
+  final Deepgram transcript on the physical paired Series 9. The post-port
+  production `ScribeSharedWatch` target compiles for generic watchOS, but its
+  signed build is awaiting login-keychain access; production recording save,
+  Instant projection/media delivery, repeated Watch cold-start reliability,
+  and an iPhone ReplayKit broadcast remain device acceptance work.
 
 ## Decisions
 
