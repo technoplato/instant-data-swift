@@ -14,6 +14,14 @@ contain its own final SHA.
   frames actually sent under each context and use the exact `System Audio`
   fallback whenever reliable application metadata is unavailable.
 
+## July 27, 2026 at 9:29:36 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `eaecd9d084651dd1b497fafc0a6b8ee10567b658`
+- High-level reason: Load generator-produced, Git-ignored provenance into the
+  SwiftPM build plugin and reject stale commits, mismatched source roots, or
+  dirty worktrees before compiling reproducible build metadata.
+
 ## July 27, 2026 at 9:27:54 AM EDT
 
 - Repository: `instant-data-swift`
