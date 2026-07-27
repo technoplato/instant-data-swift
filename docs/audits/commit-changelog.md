@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 27, 2026 at 10:14:43 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `91578fe1e6b3da54b52939f0d8736da99b68343f`
+- High-level reason: Correct the deterministic offline-relaunch benchmark to
+  the measured 11-hop contract after bootstrap pruning was integrated into the
+  existing persistence actor call rather than adding a new hop.
+
 ## July 27, 2026 at 10:13:43 AM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
@@ -13,6 +21,14 @@ contain its own final SHA.
 - High-level reason: Authorize the physical Apple Watch recording session for
   long-form audio streaming and configure its Deepgram WebSocket to surface
   connection failures immediately on constrained or expensive networks.
+
+## July 27, 2026 at 10:13:01 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `0ba57bdbdc5e4375e91189c9b1fe40cb69bb7a4a`
+- High-level reason: Prune persisted query cache rows at bootstrap and then
+  every 64 successful cache writes, preserving active observations without
+  adding retention work to every one-shot query.
 
 ## July 27, 2026 at 10:05:15 AM EDT
 

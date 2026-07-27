@@ -4,6 +4,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 10:14:54 a.m. EDT — `91578fe1e6b3` Correct amortized pruning benchmark contract
+
+- **Implementation commit:** `91578fe1e6b3da54b52939f0d8736da99b68343f`
+- **Change:** Correct the amortized pruning benchmark contract
+- **Details:**
+  - Restore the offline-relaunch actor-hop fixture to 11 after bootstrap pruning was folded into the existing persistence bootstrap actor call.
+  - Keep the deterministic benchmark aligned with the measured implementation and correct the prior ledger wording that implied an added persistence hop.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/BenchmarkTests.swift` — Pin the integrated bootstrap path at five persistence hops and eleven total actor hops.
+- **User context (verbatim):**
+  > But we also want to really be focusing on performance.
+- **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
+
 ## July 27th, 2026 at 10:13:28 a.m. EDT — `0ba57bdbdc5e` Amortize persisted query cache pruning
 
 - **Implementation commit:** `0ba57bdbdc5e4375e91189c9b1fe40cb69bb7a4a`

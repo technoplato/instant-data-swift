@@ -88,6 +88,9 @@ persisted artifacts outrank code reading whenever they disagree.
   one-shot materialization path in `c0a0304`. Active observation keys and the
   completing query remain protected; unloaded rows are bounded by the
   Reactor-compatible age, entry-count, and adapted encoded-size policy.
+  `0ba57bd` moved the scan to bootstrap plus every 64 successful writes so
+  ordinary one-shot reads retain their prior actor-hop contract; `91578fe`
+  corrected the deterministic relaunch fixture to the measured 11 hops.
 - 2026-07-27 — Scoped store observer invalidation by namespace in `da5010d`.
   Flat query plans no longer re-materialize for clearly unrelated commits;
   relationship includes and paths, schema changes, and unresolved entities
@@ -100,6 +103,30 @@ persisted artifacts outrank code reading whenever they disagree.
   read-only client facet in `760afdb`. Composition roots can now inject local
   reads and observations over the already bootstrapped runtime while ordinary
   live one-shot APIs retain their freshness contract.
+- 2026-07-27 — Fixed the five highest-priority Reactor correctness gaps with
+  focused parity tests: isolated rejected queries (`d7dd19d`), rebased later
+  optimistic writes (`cabc467`), reference-counted room joins (`ac10cb3`),
+  preserved same-millisecond mutation order (`ea1ca27`), and isolated malformed
+  outbox rows (`0bda5d5`).
+- 2026-07-27 — Bounded both unbounded live-audio collections. Microphone
+  buffering retains the newest 256 buffers and diagnoses drops (`e12be12`);
+  Watch relay correlation retains the newest 4,096 timings without falsely
+  attributing evicted audio (`1d8db69`).
+- 2026-07-27 — Reduced cumulative transcript work in Scribe. Live projection
+  no longer rewrites complete joined text (`fa2210b`), finalization still
+  persists the fallback transcript, and overlapping snapshot writes now run in
+  submission order (`17c2d62`).
+- 2026-07-27 — Hardened the Watch credential and observability path. The phone
+  relay can restore and persist validated Deepgram credentials without making
+  remote logging a prerequisite (`d3969e7`); the standalone Watch probe embeds
+  clean-build provenance (`e15d6f9`); and relay diagnostics use the logger
+  configured during Instant bootstrap (`2f9d947`). The Watch recorder now also
+  authorizes long-form audio streaming before opening Deepgram and treats
+  constrained or expensive socket failures as immediate evidence (`bb6ca86`).
+- 2026-07-27 — Completed the revised ReplayKit code scope. Scribe already
+  embeds `RPSystemBroadcastPickerView` from `a888ec9`; `62157d2` now correlates
+  transcript attribution to the audio-frame source span and uses the exact
+  `System Audio` fallback when application metadata is unavailable.
 - 2026-07-26 — Committed baselines in both repos (`f70044d`, `4d30691`).
   Confirmed no secrets in diffs (only env-var names/test fixtures; API keys go
   through KeychainClient).
@@ -113,19 +140,43 @@ Severity: P0 correctness/data-loss, P1 behavior/perf, P2 ergonomics, P3 polish.
 | ID | Severity | Status | Finding |
 | --- | --- | --- | --- |
 | S-C1 | P0 | Fixed `7f4ce7e` | `bugs/crash1.txt` proves AppKit pasteboard access crashed off-main; `currentContent` was the last synchronous live entry point. |
-| R-B1 | P1 | Open | Room registration is not observer-reference-counted; one consumer leaving can unregister a room still used by another and freeze presence. |
-| R-A1 | P1 | Open | Pending mutations created in the same millisecond are tie-broken by random UUID, so replay/rebase order can invert. |
-| R-A2 | P1 | Open | One mutation with an unresolvable attribute aborts the delivery loop and can poison every reconnect. |
-| R-A3 | P1 | Open | One rejected `add-query` can tear down the shared socket instead of failing only its observation. |
-| R-A4 | P1 | Open | Failed optimistic cardinality-one writes or deletes can leave holes until a server refresh because rollback removes failed triples without restoring overwritten server triples. |
-| S-C2/C11 | P1 | Open | Every interim transcript can trigger full projection, diffing, persistence, and full joined-text rewriting, creating out-of-order saves and roughly quadratic cumulative work. |
+| R-B1 | P1 | Fixed `ac10cb3` | Room registrations are reference-counted; only the final local observer sends `leave-room`. |
+| R-A1 | P1 | Fixed `ea1ca27` | Implicit mutation timestamps advance monotonically above the newest durable outbox row, preserving insertion order across relaunch. |
+| R-A2 | P1 | Fixed `0bda5d5` | Attribute-resolution failures are persisted per mutation while the delivery loop continues with later healthy rows. |
+| R-A3 | P1 | Fixed `d7dd19d` | A rejected `add-query` retires only the correlated registration and leaves the shared socket and healthy observations intact. |
+| R-A4 | P1 | Fixed `cabc467` | Remaining optimistic mutations are rebased above the authoritative server snapshot so later local writes stay visible. |
+| S-C2/C11 | P1 | Fixed `fa2210b`, `17c2d62` | Live projection omits cumulative joined-text rewrites, finalization writes the fallback text once, and snapshot mutations are serialized in submission order. |
 | S-C3/C4 | P1 | Partial `da5010d` | Commits now skip flat observers in untouched namespaces while relationship-dependent plans remain conservative; infinite-query windowing still needs separate review. |
 | S-C5 | P1 | Fixed `21be1b8` | Scribe's local startup and capture projection loaders now use an injected local-only client over the shared SQLite file; live one-shot queries remain freshness-sensitive and no public `queryLocal` was added. |
-| S-C6/C7 | P1/P2 | Open | Microphone PCM and Watch relay timing collections need explicit bounds and drop diagnostics. |
-| R-A8 | P2 | Partial `c0a0304` | Persisted per-query results are now pruned in production while active observations remain protected; global triple retention still needs a separate reachability policy. |
-| API-B1/B2/B3 | P2 | Proposed | Generate or centralize entity snapshot decoding and whole-model upserts to remove repeated stringly application boilerplate. |
+| S-C6/C7 | P1/P2 | Fixed `e12be12`, `1d8db69` | Microphone PCM retains 256 newest buffers with drop diagnostics; Watch relay timing uses a 4,096-entry circular buffer and refuses false attribution after eviction. |
+| R-A8 | P2 | Partial `c0a0304`, `0ba57bd` | Persisted per-query results are pruned at bootstrap and every 64 successful writes while active observations remain protected; global triple retention still needs a separate reachability policy. |
+| API-B1/B2/B3 | P2 | Partial `7ec460a` | Typed schema-owned snapshot decoding now removes string keys for cardinality-one values; macro-generated whole-model upserts remain a separate ergonomic follow-up. |
 | API-B5/B6/B7 | P2 | Proposed | Complete dynamic fetch parity and expose library-owned decoded/composite observation for TCA and actor consumers. |
 | API-B8/B10/B13 | P2 | Partial `d3e6e70`, `760afdb` | Dependency-controlled typed IDs and a read-only local client facet are implemented with ADRs; broader DocC and unified fetch-status work remain. |
+
+## Acceptance boundaries and retained follow-ups
+
+- **Infinite query transport windowing:** still open within `S-C3/C4`.
+  Namespace-scoped invalidation removes unrelated re-materialization, but the
+  Swift infinite-query observer still subscribes to an unbounded namespace and
+  applies its visible window locally. Correct upstream-style forward/reverse
+  cursor subscriptions require a dedicated behavioral port; this audit does
+  not disguise that work with a larger arbitrary limit.
+- **Global triple reachability:** still open within `R-A8`. Persisted per-query
+  cache rows now have production retention, but deleting triples that are no
+  longer reachable from any active or cached query needs a separate ownership
+  and offline-retention policy.
+- **Ergonomic breadth:** typed snapshot values, dependency-controlled IDs, and
+  the local-reader facet are accepted, ADR-backed increments. Whole-model
+  upserts, the remaining dynamic/composite fetch surface, broader DocC, and a
+  unified fetch status remain proposed rather than being claimed complete.
+- **Device evidence:** Watch credential recovery, relay timing, diagnostic
+  logger handoff, streaming authorization, Watch-probe provenance, ReplayKit
+  source correlation, the clear fallback label, and the embedded broadcast
+  picker are covered by focused tests. A physical paired-Watch
+  recording/transcription run and an iPhone ReplayKit broadcast remain device
+  acceptance work; package tests alone are not presented as proof of those
+  physical paths.
 
 ## Decisions
 
