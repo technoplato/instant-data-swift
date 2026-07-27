@@ -36,6 +36,12 @@ public struct InstantRuntimeConfiguration: Sendable {
     maxEncodedJSONBytes: 1_000_000
   )
   var queryCachePruningWriteInterval = 64
+  var liveQueryResultPruningPolicy = InstantLiveQueryResultPruningPolicy(
+    maxAgeMilliseconds: 1_000 * 60 * 60 * 24 * 7 * 52,
+    maxEntries: 1_000,
+    maxTripleCount: 1_000_000
+  )
+  var liveQueryResultPruningWriteInterval = 64
   var liveReconnectSleep: @Sendable (UInt64) async throws -> Void = { milliseconds in
     try await Task.sleep(nanoseconds: milliseconds * 1_000_000)
   }
@@ -882,23 +888,30 @@ private actor InstantRuntimeLiveSession {
     try await send(.addQuery(query, clientEventID: clientEventID), through: session)
   }
 
-  func unregisterQuery(key: String, clientEventID: String) async throws {
-    guard var registration = registeredQueries[key] else { return }
+  @discardableResult
+  func unregisterQuery(key: String, clientEventID: String) async throws -> Bool {
+    guard var registration = registeredQueries[key] else { return false }
     if registration.observerCount > 1 {
       registration.observerCount -= 1
       registeredQueries[key] = registration
-      return
+      return false
     }
     registeredQueries[key] = nil
-    guard let session, isOpened else { return }
+    guard let session, isOpened else { return true }
     try await send(
       .removeQuery(registration.query, clientEventID: clientEventID),
       through: session
     )
+    return true
   }
 
-  func retireRejectedQuery(key: String) {
-    registeredQueries[key] = nil
+  @discardableResult
+  func retireRejectedQuery(key: String) -> Bool {
+    registeredQueries.removeValue(forKey: key) != nil
+  }
+
+  func activeQueryKeys() -> Set<String> {
+    Set(registeredQueries.keys)
   }
 
   func refreshRegisteredQueries() async throws {
@@ -1619,6 +1632,7 @@ public final class InstantRuntime: Sendable {
   private let connectionGate = AsyncSerialGate()
   private let mutationFlushGate = AsyncSerialGate()
   private let queryCachePruningCadence = InstantQueryCachePruningCadence()
+  private let liveQueryResultPruningCadence = InstantQueryCachePruningCadence()
   private let liveSession = InstantRuntimeLiveSession()
   private let liveQueryResultState = InstantLiveQueryResultState()
   private let liveQueryAcknowledgements = InstantLiveQueryAcknowledgementState()
@@ -1816,6 +1830,44 @@ public final class InstantRuntime: Sendable {
         storageTransport: storageTransport,
         streamFileTransport: streamFileTransport
       )
+
+      do {
+        configuration.actorHopRecorder?.record(.persistence)
+        let pruning = try await persistence.pruneLiveQueryResults(
+          policy: configuration.liveQueryResultPruningPolicy,
+          now: configuration.now()
+        )
+        if !pruning.result.removedQueryKeys.isEmpty {
+          state = pruning.state
+          configuration.actorHopRecorder?.record(.store)
+          await store.replaceSnapshot(state.snapshot.store)
+          configuration.actorHopRecorder?.record(.outbox)
+          await outbox.replace(with: state.snapshot.outbox)
+          InstantDiagnostics.shared.record(
+            .debug,
+            subsystem: "instant-swift-data-core",
+            category: "query",
+            event: "live-query-results.pruned-at-bootstrap",
+            message: "Pruned unloaded persisted live query results during runtime bootstrap.",
+            metadata: [
+              "remainingCount": String(pruning.result.remainingEntryCount),
+              "remainingTripleCount": String(pruning.result.remainingTripleCount),
+              "removedCount": String(pruning.result.removedQueryKeys.count),
+              "removedOrphanedTripleCount": String(
+                pruning.result.removedOrphanedTripleCount
+              ),
+            ]
+          )
+        }
+      } catch {
+        InstantDiagnostics.shared.record(
+          error: error,
+          subsystem: "instant-swift-data-core",
+          category: "query",
+          event: "live-query-results.bootstrap-prune-failed",
+          message: "Could not prune persisted live query results during runtime bootstrap."
+        )
+      }
 
       Task(priority: .utility) {
         await runtime.syncUserCookieOnStartup()
@@ -2417,6 +2469,26 @@ public final class InstantRuntime: Sendable {
         liveQueryResultReplacements: translated.queryResultReplacements
       )
       await liveQueryResultState.record(translated.queryResultReplacements)
+      if !translated.queryResultReplacements.isEmpty,
+        liveQueryResultPruningCadence.shouldPrune(
+          afterSuccessfulWriteWithInterval: configuration.liveQueryResultPruningWriteInterval
+        )
+      {
+        do {
+          _ = try await performPruneLiveQueryResults(
+            policy: configuration.liveQueryResultPruningPolicy,
+            now: configuration.now()
+          )
+        } catch {
+          InstantDiagnostics.shared.record(
+            error: error,
+            subsystem: "instant-swift-data-core",
+            category: "query",
+            event: "live-query-results.prune-failed",
+            message: "Could not prune unloaded persisted live query results."
+          )
+        }
+      }
 
       await leaveOperationGate()
       return InstantLiveRefreshApplicationResult(
@@ -2834,10 +2906,13 @@ public final class InstantRuntime: Sendable {
     return Self.liveObservation(stream) { [weak self] in
       guard let self else { return }
       do {
-        try await self.liveSession.unregisterQuery(
+        let didUnload = try await self.liveSession.unregisterQuery(
           key: registrationKey,
           clientEventID: self.configuration.makeID()
         )
+        if didUnload {
+          await self.liveQueryResultState.unload(key: registrationKey)
+        }
         InstantDiagnostics.shared.record(
           .debug,
           subsystem: "instant-swift-data-core",
@@ -2848,6 +2923,7 @@ public final class InstantRuntime: Sendable {
           correlationID: plan.id
         )
       } catch {
+        await self.liveQueryResultState.unload(key: registrationKey)
         await self.recordConnectionError(error)
         InstantDiagnostics.shared.record(
           error: error,
@@ -2896,11 +2972,15 @@ public final class InstantRuntime: Sendable {
     return Self.liveObservation(stream) { [weak self] in
       guard let self else { return }
       do {
-        try await self.liveSession.unregisterQuery(
+        let didUnload = try await self.liveSession.unregisterQuery(
           key: registrationKey,
           clientEventID: self.configuration.makeID()
         )
+        if didUnload {
+          await self.liveQueryResultState.unload(key: registrationKey)
+        }
       } catch {
+        await self.liveQueryResultState.unload(key: registrationKey)
         await self.recordConnectionError(error)
       }
     }
@@ -2985,10 +3065,17 @@ public final class InstantRuntime: Sendable {
     )
     defer {
       Task {
-        try? await self.liveSession.unregisterQuery(
-          key: registrationKey,
-          clientEventID: self.configuration.makeID()
-        )
+        do {
+          let didUnload = try await self.liveSession.unregisterQuery(
+            key: registrationKey,
+            clientEventID: self.configuration.makeID()
+          )
+          if didUnload {
+            await self.liveQueryResultState.unload(key: registrationKey)
+          }
+        } catch {
+          await self.liveQueryResultState.unload(key: registrationKey)
+        }
       }
     }
 
@@ -3173,6 +3260,61 @@ public final class InstantRuntime: Sendable {
         correlationID: cacheKey
       )
     }
+  }
+
+  func pruneLiveQueryResults(
+    policy: InstantLiveQueryResultPruningPolicy,
+    now: InstantTimestamp
+  ) async throws -> InstantLiveQueryResultPruningResult {
+    await enterOperationGate()
+    do {
+      let result = try await performPruneLiveQueryResults(policy: policy, now: now)
+      await leaveOperationGate()
+      return result
+    } catch {
+      await leaveOperationGate()
+      throw error
+    }
+  }
+
+  private func performPruneLiveQueryResults(
+    policy: InstantLiveQueryResultPruningPolicy,
+    now: InstantTimestamp
+  ) async throws -> InstantLiveQueryResultPruningResult {
+    let activeQueryKeys = await liveSession.activeQueryKeys()
+    recordActorHop(.persistence)
+    let application = try await persistence.pruneLiveQueryResults(
+      policy: policy,
+      now: now,
+      preservingQueryKeys: activeQueryKeys
+    )
+    guard !application.result.removedQueryKeys.isEmpty else {
+      return application.result
+    }
+    if application.result.removedOrphanedTripleCount > 0 {
+      recordActorHop(.store)
+      await store.replaceSnapshot(application.state.snapshot.store)
+    }
+    for key in application.result.removedQueryKeys {
+      await liveQueryResultState.unload(key: key)
+    }
+    InstantDiagnostics.shared.record(
+      .debug,
+      subsystem: "instant-swift-data-core",
+      category: "query",
+      event: "live-query-results.pruned",
+      message: "Pruned unloaded persisted live query results and newly orphaned triples.",
+      metadata: [
+        "activeCount": String(activeQueryKeys.count),
+        "remainingCount": String(application.result.remainingEntryCount),
+        "remainingTripleCount": String(application.result.remainingTripleCount),
+        "removedCount": String(application.result.removedQueryKeys.count),
+        "removedOrphanedTripleCount": String(
+          application.result.removedOrphanedTripleCount
+        ),
+      ]
+    )
+    return application.result
   }
 
   private func freshCachedQueryForClosedQuery(
@@ -3871,7 +4013,9 @@ public final class InstantRuntime: Sendable {
           message: error.message,
           recovery: "Inspect the rejected query and its Instant permissions without reconnecting the healthy live session."
         )
-        await liveSession.retireRejectedQuery(key: registrationKey)
+        if await liveSession.retireRejectedQuery(key: registrationKey) {
+          await liveQueryResultState.unload(key: registrationKey)
+        }
         await liveQueryAcknowledgements.reject(key: registrationKey, error: rejection)
         InstantDiagnostics.shared.record(
           error: rejection,

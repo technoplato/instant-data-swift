@@ -85,6 +85,55 @@ public struct InstantQueryCachePruningResult: Hashable, Codable, Sendable {
   }
 }
 
+public struct InstantLiveQueryResultPruningPolicy: Hashable, Codable, Sendable {
+  public var maxAgeMilliseconds: Int64?
+  public var maxEntries: Int?
+  public var maxTripleCount: Int?
+
+  public init(
+    maxAgeMilliseconds: Int64? = nil,
+    maxEntries: Int? = nil,
+    maxTripleCount: Int? = nil
+  ) {
+    self.maxAgeMilliseconds = maxAgeMilliseconds
+    self.maxEntries = maxEntries
+    self.maxTripleCount = maxTripleCount
+  }
+}
+
+public struct InstantLiveQueryResultPruningResult: Hashable, Codable, Sendable {
+  public var removedQueryKeys: [String]
+  public var remainingQueryKeys: [String]
+  public var removedOrphanedTripleCount: Int
+  public var remainingEntryCount: Int
+  public var remainingTripleCount: Int
+
+  public init(
+    removedQueryKeys: [String],
+    remainingQueryKeys: [String],
+    removedOrphanedTripleCount: Int,
+    remainingEntryCount: Int,
+    remainingTripleCount: Int
+  ) {
+    self.removedQueryKeys = removedQueryKeys
+    self.remainingQueryKeys = remainingQueryKeys
+    self.removedOrphanedTripleCount = removedOrphanedTripleCount
+    self.remainingEntryCount = remainingEntryCount
+    self.remainingTripleCount = remainingTripleCount
+  }
+}
+
+struct InstantLiveQueryResultPruningApplication: Sendable {
+  var result: InstantLiveQueryResultPruningResult
+  var state: InstantPersistenceState
+}
+
+private struct LiveQueryResultStorageRow: Sendable {
+  var queryKey: String
+  var updatedAtMilliseconds: Int64
+  var tripleCount: Int
+}
+
 public actor SQLitePersistenceStore {
   private let fileURL: URL
   private let startupTrace: InstantStartupTrace
@@ -1683,6 +1732,148 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  func pruneLiveQueryResults(
+    policy: InstantLiveQueryResultPruningPolicy,
+    now: InstantTimestamp,
+    preservingQueryKeys: Set<String> = []
+  ) throws -> InstantLiveQueryResultPruningApplication {
+    let application = try transaction {
+      let storeRevision = try loadMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
+      let outboxRevision = try loadMetadataRevisionWithoutTransaction(Self.outboxRevisionKey)
+      let currentState =
+        if let cachedState,
+          cachedState.storeRevision == storeRevision,
+          cachedState.outboxRevision == outboxRevision
+        {
+          cachedState
+        } else {
+          try InstantPersistenceState(
+            snapshot: loadSnapshotWithoutTransaction(),
+            storeRevision: storeRevision,
+            outboxRevision: outboxRevision
+          )
+        }
+      var rows = try loadLiveQueryResultRowsWithoutTransaction()
+      var protectedQueryKeys = preservingQueryKeys
+      let optimisticProtection = Self.liveQueryPruningProtection(
+        currentState.snapshot.outbox
+      )
+      if optimisticProtection.preservesAllQueryResults {
+        protectedQueryKeys.formUnion(rows.map(\.queryKey))
+      } else if !optimisticProtection.entityIDs.isEmpty {
+        protectedQueryKeys.formUnion(
+          try liveQueryKeysOwningEntityIDsWithoutTransaction(
+            optimisticProtection.entityIDs
+          )
+        )
+      }
+
+      var removedRows: [LiveQueryResultStorageRow] = []
+      func remove(_ row: LiveQueryResultStorageRow) -> Bool {
+        guard !protectedQueryKeys.contains(row.queryKey) else { return false }
+        rows.removeAll { $0.queryKey == row.queryKey }
+        removedRows.append(row)
+        return true
+      }
+
+      if let maxAgeMilliseconds = policy.maxAgeMilliseconds {
+        let cutoff = now.milliseconds - Swift.max(0, maxAgeMilliseconds)
+        for row in rows where row.updatedAtMilliseconds < cutoff {
+          _ = remove(row)
+        }
+      }
+      if let maxEntries = policy.maxEntries {
+        let limit = Swift.max(0, maxEntries)
+        while rows.count > limit {
+          guard let row = rows.first(where: { !protectedQueryKeys.contains($0.queryKey) })
+          else { break }
+          _ = remove(row)
+        }
+      }
+      if let maxTripleCount = policy.maxTripleCount {
+        let limit = Swift.max(0, maxTripleCount)
+        var tripleCount = rows.reduce(0) { $0 + $1.tripleCount }
+        while tripleCount > limit {
+          guard let row = rows.first(where: { !protectedQueryKeys.contains($0.queryKey) })
+          else { break }
+          guard remove(row) else { continue }
+          tripleCount -= row.tripleCount
+        }
+      }
+
+      guard !removedRows.isEmpty else {
+        return InstantLiveQueryResultPruningApplication(
+          result: InstantLiveQueryResultPruningResult(
+            removedQueryKeys: [],
+            remainingQueryKeys: rows.map(\.queryKey),
+            removedOrphanedTripleCount: 0,
+            remainingEntryCount: rows.count,
+            remainingTripleCount: rows.reduce(0) { $0 + $1.tripleCount }
+          ),
+          state: currentState
+        )
+      }
+
+      var snapshot = currentState.snapshot
+      var removedIdentities: Set<InstantLiveTripleIdentity> = []
+      for row in removedRows {
+        guard let result = try liveQueryResultWithoutTransaction(key: row.queryKey) else {
+          continue
+        }
+        for triple in result.triples {
+          removedIdentities.insert(InstantLiveTripleIdentity(triple))
+        }
+        try execute(
+          "DELETE FROM instant_live_query_results WHERE query_key = ?",
+          [.text(row.queryKey)]
+        )
+      }
+
+      let previousStore = snapshot.store
+      let currentTriples = Dictionary(
+        snapshot.store.triples.map { (InstantLiveTripleIdentity($0), $0) },
+        uniquingKeysWith: { _, latest in latest }
+      )
+      var orphanedIdentities: Set<InstantLiveTripleIdentity> = []
+      for identity in removedIdentities {
+        guard
+          !(try liveQueryTripleHasOwnerWithoutTransaction(
+            identity,
+            excludingQueryKeys: []
+          )),
+          currentTriples[identity] != nil
+        else { continue }
+        orphanedIdentities.insert(identity)
+      }
+      snapshot.store.triples.removeAll {
+        orphanedIdentities.contains(InstantLiveTripleIdentity($0))
+      }
+      if snapshot.store != previousStore {
+        try saveStoreSnapshotDiffWithoutTransaction(
+          from: previousStore,
+          to: snapshot.store
+        )
+      }
+      let nextStoreRevision = try bumpMetadataRevisionWithoutTransaction(Self.storeRevisionKey)
+      return InstantLiveQueryResultPruningApplication(
+        result: InstantLiveQueryResultPruningResult(
+          removedQueryKeys: removedRows.map(\.queryKey),
+          remainingQueryKeys: rows.map(\.queryKey),
+          removedOrphanedTripleCount: orphanedIdentities.count,
+          remainingEntryCount: rows.count,
+          remainingTripleCount: rows.reduce(0) { $0 + $1.tripleCount }
+        ),
+        state: InstantPersistenceState(
+          snapshot: snapshot,
+          storeRevision: nextStoreRevision,
+          outboxRevision: outboxRevision
+        )
+      )
+    }
+    cachedState = application.state
+    return application
+  }
+
   public func loadActiveShareSnapshots(
     appID: String,
     rootNamespace: String?,
@@ -2468,6 +2659,32 @@ public actor SQLitePersistenceStore {
     return String(cString: cString)
   }
 
+  private func selectStrings(
+    _ sql: String,
+    _ bindings: [SQLiteBinding] = []
+  ) throws -> [String] {
+    var statement: OpaquePointer?
+    try prepare(sql, statement: &statement)
+    defer { sqlite3_finalize(statement) }
+    try bind(bindings, to: statement)
+
+    var values: [String] = []
+    while true {
+      let code = sqlite3_step(statement)
+      if code == SQLITE_DONE { return values }
+      guard code == SQLITE_ROW else {
+        throw persistenceError(operation: "read SQL", message: lastErrorMessage())
+      }
+      guard let cString = sqlite3_column_text(statement, 0) else {
+        throw persistenceError(
+          operation: "read SQL",
+          message: "SQLite returned a NULL string row."
+        )
+      }
+      values.append(String(cString: cString))
+    }
+  }
+
   private func selectInt64(_ sql: String, _ bindings: [SQLiteBinding] = []) throws -> Int64 {
     var statement: OpaquePointer?
     try prepare(sql, statement: &statement)
@@ -2522,6 +2739,91 @@ public actor SQLitePersistenceStore {
     }
   }
 
+  private func loadLiveQueryResultRowsWithoutTransaction() throws
+    -> [LiveQueryResultStorageRow]
+  {
+    var statement: OpaquePointer?
+    try prepare(
+      """
+      SELECT query_key, updated_at_ms, triple_count
+      FROM instant_live_query_results
+      ORDER BY updated_at_ms, query_key
+      """,
+      statement: &statement
+    )
+    defer { sqlite3_finalize(statement) }
+
+    var rows: [LiveQueryResultStorageRow] = []
+    while true {
+      let code = sqlite3_step(statement)
+      if code == SQLITE_DONE {
+        return rows
+      }
+      guard code == SQLITE_ROW else {
+        throw persistenceError(
+          operation: "read live query result rows",
+          message: lastErrorMessage()
+        )
+      }
+      guard let queryKeyCString = sqlite3_column_text(statement, 0) else {
+        throw persistenceError(
+          operation: "read live query result rows",
+          message: "SQLite returned a NULL live query result column."
+        )
+      }
+      rows.append(
+        LiveQueryResultStorageRow(
+          queryKey: String(cString: queryKeyCString),
+          updatedAtMilliseconds: sqlite3_column_int64(statement, 1),
+          tripleCount: Int(sqlite3_column_int64(statement, 2))
+        )
+      )
+    }
+  }
+
+  private static func liveQueryPruningProtection(
+    _ mutations: [PendingMutation]
+  ) -> (entityIDs: Set<String>, preservesAllQueryResults: Bool) {
+    var entityIDs: Set<String> = []
+    var preservesAllQueryResults = false
+    for mutation in mutations where mutation.status == .pending
+      || (mutation.status == .confirmed && mutation.serverTransactionID != nil)
+    {
+      for operation in mutation.transaction.operations {
+        switch operation {
+        case let .requireEntityMissing(entityID, _),
+          let .requireEntityExists(entityID, _),
+          let .deleteEntity(entityID),
+          let .deleteEntityInNamespace(entityID, _),
+          let .ruleParams(entityID, _, _):
+          entityIDs.insert(entityID)
+
+        case let .requireTripleExists(entityID, _, _):
+          entityIDs.insert(entityID)
+
+        case let .merge(triple), let .insert(triple), let .retract(triple):
+          entityIDs.insert(triple.entityID)
+          if case let .ref(targetEntityID) = triple.value {
+            entityIDs.insert(targetEntityID)
+          }
+          if case .lookupRef = triple.value {
+            preservesAllQueryResults = true
+          }
+
+        case .requireEntityMissingByLookup,
+          .requireEntityExistsByLookup,
+          .mergeByLookup,
+          .insertByLookup,
+          .retractByLookup,
+          .deleteEntityByLookup,
+          .ruleParamsByLookup:
+          preservesAllQueryResults = true
+        }
+      }
+    }
+    return (entityIDs, preservesAllQueryResults)
+  }
+
   private func liveQueryResultWithoutTransaction(
     key: String
   ) throws -> InstantPersistedLiveQueryResult? {
@@ -2555,6 +2857,29 @@ public actor SQLitePersistenceStore {
     }
     sql += " LIMIT 1"
     return try selectScalar(sql, bindings) != nil
+  }
+
+  private func liveQueryKeysOwningEntityIDsWithoutTransaction(
+    _ entityIDs: Set<String>
+  ) throws -> Set<String> {
+    let entityIDs = entityIDs.sorted()
+    var queryKeys: Set<String> = []
+    for startIndex in stride(from: 0, to: entityIDs.count, by: 300) {
+      let endIndex = Swift.min(startIndex + 300, entityIDs.count)
+      let chunk = entityIDs[startIndex..<endIndex]
+      let placeholders = Array(repeating: "?", count: chunk.count).joined(separator: ", ")
+      queryKeys.formUnion(
+        try selectStrings(
+          """
+          SELECT DISTINCT query_key
+          FROM instant_live_query_triples
+          WHERE entity_id IN (\(placeholders))
+          """,
+          chunk.map(SQLiteBinding.text)
+        )
+      )
+    }
+    return queryKeys
   }
 
   private static func indexLiveTriples(

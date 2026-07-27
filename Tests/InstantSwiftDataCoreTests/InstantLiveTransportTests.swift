@@ -2348,7 +2348,8 @@ struct InstantLiveTransportTests {
       configuration: InstantRuntimeConfiguration(
         appID: "live-query-result-relaunch",
         persistenceURL: cacheURL,
-        initialAttributes: TodoExample.attributes
+        initialAttributes: TodoExample.attributes,
+        now: { InstantTimestamp(milliseconds: createdAt.milliseconds + 2) }
       )
     )
     _ = try await runtime.applyLiveRefresh(
@@ -2381,7 +2382,8 @@ struct InstantLiveTransportTests {
       configuration: InstantRuntimeConfiguration(
         appID: "live-query-result-relaunch",
         persistenceURL: cacheURL,
-        initialAttributes: TodoExample.attributes
+        initialAttributes: TodoExample.attributes,
+        now: { InstantTimestamp(milliseconds: createdAt.milliseconds + 2) }
       )
     )
     let replacement = try await relaunched.applyLiveRefresh(
@@ -2484,6 +2486,180 @@ struct InstantLiveTransportTests {
     expectNoDifference(finalReplacement.transaction.operations.count, 4)
     let finalSnapshots = try await relaunched.query(TodoExample.query)
     expectNoDifference(finalSnapshots, [])
+  }
+
+  @Test
+  func liveQueryRetentionPreservesActiveRegistrationThenCollectsAfterUnsubscribe() async throws {
+    let cacheURL = try temporaryLiveCacheURL()
+    let createdAt = InstantTimestamp(milliseconds: 1_700_000_000_789)
+    let query = try InstantLiveQueryEncoder.encode(TodoExample.query)
+    let registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
+    var configuration = InstantRuntimeConfiguration(
+      appID: "live-query-active-retention",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      liveTransport: .local
+    )
+    configuration.liveQueryResultPruningPolicy = InstantLiveQueryResultPruningPolicy(
+      maxEntries: 0
+    )
+    configuration.liveQueryResultPruningWriteInterval = 1
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let observation = await runtime.observe(TodoExample.query)
+    let consumer = Task {
+      for await _ in observation {
+        if Task.isCancelled { break }
+      }
+    }
+
+    _ = try await runtime.applyLiveRefresh(
+      InstantLiveRefreshOK(
+        clientEventID: "event-active-retention",
+        processedTransactionID: "server-active-retention",
+        attrs: .todoServerAttrs,
+        computations: [
+          .todoJoinRowsComputation(
+            query: query,
+            entityID: "active-retention-todo",
+            text: "Active registration owns this row",
+            isCompleted: false,
+            createdAt: createdAt,
+            processedTransactionID: "server-active-retention"
+          )
+        ]
+      )
+    )
+
+    let retained = try await runtime.persistence.liveQueryResult(key: registrationKey)
+    #expect(retained != nil)
+
+    consumer.cancel()
+    await consumer.value
+    var removal: InstantLiveQueryResultPruningResult?
+    for _ in 0..<100 {
+      let result = try await runtime.pruneLiveQueryResults(
+        policy: InstantLiveQueryResultPruningPolicy(maxEntries: 0),
+        now: InstantTimestamp(milliseconds: createdAt.milliseconds + 1)
+      )
+      if result.removedQueryKeys.contains(registrationKey) {
+        removal = result
+        break
+      }
+      await Task.yield()
+    }
+
+    let completedRemoval = try #require(removal)
+    expectNoDifference(completedRemoval.removedQueryKeys, [registrationKey])
+    expectNoDifference(completedRemoval.removedOrphanedTripleCount, 4)
+    let collectedSnapshots = try await runtime.query(TodoExample.query)
+    expectNoDifference(collectedSnapshots, [])
+  }
+
+  @Test
+  func liveQueryRetentionPrunesUnloadedResultOnConfiguredWriteCadence() async throws {
+    let cacheURL = try temporaryLiveCacheURL()
+    let firstTimestamp = InstantTimestamp(milliseconds: 1_700_000_001_000)
+    let secondTimestamp = InstantTimestamp(milliseconds: firstTimestamp.milliseconds + 1)
+    let firstQuery: InstantLiveJSONValue = .object([
+      TodoExample.namespace: .object([
+        "$": .object(["where": .object(["id": .string("cadence-first")])])
+      ])
+    ])
+    let secondQuery: InstantLiveJSONValue = .object([
+      TodoExample.namespace: .object([
+        "$": .object(["where": .object(["id": .string("cadence-second")])])
+      ])
+    ])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "live-query-write-cadence",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes
+    )
+    configuration.liveQueryResultPruningPolicy = InstantLiveQueryResultPruningPolicy(
+      maxEntries: 1
+    )
+    configuration.liveQueryResultPruningWriteInterval = 1
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    for (query, entityID, timestamp) in [
+      (firstQuery, "cadence-first", firstTimestamp),
+      (secondQuery, "cadence-second", secondTimestamp),
+    ] {
+      _ = try await runtime.applyLiveRefresh(
+        InstantLiveRefreshOK(
+          clientEventID: "event-\(entityID)",
+          processedTransactionID: "server-\(entityID)",
+          attrs: .todoServerAttrs,
+          computations: [
+            .todoJoinRowsComputation(
+              query: query,
+              entityID: entityID,
+              text: entityID,
+              isCompleted: false,
+              createdAt: timestamp,
+              processedTransactionID: "server-\(entityID)"
+            )
+          ]
+        ),
+        receivedAt: timestamp
+      )
+    }
+
+    let firstKey = try InstantLiveQueryEncoder.registrationKey(for: firstQuery)
+    let secondKey = try InstantLiveQueryEncoder.registrationKey(for: secondQuery)
+    #expect(try await runtime.persistence.liveQueryResult(key: firstKey) == nil)
+    #expect(try await runtime.persistence.liveQueryResult(key: secondKey) != nil)
+    let snapshots = try await runtime.query(TodoExample.query)
+    expectNoDifference(try TodoExample.decode(snapshots).map(\.id), ["cadence-second"])
+  }
+
+  @Test
+  func liveQueryRetentionPrunesPersistedResultsDuringBootstrap() async throws {
+    let cacheURL = try temporaryLiveCacheURL()
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    let older = InstantPersistedLiveQueryResult(
+      replacement: InstantLiveQueryResultReplacement(
+        key: "bootstrap-retention-older",
+        triples: [],
+        pageInfo: nil
+      ),
+      updatedAt: InstantTimestamp(milliseconds: 1)
+    )
+    let newer = InstantPersistedLiveQueryResult(
+      replacement: InstantLiveQueryResultReplacement(
+        key: "bootstrap-retention-newer",
+        triples: [],
+        pageInfo: nil
+      ),
+      updatedAt: InstantTimestamp(milliseconds: 2)
+    )
+    let state = try await persistence.loadState()
+    let didSave = try await persistence.saveLiveRefresh(
+      state.snapshot,
+      queryResults: [older, newer],
+      storeChanged: false,
+      outboxChanged: false,
+      metadataKey: "test.live-query-result-bootstrap-pruning",
+      metadataValue: "seeded",
+      metadataUpdatedAt: InstantTimestamp(milliseconds: 2),
+      expectedStoreRevision: state.storeRevision,
+      expectedOutboxRevision: state.outboxRevision
+    )
+    expectNoDifference(didSave, true)
+
+    var configuration = InstantRuntimeConfiguration(
+      appID: "live-query-bootstrap-retention",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      now: { InstantTimestamp(milliseconds: 3) }
+    )
+    configuration.liveQueryResultPruningPolicy = InstantLiveQueryResultPruningPolicy(
+      maxEntries: 1
+    )
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+
+    #expect(try await runtime.persistence.liveQueryResult(key: older.key) == nil)
+    #expect(try await runtime.persistence.liveQueryResult(key: newer.key) != nil)
   }
 
   @Test

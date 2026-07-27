@@ -1211,6 +1211,281 @@ struct InstantStoreTests {
   }
 
   @Test
+  func liveQueryResultPruningBoundsUnloadedKeysAtUpstreamMaximum() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let store = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await store.bootstrap()
+    let results = (0...1_000).map { index in
+      InstantPersistedLiveQueryResult(
+        replacement: InstantLiveQueryResultReplacement(
+          key: String(format: "query-%04d", index),
+          triples: [],
+          pageInfo: nil
+        ),
+        updatedAt: InstantTimestamp(milliseconds: Int64(index))
+      )
+    }
+    let initialState = try await store.loadState()
+    let didSave = try await store.saveLiveRefresh(
+      initialState.snapshot,
+      queryResults: results,
+      storeChanged: false,
+      outboxChanged: false,
+      metadataKey: "test.live-query-result-pruning",
+      metadataValue: "seeded",
+      metadataUpdatedAt: InstantTimestamp(milliseconds: 1_001),
+      expectedStoreRevision: initialState.storeRevision,
+      expectedOutboxRevision: initialState.outboxRevision
+    )
+    expectNoDifference(didSave, true)
+
+    let application = try await store.pruneLiveQueryResults(
+      policy: InstantLiveQueryResultPruningPolicy(maxEntries: 1_000),
+      now: InstantTimestamp(milliseconds: 1_001)
+    )
+
+    expectNoDifference(application.result.removedQueryKeys, ["query-0000"])
+    expectNoDifference(application.result.remainingEntryCount, 1_000)
+    expectNoDifference(application.result.remainingTripleCount, 0)
+  }
+
+  @Test
+  func liveQueryResultPruningPreservesExplicitOwnersAndCollectsOnlyFinalOrphans()
+    async throws
+  {
+    let cacheURL = try temporaryCacheURL()
+    let store = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await store.bootstrap()
+    let retained = persistedLiveTodoResult(
+      key: "query-retained",
+      entityID: "retained-todo",
+      text: "Retained",
+      updatedAt: InstantTimestamp(milliseconds: 1)
+    )
+    let shared = persistedLiveTodoResult(
+      key: "query-shared-old",
+      entityID: "shared-todo",
+      text: "Shared",
+      updatedAt: InstantTimestamp(milliseconds: 2)
+    )
+    var sharedNew = shared
+    sharedNew.key = "query-shared-new"
+    sharedNew.updatedAt = InstantTimestamp(milliseconds: 3)
+    let snapshot = InstantPersistenceSnapshot(
+      store: InstantStoreSnapshot(
+        attributes: TodoExample.attributes,
+        triples: retained.triples + shared.triples
+      )
+    )
+    let didSave = try await store.saveLiveRefresh(
+      snapshot,
+      queryResults: [retained, shared, sharedNew],
+      storeChanged: true,
+      outboxChanged: false,
+      metadataKey: "test.live-query-result-shared-pruning",
+      metadataValue: "seeded",
+      metadataUpdatedAt: InstantTimestamp(milliseconds: 3),
+      expectedStoreRevision: 0,
+      expectedOutboxRevision: 0
+    )
+    expectNoDifference(didSave, true)
+
+    let application = try await store.pruneLiveQueryResults(
+      policy: InstantLiveQueryResultPruningPolicy(maxEntries: 1),
+      now: InstantTimestamp(milliseconds: 4),
+      preservingQueryKeys: [retained.key]
+    )
+
+    expectNoDifference(
+      application.result.removedQueryKeys,
+      ["query-shared-old", "query-shared-new"]
+    )
+    expectNoDifference(application.result.remainingQueryKeys, [retained.key])
+    expectNoDifference(application.result.removedOrphanedTripleCount, 4)
+    expectNoDifference(application.state.snapshot.store.triples, retained.triples)
+    let reloaded = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await reloaded.bootstrap()
+    let reloadedTriples = try await reloaded.loadSnapshot().store.triples
+    expectNoDifference(reloadedTriples, retained.triples)
+  }
+
+  @Test
+  func liveQueryResultPruningUsesOwnedTripleBudgetAndStrictAgeCutoff() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let store = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await store.bootstrap()
+    let older = persistedLiveTodoResult(
+      key: "query-owned-budget-older",
+      entityID: "owned-budget-todo",
+      text: "Shared ownership budget",
+      updatedAt: InstantTimestamp(milliseconds: 1)
+    )
+    var newer = older
+    newer.key = "query-owned-budget-newer"
+    newer.updatedAt = InstantTimestamp(milliseconds: 2)
+    let didSave = try await store.saveLiveRefresh(
+      InstantPersistenceSnapshot(
+        store: InstantStoreSnapshot(
+          attributes: TodoExample.attributes,
+          triples: older.triples
+        )
+      ),
+      queryResults: [older, newer],
+      storeChanged: true,
+      outboxChanged: false,
+      metadataKey: "test.live-query-result-budget-pruning",
+      metadataValue: "seeded",
+      metadataUpdatedAt: InstantTimestamp(milliseconds: 2),
+      expectedStoreRevision: 0,
+      expectedOutboxRevision: 0
+    )
+    expectNoDifference(didSave, true)
+
+    let sizeApplication = try await store.pruneLiveQueryResults(
+      policy: InstantLiveQueryResultPruningPolicy(maxTripleCount: 4),
+      now: InstantTimestamp(milliseconds: 3)
+    )
+    expectNoDifference(sizeApplication.result.removedQueryKeys, [older.key])
+    expectNoDifference(sizeApplication.result.remainingQueryKeys, [newer.key])
+    expectNoDifference(sizeApplication.result.remainingTripleCount, 4)
+    expectNoDifference(sizeApplication.result.removedOrphanedTripleCount, 0)
+    expectNoDifference(sizeApplication.state.snapshot.store.triples, older.triples)
+
+    let boundaryApplication = try await store.pruneLiveQueryResults(
+      policy: InstantLiveQueryResultPruningPolicy(maxAgeMilliseconds: 1),
+      now: InstantTimestamp(milliseconds: 3)
+    )
+    expectNoDifference(boundaryApplication.result.removedQueryKeys, [])
+    expectNoDifference(boundaryApplication.result.remainingQueryKeys, [newer.key])
+
+    let expiredApplication = try await store.pruneLiveQueryResults(
+      policy: InstantLiveQueryResultPruningPolicy(maxAgeMilliseconds: 1),
+      now: InstantTimestamp(milliseconds: 4)
+    )
+    expectNoDifference(expiredApplication.result.removedQueryKeys, [newer.key])
+    expectNoDifference(expiredApplication.result.removedOrphanedTripleCount, 4)
+    expectNoDifference(expiredApplication.state.snapshot.store.triples, [])
+  }
+
+  @Test
+  func liveQueryResultPruningCollectsLatestMaterializationAfterProtectedOlderOwner()
+    async throws
+  {
+    let cacheURL = try temporaryCacheURL()
+    let store = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await store.bootstrap()
+    let older = persistedLiveTodoResult(
+      key: "query-shared-metadata-older",
+      entityID: "shared-metadata-todo",
+      text: "Same semantic facts",
+      updatedAt: InstantTimestamp(milliseconds: 1)
+    )
+    var newer = older
+    newer.key = "query-shared-metadata-newer"
+    newer.updatedAt = InstantTimestamp(milliseconds: 2)
+    newer.triples = newer.triples.map { triple in
+      var triple = triple
+      triple.txID = "server-newer-materialization"
+      triple.txTime = InstantTimestamp(milliseconds: 2)
+      return triple
+    }
+    let didSave = try await store.saveLiveRefresh(
+      InstantPersistenceSnapshot(
+        store: InstantStoreSnapshot(
+          attributes: TodoExample.attributes,
+          triples: newer.triples
+        )
+      ),
+      queryResults: [older, newer],
+      storeChanged: true,
+      outboxChanged: false,
+      metadataKey: "test.live-query-result-materialization-pruning",
+      metadataValue: "seeded",
+      metadataUpdatedAt: InstantTimestamp(milliseconds: 2),
+      expectedStoreRevision: 0,
+      expectedOutboxRevision: 0
+    )
+    expectNoDifference(didSave, true)
+
+    let firstApplication = try await store.pruneLiveQueryResults(
+      policy: InstantLiveQueryResultPruningPolicy(maxEntries: 1),
+      now: InstantTimestamp(milliseconds: 3),
+      preservingQueryKeys: [older.key]
+    )
+    expectNoDifference(firstApplication.result.removedQueryKeys, [newer.key])
+    expectNoDifference(firstApplication.result.removedOrphanedTripleCount, 0)
+    expectNoDifference(firstApplication.state.snapshot.store.triples, newer.triples)
+
+    let finalApplication = try await store.pruneLiveQueryResults(
+      policy: InstantLiveQueryResultPruningPolicy(maxEntries: 0),
+      now: InstantTimestamp(milliseconds: 4)
+    )
+    expectNoDifference(finalApplication.result.removedQueryKeys, [older.key])
+    expectNoDifference(finalApplication.result.removedOrphanedTripleCount, 4)
+    expectNoDifference(finalApplication.state.snapshot.store.triples, [])
+  }
+
+  @Test
+  func liveQueryResultPruningPreservesPendingOptimisticQueryBaselines() async throws {
+    let cacheURL = try temporaryCacheURL()
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    let result = persistedLiveTodoResult(
+      key: "query-optimistic-baseline",
+      entityID: "optimistic-baseline-todo",
+      text: "Server baseline",
+      updatedAt: InstantTimestamp(milliseconds: 1)
+    )
+    let didSave = try await persistence.saveLiveRefresh(
+      InstantPersistenceSnapshot(
+        store: InstantStoreSnapshot(
+          attributes: TodoExample.attributes,
+          triples: result.triples
+        )
+      ),
+      queryResults: [result],
+      storeChanged: true,
+      outboxChanged: false,
+      metadataKey: "test.live-query-result-optimistic-pruning",
+      metadataValue: "seeded",
+      metadataUpdatedAt: InstantTimestamp(milliseconds: 1),
+      expectedStoreRevision: 0,
+      expectedOutboxRevision: 0
+    )
+    expectNoDifference(didSave, true)
+    let runtime = try await InstantRuntime.bootstrap(
+      configuration: InstantRuntimeConfiguration(
+        appID: "live-query-result-optimistic-pruning",
+        persistenceURL: cacheURL,
+        initialAttributes: TodoExample.attributes,
+        now: { InstantTimestamp(milliseconds: 3) }
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "optimistic-baseline-update",
+        operations: TodoExample.updateTextOperations(
+          id: "optimistic-baseline-todo",
+          text: "Pending optimistic text",
+          updatedAt: InstantTimestamp(milliseconds: 2),
+          transactionID: "optimistic-baseline-update"
+        )
+      ),
+      createdAt: InstantTimestamp(milliseconds: 2)
+    )
+
+    let application = try await runtime.persistence.pruneLiveQueryResults(
+      policy: InstantLiveQueryResultPruningPolicy(maxEntries: 0),
+      now: InstantTimestamp(milliseconds: 3)
+    )
+
+    expectNoDifference(application.result.removedQueryKeys, [])
+    expectNoDifference(application.result.remainingQueryKeys, [result.key])
+    let snapshots = try await runtime.query(TodoExample.query)
+    expectNoDifference(try TodoExample.decode(snapshots).map(\.text), ["Pending optimistic text"])
+  }
+
+  @Test
   func runtimePrunesPersistedQueryCacheDuringBootstrap() async throws {
     let source = persistedObjectSource(
       "PersistedObject garbage collects after reload "
@@ -17875,6 +18150,31 @@ struct InstantStoreTests {
       ),
       updatedAt: updatedAt,
       storeRevision: 0
+    )
+  }
+
+  private func persistedLiveTodoResult(
+    key: String,
+    entityID: String,
+    text: String,
+    updatedAt: InstantTimestamp
+  ) -> InstantPersistedLiveQueryResult {
+    let triples: [InstantTriple] = TodoExample.createOperations(
+      id: entityID,
+      text: text,
+      createdAt: updatedAt,
+      transactionID: "server-\(entityID)"
+    ).compactMap { operation in
+      guard case let .insert(triple) = operation else { return nil }
+      return triple
+    }
+    return InstantPersistedLiveQueryResult(
+      replacement: InstantLiveQueryResultReplacement(
+        key: key,
+        triples: triples,
+        pageInfo: nil
+      ),
+      updatedAt: updatedAt
     )
   }
 

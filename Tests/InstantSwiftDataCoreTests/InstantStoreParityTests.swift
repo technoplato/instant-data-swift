@@ -785,23 +785,23 @@ struct InstantStoreParityTests {
       (
         "instant.persisted-object.gc-max-items",
         "PersistedObject garbage collects when we exceed max items",
-        "queryCachePruningPreservesLiveKeysAndDropsOldestUnpreservedRowsForPersistedObjectParity",
+        "queryCachePruningPreservesLiveKeysAndDropsOldestUnpreservedRowsForPersistedObjectParity / liveQueryResultPruningBoundsUnloadedKeysAtUpstreamMaximum / liveQueryRetentionPreservesActiveRegistrationThenCollectsAfterUnsubscribe / liveQueryRetentionPrunesUnloadedResultOnConfiguredWriteCadence / liveQueryRetentionPrunesPersistedResultsDuringBootstrap",
         .adapted,
-        "Swift models PersistedObject live in-memory keys with preservingCacheKeys and prunes the oldest unloaded SQLite cache rows when maxEntries is exceeded."
+        "Swift protects materialized query-cache observations and canonical live Reactor registrations, bounds unloaded durable live ownership at 1,000 keys, and prunes oldest-first at bootstrap or on the write cadence only after the final observer unloads."
       ),
       (
         "instant.persisted-object.gc-max-size",
         "PersistedObject garbage collects when we exceed max size",
-        "queryCachePruningUsesEncodedRowBytesForPersistedObjectSizeParity",
+        "queryCachePruningUsesEncodedRowBytesForPersistedObjectSizeParity / liveQueryResultPruningUsesOwnedTripleBudgetAndStrictAgeCutoff",
         .adapted,
-        "Swift uses encoded JSON row byte counts instead of PersistedObject's JavaScript objectSize callback and prunes only unloaded rows until the size budget is met."
+        "Swift retains the encoded-byte adaptation for materialized query rows and uses Reactor's exact owned-triple count for durable live query results, pruning only unloaded ownership until each budget is met."
       ),
       (
         "instant.persisted-object.gc-max-age",
         "PersistedObject garbage collects when we exceed max age",
-        "queryCachePruningUsesUpdatedAtForPersistedObjectAgeParity / queryCachePruningKeepsRowsAtPersistedObjectAgeCutoff",
+        "queryCachePruningUsesUpdatedAtForPersistedObjectAgeParity / queryCachePruningKeepsRowsAtPersistedObjectAgeCutoff / liveQueryResultPruningUsesOwnedTripleBudgetAndStrictAgeCutoff",
         .adapted,
-        "Swift uses instant_query_cache.updated_at_ms as the persisted age clock, preserves live rows, and pins the strict cutoff boundary."
+        "Swift uses each persisted query row's updated_at_ms age clock, protects loaded rows, and pins the same strict cutoff boundary for materialized caches and canonical live query ownership."
       ),
       (
         "instant.persisted-object.indexeddb-connection-recovery",

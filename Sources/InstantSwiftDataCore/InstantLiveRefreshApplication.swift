@@ -89,6 +89,10 @@ actor InstantLiveQueryResultState {
   func pageInfo(for key: String) -> InstantQueryPageInfo? {
     pageInfoByQuery[key]
   }
+
+  func unload(key: String) {
+    pageInfoByQuery[key] = nil
+  }
 }
 
 enum InstantLiveRefreshTranslator {

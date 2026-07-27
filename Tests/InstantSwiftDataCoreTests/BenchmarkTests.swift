@@ -248,13 +248,13 @@ extension InstantStoreTests {
     )
     expectNoDifference(
       result.metrics.first { $0.name == "offline-restore.relaunch" }?.samples.map(\.actorHopCount),
-      [11, 11]
+      [12, 12]
     )
     expectNoDifference(
       result.metrics.first { $0.name == "offline-restore.relaunch" }?.samples.map(\.actorHopBreakdown),
       [
-        ["operation-gate": 2, "outbox": 1, "persistence": 5, "store": 3],
-        ["operation-gate": 2, "outbox": 1, "persistence": 5, "store": 3],
+        ["operation-gate": 2, "outbox": 1, "persistence": 6, "store": 3],
+        ["operation-gate": 2, "outbox": 1, "persistence": 6, "store": 3],
       ]
     )
     expectNoDifference(

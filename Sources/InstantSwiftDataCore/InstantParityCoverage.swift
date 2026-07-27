@@ -2422,30 +2422,30 @@ public enum InstantSwiftDataParityCoverage {
       sourceFile: persistedObjectSource,
       sourceTestName: "PersistedObject garbage collects when we exceed max items",
       swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
-      swiftTestName: "queryCachePruningPreservesLiveKeysAndDropsOldestUnpreservedRowsForPersistedObjectParity",
+      swiftTestName: "queryCachePruningPreservesLiveKeysAndDropsOldestUnpreservedRowsForPersistedObjectParity / liveQueryResultPruningBoundsUnloadedKeysAtUpstreamMaximum / liveQueryRetentionPreservesActiveRegistrationThenCollectsAfterUnsubscribe / liveQueryRetentionPrunesUnloadedResultOnConfiguredWriteCadence / liveQueryRetentionPrunesPersistedResultsDuringBootstrap",
       surface: "query-cache-persistence",
       status: .adapted,
-      notes: "Swift models PersistedObject live in-memory keys with preservingCacheKeys and prunes the oldest unloaded SQLite cache rows when maxEntries is exceeded."
+      notes: "Swift protects materialized query-cache observations and canonical live Reactor registrations, bounds unloaded durable live ownership at 1,000 keys, and prunes oldest-first at bootstrap or on the write cadence only after the final observer unloads."
     ),
     instant(
       id: "instant.persisted-object.gc-max-size",
       sourceFile: persistedObjectSource,
       sourceTestName: "PersistedObject garbage collects when we exceed max size",
       swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
-      swiftTestName: "queryCachePruningUsesEncodedRowBytesForPersistedObjectSizeParity",
+      swiftTestName: "queryCachePruningUsesEncodedRowBytesForPersistedObjectSizeParity / liveQueryResultPruningUsesOwnedTripleBudgetAndStrictAgeCutoff",
       surface: "query-cache-persistence",
       status: .adapted,
-      notes: "Swift uses encoded JSON row byte counts instead of PersistedObject's JavaScript objectSize callback and prunes only unloaded rows until the size budget is met."
+      notes: "Swift retains the encoded-byte adaptation for materialized query rows and uses Reactor's exact owned-triple count for durable live query results, pruning only unloaded ownership until each budget is met."
     ),
     instant(
       id: "instant.persisted-object.gc-max-age",
       sourceFile: persistedObjectSource,
       sourceTestName: "PersistedObject garbage collects when we exceed max age",
       swiftFile: "Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift",
-      swiftTestName: "queryCachePruningUsesUpdatedAtForPersistedObjectAgeParity / queryCachePruningKeepsRowsAtPersistedObjectAgeCutoff",
+      swiftTestName: "queryCachePruningUsesUpdatedAtForPersistedObjectAgeParity / queryCachePruningKeepsRowsAtPersistedObjectAgeCutoff / liveQueryResultPruningUsesOwnedTripleBudgetAndStrictAgeCutoff",
       surface: "query-cache-persistence",
       status: .adapted,
-      notes: "Swift uses instant_query_cache.updated_at_ms as the persisted age clock, preserves live rows, and pins the strict cutoff boundary."
+      notes: "Swift uses each persisted query row's updated_at_ms age clock, protects loaded rows, and pins the same strict cutoff boundary for materialized caches and canonical live query ownership."
     ),
     instant(
       id: "instant.persisted-object.indexeddb-connection-recovery",
