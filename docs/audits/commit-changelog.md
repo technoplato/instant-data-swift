@@ -6,6 +6,37 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 27, 2026 at 9:07:41 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `2739e7e5298215af04768d2b2ddcf6c1f0340b62`
+- High-level reason: Make automatic fetch observation generation-aware so a
+  canceled or stale observer cannot supersede a newer explicit projected-value
+  task and surface a spurious `CancellationError`.
+
+## July 27, 2026 at 9:04:28 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `aab5dec69a27493df3df5b8b54ed5c417405f0f5`
+- High-level reason: Make ordering parity fixtures use genuinely later edit
+  timestamps and prove the complete local order before validating the
+  infinite-query window.
+
+## July 27, 2026 at 9:04:08 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `cabc4677fbb4f81741669d919c818b9d86762fd7`
+- High-level reason: Rebase remaining optimistic mutations above the current
+  server snapshot so later local writes stay visible after an earlier server
+  confirmation, matching upstream Reactor overlay semantics.
+
+## July 27, 2026 at 8:56:56 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `bfa8bc07aa607b0e6a33e6f02cb57420bbd0c1d8`
+- High-level reason: Adopt the intent-ledger workflow and install reusable
+  change-recording and reproducible-build provenance helpers in Scribe.
+
 ## July 27, 2026 at 8:55:43 AM EDT
 
 - Repository: `instant-data-swift`
@@ -14,6 +45,13 @@ contain its own final SHA.
   only the affected query without reconnecting the shared socket, fail
   one-shot queries promptly, and prevent stale automatic mutation delivery
   when the runtime is configured for manual connection.
+
+## July 27, 2026 at 8:55:21 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `6a185835b57162af967880f93ea8731f7ad20242`
+- High-level reason: Adopt the intent-ledger workflow and install reusable
+  change-recording and reproducible-build provenance helpers in Instant.
 
 ## July 27, 2026 at 8:39:12 AM EDT
 

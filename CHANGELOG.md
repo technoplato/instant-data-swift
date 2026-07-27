@@ -4,6 +4,63 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 9:09:40 a.m. EDT — `2739e7e52982` Isolate automatic fetch generations
+
+- **Implementation commit:** `2739e7e5298215af04768d2b2ddcf6c1f0340b62`
+- **Change:** Prevent automatic fetch observation from superseding explicit tasks
+- **Details:**
+  - Reserve a generation for automatic observation and require that generation when installing its subscription.
+  - Stop a canceled or stale automatic observer from invalidating a newer projected-value task with CancellationError.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — Make automatic FetchStorage subscription installation generation-aware.
+- **User context (verbatim):**
+  > commit methodically and include a changelog with all of our commits where we write updates at the top
+- **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
+
+## July 27th, 2026 at 9:09:40 a.m. EDT — `aab5dec69a27` Stabilize ordering parity fixtures
+
+- **Implementation commit:** `aab5dec69a27493df3df5b8b54ed5c417405f0f5`
+- **Change:** Make ordering parity fixtures model genuinely later edits
+- **Details:**
+  - Give the infinite-query reorder mutation an explicit timestamp beyond the fixture hash range and assert the complete local ordering before checking the visible window.
+  - Move the Reminders list with a timestamp newer than every seeded list triple.
+- **Files:**
+  - `Tests/InstantSwiftDataCoreTests/InstantInfiniteQueryParityTests.swift` — Stabilize and tighten the out-of-window reorder fixture.
+  - `Tests/InstantSwiftDataCoreTests/InstantSharingSourceParityTests.swift` — Use a later timestamp for the move parity fixture.
+- **User context (verbatim):**
+  > commit methodically and include a changelog with all of our commits where we write updates at the top
+- **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
+
+## July 27th, 2026 at 9:09:40 a.m. EDT — `cabc4677fbb4` Fix optimistic mutation rebasing
+
+- **Implementation commit:** `cabc4677fbb4f81741669d919c818b9d86762fd7`
+- **Change:** Keep later optimistic mutations visible over server refreshes
+- **Details:**
+  - Rebase each remaining optimistic mutation with a timestamp newer than the authoritative server snapshot, matching upstream Reactor overlay semantics.
+  - Document the immutable startup trace Sendable boundary required by the concurrency guidance suite.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Restamp rebased local writes above the current server snapshot.
+  - `Sources/InstantSwiftDataCore/InstantStartupTrace.swift` — Document the unchecked Sendable safety mechanism.
+- **User context (verbatim):**
+  > commit methodically and include a changelog with all of our commits where we write updates at the top
+- **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
+
+## July 27th, 2026 at 9:09:40 a.m. EDT — `6a185835b571` Adopt intent changelog workflow
+
+- **Implementation commit:** `6a185835b57162af967880f93ea8731f7ad20242`
+- **Change:** Adopt the repository intent-ledger workflow
+- **Details:**
+  - Add the change-log discipline to repository instructions and establish a newest-first human-readable ledger.
+  - Install the reusable ledger recorder and reproducible-build provenance helper for subsequent implementation commits.
+- **Files:**
+  - `AGENTS.md` — Require small implementation commits, separate ledger commits, and reproducible provenance.
+  - `CHANGELOG.md` — Establish the repository-local intent ledger.
+  - `scripts/change-log/record_change.py` — Add deterministic ledger entry generation.
+  - `scripts/change-log/build_provenance.py` — Add clean-build provenance generation.
+- **User context (verbatim):**
+  > commit methodically and include a changelog with all of our commits where we write updates at the top
+- **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
+
 ## July 27th, 2026 at 8:55:43 a.m. EDT — `d7dd19d499ce` Fix live query error isolation
 
 - **Implementation commit:** `d7dd19d499ce8bf3643c5cbb2967fab7746963ed`
