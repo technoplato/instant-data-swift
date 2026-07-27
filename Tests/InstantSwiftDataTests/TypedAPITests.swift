@@ -5159,36 +5159,41 @@ struct TypedAPITests {
       expectNoDifference($facts.loadError, nil)
       expectNoDifference($facts.isLoading, false)
 
-      let recorder = ClientCallRecorder(queryResults: [
-        [
-          typedTodoSnapshot(
-            id: "todo-fetch-request-visible",
-            text: "Visible row",
-            isCompleted: false,
-            createdAt: baseDate
-          )
-        ],
-        [
-          typedTodoSnapshot(
-            id: "todo-fetch-request-counted-first",
-            text: "Counted first",
-            isCompleted: false,
-            createdAt: baseDate
-          ),
-          typedTodoSnapshot(
-            id: "todo-fetch-request-counted-second",
-            text: "Counted second",
-            isCompleted: false,
-            createdAt: baseDate.addingTimeInterval(1)
-          ),
-        ],
-      ])
+      let visibleRow =
+        typedTodoSnapshot(
+          id: "todo-fetch-request-visible",
+          text: "Visible row",
+          isCompleted: false,
+          createdAt: baseDate
+        )
+      let countedRows = [
+        typedTodoSnapshot(
+          id: "todo-fetch-request-counted-first",
+          text: "Counted first",
+          isCompleted: false,
+          createdAt: baseDate
+        ),
+        typedTodoSnapshot(
+          id: "todo-fetch-request-counted-second",
+          text: "Counted second",
+          isCompleted: false,
+          createdAt: baseDate.addingTimeInterval(1)
+        ),
+      ]
+      let recorder = ClientCallRecorder(queryResult: { plan in
+        if plan.filters.contains(.equals(field: "text", value: .string("Visible row"))) {
+          return [visibleRow]
+        }
+        return countedRows
+      })
       let visibleOpenRows = TypedTodoFactsRequest(
         rowsQuery: TypedTodo.query.where(TypedTodo.text == "Visible row"),
         countQuery: TypedTodo.query
       )
       let recordedFetch = Fetch(wrappedValue: TypedTodoFacts(), visibleOpenRows)
-      try await recordedFetch.load(using: recordingClient(recorder))
+      try await recordedFetch.load(
+        using: recordingClient(recorder, observationEmitsEmptySnapshot: false)
+      )
       expectNoDifference(recordedFetch.wrappedValue.todos.map(\.text), ["Visible row"])
       expectNoDifference(recordedFetch.wrappedValue.count, 2)
       let plans = await recorder.queryPlans()
@@ -5256,12 +5261,15 @@ struct TypedAPITests {
       isCompleted: true,
       createdAt: baseDate.addingTimeInterval(1)
     )
-    let recorder = ClientCallRecorder(queryResults: [
-      [open],
-      [open, done],
-      [done],
-      [open, done],
-    ])
+    let recorder = ClientCallRecorder(queryResult: { plan in
+      if plan.filters.contains(.equals(field: "isCompleted", value: .bool(false))) {
+        return [open]
+      }
+      if plan.filters.contains(.equals(field: "isCompleted", value: .bool(true))) {
+        return [done]
+      }
+      return [open, done]
+    })
     let client = recordingClient(recorder, observationEmitsEmptySnapshot: false)
     let fetch = Fetch(wrappedValue: TypedTodoFacts())
 
@@ -5293,22 +5301,22 @@ struct TypedAPITests {
     expectNoDifference(fetch.isLoading, false)
     let plans = await recorder.queryPlans()
     expectNoDifference(
-      plans.map(\.filters),
-      [
-        [.equals(field: "isCompleted", value: .bool(false))],
-        [],
-        [.equals(field: "isCompleted", value: .bool(true))],
-        [],
-      ]
+      plans.filter {
+        $0.filters == [.equals(field: "isCompleted", value: .bool(false))]
+          && $0.order == InstantQueryOrder("createdAt")
+      }.count,
+      1
     )
     expectNoDifference(
-      plans.map(\.order),
-      [
-        InstantQueryOrder("createdAt"),
-        nil,
-        InstantQueryOrder("createdAt"),
-        nil,
-      ]
+      plans.filter {
+        $0.filters == [.equals(field: "isCompleted", value: .bool(true))]
+          && $0.order == InstantQueryOrder("createdAt")
+      }.count,
+      1
+    )
+    expectNoDifference(
+      plans.filter { $0.filters.isEmpty && $0.order == nil }.count,
+      2
     )
     let counts = await recorder.counts()
     expectNoDifference(counts.queryCount, 4)
@@ -8150,6 +8158,8 @@ private actor LiveTransportConnectRecorder {
 
 private actor ClientCallRecorder {
   private var queryResults: [[InstantEntitySnapshot]]
+  private var queryResult:
+    (@Sendable (InstantQueryPlan) throws -> [InstantEntitySnapshot])?
   private var fallbackError: InstantError?
   private var queryCount = 0
   private var observationCount = 0
@@ -8157,15 +8167,20 @@ private actor ClientCallRecorder {
 
   init(
     queryResults: [[InstantEntitySnapshot]] = [],
+    queryResult: (@Sendable (InstantQueryPlan) throws -> [InstantEntitySnapshot])? = nil,
     fallbackError: InstantError? = nil
   ) {
     self.queryResults = queryResults
+    self.queryResult = queryResult
     self.fallbackError = fallbackError
   }
 
   func query(plan: InstantQueryPlan) throws -> [InstantEntitySnapshot] {
     queryCount += 1
     plans.append(plan)
+    if let queryResult {
+      return try queryResult(plan)
+    }
     if !queryResults.isEmpty {
       return queryResults.removeFirst()
     }
