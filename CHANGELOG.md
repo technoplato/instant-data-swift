@@ -4,6 +4,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 2:00:20 p.m. EDT — `c6f8e8404831` Record final delivery and device acceptance evidence
+
+- **Implementation commit:** `c6f8e84048312857c195a1d1d9206d6bd8edfe0c`
+- **Change:** Record final delivery and device acceptance evidence
+- **Details:**
+  - Reconcile the durable cross-repository audit with the short-lived writer data-loss root cause, server-acknowledgement and causal replay fixes, platform availability contract, and final full-suite counts.
+  - Record the clean provenance-bearing Scribe CLI, sanitized six-lane live matrix with complete 5/5 delivery and sub-two-second maxima, and the honest short-run Node resource caveat.
+  - Separate the current-head unsigned physical-target compile from the signed build's private-key authorization failure, preserving earlier install/launch evidence without claiming a new bundle, installation, launch, recording, or ReplayKit broadcast.
+- **Files:**
+  - `docs/audits/2026-07-26-fable5-comprehensive-audit.md` — Preserve the final performance, correctness, verification, and physical acceptance boundary across both repositories.
+- **User context (verbatim):**
+  > IMMEDIATE writes locally
+  > low latency remote reads
+  > ensure that all the test suite still passes.
+- **SpecStory:** unavailable — Codex desktop goal task; no durable SpecStory CLI capture URI is available.
+
 ## July 27th, 2026 at 1:55:58 p.m. EDT — `c211737939da` Gate mutation delivery wait by platform availability
 
 - **Implementation commit:** `c211737939daaba1641dfce5b7cf700d3743778d`
