@@ -72,6 +72,7 @@ struct PreparedStoreMutation: Sendable {
 private struct StoreObserver: Sendable {
   var plan: InstantQueryPlan
   var remotePageInfo: InstantQueryRemotePageInfo?
+  var liveQueryKey: String?
   var continuation: AsyncStream<InstantQueryEmission>.Continuation
 }
 
@@ -197,6 +198,30 @@ public actor InstantStore {
     _ plan: InstantQueryPlan,
     remotePageInfo: InstantQueryRemotePageInfo? = nil
   ) -> AsyncStream<InstantQueryEmission> {
+    observe(
+      plan,
+      remotePageInfo: remotePageInfo,
+      liveQueryKey: nil
+    )
+  }
+
+  func observeLiveQuery(
+    _ plan: InstantQueryPlan,
+    registrationKey: String,
+    remotePageInfo: InstantQueryRemotePageInfo?
+  ) -> AsyncStream<InstantQueryEmission> {
+    observe(
+      plan,
+      remotePageInfo: remotePageInfo,
+      liveQueryKey: registrationKey
+    )
+  }
+
+  private func observe(
+    _ plan: InstantQueryPlan,
+    remotePageInfo: InstantQueryRemotePageInfo?,
+    liveQueryKey: String?
+  ) -> AsyncStream<InstantQueryEmission> {
     let observerID = UUID()
     let stream = AsyncStream<InstantQueryEmission>.makeStream(
       bufferingPolicy: .bufferingNewest(1)
@@ -205,6 +230,7 @@ public actor InstantStore {
       id: observerID,
       plan: plan,
       remotePageInfo: remotePageInfo,
+      liveQueryKey: liveQueryKey,
       continuation: stream.continuation
     )
     stream.continuation.onTermination = { @Sendable _ in
@@ -213,6 +239,35 @@ public actor InstantStore {
       }
     }
     return stream.stream
+  }
+
+  func installLiveQueryPageInfo(
+    _ replacements: [InstantLiveQueryResultReplacement],
+    publishing: Bool
+  ) {
+    guard !replacements.isEmpty else { return }
+    let replacementsByKey = Dictionary(
+      replacements.map { ($0.key, $0) },
+      uniquingKeysWith: { _, latest in latest }
+    )
+    for observerID in Array(observers.keys) {
+      guard var observer = observers[observerID],
+        let liveQueryKey = observer.liveQueryKey,
+        let replacement = replacementsByKey[liveQueryKey]
+      else {
+        continue
+      }
+      observer.remotePageInfo =
+        replacement.pageInfo.map(InstantQueryRemotePageInfo.ready) ?? .waiting
+      observers[observerID] = observer
+      guard publishing else { continue }
+      observer.continuation.yield(
+        materializeEmission(
+          observer.plan,
+          remotePageInfo: observer.remotePageInfo
+        )
+      )
+    }
   }
 
   func prepare(_ transaction: InstantStoreTransaction) throws -> PreparedStoreMutation {
@@ -1172,11 +1227,13 @@ public actor InstantStore {
     id: UUID,
     plan: InstantQueryPlan,
     remotePageInfo: InstantQueryRemotePageInfo? = nil,
+    liveQueryKey: String? = nil,
     continuation: AsyncStream<InstantQueryEmission>.Continuation
   ) {
     observers[id] = StoreObserver(
       plan: plan,
       remotePageInfo: remotePageInfo,
+      liveQueryKey: liveQueryKey,
       continuation: continuation
     )
     let initialEmission = materializeEmission(plan, remotePageInfo: remotePageInfo)

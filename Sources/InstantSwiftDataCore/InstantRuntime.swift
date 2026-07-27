@@ -2184,7 +2184,8 @@ public final class InstantRuntime: Sendable {
     processedTransactionID: String?,
     receivedAt: InstantTimestamp?,
     confirmingMutationID: String? = nil,
-    mergingAttributes attributesToMerge: [InstantAttribute] = []
+    mergingAttributes attributesToMerge: [InstantAttribute] = [],
+    liveQueryResultReplacements: [InstantLiveQueryResultReplacement] = []
   ) async throws -> InstantAppliedServerTransaction {
     let processedTransactionID = (processedTransactionID ?? transaction.id)
       .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2268,6 +2269,10 @@ public final class InstantRuntime: Sendable {
         if didSave {
           recordActorHop(.store)
           await store.replaceSnapshot(storeSnapshot)
+          await store.installLiveQueryPageInfo(
+            liveQueryResultReplacements,
+            publishing: true
+          )
           recordActorHop(.outbox)
           await outbox.replace(with: outboxSnapshot)
           _ = try? await publishConnectionStatusWithGateHeld()
@@ -2321,6 +2326,10 @@ public final class InstantRuntime: Sendable {
         }
       if didSave {
         recordActorHop(.store)
+        await store.installLiveQueryPageInfo(
+          liveQueryResultReplacements,
+          publishing: false
+        )
         let committed = await store.commitAndPublish(prepared)
         recordActorHop(.outbox)
         await outbox.replace(with: outboxSnapshot)
@@ -2369,7 +2378,8 @@ public final class InstantRuntime: Sendable {
         processedTransactionID: translated.processedTransactionID,
         receivedAt: receivedAt,
         confirmingMutationID: translated.confirmationMutationID,
-        mergingAttributes: translated.attributesToMerge
+        mergingAttributes: translated.attributesToMerge,
+        liveQueryResultReplacements: translated.queryResultReplacements
       )
       await liveQueryResultState.record(translated.queryResultReplacements)
 
@@ -2812,6 +2822,51 @@ public final class InstantRuntime: Sendable {
           message: "Could not unregister a live Instant query observation.",
           correlationID: plan.id
         )
+      }
+    }
+  }
+
+  func observeLiveInfiniteQueryChunk(
+    _ plan: InstantQueryPlan
+  ) async -> AsyncStream<InstantQueryEmission> {
+    guard configuration.liveTransport != nil else {
+      return await store.observe(plan)
+    }
+
+    let query: InstantLiveJSONValue
+    let registrationKey: String
+    do {
+      query = try InstantLiveQueryEncoder.encode(plan)
+      registrationKey = try InstantLiveQueryEncoder.registrationKey(for: query)
+    } catch {
+      await recordConnectionError(error)
+      return await store.observe(plan)
+    }
+
+    let existingPageInfo = await liveQueryResultState.pageInfo(for: registrationKey)
+    let stream = await store.observeLiveQuery(
+      plan,
+      registrationKey: registrationKey,
+      remotePageInfo: existingPageInfo.map(InstantQueryRemotePageInfo.ready) ?? .waiting
+    )
+    do {
+      try await liveSession.registerQuery(
+        query,
+        key: registrationKey,
+        clientEventID: configuration.makeID()
+      )
+    } catch {
+      await recordConnectionError(error)
+    }
+    return Self.liveObservation(stream) { [weak self] in
+      guard let self else { return }
+      do {
+        try await self.liveSession.unregisterQuery(
+          key: registrationKey,
+          clientEventID: self.configuration.makeID()
+        )
+      } catch {
+        await self.recordConnectionError(error)
       }
     }
   }

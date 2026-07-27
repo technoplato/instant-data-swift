@@ -327,6 +327,316 @@ struct InstantInfiniteQueryParityTests {
   }
 
   @Test
+  func liveInfiniteQueryEmitsLocalStarterBeforeRemotePageInfo() async throws {
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: infiniteLiveServerAttributes)
+    ])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "infinite-live-local-starter",
+      persistenceURL: try temporaryInfiniteQueryCacheURL(),
+      initialAttributes: infiniteQueryAttributes,
+      makeID: { UUID().uuidString.lowercased() },
+      liveTransport: session.transport
+    )
+    configuration.autoConnectLiveTransport = false
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    try await upsertNumberEntries(
+      [("local-item", 1)],
+      transactionID: "infinite-live-local-starter-write",
+      in: runtime
+    )
+
+    let subscription = await runtime.subscribeInfiniteQuery(
+      infiniteItemsQuery(limit: 2, order: InstantQueryOrder("value"))
+    )
+    var iterator = subscription.snapshots.makeAsyncIterator()
+    let localSnapshot = try #require(await iterator.next())
+    expectNoDifference(loadedValues(localSnapshot), [1], infiniteLocalStarterSource)
+    #expect(!localSnapshot.canLoadNextPage)
+    let sentMessages = await session.sentMessages()
+    expectNoDifference(sentMessages, [], infiniteLocalStarterSource)
+
+    subscription.unsubscribe()
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func liveInfiniteQueryRegistersOnlyBoundedCursorChunks() async throws {
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: infiniteLiveServerAttributes)
+    ])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "infinite-live-bounded",
+      persistenceURL: try temporaryInfiniteQueryCacheURL(),
+      initialAttributes: infiniteQueryAttributes,
+      makeID: { UUID().uuidString.lowercased() },
+      liveTransport: session.transport
+    )
+    configuration.autoConnectLiveTransport = true
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let subscription = await runtime.subscribeInfiniteQuery(
+      infiniteItemsQuery(limit: 2, order: InstantQueryOrder("value"))
+    )
+    var iterator = subscription.snapshots.makeAsyncIterator()
+    _ = try #require(await iterator.next())
+
+    #expect(try await waitForInfiniteMessageCount(2, in: session))
+    var sent = await session.sentMessages()
+    let starterQuery = try #require(sent.last?.fields["q"])
+    expectNoDifference(
+      infiniteLiveOptions(starterQuery),
+      [
+        "limit": .number(2),
+        "order": .object(["value": .string("asc")]),
+      ],
+      infiniteBoundedTransportSource
+    )
+
+    let firstCursor = infiniteLiveCursor(id: "item-1", value: 1)
+    let secondCursor = infiniteLiveCursor(id: "item-2", value: 2)
+    await session.enqueue(
+      liveReactorAddQueryOK(
+        query: starterQuery,
+        processedTransactionID: "infinite-live-starter",
+        result: infiniteLiveQueryResult(
+          [("item-1", 1), ("item-2", 2)],
+          startCursor: firstCursor,
+          endCursor: secondCursor,
+          hasNextPage: true
+        )
+      )
+    )
+
+    #expect(try await waitForInfiniteMessageCount(4, in: session))
+    sent = await session.sentMessages()
+    let registeredQueries = sent
+      .filter { $0.op == "add-query" }
+      .compactMap { $0.fields["q"] }
+    expectNoDifference(registeredQueries.count, 3, infiniteBoundedTransportSource)
+    #expect(
+      registeredQueries.allSatisfy { query in
+        guard let options = infiniteLiveOptions(query) else { return false }
+        return options["limit"] != nil
+          || (options["after"] != nil && options["before"] != nil)
+      },
+      Comment(rawValue: infiniteBoundedTransportSource)
+    )
+    #expect(
+      registeredQueries.contains { query in
+        infiniteLiveOptions(query) == [
+          "after": .array(firstCursor),
+          "afterInclusive": .bool(true),
+          "limit": .number(2),
+          "order": .object(["value": .string("asc")]),
+        ]
+      },
+      Comment(rawValue: infiniteBoundedTransportSource)
+    )
+    #expect(
+      registeredQueries.contains { query in
+        infiniteLiveOptions(query) == [
+          "after": .array(firstCursor),
+          "limit": .number(2),
+          "order": .object(["value": .string("desc")]),
+        ]
+      },
+      Comment(rawValue: infiniteBoundedTransportSource)
+    )
+
+    let forwardQuery = try #require(
+      registeredQueries.first { query in
+        infiniteLiveOptions(query) == [
+          "after": .array(firstCursor),
+          "afterInclusive": .bool(true),
+          "limit": .number(2),
+          "order": .object(["value": .string("asc")]),
+        ]
+      }
+    )
+    await session.enqueue(
+      liveReactorAddQueryOK(
+        query: forwardQuery,
+        processedTransactionID: "infinite-live-forward-1",
+        result: infiniteLiveQueryResult(
+          [("item-1", 1), ("item-2", 2)],
+          startCursor: firstCursor,
+          endCursor: secondCursor,
+          hasNextPage: true
+        )
+      )
+    )
+    let loadableSnapshot = try #require(await iterator.next())
+    expectNoDifference(loadableSnapshot.values.map(\.id), ["item-1", "item-2"])
+    #expect(loadableSnapshot.canLoadNextPage)
+
+    subscription.loadNextPage()
+    #expect(try await waitForInfiniteMessageCount(7, in: session))
+    sent = await session.sentMessages()
+    let pagedQueries = sent
+      .filter { $0.op == "add-query" }
+      .compactMap { $0.fields["q"] }
+    expectNoDifference(pagedQueries.count, 5, infiniteBoundedTransportSource)
+    #expect(
+      pagedQueries.allSatisfy { query in
+        guard let options = infiniteLiveOptions(query) else { return false }
+        return options["limit"] != nil
+          || (options["after"] != nil && options["before"] != nil)
+      },
+      Comment(rawValue: infiniteBoundedTransportSource)
+    )
+    #expect(
+      pagedQueries.contains { query in
+        infiniteLiveOptions(query) == [
+          "after": .array(firstCursor),
+          "afterInclusive": .bool(true),
+          "before": .array(secondCursor),
+          "beforeInclusive": .bool(true),
+          "order": .object(["value": .string("asc")]),
+        ]
+      },
+      Comment(rawValue: infiniteBoundedTransportSource)
+    )
+    #expect(
+      pagedQueries.contains { query in
+        infiniteLiveOptions(query) == [
+          "after": .array(secondCursor),
+          "limit": .number(2),
+          "order": .object(["value": .string("asc")]),
+        ]
+      },
+      Comment(rawValue: infiniteBoundedTransportSource)
+    )
+
+    subscription.unsubscribe()
+    #expect(try await waitForInfiniteOpCount("remove-query", count: 5, in: session))
+    sent = await session.sentMessages()
+    let removedQueries = sent
+      .filter { $0.op == "remove-query" }
+      .compactMap { $0.fields["q"] }
+    expectNoDifference(Set(removedQueries), Set(pagedQueries), infiniteBoundedTransportSource)
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
+  func liveInfiniteQueryAutomaticallyBoundsReverseChunks() async throws {
+    let session = LiveReactorParitySession(messages: [
+      liveReactorInitOK(attrs: infiniteLiveServerAttributes)
+    ])
+    var configuration = InstantRuntimeConfiguration(
+      appID: "infinite-live-reverse",
+      persistenceURL: try temporaryInfiniteQueryCacheURL(),
+      initialAttributes: infiniteQueryAttributes,
+      makeID: { UUID().uuidString.lowercased() },
+      liveTransport: session.transport
+    )
+    configuration.autoConnectLiveTransport = true
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let subscription = await runtime.subscribeInfiniteQuery(
+      infiniteItemsQuery(limit: 2, order: InstantQueryOrder("value"))
+    )
+    var iterator = subscription.snapshots.makeAsyncIterator()
+    _ = try #require(await iterator.next())
+
+    #expect(try await waitForInfiniteMessageCount(2, in: session))
+    var sent = await session.sentMessages()
+    let starterQuery = try #require(sent.last?.fields["q"])
+    let firstCursor = infiniteLiveCursor(id: "item-1", value: 1)
+    let secondCursor = infiniteLiveCursor(id: "item-2", value: 2)
+    await session.enqueue(
+      liveReactorAddQueryOK(
+        query: starterQuery,
+        processedTransactionID: "infinite-live-reverse-starter",
+        result: infiniteLiveQueryResult(
+          [("item-1", 1), ("item-2", 2)],
+          startCursor: firstCursor,
+          endCursor: secondCursor,
+          hasNextPage: true
+        )
+      )
+    )
+
+    #expect(try await waitForInfiniteMessageCount(4, in: session))
+    sent = await session.sentMessages()
+    let initialQueries = sent
+      .filter { $0.op == "add-query" }
+      .compactMap { $0.fields["q"] }
+    let reverseQuery = try #require(
+      initialQueries.first { query in
+        infiniteLiveOptions(query) == [
+          "after": .array(firstCursor),
+          "limit": .number(2),
+          "order": .object(["value": .string("desc")]),
+        ]
+      }
+    )
+    let zeroCursor = infiniteLiveCursor(id: "item-0", value: 0)
+    let negativeCursor = infiniteLiveCursor(id: "item-negative-1", value: -1)
+    await session.enqueue(
+      liveReactorAddQueryOK(
+        query: reverseQuery,
+        processedTransactionID: "infinite-live-reverse-1",
+        result: infiniteLiveQueryResult(
+          [("item-0", 0), ("item-negative-1", -1)],
+          startCursor: zeroCursor,
+          endCursor: negativeCursor,
+          hasNextPage: true
+        )
+      )
+    )
+    let reverseSnapshot = try #require(await iterator.next())
+    expectNoDifference(
+      reverseSnapshot.values.map(\.id),
+      ["item-negative-1", "item-0"],
+      infiniteBoundedTransportSource
+    )
+
+    #expect(try await waitForInfiniteMessageCount(7, in: session))
+    sent = await session.sentMessages()
+    let pagedQueries = sent
+      .filter { $0.op == "add-query" }
+      .compactMap { $0.fields["q"] }
+    expectNoDifference(pagedQueries.count, 5, infiniteBoundedTransportSource)
+    #expect(
+      pagedQueries.allSatisfy { query in
+        guard let options = infiniteLiveOptions(query) else { return false }
+        return options["limit"] != nil
+          || (options["after"] != nil && options["before"] != nil)
+      },
+      Comment(rawValue: infiniteBoundedTransportSource)
+    )
+    #expect(
+      pagedQueries.contains { query in
+        infiniteLiveOptions(query) == [
+          "after": .array(firstCursor),
+          "before": .array(negativeCursor),
+          "beforeInclusive": .bool(true),
+          "order": .object(["value": .string("desc")]),
+        ]
+      },
+      Comment(rawValue: infiniteBoundedTransportSource)
+    )
+    #expect(
+      pagedQueries.contains { query in
+        infiniteLiveOptions(query) == [
+          "after": .array(negativeCursor),
+          "limit": .number(2),
+          "order": .object(["value": .string("desc")]),
+        ]
+      },
+      Comment(rawValue: infiniteBoundedTransportSource)
+    )
+
+    subscription.unsubscribe()
+    #expect(try await waitForInfiniteOpCount("remove-query", count: 5, in: session))
+    sent = await session.sentMessages()
+    let removedQueries = sent
+      .filter { $0.op == "remove-query" }
+      .compactMap { $0.fields["q"] }
+    expectNoDifference(Set(removedQueries), Set(pagedQueries), infiniteBoundedTransportSource)
+    _ = try await runtime.closeConnection()
+  }
+
+  @Test
   func upstreamInfiniteQueryInvalidQueryEmitsErrorResponse() async throws {
     let runtime = try await infiniteQueryRuntime()
     let subscription = await runtime.subscribeInfiniteQuery(
@@ -355,19 +665,129 @@ private func infiniteQueryRuntime() async throws -> InstantRuntime {
     configuration: InstantRuntimeConfiguration(
       appID: "infinite-query-\(UUID().uuidString)",
       persistenceURL: temporaryInfiniteQueryCacheURL(),
-      initialAttributes: [
-        .primaryKey(namespace: "items"),
-        InstantAttribute(
-          id: infiniteQueryValueAttributeID,
-          namespace: "items",
-          name: "value",
-          valueType: .number,
-          isIndexed: true
-        ),
-      ],
+      initialAttributes: infiniteQueryAttributes,
       makeID: { UUID().uuidString.lowercased() }
     )
   )
+}
+
+private let infiniteQueryAttributes: [InstantAttribute] = [
+  .primaryKey(namespace: "items"),
+  InstantAttribute(
+    id: infiniteQueryValueAttributeID,
+    namespace: "items",
+    name: "value",
+    valueType: .number,
+    isIndexed: true
+  ),
+]
+
+private let infiniteLiveServerAttributes: [InstantLiveJSONValue] = [
+  infiniteLiveServerAttribute(id: "server-items-id", name: "id", valueType: "string"),
+  infiniteLiveServerAttribute(id: "server-items-value", name: "value", valueType: "number"),
+]
+
+private func infiniteLiveServerAttribute(
+  id: String,
+  name: String,
+  valueType: String
+) -> InstantLiveJSONValue {
+  .object([
+    "cardinality": .string("one"),
+    "forward-identity": .array([
+      .string("identity-\(id)"),
+      .string("items"),
+      .string(name),
+    ]),
+    "id": .string(id),
+    "index?": .bool(name == "value"),
+    "unique?": .bool(name == "id"),
+    "value-type": .string(valueType),
+  ])
+}
+
+private func infiniteLiveCursor(id: String, value: Int) -> [InstantLiveJSONValue] {
+  [
+    .string(id),
+    .string("server-items-value"),
+    .number(Double(value)),
+    .number(Double(1_767_225_600_000 + value)),
+  ]
+}
+
+private func infiniteLiveQueryResult(
+  _ entries: [(id: String, value: Int)],
+  startCursor: [InstantLiveJSONValue]?,
+  endCursor: [InstantLiveJSONValue]?,
+  hasNextPage: Bool
+) -> [InstantLiveJSONValue] {
+  let joinRows = entries.map { entry in
+    InstantLiveJSONValue.array([
+      .array([
+        .string(entry.id),
+        .string("server-items-id"),
+        .string(entry.id),
+        .number(1_767_225_600_000),
+      ]),
+      .array([
+        .string(entry.id),
+        .string("server-items-value"),
+        .number(Double(entry.value)),
+        .number(Double(1_767_225_600_000 + entry.value)),
+      ]),
+    ])
+  }
+  return [
+    .object([
+      "child-nodes": .array([]),
+      "data": .object([
+        "datalog-result": .object(["join-rows": .array(joinRows)]),
+        "page-info": .object([
+          "items": .object([
+            "end-cursor": endCursor.map(InstantLiveJSONValue.array) ?? .null,
+            "has-next-page?": .bool(hasNextPage),
+            "has-previous-page?": .bool(false),
+            "start-cursor": startCursor.map(InstantLiveJSONValue.array) ?? .null,
+          ])
+        ]),
+      ]),
+    ])
+  ]
+}
+
+private func infiniteLiveOptions(
+  _ query: InstantLiveJSONValue
+) -> [String: InstantLiveJSONValue]? {
+  query.objectValue?["items"]?.objectValue?["$"]?.objectValue
+}
+
+private func waitForInfiniteMessageCount(
+  _ count: Int,
+  in session: LiveReactorParitySession
+) async throws -> Bool {
+  let deadline = ContinuousClock.now + .milliseconds(500)
+  while ContinuousClock.now < deadline {
+    if await session.sentMessages().count >= count {
+      return true
+    }
+    try await Task.sleep(for: .milliseconds(5))
+  }
+  return await session.sentMessages().count >= count
+}
+
+private func waitForInfiniteOpCount(
+  _ op: String,
+  count: Int,
+  in session: LiveReactorParitySession
+) async throws -> Bool {
+  let deadline = ContinuousClock.now + .milliseconds(500)
+  while ContinuousClock.now < deadline {
+    if await session.sentMessages().count(where: { $0.op == op }) >= count {
+      return true
+    }
+    try await Task.sleep(for: .milliseconds(5))
+  }
+  return await session.sentMessages().count(where: { $0.op == op }) >= count
 }
 
 private func infiniteItemsQuery(
@@ -501,3 +921,7 @@ private let infiniteEarlyLoadSource =
   "upstream/instant/client/packages/core/src/infiniteQuery.ts loadNextPage endCursor guard [adapted: Swift loadNextPage no-ops until the current local window can load another page.]"
 private let infiniteInvalidQuerySource =
   "upstream/instant/client/packages/core/src/infiniteQuery.ts sendError [adapted: Swift invalid infinite queries emit an error snapshot with no data and canLoadNextPage false.]"
+private let infiniteBoundedTransportSource =
+  "upstream/instant/client/packages/core/src/infiniteQuery.ts starter, pushNewForward, and pushNewReverse [ported: Swift live infinite queries register only limited or cursor-bounded Reactor subscriptions.]"
+private let infiniteLocalStarterSource =
+  "upstream/instant/client/packages/core/src/infiniteQuery.ts starter subscription [adapted: Swift emits the locally materialized starter page immediately while awaiting authoritative remote page-info.]"

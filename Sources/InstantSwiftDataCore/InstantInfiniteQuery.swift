@@ -66,6 +66,30 @@ extension InstantRuntime {
       )
     }
 
+    if configuration.liveTransport != nil {
+      let stream = AsyncStream<InstantInfiniteQuerySnapshot>.makeStream(
+        bufferingPolicy: .bufferingNewest(1)
+      )
+      let coordinator = InstantLiveInfiniteQueryCoordinator(
+        runtime: self,
+        plan: plan,
+        continuation: stream.continuation
+      )
+      await coordinator.start()
+      stream.continuation.onTermination = { @Sendable _ in
+        Task { await coordinator.unsubscribe() }
+      }
+      return InstantInfiniteQuerySubscription(
+        snapshots: stream.stream,
+        loadNextPage: {
+          Task { await coordinator.loadNextPage() }
+        },
+        unsubscribe: {
+          Task { await coordinator.unsubscribe() }
+        }
+      )
+    }
+
     let coordinator = InstantInfiniteQueryCoordinator(plan: plan)
     let stream = AsyncStream<InstantInfiniteQuerySnapshot>.makeStream(
       bufferingPolicy: .bufferingNewest(1)
@@ -108,6 +132,390 @@ extension InstantRuntime {
       values: emission.values,
       pageInfo: emission.pageInfo,
       canLoadNextPage: false
+    )
+  }
+}
+
+private enum InstantLiveInfiniteForwardChunkKey: Hashable, Sendable {
+  case preBootstrap
+  case cursor(InstantQueryCursor, afterInclusive: Bool)
+}
+
+private enum InstantLiveInfiniteSubscriptionKey: Hashable, Sendable {
+  case forward(InstantLiveInfiniteForwardChunkKey)
+  case reverse(InstantQueryCursor)
+}
+
+private struct InstantLiveInfiniteChunk: Sendable {
+  var data: [InstantEntitySnapshot]
+  var sequence: Int64
+  var pageInfo: InstantQueryPageInfo?
+  var hasMore: Bool
+  var endCursor: InstantQueryCursor?
+}
+
+private struct InstantLiveInfiniteReverseAdvance: Hashable, Sendable {
+  var startCursor: InstantQueryCursor
+  var endCursor: InstantQueryCursor
+}
+
+private actor InstantLiveInfiniteQueryCoordinator {
+  private let runtime: InstantRuntime
+  private let plan: InstantQueryPlan
+  private let pageSize: Int
+  private let continuation: AsyncStream<InstantInfiniteQuerySnapshot>.Continuation
+  private var starterTask: Task<Void, Never>?
+  private var subscriptions: [InstantLiveInfiniteSubscriptionKey: Task<Void, Never>] = [:]
+  private var forwardKeys: [InstantLiveInfiniteForwardChunkKey] = []
+  private var forwardChunks: [InstantLiveInfiniteForwardChunkKey: InstantLiveInfiniteChunk] = [:]
+  private var reverseKeys: [InstantQueryCursor] = []
+  private var reverseChunks: [InstantQueryCursor: InstantLiveInfiniteChunk] = [:]
+  private var advancedForwardChunks: Set<InstantLiveInfiniteForwardChunkKey> = []
+  private var advancedReverseChunks: Set<InstantLiveInfiniteReverseAdvance> = []
+  private var hasKickstarted = false
+  private var isActive = true
+  private var nextPlanID = 0
+
+  init(
+    runtime: InstantRuntime,
+    plan: InstantQueryPlan,
+    continuation: AsyncStream<InstantInfiniteQuerySnapshot>.Continuation
+  ) {
+    self.runtime = runtime
+    self.plan = plan
+    self.pageSize = InstantInfiniteQueryCoordinator.pageSize(for: plan)
+    self.continuation = continuation
+  }
+
+  func start() {
+    guard isActive, starterTask == nil else { return }
+    let starterPlan = chunkPlan(
+      name: "starter",
+      order: resolvedOrder,
+      limit: pageSize,
+      after: nil,
+      before: nil
+    )
+    starterTask = Task { [runtime] in
+      let observation = await runtime.observeLiveInfiniteQueryChunk(starterPlan)
+      for await emission in observation {
+        guard !Task.isCancelled else { break }
+        self.receiveStarter(emission)
+      }
+    }
+  }
+
+  func loadNextPage() {
+    guard isActive,
+      let key = forwardKeys.last,
+      case .cursor = key,
+      let chunk = forwardChunks[key],
+      let endCursor = chunk.endCursor,
+      advancedForwardChunks.insert(key).inserted
+    else {
+      return
+    }
+    freezeForward(key: key, chunk: chunk)
+    pushNewForward(startCursor: endCursor)
+  }
+
+  func unsubscribe() {
+    guard isActive else { return }
+    isActive = false
+    starterTask?.cancel()
+    starterTask = nil
+    for task in subscriptions.values {
+      task.cancel()
+    }
+    subscriptions.removeAll()
+    continuation.finish()
+  }
+
+  private func receiveStarter(_ emission: InstantQueryEmission) {
+    guard isActive, !hasKickstarted else { return }
+    guard emission.values.count >= pageSize,
+      let startCursor = emission.pageInfo?.startCursor,
+      startCursor.liveTuple != nil
+    else {
+      setForwardChunk(
+        key: .preBootstrap,
+        chunk: InstantLiveInfiniteChunk(
+          data: emission.values,
+          sequence: emission.sequence,
+          pageInfo: emission.pageInfo,
+          hasMore: false,
+          endCursor: nil
+        )
+      )
+      return
+    }
+
+    forwardKeys.removeAll { $0 == .preBootstrap }
+    forwardChunks[.preBootstrap] = nil
+    hasKickstarted = true
+    pushNewForward(startCursor: startCursor, afterInclusive: true)
+    pushNewReverse(startCursor: startCursor)
+  }
+
+  private func receiveForward(
+    key: InstantLiveInfiniteForwardChunkKey,
+    emission: InstantQueryEmission
+  ) {
+    guard isActive, let pageInfo = emission.pageInfo else { return }
+    setForwardChunk(
+      key: key,
+      chunk: InstantLiveInfiniteChunk(
+        data: emission.values,
+        sequence: emission.sequence,
+        pageInfo: pageInfo,
+        hasMore: pageInfo.hasNextPage,
+        endCursor: pageInfo.endCursor
+      )
+    )
+  }
+
+  private func receiveReverse(
+    startCursor: InstantQueryCursor,
+    emission: InstantQueryEmission
+  ) {
+    guard isActive, let pageInfo = emission.pageInfo else { return }
+    setReverseChunk(
+      startCursor: startCursor,
+      chunk: InstantLiveInfiniteChunk(
+        data: emission.values,
+        sequence: emission.sequence,
+        pageInfo: pageInfo,
+        hasMore: pageInfo.hasNextPage,
+        endCursor: pageInfo.endCursor
+      )
+    )
+  }
+
+  private func setForwardChunk(
+    key: InstantLiveInfiniteForwardChunkKey,
+    chunk: InstantLiveInfiniteChunk
+  ) {
+    if forwardChunks[key] == nil {
+      forwardKeys.append(key)
+    }
+    forwardChunks[key] = chunk
+    pushSnapshot()
+  }
+
+  private func setReverseChunk(
+    startCursor: InstantQueryCursor,
+    chunk: InstantLiveInfiniteChunk
+  ) {
+    if reverseChunks[startCursor] == nil {
+      reverseKeys.append(startCursor)
+    }
+    reverseChunks[startCursor] = chunk
+    maybeAdvanceReverse()
+    pushSnapshot()
+  }
+
+  private func pushNewForward(
+    startCursor: InstantQueryCursor,
+    afterInclusive: Bool = false
+  ) {
+    let key = InstantLiveInfiniteForwardChunkKey.cursor(
+      startCursor,
+      afterInclusive: afterInclusive
+    )
+    if forwardChunks[key] == nil {
+      forwardKeys.append(key)
+      forwardChunks[key] = placeholderChunk()
+    }
+    let queryPlan = chunkPlan(
+      name: "forward",
+      order: resolvedOrder,
+      limit: pageSize,
+      after: cursor(startCursor, inclusive: afterInclusive),
+      before: nil
+    )
+    replaceSubscription(key: .forward(key), plan: queryPlan) { emission in
+      await self.receiveForward(key: key, emission: emission)
+    }
+  }
+
+  private func freezeForward(
+    key: InstantLiveInfiniteForwardChunkKey,
+    chunk: InstantLiveInfiniteChunk
+  ) {
+    guard case let .cursor(startCursor, afterInclusive) = key,
+      let endCursor = chunk.endCursor
+    else {
+      return
+    }
+    forwardChunks[key] = chunk
+    let queryPlan = chunkPlan(
+      name: "forward-frozen",
+      order: resolvedOrder,
+      limit: nil,
+      after: cursor(startCursor, inclusive: afterInclusive),
+      before: cursor(endCursor, inclusive: true)
+    )
+    replaceSubscription(key: .forward(key), plan: queryPlan) { emission in
+      await self.receiveForward(key: key, emission: emission)
+    }
+  }
+
+  private func pushNewReverse(startCursor: InstantQueryCursor) {
+    if reverseChunks[startCursor] == nil {
+      reverseKeys.append(startCursor)
+      reverseChunks[startCursor] = placeholderChunk()
+    }
+    let queryPlan = chunkPlan(
+      name: "reverse",
+      order: reversedOrder,
+      limit: pageSize,
+      after: cursor(startCursor, inclusive: false),
+      before: nil
+    )
+    replaceSubscription(key: .reverse(startCursor), plan: queryPlan) { emission in
+      await self.receiveReverse(
+        startCursor: startCursor,
+        emission: emission
+      )
+    }
+  }
+
+  private func freezeReverse(
+    startCursor: InstantQueryCursor,
+    chunk: InstantLiveInfiniteChunk
+  ) {
+    guard let endCursor = chunk.endCursor else { return }
+    reverseChunks[startCursor] = chunk
+    let queryPlan = chunkPlan(
+      name: "reverse-frozen",
+      order: reversedOrder,
+      limit: nil,
+      after: cursor(startCursor, inclusive: false),
+      before: cursor(endCursor, inclusive: true)
+    )
+    replaceSubscription(key: .reverse(startCursor), plan: queryPlan) { emission in
+      await self.receiveReverse(
+        startCursor: startCursor,
+        emission: emission
+      )
+    }
+  }
+
+  private func maybeAdvanceReverse() {
+    guard let startCursor = reverseKeys.last,
+      let chunk = reverseChunks[startCursor],
+      chunk.hasMore,
+      let endCursor = chunk.endCursor,
+      advancedReverseChunks.insert(
+        InstantLiveInfiniteReverseAdvance(
+          startCursor: startCursor,
+          endCursor: endCursor
+        )
+      ).inserted
+    else {
+      return
+    }
+    freezeReverse(startCursor: startCursor, chunk: chunk)
+    pushNewReverse(startCursor: endCursor)
+  }
+
+  private func replaceSubscription(
+    key: InstantLiveInfiniteSubscriptionKey,
+    plan: InstantQueryPlan,
+    receive: @escaping @Sendable (InstantQueryEmission) async -> Void
+  ) {
+    subscriptions[key]?.cancel()
+    subscriptions[key] = Task { [runtime] in
+      let observation = await runtime.observeLiveInfiniteQueryChunk(plan)
+      for await emission in observation {
+        guard !Task.isCancelled else { break }
+        await receive(emission)
+      }
+    }
+  }
+
+  private func pushSnapshot() {
+    guard isActive else { return }
+    let orderedReverseChunks = reverseKeys.reversed().compactMap { reverseChunks[$0] }
+    let orderedForwardChunks = forwardKeys.compactMap { forwardChunks[$0] }
+    let values = orderedReverseChunks.flatMap { $0.data.reversed() }
+      + orderedForwardChunks.flatMap(\.data)
+    let canLoadNextPage = orderedForwardChunks.last?.hasMore ?? false
+    let startCursor = orderedReverseChunks.first?.pageInfo?.endCursor
+      ?? orderedForwardChunks.first?.pageInfo?.startCursor
+    let endCursor = orderedForwardChunks.last?.pageInfo?.endCursor
+      ?? orderedReverseChunks.last?.pageInfo?.startCursor
+    let sequence = (orderedReverseChunks + orderedForwardChunks)
+      .map(\.sequence)
+      .max()
+      ?? 0
+    let pageInfo = (orderedReverseChunks + orderedForwardChunks).isEmpty
+      ? nil
+      : InstantQueryPageInfo(
+        startCursor: startCursor,
+        endCursor: endCursor,
+        hasPreviousPage: false,
+        hasNextPage: canLoadNextPage
+      )
+    continuation.yield(
+      InstantInfiniteQuerySnapshot(
+        queryID: plan.id,
+        sequence: sequence,
+        values: values,
+        pageInfo: pageInfo,
+        canLoadNextPage: canLoadNextPage
+      )
+    )
+  }
+
+  private func placeholderChunk() -> InstantLiveInfiniteChunk {
+    InstantLiveInfiniteChunk(
+      data: [],
+      sequence: 0,
+      pageInfo: nil,
+      hasMore: false,
+      endCursor: nil
+    )
+  }
+
+  private func cursor(
+    _ cursor: InstantQueryCursor,
+    inclusive: Bool
+  ) -> InstantQueryCursor {
+    var cursor = cursor
+    cursor.inclusive = inclusive
+    return cursor
+  }
+
+  private var resolvedOrder: InstantQueryOrder {
+    plan.order ?? .serverCreatedAt
+  }
+
+  private var reversedOrder: InstantQueryOrder {
+    InstantQueryOrder(
+      resolvedOrder.field,
+      resolvedOrder.direction == .ascending ? .descending : .ascending
+    )
+  }
+
+  private func chunkPlan(
+    name: String,
+    order: InstantQueryOrder,
+    limit: Int?,
+    after: InstantQueryCursor?,
+    before: InstantQueryCursor?
+  ) -> InstantQueryPlan {
+    defer { nextPlanID += 1 }
+    return InstantQueryPlan(
+      id: "\(plan.id).infinite.\(name).\(nextPlanID)",
+      namespace: plan.namespace,
+      filters: plan.filters,
+      order: order,
+      limit: limit,
+      after: after,
+      before: before,
+      selectedFields: plan.selectedFields,
+      includes: plan.includes ?? []
     )
   }
 }
