@@ -4,6 +4,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 11:21:35 a.m. EDT — `f3e9fe041f1e` Expose direct composite fetch requests
+
+- **Implementation commit:** `f3e9fe041f1e67e0410c3a585cf162f941cca08f`
+- **Change:** Expose direct composite fetch requests
+- **Details:**
+  - Let actors and TCA effects load or subscribe to InstantFetchRequest directly while reusing the same library-owned combination and cancellation machinery as @Fetch.
+  - Preserve Sendable request keys without imposing a global Hashable task-identity requirement.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — Expose default and explicit-client direct request operations.
+  - `Tests/InstantSwiftDataTests/TypedAPITests.swift` — Prove direct composite load and observation through the public surface.
+  - `docs/adr/0005-direct-composite-fetch-requests.md` — Record before/after syntax and the ownership decision.
+- **User context (verbatim):**
+  > upstream mirroring of ergonomics of sqlite-data
+- **SpecStory:** unavailable — Codex desktop goal task; no durable SpecStory CLI capture URI is available.
+
 ## July 27th, 2026 at 11:02:24 a.m. EDT — `865ead6e6708` Record physical Watch transcription proof
 
 - **Implementation commit:** `865ead6e670851aae223d3b61582dcbef2d9102f`

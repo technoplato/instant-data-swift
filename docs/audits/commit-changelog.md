@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 27, 2026 at 11:21:38 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `f3e9fe041f1e67e0410c3a585cf162f941cca08f`
+- High-level reason: Expose the library-owned composite fetch request directly
+  to actors and TCA effects, preserving the same transformed load,
+  `combineLatest` observation, error, and cancellation behavior used by
+  `@Fetch` without requiring wrapper state.
+
 ## July 27, 2026 at 11:12:45 AM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)

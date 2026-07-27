@@ -69,6 +69,11 @@ persisted artifacts outrank code reading whenever they disagree.
 
 ## Progress log
 
+- 2026-07-27 — Exposed direct composite request execution in `f3e9fe0`.
+  `InstantFetchRequest.load` and `subscribe` now let actors and TCA effects use
+  the same library-owned multi-query transformation, combination, and
+  cancellation path as `@Fetch`; ADR 0005 records the accepted before/after
+  syntax. Both focused red/green tests and all 140 `TypedAPITests` passed.
 - 2026-07-27 — Fast-forwarded both local `main` branches after creating
   timestamped backup branches. Added cross-repository commit discipline and a
   newest-first SHA journal. Both worktrees were clean before new fixes.
@@ -182,7 +187,7 @@ Severity: P0 correctness/data-loss, P1 behavior/perf, P2 ergonomics, P3 polish.
 | S-C6/C7 | P1/P2 | Fixed `e12be12`, `1d8db69` | Microphone PCM retains 256 newest buffers with drop diagnostics; Watch relay timing uses a 4,096-entry circular buffer and refuses false attribution after eviction. |
 | R-A8 | P2 | Partial `c0a0304`, `0ba57bd` | Persisted per-query results are pruned at bootstrap and every 64 successful writes while active observations remain protected; global triple retention still needs a separate reachability policy. |
 | API-B1/B2/B3 | P2 | Partial `7ec460a` | Typed schema-owned snapshot decoding now removes string keys for cardinality-one values; macro-generated whole-model upserts remain a separate ergonomic follow-up. |
-| API-B5/B6/B7 | P2 | Proposed | Complete dynamic fetch parity and expose library-owned decoded/composite observation for TCA and actor consumers. |
+| API-B5/B6/B7 | P2 | Partial `f3e9fe0` | Dynamic `FetchOne` and composite `Fetch` replacement plus decoded subscriptions already exist; direct `InstantFetchRequest` load/subscription now exposes library-owned composite observation to TCA and actors. A general composite SwiftUI modifier remains intentionally separate because request keys are not globally `Hashable`. |
 | API-B8/B10/B13 | P2 | Partial `d3e6e70`, `760afdb` | Dependency-controlled typed IDs and a read-only local client facet are implemented with ADRs; broader DocC and unified fetch-status work remain. |
 
 ## Acceptance boundaries and retained follow-ups
@@ -197,10 +202,13 @@ Severity: P0 correctness/data-loss, P1 behavior/perf, P2 ergonomics, P3 polish.
   cache rows now have production retention, but deleting triples that are no
   longer reachable from any active or cached query needs a separate ownership
   and offline-retention policy.
-- **Ergonomic breadth:** typed snapshot values, dependency-controlled IDs, and
-  the local-reader facet are accepted, ADR-backed increments. Whole-model
-  upserts, the remaining dynamic/composite fetch surface, broader DocC, and a
-  unified fetch status remain proposed rather than being claimed complete.
+- **Ergonomic breadth:** typed snapshot values, dependency-controlled IDs, the
+  local-reader facet, and direct composite request execution are accepted,
+  ADR-backed increments. Dynamic `FetchOne` and composite `Fetch` replacement
+  already exist through their public `load`/`subscribe`/`task` operations.
+  Whole-model upserts, a general composite SwiftUI modifier with explicit task
+  identity, broader DocC, and a unified fetch status remain proposed rather
+  than being claimed complete.
 - **Device evidence:** Watch credential recovery, relay timing, diagnostic
   logger handoff, production asynchronous recording activation, the
   recording-compatible audio policy, Watch-probe provenance/timestamp,
@@ -208,8 +216,9 @@ Severity: P0 correctness/data-loss, P1 behavior/perf, P2 ergonomics, P3 polish.
   broadcast picker are covered by focused tests. The final clean Watch probe
   also built, installed, launched, and completed local PCM/WAV capture plus a
   final Deepgram transcript on the physical paired Series 9. The post-port
-  production `ScribeSharedWatch` target compiles and signs for generic watchOS,
-  but production install/launch, recording save, Instant projection/media
+  production `ScribeSharedWatch` target now compiles, signs, installs, launches,
+  and settles its UI on that Watch, but no production spoken recording was
+  started. Production capture/transcript/save, Instant projection/media
   delivery, repeated Watch cold-start reliability, and an iPhone ReplayKit
   broadcast remain device acceptance work.
 
