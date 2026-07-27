@@ -69,6 +69,38 @@ persisted artifacts outrank code reading whenever they disagree.
 
 ## Progress log
 
+- 2026-07-27 — Closed deterministic short-lived writer data loss in
+  `e228326` and adopted the boundary in Scribe `30068d5`. The default injected
+  flush transport is local, so the former Scribe waiter could confirm and
+  remove durable outbox rows before the background WebSocket opened. The new
+  `waitForAllPendingMutations` observes actual live acknowledgements without
+  invoking that transport, reconnects closed sessions, and fails on timeout or
+  live connection error. Ordered replay also retains an older scalar write
+  while a queued successor writes the same entity/attribute, preserving valid
+  initial upserts without permitting isolated stale retries. `c211737` gates
+  the Duration-based API to macOS 13, iOS 16, tvOS 16, and watchOS 9 so the
+  package still compiles for iOS 15 and watchOS 8. Final verification passed:
+  Instant ran 28 macro XCTest tests plus 1,220 Swift Testing tests in 103
+  suites, and Scribe ran 471 tests in 48 suites.
+- 2026-07-27 — Rebuilt the Scribe CLI from clean commit
+  `ffec2a52403d857f3d8d504e27ca5bd422878619` with embedded `dirty=false`
+  provenance, local/ISO build time, host, source root, configuration,
+  architecture, and resolved artifact path. The sanitized live report
+  `.perf-runs/2026-07-27T17-44-46-324Z/report.json` completed all six configured
+  TypeScript/Swift writer-observer lanes with 5/5 rows and no failures. Average
+  latency ranged from 165 ms to 1,530 ms and maximum latency from 234 ms to
+  1,743 ms, within the two-second budget. Swift short-run resource gates
+  passed; Node lanes showed 47–52 MiB launch growth and exceeded the 32 MiB
+  short-run growth threshold. That launch sample is not a sustained leak or
+  day-scale slope measurement.
+- 2026-07-27 — Rechecked the current physical Watch build boundary after the
+  keychain identity became discoverable. A serialized, no-sign physical
+  `ScribeSharedWatch` scheme build completed for the clean Scribe/Instant code
+  after the availability fix. The corresponding reproducible signed build
+  reached code signing but every application/extension failed private-key use
+  with `errSecInternalComponent`. No new current-head bundle was installed or
+  launched, and no production spoken recording was started; private-key
+  authorization remains a user-controlled prerequisite.
 - 2026-07-27 — Closed durable live-query reachability in `5f75dc9`.
   Canonical Reactor query results now use the upstream 52-week, 1,000-entry,
   and 1,000,000-owned-triple bounds at bootstrap and every 64 successful live
@@ -221,6 +253,8 @@ Severity: P0 correctness/data-loss, P1 behavior/perf, P2 ergonomics, P3 polish.
 | R-A2 | P1 | Fixed `0bda5d5` | Attribute-resolution failures are persisted per mutation while the delivery loop continues with later healthy rows. |
 | R-A3 | P1 | Fixed `d7dd19d` | A rejected `add-query` retires only the correlated registration and leaves the shared socket and healthy observations intact. |
 | R-A4 | P1 | Fixed `cabc467` | Remaining optimistic mutations are rebased above the authoritative server snapshot so later local writes stay visible. |
+| R-A9 | P0 | Fixed `e228326`, `c211737` | Explicit durability waits observe live server acknowledgement without locally confirming the outbox; ordered replay preserves causally required earlier writes, and the API retains older-platform package compatibility. |
+| S-C12 | P0 | Fixed `30068d5` | Scribe logger and replay durability boundaries no longer invoke the local flush transport, preventing deterministic 0/5 and 3/5 remote row loss in short-lived writers. |
 | S-C2/C11 | P1 | Fixed `fa2210b`, `17c2d62` | Live projection omits cumulative joined-text rewrites, finalization writes the fallback text once, and snapshot mutations are serialized in submission order. |
 | S-C3/C4 | P1 | Fixed `da5010d`, `11edea3`, `f604188` | Commits skip flat observers in untouched namespaces, canonical server page info and opaque cursors survive the live path, and live infinite queries use limited or cursor-bounded forward/reverse subscriptions with atomic observer windows. |
 | S-C5 | P1 | Fixed `21be1b8`, `760afdb`, `cb88d6c` | Scribe's local startup and capture projection loaders use a read-only facet of the already bootstrapped live runtime; live one-shot queries remain freshness-sensitive and no second SQLite runtime or public `queryLocal` was added. |
@@ -245,6 +279,12 @@ Severity: P0 correctness/data-loss, P1 behavior/perf, P2 ergonomics, P3 polish.
   Whole-model upserts, a general composite SwiftUI modifier with explicit task
   identity, broader DocC, and a unified fetch status remain proposed rather
   than being claimed complete.
+- **Cross-SDK live latency:** the final six-lane CLI/TypeScript matrix delivered
+  every one of five rows in every configured lane inside two seconds. The
+  macOS-app and iOS-simulator placeholders remain honestly `not_run` because
+  those hosts do not yet expose a headless benchmark role. Short Node launch
+  growth above 32 MiB remains a resource follow-up; it is not evidence of a
+  sustained leak without a longer soak.
 - **Device evidence:** Watch credential recovery, relay timing, diagnostic
   logger handoff, production asynchronous recording activation, the
   recording-compatible audio policy, Watch-probe provenance/timestamp,
@@ -256,7 +296,11 @@ Severity: P0 correctness/data-loss, P1 behavior/perf, P2 ergonomics, P3 polish.
   and settles its UI on that Watch, but no production spoken recording was
   started. Production capture/transcript/save, Instant projection/media
   delivery, repeated Watch cold-start reliability, and an iPhone ReplayKit
-  broadcast remain device acceptance work.
+  broadcast remain device acceptance work. That install/launch evidence belongs
+  to the earlier clean production checkpoint. The latest Scribe/Instant heads
+  compile for the physical target without signing, but their new signed build
+  is blocked at private-key authorization with `errSecInternalComponent`; no
+  current-head install or launch is claimed.
 
 ## Decisions
 
