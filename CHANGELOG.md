@@ -4,6 +4,21 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 10:18:42 a.m. EDT — `25d6b9718b47` Stabilize query cache retention fixtures
+
+- **Implementation commit:** `25d6b9718b475657af5d4553f1434c17a6342862`
+- **Change:** Stabilize query cache retention fixtures
+- **Details:**
+  - Document the lock protecting the pruning cadence's unchecked Sendable state.
+  - Keep relaunch, stale-cache, and legacy-migration fixtures on their controlled clocks so the one-year retention policy tests persistence semantics instead of expiring synthetic 2023 rows.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Name the NSLock safety mechanism required by concurrency guidance.
+  - `Tests/InstantSwiftDataCoreTests/InstantReactorParityTests.swift` — Keep Reactor relaunch cache evidence within the configured retention window.
+  - `Tests/InstantSwiftDataCoreTests/InstantStoreTests.swift` — Control relaunch clocks for cache persistence, stale-revision, and legacy-migration tests.
+- **User context (verbatim):**
+  > ensure that all the test suite still passes.
+- **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
+
 ## July 27th, 2026 at 10:14:54 a.m. EDT — `91578fe1e6b3` Correct amortized pruning benchmark contract
 
 - **Implementation commit:** `91578fe1e6b3da54b52939f0d8736da99b68343f`
