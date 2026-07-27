@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 27, 2026 at 10:31:57 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `875393835ad2cd3f802165469ce73c1259bd9b06`
+- High-level reason: Keep the physical Apple Watch microphone session on the
+  recording-compatible default route policy while retaining asynchronous
+  activation required before opening its Deepgram WebSocket.
+
 ## July 27, 2026 at 10:29:38 AM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
