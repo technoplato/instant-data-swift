@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 27, 2026 at 12:28:17 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `a76f39a96ec6ad3ef13dc0f17dd120725249247f`
+- High-level reason: Model simulator heart-rate streams behind the Point-Free
+  dependency boundary with controlled clocks and dates while preserving the
+  live HealthKit and WatchConnectivity dependency on physical devices.
+
 ## July 27, 2026 at 12:27:31 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
