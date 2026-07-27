@@ -339,6 +339,35 @@ struct TypedAPITests {
   }
 
   @Test
+  func entitySnapshotDecodesTypedAttributeValues() throws {
+    let createdAt = Date(timeIntervalSince1970: 1_700_000_122)
+    let snapshot = typedTodoSnapshot(
+      id: "typed-snapshot",
+      text: "Typed value",
+      isCompleted: true,
+      createdAt: createdAt
+    )
+
+    let text = try snapshot.value(TypedTodo.text)
+    let isCompleted = try snapshot.value(TypedTodo.isCompleted)
+    let decodedCreatedAt = try snapshot.value(TypedTodo.createdAt)
+
+    expectNoDifference(text, "Typed value")
+    expectNoDifference(isCompleted, true)
+    expectNoDifference(decodedCreatedAt, createdAt)
+
+    do {
+      let _: String = try snapshot.value(TypedUser.name)
+      Issue.record("Expected a namespace mismatch to fail typed snapshot decoding.")
+    } catch let error as InstantError {
+      expectNoDifference(error.code, .validationFailed)
+      expectNoDifference(error.namespace, TypedTodo.instantNamespace)
+      expectNoDifference(error.path, "name")
+      expectNoDifference(error.localID, "typed-snapshot")
+    }
+  }
+
+  @Test
   func instantEntityMacroGeneratedSchemaHelpersDriveTypedAPI() async throws {
     let dueAt = Date(timeIntervalSince1970: 1_700_000_123)
     let todoID = InstantID<MacroGeneratedTodo>(rawValue: "macro-generated-todo")

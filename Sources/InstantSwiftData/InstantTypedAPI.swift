@@ -9,6 +9,34 @@ extension InstantID {
   }
 }
 
+extension InstantEntitySnapshot {
+  public func value<Entity, Value>(
+    _ attribute: InstantAttributePath<Entity, Value>,
+    operation: String = "decode typed entity snapshot"
+  ) throws -> Value
+  where Value: InstantValueDecodable {
+    guard namespace == Entity.instantNamespace else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: operation,
+        namespace: namespace,
+        path: attribute.name,
+        localID: id,
+        message:
+          "Snapshot namespace '\(namespace)' does not match typed attribute namespace '\(Entity.instantNamespace)'.",
+        recovery: "Decode the snapshot with an attribute path from its declared entity type."
+      )
+    }
+    return try Value.decodeInstantValue(
+      values[attribute.name]?.first,
+      namespace: namespace,
+      path: attribute.name,
+      localID: id,
+      operation: operation
+    )
+  }
+}
+
 public protocol InstantValueRepresentable: Sendable {
   var instantValue: InstantValue { get }
 }
