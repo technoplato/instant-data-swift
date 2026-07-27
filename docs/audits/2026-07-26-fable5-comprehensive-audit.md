@@ -128,6 +128,19 @@ persisted artifacts outrank code reading whenever they disagree.
   embeds `RPSystemBroadcastPickerView` from `a888ec9`; `62157d2` now correlates
   transcript attribution to the audio-frame source span and uses the exact
   `System Audio` fallback when application metadata is unavailable.
+- 2026-07-27 — Completed clean-head physical Watch deployment evidence. The
+  signed `Scribe Audio Probe` built from clean Scribe commit `b2f5a4c`, embedded
+  that full commit plus dirty=false and its local/ISO build time, installed on
+  the paired Series 9, and launched successfully. Its copied device-local JSONL
+  log reported `diagnostic.prepared` on watchOS 27.0 with 48 kHz mono PCM and
+  the credential source present. No recording event was generated because the
+  available tooling cannot capture a watchOS hierarchy or safely synthesize a
+  hierarchy-derived tap.
+- 2026-07-27 — Final package verification passed after stabilizing only
+  asynchronous test evidence: Scribe ran 445 tests in 47 suites
+  (`/tmp/fable5-scribe-full-final-3.log`), and Instant ran 1,193 tests in 102
+  suites (`/tmp/fable5-instant-full-final-9.log`). The performance-safety suite
+  also remained green at 10 tests (`/tmp/fable5-performance-safety-final.log`).
 - 2026-07-26 — Committed baselines in both repos (`f70044d`, `4d30691`).
   Confirmed no secrets in diffs (only env-var names/test fixtures; API keys go
   through KeychainClient).
@@ -172,12 +185,14 @@ Severity: P0 correctness/data-loss, P1 behavior/perf, P2 ergonomics, P3 polish.
   upserts, the remaining dynamic/composite fetch surface, broader DocC, and a
   unified fetch status remain proposed rather than being claimed complete.
 - **Device evidence:** Watch credential recovery, relay timing, diagnostic
-  logger handoff, streaming authorization, Watch-probe provenance, ReplayKit
-  source correlation, the clear fallback label, and the embedded broadcast
-  picker are covered by focused tests. A physical paired-Watch
-  recording/transcription run and an iPhone ReplayKit broadcast remain device
-  acceptance work; package tests alone are not presented as proof of those
-  physical paths.
+  logger handoff, streaming authorization, recording-compatible audio policy,
+  Watch-probe provenance/timestamp, ReplayKit source correlation, the clear
+  fallback label, and the embedded broadcast picker are covered by focused
+  tests. The final clean Watch probe also built, installed, launched, and wrote
+  a matching `diagnostic.prepared` row on the physical paired Series 9. A human
+  recording/transcription interaction and an iPhone ReplayKit broadcast remain
+  device acceptance work; neither package tests nor a successful process
+  launch are presented as proof of those interactions.
 
 ## Decisions
 
