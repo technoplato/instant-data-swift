@@ -132,8 +132,10 @@ persisted artifacts outrank code reading whenever they disagree.
   watchOS activation, removes `.mixWithOthers`, and keeps the default
   microphone-compatible route; the existing TCA readiness gates still order
   capture activation, Deepgram connection/receiver readiness, and PCM delivery.
-  Focused policy/transport tests, the 447-test package suite, and a generic
-  no-sign `ScribeSharedWatch` build passed.
+  Focused policy/transport tests, the 447-test package suite, a generic no-sign
+  `ScribeSharedWatch` build, and a clean signing-enabled generic Watch build
+  passed. The final signed bundle contains arm64/arm64_32 executables and passes
+  strict deep code-sign verification; it has not been installed or launched.
 - 2026-07-27 — Completed the revised ReplayKit code scope. Scribe already
   embeds `RPSystemBroadcastPickerView` from `a888ec9`; `62157d2` now correlates
   transcript attribution to the audio-frame source span and uses the exact
@@ -206,10 +208,10 @@ Severity: P0 correctness/data-loss, P1 behavior/perf, P2 ergonomics, P3 polish.
   broadcast picker are covered by focused tests. The final clean Watch probe
   also built, installed, launched, and completed local PCM/WAV capture plus a
   final Deepgram transcript on the physical paired Series 9. The post-port
-  production `ScribeSharedWatch` target compiles for generic watchOS, but its
-  signed build is awaiting login-keychain access; production recording save,
-  Instant projection/media delivery, repeated Watch cold-start reliability,
-  and an iPhone ReplayKit broadcast remain device acceptance work.
+  production `ScribeSharedWatch` target compiles and signs for generic watchOS,
+  but production install/launch, recording save, Instant projection/media
+  delivery, repeated Watch cold-start reliability, and an iPhone ReplayKit
+  broadcast remain device acceptance work.
 
 ## Decisions
 
