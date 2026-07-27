@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 27, 2026 at 10:44:51 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `64692d14118d0ff25d9eac95f3526981fd55606a`
+- High-level reason: Preserve proof that blocked remote diagnostics do not
+  block local credential persistence while replacing scheduler-yield sampling
+  with a bounded monotonic evidence window under parallel-suite load.
+
 ## July 27, 2026 at 10:43:16 AM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
