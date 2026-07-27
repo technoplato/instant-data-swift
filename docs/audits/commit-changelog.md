@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 27, 2026 at 6:24:23 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `eabe24c19933ede3f90845a917c6909d2d79f775`
+- High-level reason: Add runtime-selectable Apple Speech Analyzer transcription
+  with on-device model preparation, time-indexed progressive results, explicit
+  finalization, visible device-local provider controls, and an immutable
+  Deepgram-or-Apple choice for each active microphone and system-audio session.
+
 ## July 27, 2026 at 4:20:15 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant`
