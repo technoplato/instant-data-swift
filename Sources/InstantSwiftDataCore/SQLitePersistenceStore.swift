@@ -638,6 +638,25 @@ public actor SQLitePersistenceStore {
     )
   }
 
+  package func bootstrap(
+    queryCachePruningPolicy: InstantQueryCachePruningPolicy,
+    now: InstantTimestamp
+  ) throws -> InstantQueryCachePruningResult? {
+    try bootstrap()
+    do {
+      return try pruneQueryCache(policy: queryCachePruningPolicy, now: now)
+    } catch {
+      InstantDiagnostics.shared.record(
+        error: error,
+        subsystem: "instant-swift-data-core",
+        category: "query",
+        event: "query-cache.bootstrap-prune-failed",
+        message: "Could not prune persisted query results during runtime bootstrap."
+      )
+      return nil
+    }
+  }
+
   func simulateUnexpectedConnectionCloseForTesting() {
     sqlite3_close(connection.raw)
     connection.raw = nil

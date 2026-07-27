@@ -35,6 +35,7 @@ public struct InstantRuntimeConfiguration: Sendable {
     maxEntries: 1_000,
     maxEncodedJSONBytes: 1_000_000
   )
+  var queryCachePruningWriteInterval = 64
   var liveReconnectSleep: @Sendable (UInt64) async throws -> Void = { milliseconds in
     try await Task.sleep(nanoseconds: milliseconds * 1_000_000)
   }
@@ -1567,6 +1568,23 @@ private actor InstantLiveQueryAcknowledgementState {
   }
 }
 
+private final class InstantQueryCachePruningCadence: @unchecked Sendable {
+  private let lock = NSLock()
+  private var writesSinceLastPrune = 0
+
+  func shouldPrune(afterSuccessfulWriteWithInterval interval: Int) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    let interval = max(1, interval)
+    if writesSinceLastPrune >= interval - 1 {
+      writesSinceLastPrune = 0
+      return true
+    }
+    writesSinceLastPrune += 1
+    return false
+  }
+}
+
 public final class InstantRuntime: Sendable {
   public static let selectedAppIDMetadataKey = "cli.selected_app_id"
   public static let cookieSyncLastUpdatedMetadataKey = "lastSyncedUserCookie"
@@ -1598,6 +1616,7 @@ public final class InstantRuntime: Sendable {
   private let operationGate = AsyncSerialGate()
   private let connectionGate = AsyncSerialGate()
   private let mutationFlushGate = AsyncSerialGate()
+  private let queryCachePruningCadence = InstantQueryCachePruningCadence()
   private let liveSession = InstantRuntimeLiveSession()
   private let liveQueryResultState = InstantLiveQueryResultState()
   private let liveQueryAcknowledgements = InstantLiveQueryAcknowledgementState()
@@ -1681,7 +1700,25 @@ public final class InstantRuntime: Sendable {
         startupTrace: startupTrace
       )
       configuration.actorHopRecorder?.record(.persistence)
-      try await persistence.bootstrap()
+      let bootstrapPruningResult = try await persistence.bootstrap(
+        queryCachePruningPolicy: configuration.queryCachePruningPolicy,
+        now: configuration.now()
+      )
+      if let bootstrapPruningResult,
+        !bootstrapPruningResult.removedCacheKeys.isEmpty
+      {
+        InstantDiagnostics.shared.record(
+          .debug,
+          subsystem: "instant-swift-data-core",
+          category: "query",
+          event: "query-cache.pruned-at-bootstrap",
+          message: "Pruned unloaded persisted query results during runtime bootstrap.",
+          metadata: [
+            "remainingCount": String(bootstrapPruningResult.remainingEntryCount),
+            "removedCount": String(bootstrapPruningResult.removedCacheKeys.count),
+          ]
+        )
+      }
       configuration.actorHopRecorder?.record(.persistence)
       var state = try await persistence.loadState()
       let storeMaterializationStopwatch = startupTrace.stopwatch()
@@ -2963,7 +3000,11 @@ public final class InstantRuntime: Sendable {
           expectedStoreRevision: state.storeRevision
         )
         if didSave {
-          await pruneQueryCache(preserving: plan.cacheKey)
+          if queryCachePruningCadence.shouldPrune(
+            afterSuccessfulWriteWithInterval: configuration.queryCachePruningWriteInterval
+          ) {
+            await pruneQueryCache(preserving: plan.cacheKey)
+          }
           await leaveOperationGate()
           return emission
         }

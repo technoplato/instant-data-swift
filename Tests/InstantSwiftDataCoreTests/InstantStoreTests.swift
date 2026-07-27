@@ -1209,6 +1209,36 @@ struct InstantStoreTests {
   }
 
   @Test
+  func runtimePrunesPersistedQueryCacheDuringBootstrap() async throws {
+    let source = persistedObjectSource(
+      "PersistedObject garbage collects after reload "
+        + "[adapted: Swift prunes unloaded query rows before serving a relaunched runtime.]"
+    )
+    let cacheURL = try temporaryCacheURL()
+    let persistence = try SQLitePersistenceStore(fileURL: cacheURL)
+    try await persistence.bootstrap()
+    let entries = try await savePersistedObjectCacheEntries(in: persistence)
+    let persistedEntryCount = try await persistence.loadQueryCache().count
+    expectNoDifference(persistedEntryCount, entries.count, source)
+
+    var configuration = InstantRuntimeConfiguration(
+      appID: "runtime-query-cache-bootstrap-pruning",
+      persistenceURL: cacheURL,
+      now: { InstantTimestamp(milliseconds: 100) }
+    )
+    configuration.queryCachePruningPolicy = InstantQueryCachePruningPolicy(maxEntries: 1)
+    configuration.queryCachePruningWriteInterval = 100
+
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+    let cacheKeys = try await runtime.cachedQueries().map(\.cacheKey)
+    expectNoDifference(
+      cacheKeys,
+      [try #require(entries.last).cacheKey],
+      source
+    )
+  }
+
+  @Test
   func runtimePrunesUnloadedQueryCacheRowsWhilePreservingActiveObservations() async throws {
     let source = persistedObjectSource(
       "PersistedObject garbage collects unloaded query subscriptions while preserving loaded keys "
@@ -1222,6 +1252,7 @@ struct InstantStoreTests {
       now: { InstantTimestamp(milliseconds: 100) }
     )
     configuration.queryCachePruningPolicy = InstantQueryCachePruningPolicy(maxEntries: 1)
+    configuration.queryCachePruningWriteInterval = 1
     let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
     let observedPlan = InstantQueryPlan(id: "cache-a", namespace: "todos")
     let transientPlan = InstantQueryPlan(id: "cache-b", namespace: "todos")
