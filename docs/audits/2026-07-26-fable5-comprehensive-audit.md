@@ -92,6 +92,10 @@ persisted artifacts outrank code reading whenever they disagree.
   Flat query plans no longer re-materialize for clearly unrelated commits;
   relationship includes and paths, schema changes, and unresolved entities
   retain conservative invalidation.
+- 2026-07-27 — Routed Scribe's explicitly local projection reads through an
+  injected local-only Instant client in `21be1b8`. The live and local clients
+  share one resolved SQLite file, preserving the strict public one-shot API
+  while removing server-acknowledgement waits from startup and capture writes.
 - 2026-07-26 — Committed baselines in both repos (`f70044d`, `4d30691`).
   Confirmed no secrets in diffs (only env-var names/test fixtures; API keys go
   through KeychainClient).
@@ -112,7 +116,7 @@ Severity: P0 correctness/data-loss, P1 behavior/perf, P2 ergonomics, P3 polish.
 | R-A4 | P1 | Open | Failed optimistic cardinality-one writes or deletes can leave holes until a server refresh because rollback removes failed triples without restoring overwritten server triples. |
 | S-C2/C11 | P1 | Open | Every interim transcript can trigger full projection, diffing, persistence, and full joined-text rewriting, creating out-of-order saves and roughly quadratic cumulative work. |
 | S-C3/C4 | P1 | Partial `da5010d` | Commits now skip flat observers in untouched namespaces while relationship-dependent plans remain conservative; infinite-query windowing still needs separate review. |
-| S-C5 | P1 | Open | Live one-shot queries can wait ten seconds and fail despite valid local state; the fix must preserve ordinary query APIs or use an injected local-only client, never public `queryLocal`. |
+| S-C5 | P1 | Fixed `21be1b8` | Scribe's local startup and capture projection loaders now use an injected local-only client over the shared SQLite file; live one-shot queries remain freshness-sensitive and no public `queryLocal` was added. |
 | S-C6/C7 | P1/P2 | Open | Microphone PCM and Watch relay timing collections need explicit bounds and drop diagnostics. |
 | R-A8 | P2 | Partial `c0a0304` | Persisted per-query results are now pruned in production while active observations remain protected; global triple retention still needs a separate reachability policy. |
 | API-B1/B2/B3 | P2 | Proposed | Generate or centralize entity snapshot decoding and whole-model upserts to remove repeated stringly application boilerplate. |

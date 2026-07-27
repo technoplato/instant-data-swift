@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 27, 2026 at 10:03:51 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `21be1b8e764a0d78d96b962354db156e675b4877`
+- High-level reason: Route Scribe's explicitly local projection loaders through
+  an injected local-only Instant client sharing the live client's SQLite file,
+  avoiding server acknowledgement waits without exposing `queryLocal`.
+
 ## July 27, 2026 at 9:59:16 AM EDT
 
 - Repository: `instant-data-swift`
