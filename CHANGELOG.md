@@ -4,6 +4,19 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 10:40:22 a.m. EDT — `01782d294545` Record final cross-repository verification
+
+- **Implementation commit:** `01782d2945459b0c382ebb7cd6476595fcae482b`
+- **Change:** Record final cross-repository verification
+- **Details:**
+  - Record the exact passing Scribe, Instant, and performance-safety suite totals and their canonical local logs.
+  - Separate verified physical Watch build, install, launch, and prepared-log evidence from the still-unperformed recording/transcription and ReplayKit broadcast interactions.
+- **Files:**
+  - `docs/audits/2026-07-26-fable5-comprehensive-audit.md` — Make the final acceptance boundary and verification evidence durable.
+- **User context (verbatim):**
+  > maintain a human-readable timestamped commit audit journal and clean worktrees
+- **SpecStory:** unavailable — Codex desktop task; no durable SpecStory CLI capture URI is available.
+
 ## July 27th, 2026 at 10:35:33 a.m. EDT — `a4245d762055` Allow nonblocking cookie sync under suite load
 
 - **Implementation commit:** `a4245d7620552df9aa272b22d8a6eca82f1ca9eb`
