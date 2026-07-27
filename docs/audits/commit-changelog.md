@@ -6,6 +6,15 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 27, 2026 at 11:08:30 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `3dd5dae2996813b41e581a7cfa0a0d0a5eae5f3e`
+- High-level reason: Record that the clean production `ScribeSharedWatch`
+  generic build now compiles and signs for arm64/arm64_32 with strict code-sign
+  verification, while preserving install and live production acceptance as
+  separate remaining device work.
+
 ## July 27, 2026 at 11:02:29 AM EDT
 
 - Repository: `instant-data-swift`
