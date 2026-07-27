@@ -102,7 +102,8 @@ persisted artifacts outrank code reading whenever they disagree.
 - 2026-07-27 — Replaced the need for a second local-only runtime with a
   read-only client facet in `760afdb`. Composition roots can now inject local
   reads and observations over the already bootstrapped runtime while ordinary
-  live one-shot APIs retain their freshness contract.
+  live one-shot APIs retain their freshness contract; Scribe adopted that
+  single-runtime composition in `cb88d6c`.
 - 2026-07-27 — Fixed the five highest-priority Reactor correctness gaps with
   focused parity tests: isolated rejected queries (`d7dd19d`), rebased later
   optimistic writes (`cabc467`), reference-counted room joins (`ac10cb3`),
@@ -147,7 +148,7 @@ Severity: P0 correctness/data-loss, P1 behavior/perf, P2 ergonomics, P3 polish.
 | R-A4 | P1 | Fixed `cabc467` | Remaining optimistic mutations are rebased above the authoritative server snapshot so later local writes stay visible. |
 | S-C2/C11 | P1 | Fixed `fa2210b`, `17c2d62` | Live projection omits cumulative joined-text rewrites, finalization writes the fallback text once, and snapshot mutations are serialized in submission order. |
 | S-C3/C4 | P1 | Partial `da5010d` | Commits now skip flat observers in untouched namespaces while relationship-dependent plans remain conservative; infinite-query windowing still needs separate review. |
-| S-C5 | P1 | Fixed `21be1b8` | Scribe's local startup and capture projection loaders now use an injected local-only client over the shared SQLite file; live one-shot queries remain freshness-sensitive and no public `queryLocal` was added. |
+| S-C5 | P1 | Fixed `21be1b8`, `760afdb`, `cb88d6c` | Scribe's local startup and capture projection loaders use a read-only facet of the already bootstrapped live runtime; live one-shot queries remain freshness-sensitive and no second SQLite runtime or public `queryLocal` was added. |
 | S-C6/C7 | P1/P2 | Fixed `e12be12`, `1d8db69` | Microphone PCM retains 256 newest buffers with drop diagnostics; Watch relay timing uses a 4,096-entry circular buffer and refuses false attribution after eviction. |
 | R-A8 | P2 | Partial `c0a0304`, `0ba57bd` | Persisted per-query results are pruned at bootstrap and every 64 successful writes while active observations remain protected; global triple retention still needs a separate reachability policy. |
 | API-B1/B2/B3 | P2 | Partial `7ec460a` | Typed schema-owned snapshot decoding now removes string keys for cardinality-one values; macro-generated whole-model upserts remain a separate ergonomic follow-up. |
