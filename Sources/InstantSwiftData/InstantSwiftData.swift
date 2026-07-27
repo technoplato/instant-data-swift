@@ -2000,17 +2000,18 @@ private final class FetchStorage<Value: Sendable>: @unchecked Sendable {
     publishChange()
   }
 
-  func reserveAutomaticObservationTask() -> Bool {
+  func reserveAutomaticObservationTask() -> Int? {
     withLock {
       guard
         _allowsAutomaticObservation,
         _automaticObservationTask == nil,
         !_isAutomaticObservationTaskReserved
       else {
-        return false
+        return nil
       }
+      _activeSubscriptionID += 1
       _isAutomaticObservationTaskReserved = true
-      return true
+      return _activeSubscriptionID
     }
   }
 
@@ -2812,7 +2813,7 @@ private func startAutomaticFetchObservation<Value: Sendable>(
   subscribe: @escaping @Sendable (InstantSwiftDataClient) async throws
     -> FetchSubscription<Value>
 ) {
-  guard storage.reserveAutomaticObservationTask() else { return }
+  guard let generation = storage.reserveAutomaticObservationTask() else { return }
   let storageReference = WeakFetchStorage(storage)
   let startupTrace = client.runtime?.configuration.startupTrace ?? .disabled
   let startupStopwatch = startupTrace.started(
@@ -2839,7 +2840,12 @@ private func startAutomaticFetchObservation<Value: Sendable>(
       )
       defer { subscription.cancel() }
       try Task.checkCancellation()
-      guard let id = storageReference.value?.beginActiveSubscription(subscription) else { return }
+      guard
+        let id = storageReference.value?.beginActiveSubscription(
+          subscription,
+          after: generation
+        )
+      else { return }
       subscriptionID = id
       for try await value in subscription {
         try Task.checkCancellation()
