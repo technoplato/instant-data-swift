@@ -4,6 +4,34 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 9:30:14 a.m. EDT — `0bda5d56651a` Isolate malformed outbox mutations
+
+- **Implementation commit:** `0bda5d56651ac8e1b5e107b7a5a74ccc4f6c7a68`
+- **Change:** Fail only an unencodable live mutation and continue sending later healthy mutations
+- **Details:**
+  - Separate attribute-resolution failures from socket-send failures inside the live session.
+  - Persist local encoding failures without marking the shared connection errored or aborting the delivery loop.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Collect and durably isolate per-mutation encoding failures.
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — Prove a malformed first mutation cannot poison the healthy mutation behind it.
+- **User context (verbatim):**
+  > One mutation with an unresolvable attribute aborts the delivery loop and can poison every reconnect.
+- **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
+
+## July 27th, 2026 at 9:30:14 a.m. EDT — `ea1ca27e3cd0` Preserve same-millisecond outbox order
+
+- **Implementation commit:** `ea1ca27e3cd0be0414ea328ef9e1ab1e10f7278d`
+- **Change:** Preserve insertion order for default-timestamp mutations created in the same millisecond
+- **Details:**
+  - Advance implicit mutation timestamps above the newest durable outbox timestamp, including after compare-and-swap retries.
+  - Keep explicitly supplied domain timestamps unchanged so deliberate older writes retain their ordering semantics.
+- **Files:**
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Assign monotonic implicit outbox timestamps.
+  - `Tests/InstantSwiftDataCoreTests/InstantLiveTransportTests.swift` — Prove reverse-lexical transaction IDs retain insertion order across relaunch.
+- **User context (verbatim):**
+  > Pending mutations created in the same millisecond are tie-broken by random UUID, so replay/rebase order can invert.
+- **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
+
 ## July 27th, 2026 at 9:12:06 a.m. EDT — `ac10cb376523` Reference-count live room joins
 
 - **Implementation commit:** `ac10cb37652315a4d81d488de1848ebd2cc8af9d`

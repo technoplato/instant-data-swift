@@ -6,6 +6,22 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 27, 2026 at 9:29:44 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `62157d2cde816bb395913c7c0a6ef938f347a2fe`
+- High-level reason: Correlate transcript source attribution with the audio
+  frames actually sent under each context and use the exact `System Audio`
+  fallback whenever reliable application metadata is unavailable.
+
+## July 27, 2026 at 9:27:54 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `0bda5d56651ac8e1b5e107b7a5a74ccc4f6c7a68`
+- High-level reason: Persist only an unencodable mutation as failed, keep the
+  shared live connection open, and continue sending healthy mutations behind
+  it instead of poisoning every delivery attempt.
+
 ## July 27, 2026 at 9:22:10 AM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
@@ -13,6 +29,37 @@ contain its own final SHA.
 - High-level reason: Embed clean-build commit, branch, dirty state, timestamps,
   host, source root, artifact location, configuration, platform, and
   architecture in the standalone Watch audio probe's structured startup log.
+
+## July 27, 2026 at 9:21:59 AM EDT
+
+- Repository: `instant-data-swift`
+- Commit: `ea1ca27e3cd0be0414ea328ef9e1ab1e10f7278d`
+- High-level reason: Assign monotonic implicit outbox timestamps so mutations
+  created in the same millisecond retain insertion order across persistence and
+  relaunch without changing deliberately supplied domain timestamps.
+
+## July 27, 2026 at 9:18:04 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `46fe3966ea42ca925de3881466c2c404b31308b6`
+- High-level reason: Wait for the asynchronously enqueued WebSocket timeout
+  diagnostic before asserting it, removing a scheduler-dependent suite flake.
+
+## July 27, 2026 at 9:17:28 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `1d8db6978969a375fccca52b5174b2f3fe5ce7df`
+- High-level reason: Retain only the newest 4,096 Watch relay chunk timings in a
+  circular buffer and avoid false latency attribution after older timings are
+  evicted.
+
+## July 27, 2026 at 9:16:13 AM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `850b5169a1745fa6adf6d8e2216477be1e6dd3b3`
+- High-level reason: Require explicit process opt-in before structured
+  diagnostics can use the dedicated remote Instant app, while preserving local
+  diagnostics by default.
 
 ## July 27, 2026 at 9:14:49 AM EDT
 
