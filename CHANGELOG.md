@@ -4,6 +4,20 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 10:23:39 a.m. EDT — `b7eaceccec88` Stabilize concurrent composite fetch fixtures
+
+- **Implementation commit:** `b7eaceccec880bdfbb6b747a9c0335bae9ca509f`
+- **Change:** Stabilize concurrent composite fetch fixtures
+- **Details:**
+  - Resolve mock query results by plan instead of task completion order so concurrent composite loads remain deterministic.
+  - Assert dynamic composite plans without depending on concurrent scheduling order.
+  - Keep the load-only fixture from starting an empty automatic observation that can overwrite the loaded value during assertions.
+- **Files:**
+  - `Tests/InstantSwiftDataTests/TypedAPITests.swift` — Make composite fetch fixtures deterministic under the full parallel suite.
+- **User context (verbatim):**
+  > ensure that all the test suite still passes.
+- **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
+
 ## July 27th, 2026 at 10:18:42 a.m. EDT — `25d6b9718b47` Stabilize query cache retention fixtures
 
 - **Implementation commit:** `25d6b9718b475657af5d4553f1434c17a6342862`
