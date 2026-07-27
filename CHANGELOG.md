@@ -4,6 +4,22 @@ Newest entries appear first. Implementation commits and intent are recorded sepa
 
 <!-- change-log:entries -->
 
+## July 27th, 2026 at 10:05:15 a.m. EDT — `760afdb4dee3` Add read-only local client facet
+
+- **Implementation commit:** `760afdb4dee3ce23408d48b233bb8501bf481181`
+- **Change:** Derive an injectable local-reader facet from an already bootstrapped Instant client
+- **Details:**
+  - Reuse the live client's runtime, in-memory store, and SQLite connection for ordinary local `query`, `queryOnce`, and observation APIs without server acknowledgement or live query registration.
+  - Keep the facet read-only and reject mutations, preserving outbox and remote-capability ownership in the ordinary client.
+- **Files:**
+  - `Sources/InstantSwiftData/InstantSwiftData.swift` — Add the public composition-boundary `localReader()` facet.
+  - `Sources/InstantSwiftDataCore/InstantRuntime.swift` — Separate local observation and one-shot materialization from live freshness enforcement.
+  - `Tests/InstantSwiftDataTests/BootstrapTests.swift` — Prove closed-client local reads and observations work while mutation is rejected.
+  - `docs/adr/0004-local-reader-facet.md` — Record why the facet replaces a second runtime without adding a second query vocabulary.
+- **User context (verbatim):**
+  > Instant Reactor and SQLiteData ergonomic parity
+- **SpecStory:** unavailable — Codex desktop sessions are not supported by the documented SpecStory CLI capture workflow, so no durable session URI is available.
+
 ## July 27th, 2026 at 9:59:16 a.m. EDT — `da5010dee7b7` Scope store observer invalidation by namespace
 
 - **Implementation commit:** `da5010dee7b70a0ee65891b2859ebc4fd8e3d2f2`

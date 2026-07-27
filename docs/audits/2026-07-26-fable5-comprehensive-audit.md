@@ -96,6 +96,10 @@ persisted artifacts outrank code reading whenever they disagree.
   injected local-only Instant client in `21be1b8`. The live and local clients
   share one resolved SQLite file, preserving the strict public one-shot API
   while removing server-acknowledgement waits from startup and capture writes.
+- 2026-07-27 — Replaced the need for a second local-only runtime with a
+  read-only client facet in `760afdb`. Composition roots can now inject local
+  reads and observations over the already bootstrapped runtime while ordinary
+  live one-shot APIs retain their freshness contract.
 - 2026-07-26 — Committed baselines in both repos (`f70044d`, `4d30691`).
   Confirmed no secrets in diffs (only env-var names/test fixtures; API keys go
   through KeychainClient).
@@ -121,7 +125,7 @@ Severity: P0 correctness/data-loss, P1 behavior/perf, P2 ergonomics, P3 polish.
 | R-A8 | P2 | Partial `c0a0304` | Persisted per-query results are now pruned in production while active observations remain protected; global triple retention still needs a separate reachability policy. |
 | API-B1/B2/B3 | P2 | Proposed | Generate or centralize entity snapshot decoding and whole-model upserts to remove repeated stringly application boilerplate. |
 | API-B5/B6/B7 | P2 | Proposed | Complete dynamic fetch parity and expose library-owned decoded/composite observation for TCA and actor consumers. |
-| API-B8/B10/B13 | P2 | Proposed | Add dependency-controlled IDs, faceted clients, DocC, and unified fetch status without broadening the application/library sync boundary. |
+| API-B8/B10/B13 | P2 | Partial `d3e6e70`, `760afdb` | Dependency-controlled typed IDs and a read-only local client facet are implemented with ADRs; broader DocC and unified fetch-status work remain. |
 
 ## Decisions
 
