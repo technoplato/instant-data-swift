@@ -148,7 +148,22 @@ struct InstantLiveTransportTests {
       await runtime.outboxTransportMutations().first { $0.mutationID == "tx-older" }
     )
     #expect(
-      !olderTransport.txSteps.contains { step in
+      olderTransport.txSteps.contains { step in
+        guard
+          case let .addTriple(_, attributeID, value, _) = step,
+          attributeID == "todos/text",
+          value == .string("Older value")
+        else { return false }
+        return true
+      }
+    )
+
+    try await runtime.confirmMutation(id: "tx-newer")
+    let staleOnlyTransport = try #require(
+      await runtime.outboxTransportMutations().first { $0.mutationID == "tx-older" }
+    )
+    #expect(
+      !staleOnlyTransport.txSteps.contains { step in
         guard
           case let .addTriple(_, attributeID, value, _) = step,
           attributeID == "todos/text",

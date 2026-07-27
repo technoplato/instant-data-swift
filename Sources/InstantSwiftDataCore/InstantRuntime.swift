@@ -7112,17 +7112,25 @@ public final class InstantRuntime: Sendable {
           return includeFailed
         }
       }
+      .sorted(by: PendingMutation.creationOrder)
     let visibleWriteFilter = await store.visibleWriteFilter(
       for: InstantVisibleWriteFilter.writeKeys(in: mutations)
     )
-    return mutations
-      .map { mutation in
-        var mutation = mutation
-        mutation.transaction.operations = visibleWriteFilter.discardingWritesOlderThanVisibleState(
-          mutation.transaction.operations
-        )
-        return InstantTransportMutation(mutation)
-      }
+    var laterQueuedWriteKeys: Set<InstantVisibleWriteKey> = []
+    var filteredReversed: [PendingMutation] = []
+    filteredReversed.reserveCapacity(mutations.count)
+    for var mutation in mutations.reversed() {
+      let mutationWriteKeys = InstantVisibleWriteFilter.writeKeys(
+        in: mutation.transaction.operations
+      )
+      mutation.transaction.operations = visibleWriteFilter.discardingWritesOlderThanVisibleState(
+        mutation.transaction.operations,
+        preserving: laterQueuedWriteKeys
+      )
+      filteredReversed.append(mutation)
+      laterQueuedWriteKeys.formUnion(mutationWriteKeys)
+    }
+    return filteredReversed.reversed().map(InstantTransportMutation.init)
   }
 
   public func flushPendingMutations(limit: Int? = nil) async throws
@@ -8094,31 +8102,36 @@ struct InstantVisibleWriteFilter: Sendable {
   }
 
   static func writeKeys(in mutations: [PendingMutation]) -> Set<InstantVisibleWriteKey> {
+    writeKeys(in: mutations.flatMap(\.transaction.operations))
+  }
+
+  static func writeKeys(
+    in operations: [InstantTripleOperation]
+  ) -> Set<InstantVisibleWriteKey> {
     Set(
-      mutations.flatMap { mutation in
-        mutation.transaction.operations.compactMap { operation in
-          switch operation {
-          case let .insert(triple), let .merge(triple):
-            return InstantVisibleWriteKey(
-              entityID: triple.entityID,
-              attributeID: triple.attributeID
-            )
-          case .requireEntityMissing, .requireEntityMissingByLookup,
-            .requireEntityExists, .requireEntityExistsByLookup,
-            .requireTripleExists,
-            .insertByLookup, .mergeByLookup,
-            .retract, .retractByLookup,
-            .deleteEntity, .deleteEntityInNamespace, .deleteEntityByLookup,
-            .ruleParams, .ruleParamsByLookup:
-            return nil
-          }
+      operations.compactMap { operation in
+        switch operation {
+        case let .insert(triple), let .merge(triple):
+          return InstantVisibleWriteKey(
+            entityID: triple.entityID,
+            attributeID: triple.attributeID
+          )
+        case .requireEntityMissing, .requireEntityMissingByLookup,
+          .requireEntityExists, .requireEntityExistsByLookup,
+          .requireTripleExists,
+          .insertByLookup, .mergeByLookup,
+          .retract, .retractByLookup,
+          .deleteEntity, .deleteEntityInNamespace, .deleteEntityByLookup,
+          .ruleParams, .ruleParamsByLookup:
+          return nil
         }
       }
     )
   }
 
   func discardingWritesOlderThanVisibleState(
-    _ operations: [InstantTripleOperation]
+    _ operations: [InstantTripleOperation],
+    preserving queuedSuccessorWriteKeys: Set<InstantVisibleWriteKey> = []
   ) -> [InstantTripleOperation] {
     return operations.filter { operation in
       let triple: InstantTriple
@@ -8144,6 +8157,7 @@ struct InstantVisibleWriteFilter: Sendable {
         entityID: triple.entityID,
         attributeID: triple.attributeID
       )
+      if queuedSuccessorWriteKeys.contains(key) { return true }
       guard let visibleWrite = newestVisibleWrite[key] else { return true }
       return visibleWrite <= triple.txTime
     }

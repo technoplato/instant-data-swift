@@ -1158,6 +1158,69 @@ public struct InstantSwiftDataClient: Sendable {
     await pendingMutationsOperation()
   }
 
+  /// Waits until every locally persisted mutation has been acknowledged by the live server.
+  ///
+  /// Transactions remain local-first: this method does not block `transact`. It is intended for
+  /// short-lived tools and explicit durability boundaries that must remain alive until another
+  /// client can observe the final mutation. Unlike `flushPendingMutations`, this does not invoke a
+  /// separately configured mutation transport or locally confirm the outbox.
+  public func waitForAllPendingMutations(
+    timeout: Duration = .seconds(10),
+    pollInterval: Duration = .milliseconds(50)
+  ) async throws {
+    guard timeout >= .zero else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "wait for pending mutations",
+        message: "The delivery timeout must be greater than or equal to zero.",
+        recovery: "Pass a non-negative timeout."
+      )
+    }
+    guard pollInterval >= .zero else {
+      throw InstantError(
+        code: .validationFailed,
+        operation: "wait for pending mutations",
+        message: "The delivery poll interval must be greater than or equal to zero.",
+        recovery: "Pass a non-negative poll interval."
+      )
+    }
+
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: timeout)
+    while true {
+      try Task.checkCancellation()
+      let pending = await pendingMutations()
+      guard !pending.isEmpty else { return }
+
+      let status = try await connectionStatus()
+      switch status.state {
+      case .closed:
+        _ = try await connect()
+      case .errored:
+        throw InstantError(
+          code: .networkFailed,
+          operation: "wait for pending mutations",
+          message:
+            status.lastErrorMessage
+            ?? "The live Instant connection failed with \(pending.count) pending mutation(s).",
+          recovery: "Reconnect and retry after inspecting the live transport error."
+        )
+      case .connecting, .opened, .authenticated:
+        break
+      }
+
+      guard clock.now < deadline else {
+        throw InstantError(
+          code: .networkFailed,
+          operation: "wait for pending mutations",
+          message: "Timed out waiting for \(pending.count) pending mutation(s) to be acknowledged.",
+          recovery: "Keep the process alive longer or inspect the live Instant connection."
+        )
+      }
+      try await clock.sleep(for: pollInterval)
+    }
+  }
+
   public func flushPendingMutations(limit: Int? = nil) async throws
     -> InstantMutationTransportFlushResult
   {
