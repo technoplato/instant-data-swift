@@ -5886,6 +5886,26 @@ public struct InstantFetchRequest<Value: Sendable>: Sendable {
   fileprivate var subscribeOperation:
     @Sendable (InstantSwiftDataClient) async throws -> FetchSubscription<Value>
 
+  public func load() async throws -> Value {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await load(using: client)
+  }
+
+  public func load(using client: InstantSwiftDataClient) async throws -> Value {
+    try await loadOperation(client)
+  }
+
+  public func subscribe() async throws -> FetchSubscription<Value> {
+    @Dependency(\.defaultInstantSwiftData) var client
+    return try await subscribe(using: client)
+  }
+
+  public func subscribe(
+    using client: InstantSwiftDataClient
+  ) async throws -> FetchSubscription<Value> {
+    try await subscribeOperation(client)
+  }
+
   public init<Entity: InstantEntityModel>(
     _ query: InstantEntityQuery<Entity>,
     transform: @escaping @Sendable ([Entity]) throws -> Value

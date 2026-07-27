@@ -5247,6 +5247,69 @@ struct TypedAPITests {
   }
 
   @Test
+  func fetchRequestLoadsCompositeValueWithoutAPropertyWrapper() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_175.36)
+    let open = typedTodoSnapshot(
+      id: "todo-fetch-request-direct-open",
+      text: "Direct open",
+      isCompleted: false,
+      createdAt: baseDate
+    )
+    let done = typedTodoSnapshot(
+      id: "todo-fetch-request-direct-done",
+      text: "Direct done",
+      isCompleted: true,
+      createdAt: baseDate.addingTimeInterval(1)
+    )
+    let recorder = ClientCallRecorder(queryResult: { plan in
+      plan.filters.contains(.equals(field: "isCompleted", value: .bool(false)))
+        ? [open]
+        : [open, done]
+    })
+    let request = TypedTodoFactsRequest(
+      rowsQuery: TypedTodo.query.where(TypedTodo.isCompleted == false),
+      countQuery: TypedTodo.query
+    ).fetchRequest
+
+    let value = try await request.load(using: recordingClient(recorder))
+
+    expectNoDifference(value.todos.map(\.text), ["Direct open"])
+    expectNoDifference(value.count, 2)
+    let counts = await recorder.counts()
+    expectNoDifference(counts.queryCount, 2)
+  }
+
+  @Test
+  func fetchRequestSubscribesToCompositeValuesWithoutAPropertyWrapper() async throws {
+    let baseDate = Date(timeIntervalSince1970: 1_700_000_175.37)
+    let client = finiteObservationClient([
+      [],
+      [
+        typedTodoSnapshot(
+          id: "todo-fetch-request-direct-live",
+          text: "Direct live",
+          isCompleted: false,
+          createdAt: baseDate
+        )
+      ],
+    ])
+    let request = TypedTodoFactsRequest(
+      rowsQuery: TypedTodo.query.order(TypedTodo.createdAt),
+      countQuery: TypedTodo.query
+    ).fetchRequest
+
+    let subscription = try await request.subscribe(using: client)
+    var values: [TypedTodoFacts] = []
+    for try await value in subscription {
+      values.append(value)
+    }
+
+    expectNoDifference(values.last?.todos.map(\.text), ["Direct live"])
+    expectNoDifference(values.last?.count, 1)
+    subscription.cancel()
+  }
+
+  @Test
   func fetchKeyRequestLoadsDynamicRequestsAndRecordsPlans() async throws {
     let baseDate = Date(timeIntervalSince1970: 1_700_000_175.375)
     let open = typedTodoSnapshot(
