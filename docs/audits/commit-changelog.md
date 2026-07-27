@@ -6,6 +6,14 @@ commit SHA, and high-level reason. Changelog-only bookkeeping commits are
 visible in Git history but are not self-recorded because a commit cannot
 contain its own final SHA.
 
+## July 27, 2026 at 12:27:31 PM EDT
+
+- Repository: `realtime-voice-sqlite-instant` (Scribe)
+- Commit: `ed2a0b7a3cf19b06d6ab331d392b825701192561`
+- High-level reason: Make iPhone and Watch transcript sections seekable, keep
+  Watch playback following the active section, configure spoken-audio output,
+  expose the active route, and peak-normalize unusually quiet PCM for playback.
+
 ## July 27, 2026 at 12:26:49 PM EDT
 
 - Repository: `realtime-voice-sqlite-instant` (Scribe)
