@@ -218,7 +218,8 @@ private func waitForCookieSyncRequests(
   _ recorder: CookieSyncRecorder,
   count: Int
 ) async throws -> [InstantUserCookieSyncRequest] {
-  for _ in 0..<100 {
+  let deadline = ContinuousClock.now + .seconds(5)
+  while ContinuousClock.now < deadline {
     let requests = await recorder.requests()
     if requests.count >= count {
       return requests
