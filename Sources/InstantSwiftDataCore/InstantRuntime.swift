@@ -2029,12 +2029,23 @@ public final class InstantRuntime: Sendable {
         )
       }
       let pendingMutation: PendingMutation
-      if let mutation {
-        pendingMutation = mutation
+      if var existingDraft = mutation {
+        if createdAt == nil {
+          existingDraft.createdAt = Self.monotonicOutboxTimestamp(
+            existingDraft.createdAt,
+            after: state.snapshot.outbox
+          )
+          mutation = existingDraft
+        }
+        pendingMutation = existingDraft
       } else {
         let newMutation = PendingMutation(
           id: transaction.id,
-          createdAt: createdAt ?? configuration.now(),
+          createdAt: createdAt
+            ?? Self.monotonicOutboxTimestamp(
+              configuration.now(),
+              after: state.snapshot.outbox
+            ),
           transaction: transaction
         )
         mutation = newMutation
@@ -2068,6 +2079,18 @@ public final class InstantRuntime: Sendable {
     }
 
     throw transactionChangedDuringPersistence(id: transaction.id)
+  }
+
+  private static func monotonicOutboxTimestamp(
+    _ requested: InstantTimestamp,
+    after mutations: [PendingMutation]
+  ) -> InstantTimestamp {
+    guard
+      let latest = mutations.map(\.createdAt).max(),
+      requested <= latest,
+      latest.milliseconds < Int64.max
+    else { return requested }
+    return InstantTimestamp(milliseconds: latest.milliseconds + 1)
   }
 
   @discardableResult

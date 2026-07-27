@@ -46,6 +46,49 @@ private let pythonStreamFileRetryBudgetSource =
 @Suite
 struct InstantLiveTransportTests {
   @Test
+  func sameMillisecondMutationsRetainInsertionOrderAcrossRelaunch() async throws {
+    let cacheURL = try temporaryLiveCacheURL()
+    let sameMillisecond = InstantTimestamp(milliseconds: 1_700_000_000_000)
+    let configuration = InstantRuntimeConfiguration(
+      appID: "same-millisecond-outbox-order",
+      persistenceURL: cacheURL,
+      initialAttributes: TodoExample.attributes,
+      now: { sameMillisecond }
+    )
+    let runtime = try await InstantRuntime.bootstrap(configuration: configuration)
+
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "z-first",
+        operations: TodoExample.createOperations(
+          id: "todo-first",
+          text: "First",
+          createdAt: sameMillisecond,
+          transactionID: "z-first"
+        )
+      )
+    )
+    try await runtime.transact(
+      InstantStoreTransaction(
+        id: "a-second",
+        operations: TodoExample.createOperations(
+          id: "todo-second",
+          text: "Second",
+          createdAt: sameMillisecond,
+          transactionID: "a-second"
+        )
+      )
+    )
+
+    let outboxIDs = await runtime.outboxMutations().map(\.id)
+    expectNoDifference(outboxIDs, ["z-first", "a-second"])
+
+    let relaunched = try await InstantRuntime.bootstrap(configuration: configuration)
+    let relaunchedOutboxIDs = await relaunched.outboxMutations().map(\.id)
+    expectNoDifference(relaunchedOutboxIDs, ["z-first", "a-second"])
+  }
+
+  @Test
   func olderOptimisticMutationCannotOverwriteNewerLocalState() async throws {
     let cacheURL = try temporaryLiveCacheURL()
     let seedAt = InstantTimestamp(milliseconds: 1_700_000_000_000)
