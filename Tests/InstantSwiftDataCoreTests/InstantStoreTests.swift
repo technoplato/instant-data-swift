@@ -612,7 +612,8 @@ struct InstantStoreTests {
       configuration: InstantRuntimeConfiguration(
         appID: "test-app",
         persistenceURL: cacheURL,
-        initialAttributes: TodoExample.attributes
+        initialAttributes: TodoExample.attributes,
+        now: { cachedAt }
       )
     )
     let relaunchedCache = try await relaunchedRuntime.cachedQuery(TodoExample.query)
@@ -915,7 +916,8 @@ struct InstantStoreTests {
     let writerRuntime = try await InstantRuntime.bootstrap(
       configuration: InstantRuntimeConfiguration(
         appID: "stale-cross-runtime-cache",
-        persistenceURL: cacheURL
+        persistenceURL: cacheURL,
+        now: { cachedAt }
       )
     )
     try await writerRuntime.transact(
@@ -6933,7 +6935,8 @@ struct InstantStoreTests {
       configuration: InstantRuntimeConfiguration(
         appID: "test-app",
         persistenceURL: cacheURL,
-        initialAttributes: TodoExample.attributes
+        initialAttributes: TodoExample.attributes,
+        now: { updatedAt }
       )
     )
     let cachedQuery = try await runtime.cachedQuery(TodoExample.query)

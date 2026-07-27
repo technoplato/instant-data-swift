@@ -1568,6 +1568,7 @@ private actor InstantLiveQueryAcknowledgementState {
   }
 }
 
+// SAFETY: `lock` protects every read and write of the cadence counter.
 private final class InstantQueryCachePruningCadence: @unchecked Sendable {
   private let lock = NSLock()
   private var writesSinceLastPrune = 0

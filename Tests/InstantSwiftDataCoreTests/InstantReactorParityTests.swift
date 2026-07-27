@@ -74,7 +74,8 @@ struct InstantReactorParityTests {
       configuration: InstantRuntimeConfiguration(
         appID: "reactor-query-subs-parity",
         persistenceURL: cacheURL,
-        initialAttributes: TodoExample.attributes
+        initialAttributes: TodoExample.attributes,
+        now: { cachedAt }
       )
     )
     let relaunchedCache = try #require(try await relaunchedRuntime.cachedQuery(plan))
